@@ -1,7 +1,8 @@
 # 36 — `banked-open-ends` sprint plan: closing the banked validation open ends
 
-**Status: OPEN, planned 2026-09-07.** Wave 0 dispatched the same day (B0, B2,
-B1 in parallel worktrees). Per-session landing records are appended to the
+**Status: CLOSED 2026-09-07 (§7 is the close-out record).** Eight sessions in
+three waves, all merged on the sprint branch `banked-open-ends`; PR to `main`
+opened at close-out. Per-session landing records are appended to the
 session paragraphs below ("Landed:") as they merge; §7 is the close-out slot.
 
 The validation-slot sprint after `ufo-lorentz` (note 35). Its content is the
@@ -605,6 +606,38 @@ flow under its own card is the reference this suite reproduces, as
 everywhere else; a `--madgraph-compat`-off alternative is the feature
 backlog's, not this sprint's.
 
+**Landed B3 (`c2c5407` + `20dbaab`, 2026-09-07).** `eval_amp2` coherent
+per configuration (`(Σ AMP)·conj(Σ AMP)` as `export_v4.py` writes it);
+`derive_channels` one forest per `config_groups` group from its lowest
+diagram; the `ICOLAMP` mask the union of the group's reached flows, pinned
+against MadGraph's representative-column convention (zero disagreements on
+19 merging processes); `ChannelSet::channel_cuts` = `get_channel_cut`, the
+card condition split out as `weights_configurations_by_amp2()` and read by
+both the scale and colour paths; artifact `FORMAT_VERSION` 7 → 8
+(`ChannelKey::{Channel, GroupChannel}`). New gate: the channel count and
+NCOLOR against `coloramps.inc`'s declared dimensions on all 38
+single-subprocess runs. **Brief correction**: note 35 §V2's nine-row set was
+wrong twice — three were 2→1 rows with no channels, and it missed six gated
+σ rows that merge (`ee_to_wpwm_cw`, `ee_to_zh_smeft`, three `ll_to_qqx_toy`,
+`pp_to_jj`) plus three that lose a *contact* channel (`gg_to_gg`,
+`tata_to_ttx_tensor4f`, `uux_to_ttx_4f`); the real may-move set is 16
+σ/samples rows + 3 amplitude-only. Falsifiers: `amplitude_oracle` identical
+except one accumulation-order digit on the Yukawa row's `amp2` (2.14e-15 →
+2.05e-15); full validate differs on exactly the 15 may-move cells; five
+seeds per row identical digit-for-digit on the 21 σ rows outside the set;
+every may-move σ inside its gate (thinnest `ll_to_qqx_toy_tensor` at 2.2×,
+χ²/dof 2.77 after its channel set fell 3 → 1). `ud_to_epemud_qcd0` `ICOLUP`
+χ² 589.5/671.3/619.7 → 0.0/0.1/0.2 (B4 predicted 0.5), cell `info → gate`.
+`gg_to_gg_cg` samples re-measured under the merged partition: ICOLUP χ² p
+minimum 0.074 → 0.022, still 223× the floor. Capstone pin 36 → 2.
+Deviation recorded: `draws_configuration()` had to be split, because the
+`ud_to_epemud_qcd0` card compiles no clustering prescription and the
+conjunction as written would have kept the `AMP2` weight; the split's
+side effect (scale path following the channel-cut weight on an
+`sde_strategy = 2` clustering card) reaches no banked row and is
+unit-pinned. MadGraph defect found: `genps.f`'s uninitialised `t` under
+`sde_strat = 1`, `tmin ≠ -1`.
+
 ## 6. Risk register
 
 - **B1's cut frame.** No banked massive-beam card may reach the rapidity
@@ -625,4 +658,40 @@ backlog's, not this sprint's.
 
 ## 7. Close-out
 
-(filled at close)
+Eight sessions (B0–B7, B7 added mid-sprint from B5's finding), all merged on
+`banked-open-ends`; `main` receives them by PR. Close-out run on the merged
+branch (`88767b9` + close-out bookkeeping), `pixi run --skip-deps validate`:
+**178 measured cells — 171 ✅, 7 ⚠️ — plus 4 ⏳ and 22 uncovered**, from
+176 / 166 / 10 / 24 at `e73b158`. The cells that moved are exactly the ones
+§1 targeted, plus one this sprint could only measure:
+
+| Cell | Was | Now | By |
+|---|---|---|---|
+| three massive-beam toy `integrals` | info (σ −6 to −7%) | gate (rel ≤ 8e-4) | B1 |
+| `ud_to_epemud_qcd0` samples | info (ICOLUP χ² ≈ 600) | gate (χ² ≤ 0.2) | B4 + B3 |
+| `gg_to_gg_cg` samples | uncovered | gate | B6 |
+| `gg_to_gg_cg` integrals | uncovered | info (−0.22% converged offset) | B6 |
+
+No tolerance was widened anywhere. Two seed counts rose to five (B0). Two
+real bugs were found by oracles built in this sprint and fixed in it: the
+fixed-beam records internally off-shell (B2 → B1) and the UFO parser's
+unary-minus/`**` precedence (B5 → B7). Every brief was corrected by its
+session on at least one point; the corrections are in the "Landed" records
+above and in TODO.md's struck entries.
+
+**Open, filed in TODO.md** ("Open ends the `banked-open-ends` sprint left"):
+the αs-free fixed-beam `SCALUP` convention (the user's decision; 27 cells);
+`gg_to_gg_cg`'s σ offset; `powf` for real bases; the pre-`e73b158`
+calibration re-recording; `ddx`/`gux` budgets; the merged-forest oracle;
+`genps.f`'s uninitialised `t` for note 07; `pp_to_jj`'s stale `ICOLUP` band.
+The malloc abort did not reproduce in ~12 full runs.
+
+**Operational notes for the next manager.** A copied submodule's `.git`
+pointer file breaks `git status` from a worktree — delete it. Copying onto
+the tracked `validation/pdf` nests the sets one level down. Three concurrent
+full validates get a suite jetsam-killed on this host (load average 84
+observed); a killed run and a failed run look alike from a log tail. B0's
+sleep-based watcher shells (eight of them) had to be killed by hand.
+Sessions integrated on a sprint branch, main touched only by note commits,
+proved cleaner than the per-session merges to main of earlier sprints: two
+manifest conflicts, both note-text, both trivial.

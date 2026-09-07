@@ -5,18 +5,30 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **the `banked-open-ends` validation sprint is open**
-(planned 2026-09-07, **note 36 is the design note**). Seven sessions in three
-waves close the open ends the last three sprints banked: B0 seed-headroom
-census, B2 incoming-leg `samples` column and B1 massive fixed beams (wave 0,
-dispatched 2026-09-07); B4 `ud_to_epemud_qcd0` `ICOLUP`, B5 coupling-level
-oracle, B6 hygiene bundle incl. `dynamical_scale_choice` 1–5 on the fixed-beam
-path (wave 1); B3 MadGraph's channel set (wave 2). Targets: the three
-massive-incoming toy `integrals` cells, `ud_to_epemud_qcd0`'s `samples` cell
-and `gg_to_gg_cg`'s two `uncovered` cells flip on measurement; every other
-cell unmoved. Excluded with reasons in note 36 §1: the five-vector residual,
-the `ee_to_mumua` +1.04%, the 2→6 tail, banking `p p > j j j`, the malloc
-abort.
+**Current position**: **between sprints.** The `banked-open-ends` validation
+sprint (note 36, eight sessions in three waves, 2026-09-07) is **closed on the
+sprint branch and awaiting the user's merge of its PR**; §7 of the note is the
+close-out record. What it moved, counted from `validation/manifest.toml` at the
+close-out run: **178 measured cells — 171 ✅, 7 ⚠️ — plus 4 ⏳ and 22 uncovered**,
+from 176 / 166 / 10 / 24 at `e73b158`. Flipped on measurement: the three
+massive-incoming toy `integrals` cells (fixed beams on shell, B1),
+`ud_to_epemud_qcd0`'s `samples` cell (MadEvent's channel-drawn colour flow under
+`sde_strategy = 2`, B4+B3), `gg_to_gg_cg`'s `samples` cell (closed-form scales
+honoured, B6); `gg_to_gg_cg`'s `integrals` cell is measured and informational.
+New standing oracles: the incoming-leg and `SCALUP`/`AQCDUP` columns in
+`samples` (B2, B6), the coupling-level oracle over 41 rows (B5), the channel
+count pinned against `coloramps.inc` on 38 runs (B3), the seed-headroom census
+(B0, note 36a). Two real bugs found by the new oracles and fixed: the UFO
+parser binding unary minus tighter than `**` (B5 → B7), and the fixed-beam
+records being internally off-shell (B2 → B1). The integrator now runs on
+MadGraph's own configuration channel set (capstone 36 → 2 channels).
+**Open, the user's call**: the αs-free fixed-beam `SCALUP` convention (27
+informational cells — validation backlog, "Open ends the `banked-open-ends`
+sprint left"). The remaining `info` cells are `ee_to_wpwm_cw` (one |M|² point),
+`ee_to_zh_smeft` (MadGraph's writer rounding, now measured on two rows by the
+coupling oracle), `wpwm_to_wpwmz_cw`, the two `NGRAPHS` diagram counts,
+`ee_to_mumua`, and `gg_to_gg_cg`'s σ offset. **Next**: performance slot by
+the rhythm; candidates in the performance backlog.
 
 The `ufo-lorentz` feature sprint
 closed 2026-09-07 with session Z; **note 35 §10 is the close-out record**, and
@@ -264,6 +276,7 @@ One line each; the note is the full record. Earlier sprints
   budget progress test primes the callsite and rebuilds the interest cache
   after installing its subscriber.
 
+- **`banked-open-ends`** (validation, eight sessions in three waves, closed 2026-09-07 on the sprint branch; note 36) — B0 seed-headroom census (two seed counts to five, six SM rows calibrated for the first time, the pre-`e73b158` calibration drift found); B2 incoming-leg `samples` column (seven massive-beam rows found, not three; records internally off-shell); B1 fixed beams on their own mass shells with the Møller flux and lab-frame cuts (three toy σ cells `info → gate`, 27 rows bit-identical, kinematics in the walkthrough); B5 coupling-level oracle over 41 rows (writer rounding on two rows; **found the UFO parser binding unary minus tighter than `**`**); B7 the parser fix with Python's grammar and the SM blob regenerated; B4 `ud_to_epemud_qcd0` diagnosed — tags byte-identical to `leshouche.inc`, the cause MadEvent's channel-drawn colour flow under `sde_strategy = 2`; B6 `SCALUP`/`AQCDUP` column (18 gate / 27 info), fallback counter asserted zero, αs evolution refusing non-finite results, closed-form dynamical scales at fixed beams (`gg_to_gg_cg` samples GATE); B3 MadGraph's configuration channel set — coherent `|Σ AMP|²`, channel count pinned on `coloramps.inc`, the colour draw under MadEvent's rule (χ² 600 → 0.1, cell GATE), capstone 36 → 2 channels. Census 176/166✅/10⚠️ → **178/171✅/7⚠️**, 24 → 22 uncovered. Transferable lesson: **build the oracle before the fix, and let it be wrong on purpose** — B2's column and B5's oracle each landed known-red, and each caught something its fix's brief had not named (seven rows not three; a parser bug no amplitude could see). Also: **every brief was corrected by its session** — six of eight reported an error in note 36 or in the TODO entry they closed.
 - **`ufo-lorentz`** (feature, fourteen sessions in five waves plus the close-out
   Z, closed 2026-09-07) — the UFO surface past the Standard Model's feature set,
   gated the project's way at every step. The rank-2 Lorentz tensor in the graded
@@ -299,8 +312,8 @@ One line each; the note is the full record. Earlier sprints
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
-- **A coupling-level oracle ahead of the amplitude gate** (from the
-  `ee_to_zh_smeft` diagnosis, 2026-09-07). For every banked row, compare this
+- ~~**A coupling-level oracle ahead of the amplitude gate** (from the
+  `ee_to_zh_smeft` diagnosis, 2026-09-07).~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B5, `a8a19e0`)**: `coupling_oracle.rs` over 41 rows, Python arbiter, Fortran reported; it found and B7 fixed the UFO parser binding unary minus tighter than `**` (`f3425e2`); the `GC_303` writer rounding is on two rows; follow-up filed below (`powf` for real bases) — original entry kept for the record: ** For every banked row, compare this
   crate's coupling values on the row's own `param_card.dat` against
   MadGraph's *Fortran runtime* values, read from the f2py matrix-element
   module's `couplings` common block that `build_amplitude.sh` already builds
@@ -313,8 +326,8 @@ One line each; the note is the full record. Earlier sprints
   writer, which prints a UFO literal like `0.4583333333333333` as
   `4.583333D-01`. Blind spot of the whole check: a rounding that both sides
   share, which the amplitude gate cannot see either.
-- **The fixed-beam integrand builds massive incoming particles massless**
-  (found and localised 2026-09-07 by the non-SM σ/samples pass, note 35 §10.9;
+- ~~**The fixed-beam integrand builds massive incoming particles massless**
+  (found and localised 2026-09-07~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B1, `3469e7a`/`7d4b9e8`)**: `FixedBeams` on shell, Møller flux, lab-rapidity cut boost; the three toy σ cells GATE at rel −3.2e-4 / +8.0e-4 / +3.8e-4, 27 of 34 fixed-beam rows bit-identical, the walkthrough carries the kinematics (`07-phase-space.md` "Fixed beams") — original entry kept for the record: ** by the non-SM σ/samples pass, note 35 §10.9;
   **diagnosed, deliberately not fixed there**). `FixedBeamIntegrand::beams`
   returns `(√ŝ/2)(1,0,0,±1)` and `prefactor` takes the flux as `1/(2ŝ)` with
   `ŝ = (E₁+E₂)²`, so a row whose incoming particles carry mass is evaluated at
@@ -372,8 +385,11 @@ One line each; the note is the full record. Earlier sprints
   `~/Library/Logs/DiagnosticReports/vibegraph-2026-09-07-085712.ips`. Anyone
   reading a gate under this suite should rerun the binary once on an abort and
   report both outcomes rather than treating one run as the measurement.
+  **Status 2026-09-07 (`banked-open-ends` close-out)**: zero aborts in the
+  sprint's ~12 full `validate` runs plus every targeted proton-sample run,
+  under host loads up to 84; still unreproduced, still unattributed.
 
-- **`ud_to_epemud_qcd0`'s event sample fails its `ICOLUP` χ² at ≈650 on 1 dof**
+- ~~**`ud_to_epemud_qcd0`'s event sample fails its `ICOLUP` χ² at ≈650 on 1 dof**~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B4 diagnosis `96b0096`, B3 fix `c2c5407`/`20dbaab`)**: not the tag dictionary (byte-identical to `leshouche.inc`) but MadEvent drawing the *integration channel* with `sde_strategy = 2`'s `GET_CHANNEL_CUT` weight over its merged configurations; χ² 590–671 → 0.0–0.2, cell GATE — original entry kept for the record: **
   (p ≈ 0, seed-stable, 60 000 events over 6 seeds) while kinematics and
   `SPINUP` clear their floors — measured the moment chain E wrote the
   comparison. This is the **fixed-beam** record path (`SubprocessRecord::new`),
@@ -397,8 +413,8 @@ One line each; the note is the full record. Earlier sprints
   (`ec2c5a0`); no threshold moved. Both cells re-arm as enforcement when this
   diagnosis lands. `ee_to_wpwm`'s `pt(w+)` KS cell remains the closest
   *gating* samples cell (`1.573e-4`/`1.6×`, unrelated).
-- **Sweep the remaining few-seed gate statistics for threshold headroom**
-  (2026-08-06, from the timelike-floor gate cascade — note 34 §1.2). Three
+- ~~**Sweep the remaining few-seed gate statistics for threshold headroom**
+  (2026-08-06~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B0, `44e4e04`, table in note 36a)**: `JJ_SEEDS` and the unweighting `GEN_SEEDS` to five, six SM σ rows calibrated for the first time; standing follow-ups below (pre-`e73b158` calibration comments, `ddx`/`gux` budgets) — original entry kept for the record: **, from the timelike-floor gate cascade — note 34 §1.2). Three
   cells failed one at a time behind cargo's abort chain, and all three were a
   gate statistic formed on fewer seeds than AGENTS.md's own ≥5 standard
   sitting at its threshold, re-rolled by a sampling-stream change: llj's
@@ -432,8 +448,8 @@ One line each; the note is the full record. Earlier sprints
 - ~~**Close-out Z of `ufo-lorentz`**~~ — **done 2026-09-07**, note 35 §10;
   `refdata-7` published the same day (the release asset hashes to the manifest
   pin, `published = true`, `bundled = false` gone from all 22 sprint rows).
-- **Move `AmplitudeEvaluator` onto MadGraph's channel set** (from V2, note 35
-  §V2): `config_groups` implements MadGraph's `IdentifyConfigTag` and the
+- ~~**Move `AmplitudeEvaluator` onto MadGraph's channel set** (from V2, note 35
+  §V2)~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B3, `c2c5407`)**: coherent `|Σ AMP|²` per configuration, one channel per `IdentifyConfigTag` group, channel count pinned against `coloramps.inc` on 38 runs, capstone 36 → 2 channels; the may-move set was 16 σ/samples rows, not nine (note 35 §V2 undercounted and missed the contact-channel drops) — original entry kept for the record: **: `config_groups` implements MadGraph's `IdentifyConfigTag` and the
   oracle asserts it, but the integrator still runs one channel per
   config-carrying diagram and `eval_amp2` sums `Σ|amp|²` where MadGraph's
   merged accumulator is the coherent `|Σ AMP|²` (correct so far only because
@@ -483,9 +499,67 @@ One line each; the note is the full record. Earlier sprints
   exactly `1` alongside the zeros and this loader does not — latent, no card in
   the repository uses `1.0`.
 
+- **Open ends the `banked-open-ends` sprint left (2026-09-07, note 36 §7)**:
+  - **An αs-free fixed-beam record writes the run card's scale** — 27
+    `samples` rows are informational on B6's `SCALUP`/`AQCDUP` column because
+    no scale prescription is compiled when the matrix element carries no
+    `αs`, so the record carries `dsqrt_q2fact` (91.188) and `AQCDUP = 0` where
+    MadGraph runs `setclscales` regardless and writes its clustered scale and
+    a running coupling (`ee_to_mumu` 91.2, `ee_to_ee` 250, `ee_to_ttx` 500).
+    σ and every shape are indifferent; the *records* differ. **A convention
+    decision, the user's**: compile the clustering on every fixed-beam run
+    and write MadGraph's numbers (27 cells flip to gate), or keep the card's
+    scale as the honest "no scale entered this matrix element" and record the
+    28 cells as a documented divergence.
+  - **`gg_to_gg_cg`'s σ is a converged −0.22% offset** (five seeds χ²/dof
+    1.01, ladder settling; the reference's error is 8.5e-4): not the scale
+    formula (the replay is at 0.999 of budget) and not the process
+    (`gg_to_gg` under the card differing in that one field sits at +9.8e-6);
+    localised to the coupling this `SCALE_FALLBACK_ROWS` member runs at
+    across the cut region rather than on MadGraph's kept events. Attribute
+    before gating.
+  - **`**` on a non-negative real base still goes through `exp(e·log b)`**
+    (`3**2 = 9.000000000000002`); switching to `f64::powf`, which Python does,
+    moves 335 of 3254 model values by ~1 ulp and would plausibly shrink the
+    coupling oracle's worst crate-vs-Python gap (8.85e-15 on SM `GC_64`). A
+    numerics change across the banked layer: its own before/after on the
+    oracle plus a full validate, never folded into another change. Any edit
+    to `ufo/expr.rs` must regenerate the interned SM blob
+    (`cargo run -p vibegraph-lib --bin gen_sm_blob`), which caches parsed ASTs.
+  - **Every σ calibration comment written before `e73b158` is stale** — the
+    note-34 draw-performance commits (`f85718d`, `c48fc69`, `f3d6e8b`) moved
+    the streams and the older five-seed figures were never re-recorded (all
+    thirteen written in `e73b158` reproduce to the digit; note 36a lists the
+    rest). A mechanical re-recording session; falsifier is one run of
+    `probe_gate_row_seed_headroom` at `f85718d^`.
+  - **Two tolerance cells under 2× headroom by budget, not threshold**:
+    `ddx_to_epemg` (1.6×, a converged +0.45% offset with a reference-bounded
+    pull) and `gux_to_epemux` (1.9×, one-seed scatter that 4× budget takes to
+    1.4e-3). Both buy margin with points; a budget decision, not a tolerance
+    one. The two thinnest cells after B3: `ll_to_qqx_toy_tensor` σ (2.2×,
+    χ²/dof 2.77, its channel set collapsed 3 → 1) and `ee_to_wpwm_cw`
+    samples (KS p 2.4e-4 against the 1e-4 floor).
+  - **The merged configuration's forest is not compared to `configs.inc` on
+    a merging run** — the count is (against `coloramps.inc`) and the partition
+    is (`amplitude_oracle` vs `matrix1.f`), but `validate_kt_cluster`'s forest
+    oracle covers only non-merging runs; extend
+    `derived_channel_forests_match_the_generated_ones` to the merging
+    single-subprocess runs now that both sides have one channel count. The
+    representative diagram is ours-first, MadGraph's is its-first; they
+    coincide where `MG_DIAGRAM_ORDER` is the identity and nothing measures the
+    rest (a sampling-efficiency difference at most, never a wrong answer).
+  - **A MadGraph defect for note 07**: `genps.f` under `sde_strat = 1` with
+    `tmin_for_channel ≠ -1` evaluates `if (t.lt.tmin_for_channel)` with `t`
+    uninitialised (its only assignment sits inside `if (sde_strat.eq.2)`).
+    Unreachable here — `tmin_for_channel` off default is refused.
+  - **`pp_to_jj`'s manifest `ICOLUP` band (0.105–0.263) is stale** — reads
+    0.123 / 0.265 / 0.020, still far above the floor; and its `samples` note
+    names the wrong minimum (the `flavour` χ² at 1.4e-3 is the row's and the
+    proton file's minimum). Bookkeeping.
+
 ### Sharper oracles the sprint named but did not build
 
-- **The `samples` gate never looks at the incoming legs.**
+- ~~**The `samples` gate never looks at the incoming legs.**~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B2, `e96dbd9`)**: per-beam `E`/`pz`/`m` at the record's printed precision, enforced on every fixed-beam row since B1; it found seven massive-beam rows, not three — original entry kept for the record: **
   `lhef::observables::kinematics` builds every observable from `STATUS_OUTGOING`
   legs, so no column compares the beam four-momenta or their masses against
   MadGraph's record. That is not hypothetical: the three massive-incoming-leg
@@ -496,8 +570,8 @@ One line each; the note is the full record. Earlier sprints
   defect on the first row that had one, needs no new reference data, and moves
   no tolerance.
 
-- **A `SCALUP` column in the `samples` category** — the sharpest missing
-  oracle (chain B review): no samples cell compares `SCALUP`, though
+- ~~**A `SCALUP` column in the `samples` category** — the sharpest missing
+  oracle (chain B review)~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B6, `dbf2fd1`)**: gates on 18 rows, informational on 27 — the convention decision it opens is filed below — original entry kept for the record: **: no samples cell compares `SCALUP`, though
   MadGraph's banked LHEs carry it and `validate_scales` already replays it
   for MG's own events. Two findings wait on it: rows that compile no scale
   prescription emit the run-card `SCALUP` and `AQCDUP = 0`
@@ -514,11 +588,11 @@ One line each; the note is the full record. Earlier sprints
   future change that makes a scale configuration-dependent on a declared-inert
   row fails a standing gate instead of a one-time manual diff. Blocked on
   nothing but runtime cost for the latter.
-- **`scale_draw_fallbacks()` is counted and read by nothing** — a NaN `AMP2`
+- ~~**`scale_draw_fallbacks()` is counted and read by nothing**~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B6, `302a4c9`)**: asserted zero on every gated integration — original entry kept for the record: ** — a NaN `AMP2`
   falls back to the sampler's channel silently (`select_index` returns `None`
   on a non-finite total). One assertion that the counter is zero on the gated
   rows makes the silent path loud.
-- **`RunningAlphaS::eval` returns NaN silently below ~0.5 GeV** (the two-loop
+- ~~**`RunningAlphaS::eval` returns NaN silently below ~0.5 GeV**~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B6, `f745cf3`)**: refuses a non-positive/non-finite result; MadGraph neither clamps nor stops there (a `9d98` sentinel below the Landau point, the NaN itself higher) — original entry kept for the record: ** (the two-loop
   `newton1` seed takes `ln` of a negative argument). The μF ≥ 2 GeV veto and
   the μR floor bound today's exposure, but the surface is a silent-NaN class:
   one guard (error or clamp, matching MG's own behaviour) closes it.
@@ -532,7 +606,7 @@ One line each; the note is the full record. Earlier sprints
 
 ### Deferred coverage
 
-- **`dynamical_scale_choice` 1–5 reaches no cross section**, so
+- ~~**`dynamical_scale_choice` 1–5 reaches no cross section**~~ **resolved 2026-09-07 (`banked-open-ends`, note 36 B6, `eca0d15`)**: honoured at fixed beams, `gg_to_gg_cg` replays MadGraph's scales at 0.999 of budget, its `samples` cell GATE, its `integrals` cell `info` on a converged −0.22% offset (below) — original entry kept for the record: **, so
   `gg_to_gg_cg`'s `integrals` and `samples` cells are `uncovered`. MadGraph chose
   `= 3` for `g g > g g NP<=1` itself (the row's `.mg5` script sets no scale), and
   `ScaleChoice::from_run_card` refuses the choice rather than approximating it
