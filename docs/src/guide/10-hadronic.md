@@ -118,7 +118,7 @@ geometric mean of the participating vertex scales, $\mu_F$ on each beam
 from the last vertices at which that beam's line was still a parton and
 still coloured.
 
-Why a clustering, and not a formula. A leading-order event is one hard
+**Why a clustering, and not a formula.** A leading-order event is one hard
 configuration, but the configuration a shower would build out of it is a
 sequence of splittings, each with its own hardness, and a single global number
 like $\sqrt{\hat s}$ describes none of them. Running the $k_T$ algorithm
@@ -135,7 +135,7 @@ here does nothing but set the scales; vibegraph refuses a card that asks for
 matching rather than running the scale half of a machine whose other half is
 missing.
 
-Why the process's own diagrams decide which merges exist. A history is only
+**Why the process's own diagrams decide which merges exist.** A history is only
 meaningful if the process could have produced it. A merge stands for a
 propagator, so a pair of lines whose combined set of external legs is not the
 subtree of some propagator in some channel of this process corresponds to no
@@ -149,7 +149,7 @@ second way, since channels whose QCD coupling order differs from the one being
 integrated are dropped, so a process with mixed QCD and QED orders has one merge
 table per order.
 
-What the resonance tagging is for. A pair that came from the decay of an
+**What the resonance tagging is for.** A pair that came from the decay of an
 on-shell particle is not an emission whose hardness is a transverse momentum:
 its scale is the mother's mass. The integration channel's own timelike lines are
 tested against their Breit-Wigner windows for each event, a pair whose line is
@@ -160,7 +160,7 @@ product onto a leg it did not come from, and it is one of the routes by which
 the scale depends on which channel produced the event and not on its momenta
 alone.
 
-Why $\mu_F$ is read per beam. Factorisation gives each beam its own density and
+**Why $\mu_F$ is read per beam.** Factorisation gives each beam its own density and
 so its own scale, and the scale that belongs to a beam is where that beam's line
 stopped being something a density describes. The walk records three vertices per
 beam: the first at which the line split, the last at which it was still a
@@ -168,7 +168,7 @@ parton, and the last at which it was still coloured. $\mu_F$ on a beam is the
 geometric mean of the last two, because past that vertex there is no parton left
 on that side for a density to have evolved.
 
-Why $\mu_R$ is a geometric mean. $\alpha_s$ enters once per QCD vertex of the
+**Why $\mu_R$ is a geometric mean.** $\alpha_s$ enters once per QCD vertex of the
 reconstructed history, and vertices at different hardnesses mean a product of
 couplings at different scales; the single scale that stands in for all of them
 is the one whose repeated coupling comes closest to that product, which is what
