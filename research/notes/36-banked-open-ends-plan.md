@@ -477,6 +477,40 @@ Four independent items, one commit each:
    reason — promote it into the replay inventory in the same change, since
    the blocker lifting is what that test exists to notice.
 
+**Landed B6 (`dbf2fd1`, `302a4c9`, `f745cf3`, `eca0d15`, 2026-09-07).**
+(1) `SCALUP`/`AQCDUP` join the `samples` comparison as scalar field columns
+(B2's beam machinery generalised to `FieldColumn`), filled through a new
+`FixedBeamIntegrand::record_scales` so the column measures what the shipped
+binary writes. 18 rows gate, **27 are informational**: at fixed beams no
+prescription is compiled when the matrix element carries no `αs`, so the
+record writes the card's `dsqrt_q2fact` (91.188) and `AQCDUP = 0` where
+MadGraph writes its clustered scale (`ee_to_mumu` 91.2, `ee_to_ee` 250,
+`ee_to_ttx` 500, `p3r3` 251.2964) and a running coupling; at proton beams
+the prescription is compiled and only `AQCDUP` falls back (waiver asserts
+`alpha_qcd == 0`). The convention decision — what an αs-free fixed-beam
+record should write — is a close-out item. Two self-corrections: the KS on a
+printed field must round both sides onto the reference's grid (MadGraph
+piles events on one printed value); the `<event>` line carries seven
+significant digits whatever the dialect's width. Pre-registered watch:
+`ee_to_wpwm`'s `pt(w+)` unmoved at 1.5728e-4. (2) `scale_draw_fallbacks()
+== 0` asserted on every gated fixed-beam and hadronic integration; zero
+everywhere. (3) `RunningAlphaS::eval` refuses a non-positive or non-finite
+result; brief correction: `alfas_functions.f` neither clamps nor stops
+there — it returns a `9d98` sentinel below the Landau condition, and the
+NaN here starts higher (0.40 GeV at two loops) from the Newton iterate
+going negative, which MadGraph does too. (4) `dynamical_scale_choice` 1–5
+honoured at fixed beams (`ClosedForms::{Honour,Refuse}`); `gg_to_gg_cg`
+replays 10 000 events / 20 000 scale comparisons at worst 0.999 of budget in
+`validate_scales`, its `samples` cell flips `uncovered → gate` (worst KS p
+2.7e-2, ICOLUP χ² p 7.4e-2), and its `integrals` cell lands `uncovered →
+info`: five seeds mean rel −2.21e-3 at χ²/dof 1.01, a converged offset 2.6×
+the reference's 8.5e-4 error, ladder settling not shrinking; `gg_to_gg`
+under the card differing in that one field sits at +9.8e-6, so the offset is
+localised to the coupling this `SCALE_FALLBACK_ROWS` member runs at across
+the cut region — filed, not gated. Every other σ row identical to the
+printed digit. Report after wave 1: 178 measured, 170 ✅ / 8 ⚠️ / 4 ⏳ / 22
+uncovered.
+
 ### B7 — UFO expression precedence: unary minus under `**` (feature-dev; added after B5)
 
 **Defect** (B5's finding). `vibegraph-lib/src/ufo/expr.rs`'s PEG grammar has
