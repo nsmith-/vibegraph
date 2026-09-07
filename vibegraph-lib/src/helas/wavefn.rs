@@ -2,7 +2,35 @@
 //!
 //! ## Conventions
 //!
-//! The HELAS conventions (see Appendix A of the HELAS reference) are as follows:
+//! The conventions are those of the HELAS manual (KEK report 91-11, Murayama,
+//! Watanabe and Hagiwara), Appendix A: the constructors below are transcriptions
+//! of its `ixxxxx`, `vxxxxx` and `sxxxxx` routines, so that an amplitude built
+//! from them agrees with MadGraph's generated code diagram by diagram and
+//! helicity by helicity, phases included.
+//!
+//! Throughout, the metric is $(+,-,-,-)$, four-vectors are laid out as
+//! $[E, p_x, p_y, p_z]$, and a wavefunction's components are stored in that same
+//! order — $[\epsilon^0, \epsilon^1, \epsilon^2, \epsilon^3]$ for a vector, and
+//! the four Weyl components (0,1 left-chiral; 2,3 right-chiral) for a spinor.
+//! HELAS packs the momentum into two extra complex entries of the same array;
+//! here it is a separate `momentum` field.
+//!
+//! ### Momentum-flow signs
+//!
+//! Every constructor takes a flow flag, and stores the flag times the momentum
+//! rather than the momentum itself. The four-momentum passed in is always the
+//! physical one; only the stored copy is signed.
+//!
+//! | constructor | flag | $+1$ | $-1$ | stored |
+//! |---|---|---|---|---|
+//! | [`DiracWf::from_momentum`] | `nsf`: [`Charge`] | [`Charge::Particle`], a $u$ spinor | [`Charge::Antiparticle`], a $v$ spinor | $n_{sf}\\,p$ |
+//! | [`VectorWf::vxxxxx`] | `nsv`: `i32` | outgoing leg | incoming leg | $n_{sv}\\,p$ |
+//! | [`ScalarWf::sxxxxx`] | `nss`: `i32` | outgoing leg | incoming leg | $n_{ss}\\,p$ |
+//!
+//! `nsv` and `nss` panic on any value other than $\pm 1$. The signed momentum is
+//! what lets the off-shell-current routines in [`crate::helas::vertex`] add and
+//! subtract leg momenta directly to obtain the momentum of the internal line;
+//! [`DiracWf::charge`] reads the flag back off the sign of the stored energy.
 //!
 //! ### Spinor wavefunctions
 //!
@@ -28,11 +56,16 @@
 //! $$
 //! \frac{\vec{\sigma} \cdot \vec{p}}{|\vec{p}|} \chi_\pm(\vec{p}) = \pm \chi_\pm(\vec{p}).
 //! $$
-//! For particles with $|\vec{p}| = -p_z$, the limit $p_y=0$, $p_x \to 0^+$ is taken to define the helicity eigenspinors,
+//! For particles with $|\vec{p}| = -p_z$, where that normalisation is singular, the
+//! limit $p_y = 0$, $p_x \to 0^-$ is taken to define the helicity eigenspinors,
 //! which ensures a smooth limit as $|\vec{p}| \to 0$. Specifically, in this limit we have
 //! $$
-//! \chi_+(\vec{p}) \to \begin{pmatrix} 0 \\\\ 1 \end{pmatrix}, \quad \chi_-(\vec{p}) \to \begin{pmatrix} -1 \\\\ 0 \end{pmatrix}.
+//! \chi_+(\vec{p}) \to \begin{pmatrix} 0 \\\\ -1 \end{pmatrix}, \quad \chi_-(\vec{p}) \to \begin{pmatrix} 1 \\\\ 0 \end{pmatrix}.
 //! $$
+//! The side of the limit is a convention, not a derived fact: approaching along
+//! $p_x \to 0^+$ instead would negate both spinors, and that phase is visible in a
+//! per-diagram comparison against the reference even though $|\mathcal{M}|^2$ is
+//! blind to it.
 //!
 //! The Dirac bispinors $u$ and $v$ are then constructed from the helicity eigenspinors as follows:
 //! $$
@@ -42,9 +75,125 @@
 //! where $\omega_\pm(p) = \sqrt{E \pm |\vec{p}|}$ are the energy-dependent factors that appear in the construction of the spinors.
 //! The $u$ spinor will be used for [`Charge::Particle`] and the $v$ spinor for [`Charge::Antiparticle`] in the HELAS convention.
 //!
+//! Two limits of that construction are computed by their own branches.
+//!
+//! **At rest** ($\vec{p} = 0$, massive), where $\omega_+ = \omega_- = \sqrt{m}$ and
+//! $\chi_\pm$ is undefined, the spinor is the $\vec{p} \to 0$ limit taken along
+//! $+\hat{z}$, i.e. with $\chi_+ = (1, 0)^T$ and $\chi_- = (0, 1)^T$. A negative
+//! `mass` is admitted: the two chiral blocks are built from $\sqrt{|m|}$ and
+//! $\sqrt{|m|}\\,\mathrm{sgn}(m)$, so a negative `mass` flips their relative sign,
+//! which is how HELAS carries a fermion whose mass parameter has been given a
+//! negative sign.
+//!
+//! **Massless** (`mass == 0`), where $\omega_- = 0$ and $\omega_+ = \sqrt{2E}$, so the
+//! bispinor is purely chiral: with $n_h = \lambda\\, n_{sf}$ the product of the helicity
+//! and charge signs, only components 2 and 3 (right-chiral) are populated for
+//! $n_h = +1$ and only components 0 and 1 (left-chiral) for $n_h = -1$, the other two
+//! being exactly zero. This is what makes chirality-violating helicity combinations of a
+//! massless process vanish bit-exactly rather than to rounding, and is the reason
+//! helicity filtering can drop them. The $|\vec{p}| = -p_z$ limit above applies here
+//! too, in the same $p_x \to 0^-$ form.
+//!
 //! ### Vector wavefunctions
 //!
-//! (TODO)
+//! [`VectorWf::vxxxxx`] builds the polarisation vector of an external spin-1
+//! particle of mass $m$ (`vmass`) and helicity $\lambda$ (`nhel`, one of
+//! $-1, 0, +1$). Write $p_T = \sqrt{p_x^2 + p_y^2}$ and let
+//! $$
+//! \hat e_\theta = \frac{1}{|\vec{p}|\\,p_T}\left(p_x p_z,\\; p_y p_z,\\; -p_T^2\right),
+//! \qquad
+//! \hat e_\varphi = \frac{1}{p_T}\left(-p_y,\\; p_x,\\; 0\right)
+//! $$
+//! be the polar and azimuthal unit vectors of $\vec{p}$, so that
+//! $(\hat e_\theta, \hat e_\varphi, \hat{p})$ is a right-handed orthonormal triad.
+//!
+//! **Transverse states** ($\lambda = \pm 1$), massive and massless alike:
+//! $$
+//! \epsilon^0 = 0, \qquad
+//! \vec{\epsilon}(p, \lambda) = \frac{1}{\sqrt{2}}\left(-\lambda\\,\hat e_\theta + i\\,n_{sv}\\,\hat e_\varphi\right),
+//! $$
+//! that is,
+//! $$
+//! \epsilon^1 = \frac{1}{\sqrt{2}}\left(-\lambda\frac{p_x p_z}{|\vec{p}|\\,p_T} - i\\,n_{sv}\frac{p_y}{p_T}\right),
+//! \quad
+//! \epsilon^2 = \frac{1}{\sqrt{2}}\left(-\lambda\frac{p_y p_z}{|\vec{p}|\\,p_T} + i\\,n_{sv}\frac{p_x}{p_T}\right),
+//! \quad
+//! \epsilon^3 = \frac{\lambda}{\sqrt{2}}\frac{p_T}{|\vec{p}|}.
+//! $$
+//!
+//! **Longitudinal state** ($\lambda = 0$; massive only):
+//! $$
+//! \epsilon^\mu(p, 0) = \frac{1}{m}\left(|\vec{p}|,\\; \frac{E}{|\vec{p}|}\\,\vec{p}\right).
+//! $$
+//! It is real and independent of $n_{sv}$.
+//!
+//! **At rest** ($\vec{p} = 0$, massive), where the triad is undefined, the routine
+//! returns the $\hat{p} \to \hat{z}$ limit of those expressions:
+//! $$
+//! \epsilon^\mu(p, \pm 1) = \frac{1}{\sqrt{2}}\left(0,\\; -\lambda,\\; i\\,n_{sv},\\; 0\right),
+//! \qquad
+//! \epsilon^\mu(p, 0) = (0, 0, 0, 1).
+//! $$
+//!
+//! **Along the $z$ axis** ($p_T = 0$, $\vec{p} \neq 0$), where $\hat e_\theta$ and
+//! $\hat e_\varphi$ are undefined, the routine uses $\hat e_\theta = \hat{x}$ and
+//! $\hat e_\varphi = \mathrm{sgn}(p_z)\\,\hat{y}$, so the transverse states are
+//! $$
+//! \epsilon^1 = -\frac{\lambda}{\sqrt{2}}, \qquad
+//! \epsilon^2 = i\\,n_{sv}\frac{\mathrm{sgn}(p_z)}{\sqrt{2}}, \qquad
+//! \epsilon^3 = 0,
+//! $$
+//! with $\mathrm{sgn}(0) = +1$; the longitudinal formula is unchanged. That triad is
+//! the limit of the general expressions at $p_y = 0$ with $p_x \to 0$ from the side
+//! on which $p_x$ and $p_z$ share a sign. Approaching from the other side would
+//! negate the whole transverse vector, so, as for the spinors, the side is a HELAS
+//! convention that has to be kept.
+//!
+//! **Incoming versus outgoing.** $n_{sv}$ enters only through the imaginary parts,
+//! so `vxxxxx(p, m, nhel, -1)` and `vxxxxx(p, m, nhel, +1)` are componentwise
+//! complex conjugates of each other (and their stored momenta differ in sign).
+//! Read with $n_{sv} = -1$ the formulas above are the usual $\epsilon^\mu(p, \lambda)$
+//! of an incoming boson; with $n_{sv} = +1$ they give $\epsilon^\mu(p, \lambda)^\ast$,
+//! the conjugate that an outgoing boson contributes to the amplitude.
+//!
+//! **Normalisation and completeness.** For every helicity and either flow sign,
+//! $$
+//! \epsilon(p, \lambda) \cdot p = 0,
+//! \qquad
+//! \epsilon(p, \lambda) \cdot \epsilon(p, \lambda^{\prime})^\ast = -\delta_{\lambda\lambda^{\prime}} .
+//! $$
+//! A massive vector's three states are complete in the usual sense,
+//! $$
+//! \sum_{\lambda = -1, 0, +1} \epsilon^\mu(p, \lambda)\\,\epsilon^\nu(p, \lambda)^\ast
+//!   = -g^{\mu\nu} + \frac{p^\mu p^\nu}{m^2},
+//! $$
+//! matching the unitary-gauge propagator numerator. A massless vector has only
+//! $\lambda = \pm 1$, and this basis fixes $\epsilon^0 = 0$, the temporal gauge of
+//! the frame the momenta are given in, so with $n^\mu = (1, 0, 0, 0)$
+//! $$
+//! \sum_{\lambda = \pm 1} \epsilon^\mu(p, \lambda)\\,\epsilon^\nu(p, \lambda)^\ast
+//!   = -g^{\mu\nu} + \frac{p^\mu n^\nu + n^\mu p^\nu}{p \cdot n} - \frac{p^\mu p^\nu}{(p \cdot n)^2}.
+//! $$
+//! Every term beyond $-g^{\mu\nu}$ carries a $p^\mu$ or $p^\nu$ and so drops out of a
+//! gauge-invariant sum by the Ward identity. Both relations are real, hence hold for
+//! either sign of $n_{sv}$.
+//!
+//! **Edge cases.** The massive branch clamps $|\vec{p}|$ to $\min(E, |\vec{p}|)$ and
+//! $p_T$ to $\min(|\vec{p}|, p_T)$, and the massless branch uses $E$ in place of
+//! $|\vec{p}|$; on-shell momenta satisfy $E \ge |\vec{p}| \ge p_T$ with equality in
+//! the first for $m = 0$, so the clamps bite only on input whose energy and
+//! three-momentum disagree at rounding level, and both branches then agree with the
+//! formulas above. The massless branch scales the imaginary parts by $n_{sv}$ rather
+//! than $n_{sv}|\lambda|$, so `nhel = 0` with `vmass = 0` returns a non-zero vector
+//! that is not a polarisation state: a massless vector has no longitudinal mode and
+//! the routine is meaningful there only for `nhel` $= \pm 1$.
+//!
+//! ### Scalar wavefunctions
+//!
+//! HELAS gives an external scalar the wavefunction $1$ — all of the dynamics sits in
+//! the couplings and propagators — so [`ScalarWf::sxxxxx`] stores `value = 1 + 0i`
+//! and carries the flow-signed momentum $n_{ss}\\,p$ that downstream vertex routines
+//! need for routing. It has no helicity argument.
 use crate::helas::repr::lorentz::{
     Bispinor, Bra, ComplexVector, Contravariant, Covariant, DiracAdjoint, Ket, LorentzVector,
     SpinorRepr, Variance,
@@ -64,7 +213,7 @@ use num_traits::Zero;
 /// currents and computing the s-channel propagator momentum.
 ///
 /// `spinor` has type `B::Fiber` (= `[C<F>; 4]` for any `B: SpinorRepr<F>`),
-/// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::LorentzRepr<F>`]
+/// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::lorentz::LorentzRepr<F>`]
 /// with `Fiber = [C<F>; 4]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiracWf<F: Real, Adj: DiracAdjoint> {
@@ -80,7 +229,14 @@ pub type InDiracWf<F> = DiracWf<F, Ket>;
 pub type OutDiracWf<F> = DiracWf<F, Bra>;
 
 impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
-    /// Create a spinor wavefunction from a bispinor and momentum.
+    /// Build the $u$ or $v$ spinor of an on-shell external leg from its momentum,
+    /// mass, helicity and charge, and store the flow-signed momentum `nsf * p`
+    /// alongside it.
+    ///
+    /// The construction, including the massless and at-rest special cases, is the
+    /// one described in the [module documentation](self). It transcribes the HELAS
+    /// `ixxxxx` routine; the `Bra` instantiation is its Dirac conjugate
+    /// $\bar{\psi} = \psi^\dagger \gamma^0$, the crate's `oxxxxx`.
     pub fn from_momentum(
         p: LorentzVector<F, Contravariant>,
         mass: F,
@@ -91,13 +247,16 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
         Self {
             spinor,
             momentum: match nsf {
-                Charge::Particle => p,      // outgoing: +p
-                Charge::Antiparticle => -p, // incoming: -p
+                Charge::Particle => p,      // u-spinor: stores +p
+                Charge::Antiparticle => -p, // v-spinor: stores -p
             },
         }
     }
 
-    /// Create a spinor wavefunction from a bispinor and momentum.
+    /// Pair an already-built bispinor with a momentum, unchanged.
+    ///
+    /// The momentum is stored verbatim, so the caller is responsible for the
+    /// flow sign; off-shell currents use this to wrap their own output.
     pub fn from_spinor(
         spinor: Bispinor<F, Adj>,
         momentum: LorentzVector<F, Contravariant>,
@@ -211,12 +370,17 @@ impl<F: Real> VectorWf<F, Contravariant> {
     /// - `nhel`: helicity `−1` (left), `0` (longitudinal), `+1` (right)
     /// - `nsv`: flow direction `+1` for outgoing, `−1` for incoming
     ///
-    /// Returns a `VectorWf` with polarization components `ε_μ` and signed momentum.
+    /// Returns a `VectorWf` holding the contravariant components $\epsilon^\mu$ and
+    /// the flow-signed momentum `nsv * p`. With `nsv = -1` these are
+    /// $\epsilon^\mu(p, \lambda)$; with `nsv = +1` they are the conjugate
+    /// $\epsilon^\mu(p, \lambda)^\ast$ an outgoing leg contributes.
     ///
     /// # Implementation
     /// Converted from ALOHA `vxxxxx.F` (Fortran77 HELAS).
     /// Handles 5 cases: massive at-rest, massive along-z, massive general,
-    /// massless along-z, massless general.
+    /// massless along-z, massless general. The explicit polarisation vector of each,
+    /// with its normalisation and completeness relation, is in the
+    /// [module documentation](self).
     pub fn vxxxxx(p: LorentzVector<F, Contravariant>, vmass: F, nhel: i32, nsv: i32) -> Self {
         let two = F::one() + F::one();
         let sqh = (F::one() / two).sqrt();

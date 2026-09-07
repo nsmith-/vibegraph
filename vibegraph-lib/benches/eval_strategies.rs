@@ -51,7 +51,7 @@ fn bench_lanes<const N: usize>(
         |b, pts| {
             b.iter(|| {
                 let mut acc = 0.0;
-                for chunk in pts.chunks_exact(N) {
+                for chunk in pts.as_chunks::<N>().0 {
                     let refs: [&[LorentzVector<f64>]; N] =
                         std::array::from_fn(|k| chunk[k].as_slice());
                     acc += eval_m2_lanes(&lane_amp, &refs, &mut scratch)
@@ -80,7 +80,9 @@ fn bench_lanes_prepacked<const N: usize>(
     let lane_amp = amp.broadcast_lanes::<N>();
     let mut scratch = lane_amp.scratch_space();
     let packed: Vec<Vec<LorentzVector<LaneField<N>>>> = points
-        .chunks_exact(N)
+        .as_chunks::<N>()
+        .0
+        .iter()
         .map(|chunk| {
             let refs: [&[LorentzVector<f64>]; N] = std::array::from_fn(|k| chunk[k].as_slice());
             pack_lane_points(&refs)

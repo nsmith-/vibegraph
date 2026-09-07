@@ -1,0 +1,39 @@
+# The narrative half of the documentation site. `scripts/build-docs.sh`
+# renders this book, the rustdoc API reference and the generated CLI
+# reference into one tree under target/site/, which docs.yml publishes.
+# `scripts/install-mdbook-tools.sh` installs the three binaries this needs.
+[book]
+title = "vibegraph"
+description = "A leading-order Monte Carlo event generator in Rust, and how it works"
+authors = ["Nick Smith"]
+language = "en"
+src = "src"
+
+[build]
+create-missing = false
+
+# Math is written as `$…$` / `$$…$$` and rendered to HTML at build time, so
+# the source needs no markdown escaping inside formulas and the pages need no
+# JavaScript to show them. A formula KaTeX cannot parse is left as source with
+# a "Rendering failed" warning; `scripts/build-docs.sh` turns that warning into
+# a build failure.
+[preprocessor.katex]
+after = ["links"]
+
+# ```mermaid fences become `<pre class="mermaid">` blocks that mermaid-init.js
+# renders in the browser, loading Mermaid from jsDelivr (the file explains why
+# it is not vendored; do not run `mdbook-mermaid install`, which would vendor it).
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+site-url = "/vibegraph/"
+git-repository-url = "https://github.com/nsmith-/vibegraph"
+edit-url-template = "https://github.com/nsmith-/vibegraph/edit/main/docs/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-js = ["mermaid-init.js"]
+
+[output.html.fold]
+enable = true
+level = 1
