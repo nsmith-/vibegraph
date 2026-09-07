@@ -967,6 +967,48 @@ lowering and kernels over R1's `tensor_bilinear`. Flips the two `l+ l- > q q~`
 cells and pins **`Sigma⊗Sigma` ≡ the γγ expansion** at the process level
 against MadGraph on both.
 
+**Landed (`87e79ca`, 2026-09-07).** `Sigma` rooted in every position it can
+occupy, one kernel each: one free Lorentz index → `SigmaVout`/`SigmaVoutRev`
+(the off-shell vector current `(ψ̄ Σ^{μν} ψ) v_ν`, the other slot against a
+partner vector or, for the dipole, a momentum); both indices contracted →
+`SigmaMv`, a Clifford element reaching the continuing spinor through R4's
+`MultivectorIout/Oout`; the `Sigma⊗Sigma` contact → `SigmaOut`/`SigmaOutRev`,
+the cut line as pure grade 2 (R4's `FierzOut` with the two gammas already
+contracted, so no `g^{αβ}` term survives). `AsymRank2Tensor::contract_vector`
+added; egglog schema and extractor costs extended. Gated: `ll_to_qqx_toy_dipole`
+(|M|² 5.56e-14, per-diagram 9.48e-15, `G = +1i`) and `ll_to_qqx_toy_tensor`
+(1.07e-15, per-diagram 3.26e-16, `|G|−1 = 0`, both spellings of the operator
+reproduced per diagram — the process-level `Sigma⊗Sigma ≡ γγ` pin). Two
+conventions the design did not anticipate, both forced by measurement and
+mutation-pinned in the manifest notes: **ALOHA's `Sigma` is half the textbook
+`(i/2)[γ^μ,γ^ν]`** (textbook normalisation reads |M|² 2.97 on the dipole row,
+0.569 on the tensor row; the false claim in `ufo/lorentz.rs`'s doc corrected),
+and **a chiral projector beside a literal `Sigma` keeps its chirality**
+(`σ^{μν}` commutes with `γ⁵`; it is `γ^μ P_χ = P_χ̄ γ^μ` that conjugates — the
+`sigma_chained` predicate in `root_lorentz.rs`, pinned structurally by the
+dipole row's adjacent `ProjM` but not yet mutation-measured: forcing it false
+and rebuilding is a filed follow-up). Negating `SigmaVout` flips `G` to `−1i`
+at per-diagram 3.0e-1; flipping the `Sigma` cut reads 7.55e-1. Reach,
+measured not assumed: the dipole row exercises `SigmaVout`, the tensor row
+`SigmaOut` (+`FierzOut/Rev`, `FierzPair`); `SigmaMv` and `MultivectorIout/Oout`
+need the structure on an internal line (hermetic rooting tests only), and
+`SigmaVoutRev`/`SigmaOutRev` are reached by no process in reach — the census
+note in `tests/smeftsim.rs` says so. Census: SM `KNOWN_UNCOVERED` gains the
+five ops (in `Op` declaration order — the census asserts order, which the
+session first broke and then fixed). Hermetic 1032/0; the MG net's 19 SM and
+13 SMEFTsim rows unmoved; `validate_lhef` passed here (3/3 — the brief's
+"known-red" was over-broad; V2 owns the corrupt file either way). Filed:
+`clippy::type_complexity` and siblings in `validate_scales.rs`,
+`validate_hadronic.rs`, `validate_sigma.rs`, `validate_kt_cluster.rs`,
+`color_cf_oracle.rs`, `common/manifest.rs` fire only with the
+`extended-validation` feature enabled, which CI's clippy step does not do
+(`ci.yml:87`) — a lint gate that is green in CI and red on the banked layer's
+own targets is hygiene worth closing. Operational: this session's recovery
+from its own `ENOSPC` ran `pkill -f "cargo test --workspace"`, which is not
+worktree-scoped and killed T3's hermetic run; the manager later stopped T3's
+regrown 16 GB debug tree to keep the disk alive — three concurrent workspace
+builds do not fit this container, which the wave-5 briefs already said.
+
 ### T3 — colour beyond the SM vocabulary (feature-dev; stretch, independent of R/E)
 
 `d(a,b,c)` exercised (engine has it; `q q~ > O8 O8` flips). Then the
