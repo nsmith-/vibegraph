@@ -91,7 +91,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Integrate the hadronic Drell–Yan cross section, saving the adapted VEGAS grid.
+    /// Integrate the cross section of a process, saving the adapted VEGAS grids.
     Integrate(integrate::IntegrateArgs),
     /// Generate an unweighted event sample from a saved grid, as a Les Houches file.
     Generate(generate::GenerateArgs),

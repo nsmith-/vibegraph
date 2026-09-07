@@ -88,6 +88,21 @@ changed: `Assisted-by: <harness>:<model>`, never `Co-Authored-By:` for a model
 `scripts/rewrite-ai-trailers.py` over the existing history before publishing —
 it rewrites every commit hash, so it must precede the first public clone.
 
+**Documentation site (2026-09-06)**: `docs/` is an mdBook — a twelve-chapter
+pedagogical tour of the pipeline (physics, algorithm, paper and module per
+stage, plus a compiler-concepts chapter on `helas::eval`), a CLI overview, the
+command reference generated from `vibegraph --help`, and a bibliography —
+assembled by `scripts/build-docs.sh` together with the KaTeX-header rustdoc of
+`vibegraph-lib` into `target/site/`, which `docs.yml` publishes to GitHub Pages
+from `main` (PRs build without deploying, and the build fails on a book link
+into a rustdoc path that does not exist). The committed CLI reference is pinned
+to the binary by the hermetic `cli_reference_docs` test; `pixi run docs` builds
+the site, `docs-api` the rustdoc alone, `docs-cli-reference` regenerates the
+chapter. **Open, the user's call**: Pages must be switched to the "GitHub
+Actions" source once in the repository settings before the deploy job can
+succeed. Rustdoc still emits 51 intra-doc-link warnings (ambiguous `write`/
+`rambo` links, unresolved `[`…`]` names); the docs build does not gate on them.
+
 **Standing measurement facts** (note 30 baseline, note 31 §6 close-out; all
 one host, M3 Max). The layer's own run-to-run spread is **0.8% median / 3.4%
 worst** on rows above 1 s, so a sub-1% claim is not measurable there. Two
@@ -449,6 +464,118 @@ above); the entries here are the eventual features.
   scope section points at it as the natural next scope step.
 
 ### In-scope features
+
+- **`madgraph-style-enumeration`** (research, unscheduled) — feyngraph
+  enumerates topology-first (QGRAF-style orderly generation over vertex-degree
+  partitions, then particle assignment by backtracking per topology), while
+  MadGraph 5 (arXiv:1106.0522, `diagram_generation.py::Amplitude.generate_diagrams`)
+  recursively combines external-leg subsets through the vertex table, so it
+  never visits a shape the model cannot fill and prunes coupling orders
+  in-recursion. Question to answer before any code: is enumeration ever on the
+  critical path here? Measure feyngraph's share of `integrate` wall time on the
+  widest cards (`p p > j j j`, the 2→6 rows, a hypothetical `p p > j j j j`)
+  against MadGraph 5's own generation time for the same cards. If it is, the
+  design spike is: (i) a leg-combination enumerator over `ufo::topo`'s vertex
+  table producing `diagrams::Diagram` unchanged — same slot-ordered rays,
+  momentum routing, Fermi sign and symmetry factor — so every downstream
+  consumer (rooting, colorize, channels, the kT merge graph) is untouched;
+  (ii) a canonical diagram tag for duplicate elimination; (iii) the WEIGHTED
+  order bound applied in-recursion rather than as a post-filter;
+  (iv) subprocess reuse across flavour relabellings, which the measured
+  flavour groups currently recover after the fact. Gate: identical diagram
+  census against `validation/madgraph/diagrams.json` and byte-identical
+  amplitude-oracle rows, since a diagram set that differs only in ordering
+  changes the rooting and therefore the arithmetic. The chapter
+  `docs/src/guide/03-diagrams.md` records the algorithmic contrast.
+
+- **`vibegraph enumerate`** (feature, user request on PR #4) — a command that
+  takes a process card and reports every diagram that contributes: SVG
+  drawings, a summary page (diagram counts per subprocess, coupling orders,
+  the flavour groups), and a binary artifact `integrate` accepts in place of
+  re-enumerating. MadGraph's `display diagrams` is the workflow: check that a
+  card means the intended process and nothing more before spending an
+  integration on it. The artifact half also closes the
+  "bundle the compiled program" piece of the self-contained-artifact item
+  below, since the enumerated diagrams are its input. feyngraph's `drawing/`
+  module is a candidate for the drawings.
+- **`--madgraph-compat` mode toggle** (feature, user request on PR #4) —
+  several sites reproduce a MadGraph choice a clean-sheet design would not
+  make; today they are unconditional, so the cleaner behaviour is unreachable
+  and its cost unmeasured. One flag, default on (every banked gate depends on
+  the compatible behaviour), recorded in the integrate artifact and the LHEF
+  header so a file says which mode produced it. Sites, each carrying a
+  "MadGraph compatibility" admonition in the docs: (a) `coupling/cluster/kt.rs`
+  — the `1 + 1e-6` crossed beam–leg inflation, which does not cancel when
+  every admissible candidate is crossed and so leaks a part in 1e6 into
+  `SCALUP`, and the first-pair-in-visit-order tie-break; off would use an
+  inflation-free measure and a tie rule that cannot enter the value.
+  (b) `coupling/alphas.rs` — the Newton iteration stopped at `TOL = 5e-4` (a
+  specific iterate, not the root) and the fixed thresholds `CMASS = 1.42` /
+  `BMASS = 4.7` instead of the model's quark masses; off would iterate to
+  convergence at the model's thresholds. (c) `lhef/mod.rs` + `lhef/write.rs`
+  — the Python post-processor column layout and the two-dialect re-emission
+  that keeps a Fortran-dialect file's seven significant digits on the scale
+  and coupling columns; off would write one layout at full precision.
+  Verified non-sites, to leave alone: `AQCDUP` is already written untruncated
+  (`lhef/build.rs`); the jet-count memo is already not carried across events
+  (`coupling/scales.rs`); `SCALUP = max(μF)` is the accord's own definition;
+  the truncated `w_max` rule is an improvement, not a concession. Gate: flag
+  on, every banked byte and σ gate unchanged; flag off, a documented per-site
+  delta table (scale shift on the tie-break rows, αs delta vs the converged
+  root, LHEF digit count), and no validation gate runs in the off mode.
+- **`reweight_card.dat`** (feature) — re-evaluate a stored event sample under
+  alternative coupling values, MadGraph's reweighting workflow. The monomial
+  exponent analysis in `helas::eval::rescale` is written for a generic model
+  parameter `G` precisely so that moving the pools to a new value is one
+  multiply per entry per event; a reweighting pass is that analysis over the
+  card's requested parameters plus the per-event |M|² ratio written back as an
+  extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
+  as monomials fall back to the exact re-evaluation path automatically.
+- **Direct-threaded interpreter dispatch** (performance, on hold) — the
+  evaluator is a switch-dispatch interpreter: one `match` per instruction,
+  whose indirect jump is what the op-blocked schedule (note 31 E1b) exists to
+  make predictable. Direct threading — each handler tail-calling the next —
+  gives the branch predictor one site per instruction kind and is the classic
+  next step; in safe Rust it needs guaranteed tail calls, i.e. the nightly
+  `become` feature, so it waits on that stabilising. Function-pointer threading
+  was measured and rejected (+7.7%, note 31 E2), so the win, if any, is in
+  the tail-call form specifically.
+- **Alternating α / grid refinement** (research) — today the Kleiss–Pittau
+  α-adaptation runs on a survey before the per-channel grids train, and the
+  α then stay fixed. An alternating scheme — train the grids with α fixed,
+  re-derive α from the trained grids' variance shares, retrain, as in an
+  expectation-maximisation loop — might converge to a lower-variance mixture
+  than the one-shot survey. Measure offline first, from recorded `g_j(x)`,
+  `f(x)` on existing samples (the same protocol as the per-flow α item): the
+  variance the alternation would reach against the points it costs, and
+  whether it oscillates. Read the result against the estimator's *measured*
+  seed spread (20+ seeds on both arrangements), since the α update is itself
+  a survey estimate over a Pareto weight tail of index ≈ 2. Pre-registered
+  failure criteria: α cycling between passes rather than converging; a win
+  inside the seed spread; any channel's reallocation falling below its
+  coverage floor. Guardrail as everywhere in the multichannel: an α floor,
+  never a coverage split.
+- **VEGAS+ adaptive stratification** (research) — the integrator is classic
+  Lepage importance sampling; VEGAS+ (arXiv:2009.05112) adds adaptive
+  stratified sampling within the grid and reports 2–19× on integrands with
+  multiple peaks or diagonal structure. The channel decomposition handles the
+  diagonal structure and the budget is already stratified across channels,
+  but whether within-channel stratification still buys convergence on these
+  integrands has never been measured. Measure on the σ gates' rows at matched
+  points (seed sweep, χ²/dof) before deciding; note that stratification
+  changes the sampling order, so it cannot be bit-for-bit against banked
+  artifacts.
+- **|M|² by term rewriting** (research) — the helicity-summed |M|² the
+  integrator needs is, algebraically, a sum over helicities of a current
+  chain times its conjugate; completeness relations replace the external
+  helicity sums by `p̸ + m` / `−g^{μν}` insertions and trace identities reduce
+  the closed fermion lines to scalar products of momenta. An e-graph seeded
+  with those identities (the `helas::eval::egraph` seam) could extract a
+  specialised |M|² program for integration with no helicity loop at all,
+  kept beside the per-helicity amplitude program event generation needs. The
+  same explicit-invariant form is the natural input to a phase-space map
+  derived from the integrand's own structure rather than read off propagator
+  poles. Both are gated on the extraction prerequisites note 15 §4.1 lists.
 
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by

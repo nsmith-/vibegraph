@@ -40,6 +40,24 @@ PAPERS=(
   "madwidth|https://ar5iv.org/html/1402.1178|MadWidth: automatic decay widths, extends UFO with decay tables (arXiv:1402.1178)"
   # Equality saturation / term rewriting:
   "egglog|https://ar5iv.org/html/2304.04332|egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332)"
+  "egg|https://ar5iv.org/html/2004.03082|egg: Fast and Extensible Equality Saturation (arXiv:2004.03082)"
+  # The rest of the documentation site's bibliography (docs/src/bibliography.md):
+  "madgraph5_beyond|https://ar5iv.org/html/1106.0522|MadGraph 5: Going Beyond — leg-combination diagram generation, wavefunction reuse (arXiv:1106.0522)"
+  "madevent|https://ar5iv.org/html/hep-ph/0208156|MadEvent: single-diagram-enhanced multichannel integration (hep-ph/0208156)"
+  "kleiss_pittau|https://ar5iv.org/html/hep-ph/9405257|Kleiss & Pittau: weight optimisation in multichannel Monte Carlo (hep-ph/9405257)"
+  "helicity_recycling|https://ar5iv.org/html/2102.00773|Speeding up MadGraph5_aMC@NLO: helicity recycling (arXiv:2102.00773)"
+  "color_flow|https://ar5iv.org/html/hep-ph/0209271|Color-flow decomposition of QCD amplitudes (hep-ph/0209271)"
+  "lhapdf6|https://ar5iv.org/html/1412.7420|LHAPDF6: grid format and log-bicubic interpolation (arXiv:1412.7420)"
+  "ckkw|https://ar5iv.org/html/hep-ph/0109231|CKKW: QCD matrix elements + parton showers, the kT-clustering measure (hep-ph/0109231)"
+  "lha|https://ar5iv.org/html/hep-ph/0109068|Les Houches Accord: generic user process interface (hep-ph/0109068)"
+  "lhef|https://ar5iv.org/html/hep-ph/0609017|Les Houches Event File format (hep-ph/0609017)"
+  "feynrules2|https://ar5iv.org/html/1310.1921|FeynRules 2.0 (arXiv:1310.1921)"
+  "slha|https://ar5iv.org/html/hep-ph/0311123|SUSY Les Houches Accord: the param_card block format (hep-ph/0311123)"
+  # Not fetchable here (pre-arXiv or paywalled), cited in the bibliography by
+  # journal reference only: RAMBO (Kleiss, Stirling & Ellis, CPC 40 (1986) 359),
+  # VEGAS (Lepage, JCP 27 (1978) 192), QGRAF (Nogueira, JCP 105 (1993) 279),
+  # Byckling & Kajantie "Particle Kinematics" (1973), Neyman (JRSS 97 (1934)
+  # 558), Schwartz (JACM 27 (1980) 701), Zippel (EUROSAM 1979).
 )
 
 get_field() { echo "$1" | cut -d'|' -f"$2"; }
