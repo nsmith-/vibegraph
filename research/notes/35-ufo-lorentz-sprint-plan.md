@@ -1498,3 +1498,172 @@ Standard-Model runs unchanged plus the sprint's 22 rows, with `sha256` and
 `size_bytes` in the manifest's `[refdata]` block and `bundled = false` gone from
 all 22 rows. `published = false` until the archive is uploaded to its release,
 which is the one thing this sprint leaves for a hand on the repository.
+
+### 10.9 Addendum (V3) — cross sections and samples for the non-Standard-Model rows
+
+**Landed 2026-09-07, after the close-out**, on the owner's PR review: several
+SMEFTsim rows' `integrals` cells read `covered-by = ["ee_to_ttx_smeft"]`, which
+a `Z h` or `W+ W-` final state is not. Of the 22 non-SM rows, 19 have a banked
+fixed-energy σ *and* a 10 000-event sample; **16 of them are now measured as
+cross sections and 17 as event samples**. The banked layer went from 143
+measured cells (136 ✅, 7 ⚠️) to **176 (166 ✅, 10 ⚠️, 4 ⏳, 24 uncovered)** —
+`pixi run --skip-deps validate` exit 0, 7 m 05 s wall / 33 m 27 s user on the
+M3 Max host — with every previously-enforced cell unmoved.
+
+#### The `integrals` table
+
+σ in pb at the row's gate budget and the suite's fixed seed; the sweep columns
+are five seeds at that budget (`probe_non_sm_seed_stability`).
+
+| row | budget | σ (ours) | σ (MG) | pull | rel | χ²/dof | 5-seed mean rel / χ²/dof / worst \|rel\| | cell |
+|---|---|---|---|---|---|---|---|---|
+| `ee_to_mumu_smlimit` | 40k×6 | 4.210246e-1 ± 2.94e-4 | 4.20960e-1 ± 2.26e-4 | +0.17 | +1.54e-4 | 0.35 | −7.1e-5 / 0.46 / 6.0e-4 | gate 0.005 |
+| `gg_to_ttx_smlimit` | 40k×6 | 1.356129e1 ± 8.75e-3 | 1.35330e1 ± 1.71e-2 | +1.47 | +2.09e-3 | 0.83 | +8.9e-4 / 1.20 / 2.1e-3 | gate 0.005 |
+| `gg_to_ttx_smlimit_qcd2` | 40k×6 | 1.350983e1 ± 9.01e-3 | 1.35040e1 ± 1.76e-2 | +0.30 | +4.32e-4 | 0.74 | −7.0e-4 / 1.48 / 1.7e-3 | gate 0.005 |
+| `ee_to_ttx_smlimit` | 40k×6 | 5.503204e-1 ± 3.46e-4 | 5.50210e-1 ± 1.81e-4 | +0.28 | +2.01e-4 | 2.40 | −3.1e-4 / 0.77 / 1.1e-3 | gate 0.005 |
+| `ee_to_wpwm_cw` | 40k×6 | 7.287363e0 ± 3.56e-3 | 7.30370e0 ± 1.14e-2 | −1.36 | −2.24e-3 | 1.44 | −2.3e-3 / 1.26 / 3.1e-3 | gate 0.008 |
+| `ee_to_ttx_dipole` | 40k×6 | 5.474379e-1 ± 3.53e-4 | 5.47390e-1 ± 1.94e-4 | +0.12 | +8.75e-5 | 1.27 | −2.4e-4 / 1.99 / 1.6e-3 | gate 0.005 |
+| `ee_to_zh_smeft` | 160k×8 | 1.411521e-1 ± 3.77e-5 | 1.41090e-1 ± 1.14e-5 | +1.58 | +4.40e-4 | 1.09 | +2.2e-5 / 0.78 / 4.4e-4 | gate 0.005 |
+| `ee_to_mumu_4f` | 40k×6 | 7.388448e0 ± 5.19e-3 | 7.38450e0 ± 3.72e-3 | +0.62 | +5.35e-4 | 0.78 | +4.5e-4 / 0.69 / 1.3e-3 | gate 0.005 |
+| `uux_to_ttx_4f` | 160k×8 | 1.390941e1 ± 4.00e-3 | 1.39130e1 ± 1.36e-3 | −0.85 | −2.58e-4 | 1.08 | −3.8e-4 / 0.96 / 6.7e-4 | gate 0.005 |
+| `tata_to_ttx_tensor4f` | 40k×6 | 5.555839e-1 ± 3.52e-4 | 5.55160e-1 ± 2.23e-4 | +1.02 | +7.64e-4 | 1.24 | −3.6e-4 / 1.62 / 1.4e-3 | gate 0.005 |
+| `ll_to_qqx_toy_dipole` | 40k×6 | 7.818200e1 ± 3.80e-2 | 7.81510e1 ± 2.56e-2 | +0.68 | +3.97e-4 | 1.03 | −1.3e-4 / 1.32 / 1.0e-3 | gate 0.005 |
+| `ll_to_qqx_toy_tensor` | 40k×6 | 8.044640e3 ± 6.96 | 8.03340e3 ± 3.16 | +1.47 | +1.40e-3 | 0.41 | +4.7e-4 / 0.61 / 1.4e-3 | gate 0.005 |
+| `ll_to_qqx_toy_yukawa` | 160k×8 | 4.026633e0 ± 1.15e-3 | 4.02610e0 ± 4.37e-4 | +0.43 | +1.32e-4 | 1.10 | +1.6e-4 / 0.27 / 3.1e-4 | gate 0.005 |
+| `qqx_to_o8o8_toy_dcolor` | 40k×6 | 7.846192e-1 ± 4.85e-4 | 8.41130e-1 ± 8.70e-4 | −56.72 | **−6.72e-2** | 0.70 | −6.77e-2 / 0.67 / 6.8e-2 | **info** |
+| `p3r3_to_p3r3_toy_epsilon` | 40k×6 | 2.084038e-3 ± 1.41e-6 | 2.21590e-3 ± 9.53e-7 | −77.52 | **−5.95e-2** | 0.42 | −6.03e-2 / 0.98 / 6.1e-2 | **info** |
+| `p3r3_to_p3r3_toy_sextet` | 40k×6 | 2.254194e-3 ± 1.53e-6 | 2.41530e-3 ± 1.12e-6 | −85.15 | **−6.67e-2** | 1.34 | −6.73e-2 / 0.68 / 6.8e-2 | **info** |
+
+Budgets are sized from the reference's own error: 40 000 × 6 puts `err_vg`
+between 4.9e-4 and 7.0e-4 relative, at or below the banked error on every row
+except the three whose reference is finer than 3e-4, which run at 160 000 × 8.
+Every `rel_tol` is the measured five-seed spread with headroom, never the
+achieved central value, and every ladder (a quarter to four times the budget) is
+flat.
+
+`ee_to_wpwm_cw` is the one row whose residual is an *offset* rather than a
+spread: −2.2e-3, converged from a quarter of the budget to four times it. A
+control says whose it is — at 160 000 × 6 over five seeds the **Standard-Model**
+`ee_to_wpwm` row reads **−2.258e-3** and this one **−2.222e-3**, both inside the
+reference's own 1.5e-3 relative Monte-Carlo error. So `rel_tol` covers offset
+plus spread at 0.008, four times tighter than the Standard-Model twin's 0.03.
+
+#### The `samples` table
+
+Three generation seeds, 20 000 events each against MadGraph's 10 000, floor
+`P_FLOOR = 1e-4` unmoved. Every column of every new row clears it on every seed,
+so all 17 gate.
+
+| row | budget | worst KS p (observable) | worst χ² p (column) |
+|---|---|---|---|
+| `ee_to_mumu_smlimit` | 20k×4 | 3.703e-1 `y(mu+)` | 1.255e-2 `SPINUP` |
+| `gg_to_ttx_smlimit` | 30k×5 | 3.685e-1 `y(t~)` | 3.746e-1 `ICOLUP` |
+| `gg_to_ttx_smlimit_qcd2` | 30k×5 | 7.612e-2 `pt(t)` | 2.156e-1 `ICOLUP` |
+| `ee_to_ttx_smlimit` | 20k×4 | 1.081e-2 `phi(t)/pi` | 1.529e-2 `SPINUP` |
+| `ee_to_wpwm_cw` | 20k×4 | 7.791e-4 `y(w+)` | 1.946e-1 `SPINUP` |
+| `ee_to_ttx_dipole` | 20k×4 | 3.085e-2 `phi(t)/pi` | 1.181e-1 `SPINUP` |
+| `ee_to_zh_smeft` | 20k×4 | 5.564e-3 `y(z)` | 3.907e-2 `SPINUP` |
+| `ee_to_mumu_4f` | 20k×4 | 2.056e-1 `pt(mu+)` | 1.726e-1 `SPINUP` |
+| `uux_to_ttx_4f` | 30k×5 | 2.079e-3 `y(t)` | 2.035e-3 `SPINUP` |
+| `tata_to_ttx_tensor4f` | 20k×4 | 1.971e-2 `phi(t)/pi` | 2.973e-1 `SPINUP` |
+| `ee_to_ttx_smeft` | 20k×4 | 1.640e-1 `phi(t)/pi` | 1.615e-1 `SPINUP` |
+| `ll_to_qqx_toy_dipole` | 20k×4 | 9.872e-2 `pt(qt)` | 2.527e-1 `SPINUP` |
+| `ll_to_qqx_toy_tensor` | 20k×4 | 1.006e-1 `phi(qt)/pi` | 2.012e-1 `SPINUP` |
+| `ll_to_qqx_toy_yukawa` | 20k×4 | 3.725e-3 `pt(qt)` | 2.776e-1 `SPINUP` |
+| `qqx_to_o8o8_toy_dcolor` | 30k×5 | 9.361e-4 `pt(o8)` | 8.612e-3 `ICOLUP` |
+| `p3r3_to_p3r3_toy_epsilon` | 20k×4 | 1.637e-1 `y(p3)` | 7.082e-2 `ICOLUP` |
+| `p3r3_to_p3r3_toy_sextet` | 20k×4 | 4.000e-1 `pt(p3)` | 2.451e-1 `ICOLUP` |
+
+The floor's own doc block is re-recorded from this run: the smallest p over every
+gating row is still `ee_to_wpwm`'s `1.573e-4`, with `ee_to_wpwm_cw` `7.791e-4`
+and `qqx_to_o8o8_toy_dcolor` `9.361e-4` behind it. The floor did not move.
+
+Colour columns, since that is what the coloured rows are for:
+`uux_to_ttx_4f` (NCOLOR 2) reproduces a lopsided split — 39 against 19 901 of
+20 000 ours, 15 against 9 985 of 10 000 theirs — at χ² p 0.38–0.76;
+`qqx_to_o8o8_toy_dcolor` realises **two** distinct Les Houches connectivities out
+of its three-flow basis, on both sides, at p 8.6e-3–3.3e-1; and both `p3r3` rows
+are all-scalar, so `SPINUP` collapses to one category and `ICOLUP` is the whole
+categorical comparison (17 516/2 410 against 8 821/1 179).
+
+#### The finding: massive incoming legs
+
+The three toy rows with **massive incoming particles** are the first such rows in
+the suite, and they are the first to see that `FixedBeamIntegrand` does not have
+them: `beams()` returns `(√ŝ/2)(1,0,0,±1)` and `prefactor()` takes the flux as
+`1/(2ŝ)` with `ŝ = (E₁+E₂)²`. MadGraph puts each beam on its own mass shell at
+the run card's energy and boosts to the partonic centre of mass. Its banked
+events say so directly — `p3 r3` at 60 and 70 GeV records incoming
+`pz = ±241.35011` with `E = 248.69635 / 251.29639`, so even `√ŝ` differs
+(499.99275 against 500), and `qt qt~` at 50 GeV records `pz = ±244.94897`.
+
+The size is localised rather than inferred. A 200-node Gauss–Legendre quadrature
+of the *same compiled amplitudes* over `cos θ`, with the flux written both ways:
+
+| row | quadrature, massless beams | this side's MC | quadrature, on-shell beams | MG's own error |
+|---|---|---|---|---|
+| `qqx_to_o8o8_toy_dcolor` | −6.77e-2 | −6.77e-2 | **−7.8e-4** | 1.0e-3 |
+| `p3r3_to_p3r3_toy_epsilon` | −6.06e-2 | −6.03e-2 | **−2.1e-4** | 4.3e-4 |
+| `p3r3_to_p3r3_toy_sextet` | −6.76e-2 | −6.73e-2 | **−5.2e-4** | 4.6e-4 |
+| `ee_to_ttx_smlimit` (control) | −1.3e-4 | −3.1e-4 | −1.3e-4 | 3.3e-4 |
+
+The control is what makes the quadrature an oracle rather than a fit: on a row
+with massless beams the two conventions are identical and both agree with the
+bank. On the three affected rows the massless-beam quadrature reproduces this
+side's Monte Carlo and the on-shell one lands on MadGraph's σ inside its own
+error. The defect is therefore in the fixed-beam integrand, not in the matrix
+element — those rows' `amplitudes` cells stay enforced bit-exact, because the
+amplitude tables are evaluated at RAMBO momenta built with the right masses.
+
+Where the effect is small it was checked rather than assumed: the two
+conventions differ by 2e-7 relative on the `ll_to_qqx_toy_*` rows (`m_in` =
+10 GeV, where an O(m²/2E²) flux deficit of 8e-4 is cancelled by an |M|² excess of
+the same size) and by 1e-7 on `tata_to_ttx_tensor4f` (`m_in` = 1.77686 GeV), so
+those four rows gate.
+
+**Not fixed here** — the fix touches beam construction, the flux, the frame RAMBO
+works in, `process_external_legs` and the beam legs the LHE record writes, which
+is its own session. Filed in `TODO.md`.
+
+#### Two rows the reference's own run cards keep out
+
+Neither row's `.mg5` script asks for the setting; MadGraph chose it per process,
+and the run card is part of the reference.
+
+- **`gg_to_gg_cg`** — `dynamical_scale_choice = 3`. The closed forms for choices
+  1–5 are transcribed from `setscales.f` and unit-tested, but
+  `ScaleChoice::from_run_card` refuses them (`UnhonouredScaleChoice`) because
+  they are computed nowhere a cross section reads them. Both its `integrals` and
+  `samples` cells are `uncovered` naming that.
+- **`wpwm_to_wpwmz_cw`** — `nhel = 1`, Monte-Carlo over helicities, which the run
+  card parser refuses as a change of estimator and per-event weight. Its
+  amplitudes disagree grossly in any case (|M|² 2.20e3), so σ would have been
+  informational either way.
+
+#### Two smaller results
+
+- **The 2→1 rows** (`bbx_to_h_identity`, `gg_to_h_cpeven`, `gg_to_h_cpodd`) had
+  `integrals` cells reading `covered-by = ["ee_to_ttx_smeft"]`. They are now
+  `uncovered` with the real reason: MadEvent has no volume to integrate, banked
+  no σ and no event file, so there is nothing for either cell to compare.
+- **`gg_to_ttx_smlimit_qcd2` is the suite's one scale-change fallback.**
+  SMEFTsim's effective `g g h` coupling is not a monomial in `G`, so its
+  subprocess re-evaluates the whole model per scale change instead of rescaling
+  its constant pools. That was an assertion failure in the σ harness; it is now
+  an allowlist (`SCALE_FALLBACK_ROWS`) asserted in both directions, so a row that
+  stopped falling back leaves a stale entry and one that started is loud. The
+  cost lands on the α survey, not the integration: 15.6 s at 4 000 × 2 against
+  17.3 s at the gate budget of 40 000 × 6.
+
+#### What these cells cannot see
+
+Every `samples` observable is built from the **outgoing** legs
+(`lhef::observables::kinematics` filters on `STATUS_OUTGOING`), so no column
+compares the beam four-momenta — which is exactly why three rows can carry a 6–7%
+σ error and still clear the KS floor comfortably. A per-event comparison of the
+incoming legs against MadGraph's own record would have caught the massive-beam
+defect on the first row that had one; it is filed as a sharper oracle.
+Symmetrically, the σ gate cannot see what keeps `ee_to_wpwm_cw` and
+`ee_to_zh_smeft` informational at the amplitude level: 2.08e-12 on one |M|² point
+and a 6.00e-11 derived-parameter spread are both orders of magnitude below any
+budget's Monte-Carlo error.
