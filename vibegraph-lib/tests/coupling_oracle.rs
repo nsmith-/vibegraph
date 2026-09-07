@@ -31,9 +31,9 @@
 //!
 //! MadGraph's Python is the arbiter: it computes from the model's own
 //! expressions with no intermediate transcription, so a disagreement between it
-//! and this crate is this crate's, and [`PYTHON_REL_TOL`] gates it. The two
-//! expressions this crate is known to read differently from Python are named in
-//! [`KNOWN_CRATE_DEFECTS`], with the diagnosis on that constant.
+//! and this crate is this crate's, and [`PYTHON_REL_TOL`] gates it. Any
+//! expression this crate is known to read differently from Python is named in
+//! [`KNOWN_CRATE_DEFECTS`], which is empty.
 //!
 //! MadGraph's Fortran is *not* an arbiter. Its writer emits the model's derived
 //! parameters into `Source/couplings.f` at a fixed number of significant digits,
@@ -118,34 +118,16 @@ const KNOWN_FORTRAN_DEVIATIONS: &[(&str, &str, f64)] = &[
 ///
 /// Each entry is `(model, coupling, relative deviation)`, the model named as the
 /// manifest names it — `<dir>-<restrict>`, or `sm` for the interned Standard
-/// Model — because the defect belongs to the model's expression and not to the
-/// row that happens to use it. Every listed entry must still be deviating, so
-/// the list fails when its cause is repaired.
+/// Model — because such a defect belongs to the model's expression and not to
+/// the row that happens to use it. Every listed entry must still be deviating,
+/// so the list fails when its cause is repaired.
 ///
-/// # Diagnosis
-///
-/// One cause: `ufo::expr`'s grammar binds unary `-` tighter than `**`, where
-/// Python binds it looser on the left (`factor: ('+'|'-') factor | power`,
-/// `power: primary ['**' factor]`). `-ee**2/(2.*cw)` is therefore read as
-/// `(-ee)**2/(2.*cw)`, which flips the sign — hence a relative deviation of
-/// exactly 2 — and, because a negative real base goes through
-/// `exp(n·log z)` with `log(-x) = ln x + iπ`, leaves a spurious imaginary part
-/// of relative size ~2.4e-16.
-///
-/// Reach, checked by parsing every `value = '...'` of every model this
-/// repository loads with Python's own `ast` and looking for a `USub` directly
-/// over a `Pow`: three expressions in total. Two are these SM couplings, which
-/// sit on the Goldstone vertices `W+ Z G- H` and `a W- G+ H` and so are declared
-/// in no generated `coupl.inc` — a tree-level unitary-gauge amplitude never
-/// reaches a Goldstone. The third is SMEFTsim's internal parameter `dWT`, whose
-/// `cbWRe*MB*(-MB**2 + MT**2 + MWsm**2)` term is non-zero only under the
-/// `massless` restriction (`cbWRe = 0.008`; every `vg_*` card zeroes it) and
-/// which the model refers to from one place, the `T1` propagator's numerator —
-/// so it is reached only by an internal top line, and every banked row's tops
-/// are external. Nothing banked is affected; the defect is a Goldstone gauge or
-/// an off-shell top away from being physics.
-const KNOWN_CRATE_DEFECTS: &[(&str, &str, f64)] =
-    &[("sm", "GC_7", 2.000_001), ("sm", "GC_54", 2.000_001)];
+/// The list is empty: on every banked row, every coupling MadGraph's Python
+/// defines agrees with this crate's within [`PYTHON_REL_TOL`]. It stays in the
+/// gate because the alternative to naming a known difference is loosening the
+/// tolerance that would otherwise catch it, and because the "must still deviate"
+/// rule is what stops an entry from outliving its cause.
+const KNOWN_CRATE_DEFECTS: &[(&str, &str, f64)] = &[];
 
 fn tables_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/couplings")
