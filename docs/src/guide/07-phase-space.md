@@ -269,6 +269,32 @@ svg.psfig .ps-dt { fill: currentColor; }
 </svg>
 </figure>
 
+The figure shows both decompositions on one example each. In the upper
+panel the diagram is $e^+e^- \to \mu^+\mu^-e^+e^-$ through an s-channel
+$\gamma^\ast/Z^\ast$ that radiates a $Z$ off the muon line, and beside it is
+the decay chain its two internal lines define. The root is the whole final
+state $\{\mu^+\mu^-e^+e^-\}$ at $s = \hat s$, fixed by the beams and not
+drawn. The first split peels off the $\mu^+$ as a leaf of fixed mass and
+leaves the subsystem $\{\mu^-e^+e^-\}$, whose invariant mass is the momentum
+flowing through the internal muon line: a zero-width pole sitting below the
+subsystem's threshold, so that invariant is drawn with the log-rise map in
+$s - m^2$. That subsystem splits in turn into the $\mu^-$ leaf and the pair
+$\{e^+e^-\}$, whose invariant is the $Z$ propagator's, drawn with the
+Breit–Wigner substitution. Every node of the chain is one of the three
+draws in the legend, and the tree's shape is read off the propagators
+alone. In the lower panel the diagram is $e^-q \to e^-qg$ with a spacelike
+photon, and the decomposition is a spine rather than a tree. The first
+rung anchors to beam 0, the electron along $+z$, and emits the blob
+$B_1 = \{e^-\}$ against the momentum transfer $t = (p_{\text{beam}\,0} -
+p_{B_1})^2 \le 0$, drawn with the $1/(m^2 - t)$ map written under it; once
+$t$ is drawn the emission's polar angle $\theta$ is fixed and only the
+azimuth is free. What is left, the remainder $R_1 = \{qg\}$, recoils against
+beam 1 and re-enters the timelike machinery of the upper panel: its
+invariant comes from the internal quark line, a log-rise again, and its
+final split into $q$ and $g$ is an isotropic two-body decay. A diagram with
+more spacelike lines repeats the rung as a ladder, one $t$ per line, with
+the emitted sides nested inside one another.
+
 Leaving one of these peaks on a flat draw is not merely inefficient. The
 estimator acquires a tail so heavy that a run either misses the region and
 underestimates, or hits it and overestimates, and because
