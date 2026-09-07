@@ -64,6 +64,20 @@ const NODE_SCHEMA: &str = "\
   (Metric Node Node)
   (MetricVout Node)
   (IdentityAmp Node Node)
+  (Gamma5 Node)
+  (Gamma5Amp Node Node)
+  (EpsilonVout Node Node Node)
+  (EpsilonAmp Node Node Node Node)
+  (FierzOut Node Node)
+  (FierzOutRev Node Node)
+  (MultivectorIout Node Node)
+  (MultivectorOout Node Node)
+  (FierzPair Node Node Node)
+  (SigmaVout Node Node Node)
+  (SigmaVoutRev Node Node Node)
+  (SigmaMv Node Node)
+  (SigmaOut Node Node)
+  (SigmaOutRev Node Node)
   (FfvVout Node Node Node Node)
   (FfvIout Node Node Node Node)
   (FfvOout Node Node Node Node)
@@ -545,12 +559,26 @@ fn op_slot_bytes(op: &str) -> f64 {
             | Op::ProjM
             | Op::ProjP
             | Op::MetricVout
+            | Op::EpsilonVout
+            | Op::Gamma5
             | Op::FfvVout
             | Op::FfvIout
             | Op::FfvOout
             | Op::PMom
-            | Op::PMomOut => 96.0,
-            Op::Metric | Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp => 16.0,
+            | Op::PMomOut
+            | Op::MultivectorIout
+            | Op::MultivectorOout
+            | Op::SigmaVout
+            | Op::SigmaVoutRev => 96.0,
+            // Sixteen graded coefficients plus the routed momentum.
+            Op::FierzOut | Op::FierzOutRev | Op::SigmaOut | Op::SigmaOutRev | Op::SigmaMv => 288.0,
+            Op::Metric
+            | Op::ProjMAmp
+            | Op::ProjPAmp
+            | Op::IdentityAmp
+            | Op::Gamma5Amp
+            | Op::EpsilonAmp
+            | Op::FierzPair => 16.0,
             Op::Mul | Op::Add | Op::Flows | Op::Hels | Op::Configs => 96.0,
             Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => 0.0,
         },

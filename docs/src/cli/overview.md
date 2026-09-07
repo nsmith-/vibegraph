@@ -109,6 +109,25 @@ UFO models are never downloaded, because FeynRules publishes no per-model
 index a name could be pinned against. Unpack the model directory under the
 cache or point `--ufo-dir` at it.
 
+`import model <name>-<restrict>` selects `restrict_<restrict>.dat` from inside
+the model directory, the way MadGraph does, and the restriction's values become
+the model's parameter defaults: a run with no param card of its own computes at
+exactly the values MadGraph's generated `param_card.dat` would carry, and a
+parameter the restriction zeroes stays zero whatever a later card says, because
+the restriction is also what pruned the vertices. The SMEFT model the validation
+ladder gates is committed in the repository, so
+
+```bash
+printf 'import model SMEFTsim_topU3l_MwScheme_UFO-massless\ngenerate e+ e- > t t~ NP<=1\n' \
+  | vibegraph integrate - --ufo-dir validation/ufo --run-card run_card.dat --out ee_to_ttx_smeft/
+```
+
+runs it out of a checkout. Every run records the model it was built from — name,
+restrict card and a digest of both — in its artifact, and `generate` refuses
+grids trained on a different one. Squared-order constraints (`NP^2==1`) are a
+hard error: this generator selects diagrams by their coupling orders and squares
+the whole amplitude, so it cannot bound an interference term.
+
 ## Watching a run
 
 Standard output carries the result and nothing else, at every verbosity:

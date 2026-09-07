@@ -46,30 +46,39 @@ pub enum ColorRep {
     AntiTriplet,
     /// The adjoint **8** (gluons).
     Octet,
+    /// The symmetric two-index **6** (sextet diquarks).
+    Sextet,
+    /// The conjugate **6̄**.
+    AntiSextet,
 }
 
 impl ColorRep {
     /// Map a UFO `color` charge to a representation: `1 → Singlet`,
-    /// `3 → Triplet`, `-3 → AntiTriplet`, `8 → Octet`. The self-conjugate reps
-    /// also accept their negated charge, which the antiparticle constructor
-    /// produces (`color: -self.color`): `-1 → Singlet`, `-8 → Octet`. Any other
-    /// value (e.g. a sextet `±6`) returns `None`.
+    /// `3 → Triplet`, `-3 → AntiTriplet`, `6 → Sextet`, `-6 → AntiSextet`,
+    /// `8 → Octet`. The self-conjugate reps also accept their negated charge,
+    /// which the antiparticle constructor produces (`color: -self.color`):
+    /// `-1 → Singlet`, `-8 → Octet`. Any other value returns `None`.
     pub fn from_ufo(color: i32) -> Option<Self> {
         match color {
             1 | -1 => Some(ColorRep::Singlet),
             3 => Some(ColorRep::Triplet),
             -3 => Some(ColorRep::AntiTriplet),
+            6 => Some(ColorRep::Sextet),
+            -6 => Some(ColorRep::AntiSextet),
             8 | -8 => Some(ColorRep::Octet),
             _ => None,
         }
     }
 
-    /// The conjugate representation (`3 ↔ 3̄`; self-conjugate otherwise).
+    /// The conjugate representation (`3 ↔ 3̄`, `6 ↔ 6̄`; self-conjugate
+    /// otherwise).
     pub fn anti(self) -> Self {
         match self {
             ColorRep::Singlet => ColorRep::Singlet,
             ColorRep::Triplet => ColorRep::AntiTriplet,
             ColorRep::AntiTriplet => ColorRep::Triplet,
+            ColorRep::Sextet => ColorRep::AntiSextet,
+            ColorRep::AntiSextet => ColorRep::Sextet,
             ColorRep::Octet => ColorRep::Octet,
         }
     }
@@ -101,11 +110,26 @@ mod color_rep_tests {
         );
     }
 
-    /// Sextets (and any other charge) remain unsupported.
+    /// The sextet is chiral too, and unlike the triplet its charge sign is the
+    /// only thing that distinguishes the two: a UFO writes the **6** as `6` and
+    /// the **6̄** as `-6`.
     #[test]
-    fn from_ufo_sextet_unsupported() {
-        assert_eq!(ColorRep::from_ufo(6), None);
-        assert_eq!(ColorRep::from_ufo(-6), None);
+    fn from_ufo_sextet_is_chiral() {
+        assert_eq!(ColorRep::from_ufo(6), Some(ColorRep::Sextet));
+        assert_eq!(ColorRep::from_ufo(-6), Some(ColorRep::AntiSextet));
+        assert_eq!(
+            ColorRep::from_ufo(6).map(ColorRep::anti),
+            ColorRep::from_ufo(-6)
+        );
+    }
+
+    /// Any charge outside `1`, `3`, `6`, `8` and their negations is refused
+    /// rather than folded into a nearby rep.
+    #[test]
+    fn from_ufo_unknown_charge_is_refused() {
+        for charge in [0, 2, 4, 5, 7, 9, 10, -2, -4, -10] {
+            assert_eq!(ColorRep::from_ufo(charge), None, "colour charge {charge}");
+        }
     }
 }
 

@@ -49,6 +49,7 @@ rounding, at the kinematics of a real event rather than of a sampler.
 
 Usage:
   pixi run -e madgraph generate-amplitude-tables
+  python validation/madgraph/gen_amplitude_tables.py ee_to_mumu   # only this row
 
 Prerequisites:
   pixi run -e madgraph build-amplitude     # builds mg_<name> and mg_amp_probe_<name>
@@ -100,6 +101,16 @@ class Row:
     # The fixed-grid registry entry (`gen_amplitude.PROCESSES`) supplying the
     # grid points, the process string and the leg PDG ids.
     grid_key: str
+    # Banked events to project into the table. Zero for a 2 -> 1 process: its
+    # phase space is a single point, MadEvent has no volume to integrate and
+    # writes no event file, and the fixed grid already holds that one point.
+    n_event_points: int = N_EVENT_POINTS
+    # The process string the table is banked under. `None` takes the grid
+    # registry entry's, which is the row's own for every row that supplies its
+    # own grid; a row that borrows another row's grid names the process its own
+    # script generates, since the two can differ in their coupling-order bounds
+    # (`u u~ > mu+ mu-` against `p p > l+ l- QCD=0`'s concrete subprocess).
+    process: str | None = None
 
 
 def rows():
@@ -111,9 +122,22 @@ def rows():
     process at the same energies) and differ in their event sets: partonic beams
     for one, boosted proton-beam events for the other.
     """
-    out = [Row(p.name, p.name) for p in gen_amplitude.PROCESSES]
-    out.append(Row("uux_to_mumu", "pp_to_ll_qcd0"))
+    out = [
+        Row(p.name, p.name, 0 if len(p.pdgs_out) == 1 else N_EVENT_POINTS)
+        for p in gen_amplitude.PROCESSES
+    ]
+    out.append(Row("uux_to_mumu", "pp_to_ll_qcd0", process=script_process("uux_to_mumu")))
     return sorted(out, key=lambda r: r.key)
+
+
+def script_process(key):
+    """The process a row's own `.mg5` script generates, as written there."""
+    path = os.path.join(HERE, "scripts", f"{key}.mg5")
+    with open(path) as f:
+        for line in f:
+            if line.startswith("generate "):
+                return line[len("generate "):].strip()
+    raise ValueError(f"{path}: no `generate` line")
 
 
 # ─────────────────────────── MadGraph source reading ──────────────────────────
@@ -229,20 +253,12 @@ def read_amp2_groups(key):
 def helicity_combos(key, n_ext):
     """MadGraph's own NHEL table, in its own row order.
 
-    Read from the `DATA (NHEL(I,N),I=1,n_ext) / ... /` block rather than
-    enumerated as a product, so the banked helicity set is MadGraph's and a
+    Read from the generated `DATA (NHEL(I,N),I=1,n_ext) / ... /` block rather
+    than enumerated as a product, so the banked helicity set is MadGraph's and a
     disagreement with vibegraph's enumeration is a finding rather than something
     the reference quietly conforms to.
     """
-    with open(matrix_file(key)) as f:
-        src = join_continuations(f.read())
-    combos = []
-    for row in re.findall(r"DATA \(NHEL\(I,\s*\d+\),I=1,\s*\d+\) /([^/]*)/", src):
-        vals = [int(v) for v in row.replace(" ", "").split(",")]
-        assert len(vals) == n_ext, f"{key}: NHEL row {vals} is not {n_ext} long"
-        combos.append(vals)
-    assert combos, f"{key}: no NHEL rows found in {matrix_file(key)}"
-    return combos
+    return gen_amplitude.nhel_table(key, n_ext)
 
 
 def param_card_path(key):
@@ -431,12 +447,20 @@ def evaluate(key, row, proc):
     card = param_card_path(key)
     masses = read_masses(card)
 
-    m2_module = importlib.import_module(f"mg_{key}")
+    # The helicity-summed |M|^2 is what the event points need; the grid points
+    # carry MadGraph's own value from the CSV. A row with no event set (a 2 -> 1
+    # process, whose `launch` writes no events) therefore never needs it.
+    m2_module = (
+        gen_amplitude.summed_m2_module(key, n_ext) if row.n_event_points else None
+    )
     probe = importlib.import_module(f"mg_amp_probe_{key}")
 
-    relpath, event_points, worst_onshell, worst_imbalance = read_event_points(
-        key, proc, masses, N_EVENT_POINTS
-    )
+    if row.n_event_points:
+        relpath, event_points, worst_onshell, worst_imbalance = read_event_points(
+            key, proc, masses, row.n_event_points
+        )
+    else:
+        relpath, event_points, worst_onshell, worst_imbalance = None, [], 0.0, 0.0
 
     amp2_groups = read_amp2_groups(key)
 
@@ -461,7 +485,7 @@ def evaluate(key, row, proc):
 
     table = {
         "key": key,
-        "process": process_str,
+        "process": row.process or process_str,
         "n_ext": n_ext,
         "n_graphs": ngraphs,
         "n_flows": ncolor,
@@ -535,8 +559,13 @@ def write_table(path, table):
 def main():
     os.makedirs(TABLE_DIR, exist_ok=True)
     registry = {p.name: p for p in gen_amplitude.PROCESSES}
+    selected = [a for a in sys.argv[1:] if not a.startswith("-")]
+    all_rows = rows()
+    unknown = sorted(set(selected) - {r.key for r in all_rows})
+    assert not unknown, f"no such table row: {unknown}"
+    wanted = [r for r in all_rows if not selected or r.key in selected]
     total = 0
-    for row in rows():
+    for row in wanted:
         proc = registry[row.grid_key]
         table, stats = evaluate(row.key, row, proc)
         path = os.path.join(TABLE_DIR, f"{row.key}.json")
@@ -545,12 +574,13 @@ def main():
         total += size
         print(
             f"[{row.key}] {table['process']}: {len(table['points'])} points "
-            f"({N_EVENT_POINTS} event + {len(table['points']) - N_EVENT_POINTS} grid), "
+            f"({row.n_event_points} event + "
+            f"{len(table['points']) - row.n_event_points} grid), "
             f"{stats['n_detail']} with per-helicity tables, NGRAPHS={table['n_graphs']} "
             f"NCOLOR={table['n_flows']}, projection: off-shell <= {stats['onshell']:.1e}, "
             f"imbalance <= {stats['imbalance']:.1e}, {size / 1024:.0f} KiB"
         )
-    print(f"wrote {len(rows())} tables to {TABLE_DIR} ({total / 1024:.0f} KiB total)")
+    print(f"wrote {len(wanted)} tables to {TABLE_DIR} ({total / 1024:.0f} KiB total)")
 
 
 if __name__ == "__main__":

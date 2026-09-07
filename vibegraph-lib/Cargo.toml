@@ -171,3 +171,10 @@ required-features = ["extended-validation"]
 name = "sm_interned_blob"
 required-features = ["extended-validation"]
 
+[[test]]
+name = "smeftsim"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "toy_models"
+required-features = ["extended-validation"]

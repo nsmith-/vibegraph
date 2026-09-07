@@ -61,6 +61,19 @@
 //! their ~1 ms matrix-element cost over a 24-dim map making a meaningful integral
 //! prohibitively slow.
 //!
+//! Sixteen rows here have a model that is not the Standard Model: the SMEFTsim
+//! ladder's own cross sections under the vendored model and one restrict card per
+//! Wilson-coefficient class, and the two toy models this repository authors. Each
+//! row's model is the one its manifest entry names, so the comparison is against
+//! the process MadGraph generated and not against a same-named Standard-Model one,
+//! and the parameters are MadGraph's own `Cards/param_card.dat` for that run.
+//!
+//! Two rows of that set are not integrated at all, for reasons that live in their
+//! banked run cards rather than in their physics — `gg_to_gg_cg`'s
+//! `dynamical_scale_choice = 3` and `wpwm_to_wpwmz_cw`'s `nhel = 1`. Neither
+//! `.mg5` script asks for either; MadGraph chose them per process, and the run
+//! card is part of the reference.
+//!
 //! Every process is driven through the same run-card-pinned setup, so the cut
 //! compiler and beam handling are exercised for all of them.
 //!
@@ -168,6 +181,21 @@ const PULL_LIMIT: f64 = 3.5;
 /// shrinking, not by its budget being cut.
 const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
 
+/// The rows whose subprocess re-evaluates the whole model on each scale change
+/// rather than rescaling its constant pools — roughly two orders of magnitude
+/// per event, so it is a cost worth naming rather than absorbing.
+///
+/// `gg_to_ttx_smlimit_qcd2` is here because SMEFTsim's effective `g g h` vertex,
+/// which an explicit `QCD<=2` keeps and the default order bound drops, carries a
+/// coupling that is not a monomial in `G`; the rescaling path needs one. The
+/// cost lands almost entirely on the α survey, so the row runs in 17 s at its
+/// gate budget against 16 s at a twentieth of it.
+///
+/// Membership is asserted in both directions in [`with_integrand`]: a row that
+/// stopped falling back would leave a stale entry here, and one that started
+/// would be a silent hundredfold on the banked layer.
+const SCALE_FALLBACK_ROWS: [&str; 1] = ["gg_to_ttx_smlimit_qcd2"];
+
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
 
@@ -235,10 +263,11 @@ impl Plan {
 /// and, via the multichannel sampler, the resonant `ee_to_tatah` and `ee_to_mumua`,
 /// whose Z/gamma* Breit-Wigner peaks flat RAMBO could not reach — together with the
 /// three QCD processes, which are now driven at the run card's own per-event
-/// renormalisation scale rather than at the param card's alpha_s. Their budgets are
-/// sized to bring `err_vg` near the banked MG error while keeping the default test
-/// suite fast. The 2->6 states cost ~1 ms per matrix-element evaluation over a
-/// 24-dim map, too slow to integrate meaningfully.
+/// renormalisation scale rather than at the param card's alpha_s, and the SMEFTsim
+/// and toy-model rows below. Their budgets are sized to bring `err_vg` near the
+/// banked MG error while keeping the default test suite fast. The 2->6 states cost
+/// ~1 ms per matrix-element evaluation over a 24-dim map, too slow to integrate
+/// meaningfully.
 fn plan_for(dir: &str) -> Plan {
     match dir {
         // ── smooth electroweak, asserted ────────────────────────────────────
@@ -345,6 +374,34 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.02,
         },
+        // ── the SMEFT capstone, asserted ────────────────────────────────────
+        // The one cross section in the SMEFTsim ladder, and the only row here whose
+        // model is not the Standard Model: `e+ e- > t t~ NP<=1` under the model's
+        // own `restrict_massless` card, with every real Wilson coefficient on, at
+        // the parameters of MadGraph's own `param_card.dat` for this run.
+        //
+        // 36 diagrams and 36 sampling channels, of which the contact four-fermion
+        // ones span the whole final state and the dipole and current-shift ones sit
+        // on the same γ/Z poles as the Standard-Model pair — so the budget is set by
+        // how finely the reference is known rather than by a resonance. 160 000 × 8
+        // puts `err_vg` at 2.95e-4 relative against the banked run's own 2.37e-4,
+        // which is what "comparable precision" means here.
+        //
+        // `rel_tol` is the measured seed spread with headroom, not the reference's
+        // error and not the achieved central value. Over seven seeds at this budget
+        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 1.22 and
+        // |rel| <= 4.7e-4 with per-seed χ²/dof in 0.91–1.22; their inverse-variance
+        // mean is +1.6e-4 of the bank at χ²/dof 0.75 over the seeds, inside the
+        // reference's own error. The ladder is flat: rel +8.2e-4 / +2.9e-4 / +3.1e-4
+        // / +4.3e-4 / +1.2e-4 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points
+        // an iteration, scattering inside the same band over a sixteenfold budget
+        // rather than drifting, which is what says the residual is sampling — a
+        // defect migrates between seeds at fixed size instead.
+        "ee_to_ttx_smeft" => Plan::Gate {
+            neval: 160_000,
+            niter: 8,
+            rel_tol: 0.002,
+        },
         // ── the multi-rung spine reference, asserted ────────────────────────
         // The one banked row whose diagrams carry a ladder of spacelike lines:
         // 35 channels splitting 12 / 14 / 9 over one, two and three of them, so
@@ -414,6 +471,135 @@ fn plan_for(dir: &str) -> Plan {
             niter: 8,
             rel_tol: 0.005,
         },
+        // ── the SMEFTsim ladder's own cross sections, asserted ──────────────
+        // Every ladder row whose banked run has a cross section to compare, so a
+        // SMEFT matrix element is integrated under its own model and restrict card
+        // rather than inferred from the capstone. Each is driven through the same
+        // run-card-pinned setup as a Standard-Model row, at the parameters of
+        // MadGraph's own `Cards/param_card.dat` for that run.
+        //
+        // What a cross section adds over these rows' gated amplitudes is everything
+        // outside the matrix element -- flux, the initial-state spin and colour
+        // average, the identical-particle factor and the phase-space measure -- on a
+        // model whose vertices are not the Standard Model's. What it cannot see is
+        // anything the amplitude cells already own: `ee_to_wpwm_cw`'s single
+        // |M|^2 point at 2.08e-12 and `ee_to_zh_smeft`'s tenth-digit derived-parameter
+        // spread are both orders of magnitude below any budget's Monte-Carlo error,
+        // so a green cell here says nothing about either and their `amplitudes` cells
+        // remain the place those live.
+        //
+        // The four SM-limit rows are gated on their own numbers rather than deferred
+        // to the interned-SM rows of the same processes: the matrix element is the
+        // Standard Model's, but the path to it -- a UFO read from source, the
+        // {mW, mZ, GF} input scheme, MadGraph's interaction splitting and the
+        // restrict card's pruning -- is not, and a cross section is where that path's
+        // couplings meet the flux and the measure.
+        //
+        // Budgets are set from the reference's own error: 40 000 x 6 puts `err_vg`
+        // between 4.9e-4 and 7.0e-4 relative, which is at or below the banked error
+        // on every row here except the three whose reference is finer than 3e-4, and
+        // those run at 160 000 x 8. `rel_tol` is the measured five-seed spread with
+        // headroom (`probe_non_sm_seed_stability`), never the achieved central value:
+        // over five seeds at these budgets the worst |rel| is 6.0e-4
+        // (`ee_to_mumu_smlimit`), 2.1e-3 (`gg_to_ttx_smlimit`), 1.7e-3
+        // (`gg_to_ttx_smlimit_qcd2`), 1.1e-3 (`ee_to_ttx_smlimit`), 1.6e-3
+        // (`ee_to_ttx_dipole`), 4.4e-4 (`ee_to_zh_smeft`), 1.3e-3 (`ee_to_mumu_4f`),
+        // 6.7e-4 (`uux_to_ttx_4f`), 1.4e-3 (`tata_to_ttx_tensor4f`), 1.0e-3 and
+        // 1.4e-3 (`ll_to_qqx_toy_dipole`, `_tensor`) and 3.1e-4
+        // (`ll_to_qqx_toy_yukawa`), with per-row chi2/dof over the seeds in
+        // 0.27-1.99. Every ladder is flat: quadrupling and quartering the budget
+        // moves each row inside its own seed band rather than in a direction.
+        "ee_to_mumu_smlimit"
+        | "gg_to_ttx_smlimit"
+        | "ee_to_ttx_smlimit"
+        | "ee_to_ttx_dipole"
+        | "ee_to_mumu_4f"
+        | "tata_to_ttx_tensor4f" => Plan::Gate {
+            neval: 40_000,
+            niter: 6,
+            rel_tol: 0.005,
+        },
+        // The one row whose residual is a converged offset rather than a spread:
+        // rel settles at -2.2e-3 and stays there over a sixteenfold budget
+        // (-2.62e-3 / -8.80e-4 / -2.24e-3 / -2.22e-3 / -2.18e-3 across the ladder),
+        // with the five-seed worst at -3.1e-3. The offset is the process's, not the
+        // card's: at 160 000 x 6 over the same five seeds the Standard-Model
+        // `ee_to_wpwm` row sits at -2.258e-3 and this one at -2.222e-3, and both are
+        // inside the reference's own 1.5e-3 relative Monte-Carlo error. `rel_tol`
+        // therefore has to cover offset plus spread, and 0.008 does with 2.6x
+        // headroom -- still four times tighter than the Standard-Model twin's 0.03.
+        "ee_to_wpwm_cw" => Plan::Gate {
+            neval: 40_000,
+            niter: 6,
+            rel_tol: 0.008,
+        },
+        // The row whose effective `g g h` coupling is not a monomial in `G`, so its
+        // subprocess re-evaluates the whole model on each scale change instead of
+        // rescaling its constant pools ([`SCALE_FALLBACK_ROWS`]). That is the
+        // per-event cost, and it lands on the alpha survey rather than on the
+        // integration: the row takes 15.6 s at 4 000 x 2 and 17.3 s at 40 000 x 6.
+        "gg_to_ttx_smlimit_qcd2" => Plan::Gate {
+            neval: 40_000,
+            niter: 6,
+            rel_tol: 0.005,
+        },
+        // The three rows whose banked run is known more finely than 3e-4 relative,
+        // where 40 000 x 6 would leave `err_vg` six to eleven times the reference's
+        // own error rather than comparable to it.
+        "ee_to_zh_smeft" | "uux_to_ttx_4f" | "ll_to_qqx_toy_yukawa" => Plan::Gate {
+            neval: 160_000,
+            niter: 8,
+            rel_tol: 0.005,
+        },
+        // ── the toy models' cross sections ──────────────────────────────────
+        // Colour-singlet incoming legs, where this crate's fixed-beam convention and
+        // MadGraph's agree.
+        "ll_to_qqx_toy_dipole" | "ll_to_qqx_toy_tensor" => Plan::Gate {
+            neval: 40_000,
+            niter: 6,
+            rel_tol: 0.005,
+        },
+        // The three rows with *massive* incoming particles, measured and not
+        // enforced. `FixedBeamIntegrand` puts both beams on the light cone at
+        // `sqrt(s-hat)/2` and takes the flux as `1/(2 s-hat)`; MadGraph puts each beam
+        // on its own mass shell at the run card's energy and boosts to the partonic
+        // centre of mass, which its banked events show directly (`p3 r3` at 60 and
+        // 70 GeV records incoming `pz = +-241.350` and `E = 248.696 / 251.296`, so
+        // even `s-hat` differs -- 499.99275 against 500). Every other fixed-energy row
+        // in the suite has massless incoming particles, so nothing here could see it.
+        //
+        // The size is localised, not inferred. A 200-node Gauss-Legendre quadrature
+        // of the same amplitudes over `cos(theta)` reproduces this side's own Monte
+        // Carlo under the massless-beam convention (-6.77e-2 / -6.06e-2 / -6.76e-2
+        // against the sweeps' -6.77e-2 / -6.03e-2 / -6.73e-2) and lands on the banked
+        // sigma under MadGraph's (-7.8e-4, -2.1e-4, -5.2e-4, against reference errors
+        // of 1.0e-3, 4.3e-4 and 4.6e-4). Its control is `ee_to_ttx_smlimit`, whose
+        // massless beams make the two conventions identical and both -1.3e-4 of the
+        // bank.
+        //
+        // The ladder is what says this is not sampling: rel holds at -6.7e-2, -6.0e-2
+        // and -6.7e-2 from a quarter of the budget to four times it while the pull
+        // grows from -43 to -63, -42 to -113 and -47 to -120.
+        "qqx_to_o8o8_toy_dcolor" | "p3r3_to_p3r3_toy_epsilon" | "p3r3_to_p3r3_toy_sextet" => {
+            Plan::Info {
+                neval: 40_000,
+                niter: 6,
+                reason: "massive incoming legs: this side builds them massless at \
+                         sqrt(s-hat)/2 with flux 1/(2 s-hat), MadGraph on shell at the card \
+                         energy in the partonic centre of mass",
+            }
+        }
+        // ── the two rows whose banked run card this crate refuses ───────────
+        // Neither script asks for these settings; MadGraph chose them for the
+        // process, and the run card is part of the reference.
+        "gg_to_gg_cg" => Plan::Skip(
+            "MadGraph ran it at dynamical_scale_choice = 3, and the closed forms for 1-5 \
+             are computed nowhere a cross section reads them",
+        ),
+        "wpwm_to_wpwmz_cw" => Plan::Skip(
+            "MadGraph ran it at nhel = 1, Monte-Carlo over helicities, which the run card \
+             parser refuses because it changes both the estimator and the per-event weight",
+        ),
         // ── 2 -> 6, measured in the oracle layer and not enforced ───────────
         // These two are not here because the matrix element is slow. One
         // integration point costs 64 µs and 71 µs through this harness against the
@@ -514,15 +700,27 @@ fn reference_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json")
 }
 
-/// Load MadGraph's exact param card for a run if present, else the interned SM
-/// restrict defaults (a ~1e-7 relative shift in |M|^2, negligible against the
-/// Monte-Carlo error of this gate).
+/// Load MadGraph's exact param card for a run if present, else the model's own
+/// post-restriction defaults — an empty card leaves every external parameter where
+/// `import model <name>-<restrict>` put it, which is what MadGraph's generated card
+/// carries for a run that did not edit one.
 fn param_card(dir: &str) -> ParamCard {
     let path = output_dir().join(dir).join("Cards/param_card.dat");
     std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| s.parse::<ParamCard>().ok())
         .unwrap_or_else(|| "".parse::<ParamCard>().unwrap())
+}
+
+/// The UFO model a banked row's reference was generated against.
+///
+/// A row that names no model of its own is the interned Standard Model; the
+/// SMEFTsim rows name a vendored directory and a restrict card, and a gate that
+/// integrated one of those under the SM would be comparing a different process to
+/// the bank. The restrict card is part of the model here rather than of the
+/// parameter card, exactly as `import model <dir>-<restrict>` makes it.
+fn row_model(dir: &str) -> std::sync::Arc<vibegraph::ufo::UFOModel> {
+    common::model_for_row(dir).unwrap_or_else(|e| panic!("[{dir}] {e}"))
 }
 
 /// Integrate one process and return `(sigma_pb, err_pb, chi2_per_dof)`.
@@ -693,10 +891,10 @@ fn with_integrand<R>(
     );
     let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
-    let model = common::sm_model();
+    let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
-    let sets = common::generate(process);
+    let sets = common::generate_with(process, model.as_ref());
     let evals =
         compile_subprocesses(&sets, &model, &evaluated).expect("compile fixed-energy subprocesses");
     let bounds: Vec<_> = evals
@@ -730,9 +928,11 @@ fn with_integrand<R>(
     let scale_report = integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .unwrap_or_else(|e| panic!("[{dir}] cannot run alpha_s to the run card's scale: {e}"));
-    assert!(
-        scale_report.fallbacks.is_empty(),
-        "[{dir}] a subprocess must re-evaluate the model per scale change: {:?}",
+    let expects_fallback = SCALE_FALLBACK_ROWS.contains(&dir);
+    assert_eq!(
+        !scale_report.fallbacks.is_empty(),
+        expects_fallback,
+        "[{dir}] scale-change fallbacks {:?} against an expectation of {expects_fallback}",
         scale_report.fallbacks
     );
     // Promote flat RAMBO to the resonance-aware per-diagram multichannel — the same
@@ -792,6 +992,167 @@ fn probe_resonant_seed_stability() {
                 s / e.sigma_pb - 1.0,
             );
         }
+    }
+}
+
+/// The capstone SMEFT row's seed sweep and budget ladder, the measurement its
+/// `rel_tol` is set from.
+///
+/// A SMEFT cross section is the first here whose integrand carries contact
+/// diagrams beside the s-channel poles, so how the multichannel combiner splits
+/// the budget over them is not inherited from any Standard-Model row. The sweep
+/// is the same instrument the resonant rows use — several seeds at the gate
+/// budget, read as a spread and a chi2/dof about their own mean rather than as
+/// one pull — with the ladder beside it, because a residual that is sampling
+/// shrinks with budget where a defect migrates between seeds at fixed size.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_smeft_capstone_seed_stability() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let dir = "ee_to_ttx_smeft";
+    let e = &banked[dir];
+    let (neval, niter) = match plan_for(dir) {
+        Plan::Gate { neval, niter, .. } => (neval, niter),
+        _ => panic!("[{dir}] has no gate plan to sweep"),
+    };
+    eprintln!(
+        "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) ──",
+        e.sigma_pb,
+        e.sigma_err_pb,
+        100.0 * e.sigma_err_pb / e.sigma_pb
+    );
+    for (label, n, k) in [
+        ("ladder x1/4", neval / 4, niter),
+        ("ladder x1/2", neval / 2, niter),
+        ("ladder x1", neval, niter),
+        ("ladder x2", neval * 2, niter),
+        ("ladder x4", neval * 4, niter),
+    ] {
+        let t = std::time::Instant::now();
+        let (s, err, chi2) = integrate(dir, &e.process, n, k, SEED);
+        let (pull, rel) = compare(s, err, e);
+        eprintln!(
+            "  {label:>12} ({n}x{k}): vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+             rel {rel:+.2e} | chi2/dof {chi2:.2} | {:.1} s",
+            t.elapsed().as_secs_f64()
+        );
+    }
+    let seeds = [SEED, 11, 22, 33, 44, 55, 66];
+    let mut sigmas = Vec::new();
+    for seed in seeds {
+        let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
+        let (pull, rel) = compare(s, err, e);
+        eprintln!(
+            "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+             rel {rel:+.2e} | chi2/dof {chi2:.2}"
+        );
+        sigmas.push((s, err));
+    }
+    let w: f64 = sigmas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+    let mean: f64 = sigmas.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / w;
+    let chi2: f64 = sigmas.iter().map(|(s, e)| ((s - mean) / e).powi(2)).sum();
+    eprintln!(
+        "  {} seeds: mean {mean:.6e} ± {:.3e} | rel {:+.2e} | chi2/dof {:.2}",
+        sigmas.len(),
+        w.sqrt().recip(),
+        mean / e.sigma_pb - 1.0,
+        chi2 / (sigmas.len() - 1) as f64
+    );
+}
+
+/// The rows the σ gate reaches beyond the Standard Model: the SMEFTsim ladder's
+/// own cross sections and the toy models'. Every one of them has a banked
+/// fixed-energy σ and is measured here, gated or not.
+const NON_SM_SIGMA_ROWS: [&str; 16] = [
+    "ee_to_mumu_smlimit",
+    "gg_to_ttx_smlimit",
+    "gg_to_ttx_smlimit_qcd2",
+    "ee_to_ttx_smlimit",
+    "ee_to_wpwm_cw",
+    "ee_to_ttx_dipole",
+    "ee_to_zh_smeft",
+    "ee_to_mumu_4f",
+    "uux_to_ttx_4f",
+    "tata_to_ttx_tensor4f",
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
+    "qqx_to_o8o8_toy_dcolor",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
+];
+
+/// The budget ladder and seed sweep behind every non-Standard-Model row's
+/// `rel_tol`, run at the budget that row's plan carries.
+///
+/// A single-seed pull says nothing on its own: what separates a sampling residual
+/// from a defect is that the ladder does not drift and the seeds scatter about a
+/// mean inside the reference's own error. A defect migrates between seeds at
+/// fixed size and survives a sixteenfold budget instead. Both halves are printed
+/// per row so a tolerance can be read off the spread rather than off the achieved
+/// central value. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_non_sm_seed_stability() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    for dir in NON_SM_SIGMA_ROWS {
+        let e = &banked[dir];
+        let (neval, niter) = match plan_for(dir) {
+            Plan::Gate { neval, niter, .. } => (neval, niter),
+            Plan::Info { neval, niter, .. } => (neval, niter),
+            _ => panic!("[{dir}] is not measured by this suite"),
+        };
+        eprintln!(
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter} ──",
+            e.sigma_pb,
+            e.sigma_err_pb,
+            100.0 * e.sigma_err_pb / e.sigma_pb
+        );
+        for (label, n, k) in [
+            ("ladder x1/4", neval / 4, niter),
+            ("ladder x1/2", neval / 2, niter),
+            ("ladder x1", neval, niter),
+            ("ladder x2", neval * 2, niter),
+            ("ladder x4", neval * 4, niter),
+        ] {
+            let t = std::time::Instant::now();
+            let (s, err, chi2) = integrate(dir, &e.process, n, k, SEED);
+            let (pull, rel) = compare(s, err, e);
+            eprintln!(
+                "  {label:>12} ({n}x{k}): vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+                 rel {rel:+.3e} | chi2/dof {chi2:.2} | {:.1} s",
+                t.elapsed().as_secs_f64()
+            );
+        }
+        let mut sigmas = Vec::new();
+        for seed in [SEED, 11, 22, 33, 44] {
+            let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
+            let (pull, rel) = compare(s, err, e);
+            eprintln!(
+                "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+                 rel {rel:+.3e} | chi2/dof {chi2:.2}"
+            );
+            sigmas.push((s, err));
+        }
+        let w: f64 = sigmas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+        let mean: f64 = sigmas.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / w;
+        let chi2: f64 = sigmas.iter().map(|(s, e)| ((s - mean) / e).powi(2)).sum();
+        let worst = sigmas
+            .iter()
+            .map(|(s, _)| (s / e.sigma_pb - 1.0).abs())
+            .fold(0.0, f64::max);
+        eprintln!(
+            "  SWEEP {dir}: {} seeds, mean {mean:.6e} ± {:.3e} | rel {:+.3e} | \
+             chi2/dof {:.2} | worst |rel| {worst:.3e}",
+            sigmas.len(),
+            w.sqrt().recip(),
+            mean / e.sigma_pb - 1.0,
+            chi2 / (sigmas.len() - 1) as f64
+        );
     }
 }
 
@@ -2383,7 +2744,7 @@ fn probe_the_scale_draw_reads_the_point_and_not_the_sampler() {
                     );
                     checked += 1;
                 }
-                if !distinct.iter().any(|m| *m == want.mu_r) {
+                if !distinct.contains(&want.mu_r) {
                     distinct.push(want.mu_r);
                 }
             }
@@ -2505,9 +2866,7 @@ fn probe_cluster_scale_spread_over_configurations() {
             0,
             None,
             |integ, _| {
-                let Some(sets) = integ.scale_source().and_then(|s| s.channels()) else {
-                    return None;
-                };
+                let sets = integ.scale_source().and_then(|s| s.channels())?;
                 assert_eq!(sets.len(), 1, "a fixed-beam run has one channel set");
                 let set = &sets[0];
                 assert_eq!(
@@ -3284,7 +3643,6 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
     let banked: BTreeMap<String, BankedSigma> =
         serde_json::from_str(&text).expect("sigma_reference.json parses");
 
-    let model = common::sm_model();
     let unbundled = common::manifest::unbundled_rows();
     let mut bounded_processes = 0usize;
     let mut control_fired = 0usize;
@@ -3313,8 +3671,9 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
         let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
+        let model = row_model(dir);
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
-        let sets = common::generate(&entry.process);
+        let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
@@ -3624,10 +3983,10 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
-    let model = common::sm_model();
+    let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
-    let sets = common::generate(process);
+    let sets = common::generate_with(process, model.as_ref());
     let diagrams: Vec<_> = sets
         .iter()
         .flat_map(|s| s.diagrams.iter().cloned())

@@ -36,6 +36,9 @@ report back.
   selection.
 - `28-kt-spine-feature-sprint-plan.md` — kT clustering, multi-rung t-channel
   spine, channel-dependent scales.
+- `35-ufo-lorentz-sprint-plan.md` — general UFO Lorentz structures: the
+  rank-2 tensor representation, SMEFTsim as the gated test case (interaction
+  splitting, `Epsilon`, γ-chains, four-fermion, tensor⊗tensor), the toy UFO.
 - `01-paper-summaries.md`, `02-reference-implementations.md`,
   `03-sherpa-powheg.md` §1.5, `research/refs/README.md` — papers,
   reference-implementation key paths, and how to fetch both.

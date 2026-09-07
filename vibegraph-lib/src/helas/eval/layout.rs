@@ -16,13 +16,13 @@ use super::analysis::{NodeAnalysis, NodeType, Storage};
 use super::ast::Ast;
 use super::op::{Const, ConstKind, NodeId, Op};
 use super::tree::Tree;
-use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket};
+use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket, Multivector};
 use crate::helas::repr::numbers::Chirality;
 use crate::helas::repr::C;
 
 /// The result-arena classes, in a fixed index order (`0..N_ARENAS`). Mirrors
 /// [`Storage`]; the runtime holds one arena per class.
-pub(super) const N_ARENAS: usize = 5;
+pub(super) const N_ARENAS: usize = 6;
 
 /// Element size, in bytes, of each result arena at `F = f64` — the yardstick the
 /// scheduling guardrail weighs a program's arena footprint with. A wider scalar (a SIMD
@@ -33,6 +33,7 @@ pub(super) fn arena_elem_bytes() -> [usize; N_ARENAS] {
         std::mem::size_of::<f64>(),
         std::mem::size_of::<C<f64>>(),
         std::mem::size_of::<ComplexVector<f64>>(),
+        std::mem::size_of::<Multivector<f64>>(),
         std::mem::size_of::<Bispinor<f64, Ket>>(),
         std::mem::size_of::<Bispinor<f64, Bra>>(),
     ]
@@ -54,8 +55,9 @@ pub(super) fn arena_index(s: Storage) -> usize {
         Storage::Real => 0,
         Storage::Scalar => 1,
         Storage::Vector => 2,
-        Storage::FermionIn => 3,
-        Storage::FermionOut => 4,
+        Storage::Multivector => 3,
+        Storage::FermionIn => 4,
+        Storage::FermionOut => 5,
     }
 }
 
@@ -239,10 +241,21 @@ pub(super) enum Instr {
         f: u32,
         chirality: Chirality,
     },
+    Gamma5Fin {
+        f: u32,
+    },
+    Gamma5Fout {
+        f: u32,
+    },
     Bilinear {
         bra: u32,
         ket: u32,
         chirality: Chirality,
+    },
+    /// Pseudoscalar bilinear `ψ̄ γ⁵ ψ`.
+    Pseudoscalar {
+        bra: u32,
+        ket: u32,
     },
     Metric {
         a: u32,
@@ -250,6 +263,78 @@ pub(super) enum Instr {
     },
     MetricVout {
         v: u32,
+    },
+    /// `ε^{μνρσ} a_μ b_ν c_ρ` at the free index σ → vector current.
+    EpsilonVout {
+        a: u32,
+        b: u32,
+        c: u32,
+    },
+    /// `ε^{μνρσ} a_μ b_ν c_ρ d_σ` → scalar.
+    EpsilonAmp {
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+    },
+    /// The cut fermion line of a tensor-tensor contact as a Clifford element;
+    /// `reversed_order` is the two lines' relative index order.
+    FierzOut {
+        bra: u32,
+        ket: u32,
+        reversed_order: bool,
+    },
+    /// Clifford element applied to a continuing ket line, `M ψ`.
+    MultivectorFin {
+        m: u32,
+        f: u32,
+    },
+    /// Clifford element applied to a continuing bra line, `ψ̄ M`.
+    MultivectorFout {
+        m: u32,
+        f: u32,
+    },
+    /// `ψ̄ M ψ` — the Clifford element paired with the surviving line's bilinears.
+    FierzPair {
+        m: u32,
+        bra: u32,
+        ket: u32,
+    },
+    /// `(ψ̄ Σ^{μν} ψ) v_ν` → vector current. `negate` carries the two −1s the rooting
+    /// resolves — a line read against the vertex's adjoint, and the free index on the
+    /// second Lorentz slot — which are the same sign.
+    SigmaVout {
+        bra: u32,
+        ket: u32,
+        v: u32,
+        negate: bool,
+    },
+    /// `Σ^{μν} a_μ b_ν` → Clifford element.
+    SigmaMv {
+        a: u32,
+        b: u32,
+    },
+    /// The cut line of a `Sigma ⊗ Sigma` contact as a Clifford element;
+    /// `reversed_order` is the two lines' relative index order.
+    SigmaOut {
+        bra: u32,
+        ket: u32,
+        reversed_order: bool,
+    },
+    /// Clifford element scaled by a complex scalar.
+    ScaleMvC {
+        m: u32,
+        scale: u32,
+    },
+    /// Clifford element scaled by a bare real.
+    ScaleMvR {
+        m: u32,
+        scale: u32,
+    },
+    /// Sum of Clifford elements, over `[start, start+len)` of the operand table.
+    AddMultivector {
+        start: u32,
+        len: u32,
     },
     /// `P` read-off of an input line: its structure momentum is the momentum-table entry
     /// `mom` (the operand's momentum id), promoted to a vector current.
@@ -310,21 +395,36 @@ impl Instr {
             Instr::FfvFout { .. } => 27,
             Instr::ProjFin { .. } => 28,
             Instr::ProjFout { .. } => 29,
-            Instr::Bilinear { .. } => 30,
-            Instr::Metric { .. } => 31,
-            Instr::MetricVout { .. } => 32,
-            Instr::PMom { .. } => 33,
-            Instr::PMomOut { .. } => 34,
-            Instr::Flows => 35,
-            Instr::Hels => 36,
-            Instr::Configs => 37,
+            Instr::Gamma5Fin { .. } => 30,
+            Instr::Gamma5Fout { .. } => 31,
+            Instr::Bilinear { .. } => 32,
+            Instr::Pseudoscalar { .. } => 33,
+            Instr::Metric { .. } => 34,
+            Instr::MetricVout { .. } => 35,
+            Instr::EpsilonVout { .. } => 36,
+            Instr::EpsilonAmp { .. } => 37,
+            Instr::PMom { .. } => 38,
+            Instr::PMomOut { .. } => 39,
+            Instr::Flows => 40,
+            Instr::Hels => 41,
+            Instr::Configs => 42,
+            Instr::FierzOut { .. } => 43,
+            Instr::MultivectorFin { .. } => 44,
+            Instr::MultivectorFout { .. } => 45,
+            Instr::FierzPair { .. } => 46,
+            Instr::ScaleMvC { .. } => 47,
+            Instr::ScaleMvR { .. } => 48,
+            Instr::AddMultivector { .. } => 49,
+            Instr::SigmaVout { .. } => 50,
+            Instr::SigmaMv { .. } => 51,
+            Instr::SigmaOut { .. } => 52,
         }
     }
 
     /// Human-readable variant name, for the study's per-kind tables.
     #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
     pub(super) fn kind_name(kind: u8) -> &'static str {
-        const NAMES: [&str; 38] = [
+        const NAMES: [&str; 53] = [
             "ComplexConst",
             "RealConst",
             "ExternalScalar",
@@ -355,14 +455,29 @@ impl Instr {
             "FfvFout",
             "ProjFin",
             "ProjFout",
+            "Gamma5Fin",
+            "Gamma5Fout",
             "Bilinear",
+            "Pseudoscalar",
             "Metric",
             "MetricVout",
+            "EpsilonVout",
+            "EpsilonAmp",
             "PMom",
             "PMomOut",
             "Flows",
             "Hels",
             "Configs",
+            "FierzOut",
+            "MultivectorFin",
+            "MultivectorFout",
+            "FierzPair",
+            "ScaleMvC",
+            "ScaleMvR",
+            "AddMultivector",
+            "SigmaVout",
+            "SigmaMv",
+            "SigmaOut",
         ];
         NAMES[kind as usize]
     }
@@ -403,9 +518,11 @@ pub(super) struct Program {
     pub(super) arena_sizes: [u32; N_ARENAS],
     /// Shared operand table for the variadic/mixed-class instructions.
     pub(super) operands: Box<[OperandRef]>,
-    /// Momentum-table ids for the `PMomOut` operand slices — the momenta whose negated sum
-    /// is the vertex output leg's structure momentum.
-    pub(super) mom_operands: Box<[u32]>,
+    /// The `PMomOut` operand slices: each entry is a momentum-table id and the sign
+    /// with which that input's stored momentum enters the vertex's all-incoming sum
+    /// (see [`super::kernel::pmom_out`]). The output leg's structure momentum is the
+    /// negated signed sum.
+    pub(super) mom_operands: Box<[(u32, i8)]>,
     pub(super) root: RootKind,
     /// Scalar-arena indices of the per-configuration diagram amplitudes `A_d` (the
     /// children of the [`Op::Configs`] root bundle), in configuration order. Under a
@@ -627,7 +744,7 @@ fn lower_node(
     id: NodeId,
     loc: &[u32],
     operands: &mut Vec<OperandRef>,
-    mom_operands: &mut Vec<u32>,
+    mom_operands: &mut Vec<(u32, i8)>,
 ) -> Instr {
     let node = ast.value(id);
     let kids = ast.children_ids(id);
@@ -708,6 +825,7 @@ fn lower_node(
                     mom,
                 },
                 Storage::Real => panic!("Propagate on a real-constant input"),
+                Storage::Multivector => panic!("Propagate on a Clifford element"),
             }
         }
         Op::Add => {
@@ -721,6 +839,7 @@ fn lower_node(
                 Storage::Vector => Instr::AddVector { start, len },
                 Storage::FermionIn => Instr::AddFin { start, len },
                 Storage::FermionOut => Instr::AddFout { start, len },
+                Storage::Multivector => Instr::AddMultivector { start, len },
                 Storage::Real => panic!("Add produced a real-constant"),
             }
         }
@@ -756,6 +875,10 @@ fn lower_node(
                 (Storage::FermionOut, Storage::Scalar) => Instr::ScaleFoutC { f: a, scale: b },
                 (Storage::Real, Storage::FermionOut) => Instr::ScaleFoutR { f: b, scale: a },
                 (Storage::FermionOut, Storage::Real) => Instr::ScaleFoutR { f: a, scale: b },
+                (Storage::Scalar, Storage::Multivector) => Instr::ScaleMvC { m: b, scale: a },
+                (Storage::Multivector, Storage::Scalar) => Instr::ScaleMvC { m: a, scale: b },
+                (Storage::Real, Storage::Multivector) => Instr::ScaleMvR { m: b, scale: a },
+                (Storage::Multivector, Storage::Real) => Instr::ScaleMvR { m: a, scale: b },
                 (x, y) => panic!(
                     "Mul invariant violated: unsupported operand storage classes {x:?} × {y:?}"
                 ),
@@ -812,6 +935,32 @@ fn lower_node(
                 other => panic!("chiral projection on {other:?} input"),
             }
         }
+        Op::Gamma5 => {
+            let f = li(kids[0]);
+            match an.out_type(kids[0]).storage().unwrap() {
+                Storage::FermionIn => Instr::Gamma5Fin { f },
+                Storage::FermionOut => Instr::Gamma5Fout { f },
+                other => panic!("gamma5 on {other:?} input"),
+            }
+        }
+        Op::Gamma5Amp => {
+            let (bra, ket, _) = bra_ket(kids[0], kids[1]);
+            Instr::Pseudoscalar {
+                bra: li(bra),
+                ket: li(ket),
+            }
+        }
+        Op::EpsilonVout => Instr::EpsilonVout {
+            a: li(kids[0]),
+            b: li(kids[1]),
+            c: li(kids[2]),
+        },
+        Op::EpsilonAmp => Instr::EpsilonAmp {
+            a: li(kids[0]),
+            b: li(kids[1]),
+            c: li(kids[2]),
+            d: li(kids[3]),
+        },
         Op::ProjMAmp | Op::ProjPAmp | Op::IdentityAmp => {
             let chirality = match node.op {
                 Op::ProjMAmp => Chirality::Left,
@@ -825,6 +974,52 @@ fn lower_node(
                 chirality,
             }
         }
+        Op::FierzOut | Op::FierzOutRev => {
+            let (bra, ket, _) = bra_ket(kids[0], kids[1]);
+            Instr::FierzOut {
+                bra: li(bra),
+                ket: li(ket),
+                reversed_order: node.op == Op::FierzOutRev,
+            }
+        }
+        Op::MultivectorIout | Op::MultivectorOout => {
+            let m = li(kids[0]);
+            let f = li(kids[1]);
+            match an.out_type(kids[1]).storage().unwrap() {
+                Storage::FermionIn => Instr::MultivectorFin { m, f },
+                Storage::FermionOut => Instr::MultivectorFout { m, f },
+                other => panic!("Clifford-element current on {other:?} input"),
+            }
+        }
+        Op::FierzPair => {
+            let (bra, ket, _) = bra_ket(kids[1], kids[2]);
+            Instr::FierzPair {
+                m: li(kids[0]),
+                bra: li(bra),
+                ket: li(ket),
+            }
+        }
+        Op::SigmaVout | Op::SigmaVoutRev => {
+            let (bra, ket, reversed) = bra_ket(kids[0], kids[1]);
+            Instr::SigmaVout {
+                bra: li(bra),
+                ket: li(ket),
+                v: li(kids[2]),
+                negate: reversed != (node.op == Op::SigmaVoutRev),
+            }
+        }
+        Op::SigmaMv => Instr::SigmaMv {
+            a: li(kids[0]),
+            b: li(kids[1]),
+        },
+        Op::SigmaOut | Op::SigmaOutRev => {
+            let (bra, ket, _) = bra_ket(kids[0], kids[1]);
+            Instr::SigmaOut {
+                bra: li(bra),
+                ket: li(ket),
+                reversed_order: node.op == Op::SigmaOutRev,
+            }
+        }
         Op::Metric => Instr::Metric {
             a: li(kids[0]),
             b: li(kids[1]),
@@ -836,7 +1031,11 @@ fn lower_node(
         Op::PMomOut => {
             let start = mom_operands.len() as u32;
             for &k in kids {
-                mom_operands.push(an.mom_id(k));
+                let sign = match an.out_type(k) {
+                    NodeType::FermionIn => -1,
+                    _ => 1,
+                };
+                mom_operands.push((an.mom_id(k), sign));
             }
             Instr::PMomOut {
                 start,
@@ -896,7 +1095,7 @@ impl Program {
         let mut instrs: Vec<Instr> = Vec::with_capacity(n);
         let mut dest: Vec<u32> = Vec::with_capacity(n);
         let mut operands: Vec<OperandRef> = Vec::new();
-        let mut mom_operands: Vec<u32> = Vec::new();
+        let mut mom_operands: Vec<(u32, i8)> = Vec::new();
 
         for &id in order.iter() {
             instrs.push(lower_node(

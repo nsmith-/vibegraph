@@ -98,6 +98,85 @@ pub enum Op {
     MetricVout,
     /// full scalar bilinear ψ̄ δ ψ.
     IdentityAmp,
+    /// γ⁵ on a continuing fermion current. Preserves the input's adjoint: γ⁵ is
+    /// diagonal in the Weyl basis, so the same weighting acts on a ket from the
+    /// left and on a bra from the right.
+    Gamma5,
+    /// pseudoscalar bilinear ψ̄ γ⁵ ψ.
+    Gamma5Amp,
+    /// three vectors → off-shell vector current `E^σ = ε^{μνρσ} a_μ b_ν c_ρ`, the
+    /// free index last. Operands are the ε arguments with the output slot removed;
+    /// the antisymmetry sign of moving that slot to the end is absorbed by the
+    /// rooting, which swaps two operands when it is negative.
+    EpsilonVout,
+    /// four vectors → scalar `ε^{μνρσ} a_μ b_ν c_ρ d_σ`, operands in ε argument
+    /// order.
+    EpsilonAmp,
+    // ── tensor-tensor (cyclic four-fermion) primitives ──
+    //
+    // A four-fermion structure whose two fermion lines are joined by *two* summed
+    // Lorentz indices closes a cycle in the index graph, so no rooted tree can
+    // evaluate it by contracting one index at a time. The cycle is cut at one line:
+    // that line's `γ^α γ^β` chain is evaluated once, as a Clifford element
+    // ([`Op::FierzOut`]), and the element is then applied to the other line — as an
+    // operator on its continuing spinor ([`Op::MultivectorIout`] /
+    // [`Op::MultivectorOout`]) or as the pairing that closes it into the amplitude
+    // ([`Op::FierzPair`]).
+    /// two fermions → the cut line's `γ^α γ^β` chain as a Clifford element, in the
+    /// index order the *other* line reads it: `4s − 2·(½ t^{μν} σ_{μν})`, where `s`
+    /// and `t^{μν}` are the grade-0 and grade-2 bilinears of the pair
+    /// (`SpinorRepr::fierz_coefficients`). Children: `[bra, ket]` — the two ends of
+    /// the cut line with everything but the two shared gammas already applied.
+    /// `γ^αγ^β = g^{αβ} − i σ^{αβ}` is what puts the chain in those two grades, and
+    /// `γ_α γ_β g^{αβ} = 4`, `γ_α γ_β t^{αβ} = −i σ_{αβ} t^{αβ}` are the two
+    /// contractions the coefficients carry.
+    FierzOut,
+    /// [`Op::FierzOut`] with the two lines reading the shared indices in opposite
+    /// orders (`γ^αγ^β` against `γ_βγ_α`): `4s + 2·(½ t^{μν} σ_{μν})`. Only the
+    /// grade-2 sign differs, the whole content of the two index orders.
+    FierzOutRev,
+    /// Clifford element + flow-in fermion → flow-in fermion current `M ψ`.
+    /// Children: `[m, f]`.
+    MultivectorIout,
+    /// Clifford element + flow-out fermion → flow-out fermion current `ψ̄ M`.
+    /// Children: `[m, f]`.
+    MultivectorOout,
+    /// Clifford element + two fermions → the scalar `ψ̄ M ψ`, evaluated as the
+    /// grade-diagonal Fierz pairing `⟨fierz_coefficients(ψ̄, ψ), M⟩`. Children:
+    /// `[m, i, j]` with the fermion pair in the vertex's slot order.
+    FierzPair,
+    // ── literal `Sigma` primitives ──
+    //
+    // ALOHA's `Sigma` is `½ σ^{μν}`, half the textbook `(i/2)[γ^μ, γ^ν]`
+    // ([`kernel::sigma_half`](super::kernel)); every kernel below carries that half.
+    // A `Sigma` whose two Lorentz indices are both contracted is a Clifford element
+    // ([`Op::SigmaMv`]) and reaches the surviving fermion line through the same
+    // [`Op::MultivectorIout`]/[`Op::MultivectorOout`] the tensor⊗tensor contact uses;
+    // one free Lorentz index makes it a vector producer instead.
+    /// two fermions + a vector → the off-shell vector current `(ψ̄ Σ^{μν} ψ) v_ν`,
+    /// the free index on `Sigma`'s *first* Lorentz slot. Children: `[i, j, v]` with
+    /// the fermion pair in the vertex's slot order (row first). Reading the pair
+    /// against the vertex's defined adjoint conjugates the structure as
+    /// `C σ^{μνT} C⁻¹ = −σ^{μν}`, so a reversed line takes a relative −1, exactly as
+    /// [`Op::GammaVout`] does.
+    SigmaVout,
+    /// [`Op::SigmaVout`] with the free index on `Sigma`'s *second* Lorentz slot,
+    /// `(ψ̄ Σ^{νμ} ψ) v_ν` — its negative, `σ` being antisymmetric.
+    SigmaVoutRev,
+    /// two vectors → the Clifford element `Σ^{μν} a_μ b_ν`, grade 2 with coefficient
+    /// `½ (a ∧ b)`. Children: `[a, b]` in `Sigma`'s own Lorentz slot order.
+    SigmaMv,
+    /// two fermions → the cut line of a `Sigma ⊗ Sigma` contact as a Clifford
+    /// element: pure grade 2 with coefficient `½ t^{μν}`, where `t` is the pair's
+    /// tensor bilinear. Children: `[bra, ket]` — the cut line's two ends with
+    /// everything but the shared `Sigma` already applied. It is [`Op::FierzOut`] with
+    /// the two gammas already contracted, so the `g^{αβ}` term (and with it the whole
+    /// grade-0 part) is gone.
+    SigmaOut,
+    /// [`Op::SigmaOut`] with the two lines reading the shared indices in opposite
+    /// orders: the grade-2 coefficient with the other sign, which is also what a line
+    /// read against the vertex's own adjoint takes.
+    SigmaOutRev,
     // ── fused chiral FFV kernels ──
     // A vertex whose structures form a chiral pair (`Gamma·ProjM` / `Gamma·ProjP`
     // variants of one contraction shape) is fused at lowering into a single node:

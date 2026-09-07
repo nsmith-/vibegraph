@@ -38,6 +38,13 @@ pub struct Process {
     pub class: String,
     pub n_final: u32,
     pub rationale: String,
+    /// The UFO model directory the row's reference was generated against, and
+    /// the restrict card it was imported with. Absent where the row is the
+    /// interned Standard Model, which is what most of the table is.
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub restrict: Option<String>,
     /// A row whose reference run does not exist yet.
     #[serde(default)]
     pub status: Option<String>,

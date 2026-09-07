@@ -1,0 +1,38 @@
+# MadGraph5 batch script: e+ e- > t t~ NP<=1
+# in SMEFTsim_topU3l_MwScheme (UFO v3.0.2), restricted by restrict_massless.dat.
+#
+# Why this exact process:
+#   The capstone: every real Wilson coefficient on at once, under the model's own
+#   restrict_massless.dat -- Z-coupling shifts, top dipoles, scalar/vector/tensor
+#   four-fermion contact terms and the {mW, mZ, GF} input shifts all contributing
+#   to one process. sqrt(s) = 500 GeV clears 2*MT.
+#
+#   Note what restrict_massless.dat does not switch on: its SMEFTcpv block is
+#   zero throughout, so no CP-odd operator contributes here. The `Epsilon`
+#   structures are covered by the gg_to_h_cpodd, ee_to_wpwm_cw and gg_to_gg_cg
+#   rows, whose cards choose CP-odd values the shipped card leaves at zero.
+#
+#   This is the row that owns the fixed-energy cross section.
+#
+# The model path is repo-relative to the vendored UFO; build.sh rewrites it to
+# the work-area copy it stages under output/models/, which is where the
+# vg_* restrict cards of validation/madgraph/cards/smeft/ are placed. Both
+# generators therefore prune vertices from the same card.
+#
+# `display interactions` prints the count MadGraph's own interaction splitting
+# arrives at (one interaction per coupling-order tuple, import_ufo.add_interaction)
+# into the build log, which is where extract_interactions.py reads it from.
+#
+# Orders are explicit because SMEFTsim gives NP hierarchy 99: MadGraph's default
+# WEIGHTED bound would drop every diagram carrying a Wilson coefficient.
+import model validation/ufo/SMEFTsim_topU3l_MwScheme_UFO-massless
+display interactions
+generate e+ e- > t t~ NP<=1
+output ee_to_ttx_smeft -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

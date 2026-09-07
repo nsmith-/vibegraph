@@ -45,6 +45,16 @@ Git submodules for upstream code we study or adapt from. Fetched papers live in 
 | `include/` | Fortran common block headers (pwhg_flst.h, pwhg_kn.h, LesHouches.h, …) |
 | `hvq/` | Heavy-quark production — canonical complete example process |
 
+### Vendored, not a submodule: SMEFTsim
+
+The `SMEFTsim_topU3l_MwScheme_UFO` model (SMEFTsim 3.0, tag `v3.0.2`, MIT)
+lives at `validation/ufo/SMEFTsim_topU3l_MwScheme_UFO/`, copied byte for byte
+with its licence and a `SHA256SUMS` manifest; `validation/ufo/README.md`
+records the provenance. The upstream repository
+(https://github.com/SMEFTsim/SMEFTsim) is ~100 MB of FeynRules sources and
+notebooks around a sub-megabyte UFO, which is why it is vendored (note 35 §7
+D1). The census that sized the `ufo-lorentz` sprint is in note 35 §1.
+
 ## Fetching submodules
 
 After cloning, populate submodules with:

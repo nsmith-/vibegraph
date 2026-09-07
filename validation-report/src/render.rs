@@ -51,8 +51,19 @@ pub fn markdown(
             multi_channel_started = true;
             out.push_str("| **multi-channel** | | | | | |\n");
         }
+        // A row generated against a model other than the interned Standard Model
+        // says so beside its process string: two rows can share a process and
+        // differ only in which Wilson coefficients their card leaves standing.
+        let model = match (&row.process.model, &row.process.restrict) {
+            (Some(m), r) => format!(
+                " <br>`{}{}`",
+                m.rsplit('/').next().unwrap_or(m),
+                r.as_ref().map(|r| format!("-{r}")).unwrap_or_default()
+            ),
+            (None, _) => String::new(),
+        };
         out.push_str(&format!(
-            "| `{}` `{}` | {} |",
+            "| `{}` `{}`{model} | {} |",
             row.process.key, row.process.process, row.process.n_final
         ));
         for cell in &row.cells {
@@ -444,6 +455,8 @@ pub fn json(
                 "class": row.process.class,
                 "n_final": row.process.n_final,
                 "rationale": row.process.rationale,
+                "model": row.process.model,
+                "restrict": row.process.restrict,
                 "bundled": row.process.bundled,
                 "cells": cells,
             })
