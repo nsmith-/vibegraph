@@ -184,7 +184,9 @@ The partonic invariant is the square of their sum,
 
 which is MadGraph's `stot = m1² + m2² + 2 (pi1(0) pi2(0) − pi1(3) pi2(3))`
 (`genps.f:676`, the second beam's `pz` negative). For massless beams this is
-`(E_a + E_b)²`; for `p3 r3` at 250 + 250 GeV it is `499.99275²`, and that is
+`4 E_a E_b`, which equals `(E_a + E_b)²` only at equal energies (B1 pinned the
+unequal-energy case by a unit test after finding the earlier wording here
+wrong); for `p3 r3` at 250 + 250 GeV it is `499.99275²`, and that is
 the number the banked events carry, not 500².
 
 In the centre-of-mass frame the two beams share one momentum magnitude and
