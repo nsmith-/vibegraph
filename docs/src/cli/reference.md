@@ -177,6 +177,44 @@ Options:
       --parallel-diagrams
           Enumerate diagrams on the worker pool too, instead of on one thread. Pays off only for processes whose enumeration costs seconds; below that the fan-out is a slowdown. Timing only: the artifact is identical either way
 
+      --map-split-angle <SPLIT_ANGLE>
+          How each 2-body split of the decay tree draws its decay angle.
+          
+          Every choice is a parametrisation of the same phase space — none moves the cross section, only the evaluations needed to reach an accuracy. `auto` picks `soft-emission` where the process has a split it shapes (measured −30% on `u u~ > g g g`, three seeds) and `isotropic`, the map every banked row used, elsewhere. The choice is recorded in the artifact and replayed by `vibegraph generate`.
+
+          Possible values:
+          - auto:          Soft-emission where the process has a gluon or photon emission split, isotropic otherwise
+          - isotropic:     Flat in `cos θ` and `φ` against the collision-CM axes
+          - windowed:      Flat in `cos θ*` from the parent's flight direction, confined to the window the cut-implied energy floors admit, on every split
+          - soft-emission: Density `∝ 1/(E₁E₂)` — a splitting kernel's `1/(z(1−z))` — on the splits with a single gluon or photon daughter
+          - soft-all:      The `1/(E₁E₂)` map on every split
+          
+          [default: auto]
+
+      --map-tau <TAU>
+          How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
+          
+          `auto` is `log`, the map every banked hadronic row used; `inverse-square` is MadEvent's, unmeasured here.
+
+          Possible values:
+          - auto
+          - log:            Density `∝ 1/τ` above the cut-implied `τ_min`
+          - inverse-square: Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance spanning the whole final state
+          
+          [default: auto]
+
+      --map-rung-order <RUNG_ORDER>
+          The order a peripheral (t-channel) chain draws its rungs in.
+          
+          `auto` is `derived`; `reversed` exists to be measured against it.
+
+          Possible values:
+          - auto
+          - derived:  Outward from beam 0, as the diagram's spacelike lines nest
+          - reversed: The same rungs in reverse — a control, not a recommendation
+          
+          [default: auto]
+
   -h, --help
           Print help (see a summary with '-h')
 ```

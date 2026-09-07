@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use tracing::{info, warn};
-use vibegraph::artifact::{ChannelKey, IntegrateArtifact, FORMAT_VERSION};
+use vibegraph::artifact::{ChannelKey, IntegrateArtifact, SCALE_DRAW_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::Cuts;
@@ -34,6 +34,7 @@ use vibegraph::lhef::emit::{
 };
 use vibegraph::lhef::write::generator_element;
 use vibegraph::pdf::{PdfMember, PdfSet};
+use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{
     derive_flavor_groups, BeamOrdering, FlavorGroups, ProtonIntegrand, ProtonSelection,
@@ -345,7 +346,7 @@ fn refuse_stale_artifact_on_clustering_scale(
     artifact: &IntegrateArtifact,
     run_card: &RunCard,
 ) -> Result<(), IntegrateError> {
-    if artifact.format_version >= FORMAT_VERSION {
+    if artifact.format_version >= SCALE_DRAW_VERSION {
         return Ok(());
     }
     let needs_channels = ScaleChoice::from_run_card(run_card)
@@ -355,7 +356,7 @@ fn refuse_stale_artifact_on_clustering_scale(
         return Ok(());
     }
     Err(err(format!(
-        "this artifact was written at format version {} (this build is {FORMAT_VERSION}); its \
+        "this artifact was written at format version {} (the draw arrived at {SCALE_DRAW_VERSION}); its \
          sigma_pb was computed with the per-event scale read from the sampler's own channel, \
          and this run card selects the clustering scale, which now draws its configuration \
          per point from the per-diagram AMP2 instead. That is a different rule, so the \
@@ -601,6 +602,9 @@ fn generate_sample(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    // The grids were trained under the artifact's maps; the channels are rebuilt
+    // under exactly those, whatever the rule would choose today.
+    integ.set_map_options(MapOptions::fixed(artifact.maps));
     integ
         .use_running_coupling(&diagrams, model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
@@ -1015,9 +1019,18 @@ fn generate_proton_sample(
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
         .collect();
 
-    let mut integ =
-        ProtonIntegrand::new(&groups, &amps, evaluated, pdf, sqrt_s_had, rc.dsqrt_q2fact1)
-            .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+    // The grids were trained under the artifact's maps; the channels and the `τ`
+    // draw are rebuilt under exactly those, whatever the rule would choose today.
+    let mut integ = ProtonIntegrand::new_with_maps(
+        &groups,
+        &amps,
+        evaluated,
+        pdf,
+        sqrt_s_had,
+        rc.dsqrt_q2fact1,
+        MapOptions::fixed(artifact.maps),
+    )
+    .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
     integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
@@ -1183,6 +1196,7 @@ fn report(
 mod tests {
     use super::*;
     use vibegraph::artifact::{ChannelGrid, ChannelKey, FORMAT_VERSION};
+    use vibegraph::phasespace::maps::MapChoices;
     use vibegraph::ufo::sm::SMRestrict;
     use vibegraph::vegas::VegasGrid;
 
@@ -1213,6 +1227,7 @@ mod tests {
                 chi2_per_dof: 1.0,
                 sampler: None,
             }],
+            maps: MapChoices::LEGACY,
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
             chi2_per_dof: 1.0,

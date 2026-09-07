@@ -164,12 +164,11 @@ struct Branch<F: Real> {
     /// diagram has one. `None` for the root (invariant fixed at √ŝ) and for the
     /// auxiliary branches introduced when a vertex has more than two subsystems.
     resonance: Option<Resonance<F>>,
-    /// `Some` when this split draws its decay angle with the soft-emission shape of
-    /// [`SoftSplit`] — density `∝ 1/(E₁E₂)` in the daughters' CM energies, the
-    /// `1/(z(1−z))` of a splitting kernel — instead of isotropically, carrying the
-    /// cut-implied lower bounds (GeV) on the two daughters' CM energies the draw is
-    /// regulated at. Installed by [`DiagramChannel::with_soft_split_angles`].
-    soft_angle: Option<(F, F)>,
+    /// How this split draws its decay angle: isotropically, or with one of the
+    /// shaped maps of [`AngleShape`] confined to the window the cut-implied lower
+    /// bounds (GeV) on the two daughters' CM energies admit. Installed by
+    /// [`DiagramChannel::with_split_angles`].
+    angle: AngleMap<F>,
 }
 
 impl<F: Real> Node<F> {
@@ -179,6 +178,28 @@ impl<F: Real> Node<F> {
             Node::Branch(b) => b.mu,
         }
     }
+}
+
+/// The shaped 2-body angular maps a split can draw with instead of the isotropic
+/// one. Both measure the decay angle from the parent's direction of flight in the
+/// collision CM and confine it to the window in which each daughter clears its
+/// cut-implied energy floor; they differ in the density over that window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AngleShape {
+    /// Uniform in `cos θ*` over the window — the isotropic map with the region the
+    /// cuts reject taken out of it.
+    Windowed,
+    /// Density `∝ 1/(E₁E₂)` in the daughters' CM energies over the window, the
+    /// `1/(z(1−z))` of a splitting kernel's soft limits ([`SoftSplit`]).
+    Soft,
+}
+
+/// A branch's angular map: [`AngleShape`] plus the energy floors its window is
+/// built from, or the isotropic draw.
+#[derive(Clone, Copy, Debug)]
+enum AngleMap<F: Real> {
+    Isotropic,
+    Shaped { shape: AngleShape, floors: (F, F) },
 }
 
 /// One rung of a t-channel spine: the final-state blob emitted at this step of the
@@ -468,13 +489,50 @@ impl<F: Real> DiagramChannel<F> {
             .fold(0u64, |m, (slot, _)| m | (1u64 << slot))
     }
 
-    /// The rule for [`with_soft_split_angles`](Self::with_soft_split_angles) that
-    /// shapes a split when one of its daughters *is* a leg in `emitters` — a
-    /// single massless vector, not a subsystem containing one.
+    /// The rule that selects a split when one of its daughters *is* a leg in
+    /// `emitters` — a single massless vector, not a subsystem containing one —
+    /// which is where a splitting kernel's soft singularity sits.
     pub fn soft_emission_rule(emitters: u64) -> impl Fn(u64, u64) -> bool {
         move |left, right| {
             (left.count_ones() == 1 && left & emitters != 0)
                 || (right.count_ones() == 1 && right & emitters != 0)
+        }
+    }
+
+    /// How many 2-body splits of this channel `rule` selects, not counting the root
+    /// of an all-timelike tree: that split's parent is at rest in the collision
+    /// CM, so no angular map can shape it and selecting it changes nothing.
+    pub fn splits_selected(&self, rule: &dyn Fn(u64, u64) -> bool) -> usize {
+        fn count<F: Real>(node: &Node<F>, rule: &dyn Fn(u64, u64) -> bool) -> usize {
+            match node {
+                Node::Leaf { .. } => 0,
+                Node::Branch(b) => count_branch(b, rule),
+            }
+        }
+        fn count_branch<F: Real>(b: &Branch<F>, rule: &dyn Fn(u64, u64) -> bool) -> usize {
+            usize::from(rule(node_mask(&b.left), node_mask(&b.right)))
+                + count(&b.left, rule)
+                + count(&b.right, rule)
+        }
+        match &self.topology {
+            ChannelTopology::Timelike(root) => count(&root.left, rule) + count(&root.right, rule),
+            ChannelTopology::Spine(spine) => {
+                spine
+                    .rungs
+                    .iter()
+                    .map(|r| count(&r.emitted, rule))
+                    .sum::<usize>()
+                    + count(&spine.recoil, rule)
+            }
+        }
+    }
+
+    /// The number of peripheral rungs — spacelike lines the chain draws a transfer
+    /// for. Zero for an all-timelike tree.
+    pub fn rung_count(&self) -> usize {
+        match &self.topology {
+            ChannelTopology::Timelike(_) => 0,
+            ChannelTopology::Spine(spine) => spine.rungs.len(),
         }
     }
 
@@ -812,22 +870,20 @@ impl<F: Real> DiagramChannel<F> {
         self
     }
 
-    /// Give the 2-body splits `rule` selects the soft-emission angular map of
-    /// [`SoftSplit`], regulated at the energies `energy_floor` implies, leaving the
-    /// other splits isotropic.
+    /// Give the 2-body splits `rule` selects a shaped angular map, regulated at
+    /// the energies `energy_floor` implies, leaving the other splits isotropic.
     ///
     /// `rule` receives the outgoing-leg slots of a split's two daughters as bitmasks
-    /// and says whether that split should draw its decay angle with density
-    /// `∝ 1/(E₁E₂)` in the daughters' collision-CM energies — the `1/(z(1−z))` shape
-    /// of a splitting kernel's soft limits, measured from the parent's direction of
-    /// flight. `energy_floor` receives a subsystem's slots and returns a lower bound
-    /// (GeV) on its CM energy holding at every accepted configuration —
+    /// and names the [`AngleShape`] that split should draw its decay angle with —
+    /// measured from the parent's direction of flight — or `None` to leave it
+    /// isotropic. `energy_floor` receives a subsystem's slots and returns a lower
+    /// bound (GeV) on its CM energy holding at every accepted configuration —
     /// `Cuts::energy_floor` is that derivation — and the draw is confined to the
     /// angles that respect it, since a `1/E` map left to run down to the kinematic
     /// edge spends most of its draws below the transverse-momentum threshold that
     /// rejects them. A split whose parent is at rest in the collision CM (the root
     /// of an all-timelike tree) has no direction of flight and stays isotropic
-    /// whatever `rule` says, since the map reduces to the flat one there.
+    /// whatever `rule` says, since every shape reduces to the flat one there.
     ///
     /// The shape and the floors enter the draw and its measure alike, so the
     /// sampler's weight and the density stay exact reciprocals; what they change is
@@ -835,21 +891,21 @@ impl<F: Real> DiagramChannel<F> {
     /// keep the window's positive density rather than an exact zero, consistently:
     /// the bound that makes the floor admissible says every such configuration
     /// fails the cuts, so its density is never read against a non-zero integrand.
-    /// Applied to a split whose integrand carries no soft enhancement it is a
-    /// *worse* map, because the weight then varies as `E₁E₂` where the integrand
-    /// does not.
-    pub fn with_soft_split_angles(
+    /// The soft shape applied to a split whose integrand carries no soft
+    /// enhancement is a *worse* map, because the weight then varies as `E₁E₂`
+    /// where the integrand does not.
+    pub fn with_split_angles(
         mut self,
-        rule: &dyn Fn(u64, u64) -> bool,
+        rule: &dyn Fn(u64, u64) -> Option<AngleShape>,
         energy_floor: &dyn Fn(u64) -> F,
     ) -> Self {
         match &mut self.topology {
-            ChannelTopology::Timelike(root) => soft_angle_branch(root, rule, energy_floor),
+            ChannelTopology::Timelike(root) => angle_branch(root, rule, energy_floor),
             ChannelTopology::Spine(spine) => {
                 for rung in &mut spine.rungs {
-                    soft_angle_node(&mut rung.emitted, rule, energy_floor);
+                    angle_node(&mut rung.emitted, rule, energy_floor);
                 }
-                soft_angle_node(&mut spine.recoil, rule, energy_floor);
+                angle_node(&mut spine.recoil, rule, energy_floor);
             }
         }
         self
@@ -1136,7 +1192,7 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         shape,
         floor: F::zero(),
         resonance,
-        soft_angle: None,
+        angle: AngleMap::Isotropic,
     }))
 }
 
@@ -1199,30 +1255,34 @@ fn floor_node<F: Real>(node: &mut Node<F>, floor: &dyn Fn(u64) -> F) -> u64 {
     }
 }
 
-fn soft_angle_branch<F: Real>(
+fn angle_branch<F: Real>(
     branch: &mut Branch<F>,
-    rule: &dyn Fn(u64, u64) -> bool,
+    rule: &dyn Fn(u64, u64) -> Option<AngleShape>,
     energy_floor: &dyn Fn(u64) -> F,
 ) {
     let (left, right) = (node_mask(&branch.left), node_mask(&branch.right));
-    // A subsystem's energy is at least its mass, whatever the cuts say.
-    branch.soft_angle = rule(left, right).then(|| {
-        (
-            energy_floor(left).max(branch.left.mu()),
-            energy_floor(right).max(branch.right.mu()),
-        )
-    });
-    soft_angle_node(&mut branch.left, rule, energy_floor);
-    soft_angle_node(&mut branch.right, rule, energy_floor);
+    branch.angle = match rule(left, right) {
+        None => AngleMap::Isotropic,
+        // A subsystem's energy is at least its mass, whatever the cuts say.
+        Some(shape) => AngleMap::Shaped {
+            shape,
+            floors: (
+                energy_floor(left).max(branch.left.mu()),
+                energy_floor(right).max(branch.right.mu()),
+            ),
+        },
+    };
+    angle_node(&mut branch.left, rule, energy_floor);
+    angle_node(&mut branch.right, rule, energy_floor);
 }
 
-fn soft_angle_node<F: Real>(
+fn angle_node<F: Real>(
     node: &mut Node<F>,
-    rule: &dyn Fn(u64, u64) -> bool,
+    rule: &dyn Fn(u64, u64) -> Option<AngleShape>,
     energy_floor: &dyn Fn(u64) -> F,
 ) {
     if let Node::Branch(b) = node {
-        soft_angle_branch(b, rule, energy_floor);
+        angle_branch(b, rule, energy_floor);
     }
 }
 
@@ -1267,8 +1327,15 @@ fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
         }
     }
     out.push(',');
-    if let Some((e1, e2)) = branch.soft_angle {
-        out.push_str("S(");
+    if let AngleMap::Shaped {
+        shape,
+        floors: (e1, e2),
+    } = branch.angle
+    {
+        out.push_str(match shape {
+            AngleShape::Windowed => "W(",
+            AngleShape::Soft => "S(",
+        });
         key_scalar(e1, out);
         out.push(',');
         key_scalar(e2, out);
@@ -1668,12 +1735,9 @@ fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> 
 /// than through a cancelling difference of logarithms, and a parent exactly at
 /// rest returns `None`, meaning the isotropic map itself.
 ///
-/// The window is where `E₁ ≥ E₁ᵐⁱⁿ` and `E₂ ≥ E₂ᵐⁱⁿ`, i.e. `c ≥ (E₁ᵐⁱⁿ/γ − a)/b`
-/// and `c ≤ (a′ − E₂ᵐⁱⁿ/γ)/b`, clipped to `[−1, 1]`. A split no angle of which can
-/// satisfy both floors is outside the cuts altogether and also returns `None`.
-///
-/// `b < min(a, a′)` always: `a ≥ p* > β·p*` and likewise for `a′`, so every
-/// logarithm's argument is positive and no endpoint is singular.
+/// The window is [`angle_window`]'s. `b < min(a, a′)` always: `a ≥ p* > β·p*` and
+/// likewise for `a′`, so every logarithm's argument is positive and no endpoint is
+/// singular.
 #[derive(Clone, Copy, Debug)]
 struct SoftSplit<F: Real> {
     a: F,
@@ -1685,16 +1749,10 @@ struct SoftSplit<F: Real> {
 
 impl<F: Real> SoftSplit<F> {
     /// The map for daughters of rest-frame energies `a`, `a_prime`, a boost
-    /// `b = β·p*`, and the window the floors `e1_min`, `e2_min` on the daughters' CM
-    /// energies admit at Lorentz factor `gamma`; `None` when the parent does not
-    /// move (`b ≤ 0`), the split is degenerate, or the window is empty.
-    fn new(a: F, a_prime: F, b: F, gamma: F, e1_min: F, e2_min: F) -> Option<Self> {
-        if !(b > F::zero() && a > b && a_prime > b && gamma >= F::one()) {
-            return None;
-        }
-        let c_lo = ((e1_min / gamma - a) / b).max(-F::one());
-        let c_hi = ((a_prime - e2_min / gamma) / b).min(F::one());
-        if !(c_lo < c_hi) {
+    /// `b = β·p*` and the window `[c_lo, c_hi]`; `None` when the parent does not
+    /// move (`b ≤ 0`) or the split is degenerate.
+    fn new(a: F, a_prime: F, b: F, (c_lo, c_hi): (F, F)) -> Option<Self> {
+        if !(b > F::zero() && a > b && a_prime > b) {
             return None;
         }
         let w = |c: F| (b * c / a).ln_1p() - (-b * c / a_prime).ln_1p();
@@ -1733,17 +1791,77 @@ impl<F: Real> SoftSplit<F> {
     }
 }
 
-/// The [`SoftSplit`] of a system with invariant `s` (mass `sqrt_s`) and CM momentum
-/// `p_lab`, splitting into daughters of invariants `sl`, `sr` held above the CM
-/// energies `floors`.
-fn soft_split<F: Real>(
+/// A shaped angular draw of one split, built from the parent's motion: the window
+/// alone with a flat density over it, or the soft map.
+#[derive(Clone, Copy, Debug)]
+enum ShapedSplit<F: Real> {
+    Windowed { c_lo: F, c_hi: F },
+    Soft(SoftSplit<F>),
+}
+
+impl<F: Real> ShapedSplit<F> {
+    /// `cos θ*` for the unit-interval coordinate `x`.
+    fn cos(&self, x: F) -> F {
+        match self {
+            ShapedSplit::Windowed { c_lo, c_hi } => *c_lo + (*c_hi - *c_lo) * x,
+            ShapedSplit::Soft(map) => map.cos(x),
+        }
+    }
+
+    /// The measure `d(cos θ*)/dx` at `cos θ* = c`, from the drawn quantities.
+    fn measure(&self, c: F) -> F {
+        match self {
+            ShapedSplit::Windowed { c_lo, c_hi } => *c_hi - *c_lo,
+            ShapedSplit::Soft(map) => map.measure(c),
+        }
+    }
+
+    /// The same measure from a configuration's daughter CM energies `e1`, `e2` and
+    /// parent `E`, `M` — what a density rebuilding the split from momenta has.
+    fn measure_from_energies(&self, e1: F, e2: F, e: F, m: F) -> F {
+        match self {
+            ShapedSplit::Windowed { c_lo, c_hi } => *c_hi - *c_lo,
+            ShapedSplit::Soft(map) => map.measure_from_energies(e1, e2, e, m),
+        }
+    }
+}
+
+/// The `cos θ*` window over which both daughters clear their CM-energy floors:
+/// `E₁ = γ(a + b·c) ≥ e1_min` and `E₂ = γ(a′ − b·c) ≥ e2_min`, i.e.
+/// `c ≥ (e1_min/γ − a)/b` and `c ≤ (a′ − e2_min/γ)/b`, clipped to `[−1, 1]`.
+/// `None` when the parent does not move (no direction to measure from, and every
+/// shape is the isotropic map), the split is degenerate, or no angle satisfies
+/// both floors — a split outside the cuts altogether.
+fn angle_window<F: Real>(
+    a: F,
+    a_prime: F,
+    b: F,
+    gamma: F,
+    (e1_min, e2_min): (F, F),
+) -> Option<(F, F)> {
+    if !(b > F::zero() && a > b && a_prime > b && gamma >= F::one()) {
+        return None;
+    }
+    let c_lo = ((e1_min / gamma - a) / b).max(-F::one());
+    let c_hi = ((a_prime - e2_min / gamma) / b).min(F::one());
+    (c_lo < c_hi).then_some((c_lo, c_hi))
+}
+
+/// The [`ShapedSplit`] of a system with invariant `s` (mass `sqrt_s`) and CM
+/// momentum `p_lab`, splitting into daughters of invariants `sl`, `sr` under the
+/// angular map `angle`; `None` for the isotropic draw, which is also what every
+/// shape reduces to when [`angle_window`] has nothing to confine.
+fn shaped_split<F: Real>(
+    angle: AngleMap<F>,
     s: F,
     sqrt_s: F,
     p_lab: LorentzVector<F>,
     sl: F,
     sr: F,
-    floors: (F, F),
-) -> Option<SoftSplit<F>> {
+) -> Option<ShapedSplit<F>> {
+    let AngleMap::Shaped { shape, floors } = angle else {
+        return None;
+    };
     let two = F::one() + F::one();
     if !(sqrt_s > F::zero()) || !(p_lab.e() > F::zero()) {
         return None;
@@ -1753,14 +1871,15 @@ fn soft_split<F: Real>(
     let a_prime = (s + sr - sl) / two_sqrt_s;
     let beta = p_lab.p3_squared().sqrt() / p_lab.e();
     let gamma = p_lab.e() / sqrt_s;
-    SoftSplit::new(
-        a,
-        a_prime,
-        beta * p_star(s, sqrt_s, sl, sr),
-        gamma,
-        floors.0,
-        floors.1,
-    )
+    let b = beta * p_star(s, sqrt_s, sl, sr);
+    let window = angle_window(a, a_prime, b, gamma, floors)?;
+    match shape {
+        AngleShape::Windowed => Some(ShapedSplit::Windowed {
+            c_lo: window.0,
+            c_hi: window.1,
+        }),
+        AngleShape::Soft => SoftSplit::new(a, a_prime, b, window).map(ShapedSplit::Soft),
+    }
 }
 
 /// Draw the invariants and angles of one 2-body split and recurse into composite
@@ -1809,11 +1928,9 @@ fn sample_branch<F: Real>(
     };
     *weight = *weight * r2_factor(s, sqrt_s, sl, sr);
 
-    // `R_2` carries the isotropic angular volume; the soft-shaped draw replaces the
-    // flat `d cos θ* / dx = 2` with its own measure, so the ratio is what enters.
-    let soft = branch
-        .soft_angle
-        .and_then(|floors| soft_split(s, sqrt_s, p_lab, sl, sr, floors));
+    // `R_2` carries the isotropic angular volume; a shaped draw replaces the flat
+    // `d cos θ* / dx = 2` with its own measure, so the ratio is what enters.
+    let soft = shaped_split(branch.angle, s, sqrt_s, p_lab, sl, sr);
     let x = u[*cursor];
     *cursor += 1;
     let cos = match soft {
@@ -1945,9 +2062,9 @@ fn branch_jacobian<F: Real>(
         f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
-    if let Some(floors) = branch.soft_angle {
+    if !matches!(branch.angle, AngleMap::Isotropic) {
         let parent = subtree_momentum_of_branch(branch, momenta, memo);
-        if let Some(map) = soft_split(s, sqrt_s, parent, sl, sr, floors) {
+        if let Some(map) = shaped_split(branch.angle, s, sqrt_s, parent, sl, sr) {
             let e1 = subtree_momentum(&branch.left, momenta, memo).e();
             let e2 = subtree_momentum(&branch.right, momenta, memo).e();
             let two = F::one() + F::one();
@@ -4102,7 +4219,7 @@ mod tests {
         let mut stream = SubStream::from_stream(0x50F7, 5);
         for (sqrt_s, masses, subs) in topologies() {
             let ch = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
-                .with_soft_split_angles(&|_, _| true, &|_| 0.0);
+                .with_split_angles(&|_, _| Some(AngleShape::Soft), &|_| 0.0);
             for _ in 0..200 {
                 let u = stream.uniforms::<f64>(ch.ndim());
                 let pt = ch.sample(&u);
@@ -4146,9 +4263,9 @@ mod tests {
         for (sqrt_s, masses, subs) in topologies() {
             let plain = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs);
             let off = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
-                .with_soft_split_angles(&|_, _| false, &|_| 0.0);
+                .with_split_angles(&|_, _| None, &|_| 0.0);
             let on = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
-                .with_soft_split_angles(&|_, _| true, &|_| 0.0);
+                .with_split_angles(&|_, _| Some(AngleShape::Soft), &|_| 0.0);
             assert_eq!(plain.map_key(), off.map_key());
             assert_ne!(plain.map_key(), on.map_key());
             assert!(on.map_key().contains("S("));
@@ -4192,7 +4309,7 @@ mod tests {
             .with_timelike_floors(&floor);
         let soft = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
             .with_timelike_floors(&floor)
-            .with_soft_split_angles(&|_, _| true, &|_| 0.0);
+            .with_split_angles(&|_, _| Some(AngleShape::Soft), &|_| 0.0);
         let f = |p: &[LorentzVector<f64>]| 1.0 / (p[1].e() * p[2].e());
         let n = 400_000;
         let (m_flat, v_flat) = mc_integrand(&flat, 0x50F9, n, f);
@@ -4233,9 +4350,9 @@ mod tests {
             }
         };
         let floored = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
-            .with_soft_split_angles(&|_, _| true, &floor);
+            .with_split_angles(&|_, _| Some(AngleShape::Soft), &floor);
         let free = DiagramChannel::from_topology(sqrt_s, masses.clone(), &subs)
-            .with_soft_split_angles(&|_, _| true, &|_| 0.0);
+            .with_split_angles(&|_, _| Some(AngleShape::Soft), &|_| 0.0);
         assert_ne!(floored.map_key(), free.map_key());
 
         let mut stream = SubStream::from_stream(0x50FB, 9);

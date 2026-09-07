@@ -62,6 +62,7 @@ use std::f64::consts::PI;
 
 pub mod channel;
 pub mod diagram_channel;
+pub mod maps;
 pub mod rambo;
 pub mod rng;
 
@@ -70,7 +71,8 @@ pub use channel::{
     MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, ScaledChannel, ScaledMultiChannel,
     SubsystemMemo,
 };
-pub use diagram_channel::{DiagramChannel, Resonance, RungSpec, TChannel};
+pub use diagram_channel::{AngleShape, DiagramChannel, Resonance, RungSpec, TChannel};
+pub use maps::{MapChoices, MapOptions, ProcessShape, RungOrder, SplitAngle, TauMap};
 pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.

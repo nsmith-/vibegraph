@@ -12,6 +12,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::phasespace::maps::MapChoices;
 use crate::runcard::RunCard;
 use crate::ufo::identity::ModelIdentity;
 use crate::vegas::VegasGrid;
@@ -57,8 +58,19 @@ use crate::vegas::VegasGrid;
 /// [`IntegrateArtifact::format_version`] alone. `vibegraph generate` is that
 /// caller: it refuses to replay a `format_version < 7` artifact's `sigma_pb` as
 /// `XSECUP` when the run card selects the clustering scale
-/// ([`crate::coupling::scales::ScaleChoice::needs_channels`]).
-pub const FORMAT_VERSION: u32 = 7;
+/// ([`crate::coupling::scales::ScaleChoice::needs_channels`]); that threshold is
+/// [`SCALE_DRAW_VERSION`].
+///
+/// `8` adds [`IntegrateArtifact::maps`]: the phase-space map choices the run
+/// integrated under, so a generator rebuilds its channels and its `τ` draw from
+/// what the grids were trained on rather than from the current default. A file
+/// of version 6 or 7 was written before any choice existed, under
+/// [`MapChoices::LEGACY`], which its upgrade records.
+pub const FORMAT_VERSION: u32 = 8;
+
+/// The first version whose `sigma_pb` was formed with the per-point `AMP2`
+/// scale-configuration draw (see the version-7 entry in [`FORMAT_VERSION`]'s doc).
+pub const SCALE_DRAW_VERSION: u32 = 7;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
 pub const OLDEST_READABLE_VERSION: u32 = 3;
@@ -272,6 +284,10 @@ pub struct IntegrateArtifact {
     pub sigma_pb: f64,
     pub sigma_err_pb: f64,
     pub chi2_per_dof: f64,
+    /// The phase-space maps the run integrated under, every choice settled. A
+    /// generator rebuilds its channels from these; a file older than version 8
+    /// reads back [`MapChoices::LEGACY`], the maps every such run used.
+    pub maps: MapChoices,
 }
 
 /// Prefix of the encoded artifact, decoded on its own so a file written by a
@@ -377,6 +393,63 @@ pub mod v4 {
     }
 }
 
+/// Schema versions 6 and 7, kept so artifacts banked before the map choices were
+/// recorded still load. Every field is version 8's but for
+/// [`IntegrateArtifact::maps`], which such a writer could only have integrated
+/// under [`MapChoices::LEGACY`], and the upgrade records exactly that.
+pub mod v7 {
+    use serde::Deserialize;
+
+    use super::ChannelGrid;
+    use crate::runcard::RunCard;
+    use crate::ufo::identity::ModelIdentity;
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct IntegrateArtifact {
+        /// The version this file was actually written at, carried through the
+        /// upgrade unchanged: `vibegraph generate`'s artifact-age guard reads the
+        /// file's own version.
+        pub format_version: u32,
+        pub process: String,
+        pub model: ModelIdentity,
+        pub pdf_set: String,
+        pub pdf_member: u32,
+        pub mu_f: f64,
+        pub sqrt_s_had: f64,
+        pub neval: usize,
+        pub niter: usize,
+        pub seed: u64,
+        pub run_card: RunCard,
+        pub channels: Vec<ChannelGrid>,
+        pub sigma_pb: f64,
+        pub sigma_err_pb: f64,
+        pub chi2_per_dof: f64,
+    }
+}
+
+impl v7::IntegrateArtifact {
+    fn upgrade(self) -> IntegrateArtifact {
+        IntegrateArtifact {
+            format_version: self.format_version,
+            process: self.process,
+            model: self.model,
+            pdf_set: self.pdf_set,
+            pdf_member: self.pdf_member,
+            mu_f: self.mu_f,
+            sqrt_s_had: self.sqrt_s_had,
+            neval: self.neval,
+            niter: self.niter,
+            seed: self.seed,
+            run_card: self.run_card,
+            channels: self.channels,
+            sigma_pb: self.sigma_pb,
+            sigma_err_pb: self.sigma_err_pb,
+            chi2_per_dof: self.chi2_per_dof,
+            maps: MapChoices::LEGACY,
+        }
+    }
+}
+
 /// Schema version 5, kept so artifacts banked before the rung chain still load.
 /// Every field is version 6's but for the sampler's spine pole, which a version-5
 /// writer recorded as a single `Option<f64>`.
@@ -473,6 +546,7 @@ impl v5::IntegrateArtifact {
             sigma_pb: self.sigma_pb,
             sigma_err_pb: self.sigma_err_pb,
             chi2_per_dof: self.chi2_per_dof,
+            maps: MapChoices::LEGACY,
         }
     }
 }
@@ -508,6 +582,7 @@ impl v4::IntegrateArtifact {
             sigma_pb: self.sigma_pb,
             sigma_err_pb: self.sigma_err_pb,
             chi2_per_dof: self.chi2_per_dof,
+            maps: MapChoices::LEGACY,
         }
     }
 }
@@ -549,6 +624,7 @@ impl v3::IntegrateArtifact {
             sigma_pb: self.sigma_pb,
             sigma_err_pb: self.sigma_err_pb,
             chi2_per_dof: self.chi2_per_dof,
+            maps: MapChoices::LEGACY,
         }
     }
 }
@@ -593,10 +669,12 @@ impl IntegrateArtifact {
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
-            // 6 and 7 share one schema (see `FORMAT_VERSION`'s doc), so a version-6
-            // file decodes straight into the current struct with its own recorded
-            // `format_version` intact — no upgrade function is needed or wanted.
-            FORMAT_VERSION | 6 => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            // 6 and 7 share one schema (see `FORMAT_VERSION`'s doc); the upgrade adds
+            // the map choices and keeps the file's own recorded `format_version`.
+            6 | 7 => bincode::deserialize::<v7::IntegrateArtifact>(&raw)
+                .map_err(ArtifactError::Decode)
+                .map(v7::IntegrateArtifact::upgrade),
             5 => bincode::deserialize::<v5::IntegrateArtifact>(&raw)
                 .map_err(ArtifactError::Decode)
                 .map(v5::IntegrateArtifact::upgrade),
@@ -653,7 +731,65 @@ mod tests {
             sigma_pb: 934.42,
             sigma_err_pb: 0.87,
             chi2_per_dof: 1.02,
+            maps: MapChoices::LEGACY,
         }
+    }
+
+    /// A file written at version 6 or 7 carries no map choices; it reads back
+    /// under the maps every such run used, with its own version intact.
+    #[test]
+    fn a_pre_maps_artifact_reads_back_under_the_legacy_maps() {
+        #[derive(Serialize)]
+        struct V7Artifact {
+            format_version: u32,
+            process: String,
+            model: ModelIdentity,
+            pdf_set: String,
+            pdf_member: u32,
+            mu_f: f64,
+            sqrt_s_had: f64,
+            neval: usize,
+            niter: usize,
+            seed: u64,
+            run_card: RunCard,
+            channels: Vec<ChannelGrid>,
+            sigma_pb: f64,
+            sigma_err_pb: f64,
+            chi2_per_dof: f64,
+        }
+        let a = sample_artifact();
+        let old = V7Artifact {
+            format_version: 7,
+            process: a.process.clone(),
+            model: a.model.clone(),
+            pdf_set: a.pdf_set.clone(),
+            pdf_member: a.pdf_member,
+            mu_f: a.mu_f,
+            sqrt_s_had: a.sqrt_s_had,
+            neval: a.neval,
+            niter: a.niter,
+            seed: a.seed,
+            run_card: a.run_card.clone(),
+            channels: a.channels.clone(),
+            sigma_pb: a.sigma_pb,
+            sigma_err_pb: a.sigma_err_pb,
+            chi2_per_dof: a.chi2_per_dof,
+        };
+        let dir =
+            std::env::temp_dir().join(format!("vibegraph-artifact-test-v7-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("v7.bin.zst");
+        let raw = bincode::serialize(&old).unwrap();
+        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+
+        let reloaded = IntegrateArtifact::read_from_path(&path).expect("version 7 reads");
+        assert_eq!(reloaded.format_version, 7);
+        assert_eq!(reloaded.maps, MapChoices::LEGACY);
+        assert_eq!(reloaded.sigma_pb.to_bits(), a.sigma_pb.to_bits());
+        assert_eq!(reloaded.channels.len(), 1);
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&dir).ok();
     }
 
     #[test]
@@ -1162,30 +1298,6 @@ mod tests {
         assert_eq!(timelike.topology, SamplerTopology::Timelike);
         assert!(timelike.spine_poles_gev2.is_empty());
         assert_eq!(upgraded.sigma_pb.to_bits(), 934.42f64.to_bits());
-
-        std::fs::remove_file(&path).ok();
-        std::fs::remove_dir(&dir).ok();
-    }
-
-    /// A version-6 file shares version 7's schema exactly, so it decodes with no
-    /// upgrade function at all — and, unlike versions 3 through 5, it must keep its
-    /// own recorded version rather than reading back as `FORMAT_VERSION`. That is
-    /// the field `vibegraph generate`'s artifact-age guard reads to tell a
-    /// pre-draw `sigma_pb` from a post-draw one.
-    #[test]
-    fn a_version_6_artifact_keeps_its_own_recorded_version() {
-        let mut artifact = sample_artifact();
-        artifact.format_version = 6;
-        let dir =
-            std::env::temp_dir().join(format!("vibegraph-artifact-test-v6-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("v6.bin.zst");
-        let _ = std::fs::remove_file(&path);
-
-        artifact.write_to_path(&path, false).expect("write");
-        let reloaded = IntegrateArtifact::read_from_path(&path).expect("version 6 reads");
-        assert_eq!(reloaded.format_version, 6);
-        assert_eq!(reloaded.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();

@@ -519,11 +519,11 @@ impl Cuts {
     /// `E² = p_T² + p_z² + m²` with `p_T` invariant under the boost, and at least
     /// the `emin` threshold in the lab; a subsystem's energy is the sum of its legs'.
     /// The bound is what regulates a soft-shaped angular draw at the cuts
-    /// ([`DiagramChannel::with_soft_split_angles`]), so that a map built for a
+    /// ([`DiagramChannel::with_split_angles`]), so that a map built for a
     /// `1/E` rise does not spend its draws below the threshold that rejects them.
     ///
-    /// [`DiagramChannel::with_soft_split_angles`]:
-    ///     crate::phasespace::diagram_channel::DiagramChannel::with_soft_split_angles
+    /// [`DiagramChannel::with_split_angles`]:
+    ///     crate::phasespace::diagram_channel::DiagramChannel::with_split_angles
     pub fn energy_floor(&self, slots: u64) -> f64 {
         self.finals
             .iter()

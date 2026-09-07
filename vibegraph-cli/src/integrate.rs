@@ -31,6 +31,7 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::{PdfMember, PdfSet};
+use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
@@ -124,6 +125,101 @@ impl From<Allocation> for BlockAllocation {
         match a {
             Allocation::ByAlpha => BlockAllocation::ByAlpha,
             Allocation::Neyman => BlockAllocation::Neyman,
+        }
+    }
+}
+
+/// How a 2-body split of the decay tree draws its decay angle
+/// ([`SplitAngle`]); `auto` lets the rule read the process.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum SplitAngleArg {
+    /// Soft-emission where the process has a gluon or photon emission split,
+    /// isotropic otherwise.
+    Auto,
+    /// Flat in `cos θ` and `φ` against the collision-CM axes.
+    Isotropic,
+    /// Flat in `cos θ*` from the parent's flight direction, confined to the
+    /// window the cut-implied energy floors admit, on every split.
+    Windowed,
+    /// Density `∝ 1/(E₁E₂)` — a splitting kernel's `1/(z(1−z))` — on the
+    /// splits with a single gluon or photon daughter.
+    SoftEmission,
+    /// The `1/(E₁E₂)` map on every split.
+    SoftAll,
+}
+
+/// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is `log`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum TauMapArg {
+    Auto,
+    /// Density `∝ 1/τ` above the cut-implied `τ_min`.
+    Log,
+    /// Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance
+    /// spanning the whole final state.
+    InverseSquare,
+}
+
+/// The order a peripheral chain draws its rungs in ([`RungOrder`]); `auto` is
+/// `derived`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum RungOrderArg {
+    Auto,
+    /// Outward from beam 0, as the diagram's spacelike lines nest.
+    Derived,
+    /// The same rungs in reverse — a control, not a recommendation.
+    Reversed,
+}
+
+/// The phase-space map flags, shared by the integrator and anything that
+/// re-derives channels from a process.
+#[derive(Args, Debug, Clone, Copy)]
+pub struct MapArgs {
+    /// How each 2-body split of the decay tree draws its decay angle.
+    ///
+    /// Every choice is a parametrisation of the same phase space — none moves the
+    /// cross section, only the evaluations needed to reach an accuracy. `auto`
+    /// picks `soft-emission` where the process has a split it shapes (measured
+    /// −30% on `u u~ > g g g`, three seeds) and `isotropic`, the map every banked
+    /// row used, elsewhere. The choice is recorded in the artifact and replayed by
+    /// `vibegraph generate`.
+    #[arg(long = "map-split-angle", value_enum, default_value_t = SplitAngleArg::Auto)]
+    pub split_angle: SplitAngleArg,
+
+    /// How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
+    ///
+    /// `auto` is `log`, the map every banked hadronic row used; `inverse-square`
+    /// is MadEvent's, unmeasured here.
+    #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
+    pub tau: TauMapArg,
+
+    /// The order a peripheral (t-channel) chain draws its rungs in.
+    ///
+    /// `auto` is `derived`; `reversed` exists to be measured against it.
+    #[arg(long = "map-rung-order", value_enum, default_value_t = RungOrderArg::Auto)]
+    pub rung_order: RungOrderArg,
+}
+
+impl MapArgs {
+    /// The options the flags spell, `auto` left to the rule.
+    pub fn options(&self) -> MapOptions {
+        MapOptions {
+            split_angle: match self.split_angle {
+                SplitAngleArg::Auto => None,
+                SplitAngleArg::Isotropic => Some(SplitAngle::Isotropic),
+                SplitAngleArg::Windowed => Some(SplitAngle::Windowed),
+                SplitAngleArg::SoftEmission => Some(SplitAngle::SoftEmission),
+                SplitAngleArg::SoftAll => Some(SplitAngle::SoftAll),
+            },
+            tau: match self.tau {
+                TauMapArg::Auto => None,
+                TauMapArg::Log => Some(TauMap::Log),
+                TauMapArg::InverseSquare => Some(TauMap::InverseSquare),
+            },
+            rung_order: match self.rung_order {
+                RungOrderArg::Auto => None,
+                RungOrderArg::Derived => Some(RungOrder::Derived),
+                RungOrderArg::Reversed => Some(RungOrder::Reversed),
+            },
         }
     }
 }
@@ -232,6 +328,9 @@ pub struct IntegrateArgs {
 
     #[command(flatten)]
     pub parallel: ParallelArgs,
+
+    #[command(flatten)]
+    pub maps: MapArgs,
 }
 
 /// The failure surface of the `integrate` command. Displayed to stderr by the
@@ -334,6 +433,8 @@ struct RunOutput {
     sqrt_s: f64,
     /// One trained grid per phase-space channel, in channel order.
     channels: Vec<ChannelGrid>,
+    /// The phase-space maps the run integrated under, every choice settled.
+    maps: MapChoices,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -498,6 +599,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         sigma_pb,
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
+        maps: output.maps,
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -568,9 +670,16 @@ fn integrate_hadronic(
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
         .collect();
 
-    let mut integ =
-        ProtonIntegrand::new(&groups, &amps, evaluated, pdf, sqrt_s_had, rc.dsqrt_q2fact1)
-            .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+    let mut integ = ProtonIntegrand::new_with_maps(
+        &groups,
+        &amps,
+        evaluated,
+        pdf,
+        sqrt_s_had,
+        rc.dsqrt_q2fact1,
+        args.maps.options(),
+    )
+    .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
     // Both scales and the strong coupling come from the run card; the coupling is
     // the PDF set's own tabulation, which is what the densities were fitted with.
     let scale_report = integ
@@ -610,6 +719,7 @@ fn integrate_hadronic(
         mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
         channels,
+        maps: integ.maps(),
         result,
         convergence,
     })
@@ -655,6 +765,7 @@ fn integrate_fixed_energy(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    integ.set_map_options(args.maps.options());
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
@@ -664,6 +775,9 @@ fn integrate_fixed_energy(
     tui::state::note_channels(diagrams.len());
     let n_survey = survey_points(args.neval);
     integ.use_multichannel(&diagrams, evaluated, n_survey, ADAPT_ITERS, args.seed);
+    // A process with no diagram to map keeps flat RAMBO, which draws its angles
+    // isotropically and has no chain: the legacy choices describe it exactly.
+    let maps = integ.maps().unwrap_or(MapChoices::LEGACY);
 
     let (per_channel, result, convergence) = integ.adapt_grids_budget(
         args.budget()?,
@@ -688,6 +802,7 @@ fn integrate_fixed_energy(
                 )
             })
             .collect(),
+        maps,
         result,
         convergence,
     })
