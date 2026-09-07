@@ -114,16 +114,44 @@ the [cache](../cli/overview.md#data-the-binary-does-not-carry), and
 MadGraph's generated `param_card.dat` records them. The loader splits a UFO
 vertex into one interaction per coupling-order tuple and prunes the
 couplings a restriction zeroes, as MadGraph's `import_ufo` does, so diagram
-counts agree with MadGraph's per split interaction. The representation
-surface reaches past the Standard Model's: the Lorentz structures of a
-dimension-six SMEFT model (`Epsilon`, `Gamma5`, γ-chains with momenta,
-four-fermion contacts in either pairing, the cyclic tensor⊗tensor contact),
-a literal `Sigma`, and the colour atoms `d`, baryonic `Epsilon` and the
-sextet `K6` are evaluated and gated against MadGraph
-(see the [validation chapter](12-validation.md)). Spin $\ge 3/2$ and spin-2
-wavefunctions, Majorana fermions and the charge conjugation they need, a
-colour sextet on an external leg, and loop-level models are rejected with an
-error rather than silently approximated.
+counts agree with MadGraph's per split interaction. What the loader and the
+evaluator then reach beyond the Standard Model is the next section.
+
+## Beyond the Standard Model
+
+The Lorentz and colour surface reaches past the Standard Model's, and every
+claim below is a row of `validation/manifest.toml` enforced against
+MadGraph's own matrix elements per diagram, per helicity and per colour flow
+(the [validation chapter](12-validation.md) describes the gate).
+
+**SMEFTsim.** `SMEFTsim_topU3l_MwScheme_UFO` — a dimension-six SMEFT model
+with derivative gauge-boson vertices, Levi-Civita structures, $\gamma^5$ and
+momenta inside $\gamma$-chains, four-fermion contacts in both pairings and a
+cyclic tensor⊗tensor one, under the $\{m_W, m_Z, G_F\}$ input scheme — is
+vendored byte for byte under `validation/ufo/` (MIT, tag `v3.0.2`), and
+thirteen of its rows are enforced, from the SM limit up to the capstone
+$e^+e^- \to t\bar t$ at `NP<=1`, whose cross section is gated against a
+banked MadGraph run as well.
+
+**Two toy models.** Structures no published model in reach isolates get a
+UFO of their own. Two small models written for this repository, also under
+`validation/ufo/` and licensed like the rest of it, put one such structure in
+one vertex each, so a failure names the structure rather than a corner of a
+900-vertex model: a literal $\sigma^{\mu\nu}$ (which FeynRules expands away
+before it writes a model file), the bare `Identity` and $\gamma^5$ bilinears,
+the symmetric colour structure constant $d^{abc}$, the baryonic
+$\epsilon$ tensors and the sextet Clebsch coefficients. All six of their rows
+are enforced, and two convention bugs surfaced there that no Standard-Model
+process could isolate: the reversal sign of a fermion line is the
+$C\Gamma^{\mathsf T}C^{-1}$ parity of its bilinears, not a count of its
+propagators, and ALOHA's `Sigma` is half the textbook $\sigma^{\mu\nu}$.
+
+**Hard errors.** Representations neither the models nor the toys reach —
+spin $\ge 3/2$, spin-2, Majorana fermions and the charge conjugation they
+need, a colour sextet on an external leg, loop-level models — are refused
+with an error rather than silently approximated, as are squared-order
+constraints (`NP^2==1`: a bound on an interference term, which this
+generator selects diagrams too early to express).
 
 ## Model identity
 

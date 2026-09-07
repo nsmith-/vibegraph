@@ -366,14 +366,9 @@ One line each; the note is the full record. Earlier sprints
   over 1088 sums) is recorded in `abedb81`'s tests if the tolerance is ever
   revisited.
 
-- ~~**Close-out Z of `ufo-lorentz`**~~ — **done 2026-09-07**, note 35 §10.
-  Nothing was left undone except the one item that was never in its scope:
-  **`refdata-7` is assembled and hash-pinned but not uploaded**
-  (`published = false`; `validation/manifest.toml`'s `[refdata]` block carries
-  the `sha256` and `size_bytes`, `bundled = false` is gone from all 22 sprint
-  rows, and `validation/madgraph/assemble_bundle.sh` rebuilds the archive
-  byte-identically). Uploading it to the `refdata-7` release and flipping
-  `published = true` needs a hand on the repository.
+- ~~**Close-out Z of `ufo-lorentz`**~~ — **done 2026-09-07**, note 35 §10;
+  `refdata-7` published the same day (the release asset hashes to the manifest
+  pin, `published = true`, `bundled = false` gone from all 22 sprint rows).
 - **Move `AmplitudeEvaluator` onto MadGraph's channel set** (from V2, note 35
   §V2): `config_groups` implements MadGraph's `IdentifyConfigTag` and the
   oracle asserts it, but the integrator still runs one channel per
