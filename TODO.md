@@ -498,6 +498,31 @@ above); the entries here are the eventual features.
   "bundle the compiled program" piece of the self-contained-artifact item
   below, since the enumerated diagrams are its input. feyngraph's `drawing/`
   module is a candidate for the drawings.
+- **`--madgraph-compat` mode toggle** (feature, user request on PR #4) —
+  several sites reproduce a MadGraph choice a clean-sheet design would not
+  make; today they are unconditional, so the cleaner behaviour is unreachable
+  and its cost unmeasured. One flag, default on (every banked gate depends on
+  the compatible behaviour), recorded in the integrate artifact and the LHEF
+  header so a file says which mode produced it. Sites, each carrying a
+  "MadGraph compatibility" admonition in the docs: (a) `coupling/cluster/kt.rs`
+  — the `1 + 1e-6` crossed beam–leg inflation, which does not cancel when
+  every admissible candidate is crossed and so leaks a part in 1e6 into
+  `SCALUP`, and the first-pair-in-visit-order tie-break; off would use an
+  inflation-free measure and a tie rule that cannot enter the value.
+  (b) `coupling/alphas.rs` — the Newton iteration stopped at `TOL = 5e-4` (a
+  specific iterate, not the root) and the fixed thresholds `CMASS = 1.42` /
+  `BMASS = 4.7` instead of the model's quark masses; off would iterate to
+  convergence at the model's thresholds. (c) `lhef/mod.rs` + `lhef/write.rs`
+  — the Python post-processor column layout and the two-dialect re-emission
+  that keeps a Fortran-dialect file's seven significant digits on the scale
+  and coupling columns; off would write one layout at full precision.
+  Verified non-sites, to leave alone: `AQCDUP` is already written untruncated
+  (`lhef/build.rs`); the jet-count memo is already not carried across events
+  (`coupling/scales.rs`); `SCALUP = max(μF)` is the accord's own definition;
+  the truncated `w_max` rule is an improvement, not a concession. Gate: flag
+  on, every banked byte and σ gate unchanged; flag off, a documented per-site
+  delta table (scale shift on the tie-break rows, αs delta vs the converged
+  root, LHEF digit count), and no validation gate runs in the off mode.
 - **`reweight_card.dat`** (feature) — re-evaluate a stored event sample under
   alternative coupling values, MadGraph's reweighting workflow. The monomial
   exponent analysis in `helas::eval::rescale` is written for a generic model
@@ -523,8 +548,13 @@ above); the entries here are the eventual features.
   than the one-shot survey. Measure offline first, from recorded `g_j(x)`,
   `f(x)` on existing samples (the same protocol as the per-flow α item): the
   variance the alternation would reach against the points it costs, and
-  whether it oscillates. Guardrail as everywhere in the multichannel: an α
-  floor, never a coverage split.
+  whether it oscillates. Read the result against the estimator's *measured*
+  seed spread (20+ seeds on both arrangements), since the α update is itself
+  a survey estimate over a Pareto weight tail of index ≈ 2. Pre-registered
+  failure criteria: α cycling between passes rather than converging; a win
+  inside the seed spread; any channel's reallocation falling below its
+  coverage floor. Guardrail as everywhere in the multichannel: an α floor,
+  never a coverage split.
 - **VEGAS+ adaptive stratification** (research) — the integrator is classic
   Lepage importance sampling; VEGAS+ (arXiv:2009.05112) adds adaptive
   stratified sampling within the grid and reports 2–19× on integrands with
