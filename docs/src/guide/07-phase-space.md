@@ -321,6 +321,45 @@ Identical particles in the final state divide the measure by
 $\prod_s n_s!$, applied per subprocess since it depends on the outgoing
 multiset, not on the matrix element.
 
+### Map choices
+
+A decomposition leaves a few things open that are choices of map rather
+than of physics: every option below is a different parametrisation of the
+same phase space, so the estimator is unbiased under any of them and what
+moves is the variance of the weight — the evaluations a run needs to reach
+an accuracy. `vibegraph integrate` exposes each as a `--map-*` flag whose
+default, `auto`, is a rule that reads the process; the settled choices are
+banked in the artifact and `generate` rebuilds its channels from those, so an
+event sample is always drawn from the maps its grids were trained on.
+
+- **The two-body decay angle** (`--map-split-angle`). The isotropic draw
+  above is flat in $\cos\theta$ against the collision-CM axes. A massless
+  emission's splitting kernel goes like $1/z$ or $1/(z(1-z))$ in the
+  parent's energy fraction $z = E_1/E$, and since $E_1 E_2 = E^2 z(1-z)$ a
+  density $\propto 1/(E_1E_2)$ in the angle measured from the parent's
+  direction of flight is exactly $dz/(z(1-z))$, regulated at both ends by
+  the pair's own mass through $\beta < 1$. `soft-emission` applies that map
+  to the splits with a single gluon or photon daughter and is what `auto`
+  picks when the process has one (measured −30% in evaluations on
+  $u\bar u \to ggg$, three seeds; inert by construction elsewhere, where the
+  draws are bit-identical to the isotropic ones). Either shape is confined
+  to the angles at which both daughters clear the energy floor the cuts
+  imply, because a $1/E$ map left to run down to the kinematic edge spends
+  most of its draws below the $p_T$ threshold that rejects them.
+  `windowed` is that confinement alone, and `soft-all` the shape on every
+  split.
+- **The $\tau = \hat s/s$ draw** of a proton-beam run (`--map-tau`): the
+  logarithmic map of the [hadronic chapter](10-hadronic.md), or MadEvent's
+  $1/\tau^2$.
+- **The order of a ladder's rungs** (`--map-rung-order`): as the diagram's
+  spacelike lines nest outward from beam 0, or reversed, which exists to be
+  measured against.
+
+MadEvent leaves the decay angle to its adaptive grid — its `one_tree` draws
+$\cos\theta$ and $\phi$ flat too — and shapes its invariants partly with the
+same analytic transforms used here and partly by pre-warping the grid; note
+36 in the research notes lists every map it applies against these.
+
 ## Random numbers
 
 Sampling is defined in two decoupled layers. A counter-based generator,
