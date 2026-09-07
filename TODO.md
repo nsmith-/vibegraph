@@ -155,7 +155,7 @@ from.
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28) |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28); a 2-body split with a gluon/photon daughter draws its angle with the `1/(z(1−z))` soft shape inside the cuts' energy window (note 36) |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.905 ± 0.567** vs MG 933.230 ± 0.480; **644.203 ± 0.384** vs 644.330 ± 0.283), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **424.428 ± 0.432 pb** over three seeds vs MG 423.840 ± 1.518 (pull +0.37). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.029%** (pull +0.13) / `gux_to_epemux` **−0.165%** (pull −0.70) and σ(pp→ℓ⁺ℓ⁻j) **+0.25%** (pull +0.73), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path at their own reference-precision-sized budgets (addendum S6, note 32): `pp_to_bb` +0.05% at 75k, `pp_to_bb_qcd2` +0.01% at 75k, `pp_to_llj` +0.18% at 150k (its ladder still climbs monotonically across 75k–600k, 0.04%→0.21%, which is why it did not cut to 75k with the other three), `pp_to_ll_scalefact2` +0.02% at 75k. The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.813339e8 ± 5.496e5 pb** over three seeds vs MG 6.788500e8 ± 1.473e6, rel **+0.37%** at pull **+1.58**, at `rel_tol` 0.005 (75k, addendum S6) — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` (all figures in this row measured fresh 2026-08-05 by the addendum close-out session, note 32 S8; run `pixi run --skip-deps validate-sigma` / `validate-hadronic` to reproduce) |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with **per-member colour-flow tables** — each flavour member's tags derived under the structurally-determined flow permutation, refuse-on-ambiguity — checked against MG's `leshouche.inc` (73/73 concrete subprocesses over 47 files; note 29 chain A), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
@@ -208,6 +208,27 @@ One line each; the note is the full record. Earlier sprints
   README table updated, and the default cap raised 100 → 500 the same day
   (user decision; the performance-backlog entry records the rationale and
   the SHA-identical stock-run verification).
+- **`splitting-kernel-sampling`** (one session, 2026-09-07; note 36 is the
+  record) — the user's observation that the map's 1→2 splitting is isotropic
+  while a splitting kernel goes like `1/(z(1−z))`. Built: `SoftSplit`, a
+  2-body angle drawn from the parent's flight direction with density
+  `∝ 1/(E₁E₂)` (= `dz/(z(1−z))`), confined to the window the cuts' energy
+  floors admit (`Cuts::energy_floor`), reciprocal to `1e-9` and `V_n`-exact;
+  **production** for a split with a single gluon/photon daughter, isotropic
+  and bit-identical everywhere else. Measured (three seeds, evaluations to
+  χ²-scaled 0.1%): `u u~ > g g g` **−31/−30/−35%**; `g g > g u u~` neutral;
+  the unregulated map **+24–45%** (it spends its draws below `ptj`, note 34
+  §1.2's lesson again); `g u > e+ e- u` bit-identical, and therefore
+  `p p > l+ l- j` too — **llj has no 1→2 split with a gluon daughter** (the
+  gluon is a spine rung; the s-channel root is at rest), so the isotropic
+  angle is not its residual. `ee_to_mumua`, the one gated row the rule
+  touches, keeps its +1.0% reference-owned offset at 12–21% smaller error.
+  MadEvent map survey (note 36 §1): nothing it shapes that we do not, and it
+  does not shape the angle either; candidates filed below. **Not run here**:
+  the banked hadronic gates (PDF host refused by this session's egress
+  policy) — `pixi run --skip-deps validate` is owed on the next host with
+  the set. Transferable lesson: **a `1/x` map without its cut-implied floor
+  is a loss, not a wash** — the third time this codebase has measured it.
 - **`draw-performance`** (two parallel sessions, merged 2026-08-06; note 34 §1
   is the record) — `density-draw` (`470eb8f`/`443f6bc`): the mixture density
   priced only after the cut, **2→6 per-point 62.9/68.5 → 4.6/6.8 µs
@@ -994,6 +1015,22 @@ what refuses and where.
   map edge, neither of the evaluator. The bias oracle for any
   future floor is `no_accepted_configuration_sits_below_a_subsystem_floor`;
   the `mmll = 50` bound is attained within 1.0002, so it cannot tighten.
+- **Splitting-angle follow-ups** (note 36 §4, 2026-09-07). (a) A one-sided
+  `1/E_g` variant of `SoftSplit` for `q* → q g`, where the symmetric map
+  spends half its attention on the quark's soft end `P_qq` does not have —
+  `g g > g u u~` read neutral under the symmetric rule. (b) An
+  energy-floored *isotropic* window for every composite split: shaping the
+  lepton pair in `g u > e+ e- u` read 1.20/0.72/0.72M evaluations against
+  1.20/0.96/1.08M, two seeds on the `--min-iters` floor, and the shape is
+  wrong for `V → l+ l-`, so the floor is the candidate lever — the one item
+  in this family that can reach llj's lepton pair. Three seeds is a hint;
+  measure with ≥ 5 and the ladder. (c) MadEvent's `τ` map is `1/τ²` above the
+  cut floor (`transpole(pole = −2)`), ours `1/τ`; and its `tstrategy`
+  ping-pong for ≥ 3-rung ladders. Both need the PDF set (`dy13`,
+  `pp_to_llj`) or a ≥ 4-jet process. (d) llj's own soft structure lives on
+  the spine's remainder invariant, `1/(ŝ − ŝ_rest)` against the Z/γ* pole
+  on the same variable — a second channel per spine if anything, preceded by
+  the weight-tail decomposition binned in `ŝ − ŝ_rest`.
 - ~~Should the default `--max-iters 100` move?~~ — **decided and raised to
   500** (user, 2026-08-07, same day the note 34 §3 remeasure filed it): the
   cap is a safety bound a converging run never touches (the stop fires the

@@ -1206,7 +1206,13 @@ impl<'a> ProtonIntegrand<'a> {
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
                 let channel = DiagramChannel::from_diagram_regulated(d, model, sqrt_s_had, floor)
-                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots));
+                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
+                    .with_soft_split_angles(
+                        &DiagramChannel::<f64>::soft_emission_rule(
+                            DiagramChannel::<f64>::massless_vector_slots(d, model),
+                        ),
+                        &|slots| cuts.energy_floor(slots),
+                    );
                 let channel = if bound_transfer {
                     channel
                 } else {

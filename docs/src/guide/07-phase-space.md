@@ -160,6 +160,17 @@ How each sampled invariant is drawn depends on what the diagram puts there:
   draw over its kinematic range, whose lower edge is the subsystem's mass
   threshold raised to whatever floor the process's cuts imply.
 
+The decay *angle* of each two-body split is isotropic in the parent's rest
+frame, with one exception. A split with a massless vector, a gluon or a
+photon, as one daughter carries a splitting kernel's soft enhancement,
+$1/z$ or $1/(z(1-z))$ in the daughters' energy fractions, which an isotropic
+draw leaves in the weight. Such a split measures its angle from the parent's
+direction of flight and draws it with a density $\propto 1/(E_1 E_2)$ in the
+daughters' collision-frame energies, which is $dz/(z(1-z))$, confined to the
+angles at which both daughters clear the energy the cuts imply for them. A
+parent at rest has no direction of flight, and the map is the isotropic one
+there.
+
 A **spacelike** (t-channel) line is not a subsystem mass but a momentum
 transfer $t \le 0$, and a diagram carrying spacelike lines is decomposed as
 a *spine*: an ordered chain of peripheral emissions off one beam, each rung

@@ -1516,6 +1516,12 @@ impl<'a> FixedBeamIntegrand<'a> {
             .map(|d| {
                 DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
                     .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
+                    .with_soft_split_angles(
+                        &DiagramChannel::<f64>::soft_emission_rule(
+                            DiagramChannel::<f64>::massless_vector_slots(d, model),
+                        ),
+                        &|slots| cuts.energy_floor(slots),
+                    )
             })
             .collect();
         if built.is_empty() {
