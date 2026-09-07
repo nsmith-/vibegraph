@@ -114,6 +114,22 @@ numbers; a "nothing to do" that is a table is the deliverable.
 the sweeps; the whole census should fit inside a few hours of CPU on the
 16-core host.
 
+**Landed B0 (`44e4e04`, 2026-09-07).** Five `#[ignore]` probes, one per file
+that enforces a seed statistic, and a headroom table over every enforced
+banked statistic (filed in §7). Two seed counts raised to five with
+before/after measured: `JJ_SEEDS` (dijet σ: 5 seeds `6.811101e8 ± 4.269e5 pb`,
+rel +0.33%, χ²/dof 1.40) and the unweighting `GEN_SEEDS`. Three tolerance
+cells under 2× headroom recorded, none widened: `ddx_to_epemg` 1.6×,
+`gux_to_epemux` 1.9×, `pp_to_jj` 1.5×. Findings: every σ calibration comment
+written before `e73b158` no longer reproduces while all thirteen written in
+it do — the note-34 draw-performance commits moved the streams and the older
+comments were never re-recorded (a re-recording session, after B3);
+`ee_to_mumua`'s reported-not-asserted exemption is load-bearing (gate-seed
+|pull| 3.56 > 3.5); six SM σ rows had no seed calibration at all, now
+measured at 9.9×–27.9×; standardised thresholds (pulls, p-floors, χ²/dof)
+are false-positive rates, and "form over five seeds" would raise the flag
+rate on an extremum-vs-floor statistic, so they are reported, not judged.
+
 ### B2 — the incoming legs in the `samples` gate (validation-dev)
 
 **What.** `lhef::observables::kinematics` builds every column from
@@ -150,6 +166,17 @@ passes under it; the `the_gate_rejects_a_sample_from_a_different_process`
 negative control extended to the new column. Update
 `docs/src/guide/12-validation.md`'s "what it cannot see" table row for event
 samples, since the incoming legs are no longer in the blind spot.
+
+**Landed B2 (`e96dbd9`, 2026-09-07).** `beam_columns` in `validation/samples.rs`:
+per beam `E`, `pz`, `m`, exact at half the last printed digit read off the
+file's own spelling where the field is constant, weighted KS where it varies
+(proton rows). The brief's expected-fail set was wrong: **seven** rows carry
+massive beams, not three — the three named plus `ll_to_qqx_toy_*` (10 GeV,
+pz off by 2.0008e-1) and `tata_to_ttx_tensor4f` (1.777 GeV, 6.3145e-3) — and
+their records were internally off-shell (model mass beside light-cone
+momenta). All seven landed `info` on the column, every massless row at
+deviation exactly 0, proton beam-KS minimum p 0.013. Ten SMEFT manifest
+notes lost the now-false "blind to the incoming legs" claim.
 
 ### B1 — massive fixed beams (feature-dev)
 
@@ -292,6 +319,25 @@ set with its measured moves and every other row's bit-identity), the five-seed
 sweep on the three flipped rows, the `validate_scales` replay result on the
 two colour-toy runs, the B2 column readings on the three rows, and the docs
 diff.
+
+**Landed B1 (`3469e7a` + `7d4b9e8`, 2026-09-07, rebased onto `d65d585`).**
+`FixedBeams` derives the initial state from the run card's energies and the
+legs' pole masses; `kallen`/`beam_momenta` moved to `phasespace/beams.rs` and
+shared by integrand and channel maps; flux `1/(2λ^{1/2})`; lab-rapidity cut
+boost when `lab_beta ≠ 0`; `EBMUP` = the run card's energies. Falsifier met:
+27 of 34 fixed-beam σ rows byte-identical, the three massive rows land at
+rel −3.19e-4 / +7.95e-4 / +3.80e-4 (five seeds χ²/dof 0.98 / 0.99 / 0.68,
+ladders converging) and flip `info → gate` at `rel_tol 0.005`; the four
+light-massive rows move by 2.5e-7–1.7e-6. The integrand's beams reproduce
+all eleven of MadGraph's printed digits; B2's column is enforced on every
+fixed-beam row (`MASSIVE_BEAMS` retired). Docs: "Fixed beams" section in
+`07-phase-space.md`, the flux bullet in `01-pipeline.md`. Brief corrections:
+the note's massless `ŝ = (E_a+E_b)²` holds only at equal energies (fixed in
+§3); step 7 was wrong — `validate_scales` replays MadGraph's own record
+momenta and is structurally insensitive to this change. Finding for B6: on
+αs-free rows with a dynamical-scale card the record writes `SCALUP` =
+`dsqrt_q2fact` (91.188) where MadGraph writes the clustered scale.
+Report after the flip: 169 ✅ / 7 ⚠️ / 4 ⏳ / 24 uncovered.
 
 ## 4. Wave 1
 
