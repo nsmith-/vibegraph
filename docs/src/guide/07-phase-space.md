@@ -326,12 +326,17 @@ same integer draw feeds every lane through the same arithmetic.
 
 ## Frames
 
-A matrix element is evaluated in the partonic centre-of-mass frame with the
-beams along $\pm z$, which is the frame the pruned evaluator requires
-and in which $|\mathcal{M}|^2$ is an invariant. The
-[cuts](10-hadronic.md#cuts) are applied in the laboratory frame, whose
-rapidity and transverse observables are not boost invariant, so a hadronic
-point is boosted before the cut filter sees it.
+The helicity-summed $|\mathcal{M}|^2$ is a Lorentz invariant and could be
+evaluated in any frame. What fixes the frame is
+[helicity pruning](06-compiler.md#helicity-pruning): the combinations an
+evaluator drops were found to vanish in the partonic centre-of-mass frame
+with the beams along $\pm z$, and some of them vanish only there, since
+the helicity of a massive particle is not boost invariant. A pruned sum is
+therefore the full sum only for momenta in that frame, and that is the
+frame the matrix element is handed. The [cuts](10-hadronic.md#cuts) are
+applied in the laboratory frame, whose rapidity and transverse observables
+are not boost invariant, so a hadronic point is boosted before the cut
+filter sees it.
 
 ## Where it lives
 
