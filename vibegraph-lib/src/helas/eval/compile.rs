@@ -373,6 +373,20 @@ impl AmplitudeEvaluator {
     /// massless the per-diagram channel maps degenerate onto one another, so the
     /// channel index carries no information about which diagram produced the point.
     ///
+    /// **The amplitude share is MadEvent's channel weight only under its default
+    /// integration strategy, and the configurations here are finer than its.** Two
+    /// differences bound how far this reproduces a MadGraph run's own colour
+    /// column. First, `SMATRIX` rescales every `AMP2(j)` by `GET_CHANNEL_CUT` — the
+    /// product of the configuration's inverse squared propagator denominators — and
+    /// under the run card's `sde_strategy = 2` it *replaces* the amplitude by that
+    /// product outright, so the channel weight then carries no coupling and no
+    /// amplitude at all. Second, MadGraph sums diagrams its channel mapping calls
+    /// one topology into a single accumulator, coherently, where these
+    /// configurations stay one per diagram. Neither difference reaches `|M|²` or the
+    /// cross section, and neither is visible at all where every configuration
+    /// reaches the same flows; both move the written colour flow of a process whose
+    /// `ICOLAMP` rows separate the flows configuration by configuration.
+    ///
     /// A process whose colour basis has one flow reduces to a no-op: every diagram
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
