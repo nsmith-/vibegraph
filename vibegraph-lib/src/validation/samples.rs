@@ -9,10 +9,36 @@
 //! [`EventSample`] is a sample as the tests hold it — records plus the weight each
 //! carries. [`compare`] turns two of them into a [`Comparison`]: one
 //! Kolmogorov–Smirnov result per named continuous observable
-//! ([`observables::kinematics`](crate::lhef::observables::kinematics)) and one χ²
-//! homogeneity result per categorical column (`SPINUP`, `ICOLUP`, flavour). The
-//! statistics themselves are [`crate::stats`]; what this module adds is turning
-//! records into columns, and deciding what is not comparable.
+//! ([`observables::kinematics`](crate::lhef::observables::kinematics)), one χ²
+//! homogeneity result per categorical column (`SPINUP`, `ICOLUP`, flavour), and
+//! one [`BeamColumn`] per incoming leg and field. The statistics themselves are
+//! [`crate::stats`]; what this module adds is turning records into columns, and
+//! deciding what is not comparable.
+//!
+//! # The incoming legs
+//!
+//! Every kinematic observable is built from the outgoing legs, so on their own
+//! they say nothing about the beams. [`beam_columns`] compares the incoming legs
+//! directly, field by field: `E`, `pz` and the mass the record carries.
+//!
+//! At fixed beams those are constants of the process, so there is no
+//! distribution to test and the statistic is the largest absolute departure from
+//! the banked record's own value over every event of both samples, judged
+//! against what that record's *printing* allows — half the place value of the
+//! field's last digit, read off the line the file spelled (see
+//! [`printed_place`]), plus a few double-precision ulps for the arithmetic on
+//! this side. That is an equality test at the only precision the reference
+//! states its beams to, and it is the one comparison here that is not a
+//! normalised shape.
+//!
+//! At hadron beams the legs carry the momentum fractions and vary per event, so
+//! the same fields fall back to the weighted two-sample Kolmogorov–Smirnov the
+//! outgoing columns use. Which of the two a field takes is read off the samples
+//! (whether it is degenerate), not declared.
+//!
+//! What this cannot see: two runs whose beams agree. A wrong beam construction
+//! that happens to reproduce the reference's momenta is invisible here, as is
+//! everything about the outgoing state — that is the KS and χ² columns'.
 //!
 //! # What is deliberately not compared
 //!
@@ -33,7 +59,7 @@ use crate::lhef::observables::{
     canonical, colour_key, flavour_key, helicity_key, kinematics, Labelling,
 };
 use crate::lhef::parse::LheFile;
-use crate::lhef::record::{LheEvent, WeightStrategy};
+use crate::lhef::record::{LheEvent, LheParticle, WeightStrategy, STATUS_INCOMING};
 use crate::stats::{chi2_homogeneity, effective_counts, effective_size, ks_two_sample};
 
 /// An observable whose values span less than this fraction of their own scale is
@@ -137,11 +163,65 @@ pub struct Chi2Column {
     pub detail: Vec<(String, f64, f64)>,
 }
 
+/// One incoming leg's field, compared between the two samples.
+#[derive(Clone, Debug)]
+pub struct BeamColumn {
+    /// `beam1 E`, `beam1 pz`, `beam1 m`, and the same for the second beam.
+    pub field: String,
+    pub kind: BeamKind,
+}
+
+/// How an incoming leg's field was compared, which depends on whether it varies.
+#[derive(Clone, Copy, Debug)]
+pub enum BeamKind {
+    /// Both samples hold the field at one value, so there is no distribution:
+    /// the reference is the banked record's own value and the statistic is the
+    /// largest absolute departure from it on either side.
+    Constant {
+        /// The banked record's value.
+        theirs: f64,
+        /// Our value furthest from it.
+        ours: f64,
+        /// The largest `|v − theirs|` over every event of both samples.
+        max_dev: f64,
+        /// What the banked record's printed precision allows.
+        tol: f64,
+    },
+    /// The field varies per event — a hadron beam's momentum fraction — so it is
+    /// compared as a weighted distribution like every outgoing observable.
+    Distribution { d: f64, p: f64 },
+}
+
+impl BeamColumn {
+    /// Whether the column agrees: inside the reference's printed precision for a
+    /// constant field, above the floor for a varying one.
+    pub fn agrees(&self, p_floor: f64) -> bool {
+        match self.kind {
+            BeamKind::Constant { max_dev, tol, .. } => max_dev <= tol,
+            BeamKind::Distribution { p, .. } => p >= p_floor,
+        }
+    }
+
+    /// A constant field's deviation as a multiple of its tolerance, which is how
+    /// two constant columns are ranked against each other. `0` where the two
+    /// records agree exactly, whatever the tolerance is.
+    pub fn deviation_ratio(&self) -> f64 {
+        match self.kind {
+            BeamKind::Constant { max_dev, tol, .. } if max_dev > 0.0 => {
+                max_dev / tol.max(f64::MIN_POSITIVE)
+            }
+            _ => 0.0,
+        }
+    }
+}
+
 /// What comparing two samples found.
 #[derive(Clone, Debug)]
 pub struct Comparison {
     pub ks: Vec<KsColumn>,
     pub chi2: Vec<Chi2Column>,
+    /// The incoming legs, field by field.
+    pub beams: Vec<BeamColumn>,
     /// Observables that are constants of the process.
     pub constant: Vec<String>,
     /// Categorical columns with a single category.
@@ -157,6 +237,28 @@ impl Comparison {
     /// The smallest χ² p-value and the column it came from.
     pub fn worst_chi2(&self) -> Option<&Chi2Column> {
         self.chi2.iter().min_by(|a, b| a.p.total_cmp(&b.p))
+    }
+
+    /// The constant incoming-leg field sitting furthest outside the reference's
+    /// printed precision.
+    pub fn worst_beam_constant(&self) -> Option<&BeamColumn> {
+        self.beams
+            .iter()
+            .filter(|c| matches!(c.kind, BeamKind::Constant { .. }))
+            .max_by(|a, b| a.deviation_ratio().total_cmp(&b.deviation_ratio()))
+    }
+
+    /// The smallest KS p-value over the incoming-leg fields that vary.
+    pub fn worst_beam_distribution(&self) -> Option<&BeamColumn> {
+        self.beams
+            .iter()
+            .filter(|c| matches!(c.kind, BeamKind::Distribution { .. }))
+            .min_by(|a, b| match (a.kind, b.kind) {
+                (BeamKind::Distribution { p: x, .. }, BeamKind::Distribution { p: y, .. }) => {
+                    x.total_cmp(&y)
+                }
+                _ => std::cmp::Ordering::Equal,
+            })
     }
 }
 
@@ -329,6 +431,194 @@ fn columns(sample: &EventSample, labelling: Labelling) -> Columns {
     }
 }
 
+/// One incoming-leg field a comparison reads.
+///
+/// `px` and `py` get no column: the accord fixes them at zero on a beam, so no
+/// generator has a choice about them. `E`, `pz` and the mass are the three a
+/// beam construction can get wrong.
+struct BeamField {
+    /// The name the column is reported under.
+    name: &'static str,
+    /// The value on a parsed leg.
+    value: fn(&LheParticle) -> f64,
+    /// Where the field sits on a Les Houches particle line, so the tolerance can
+    /// be read off the spelling the file used.
+    line_field: usize,
+}
+
+const BEAM_FIELDS: [BeamField; 3] = [
+    BeamField {
+        name: "E",
+        value: |p| p.momentum[0],
+        line_field: 9,
+    },
+    BeamField {
+        name: "pz",
+        value: |p| p.momentum[3],
+        line_field: 8,
+    },
+    BeamField {
+        name: "m",
+        value: |p| p.mass,
+        line_field: 10,
+    },
+];
+
+/// Eleven significant digits, which is what both of MadGraph's serialisation
+/// dialects print momenta and masses at — the Fortran writer's
+/// `0.24135011226E+03` and the Python post-processing's `+1.1855987927e+01`.
+/// Used only for a record that carries no text of its own to read.
+const PRINTED_SIGNIFICANT_DIGITS: i32 = 11;
+
+/// The place value of the last digit a field was printed with: `1e-8` for
+/// `0.24135011226E+03`, `1e-9` for `+1.1855987927e+01`.
+///
+/// This is what makes the tolerance a property of the *file* rather than of a
+/// dialect this code knows about: a third spelling with a different width is
+/// read correctly without being enumerated anywhere.
+pub fn printed_place(text: &str) -> Option<f64> {
+    let (mantissa, exponent) = text.split_once(['e', 'E'])?;
+    let exponent: i32 = exponent.parse().ok()?;
+    let fraction = mantissa.split_once('.')?.1;
+    if fraction.is_empty() || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(10f64.powi(exponent - fraction.len() as i32))
+}
+
+/// What a printed field's own precision allows between two records of it: half
+/// the place value of its last digit, plus a few double-precision ulps for the
+/// arithmetic that produced the value being compared against it.
+fn printed_tolerance(spelling: Option<&str>, value: f64) -> f64 {
+    let place = spelling.and_then(printed_place).unwrap_or_else(|| {
+        if value == 0.0 {
+            0.0
+        } else {
+            let decade = value.abs().log10().floor() as i32;
+            10f64.powi(decade - (PRINTED_SIGNIFICANT_DIGITS - 1))
+        }
+    });
+    0.5 * place + 8.0 * f64::EPSILON * value.abs()
+}
+
+/// The particle lines of an event as its file spelled them, when it was read
+/// from one.
+///
+/// The source block is the info line followed by one line per leg, so a block
+/// whose line count no longer matches the record has been edited and is not
+/// used.
+fn particle_lines(event: &LheEvent) -> Option<Vec<&str>> {
+    let text = event.source.as_ref()?.as_str();
+    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
+    lines.next()?;
+    let lines: Vec<&str> = lines.collect();
+    (lines.len() == event.particles.len()).then_some(lines)
+}
+
+/// The record's own spelling of one leg's field, for the tolerance it implies.
+fn spelling(event: &LheEvent, leg: usize, field: usize) -> Option<String> {
+    let line = *particle_lines(event)?.get(leg)?;
+    line.split_whitespace().nth(field).map(str::to_string)
+}
+
+/// The indices of an event's incoming legs, in the record's own order.
+fn incoming(event: &LheEvent) -> Vec<usize> {
+    event
+        .particles
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.status == STATUS_INCOMING)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Compare the two samples' incoming legs, field by field.
+///
+/// # Panics
+///
+/// If the two samples list different numbers of incoming legs, or an event of
+/// either lists a different number from its own sample's first — neither is a
+/// disagreement a statistic can express.
+pub fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<BeamColumn> {
+    if ours.is_empty() || theirs.is_empty() {
+        return Vec::new();
+    }
+    let legs = |sample: &EventSample, side: &str| {
+        let n = incoming(&sample.events[0]).len();
+        for (k, event) in sample.events.iter().enumerate() {
+            assert_eq!(
+                incoming(event).len(),
+                n,
+                "{side} event {k} lists a different number of incoming legs from its own first"
+            );
+        }
+        n
+    };
+    let n = legs(ours, "our");
+    assert_eq!(
+        n,
+        legs(theirs, "the reference's"),
+        "the two samples list different numbers of incoming legs"
+    );
+
+    let mut columns = Vec::with_capacity(n * BEAM_FIELDS.len());
+    for beam in 0..n {
+        for BeamField {
+            name,
+            value,
+            line_field,
+        } in BEAM_FIELDS
+        {
+            let read = |sample: &EventSample| -> Vec<(f64, f64)> {
+                sample
+                    .events
+                    .iter()
+                    .zip(&sample.weights)
+                    .map(|(event, &w)| {
+                        let leg = incoming(event)[beam];
+                        (value(&event.particles[leg]), w)
+                    })
+                    .collect()
+            };
+            let (a, b) = (read(ours), read(theirs));
+            let field = format!("beam{} {name}", beam + 1);
+            let kind = if degenerate(&a) && degenerate(&b) {
+                let reference = b[0].0;
+                let leg = incoming(&theirs.events[0])[beam];
+                let tol = printed_tolerance(
+                    spelling(&theirs.events[0], leg, line_field).as_deref(),
+                    reference,
+                );
+                let furthest = |values: &[(f64, f64)]| {
+                    values.iter().map(|&(v, _)| v).fold(reference, |best, v| {
+                        if (v - reference).abs() > (best - reference).abs() {
+                            v
+                        } else {
+                            best
+                        }
+                    })
+                };
+                let (mine, other) = (furthest(&a), furthest(&b));
+                let max_dev = (mine - reference).abs().max((other - reference).abs());
+                BeamKind::Constant {
+                    theirs: reference,
+                    ours: mine,
+                    max_dev,
+                    tol,
+                }
+            } else {
+                let test = ks_two_sample(&a, &b).expect("both columns are finite and non-empty");
+                BeamKind::Distribution {
+                    d: test.d,
+                    p: test.p,
+                }
+            };
+            columns.push(BeamColumn { field, kind });
+        }
+    }
+    columns
+}
+
 /// Whether a column's values span enough of their own scale to have a
 /// distribution.
 fn degenerate(values: &[(f64, f64)]) -> bool {
@@ -367,7 +657,8 @@ pub fn labelling_for(a: &EventSample, b: &EventSample) -> Labelling {
 /// # Panics
 ///
 /// If the two samples produce different observable names, which means they are
-/// not samples of the same process as far as any of this can tell.
+/// not samples of the same process as far as any of this can tell, or if they
+/// list different numbers of incoming legs.
 pub fn compare(ours: &EventSample, theirs: &EventSample, labelling: Labelling) -> Comparison {
     let mine = columns(ours, labelling);
     let mg = columns(theirs, labelling);
@@ -404,6 +695,7 @@ pub fn compare(ours: &EventSample, theirs: &EventSample, labelling: Labelling) -
     Comparison {
         ks,
         chi2,
+        beams: beam_columns(ours, theirs),
         constant,
         single_category,
     }
@@ -532,5 +824,126 @@ mod tests {
     #[should_panic(expected = "IDWTUP = 1")]
     fn an_unknown_strategy_is_refused_rather_than_guessed() {
         EventSample::from_lhe(file(WeightStrategy::Other(1), 1.0, &[1.0]));
+    }
+
+    /// Two events of a fixed-beam `2 → 2` run in MadGraph's Fortran dialect: the
+    /// beams on their own mass shells at 60 and 70 GeV, spelled at eleven
+    /// significant digits, which is where the tolerance below comes from.
+    const BANKED_LHE: &str = "\
+<init>
+9000051 9000052 0.25000000E+03 0.25000000E+03 0 0 0 0 3 1
+0.22159200E-02 0.95337000E-06 0.22159200E-02 1
+</init>
+<event>
+4 1 +2.2159200e-03 0.2512964E+03 0.7957747E-01 0.4333599E+00
+9000051   -1    0    0  501    0  0.00000000000E+00  0.00000000000E+00  0.24135011226E+03  0.24869635439E+03  0.60000000000E+02 0.  0.
+9000052   -1    0    0  502    0 -0.00000000000E+00 -0.00000000000E+00 -0.24135011226E+03  0.25129639211E+03  0.70000000000E+02 0.  0.
+9000051    1    1    2  501    0 -0.66923528756E+02 -0.87907914694E+02  0.21457706429E+03  0.24869635439E+03  0.60000000000E+02 0.  0.
+9000052    1    1    2  502    0  0.66923528756E+02  0.87907914694E+02 -0.21457706429E+03  0.25129639211E+03  0.70000000000E+02 0.  0.
+</event>
+<event>
+4 1 +2.2159200e-03 0.2512964E+03 0.7957747E-01 0.4333599E+00
+9000051   -1    0    0  501    0  0.00000000000E+00  0.00000000000E+00  0.24135011226E+03  0.24869635439E+03  0.60000000000E+02 0.  0.
+9000052   -1    0    0  502    0 -0.00000000000E+00 -0.00000000000E+00 -0.24135011226E+03  0.25129639211E+03  0.70000000000E+02 0.  0.
+9000051    1    1    2  501    0 -0.12772289271E+03  0.34171648500E+02  0.20191344137E+03  0.24869635439E+03  0.60000000000E+02 0.  0.
+9000052    1    1    2  502    0  0.12772289271E+03 -0.34171648500E+02 -0.20191344137E+03  0.25129639211E+03  0.70000000000E+02 0.  0.
+</event>
+";
+
+    fn banked() -> EventSample {
+        EventSample::from_lhe(LheFile::parse(BANKED_LHE).expect("the fixture parses"))
+    }
+
+    /// A constant column that agrees with the banked record to the last bit.
+    fn exact(cell: &BeamColumn) -> bool {
+        matches!(cell.kind, BeamKind::Constant { max_dev, .. } if max_dev == 0.0)
+    }
+
+    fn column<'a>(columns: &'a [BeamColumn], field: &str) -> &'a BeamColumn {
+        columns
+            .iter()
+            .find(|c| c.field == field)
+            .unwrap_or_else(|| panic!("no {field} column"))
+    }
+
+    /// Both of MadGraph's spellings, read for the place value of their last
+    /// digit — the quantity the fixed-beam tolerance is half of.
+    #[test]
+    fn a_printed_fields_precision_is_read_off_its_own_spelling() {
+        assert_eq!(printed_place("0.24135011226E+03"), Some(1e-8));
+        assert_eq!(printed_place("-0.24135011226E+03"), Some(1e-8));
+        assert_eq!(printed_place("+1.1855987927e+01"), Some(1e-9));
+        assert_eq!(printed_place("0.0000000000e+00"), Some(1e-10));
+        assert_eq!(printed_place("501"), None);
+    }
+
+    /// The pin the fixed-beam column stands on: a perturbation of one incoming
+    /// `pz` inside what the record's own printing states passes, and one outside
+    /// it fails, on the same pair of samples.
+    ///
+    /// It is a *per-event* maximum, so perturbing a single event of a sample
+    /// whose beams are otherwise identical is enough.
+    #[test]
+    fn an_incoming_pz_is_compared_at_the_records_own_printed_precision() {
+        let mg = banked();
+        let identical = beam_columns(&mg, &mg);
+        for cell in &identical {
+            assert!(
+                exact(cell),
+                "{} against itself is not exact: {:?}",
+                cell.field,
+                cell.kind
+            );
+        }
+        assert_eq!(identical.len(), 6, "two beams times (E, pz, m)");
+
+        // Half the last printed digit's place, plus a few ulps of the value.
+        let tol = match column(&identical, "beam1 pz").kind {
+            BeamKind::Constant { tol, .. } => tol,
+            other => panic!("a fixed beam is not a constant: {other:?}"),
+        };
+        assert!((5e-9..5.1e-9).contains(&tol), "tolerance {tol:e}");
+
+        for (shift, agrees) in [(0.8 * tol, true), (4.0 * tol, false)] {
+            let mut ours = mg.clone();
+            ours.events[0].particles[0].momentum[3] += shift;
+            let found = beam_columns(&ours, &mg);
+            let cell = column(&found, "beam1 pz");
+            assert_eq!(
+                cell.agrees(1e-4),
+                agrees,
+                "a {shift:e} GeV shift against a {tol:e} GeV tolerance: {:?}",
+                cell.kind
+            );
+            for other in &found {
+                if other.field != "beam1 pz" {
+                    assert!(
+                        other.agrees(1e-4),
+                        "{} moved too: {:?}",
+                        other.field,
+                        other.kind
+                    );
+                }
+            }
+        }
+    }
+
+    /// A beam whose energy varies event to event — a hadron beam's momentum
+    /// fraction — has a distribution, and the column becomes the same weighted
+    /// KS the outgoing observables take. Which branch a field falls into is read
+    /// off the samples, not declared.
+    #[test]
+    fn a_beam_that_varies_per_event_is_compared_as_a_distribution() {
+        let mg = banked();
+        let mut ours = mg.clone();
+        ours.events[0].particles[0].momentum[0] *= 0.5;
+        ours.events[0].particles[0].momentum[3] *= 0.5;
+        let found = beam_columns(&ours, &mg);
+        assert!(matches!(
+            column(&found, "beam1 E").kind,
+            BeamKind::Distribution { .. }
+        ));
+        assert!(exact(column(&found, "beam1 m")));
+        assert!(exact(column(&found, "beam2 E")));
     }
 }

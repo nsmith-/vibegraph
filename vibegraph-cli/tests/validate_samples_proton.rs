@@ -26,6 +26,12 @@
 //! flavour column is the first comparison of the realised populations against
 //! MadGraph's own sample.
 //!
+//! And the **incoming legs**, which here are not constants of the process: each
+//! beam's energy is a momentum fraction times the run card's, drawn from the
+//! parton luminosities, so its column is a weighted KS against MadGraph's own
+//! and is the first comparison of the realised `x` spectra. The fixed-beam rows
+//! compare the same legs as an equality, since there they are constants.
+//!
 //! And, on the Drell-Yan pair, **`dσ/dm_ll` in absolute picobarns** down to the
 //! card's own threshold ([`the_drell_yan_mass_spectrum_is_binned_against_madgraph`]):
 //! the per-row columns below are shape statements, and the σ gates elsewhere are
@@ -46,7 +52,7 @@ use std::process::Command;
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::validation::samples::{compare, labelling_for, EventSample, Spectrum};
+use vibegraph::validation::samples::{compare, labelling_for, BeamKind, EventSample, Spectrum};
 
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
 mod report;
@@ -57,7 +63,7 @@ mod manifest;
 #[path = "../../vibegraph-lib/tests/common/leshouche.rs"]
 mod leshouche;
 
-use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
+use report::{BeamCell, CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
 
 /// The PDF set both banked runs were generated with.
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
@@ -400,6 +406,39 @@ fn check_row(row_spec: &Row) {
                 ));
             }
         }
+        for cell in &found.beams {
+            match cell.kind {
+                BeamKind::Constant {
+                    theirs, ours, tol, ..
+                } => eprintln!(
+                    "             {:<9} {ours:.11e} against {theirs:.11e} (tol {tol:.2e})",
+                    cell.field
+                ),
+                BeamKind::Distribution { d, p } => {
+                    eprintln!("             {:<9} KS p {p:.3e} (D {d:.4})", cell.field)
+                }
+            }
+            if cell.agrees(P_FLOOR) {
+                continue;
+            }
+            failures.push(match cell.kind {
+                BeamKind::Constant {
+                    theirs,
+                    ours,
+                    max_dev,
+                    tol,
+                } => format!(
+                    "seed {seed:#010x} incoming {} is {ours:.11e} against the record's \
+                     {theirs:.11e}: {max_dev:.4e} outside the {tol:.2e} its printing allows",
+                    cell.field
+                ),
+                BeamKind::Distribution { d, p } => format!(
+                    "seed {seed:#010x} incoming {} KS p {p:.3e} (D {d:.4}) below the \
+                     {P_FLOOR:.0e} floor",
+                    cell.field
+                ),
+            });
+        }
 
         row.constant_observables = found.constant.clone();
         row.single_category = found
@@ -442,16 +481,22 @@ fn check_row(row_spec: &Row) {
                         .collect(),
                 })
                 .collect(),
+            beams: found.beams.iter().map(BeamCell::of).collect(),
         });
     }
 
     row.finish();
     eprintln!(
-        "  min KS p {:.3e} ({}), min chi2 p {:.3e} ({}) over {} seeds",
+        "  min KS p {:.3e} ({}), min chi2 p {:.3e} ({}), worst incoming {} \
+         (dev {:.4e} against tol {:.2e}, min beam KS p {:.3e}) over {} seeds",
         row.min_ks_p,
         row.worst_ks_observable,
         row.min_chi2_p,
         row.worst_chi2_column,
+        row.worst_beam_field,
+        row.max_beam_dev,
+        row.beam_tol,
+        row.min_beam_ks_p,
         GEN_SEEDS.len()
     );
     row.status = match mode {
