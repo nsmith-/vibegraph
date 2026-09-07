@@ -261,48 +261,6 @@ const CROSSING_INFLATION: f64 = 1e-6;
 /// did not bank.
 const TIE_BREAK_MISSES: &[(&str, usize)] = &[("pp_to_jj", 9)];
 
-/// The banked run cards this crate refuses, by the row whose `Cards/` holds
-/// them, with what makes the refusal the right answer.
-///
-/// A refusal is a claim about the estimator, not a gap: the card asks for a
-/// quantity that is not the one the rest of this crate computes, and accepting
-/// it would mean silently computing something else. The entry is two-way — a
-/// listed card that starts parsing fails
-/// [`banked_run_cards_are_accepted`].
-const REFUSED_RUN_CARDS: &[(&str, &str)] = &[(
-    "wpwm_to_wpwmz_cw",
-    "`w+ w- > w+ w- z` puts a weak boson on both beams, which is MadGraph's \
-     effective-vector-approximation branch (`banner.py`: `eva_in_b1 and eva_in_b2`). \
-     That branch sets `nhel = 1` — Monte Carlo over helicities in place of the \
-     explicit sum — along with `pdlabel = eva` and `fixed_fac_scale`, and the \
-     script's `set lpp1 0` overrides the beams it also set but not those. A \
-     sampled helicity is a different estimator and a different per-event weight, \
-     so the card is refused rather than read as an explicit sum",
-)];
-
-/// The runs whose model declares no strong coupling, with the `AQCDUP` every
-/// one of their events carries.
-///
-/// A UFO with no `aS` among its external parameters leaves `SMINPUTS` out of
-/// the generated parameter card altogether, so there is no `αs(M_Z)` for this
-/// crate to evolve and the field is one number over all 10 000 events. Nothing
-/// in these processes multiplies it either — the toy models carry their own
-/// couplings and reach colour through the colour atoms alone.
-///
-/// **What this cannot see**: whether MadGraph's number is the right one. It
-/// comes from its own `ALPHAS` under whatever defaults a model with no `aS`
-/// leaves in `run.inc`, which is why the two `l+ l-` shapes and the octet run
-/// disagree with each other; nothing here derives it. What is asserted is that
-/// the field is constant, that it is *this* constant, and that the parameter
-/// card still holds no `aS` — so a model that grows one and goes on printing
-/// one number is a coupling frozen in silence and fails here.
-const CONSTANT_ALPHA_S_RUNS: &[(&str, f64)] = &[
-    ("ll_to_qqx_toy_dipole", 0.3052475),
-    ("ll_to_qqx_toy_tensor", 0.3052475),
-    ("ll_to_qqx_toy_yukawa", 0.3052475),
-    ("qqx_to_o8o8_toy_dcolor", 0.4333524),
-];
-
 /// The runs whose `scalefact` is not `1`, with the value their card carries.
 ///
 /// One exists, and it is the only thing that pins where MadGraph applies the
@@ -598,6 +556,30 @@ fn fixed(choice: &ScaleChoice) -> Result<MuTriple, ScaleError> {
         outgoing: &[],
     })?;
     Ok(MuTriple([scales.mu_r, scales.mu_f[0], scales.mu_f[1]]))
+}
+
+/// A run's `αs(M_Z)`, from `SMINPUTS` where the model declares an `aS` and from
+/// [`common::UNDECLARED_ALPHA_S_MZ`] where it declares none. A run in neither is a
+/// model this gate has not classified, not a run to skip.
+fn alpha_s_mz(name: &str, params: &ParamCard) -> f64 {
+    match params.get("sminputs", &[3]) {
+        Some(a_s) => {
+            assert!(
+                !common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: its parameter card carries an aS now — drop it from \
+                 UNDECLARED_ALPHA_S_RUNS"
+            );
+            a_s
+        }
+        None => {
+            assert!(
+                common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: no aS in SMINPUTS and the run is not declared as a model \
+                 without one"
+            );
+            common::UNDECLARED_ALPHA_S_MZ
+        }
+    }
 }
 
 fn run_card(run: &Path) -> RunCard {
@@ -1004,38 +986,7 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
         let choice = ScaleChoice::from_run_card(&card).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
 
-        // A model with no strong coupling has no scale dependence to reproduce:
-        // the comparison is against the declared constant, and against the
-        // absence of the parameter that would make it run.
-        if let Some((_, constant)) = CONSTANT_ALPHA_S_RUNS.iter().find(|(run, _)| run == name) {
-            assert!(
-                params.get("sminputs", &[3]).is_none(),
-                "{name}: its parameter card carries an aS now, so AQCDUP is a running \
-                 coupling and the run belongs with the others"
-            );
-            let mut run_worst = 0.0f64;
-            for event in parse_events(run).iter() {
-                let budget = printed_half_ulp(*constant, 7);
-                let fraction = (event.aqcdup - constant).abs() / budget;
-                assert!(
-                    fraction <= 1.0,
-                    "{name}: AQCDUP {:.7e} against the recorded constant {constant}, \
-                     {fraction:.3} of budget {budget:.3e}",
-                    event.aqcdup
-                );
-                run_worst = run_worst.max(fraction);
-                events_checked += 1;
-            }
-            if run_worst > worst.0 {
-                worst = (run_worst, name.clone());
-            }
-            runs_checked += 1;
-            continue;
-        }
-
-        let a_s = params
-            .get("sminputs", &[3])
-            .unwrap_or_else(|| panic!("{name}: aS in SMINPUTS"));
+        let a_s = alpha_s_mz(name, &params);
         let source = AlphaSSource::from_run_card(
             &card,
             a_s,
@@ -1513,7 +1464,7 @@ fn the_general_path_keeps_the_beam_crossing_population() {
 /// that nothing legitimate is rejected; the committed-card half runs on a bare
 /// clone in `scales_run_cards.rs`.
 ///
-/// [`REFUSED_RUN_CARDS`] is the two-way exception: those cards are rejected on
+/// [`common::REFUSED_RUN_CARDS`] is the two-way exception: those cards are rejected on
 /// purpose and are asserted to stay rejected, so a refusal that is quietly
 /// dropped fails here rather than turning into silent acceptance.
 #[test]
@@ -1527,7 +1478,9 @@ fn banked_run_cards_are_accepted() {
             .expect("row directory")
             .to_string_lossy()
             .into_owned();
-        let deliberate = REFUSED_RUN_CARDS.iter().any(|(name, _)| *name == row);
+        let deliberate = common::REFUSED_RUN_CARDS
+            .iter()
+            .any(|(name, _)| *name == row);
         for name in ["run_card.dat", "run_card_default.dat"] {
             let path = dir.join("Cards").join(name);
             if path.is_file() {
@@ -1557,7 +1510,7 @@ fn banked_run_cards_are_accepted() {
         let outcome = RunCard::parse_file(path);
         assert!(
             outcome.is_err(),
-            "{} is listed in REFUSED_RUN_CARDS but is accepted now — drop the entry",
+            "{} is listed in common::REFUSED_RUN_CARDS but is accepted now — drop the entry",
             path.display()
         );
         println!(
