@@ -206,7 +206,7 @@ impl RowFile {
             ),
             Category::Samples => format!(
                 "{} MadGraph events, {} labelling, p-floor {}; worst observable {} at KS p {}, \
-                 worst column {} at chi2 p {}; {}",
+                 worst column {} at chi2 p {}; {}; {}",
                 self.u64_at("mg_events")?,
                 self.str_at("labelling")?,
                 exp(self.f64_at("p_floor")?),
@@ -215,6 +215,7 @@ impl RowFile {
                 self.str_at("worst_chi2_column")?,
                 pval(self.f64_at("min_chi2_p")?),
                 self.incoming_legs(),
+                self.reported_scales(),
             ),
         })
     }
@@ -239,6 +240,32 @@ impl RowFile {
         format!(
             "incoming legs: worst {field} deviates {} against the record's printed {}, \
              min beam KS p {}{mode}",
+            exp(dev),
+            exp(tol),
+            pval(ks),
+        )
+    }
+
+    /// How the reported scales read: the constant field furthest from the banked
+    /// record against what that record's printing allows, and the smallest KS
+    /// p-value over the fields a per-event prescription varies.
+    ///
+    /// A row measured before the column existed carries none of these fields, and
+    /// says so rather than rendering a zero deviation as agreement.
+    fn reported_scales(&self) -> String {
+        let Ok(field) = self.str_at("worst_scale_field") else {
+            return "scales not compared".to_string();
+        };
+        let mode = match self.str_at("scale_mode") {
+            Ok("gate") => "",
+            _ => ", measured not enforced",
+        };
+        let dev = self.f64_at("max_scale_dev").unwrap_or(f64::NAN);
+        let tol = self.f64_at("scale_tol").unwrap_or(f64::NAN);
+        let ks = self.f64_at("min_scale_ks_p").unwrap_or(f64::NAN);
+        format!(
+            "scales: worst {field} deviates {} against the record's printed {}, \
+             min scale KS p {}{mode}",
             exp(dev),
             exp(tol),
             pval(ks),

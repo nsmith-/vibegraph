@@ -52,7 +52,7 @@ use std::process::Command;
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
 use vibegraph::lhef::parse::LheFile;
-use vibegraph::validation::samples::{compare, labelling_for, BeamKind, EventSample, Spectrum};
+use vibegraph::validation::samples::{compare, labelling_for, EventSample, Spectrum};
 
 #[path = "../../vibegraph-lib/tests/common/report.rs"]
 mod report;
@@ -63,7 +63,7 @@ mod manifest;
 #[path = "../../vibegraph-lib/tests/common/leshouche.rs"]
 mod leshouche;
 
-use report::{BeamCell, CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
+use report::{CategoryCount, Chi2Cell, FieldCell, KsCell, SamplesRow, SeedSample, Stopwatch};
 
 /// The PDF set both banked runs were generated with.
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
@@ -137,10 +137,25 @@ struct Row {
     neval: &'static str,
     niter: &'static str,
     mode: &'static str,
+    /// The reported scales' own mode. `no_alpha_s` where the row's matrix
+    /// element does not move with the strong coupling, so no running coupling is
+    /// built and every record carries `AQCDUP = 0` while MadGraph's carries
+    /// `αs(μR)`: measured, reported, and asserted to be that case rather than
+    /// some other disagreement wearing the same waiver.
+    scale_mode: ScaleMode,
     /// Per-event scans run over each generated sample in addition to the
     /// distribution comparison. Each returns how many units it judged and how many
     /// failed, so a clean reading is a recorded measurement rather than silence.
     scans: &'static [Scan],
+}
+
+/// Whether a row's reported scales gate, and why not where they do not.
+#[derive(Clone, Copy, PartialEq)]
+enum ScaleMode {
+    Gate,
+    /// Nothing in the matrix element moves with `αs`, so no running coupling is
+    /// built and the record reports none.
+    NoAlphaS,
 }
 
 /// One per-event scan: `(name, unit, run)`, where `run` returns `(bad, total)`.
@@ -319,6 +334,7 @@ const LLJ_FIXED_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -332,6 +348,7 @@ const LLJ_DYN_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -345,6 +362,7 @@ const BB_FIXED_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -358,6 +376,7 @@ const JJ_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: DIJET_SCANS,
 };
 
@@ -371,6 +390,7 @@ const BB_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -384,6 +404,7 @@ const BB_QCD2_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -397,6 +418,7 @@ const LLJ_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::Gate,
     scans: &[],
 };
 
@@ -410,6 +432,7 @@ const SCALEFACT2_ROW: Row = Row {
     neval: NEVAL,
     niter: NITER,
     mode: "gate",
+    scale_mode: ScaleMode::NoAlphaS,
     scans: &[],
 };
 
@@ -473,10 +496,34 @@ fn check_row(row_spec: &Row) {
     row.mg_events = mg.len();
     row.sigma_mg_pb = mg.sigma_pb;
     row.labelling = "coarse";
+    row.scale_mode = match row_spec.scale_mode {
+        ScaleMode::Gate => mode,
+        ScaleMode::NoAlphaS => "info",
+    };
     let mut failures: Vec<String> = Vec::new();
+    // The `AQCDUP` column's recorded disagreement on a row that builds no running
+    // coupling: reported in full, never enforced.
+    let mut informational: Vec<String> = Vec::new();
 
     for &seed in &GEN_SEEDS {
         let ours = generator.sample(seed);
+        if row_spec.scale_mode == ScaleMode::NoAlphaS {
+            // The waiver covers one mechanism — no strong coupling was built, so
+            // the record reports none — and nothing else that could disagree on
+            // the same column.
+            let reported: Vec<f64> = ours
+                .events
+                .iter()
+                .map(|e| e.alpha_qcd)
+                .filter(|a| *a != 0.0)
+                .collect();
+            assert!(
+                reported.is_empty(),
+                "[{run}] is waived on AQCDUP because no running coupling is built, but \
+                 {} of its events report one",
+                reported.len()
+            );
+        }
 
         for (name, unit, scan) in row_spec.scans {
             let (bad, total) = scan(row_spec, &ours);
@@ -529,38 +576,19 @@ fn check_row(row_spec: &Row) {
                 ));
             }
         }
-        for cell in &found.beams {
-            match cell.kind {
-                BeamKind::Constant {
-                    theirs, ours, tol, ..
-                } => eprintln!(
-                    "             {:<9} {ours:.11e} against {theirs:.11e} (tol {tol:.2e})",
-                    cell.field
-                ),
-                BeamKind::Distribution { d, p } => {
-                    eprintln!("             {:<9} KS p {p:.3e} (D {d:.4})", cell.field)
+        for (what, columns) in [("incoming", &found.beams), ("reported", &found.scales)] {
+            for cell in columns {
+                eprintln!("             {}", cell.describe());
+                let Some(line) = cell.disagreement(what, P_FLOOR) else {
+                    continue;
+                };
+                let line = format!("seed {seed:#010x} {line}");
+                if row_spec.scale_mode == ScaleMode::NoAlphaS && cell.field == "AQCDUP" {
+                    informational.push(line);
+                } else {
+                    failures.push(line);
                 }
             }
-            if cell.agrees(P_FLOOR) {
-                continue;
-            }
-            failures.push(match cell.kind {
-                BeamKind::Constant {
-                    theirs,
-                    ours,
-                    max_dev,
-                    tol,
-                } => format!(
-                    "seed {seed:#010x} incoming {} is {ours:.11e} against the record's \
-                     {theirs:.11e}: {max_dev:.4e} outside the {tol:.2e} its printing allows",
-                    cell.field
-                ),
-                BeamKind::Distribution { d, p } => format!(
-                    "seed {seed:#010x} incoming {} KS p {p:.3e} (D {d:.4}) below the \
-                     {P_FLOOR:.0e} floor",
-                    cell.field
-                ),
-            });
         }
 
         row.constant_observables = found.constant.clone();
@@ -604,7 +632,8 @@ fn check_row(row_spec: &Row) {
                         .collect(),
                 })
                 .collect(),
-            beams: found.beams.iter().map(BeamCell::of).collect(),
+            beams: found.beams.iter().map(FieldCell::of).collect(),
+            scales: found.scales.iter().map(FieldCell::of).collect(),
         });
     }
 
@@ -622,6 +651,10 @@ fn check_row(row_spec: &Row) {
         row.min_beam_ks_p,
         GEN_SEEDS.len()
     );
+    eprintln!(
+        "  worst reported {} (dev {:.4e} against tol {:.2e}, min scale KS p {:.3e})",
+        row.worst_scale_field, row.max_scale_dev, row.scale_tol, row.min_scale_ks_p,
+    );
     row.status = match mode {
         "gate" => {
             if failures.is_empty() {
@@ -635,6 +668,9 @@ fn check_row(row_spec: &Row) {
     row.duration_s = Some(clock.seconds());
     row.write();
 
+    if !informational.is_empty() {
+        eprintln!("  [{run}] measured, not enforced:\n{informational:#?}");
+    }
     if mode != "gate" {
         if !failures.is_empty() {
             eprintln!("  [{run}] measured, not enforced:\n{failures:#?}");
@@ -698,6 +734,7 @@ const DY_ROWS: &[Row] = &[
         neval: DY_NEVAL,
         niter: DY_NITER,
         mode: "gate",
+        scale_mode: ScaleMode::NoAlphaS,
         scans: &[],
     },
     Row {
@@ -710,6 +747,7 @@ const DY_ROWS: &[Row] = &[
         neval: DY_NEVAL,
         niter: DY_NITER,
         mode: "gate",
+        scale_mode: ScaleMode::NoAlphaS,
         scans: &[],
     },
 ];

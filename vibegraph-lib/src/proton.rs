@@ -86,7 +86,7 @@ use thread_local::ThreadLocal;
 use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
-use crate::coupling::scales::{EventScales, ScaleError};
+use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
@@ -1317,6 +1317,10 @@ impl<'a> ProtonIntegrand<'a> {
             card,
             alpha_s,
             awareness.depends_on_alpha_s,
+            // No banked hadron-beam run selects one of `setscales.f`'s closed
+            // forms, so a scale taken under one here would feed the parton
+            // densities with nothing on the other side of it.
+            ClosedForms::Refuse,
         )?;
         // Every pooled sampling channel has to name a channel of its own group's
         // forests: that pairing is the whole of how a drawn channel reaches the

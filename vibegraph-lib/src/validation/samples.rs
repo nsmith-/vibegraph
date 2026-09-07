@@ -10,10 +10,22 @@
 //! carries. [`compare`] turns two of them into a [`Comparison`]: one
 //! Kolmogorov–Smirnov result per named continuous observable
 //! ([`observables::kinematics`](crate::lhef::observables::kinematics)), one χ²
-//! homogeneity result per categorical column (`SPINUP`, `ICOLUP`, flavour), and
-//! one [`BeamColumn`] per incoming leg and field. The statistics themselves are
-//! [`crate::stats`]; what this module adds is turning records into columns, and
-//! deciding what is not comparable.
+//! homogeneity result per categorical column (`SPINUP`, `ICOLUP`, flavour), one
+//! [`FieldColumn`] per incoming leg and field, and one more per scalar the
+//! `<event>` line reports. The statistics themselves are [`crate::stats`]; what
+//! this module adds is turning records into columns, and deciding what is not
+//! comparable.
+//!
+//! # A field that may or may not have a distribution
+//!
+//! The incoming legs and the record's scales are both *fields* rather than
+//! shapes: whether either has a distribution to test is a property of the run,
+//! not of the field. [`FieldColumn`] therefore carries both readings and
+//! [`field_column`] picks between them off the samples themselves — a field
+//! degenerate on both sides is compared as an equality against the banked
+//! record's own value, at the precision that record printed it to
+//! ([`printed_place`]) plus a few double-precision ulps; anything else takes the
+//! same weighted two-sample Kolmogorov–Smirnov the outgoing observables do.
 //!
 //! # The incoming legs
 //!
@@ -21,24 +33,29 @@
 //! they say nothing about the beams. [`beam_columns`] compares the incoming legs
 //! directly, field by field: `E`, `pz` and the mass the record carries.
 //!
-//! At fixed beams those are constants of the process, so there is no
-//! distribution to test and the statistic is the largest absolute departure from
-//! the banked record's own value over every event of both samples, judged
-//! against what that record's *printing* allows — half the place value of the
-//! field's last digit, read off the line the file spelled (see
-//! [`printed_place`]), plus a few double-precision ulps for the arithmetic on
-//! this side. That is an equality test at the only precision the reference
-//! states its beams to, and it is the one comparison here that is not a
-//! normalised shape.
-//!
-//! At hadron beams the legs carry the momentum fractions and vary per event, so
-//! the same fields fall back to the weighted two-sample Kolmogorov–Smirnov the
-//! outgoing columns use. Which of the two a field takes is read off the samples
-//! (whether it is degenerate), not declared.
+//! At fixed beams those are constants of the process; at hadron beams they carry
+//! the momentum fractions and vary per event. Either way the comparison is an
+//! equality against the reference's own record rather than a normalised shape.
 //!
 //! What this cannot see: two runs whose beams agree. A wrong beam construction
 //! that happens to reproduce the reference's momenta is invisible here, as is
 //! everything about the outgoing state — that is the KS and χ² columns'.
+//!
+//! # The scales the record reports
+//!
+//! `SCALUP` and `AQCDUP` are the only fields of a Les Houches event that say
+//! what the matrix element was *evaluated at*, and no shape reaches them: a
+//! wrong scale on every event moves the weights and so the cross section, but a
+//! wrong scale on a subset that σ averages over, or a right cross section
+//! reported under a scale nothing computed, leaves every other column of this
+//! module untouched. [`scale_columns`] compares them field by field the way
+//! [`beam_columns`] compares the legs.
+//!
+//! What this cannot see: a scale prescription both sides get wrong the same way,
+//! and `μR` where it differs from `μF` — `SCALUP` is `max(μF)` by the accord's
+//! own definition ([`scalup`](crate::lhef::build::scalup)) and `AQCDUP` reaches
+//! `μR` only through `αs`, which is flat enough near `M_Z` that the field
+//! constrains the scale far more weakly than it constrains the coupling.
 //!
 //! # What is deliberately not compared
 //!
@@ -163,17 +180,19 @@ pub struct Chi2Column {
     pub detail: Vec<(String, f64, f64)>,
 }
 
-/// One incoming leg's field, compared between the two samples.
+/// One scalar field of the record, compared between the two samples: an incoming
+/// leg's energy, momentum or mass, or a scale the `<event>` line reports.
 #[derive(Clone, Debug)]
-pub struct BeamColumn {
-    /// `beam1 E`, `beam1 pz`, `beam1 m`, and the same for the second beam.
+pub struct FieldColumn {
+    /// `beam1 E`, `beam1 pz`, `beam1 m` and the same for the second beam, or
+    /// `SCALUP` and `AQCDUP`.
     pub field: String,
-    pub kind: BeamKind,
+    pub kind: FieldKind,
 }
 
-/// How an incoming leg's field was compared, which depends on whether it varies.
+/// How a field was compared, which depends on whether it varies.
 #[derive(Clone, Copy, Debug)]
-pub enum BeamKind {
+pub enum FieldKind {
     /// Both samples hold the field at one value, so there is no distribution:
     /// the reference is the banked record's own value and the statistic is the
     /// largest absolute departure from it on either side.
@@ -187,19 +206,61 @@ pub enum BeamKind {
         /// What the banked record's printed precision allows.
         tol: f64,
     },
-    /// The field varies per event — a hadron beam's momentum fraction — so it is
-    /// compared as a weighted distribution like every outgoing observable.
+    /// The field varies per event — a hadron beam's momentum fraction, a
+    /// clustered scale — so it is compared as a weighted distribution like every
+    /// outgoing observable.
     Distribution { d: f64, p: f64 },
 }
 
-impl BeamColumn {
+impl FieldColumn {
     /// Whether the column agrees: inside the reference's printed precision for a
     /// constant field, above the floor for a varying one.
     pub fn agrees(&self, p_floor: f64) -> bool {
         match self.kind {
-            BeamKind::Constant { max_dev, tol, .. } => max_dev <= tol,
-            BeamKind::Distribution { p, .. } => p >= p_floor,
+            FieldKind::Constant { max_dev, tol, .. } => max_dev <= tol,
+            FieldKind::Distribution { p, .. } => p >= p_floor,
         }
+    }
+
+    /// The column as one log line: the value furthest from the reference against
+    /// the reference itself for a constant field, the KS reading for one that
+    /// varies.
+    pub fn describe(&self) -> String {
+        match self.kind {
+            FieldKind::Constant {
+                theirs, ours, tol, ..
+            } => format!(
+                "{:<9} {ours:.11e} against {theirs:.11e} (tol {tol:.2e})",
+                self.field
+            ),
+            FieldKind::Distribution { d, p } => {
+                format!("{:<9} KS p {p:.3e} (D {d:.4})", self.field)
+            }
+        }
+    }
+
+    /// How the column disagrees, in the record's own terms, or `None` where it
+    /// does not. `what` names the family the field belongs to.
+    pub fn disagreement(&self, what: &str, p_floor: f64) -> Option<String> {
+        if self.agrees(p_floor) {
+            return None;
+        }
+        Some(match self.kind {
+            FieldKind::Constant {
+                theirs,
+                ours,
+                max_dev,
+                tol,
+            } => format!(
+                "{what} {} is {ours:.11e} against the record's {theirs:.11e}: {max_dev:.4e} \
+                 outside the {tol:.2e} its printing allows",
+                self.field
+            ),
+            FieldKind::Distribution { d, p } => format!(
+                "{what} {} KS p {p:.3e} (D {d:.4}) below the {p_floor:.0e} floor",
+                self.field
+            ),
+        })
     }
 
     /// A constant field's deviation as a multiple of its tolerance, which is how
@@ -207,7 +268,7 @@ impl BeamColumn {
     /// records agree exactly, whatever the tolerance is.
     pub fn deviation_ratio(&self) -> f64 {
         match self.kind {
-            BeamKind::Constant { max_dev, tol, .. } if max_dev > 0.0 => {
+            FieldKind::Constant { max_dev, tol, .. } if max_dev > 0.0 => {
                 max_dev / tol.max(f64::MIN_POSITIVE)
             }
             _ => 0.0,
@@ -221,7 +282,9 @@ pub struct Comparison {
     pub ks: Vec<KsColumn>,
     pub chi2: Vec<Chi2Column>,
     /// The incoming legs, field by field.
-    pub beams: Vec<BeamColumn>,
+    pub beams: Vec<FieldColumn>,
+    /// The scales the `<event>` line reports, field by field.
+    pub scales: Vec<FieldColumn>,
     /// Observables that are constants of the process.
     pub constant: Vec<String>,
     /// Categorical columns with a single category.
@@ -241,25 +304,46 @@ impl Comparison {
 
     /// The constant incoming-leg field sitting furthest outside the reference's
     /// printed precision.
-    pub fn worst_beam_constant(&self) -> Option<&BeamColumn> {
-        self.beams
-            .iter()
-            .filter(|c| matches!(c.kind, BeamKind::Constant { .. }))
-            .max_by(|a, b| a.deviation_ratio().total_cmp(&b.deviation_ratio()))
+    pub fn worst_beam_constant(&self) -> Option<&FieldColumn> {
+        worst_constant(&self.beams)
     }
 
     /// The smallest KS p-value over the incoming-leg fields that vary.
-    pub fn worst_beam_distribution(&self) -> Option<&BeamColumn> {
-        self.beams
-            .iter()
-            .filter(|c| matches!(c.kind, BeamKind::Distribution { .. }))
-            .min_by(|a, b| match (a.kind, b.kind) {
-                (BeamKind::Distribution { p: x, .. }, BeamKind::Distribution { p: y, .. }) => {
-                    x.total_cmp(&y)
-                }
-                _ => std::cmp::Ordering::Equal,
-            })
+    pub fn worst_beam_distribution(&self) -> Option<&FieldColumn> {
+        worst_distribution(&self.beams)
     }
+
+    /// The constant scale field sitting furthest outside the reference's printed
+    /// precision.
+    pub fn worst_scale_constant(&self) -> Option<&FieldColumn> {
+        worst_constant(&self.scales)
+    }
+
+    /// The smallest KS p-value over the scale fields that vary.
+    pub fn worst_scale_distribution(&self) -> Option<&FieldColumn> {
+        worst_distribution(&self.scales)
+    }
+}
+
+/// The column whose constant departs furthest from the reference as a multiple
+/// of its own tolerance.
+fn worst_constant(columns: &[FieldColumn]) -> Option<&FieldColumn> {
+    columns
+        .iter()
+        .filter(|c| matches!(c.kind, FieldKind::Constant { .. }))
+        .max_by(|a, b| a.deviation_ratio().total_cmp(&b.deviation_ratio()))
+}
+
+/// The column with the smallest KS p-value among those that vary.
+fn worst_distribution(columns: &[FieldColumn]) -> Option<&FieldColumn> {
+    columns
+        .iter()
+        .filter_map(|c| match c.kind {
+            FieldKind::Distribution { p, .. } => Some((p, c)),
+            FieldKind::Constant { .. } => None,
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, c)| c)
 }
 
 /// One sample's differential cross section in a named observable, binned.
@@ -486,19 +570,106 @@ pub fn printed_place(text: &str) -> Option<f64> {
     Some(10f64.powi(exponent - fraction.len() as i32))
 }
 
-/// What a printed field's own precision allows between two records of it: half
-/// the place value of its last digit, plus a few double-precision ulps for the
-/// arithmetic that produced the value being compared against it.
-fn printed_tolerance(spelling: Option<&str>, value: f64) -> f64 {
-    let place = spelling.and_then(printed_place).unwrap_or_else(|| {
-        if value == 0.0 {
-            0.0
-        } else {
-            let decade = value.abs().log10().floor() as i32;
-            10f64.powi(decade - (PRINTED_SIGNIFICANT_DIGITS - 1))
-        }
-    });
-    0.5 * place + 8.0 * f64::EPSILON * value.abs()
+/// How many significant digits a field was printed with: `11` for
+/// `0.24135011226E+03` and for `+1.1855987927e+01`.
+///
+/// The mantissa's leading zeros are not significant, which is what makes the two
+/// dialects — a leading `0.` and a leading digit — give the same answer for the
+/// same number.
+pub fn printed_digits(text: &str) -> Option<u32> {
+    let mantissa = text.split_once(['e', 'E'])?.0;
+    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    let significant = digits.trim_start_matches('0');
+    if !significant.is_empty() {
+        return Some(significant.len() as u32);
+    }
+    // An all-zero mantissa carries no significant digit at all; what its
+    // spelling resolves is the fractional width, the same quantity
+    // `printed_place` reads.
+    let fraction = mantissa.split_once('.')?.1;
+    (!fraction.is_empty()).then_some(fraction.len() as u32)
+}
+
+/// `value` on the grid the reference's own printing puts its values on:
+/// rounded to `digits` significant decimal digits.
+///
+/// A Kolmogorov–Smirnov statistic reads the two samples' values as exact reals,
+/// and the reference's are not — they were read back from a file that printed
+/// them to a fixed width. Two near-constant columns whose values differ in the
+/// digit after that width are then *disjoint in order*, and the statistic reads
+/// `D = 1` on a disagreement of one part in `1e8`. Rounding both sides onto the
+/// reference's own grid is what makes the KS branch a comparison at the
+/// precision the file states, which is what the constant branch's tolerance
+/// already is.
+fn round_significant(value: f64, digits: u32) -> f64 {
+    if value == 0.0 || !value.is_finite() {
+        return value;
+    }
+    let decade = value.abs().log10().floor() as i32;
+    let scale = 10f64.powi(digits as i32 - 1 - decade);
+    (value * scale).round() / scale
+}
+
+/// The `<event>` info line's scalar fields carry seven significant digits
+/// whatever width a file spells them at.
+///
+/// `rw_events.f` writes the line as `(i2,i5,e16.7e3,3e15.7)`, and MadGraph's
+/// Python post-processing re-serialises the same numbers two digits wider — so a
+/// banked file prints `1.30002700e-01` for a value that was only ever written as
+/// `1.300027e-01`: seven digits of information and two of padding. Reading the
+/// spelling alone would state a precision the reference does not have and
+/// compare against digits it never wrote. `validate_alphas` reads the same fact
+/// off the bank directly, over every event of every banked run.
+///
+/// The particle lines are not capped: there the spelled width *is* the written
+/// width in both dialects.
+const EVENT_LINE_DIGITS: u32 = 7;
+
+/// What a reference field's own printing states about its value: the place value
+/// of its last digit, and how many significant digits it carries.
+#[derive(Clone, Copy, Debug)]
+struct Printed {
+    place: f64,
+    digits: u32,
+}
+
+impl Printed {
+    /// Read off the reference's spelling, falling back to
+    /// [`PRINTED_SIGNIFICANT_DIGITS`] for a record that carries no text of its
+    /// own. `max_digits` caps what the spelling is allowed to claim, for a field
+    /// whose writer is narrower than the dialect that re-printed it.
+    fn of(spelling: Option<&str>, value: f64, max_digits: Option<u32>) -> Self {
+        let digits = spelling
+            .and_then(printed_digits)
+            .unwrap_or(PRINTED_SIGNIFICANT_DIGITS as u32)
+            .min(max_digits.unwrap_or(u32::MAX));
+        let place = match spelling.and_then(printed_place) {
+            // The value's own decade rather than the spelling's exponent, so a
+            // capped width states the place of the last digit it actually wrote.
+            Some(spelled) => spelled.max(place_of(value, digits)),
+            None => place_of(value, digits),
+        };
+        Printed { place, digits }
+    }
+
+    /// What this precision allows between two records of the field: half the
+    /// place value of its last digit, plus a few double-precision ulps for the
+    /// arithmetic that produced the value being compared against it.
+    fn tolerance(&self, value: f64) -> f64 {
+        0.5 * self.place + 8.0 * f64::EPSILON * value.abs()
+    }
+}
+
+/// The place value of the last of `digits` significant digits of `value`.
+fn place_of(value: f64, digits: u32) -> f64 {
+    if value == 0.0 || !value.is_finite() {
+        return 0.0;
+    }
+    let decade = value.abs().log10().floor() as i32;
+    10f64.powi(decade - (digits as i32 - 1))
 }
 
 /// The particle lines of an event as its file spelled them, when it was read
@@ -516,8 +687,16 @@ fn particle_lines(event: &LheEvent) -> Option<Vec<&str>> {
 }
 
 /// The record's own spelling of one leg's field, for the tolerance it implies.
-fn spelling(event: &LheEvent, leg: usize, field: usize) -> Option<String> {
+fn particle_field(event: &LheEvent, leg: usize, field: usize) -> Option<String> {
     let line = *particle_lines(event)?.get(leg)?;
+    line.split_whitespace().nth(field).map(str::to_string)
+}
+
+/// The record's own spelling of one `<event>` info-line field, for the tolerance
+/// it implies. The info line is the block's first non-blank line.
+fn info_field(event: &LheEvent, field: usize) -> Option<String> {
+    let text = event.source.as_ref()?.as_str();
+    let line = text.lines().find(|l| !l.trim().is_empty())?;
     line.split_whitespace().nth(field).map(str::to_string)
 }
 
@@ -539,7 +718,7 @@ fn incoming(event: &LheEvent) -> Vec<usize> {
 /// If the two samples list different numbers of incoming legs, or an event of
 /// either lists a different number from its own sample's first — neither is a
 /// disagreement a statistic can express.
-pub fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<BeamColumn> {
+pub fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
     if ours.is_empty() || theirs.is_empty() {
         return Vec::new();
     }
@@ -581,42 +760,135 @@ pub fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<BeamColumn>
                     .collect()
             };
             let (a, b) = (read(ours), read(theirs));
-            let field = format!("beam{} {name}", beam + 1);
-            let kind = if degenerate(&a) && degenerate(&b) {
-                let reference = b[0].0;
-                let leg = incoming(&theirs.events[0])[beam];
-                let tol = printed_tolerance(
-                    spelling(&theirs.events[0], leg, line_field).as_deref(),
-                    reference,
-                );
-                let furthest = |values: &[(f64, f64)]| {
-                    values.iter().map(|&(v, _)| v).fold(reference, |best, v| {
-                        if (v - reference).abs() > (best - reference).abs() {
-                            v
-                        } else {
-                            best
-                        }
-                    })
-                };
-                let (mine, other) = (furthest(&a), furthest(&b));
-                let max_dev = (mine - reference).abs().max((other - reference).abs());
-                BeamKind::Constant {
-                    theirs: reference,
-                    ours: mine,
-                    max_dev,
-                    tol,
-                }
-            } else {
-                let test = ks_two_sample(&a, &b).expect("both columns are finite and non-empty");
-                BeamKind::Distribution {
-                    d: test.d,
-                    p: test.p,
-                }
-            };
-            columns.push(BeamColumn { field, kind });
+            let leg = incoming(&theirs.events[0])[beam];
+            let spelling = particle_field(&theirs.events[0], leg, line_field);
+            columns.push(field_column(
+                format!("beam{} {name}", beam + 1),
+                &a,
+                &b,
+                Printed::of(spelling.as_deref(), b[0].0, None),
+            ));
         }
     }
     columns
+}
+
+/// One scalar of the `<event>` line a comparison reads.
+///
+/// `AQEDUP` gets no column: nothing in this crate's integration path depends on
+/// the electromagnetic coupling running, so the field is a parameter-card
+/// constant on both sides and would compare the parameter card to itself.
+struct ScaleField {
+    /// The name the column is reported under, which is the accord's own.
+    name: &'static str,
+    /// The value on a parsed event.
+    value: fn(&LheEvent) -> f64,
+    /// Where the field sits on the `<event>` info line, so the tolerance can be
+    /// read off the spelling the file used.
+    line_field: usize,
+}
+
+const SCALE_FIELDS: [ScaleField; 2] = [
+    ScaleField {
+        name: "SCALUP",
+        value: |e| e.scale,
+        line_field: 3,
+    },
+    ScaleField {
+        name: "AQCDUP",
+        value: |e| e.alpha_qcd,
+        line_field: 5,
+    },
+];
+
+/// Compare the two samples' reported scales, field by field.
+///
+/// A run whose every scale is a run-card constant gives one value per field and
+/// the comparison is an equality against the banked record; a clustered or
+/// otherwise dynamical prescription gives a distribution and the comparison is
+/// the same weighted KS the outgoing observables take. Which one applies is read
+/// off the samples rather than declared, so a prescription that silently
+/// collapsed to a constant reports as one.
+pub fn scale_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
+    if ours.is_empty() || theirs.is_empty() {
+        return Vec::new();
+    }
+    SCALE_FIELDS
+        .iter()
+        .map(
+            |ScaleField {
+                 name,
+                 value,
+                 line_field,
+             }| {
+                let read = |sample: &EventSample| -> Vec<(f64, f64)> {
+                    sample
+                        .events
+                        .iter()
+                        .zip(&sample.weights)
+                        .map(|(event, &w)| (value(event), w))
+                        .collect()
+                };
+                let (a, b) = (read(ours), read(theirs));
+                let spelling = info_field(&theirs.events[0], *line_field);
+                field_column(
+                    (*name).to_string(),
+                    &a,
+                    &b,
+                    Printed::of(spelling.as_deref(), b[0].0, Some(EVENT_LINE_DIGITS)),
+                )
+            },
+        )
+        .collect()
+}
+
+/// One field's column: an equality against the reference's own value where
+/// neither sample gives it a distribution, and a weighted KS where either does.
+///
+/// `printed` is what the reference's own record states about the field, which is
+/// what sets both the equality's tolerance and the grid the KS branch rounds
+/// onto.
+fn field_column(
+    field: String,
+    ours: &[(f64, f64)],
+    theirs: &[(f64, f64)],
+    printed: Printed,
+) -> FieldColumn {
+    let kind = if degenerate(ours) && degenerate(theirs) {
+        let reference = theirs[0].0;
+        let tol = printed.tolerance(reference);
+        let furthest = |values: &[(f64, f64)]| {
+            values.iter().map(|&(v, _)| v).fold(reference, |best, v| {
+                if (v - reference).abs() > (best - reference).abs() {
+                    v
+                } else {
+                    best
+                }
+            })
+        };
+        let (mine, other) = (furthest(ours), furthest(theirs));
+        let max_dev = (mine - reference).abs().max((other - reference).abs());
+        FieldKind::Constant {
+            theirs: reference,
+            ours: mine,
+            max_dev,
+            tol,
+        }
+    } else {
+        let grid = |values: &[(f64, f64)]| -> Vec<(f64, f64)> {
+            values
+                .iter()
+                .map(|&(v, w)| (round_significant(v, printed.digits), w))
+                .collect()
+        };
+        let test = ks_two_sample(&grid(ours), &grid(theirs))
+            .expect("both columns are finite and non-empty");
+        FieldKind::Distribution {
+            d: test.d,
+            p: test.p,
+        }
+    };
+    FieldColumn { field, kind }
 }
 
 /// Whether a column's values span enough of their own scale to have a
@@ -696,6 +968,7 @@ pub fn compare(ours: &EventSample, theirs: &EventSample, labelling: Labelling) -
         ks,
         chi2,
         beams: beam_columns(ours, theirs),
+        scales: scale_columns(ours, theirs),
         constant,
         single_category,
     }
@@ -855,11 +1128,11 @@ mod tests {
     }
 
     /// A constant column that agrees with the banked record to the last bit.
-    fn exact(cell: &BeamColumn) -> bool {
-        matches!(cell.kind, BeamKind::Constant { max_dev, .. } if max_dev == 0.0)
+    fn exact(cell: &FieldColumn) -> bool {
+        matches!(cell.kind, FieldKind::Constant { max_dev, .. } if max_dev == 0.0)
     }
 
-    fn column<'a>(columns: &'a [BeamColumn], field: &str) -> &'a BeamColumn {
+    fn column<'a>(columns: &'a [FieldColumn], field: &str) -> &'a FieldColumn {
         columns
             .iter()
             .find(|c| c.field == field)
@@ -899,7 +1172,7 @@ mod tests {
 
         // Half the last printed digit's place, plus a few ulps of the value.
         let tol = match column(&identical, "beam1 pz").kind {
-            BeamKind::Constant { tol, .. } => tol,
+            FieldKind::Constant { tol, .. } => tol,
             other => panic!("a fixed beam is not a constant: {other:?}"),
         };
         assert!((5e-9..5.1e-9).contains(&tol), "tolerance {tol:e}");
@@ -928,6 +1201,142 @@ mod tests {
         }
     }
 
+    /// The record's scales are read at the precision the `<event>` info line
+    /// printed them to, which is four places coarser for `SCALUP` than for a
+    /// momentum: MadGraph's `unwgt.f` writes the info line at seven significant
+    /// digits and the particle lines at eleven.
+    #[test]
+    fn the_reported_scales_are_compared_at_the_info_lines_own_printed_precision() {
+        let mg = banked();
+        let identical = scale_columns(&mg, &mg);
+        assert_eq!(identical.len(), 2, "SCALUP and AQCDUP");
+        for cell in &identical {
+            assert!(
+                exact(cell),
+                "{} against itself is not exact: {:?}",
+                cell.field,
+                cell.kind
+            );
+        }
+
+        let tol = |columns: &[FieldColumn], field: &str| match column(columns, field).kind {
+            FieldKind::Constant { tol, .. } => tol,
+            other => panic!("{field} is not a constant here: {other:?}"),
+        };
+        // `0.2512964E+03` and `0.4333599E+00`: half of `1e-4` and half of `1e-7`.
+        let scalup = tol(&identical, "SCALUP");
+        assert!(
+            (5e-5..5.1e-5).contains(&scalup),
+            "SCALUP tolerance {scalup:e}"
+        );
+        let aqcdup = tol(&identical, "AQCDUP");
+        assert!(
+            (5e-8..5.1e-8).contains(&aqcdup),
+            "AQCDUP tolerance {aqcdup:e}"
+        );
+
+        for (shift, agrees) in [(0.8 * scalup, true), (4.0 * scalup, false)] {
+            let mut ours = mg.clone();
+            for event in &mut ours.events {
+                event.scale += shift;
+            }
+            let found = scale_columns(&ours, &mg);
+            assert_eq!(
+                column(&found, "SCALUP").agrees(1e-4),
+                agrees,
+                "a {shift:e} GeV shift against a {scalup:e} GeV tolerance: {:?}",
+                column(&found, "SCALUP").kind
+            );
+            assert!(exact(column(&found, "AQCDUP")), "AQCDUP moved too");
+        }
+    }
+
+    /// A single event's scale out of line with the rest of its own sample is a
+    /// *distribution* disagreement, not a deviation: the sample stops being
+    /// degenerate and the column takes the KS branch.
+    ///
+    /// This is where the scales differ from the incoming legs, which are pinned
+    /// by a per-event maximum. `DEGENERATE_SPAN` is `1e-9` of the field's own
+    /// scale and the info line prints `SCALUP` to seven significant digits, so
+    /// every departure the printed precision can resolve is already wide enough
+    /// to end the degeneracy — and the two branches partition the failures
+    /// between them rather than one covering both.
+    #[test]
+    fn one_events_scale_out_of_line_ends_the_constant_comparison() {
+        let mg = banked();
+        let mut ours = mg.clone();
+        ours.events[0].scale += 1e-3;
+        let found = scale_columns(&ours, &mg);
+        assert!(matches!(
+            column(&found, "SCALUP").kind,
+            FieldKind::Distribution { .. }
+        ));
+    }
+
+    /// The reference's printed width, read the same way off both of MadGraph's
+    /// dialects, and the grid it puts a value on.
+    #[test]
+    fn a_ks_column_is_compared_on_the_references_own_printed_grid() {
+        assert_eq!(printed_digits("0.24135011226E+03"), Some(11));
+        assert_eq!(printed_digits("+1.1855987927e+01"), Some(11));
+        assert_eq!(printed_digits("0.2512964E+03"), Some(7));
+        assert_eq!(printed_digits("0.0000000000e+00"), Some(10));
+        assert_eq!(printed_digits("501"), None);
+
+        // The event line's fields are capped at what `rw_events.f` writes, so a
+        // nine-digit re-serialisation of a seven-digit field states seven.
+        let padded = Printed::of(Some("1.30002700e-01"), 0.130002711, Some(EVENT_LINE_DIGITS));
+        assert_eq!(padded.digits, 7);
+        assert!((5e-8..5.1e-8).contains(&padded.tolerance(0.13)));
+        // A particle line is not capped: there the spelled width is the written
+        // width in both dialects.
+        let momentum = Printed::of(Some("0.24135011226E+03"), 241.35011226, None);
+        assert_eq!(momentum.digits, 11);
+        assert!((5e-9..5.1e-9).contains(&momentum.tolerance(241.35)));
+
+        assert_eq!(round_significant(0.10246487912, 7), 0.1024649);
+        assert_eq!(round_significant(-251.29639211, 7), -251.2964);
+        assert_eq!(round_significant(0.0, 7), 0.0);
+
+        // Two near-constant columns a hair apart are disjoint in order, so an
+        // exact-value KS reads the largest gap there is on a disagreement of one
+        // part in 1e8. On the reference's own grid they coincide.
+        let mg = banked();
+        let mut ours = mg.clone();
+        for (k, event) in ours.events.iter_mut().enumerate() {
+            event.alpha_qcd *= 1.0 + 1e-8 * (1.0 + k as f64);
+        }
+        let found = scale_columns(&ours, &mg);
+        match column(&found, "AQCDUP").kind {
+            FieldKind::Distribution { d, .. } => {
+                assert_eq!(d, 0.0, "the reference's grid did not absorb the printing")
+            }
+            other => panic!("a perturbed column is not a constant: {other:?}"),
+        }
+    }
+
+    /// A record whose scale prescription reads the event gives a distribution
+    /// rather than a constant, and the column follows the samples into the
+    /// weighted KS the outgoing observables take.
+    ///
+    /// This is the branch that sees a run reporting the run card's own scale
+    /// where the reference clustered one per event: the two sides then disagree
+    /// on *which* comparison applies, and a column that is a constant on one side
+    /// and a distribution on the other is compared as a distribution — where a
+    /// single value against a spread is the largest KS gap there is.
+    #[test]
+    fn a_scale_that_varies_per_event_is_compared_as_a_distribution() {
+        let mg = banked();
+        let mut ours = mg.clone();
+        ours.events[0].scale *= 0.5;
+        let found = scale_columns(&ours, &mg);
+        assert!(matches!(
+            column(&found, "SCALUP").kind,
+            FieldKind::Distribution { .. }
+        ));
+        assert!(exact(column(&found, "AQCDUP")));
+    }
+
     /// A beam whose energy varies event to event — a hadron beam's momentum
     /// fraction — has a distribution, and the column becomes the same weighted
     /// KS the outgoing observables take. Which branch a field falls into is read
@@ -941,7 +1350,7 @@ mod tests {
         let found = beam_columns(&ours, &mg);
         assert!(matches!(
             column(&found, "beam1 E").kind,
-            BeamKind::Distribution { .. }
+            FieldKind::Distribution { .. }
         ));
         assert!(exact(column(&found, "beam1 m")));
         assert!(exact(column(&found, "beam2 E")));

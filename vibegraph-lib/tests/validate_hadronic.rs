@@ -394,7 +394,19 @@ fn run_seed_shaped(
         *summary = subsampler_summary(&integ);
     }
     integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
-    integ.integrate(neval, niter, seed)
+    let result = integ.integrate(neval, niter, seed);
+    // The per-point scale-configuration draw falls back to the sampling channel
+    // when the squared amplitude it draws from is not finite, which is the only
+    // way a NaN `AMP2` reaches production without saying anything. The counter
+    // exists to be read; reading it here is what makes the path loud.
+    assert_eq!(
+        integ.scale_draw_fallbacks(),
+        0,
+        "the scale-configuration draw fell back to the sampling channel on {} points: \
+         their squared amplitudes summed to something the draw could not normalise",
+        integ.scale_draw_fallbacks(),
+    );
+    result
 }
 
 /// The unweighted mean of independent seeds, its error, and the scatter of the
