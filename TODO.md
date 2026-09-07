@@ -5,59 +5,29 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **`ufo-lorentz` feature sprint — waves 1–5 landed
-and merged, close-out Z pending** (note 35; R1 `bff5aa9`, L1 `00858a8`, V1
-`2a34b9d`, L2 `5f319a9`, E1 `069ffad`, C1 `331646e`, E2 `733e33d`, F1
-`c64a939`, R4 `575c1b6`, C `412bc68`, T1 `a9d0f35`, T2 `87e79ca`, T3
-`1dbeb3d`/`fc88d2c`, V2 `6304216`/`4826d1c`/`9519e9f`; landing records in the
-note's session paragraphs). Where that leaves it: **thirteen SMEFTsim rows
-enforced against MadGraph at the amplitude level, the capstone `e+ e- > t t~
-NP<=1` cross section gated** (pull +0.82, seven seeds within ±1.22, ladder
-flat over 16×; the SM limit of the same process is 4.04× lower), the user path
-(`vibegraph integrate --ufo-dir validation/ufo` with
-`import model SMEFTsim_topU3l_MwScheme_UFO-massless`, model identity in the
-artifact, `NP^2==1` a hard error), and **all six toy-model rows gated**: the
-literal `Sigma` in a dipole and a tensor⊗tensor contact (ALOHA's `Sigma` is
-half the textbook σ^{μν} — measured, mutation-pinned), bare `Identity` and
-`Gamma5` (after MadGraph's `AMP2` channel-grouping rule `IdentifyConfigTag` was
-ported), `d(1,2,3)`, baryonic colour `Epsilon`, and the sextet `K6` — the
-colour engine now carries `Epsilon/EpsilonBar/K6/K6Bar/T6` and
-`ColorRep::Sextet`, with the finding that the all-incoming crossing exchanges
-`Epsilon ↔ EpsilonBar` and `K6 ↔ K6Bar`. Two real bugs surfaced by the toy
-rows and fixed: a restrict card's non-zero values were not the model's defaults
-(a card-less run of a restricted model was silently its SM limit), and the
-fermion-line reversal sign charged a `−1` per internal propagator regardless of
-whether the line's vertices carry a Dirac matrix — `+1` for
-`Identity`/`Gamma5`/bare projectors, which no SM line had ever isolated.
-Banked-layer hygiene landed too: five corrupt banked event files regenerated
-with no reference moved, all nineteen model-bearing runs declared in the
-`validate_scales` inventories (42 runs, 1.14 M scale comparisons), and the
-`AMP2` grouping now derived rather than exempted on nine rows. The three
-SMEFTsim rows that stay `info` keep their localized disagreements: one |M|²
-point on `e+ e- > W+ W-` at 2.08e-12, a tenth-digit derived-parameter spread
-on `e+ e- > Z h`, and the five-vector stretch row. **Next**: the close-out
-session Z (below). Two of §5's premises fell on contact:
-the cyclic tensor⊗tensor row needs a massive lepton (`tata_to_ttx_tensor4f`
-replaces it) and the shipped `restrict_massless` card zeroes every CP-odd
-coefficient, so the capstone reaches neither an `Epsilon` nor a tensor
-four-fermion structure. Two walls are already down: the loader now splits interactions per coupling-order
-tuple and prunes zero couplings the way MadGraph does, so SMEFTsim's SM limit
-enumerates MadGraph's diagram counts (2 / 3 / 2 for the three SM-limit rows),
-and the graded Clifford-basis tensor representation exists with its ε/γ5 sign
-identity pinned. One §1.4 hypothesis was falsified on contact: MadGraph's
-`expansion_order` cap applies only to orders strictly between 0 and 99, so
-`NPprop = 0` caps nothing and the auxiliary fields stay out through the WEIGHTED
-hierarchy instead. The sprint takes the UFO surface past the SM's feature set: the rank-2
-Lorentz tensor representation in the graded `1+4+6+4+1` Dirac basis and the
-finished completeness relations, SMEFTsim's `SMEFTsim_topU3l_MwScheme_UFO`
-(vendored byte for byte at `validation/ufo/`, tag `v3.0.2`, MIT) as the
-MadGraph-gated test case for `Epsilon`, `Gamma5`, γ-chains,
-four-fermion and tensor⊗tensor structures, and a hand-written toy UFO for the
-structures SMEFTsim never emits (literal `Sigma`, `d(a,b,c)`, baryonic colour
-`Epsilon`, sextets as stretch). Its census probe found the first wall is not
-Lorentz at all: MadGraph splits one UFO vertex into one interaction per
-coupling-order tuple and drops zero couplings under a restriction, and we do
-neither, so SMEFTsim enumerates zero SM diagrams even in its SM limit.
+**Current position**: **between sprints.** The `ufo-lorentz` feature sprint
+closed 2026-09-07 with session Z; **note 35 §10 is the close-out record** and
+the closed-sprint history below carries its one-line summary. What it leaves
+standing, counted from `validation/manifest.toml`: **51 rows × 4 categories,
+147 cells declaring a mode (138 `gate`, 9 `info`) and 57 declaring none** —
+29 Standard-Model rows (97 `gate`), 16 SMEFTsim rows (29), 4 `vibegraph_toy_UFO`
+rows (8) and 2 `vibegraph_toy_color_UFO` rows (4). Thirteen SMEFTsim rows are
+enforced at the amplitude level with the capstone `e+ e- > t t~ NP<=1` cross
+section gated, all six toy-model rows are enforced, and the `validate_scales`
+per-event replay covers 44 runs / 440 000 events / 1 160 000 scale comparisons.
+The collated report, measured on the M3 Max host at close-out: **143 measured
+cells — 136 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and 57 uncovered**
+(`pixi run --skip-deps validate` exit 0; amplitudes 42, diagrams 48,
+integrals 28, samples 27 timed measurements).
+The `info` cells that remain are `ee_to_wpwm_cw` (one |M|² point at 2.08e-12),
+`ee_to_zh_smeft` (a tenth-digit derived-parameter spread), `wpwm_to_wpwmz_cw`
+(the five-vector residual, |M|² 2.20e3 and reported again since Z),
+`gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, and the five
+Standard-Model `info` cells that predate the sprint. **Next**: the user's call.
+The named candidates are the channel-set migration and the five-vector residual
+(both in the validation backlog below), and `refdata-7`'s upload, which is the
+one thing the sprint could not do for itself.
+
 Sprint-history context follows. The **performance sprint** (eleven
 sessions, note 31 §6) and its **addendum** (eight of nine merged, S9 killed
 clean, note 32 §5) both closed 2026-08-05 — one line each in the closed-sprint
@@ -264,11 +234,65 @@ One line each; the note is the full record. Earlier sprints
   budget progress test primes the callsite and rebuilds the interest cache
   after installing its subscriber.
 
+- **`ufo-lorentz`** (feature, fourteen sessions in five waves plus the close-out
+  Z, closed 2026-09-07) — the UFO surface past the Standard Model's feature set,
+  gated the project's way at every step. The rank-2 Lorentz tensor in the graded
+  `1+4+6+4+1` Dirac basis with the completeness relations finished; a loader
+  that splits one UFO vertex per coupling-order tuple, prunes zero couplings and
+  reads `Gamma5`, `**`, sub-expression operators and `propagators.py`; `Epsilon`,
+  γ-chains, four-fermion pairings and the cyclic tensor⊗tensor contact through
+  the rooting; and a colour engine carrying `Epsilon/EpsilonBar/K6/K6Bar/T6` and
+  `ColorRep::Sextet`. Test cases: SMEFTsim `topU3l_MwScheme` vendored byte for
+  byte (13 amplitude rows enforced, capstone σ gated at pull +0.82) and two
+  hand-written toy UFOs for what SMEFTsim never emits — literal `Sigma`, bare
+  `Identity`/`Gamma5`, `d(1,2,3)`, baryonic `Epsilon`, sextet `K6` — all six
+  rows enforced. Nine conventions pinned by tests that fail if they are false
+  (note 35 §10.1), among them ALOHA's `Sigma` being *half* the textbook
+  `σ^{μν}`, a chiral projector beside a literal `Sigma` keeping its chirality
+  (mutation-measured at per-diagram 9.985e-1), the all-incoming crossing
+  exchanging `Epsilon ↔ EpsilonBar` and `K6 ↔ K6Bar`, and `SCALUP` being `μF`
+  rather than `μR` wherever the clustering reads the two off different vertices.
+  Two real bugs, both surfaced by toy rows and by nothing else: a card-less run
+  of a restricted model was silently its SM limit, and the fermion-line reversal
+  sign charged a `−1` per internal propagator regardless of the bilinear's
+  `C Γᵀ C⁻¹` parity. Census over the sprint, counted from the manifest: **29
+  rows → 51** and **97 `gate` cells → 138**, with every Standard-Model row's
+  cells unmoved. Transferable lesson: **a toy model is a validation instrument, not a
+  convenience** — every Standard-Model fermion line reaches a gauge vertex, so
+  counting propagators and reading the bilinear parity agreed on every row the
+  suite had ever had; `qt qt~ > o8 o8`, a process nobody would generate for its
+  physics, is what separated them. Note 35, close-out §10.
+
 ---
 
 ## 🔎 Validation backlog
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
+
+- **A nondeterministic heap-corruption abort under the proton-sample suite's
+  concurrent load** (observed 2026-09-07 by the sprint manager, 1 run in 5;
+  *not* caused by the `ufo-lorentz` sprint and not diagnosed by it). In one of
+  five runs of
+  `validate_samples_proton::generated_llj_dyn_events_agree_with_madgraphs_banked_ones`,
+  the `vibegraph integrate` child (`p p > l+ l- j QCD=2 QED=2` on
+  `pp_to_llj_dyn`'s dynamical-scale card, seed 20260731, 300k × niter) aborted
+  during VEGAS warm-up iteration 2 with macOS libmalloc's "pointer being freed
+  was not allocated" (SIGABRT). The crashed thread was dropping a `Vec<f64>`
+  inside `kt::Clustering` within `ClusterScales` at the end of
+  `ScaleChoice::cluster_scales`, called from `ProtonIntegrand::scales_of` on a
+  rayon worker, while another worker was inside `cluster::kt`/`cluster::graph`.
+  What the manager ruled out: the workspace contains no `unsafe` code (the two
+  grep hits are doc comments), the global allocator is `System` (the crashing
+  frame is `std::sys::alloc::unix::System::dealloc`; mimalloc is linked via
+  egglog 2.0 but not installed), the linked native code is zstd, ring, dirs-sys
+  and mimalloc, and `coupling/cluster/**`, `hadronic.rs`, `proton.rs` and
+  `vegas` are byte-identical to `main`. Unreproduced so far: the same child
+  command run directly twice, the test alone once, and a full no-fail-fast
+  banked layer once all passed, and it has not been attempted on `main`. Crash
+  report preserved at
+  `~/Library/Logs/DiagnosticReports/vibegraph-2026-09-07-085712.ips`. Anyone
+  reading a gate under this suite should rerun the binary once on an abort and
+  report both outcomes rather than treating one run as the measurement.
 
 - **`ud_to_epemud_qcd0`'s event sample fails its `ICOLUP` χ² at ≈650 on 1 dof**
   (p ≈ 0, seed-stable, 60 000 events over 6 seeds) while kinematics and
@@ -326,18 +350,14 @@ One line each; the note is the full record. Earlier sprints
   over 1088 sums) is recorded in `abedb81`'s tests if the tolerance is ever
   revisited.
 
-- **Close-out Z of `ufo-lorentz`** (note 35 §8): rewrite the `non-sm-ufo`
-  checklist and README scope from measurement (sextets/ε are no longer refused;
-  spin-2, spin-3/2, Majorana/`C` remain the descoped set); promote the two
-  colour-toy runs out of `validate_scales`' declined set now that T3 loads
-  their model; the `sigma_chained` mutation pin T2 left (force it false,
-  rebuild, confirm `ll_to_qqx_toy_dipole` fails); reconcile the per-model op
-  census allowlists; `p3r3_to_p3r3_toy_epsilon`/`_sextet`'s `AQCDUP` finding
-  (V2: `AQCDUP` larger at a larger `SCALUP`, the only banked 2→2 whose
-  clustering reads μR off a different vertex than μF); the `extended-validation`
-  clippy debt CI's clippy step never sees (`validate_scales.rs` and siblings);
-  the refdata-7 bundle cut carrying the 16 SMEFTsim + 6 toy rows (`bundled =
-  false` today).
+- ~~**Close-out Z of `ufo-lorentz`**~~ — **done 2026-09-07**, note 35 §10.
+  Nothing was left undone except the one item that was never in its scope:
+  **`refdata-7` is assembled and hash-pinned but not uploaded**
+  (`published = false`; `validation/manifest.toml`'s `[refdata]` block carries
+  the `sha256` and `size_bytes`, `bundled = false` is gone from all 22 sprint
+  rows, and `validation/madgraph/assemble_bundle.sh` rebuilds the archive
+  byte-identically). Uploading it to the `refdata-7` release and flipping
+  `published = true` needs a hand on the repository.
 - **Move `AmplitudeEvaluator` onto MadGraph's channel set** (from V2, note 35
   §V2): `config_groups` implements MadGraph's `IdentifyConfigTag` and the
   oracle asserts it, but the integrator still runs one channel per
@@ -348,8 +368,20 @@ One line each; the note is the full record. Earlier sprints
   coherent accumulation, the channel move, re-gating the nine σ ladders,
   re-pinning the capstone's 36 channels in `cli_ufo_model.rs`. Until then the
   per-event configuration draw and `ICOLAMP` mask are finer than MadGraph's.
-- **`wpwm_to_wpwmz_cw` needs an `MG_DIAGRAM_ORDER` entry** before its amplitude
-  comparison can start (derived grouping starts at diagram 62 vs MadGraph's 2).
+- **`wpwm_to_wpwmz_cw`'s diagram pairing, and the five-vector residual behind
+  it** (Z, note 35 §10.5). The row's `amplitudes` cell reports again —
+  `KNOWN_CONFIG_PAIRING_UNAVAILABLE` prints both configuration partitions and
+  lets the rest of the comparison run, so the cell reads |M|² 2.20e3 rather
+  than "no comparison" — but the partition itself is still uncompared, and Z
+  falsified the cheap route to it: the two partitions agree on the multiset of
+  group sizes (21 groups, `{3×8, 7×8, 12, 17×4}`) and on nothing finer, ours
+  being the contiguous diagrams 62–221 and MadGraph's 2–186 with three gaps, so
+  no index shift maps one onto the other. With 222 graphs no per-diagram table
+  is banked, and a pairing written to satisfy the one check that reads it would
+  be fitted to it. The honest route is MadGraph's own per-diagram cluster trees
+  in `output/wpwm_to_wpwmz_cw.json`; it belongs with whichever session takes the
+  five-vector structures on, since that is what the row's |M|² disagreement is
+  about.
 - **Banked-layer findings from the `ufo-lorentz` wave-4 sessions (2026-09-06)** —
   (a)–(c) **resolved by V2 (2026-09-07, note 35 §V2)**, (d) was a fermion-line
   sign, not colour (T3), (e)–(f) stand: (a) V1's
@@ -365,10 +397,15 @@ One line each; the note is the full record. Earlier sprints
   row's `Identity`/`Gamma5` measurement; (d) the `d(1,2,3)` flow-assembly sign
   (`qqx_to_o8o8_toy_dcolor`, note 35 §6 T1) is invisible to both colour
   oracles because each normalises a colour column by its leading fourth root
-  of unity — a blind spot worth a per-diagram signed comparison; (e) this
-  container holds no PDF set and cannot fetch one (`lhapdfsets.web.cern.ch`
-  403 through the proxy), so the nine `pp_*` rows' `integrals`/`samples` cells
-  are unmeasurable here; (f) MadGraph fixes a restrict-card parameter set to
+  of unity — a blind spot worth a per-diagram signed comparison, **closed by T3**
+  (`normalise_group` takes one unit per *graph* and `graph_unit_flips` requires
+  every graph's unit real relative to the subprocess's modal fourth root of
+  unity); (e) was an artefact of the container those sessions ran in, which held
+  no PDF set and could not fetch one — **not a property of the suite**: on a host
+  with both sets fetched the nine `pp_*` rows' `integrals`/`samples` cells,
+  `validate_pdf_grid`, `validate_hadronic`, `validate_alphas` and
+  `validate_samples_proton` all run and pass (measured by Z, 2026-09-07);
+  (f) MadGraph fixes a restrict-card parameter set to
   exactly `1` alongside the zeros and this loader does not — latent, no card in
   the repository uses `1.0`.
 
@@ -421,10 +458,13 @@ One line each; the note is the full record. Earlier sprints
   design (above) reaching `extract_diagrams.py`; until then the manifest's
   "includes the per-flavour concrete-subprocess union" notes describe the
   intent, not the current assertion.
-- **`IdentityAmp` process-level coverage** — the last `KNOWN_UNCOVERED` op; needs
-  an `Identity` scalar bilinear the SM lacks, so it rides with `non-sm-ufo`
-  (feature backlog). SMEFTsim's `FFS2` is exactly that structure; note 35 L2
-  gates it (`bbx_to_h_identity`), and the census becomes per-model there.
+- ~~**`IdentityAmp` process-level coverage**~~ — **done**: SMEFTsim's `FFS2` is
+  exactly that structure and `bbx_to_h_identity` reaches it (L2), the toy
+  model's bare `Identity` reaches it again (`ll_to_qqx_toy_yukawa`), and the
+  census is per-model — `helas::eval::compile`'s SM allowlist,
+  `tests/smeftsim.rs`'s and `tests/toy_models.rs`'s. It stays on the SM
+  allowlist because the Standard Model still has no such bilinear, which is what
+  that list is a statement about.
 - **Flavour-group probe coverage** — `derive_flavor_groups` partitions on sampled
   `|M|²`, which is complete but unsound whatever the probe set: two subprocesses
   differing only where the probe does not look are merged silently. The probe
@@ -545,10 +585,13 @@ above); the entries here are the eventual features.
   assume a 2→n hard process.
 - **Custom UFO propagators** (`propagators.py`, UFO 2.0) — parse the file and
   thread the propagator forms through the HELAS compiler.
-- **Non-SM UFO models** — the `non-sm-ufo` checklist below; the README's
-  scope section points at it as the natural next scope step. **Planned as the
-  `ufo-lorentz` sprint (note 35)**: SMEFTsim `topU3l_MwScheme` end to end, the
-  tensor representation, and a toy UFO for the rest of the checklist.
+- ~~**Non-SM UFO models**~~ — **the `ufo-lorentz` sprint delivered this**
+  (closed 2026-09-07, note 35): SMEFTsim `topU3l_MwScheme` end to end with 13
+  amplitude rows and one cross section enforced, the graded tensor
+  representation, and two authored toy UFOs for what SMEFTsim never emits. The
+  `non-sm-ufo` checklist below is rewritten to what is measured; what remains
+  there is the descoped set (spin-2, spin-3/2, Majorana/`C`, adjoint-indexed
+  `T6`, external sextets, squared orders, loop UFOs), each with what refuses.
 
 ### In-scope features
 
@@ -636,98 +679,94 @@ above); the entries here are the eventual features.
 
 ### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
 
-**Explicitly descoped from v1** (user, 2026-08-02): the release goal is the SM
-UFO, and the README's scope section says so and points here. The UFO surface is
-deliberately model-generic, but "generic" currently ends at the SM's feature
-set. None of these block anything; collected so a future BSM-model task scopes
-against a checklist instead of rediscovering each wall one hard error at a
-time. A small dedicated test model (or a public BSM UFO) would be the natural
-vehicle for several at once — and would also retire the standing gap that no
-non-SM model has ever been loaded end to end, so "model-generic" is currently
-exercised on SM evidence alone.
+**Rewritten from measurement 2026-09-07 (note 35 §10).** The `ufo-lorentz`
+sprint retired most of this list: two non-SM models are now loaded end to end
+and gated against MadGraph — the vendored SMEFTsim `topU3l_MwScheme` (13
+amplitude rows, one cross section) and two authored toy UFOs (6 rows) — so
+"model-generic" is no longer exercised on Standard-Model evidence alone. Every
+entry below states what is *measured*, and each one that is still a wall says
+what refuses and where.
 
-**Measured 2026-09-05** (note 35 §1.3 — a probe of today's loader against
-SMEFTsim `topU3l_MwScheme`, the sprint's test case). Walls in the order the code
-hits them, each owned by a note-35 session:
+**Supported and gated** (was a wall, is not any more):
 
-- ~~**Coupling-order bundling** (L1)~~ **done `00858a8`**: one vertex per
-  coupling-order tuple (`<vertex>#<n>`), restriction drops zero couplings then
-  empty vertices then unreferenced Lorentz structures, `expansion_order` read
-  and applied with MadGraph's `0 < v < 99` window (which makes it inert for
-  SMEFTsim). SM limit: `e+ e- > mu+ mu-` 2, `g g > t t~` 3, `e+ e- > t t~` 2.
-  Still open from this item: `root_diagram.rs` takes the first structure's
-  `spin_map` for a whole vertex (F1).
-- ~~**Parser gaps** (L1)~~ **done `00858a8`**: `Gamma5`, `**` integer powers
-  (`n > 2` on an indexed object rejected), sub-expression operator arguments
-  reporting `UnknownOperator` by name; `propagators.py` parsed and the hard
-  error moved to "a custom-propagator particle propagates in a selected
-  diagram" (`ConvertError::CustomPropagator`).
-- ~~**Tree-shaped primitives** (E1)~~ **done `069ffad`/`49146e6`**: `Gamma5`,
-  `Epsilon` (vector-output and scalar), per-node adjoint inference along a
-  fermion line, the `PMomOut` bra−ket sign. Left behind, each measured:
-  - ~~Four-gluon contact colour decomposition~~ **not a colour bug** (C1
-    `331646e` proved the decomposition exact and added a per-graph JAMP
-    oracle on every subprocess); the residual was the four-vector contact's
-    build sign gated per term on a SM-only proxy, fixed per vertex (E2
-    `733e33d`, `gg_to_gg_cg` gated at 2.16e-13, `EpsilonVout` covered).
-  - **`ee_to_zh_smeft` derived parameters**: each diagram equals MadGraph's
-    times its own unit-modulus constant, differing in the tenth digit; the
-    card is the only one turning on both input-scheme shifts. Suspects:
-    `dMZ2`, `dkH`, `dWZ` (`cmath.sqrt(-4*MB**2 + MZ**2)`), `dWH`, then
-    `dGf`/`dgw`/`dg1`.
-  - **`ee_to_wpwm_cw` point 36** (√s = 500 GeV RAMBO grid): 2.078e-12 against
-    the 1e-12 budget at the linear level exact; not input conditioning
-    (336× its ulp sensitivity). Reformulate or explain; never loosen.
-  - **Multi-topology configuration merges** for `wpwm_to_wpwmz_cw` (and any
-    row where MadGraph folds same-topology diagrams into one `AMP2`) need a
-    banked `MG_DIAGRAM_ORDER`, measured from `matrix1_orig.f`.
-  - The SMEFT rows' top-level `process` display field still lacks `NP<=1`
-    (only `mg_amplitude.process` carries it); close-out sweep.
-- ~~**Four-fermion vertices** (F1)~~ **done `c64a939`**: sinks close any
-  number of fermion pairs, the pairing is read per Lorentz structure
-  (MadGraph's `get_fermion_flow` ported; one feyngraph vertex per flow
-  group), MadGraph's `get_sign_flow` parity is measured to be already inside
-  our Fermi sign; `ee_to_mumu_4f`, `uux_to_ttx_4f` and the capstone gated.
-  The four-quark "did not reduce to a scalar" was a `colorize.rs` slot
-  correction that gave up at a vertex with two 3 and two 3̄ slots (C1
-  `331646e`), not a missing rule. Left behind: a same-flavour four-fermion
-  process (`e+ e- > e+ e- NP<=1`) enumerates one diagram per pairing where
-  MadGraph draws one (an `ee_to_ee_4f` row would gate it — the `gg_to_gg_cg`
-  21/27 class); `EvaluatedModel::from_model` on a restrict-card-loaded
-  SMEFTsim model evaluates every amplitude to zero where `from_model_card`
-  is right — check before any SMEFT σ run; the capstone `integrals` cell's
-  blocker text is stale (C).
-- ~~**Cyclic tensor⊗tensor structures** (R4)~~ **done `575c1b6`**: the cut
-  line is evaluated as a Clifford element (grades 0 and 2), contracted into
-  the other line or the amplitude; `ta+ ta- > t t~` with `cleQt3` gated.
-  Blind spot recorded in note 35 §3 R4: the gated row cannot see the grade-0
-  weight (SMEFTsim's operator cancels it by construction), which rests on the
-  hermetic 4×4 pin.
-- SMEFTsim emits **no `Sigma` and no `C`**; literal `Sigma`, `d(a,b,c)` and the
-  baryonic/sextet colour atoms are the toy model's job (T1–T3).
+- **Coupling-order bundling and restriction semantics** — one feyngraph vertex
+  per coupling-order tuple, zero couplings dropped then empty vertices then
+  unreferenced Lorentz structures, `expansion_order` applied with MadGraph's
+  `0 < v < 99` window. Gated by SMEFTsim's SM-limit rows reproducing MadGraph's
+  diagram counts.
+- **The parser** — `Gamma5`, `**` integer powers, sub-expression operator
+  arguments reporting `UnknownOperator` by name, and `propagators.py` parsed
+  (the hard error moved to "a custom-propagator particle propagates in a
+  *selected* diagram", `ConvertError::CustomPropagator`).
+- **Tree-shaped Lorentz primitives** — `Epsilon` (vector-output and scalar),
+  γ-chains through a summed spinor index, per-node adjoint inference along a
+  fermion line, the `PMomOut` bra−ket sign.
+- **Four-fermion vertices** — any number of pairs closed at a sink, the pairing
+  read per Lorentz structure (MadGraph's `get_fermion_flow` ported), and the
+  cyclic tensor⊗tensor contact evaluated as a Clifford element.
+- **The literal `Sigma`** in every position it can occupy — a momentum-contracted
+  dipole, a `Sigma ⊗ Sigma` contact, and both indices contracted on an internal
+  line. ALOHA's `Sigma` is *half* the textbook `(i/2)[γ^μ, γ^ν]`; a chiral
+  projector beside one keeps its chirality. Both measured, both mutation-pinned.
+- **Colour sextets and baryonic epsilons** — `Epsilon`/`EpsilonBar`,
+  `K6`/`K6Bar`/`T6`, `ColorRep::Sextet`/`AntiSextet` and `Identity(6,6̄) → T6`,
+  with `color_algebra.py`'s reduction rules. `p3r3_to_p3r3_toy_epsilon` and
+  `p3r3_to_p3r3_toy_sextet` gate them, separating the antisymmetric triplet from
+  the symmetric sextet by the colour atom alone (JAMP columns `+1/−1` against
+  `½/½` over MadGraph's own basis). Note 16's "sextets out of scope" is
+  superseded.
+- **The symmetric structure constant `d(a,b,c)`** — gated by
+  `qqx_to_o8o8_toy_dcolor`, which is also what caught the fermion-line reversal
+  sign.
+- **`IdentityAmp` and `Gamma5Amp` process-level coverage** — reached by
+  `bbx_to_h_identity` (SMEFTsim) and `ll_to_qqx_toy_yukawa` (toy) respectively;
+  the per-model op censuses in `tests/smeftsim.rs` and `tests/toy_models.rs`
+  assert it both ways.
 
-- **Color sextets and baryonic epsilons**: the color engine handles
-  Singlet/Triplet/AntiTriplet/Octet only (`helas/repr/color.rs`); sextet tensors
-  `K6`/`K6Bar`/`T6` (diquark models) and the baryon-number-violating
-  `Epsilon`/`EpsilonBar` (e.g. RPV SUSY) are deliberate hard errors
-  (`ufo/color.rs::SextetUnsupported`, `helas/color/tensor.rs`). Note the two
-  distinct "6"s: NCOLOR=6 (flow-basis dimension) is fully supported; the sextet
-  *representation* is not. MG's reference algebra lives in `color_algebra.py`;
-  support means new `ColorTensor` atoms + trace-basis reduction rules + CF
-  products, validated the color-flow way (CF oracle vs MG's DATA CF, then the
-  JAMP-weighted |M|² gate).
-- **Spin codes beyond {1, 2, 3}**: `helicity_states_for_spin` (`eval/compile.rs`)
-  future-proofs the spin-2 helicity list (code 5), but nothing downstream builds
-  tensor external wavefunctions or propagators; spin-3/2 (code 4) is an
-  `UnsupportedSpin` error. Ghost codes stay irrelevant at LO.
-- **Majorana fermions** (MSSM neutralinos, gluinos): fermion-flow handling
-  assumes Dirac-continuous lines end to end — no flow-flip/charge-conjugation
-  machinery. Classically subtle sign territory; the `color-flow` fermion-flow
-  slot-swap bug shows how delicate the flow conventions are even pure-Dirac.
-- **`IdentityAmp` process-level coverage**: needs an `Identity` scalar bilinear
-  the SM lacks — a natural rider on whichever small test model lands first.
-- **Loop-level UFOs** (`loop_sm`, NLO models): out of the LO charter (parser
+**Still refused, each deliberately and each with a reason**:
+
+- **Spin codes beyond {1, 2, 3}**. `helicity_states_for_spin` accepts the spin-2
+  code (5) but nothing downstream builds a tensor external wavefunction or
+  propagator; spin-3/2 (code 4) is an `UnsupportedSpin` error. Descoped from
+  `ufo-lorentz` by decision (note 35 §7 D2): a symmetric Lorentz tensor is a
+  different object from the antisymmetric grade-2 slice the sprint built.
+  Ghost codes stay irrelevant at LO.
+- **Majorana fermions and charge conjugation**. Fermion-flow handling assumes
+  Dirac-continuous lines end to end — no flow-flip machinery, and the UFO `C`
+  operator is unrooted. Descoped by the same decision; MadGraph itself refuses
+  Majorana fermions in four-fermion vertices. Classically subtle sign territory,
+  and the `color-flow` slot-swap bug shows how delicate flow conventions are
+  even pure-Dirac. This is what keeps `vibegraph_toy_color_UFO` all-scalar: two
+  same-representation fermions reach a diquark only through a
+  fermion-number-violating vertex.
+- **A `T6` carrying adjoint indices**. The sextet generator's expansion draws
+  fresh summed indices from a module-global MadGraph counter; the algebra is
+  unit-tested (`δ6(i,i) = 6`) but no banked row carries a sextet `Identity`, so
+  the crossing rule for `T6` is unpinned and the case is refused rather than
+  guessed.
+- **An external sextet, or any basis key in which a baryonic or sextet tensor
+  survives** — three colour indices tied at a point, or two colour lines on one
+  leg, which no Les Houches record can write. Both gated rows keep their diquark
+  internal, so their flow tags are ordinary triplet lines. `order_summation` is
+  not ported either; it is a no-op while `K6`/`K6Bar` reduce away and would be
+  needed for an external sextet.
+- **Squared-order constraints** (`NP^2==1`) — a hard error, descoped by decision
+  (note 35 §7 D4); every SMEFT row compares the full |M|² at `NP<=1`.
+- **Loop-level UFOs** (`loop_sm`, NLO models) — out of the LO charter (parser
   history in note 04).
+
+**Open questions the sprint left explicit, none of them a wall**:
+
+- **A vertex mixing a Dirac-matrix bilinear with a matrix-free one** trips
+  `carries_dirac_matrix`'s uniformity assertion. No model in the tree does it,
+  and which vertex on such a line would own the reversal factor is a question no
+  oracle in the suite resolves.
+- **A same-flavour four-fermion process** (`e+ e- > e+ e- NP<=1`) enumerates one
+  diagram per pairing where MadGraph draws one — the `gg_to_gg_cg` 21/27
+  counting-convention class. An `ee_to_ee_4f` row would gate it.
+- **MadGraph fixes a restrict-card parameter set to exactly `1`** alongside the
+  zeros and this loader does not. Latent: no card in the repository uses `1.0`.
+
 
 ---
 

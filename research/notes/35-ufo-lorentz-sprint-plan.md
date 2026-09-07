@@ -1,6 +1,6 @@
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
-**Status: IN PROGRESS — wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
+**Status: CLOSED 2026-09-07 (§10 is the close-out record). Wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1
 `00858a8`, V1 `2a34b9d`/`92db0ad`), wave 2 landed 2026-09-06 (L2 `5f319a9`,
 E1 `069ffad`/`49146e6`), wave 3 landed 2026-09-06 (C1 `331646e`, E2
 `733e33d`, F1 `c64a939`, R4 `575c1b6`/`9604089`), wave 4 landed 2026-09-06
@@ -11,8 +11,14 @@ capstone `e+ e- > t t~ NP<=1` cross section is gated** (pull +0.82, rel
 +3.1e-4), and **all six toy-model rows are gated** — literal `Sigma` (dipole
 and tensor⊗tensor), bare `Identity`/`Gamma5`, `d(1,2,3)`, baryonic `Epsilon`,
 sextet `K6`. Only `ee_to_wpwm_cw` (one point), `ee_to_zh_smeft` (derived
-parameters) and the five-vector stretch row remain informational. Remaining:
-the close-out session Z.
+parameters) and the five-vector stretch row remain informational at the
+amplitude level. Session Z closed the sprint (`§10`): the two colour-toy runs
+promoted into `validate_scales`' clustered inventory with `SCALUP` measured to
+be `μF` there and `μR` recovered from `AQCDUP` to `8.9e-8`, the `sigma_chained`
+chirality rule mutation-measured, a toy-model op census, `wpwm_to_wpwmz_cw`'s
+amplitude cell reporting again, the `extended-validation` clippy debt closed and
+that invocation added to the banked layer, and three SMEFTsim `diagrams` cells
+promoted on measured counts.
 Per-session landing records are appended to the session paragraphs below
 ("Landed:"); §5 carries the corrections to the row table; §3.5 records the
 two sessions added mid-sprint (C1 colour, E2 contact sign).**
@@ -1239,3 +1245,256 @@ Z (close-out): TODO/README/checklist rewritten from measurement; the T3-lifted c
   pinned 3.7.x imports SMEFTsim 3.0 as validated by its authors against
   CERN-LPCC-2019-02, but a disagreement is diagnosed before it is
   attributed either way.
+
+## 10. Close-out (Z)
+
+**Landed 2026-09-07.** Five measurements and the bookkeeping they license.
+The banked layer is green end to end on this host (`pixi run --skip-deps
+validate`, exit 0), as are `cargo fmt --all --check`, `cargo test --workspace`
+(1051 passed, 0 failed) and both clippy invocations. The
+session's own corrections to its brief are marked; where a figure was carried
+over from an earlier run of this session that was lost with its container, it
+was re-measured here and the re-measurement is what is written.
+
+### 10.1 What the sprint leaves gated
+
+Counted from `validation/manifest.toml` by script, after this session's flips:
+**51 rows × 4 categories = 204 cells; 147 declare a mode — 135 → 138 `gate`
+and 12 → 9 `info` — and 57 declare none** (`uncovered` or `covered-by`, each
+with the reason on the cell). Against `main` before the sprint — 29 rows, 116
+cells, 97 `gate`, 5 `info`, 14 none — the Standard-Model rows' cells are
+unmoved, which is the regression net saying so rather than an assumption. By
+model family: **29 Standard-Model rows with 97
+`gate` cells and 5 `info`; 16 SMEFTsim rows with 29 and 4; 4
+`vibegraph_toy_UFO` rows with 8 and 0; 2 `vibegraph_toy_color_UFO` rows with 4
+and 0.** The `info` cells that remain are the three SMEFTsim amplitude rows
+this note's §5 already names (`ee_to_wpwm_cw`'s one point, `ee_to_zh_smeft`'s
+derived parameters, `wpwm_to_wpwmz_cw`'s five-vector residual),
+`gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, and the five
+Standard-Model `info` cells that predate the sprint.
+
+What the collator then measured, on this host and this tree
+(`pixi run --skip-deps validate`, exit 0): **143 measured cells — 136 ✅,
+7 ⚠️ — plus 4 ⏳ at the long tier and 57 uncovered**. The manager measured the
+same layer at this session's base (`3ccd98b`) and read 133 ✅ / 10 ⚠️ over the
+same 143, so the whole movement is the three `diagrams` cells §10.7 promoted and
+nothing else. The seven that stay `⚠️` are `gg_to_gg` 4/6 and `gg_to_gg_cg`
+21/27 (the `NGRAPHS` counting convention), `ee_to_wpwm_cw` 1.63e-12,
+`ee_to_zh_smeft` 6.00e-11 and `wpwm_to_wpwmz_cw` 2.20e3 at the amplitude level,
+and the two Standard-Model `samples` cells (`ee_to_mumua`,
+`ud_to_epemud_qcd0`) that predate the sprint.
+
+Nine conventions or rules the sprint pinned, each by a test that fails if it is
+false — the list the standing rule asks for:
+
+1. **ALOHA's `Sigma` is half the textbook `(i/2)[γ^μ, γ^ν]`** (T2; the textbook
+   normalisation reads |M|² 2.97 on the dipole row and 0.569 on the tensor one).
+2. **A chiral projector beside a literal `Sigma` keeps its chirality** —
+   `σ^{μν}` commutes with `γ⁵`, and it is `γ^μ P_χ = P_χ̄ γ^μ` that conjugates.
+   Mutation-measured in this session (§10.3).
+3. **`Sigma ⊗ Sigma` is the `γγ` expansion at the process level**, both
+   spellings reproduced per diagram and per helicity in one process (T2).
+4. **The all-incoming crossing exchanges `Epsilon ↔ EpsilonBar` and
+   `K6 ↔ K6Bar`** (T3); without the swap the colour matrix stops reducing to a
+   scalar, which is a standing gated failure.
+5. **The fermion-line reversal sign is gated on the line's Dirac-matrix
+   content**, not on its propagator count (T3).
+6. **MadGraph's `AMP2` grouping is `IdentifyConfigTag`** (V2), derived rather
+   than banked and asserted against the generated `matrix1.f` as sets of graph
+   indices.
+7. **MadGraph's four-fermion permutation sign is already inside our Fermi
+   sign** (F1, measured rather than assumed).
+8. **A restrict card's non-zero values are the model's defaults** (T-track bug,
+   below), pinned by `restricted_defaults_are_madgraphs_generated_param_card` —
+   421 external parameters over 13 rows against MadGraph's own generated cards.
+9. **`SCALUP` is `μF`, not `μR`, wherever the clustering reads the two off
+   different vertices** (Z, §10.2) — the first banked `2 → 2` to reach the
+   general `q2fact(1) ≠ q2fact(2)` case.
+
+Two real bugs surfaced, both by the toy rows and neither by any Standard-Model
+process:
+
+* **A card-less run of a restricted model was silently its SM limit** — the
+  restrict card's non-zero values were not being taken as the model's defaults.
+* **`spine_sign_from_flow` charged a `−1` per internal fermion propagator**
+  regardless of whether the line's vertices carry a Dirac matrix. The factor is
+  the `C Γᵀ C⁻¹` parity of the bilinear: `−1` for `Gamma`/`Sigma`, `+1` for
+  `Identity`/`Gamma5`/bare projectors.
+
+**The transferable lesson is the second one: a sign no Standard-Model process
+could isolate.** Every SM fermion line reaches a gauge vertex, so counting
+propagators and reading the bilinear parity give the same answer on every row
+the suite had — for years. `qt qt~ > o8 o8` is the first fermion line built
+entirely of Yukawa-type bilinears, and it is a process nobody would generate
+for its physics. That is the argument for a toy model as a *validation
+instrument* rather than as a convenience: the structures a real model never
+isolates are exactly the ones whose conventions no gate has ever seen, and a
+five-field UFO written to put one of them in one vertex is cheaper than any
+amount of staring at the code that carries it. The corollary is the one this
+note's §1 already applied: size the model from a *measured* probe of the loader,
+not from reading it.
+
+### 10.2 Item 1 — the colour-toy runs promoted in `validate_scales`
+
+T3 taught the loader to read `vibegraph_toy_color_UFO`, which falsified
+`validate_scales`' declared reason for skipping the two rows; the gate said so
+by failing, which is what the inventory exists for:
+
+```
+declined_runs_decline_for_the_declared_reason panicked:
+  p3r3_to_p3r3_toy_epsilon: its model loads now, so the run belongs in a
+  replaying inventory
+```
+
+Both rows are now in `CLUSTERED_RUNS` and `Declined::ModelUnreadable` is gone.
+**V2's hypothesis for their `AQCDUP` finding is falsified**: it is not a
+`SCALUP`-vs-`μR` defect at all. Replayed with the row's own model, at 10 000
+events each,
+
+```
+p3r3_to_p3r3_toy_epsilon: 10000 events at mu_F 248.696354/251.296392 GeV and
+  mu_R 249.992993 GeV; SCALUP = max(mu_F) at 0.158 of budget and 2.607e4
+  budgets from mu_R; AQCDUP from mu_R at 0.477 of budget, and inverting it
+  returns mu_R to 8.86e-8 relative
+```
+
+(the `_sextet` row reads identically — same process, same card, different
+colour atom). So `SCALUP` reproduces as `μF`: these are two *distinct massive*
+colour triplets, `partonline` ends at the first initial-state merge because the
+beams are `isqcd` but not `isparton`, `jcentral` differs per side, and each beam
+keeps its own factorisation scale. `μR` is the four-factor geometric mean of the
+two, and inverting `AQCDUP` recovers it to `8.9e-8` relative. Nothing is wrong
+and nothing is loosened: `SCALUP_IS_NOT_MU_R` drops the one comparison that is
+not a statement about these runs, and
+`scalup_is_the_factorisation_scale_on_the_diquark_rows` asserts all three halves
+of the reading (reproduction ≤ 1 budget, parting > 1e3 budgets — measured at
+2.6e4 — and `AQCDUP` from the computed `μR` ≤ 1 budget), so a run that stopped
+parting the two scales fails. Coverage: **42 → 44 runs, 420 000 → 440 000 events,
+1 140 000 → 1 160 000 scale comparisons**, worst 1.000 of budget, six declined
+runs down to four.
+
+### 10.3 Item 2 — the `sigma_chained` mutation pin
+
+T2 left the chirality rule of §10.1(2) structurally pinned but not
+mutation-measured. Forcing `sigma_chained` (`root_lorentz.rs`) to return `false`
+and rebuilding puts `ll_to_qqx_toy_dipole` — and only that row, 41 of 42 still
+passing — outside the amplitude gate at **per-diagram 9.985e-1**, with the
+breakdown naming the diagram the rule governs:
+
+```
+  diagram 0: own constant |g|=1.000000 arg= +90.00° residual=2.68e-15
+  diagram 1: own constant |g|=0.075557 arg= +90.00° residual=9.99e-1
+```
+
+The gauge diagram is untouched and the dipole diagram's own fitted constant
+collapses to `0.0756`, which is the mutation landing where the rule lives rather
+than moving the process globally. Recorded in the row's manifest note beside the
+sign and normalisation mutations it already carried.
+
+### 10.4 Item 3 — the toy models' op census
+
+`vibegraph-lib/tests/toy_models.rs`, keyed by row the way `smeftsim.rs` is: the
+gated set read back out of the manifest, each row's process string checked
+against the one its banked amplitude table was generated for, the diagram counts
+against `diagrams.json` (2/2, 3/3, 5/5, 3/3, 2/2, 2/2, all enforced), and the
+two-way op census. **The allowlist is 19 ops, measured** — every one of them
+traceable to the seven Lorentz structures these two models write, which is short
+enough to read the allowlist off. What the toy family covers and nothing else in
+the tree does: `SigmaVout`, `SigmaOut` and the bare `Gamma5Amp`; it reaches
+`FierzOut`/`FierzOutRev`/`FierzPair` and `IdentityAmp` too.
+
+**A correction to this session's brief**: `IdentityAmp` is *not* on SMEFTsim's
+allowlist and never was — `bbx_to_h_identity`, `gg_to_ttx_smlimit_qcd2` and
+`tata_to_ttx_tensor4f` all reach it. Only `Gamma5Amp` is, correctly: SMEFTsim's
+dipole reaches `γ⁵` inside a chain and never as a bilinear of its own. Neither
+model allowlist needed a change; what did was their prose, which pointed at a
+toy census that did not exist yet.
+
+### 10.5 Item 4 — `wpwm_to_wpwmz_cw`'s configuration partition
+
+V2's `config_groups` assertion turned this row's `amplitudes` cell from a
+measured disagreement into "no comparison", because the partition is compared as
+sets of *MadGraph* graph indices and this row banks no diagram pairing.
+
+**A second correction to the brief**: the two partitions are not "the same
+multiset with shifted indices". They agree on the multiset of group sizes —
+both 21 groups, `{3×8, 7×8, 12, 17×4}` — and on nothing finer: ours are the
+contiguous diagrams 62–221, MadGraph's run 2–186 with three gaps. No shift maps
+one onto the other, and with 222 graphs no per-diagram table is banked to
+measure a pairing against, so any pairing written now would be fitted to the
+only check that reads it. `KNOWN_CONFIG_PAIRING_UNAVAILABLE` therefore prints
+both partitions and lets the rest of the comparison run — `|M|²`, the per-flow
+JAMPs and JAMP2 need no pairing — so the cell reports the disagreement it
+measures instead of reporting nothing:
+
+```
+[wpwm_to_wpwmz_cw] |M|² max_rel grid 2.20e3 / event 9.49e2, per-flow 2.19e1,
+  JAMP2 2.20e3 (G = -1i, |G|-1 = 9.2e-1)
+```
+
+which is the row's banked note, digit for digit. The exemption is two-way: it
+fails the day the row banks per-diagram amplitudes, because then the pairing is
+derivable. MadGraph's own per-diagram cluster trees in
+`output/wpwm_to_wpwmz_cw.json` are the honest route to it.
+
+### 10.6 Item 5 — the clippy debt CI's lint step cannot see
+
+CI lints with no features, which leaves every `extended-validation` target — the
+gates themselves and the `common/` modules they share — unlinted. **21 errors
+over six files** on this session's base, of which 9 were read off one clippy run
+directly and 12 had already been fixed when that run was made — the 11
+`dead_code` errors in `common/manifest.rs`, which the base gate's own log counts
+as warnings on the `validate_samples_proton` target, and one
+`clippy::zombie_processes`. That is one more than the lost run counted: the
+extra is `clippy::for_kv_map` in `validate_kt_cluster.rs`, in the same file as
+the `zombie_processes` that run reported. All fixed rather than allowed, except
+one allow that is right: `common/manifest.rs` is reached from `vibegraph-cli`
+through a `#[path]` module that bypasses `common/mod.rs`, so its 11 dead-code
+errors are a statement about the caller, and it gets the same documented
+`#![allow(dead_code)]` `report.rs` and `leshouche.rs` already carry. The rest
+are real: named types for the six `type_complexity` sites (`ScaleCheck`,
+`ScaleOf`, `AmpKey`, `NormalisedGraph`, `DiagramGroup`, `LadderArm` — which
+retired the two pre-existing `#[allow]`s too, so the test tree now carries
+none), a `Child` the streaming dump reader reaps on drop, `keys()`,
+`contains()` and a `?`. The invocation is now the first step of
+`validation/validate.sh`, before the gates.
+
+The one fix with a behavioural surface is the reaped `Child`: `read_dump`
+streams a 75 MB dump, so its `gzip` outlives the call that spawned it and the
+reader had been dropping the handle without waiting. This host has eight of the
+nine dumps, so it was measured rather than reasoned about —
+`validate_kt_cluster`'s two ignored tests pass with it (**80 000 events,
+2 235 998 candidate pairs, 80 000 merge sequences and 80 000 scale pairs
+reproduced**, 120 merge tables derived and checked whole). That is the oracle
+layer and outside the banked gate, but it is the check that says the streaming
+still streams.
+
+### 10.7 Item 6 — the bookkeeping, and three cells it promoted
+
+Four `diagrams` notes in the manifest still said the row's model "refuses to
+load today", which stopped being true at wave 1. Rewritten to what the gate
+measures, and three of the four promoted on that measurement:
+`ee_to_wpwm_cw` **7/7**, `ee_to_zh_smeft` **14/14** and `wpwm_to_wpwmz_cw`
+**222/222** are enforced; `gg_to_gg_cg` stays `info` at 21/27 because 27 is
+MadGraph's `NGRAPHS` — one `AMP()` per (diagram, colour-ordered contact
+structure) — and the Standard Model's own `gg_to_gg` sits at 4/6 under the same
+convention. That the amplitude cell of `wpwm_to_wpwmz_cw` is `⚠️` and its
+diagram cell `✅` is the useful pair: the enumeration is not where its
+disagreement is.
+
+`TODO.md`'s current position now reads "between sprints", its `non-sm-ufo`
+checklist is rewritten from measurement (what is supported and gated, what is
+refused and why, what is an open question), and the closed-sprint history gains
+the sprint's line. `README.md`'s scope and boundary paragraphs said colour
+sextets and baryonic epsilons were hard errors; they are gated rows now, and the
+toy models get a paragraph of their own there. `validation/ufo/README.md`'s
+"refused at load" paragraph is rewritten to what is true, with why the two toy
+models stay separate anyway.
+
+### 10.8 The reference data
+
+`refdata-7` is **assembled and pinned, upload pending**: cut 6's 29
+Standard-Model runs unchanged plus the sprint's 22 rows, with `sha256` and
+`size_bytes` in the manifest's `[refdata]` block and `bundled = false` gone from
+all 22 rows. `published = false` until the archive is uploaded to its release,
+which is the one thing this sprint leaves for a hand on the repository.

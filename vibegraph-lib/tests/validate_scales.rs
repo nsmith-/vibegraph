@@ -139,6 +139,8 @@ const CLUSTERED_RUNS: &[&str] = &[
     "ll_to_qqx_toy_dipole",
     "ll_to_qqx_toy_tensor",
     "ll_to_qqx_toy_yukawa",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
     "pp_to_bb",
     "pp_to_bb_qcd2",
     "pp_to_jj",
@@ -194,17 +196,12 @@ enum Declined {
     /// The run card is refused outright, so there is no prescription and no
     /// `αs` source either.
     RefusedRunCard,
-    /// The row's model is one this crate cannot read yet, so no channel forest
-    /// exists to replay the clustering against.
-    ModelUnreadable,
 }
 
 /// Every declared run whose scales are not replayed, with its reason.
 const DECLINED_RUNS: &[(&str, Declined)] = &[
     ("bbx_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
     ("gg_to_gg_cg", Declined::UnhonouredChoice(3)),
-    ("p3r3_to_p3r3_toy_epsilon", Declined::ModelUnreadable),
-    ("p3r3_to_p3r3_toy_sextet", Declined::ModelUnreadable),
     ("uux_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
     ("wpwm_to_wpwmz_cw", Declined::RefusedRunCard),
 ];
@@ -234,6 +231,28 @@ const GRID_ALPHA_S_RUNS: &[&str] = &[
 /// what separates the two regimes is the `fixed_*_scale` flags alone, not the
 /// final state.
 const FIXED_SCALE_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed", "ud_to_epemud_qcd0"];
+
+/// The clustered runs whose `SCALUP` is `μF` and *not* `μR`.
+///
+/// `unwgt.f:686` fills `SCALUP` with `sqrt(max(q2fact(1), q2fact(2)))` — the
+/// larger **factorisation** scale. It doubles as `μR` only where the clustering
+/// reads both off the same vertex, which every other banked run does. These two
+/// are the suite's first `2 → 2` reaching the general `q2fact(1) != q2fact(2)`
+/// case: their beams are two *distinct massive* colour triplets, so
+/// `partonline` ends at the first initial-state merge (the beams are `isqcd`
+/// but not `isparton`) and `jcentral` differs per side, leaving each beam its
+/// own factorisation scale and `μR` the four-factor geometric mean of the two.
+///
+/// So the entry drops one comparison and nothing else: the `SCALUP`-against-`μR`
+/// check, which is not a statement about these runs. Every other field is still
+/// replayed, and `μR` itself is still enforced — through `AQCDUP`, which is the
+/// finer oracle for it anyway (`αs`'s seven printed digits locate the scale to
+/// about `1e-6` relative, tighter than `SCALUP`'s own rounding).
+///
+/// [`scalup_is_the_factorisation_scale_on_the_diquark_rows`] is what keeps this
+/// from being an exemption: it measures both halves, so a run that stopped
+/// parting the two scales, or stopped reproducing either of them, fails.
+const SCALUP_IS_NOT_MU_R: &[&str] = &["p3r3_to_p3r3_toy_epsilon", "p3r3_to_p3r3_toy_sextet"];
 
 /// `cluster.f`'s inflation of a beam–leg candidate whose legs point in opposite
 /// directions, as it reaches the scale: the factor lands on `pt2ijcl`, so a
@@ -476,17 +495,18 @@ fn printed_half_ulp(v: f64, digits: i32) -> f64 {
 /// Momentum components are printed to eleven significant digits.
 const MOMENTUM_DIGITS: i32 = 11;
 
+/// The three scales as a function of one event's momenta, with everything else
+/// about the replay — the run's prescription, its channel forests, the
+/// integration channel — already bound.
+type ScaleOf<'a> = dyn FnMut(&[[f64; 4]; 2], &[[f64; 4]]) -> Result<MuTriple, ScaleError> + 'a;
+
 /// How far the computed scale moves when each printed momentum component is
 /// walked to the ends of its own rounding interval, summed over components.
 ///
 /// Measured rather than estimated from a derivative, exactly because the
 /// interesting cases are the ones where the derivative is enormous: a forward
 /// leg's `(E − p_z)(E + p_z)` cancels most of the digits it was given.
-fn momentum_spread(
-    scales: &mut dyn FnMut(&[[f64; 4]; 2], &[[f64; 4]]) -> Result<MuTriple, ScaleError>,
-    event: &Event,
-    base: MuTriple,
-) -> MuTriple {
+fn momentum_spread(scales: &mut ScaleOf, event: &Event, base: MuTriple) -> MuTriple {
     let mut spread = MuTriple::default();
     let mut outgoing = event.outgoing.clone();
     let mut incoming = event.incoming;
@@ -693,13 +713,6 @@ fn declined_runs_decline_for_the_declared_reason() {
                 );
                 println!("{name}: run card refused — {}", refused.unwrap_err());
             }
-            Declined::ModelUnreadable => match common::model_for_row(name) {
-                Ok(_) => panic!(
-                    "{name}: its model loads now, so the run belongs in a replaying \
-                         inventory"
-                ),
-                Err(e) => println!("{name}: model unreadable — {e}"),
-            },
         }
         checked += 1;
     }
@@ -827,7 +840,14 @@ fn banked_events_reproduce_every_printed_scale() {
             if got.config != 1 {
                 other_channel += 1;
             }
-            for (field, printed, digits, pick, moved) in checks(event, got.mu, got.spread) {
+            for check in checks(name, event, got.spread) {
+                let ScaleCheck {
+                    field,
+                    printed,
+                    digits,
+                    pick,
+                    moved,
+                } = check;
                 let budget = printed_half_ulp(printed, digits) + moved;
                 let fraction = (pick(got.mu) - printed).abs() / budget;
                 comparisons += 1;
@@ -918,15 +938,24 @@ fn banked_events_reproduce_every_printed_scale() {
     );
 }
 
-/// Each printed scale field of one event, with the digits it carries, which of
-/// the three computed scales it is compared against, and how far that scale
-/// moves across the momenta's own rounding.
-#[allow(clippy::type_complexity)]
-fn checks(
-    event: &Event,
-    base: MuTriple,
-    spread: MuTriple,
-) -> Vec<(&'static str, f64, i32, fn(MuTriple) -> f64, f64)> {
+/// One printed scale field of an event against the computed scale it is compared
+/// with: the field's name, its printed value and how many significant digits
+/// that value carries, which of the three computed scales answers it, and how
+/// far that scale moves across the momenta's own printed rounding.
+struct ScaleCheck {
+    field: &'static str,
+    printed: f64,
+    digits: i32,
+    pick: fn(MuTriple) -> f64,
+    moved: f64,
+}
+
+/// Every printed scale field of one event, as the checks the replay owes it.
+///
+/// `SCALUP` answers to `μF` on every run and to `μR` on all but the diquark
+/// rows; see [`SCALUP_IS_NOT_MU_R`] for what separates them and for the
+/// two-way measurement that keeps the partition from being a convenience.
+fn checks(name: &str, event: &Event, spread: MuTriple) -> Vec<ScaleCheck> {
     // SCALUP is sqrt(max(q2fact)), so it is compared against whichever
     // factorisation scale is larger; mu_R rides along wherever the clustering
     // assigns both from the same vertex.
@@ -934,25 +963,48 @@ fn checks(
     let mu_r: fn(MuTriple) -> f64 = |mu| mu.0[0];
     let mu_f1: fn(MuTriple) -> f64 = |mu| mu.0[1];
     let mu_f2: fn(MuTriple) -> f64 = |mu| mu.0[2];
-    let _ = base;
-    let mut checks = vec![
-        (
-            "SCALUP vs mu_F",
-            event.scalup,
-            7,
-            mu_f_max,
-            spread.0[1].max(spread.0[2]),
-        ),
-        ("SCALUP vs mu_R", event.scalup, 7, mu_r, spread.0[0]),
-    ];
+    let mut checks = vec![ScaleCheck {
+        field: "SCALUP vs mu_F",
+        printed: event.scalup,
+        digits: 7,
+        pick: mu_f_max,
+        moved: spread.0[1].max(spread.0[2]),
+    }];
+    if !SCALUP_IS_NOT_MU_R.contains(&name) {
+        checks.push(ScaleCheck {
+            field: "SCALUP vs mu_R",
+            printed: event.scalup,
+            digits: 7,
+            pick: mu_r,
+            moved: spread.0[0],
+        });
+    }
     if let Some(rscale) = event.rscale {
-        checks.push(("rscale", rscale, 8, mu_r, spread.0[0]));
+        checks.push(ScaleCheck {
+            field: "rscale",
+            printed: rscale,
+            digits: 8,
+            pick: mu_r,
+            moved: spread.0[0],
+        });
     }
     if let Some(q) = event.pdf_scale[0] {
-        checks.push(("pdfrwt beam 1", q, 8, mu_f1, spread.0[1]));
+        checks.push(ScaleCheck {
+            field: "pdfrwt beam 1",
+            printed: q,
+            digits: 8,
+            pick: mu_f1,
+            moved: spread.0[1],
+        });
     }
     if let Some(q) = event.pdf_scale[1] {
-        checks.push(("pdfrwt beam 2", q, 8, mu_f2, spread.0[2]));
+        checks.push(ScaleCheck {
+            field: "pdfrwt beam 2",
+            printed: q,
+            digits: 8,
+            pick: mu_f2,
+            moved: spread.0[2],
+        });
     }
     checks
 }
@@ -1251,6 +1303,100 @@ fn scalup_is_not_the_renormalisation_scale() {
         checked += 1;
     }
     assert_eq!(checked, 2);
+}
+
+/// The two halves of [`SCALUP_IS_NOT_MU_R`], measured on the rows it names.
+///
+/// The `SCALUP`-against-`μR` comparison is dropped for these two runs, and an
+/// entry that only removes a check is an exemption. What makes it a
+/// measurement is that both halves are asserted here:
+///
+/// * **`SCALUP` is `μF`.** The larger of the two computed factorisation scales
+///   reproduces the printed field inside its own printing budget.
+/// * **`SCALUP` is not `μR`.** The computed renormalisation scale is more than
+///   `1e3` budgets away from the same field — three orders of magnitude, so no
+///   rounding argument reaches it.
+/// * **`μR` is right anyway.** `αs` at the computed `μR` reproduces `AQCDUP`
+///   inside *its* printing budget, which is the finer of the two oracles for
+///   the scale and the reason dropping the coarser one costs no coverage.
+///
+/// A run that stopped parting the two scales fails the second assertion and
+/// belongs back in the ordinary inventory; one whose replay drifted fails the
+/// first or the third.
+#[test]
+fn scalup_is_the_factorisation_scale_on_the_diquark_rows() {
+    let mut checked = 0usize;
+    for &name in SCALUP_IS_NOT_MU_R {
+        let run = output_dir().join(name);
+        if !run.join("Cards/run_card.dat").exists() {
+            vibegraph::validation::require("scales_gate_replays_madgraph", "a banked run", name);
+        }
+        let card = run_card(&run);
+        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let channels = channels_for(name, &run);
+        let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
+        let running = RunningAlphaS::from_run_card(&card, alpha_s_mz(name, &params))
+            .expect("supported alpha_s");
+
+        let events = parse_events(&run);
+        let mut worst_mu_f = 0.0f64;
+        let mut closest_mu_r = f64::INFINITY;
+        let mut worst_aqcdup = 0.0f64;
+        let mut worst_inversion = 0.0f64;
+        let mut first = None;
+        for event in &events {
+            let got = replay(&choice, Some(&channels), event);
+            let (mu_r, mu_f) = (got.mu.0[0], got.mu.0[1].max(got.mu.0[2]));
+            let scalup_budget = printed_half_ulp(event.scalup, 7);
+            worst_mu_f = worst_mu_f.max(
+                (mu_f - event.scalup).abs()
+                    / (scalup_budget + got.spread.0[1].max(got.spread.0[2])),
+            );
+            closest_mu_r =
+                closest_mu_r.min((mu_r - event.scalup).abs() / (scalup_budget + got.spread.0[0]));
+
+            let from_mu_r = aqcdup_from_alpha_s(running.eval(mu_r));
+            let moved = [mu_r + got.spread.0[0], mu_r - got.spread.0[0]]
+                .into_iter()
+                .map(|q| (aqcdup_from_alpha_s(running.eval(q)) - from_mu_r).abs())
+                .fold(0.0f64, f64::max);
+            worst_aqcdup = worst_aqcdup.max(
+                (from_mu_r - event.aqcdup).abs() / (printed_half_ulp(event.aqcdup, 7) + moved),
+            );
+            // The same statement without the printing budget: the scale the
+            // field itself names, against the one the clustering computed.
+            worst_inversion =
+                worst_inversion.max((invert_alpha_s(&running, event.aqcdup) / mu_r - 1.0).abs());
+            first.get_or_insert((mu_r, got.mu.0[1], got.mu.0[2]));
+        }
+
+        let (mu_r, mu_f1, mu_f2) = first.expect("events");
+        assert!(
+            worst_mu_f <= 1.0,
+            "{name}: SCALUP is not reproduced by the larger factorisation scale \
+             ({worst_mu_f:.3} of budget)"
+        );
+        assert!(
+            closest_mu_r > 1e3,
+            "{name}: the computed mu_R comes within {closest_mu_r:.3e} budgets of SCALUP on \
+             some event, so the two scales no longer part and the run belongs back in the \
+             ordinary inventory"
+        );
+        assert!(
+            worst_aqcdup <= 1.0,
+            "{name}: alpha_s at the computed mu_R misses AQCDUP by {worst_aqcdup:.3} of its \
+             printing budget"
+        );
+        println!(
+            "{name}: {} events at mu_F {mu_f1:.6}/{mu_f2:.6} GeV and mu_R {mu_r:.6} GeV; \
+             SCALUP = max(mu_F) at {worst_mu_f:.3} of budget and {closest_mu_r:.3e} budgets \
+             from mu_R; AQCDUP from mu_R at {worst_aqcdup:.3} of budget, and inverting it \
+             returns mu_R to {worst_inversion:.2e} relative",
+            events.len()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, SCALUP_IS_NOT_MU_R.len());
 }
 
 /// `μR` recovered from `αs(μR)` by bisection, which is monotone over the range

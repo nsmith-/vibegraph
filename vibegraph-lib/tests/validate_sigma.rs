@@ -2497,7 +2497,7 @@ fn probe_the_scale_draw_reads_the_point_and_not_the_sampler() {
                     );
                     checked += 1;
                 }
-                if !distinct.iter().any(|m| *m == want.mu_r) {
+                if !distinct.contains(&want.mu_r) {
                     distinct.push(want.mu_r);
                 }
             }
@@ -2619,9 +2619,7 @@ fn probe_cluster_scale_spread_over_configurations() {
             0,
             None,
             |integ, _| {
-                let Some(sets) = integ.scale_source().and_then(|s| s.channels()) else {
-                    return None;
-                };
+                let sets = integ.scale_source().and_then(|s| s.channels())?;
                 assert_eq!(sets.len(), 1, "a fixed-beam run has one channel set");
                 let set = &sets[0];
                 assert_eq!(

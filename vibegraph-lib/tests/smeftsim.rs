@@ -708,18 +708,12 @@ fn gated_rows_op_census() {
     // `ψ̄ (M ψ) = (ψ̄ M) ψ = ⟨fierz(ψ̄, ψ), M⟩` and on
     // `tensor_four_fermion_currents_are_rooting_invariant`, which re-roots a contact
     // that does. The five `Sigma` ops are absent from this model for the reason the
-    // toy model exists: FeynRules expands `σ^{μν}` into gamma chains before it writes
+    // toy models exist: FeynRules expands `σ^{μν}` into gamma chains before it writes
     // a UFO, so SMEFTsim spells every tensor structure with gammas and a literal
-    // `Sigma` appears in no vertex of it. The banked toy rows cover two of them —
-    // `SigmaVout` on `ll_to_qqx_toy_dipole` and `SigmaOut` on `ll_to_qqx_toy_tensor`.
-    // The other three need what no banked row has: `SigmaMv` needs the dipole on an
-    // *internal* fermion line, and the two `Rev` spellings need an index order no
-    // model in reach writes (`SigmaVoutRev`) or a crossing the gated row's contact
-    // does not have (`SigmaOutRev`). All three rest on
-    // `literal_sigma_currents_are_rooting_invariant`, which puts both structures on an
-    // internal line and re-roots them, on the rooting unit tests that build each
-    // spelling, and on the kernel identities `SigmaVoutRev = −SigmaVout` and
-    // `SigmaOutRev = −SigmaOut`.
+    // `Sigma` appears in no vertex of it. Where those five stand is the toy models'
+    // census to say, not this one's — `tests/toy_models.rs` measures it and carries
+    // the reasons; two of the five are covered there and the other three rest on
+    // `literal_sigma_currents_are_rooting_invariant` and the kernel identities.
     const KNOWN_UNCOVERED: [Op; 13] = [
         Op::Hels,
         Op::ProjMAmp,
