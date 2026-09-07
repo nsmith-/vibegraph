@@ -373,6 +373,32 @@ a change to the fixed-beam dictionary. If the fix would move a hadronic
 cell, the diagnosis is wrong; stop and report. Flip the cell `info → gate`
 on the measurement.
 
+**Landed B4 (`96b0096`, 2026-09-07) — diagnosis only, the brief's cause
+falsified.** `color_flow_tags` is byte-identical to `leshouche.inc`, labels
+included, the `ICOLAMP` mask partitions 24/11 as MadGraph's `JAMP` rows do,
+and a transposition would give χ² ≈ 17 000, not ~640 — all three candidates
+above are out. Root cause: MadEvent's `SELECT_COLOR` takes `ICONFIG` from
+the *integration channel* the point was generated in, so the written
+`ICOLUP` marginal is the multichannel weight share, and this row's card sets
+`sde_strategy = 2`, under which `AMP2(J) = GET_CHANNEL_CUT(P, I)` — a
+product of propagator denominators with no amplitude in it — over
+MadGraph's 21 *merged* configurations. Our `select_color_flow` draws
+`∝ AMP2` (the `sde_strategy = 1` weight) over one configuration per
+diagram. Flow-2 fraction on MadGraph's own events: written 0.81850 ±
+0.00386; `results.dat` channel share 0.82074; `GET_CHANNEL_CUT` over the 21
+merged configs 0.82181 (0.86σ); our per-diagram `AMP2` share 0.91731
+(25.6σ), which our three seeds realise to three digits. Neither ingredient
+alone suffices (`GET_CHANNEL_CUT` over 35 per-diagram configs gives 0.782,
+χ² ≈ 54); both together predict χ² ≈ 0.5. The only banked run that is both
+`sde_strategy = 2` and NCOLOR > 1, which is why only this row shows it.
+`EventScaleSource::draws_configuration()` already encodes the
+`sde_strategy == 1 && tmin_for_channel == -1` conjunction on the scale path;
+the colour path is the asymmetry. **The fix is B3's** (below). Also
+recorded: the row's χ² drifted 642–664 → 590–671 on the same seeds before
+this sprint; `pp_to_jj`'s quoted `ICOLUP` band 0.105–0.263 is stale (reads
+0.123/0.265/0.020); `R_SDE_STRATEGY` in `runcard/classes.rs` understates
+the field's reach (close-out bookkeeping).
+
 ### B5 — a coupling-level oracle ahead of the amplitude gate (validation-dev)
 
 **What.** For every banked `mg_amplitude` row, compare this crate's coupling
@@ -508,6 +534,26 @@ through the same partition) — assert that with a byte-identical
 
 **Report.** Per-row channel counts before/after, the five-seed table on the
 nine rows, the capstone's new pin, and the bit-identity list.
+
+**Added after B4 — the colour-flow draw under MadEvent's channel rule.**
+Once the integrator runs on MadGraph's merged configurations, make
+`select_color_flow`'s configuration draw MadEvent's: the configuration is
+the sampled integration channel's (the `ICONFIG` MadEvent hands
+`SELECT_COLOR`), whose marginal is the multichannel weight share; under
+`sde_strategy = 2` (or `tmin_for_channel ≠ -1`) the per-configuration
+weight is `GET_CHANNEL_CUT`'s propagator-denominator product
+(`genps.f:1817`), not `AMP2`; under `sde_strategy = 1` with
+`tmin_for_channel = -1` it stays `AMP2` as today. Reuse the
+`draws_configuration()` conjunction so the scale and colour paths read one
+rule. **Falsifier (B4's numbers):** `ud_to_epemud_qcd0`'s `ICOLUP` flow-2
+fraction moves from ≈0.917 to ≈0.822 and its three-seed χ² from ~600 to
+O(1) (predicted 0.5, p ≈ 0.48), and its cell flips `info → gate` with B2's
+beam column enforced; every other `ICOLUP` cell is unmoved (all other runs
+are `sde_strategy = 1`, `tmin_for_channel = -1`, so the rule reduces to the
+present one). Decision recorded (manager, 2026-09-07): MadGraph's written
+flow under its own card is the reference this suite reproduces, as
+everywhere else; a `--madgraph-compat`-off alternative is the feature
+backlog's, not this sprint's.
 
 ## 6. Risk register
 
