@@ -11,6 +11,9 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The repository's fetched PDF sets, ahead of whatever the environment carries;
+# the same rule as the MadGraph driver's.
+export LHAPDF_DATA_PATH="$HERE/../pdf${LHAPDF_DATA_PATH:+:$LHAPDF_DATA_PATH}"
 PDIR="$HERE/output/dy13_default/SubProcesses/P1_qq_ll"
 LIBDIR="$HERE/output/dy13_default/lib"
 

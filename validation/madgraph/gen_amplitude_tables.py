@@ -105,6 +105,12 @@ class Row:
     # phase space is a single point, MadEvent has no volume to integrate and
     # writes no event file, and the fixed grid already holds that one point.
     n_event_points: int = N_EVENT_POINTS
+    # The process string the table is banked under. `None` takes the grid
+    # registry entry's, which is the row's own for every row that supplies its
+    # own grid; a row that borrows another row's grid names the process its own
+    # script generates, since the two can differ in their coupling-order bounds
+    # (`u u~ > mu+ mu-` against `p p > l+ l- QCD=0`'s concrete subprocess).
+    process: str | None = None
 
 
 def rows():
@@ -120,8 +126,18 @@ def rows():
         Row(p.name, p.name, 0 if len(p.pdgs_out) == 1 else N_EVENT_POINTS)
         for p in gen_amplitude.PROCESSES
     ]
-    out.append(Row("uux_to_mumu", "pp_to_ll_qcd0"))
+    out.append(Row("uux_to_mumu", "pp_to_ll_qcd0", process=script_process("uux_to_mumu")))
     return sorted(out, key=lambda r: r.key)
+
+
+def script_process(key):
+    """The process a row's own `.mg5` script generates, as written there."""
+    path = os.path.join(HERE, "scripts", f"{key}.mg5")
+    with open(path) as f:
+        for line in f:
+            if line.startswith("generate "):
+                return line[len("generate "):].strip()
+    raise ValueError(f"{path}: no `generate` line")
 
 
 # ─────────────────────────── MadGraph source reading ──────────────────────────
@@ -469,7 +485,7 @@ def evaluate(key, row, proc):
 
     table = {
         "key": key,
-        "process": process_str,
+        "process": row.process or process_str,
         "n_ext": n_ext,
         "n_graphs": ngraphs,
         "n_flows": ncolor,

@@ -36,7 +36,12 @@ already_built() {
 # gen_amplitude.py reads, listed here through its own resolved registry so the
 # two can never name different sets.
 # Positional arguments narrow the set to those rows; with none, every row builds.
-mapfile -t GENERIC_PROCESSES < <(
+# A read loop rather than `mapfile`: macOS ships bash 3.2, which has no
+# array-reading builtin.
+GENERIC_PROCESSES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && GENERIC_PROCESSES+=("$name")
+done < <(
     python "$REPO_ROOT/validation/madgraph/gen_amplitude.py" --dump-processes |
         python -c 'import json,sys; [print(r["name"]) for r in json.load(sys.stdin)]' |
         { if [ $# -gt 0 ]; then grep -Fx -f <(printf '%s\n' "$@"); else cat; fi; }

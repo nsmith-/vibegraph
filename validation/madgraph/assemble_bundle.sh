@@ -91,7 +91,15 @@ vg_say "    $count files"
 
 vg_say ">>> staging with normalised metadata"
 mkdir -p "$STAGE/root"
-tar -cf - -C "$WORK_AREA" -T "$STAGE/members.txt" | tar -xf - -C "$STAGE/root"
+# Through a file rather than a pipe: bsdtar reports a write error when the
+# extracting side closes the pipe before the trailing end-of-archive blocks
+# are flushed, and `pipefail` would make that a failed assembly of a complete
+# stage.
+tar -cf "$STAGE/stage.tar" -C "$WORK_AREA" -T "$STAGE/members.txt"
+tar -xf "$STAGE/stage.tar" -C "$STAGE/root"
+rm -f "$STAGE/stage.tar"
+staged="$(find "$STAGE/root" -type f | wc -l | tr -d ' ')"
+[ "$staged" = "$count" ] || vg_die "staged $staged files of $count selected"
 
 # The event files travel as plain Les Houches text. MadGraph writes them gzipped
 # and every gate reads them gzipped — `vg_ensure_refdata` gzips them back as it

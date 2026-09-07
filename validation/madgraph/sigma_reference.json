@@ -38,7 +38,7 @@
     "ebeam1": 250.0,
     "ebeam2": 250.0,
     "process": "e+ e- > mu+ mu-",
-    "sigma_err_pb": 0.00020574,
+    "sigma_err_pb": 0.00022615,
     "sigma_pb": 0.42096
   },
   "ee_to_mumu_tata_qcd0": {
@@ -166,6 +166,48 @@
     "process": "g u~ > e+ e- u~ QCD=2 QED=2",
     "sigma_err_pb": 0.00021701,
     "sigma_pb": 0.10884
+  },
+  "ll_to_qqx_toy_dipole": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "lt~ lt > qt qt~ NP<=1",
+    "sigma_err_pb": 0.025568,
+    "sigma_pb": 78.151
+  },
+  "ll_to_qqx_toy_tensor": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "lt~ lt > qt qt~ NP<=1 NPGG<=1",
+    "sigma_err_pb": 3.1623,
+    "sigma_pb": 8033.4
+  },
+  "ll_to_qqx_toy_yukawa": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "lt~ lt > qt qt~ NP<=2 NPCP<=2",
+    "sigma_err_pb": 0.00043667,
+    "sigma_pb": 4.0261
+  },
+  "p3r3_to_p3r3_toy_epsilon": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "p3 r3 > p3 r3 NP<=2",
+    "sigma_err_pb": 9.5337e-07,
+    "sigma_pb": 0.0022159
+  },
+  "p3r3_to_p3r3_toy_sextet": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "p3 r3 > p3 r3 NP<=2",
+    "sigma_err_pb": 1.1174e-06,
+    "sigma_pb": 0.0024153
+  },
+  "qqx_to_o8o8_toy_dcolor": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "qt qt~ > o8 o8 NP<=2",
+    "sigma_err_pb": 0.00087017,
+    "sigma_pb": 0.84113
   },
   "tata_to_ttx_tensor4f": {
     "ebeam1": 250.0,
