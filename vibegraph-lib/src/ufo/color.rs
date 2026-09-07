@@ -7,12 +7,20 @@
 //! introduced later, during diagram colorization — never present in a raw
 //! UFO model file).
 //!
+//! `Epsilon(i,j,k)` and `EpsilonBar(i,j,k)` — the baryonic invariants of three
+//! fundamental and three antifundamental indices — parse as atoms of their own
+//! and reach the algebra engine unresolved.
+//!
+//! The sextet atoms `K6`, `K6Bar` and `T6` parse here too. Whether the algebra
+//! engine can reduce them is a separate question, decided during colorization:
+//! parsing a model must not depend on which of its vertices a process reaches.
+//!
 //! `Identity(m,n)` is representation-dependent and is resolved here, at
 //! parse time, using the color reps of the particles at slots `m`/`n`
 //! (mirrors MadGraph's `import_ufo.treat_color`):
 //! - a 3/3̄ pair becomes `T(i,j)` with the fundamental slot first;
 //! - an 8/8 pair becomes `2·Tr(m,n)` (`Tr[T^aT^b] = δ^{ab}/2`);
-//! - a sextet pair is an explicit unsupported error.
+//! - a 6/6̄ pair becomes `T6(i,j)` with the sextet slot first.
 //!
 //! The color-algebra engine (simplification, canonical forms, the CF matrix)
 //! is a separate, later concern; this module only produces the parsed,
@@ -38,6 +46,19 @@ pub enum ColorAtom {
     F(i32, i32, i32),
     /// `d(a,b,c)`: the totally symmetric SU(3) structure constant.
     D(i32, i32, i32),
+    /// `Epsilon(i,j,k)`: the totally antisymmetric invariant of three
+    /// fundamental (**3**) indices.
+    Epsilon(i32, i32, i32),
+    /// `EpsilonBar(i,j,k)`: the same over three antifundamental (**3̄**) indices.
+    EpsilonBar(i32, i32, i32),
+    /// `K6(m,i,j)`: the sextet Clebsch–Gordan coefficient joining two
+    /// antifundamental indices to the sextet index `m`, which comes first.
+    K6(i32, i32, i32),
+    /// `K6Bar(m,i,j)`: the same joining two fundamental indices to a **6̄**.
+    K6Bar(i32, i32, i32),
+    /// `T6(a…,i,j)`: a sextet generator chain (`T6(i,j)` with no adjoint index
+    /// is the sextet delta).
+    T6(Vec<i32>, i32, i32),
 }
 
 impl std::fmt::Display for ColorAtom {
@@ -56,6 +77,18 @@ impl std::fmt::Display for ColorAtom {
             ColorAtom::Tr(adj) => write!(f, "{}", joined("Tr", adj)),
             ColorAtom::F(a, b, c) => write!(f, "{}", joined("f", &[*a, *b, *c])),
             ColorAtom::D(a, b, c) => write!(f, "{}", joined("d", &[*a, *b, *c])),
+            ColorAtom::Epsilon(a, b, c) => write!(f, "{}", joined("Epsilon", &[*a, *b, *c])),
+            ColorAtom::EpsilonBar(a, b, c) => {
+                write!(f, "{}", joined("EpsilonBar", &[*a, *b, *c]))
+            }
+            ColorAtom::K6(m, i, j) => write!(f, "{}", joined("K6", &[*m, *i, *j])),
+            ColorAtom::K6Bar(m, i, j) => write!(f, "{}", joined("K6Bar", &[*m, *i, *j])),
+            ColorAtom::T6(adj, i, j) => {
+                let mut indices = adj.clone();
+                indices.push(*i);
+                indices.push(*j);
+                write!(f, "{}", joined("T6", &indices))
+            }
         }
     }
 }
@@ -95,11 +128,6 @@ pub enum ColorError {
     SlotOutOfRange(i32, usize),
     #[error("Identity({m},{n}) pairs incompatible color representations {cm} and {cn}")]
     IdentityRepMismatch { m: i32, n: i32, cm: i32, cn: i32 },
-    #[error(
-        "Identity({m},{n}) touches an SU(3) sextet representation (color {rep}); \
-         sextets are not supported"
-    )]
-    SextetUnsupported { m: i32, n: i32, rep: i32 },
 }
 
 /// One factor as parsed, before `Identity` resolution.
@@ -109,6 +137,11 @@ enum RawAtom {
     T(Vec<i32>, i32, i32),
     F(i32, i32, i32),
     D(i32, i32, i32),
+    Epsilon(i32, i32, i32),
+    EpsilonBar(i32, i32, i32),
+    K6(i32, i32, i32),
+    K6Bar(i32, i32, i32),
+    T6(Vec<i32>, i32, i32),
 }
 
 peg::parser! {
@@ -134,6 +167,19 @@ peg::parser! {
             }
             / "f(" a:int() "," b:int() "," c:int() ")" { RawAtom::F(a, b, c) }
             / "d(" a:int() "," b:int() "," c:int() ")" { RawAtom::D(a, b, c) }
+            / "EpsilonBar(" a:int() "," b:int() "," c:int() ")" { RawAtom::EpsilonBar(a, b, c) }
+            / "Epsilon(" a:int() "," b:int() "," c:int() ")" { RawAtom::Epsilon(a, b, c) }
+            / "K6Bar(" m:int() "," i:int() "," j:int() ")" { RawAtom::K6Bar(m, i, j) }
+            / "K6(" m:int() "," i:int() "," j:int() ")" { RawAtom::K6(m, i, j) }
+            / "T6(" args:int_list() ")" {?
+                if args.len() < 2 {
+                    Err("T6(...) needs at least two indices")
+                } else {
+                    let j = args[args.len() - 1];
+                    let i = args[args.len() - 2];
+                    Ok(RawAtom::T6(args[..args.len() - 2].to_vec(), i, j))
+                }
+            }
 
         rule int_list() -> Vec<i32> = int() ** ","
 
@@ -165,8 +211,8 @@ fn slot_color(slot: i32, particle_colors: &[i32]) -> Result<i32, ColorError> {
 /// Resolve one `Identity(m,n)` atom given the color reps at its two slots.
 ///
 /// Mirrors MadGraph's `import_ufo.treat_color`: a 3/3̄ pair becomes `T(i,j)`
-/// with the fundamental slot first; an 8/8 pair becomes `2·Tr(m,n)`; sextets
-/// are rejected.
+/// with the fundamental slot first, a 6/6̄ pair becomes `T6(i,j)` with the
+/// sextet slot first, and an 8/8 pair becomes `2·Tr(m,n)`.
 fn resolve_identity(
     m: i32,
     n: i32,
@@ -177,11 +223,9 @@ fn resolve_identity(
     match (cm, cn) {
         (3, -3) => Ok((1, ColorAtom::T(vec![], m, n))),
         (-3, 3) => Ok((1, ColorAtom::T(vec![], n, m))),
+        (6, -6) => Ok((1, ColorAtom::T6(vec![], m, n))),
+        (-6, 6) => Ok((1, ColorAtom::T6(vec![], n, m))),
         (8, 8) => Ok((2, ColorAtom::Tr(vec![m, n]))),
-        (6, _) | (_, 6) | (-6, _) | (_, -6) => {
-            let rep = if cm == 6 || cm == -6 { cm } else { cn };
-            Err(ColorError::SextetUnsupported { m, n, rep })
-        }
         _ => Err(ColorError::IdentityRepMismatch { m, n, cm, cn }),
     }
 }
@@ -201,6 +245,11 @@ fn resolve(atoms: Vec<RawAtom>, particle_colors: &[i32]) -> Result<ColorExpr, Co
             RawAtom::T(adj, i, j) => resolved.push(ColorAtom::T(adj, i, j)),
             RawAtom::F(a, b, c) => resolved.push(ColorAtom::F(a, b, c)),
             RawAtom::D(a, b, c) => resolved.push(ColorAtom::D(a, b, c)),
+            RawAtom::Epsilon(a, b, c) => resolved.push(ColorAtom::Epsilon(a, b, c)),
+            RawAtom::EpsilonBar(a, b, c) => resolved.push(ColorAtom::EpsilonBar(a, b, c)),
+            RawAtom::K6(m, i, j) => resolved.push(ColorAtom::K6(m, i, j)),
+            RawAtom::K6Bar(m, i, j) => resolved.push(ColorAtom::K6Bar(m, i, j)),
+            RawAtom::T6(adj, i, j) => resolved.push(ColorAtom::T6(adj, i, j)),
         }
     }
     Ok(ColorExpr {
@@ -268,8 +317,34 @@ mod tests {
     }
 
     #[test]
+    fn epsilon_atoms_parse() {
+        assert_eq!(parse("Epsilon(1,2,3)"), vec![RawAtom::Epsilon(1, 2, 3)]);
+        assert_eq!(
+            parse("EpsilonBar(1,2,3)"),
+            vec![RawAtom::EpsilonBar(1, 2, 3)]
+        );
+    }
+
+    /// `Epsilon` is a prefix of `EpsilonBar`, so the two must not alias: an
+    /// `EpsilonBar` read as an `Epsilon` would conjugate the whole structure.
+    #[test]
+    fn epsilon_bar_is_not_read_as_epsilon() {
+        let resolved = parse_and_resolve("EpsilonBar(1,2,3)", &[-3, -3, -3]).unwrap();
+        assert_eq!(resolved.atoms, vec![ColorAtom::EpsilonBar(1, 2, 3)]);
+        assert_eq!(resolved.to_string(), "EpsilonBar(1,2,3)");
+    }
+
+    #[test]
+    fn sextet_atoms_parse() {
+        assert_eq!(parse("K6(3,1,2)"), vec![RawAtom::K6(3, 1, 2)]);
+        assert_eq!(parse("K6Bar(3,1,2)"), vec![RawAtom::K6Bar(3, 1, 2)]);
+        assert_eq!(parse("T6(1,2)"), vec![RawAtom::T6(vec![], 1, 2)]);
+        assert_eq!(parse("T6(3,1,2)"), vec![RawAtom::T6(vec![3], 1, 2)]);
+    }
+
+    #[test]
     fn unknown_atom_is_hard_error() {
-        let err = parse_color_string("K6(1,2)").unwrap_err();
+        let err = parse_color_string("Sextet(1,2)").unwrap_err();
         assert!(matches!(err, ColorError::Parse { .. }));
     }
 
@@ -338,10 +413,22 @@ mod tests {
         assert_eq!(resolved.to_string(), "2*Tr(1,2)");
     }
 
+    /// A 6/6̄ `Identity` becomes the sextet delta with the **6** slot first,
+    /// whichever slot it sits in (`import_ufo.treat_color`).
     #[test]
-    fn identity_sextet_is_unsupported() {
-        let err = parse_and_resolve("Identity(1,2)", &[6, -6, 1]).unwrap_err();
-        assert!(matches!(err, ColorError::SextetUnsupported { .. }));
+    fn identity_sextet_pair_becomes_the_sextet_delta() {
+        let resolved = parse_and_resolve("Identity(1,2)", &[6, -6, 1]).unwrap();
+        assert_eq!(resolved.atoms, vec![ColorAtom::T6(vec![], 1, 2)]);
+        assert_eq!(resolved.to_string(), "T6(1,2)");
+
+        let swapped = parse_and_resolve("Identity(1,2)", &[-6, 6, 1]).unwrap();
+        assert_eq!(swapped.atoms, vec![ColorAtom::T6(vec![], 2, 1)]);
+    }
+
+    #[test]
+    fn identity_two_sextets_errors() {
+        let err = parse_and_resolve("Identity(1,2)", &[6, 6, 1]).unwrap_err();
+        assert!(matches!(err, ColorError::IdentityRepMismatch { .. }));
     }
 
     #[test]

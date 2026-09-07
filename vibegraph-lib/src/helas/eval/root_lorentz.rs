@@ -73,6 +73,13 @@ pub struct RootedTerm {
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
     /// at the canonical rooting ([`DiagramEvalTree::reversed_convention_sign`]).
     pub reversed_sign: i8,
+    /// Whether this term's bilinear carries a Dirac matrix — a `Gamma` or a `Sigma` —
+    /// rather than being built from `Identity`, `Gamma5` and the chiral projectors
+    /// alone. Read by [`spine_sign_from_flow`](super::root_diagram::spine_sign_from_flow):
+    /// only the first kind conjugates non-trivially under a fermion-line reversal
+    /// (`Cγ^{μT}C⁻¹ = −γ^μ`, `Cσ^{μνT}C⁻¹ = −σ^{μν}`, against `C·1ᵀ·C⁻¹ = 1` and
+    /// `Cγ⁵ᵀC⁻¹ = γ⁵`), so a line built only from the second takes no reversal sign.
+    pub carries_dirac_matrix: bool,
     /// Resolved primitive with output fiber fixed.
     pub tree: LorentzEvalTree,
 }
@@ -1702,6 +1709,10 @@ pub fn root_term(
         coeff: term.coeff,
         build_sign: if sign < 0.0 { -1 } else { 1 },
         reversed_sign,
+        carries_dirac_matrix: term
+            .ops
+            .iter()
+            .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })),
         tree,
     })
 }

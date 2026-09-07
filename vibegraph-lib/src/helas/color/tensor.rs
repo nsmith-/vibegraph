@@ -6,12 +6,14 @@
 //! the antifundamental (**3̄**) index `j`. A negative index is a summed
 //! (contracted) index; a positive index labels an external leg.
 //!
-//! Only the structures the Standard Model tree-level algebra needs are
-//! representable: [`ColorTensor::T`], [`ColorTensor::Tr`], [`ColorTensor::F`],
-//! [`ColorTensor::D`], and [`ColorTensor::One`]. Sextet (`K6`/`K6Bar`/`T6`) and
-//! baryonic (`Epsilon`) tensors are deliberately *not* representable; colorize
-//! must reject them with [`ColorAlgebraError::Unsupported`] before reaching the
-//! algebra engine.
+//! Representable: [`ColorTensor::T`], [`ColorTensor::Tr`], [`ColorTensor::F`],
+//! [`ColorTensor::D`], [`ColorTensor::One`], the baryonic pair
+//! [`ColorTensor::Epsilon`]/[`ColorTensor::EpsilonBar`], and the sextet
+//! Clebsch-Gordan coefficients [`ColorTensor::K6`]/[`ColorTensor::K6Bar`] with
+//! the sextet delta [`ColorTensor::T6`]. A `T6` carrying adjoint indices — the
+//! sextet *generator*, whose expansion allocates fresh summed indices — is
+//! rejected by colorize with [`ColorAlgebraError::Unsupported`] before it
+//! reaches the algebra engine.
 
 use thiserror::Error;
 
@@ -25,9 +27,9 @@ pub type Idx = i32;
 /// A color structure the algebra engine cannot handle.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ColorAlgebraError {
-    /// A sextet or baryonic tensor (`K6`, `K6Bar`, `T6`, `Epsilon`) was
-    /// encountered; these are outside the tree-level SM color vocabulary.
-    #[error("unsupported color structure '{0}': sextet/baryonic tensors are not implemented")]
+    /// A colour structure the engine does not represent — a sextet tensor
+    /// (`K6`, `K6Bar`, `T6`) or a rep it cannot label — was encountered.
+    #[error("unsupported color structure '{0}'")]
     Unsupported(String),
     /// A color basis key did not read as a consistent set of color lines over the
     /// process's external legs (see [`color_flow_tags`]).
@@ -40,11 +42,19 @@ pub enum ColorAlgebraError {
 /// Class tag used to order tensors inside an immutable/canonical form.
 ///
 /// The discriminant order reproduces MadGraph's ordering of color-object class
-/// names as Python strings: `ColorOne` < `T` < `Tr` < `d` < `f`.
+/// names as Python strings: `ColorOne` < `Epsilon` < `EpsilonBar` < `K6` <
+/// `K6Bar` < `T` < `T6` < `Tr` < `d` < `f`. Basis keys are sorted by this, so
+/// the order is part of the interface to MadGraph's `JAMP` ordering and not a
+/// free choice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TensorKind {
     One,
+    Epsilon,
+    EpsilonBar,
+    K6,
+    K6Bar,
     T,
+    T6,
     Tr,
     D,
     F,
@@ -63,6 +73,17 @@ pub enum ColorTensor {
     F(Idx, Idx, Idx),
     /// `d(a,b,c)`: the totally symmetric invariant.
     D(Idx, Idx, Idx),
+    /// `Epsilon(i,j,k)`: the baryonic invariant of three fundamental indices.
+    Epsilon(Idx, Idx, Idx),
+    /// `EpsilonBar(i,j,k)`: the same over three antifundamental indices.
+    EpsilonBar(Idx, Idx, Idx),
+    /// `K6(m,i,j)`: the Clebsch–Gordan coefficient joining two antifundamental
+    /// indices `i`, `j` to the sextet index `m`.
+    K6(Idx, Idx, Idx),
+    /// `K6Bar(m,i,j)`: the same joining two fundamental indices to a `6̄`.
+    K6Bar(Idx, Idx, Idx),
+    /// `T6(i,j)`: the sextet Kronecker delta `δ6_{ij}`.
+    T6(Idx, Idx),
     /// The color identity `1` (no indices).
     One,
 }
@@ -75,6 +96,11 @@ impl ColorTensor {
             ColorTensor::Tr(_) => TensorKind::Tr,
             ColorTensor::F(..) => TensorKind::F,
             ColorTensor::D(..) => TensorKind::D,
+            ColorTensor::Epsilon(..) => TensorKind::Epsilon,
+            ColorTensor::EpsilonBar(..) => TensorKind::EpsilonBar,
+            ColorTensor::K6(..) => TensorKind::K6,
+            ColorTensor::K6Bar(..) => TensorKind::K6Bar,
+            ColorTensor::T6(..) => TensorKind::T6,
             ColorTensor::One => TensorKind::One,
         }
     }
@@ -91,7 +117,13 @@ impl ColorTensor {
                 v
             }
             ColorTensor::Tr(adj) => adj.clone(),
-            ColorTensor::F(a, b, c) | ColorTensor::D(a, b, c) => vec![*a, *b, *c],
+            ColorTensor::F(a, b, c)
+            | ColorTensor::D(a, b, c)
+            | ColorTensor::Epsilon(a, b, c)
+            | ColorTensor::EpsilonBar(a, b, c)
+            | ColorTensor::K6(a, b, c)
+            | ColorTensor::K6Bar(a, b, c) => vec![*a, *b, *c],
+            ColorTensor::T6(i, j) => vec![*i, *j],
             ColorTensor::One => Vec::new(),
         }
     }
@@ -120,14 +152,36 @@ impl ColorTensor {
                 assert!(indices.len() == 3, "d tensor needs exactly three indices");
                 ColorTensor::D(indices[0], indices[1], indices[2])
             }
+            TensorKind::Epsilon => {
+                assert!(indices.len() == 3, "Epsilon needs exactly three indices");
+                ColorTensor::Epsilon(indices[0], indices[1], indices[2])
+            }
+            TensorKind::EpsilonBar => {
+                assert!(indices.len() == 3, "EpsilonBar needs exactly three indices");
+                ColorTensor::EpsilonBar(indices[0], indices[1], indices[2])
+            }
+            TensorKind::K6 => {
+                assert!(indices.len() == 3, "K6 needs exactly three indices");
+                ColorTensor::K6(indices[0], indices[1], indices[2])
+            }
+            TensorKind::K6Bar => {
+                assert!(indices.len() == 3, "K6Bar needs exactly three indices");
+                ColorTensor::K6Bar(indices[0], indices[1], indices[2])
+            }
+            TensorKind::T6 => {
+                assert!(indices.len() == 2, "T6 needs exactly two indices");
+                ColorTensor::T6(indices[0], indices[1])
+            }
         }
     }
 
     /// Complex conjugate of a single tensor.
     ///
     /// `T(a,b,c,i,j)* = T(c,b,a,j,i)` (reverse the adjoint chain, swap the two
-    /// fundamental indices); every other tensor conjugates by reversing its
-    /// index list.
+    /// fundamental indices); `Epsilon* = EpsilonBar` and `K6* = K6Bar` and
+    /// back, **keeping the index order** — conjugation exchanges the two
+    /// representations rather than reordering one; every other tensor
+    /// conjugates by reversing its index list.
     pub fn conj(&self) -> ColorTensor {
         match self {
             ColorTensor::T(adj, i, j) => {
@@ -142,6 +196,11 @@ impl ColorTensor {
             }
             ColorTensor::F(a, b, c) => ColorTensor::F(*c, *b, *a),
             ColorTensor::D(a, b, c) => ColorTensor::D(*c, *b, *a),
+            ColorTensor::Epsilon(a, b, c) => ColorTensor::EpsilonBar(*a, *b, *c),
+            ColorTensor::EpsilonBar(a, b, c) => ColorTensor::Epsilon(*a, *b, *c),
+            ColorTensor::K6(a, b, c) => ColorTensor::K6Bar(*a, *b, *c),
+            ColorTensor::K6Bar(a, b, c) => ColorTensor::K6(*a, *b, *c),
+            ColorTensor::T6(i, j) => ColorTensor::T6(*j, *i),
             ColorTensor::One => ColorTensor::One,
         }
     }
@@ -155,6 +214,17 @@ impl ColorTensor {
             ColorTensor::D(a, b, c) => Some(d_to_traces(*a, *b, *c)),
             ColorTensor::Tr(idx) => tr_simplify(idx),
             ColorTensor::T(adj, i, j) => t_simplify(adj, *i, *j),
+            ColorTensor::Epsilon(a, b, c) => {
+                epsilon_sort(&[*a, *b, *c], |v| ColorTensor::Epsilon(v[0], v[1], v[2]))
+            }
+            ColorTensor::EpsilonBar(a, b, c) => {
+                epsilon_sort(&[*a, *b, *c], |v| ColorTensor::EpsilonBar(v[0], v[1], v[2]))
+            }
+            // `K6`/`K6Bar` carry no single-object rule: `color_algebra.py`
+            // leaves `use_symmetry` off, so the `K6(m,i,j) = K6(m,j,i)`
+            // reordering never fires there either.
+            ColorTensor::K6(..) | ColorTensor::K6Bar(..) => None,
+            ColorTensor::T6(i, j) => t6_simplify(*i, *j),
         }
     }
 
@@ -169,9 +239,207 @@ impl ColorTensor {
             (ColorTensor::T(sadj, si, sj), ColorTensor::T(oadj, oi, oj)) => {
                 t_t_pair(sadj, *si, *sj, oadj, *oi, *oj)
             }
+            (ColorTensor::Epsilon(a, b, c), ColorTensor::T(adj, i, j)) if adj.is_empty() => {
+                // e(...,j,...) delta(i,j) = e(...,i,...)
+                eps_delta_pair(&[*a, *b, *c], *j, *i, |v| {
+                    ColorTensor::Epsilon(v[0], v[1], v[2])
+                })
+            }
+            (ColorTensor::EpsilonBar(a, b, c), ColorTensor::T(adj, i, j)) if adj.is_empty() => {
+                // ebar(...,i,...) delta(i,j) = ebar(...,j,...)
+                eps_delta_pair(&[*a, *b, *c], *i, *j, |v| {
+                    ColorTensor::EpsilonBar(v[0], v[1], v[2])
+                })
+            }
+            (ColorTensor::Epsilon(a, b, c), ColorTensor::EpsilonBar(l, m, n)) => {
+                Some(eps_epsbar_pair(&[*a, *b, *c], &[*l, *m, *n]))
+            }
+            (ColorTensor::K6(m, i, j), ColorTensor::K6Bar(n, k, l)) => {
+                k6_k6bar_pair(*m, [*i, *j], *n, [*k, *l])
+            }
+            (ColorTensor::K6(m, i, j), ColorTensor::T(adj, x, y)) if adj.is_empty() => {
+                // delta3(x,y) K6(m,x,k) = K6(m,k,y)
+                k6_delta_pair(*m, [*i, *j], *x, *y, ColorTensor::K6)
+            }
+            (ColorTensor::K6Bar(m, i, j), ColorTensor::T(adj, x, y)) if adj.is_empty() => {
+                // delta3(x,y) K6Bar(m,y,k) = K6Bar(m,k,x)
+                k6_delta_pair(*m, [*i, *j], *y, *x, ColorTensor::K6Bar)
+            }
+            (ColorTensor::T6(i, j), ColorTensor::T6(k, l)) => (*k == *j)
+                .then(|| ColorFactor(vec![ColorString::new(vec![ColorTensor::T6(*i, *l)])])),
+            (ColorTensor::T6(m, n), ColorTensor::K6(a, i, j)) => (*a == *n)
+                .then(|| ColorFactor(vec![ColorString::new(vec![ColorTensor::K6(*m, *i, *j)])])),
+            (ColorTensor::T6(m, n), ColorTensor::K6Bar(a, i, j)) => (*a == *m)
+                .then(|| ColorFactor(vec![ColorString::new(vec![ColorTensor::K6Bar(*n, *i, *j)])])),
             _ => None,
         }
     }
+}
+
+/// The sign of the permutation taking `lst` to its sorted order, by the
+/// selection-sort walk `color_algebra.Epsilon.perm_parity` uses.
+fn perm_parity(lst: &[Idx; 3]) -> i64 {
+    let mut lst = *lst;
+    let mut order = lst;
+    order.sort_unstable();
+    let mut parity = 1i64;
+    for i in 0..lst.len() - 1 {
+        if lst[i] != order[i] {
+            parity = -parity;
+            let mn = lst
+                .iter()
+                .position(|v| *v == order[i])
+                .expect("sorted from lst");
+            lst.swap(i, mn);
+        }
+    }
+    parity
+}
+
+/// `Epsilon`/`EpsilonBar` single-object rule: rewrite to ascending index order,
+/// carrying the permutation's sign (`epsilon(i,k,j) = -epsilon(i,j,k)`).
+fn epsilon_sort(idx: &[Idx; 3], build: impl Fn([Idx; 3]) -> ColorTensor) -> Option<ColorFactor> {
+    let mut sorted = *idx;
+    sorted.sort_unstable();
+    if sorted == *idx {
+        return None;
+    }
+    Some(ColorFactor(vec![ColorString {
+        coeff: ColorCoeff::rational(perm_parity(idx), 1),
+        tensors: vec![build(sorted)],
+    }]))
+}
+
+/// An epsilon absorbing a Kronecker delta: the index `from` on the epsilon is
+/// replaced by `to`. `e_ijk T(l,k) = e_ijl` for an `Epsilon` (the delta's
+/// antifundamental index is the one the epsilon carries) and
+/// `ebar_ijk T(k,l) = ebar_ijl` for an `EpsilonBar`.
+fn eps_delta_pair(
+    idx: &[Idx; 3],
+    from: Idx,
+    to: Idx,
+    build: impl Fn([Idx; 3]) -> ColorTensor,
+) -> Option<ColorFactor> {
+    let pos = idx.iter().position(|v| *v == from)?;
+    let mut next = *idx;
+    next[pos] = to;
+    Some(ColorFactor(vec![ColorString::new(vec![build(next)])]))
+}
+
+/// `Epsilon`·`EpsilonBar`, MadGraph's two reduction rules.
+///
+/// With a summed index in common the pair collapses to two delta products,
+/// `e_ijk ebar_ilm = T(j,l)T(k,m) - T(j,m)T(k,l)`, with both triples rotated so
+/// the shared index leads. With no index in common it expands into the six
+/// terms of `det(delta)`. Where several indices are shared MadGraph rotates on
+/// the *last* one it finds, which this reproduces.
+fn eps_epsbar_pair(eps: &[Idx; 3], aeps: &[Idx; 3]) -> ColorFactor {
+    let mut common: Option<(usize, usize)> = None;
+    for (pe, e) in eps.iter().enumerate() {
+        if let Some(pa) = aeps.iter().position(|a| a == e) {
+            common = Some((pe, pa));
+        }
+    }
+    let delta = |x: Idx, y: Idx| ColorTensor::T(Vec::new(), x, y);
+    if let Some((pe, pa)) = common {
+        let rot = |v: &[Idx; 3], p: usize| [v[p], v[(p + 1) % 3], v[(p + 2) % 3]];
+        let e = rot(eps, pe);
+        let a = rot(aeps, pa);
+        return ColorFactor(vec![
+            ColorString {
+                coeff: ColorCoeff::rational(1, 1),
+                tensors: vec![delta(e[1], a[1]), delta(e[2], a[2])],
+            },
+            ColorString {
+                coeff: ColorCoeff::rational(-1, 1),
+                tensors: vec![delta(e[1], a[2]), delta(e[2], a[1])],
+            },
+        ]);
+    }
+    let [i, j, k] = *eps;
+    let [l, m, n] = *aeps;
+    let term = |q: i64, x: [(Idx, Idx); 3]| ColorString {
+        coeff: ColorCoeff::rational(q, 1),
+        tensors: x.iter().map(|&(a, b)| delta(a, b)).collect(),
+    };
+    ColorFactor(vec![
+        term(1, [(i, l), (j, m), (k, n)]),
+        term(1, [(i, m), (j, n), (k, l)]),
+        term(1, [(i, n), (j, l), (k, m)]),
+        term(-1, [(i, n), (j, m), (k, l)]),
+        term(-1, [(i, m), (j, l), (k, n)]),
+        term(-1, [(i, l), (j, n), (k, m)]),
+    ])
+}
+
+/// The sextet delta's single-object rules: `delta6(i,i) = ½Nc(Nc+1)`; an open
+/// `delta6(i,j)` is irreducible on its own.
+fn t6_simplify(i: Idx, j: Idx) -> Option<ColorFactor> {
+    if i != j {
+        return None;
+    }
+    Some(ColorFactor(vec![
+        ColorString {
+            coeff: ColorCoeff {
+                q: num_rational::Ratio::new(1, 2),
+                imag: false,
+                nc_power: 2,
+            },
+            tensors: Vec::new(),
+        },
+        ColorString {
+            coeff: ColorCoeff {
+                q: num_rational::Ratio::new(1, 2),
+                imag: false,
+                nc_power: 1,
+            },
+            tensors: Vec::new(),
+        },
+    ]))
+}
+
+/// `K6`·`K6Bar`, the three rules of `color_algebra.py`.
+///
+/// Sharing the sextet index sums over the **6** and leaves the symmetric pair of
+/// delta products, `K6(m,i,j) K6Bar(m,k,l) = ½(T(l,i)T(k,j) + T(k,i)T(l,j))` —
+/// the halves are what a sextet resonance's two colour flows carry. Sharing both
+/// triplet indices instead closes the pair into the sextet delta `T6(m,n)`,
+/// either way round, since `K6` is symmetric in them.
+fn k6_k6bar_pair(m: Idx, ij: [Idx; 2], n: Idx, kl: [Idx; 2]) -> Option<ColorFactor> {
+    let delta = |x: Idx, y: Idx| ColorTensor::T(Vec::new(), x, y);
+    if m == n {
+        return Some(ColorFactor(vec![
+            ColorString {
+                coeff: ColorCoeff::rational(1, 2),
+                tensors: vec![delta(kl[1], ij[0]), delta(kl[0], ij[1])],
+            },
+            ColorString {
+                coeff: ColorCoeff::rational(1, 2),
+                tensors: vec![delta(kl[0], ij[0]), delta(kl[1], ij[1])],
+            },
+        ]));
+    }
+    let closed = (ij[1] == kl[0] && ij[0] == kl[1]) || (ij[0] == kl[0] && ij[1] == kl[1]);
+    closed.then(|| ColorFactor(vec![ColorString::new(vec![ColorTensor::T6(m, n)])]))
+}
+
+/// A Kronecker delta walking into a `K6`/`K6Bar`: the matched triplet index is
+/// replaced and moves to the end, the other one taking its place first —
+/// `delta3(x,y) K6(m,x,k) = K6(m,k,y)`, verbatim from `color_algebra.py`.
+fn k6_delta_pair(
+    m: Idx,
+    ij: [Idx; 2],
+    matched: Idx,
+    replacement: Idx,
+    build: impl Fn(Idx, Idx, Idx) -> ColorTensor,
+) -> Option<ColorFactor> {
+    let pos = ij.iter().position(|v| *v == matched)?;
+    let other = ij[1 - pos];
+    Some(ColorFactor(vec![ColorString::new(vec![build(
+        m,
+        other,
+        replacement,
+    )])]))
 }
 
 /// `f(a,b,c) = -2i·Tr(a,b,c) + 2i·Tr(c,b,a)`.

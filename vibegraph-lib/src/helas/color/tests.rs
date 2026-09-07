@@ -8,7 +8,7 @@ use num_rational::Ratio;
 
 use super::coeff::ColorCoeff;
 use super::factor::{ColorFactor, ColorString};
-use super::tensor::{ColorTensor, TensorKind};
+use super::tensor::ColorTensor;
 use crate::helas::repr::color::{ColorRepr, SU3Adjoint, SU3Fundamental};
 
 /// Convenience: a `T` with the given adjoint chain and fundamental indices.
@@ -198,17 +198,7 @@ fn canonicalization_is_idempotent() {
         canon1
             .0
             .iter()
-            .map(|(kind, idx)| match kind {
-                TensorKind::T => ColorTensor::T(
-                    idx[..idx.len() - 2].to_vec(),
-                    idx[idx.len() - 2],
-                    idx[idx.len() - 1],
-                ),
-                TensorKind::Tr => ColorTensor::Tr(idx.clone()),
-                TensorKind::F => ColorTensor::F(idx[0], idx[1], idx[2]),
-                TensorKind::D => ColorTensor::D(idx[0], idx[1], idx[2]),
-                TensorKind::One => ColorTensor::One,
-            })
+            .map(|(kind, idx)| ColorTensor::from_immutable(*kind, idx))
             .collect(),
     );
     assert_eq!(rebuilt.canonical(), canon1);
@@ -387,4 +377,268 @@ fn coeff_multiply_overflow_panics() {
         nc_power: 0,
     };
     let _ = big.mul(&big);
+}
+
+// ── Baryonic invariants ───────────────────────────────────────────────────
+
+/// `Epsilon` is totally antisymmetric: an odd permutation of its indices is the
+/// negative of the sorted tensor, an even one the tensor itself.
+///
+/// The rewrite is what makes two epsilons written in different index orders
+/// meet on one basis key, so getting its sign wrong would not fail loudly — it
+/// would quietly put a `−1` on one diagram of a multi-diagram basis.
+#[test]
+fn epsilon_reorders_with_the_permutation_sign() {
+    let sorted = ColorTensor::Epsilon(1, 2, 3);
+    let cases = [
+        ([1, 3, 2], -1i64),
+        ([2, 1, 3], -1),
+        ([3, 2, 1], -1),
+        ([2, 3, 1], 1),
+        ([3, 1, 2], 1),
+    ];
+    for ([a, b, c], sign) in cases {
+        let out = ColorFactor(vec![ColorString::new(vec![ColorTensor::Epsilon(a, b, c)])])
+            .full_simplify();
+        assert_eq!(
+            out.0.len(),
+            1,
+            "Epsilon({a},{b},{c}) must reduce to one term, got {out:?}"
+        );
+        assert_eq!(out.0[0].tensors, vec![sorted.clone()]);
+        assert_eq!(
+            out.0[0].coeff.eval_nc(3),
+            Ratio::from_integer(sign),
+            "Epsilon({a},{b},{c}) sign"
+        );
+    }
+}
+
+/// `EpsilonBar` reorders the same way, on its own indices.
+#[test]
+fn epsilon_bar_reorders_with_the_permutation_sign() {
+    let out = ColorFactor(vec![ColorString::new(vec![ColorTensor::EpsilonBar(
+        2, 1, 3,
+    )])])
+    .full_simplify();
+    assert_eq!(out.0.len(), 1);
+    assert_eq!(out.0[0].tensors, vec![ColorTensor::EpsilonBar(1, 2, 3)]);
+    assert_eq!(out.0[0].coeff.eval_nc(3), Ratio::from_integer(-1));
+}
+
+/// Conjugation exchanges the two baryonic invariants and **keeps their index
+/// order**: `Epsilon(i,j,k)* = EpsilonBar(i,j,k)`, not `EpsilonBar(k,j,i)`.
+///
+/// Reversing would be an odd permutation of three indices, so the two readings
+/// differ by a `−1` on every colour-matrix entry an epsilon reaches.
+#[test]
+fn epsilon_conjugates_into_epsilon_bar_in_place() {
+    assert_eq!(
+        ColorTensor::Epsilon(1, 2, 3).conj(),
+        ColorTensor::EpsilonBar(1, 2, 3)
+    );
+    assert_eq!(
+        ColorTensor::EpsilonBar(1, 2, 3).conj(),
+        ColorTensor::Epsilon(1, 2, 3)
+    );
+}
+
+/// A delta walks through an epsilon, renaming the index it shares with it:
+/// `e_ijk δ(l,k) = e_ijl` and `ebar_ijk δ(k,l) = ebar_ijl`. The two absorb
+/// *opposite* ends of the delta, because an epsilon's indices are fundamental
+/// and an epsilon-bar's antifundamental.
+#[test]
+fn epsilon_absorbs_a_delta_at_the_matching_end() {
+    let eps = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::Epsilon(1, 2, -1),
+        delta(3, -1),
+    ])])
+    .full_simplify();
+    assert_eq!(eps.0.len(), 1);
+    assert_eq!(eps.0[0].tensors, vec![ColorTensor::Epsilon(1, 2, 3)]);
+
+    let bar = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::EpsilonBar(1, 2, -1),
+        delta(-1, 3),
+    ])])
+    .full_simplify();
+    assert_eq!(bar.0.len(), 1);
+    assert_eq!(bar.0[0].tensors, vec![ColorTensor::EpsilonBar(1, 2, 3)]);
+}
+
+/// A contracted epsilon pair collapses to a *difference* of two delta products:
+/// `e_{xij} ebar_{xkl} = δ(i,k)δ(j,l) − δ(i,l)δ(j,k)`.
+///
+/// This is the whole content of the `p3 r3 > p3 r3` diquark row — MadGraph
+/// writes it as `JAMP(1) = AMP(1) + AMP(2)`, `JAMP(2) = −AMP(1)` — so the
+/// relative minus is checked here at the level the row can only see squared.
+#[test]
+fn contracted_epsilon_pair_is_the_antisymmetrised_delta_product() {
+    let out = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::Epsilon(-1, 1, 2),
+        ColorTensor::EpsilonBar(-1, 3, 4),
+    ])])
+    .full_simplify();
+    assert_eq!(out.0.len(), 2, "expected two delta products, got {out:?}");
+    let term = |tensors: Vec<ColorTensor>| {
+        out.0
+            .iter()
+            .find(|s| s.tensors == tensors)
+            .unwrap_or_else(|| panic!("missing term {tensors:?} in {out:?}"))
+    };
+    assert_eq!(
+        term(vec![delta(1, 3), delta(2, 4)]).coeff.eval_nc(3),
+        Ratio::from_integer(1)
+    );
+    assert_eq!(
+        term(vec![delta(1, 4), delta(2, 3)]).coeff.eval_nc(3),
+        Ratio::from_integer(-1)
+    );
+}
+
+/// Two uncontracted epsilons expand into the six terms of `det δ`, three at
+/// `+1` and three at `−1`.
+#[test]
+fn uncontracted_epsilon_pair_expands_into_six_delta_products() {
+    let out = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::Epsilon(1, 2, 3),
+        ColorTensor::EpsilonBar(4, 5, 6),
+    ])])
+    .full_simplify();
+    assert_eq!(out.0.len(), 6, "expected six terms, got {out:?}");
+    let plus = out
+        .0
+        .iter()
+        .filter(|s| s.coeff.eval_nc(3) == Ratio::from_integer(1))
+        .count();
+    assert_eq!(plus, 3, "three of the six terms carry +1: {out:?}");
+}
+
+/// The fully contracted pair is `ε_{ijk} ε̄_{ijk} = 3! = 6`, an oracle for the
+/// two-term rule that involves neither MadGraph nor the rest of this engine:
+/// it is the number of orderings of three colours, and it comes out of
+/// `Nc² − Nc` at `Nc = 3` only if the relative minus is there.
+#[test]
+fn fully_contracted_epsilon_pair_counts_the_colour_orderings() {
+    let out = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::Epsilon(-1, -2, -3),
+        ColorTensor::EpsilonBar(-1, -2, -3),
+    ])])
+    .full_simplify();
+    assert_eq!(
+        eval_scalar(&out),
+        (Ratio::from_integer(6), Ratio::from_integer(0))
+    );
+}
+
+// ── Sextet Clebsch–Gordan coefficients ────────────────────────────────────
+
+/// A sextet resonance's colour flow: summing over the **6** index leaves the
+/// *symmetric* pair of delta products at one half each,
+/// `K6(m,i,j) K6Bar(m,k,l) = ½(T(l,i)T(k,j) + T(k,i)T(l,j))`.
+///
+/// The two halves are what MadGraph writes as `JAMP(1) = 0.5·AMP(1) + AMP(2)`
+/// and `JAMP(2) = 0.5·AMP(1)` on the `p3 r3 > p3 r3` sextet row, against the
+/// `+1`/`−1` its baryonic sibling carries: the sextet is the symmetric half of
+/// the same `3 ⊗ 3`, so the relative sign between the two terms is `+` here and
+/// `−` there, and that contrast is the whole content of the two rows.
+#[test]
+fn sextet_clebsch_pair_splits_into_symmetric_delta_halves() {
+    let out = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::K6(-1, 1, 2),
+        ColorTensor::K6Bar(-1, 3, 4),
+    ])])
+    .full_simplify();
+    assert_eq!(out.0.len(), 2, "expected two delta products, got {out:?}");
+    for s in &out.0 {
+        assert_eq!(
+            s.coeff.eval_nc(3),
+            Ratio::new(1, 2),
+            "both terms carry +1/2: {out:?}"
+        );
+    }
+    // The engine keeps a string's tensors in its own sorted order, so the terms
+    // are matched as sets.
+    let has = |mut tensors: Vec<ColorTensor>| {
+        tensors.sort_by_key(ColorTensor::indices);
+        out.0.iter().any(|s| s.tensors == tensors)
+    };
+    assert!(has(vec![delta(4, 1), delta(3, 2)]), "{out:?}");
+    assert!(has(vec![delta(3, 1), delta(4, 2)]), "{out:?}");
+}
+
+/// Contracting both triplet indices instead closes the pair into the sextet
+/// delta, either way round — `K6` is symmetric in them.
+#[test]
+fn sextet_clebsch_pair_closes_into_the_sextet_delta() {
+    for (a, b) in [((-1, -2), (-1, -2)), ((-1, -2), (-2, -1))] {
+        let out = ColorFactor(vec![ColorString::new(vec![
+            ColorTensor::K6(1, a.0, a.1),
+            ColorTensor::K6Bar(2, b.0, b.1),
+        ])])
+        .full_simplify();
+        assert_eq!(out.0.len(), 1, "{a:?} {b:?}: {out:?}");
+        assert_eq!(out.0[0].tensors, vec![ColorTensor::T6(1, 2)]);
+        assert_eq!(out.0[0].coeff.eval_nc(3), Ratio::from_integer(1));
+    }
+}
+
+/// The closed sextet delta is the dimension of the **6**: `δ6_{mm} = ½Nc(Nc+1)`,
+/// which is `6` at `Nc = 3`. An independent count of the rep this engine claims
+/// to be carrying.
+#[test]
+fn sextet_delta_trace_is_the_sextet_dimension() {
+    let out = ColorFactor(vec![ColorString::new(vec![ColorTensor::T6(-1, -1)])]).full_simplify();
+    assert_eq!(
+        eval_scalar(&out),
+        (Ratio::from_integer(6), Ratio::from_integer(0))
+    );
+}
+
+/// The whole chain at once: `K6(m,i,j) K6Bar(n,i,j) δ6(n,m)` must count the
+/// sextet's dimension too, reaching it through the Clebsch coefficients rather
+/// than through the delta rule alone.
+#[test]
+fn contracted_clebsch_pair_counts_the_sextet_dimension() {
+    let out = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::K6(-1, -3, -4),
+        ColorTensor::K6Bar(-2, -3, -4),
+        ColorTensor::T6(-2, -1),
+    ])])
+    .full_simplify();
+    assert_eq!(
+        eval_scalar(&out),
+        (Ratio::from_integer(6), Ratio::from_integer(0))
+    );
+}
+
+/// A sextet delta walks through a Clebsch coefficient, renaming its sextet
+/// index: `δ6(m,n) K6(n,i,j) = K6(m,i,j)` and `δ6(m,n) K6Bar(m,i,j) =
+/// K6Bar(n,i,j)`. The two absorb *opposite* ends, as their reps require.
+#[test]
+fn sextet_delta_renames_a_clebsch_sextet_index() {
+    let k6 = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::T6(1, -1),
+        ColorTensor::K6(-1, 2, 3),
+    ])])
+    .full_simplify();
+    assert_eq!(k6.0.len(), 1);
+    assert_eq!(k6.0[0].tensors, vec![ColorTensor::K6(1, 2, 3)]);
+
+    let k6bar = ColorFactor(vec![ColorString::new(vec![
+        ColorTensor::T6(-1, 2),
+        ColorTensor::K6Bar(-1, 3, 4),
+    ])])
+    .full_simplify();
+    assert_eq!(k6bar.0.len(), 1);
+    assert_eq!(k6bar.0[0].tensors, vec![ColorTensor::K6Bar(2, 3, 4)]);
+}
+
+/// Conjugation exchanges the two Clebsch coefficients keeping their index
+/// order, and transposes the sextet delta.
+#[test]
+fn sextet_tensors_conjugate_into_their_partners() {
+    assert_eq!(ColorTensor::K6(1, 2, 3).conj(), ColorTensor::K6Bar(1, 2, 3));
+    assert_eq!(ColorTensor::K6Bar(1, 2, 3).conj(), ColorTensor::K6(1, 2, 3));
+    assert_eq!(ColorTensor::T6(1, 2).conj(), ColorTensor::T6(2, 1));
 }
