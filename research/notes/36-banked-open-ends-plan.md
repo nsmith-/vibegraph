@@ -114,6 +114,22 @@ numbers; a "nothing to do" that is a table is the deliverable.
 the sweeps; the whole census should fit inside a few hours of CPU on the
 16-core host.
 
+**Landed B0 (`44e4e04`, 2026-09-07).** Five `#[ignore]` probes, one per file
+that enforces a seed statistic, and a headroom table over every enforced
+banked statistic (filed in §7). Two seed counts raised to five with
+before/after measured: `JJ_SEEDS` (dijet σ: 5 seeds `6.811101e8 ± 4.269e5 pb`,
+rel +0.33%, χ²/dof 1.40) and the unweighting `GEN_SEEDS`. Three tolerance
+cells under 2× headroom recorded, none widened: `ddx_to_epemg` 1.6×,
+`gux_to_epemux` 1.9×, `pp_to_jj` 1.5×. Findings: every σ calibration comment
+written before `e73b158` no longer reproduces while all thirteen written in
+it do — the note-34 draw-performance commits moved the streams and the older
+comments were never re-recorded (a re-recording session, after B3);
+`ee_to_mumua`'s reported-not-asserted exemption is load-bearing (gate-seed
+|pull| 3.56 > 3.5); six SM σ rows had no seed calibration at all, now
+measured at 9.9×–27.9×; standardised thresholds (pulls, p-floors, χ²/dof)
+are false-positive rates, and "form over five seeds" would raise the flag
+rate on an extremum-vs-floor statistic, so they are reported, not judged.
+
 ### B2 — the incoming legs in the `samples` gate (validation-dev)
 
 **What.** `lhef::observables::kinematics` builds every column from
@@ -151,6 +167,17 @@ negative control extended to the new column. Update
 `docs/src/guide/12-validation.md`'s "what it cannot see" table row for event
 samples, since the incoming legs are no longer in the blind spot.
 
+**Landed B2 (`e96dbd9`, 2026-09-07).** `beam_columns` in `validation/samples.rs`:
+per beam `E`, `pz`, `m`, exact at half the last printed digit read off the
+file's own spelling where the field is constant, weighted KS where it varies
+(proton rows). The brief's expected-fail set was wrong: **seven** rows carry
+massive beams, not three — the three named plus `ll_to_qqx_toy_*` (10 GeV,
+pz off by 2.0008e-1) and `tata_to_ttx_tensor4f` (1.777 GeV, 6.3145e-3) — and
+their records were internally off-shell (model mass beside light-cone
+momenta). All seven landed `info` on the column, every massless row at
+deviation exactly 0, proton beam-KS minimum p 0.013. Ten SMEFT manifest
+notes lost the now-false "blind to the incoming legs" claim.
+
 ### B1 — massive fixed beams (feature-dev)
 
 **Defect.** `FixedBeamIntegrand` (`hadronic.rs`) builds both incoming legs on
@@ -184,7 +211,9 @@ The partonic invariant is the square of their sum,
 
 which is MadGraph's `stot = m1² + m2² + 2 (pi1(0) pi2(0) − pi1(3) pi2(3))`
 (`genps.f:676`, the second beam's `pz` negative). For massless beams this is
-`(E_a + E_b)²`; for `p3 r3` at 250 + 250 GeV it is `499.99275²`, and that is
+`4 E_a E_b`, which equals `(E_a + E_b)²` only at equal energies (B1 pinned the
+unequal-energy case by a unit test after finding the earlier wording here
+wrong); for `p3 r3` at 250 + 250 GeV it is `499.99275²`, and that is
 the number the banked events carry, not 500².
 
 In the centre-of-mass frame the two beams share one momentum magnitude and
@@ -291,6 +320,25 @@ sweep on the three flipped rows, the `validate_scales` replay result on the
 two colour-toy runs, the B2 column readings on the three rows, and the docs
 diff.
 
+**Landed B1 (`3469e7a` + `7d4b9e8`, 2026-09-07, rebased onto `d65d585`).**
+`FixedBeams` derives the initial state from the run card's energies and the
+legs' pole masses; `kallen`/`beam_momenta` moved to `phasespace/beams.rs` and
+shared by integrand and channel maps; flux `1/(2λ^{1/2})`; lab-rapidity cut
+boost when `lab_beta ≠ 0`; `EBMUP` = the run card's energies. Falsifier met:
+27 of 34 fixed-beam σ rows byte-identical, the three massive rows land at
+rel −3.19e-4 / +7.95e-4 / +3.80e-4 (five seeds χ²/dof 0.98 / 0.99 / 0.68,
+ladders converging) and flip `info → gate` at `rel_tol 0.005`; the four
+light-massive rows move by 2.5e-7–1.7e-6. The integrand's beams reproduce
+all eleven of MadGraph's printed digits; B2's column is enforced on every
+fixed-beam row (`MASSIVE_BEAMS` retired). Docs: "Fixed beams" section in
+`07-phase-space.md`, the flux bullet in `01-pipeline.md`. Brief corrections:
+the note's massless `ŝ = (E_a+E_b)²` holds only at equal energies (fixed in
+§3); step 7 was wrong — `validate_scales` replays MadGraph's own record
+momenta and is structurally insensitive to this change. Finding for B6: on
+αs-free rows with a dynamical-scale card the record writes `SCALUP` =
+`dsqrt_q2fact` (91.188) where MadGraph writes the clustered scale.
+Report after the flip: 169 ✅ / 7 ⚠️ / 4 ⏳ / 24 uncovered.
+
 ## 4. Wave 1
 
 ### B4 — `ud_to_epemud_qcd0`'s `ICOLUP` (validation-dev)
@@ -325,6 +373,32 @@ a change to the fixed-beam dictionary. If the fix would move a hadronic
 cell, the diagnosis is wrong; stop and report. Flip the cell `info → gate`
 on the measurement.
 
+**Landed B4 (`96b0096`, 2026-09-07) — diagnosis only, the brief's cause
+falsified.** `color_flow_tags` is byte-identical to `leshouche.inc`, labels
+included, the `ICOLAMP` mask partitions 24/11 as MadGraph's `JAMP` rows do,
+and a transposition would give χ² ≈ 17 000, not ~640 — all three candidates
+above are out. Root cause: MadEvent's `SELECT_COLOR` takes `ICONFIG` from
+the *integration channel* the point was generated in, so the written
+`ICOLUP` marginal is the multichannel weight share, and this row's card sets
+`sde_strategy = 2`, under which `AMP2(J) = GET_CHANNEL_CUT(P, I)` — a
+product of propagator denominators with no amplitude in it — over
+MadGraph's 21 *merged* configurations. Our `select_color_flow` draws
+`∝ AMP2` (the `sde_strategy = 1` weight) over one configuration per
+diagram. Flow-2 fraction on MadGraph's own events: written 0.81850 ±
+0.00386; `results.dat` channel share 0.82074; `GET_CHANNEL_CUT` over the 21
+merged configs 0.82181 (0.86σ); our per-diagram `AMP2` share 0.91731
+(25.6σ), which our three seeds realise to three digits. Neither ingredient
+alone suffices (`GET_CHANNEL_CUT` over 35 per-diagram configs gives 0.782,
+χ² ≈ 54); both together predict χ² ≈ 0.5. The only banked run that is both
+`sde_strategy = 2` and NCOLOR > 1, which is why only this row shows it.
+`EventScaleSource::draws_configuration()` already encodes the
+`sde_strategy == 1 && tmin_for_channel == -1` conjunction on the scale path;
+the colour path is the asymmetry. **The fix is B3's** (below). Also
+recorded: the row's χ² drifted 642–664 → 590–671 on the same seeds before
+this sprint; `pp_to_jj`'s quoted `ICOLUP` band 0.105–0.263 is stale (reads
+0.123/0.265/0.020); `R_SDE_STRATEGY` in `runcard/classes.rs` understates
+the field's reach (close-out bookkeeping).
+
 ### B5 — a coupling-level oracle ahead of the amplitude gate (validation-dev)
 
 **What.** For every banked `mg_amplitude` row, compare this crate's coupling
@@ -350,6 +424,25 @@ disagreement fails the gate.
 
 **Blind spot, recorded.** A rounding both sides share is invisible here as it
 is to the amplitude gate; say so in the test's doc comment.
+
+**Landed B5 (`a8a19e0`, 2026-09-07).** `gen_couplings.py` banks, per
+`mg_amplitude` row (41), the couplings from MadGraph's Python `model_reader`
+and from the f2py module's `COMMON/COUPLINGS/` after `SETPARA`; hermetic
+`coupling_oracle.rs` compares the crate's couplings against both
+(`PYTHON_REL_TOL 1e-13`, `FORTRAN_REL_TOL 1e-14`, measured worst agreeing
+gaps 8.85e-15 crate-vs-Python on the SM, 3.0e-16 Fortran-vs-Python);
+`[[standalone]] couplings-mg`, `pixi run -e madgraph generate-couplings` /
+`validate-couplings`. Findings: (1) the `GC_303` writer rounding (1.197e-8)
+is on **two** rows, `ee_to_zh_smeft` and `wpwm_to_wpwmz_cw`, and nothing
+else on any row deviates Fortran-vs-Python; (2) **a crate-side parser
+precedence bug** — `ufo/expr.rs` binds unary `-` tighter than `**`, so
+`-ee**2/(2.*cw)` reads as `(-ee)**2/…` (sign flip plus a 2.4e-16 spurious
+imaginary part from `powc` on a negative base). Reach, machine-checked over
+every expression in every model the repo loads: SM `GC_7`/`GC_54` (Goldstone
+vertices, unreachable at tree level in unitary gauge) and SMEFTsim's `dWT`
+(reached only through the `T1` custom propagator). No banked cell affected;
+landed as `KNOWN_CRATE_DEFECTS`, required present so the entry cannot
+outlive its cause. **B7 below fixes it.**
 
 ### B6 — hygiene bundle (validation-dev; Sonnet is adequate)
 
@@ -384,6 +477,80 @@ Four independent items, one commit each:
    reason — promote it into the replay inventory in the same change, since
    the blocker lifting is what that test exists to notice.
 
+**Landed B6 (`dbf2fd1`, `302a4c9`, `f745cf3`, `eca0d15`, 2026-09-07).**
+(1) `SCALUP`/`AQCDUP` join the `samples` comparison as scalar field columns
+(B2's beam machinery generalised to `FieldColumn`), filled through a new
+`FixedBeamIntegrand::record_scales` so the column measures what the shipped
+binary writes. 18 rows gate, **27 are informational**: at fixed beams no
+prescription is compiled when the matrix element carries no `αs`, so the
+record writes the card's `dsqrt_q2fact` (91.188) and `AQCDUP = 0` where
+MadGraph writes its clustered scale (`ee_to_mumu` 91.2, `ee_to_ee` 250,
+`ee_to_ttx` 500, `p3r3` 251.2964) and a running coupling; at proton beams
+the prescription is compiled and only `AQCDUP` falls back (waiver asserts
+`alpha_qcd == 0`). The convention decision — what an αs-free fixed-beam
+record should write — is a close-out item. Two self-corrections: the KS on a
+printed field must round both sides onto the reference's grid (MadGraph
+piles events on one printed value); the `<event>` line carries seven
+significant digits whatever the dialect's width. Pre-registered watch:
+`ee_to_wpwm`'s `pt(w+)` unmoved at 1.5728e-4. (2) `scale_draw_fallbacks()
+== 0` asserted on every gated fixed-beam and hadronic integration; zero
+everywhere. (3) `RunningAlphaS::eval` refuses a non-positive or non-finite
+result; brief correction: `alfas_functions.f` neither clamps nor stops
+there — it returns a `9d98` sentinel below the Landau condition, and the
+NaN here starts higher (0.40 GeV at two loops) from the Newton iterate
+going negative, which MadGraph does too. (4) `dynamical_scale_choice` 1–5
+honoured at fixed beams (`ClosedForms::{Honour,Refuse}`); `gg_to_gg_cg`
+replays 10 000 events / 20 000 scale comparisons at worst 0.999 of budget in
+`validate_scales`, its `samples` cell flips `uncovered → gate` (worst KS p
+2.7e-2, ICOLUP χ² p 7.4e-2), and its `integrals` cell lands `uncovered →
+info`: five seeds mean rel −2.21e-3 at χ²/dof 1.01, a converged offset 2.6×
+the reference's 8.5e-4 error, ladder settling not shrinking; `gg_to_gg`
+under the card differing in that one field sits at +9.8e-6, so the offset is
+localised to the coupling this `SCALE_FALLBACK_ROWS` member runs at across
+the cut region — filed, not gated. Every other σ row identical to the
+printed digit. Report after wave 1: 178 measured, 170 ✅ / 8 ⚠️ / 4 ⏳ / 22
+uncovered.
+
+### B7 — UFO expression precedence: unary minus under `**` (feature-dev; added after B5)
+
+**Defect** (B5's finding). `vibegraph-lib/src/ufo/expr.rs`'s PEG grammar has
+`power = unary "**" power / unary` with `unary = "-" primary / …`, so unary
+minus binds tighter than exponentiation. Python — the language UFO
+expressions are written in — has `factor: ('+'|'-') factor | power` and
+`power: primary ['**' factor]`: `-a**2` is `-(a**2)`, and the exponent itself
+is a `factor`, so `a**-b` parses. Three expressions in the repo's models hit
+it (SM `GC_7`, `GC_54`; SMEFTsim `dWT`), none reachable by a banked row.
+
+**Fix.** Adopt Python's grammar: `unary = "-" unary | "+" unary | power`,
+`power = primary "**" unary / primary`, with `multiplicative` calling
+`unary`. Pin with unit tests on `-a**2` (= `-(a²)`), `(-a)**2`, `a**-b`,
+`-a**-b`, `2**3**2` (right-associative, 512), and the three model
+expressions evaluated against Python's values from the banked coupling
+tables.
+
+**Falsifier.** `coupling_oracle`'s `KNOWN_CRATE_DEFECTS` entries for `GC_7`
+and `GC_54` must stop deviating — the gate is built to fail when a listed
+defect disappears, so delete both entries in the same commit and the test
+must pass with the list empty. Everything else in the banked layer is
+bit-identical: `pixi run --skip-deps validate` cell-for-cell against the
+sprint branch, and `amplitude_oracle` byte-identical.
+
+**Landed B7 (`f3425e2`, 2026-09-07).** Python's `factor`/`power` grammar
+adopted verbatim (`unary = "-" unary | "+" unary | power`, `power = primary
+"**" unary`), five unit tests incl. the three model expressions against
+Python's arithmetic, and `KNOWN_CRATE_DEFECTS` emptied with the falsifier
+firing as designed (`GC_7` 2.0 → 3.87e-16, `GC_54` 2.0 → 2.07e-15, imaginary
+parts exactly 0). Brief corrections: the interned SM blob caches parsed ASTs,
+so `sm_parsed.bin.zst` had to be regenerated in the same commit (any future
+`ufo/expr.rs` edit must do the same; `sm_interned_blob` catches it only under
+`extended-validation`); `dWT` has no banked Python value and is 0 under both
+banked restrictions, so its pin is expression-level. Two further defects
+found: `-x` left `im = −0.0`, sending `(−a)**0.5` to the wrong branch (fixed,
+tested); a non-negative real base still goes through `exp(e·log b)` (`3**2 =
+9.000000000000002`), and switching to `powf` moves 335 of 3254 model values by
+~1 ulp — measured, **not landed**, filed as a follow-up needing its own
+oracle before/after. Cell-for-cell report diff: 0 non-duration differences.
+
 ## 5. Wave 2
 
 ### B3 — MadGraph's channel set (feature-dev)
@@ -417,6 +584,26 @@ through the same partition) — assert that with a byte-identical
 
 **Report.** Per-row channel counts before/after, the five-seed table on the
 nine rows, the capstone's new pin, and the bit-identity list.
+
+**Added after B4 — the colour-flow draw under MadEvent's channel rule.**
+Once the integrator runs on MadGraph's merged configurations, make
+`select_color_flow`'s configuration draw MadEvent's: the configuration is
+the sampled integration channel's (the `ICONFIG` MadEvent hands
+`SELECT_COLOR`), whose marginal is the multichannel weight share; under
+`sde_strategy = 2` (or `tmin_for_channel ≠ -1`) the per-configuration
+weight is `GET_CHANNEL_CUT`'s propagator-denominator product
+(`genps.f:1817`), not `AMP2`; under `sde_strategy = 1` with
+`tmin_for_channel = -1` it stays `AMP2` as today. Reuse the
+`draws_configuration()` conjunction so the scale and colour paths read one
+rule. **Falsifier (B4's numbers):** `ud_to_epemud_qcd0`'s `ICOLUP` flow-2
+fraction moves from ≈0.917 to ≈0.822 and its three-seed χ² from ~600 to
+O(1) (predicted 0.5, p ≈ 0.48), and its cell flips `info → gate` with B2's
+beam column enforced; every other `ICOLUP` cell is unmoved (all other runs
+are `sde_strategy = 1`, `tmin_for_channel = -1`, so the rule reduces to the
+present one). Decision recorded (manager, 2026-09-07): MadGraph's written
+flow under its own card is the reference this suite reproduces, as
+everywhere else; a `--madgraph-compat`-off alternative is the feature
+backlog's, not this sprint's.
 
 ## 6. Risk register
 
