@@ -80,6 +80,9 @@ stage_refs() {
   vg_say ">>> amplitudes/<process>.json — |M|^2, AMP() and JAMP() at events + grid"
   python "$MG/gen_amplitude_tables.py"
 
+  vg_say ">>> couplings/<process>.json — the model couplings MadGraph's Python and its Fortran hold"
+  python "$MG/gen_couplings.py"
+
   vg_say ">>> sigma_reference.json — banked fixed-energy cross sections"
   python "$MG/extract_sigma.py"
 

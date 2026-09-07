@@ -165,7 +165,7 @@ script = "validation/madgraph/scripts/ee_to_mumu.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The smallest complete amplitude: colourless massless s-channel gamma*/Z, the reference point every convention change is re-measured against."
-artifacts = ["output/ee_to_mumu", "output/ee_to_mumu.json", "output/ee_to_mumu_amplitude.csv", "sigma_reference.json#ee_to_mumu", "amplitudes/ee_to_mumu.json"]
+artifacts = ["output/ee_to_mumu", "output/ee_to_mumu.json", "output/ee_to_mumu_amplitude.csv", "sigma_reference.json#ee_to_mumu", "amplitudes/ee_to_mumu.json", "couplings/ee_to_mumu.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [10.0, 50.0, 91.188, 200.0, 500.0], npoints = 10, seed = 3 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -180,7 +180,7 @@ script = "validation/madgraph/scripts/ee_to_ee.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Bhabha: s+t interference with identical initial/final flavours, the sharpest regression for crossed-line conjugation and the relative sign between crossed diagram classes."
-artifacts = ["output/ee_to_ee", "output/ee_to_ee.json", "output/ee_to_ee_amplitude.csv", "sigma_reference.json#ee_to_ee", "amplitudes/ee_to_ee.json"]
+artifacts = ["output/ee_to_ee", "output/ee_to_ee.json", "output/ee_to_ee_amplitude.csv", "sigma_reference.json#ee_to_ee", "amplitudes/ee_to_ee.json", "couplings/ee_to_ee.json"]
 mg_amplitude = { process = "e+ e- > e+ e-", pdgs_in = [-11, 11], pdgs_out = [-11, 11], sqrt_s_list = [91.188, 200.0, 500.0], npoints = 17, seed = 13 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -195,7 +195,7 @@ script = "validation/madgraph/scripts/ee_to_ttx.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Massive external fermions: the massive-fermion spinor conventions in ixxxxx/oxxxxx that no massless continuum process touches. Beams at 500 GeV clear 2*MT."
-artifacts = ["output/ee_to_ttx", "output/ee_to_ttx.json", "output/ee_to_ttx_amplitude.csv", "sigma_reference.json#ee_to_ttx", "amplitudes/ee_to_ttx.json"]
+artifacts = ["output/ee_to_ttx", "output/ee_to_ttx.json", "output/ee_to_ttx_amplitude.csv", "sigma_reference.json#ee_to_ttx", "amplitudes/ee_to_ttx.json", "couplings/ee_to_ttx.json"]
 mg_amplitude = { process = "e+ e- > t t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 25, seed = 19 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -210,7 +210,7 @@ script = "validation/madgraph/scripts/ee_to_wpwm.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Triple-gauge (VVV) vertex plus massive charged vector externals (three helicity states each) and t-channel neutrino exchange: where the V-chain phase ledger first meets VVV."
-artifacts = ["output/ee_to_wpwm", "output/ee_to_wpwm.json", "output/ee_to_wpwm_amplitude.csv", "sigma_reference.json#ee_to_wpwm", "amplitudes/ee_to_wpwm.json"]
+artifacts = ["output/ee_to_wpwm", "output/ee_to_wpwm.json", "output/ee_to_wpwm_amplitude.csv", "sigma_reference.json#ee_to_wpwm", "amplitudes/ee_to_wpwm.json", "couplings/ee_to_wpwm.json"]
 mg_amplitude = { process = "e+ e- > W+ W-", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 25, seed = 23 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -225,7 +225,7 @@ script = "validation/madgraph/scripts/ee_to_zh.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Higgsstrahlung: external scalar wavefunction (sxxxxx) on an on-shell VVS vertex, complementing the internal-Higgs ZZH class of the 2->6 continuum."
-artifacts = ["output/ee_to_zh", "output/ee_to_zh.json", "output/ee_to_zh_amplitude.csv", "sigma_reference.json#ee_to_zh", "amplitudes/ee_to_zh.json"]
+artifacts = ["output/ee_to_zh", "output/ee_to_zh.json", "output/ee_to_zh_amplitude.csv", "sigma_reference.json#ee_to_zh", "amplitudes/ee_to_zh.json", "couplings/ee_to_zh.json"]
 mg_amplitude = { process = "e+ e- > Z H", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 25, seed = 29 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -254,7 +254,7 @@ script = "validation/madgraph/scripts/uux_to_uux.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Identical-flavour quark lines: s- and t-channel gluon exchange give a genuine NCOLOR=2 amplitude, the smallest real test of the multi-flow CF matrix (CF = [[9,3],[3,9]]) and of the T.T Fierz half of the colour vocabulary."
-artifacts = ["output/uux_to_uux", "output/uux_to_uux_amplitude.csv", "sigma_reference.json#uux_to_uux", "amplitudes/uux_to_uux.json"]
+artifacts = ["output/uux_to_uux", "output/uux_to_uux_amplitude.csv", "sigma_reference.json#uux_to_uux", "amplitudes/uux_to_uux.json", "couplings/uux_to_uux.json"]
 mg_amplitude = { process = "u u~ > u u~", pdgs_in = [2, -2], pdgs_out = [2, -2], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 41 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -269,7 +269,7 @@ script = "validation/madgraph/scripts/gg_to_ttx.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "External octets feeding a quark line: the f(1,2,3) triple-gluon vertex resolved through the f -> trace colour rules, giving NCOLOR=2 with CF = [[16/3,-2/3],[-2/3,16/3]]. Complements uux_to_uux with the other half of the SM colour vocabulary."
-artifacts = ["output/gg_to_ttx", "output/gg_to_ttx_amplitude.csv", "sigma_reference.json#gg_to_ttx", "amplitudes/gg_to_ttx.json"]
+artifacts = ["output/gg_to_ttx", "output/gg_to_ttx_amplitude.csv", "sigma_reference.json#gg_to_ttx", "amplitudes/gg_to_ttx.json", "couplings/gg_to_ttx.json"]
 mg_amplitude = { process = "g g > t t~", pdgs_in = [21, 21], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 25, seed = 43 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -284,7 +284,7 @@ script = "validation/madgraph/scripts/gg_to_gg.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The four-gluon vertex — the only SM vertex with more than one colour structure — and pure-f colour algebra reduced to the six-element single-trace basis (NCOLOR=6). The stress test for per-chain rooting of multi-structure vertices and the largest CF contraction in the tree-level vocabulary."
-artifacts = ["output/gg_to_gg", "output/gg_to_gg_amplitude.csv", "sigma_reference.json#gg_to_gg", "amplitudes/gg_to_gg.json"]
+artifacts = ["output/gg_to_gg", "output/gg_to_gg_amplitude.csv", "sigma_reference.json#gg_to_gg", "amplitudes/gg_to_gg.json", "couplings/gg_to_gg.json"]
 mg_amplitude = { process = "g g > g g", pdgs_in = [21, 21], pdgs_out = [21, 21], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 47 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "6 against 4: MadGraph writes the four-gluon contact term as one graph per colour structure (VVVV1_0/VVVV3_0/VVVV4_0 into AMP(1..3)) where we write one diagram whose vertex carries all three, so 3 + 3 against 3 + 1. Reported, not enforced — the amplitudes cell pins the same process at a finer level than a count." }
@@ -299,7 +299,7 @@ script = "validation/madgraph/scripts/ee_to_mumua.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "First external vector wavefunction (vxxxxx) compared against MadGraph; a massless photon has exactly two physical helicity states, so the state list itself is under test."
-artifacts = ["output/ee_to_mumua", "output/ee_to_mumua.json", "output/ee_to_mumua_amplitude.csv", "sigma_reference.json#ee_to_mumua", "amplitudes/ee_to_mumua.json"]
+artifacts = ["output/ee_to_mumua", "output/ee_to_mumua.json", "output/ee_to_mumua_amplitude.csv", "sigma_reference.json#ee_to_mumua", "amplitudes/ee_to_mumua.json", "couplings/ee_to_mumua.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu- a", pdgs_in = [-11, 11], pdgs_out = [-13, 13, 22], sqrt_s_list = [200.0, 500.0], npoints = 25, seed = 17 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -314,7 +314,7 @@ script = "validation/madgraph/scripts/ee_to_tatah.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "External FFS Yukawa emission: the Higgs radiated off a massive tau line, so an external scalar meets the fermion chain — untested by the VVS-only zh channel."
-artifacts = ["output/ee_to_tatah", "output/ee_to_tatah.json", "output/ee_to_tatah_amplitude.csv", "sigma_reference.json#ee_to_tatah", "amplitudes/ee_to_tatah.json"]
+artifacts = ["output/ee_to_tatah", "output/ee_to_tatah.json", "output/ee_to_tatah_amplitude.csv", "sigma_reference.json#ee_to_tatah", "amplitudes/ee_to_tatah.json", "couplings/ee_to_tatah.json"]
 mg_amplitude = { process = "e+ e- > ta+ ta- H", pdgs_in = [-11, 11], pdgs_out = [-15, 15, 25], sqrt_s_list = [250.0, 500.0], npoints = 25, seed = 31 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -329,7 +329,7 @@ script = "validation/madgraph/scripts/uux_to_epemg.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "Baseline of a three-point design over the llj subprocess classes (this row, gu_to_epemu varying the colour arrangement, ddx_to_epemg varying the initial flavour). A gluon radiated off an annihilating quark line, single colour structure T^a_{ij}; the two attachments differ by the sign of the internal quark propagator's momentum, where a fermion-flow error shows up per diagram while |M|^2 stays unmoved."
-artifacts = ["output/uux_to_epemg", "output/uux_to_epemg_amplitude.csv", "sigma_reference.json#uux_to_epemg", "amplitudes/uux_to_epemg.json"]
+artifacts = ["output/uux_to_epemg", "output/uux_to_epemg_amplitude.csv", "sigma_reference.json#uux_to_epemg", "amplitudes/uux_to_epemg.json", "couplings/uux_to_epemg.json"]
 mg_amplitude = { process = "u u~ > e+ e- g QCD=2 QED=2", pdgs_in = [2, -2], pdgs_out = [-11, 11, 21], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 53 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -344,7 +344,7 @@ script = "validation/madgraph/scripts/ddx_to_epemg.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "The down-type partner of uux_to_epemg: identical topology and colour structure, different electroweak couplings. Holding everything but the initial flavour fixed makes a coupling-table error separable from a topology or flow-convention error."
-artifacts = ["output/ddx_to_epemg", "output/ddx_to_epemg_amplitude.csv", "sigma_reference.json#ddx_to_epemg", "amplitudes/ddx_to_epemg.json"]
+artifacts = ["output/ddx_to_epemg", "output/ddx_to_epemg_amplitude.csv", "sigma_reference.json#ddx_to_epemg", "amplitudes/ddx_to_epemg.json", "couplings/ddx_to_epemg.json"]
 mg_amplitude = { process = "d d~ > e+ e- g QCD=2 QED=2", pdgs_in = [1, -1], pdgs_out = [-11, 11, 21], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 61 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -359,7 +359,7 @@ script = "validation/madgraph/scripts/gu_to_epemu.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "The first mixed incoming colour arrangement: one adjoint beam and one fundamental beam, with the quark line running through a spacelike propagator. Also the crossing of uux_to_epemg, so a convention error that is a property of the arrangement rather than of the functions shows up here and not there."
-artifacts = ["output/gu_to_epemu", "output/gu_to_epemu_amplitude.csv", "sigma_reference.json#gu_to_epemu", "amplitudes/gu_to_epemu.json"]
+artifacts = ["output/gu_to_epemu", "output/gu_to_epemu_amplitude.csv", "sigma_reference.json#gu_to_epemu", "amplitudes/gu_to_epemu.json", "couplings/gu_to_epemu.json"]
 mg_amplitude = { process = "g u > e+ e- u QCD=2 QED=2", pdgs_in = [21, 2], pdgs_out = [-11, 11, 2], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 59 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -374,7 +374,7 @@ script = "validation/madgraph/scripts/gux_to_epemux.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "The antiquark orientation of gu_to_epemu: the colour flow into the gluon's adjoint index runs the other way and the fermion line is traversed in the opposite sense, so a slot assignment right for one orientation and wrong for the other leaves the gu row clean."
-artifacts = ["output/gux_to_epemux", "output/gux_to_epemux_amplitude.csv", "sigma_reference.json#gux_to_epemux", "amplitudes/gux_to_epemux.json"]
+artifacts = ["output/gux_to_epemux", "output/gux_to_epemux_amplitude.csv", "sigma_reference.json#gux_to_epemux", "amplitudes/gux_to_epemux.json", "couplings/gux_to_epemux.json"]
 mg_amplitude = { process = "g u~ > e+ e- u~ QCD=2 QED=2", pdgs_in = [21, -2], pdgs_out = [-11, 11, -2], sqrt_s_list = [50.0, 200.0, 500.0], npoints = 25, seed = 67 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -389,7 +389,7 @@ script = "validation/madgraph/scripts/ee_to_mumu_tata_qcd0.mg5"
 class = "single-channel"
 n_final = 4
 rationale = "Minimal pure-EW process with a chained off-shell fermion current: the incoming e-line absorbs two internal gamma*/Z propagators in series. Colourless, three distinct fermion lines, no identical final-state particles — the 2->6 continuum's phase structure in a process small enough for a per-diagram AMP dump."
-artifacts = ["output/ee_to_mumu_tata_qcd0", "output/ee_to_mumu_tata_qcd0.json", "output/ee_to_mumu_tata_qcd0_amplitude.csv", "sigma_reference.json#ee_to_mumu_tata_qcd0", "amplitudes/ee_to_mumu_tata_qcd0.json"]
+artifacts = ["output/ee_to_mumu_tata_qcd0", "output/ee_to_mumu_tata_qcd0.json", "output/ee_to_mumu_tata_qcd0_amplitude.csv", "sigma_reference.json#ee_to_mumu_tata_qcd0", "amplitudes/ee_to_mumu_tata_qcd0.json", "couplings/ee_to_mumu_tata_qcd0.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu- ta+ ta- QCD=0", pdgs_in = [-11, 11], pdgs_out = [-13, 13, -15, 15], sqrt_s_list = [500.0], npoints = 50, seed = 11, profile_npoints = 2000 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -404,7 +404,7 @@ script = "validation/madgraph/scripts/uux_to_ccx_emmm_qcd0.mg5"
 class = "single-channel"
 n_final = 6
 rationale = "Different-flavour quark lines with diagonal CKM leave only the s-channel EW connection, so NCOLOR=1 and the coherent diagram sum needs no colour-flow code; distinct leptons make IDEN pure spin*colour averaging with no symmetry factor."
-artifacts = ["output/uux_to_ccx_emmm_qcd0", "output/uux_to_ccx_emmm_qcd0.json", "output/uux_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#uux_to_ccx_emmm_qcd0", "amplitudes/uux_to_ccx_emmm_qcd0.json"]
+artifacts = ["output/uux_to_ccx_emmm_qcd0", "output/uux_to_ccx_emmm_qcd0.json", "output/uux_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#uux_to_ccx_emmm_qcd0", "amplitudes/uux_to_ccx_emmm_qcd0.json", "couplings/uux_to_ccx_emmm_qcd0.json"]
 mg_amplitude = { process = "u u~ > c c~ e+ e- mu+ mu- QCD=0", pdgs_in = [2, -2], pdgs_out = [4, -4, -11, 11, -13, 13], sqrt_s_list = [500.0], npoints = 50, seed = 7, profile_npoints = 500 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -419,7 +419,7 @@ script = "validation/madgraph/scripts/bbx_to_ccx_emmm_qcd0.mg5"
 class = "single-channel"
 n_final = 6
 rationale = "Massive-initial-spine variant of uux_to_ccx_emmm_qcd0: a two-propagator initial spine with massive internal fermions, which is what would catch a spine-parity derivation that assumed the massless S(-q) = -S(q) identity."
-artifacts = ["output/bbx_to_ccx_emmm_qcd0", "output/bbx_to_ccx_emmm_qcd0.json", "output/bbx_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#bbx_to_ccx_emmm_qcd0", "amplitudes/bbx_to_ccx_emmm_qcd0.json"]
+artifacts = ["output/bbx_to_ccx_emmm_qcd0", "output/bbx_to_ccx_emmm_qcd0.json", "output/bbx_to_ccx_emmm_qcd0_amplitude.csv", "sigma_reference.json#bbx_to_ccx_emmm_qcd0", "amplitudes/bbx_to_ccx_emmm_qcd0.json", "couplings/bbx_to_ccx_emmm_qcd0.json"]
 mg_amplitude = { process = "b b~ > c c~ e+ e- mu+ mu- QCD=0", pdgs_in = [5, -5], pdgs_out = [4, -4, -11, 11, -13, 13], sqrt_s_list = [500.0], npoints = 50, seed = 37, profile_npoints = 500 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -434,7 +434,7 @@ script = "validation/madgraph/scripts/ud_to_epemud_qcd0.mg5"
 class = "single-channel"
 n_final = 4
 rationale = "The multi-rung t-channel reference: the one banked run whose diagrams carry a genuine ladder of spacelike lines, so a phase-space map that orders its rungs wrongly has something to disagree with. Its 35 diagrams split 12 / 14 / 9 over one, two and three spacelike lines, and the rungs are asymmetric — the blobs a chain emits are a single jet, a single lepton and a lepton pair, over a mix of massless and m_Z poles — so an ordering test on it is not vacuous. QCD=0 with lpp = 0 and all three scales fixed at m_Z keeps it clear of the scale prescription entirely: with no alpha_s in the matrix element and no PDF on either beam, no scale choice can reach the cross section."
-artifacts = ["output/ud_to_epemud_qcd0", "output/ud_to_epemud_qcd0/Events/run_01/unweighted_events.lhe.gz"]
+artifacts = ["output/ud_to_epemud_qcd0", "output/ud_to_epemud_qcd0/Events/run_01/unweighted_events.lhe.gz", "couplings/ud_to_epemud_qcd0.json"]
 mg_amplitude = { process = "u d > e+ e- u d QCD=0", pdgs_in = [2, 1], pdgs_out = [-11, 11, 2, 1], sqrt_s_list = [200.0, 500.0], npoints = 25, seed = 71, profile_npoints = 2000 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "35 topologies against MadGraph's NGRAPHS = 35 over the single P1_qq_llqq subprocess class" }
@@ -470,7 +470,7 @@ script = "validation/madgraph/scripts/pp_to_ll_qcd0.mg5"
 class = "multi-channel"
 n_final = 2
 rationale = "Drell-Yan with the strong coupling forbidden: the order-constraint counterpart of pp_to_ll, and the group whose banked amplitude table is the concrete u u~ > mu+ mu- subprocess every partonic Drell-Yan check reads."
-artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_ll_qcd0_amplitude.csv", "amplitudes/pp_to_ll_qcd0.json"]
+artifacts = ["output/pp_to_ll_qcd0", "output/pp_to_ll_qcd0.json", "output/pp_to_ll_qcd0_amplitude.csv", "amplitudes/pp_to_ll_qcd0.json", "couplings/pp_to_ll_qcd0.json"]
 # Generates through this row's own compiled module (the concrete u u~ > mu+ mu-
 # subprocess), which is also uux_to_mumu's amplitude table — see that row's
 # `amplitudes` note.
@@ -622,7 +622,7 @@ script = "validation/madgraph/scripts/ee_to_mumu_smlimit.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The SMEFTsim SM limit on the smallest amplitude there is. Every Wilson coefficient is zero under restrict_SMlimit_massless, so MadGraph's matrix element is the Standard Model's and the interned-SM row of the same process already gates the physics -- what this row isolates is the model plumbing around it: a UFO read from source, the {mW, mZ, GF} input scheme, MadGraph's splitting of one vertex into one interaction per coupling-order tuple, and the pruning of the couplings the card zeroes."
-artifacts = ["output/ee_to_mumu_smlimit", "output/ee_to_mumu_smlimit.json", "output/ee_to_mumu_smlimit_amplitude.csv", "sigma_reference.json#ee_to_mumu_smlimit", "amplitudes/ee_to_mumu_smlimit.json"]
+artifacts = ["output/ee_to_mumu_smlimit", "output/ee_to_mumu_smlimit.json", "output/ee_to_mumu_smlimit_amplitude.csv", "sigma_reference.json#ee_to_mumu_smlimit", "amplitudes/ee_to_mumu_smlimit.json", "couplings/ee_to_mumu_smlimit.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 101 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -639,7 +639,7 @@ script = "validation/madgraph/scripts/gg_to_ttx_smlimit.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The SM limit with colour: the f(1,2,3) triple-gluon vertex and a massive quark line, so a splitting or pruning error confined to a coloured vertex has a row to fail on."
-artifacts = ["output/gg_to_ttx_smlimit", "output/gg_to_ttx_smlimit.json", "output/gg_to_ttx_smlimit_amplitude.csv", "sigma_reference.json#gg_to_ttx_smlimit", "amplitudes/gg_to_ttx_smlimit.json"]
+artifacts = ["output/gg_to_ttx_smlimit", "output/gg_to_ttx_smlimit.json", "output/gg_to_ttx_smlimit_amplitude.csv", "sigma_reference.json#gg_to_ttx_smlimit", "amplitudes/gg_to_ttx_smlimit.json", "couplings/gg_to_ttx_smlimit.json"]
 mg_amplitude = { process = "g g > t t~", pdgs_in = [21, 21], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 103 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -656,7 +656,7 @@ script = "validation/madgraph/scripts/gg_to_ttx_smlimit_qcd2.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "gg_to_ttx_smlimit with the coupling order written out, as the control on MadGraph's default WEIGHTED bound. The model carries an effective ggH vertex at SMHLOOP = 1; the default bound drops its g g > H > t t~ diagram and an explicit QCD<=2 keeps it, so the two rows differ by exactly one diagram (4 against 3) and by the colour structure that diagram brings (NCOLOR 3 against 2). What the default order bound does to a model whose orders are not the Standard Model's is thereby a measured number on this row rather than an inference from the other."
-artifacts = ["output/gg_to_ttx_smlimit_qcd2", "output/gg_to_ttx_smlimit_qcd2.json", "output/gg_to_ttx_smlimit_qcd2_amplitude.csv", "sigma_reference.json#gg_to_ttx_smlimit_qcd2", "amplitudes/gg_to_ttx_smlimit_qcd2.json"]
+artifacts = ["output/gg_to_ttx_smlimit_qcd2", "output/gg_to_ttx_smlimit_qcd2.json", "output/gg_to_ttx_smlimit_qcd2_amplitude.csv", "sigma_reference.json#gg_to_ttx_smlimit_qcd2", "amplitudes/gg_to_ttx_smlimit_qcd2.json", "couplings/gg_to_ttx_smlimit_qcd2.json"]
 mg_amplitude = { process = "g g > t t~ QCD<=2", pdgs_in = [21, 21], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 179 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -673,7 +673,7 @@ script = "validation/madgraph/scripts/ee_to_ttx_smlimit.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The SM limit with massive external fermions, read through SMEFTsim's {mW, mZ, GF} inputs rather than the interned model's {alpha, GF, mZ}: the two schemes derive the same couplings from different measured numbers, so agreement here is agreement on the derivation and not only on the vertex."
-artifacts = ["output/ee_to_ttx_smlimit", "output/ee_to_ttx_smlimit.json", "output/ee_to_ttx_smlimit_amplitude.csv", "sigma_reference.json#ee_to_ttx_smlimit", "amplitudes/ee_to_ttx_smlimit.json"]
+artifacts = ["output/ee_to_ttx_smlimit", "output/ee_to_ttx_smlimit.json", "output/ee_to_ttx_smlimit_amplitude.csv", "sigma_reference.json#ee_to_ttx_smlimit", "amplitudes/ee_to_ttx_smlimit.json", "couplings/ee_to_ttx_smlimit.json"]
 mg_amplitude = { process = "e+ e- > t t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 107 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -690,7 +690,7 @@ script = "validation/madgraph/scripts/bbx_to_h_identity.mg5"
 class = "single-channel"
 n_final = 1
 rationale = "O_bH's fermion-fermion-scalar vertex carries the bare `Identity(2,1)` bilinear, the one UFO Lorentz operator no Standard-Model process in this set reaches. 2 -> 1 at fixed beams, so the whole phase space is the single point the amplitude table banks and MadEvent has no volume to integrate."
-artifacts = ["output/bbx_to_h_identity", "output/bbx_to_h_identity.json", "output/bbx_to_h_identity_amplitude.csv", "amplitudes/bbx_to_h_identity.json"]
+artifacts = ["output/bbx_to_h_identity", "output/bbx_to_h_identity.json", "output/bbx_to_h_identity_amplitude.csv", "amplitudes/bbx_to_h_identity.json", "couplings/bbx_to_h_identity.json"]
 mg_amplitude = { process = "b b~ > h NP<=1", pdgs_in = [5, -5], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 109 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -707,7 +707,7 @@ script = "validation/madgraph/scripts/gg_to_h_cpeven.mg5"
 class = "single-channel"
 n_final = 1
 rationale = "O_HG's vector-vector-scalar vertex, whose structure is `P(1,2)*P(2,1) - P.P Metric(1,2)`: two momenta on a VVS vertex, measured beside SMEFTsim's own effective SM ggh vertex rather than alone."
-artifacts = ["output/gg_to_h_cpeven", "output/gg_to_h_cpeven.json", "output/gg_to_h_cpeven_amplitude.csv", "amplitudes/gg_to_h_cpeven.json"]
+artifacts = ["output/gg_to_h_cpeven", "output/gg_to_h_cpeven.json", "output/gg_to_h_cpeven_amplitude.csv", "amplitudes/gg_to_h_cpeven.json", "couplings/gg_to_h_cpeven.json"]
 mg_amplitude = { process = "g g > h NP<=1", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 113 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -724,7 +724,7 @@ script = "validation/madgraph/scripts/gg_to_h_cpodd.mg5"
 class = "single-channel"
 n_final = 1
 rationale = "The same process with O_HGtil beside O_HG, whose vertex carries `Epsilon(1,2,-1,-2)*P(-2,2)*P(-1,1)`. The two do not interfere in the helicity-summed |M|^2 -- the epsilon flips sign between the two gluon helicity configurations and the interference cancels -- so the epsilon sign convention is visible only in the per-helicity amplitudes, which is exactly the level this row's table banks."
-artifacts = ["output/gg_to_h_cpodd", "output/gg_to_h_cpodd.json", "output/gg_to_h_cpodd_amplitude.csv", "amplitudes/gg_to_h_cpodd.json"]
+artifacts = ["output/gg_to_h_cpodd", "output/gg_to_h_cpodd.json", "output/gg_to_h_cpodd_amplitude.csv", "amplitudes/gg_to_h_cpodd.json", "couplings/gg_to_h_cpodd.json"]
 mg_amplitude = { process = "g g > h NP<=1", pdgs_in = [21, 21], pdgs_out = [25], sqrt_s_list = [125.09], npoints = 1, seed = 127 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -741,7 +741,7 @@ script = "validation/madgraph/scripts/ee_to_wpwm_cw.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "O_W's triple-gauge vertex carries three momenta and O_Wtil's its `Epsilon` counterpart, on a process whose Standard-Model diagrams are already gated in this set -- so a disagreement localises to the new vertex."
-artifacts = ["output/ee_to_wpwm_cw", "output/ee_to_wpwm_cw.json", "output/ee_to_wpwm_cw_amplitude.csv", "sigma_reference.json#ee_to_wpwm_cw", "amplitudes/ee_to_wpwm_cw.json"]
+artifacts = ["output/ee_to_wpwm_cw", "output/ee_to_wpwm_cw.json", "output/ee_to_wpwm_cw_amplitude.csv", "sigma_reference.json#ee_to_wpwm_cw", "amplitudes/ee_to_wpwm_cw.json", "couplings/ee_to_wpwm_cw.json"]
 mg_amplitude = { process = "e+ e- > W+ W- NP<=1", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 131 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "7 diagrams enumerated against MadGraph's 7: the Standard-Model neutrino t-channel, and the photon and Z s-channels each carrying the SM `VVV5` triple-gauge vertex beside O_W's `VVV7` and O_Wtil's `VVV8`. Enforced: the count is what says the interaction splitting reaches each of the card's new structures separately rather than folding them into the vertex they share, which is the premise the row's per-diagram amplitude comparison is read under" }
@@ -758,7 +758,7 @@ script = "validation/madgraph/scripts/gg_to_gg_cg.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "O_G and O_Gtil: a higher-derivative four-gluon vertex, an `Epsilon` VVVV and the f*f*f colour chains, on the process with the largest colour matrix in the set."
-artifacts = ["output/gg_to_gg_cg", "output/gg_to_gg_cg.json", "output/gg_to_gg_cg_amplitude.csv", "amplitudes/gg_to_gg_cg.json"]
+artifacts = ["output/gg_to_gg_cg", "output/gg_to_gg_cg.json", "output/gg_to_gg_cg_amplitude.csv", "amplitudes/gg_to_gg_cg.json", "couplings/gg_to_gg_cg.json"]
 mg_amplitude = { process = "g g > g g NP<=1", pdgs_in = [21, 21], pdgs_out = [21, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 137 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "info", note = "21 topologies enumerated against a banked 27, and the gap is a counting convention rather than a missing diagram: MadGraph draws 21 graphs for this process too (3 four-gluon contacts, plus 5 gluon-exchange and 1 SMHLOOP Higgs-exchange in each of 3 channels), and 27 is its NGRAPHS -- one `AMP()` per (diagram, colour-ordered contact structure), the three contacts contributing three amplitudes each. The Standard Model's `gg_to_gg` sits at 4 against 6 for exactly the same reason and is informational too. What the counting convention leaves unchecked is checked at a finer level instead: all 27 of MadGraph's amplitude columns are reproduced by this row's `amplitudes` cell, which is enforced" }
@@ -775,7 +775,7 @@ script = "validation/madgraph/scripts/ee_to_ttx_dipole.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The top electroweak dipoles in both CP parities. Their CP-even part is a momentum-slashed gamma chain (FFV9) and their CP-odd part the same chain with a `Gamma5` in the middle of it (FFV2) -- the only route in this model to a `Gamma5` inside a chain, which is why the card carries the imaginary coefficients the shipped one leaves at zero."
-artifacts = ["output/ee_to_ttx_dipole", "output/ee_to_ttx_dipole.json", "output/ee_to_ttx_dipole_amplitude.csv", "sigma_reference.json#ee_to_ttx_dipole", "amplitudes/ee_to_ttx_dipole.json"]
+artifacts = ["output/ee_to_ttx_dipole", "output/ee_to_ttx_dipole.json", "output/ee_to_ttx_dipole_amplitude.csv", "sigma_reference.json#ee_to_ttx_dipole", "amplitudes/ee_to_ttx_dipole.json", "couplings/ee_to_ttx_dipole.json"]
 mg_amplitude = { process = "e+ e- > t t~ NP<=1", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 139 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -792,7 +792,7 @@ script = "validation/madgraph/scripts/ee_to_zh_smeft.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The Higgs-gauge derivative operators O_HW, O_HB, O_HWB together with O_HDD: the derivative VVS vertices and the two coefficients that shift the {mW, mZ, GF} input scheme, deliberately on one card. A scheme shift moves every diagram of the row including the Standard-Model ones; a vertex error moves one."
-artifacts = ["output/ee_to_zh_smeft", "output/ee_to_zh_smeft.json", "output/ee_to_zh_smeft_amplitude.csv", "sigma_reference.json#ee_to_zh_smeft", "amplitudes/ee_to_zh_smeft.json"]
+artifacts = ["output/ee_to_zh_smeft", "output/ee_to_zh_smeft.json", "output/ee_to_zh_smeft_amplitude.csv", "sigma_reference.json#ee_to_zh_smeft", "amplitudes/ee_to_zh_smeft.json", "couplings/ee_to_zh_smeft.json"]
 mg_amplitude = { process = "e+ e- > Z H NP<=1", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 149 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "14 diagrams enumerated against MadGraph's 14: the photon line's 6 and the Z line's 8, each the Standard Model's `VVS1` vertex beside the derivative `VVS4..7` structures O_HW, O_HB and O_HWB write. Enforced independently of this row's `amplitudes` cell, which stays informational for a parameter-derivation difference: what that cell measures is the value of a coupling, and what this one measures is that the diagrams carrying it are MadGraph's" }
@@ -809,7 +809,7 @@ script = "validation/madgraph/scripts/ee_to_mumu_4f.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Vector four-lepton contact operators across two lepton flavours. This is where one UFO vertex carries both spinor pairings -- (1,2)(3,4) and (1,4)(2,3) -- so the permutation sign MadGraph prefixes per Lorentz structure is observable rather than conventional."
-artifacts = ["output/ee_to_mumu_4f", "output/ee_to_mumu_4f.json", "output/ee_to_mumu_4f_amplitude.csv", "sigma_reference.json#ee_to_mumu_4f", "amplitudes/ee_to_mumu_4f.json"]
+artifacts = ["output/ee_to_mumu_4f", "output/ee_to_mumu_4f.json", "output/ee_to_mumu_4f_amplitude.csv", "sigma_reference.json#ee_to_mumu_4f", "amplitudes/ee_to_mumu_4f.json", "couplings/ee_to_mumu_4f.json"]
 mg_amplitude = { process = "e+ e- > mu+ mu- NP<=1", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 151 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -826,7 +826,7 @@ script = "validation/madgraph/scripts/uux_to_ttx_4f.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "Four-quark contact operators joining the light and third generations in both colour contractions: the singlet operators give `Identity*Identity` colour and the octet ones `T(-1,i,j)*T(-1,k,l)`, in one process, against the Standard Model's s-channel gluon and photon/Z diagrams."
-artifacts = ["output/uux_to_ttx_4f", "output/uux_to_ttx_4f.json", "output/uux_to_ttx_4f_amplitude.csv", "sigma_reference.json#uux_to_ttx_4f", "amplitudes/uux_to_ttx_4f.json"]
+artifacts = ["output/uux_to_ttx_4f", "output/uux_to_ttx_4f.json", "output/uux_to_ttx_4f_amplitude.csv", "sigma_reference.json#uux_to_ttx_4f", "amplitudes/uux_to_ttx_4f.json", "couplings/uux_to_ttx_4f.json"]
 mg_amplitude = { process = "u u~ > t t~ NP<=1", pdgs_in = [2, -2], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 157 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -843,7 +843,7 @@ script = "validation/madgraph/scripts/tata_to_ttx_tensor4f.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The tensor-tensor four-fermion operator O_leQt3, whose Lorentz structure is four `Gamma` factors on an index graph that is a 4-cycle -- the one shape no rooting of a tree can evaluate. Taus and not electrons because the topU3l flavour assumption puts a lepton Yukawa spurion on every chirality-flipping lepton operator: under the shipped massless-lepton values every cyclic-tensor vertex in the model vanishes and MadGraph does not know the NP coupling order at all, so this row's card restores the tau mass and Yukawa and nothing else."
-artifacts = ["output/tata_to_ttx_tensor4f", "output/tata_to_ttx_tensor4f.json", "output/tata_to_ttx_tensor4f_amplitude.csv", "sigma_reference.json#tata_to_ttx_tensor4f", "amplitudes/tata_to_ttx_tensor4f.json"]
+artifacts = ["output/tata_to_ttx_tensor4f", "output/tata_to_ttx_tensor4f.json", "output/tata_to_ttx_tensor4f_amplitude.csv", "sigma_reference.json#tata_to_ttx_tensor4f", "amplitudes/tata_to_ttx_tensor4f.json", "couplings/tata_to_ttx_tensor4f.json"]
 mg_amplitude = { process = "ta+ ta- > t t~ NP<=1", pdgs_in = [-15, 15], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 163 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -860,7 +860,7 @@ script = "validation/madgraph/scripts/ee_to_ttx_smeft.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The capstone: every real Wilson coefficient on at once under the model's own restrict_massless.dat, and the one row of the ladder that owns a cross section. What that card does *not* switch on is on the record too: its CP-odd block is zero throughout, and its lepton Yukawas are zero, so neither the `Epsilon` structures nor the cyclic tensor-tensor one reaches this row -- they are covered by gg_to_h_cpodd, ee_to_wpwm_cw, gg_to_gg_cg and tata_to_ttx_tensor4f, whose cards choose the values the shipped card leaves at zero."
-artifacts = ["output/ee_to_ttx_smeft", "output/ee_to_ttx_smeft.json", "output/ee_to_ttx_smeft_amplitude.csv", "amplitudes/ee_to_ttx_smeft.json", "sigma_reference.json#ee_to_ttx_smeft"]
+artifacts = ["output/ee_to_ttx_smeft", "output/ee_to_ttx_smeft.json", "output/ee_to_ttx_smeft_amplitude.csv", "amplitudes/ee_to_ttx_smeft.json", "couplings/ee_to_ttx_smeft.json", "sigma_reference.json#ee_to_ttx_smeft"]
 mg_amplitude = { process = "e+ e- > t t~ NP<=1", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 167 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
@@ -877,7 +877,7 @@ script = "validation/madgraph/scripts/wpwm_to_wpwmz_cw.mg5"
 class = "single-channel"
 n_final = 3
 rationale = "O_W reached through a five-vector vertex sitting inside a diagram rather than saturating the external legs -- the arity the four-point rows never reach, and the one most likely to expose an assumption in the colour or channel builder rather than in the rooting."
-artifacts = ["output/wpwm_to_wpwmz_cw", "output/wpwm_to_wpwmz_cw.json", "output/wpwm_to_wpwmz_cw_amplitude.csv", "amplitudes/wpwm_to_wpwmz_cw.json"]
+artifacts = ["output/wpwm_to_wpwmz_cw", "output/wpwm_to_wpwmz_cw.json", "output/wpwm_to_wpwmz_cw_amplitude.csv", "amplitudes/wpwm_to_wpwmz_cw.json", "couplings/wpwm_to_wpwmz_cw.json"]
 mg_amplitude = { process = "W+ W- > W+ W- Z NP<=1", pdgs_in = [24, -24], pdgs_out = [24, -24, 23], sqrt_s_list = [500.0], npoints = 8, seed = 173, profile_npoints = 2000 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "222 diagrams enumerated against MadGraph's 222, the largest count in the suite and the only row whose enumeration reaches a five-vector vertex inside a diagram rather than saturating the external legs. Enforced: the row's `amplitudes` cell disagrees grossly and stays informational, so the diagram count is what separates `we draw a different process` from `we evaluate the same process differently` -- and it says the enumeration is not where the disagreement is" }
@@ -917,7 +917,7 @@ script = "validation/madgraph/scripts/ll_to_qqx_toy_dipole.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "A dipole whose Lorentz structure writes `Sigma` literally: `Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)`, a momentum-contracted sigma^{mu nu} behind a chiral projector. No FeynRules-written model emits one, so this row and ll_to_qqx_toy_tensor are the only place the operator exists unexpanded. The dipole and the plain gauge coupling share the qt~ qt vt vertex at different coupling orders, so the row is two diagrams through one propagator and the dipole's phase and normalisation are measurable in the per-helicity interference rather than only in the helicity sum."
-artifacts = ["output/ll_to_qqx_toy_dipole", "output/ll_to_qqx_toy_dipole.json", "output/ll_to_qqx_toy_dipole_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_dipole", "amplitudes/ll_to_qqx_toy_dipole.json"]
+artifacts = ["output/ll_to_qqx_toy_dipole", "output/ll_to_qqx_toy_dipole.json", "output/ll_to_qqx_toy_dipole_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_dipole", "amplitudes/ll_to_qqx_toy_dipole.json", "couplings/ll_to_qqx_toy_dipole.json"]
 mg_amplitude = { process = "lt~ lt > qt qt~ NP<=1", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 211 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams enumerated against MadGraph's 2 -- the s-channel vector with the gauge coupling at one end and the same propagator with the literal-`Sigma` dipole at the other, which MadGraph's splitting of the qt~ qt vt vertex into one interaction per coupling-order tuple keeps apart. Enforced now that the row's amplitude cell is: the count is what says the dipole interaction reaches diagram enumeration at all" }
@@ -934,7 +934,7 @@ script = "validation/madgraph/scripts/ll_to_qqx_toy_tensor.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The tensor-tensor four-fermion contact in both of its spellings at once, beside the vector exchange they interfere with: `Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3)` under one coupling order and the gamma-gamma expansion of the same operator under another, so MadGraph writes them as two diagrams and the identity between the two spellings is a per-helicity comparison of `AMP(2)` against `AMP(3)` rather than an algebraic claim. The expanded spelling's index graph is a 4-cycle, the shape no rooted contraction tree can walk."
-artifacts = ["output/ll_to_qqx_toy_tensor", "output/ll_to_qqx_toy_tensor.json", "output/ll_to_qqx_toy_tensor_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_tensor", "amplitudes/ll_to_qqx_toy_tensor.json"]
+artifacts = ["output/ll_to_qqx_toy_tensor", "output/ll_to_qqx_toy_tensor.json", "output/ll_to_qqx_toy_tensor_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_tensor", "amplitudes/ll_to_qqx_toy_tensor.json", "couplings/ll_to_qqx_toy_tensor.json"]
 mg_amplitude = { process = "lt~ lt > qt qt~ NP<=1 NPGG<=1", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 223 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "3 diagrams enumerated against MadGraph's 3 -- the vector exchange, the `Sigma`-spelled contact and the gamma-gamma-spelled one, each its own diagram because each coupling carries its own order. Enforced alongside the row's amplitude cell: the count is what keeps the two spellings apart, and a merge of them would make the identity the amplitude cell measures vacuous" }
@@ -951,7 +951,7 @@ script = "validation/madgraph/scripts/ll_to_qqx_toy_yukawa.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The bare `Identity(2,1)` and the bare `Gamma5(2,1)` on both ends of one s-channel scalar. Each Yukawa vertex carries both bilinears at different coupling orders, so the scalar exchange arrives as four diagrams -- scalar/scalar, scalar/pseudoscalar, pseudoscalar/scalar, pseudoscalar/pseudoscalar -- beside a vector exchange, and the relative phase between a scalar and a pseudoscalar current is what their per-helicity interference measures. SMEFTsim reaches `Identity` through one operator and never reaches a bare `Gamma5` at all."
-artifacts = ["output/ll_to_qqx_toy_yukawa", "output/ll_to_qqx_toy_yukawa.json", "output/ll_to_qqx_toy_yukawa_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_yukawa", "amplitudes/ll_to_qqx_toy_yukawa.json"]
+artifacts = ["output/ll_to_qqx_toy_yukawa", "output/ll_to_qqx_toy_yukawa.json", "output/ll_to_qqx_toy_yukawa_amplitude.csv", "sigma_reference.json#ll_to_qqx_toy_yukawa", "amplitudes/ll_to_qqx_toy_yukawa.json", "couplings/ll_to_qqx_toy_yukawa.json"]
 mg_amplitude = { process = "lt~ lt > qt qt~ NP<=2 NPCP<=2", pdgs_in = [-9000011, 9000011], pdgs_out = [9000004, -9000004], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 227 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "5 diagrams enumerated against MadGraph's 5 -- the vector exchange plus the four scalar exchanges the two bilinears make at the two ends" }
@@ -968,7 +968,7 @@ script = "validation/madgraph/scripts/qqx_to_o8o8_toy_dcolor.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The symmetric structure constant `d(1,2,3)`, which this crate's colour algebra can represent and no validated process reaches: the Standard Model writes `f` and `T` and never `d`. It sits on the cubic self-coupling of a real colour-octet scalar, so the s-channel diagram carrying it interferes with the t- and u-channel quark exchanges that do not, and the reduction d(a,b,c) = 2 Tr(a,b,c) + 2 Tr(c,b,a) shows up as a three-flow colour basis whose first flow is MadGraph's own -2/3 * AMP(1) rather than only as a number in a total."
-artifacts = ["output/qqx_to_o8o8_toy_dcolor", "output/qqx_to_o8o8_toy_dcolor.json", "output/qqx_to_o8o8_toy_dcolor_amplitude.csv", "sigma_reference.json#qqx_to_o8o8_toy_dcolor", "amplitudes/qqx_to_o8o8_toy_dcolor.json"]
+artifacts = ["output/qqx_to_o8o8_toy_dcolor", "output/qqx_to_o8o8_toy_dcolor.json", "output/qqx_to_o8o8_toy_dcolor_amplitude.csv", "sigma_reference.json#qqx_to_o8o8_toy_dcolor", "amplitudes/qqx_to_o8o8_toy_dcolor.json", "couplings/qqx_to_o8o8_toy_dcolor.json"]
 mg_amplitude = { process = "qt qt~ > o8 o8 NP<=2", pdgs_in = [9000004, -9000004], pdgs_out = [9000021, 9000021], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 229 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "3 diagrams enumerated against MadGraph's 3 -- t- and u-channel quark exchange and the s-channel octet scalar whose second vertex carries `d(1,2,3)`" }
@@ -985,7 +985,7 @@ script = "validation/madgraph/scripts/p3r3_to_p3r3_toy_epsilon.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The baryonic colour atom, reached through an s-channel triplet diquark whose two ends contribute `Epsilon` and `EpsilonBar`: what the row measures is their contraction rule, not either atom alone, and the singlet-scalar exchange it interferes with supplies the plain delta-delta structure the contraction reduces to. Every field of the model is a scalar, because joining two same-representation fermions to a diquark needs a fermion-number-violating vertex and therefore charge conjugation -- separate machinery, deliberately out of scope -- so the row measures colour and nothing else."
-artifacts = ["output/p3r3_to_p3r3_toy_epsilon", "output/p3r3_to_p3r3_toy_epsilon.json", "output/p3r3_to_p3r3_toy_epsilon_amplitude.csv", "sigma_reference.json#p3r3_to_p3r3_toy_epsilon", "amplitudes/p3r3_to_p3r3_toy_epsilon.json"]
+artifacts = ["output/p3r3_to_p3r3_toy_epsilon", "output/p3r3_to_p3r3_toy_epsilon.json", "output/p3r3_to_p3r3_toy_epsilon_amplitude.csv", "sigma_reference.json#p3r3_to_p3r3_toy_epsilon", "amplitudes/p3r3_to_p3r3_toy_epsilon.json", "couplings/p3r3_to_p3r3_toy_epsilon.json"]
 mg_amplitude = { process = "p3 r3 > p3 r3 NP<=2", pdgs_in = [9000051, 9000052], pdgs_out = [9000051, 9000052], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 233 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams enumerated against MadGraph's 2: the s-channel triplet diquark whose two ends carry `Epsilon` and `EpsilonBar`, and the singlet-scalar exchange it interferes with" }
@@ -1002,7 +1002,7 @@ script = "validation/madgraph/scripts/p3r3_to_p3r3_toy_sextet.mg5"
 class = "single-channel"
 n_final = 2
 rationale = "The sextet Clebsch coefficients `K6`/`K6Bar`, reached through an s-channel sextet diquark. The sextet is internal, so MadGraph reduces the pair through K6(m,i,j) K6Bar(m,k,l) = (T(l,i)T(k,j) + T(k,i)T(l,j))/2 before it builds a colour matrix and no external leg carries two colour lines -- which separates the reduction rules from the open question of how a sextet leg is written into an event file. The same process as p3r3_to_p3r3_toy_epsilon under the other card, so the two differ by the atom alone and MadGraph's JAMP coefficients (1, -1 against 1/2, 1/2) are the reduction made visible."
-artifacts = ["output/p3r3_to_p3r3_toy_sextet", "output/p3r3_to_p3r3_toy_sextet.json", "output/p3r3_to_p3r3_toy_sextet_amplitude.csv", "sigma_reference.json#p3r3_to_p3r3_toy_sextet", "amplitudes/p3r3_to_p3r3_toy_sextet.json"]
+artifacts = ["output/p3r3_to_p3r3_toy_sextet", "output/p3r3_to_p3r3_toy_sextet.json", "output/p3r3_to_p3r3_toy_sextet_amplitude.csv", "sigma_reference.json#p3r3_to_p3r3_toy_sextet", "amplitudes/p3r3_to_p3r3_toy_sextet.json", "couplings/p3r3_to_p3r3_toy_sextet.json"]
 mg_amplitude = { process = "p3 r3 > p3 r3 NP<=2", pdgs_in = [9000051, 9000052], pdgs_out = [9000051, 9000052], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 239 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams enumerated against MadGraph's 2: the s-channel sextet diquark whose two ends carry `K6Bar` and `K6`, and the singlet-scalar exchange it interferes with" }
@@ -1150,6 +1150,14 @@ layer = "hermetic"
 targets = ["vibegraph-lib/tests/amplitude_oracle.rs"]
 inputs = ["validation/madgraph/amplitudes/<process>.json"]
 rationale = "The gate behind the `amplitudes` column, one trial per row: |M|^2 at every banked point, and per-diagram AMP() plus per-flow JAMP() per helicity at a few of each point set. Listed here as well as in the table because a single binary covers every row."
+
+[[standalone]]
+key = "couplings-mg"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/coupling_oracle.rs"]
+inputs = ["validation/madgraph/couplings/<process>.json"]
+rationale = "Every `mg_amplitude` row's model couplings on its own param card, against MadGraph's Python `model_reader` and against the `COMMON/COUPLINGS/` block of its compiled matrix element. Ahead of the amplitude gate on purpose: a coupling that is off in its tenth digit reads there as a spread of per-diagram constants and here as one coupling by name."
+note = "It carries the two lists a three-way comparison needs. MadGraph's Fortran writer prints long UFO literals at seven significant digits, which puts `GC_303` 1.2e-8 off its own Python on `ee_to_zh_smeft` and `wpwm_to_wpwmz_cw`; and this crate reads `-ee**2/(2.*cw)` as `(-ee)**2/(2.*cw)`, which flips the sign of the interned SM's `GC_7` and `GC_54`. Those two are Goldstone couplings, declared in no generated coupl.inc, so nothing banked is affected — and each entry asserts the gap is still there, so repairing either side fails this gate rather than passing silently."
 
 [[standalone]]
 key = "samples-mg"
