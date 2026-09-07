@@ -109,7 +109,7 @@ more detail, and `research/refs/fetch-papers.sh` fetches the arXiv ones.
   multiparticle phase space at high energies*, Comput. Phys. Commun. 40
   (1986) 359. RAMBO.
 - E. Byckling, K. Kajantie, *Particle Kinematics*, Wiley (1973). The
-  recursive two-body decomposition of \\(n\\)-body phase space.
+  recursive two-body decomposition of $n$-body phase space.
 - G. P. Lepage, *A new algorithm for adaptive multidimensional integration*,
   J. Comput. Phys. 27 (1978) 192. VEGAS.
 - G. P. Lepage, *Adaptive multidimensional integration: VEGAS enhanced*,
@@ -119,7 +119,7 @@ more detail, and `research/refs/fetch-papers.sh` fetches the arXiv ones.
 - R. Kleiss, R. Pittau, *Weight optimization in multichannel Monte Carlo*,
   Comput. Phys. Commun. 83 (1994) 141,
   [hep-ph/9405257](https://arxiv.org/abs/hep-ph/9405257). Adapting the channel
-  weights \\(\alpha_j\\).
+  weights $\alpha_j$.
 - V. Hirschi, O. Mattelaer, *Automated event generation for loop-induced
   processes*, JHEP 10 (2015) 146,
   [arXiv:1507.00020](https://arxiv.org/abs/1507.00020). Its appendix describes

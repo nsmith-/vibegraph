@@ -51,8 +51,8 @@ case. Its algorithm is **topology-first**: the shapes of all graphs are
 enumerated without reference to any particle, and particles are assigned
 to each shape afterwards.
 
-1. **Topologies.** A tree with \\(E\\) external legs and \\(N_k\\)
-   vertices of degree \\(k\\) satisfies \\(\sum_k (k-2) N_k = E - 2\\),
+1. **Topologies.** A tree with $E$ external legs and $N_k$
+   vertices of degree $k$ satisfies $\sum_k (k-2) N_k = E - 2$,
    which fixes the admissible vertex-degree partitions for the degrees the
    model's interactions have (three and four in the Standard Model). For
    each partition the generator fills an adjacency matrix by depth-first
@@ -73,30 +73,29 @@ to each shape afterwards.
 3. **Filtering** by the coupling-order constraint, and discarding diagrams
    that vanish under the model's restriction.
 
-### What MadGraph 5 does instead
-
-MadGraph 5 ([Alwall et al. 2011](../bibliography.md#the-pipeline-as-a-whole))
-abandoned topology-first enumeration. Its algorithm starts from the list of
-external legs, all flipped to one convention, and recursively **combines
-subsets of legs through the model's interactions**: a subset is replaced
-by the single off-shell leg the matching vertex implies, the reduced list
-is recursed into, and the recursion closes when the remaining legs form a
-final vertex. Duplicates are removed by a canonical tag per diagram, and
-coupling-order limits prune the recursion as it runs.
-
-The difference is structural. Topology-first generates every graph shape
-and only then discovers that most admit no particle assignment, and the
-number of tree shapes grows factorially with the leg count, faster still
-once four-point vertices are admitted. Leg combination never visits a
-shape the model cannot fill, because a subset of legs is only combined
-when a vertex exists for it; \\(n\\)-point vertices cost nothing extra, and
-an order constraint stops a branch early rather than discarding its
-output. That pruning is what let MadGraph 5 handle high multiplicities its
-predecessor could not, and it is also what made reusing diagrams across
-flavour-relabelled subprocesses natural. At the multiplicities this
-generator validates, up to \\(2\\to6\\), feyngraph's enumeration is a small
-fraction of a run; a self-implemented leg-combination enumerator is a
-tracked research item, not a present need.
+> **Aside: what MadGraph 5 does instead.**
+> MadGraph 5 ([Alwall et al. 2011](../bibliography.md#the-pipeline-as-a-whole))
+> abandoned topology-first enumeration. Its algorithm starts from the list of
+> external legs, all flipped to one convention, and recursively **combines
+> subsets of legs through the model's interactions**: a subset is replaced
+> by the single off-shell leg the matching vertex implies, the reduced list
+> is recursed into, and the recursion closes when the remaining legs form a
+> final vertex. Duplicates are removed by a canonical tag per diagram, and
+> coupling-order limits prune the recursion as it runs.
+>
+> The difference is structural. Topology-first generates every graph shape
+> and only then discovers that most admit no particle assignment, and the
+> number of tree shapes grows factorially with the leg count, faster still
+> once four-point vertices are admitted. Leg combination never visits a
+> shape the model cannot fill, because a subset of legs is only combined
+> when a vertex exists for it; $n$-point vertices cost nothing extra, and
+> an order constraint stops a branch early rather than discarding its
+> output. That pruning is what let MadGraph 5 handle high multiplicities its
+> predecessor could not, and it is also what made reusing diagrams across
+> flavour-relabelled subprocesses natural. At the multiplicities this
+> generator validates, up to $2\\to6$, feyngraph's enumeration is a small
+> fraction of a run; a self-implemented leg-combination enumerator is a
+> tracked research item, not a present need.
 
 Each diagram comes back with what the amplitude needs: its external legs,
 its vertices with the UFO interaction they realise and their legs in the

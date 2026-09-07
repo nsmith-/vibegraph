@@ -17,28 +17,20 @@ computer science.
 
 The whole pipeline, in order:
 
-```text
-DiagramSet + UFOModel
-   │  rooting            each diagram → an evaluation tree; each Lorentz
-   │                     structure → a contraction tree at its output leg
-   ▼
-   │  lowering           every tree inlined into one arena DAG, Ast<Sym>
-   │  optimisation       sum re-flattening, hash-consing CSE
-   ▼
-   │  folding            model constants interned into pools → Ast<Const>,
-   │                     independent of the parameter card and of the scalar type
-   ▼
-   │  helicity expansion every helicity combination baked in and interned
-   │  helicity pruning   combinations that vanish identically dropped
-   ▼
-   │  analysis           per node: output type, constness, momentum id
-   │  layout             typed instruction stream, per-type result arenas,
-   │                     liveness-based slot reuse
-   ▼
- AmplitudeEvaluator ── bind(parameter card, F) ──▶ BoundAmplitude
-                                                      │  one forward pass
-                                                      ▼  per point
-                                                    |M|², JAMPs, …
+```mermaid
+flowchart TB
+  input["DiagramSet + UFOModel"]
+  root["<b>rooting</b><br/>each diagram → an evaluation tree;<br/>each Lorentz structure → a contraction tree at its output leg"]
+  lower["<b>lowering, optimisation</b><br/>every tree inlined into one arena DAG, Ast&lt;Sym&gt;;<br/>sum re-flattening, hash-consing CSE"]
+  fold["<b>folding</b><br/>model constants interned into pools → Ast&lt;Const&gt;,<br/>independent of the parameter card and of the scalar type"]
+  hel["<b>helicity expansion, pruning</b><br/>every helicity combination baked in and interned;<br/>combinations that vanish identically dropped"]
+  layout["<b>analysis, layout</b><br/>per node: output type, constness, momentum id;<br/>typed instruction stream, per-type result arenas, liveness-based slot reuse"]
+  ev["AmplitudeEvaluator"]
+  bound["BoundAmplitude"]
+  out["|M|², JAMPs, …"]
+  input --> root --> lower --> fold --> hel --> layout --> ev
+  ev -- "bind(parameter card, F)" --> bound
+  bound -- "one forward pass per point" --> out
 ```
 
 Two properties hold the design together. Every pass is a pure function of
@@ -61,11 +53,15 @@ final amplitude. The choice of root is a choice of evaluation order and
 therefore of which intermediate currents exist. Different rootings of the
 same diagram compute the same amplitude with different intermediates, and
 two diagrams share work only when their rootings produce identical
-subtrees. Production roots every diagram at the vertex adjacent to its
-lowest-numbered external leg, the same canonical choice feyngraph's vertex
-order gives; a study of alternative rootings found up to 21% fewer nodes
-available from a smarter choice, and also that the primitive orientations
-are only validated for the canonical one, so the canonical rooting stays.
+subtrees. Production roots every diagram at the vertex with the fewest
+directly attached external legs, ties broken toward the lowest vertex
+index, a rule a rooting study found to capture nearly all of the roughly
+20% node reduction available over feyngraph's own vertex order. Rooting
+must not change the physics, and that is pinned rather than assumed: the
+convention signs that depend on orientation are lifted into each diagram's
+Fermi sign at the canonical rooting, and a rooting-soundness gate in the
+test suite re-roots diagrams at every vertex and asserts $|\mathcal{M}|^2$
+is invariant.
 
 At the vertex level, a UFO Lorentz structure is a tensor network whose
 output leg is now known. Rooting it at that leg means picking an order to
@@ -102,8 +98,10 @@ identical subdiagrams identically, currents shared across diagrams collide
 in the hash table and are computed once. This is the mechanism MadGraph
 calls wavefunction reuse ([Alwall et al. 2011](../bibliography.md#the-pipeline-as-a-whole)),
 performed here as a generic pass over an IR rather than at code-emission
-time. Sums are re-flattened afterwards, since a balanced binary tree of
-additions is the wrong shape for a fused accumulate.
+time. Sums are re-flattened afterwards into one n-ary addition per sum: the
+forward-pass evaluator materialises a result slot per node, so every binary
+partial sum would cost a full slot of memory traffic, and the balanced
+shape was measured to be slower than a single accumulation.
 
 ## Folding: binding times
 
@@ -123,15 +121,16 @@ couplings and colour coefficients that appear at every vertex are computed
 once per card, not once per point per helicity. What remains is
 `Ast<Const>`, a skeleton whose leaves are pool indices and which is
 independent of the card and of the scalar type. Binding a card evaluates
-the pools at the chosen precision and nothing else. Binding is cheap
-enough to do per event, which the [running coupling](#rescaling-the-strong-coupling)
-exploits.
+the pools at the chosen precision and nothing else. Binding a whole card
+still walks the model's parameter graph, which is too slow to repeat per
+event; the [per-event coupling](#rescaling-the-strong-coupling) below moves
+the pools directly instead.
 
 ## Helicity expansion
 
-The helicity-summed \\(|\mathcal{M}|^2\\) needs the amplitude at every
-surviving helicity combination, sixteen for a \\(2\to2\\) fermion process
-and 256 for a \\(2\to6\\) one. Running the arena once per combination
+The helicity-summed $|\mathcal{M}|^2$ needs the amplitude at every
+surviving helicity combination, sixteen for a $2\to2$ fermion process
+and 256 for a $2\to6$ one. Running the arena once per combination
 wastes most of the work: a current depends only on the helicities of the
 legs in its own subtree, so a current over two legs takes at most four
 distinct values across all combinations.
@@ -143,8 +142,8 @@ Two combinations that agree on the legs beneath a node produce the same
 node, and it is interned once. The expanded arena computes each distinct
 current exactly once per phase-space point, in a single linear pass with no
 skip predicate, which is the arithmetic minimum for the sum. Measured
-sharing runs from 2.8× on \\(e^+e^-\to\mu^+\mu^-\\) to 1.8× on a
-\\(2\to6\\) process. In compiler terms this is loop unrolling followed by
+sharing runs from 2.8× on $e^+e^-\to\mu^+\mu^-$ to 1.8× on a
+$2\to6$ process. In compiler terms this is loop unrolling followed by
 specialisation and global CSE; in MadGraph's terms it is helicity recycling
 ([Mattelaer & Ostrolenk 2021](../bibliography.md#the-amplitude-compiler)),
 obtained through the hash table rather than by restructuring calls. The
@@ -165,7 +164,7 @@ should not be in the expansion at all. Deciding which vanish symbolically
 would need a zero-propagation rule per kernel, each a convention claim to
 be pinned. Instead the compiler *probes*: it evaluates the full expansion
 at ten deterministic, generic centre-of-mass phase-space points and drops
-every combination whose contribution is below \\(10^{-24}\\) of the total
+every combination whose contribution is below $10^{-24}$ of the total
 at all of them.
 
 The justification is the Schwartz–Zippel lemma. Each helicity amplitude
@@ -173,16 +172,20 @@ is a rational function of the momenta; a rational function that vanishes
 at random generic points vanishes on the whole variety with probability
 one. The threshold is chosen where the measured spectrum of contributions
 is empty: identically-zero combinations come out as exact zeros or as
-cancellation residues below \\(10^{-30}\\), and the smallest genuine
-contribution seen is around \\(10^{-12}\\), so the dropped terms are below
+cancellation residues below $10^{-30}$, and the smallest genuine
+contribution seen is around $10^{-12}$, so the dropped terms are below
 half an ulp of every partial sum and the pruned result equals the unpruned
 one bit for bit. The survivor sets match MadGraph's generated `NHEL` tables
 exactly, process by process.
 
 The probe fixes a contract. Some zeros hold only in the partonic
-centre-of-mass frame with the beams along \\(\pm z\\), because helicity of
+centre-of-mass frame with the beams along $\pm z$, because helicity of
 a massive particle is not boost invariant. A pruned evaluator therefore
-takes momenta in that frame, which is MadGraph's contract as well.
+takes momenta in that frame, which is MadGraph's contract as well. The
+contract is not in the type system: a pruned evaluator carries a flag, and
+every helicity-summed entry point checks the momenta against it at run
+time, refusing a frame it cannot evaluate correctly rather than returning
+a wrong sum.
 
 ## Static analysis and layout
 
@@ -202,16 +205,26 @@ sixteen bytes rather than the hundred and four a tagged union of all
 wavefunction kinds would. Slots are allocated by **liveness**: a result's
 slot is released after its last read and reused, so the arena size is the
 peak number of simultaneously live values, not the node count. The
-difference is large; a \\(2\to6\\) expansion of half a million nodes peaks
+difference is large; a $2\to6$ expansion of half a million nodes peaks
 at about 27 000 live slots and fits in cache. Roots are pinned live to the
 end, and no instruction writes over its own operands.
 
 The instruction order is the one property of a program that changes no
 value. Production emits nodes grouped by instruction kind within each
 dependency level, so that the interpreter's single indirect dispatch sees
-long runs of one variant and predicts well. Alternative schedules exist as
-a study hook, with metrics for operand distance, live-set width,
-dispatch-run length and critical-path depth.
+long runs of one variant and the CPU's branch predictor, which predicts an
+indirect jump from its recent history, guesses right.[^dispatch] Alternative
+schedules exist as a study hook, with metrics for operand distance,
+live-set width, dispatch-run length and critical-path depth.
+
+[^dispatch]: A loop with one `match` per instruction is a *switch-dispatch*
+    interpreter, and its cost is dominated by that one mispredictable
+    jump. The classic remedy is *direct threading*: each instruction's
+    handler jumps straight to the next handler, giving the predictor one
+    site per instruction kind. A safe-Rust version needs guaranteed tail
+    calls, which is the nightly `become` feature, so it stays a tracked
+    option rather than a pass. Threading the dispatch through function
+    pointers was measured and rejected as slower.
 
 ## Interpretation and kernels
 
@@ -232,34 +245,47 @@ nothing more.
 ## SIMD lanes
 
 The scalar type `F` is a trait. Instantiating the bound amplitude at
-`F = NumericArray<f64, N>` evaluates \\(N\\) phase-space points in one pass,
+`F = NumericArray<f64, N>` evaluates $N$ phase-space points in one pass,
 every elementwise operation acting per lane, so each lane's result is bit
 for bit the scalar result at that point. The one thing that can break this
 is a data-dependent branch on `F`, which on a lane pack reduces to a single
 boolean and applies one formula to every lane. The evaluator's contract is
-that every such branch is lane-uniform by construction: the branches are on
-masses (card constants, identical across lanes) and on frame-dependent
-degeneracies that the centre-of-mass contract rules out.
+that every such branch is lane-uniform by construction. They all sit in
+the external wavefunction constructors and the vector propagator: forks on
+a mass being zero (a card constant, identical across lanes), and forks in
+the polarisation-vector and spinor constructors for a momentum exactly on
+the beam axis or exactly at rest. A beam leg is on the axis in every lane
+and a produced leg is off it in every lane but a measure-zero one, so a
+batch of points sharing a process topology and centre-of-mass kinematics
+takes the same branch on every lane.
 
 ## Rescaling the strong coupling
 
 At a hadron collider the renormalisation scale, and with it
-\\(\alpha_s\\), changes per event ([proton beams](10-hadronic.md#scales)).
+$\alpha_s$, changes per event ([proton beams](10-hadronic.md#scales)).
 Re-evaluating the model's whole parameter graph per event would dominate a
 cheap matrix element. The compiler instead does a small static analysis on
-the pools: every tree-level coupling of a renormalisable model is a
-monomial \\(k\, G^n\\) in the strong coupling, a product of monomials is a
-monomial, and the exponent \\(n\\) survives constant folding. Each pool
-entry is tagged with its exponent, and moving to a new \\(\alpha_s\\) is a
-multiply by \\(r^n\\) per entry. An entry the analysis cannot tag, because
-a sum mixed exponents or a coupling went through a function of \\(G\\),
-sends the whole amplitude down the exact re-evaluation path instead. This
-is detected, never assumed.
+the pools. The analysis is written for a generic model parameter $G$, not
+for $\alpha_s$ specifically: every tree-level coupling of a renormalisable
+model is a monomial $k\, G^n$ in $G$, a product of monomials is a
+monomial, and the exponent $n$ survives constant folding. Each pool entry
+is tagged with its exponent, and moving to a new value of $G$ is a
+multiply by $r^n$ per entry with $r$ the ratio of new to old. An entry the
+analysis cannot tag, because a sum mixed exponents or a coupling went
+through a function of $G$, sends the whole amplitude down the exact
+re-evaluation path instead. This is detected, never assumed.
+
+The strong coupling, the UFO parameter `G`, is the one parameter moved
+today, because the scale prescription moves it per event. The same
+mechanism is what makes reweighting cheap: re-evaluating a stored event
+sample under alternative coupling values is one multiply per pool entry per
+event rather than a model evaluation, and MadGraph's `reweight_card.dat`
+workflow is a tracked feature built on it.
 
 ## E-graphs, and why the pipeline does not use them
 
 Hash-consing finds subexpressions that are syntactically identical. Many
-more are *algebraically* equal: a photon and a \\(Z\\) exchanged between
+more are *algebraically* equal: a photon and a $Z$ exchanged between
 the same fermion pair share their chiral currents and differ only in the
 scalar couplings that recombine them, but the fused vertex node carries the
 couplings as operands and the two nodes never collide. Exposing such
@@ -285,6 +311,20 @@ with enough consumers of the same current to pay for both. None of that is
 prevented by the design; the seam is in place, and the pipeline runs
 without it.
 
+Term rewriting has a second target the current stage does not aim at. The
+helicity-summed $|\mathcal{M}|^2$ is what the integration phase needs, and
+as an algebraic object it is a sum over helicities of a product of a
+current chain and its conjugate. Completeness relations turn each helicity
+sum over external spinors and polarisation vectors into $\not p + m$ and
+$-g^{\mu\nu}$ insertions, and trace identities reduce the resulting
+closed fermion lines to scalar products of momenta. An e-graph seeded with
+those identities could extract a specialised $|\mathcal{M}|^2$ program for
+the integrator, with no helicity loop at all, alongside the amplitude
+program that event generation needs at a single helicity. The same
+algebraic form, being explicit in the invariants, is also the natural input
+to a phase-space map derived from the integrand rather than read off
+propagator poles. Both are tracked research items.
+
 ## Where it lives
 
 [`vibegraph::helas::eval`](../api/vibegraph/helas/eval/index.html). The
@@ -299,7 +339,7 @@ the runtime after
 [`eval_m2`](../api/vibegraph/helas/eval/struct.BoundAmplitude.html#method.eval_m2)
 and its single-helicity and per-flow siblings;
 [`ScaleAwareAmplitude`](../api/vibegraph/helas/eval/struct.ScaleAwareAmplitude.html)
-is the per-event \\(\alpha_s\\) path; [`Op`](../api/vibegraph/helas/eval/enum.Op.html)
+is the per-event $\alpha_s$ path; [`Op`](../api/vibegraph/helas/eval/enum.Op.html)
 and [`Ast`](../api/vibegraph/helas/eval/struct.Ast.html) are the IR. The
 research notes numbered 10, 13, 15, 17 and 20 under `research/notes/` are
 the design and measurement record.

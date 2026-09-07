@@ -488,6 +488,65 @@ above); the entries here are the eventual features.
   changes the rooting and therefore the arithmetic. The chapter
   `docs/src/guide/03-diagrams.md` records the algorithmic contrast.
 
+- **`vibegraph enumerate`** (feature, user request on PR #4) — a command that
+  takes a process card and reports every diagram that contributes: SVG
+  drawings, a summary page (diagram counts per subprocess, coupling orders,
+  the flavour groups), and a binary artifact `integrate` accepts in place of
+  re-enumerating. MadGraph's `display diagrams` is the workflow: check that a
+  card means the intended process and nothing more before spending an
+  integration on it. The artifact half also closes the
+  "bundle the compiled program" piece of the self-contained-artifact item
+  below, since the enumerated diagrams are its input. feyngraph's `drawing/`
+  module is a candidate for the drawings.
+- **`reweight_card.dat`** (feature) — re-evaluate a stored event sample under
+  alternative coupling values, MadGraph's reweighting workflow. The monomial
+  exponent analysis in `helas::eval::rescale` is written for a generic model
+  parameter `G` precisely so that moving the pools to a new value is one
+  multiply per entry per event; a reweighting pass is that analysis over the
+  card's requested parameters plus the per-event |M|² ratio written back as an
+  extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
+  as monomials fall back to the exact re-evaluation path automatically.
+- **Direct-threaded interpreter dispatch** (performance, on hold) — the
+  evaluator is a switch-dispatch interpreter: one `match` per instruction,
+  whose indirect jump is what the op-blocked schedule (note 31 E1b) exists to
+  make predictable. Direct threading — each handler tail-calling the next —
+  gives the branch predictor one site per instruction kind and is the classic
+  next step; in safe Rust it needs guaranteed tail calls, i.e. the nightly
+  `become` feature, so it waits on that stabilising. Function-pointer threading
+  was measured and rejected (+7.7%, note 31 E2), so the win, if any, is in
+  the tail-call form specifically.
+- **Alternating α / grid refinement** (research) — today the Kleiss–Pittau
+  α-adaptation runs on a survey before the per-channel grids train, and the
+  α then stay fixed. An alternating scheme — train the grids with α fixed,
+  re-derive α from the trained grids' variance shares, retrain, as in an
+  expectation-maximisation loop — might converge to a lower-variance mixture
+  than the one-shot survey. Measure offline first, from recorded `g_j(x)`,
+  `f(x)` on existing samples (the same protocol as the per-flow α item): the
+  variance the alternation would reach against the points it costs, and
+  whether it oscillates. Guardrail as everywhere in the multichannel: an α
+  floor, never a coverage split.
+- **VEGAS+ adaptive stratification** (research) — the integrator is classic
+  Lepage importance sampling; VEGAS+ (arXiv:2009.05112) adds adaptive
+  stratified sampling within the grid and reports 2–19× on integrands with
+  multiple peaks or diagonal structure. The channel decomposition handles the
+  diagonal structure and the budget is already stratified across channels,
+  but whether within-channel stratification still buys convergence on these
+  integrands has never been measured. Measure on the σ gates' rows at matched
+  points (seed sweep, χ²/dof) before deciding; note that stratification
+  changes the sampling order, so it cannot be bit-for-bit against banked
+  artifacts.
+- **|M|² by term rewriting** (research) — the helicity-summed |M|² the
+  integrator needs is, algebraically, a sum over helicities of a current
+  chain times its conjugate; completeness relations replace the external
+  helicity sums by `p̸ + m` / `−g^{μν}` insertions and trace identities reduce
+  the closed fermion lines to scalar products of momenta. An e-graph seeded
+  with those identities (the `helas::eval::egraph` seam) could extract a
+  specialised |M|² program for integration with no helicity loop at all,
+  kept beside the per-helicity amplitude program event generation needs. The
+  same explicit-invariant form is the natural input to a phase-space map
+  derived from the integrand's own structure rather than read off propagator
+  poles. Both are gated on the extraction prerequisites note 15 §4.1 lists.
+
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. Today's `derive_flavor_groups` partitions subprocesses by
   sampled `|M|²` agreement: **complete but unsound** — two programs that differ

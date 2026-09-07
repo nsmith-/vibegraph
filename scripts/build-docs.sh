@@ -7,15 +7,18 @@
 #
 # and refresh docs/src/cli/reference.md from the built binary first, so the
 # published CLI reference is always the binary's own help text. `docs.yml` runs
-# exactly this script; locally, `pixi run docs` does too. Requires `mdbook` on
-# PATH (https://rust-lang.github.io/mdBook/guide/installation.html).
+# exactly this script; locally, `pixi run docs` does too. Requires `mdbook`,
+# `mdbook-katex` and `mdbook-mermaid` on PATH, which
+# `scripts/install-mdbook-tools.sh` provides at the pinned versions.
 set -euo pipefail
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 site="$repo/target/site"
 
 cd "$repo"
-command -v mdbook >/dev/null || { echo "mdbook not found on PATH" >&2; exit 1; }
+for tool in mdbook mdbook-katex mdbook-mermaid; do
+  command -v "$tool" >/dev/null || { echo "$tool not found on PATH (run scripts/install-mdbook-tools.sh)" >&2; exit 1; }
+done
 
 cargo build -q -p vibegraph
 scripts/gen-cli-docs.sh target/debug/vibegraph
@@ -24,7 +27,15 @@ RUSTDOCFLAGS="--html-in-header $repo/doc-include/mathjax-header.html" \
   cargo doc -q --no-deps -p vibegraph-lib
 
 rm -rf "$site"
-mdbook build docs --dest-dir "$site"
+# mdbook-katex leaves a formula it cannot parse as source and only warns, so
+# the warning is promoted to a failure here: a broken formula is a broken page.
+log="$(mktemp)"
+mdbook build docs --dest-dir "$site" 2>&1 | tee "$log"
+if grep -q 'Rendering failed' "$log"; then
+  echo "a formula failed to render (see the mdbook_katex warnings above)" >&2
+  exit 1
+fi
+rm -f "$log"
 rm -rf "$site/api"
 cp -R target/doc "$site/api"
 # Pages serves nothing under a directory named `.lock`-style hidden files;

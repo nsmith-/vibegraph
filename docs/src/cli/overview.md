@@ -14,8 +14,16 @@ by its event-generation phase:
 
 The third, **`vibegraph check-events`**, reads an event file back and checks
 momentum balance, mass shells, weight bounds and the `<init>` cross
-references. The [command reference](reference.md) lists every option of
-each; this page is about how they fit together. The physics behind each
+references.
+
+A fourth, `vibegraph enumerate`, is planned: it will take a process card
+and report every diagram that contributes, as drawings, a summary page and
+a binary artifact `integrate` can take instead of enumerating again, so
+that a user can check that a card means the process they intended and
+nothing more, the way MadGraph's `display diagrams` is used.
+
+The [command reference](reference.md) lists every option of each command;
+this page is about how they fit together. The physics behind each
 step is the subject of the [guided tour](../guide/01-pipeline.md).
 
 ## Two cards

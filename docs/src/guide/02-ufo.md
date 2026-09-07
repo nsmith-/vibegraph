@@ -18,15 +18,17 @@ packages from a Lagrangian; generators read them.
 | `vertices.py` | Interactions: a particle list, a list of colour structures, a list of Lorentz structures, and a coupling for each (colour, Lorentz) pair |
 | `coupling_orders.py` | The order-counting hierarchy (`QCD`, `QED`) |
 
-The organising idea is that a vertex is a tensor product over three
-independent axes:
+The organising idea is that a vertex is a sum of tensor products of a
+colour structure and a Lorentz structure, with one numerical coupling per
+pair:
 
-\\[
-V = \sum_{c,\,l} g_{cl}\; \mathcal{C}_c \otimes \mathcal{L}_l ,
-\\]
+$$
+V = \sum_{c,\,l} g_{cl}\; \mathcal{C}_c \otimes \mathcal{L}_l .
+$$
 
-a colour structure \\(\mathcal{C}_c\\), a Lorentz structure
-\\(\mathcal{L}_l\\), and a numerical coupling \\(g_{cl}\\) for each pair. This
+The two independent axes are the colour structures $\mathcal{C}_c$ and the
+Lorentz structures $\mathcal{L}_l$; the coupling $g_{cl}$ is a scalar
+indexed by the pair, and most pairs a vertex could form are absent. This
 factorisation is what lets the [colour algebra](05-color.md) be done
 symbolically once per process while the [Lorentz structures](04-helicity-amplitudes.md)
 are evaluated numerically per phase-space point, and it is what the
@@ -76,7 +78,7 @@ what is done with them.
 
 Colour structures are strings over `T`, `f`, `d` and `Identity`, parsed by
 `ufo::color`. `Identity(1,2)` is representation-dependent (a
-\\(\delta_{ij}\\) between a triplet and an antitriplet, \\(2\,\mathrm{Tr}\\)
+$\delta_{ij}$ between a triplet and an antitriplet, $2\,\mathrm{Tr}$
 between two octets), so it is resolved at load time from the particles'
 colour representations, which is where MadGraph resolves it too.
 
@@ -85,11 +87,14 @@ colour representations, which is where MadGraph resolves it too.
 A UFO model is usually more general than a run needs. The Standard Model
 ships with restriction cards (`restrict_no_b_mass.dat` and others) that set
 chosen parameters to zero; MadGraph applies one when a card says
-`import model sm-no_b_mass`. vibegraph bakes the restriction into the parsed
-model: the restricted parameters are fixed, every coupling that evaluates to
-zero under them is dropped, and every vertex left with no coupling is
-removed before any diagram is enumerated. The restriction is therefore part
-of the model's identity, not a runtime switch.
+`import model sm-no_b_mass`. What a restriction card means is only which
+parameters are zero. vibegraph bakes that into the parsed model: with the
+restricted parameters set to zero, every coupling that evaluates to zero is
+dropped, and every vertex left with no coupling is removed before any
+diagram is enumerated. The card's non-zero values carry no such weight; the
+`param_card.dat` read at run time supplies the values the run actually uses
+and may override them. The pruning is therefore part of the model's
+identity, not a runtime switch, and the parameter values are not.
 
 ## The Standard Model, compiled in
 
@@ -105,7 +110,7 @@ has drifted.
 Any other model is a directory: `import model <name>` resolves it through
 the [cache](../cli/overview.md#data-the-binary-does-not-carry). The loader
 is generic, but the representation surface is the Standard Model's. Colour
-sextets, baryonic epsilon tensors, spin \\(\ge 3/2\\), Majorana fermions and
+sextets, baryonic epsilon tensors, spin $\ge 3/2$, Majorana fermions and
 loop-level models are rejected with an error rather than silently
 approximated.
 

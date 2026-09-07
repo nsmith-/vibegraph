@@ -7,11 +7,14 @@ pipeline of [MadGraph5\_aMC@NLO](https://arxiv.org/abs/1405.0301) closely
 enough that it is validated against it, at the strictest level each stage
 permits.
 
-```text
-UFO model ──▶ diagram enumeration ──▶ helicity amplitudes (HELAS/ALOHA)
-                                              │
-        LHEF events ◀── unweighting ◀── σ integration ◀── phase-space sampling
-                                                          (multichannel VEGAS)
+```mermaid
+flowchart LR
+  ufo["UFO model"] --> enum["Diagram<br/>enumeration"]
+  enum --> helas["Helicity amplitudes<br/>(HELAS / ALOHA)"]
+  helas --> ps["Phase-space sampling<br/>(multichannel VEGAS)"]
+  ps --> sigma["σ integration"]
+  sigma --> unw["Unweighting"]
+  unw --> lhef["LHEF events"]
 ```
 
 This site has three parts.
@@ -48,6 +51,6 @@ and the [API reference](api.md) the fastest route into the source.
 
 ## Conventions
 
-Natural units, \\(\hbar = c = 1\\), with GeV as the energy scale. The metric
-signature is \\((+,-,-,-)\\). Four-momenta are stored as `[E, px, py, pz]`.
-Cross sections are computed in GeV\\(^{-2}\\) and reported in picobarns.
+Natural units, $\hbar = c = 1$, with GeV as the energy scale. The metric
+signature is $(+,-,-,-)$. Four-momenta are stored as `[E, px, py, pz]`.
+Cross sections are computed in GeV$^{-2}$ and reported in picobarns.

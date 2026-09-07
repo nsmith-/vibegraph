@@ -15,17 +15,17 @@ Because a UFO vertex is a tensor product of a colour structure and a
 Lorentz structure ([UFO models](02-ufo.md)), each diagram's amplitude
 splits into a colour tensor times a kinematic amplitude. Collect the
 distinct colour tensors of all diagrams into a basis
-\\(\{\mathcal{C}_f\}\\); the full amplitude is then
+$\{\mathcal{C}_f\}$; the full amplitude is then
 
-\\[
+$$
 \mathcal{M} = \sum_f \mathcal{C}_f\, J_f(p, h),
 \qquad
 \sum_{\text{colour}} |\mathcal{M}|^2 = \sum_{f,f'} J_f\, \mathrm{CF}_{ff'}\, J_{f'}^\ast ,
-\\]
+$$
 
-where each \\(J_f\\), MadGraph's *JAMP*, is a linear combination of diagram
+where each $J_f$, MadGraph's *JAMP*, is a linear combination of diagram
 amplitudes with rational coefficients, and
-\\(\mathrm{CF}_{ff'} = \sum_{\text{colour}} \mathcal{C}_f \mathcal{C}_{f'}^\ast\\)
+$\mathrm{CF}_{ff'} = \sum_{\text{colour}} \mathcal{C}_f \mathcal{C}_{f'}^\ast$
 is a constant matrix of exact rational numbers. The colour sum is a small
 matrix contraction at the end of every helicity evaluation, and everything
 else is [helicity amplitudes](04-helicity-amplitudes.md) as before.
@@ -43,34 +43,34 @@ chains by a rewrite system, the same rule set as MadGraph's
 
 | Rule | Identity |
 |---|---|
-| \\(f\\) to traces | \\(f^{abc} = -2i\,\mathrm{Tr}(a b c) + 2i\,\mathrm{Tr}(c b a)\\) |
-| chain merge | \\(T(A)_{ij}\,T(B)_{jk} = T(AB)_{ik}\\) |
-| chain closes | \\(T(A)_{ii} = \mathrm{Tr}(A)\\) |
-| Fierz | \\(T^a_{ij} T^a_{kl} = \tfrac12 \delta_{il}\delta_{kj} - \tfrac{1}{2N_c}\delta_{ij}\delta_{kl}\\), in its trace and chain forms |
-| trace values | \\(\mathrm{Tr}(\emptyset) = N_c,\quad \mathrm{Tr}(a) = 0\\) |
+| $f$ to traces | $f^{abc} = -2i\,\mathrm{Tr}(a b c) + 2i\,\mathrm{Tr}(c b a)$ |
+| chain merge | $T(A)_{ij}\,T(B)_{jk} = T(AB)_{ik}$ |
+| chain closes | $T(A)_{ii} = \mathrm{Tr}(A)$ |
+| Fierz | $T^a_{ij} T^a_{kl} = \tfrac12 \delta_{il}\delta_{kj} - \tfrac{1}{2N_c}\delta_{ij}\delta_{kl}$, in its trace and chain forms |
+| trace values | $\mathrm{Tr}(\emptyset) = N_c,\quad \mathrm{Tr}(a) = 0$ |
 
-Coefficients are exact rationals times a power of \\(i\\) times a power of
-\\(N_c\\), kept as `num_rational::Ratio<i64>` with checked arithmetic. They
+Coefficients are exact rationals times a power of $i$ times a power of
+$N_c$, kept as `num_rational::Ratio<i64>` with checked arithmetic. They
 first become floating-point numbers at the very end, when the amplitude's
 constant pools are built. Each distinct canonical tensor surviving the
 reduction is one basis element, and the matrix element
-\\(\mathrm{CF}_{ff'}\\) is the reduction of \\(\mathcal{C}_f\\) times the
-conjugate of \\(\mathcal{C}_{f'}\\) with \\(N_c = 3\\) substituted.
+$\mathrm{CF}_{ff'}$ is the reduction of $\mathcal{C}_f$ times the
+conjugate of $\mathcal{C}_{f'}$ with $N_c = 3$ substituted.
 
-A colourless process has one basis element and \\(\mathrm{CF} = [1]\\).
-\\(u\bar u \to u\bar u\\) has two flows; \\(gg \to gg\\) has six, and its
+A colourless process has one basis element and $\mathrm{CF} = [1]$.
+$u\bar u \to u\bar u$ has two flows; $gg \to gg$ has six, and its
 matrix has a large automorphism group, which is the reason colour is
-validated below the \\(|\mathcal{M}|^2\\) level.
+validated below the $|\mathcal{M}|^2$ level.
 
 ## Colour flows for events
 
 The trace basis is what the cross section needs. An event record needs
 something else: a *colour flow*, a pairing of every coloured leg's colour
 line with an anticolour line, which is what a parton shower reads to decide
-where to radiate. At leading order in \\(1/N_c\\) each basis element is a
+where to radiate. At leading order in $1/N_c$ each basis element is a
 definite set of such lines ([Maltoni et al. 2003](../bibliography.md#colour)),
 so a flow is chosen per event by drawing a basis element with probability
-proportional to its diagonal weight \\(\sum_h |J_f|^2\\), MadGraph's `JAMP2`
+proportional to its diagonal weight $\sum_h |J_f|^2$, MadGraph's `JAMP2`
 and `SELECT_COLOR`. The `(colour, anticolour)` labels per leg are read off
 the basis element's canonical form and become the `ICOLUP` columns of the
 Les Houches record ([event files](11-unweighting-events.md)). The
@@ -81,9 +81,9 @@ MadGraph generates for the same process.
 
 Colour is where the project's validation principle was learned the hard
 way. The colour matrix is a Gram matrix, invariant under transposing every
-index consistently, so an oracle comparing \\(\mathrm{CF}\\) against
+index consistently, so an oracle comparing $\mathrm{CF}$ against
 MadGraph's passed while a conjugation-convention bug flipped physical
-signs. \\(|\mathcal{M}|^2\\) is blind to a global phase on every flow.
+signs. $|\mathcal{M}|^2$ is blind to a global phase on every flow.
 Per-flow complex JAMP values, compared against banked MadGraph values up to
 one fitted unit-modulus phase per process, are what finally see both, and
 per-flow colour-line connectivity is what sees a swapped pair of flows

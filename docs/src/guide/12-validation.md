@@ -16,11 +16,11 @@ pipeline:
 
 | Quantity | Strictness | Blind to |
 |---|---|---|
-| Model and card inputs, the \\(\alpha_s\\) iteration, helicity survivor sets, colour tags, the kT merge sequence, the LHEF writer | bit-exact equality | nothing they compute, everything they do not |
-| Per-point \\(\lvert\mathcal{M}\rvert^2\\) against MadGraph's Fortran | \\(\le 10^{-12}\\) relative, sized for summation order | global phases, flow relabellings |
+| Model and card inputs, the $\alpha_s$ iteration, helicity survivor sets, colour tags, the kT merge sequence, the LHEF writer | bit-exact equality | nothing they compute, everything they do not |
+| Per-point $\lvert\mathcal{M}\rvert^2$ against MadGraph's Fortran | $\le 10^{-12}$ relative, sized for summation order | global phases, flow relabellings |
 | Per-flow JAMPs, per-diagram amplitudes per helicity | one fitted unit phase per process | a swapped pair of flows with identical JAMPs |
 | Cross sections | statistical, at the reference's own uncertainty | a missed region a fixed seed happens not to expose |
-| Event samples | weighted Kolmogorov–Smirnov and \\(\chi^2\\) tests per observable | tails, correlations between columns |
+| Event samples | weighted Kolmogorov–Smirnov and $\chi^2$ tests per observable | tails, correlations between columns |
 
 A convention claim, "this sign comes for free", is treated as a hypothesis
 until a test exists that would fail if it were false. A passing gate that
@@ -31,7 +31,7 @@ cannot see the convention is not confirmation.
 A cross section carries Monte Carlo error, and the
 [inverse-variance combination](08-vegas.md#combining-iterations) can turn a
 missed region into a confidently wrong result. Sampler gates therefore
-sweep several seeds, read the spread and \\(\chi^2\\) per degree of freedom
+sweep several seeds, read the spread and $\chi^2$ per degree of freedom
 rather than a headline pull, and scan the budget as a second axis. Event
 samples are compared distribution by distribution against MadGraph's
 banked samples with tests that take the overweight events' weights into

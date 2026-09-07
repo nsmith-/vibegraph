@@ -78,6 +78,23 @@ bash research/refs/fetch-papers.sh
 | `vegas` | VEGAS+ adaptive importance sampling | markdown |
 | `mcreview` | Monte Carlo methods review | markdown |
 | `egglog` | egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332) | markdown |
+| `egg` | egg: Fast and Extensible Equality Saturation (arXiv:2004.03082) | markdown |
+| `madgraph5_beyond` | MadGraph 5: Going Beyond (arXiv:1106.0522) | markdown |
+| `madevent` | MadEvent: single-diagram-enhanced multichannel integration (hep-ph/0208156) | markdown |
+| `kleiss_pittau` | Weight optimisation in multichannel Monte Carlo (hep-ph/9405257) | markdown |
+| `helicity_recycling` | Speeding up MadGraph5_aMC@NLO (arXiv:2102.00773) | markdown |
+| `color_flow` | Color-flow decomposition of QCD amplitudes (hep-ph/0209271) | markdown |
+| `lhapdf6` | LHAPDF6 (arXiv:1412.7420) | markdown |
+| `ckkw` | CKKW: QCD matrix elements + parton showers (hep-ph/0109231) | markdown |
+| `lha` | Les Houches Accord, generic user process interface (hep-ph/0109068) | markdown |
+| `lhef` | Les Houches Event File format (hep-ph/0609017) | markdown |
+| `feynrules2` | FeynRules 2.0 (arXiv:1310.1921) | markdown |
+| `slha` | SUSY Les Houches Accord (hep-ph/0311123) | markdown |
+
+The documentation site's bibliography (`docs/src/bibliography.md`) cites a few
+pre-arXiv or paywalled papers the script cannot fetch — RAMBO, Lepage's 1978
+VEGAS paper, QGRAF, Byckling & Kajantie, Neyman, Schwartz, Zippel — by journal
+reference only. The comment at the end of the script's table lists them.
 
 ## OCR for scanned PDFs (HELAS)
 

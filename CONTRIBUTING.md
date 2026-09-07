@@ -48,7 +48,7 @@ harnesses but it is just the project's house rules, and it reads fine as prose.
 
 The documentation site under `docs/` is an mdBook, published from `main` by
 `docs.yml`; `scripts/build-docs.sh` builds the same site locally, API reference
-included, given `mdbook` on `PATH`. The command reference chapter is generated
+included, given the three binaries `scripts/install-mdbook-tools.sh` installs. The command reference chapter is generated
 from `vibegraph --help`, so after changing a flag or its help text run
 `scripts/gen-cli-docs.sh` and commit the result — `cargo test` fails while the
 committed chapter is stale.
