@@ -163,9 +163,10 @@ fn map_index(
 /// `counter`) for the expression's internal negative indices. Returns the
 /// integer coefficient (the `2` from an octet `Identity`, otherwise `1`).
 ///
-/// **The `T` index pair is transposed on substitution.** In a UFO color string
-/// `T(a…,i,j)` the slot `i` holds the interaction's `3` field and `j` its `3̄`
-/// ([`check_t_slot_reps`] pins that). MadGraph instead indexes a `T`'s
+/// **The `T` index pair is transposed on substitution, and the baryonic
+/// `Epsilon`/`EpsilonBar` are exchanged.** In a UFO color string `T(a…,i,j)` the
+/// slot `i` holds the interaction's `3` field and `j` its `3̄`
+/// ([`check_slot_reps`] pins that). MadGraph instead indexes a `T`'s
 /// fundamental slot by the leg that carries a `3` index in the all-outgoing
 /// crossing, and feyngraph presents every leg in the all-incoming crossing — the
 /// opposite arrow — so the leg standing in a `3` slot is exactly the one
@@ -178,11 +179,25 @@ fn map_index(
 /// with a four-quark contact, where the singlet contact and the gluon exchange
 /// then land on two unrelated keys). Adjoint indices are self-conjugate and pass
 /// through untouched, so pure-gluon vertices are unaffected.
+///
+/// The sextet atoms cross the same way: a `K6` stands on a **6** slot with two
+/// `3̄` slots and a `K6Bar` on a `6̄` with two `3`, so under the crossing each
+/// becomes the other, and a `T6(i,j)` transposes exactly as a `T` does.
+///
+/// The same crossing is what exchanges the two baryonic invariants. An
+/// `Epsilon` stands on three `3` slots and an `EpsilonBar` on three `3̄` slots,
+/// so under the crossing every one of those legs is the opposite kind to the one
+/// MadGraph reads and the whole tensor becomes its conjugate. Reading them
+/// straight through is not invisible: the epsilon–epsilon-bar contraction
+/// produces `T` products, and taking them unconjugated while every `T` in the
+/// same basis is conjugated splits the basis into a structure and its transpose
+/// — the `p3 r3 > p3 r3` diquark row would then land its two diagrams on
+/// unrelated keys instead of on MadGraph's `T(3,1) T(4,2)` / `T(3,2) T(4,1)`.
 fn convert_expr(
     expr: &ColorExpr,
     slot_index: &[Idx],
     counter: &mut Idx,
-) -> (i64, Vec<ColorTensor>) {
+) -> Result<(i64, Vec<ColorTensor>), ColorAlgebraError> {
     let mut internal: HashMap<i32, Idx> = HashMap::new();
     let mut map = |idx: i32| map_index(idx, slot_index, &mut internal, counter);
     let tensors = expr
@@ -191,14 +206,23 @@ fn convert_expr(
         .map(|atom| match atom {
             ColorAtom::T(adj, i, j) => {
                 let adj: Vec<Idx> = adj.iter().map(|&a| map(a)).collect();
-                ColorTensor::T(adj, map(*j), map(*i))
+                Ok(ColorTensor::T(adj, map(*j), map(*i)))
             }
-            ColorAtom::Tr(adj) => ColorTensor::Tr(adj.iter().map(|&a| map(a)).collect()),
-            ColorAtom::F(a, b, c) => ColorTensor::F(map(*a), map(*b), map(*c)),
-            ColorAtom::D(a, b, c) => ColorTensor::D(map(*a), map(*b), map(*c)),
+            ColorAtom::Tr(adj) => Ok(ColorTensor::Tr(adj.iter().map(|&a| map(a)).collect())),
+            ColorAtom::F(a, b, c) => Ok(ColorTensor::F(map(*a), map(*b), map(*c))),
+            ColorAtom::D(a, b, c) => Ok(ColorTensor::D(map(*a), map(*b), map(*c))),
+            ColorAtom::Epsilon(a, b, c) => Ok(ColorTensor::EpsilonBar(map(*a), map(*b), map(*c))),
+            ColorAtom::EpsilonBar(a, b, c) => Ok(ColorTensor::Epsilon(map(*a), map(*b), map(*c))),
+            ColorAtom::K6(m, i, j) => Ok(ColorTensor::K6Bar(map(*m), map(*i), map(*j))),
+            ColorAtom::K6Bar(m, i, j) => Ok(ColorTensor::K6(map(*m), map(*i), map(*j))),
+            ColorAtom::T6(adj, i, j) if adj.is_empty() => Ok(ColorTensor::T6(map(*j), map(*i))),
+            ColorAtom::T6(..) => Err(ColorAlgebraError::Unsupported(format!(
+                "sextet generator '{atom}' in '{expr}': only the sextet delta T6(i,j) is \
+                 reduced, the generator's expansion into K6 T K6Bar is not"
+            ))),
         })
-        .collect();
-    (expr.coeff, tensors)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((expr.coeff, tensors))
 }
 
 /// The per-slot color index for every vertex of a diagram, plus the base value
@@ -231,34 +255,92 @@ fn slot_indices(diagram: &Diagram) -> (Vec<Vec<Idx>>, Idx) {
     (slots, internal_base)
 }
 
-/// Cross-check the index convention [`convert_expr`] transposes under: in every
-/// `T(a…,i,j)` of every color structure the diagram uses, `i` and `j` are slot
-/// indices whose interaction particles are a `3` and a `3̄` in that order.
+/// Cross-check the index convention [`convert_expr`] crosses under. In every
+/// color structure the diagram uses, each atom must stand on the reps its own
+/// crossing assumes: a `T(a…,i,j)` on a `3` and a `3̄` in that order, an
+/// `Epsilon` on three `3`s and an `EpsilonBar` on three `3̄`s, a `K6` on a `6`
+/// with two `3̄`s and a `K6Bar` on a `6̄` with two `3`s, and a sextet delta
+/// `T6(i,j)` on a `6`/`6̄` pair.
 ///
-/// A summed index in either position, or a slot pair that is not a `3`/`3̄` pair,
-/// means the vertex is written under a convention this engine does not read, so
-/// it is rejected rather than transposed into a wrong answer.
-fn check_t_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgebraError> {
+/// A summed index in any of those positions, or a slot whose rep is not the one
+/// the atom implies, means the vertex is written under a convention this engine
+/// does not read, so it is rejected rather than crossed into a wrong answer.
+fn check_slot_reps(model: &UFOModel, diagram: &Diagram) -> Result<(), ColorAlgebraError> {
     for (vi, vertex) in diagram.vertices.iter().enumerate() {
         let structures = &model.vertex_def(vertex.interaction).color;
         for expr in used_color_indices(model, vertex)
             .into_iter()
             .map(|c| &structures[c])
         {
+            let rep = |slot: i32| -> Option<ColorRep> {
+                let s = usize::try_from(slot - 1).ok()?;
+                (s < vertex.rays.len())
+                    .then(|| slot_rep(model, diagram, VtxIdx(vi), s).ok())
+                    .flatten()
+            };
+            let require = |slots: &[i32], want: ColorRep, what: &str| {
+                slots
+                    .iter()
+                    .all(|&s| rep(s) == Some(want))
+                    .then_some(())
+                    .ok_or_else(|| {
+                        ColorAlgebraError::Unsupported(format!(
+                            "{what} in '{expr}' does not stand on {} {want:?} slot(s)",
+                            slots.len()
+                        ))
+                    })
+            };
             for atom in &expr.atoms {
-                let ColorAtom::T(_, i, j) = atom else {
-                    continue;
-                };
-                let rep = |slot: i32| -> Option<ColorRep> {
-                    let s = usize::try_from(slot - 1).ok()?;
-                    (s < vertex.rays.len())
-                        .then(|| slot_rep(model, diagram, VtxIdx(vi), s).ok())
-                        .flatten()
-                };
-                if rep(*i) != Some(ColorRep::Triplet) || rep(*j) != Some(ColorRep::AntiTriplet) {
-                    return Err(ColorAlgebraError::Unsupported(format!(
-                        "T({i},{j}) in '{expr}' is not a 3/3̄ slot pair"
-                    )));
+                match atom {
+                    ColorAtom::T(_, i, j) => {
+                        if rep(*i) != Some(ColorRep::Triplet)
+                            || rep(*j) != Some(ColorRep::AntiTriplet)
+                        {
+                            return Err(ColorAlgebraError::Unsupported(format!(
+                                "T({i},{j}) in '{expr}' is not a 3/3̄ slot pair"
+                            )));
+                        }
+                    }
+                    ColorAtom::Epsilon(a, b, c) => require(
+                        &[*a, *b, *c],
+                        ColorRep::Triplet,
+                        &format!("Epsilon({a},{b},{c})"),
+                    )?,
+                    ColorAtom::EpsilonBar(a, b, c) => require(
+                        &[*a, *b, *c],
+                        ColorRep::AntiTriplet,
+                        &format!("EpsilonBar({a},{b},{c})"),
+                    )?,
+                    ColorAtom::K6(m, i, j) => {
+                        if rep(*m) != Some(ColorRep::Sextet) {
+                            return Err(ColorAlgebraError::Unsupported(format!(
+                                "K6({m},{i},{j}) in '{expr}' does not lead with a 6 slot"
+                            )));
+                        }
+                        require(
+                            &[*i, *j],
+                            ColorRep::AntiTriplet,
+                            &format!("K6({m},{i},{j})"),
+                        )?;
+                    }
+                    ColorAtom::K6Bar(m, i, j) => {
+                        if rep(*m) != Some(ColorRep::AntiSextet) {
+                            return Err(ColorAlgebraError::Unsupported(format!(
+                                "K6Bar({m},{i},{j}) in '{expr}' does not lead with a 6̄ slot"
+                            )));
+                        }
+                        require(&[*i, *j], ColorRep::Triplet, &format!("K6Bar({m},{i},{j})"))?;
+                    }
+                    ColorAtom::T6(adj, i, j) if adj.is_empty() => {
+                        if rep(*i) != Some(ColorRep::Sextet)
+                            || rep(*j) != Some(ColorRep::AntiSextet)
+                        {
+                            return Err(ColorAlgebraError::Unsupported(format!(
+                                "T6({i},{j}) in '{expr}' is not a 6/6̄ slot pair"
+                            )));
+                        }
+                    }
+                    ColorAtom::Tr(_) | ColorAtom::F(..) | ColorAtom::D(..) | ColorAtom::T6(..) => {}
                 }
             }
         }
@@ -293,7 +375,7 @@ fn colorize_diagram(
 ) -> Result<Vec<(Vec<u8>, ColorString)>, ColorAlgebraError> {
     check_propagator_reps(model, diagram)?;
 
-    check_t_slot_reps(model, diagram)?;
+    check_slot_reps(model, diagram)?;
 
     let (slots, internal_base) = slot_indices(diagram);
     let used: Vec<Vec<usize>> = diagram
@@ -325,7 +407,7 @@ fn colorize_diagram(
         for (vi, &color_idx) in chain.iter().enumerate() {
             let vertex = &diagram.vertices[vi];
             let expr = &model.vertex_def(vertex.interaction).color[color_idx as usize];
-            let (int_coeff, ts) = convert_expr(expr, &slots[vi], &mut counter);
+            let (int_coeff, ts) = convert_expr(expr, &slots[vi], &mut counter)?;
             coeff = coeff.mul(&ColorCoeff::rational(int_coeff, 1));
             tensors.extend(ts);
         }

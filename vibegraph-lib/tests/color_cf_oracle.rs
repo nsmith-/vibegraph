@@ -374,6 +374,11 @@ fn render_structure(structure: &ImmutableString) -> String {
             TensorKind::Tr => "Tr",
             TensorKind::F => "f",
             TensorKind::D => "d",
+            TensorKind::Epsilon => "Epsilon",
+            TensorKind::EpsilonBar => "EpsilonBar",
+            TensorKind::K6 => "K6",
+            TensorKind::K6Bar => "K6Bar",
+            TensorKind::T6 => "T6",
             TensorKind::One => unreachable!(),
         };
         let args: Vec<String> = idxs.iter().map(|i| i.to_string()).collect();
