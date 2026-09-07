@@ -150,41 +150,15 @@ How each sampled invariant is drawn depends on what the diagram puts there:
   in $s$, and the resonance is flat in $\theta$.
 - A zero-width pole at or below the kinematic floor, the massless
   $\gamma^\ast$ of a lepton pair above all, has no width to regulate its
-  rise and no kinematic lower edge of its own. Its invariant is drawn by a
-  two-piece map in the shifted variable $t = s - m^2$. Above a floor
-  $t_0 = \max\big(t_{\min},\, \min(10\ \mathrm{GeV}^2,\, t_{\max}/50)\big)$
-  the draw is
-  [log-uniform](https://en.wikipedia.org/wiki/Reciprocal_distribution),
-  $t = t_0 (t_{\max}/t_0)^y$, giving a density $\propto 1/t$; the leading
-  tenth of the random number covers the remaining $[t_{\min}, t_0]$
-  linearly, so the map keeps the full kinematic support and the estimator
-  stays unbiased. When the kinematic edge already sits at or above the
-  floor there is no sub-floor region and the logarithmic piece takes the
-  whole draw. A zero-width pole strictly *inside* the range is a genuine
-  singularity this map does not address, and the flat draw stands.
+  rise. Its invariant is drawn
+  [log-uniformly](https://en.wikipedia.org/wiki/Reciprocal_distribution) in
+  $t = s - m^2$ above a floor, giving a density $\propto 1/t$, with a small
+  linear piece covering the range below the floor so the map keeps the full
+  kinematic support.[^logmap]
 - A subsystem with no pole keeps a flat
   ([uniform](https://en.wikipedia.org/wiki/Continuous_uniform_distribution))
   draw over its kinematic range, whose lower edge is the subsystem's mass
   threshold raised to whatever floor the process's cuts imply.
-
-The exponent in that second map is a choice, and $1/t$ rather than $1/t^2$
-is the right one. The squared propagator does contribute $1/(s-m^2)^2$ to
-$|\mathcal{M}|^2$, but that is not what the integral over the invariant
-sees: the current a massless zero-width line couples to supplies a
-numerator vanishing linearly at the pole, since the lepton tensor of a
-massless pair is proportional to the pair's invariant mass squared, and
-what is left is a $1/t$ rise, the $dm^2/m^2$ of a quasi-real photon.
-Uniform in $\ln t$ makes that integrand exactly constant above the floor,
-which is the property the map is pinned on. The floor settles the rest. A
-massless pole has no kinematic lower edge, so $t_0$ is an invented number,
-and its influence should be as weak as possible: a $1/t$ draw normalises
-as $\ln t_0$, while a $1/t^2$ draw normalises as $1/t_0$ and would put half
-its points within a factor of two of that invented constant, starving the
-region above it where the cuts actually accept events. MadEvent reaches the
-same profile by pre-shaping the VEGAS grid into logarithmic bins, with the
-same floor and the same tenth of the bins reserved to reach below it;
-vibegraph does it as an analytic map, which does not depend on having a
-per-channel grid.
 
 A **spacelike** (t-channel) line is not a subsystem mass but a momentum
 transfer $t \le 0$, and a diagram carrying spacelike lines is decomposed as
@@ -192,19 +166,46 @@ a *spine*: an ordered chain of peripheral emissions off one beam, each rung
 emitting one blob against the momentum transfer the earlier rungs left
 behind. A rung's polar angle is fixed by its sampled $t$, leaving only the
 azimuth free, and the emitted and remainder subsystems recurse into the
-same two-body machinery. The transfer is importance-sampled too, since the
-forward peak of a $t$-channel exchange is as sharp as any resonance: the
-substitution $t = m^2 - (m^2 - t_{\min}) e^{-xN}$ with
-$N = \ln[(m^2 - t_{\min})/(m^2 - t_{\max})]$ gives a density
-$\propto 1/(m^2 - t)$. A spacelike line has no width, so when the pole
-cannot shape the draw at all, a massless exchange whose window reaches the
-collinear edge $t_{\max} = m^2 = 0$, the draw falls back to flat and the
-rung reduces to an isotropic two-body split. That edge is also where the
-spine is regulated: rungs are bounded at $t \le -\Lambda$ for the fiducial
-scale $\Lambda$ the process's transverse-momentum cuts imply, which is
-where the cuts stop accepting anyway, and the pole location is floored at a
-small fraction of it so a near-degenerate window still draws against a pole
-far above the cancellation noise in $t$.
+same two-body machinery. The transfer is importance-sampled too, with a
+density $\propto 1/(m^2 - t)$, since the forward peak of a $t$-channel
+exchange is as sharp as any resonance.[^spine]
+
+[^logmap]: The map is two-piece in $t = s - m^2$. Above the floor
+    $t_0 = \max\big(t_{\min},\, \min(10\ \mathrm{GeV}^2,\, t_{\max}/50)\big)$
+    the draw is $t = t_0 (t_{\max}/t_0)^y$; the leading tenth of the random
+    number covers $[t_{\min}, t_0]$ linearly, so the estimator stays
+    unbiased, and when the kinematic edge already sits at or above the
+    floor the logarithmic piece takes the whole draw. A zero-width pole
+    strictly *inside* the range is a genuine singularity this map does not
+    address, and the flat draw stands. The exponent is a choice, and $1/t$
+    rather than $1/t^2$ is the right one: the squared propagator does
+    contribute $1/(s-m^2)^2$ to $|\mathcal{M}|^2$, but the current a
+    massless zero-width line couples to supplies a numerator vanishing
+    linearly at the pole (the lepton tensor of a massless pair is
+    proportional to the pair's invariant mass squared), and what is left is
+    a $1/t$ rise, the $dm^2/m^2$ of a quasi-real photon. Uniform in $\ln t$
+    makes that integrand exactly constant above the floor, which is the
+    property the map is pinned on. The floor settles the rest: a massless
+    pole has no kinematic lower edge, so $t_0$ is an invented number whose
+    influence should be as weak as possible, and a $1/t$ draw normalises as
+    $\ln t_0$ while a $1/t^2$ draw normalises as $1/t_0$ and would put half
+    its points within a factor of two of that constant, starving the region
+    above it where the cuts accept events. MadEvent reaches the same
+    profile by pre-shaping the VEGAS grid into logarithmic bins, with the
+    same floor and the same tenth of the bins reserved below it; vibegraph
+    does it as an analytic map, which does not depend on a per-channel grid.
+
+[^spine]: The substitution is $t = m^2 - (m^2 - t_{\min}) e^{-xN}$ with
+    $N = \ln[(m^2 - t_{\min})/(m^2 - t_{\max})]$. A spacelike line has no
+    width, so when the pole cannot shape the draw at all, a massless
+    exchange whose window reaches the collinear edge $t_{\max} = m^2 = 0$,
+    the draw falls back to flat and the rung reduces to an isotropic
+    two-body split. That edge is also where the spine is regulated: rungs
+    are bounded at $t \le -\Lambda$ for the fiducial scale $\Lambda$ the
+    process's transverse-momentum cuts imply, which is where the cuts stop
+    accepting anyway, and the pole location is floored at a small fraction
+    of it so a near-degenerate window still draws against a pole far above
+    the cancellation noise in $t$.
 
 <figure>
 <svg class="psfig" viewBox="0 0 860 630" width="100%" role="img" aria-labelledby="psTitle psDesc" xmlns="http://www.w3.org/2000/svg">
