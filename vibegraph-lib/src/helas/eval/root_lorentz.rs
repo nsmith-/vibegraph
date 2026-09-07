@@ -86,7 +86,8 @@ impl std::fmt::Display for RootedTerm {
 /// Errors from rooting a vertex's Lorentz structure into a contraction tree.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum RootLorentzError {
-    /// The vertex structure contains unsupported ops (Sigma, Epsilon, C) or too many free indices.
+    /// The vertex structure contains unsupported ops (charge conjugation) or too many
+    /// free indices.
     #[error("unsupported vertex: {0}")]
     UnsupportedVertex(String),
     /// The structure is syntactically invalid (e.g., mismatched indices).
@@ -170,7 +171,23 @@ pub enum LorentzEvalNode {
     /// Clifford element + two fermions → the scalar `ψ̄ M ψ`, the grade-diagonal
     /// Fierz pairing of the element with the pair's own sixteen bilinears.
     FierzPair { m: usize, i: usize, j: usize },
-    // TODO: Sigma
+    /// Two fermions + a vector → the off-shell vector current `(ψ̄ Σ^{μν} ψ) v_ν`,
+    /// the free index on the `Sigma`'s first Lorentz slot. Children are the fermion
+    /// pair in vertex slot order (row first) and the vector at the other slot.
+    SigmaVout { i: usize, j: usize, v: usize },
+    /// [`SigmaVout`](Self::SigmaVout) with the free index on the second Lorentz slot
+    /// — its negative.
+    SigmaVoutRev { i: usize, j: usize, v: usize },
+    /// Two vectors → the Clifford element `Σ^{μν} a_μ b_ν`, in the `Sigma`'s own
+    /// Lorentz slot order.
+    SigmaMv { a: usize, b: usize },
+    /// Two fermions → the cut line of a `Sigma ⊗ Sigma` contact as a Clifford
+    /// element (see [`Op::SigmaOut`](super::op::Op::SigmaOut)). Children are the
+    /// line's two ends in vertex slot order (row first).
+    SigmaOut { i: usize, j: usize },
+    /// [`SigmaOut`](Self::SigmaOut) with the two lines traversing the shared indices
+    /// in opposite orders.
+    SigmaOutRev { i: usize, j: usize },
 }
 
 impl LorentzEvalNode {
@@ -198,6 +215,13 @@ impl LorentzEvalNode {
             LorentzEvalNode::MultivectorIout { m, j } => vec![*m, *j],
             LorentzEvalNode::MultivectorOout { m, i } => vec![*m, *i],
             LorentzEvalNode::FierzPair { m, i, j } => vec![*m, *i, *j],
+            LorentzEvalNode::SigmaVout { i, j, v } | LorentzEvalNode::SigmaVoutRev { i, j, v } => {
+                vec![*i, *j, *v]
+            }
+            LorentzEvalNode::SigmaMv { a, b } => vec![*a, *b],
+            LorentzEvalNode::SigmaOut { i, j } | LorentzEvalNode::SigmaOutRev { i, j } => {
+                vec![*i, *j]
+            }
         }
     }
 
@@ -227,6 +251,11 @@ impl LorentzEvalNode {
             MultivectorIout { .. } => format!("MultivectorIout({})", body),
             MultivectorOout { .. } => format!("MultivectorOout({})", body),
             FierzPair { .. } => format!("FierzPair({})", body),
+            SigmaVout { .. } => format!("SigmaVout({})", body),
+            SigmaVoutRev { .. } => format!("SigmaVoutRev({})", body),
+            SigmaMv { .. } => format!("SigmaMv({})", body),
+            SigmaOut { .. } => format!("SigmaOut({})", body),
+            SigmaOutRev { .. } => format!("SigmaOutRev({})", body),
         }
     }
 }
@@ -399,9 +428,10 @@ impl LorentzEvalTree {
                 if standalone_projector_crossed(idx, wrapped, flows) {
                     *sign = -*sign;
                 }
+                let beside_sigma = sigma_chained(term, if idx >= 0 { wrapped } else { idx }, iop);
                 let child =
                     self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
-                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows) {
+                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows, beside_sigma) {
                     LorentzEvalNode::ProjP { i: child }
                 } else {
                     LorentzEvalNode::ProjM { i: child }
@@ -419,9 +449,10 @@ impl LorentzEvalTree {
                 if standalone_projector_crossed(idx, wrapped, flows) {
                     *sign = -*sign;
                 }
+                let beside_sigma = sigma_chained(term, if idx >= 0 { wrapped } else { idx }, iop);
                 let child =
                     self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
-                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows) {
+                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows, beside_sigma) {
                     LorentzEvalNode::ProjM { i: child }
                 } else {
                     LorentzEvalNode::ProjP { i: child }
@@ -473,9 +504,62 @@ impl LorentzEvalTree {
                     self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)?;
                 Ok(self.add_node(LorentzEvalNode::Gamma5 { i: child }))
             }
-            LorentzOp::Sigma { .. } => Err(RootLorentzError::UnsupportedVertex(
-                "Sigma tensors are deferred to future work".to_string(),
-            )),
+            LorentzOp::Sigma { mu, nu, i, j } => {
+                if *mu == idx || *nu == idx {
+                    // Vector output: the pair's tensor bilinear with the other Lorentz
+                    // slot contracted against whatever sits there (a partner vector leg
+                    // or, for a dipole, a momentum).
+                    let free_is_first = *mu == idx;
+                    let contracted = if free_is_first { *nu } else { *mu };
+                    let child_i =
+                        self.build_child(term, *i, visited_ops, flows, out_adjoint, sign)?;
+                    let child_j =
+                        self.build_child(term, *j, visited_ops, flows, out_adjoint, sign)?;
+                    let v =
+                        self.build_child(term, contracted, visited_ops, flows, out_adjoint, sign)?;
+                    Ok(self.add_node(if free_is_first {
+                        LorentzEvalNode::SigmaVout {
+                            i: child_i,
+                            j: child_j,
+                            v,
+                        }
+                    } else {
+                        LorentzEvalNode::SigmaVoutRev {
+                            i: child_i,
+                            j: child_j,
+                            v,
+                        }
+                    }))
+                } else if *i == idx || *j == idx {
+                    // Fermion output: both Lorentz indices are contracted, so the
+                    // `Sigma` is a Clifford element acting on the continuing spinor —
+                    // the same operator-on-a-line the tensor⊗tensor contact produces,
+                    // and it continues through the same nodes. The adjoint is resolved
+                    // exactly as for a fermion-output `Gamma`.
+                    let other = if *i == idx { *j } else { *i };
+                    let node_adjoint = if idx >= 0 {
+                        out_adjoint
+                    } else {
+                        chain_adjoint(term, other, iop, flows)
+                    };
+                    let a = self.build_child(term, *mu, visited_ops, flows, out_adjoint, sign)?;
+                    let b = self.build_child(term, *nu, visited_ops, flows, out_adjoint, sign)?;
+                    let m = self.add_node(LorentzEvalNode::SigmaMv { a, b });
+                    let f = self.build_child(term, other, visited_ops, flows, out_adjoint, sign)?;
+                    let node = match node_adjoint {
+                        Some(Adjoint::Ket) => LorentzEvalNode::MultivectorIout { m, j: f },
+                        Some(Adjoint::Bra) => LorentzEvalNode::MultivectorOout { m, i: f },
+                        None => {
+                            return Err(RootLorentzError::InvalidStructure(
+                                "fermion-output Sigma rooted without a spinor adjoint".to_string(),
+                            ))
+                        }
+                    };
+                    Ok(self.add_node(node))
+                } else {
+                    unreachable!("Sigma op should involve idx {}", idx);
+                }
+            }
             LorentzOp::Epsilon { mu, nu, rho, sigma } => {
                 let args = [*mu, *nu, *rho, *sigma];
                 let Some(slot) = args.iter().position(|&a| a == idx) else {
@@ -724,6 +808,30 @@ impl LorentzEvalTree {
                         tree.build_child(term, *sigma, &mut visited_ops, flows, None, &mut sign)?;
                     tree.add_node(LorentzEvalNode::EpsilonAmp { a, b, c, d })
                 }
+                LorentzOp::Sigma { mu, nu, i, j } => {
+                    visited_ops.push(iop);
+                    // Both Lorentz indices sink into the amplitude (or into a scalar
+                    // output leg), so the structure closes the same way an FFV `Gamma`
+                    // does: build the vector current the pair produces and contract it
+                    // with whatever sits at the remaining slot.
+                    let child_i =
+                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
+                    let child_j =
+                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
+                    let v =
+                        tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
+                    let current = tree.add_node(LorentzEvalNode::SigmaVout {
+                        i: child_i,
+                        j: child_j,
+                        v,
+                    });
+                    let other =
+                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
+                    tree.add_node(LorentzEvalNode::Metric {
+                        mu: current,
+                        nu: other,
+                    })
+                }
                 _ => {
                     todo!(
                         "Routing for remaining ops not yet implemented in tree builder: {:?}",
@@ -841,15 +949,19 @@ fn term_reversed_parity(
 ) -> i8 {
     let mut parity = 1i8;
     for op in &term.ops {
-        let LorentzOp::Gamma { i, j, .. } = op else {
-            continue;
+        // A `Sigma` rooted at a vector leg is the same shape: `C σ^{μνT} C⁻¹ = −σ^{μν}`
+        // like `C γ^{μT} C⁻¹ = −γ^μ`, so the reversed reading takes the same −1.
+        let (i, j) = match op {
+            LorentzOp::Gamma { i, j, .. } | LorentzOp::Sigma { i, j, .. } => (*i, *j),
+            _ => continue,
         };
-        // Rooted at a fermion leg → GammaIout/GammaOout, no reversed bilinear.
-        if idx == Some(*i as usize) || idx == Some(*j as usize) {
+        // Rooted at a fermion leg → a fermion-continuing node, no reversed bilinear.
+        if idx == Some(i as usize) || idx == Some(j as usize) {
             continue;
         }
-        // GammaVout{i, j}: reversed iff the first operand (UFO index i) is a ket.
-        if let Some(Some(lf)) = flows.get(*i as usize) {
+        // GammaVout{i, j} / SigmaVout{i, j, v}: reversed iff the first operand (the UFO
+        // row index `i`) is a ket.
+        if let Some(Some(lf)) = flows.get(i as usize) {
             if lf.adjoint == Adjoint::Ket {
                 parity = -parity;
             }
@@ -965,7 +1077,16 @@ fn chiral_correction(
     wrapped: isize,
     wrapped_is_row: bool,
     flows: &[Option<LegAdjoint>],
+    sigma_chained: bool,
 ) -> bool {
+    // The conjugation is the projector moving through the operator beside it, and
+    // `γ^μ P_χ = P_χ̄ γ^μ` is what performs it. `σ^{μν}` commutes with `γ⁵` instead, so a
+    // projector beside a literal `Sigma` keeps its chirality whichever way the line is
+    // read; the −1 of `C σ^{μνT} C⁻¹ = −σ^{μν}` is the reversed-bilinear sign's, as for
+    // a gamma.
+    if sigma_chained {
+        return false;
+    }
     if idx >= 0 {
         // Projector adjacent to the rooted output leg (wraps the gamma chain). The
         // adjoint-vs-slot alignment was already canonicalized by re-rooting; only a
@@ -991,6 +1112,20 @@ fn chiral_correction(
         Adjoint::Ket
     };
     lf.adjoint != expected
+}
+
+/// True iff the operator on the *summed* side of a chiral projector is a literal
+/// `Sigma`.
+///
+/// `summed` is the index that connects the projector to the chain it sits beside — the
+/// index the walk arrived through when the projector was reached from inside the chain,
+/// and the index it wraps when the projector sits at the rooted output leg. `proj_op` is
+/// the projector's own position, so the lookup cannot turn back through it.
+fn sigma_chained(term: &LorentzTerm, summed: isize, proj_op: usize) -> bool {
+    summed < 0
+        && term.ops.iter().enumerate().any(|(k, op)| {
+            k != proj_op && op.involves_spinor(summed) && matches!(op, LorentzOp::Sigma { .. })
+        })
 }
 
 /// Adjust leg index for spinor adjoint if it is a spinor leg.
@@ -1056,11 +1191,26 @@ fn correct_spin_index_for_flow(
 // spinor, or as the pairing that closes it into the amplitude. The two index orders
 // (`γ^αγ^β` against `γ_αγ_β` or against `γ_βγ_α`) differ only in the sign of the
 // grade-2 term.
+//
+// A line written with a literal `Sigma` is the same cut with the two gammas already
+// contracted: the `g^{αβ}` term is gone, so the cut is pure grade 2 and the surviving
+// line reads `Σ^{αβ} · (½ t_{αβ})`.
+
+/// What carries a cyclic line's two shared Lorentz indices.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SharedCarrier {
+    /// Two adjacent `Gamma` factors, `γ^α γ^β`.
+    Gammas,
+    /// One literal `Sigma`: the same two gammas already contracted, so the cut line
+    /// keeps only the grade-2 half.
+    Sigma,
+}
 
 /// One fermion line of a recognised cyclic tensor⊗tensor term.
 ///
-/// The chain reads `ψ_row · row_ops · γ^{shared[0]} γ^{shared[1]} · col_ops · ψ_col`
-/// in the vertex's own (row = bra slot, column = ket slot) orientation.
+/// The chain reads `ψ_row · row_ops · Γ^{shared[0] shared[1]} · col_ops · ψ_col` in the
+/// vertex's own (row = bra slot, column = ket slot) orientation, with `Γ` the line's
+/// [`SharedCarrier`].
 #[derive(Clone, Debug)]
 struct TensorLine {
     /// Vertex leg at the chain's row (bra) end.
@@ -1076,12 +1226,16 @@ struct TensorLine {
     col_ops: Vec<usize>,
     /// The two shared Lorentz index labels, in chain order.
     shared: [isize; 2],
+    /// What carries them.
+    carrier: SharedCarrier,
 }
 
 /// A term recognised as two fermion lines joined by two summed Lorentz indices.
 #[derive(Clone, Debug)]
 struct TensorTerm {
     lines: [TensorLine; 2],
+    /// The carrier both lines share (a mixed term is refused).
+    carrier: SharedCarrier,
     /// Whether the two lines traverse the shared indices in opposite orders
     /// (`γ^αγ^β` against `γ_βγ_α`).
     reversed_order: bool,
@@ -1090,13 +1244,15 @@ struct TensorTerm {
 /// The spinor index pair `(row, column)` of an operator the tensor path can place on a
 /// fermion line, or `None`.
 ///
-/// `Sigma` and `C` carry a spinor pair too and are deliberately absent: a `Sigma`
-/// carries the two Lorentz indices itself (it is the two gammas already contracted, and
-/// belongs where they do rather than beside them), and charge conjugation is not
-/// supported anywhere in the rooting.
+/// A `Sigma` is here as a carrier of the shared indices, never as a factor beside them:
+/// it *is* the two gammas already contracted, so a line spells its rank-2 slot either
+/// with two adjacent `Gamma`s or with one `Sigma` (see [`SharedCarrier`]). `C` carries a
+/// spinor pair too and is deliberately absent — charge conjugation is not supported
+/// anywhere in the rooting.
 fn spinor_pair(op: &LorentzOp) -> Option<(isize, isize)> {
     match op {
         LorentzOp::Gamma { i, j, .. }
+        | LorentzOp::Sigma { i, j, .. }
         | LorentzOp::Identity { i, j }
         | LorentzOp::ProjM { i, j }
         | LorentzOp::ProjP { i, j }
@@ -1112,11 +1268,11 @@ fn spinor_pair(op: &LorentzOp) -> Option<(isize, isize)> {
 /// it found rather than an "index has no operator" failure deep in the walk.
 ///
 /// The recognised shape is deliberately narrow: four fermion legs and nothing else,
-/// every operator a spinor-index one, each line carrying exactly two adjacent `Gamma`
-/// factors whose Lorentz indices are the two labels the lines share. That is every
-/// cyclic structure SMEFTsim writes (`FFFF5`–`8`, `FFFF19`–`21`); a literal
-/// `Sigma(α,β,i,j)` carrying both shared indices on one line is the same object with
-/// the two gammas already contracted and is the natural next case.
+/// every operator a spinor-index one, each line carrying its two shared Lorentz labels
+/// on either two adjacent `Gamma` factors or one literal `Sigma`, and both lines
+/// spelling them the same way. The gamma pair is every cyclic structure SMEFTsim writes
+/// (`FFFF5`–`8`, `FFFF19`–`21`); the `Sigma` is the toy model's `FFFFT`, the same
+/// object with the two gammas already contracted.
 fn cyclic_tensor_term(
     term: &LorentzTerm,
     spins: &[i32],
@@ -1177,26 +1333,51 @@ fn cyclic_tensor_term(
 
     let mut built: Vec<TensorLine> = Vec::new();
     for (chain, row_leg, col_leg) in lines {
-        let gammas: Vec<usize> = chain
-            .iter()
-            .enumerate()
-            .filter(|&(_, &k)| matches!(term.ops[k], LorentzOp::Gamma { .. }))
-            .map(|(pos, _)| pos)
-            .collect();
-        if gammas.len() != 2 || gammas[1] != gammas[0] + 1 {
-            return refuse("a fermion line without exactly two adjacent Gamma factors");
-        }
-        let mu_of = |pos: usize| match term.ops[chain[pos]] {
-            LorentzOp::Gamma { mu, .. } => mu,
-            _ => unreachable!("gamma positions were filtered on the op"),
+        let at = |pred: fn(&LorentzOp) -> bool| -> Vec<usize> {
+            chain
+                .iter()
+                .enumerate()
+                .filter(|&(_, &k)| pred(&term.ops[k]))
+                .map(|(pos, _)| pos)
+                .collect()
+        };
+        let gammas = at(|op| matches!(op, LorentzOp::Gamma { .. }));
+        let sigmas = at(|op| matches!(op, LorentzOp::Sigma { .. }));
+        let (carrier, first, last, shared) = match (gammas.as_slice(), sigmas.as_slice()) {
+            ([g0, g1], []) if *g1 == g0 + 1 => {
+                let mu_of = |pos: usize| match term.ops[chain[pos]] {
+                    LorentzOp::Gamma { mu, .. } => mu,
+                    _ => unreachable!("gamma positions were filtered on the op"),
+                };
+                (SharedCarrier::Gammas, *g0, *g1, [mu_of(*g0), mu_of(*g1)])
+            }
+            ([], [sig]) => {
+                let LorentzOp::Sigma { mu, nu, .. } = term.ops[chain[*sig]] else {
+                    unreachable!("sigma positions were filtered on the op");
+                };
+                (SharedCarrier::Sigma, *sig, *sig, [mu, nu])
+            }
+            _ => {
+                return refuse(
+                    "a fermion line spelling its rank-2 slot as neither two adjacent \
+                     Gamma factors nor one Sigma",
+                )
+            }
         };
         built.push(TensorLine {
             row_leg,
             col_leg,
-            row_ops: chain[..gammas[0]].to_vec(),
-            col_ops: chain[gammas[1] + 1..].to_vec(),
-            shared: [mu_of(gammas[0]), mu_of(gammas[1])],
+            row_ops: chain[..first].to_vec(),
+            col_ops: chain[last + 1..].to_vec(),
+            shared,
+            carrier,
         });
+    }
+    if built[0].carrier != built[1].carrier {
+        return refuse(
+            "the two fermion lines spell their rank-2 slots differently, one with a \
+             Sigma and one with a gamma pair",
+        );
     }
 
     let (a, b) = (built[0].shared, built[1].shared);
@@ -1213,8 +1394,10 @@ fn cyclic_tensor_term(
     let [line_a, line_b]: [TensorLine; 2] = built
         .try_into()
         .expect("exactly two lines were built above");
+    let carrier = line_a.carrier;
     Ok(Some(TensorTerm {
         lines: [line_a, line_b],
+        carrier,
         reversed_order,
     }))
 }
@@ -1301,8 +1484,10 @@ impl LorentzEvalTree {
     /// The order flips once per line that is read against the vertex's own arrow: the
     /// reversal replaces the chain by `C Γᵀ C⁻¹`, and for `X γ^α γ^β Y` that is
     /// `Y γ^β γ^α X` — the same operators with the two gammas transposed, so only the
-    /// grade-2 coefficient changes sign. A crossed line reads the same way and adds
-    /// the `−1` of the conjugated pair's operator reordering.
+    /// grade-2 coefficient changes sign. For a `Sigma` line it is the same flip through
+    /// a different route: `C σ^{αβT} C⁻¹ = −σ^{αβ}` and `σ^{βα} = −σ^{αβ}` are one
+    /// sign. A crossed line reads the same way and adds the `−1` of the conjugated
+    /// pair's operator reordering.
     fn add_cut_line(
         &mut self,
         term: &LorentzTerm,
@@ -1331,10 +1516,11 @@ impl LorentzEvalTree {
                 *sign = -*sign;
             }
         }
-        Ok(self.add_node(if reversed {
-            LorentzEvalNode::FierzOutRev { i: row, j: col }
-        } else {
-            LorentzEvalNode::FierzOut { i: row, j: col }
+        Ok(self.add_node(match (tensor.carrier, reversed) {
+            (SharedCarrier::Gammas, false) => LorentzEvalNode::FierzOut { i: row, j: col },
+            (SharedCarrier::Gammas, true) => LorentzEvalNode::FierzOutRev { i: row, j: col },
+            (SharedCarrier::Sigma, false) => LorentzEvalNode::SigmaOut { i: row, j: col },
+            (SharedCarrier::Sigma, true) => LorentzEvalNode::SigmaOutRev { i: row, j: col },
         }))
     }
 
@@ -1848,31 +2034,264 @@ mod tests {
         )
     }
 
+    /// The toy model's dipole, `Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)`, 0-indexed.
+    fn dipole_term() -> LorentzTerm {
+        LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                LorentzOp::Sigma {
+                    mu: 2,
+                    nu: -1,
+                    i: 1,
+                    j: -2,
+                },
+                LorentzOp::P { mu: -1, leg: 2 },
+                LorentzOp::ProjM { i: -2, j: 0 },
+            ],
+        }
+    }
+
+    fn tree_has(tree: &LorentzEvalTree, pred: impl Fn(&LorentzEvalNode) -> bool) -> bool {
+        tree.nodes.iter().any(pred)
+    }
+
+    /// A momentum-contracted `Sigma` rooted at its vector leg is a vector current, and
+    /// the projector beside it keeps its chirality.
+    ///
+    /// The chirality is the claim with teeth: a projector reached through a summed index
+    /// beside a `Gamma` conjugates when the line runs against the vertex's arrow
+    /// (`γ^μ P_χ = P_χ̄ γ^μ`), and `σ^{μν}` commutes with `γ⁵` instead. Both a crossed
+    /// line and a slot/adjoint mismatch are checked, since those are the two ways
+    /// [`chiral_correction`] fires.
     #[test]
-    fn test_root_sigma_unsupported() {
-        // Sigma should trigger UnsupportedVertex when it's on the path to the root.
-        // Root at leg 1 (fermion) where Sigma(1,2,2,1) is present
+    fn a_momentum_contracted_sigma_roots_at_its_vector_leg() {
+        let spins = vec![2, 2, 3];
+        let term = dipole_term();
+        for crossed in [false, true] {
+            for adjoint in [Adjoint::Bra, Adjoint::Ket] {
+                let bind = |a: Adjoint| {
+                    Some(LegAdjoint {
+                        adjoint: a,
+                        crossed,
+                    })
+                };
+                let flows = [
+                    bind(adjoint),
+                    bind(match adjoint {
+                        Adjoint::Bra => Adjoint::Ket,
+                        Adjoint::Ket => Adjoint::Bra,
+                    }),
+                    None,
+                ];
+                let (tree, _, _) =
+                    LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), Some(2), &flows)
+                        .unwrap();
+                assert!(
+                    matches!(tree.root_value(), LorentzEvalNode::SigmaVout { .. }),
+                    "crossed={crossed} adjoint={adjoint}: {:?}",
+                    tree.root_value()
+                );
+                assert!(
+                    tree_has(&tree, |n| matches!(n, LorentzEvalNode::ProjM { .. })),
+                    "crossed={crossed} adjoint={adjoint}: a Sigma-chained projector must \
+                     keep its chirality, tree {tree}"
+                );
+                assert!(tree_has(&tree, |n| matches!(n, LorentzEvalNode::POut)));
+            }
+        }
+    }
+
+    /// The same dipole with all three legs bound sinks into the amplitude the way an
+    /// FFV `Gamma` does: the vector current the pair produces, contracted with the
+    /// vector leg.
+    #[test]
+    fn a_momentum_contracted_sigma_sinks_through_a_metric() {
+        let spins = vec![2, 2, 3];
+        let term = dipole_term();
+        let flows = [lf(Adjoint::Bra), lf(Adjoint::Ket), None];
+        let (tree, _, _) =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), None, &flows).unwrap();
+        let LorentzEvalNode::Metric { mu, .. } = tree.root_value() else {
+            panic!("expected a Metric sink, got {}", tree);
+        };
+        assert!(matches!(tree.value(*mu), LorentzEvalNode::SigmaVout { .. }));
+        assert!(tree_has(&tree, |n| matches!(
+            n,
+            LorentzEvalNode::P { leg: 2 }
+        )));
+    }
+
+    /// Rooted at a fermion leg the `Sigma` is a Clifford element acting on the
+    /// continuing spinor, so it reaches the same `Multivector*` nodes the cyclic
+    /// tensor⊗tensor path uses — one per adjoint.
+    #[test]
+    fn a_momentum_contracted_sigma_roots_at_either_fermion_leg() {
+        let spins = vec![2, 2, 3];
+        let term = dipole_term();
+        for (out, adjoint, want_ket) in [
+            (0usize, Adjoint::Ket, true),
+            (0, Adjoint::Bra, false),
+            (1, Adjoint::Ket, true),
+            (1, Adjoint::Bra, false),
+        ] {
+            // A fermion line carries one adjoint, so the output leg's `flows` entry
+            // (the adjoint of the current the vertex produces) equals the input's.
+            let flows = [lf(adjoint), lf(adjoint), None];
+            let (tree, _, _) =
+                LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), Some(out), &flows)
+                    .unwrap();
+            assert!(
+                tree_has(&tree, |n| matches!(n, LorentzEvalNode::SigmaMv { .. })),
+                "out={out} adjoint={adjoint}: {tree}"
+            );
+            let wanted = |n: &LorentzEvalNode| {
+                if want_ket {
+                    matches!(n, LorentzEvalNode::MultivectorIout { .. })
+                } else {
+                    matches!(n, LorentzEvalNode::MultivectorOout { .. })
+                }
+            };
+            assert!(
+                tree_has(&tree, wanted),
+                "out={out} adjoint={adjoint}: {tree}"
+            );
+        }
+    }
+
+    /// A `Sigma` whose *second* Lorentz index is the free one is the transpose of an
+    /// antisymmetric tensor, and roots to the node that carries that sign.
+    #[test]
+    fn a_sigma_rooted_at_its_second_lorentz_slot_takes_the_reversed_node() {
+        let spins = vec![2, 2, 3];
         let term = LorentzTerm {
             coeff: 1.0,
-            ops: vec![LorentzOp::Sigma {
-                mu: 0,
-                nu: 1,
-                i: 1,
-                j: 0,
-            }],
+            ops: vec![
+                LorentzOp::Sigma {
+                    mu: -1,
+                    nu: 2,
+                    i: 1,
+                    j: 0,
+                },
+                LorentzOp::P { mu: -1, leg: 2 },
+            ],
         };
-        let spins = vec![2, 2, 3];
-        let result = root_term(
-            &term,
-            &spins,
-            &flow_of(&spins),
-            Some(0),
-            &[lf(Adjoint::Ket), lf(Adjoint::Ket), None],
-        ); // root at leg 1 (0-indexed as 0)
-        assert!(matches!(
-            result,
-            Err(RootLorentzError::UnsupportedVertex(_))
-        ));
+        let flows = [lf(Adjoint::Bra), lf(Adjoint::Ket), None];
+        let (tree, _, _) =
+            LorentzEvalTree::build_at_leg(&term, &spins, &flow_of(&spins), Some(2), &flows)
+                .unwrap();
+        assert!(
+            matches!(tree.root_value(), LorentzEvalNode::SigmaVoutRev { .. }),
+            "{tree}"
+        );
+    }
+
+    /// `Sigma(-1,-2,2,1)*Sigma(-1,-2,4,3)` is the cyclic tensor⊗tensor shape with each
+    /// line's two gammas already contracted, and cuts to a `Sigma` element.
+    #[test]
+    fn a_sigma_pair_is_the_cyclic_tensor_shape() {
+        let spins = vec![2, 2, 2, 2];
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                LorentzOp::Sigma {
+                    mu: -1,
+                    nu: -2,
+                    i: 1,
+                    j: 0,
+                },
+                LorentzOp::Sigma {
+                    mu: -1,
+                    nu: -2,
+                    i: 3,
+                    j: 2,
+                },
+            ],
+        };
+        let flow = vec![(0usize, 1usize), (2, 3)];
+        // Both lines read along the vertex's arrow and both spell the shared indices in
+        // the same order, so the cut is the aligned node; putting the second pair on a
+        // crossed line reverses the relative order, which for a `Sigma` is the same
+        // sign as `C σ^{αβT} C⁻¹ = −σ^{αβ}`.
+        for (crossed, want_rev) in [(false, false), (true, true)] {
+            let bind = |a: Adjoint, c: bool| {
+                Some(LegAdjoint {
+                    adjoint: a,
+                    crossed: c,
+                })
+            };
+            let flows = [
+                bind(Adjoint::Ket, false),
+                bind(Adjoint::Bra, false),
+                bind(Adjoint::Ket, crossed),
+                bind(Adjoint::Bra, crossed),
+            ];
+            let (tree, _, _) =
+                LorentzEvalTree::build_at_leg(&term, &spins, &flow, None, &flows).unwrap();
+            assert!(matches!(
+                tree.root_value(),
+                LorentzEvalNode::FierzPair { .. }
+            ));
+            let wanted = |n: &LorentzEvalNode| {
+                if want_rev {
+                    matches!(n, LorentzEvalNode::SigmaOutRev { .. })
+                } else {
+                    matches!(n, LorentzEvalNode::SigmaOut { .. })
+                }
+            };
+            assert!(
+                tree_has(&tree, wanted),
+                "crossed={crossed}: a Sigma-spelled cut line must not reuse the \
+                 gamma-pair node: {tree}"
+            );
+            assert!(
+                !tree_has(&tree, |n| matches!(
+                    n,
+                    LorentzEvalNode::FierzOut { .. } | LorentzEvalNode::FierzOutRev { .. }
+                )),
+                "{tree}"
+            );
+        }
+    }
+
+    /// A cyclic term whose two lines spell their rank-2 slots differently is refused by
+    /// name: the cut of one is the contraction against the *other* line's operator, so
+    /// the two spellings are not independent choices.
+    #[test]
+    fn a_mixed_sigma_and_gamma_pair_contact_is_refused() {
+        let spins = vec![2, 2, 2, 2];
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![
+                LorentzOp::Sigma {
+                    mu: -1,
+                    nu: -2,
+                    i: 1,
+                    j: 0,
+                },
+                LorentzOp::Gamma {
+                    mu: -1,
+                    i: 3,
+                    j: -3,
+                },
+                LorentzOp::Gamma {
+                    mu: -2,
+                    i: -3,
+                    j: 2,
+                },
+            ],
+        };
+        let flow = vec![(0usize, 1usize), (2, 3)];
+        let flows = [
+            lf(Adjoint::Ket),
+            lf(Adjoint::Bra),
+            lf(Adjoint::Ket),
+            lf(Adjoint::Bra),
+        ];
+        let err = LorentzEvalTree::build_at_leg(&term, &spins, &flow, None, &flows).unwrap_err();
+        let RootLorentzError::UnsupportedVertex(why) = &err else {
+            panic!("expected a refusal naming the shape, got {err:?}");
+        };
+        assert!(why.contains("Sigma") && why.contains("gamma pair"), "{why}");
     }
 
     #[test]

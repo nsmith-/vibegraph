@@ -31,7 +31,11 @@ pub enum LorentzError {
 pub enum LorentzOp {
     /// Dirac gamma matrix: Γ^μ_{ij}
     Gamma { mu: isize, i: isize, j: isize },
-    /// Sigma: σ^{μν}_{ij} = i/2 [γ^μ, γ^ν]
+    /// Sigma: ALOHA's `σ^{μν}`, which is **half** the textbook
+    /// `(i/2)[γ^μ, γ^ν]` — `aloha/aloha_object.py`'s `L_Sigma.sigma` table carries
+    /// ±½ and ±½i where the textbook matrix carries ±1 and ±1i. The evaluator's
+    /// kernels carry that half (`helas::eval::kernel`), and the
+    /// `ll_to_qqx_toy_tensor` row measures it.
     Sigma {
         mu: isize,
         nu: isize,

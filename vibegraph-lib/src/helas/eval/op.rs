@@ -145,6 +145,38 @@ pub enum Op {
     /// grade-diagonal Fierz pairing `⟨fierz_coefficients(ψ̄, ψ), M⟩`. Children:
     /// `[m, i, j]` with the fermion pair in the vertex's slot order.
     FierzPair,
+    // ── literal `Sigma` primitives ──
+    //
+    // ALOHA's `Sigma` is `½ σ^{μν}`, half the textbook `(i/2)[γ^μ, γ^ν]`
+    // ([`kernel::sigma_half`](super::kernel)); every kernel below carries that half.
+    // A `Sigma` whose two Lorentz indices are both contracted is a Clifford element
+    // ([`Op::SigmaMv`]) and reaches the surviving fermion line through the same
+    // [`Op::MultivectorIout`]/[`Op::MultivectorOout`] the tensor⊗tensor contact uses;
+    // one free Lorentz index makes it a vector producer instead.
+    /// two fermions + a vector → the off-shell vector current `(ψ̄ Σ^{μν} ψ) v_ν`,
+    /// the free index on `Sigma`'s *first* Lorentz slot. Children: `[i, j, v]` with
+    /// the fermion pair in the vertex's slot order (row first). Reading the pair
+    /// against the vertex's defined adjoint conjugates the structure as
+    /// `C σ^{μνT} C⁻¹ = −σ^{μν}`, so a reversed line takes a relative −1, exactly as
+    /// [`Op::GammaVout`] does.
+    SigmaVout,
+    /// [`Op::SigmaVout`] with the free index on `Sigma`'s *second* Lorentz slot,
+    /// `(ψ̄ Σ^{νμ} ψ) v_ν` — its negative, `σ` being antisymmetric.
+    SigmaVoutRev,
+    /// two vectors → the Clifford element `Σ^{μν} a_μ b_ν`, grade 2 with coefficient
+    /// `½ (a ∧ b)`. Children: `[a, b]` in `Sigma`'s own Lorentz slot order.
+    SigmaMv,
+    /// two fermions → the cut line of a `Sigma ⊗ Sigma` contact as a Clifford
+    /// element: pure grade 2 with coefficient `½ t^{μν}`, where `t` is the pair's
+    /// tensor bilinear. Children: `[bra, ket]` — the cut line's two ends with
+    /// everything but the shared `Sigma` already applied. It is [`Op::FierzOut`] with
+    /// the two gammas already contracted, so the `g^{αβ}` term (and with it the whole
+    /// grade-0 part) is gone.
+    SigmaOut,
+    /// [`Op::SigmaOut`] with the two lines reading the shared indices in opposite
+    /// orders: the grade-2 coefficient with the other sign, which is also what a line
+    /// read against the vertex's own adjoint takes.
+    SigmaOutRev,
     // ── fused chiral FFV kernels ──
     // A vertex whose structures form a chiral pair (`Gamma·ProjM` / `Gamma·ProjP`
     // variants of one contraction shape) is fused at lowering into a single node:

@@ -877,8 +877,13 @@ mod tests {
     /// vertex at all, so their coverage belongs to the SMEFTsim census. So do the
     /// tensor-tensor ops: they exist for a four-fermion structure whose two lines
     /// share two summed Lorentz indices, and no Standard Model structure has a cyclic
-    /// index graph at all.
-    const SM_KNOWN_UNCOVERED: [Op; 11] = [
+    /// index graph at all. The `Sigma` ops need a model that writes `Sigma` literally,
+    /// which no FeynRules-generated UFO does — FeynRules expands `σ^{μν}` into gamma
+    /// chains before it emits the model — so their coverage is the toy model's
+    /// (`ll_to_qqx_toy_dipole` reaches `SigmaVout`, `ll_to_qqx_toy_tensor` reaches
+    /// `SigmaOut`; the other three are pinned hermetically, see the toy census note in
+    /// `tests/smeftsim.rs`).
+    const SM_KNOWN_UNCOVERED: [Op; 16] = [
         Op::Hels,
         Op::IdentityAmp,
         Op::Gamma5,
@@ -890,6 +895,11 @@ mod tests {
         Op::MultivectorIout,
         Op::MultivectorOout,
         Op::FierzPair,
+        Op::SigmaVout,
+        Op::SigmaVoutRev,
+        Op::SigmaMv,
+        Op::SigmaOut,
+        Op::SigmaOutRev,
     ];
 
     /// Every `Op` outside [`SM_KNOWN_UNCOVERED`] appears in the compiled AST of at

@@ -446,9 +446,14 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
         // Chiral projection and γ⁵ preserve the fermion flow.
         Op::ProjM | Op::ProjP | Op::Gamma5 => ty(0),
         // Vector producers.
-        Op::GammaVout | Op::FfvVout | Op::MetricVout | Op::EpsilonVout | Op::PMom | Op::PMomOut => {
-            NodeType::Vector
-        }
+        Op::GammaVout
+        | Op::FfvVout
+        | Op::MetricVout
+        | Op::EpsilonVout
+        | Op::SigmaVout
+        | Op::SigmaVoutRev
+        | Op::PMom
+        | Op::PMomOut => NodeType::Vector,
         // Off-shell fermion currents follow the fermion input's flow (operand 1).
         Op::GammaIout
         | Op::GammaOout
@@ -456,8 +461,11 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
         | Op::FfvOout
         | Op::MultivectorIout
         | Op::MultivectorOout => ty(1),
-        // The cut fermion line of a tensor-tensor contact.
-        Op::FierzOut | Op::FierzOutRev => NodeType::Multivector,
+        // The cut fermion line of a tensor-tensor contact, and the Clifford elements a
+        // literal `Sigma` produces.
+        Op::FierzOut | Op::FierzOutRev | Op::SigmaOut | Op::SigmaOutRev | Op::SigmaMv => {
+            NodeType::Multivector
+        }
         // Scalar bilinears and full contractions.
         Op::ProjMAmp
         | Op::ProjPAmp
@@ -556,11 +564,21 @@ fn momentum_into(
         // Momentum-preserving unary transforms.
         Op::Propagate | Op::ProjM | Op::ProjP | Op::Gamma5 | Op::MetricVout => add(buf, kids[0], 1),
         // Vector contractions: the sum of the operands' momenta, as for the unary
-        // `MetricVout` above.
-        Op::Metric | Op::EpsilonVout | Op::EpsilonAmp => {
+        // `MetricVout` above. `SigmaMv` contracts two vectors into a Clifford element
+        // and routes them the same way.
+        Op::Metric | Op::EpsilonVout | Op::EpsilonAmp | Op::SigmaMv => {
             for &k in kids {
                 add(buf, k, 1);
             }
+        }
+        // A `Sigma` rooted at a vector leg: the fermion pair's `bra − ket` plus the
+        // vector it contracts its other Lorentz index against (a momentum read-off in
+        // a dipole, which routes nothing).
+        Op::SigmaVout | Op::SigmaVoutRev => {
+            let (bra, ket) = bra_ket(&kids[..2]);
+            add(buf, bra, 1);
+            add(buf, ket, -1);
+            add(buf, kids[2], 1);
         }
         // Vector / scalar bilinears of two fermions: bra − ket.
         Op::GammaVout
@@ -570,7 +588,9 @@ fn momentum_into(
         | Op::IdentityAmp
         | Op::Gamma5Amp
         | Op::FierzOut
-        | Op::FierzOutRev => {
+        | Op::FierzOutRev
+        | Op::SigmaOut
+        | Op::SigmaOutRev => {
             let (bra, ket) = bra_ket(kids);
             add(buf, bra, 1);
             add(buf, ket, -1);

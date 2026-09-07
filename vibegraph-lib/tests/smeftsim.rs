@@ -707,14 +707,31 @@ fn gated_rows_op_census() {
     // sit on an internal line. Those two rest on the hermetic kernel identity
     // `ψ̄ (M ψ) = (ψ̄ M) ψ = ⟨fierz(ψ̄, ψ), M⟩` and on
     // `tensor_four_fermion_currents_are_rooting_invariant`, which re-roots a contact
-    // that does.
-    const KNOWN_UNCOVERED: [Op; 8] = [
+    // that does. The five `Sigma` ops are absent from this model for the reason the
+    // toy model exists: FeynRules expands `σ^{μν}` into gamma chains before it writes
+    // a UFO, so SMEFTsim spells every tensor structure with gammas and a literal
+    // `Sigma` appears in no vertex of it. The banked toy rows cover two of them —
+    // `SigmaVout` on `ll_to_qqx_toy_dipole` and `SigmaOut` on `ll_to_qqx_toy_tensor`.
+    // The other three need what no banked row has: `SigmaMv` needs the dipole on an
+    // *internal* fermion line, and the two `Rev` spellings need an index order no
+    // model in reach writes (`SigmaVoutRev`) or a crossing the gated row's contact
+    // does not have (`SigmaOutRev`). All three rest on
+    // `literal_sigma_currents_are_rooting_invariant`, which puts both structures on an
+    // internal line and re-roots them, on the rooting unit tests that build each
+    // spelling, and on the kernel identities `SigmaVoutRev = −SigmaVout` and
+    // `SigmaOutRev = −SigmaOut`.
+    const KNOWN_UNCOVERED: [Op; 13] = [
         Op::Hels,
         Op::ProjMAmp,
         Op::ProjPAmp,
         Op::Gamma5Amp,
         Op::MultivectorIout,
         Op::MultivectorOout,
+        Op::SigmaVout,
+        Op::SigmaVoutRev,
+        Op::SigmaMv,
+        Op::SigmaOut,
+        Op::SigmaOutRev,
         Op::FfvIout,
         Op::FfvOout,
     ];

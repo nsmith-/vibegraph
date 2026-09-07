@@ -300,6 +300,27 @@ pub(super) enum Instr {
         bra: u32,
         ket: u32,
     },
+    /// `(ψ̄ Σ^{μν} ψ) v_ν` → vector current. `negate` carries the two −1s the rooting
+    /// resolves — a line read against the vertex's adjoint, and the free index on the
+    /// second Lorentz slot — which are the same sign.
+    SigmaVout {
+        bra: u32,
+        ket: u32,
+        v: u32,
+        negate: bool,
+    },
+    /// `Σ^{μν} a_μ b_ν` → Clifford element.
+    SigmaMv {
+        a: u32,
+        b: u32,
+    },
+    /// The cut line of a `Sigma ⊗ Sigma` contact as a Clifford element;
+    /// `reversed_order` is the two lines' relative index order.
+    SigmaOut {
+        bra: u32,
+        ket: u32,
+        reversed_order: bool,
+    },
     /// Clifford element scaled by a complex scalar.
     ScaleMvC {
         m: u32,
@@ -394,13 +415,16 @@ impl Instr {
             Instr::ScaleMvC { .. } => 47,
             Instr::ScaleMvR { .. } => 48,
             Instr::AddMultivector { .. } => 49,
+            Instr::SigmaVout { .. } => 50,
+            Instr::SigmaMv { .. } => 51,
+            Instr::SigmaOut { .. } => 52,
         }
     }
 
     /// Human-readable variant name, for the study's per-kind tables.
     #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
     pub(super) fn kind_name(kind: u8) -> &'static str {
-        const NAMES: [&str; 50] = [
+        const NAMES: [&str; 53] = [
             "ComplexConst",
             "RealConst",
             "ExternalScalar",
@@ -451,6 +475,9 @@ impl Instr {
             "ScaleMvC",
             "ScaleMvR",
             "AddMultivector",
+            "SigmaVout",
+            "SigmaMv",
+            "SigmaOut",
         ];
         NAMES[kind as usize]
     }
@@ -970,6 +997,27 @@ fn lower_node(
                 m: li(kids[0]),
                 bra: li(bra),
                 ket: li(ket),
+            }
+        }
+        Op::SigmaVout | Op::SigmaVoutRev => {
+            let (bra, ket, reversed) = bra_ket(kids[0], kids[1]);
+            Instr::SigmaVout {
+                bra: li(bra),
+                ket: li(ket),
+                v: li(kids[2]),
+                negate: reversed != (node.op == Op::SigmaVoutRev),
+            }
+        }
+        Op::SigmaMv => Instr::SigmaMv {
+            a: li(kids[0]),
+            b: li(kids[1]),
+        },
+        Op::SigmaOut | Op::SigmaOutRev => {
+            let (bra, ket, _) = bra_ket(kids[0], kids[1]);
+            Instr::SigmaOut {
+                bra: li(bra),
+                ket: li(ket),
+                reversed_order: node.op == Op::SigmaOutRev,
             }
         }
         Op::Metric => Instr::Metric {
