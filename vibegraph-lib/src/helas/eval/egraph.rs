@@ -73,6 +73,11 @@ const NODE_SCHEMA: &str = "\
   (MultivectorIout Node Node)
   (MultivectorOout Node Node)
   (FierzPair Node Node Node)
+  (SigmaVout Node Node Node)
+  (SigmaVoutRev Node Node Node)
+  (SigmaMv Node Node)
+  (SigmaOut Node Node)
+  (SigmaOutRev Node Node)
   (FfvVout Node Node Node Node)
   (FfvIout Node Node Node Node)
   (FfvOout Node Node Node Node)
@@ -562,9 +567,11 @@ fn op_slot_bytes(op: &str) -> f64 {
             | Op::PMom
             | Op::PMomOut
             | Op::MultivectorIout
-            | Op::MultivectorOout => 96.0,
+            | Op::MultivectorOout
+            | Op::SigmaVout
+            | Op::SigmaVoutRev => 96.0,
             // Sixteen graded coefficients plus the routed momentum.
-            Op::FierzOut | Op::FierzOutRev => 288.0,
+            Op::FierzOut | Op::FierzOutRev | Op::SigmaOut | Op::SigmaOutRev | Op::SigmaMv => 288.0,
             Op::Metric
             | Op::ProjMAmp
             | Op::ProjPAmp

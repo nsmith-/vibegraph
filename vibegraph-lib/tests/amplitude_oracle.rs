@@ -256,6 +256,13 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
          photon line and one for the Z line, each covering the SM current, the coupling \
          shifts and the dipole structures at either end",
     ),
+    (
+        "ll_to_qqx_toy_dipole",
+        "one accumulator per s-channel boson, as `ee_to_ttx_dipole`: the plain gauge \
+         coupling and the literal-`Sigma` dipole sit on the same `vt` line, one \
+         topology to MadGraph's channel mapping, so its single accumulator covers our \
+         two diagrams",
+    ),
 ];
 
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the

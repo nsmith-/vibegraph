@@ -1252,6 +1252,22 @@ impl<F: Real> AsymRank2Tensor<F> {
         AsymRank2Tensor([-t[5], t[4], -t[3], t[2], -t[1], t[0]])
     }
 
+    /// `T^{μν} v_ν` — the vector left after contracting the *second* index with a
+    /// contravariant `v`, lowered here. Contravariant, like every other vector this
+    /// module produces. The first-index contraction is its negative, by antisymmetry.
+    #[inline]
+    pub fn contract_vector(
+        &self,
+        v: &ComplexVector<F, Contravariant>,
+    ) -> ComplexVector<F, Contravariant> {
+        let vl = v.dualize();
+        ComplexVector::new(std::array::from_fn(|mu| {
+            (0..4).fold(C::zero(), |acc, nu| {
+                cmul_add(self.get(mu, nu), vl.0[nu], acc)
+            })
+        }))
+    }
+
     /// `T^{μν} a_μ b_ν`, lowering the two contravariant arguments here.
     #[inline]
     pub fn contract_vectors(
@@ -2377,6 +2393,16 @@ mod tests {
             for (mu, nu) in iproduct!(0..4, 0..4) {
                 let expect = a.component(mu) * b.component(nu) - a.component(nu) * b.component(mu);
                 assert!((w.get(mu, nu) - expect).norm() < EPS_ABS);
+            }
+
+            // T^{μν} v_ν, the one-index contraction: contracting the result with a
+            // second vector reproduces the two-index form, and swapping the free
+            // index onto the first slot negates it.
+            let cv = t.contract_vector(&b);
+            assert!((cv.dot(&al) - t.contract_vectors(&a, &b)).norm() < EPS_ABS);
+            for mu in 0..4 {
+                let brute: C<f64> = (0..4).map(|nu| t.get(mu, nu) * bl.component(nu)).sum();
+                assert!((cv.component(mu) - brute).norm() < EPS_ABS);
             }
         }
     }

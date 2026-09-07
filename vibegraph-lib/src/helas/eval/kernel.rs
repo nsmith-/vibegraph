@@ -20,8 +20,8 @@ use num_traits::Zero;
 
 use super::waveform_slot::{MultivectorWf, WaveformSlot};
 use crate::helas::repr::lorentz::{
-    epsilon4, epsilon_vector, Bispinor, Bra, ComplexVector, DiracAdjoint, Ket, LorentzVector,
-    Multivector, SpinorRepr, VectorRepr,
+    epsilon4, epsilon_vector, AsymRank2Tensor, Bispinor, Bra, ComplexVector, DiracAdjoint, Ket,
+    LorentzVector, Multivector, SpinorRepr, VectorRepr,
 };
 use crate::helas::repr::numbers::Chirality;
 use crate::helas::repr::{ri, Real, C};
@@ -302,6 +302,80 @@ pub fn multivector_fout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
 ) -> Bispinor<F, Bra> {
     fo.apply(m)
+}
+
+/// The `Sigma` half: ALOHA's `Sigma` is `½ σ^{μν}`, not the textbook
+/// `σ^{μν} = (i/2)[γ^μ, γ^ν]`.
+///
+/// `aloha/aloha_object.py`'s `L_Sigma.sigma` table carries ±½ and ±½i where the
+/// textbook matrix carries ±1 and ±1i, and the banked `ll_to_qqx_toy_tensor` row
+/// measures it as a process-level ratio: the same four-fermion operator written with
+/// two literal `Sigma`s and with its γγ expansion gives
+/// `AMP(FFFFG)/AMP(FFFFT) = 4 × ggam/gtens` to 4.7e-14 over every helicity of every
+/// banked point. The factor enters once per `Sigma`, so a kernel at the textbook
+/// normalisation is 2× too large on a dipole and 4× on a tensor⊗tensor contact.
+#[inline]
+fn sigma_half<F: Real>() -> F {
+    F::one() / (F::one() + F::one())
+}
+
+/// `SigmaVout`/`SigmaVoutRev` on bare operands: two fermions and a vector → the
+/// off-shell vector current `J^μ = (ψ̄ Σ^{μν} ψ) v_ν`, the free index on `Sigma`'s
+/// *first* Lorentz slot.
+///
+/// `negate` carries both minus signs the rooting resolves, which are the same sign:
+/// a line read against the vertex's own adjoint conjugates the structure as
+/// `C σ^{μνT} C⁻¹ = −σ^{μν}` (as `C γ^{μT} C⁻¹ = −γ^μ` does for [`gamma_vout_bare`]),
+/// and putting the free index on the *second* slot instead is a transposition of an
+/// antisymmetric tensor.
+#[inline]
+pub fn sigma_vout_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+    v: &ComplexVector<F>,
+    negate: bool,
+) -> ComplexVector<F> {
+    let t = fo.tensor_bilinear(fi, Chirality::Both) * sigma_half::<F>();
+    let j = t.contract_vector(v);
+    if negate {
+        -j
+    } else {
+        j
+    }
+}
+
+/// `SigmaMv` on bare vectors: `Σ^{μν} a_μ b_ν` as a Clifford element, the operator a
+/// `Sigma` becomes once both of its Lorentz indices are contracted and one of its
+/// spinor indices continues a fermion line.
+///
+/// Lowering both arguments and antisymmetrising is exactly the wedge of the two
+/// contravariant vectors, so in [`Multivector`]'s grade-2 normalisation
+/// (`½ T^{μν} σ_{μν}`) the coefficient is `½ (a ∧ b)` — the ½ being [`sigma_half`].
+#[inline]
+pub fn sigma_mv_bare<F: Real>(a: &ComplexVector<F>, b: &ComplexVector<F>) -> Multivector<F> {
+    Multivector::from_bivector(&(AsymRank2Tensor::wedge(a, b) * sigma_half::<F>()))
+}
+
+/// `SigmaOut`/`SigmaOutRev` on bare spinors: the cut fermion line of a
+/// `Sigma ⊗ Sigma` contact as a Clifford element, ready to contract into the other
+/// line's own `Sigma`.
+///
+/// A literal `Sigma` is the two gammas of [`fierz_out_bare`] already contracted, so the
+/// cut line is pure grade 2 — there is no `g^{αβ}` term to leave a scalar behind. Its
+/// bilinear is `½ t^{αβ}` and the surviving line reads it as `Σ^{αβ} · ½ t_{αβ}`, which
+/// in the grade-2 normalisation is `T = ½ t`: one [`sigma_half`] per line, and the
+/// factor two between `σ_{αβ} t^{αβ}` and `½ T^{μν} σ_{μν}` returns one of them.
+/// `reversed_order` is the two lines' relative index order, and — because
+/// `C σ^{αβT} C⁻¹ = −σ^{αβ}` and `σ^{βα} = −σ^{αβ}` are the same sign — also carries a
+/// line read against the vertex's own adjoint.
+#[inline]
+pub fn sigma_out_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+    reversed_order: bool,
+) -> Multivector<F> {
+    let t = fo.tensor_bilinear(fi, Chirality::Both) * sigma_half::<F>();
+    Multivector::from_bivector(&if reversed_order { -t } else { t })
 }
 
 /// `FierzPair` on bare spinors: `ψ̄ M ψ`, as the grade-diagonal pairing of the element
@@ -921,6 +995,79 @@ pub fn fierz_pair<F: Real>(
     })
 }
 
+/// `SigmaVout`: two fermions and a vector → the off-shell vector current
+/// `(ψ̄ Σ^{μν} ψ) v_ν` (see [`sigma_vout_bare`]).
+pub fn sigma_vout<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    v: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    sigma_vout_current(a, b, v, false)
+}
+
+/// `SigmaVoutRev`: [`sigma_vout`] with the free index on `Sigma`'s second Lorentz
+/// slot, `(ψ̄ Σ^{νμ} ψ) v_ν` — the negative of it.
+pub fn sigma_vout_rev<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    v: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
+    sigma_vout_current(a, b, v, true)
+}
+
+/// The `Sigma` vector current on slots. The pair's momentum enters as a fermion
+/// bilinear's (`p_bra − p_ket`) and the contracted vector adds its own, as it does at
+/// any other vertex that reads a vector input.
+pub fn sigma_vout_current<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    v: &WaveformSlot<F>,
+    swapped: bool,
+) -> WaveformSlot<F> {
+    let (fo, fi, reversed) = resolve_bra_ket(a, b);
+    let WaveformSlot::Vector(v) = v else {
+        panic!("Sigma vector current: expected a vector input");
+    };
+    WaveformSlot::Vector(VectorWf {
+        eps: sigma_vout_bare(&fo.spinor, &fi.spinor, &v.eps, reversed != swapped),
+        momentum: fo.momentum - fi.momentum + v.momentum,
+    })
+}
+
+/// `SigmaMv`: two vectors → the Clifford element `Σ^{μν} a_μ b_ν`
+/// (see [`sigma_mv_bare`]).
+pub fn sigma_mv<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    let [a, b] = expect_vectors([a, b]);
+    WaveformSlot::Multivector(MultivectorWf {
+        m: sigma_mv_bare(&a.eps, &b.eps),
+        momentum: a.momentum + b.momentum,
+    })
+}
+
+/// `SigmaOut`: the cut line of a `Sigma ⊗ Sigma` contact as a Clifford element
+/// (see [`sigma_out_bare`]), carrying the momentum a fermion pair routes.
+pub fn sigma_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    sigma_out_current(a, b, false)
+}
+
+/// `SigmaOutRev`: [`sigma_out`] with the two lines' shared indices in opposite orders.
+pub fn sigma_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+    sigma_out_current(a, b, true)
+}
+
+/// The cut `Sigma` line's Clifford element on slots.
+pub fn sigma_out_current<F: Real>(
+    a: &WaveformSlot<F>,
+    b: &WaveformSlot<F>,
+    reversed_order: bool,
+) -> WaveformSlot<F> {
+    let (fo, fi, _) = resolve_bra_ket(a, b);
+    WaveformSlot::Multivector(MultivectorWf {
+        m: sigma_out_bare(&fo.spinor, &fi.spinor, reversed_order),
+        momentum: fo.momentum - fi.momentum,
+    })
+}
+
 /// The vector currents behind `N` slots, panicking on any non-vector operand.
 fn expect_vectors<F: Real, const N: usize>(slots: [&WaveformSlot<F>; N]) -> [VectorWf<F>; N] {
     slots.map(|s| match s {
@@ -1404,6 +1551,145 @@ mod tests {
                 (on_bra - paired).norm() < CLIFFORD_TOL * scale,
                 "M applied to the bra: {on_bra:?} vs the pairing {paired:?}"
             );
+        }
+    }
+
+    /// Every grade's worst deviation between two Clifford elements.
+    fn mv_max_diff(a: &Multivector<f64>, b: &Multivector<f64>) -> f64 {
+        let d = *a - *b;
+        let mut m = d.scalar().norm().max(d.pseudoscalar().norm());
+        for k in 0..4 {
+            m = m
+                .max(d.vector().component(k).norm())
+                .max(d.axial().component(k).norm());
+        }
+        for k in 0..6 {
+            m = m.max(d.bivector().component(k).norm());
+        }
+        m
+    }
+
+    fn as_multivector(slot: &WaveformSlot<f64>) -> Multivector<f64> {
+        match slot {
+            WaveformSlot::Multivector(m) => m.m,
+            other => panic!("expected a Clifford-element slot, got {other:?}"),
+        }
+    }
+
+    /// `Σ^{μν} a_μ b_ν` against the two γ-chains it is built from:
+    /// `a̸ b̸ = a·b − i σ^{μν} a_μ b_ν` makes `σ^{μν} a_μ b_ν = (i/2)(a̸b̸ − b̸a̸)`, and
+    /// ALOHA's `Sigma` is half of that.
+    ///
+    /// [`Multivector::from_gamma_pair`] is the independent route: it is a closed
+    /// coefficient form checked against explicit 4×4 Weyl matrices in the repr layer
+    /// and knows nothing of [`sigma_mv_bare`]'s wedge. Both the normalisation (the
+    /// quarter, not a half) and the index order are pinned, the latter because
+    /// swapping `a` and `b` negates one side and not the other.
+    #[test]
+    fn the_sigma_element_is_half_the_commutator_of_its_two_gammas() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x516_4A_01);
+        for _ in 0..64 {
+            let (a, b) = (rand_vector(&mut rng), rand_vector(&mut rng));
+            let (av, bv) = (as_vector(&a), as_vector(&b));
+            let quarter_i = C::new(0.0, 0.25);
+            let expect = (Multivector::from_gamma_pair(&av, &bv)
+                - Multivector::from_gamma_pair(&bv, &av))
+                * quarter_i;
+            let ours = as_multivector(&sigma_mv(&a, &b));
+            let scale = mv_max_diff(&expect, &Multivector::zero()).max(1.0);
+            assert!(
+                mv_max_diff(&ours, &expect) < CLIFFORD_TOL * scale,
+                "SigmaMv against (i/4)(a̸b̸ − b̸a̸)"
+            );
+            // Grade 2 alone, and antisymmetric in its two arguments.
+            assert!(ours.scalar().norm() == 0.0 && ours.pseudoscalar().norm() == 0.0);
+            let swapped = as_multivector(&sigma_mv(&b, &a));
+            assert!(mv_max_diff(&swapped, &(-ours)) < CLIFFORD_TOL * scale);
+            assert!(
+                mv_max_diff(&ours, &Multivector::zero()) > 1e-6,
+                "a vanishing element would make the antisymmetry check vacuous"
+            );
+        }
+    }
+
+    /// The `Sigma` vector current is the same object read at one free index:
+    /// `[(ψ̄ Σ^{μν} ψ) v_ν] w_μ = ψ̄ (Σ^{μν} w_μ v_ν) ψ`.
+    ///
+    /// It ties [`sigma_vout_bare`] to [`sigma_mv_bare`] — one goes through the pair's
+    /// tensor bilinear and a one-index contraction, the other through a wedge of two
+    /// vectors and the graded pairing — so the ½, the index order and the variance
+    /// have to agree on both routes. The `Rev` spelling (free index on the second
+    /// Lorentz slot) is the negative, which is `σ`'s antisymmetry, and reading the pair
+    /// against the vertex's adjoint is the `C σ^{μνT} C⁻¹ = −σ^{μν}` sign.
+    #[test]
+    fn the_sigma_vector_current_is_the_element_at_one_free_index() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x516_4A_02);
+        for _ in 0..64 {
+            let (bra, ket) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let (v, w) = (rand_vector(&mut rng), rand_vector(&mut rng));
+            let current = sigma_vout(&bra, &ket, &v);
+            let contracted = as_scalar(&metric(&current, &w));
+            let paired = as_scalar(&fierz_pair(&sigma_mv(&w, &v), &bra, &ket));
+            let scale = paired.norm().max(1.0);
+            assert!(
+                (contracted - paired).norm() < CLIFFORD_TOL * scale,
+                "SigmaVout contracted with w: {contracted:?} vs the paired element {paired:?}"
+            );
+            assert!(paired.norm() > 1e-9, "a vanishing draw would be vacuous");
+
+            let rev = as_vector(&sigma_vout_rev(&bra, &ket, &v));
+            let fwd = as_vector(&current);
+            let reversed_pair = as_vector(&sigma_vout(&ket, &bra, &v));
+            for mu in 0..4 {
+                assert!((rev.component(mu) + fwd.component(mu)).norm() < CLIFFORD_TOL * scale);
+                assert!(
+                    (reversed_pair.component(mu) + fwd.component(mu)).norm() < CLIFFORD_TOL * scale
+                );
+            }
+        }
+    }
+
+    /// The two spellings of one four-fermion tensor operator agree inside this crate:
+    /// `Σ ⊗ Σ` is exactly a quarter of the γγ expansion the toy model's `FFFFG` writes.
+    ///
+    /// `σ^{μν} ⊗ σ_{μν} = −½[(γ^μγ^ν)⊗(γ_μγ_ν) − (γ^μγ^ν)⊗(γ_νγ_μ)]` is the expansion,
+    /// and ALOHA's `Sigma` carries a ½ per line, so the literal spelling is a quarter of
+    /// it. The right-hand side runs entirely through the already-MadGraph-gated
+    /// [`fierz_out`]/[`fierz_out_rev`] path, so this pins the new `Sigma` cut's
+    /// normalisation *and* its sign against a route that has an external oracle —
+    /// before the toy row is consulted. The `−⅛` is the product of the two: a kernel at
+    /// the textbook normalisation would be four times too large here.
+    #[test]
+    fn the_sigma_contact_is_a_quarter_of_its_gamma_gamma_expansion() {
+        let mut rng = crate::helas::eval::prop_harness::seeded_rng(0x516_4A_03);
+        for _ in 0..64 {
+            let (bra1, ket1) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let (bra2, ket2) = (rand_bra(&mut rng), rand_ket(&mut rng));
+            let aligned = as_scalar(&fierz_pair(&fierz_out(&bra2, &ket2), &bra1, &ket1));
+            let reversed = as_scalar(&fierz_pair(&fierz_out_rev(&bra2, &ket2), &bra1, &ket1));
+            let expect = (aligned - reversed) * -0.125;
+            let ours = as_scalar(&fierz_pair(&sigma_out(&bra2, &ket2), &bra1, &ket1));
+            let scale = aligned.norm().max(reversed.norm()).max(1.0);
+            assert!(
+                (ours - expect).norm() < CLIFFORD_TOL * scale,
+                "Sigma-spelled contact {ours:?} vs a quarter of the γγ expansion {expect:?}"
+            );
+            assert!(
+                expect.norm() > 1e-9 * scale,
+                "the expansion vanished on this draw, so the check is vacuous"
+            );
+
+            // The cut is pure grade 2 — a literal `Sigma` has no `g^{αβ}` term to leave
+            // a scalar behind — and the two index orders differ by its sign alone.
+            let cut = as_multivector(&sigma_out(&bra2, &ket2));
+            let cut_rev = as_multivector(&sigma_out_rev(&bra2, &ket2));
+            assert!(cut.scalar().norm() == 0.0 && cut.pseudoscalar().norm() == 0.0);
+            for mu in 0..4 {
+                assert!(cut.vector().component(mu).norm() == 0.0);
+                assert!(cut.axial().component(mu).norm() == 0.0);
+            }
+            assert!(mv_max_diff(&cut_rev, &(-cut)) < CLIFFORD_TOL);
+            assert!(mv_max_diff(&cut, &Multivector::zero()) > 1e-9);
         }
     }
 }

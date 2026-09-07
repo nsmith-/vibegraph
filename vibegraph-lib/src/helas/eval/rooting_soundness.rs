@@ -767,3 +767,129 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
     }
     assert!(compared >= 100, "only {compared} amplitudes compared");
 }
+
+/// The toy model's literal-`Sigma` structures with an *off-shell* output, re-rooted.
+///
+/// The two banked toy rows put each structure in a vertex all of whose legs are
+/// external, so between them they reach only the vector-leg rooting (the dipole's
+/// s-channel current) and the amplitude sink (the contact). Radiating a `vt` off the
+/// quark line puts both on an internal fermion line, which is what reaches the
+/// fermion-leg rootings: the dipole becomes a Clifford element acting on the continuing
+/// spinor (`SigmaMv` + `MultivectorIout`/`MultivectorOout`), and the `Sigma ⊗ Sigma`
+/// contact cuts the line the output leg is not on.
+///
+/// Re-rooting is the falsifier. The amplitude must not depend on which vertex is the
+/// root, so it pins the element's momentum routing, the `±` a line read against the
+/// vertex's own adjoint takes, and — for the dipole — that a `Sigma`-chained chiral
+/// projector keeps its chirality: conjugating it at one rooting and not at another
+/// moves the amplitude. The oracle is the baseline amplitude itself, as everywhere in
+/// this module; the absolute conventions are the banked rows'.
+///
+/// Hermetic: the model, its restrict cards and their parameter defaults are all in
+/// tree, and MadGraph is not consulted.
+#[test]
+fn literal_sigma_currents_are_rooting_invariant() {
+    use super::op::Op;
+    use super::tree::Tree;
+    use crate::phasespace::rambo_massless;
+    use rand::SeedableRng;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = root.join("../validation/ufo/vibegraph_toy_UFO");
+    // (card, process, the ops the structure must reach — an empty intersection would
+    // make the whole comparison vacuous).
+    let cases: [(&str, &str, &[Op]); 2] = [
+        (
+            "restrict_dipole.dat",
+            "lt~ lt > qt qt~ vt NP<=1",
+            &[Op::SigmaVout, Op::SigmaMv],
+        ),
+        (
+            "restrict_tensor.dat",
+            "lt~ lt > qt qt~ vt NP<=1 NPGG<=1",
+            &[Op::SigmaOut],
+        ),
+    ];
+
+    let sqrt_s = 900.0;
+    let mut compared = 0usize;
+    for (card, process, must_reach) in cases {
+        let model =
+            Arc::new(UFOModel::load(&dir, Some(&dir.join(card))).expect("load the toy model"));
+        let evaluated = EvaluatedModel::from_model(Arc::clone(&model));
+        let opts = ParsingOptions::default();
+        let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+        let sets = generate_from_proc_card(&pc, model.as_ref()).unwrap();
+        let set = sets.iter().find(|s| !s.diagrams.is_empty()).unwrap();
+
+        let ev = AmplitudeEvaluator::compile(set, model.as_ref()).unwrap();
+        let ast = &ev.folded().ast;
+        let reached: Vec<Op> = ast.iter().map(|id| ast.value(id).op).collect();
+        for op in must_reach {
+            assert!(
+                reached.contains(op),
+                "[{card}] '{process}' never reaches {op:?}, so this comparison is vacuous"
+            );
+        }
+
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5169_4a5f);
+        let mut momenta = vec![
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, sqrt_s / 2.0),
+            LorentzVector::new(sqrt_s / 2.0, 0.0, 0.0, -sqrt_s / 2.0),
+        ];
+        momenta.extend(rambo_massless(sqrt_s, 3, &mut rng));
+        let helicities: Vec<Vec<i32>> = (0..32)
+            .map(|m: usize| {
+                (0..5)
+                    .map(|i| if m >> i & 1 == 1 { 1 } else { -1 })
+                    .collect()
+            })
+            .collect();
+
+        let multi: Vec<&Diagram> = set
+            .diagrams
+            .iter()
+            .filter(|d| d.vertices.len() > 1)
+            .collect();
+        assert!(
+            !multi.is_empty(),
+            "[{card}] no diagram with an internal line to re-root"
+        );
+        for (d, diagram) in multi.iter().enumerate() {
+            let per_root = |r: usize| -> Vec<num_complex::Complex<f64>> {
+                set_root_override(Box::new(move |_| VtxIdx(r)));
+                let one = DiagramSet {
+                    particles_in: set.particles_in.clone(),
+                    particles_out: set.particles_out.clone(),
+                    diagrams: vec![(*diagram).clone()],
+                };
+                let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
+                let bound = BoundAmplitude::<f64>::bind(&ev, &evaluated);
+                let mut scratch = bound.scratch_space();
+                let values = helicities
+                    .iter()
+                    .map(|hel| bound.eval_amplitude(&momenta, hel, &mut scratch))
+                    .collect();
+                clear_root_override();
+                values
+            };
+            let base = per_root(0);
+            let scale = base.iter().fold(0.0f64, |m, z| m.max(z.norm()));
+            assert!(
+                scale > 0.0,
+                "[{card}] diagram {d} vanishes at every helicity"
+            );
+            for r in 1..diagram.vertices.len() {
+                for (h, (a, b)) in base.iter().zip(&per_root(r)).enumerate() {
+                    assert!(
+                        (a - b).norm() / scale < REL_TOL,
+                        "[{card}] diagram {d} helicity {h}: rooted at vertex 0 {a:?}, \
+                         at vertex {r} {b:?}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+    }
+    assert!(compared >= 100, "only {compared} amplitudes compared");
+}

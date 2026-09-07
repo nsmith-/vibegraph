@@ -460,6 +460,11 @@ fn render_hole(lt: &LorentzEvalTree, n: usize, proj: usize) -> String {
             L::MultivectorIout { .. } => "MultivectorIout".to_string(),
             L::MultivectorOout { .. } => "MultivectorOout".to_string(),
             L::FierzPair { .. } => "FierzPair".to_string(),
+            L::SigmaVout { .. } => "SigmaVout".to_string(),
+            L::SigmaVoutRev { .. } => "SigmaVoutRev".to_string(),
+            L::SigmaMv { .. } => "SigmaMv".to_string(),
+            L::SigmaOut { .. } => "SigmaOut".to_string(),
+            L::SigmaOutRev { .. } => "SigmaOutRev".to_string(),
         }
     };
     let kids = node
@@ -735,6 +740,33 @@ fn lower_lorentz(
             let c = rec(i, b);
             let d = rec(j, b);
             b.add(Op::FierzPair, Sym::None, vec![a, c, d])
+        }
+        L::SigmaVout { i, j, v } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            let d = rec(v, b);
+            b.add(Op::SigmaVout, Sym::None, vec![a, c, d])
+        }
+        L::SigmaVoutRev { i, j, v } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            let d = rec(v, b);
+            b.add(Op::SigmaVoutRev, Sym::None, vec![a, c, d])
+        }
+        L::SigmaMv { a, b: bb } => {
+            let x = rec(a, b);
+            let y = rec(bb, b);
+            b.add(Op::SigmaMv, Sym::None, vec![x, y])
+        }
+        L::SigmaOut { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::SigmaOut, Sym::None, vec![a, c])
+        }
+        L::SigmaOutRev { i, j } => {
+            let a = rec(i, b);
+            let c = rec(j, b);
+            b.add(Op::SigmaOutRev, Sym::None, vec![a, c])
         }
         L::Mul { ref children } => {
             let cs: Vec<NodeId> = children.iter().map(|&c| rec(c, b)).collect();

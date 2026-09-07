@@ -1317,6 +1317,33 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 );
                 scalars[loc] = out;
             }
+            Instr::SigmaVout {
+                bra,
+                ket,
+                v,
+                negate,
+            } => {
+                let out = kernel::sigma_vout_bare(
+                    &fout[bra as usize],
+                    &fin[ket as usize],
+                    &vectors[v as usize],
+                    negate,
+                );
+                vectors[loc] = out;
+            }
+            Instr::SigmaMv { a, b } => {
+                let out = kernel::sigma_mv_bare(&vectors[a as usize], &vectors[b as usize]);
+                multivectors[loc] = out;
+            }
+            Instr::SigmaOut {
+                bra,
+                ket,
+                reversed_order,
+            } => {
+                let out =
+                    kernel::sigma_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
+                multivectors[loc] = out;
+            }
             Instr::ScaleMvC { m, scale } => {
                 multivectors[loc] = multivectors[m as usize] * scalars[scale as usize];
             }
@@ -1625,6 +1652,11 @@ pub(super) fn apply<'a, F: Real + 'a>(
         Op::MultivectorIout => kernel::multivector_iout(kid(0), kid(1)),
         Op::MultivectorOout => kernel::multivector_oout(kid(0), kid(1)),
         Op::FierzPair => kernel::fierz_pair(kid(0), kid(1), kid(2)),
+        Op::SigmaVout => kernel::sigma_vout(kid(0), kid(1), kid(2)),
+        Op::SigmaVoutRev => kernel::sigma_vout_rev(kid(0), kid(1), kid(2)),
+        Op::SigmaMv => kernel::sigma_mv(kid(0), kid(1)),
+        Op::SigmaOut => kernel::sigma_out(kid(0), kid(1)),
+        Op::SigmaOutRev => kernel::sigma_out_rev(kid(0), kid(1)),
         Op::EpsilonVout => kernel::epsilon_vout(kid(0), kid(1), kid(2)),
         Op::EpsilonAmp => kernel::epsilon_amp(kid(0), kid(1), kid(2), kid(3)),
         Op::PMom => kernel::pmom(kid(0)),
