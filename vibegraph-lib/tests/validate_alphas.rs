@@ -157,7 +157,27 @@ struct Resolved {
 fn resolve(name: &str, run: &Path) -> Resolved {
     let card = RunCard::parse_file(&run.join("Cards/run_card.dat")).expect("run card");
     let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
-    let a_s = params.get("sminputs", &[3]).expect("aS in SMINPUTS");
+    // A model with no `aS` leaves `SMINPUTS` out of the generated card; MadGraph
+    // still ran the coupling, and the value it ran is
+    // `common::UNDECLARED_ALPHA_S_MZ`, which the log oracle below pins.
+    let a_s = match params.get("sminputs", &[3]) {
+        Some(a_s) => {
+            assert!(
+                !common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: its parameter card carries an aS now — drop it from \
+                 UNDECLARED_ALPHA_S_RUNS"
+            );
+            a_s
+        }
+        None => {
+            assert!(
+                common::UNDECLARED_ALPHA_S_RUNS.contains(&name),
+                "{name}: no aS in SMINPUTS and the run is not declared as a model \
+                 without one"
+            );
+            common::UNDECLARED_ALPHA_S_MZ
+        }
+    };
     let info = common::pdfset::set_alpha_s_info(&card);
     let source = AlphaSSource::from_run_card(&card, a_s, info.as_ref())
         .unwrap_or_else(|e| panic!("{name}: alpha_s source: {e}"));
@@ -170,6 +190,23 @@ fn resolve(name: &str, run: &Path) -> Resolved {
         source,
         param_card_asmz: asmz_from_param_card(a_s),
     }
+}
+
+/// Whether this run's card is one [`common::REFUSED_RUN_CARDS`] declares refused,
+/// asserting the refusal rather than assuming it: a card that starts parsing fails
+/// here and the run rejoins the sweep.
+fn refused_card(name: &str, run: &Path) -> bool {
+    if !common::REFUSED_RUN_CARDS
+        .iter()
+        .any(|(row, _)| *row == name)
+    {
+        return false;
+    }
+    assert!(
+        RunCard::parse_file(&run.join("Cards/run_card.dat")).is_err(),
+        "{name}: its run card is accepted now, so the run belongs in this sweep"
+    );
+    true
 }
 
 /// `(scalup, aqcdup)` for every `<event>` of a run.
@@ -227,6 +264,17 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// outside. The partition is asserted rather than assumed, so the day it
 /// changes is a test failure and not a silent reclassification.
 ///
+/// Two more sit outside for a reason of their own:
+/// `p3r3_to_p3r3_toy_epsilon` and `p3r3_to_p3r3_toy_sextet` miss on every one of
+/// their 10 000 events, by 13 514 times the printing budget, and the sign is what
+/// names the cause — their `AQCDUP` is *larger* than the octet run's at a
+/// *larger* `SCALUP` (0.4333599 at 251.2964 GeV against 0.4333524 at 250), which
+/// no running coupling does. `SCALUP` is `μF` and these two are the only banked
+/// runs where the clustering reads `μR` off a different vertex, so the field this
+/// oracle takes as given is not the scale the coupling was evaluated at. Their
+/// `μR` is not recoverable from the record — `validate_scales` declines them for
+/// a model it cannot read — so the miss is reported here and not repaired.
+///
 /// The four `lhapdf` runs are here on the strength of a *different* source:
 /// their `αs` comes from the PDF set's own table, not from this crate's
 /// evolution. The parameter card's value would reproduce none of their events —
@@ -243,16 +291,29 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
     "ee_to_mumu",
+    "ee_to_mumu_4f",
+    "ee_to_mumu_smlimit",
     "ee_to_mumu_tata_qcd0",
     "ee_to_mumua",
     "ee_to_tatah",
     "ee_to_ttx",
+    "ee_to_ttx_dipole",
+    "ee_to_ttx_smeft",
+    "ee_to_ttx_smlimit",
     "ee_to_wpwm",
+    "ee_to_wpwm_cw",
     "ee_to_zh",
+    "ee_to_zh_smeft",
     "gg_to_gg",
+    "gg_to_gg_cg",
     "gg_to_ttx",
+    "gg_to_ttx_smlimit",
+    "gg_to_ttx_smlimit_qcd2",
     "gu_to_epemu",
     "gux_to_epemux",
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
     "pp_to_bb",
     "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
@@ -263,9 +324,12 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
     "pp_to_ll_scalefact2",
+    "qqx_to_o8o8_toy_dcolor",
+    "tata_to_ttx_tensor4f",
     "ud_to_epemud_qcd0",
     "uux_to_epemg",
     "uux_to_mumu",
+    "uux_to_ttx_4f",
     "uux_to_uux",
 ];
 
@@ -322,6 +386,9 @@ fn banked_events_reproduce_aqcdup() {
     let mut worst_run = String::new();
 
     for (name, run) in &runs {
+        if refused_card(name, run) {
+            continue;
+        }
         let running = resolve(name, run).source;
         let events = event_scales(run);
         let mut run_worst = 0.0f64;
@@ -407,6 +474,9 @@ fn banked_run_logs_pin_the_alpha_s_source_rule() {
     let mut checked = 0usize;
     let mut grid_runs: Vec<String> = Vec::new();
     for (name, run) in &runs {
+        if refused_card(name, run) {
+            continue;
+        }
         let Some(log) = find_run_log(run) else {
             continue;
         };

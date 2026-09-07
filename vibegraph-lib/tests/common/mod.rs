@@ -10,6 +10,48 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+
+/// The banked runs whose model declares no strong coupling, and the `αs(M_Z)`
+/// MadGraph ran them with.
+///
+/// A UFO with no `aS` among its external parameters leaves `SMINPUTS` out of the
+/// generated parameter card altogether, so the cards do not say what MadGraph's
+/// own `αs(M_Z)` was — the value below is the one `setrun.f` printed into every
+/// one of these runs' logs, which is what makes them ordinary participants in the
+/// `AQCDUP` oracle instead of runs a gate has to skip. Declaring it here rather
+/// than reading it back out of the log is what keeps the log an independent
+/// oracle: `validate_alphas::banked_run_logs_pin_the_alpha_s_source_rule` asserts
+/// the printed line against this number.
+pub const UNDECLARED_ALPHA_S_MZ: f64 = 1.3799843265950287;
+
+/// The runs [`UNDECLARED_ALPHA_S_MZ`] applies to.
+pub const UNDECLARED_ALPHA_S_RUNS: &[&str] = &[
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
+    "qqx_to_o8o8_toy_dcolor",
+];
+
+/// The banked run cards this crate refuses, by the row whose `Cards/` holds them,
+/// with what makes the refusal the right answer.
+///
+/// A refusal is a claim about the estimator, not a gap: the card asks for a
+/// quantity that is not the one the rest of this crate computes, and accepting it
+/// would mean silently computing something else. Every gate that sweeps the banked
+/// cards reads this list, and `validate_scales::banked_run_cards_are_accepted`
+/// checks it both ways — a listed card that starts parsing fails there.
+pub const REFUSED_RUN_CARDS: &[(&str, &str)] = &[(
+    "wpwm_to_wpwmz_cw",
+    "`w+ w- > w+ w- z` puts a weak boson on both beams, which is MadGraph's \
+     effective-vector-approximation branch (`banner.py`: `eva_in_b1 and eva_in_b2`). \
+     That branch sets `nhel = 1` -- Monte Carlo over helicities in place of the \
+     explicit sum -- along with `pdlabel = eva` and `fixed_fac_scale`, and the \
+     script\'s `set lpp1 0` overrides the beams it also set but not those. A sampled \
+     helicity is a different estimator and a different per-event weight, so the card \
+     is refused rather than read as an explicit sum",
+)];
 use vibegraph::ufo::sm::{sm_model as interned_sm, SMRestrict};
 use vibegraph::ufo::UFOModel;
 

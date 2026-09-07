@@ -718,6 +718,91 @@ fn config_carrying_diagrams(diagrams: &[Diagram]) -> Vec<usize> {
         .collect()
 }
 
+/// [`config_carrying_diagrams`] partitioned the way MadGraph's channel mapping
+/// partitions them: each entry holds the diagrams sharing one `AMP2` accumulator, in
+/// diagram order, and the entries are in the order their opening diagram appears —
+/// the numbering `get_amp2_lines` gives them.
+///
+/// The rule is `IdentifyConfigTag` (`madgraph/iolibs/group_subprocs.py`), the
+/// `DiagramTag` `find_mapping_diagrams` keys `diagram_maps` by. It identifies an
+/// external leg by its leg number and an internal line by the propagating particle's
+/// `(colour, mass, width)`; the interaction at each vertex is looked up and then
+/// discarded. Two diagrams that differ only in which interaction joins the same
+/// particles are therefore **one** configuration. No Standard-Model process can show
+/// that — the SM never puts two different interactions between the same three
+/// particles — but a scalar carrying an `Identity` and a `Gamma5` bilinear does, and
+/// its four combinations across one s-channel exchange are one accumulator, not four.
+///
+/// The tag is built from the baked momenta rather than by walking the tree: a tree is
+/// determined by the bipartitions of its external legs, so a propagator's signed
+/// external-momentum combination *is* its position, and the sorted multiset over the
+/// internal lines settles both the topology and the propagators on it.
+///
+/// **This is not the partition [`AmplitudeEvaluator`] integrates over.** Its
+/// configurations are one per entry of [`config_carrying_diagrams`], which is finer
+/// wherever this function merges: a merged accumulator is MadGraph's coherent
+/// `|Σ AMP|²` over the group, and squaring each member separately is a different
+/// number and a different channel decomposition. What this function is for is
+/// aligning the two — `amplitude_oracle` folds our per-diagram configuration
+/// amplitudes through it to compare against MadGraph's own accumulators, and asserts
+/// the partition it derives here against the `AMP2` grouping in MadGraph's generated
+/// `matrix1.f`.
+pub fn config_groups(diagrams: &[Diagram], model: &UFOModel) -> Vec<Vec<usize>> {
+    let mut tags: Vec<ConfigTag> = Vec::new();
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for index in config_carrying_diagrams(diagrams) {
+        let tag = config_tag(&diagrams[index], model);
+        match tags.iter().position(|seen| *seen == tag) {
+            Some(config) => groups[config].push(index),
+            None => {
+                tags.push(tag);
+                groups.push(vec![index]);
+            }
+        }
+    }
+    groups
+}
+
+/// One diagram's `IdentifyConfigTag`: per internal line, where it sits (its external
+/// bipartition, signed to a canonical direction) and what propagates on it.
+type ConfigTag = Vec<(Vec<i8>, i32, String, String)>;
+
+fn config_tag(diagram: &Diagram, model: &UFOModel) -> ConfigTag {
+    // `IdentifyConfigTag` substitutes the photon's mass and width for a `Z` or an
+    // `H` on a line whose leg is initial-state — which, on a 2 → n tree, is exactly
+    // a spacelike line. It is what makes a t-channel γ and a t-channel Z one
+    // configuration while the s-channel pair stays two.
+    let photon = model
+        .particles
+        .values()
+        .find(|p| p.pdg_code == 22)
+        .map(|p| (p.mass_param.clone(), p.width_param.clone()));
+
+    let mut tag: ConfigTag = diagram
+        .props
+        .iter()
+        .map(|prop| {
+            let mut split = prop.momentum.clone();
+            if split.iter().find(|&&c| c != 0).is_some_and(|&c| c < 0) {
+                split.iter_mut().for_each(|c| *c = -*c);
+            }
+            let particle = model.particle(prop.particle);
+            let (mass, width) = match &photon {
+                Some(zero)
+                    if prop.is_spacelike(diagram.n_in)
+                        && matches!(particle.pdg_code.abs(), 23 | 25) =>
+                {
+                    zero.clone()
+                }
+                _ => (particle.mass_param.clone(), particle.width_param.clone()),
+            };
+            (split, particle.color, mass, width)
+        })
+        .collect();
+    tag.sort();
+    tag
+}
+
 /// Helicity-filter threshold: a combination whose CF-contracted |M_c|² stays below
 /// `Σ_c |M_c|² · HEL_PRUNE_REL / NCOMB` at every probe point is dropped (MadGraph's
 /// `LIMHEL` criterion, tightened from its 1e-8 into the bimodal gap between
