@@ -105,7 +105,7 @@ pub fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
                 BinOp::Sub => l - r,
                 BinOp::Mul => l * r,
                 BinOp::Div => l / r,
-                BinOp::Pow => l.powc(r),
+                BinOp::Pow => pow(l, r),
             }
         }
         Expr::Neg(inner) => -eval(inner, params),
@@ -134,10 +134,32 @@ pub fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     }
 }
 
+/// `base ** exp`, keeping a negative real base off the complex branch.
+///
+/// `powc` evaluates `exp(exp·log base)`, and `log(-x) = ln x + iπ`, so a
+/// negative real base raised to an integral power comes back with `sin(nπ)`
+/// left on the imaginary part — a spurious ~2.4e-16 relative imaginary
+/// component on a quantity Python computes in real arithmetic. Python's float
+/// power keeps `(-x)**n` real for integral `n` and takes the principal branch
+/// (`arg = +π`) otherwise; both are reproduced here. A non-negative real base
+/// is left on the complex path, where the polar form already agrees with the
+/// real power to within the last bits of `exp` and `log`.
+fn pow(base: Complex64, exp: Complex64) -> Complex64 {
+    if base.im == 0.0 && base.re < 0.0 && exp.im == 0.0 {
+        if exp.re.fract() == 0.0 {
+            return Complex64::new(base.re.powf(exp.re), 0.0);
+        }
+        // Rebuilding the base discards the negative zero `-x` leaves on its
+        // imaginary part, which would otherwise select the conjugate branch.
+        return Complex64::new(base.re, 0.0).powc(exp);
+    }
+    base.powc(exp)
+}
+
 peg::parser! {
     /// PEG grammar for UFO expression strings.
     ///
-    /// Precedence (low to high): additive, multiplicative, power, unary, primary.
+    /// Precedence (low to high): additive, multiplicative, unary, power, primary.
     pub grammar ufo_expr() for str {
 
         // Entry point.
@@ -154,7 +176,7 @@ peg::parser! {
             / "-" { BinOp::Sub }
 
         rule multiplicative() -> Expr
-            = l:power() rest:(_ op:mulop() _ r:power() {(op, r)})* {
+            = l:unary() rest:(_ op:mulop() _ r:unary() {(op, r)})* {
                 rest.into_iter().fold(l, |acc, (op, r)| Expr::BinOp(op, Box::new(acc), Box::new(r)))
             }
 
@@ -162,14 +184,17 @@ peg::parser! {
             = "*" !"*" { BinOp::Mul }
             / "/" { BinOp::Div }
 
-        // Power: right-associative.
-        rule power() -> Expr
-            = base:unary() _ "**" _ exp:power() { Expr::BinOp(BinOp::Pow, Box::new(base), Box::new(exp)) }
-            / unary()
-
+        // A sign binds looser than `**` on the left, as Python's
+        // `factor: ('+'|'-') factor | power` does: `-a**2` is `-(a**2)`.
         rule unary() -> Expr
-            = "-" _ e:primary() { Expr::Neg(Box::new(e)) }
-            / "+" _ e:primary() { e }
+            = "-" _ e:unary() { Expr::Neg(Box::new(e)) }
+            / "+" _ e:unary() { e }
+            / power()
+
+        // Right-associative, and the exponent is itself a signed factor
+        // (Python's `power: primary ['**' factor]`), so `a**-b` parses.
+        rule power() -> Expr
+            = base:primary() _ "**" _ exp:unary() { Expr::BinOp(BinOp::Pow, Box::new(base), Box::new(exp)) }
             / primary()
 
         rule primary() -> Expr
@@ -261,6 +286,17 @@ mod tests {
     use super::*;
     use std::f64::consts::PI;
 
+    /// Equality up to the last few bits: raising a non-negative real base goes
+    /// through the complex polar form, which costs a couple of ulp per `**`.
+    #[track_caller]
+    fn assert_close(got: Complex64, want: Complex64) {
+        let tol = 8.0 * f64::EPSILON * want.norm().max(1.0);
+        assert!(
+            (got - want).norm() <= tol,
+            "{got} is not {want} within {tol:e}"
+        );
+    }
+
     fn params(pairs: &[(&str, f64)]) -> HashMap<String, Complex64> {
         pairs
             .iter()
@@ -302,6 +338,123 @@ mod tests {
         let e = parse_expr("ee**2").unwrap();
         let p = params(&[("ee", 3.0)]);
         assert!((eval(&e, &p).re - 9.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_sign_binds_looser_than_exponentiation() {
+        let p = params(&[("a", 3.0)]);
+        assert_eq!(parse_expr("-a**2").unwrap(), parse_expr("-(a**2)").unwrap());
+        assert_ne!(parse_expr("-a**2").unwrap(), parse_expr("(-a)**2").unwrap());
+        assert_close(
+            eval(&parse_expr("-a**2").unwrap(), &p),
+            Complex64::new(-9.0, 0.0),
+        );
+        assert_close(
+            eval(&parse_expr("(-a)**2").unwrap(), &p),
+            Complex64::new(9.0, 0.0),
+        );
+        assert_close(
+            eval(&parse_expr("+a**2").unwrap(), &p),
+            Complex64::new(9.0, 0.0),
+        );
+        // The sign is looser than `**` but tighter than `*`, so a leading minus
+        // negates the whole product's first factor only.
+        assert_close(
+            eval(&parse_expr("-a**2*a").unwrap(), &p),
+            Complex64::new(-27.0, 0.0),
+        );
+    }
+
+    #[test]
+    fn an_exponent_carries_its_own_sign() {
+        let p = params(&[("a", 2.0), ("b", 3.0)]);
+        assert_close(
+            eval(&parse_expr("a**-b").unwrap(), &p),
+            Complex64::new(0.125, 0.0),
+        );
+        assert_close(
+            eval(&parse_expr("-a**-b").unwrap(), &p),
+            Complex64::new(-0.125, 0.0),
+        );
+        // `10**-40` is how SMEFTsim's parameters guard a division by a
+        // possibly-zero Yukawa.
+        assert_close(
+            eval(&parse_expr("10**-40").unwrap(), &HashMap::new()),
+            Complex64::new(1e-40, 0.0),
+        );
+    }
+
+    #[test]
+    fn exponentiation_is_right_associative() {
+        // 512, not the 64 a left-associative reading would give.
+        assert_close(
+            eval(&parse_expr("2**3**2").unwrap(), &HashMap::new()),
+            Complex64::new(512.0, 0.0),
+        );
+        assert_close(
+            eval(&parse_expr("2**-3**2").unwrap(), &HashMap::new()),
+            Complex64::new(2f64.powi(-9), 0.0),
+        );
+    }
+
+    #[test]
+    fn a_negative_real_base_raised_to_an_integer_power_stays_real() {
+        let p = params(&[("a", 3.0)]);
+        assert_eq!(
+            eval(&parse_expr("(-a)**2").unwrap(), &p),
+            Complex64::new(9.0, 0.0)
+        );
+        assert_eq!(
+            eval(&parse_expr("(-a)**3").unwrap(), &p),
+            Complex64::new(-27.0, 0.0)
+        );
+        // A negative base with a fractional exponent does leave the reals, and
+        // there the complex branch is the answer Python gives too.
+        let root = eval(&parse_expr("(-a)**0.5").unwrap(), &p);
+        assert!(root.im > 0.0 && (root.im - 3f64.sqrt()).abs() < 1e-15);
+    }
+
+    /// The three expressions in the models this repository loads whose value
+    /// depends on a sign binding looser than `**`: the Standard Model's `GC_7`
+    /// and `GC_54`, and the `cbWRe` term of SMEFTsim's `dWT`.
+    #[test]
+    fn model_expressions_read_as_python_reads_them() {
+        let p = params(&[
+            ("ee", 0.3079537672443688),
+            ("cw", 0.875391102200322),
+            ("sw", 0.4834153681757587),
+            ("cbWRe", 0.008),
+            ("MB", 4.7),
+            ("MT", 173.0),
+            ("MWsm", 79.82436),
+        ]);
+        for (expr, parenthesized) in [
+            ("-ee**2/(2.*cw)", "-(ee**2)/(2.*cw)"),
+            ("-ee**2/(2.*sw)", "-(ee**2)/(2.*sw)"),
+            (
+                "cbWRe*MB*(-MB**2 + MT**2 + MWsm**2)",
+                "cbWRe*MB*(-(MB**2) + MT**2 + MWsm**2)",
+            ),
+        ] {
+            let ours = eval(&parse_expr(expr).unwrap(), &p);
+            assert_eq!(
+                ours,
+                eval(&parse_expr(parenthesized).unwrap(), &p),
+                "{expr}"
+            );
+            assert_eq!(ours.im, 0.0, "{expr} is real");
+        }
+        // The Standard Model's own values on its default card: negative, where
+        // reading the sign as part of the base would make them positive.
+        let gc_7 = eval(&parse_expr("-ee**2/(2.*cw)").unwrap(), &p);
+        let gc_54 = eval(&parse_expr("-ee**2/(2.*sw)").unwrap(), &p);
+        assert_close(gc_7, Complex64::new(-0.05416751582328568, 0.0));
+        assert_close(gc_54, Complex64::new(-0.0980890648117737, 0.0));
+        let d_wt = eval(
+            &parse_expr("cbWRe*MB*(-MB**2 + MT**2 + MWsm**2)").unwrap(),
+            &p,
+        );
+        assert_close(d_wt, Complex64::new(1364.0843256978012, 0.0));
     }
 
     #[test]
