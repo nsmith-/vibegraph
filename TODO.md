@@ -20,7 +20,7 @@ cells — 136 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and 57 uncovered**
 (`pixi run --skip-deps validate` exit 0; amplitudes 42, diagrams 48,
 integrals 28, samples 27 timed measurements).
 The `info` cells that remain are `ee_to_wpwm_cw` (one |M|² point at 2.08e-12),
-`ee_to_zh_smeft` (a tenth-digit derived-parameter spread), `wpwm_to_wpwmz_cw`
+`ee_to_zh_smeft` (MadGraph's generated Fortran rounds the UFO's `11/24` literal in the h-Z-γ loop coupling `GC_303` to seven significant digits, a 1.2e-8 defect on its side — attributed, note 35 §3 E1), `wpwm_to_wpwmz_cw`
 (the five-vector residual, |M|² 2.20e3 and reported again since Z),
 `gg_to_gg_cg`'s diagram count under the `NGRAPHS` convention, and the five
 Standard-Model `info` cells that predate the sprint. **Next**: the user's call.

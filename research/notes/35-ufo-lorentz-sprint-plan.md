@@ -391,7 +391,19 @@ unsigned; see §3.5). Gated since `733e33d` at 2.16e-13;
 unit-modulus constant at +90°, the constants differing in the tenth digit:
 a derived-parameter difference on the only card with both input-scheme
 shifts (`dMZ2`, `dkH`, and the width shifts `dWZ`/`dWH` — `dWZ` uses
-`cmath.sqrt(-4*MB**2 + MZ**2)` — are the suspects); `wpwm_to_wpwmz_cw`
+`cmath.sqrt(-4*MB**2 + MZ**2)` — are the suspects; **attributed 2026-09-07,
+after the close-out**: none of those. A three-way comparison on the row's own
+card — this crate, MadGraph's Python `model_reader`, MadGraph's generated
+Fortran read back through the f2py module's `couplings` common block — puts
+our 109 couplings within 6.5e-15 of MadGraph's Python and finds MadGraph's
+Fortran off its own Python on exactly one of the subprocess's 17 couplings,
+`GC_303 = 2i·gHza/vevhat`, the `SMHLOOP` h-Z-γ effective coupling, by 1.2e-8
+— the `|k|−1 = 1.2e-8` E1 had already measured. The UFO writes `gHza` with
+the literal `0.4583333333333333` (11/24) and several like it, and MadGraph's
+Fortran writer emits them as `4.583333D-01`, seven significant digits. The
+reference is the side that rounds; the row stays `info` with the cause
+named, and enforcing it would mean rounding a literal on purpose to match a
+defect); `wpwm_to_wpwmz_cw`
 enumerates and compiles (five-leg vertices needed no arity work) but is
 grossly off with no per-diagram table banked. Fusion guard: `chiral_gamma_site`
 refuses a chain or a `Gamma5`; the process-level fused-vs-generic pin is
