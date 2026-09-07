@@ -14,6 +14,11 @@
 //!   pinned in the library's own tests and the flow tags against
 //!   `leshouche.inc`, but until here nothing had compared the *realised*
 //!   frequencies against MadGraph's realised frequencies.
+//! * The **incoming legs**. Every kinematic observable is built from the
+//!   outgoing state, so the beams are the one part of the record no distribution
+//!   reaches. At fixed beams they are constants of the process, and the
+//!   comparison is an equality at the banked file's own printed precision rather
+//!   than a p-value — see [`samples::beam_columns`](vibegraph::validation::samples::beam_columns).
 //!
 //! # How the two samples are made comparable
 //!
@@ -40,8 +45,12 @@
 //! # What this gate provably cannot detect
 //!
 //! * Anything both sides get right about *shape* and wrong about *normalisation*:
-//!   every statistic here is computed on normalised distributions, and the
-//!   absolute cross section is the `integrals` category's business.
+//!   every KS and χ² statistic here is computed on normalised distributions, and
+//!   the absolute cross section is the `integrals` category's business.
+//! * A beam construction that reproduces MadGraph's momenta for the wrong
+//!   reason. The incoming-leg columns are an equality against the record, so
+//!   they see a beam that is built differently, not one that is built badly and
+//!   lands in the same place.
 //! * Correlations between columns. Each observable is compared on its own
 //!   marginal, so two samples with identical marginals and different correlations
 //!   pass.
@@ -50,6 +59,7 @@
 //!   question is decided by a binned comparison
 //!   ([`the_low_m_ll_region_is_binned_against_madgraph`]) and not by a p-value.
 
+use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -71,11 +81,15 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
 use vibegraph::unweight::Unweighter;
-use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSample, Spectrum};
+use vibegraph::validation::samples::{
+    compare, labelling_for, BeamKind, Chi2Column, EventSample, Spectrum,
+};
 
 mod common;
 
-use common::report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
+use common::report::{
+    BeamCell, CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch,
+};
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
 /// the grids the events are drawn on are the ones that gate integrates over.
@@ -283,13 +297,9 @@ const ROWS: &[Row] = &[
     // through `common::model_for_row`, so a SMEFT sample is drawn from a SMEFT
     // matrix element rather than from a same-named Standard-Model one.
     //
-    // What these cells do *not* see is the beam configuration: every observable
-    // here is built from the outgoing legs alone, so a difference in how the
-    // incoming momenta are constructed is invisible to all of them. It is not
-    // hypothetical — `qqx_to_o8o8_toy_dcolor` and the two `p3r3` rows have massive
-    // incoming particles that this crate puts on the light cone, which moves their
-    // cross sections by 6 to 7% (their `integrals` cells) and leaves every column
-    // below comfortably above the floor.
+    // The beam configuration is compared by the incoming-leg columns rather than
+    // by any of the observables, which are built from the outgoing legs alone.
+    // `MASSIVE_BEAMS` is where that comparison currently disagrees.
     Row {
         key: "ee_to_mumu_smlimit",
         process: "e+ e- > mu+ mu-",
@@ -445,6 +455,54 @@ const ROWS: &[Row] = &[
         mode: "gate",
     },
 ];
+
+/// The rows whose incoming legs this crate builds differently from MadGraph, so
+/// their incoming-leg columns are measured and reported rather than enforced.
+///
+/// MadGraph puts each beam on its own mass shell at the run card's energy and
+/// boosts to the partonic centre of mass; `FixedBeamIntegrand` puts both on the
+/// light cone at `√ŝ/2`. Every row with a massive incoming particle therefore
+/// disagrees on the beams' `pz`, by a construction difference whose size is set
+/// by the mass and not by any statistic. Measured against MadGraph's banked
+/// records, at `ebeam1 = ebeam2 = 250` GeV throughout:
+///
+/// | row | `m_in` (GeV) | banked `pz` | worst deviation (GeV) |
+/// |---|---|---|---|
+/// | `qqx_to_o8o8_toy_dcolor` | 50 | ±244.94897428 | 5.05 on `pz` |
+/// | `p3r3_to_p3r3_toy_epsilon` | 60 / 70 | ±241.35011226 | 8.65 on `pz`, 1.30 on `E` |
+/// | `p3r3_to_p3r3_toy_sextet` | 60 / 70 | ±241.35011226 | 8.65 on `pz`, 1.30 on `E` |
+/// | `ll_to_qqx_toy_dipole` | 10 | ±249.79991994 | 0.200 on `pz` |
+/// | `ll_to_qqx_toy_tensor` | 10 | ±249.79991994 | 0.200 on `pz` |
+/// | `ll_to_qqx_toy_yukawa` | 10 | ±249.79991994 | 0.200 on `pz` |
+/// | `tata_to_ttx_tensor4f` | 1.77686 | ±249.99368546 | 6.31e-3 on `pz` |
+///
+/// The masses themselves agree on every one of them — the record carries the
+/// model's pole mass, so these events are written off their own mass shell —
+/// which is what says the disagreement is the momentum construction and not the
+/// particle content. The first three carry the same defect in their `integrals`
+/// cells at 6 to 7%; on the last four the flux error cancels against an `|M|²`
+/// excess of the same `O(m²/ŝ)` size and those cells are enforced, which is
+/// exactly why the beams need a column of their own rather than a cross section
+/// to be seen in.
+const MASSIVE_BEAMS: [&str; 7] = [
+    "qqx_to_o8o8_toy_dcolor",
+    "p3r3_to_p3r3_toy_epsilon",
+    "p3r3_to_p3r3_toy_sextet",
+    "ll_to_qqx_toy_dipole",
+    "ll_to_qqx_toy_tensor",
+    "ll_to_qqx_toy_yukawa",
+    "tata_to_ttx_tensor4f",
+];
+
+/// Whether a row's incoming-leg columns are enforced. An informational row is
+/// informational on all of its columns.
+fn beam_column_mode(row: &Row) -> &'static str {
+    if row.mode != "gate" || MASSIVE_BEAMS.contains(&row.key) {
+        "info"
+    } else {
+        "gate"
+    }
+}
 
 /// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
 /// free at `dynamical_scale_choice = -1`.
@@ -607,8 +665,16 @@ fn generate(
     }
 }
 
+/// What one seed's comparison found that disagrees, split by which mode governs
+/// it: the outgoing columns and the incoming legs carry separate modes.
+#[derive(Default)]
+struct Disagreements {
+    columns: Vec<String>,
+    beams: Vec<String>,
+}
+
 /// Compare one generated sample against MadGraph's, filling in a report row's
-/// per-seed entry and returning the columns that fell below the floor.
+/// per-seed entry and returning what disagreed.
 fn compare_seed(
     key: &str,
     seed: u64,
@@ -616,7 +682,7 @@ fn compare_seed(
     theirs: &EventSample,
     labelling: Labelling,
     row: &mut SamplesRow,
-) -> Vec<String> {
+) -> Disagreements {
     let found = compare(ours, theirs, labelling);
     let worst = found
         .worst_ks()
@@ -643,10 +709,27 @@ fn compare_seed(
         );
     }
 
-    let mut below = Vec::new();
+    let mut beam_lines = String::new();
+    for cell in &found.beams {
+        match cell.kind {
+            BeamKind::Constant {
+                theirs, ours, tol, ..
+            } => beam_lines.push_str(&format!(
+                "             {:<9} {ours:.11e} against {theirs:.11e} (tol {tol:.2e})\n",
+                cell.field
+            )),
+            BeamKind::Distribution { d, p } => beam_lines.push_str(&format!(
+                "             {:<9} KS p {p:.3e} (D {d:.4})\n",
+                cell.field
+            )),
+        }
+    }
+    eprint!("{beam_lines}");
+
+    let mut below = Disagreements::default();
     for cell in &found.ks {
         if cell.p < P_FLOOR {
-            below.push(format!(
+            below.columns.push(format!(
                 "[{key}] seed {seed:#010x} KS {} p {:.3e} (D {:.4}) below the {P_FLOOR:.0e} floor",
                 cell.observable, cell.p, cell.d
             ));
@@ -654,12 +737,34 @@ fn compare_seed(
     }
     for cell in &found.chi2 {
         if cell.p < P_FLOOR {
-            below.push(format!(
+            below.columns.push(format!(
                 "[{key}] seed {seed:#010x} chi2 {} p {:.3e} ({:.1}/{} dof) below the \
                  {P_FLOOR:.0e} floor",
                 cell.column, cell.p, cell.chi2, cell.dof
             ));
         }
+    }
+    for cell in &found.beams {
+        if cell.agrees(P_FLOOR) {
+            continue;
+        }
+        below.beams.push(match cell.kind {
+            BeamKind::Constant {
+                theirs,
+                ours,
+                max_dev,
+                tol,
+            } => format!(
+                "[{key}] seed {seed:#010x} incoming {} is {ours:.11e} against the record's \
+                 {theirs:.11e}: {max_dev:.4e} outside the {tol:.2e} its printing allows",
+                cell.field
+            ),
+            BeamKind::Distribution { d, p } => format!(
+                "[{key}] seed {seed:#010x} incoming {} KS p {p:.3e} (D {d:.4}) below the \
+                 {P_FLOOR:.0e} floor",
+                cell.field
+            ),
+        });
     }
 
     row.constant_observables = found.constant.clone();
@@ -682,6 +787,7 @@ fn compare_seed(
             })
             .collect(),
         chi2: found.chi2.iter().map(chi2_cell).collect(),
+        beams: found.beams.iter().map(BeamCell::of).collect(),
     });
     below
 }
@@ -714,6 +820,9 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Columns below the floor on a row the manifest marks informational: reported
     // in full, never enforced, and tracked in the backlog instead.
     let mut informational: Vec<String> = Vec::new();
+    // Which rows' incoming legs actually disagreed, checked against
+    // `MASSIVE_BEAMS` at the end.
+    let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
     for row in ROWS {
         let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
@@ -730,7 +839,8 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
             );
-            let mut report = SamplesRow::new(row.key, row.process, row.mode);
+            let beams = beam_column_mode(row);
+            let mut report = SamplesRow::new(row.key, row.process, row.mode).with_beam_mode(beams);
             report.p_floor = P_FLOOR;
             report.mg_events = mg.len();
             report.sigma_mg_pb = mg.sigma_pb;
@@ -750,22 +860,33 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     Labelling::Coarse => "coarse",
                 };
                 let found = compare_seed(row.key, seed, &ours, &mg, l, &mut report);
-                if row.mode == "gate" {
-                    failures.extend(found);
-                } else {
-                    informational.extend(found);
+                if !found.beams.is_empty() {
+                    beams_disagreed.insert(row.key);
+                }
+                for (mode, what) in [(row.mode, found.columns), (beams, found.beams)] {
+                    if mode == "gate" {
+                        failures.extend(what);
+                    } else {
+                        informational.extend(what);
+                    }
                 }
             }
             report.finish();
             eprintln!(
-                "  min KS p {:.3e}, min chi2 p {:.3e} over {} seeds",
+                "  min KS p {:.3e}, min chi2 p {:.3e}, worst incoming {} {:.4e} against a \
+                 {:.2e} tolerance (min beam KS p {:.3e}) over {} seeds",
                 report.min_ks_p,
                 report.min_chi2_p,
+                report.worst_beam_field,
+                report.max_beam_dev,
+                report.beam_tol,
+                report.min_beam_ks_p,
                 GEN_SEEDS.len()
             );
             report.status = match row.mode {
                 "gate" => {
-                    if report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR {
+                    let outgoing = report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR;
+                    if outgoing && (beams != "gate" || report.beams_agree(P_FLOOR)) {
                         "pass"
                     } else {
                         "fail"
@@ -782,6 +903,16 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             "informational rows below the floor (measured, not enforced):\n{informational:#?}"
         );
     }
+    // The exception list has to stay a record of a live disagreement, in both
+    // directions. A row that has started agreeing belongs in the enforced set,
+    // and a row that has started disagreeing is a regression no p-value column
+    // here would notice — an informational list nobody re-reads is how a cell
+    // outlives the defect it was opened for.
+    assert_eq!(
+        beams_disagreed,
+        MASSIVE_BEAMS.into_iter().collect::<BTreeSet<_>>(),
+        "the rows whose incoming legs disagree are no longer the rows MASSIVE_BEAMS names"
+    );
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
 }
 
@@ -919,6 +1050,49 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
             worst.p < P_FLOOR,
             "{a} against {b} passed the {P_FLOOR:.0e} floor at p = {:.3e}",
             worst.p
+        );
+    }
+
+    // The incoming-leg columns need their own probe, because the pairs above are
+    // all at the same beams and none of them exercises one. `ee_to_mumu` and
+    // `ee_to_mumu_smlimit` are the same process at 45.6 and 250 GeV per beam, so
+    // the columns have to reject it on the beams alone; `ee_to_ttx` against
+    // `gg_to_ttx` is the opposite case and is here to state the blind spot as a
+    // measurement rather than as a claim — two genuinely different processes
+    // whose beams are byte-identical records, which these columns cannot and
+    // should not separate.
+    for (a, b, rejects) in [
+        ("ee_to_mumu", "ee_to_mumu_smlimit", true),
+        ("ee_to_ttx", "gg_to_ttx", false),
+    ] {
+        let (sa, sb) = (banked_sample(a), banked_sample(b));
+        let found = compare(&sa, &sb, labelling_for(&sa, &sb));
+        let worst = found
+            .worst_beam_constant()
+            .expect("both runs are at fixed beams");
+        let BeamKind::Constant {
+            theirs,
+            ours,
+            max_dev,
+            tol,
+        } = worst.kind
+        else {
+            unreachable!("worst_beam_constant returns a constant column")
+        };
+        eprintln!(
+            "  {a} against {b}: worst incoming {} {ours:.8e} against {theirs:.8e}, \
+             deviation {max_dev:.4e} against a {tol:.2e} tolerance",
+            worst.field
+        );
+        assert_eq!(
+            !worst.agrees(P_FLOOR),
+            rejects,
+            "{a} against {b}: the incoming-leg columns {} it",
+            if rejects {
+                "failed to reject"
+            } else {
+                "rejected"
+            }
         );
     }
 }
