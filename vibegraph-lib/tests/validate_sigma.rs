@@ -987,7 +987,20 @@ fn with_integrand<R>(
             trajectory: Vec::new(),
             variance_shares: Vec::new(),
         });
-    f(&integ, &report)
+    let out = f(&integ, &report);
+    // The per-point scale-configuration draw falls back to the sampling channel
+    // when the squared amplitude it draws from is not finite, which is the only
+    // way a NaN `AMP2` reaches production without saying anything. The counter
+    // exists to be read; reading it here is what makes the path loud.
+    assert_eq!(
+        integ.scale_draw_fallbacks(),
+        0,
+        "[{dir}] the scale-configuration draw fell back to the sampling channel on \
+         {} points: their squared amplitudes summed to something the draw could not \
+         normalise",
+        integ.scale_draw_fallbacks(),
+    );
+    out
 }
 
 /// Seed-stability sweep for the resonant multichannel rows: integrate each across
