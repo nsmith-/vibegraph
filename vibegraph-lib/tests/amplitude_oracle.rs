@@ -104,7 +104,7 @@ use std::path::{Path, PathBuf};
 use common::report::{AmplitudesRow, Stopwatch};
 
 use vibegraph::diagrams::DiagramSet;
-use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use vibegraph::helas::eval::{config_groups, AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
@@ -169,17 +169,17 @@ const AMP2_REL_TOL: f64 = 1e-12;
 /// integration configuration, so its `AMP2` grouping is coarser than one
 /// configuration per non-contact diagram.
 ///
-/// That merge is `get_amp2_lines`' `config_map` branch: diagrams MadGraph's
-/// channel mapping calls the same topology are summed *coherently* into one
-/// accumulator, `|Σ AMP|²`, and which diagrams those are comes from the channel
-/// mapping rather than from the diagram itself, so it is not derivable from the
-/// diagram list the way the four-point-vertex exclusion is. Where it happens our
-/// configurations are finer than MadGraph's and the per-configuration comparison
-/// has nothing to align, so it is skipped and the amplitudes are still compared
-/// one by one.
+/// That merge is `get_amp2_lines`' `config_map` branch: diagrams MadGraph's channel
+/// mapping calls the same topology are summed *coherently* into one accumulator,
+/// `|Σ AMP|²`. Which diagrams those are is derived rather than banked —
+/// [`config_groups`] is `IdentifyConfigTag` — and this list is the reading of *why*
+/// each row merges, checked both ways against that derivation: a listed row whose
+/// derived partition turns out to be one group per diagram fails here, and an
+/// unlisted row that merges fails too.
 ///
-/// The entry is two-way: a listed process whose grouping starts agreeing fails
-/// here, so a stale exemption cannot survive.
+/// This crate's own configurations stay one per diagram, which is finer, so the
+/// comparison folds ours into MadGraph's accumulators. What is not folded is the
+/// integration: a merged accumulator is one channel to MadGraph and several to us.
 const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
     (
         "ee_to_ee",
@@ -192,6 +192,15 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
         "MadGraph writes 21 accumulators over the 35 diagrams: the four neutral-current \
          diagrams that differ only in which of γ/Z carries each of two rungs share one, \
          and eight further pairs differing only in the boson on one rung share one each",
+    ),
+    (
+        "ll_to_qqx_toy_yukawa",
+        "the toy model's scalar carries an `Identity` and a `Gamma5` bilinear on the \
+         same two vertices, so the four combinations of them across one s-channel \
+         scalar are one topology to the channel mapping and one accumulator: [1, 4] \
+         over the vector exchange and the four scalar ones. It is the row the merge \
+         rule was read for — no Standard-Model process puts two interactions between \
+         the same three particles",
     ),
     (
         "bbx_to_h_identity",
@@ -311,6 +320,11 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
     // pairs by reversing each topology's block.
     ("ee_to_wpwm_cw", &[2, 1, 0, 5, 4, 3, 6]),
     ("ee_to_ttx_dipole", &[0, 2, 1, 4, 3, 5, 7, 6, 9, 8]),
+    // Not a permutation, for the reason `gg_to_gg_cg` carries below: MadGraph writes
+    // the four-gluon contact as its three colour-ordered amplitudes, `AMP(1..3)` over
+    // one graph, so this row's 4 diagrams face 6 `AMP()`. The contact entry names the
+    // first amplitude of its group; the three gluon exchanges follow it.
+    ("gg_to_gg", &[0, 3, 4, 5]),
     // Not a permutation: MadGraph writes the three four-gluon contacts as their
     // three colour-ordered amplitudes each, nine `AMP()` over three diagrams, so
     // this row's 21 diagrams face 27 graphs. Only the eighteen
@@ -956,66 +970,73 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     }
 
     // ── the integration configurations ───────────────────────────────────────
-    // MadGraph's own AMP2 accumulators, against the configurations our compiler
-    // derives from the diagrams. The grouping decides which ICOLAMP column an
-    // event's colour draw is masked with, so it is compared before any value is.
-    let merge = KNOWN_CONFIG_MERGE.iter().find(|(k, _)| *k == name);
+    // MadGraph's own AMP2 accumulators, against the partition
+    // `helas::eval::compile::config_groups` derives from the diagrams by MadGraph's
+    // own rule. The grouping decides which ICOLAMP column an event's colour draw is
+    // masked with, so it is compared before any value is — as sets of MadGraph graph
+    // indices, because the two enumeration orders differ (`MG_DIAGRAM_ORDER`) and a
+    // sequence of group sizes would compare two orderings rather than two partitions.
     let our_counts = evaluator.config_amp_counts().to_vec();
-    let grouping_agrees = our_counts.len() == table.amp2_groups.len()
-        && our_counts
-            .iter()
-            .zip(&table.amp2_groups)
-            .all(|(n, g)| *n == g.len());
-    match (grouping_agrees, merge) {
-        (false, None) => {
+    if !our_counts.iter().all(|&n| n == 1) {
+        return Err(format!(
+            "[{name}] a configuration owns several amplitudes {our_counts:?}, so a \
+             configuration cannot be named by its diagram"
+        )
+        .into());
+    }
+    let derived = config_groups(&set.diagrams, model.as_ref());
+    let ours_grouped: BTreeSet<BTreeSet<usize>> = derived
+        .iter()
+        .map(|group| group.iter().map(|&d| order[d]).collect())
+        .collect();
+    let theirs_grouped: BTreeSet<BTreeSet<usize>> = table
+        .amp2_groups
+        .iter()
+        .map(|group| group.iter().copied().collect())
+        .collect();
+    if ours_grouped != theirs_grouped {
+        return Err(format!(
+            "[{name}] the integration configurations are not MadGraph's: ours group \
+             {:?}, MadGraph's AMP2 accumulators group {:?}",
+            ours_grouped
+                .iter()
+                .map(|g| g.iter().copied().collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            table.amp2_groups
+        )
+        .into());
+    }
+    // Where MadGraph merges, our own configurations stay one per diagram, so the
+    // comparison folds ours into its accumulators rather than the other way round.
+    let merges = derived.iter().any(|group| group.len() > 1);
+    let merge = KNOWN_CONFIG_MERGE.iter().find(|(k, _)| *k == name);
+    match (merges, merge) {
+        (true, None) => {
             return Err(format!(
-                "[{name}] the integration configurations are not MadGraph's: ours group \
-                 {our_counts:?} amplitudes, MadGraph's AMP2 accumulators group {:?}",
-                table.amp2_groups.iter().map(Vec::len).collect::<Vec<_>>()
+                "[{name}] MadGraph merges diagrams into one AMP2 accumulator {:?} and \
+                 this crate's configurations are one per diagram — add the row to \
+                 KNOWN_CONFIG_MERGE with what it merges",
+                table.amp2_groups
             )
             .into());
         }
-        (true, Some((_, why))) => {
+        (false, Some((_, why))) => {
             return Err(format!(
-                "[{name}] is listed in KNOWN_CONFIG_MERGE ({why}) but its configurations \
-                 now agree with MadGraph's — drop the exemption"
+                "[{name}] is listed in KNOWN_CONFIG_MERGE ({why}) but MadGraph writes one \
+                 accumulator per diagram here — drop the exemption"
             )
             .into());
         }
         _ => {}
     }
-    // The MadGraph AMP index of each of our configuration amplitudes, in the
-    // flattened order `run_config_amps` returns them: MadGraph's own AMP2 grouping
-    // flattened, then through the banked diagram order.
-    //
-    // That flattening is only an index source while MadGraph lists the graphs in graph
-    // order. Its channel mapping breaks that where it merges diagrams into one
-    // accumulator (`KNOWN_CONFIG_MERGE`) — `u d > e+ e- u d QCD=0` groups
-    // `[0,2,4,6],[1,3,5,7],…`, so position `k` of the flattening is not graph `k`.
-    // There each of our configurations owns exactly one amplitude, so the pairing
-    // comes from the diagram behind it instead.
-    let mg_amp_index: Vec<usize> = match merge {
-        Some(_) => {
-            if !our_counts.iter().all(|&n| n == 1) {
-                return Err(format!(
-                    "[{name}] merges configurations and owns multi-amplitude \
-                     configurations {our_counts:?}; the two groupings cannot be paired"
-                )
-                .into());
-            }
-            evaluator
-                .config_diagrams()
-                .iter()
-                .map(|&d| order[d])
-                .collect()
-        }
-        None => table
-            .amp2_groups
-            .iter()
-            .flatten()
-            .map(|&i| order[i])
-            .collect(),
-    };
+    // The MadGraph AMP index of each of our configuration amplitudes, in the order
+    // `run_config_amps` returns them: the diagram behind each, through the banked
+    // diagram order.
+    let mg_amp_index: Vec<usize> = evaluator
+        .config_diagrams()
+        .iter()
+        .map(|&d| order[d])
+        .collect();
     let n_config_amps: usize = our_counts.iter().sum();
     if mg_amp_index.len() != n_config_amps {
         return Err(format!(
@@ -1062,7 +1083,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     // One entry table per configuration amplitude: the fit is per configuration,
     // not global (see the module header on why the phase is per diagram).
     let mut config_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
-    let mut our_amp2 = vec![0.0f64; table.amp2_groups.len()];
+    let mut our_amp2 = vec![0.0f64; derived.len()];
 
     for (pi, pt) in table.points.iter().enumerate() {
         let Some(detail) = pt.detail.as_ref() else {
@@ -1196,20 +1217,46 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         // coherent `|Σ AMP|²` (the `config_map` branch of `get_amp2_lines`), and
         // is formed that way here so a grouping ours sums incoherently cannot
         // pass unnoticed.
-        if let (Some(amps), true) = (
-            detail.amps.as_ref(),
-            grouping_agrees && !table.amp2_groups.is_empty(),
-        ) {
-            let mut mg_amp2 = vec![0.0f64; table.amp2_groups.len()];
+        if let (Some(amps), false) = (detail.amps.as_ref(), table.amp2_groups.is_empty()) {
+            let mut mg_amp2 = vec![0.0f64; derived.len()];
             for row in amps {
-                for (acc, group) in mg_amp2.iter_mut().zip(&table.amp2_groups) {
+                for (acc, group) in mg_amp2.iter_mut().zip(&derived) {
                     let coherent = group
                         .iter()
-                        .fold(C::new(0.0, 0.0), |sum, &j| sum + row[order[j]]);
+                        .fold(C::new(0.0, 0.0), |sum, &d| sum + row[order[d]]);
                     *acc += coherent.norm_sqr();
                 }
             }
-            bound.eval_amp2(&pt.momenta, &mut scratch, &mut our_amp2);
+            // A group of one is our own configuration and is read off the evaluator,
+            // over every helicity rather than only the tabulated ones. A group of
+            // several is MadGraph's coherent sum, which no single configuration of
+            // ours holds, so it is folded here from the configuration amplitudes at
+            // the tabulated helicities — the same rows `mg_amp2` sums over.
+            if merges {
+                for (ci, group) in derived.iter().enumerate() {
+                    let slots: Vec<usize> = group
+                        .iter()
+                        .map(|d| {
+                            evaluator
+                                .config_diagrams()
+                                .iter()
+                                .position(|c| c == d)
+                                .expect("a grouped diagram carries a configuration")
+                        })
+                        .collect();
+                    our_amp2[ci] = 0.0;
+                    for &hi in &detail.helicities {
+                        let hel = &table.helicities[hi];
+                        let ours_cfg = bound.run_config_amps(&pt.momenta, hel, &mut scratch);
+                        let coherent = slots
+                            .iter()
+                            .fold(C::new(0.0, 0.0), |sum, &s| sum + ours_cfg[s]);
+                        our_amp2[ci] += coherent.norm_sqr();
+                    }
+                }
+            } else {
+                bound.eval_amp2(&pt.momenta, &mut scratch, &mut our_amp2);
+            }
             let norm = mg_amp2.iter().cloned().fold(0.0f64, f64::max).max(1e-300);
             for (ci, (a, b)) in our_amp2.iter().zip(&mg_amp2).enumerate() {
                 let dev = (a - b).abs() / norm;
@@ -1358,10 +1405,10 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         if per_diagram_fit { "" } else { " (not banked)" },
         g.im.signum(),
         table.amp2_groups.len(),
-        if grouping_agrees {
-            ""
+        if merges {
+            " (MadGraph merges some into one accumulator)"
         } else {
-            " (MadGraph merges some; AMP2 not compared)"
+            ""
         },
         m2.amp2_pruned,
     );
@@ -1405,7 +1452,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     row.jamp2 = worst_jamp2;
     row.n_configs = table.amp2_groups.len();
     row.per_config = worst_config;
-    row.amp2 = grouping_agrees.then_some(worst_amp2);
+    row.amp2 = (!table.amp2_groups.is_empty()).then_some(worst_amp2);
     row.amp2_pruned = m2.amp2_pruned;
     // Every row is compared as the full per-helicity × per-flow outer product;
     // nothing here weakens it to the two projections of it.

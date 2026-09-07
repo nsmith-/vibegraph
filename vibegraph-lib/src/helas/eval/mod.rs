@@ -106,7 +106,7 @@ pub mod op_census {
 }
 
 pub use ast::{Ast, ParseAstError};
-pub use compile::AmplitudeEvaluator;
+pub use compile::{config_groups, AmplitudeEvaluator};
 pub use error::{CompileError, EvalError, RootDiagramError};
 pub use lanes::LaneField;
 pub use op::{Const, ConstKind, Node, Op, Sym};
