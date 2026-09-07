@@ -102,6 +102,14 @@ const N_IN: usize = 2;
 /// which at that budget still has the banked σ about 1% low. This comparison is
 /// therefore also a read on the integration's convergence, and the bound sits above
 /// the converged spread and below what an unconverged budget produces.
+///
+/// Re-measured by `probe_sample_sigma_seed_headroom`, which walks the whole
+/// integrate-then-generate path at five seeds rather than the one the gate
+/// spends: `{+0.355, −0.428, +0.009, −0.264, −0.396}%`, worst `4.28e-3`, so the
+/// bound clears the five-seed spread by `3.5x` and the gate's own seed by
+/// `4.2x`. The spread is the same size as the sweep this bound was set from and
+/// its signs are not — a single-seed cell is a draw, and which side of the
+/// integration a given seed's sample lands is not a property of the seed.
 const SIGMA_MAX_REL: f64 = 0.015;
 
 fn output_dir() -> PathBuf {
@@ -132,10 +140,10 @@ struct Run {
 /// The one `vibegraph integrate` run every case here replays.
 fn integrated() -> &'static Run {
     static ONCE: OnceLock<Run> = OnceLock::new();
-    ONCE.get_or_init(integrate)
+    ONCE.get_or_init(|| integrate_at(SEED))
 }
 
-fn integrate() -> Run {
+fn integrate_at(seed: &str) -> Run {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().to_path_buf();
     let proc_card = dir.join("proc_card.dat");
@@ -154,7 +162,7 @@ fn integrate() -> Run {
         .arg("--pdf-dir")
         .arg(pdf_dir())
         .arg("--fixed-budget")
-        .args(["--neval", NEVAL, "--niter", NITER, "--seed", SEED])
+        .args(["--neval", NEVAL, "--niter", NITER, "--seed", seed])
         .output()
         .expect("spawn vibegraph");
     assert!(
@@ -186,6 +194,10 @@ fn integrate() -> Run {
 
 impl Run {
     fn generate_cmd(&self, name: &str) -> Command {
+        self.generate_cmd_at(name, SEED)
+    }
+
+    fn generate_cmd_at(&self, name: &str, seed: &str) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
         cmd.arg("generate")
             .arg(&self.artifact_path)
@@ -195,7 +207,7 @@ impl Run {
             .arg("--pdf-dir")
             .arg(pdf_dir())
             .arg("--seed")
-            .arg(SEED)
+            .arg(seed)
             .arg("-o")
             .arg(self.dir.join(name))
             .arg("--force");
@@ -203,8 +215,12 @@ impl Run {
     }
 
     fn generate(&self, nevents: usize, name: &str) -> LheFile {
+        self.generate_at(nevents, name, SEED)
+    }
+
+    fn generate_at(&self, nevents: usize, name: &str, seed: &str) -> LheFile {
         let out = self
-            .generate_cmd(name)
+            .generate_cmd_at(name, seed)
             .arg("--nevents")
             .arg(nevents.to_string())
             .output()
@@ -332,6 +348,61 @@ fn banked_colour_patterns() -> &'static BTreeSet<ColourPattern> {
             .map(|e| (roles(e), connectivity(e)))
             .collect()
     })
+}
+
+/// [`SEED`] and the four further seeds that bring the sample-versus-integration
+/// comparison to AGENTS.md's five. The first is the gate's own, so the sweep
+/// contains the reading the gate takes.
+const HEADROOM_SEEDS: [&str; 5] = [SEED, "20260732", "20260733", "20260734", "20260735"];
+
+/// [`SIGMA_MAX_REL`]'s headroom over five seeds rather than the gate's one.
+///
+/// The gate integrates and generates at a single seed and asserts one relative
+/// distance, so what it bounds is one draw from a distribution it never sees.
+/// This walks the same integrate-then-generate path at five seeds and prints the
+/// worst of them against the bound, because a single-seed statistic sitting close
+/// to its threshold is the failure mode a sampling-stream change surfaces one
+/// cell at a time.
+///
+/// Each seed drives its own integration as well as its own generation: the
+/// quantity under test is the sample's cross section against *its own*
+/// integration's, and holding the grids fixed while re-drawing events would
+/// measure only half of what the gate asserts. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_sample_sigma_seed_headroom() {
+    if !banked_present() {
+        vibegraph::validation::require(
+            "probe_sample_sigma_seed_headroom",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let mut rels = Vec::new();
+    for seed in HEADROOM_SEEDS {
+        let run = integrate_at(seed);
+        let file = run.generate_at(NEVENTS, "events.lhe", seed);
+        assert_eq!(file.events.len(), NEVENTS);
+        let mean = file.events.iter().map(|e| e.weight).sum::<f64>() / NEVENTS as f64;
+        let rel = mean / run.artifact.sigma_pb - 1.0;
+        eprintln!(
+            "  seed {seed}: sigma(sample) = {mean:.4} pb vs integration {:.4} ± {:.4} pb \
+             -> rel {:+.3}%",
+            run.artifact.sigma_pb,
+            run.artifact.sigma_err_pb,
+            100.0 * rel
+        );
+        rels.push(rel);
+    }
+    let worst = rels.iter().fold(0.0f64, |a, r| a.max(r.abs()));
+    eprintln!(
+        "\nHEADROOM cli_generate_proton SIGMA_MAX_REL {SIGMA_MAX_REL} vs worst |rel| over \
+         {} seeds {worst:.3e} -> {:.1}x | 1-seed |rel| {:.3e} -> {:.1}x",
+        rels.len(),
+        SIGMA_MAX_REL / worst,
+        rels[0].abs(),
+        SIGMA_MAX_REL / rels[0].abs(),
+    );
 }
 
 /// The initial states MadGraph's own sample contains, as `(roles[0], roles[1])`.

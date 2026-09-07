@@ -136,6 +136,21 @@ use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
 /// expected; 3.5 leaves headroom over the nominal 3-sigma target without
 /// admitting a genuine normalisation error (which shows up as a many-sigma pull
 /// once the budget makes `err_vg` small).
+///
+/// This is a false-positive rate against a trial count, not a tolerance, and it
+/// is read that way. `probe_gate_row_seed_headroom` sweeps every gated row over
+/// five seeds at its own plan budget: the worst pull per row runs `0.51`
+/// (`gg_to_ttx`) to `2.65` (`ddx_to_epemg`), with a median near `1.5`. That is
+/// what a correctly sized bound on the maximum of five roughly standard-normal
+/// draws looks like — the expected maximum is about `1.16` and the bound is
+/// crossed once in some hundreds of rows — so a row reading "only" twice inside
+/// this limit is the instrument working rather than a margin running out. A
+/// limit with more room than that would have stopped rejecting.
+///
+/// The one row the sweep puts *above* it is `ee_to_mumua` at `3.56`, which is
+/// the row [`PULL_REPORTED_NOT_ASSERTED`] names and the measurement that keeps
+/// that list from being vacuous: without the exemption the gate would fail on a
+/// disagreement it has separately established is the reference's own.
 const PULL_LIMIT: f64 = 3.5;
 
 /// The gated rows whose pull is reported rather than asserted, and why the pull
@@ -434,11 +449,27 @@ fn plan_for(dir: &str) -> Plan {
         // channel other than the first, and both are numerically identical to
         // what they were when every point was clustered in channel 1: over five
         // seeds at this budget and at four times it
-        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 3.9e-3 and
-        // 5.6e-3 with means +2.8e-3 / +4.3e-3, flat across the ladder and inside
-        // twice the banked run's own 0.21% and 0.20% Monte-Carlo error.
-        // `rel_tol` is set at 0.01 by that spread rather than by the reference's
-        // error, which is the tighter of the two here.
+        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 4.2e-3 and
+        // 6.3e-3 at one times, 2.8e-3 and 5.5e-3 at four, with means +3.0e-3 /
+        // +4.5e-3 falling to +2.2e-3 / +4.2e-3 — inside twice the banked runs'
+        // own 0.21% and 0.20% Monte-Carlo error. `rel_tol` is set at 0.01 by that
+        // spread rather than by the reference's error, which is the tighter of
+        // the two here.
+        //
+        // `ddx_to_epemg` is the narrower of the pair and the narrowest σ cell in
+        // this file: its worst seed sits `1.6x` inside `rel_tol` and its worst
+        // pull `1.3x` inside `PULL_LIMIT`. Neither margin is a seed accident. The
+        // residual is a converged offset — mean `+0.45%` at this budget and
+        // `+0.42%` at four times it — against a reference whose own error is
+        // `0.20%`, so what the bound has room for after the offset is another
+        // `0.35%`. The pull cannot run away with budget the way a systematic's
+        // usually does, because the combined error here is the reference's:
+        // quadrupling the points halves `err_vg` and leaves the worst pull at
+        // `2.62` against `2.65`, its saturation value `rel / (σ_MG err / σ_MG)`
+        // ≈ `2.2` plus seed scatter. Spending four times the points is what
+        // would buy margin on `rel` — it is measured at `5.5e-3` worst there —
+        // and that is a budget decision this row's ladder has not been asked to
+        // make.
         "uux_to_epemg" | "ddx_to_epemg" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -462,10 +493,17 @@ fn plan_for(dir: &str) -> Plan {
         //
         // `rel_tol` 0.005 is set from the larger of the reference's own
         // Monte-Carlo error (0.18% and 0.20%) and the measured five-seed spread
-        // (worst |rel| 1.35e-3 and 1.51e-3 at this budget, 1.53e-3 and 1.20e-3 at
-        // four times it — `probe_llj_parton_seed_stability`), with headroom over
-        // both. It is not fitted to the achieved central value, which is smaller
-        // than either.
+        // (worst |rel| 1.84e-3 and 2.63e-3 at this budget, 1.27e-3 and 1.37e-3 at
+        // four times it — `probe_llj_parton_seed_stability`). It is not fitted to
+        // the achieved central value, which is smaller than either: the five-seed
+        // means are +7.3e-4 and −6.3e-4.
+        //
+        // `gux_to_epemux`'s worst seed clears `rel_tol` by `1.9x`, and the
+        // distinction that matters is that this is spread and not an offset. One
+        // seed of the five lands at −2.63e-3 where the other four are inside
+        // 8.7e-4, and quadrupling the budget takes the worst to 1.37e-3 and the
+        // mean to −1.4e-4. A bound whose margin is eaten by the estimator's own
+        // scatter is bought back with points rather than with tolerance.
         "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -1061,6 +1099,99 @@ fn probe_smeft_capstone_seed_stability() {
         mean / e.sigma_pb - 1.0,
         chi2 / (sigmas.len() - 1) as f64
     );
+}
+
+/// The seeds every headroom measurement in this file is formed over — AGENTS.md's
+/// standard, and the same five the per-family sweeps above use so their numbers
+/// and this one's are the same statistic.
+const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+
+/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against the spread of five
+/// seeds at that row's own plan budget — the headroom census behind the
+/// single-seed gate.
+///
+/// The gate spends one seed, so what it asserts is one draw from a distribution
+/// it never sees. That is sound only while the bound sits well outside the whole
+/// distribution, and "well outside" is a measurement: this prints, per row, the
+/// worst `|rel|` and `|pull|` over the five seeds, the χ²/dof of the seeds about
+/// their own inverse-variance mean, and the ratio of each bound to the worst
+/// value under it. A ratio near one is a row whose next sampling-stream change
+/// fails the gate on the draw rather than on the physics.
+///
+/// It subsumes no per-family sweep: those carry a budget ladder beside the seeds,
+/// which is the axis that separates a sampling residual from a defect, and this
+/// one deliberately does not — one rung, every gated row, so the census is a
+/// single command. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_gate_row_seed_headroom() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let unbundled = common::manifest::unbundled_rows();
+    let mut lines = Vec::new();
+    for (dir, e) in &banked {
+        let Plan::Gate {
+            neval,
+            niter,
+            rel_tol,
+        } = plan_for(dir)
+        else {
+            continue;
+        };
+        if !matches!(run_presence(dir, &unbundled), RunPresence::Present) {
+            eprintln!("── {dir}: run directory absent, skipped ──");
+            continue;
+        }
+        eprintln!(
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter}, rel_tol {rel_tol} ──",
+            e.sigma_pb,
+            e.sigma_err_pb,
+            100.0 * e.sigma_err_pb / e.sigma_pb
+        );
+        let mut runs = Vec::new();
+        for seed in HEADROOM_SEEDS {
+            let t = std::time::Instant::now();
+            let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
+            let (pull, rel) = compare(s, err, e);
+            eprintln!(
+                "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+                 rel {rel:+.3e} | chi2/dof {chi2:.2} | {:.1} s",
+                t.elapsed().as_secs_f64()
+            );
+            runs.push((s, err, pull, rel));
+        }
+        let w: f64 = runs.iter().map(|(_, err, _, _)| 1.0 / (err * err)).sum();
+        let mean: f64 = runs
+            .iter()
+            .map(|(s, err, _, _)| s / (err * err))
+            .sum::<f64>()
+            / w;
+        let chi2: f64 = runs
+            .iter()
+            .map(|(s, err, _, _)| ((s - mean) / err).powi(2))
+            .sum::<f64>()
+            / (runs.len() - 1) as f64;
+        let worst_rel = runs.iter().fold(0.0f64, |a, (_, _, _, r)| a.max(r.abs()));
+        let worst_pull = runs.iter().fold(0.0f64, |a, (_, _, p, _)| a.max(p.abs()));
+        let line = format!(
+            "HEADROOM {dir:<26} {neval:>7}x{niter} | rel_tol {rel_tol:.4} vs worst |rel| \
+             {worst_rel:.3e} -> {:5.1}x | PULL_LIMIT {PULL_LIMIT} vs worst |pull| \
+             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | chi2/dof {chi2:.2}",
+            rel_tol / worst_rel,
+            PULL_LIMIT / worst_pull,
+            mean / e.sigma_pb - 1.0,
+        );
+        eprintln!("  {line}");
+        lines.push(line);
+    }
+    eprintln!(
+        "\n──────── census ({} gated rows, {} seeds) ────────",
+        lines.len(),
+        HEADROOM_SEEDS.len()
+    );
+    for line in &lines {
+        eprintln!("{line}");
+    }
 }
 
 /// The rows the σ gate reaches beyond the Standard Model: the SMEFTsim ladder's

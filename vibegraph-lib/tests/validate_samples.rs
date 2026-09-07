@@ -133,6 +133,22 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// reference's sample rather than this side's — see the `ee_to_mumua` `samples`
 /// note in `validation/manifest.toml`.
 ///
+/// Two extra seeds do not move it. `probe_samples_p_floor_headroom` repeats the
+/// whole comparison over [`GEN_SEEDS`] plus two more: the five-seed minimum over
+/// the gating rows is the same `1.573e-4` on the same `ee_to_wpwm` `pt(w+)` and
+/// the same seed, with the two new seeds reading `4.765e-2` and `1.962e-2` on
+/// that row. Fifteen of the thirty-two gating rows move their own minimum
+/// downward, none below `5.483e-3`.
+///
+/// That is the reading this floor is built to give, and it is why `1.6x` above
+/// it is not a margin running out. The statistic is the smallest of some
+/// hundreds of draws from a distribution that is uniform when the two samples
+/// agree, so its distance from the floor is set by how many draws are taken:
+/// two thirds again as many seeds lower the expected minimum by the same
+/// factor, which raises the rate at which a green run flags rather than
+/// lowering it. Adding seeds is therefore not a remedy here, unlike on a σ row
+/// whose statistic is a mean.
+///
 /// Never loosened after a failure: a column that falls below this is recorded,
 /// the row is marked informational with the measurement in its note, and the
 /// disagreement is filed — the threshold does not move.
@@ -767,6 +783,109 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
         );
     }
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
+}
+
+/// [`GEN_SEEDS`] extended to AGENTS.md's five, for the headroom census below.
+/// The first three are [`GEN_SEEDS`] itself, so the probe's reading contains the
+/// gate's own and the difference between them is what the two extra seeds add.
+const HEADROOM_GEN_SEEDS: [u64; 5] = [
+    0x5A_4D_0001,
+    0x5A_4D_0002,
+    0x5A_4D_0003,
+    0x5A_4D_0004,
+    0x5A_4D_0005,
+];
+
+/// [`P_FLOOR`]'s headroom over five seeds rather than the gate's three.
+///
+/// The gate statistic is the smallest `p` over rows × seeds × columns, and a
+/// minimum is the order statistic that moves most when the sample grows: two
+/// extra seeds add two thirds again as many draws from the null distribution, so
+/// the five-seed minimum can only fall. What this measures is how far it falls —
+/// whether the gate's margin over the floor is a property of the comparison or of
+/// how few draws the gate takes.
+///
+/// Reported per row as the minimum `p` over that row's seeds and columns, with
+/// the three-seed and five-seed minima side by side and the row's ratio to
+/// [`P_FLOOR`]. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_samples_p_floor_headroom() {
+    let mut three: Vec<(f64, String)> = Vec::new();
+    let mut five: Vec<(f64, String)> = Vec::new();
+    for row in ROWS {
+        let mg = banked_sample(row.key);
+        with_integrand(row, |integ, records, _| {
+            let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
+            let mut uw = Unweighter::scan(
+                integ,
+                channels.iter().map(|c| (&c.grid, c.neval)),
+                SCAN_SEED,
+            );
+            let mut labelling = None;
+            let mut row_three = (f64::INFINITY, String::new());
+            let mut row_five = (f64::INFINITY, String::new());
+            for (i, &seed) in HEADROOM_GEN_SEEDS.iter().enumerate() {
+                let ours = generate(integ, records, &mut uw, seed);
+                let l = *labelling.get_or_insert_with(|| labelling_for(&ours, &mg));
+                let found = compare(&ours, &mg, l);
+                let mut worst = (f64::INFINITY, String::new());
+                for cell in &found.ks {
+                    if cell.p < worst.0 {
+                        worst = (cell.p, format!("KS {}", cell.observable));
+                    }
+                }
+                for cell in &found.chi2 {
+                    if cell.p < worst.0 {
+                        worst = (cell.p, format!("chi2 {}", cell.column));
+                    }
+                }
+                eprintln!(
+                    "  [{}] seed {seed:#010x} ({} events): worst p {:.3e} on {}",
+                    row.key,
+                    ours.len(),
+                    worst.0,
+                    worst.1
+                );
+                if i < GEN_SEEDS.len() && worst.0 < row_three.0 {
+                    row_three = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+                }
+                if worst.0 < row_five.0 {
+                    row_five = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+                }
+            }
+            eprintln!(
+                "  ROW {:<28} mode {:<4} | 3-seed min p {:.3e} ({:.1}x floor) | \
+                 5-seed min p {:.3e} ({:.1}x floor) on {}",
+                row.key,
+                row.mode,
+                row_three.0,
+                row_three.0 / P_FLOOR,
+                row_five.0,
+                row_five.0 / P_FLOOR,
+                row_five.1
+            );
+            if row.mode == "gate" {
+                three.push((row_three.0, format!("{} {}", row.key, row_three.1)));
+                five.push((row_five.0, format!("{} {}", row.key, row_five.1)));
+            }
+        });
+    }
+    let pick = |v: &[(f64, String)]| {
+        v.iter()
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .expect("a gating row")
+            .clone()
+    };
+    let (p3, w3) = pick(&three);
+    let (p5, w5) = pick(&five);
+    eprintln!(
+        "\nHEADROOM samples P_FLOOR {P_FLOOR:.0e} | 3 seeds over {} gating rows: min p \
+         {p3:.3e} ({:.2}x) on {w3} | 5 seeds: min p {p5:.3e} ({:.2}x) on {w5}",
+        three.len(),
+        p3 / P_FLOOR,
+        p5 / P_FLOOR,
+    );
 }
 
 /// The mutation probe: the statistics have to *catch* something, or a run of
