@@ -137,6 +137,7 @@ pylhe = ">=2.0.0,<3"
 build-diagrams = "bash validation/madgraph/build.sh"
 # Extract diagram counts and metadata from MadGraph output
 extract-diagrams = { cmd = "python validation/madgraph/extract_diagrams.py", depends-on = ["build-diagrams"] }
+extract-configs = { cmd = "python validation/madgraph/extract_configs.py", depends-on = ["build-diagrams"] }
 # Full pipeline: extract MadGraph reference data, then run extended Rust tests
 validate-diagrams = { cmd = "cargo test -p vibegraph-lib --profile release-debug --test validate_madgraph_diagrams", depends-on = ["extract-diagrams"] }
 # Compile MadGraph Fortran MATRIX1 subroutines via f2py into Python extension modules
@@ -150,6 +151,13 @@ generate-amplitude-tables = { cmd = "python validation/madgraph/gen_amplitude_ta
 # The amplitude gate itself. Hermetic — it reads only the committed tables — so
 # this task exists to run it against freshly regenerated ones
 validate-amplitudes = { cmd = "cargo test -p vibegraph-lib --test amplitude_oracle -- --nocapture", depends-on = ["generate-amplitude-tables"] }
+# Bank one committed coupling table per mg_amplitude row: the model's couplings as
+# MadGraph's Python model_reader evaluates them and as the compiled matrix
+# element's COMMON/COUPLINGS/ block holds them, both on the row's own param card
+generate-couplings = { cmd = "python validation/madgraph/gen_couplings.py", depends-on = ["build-amplitude"] }
+# The coupling gate. Hermetic like the amplitude one — it reads only the
+# committed tables — so this task exists to run it against freshly regenerated ones
+validate-couplings = { cmd = "cargo test -p vibegraph-lib --test coupling_oracle -- --nocapture", depends-on = ["generate-couplings"] }
 # CF-matrix gate: the exact colour-factor matrix and NCOLOR against every
 # generated matrix1_orig.f's DATA CF block
 validate-color-cf = { cmd = "cargo test -p vibegraph-lib --features extended-validation --test color_cf_oracle -- --nocapture", depends-on = ["build-diagrams"] }

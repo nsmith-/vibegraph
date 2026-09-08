@@ -324,6 +324,103 @@ consequences follow. Parallel integration assigns
 a lane-batched evaluation reproduces the scalar one exactly, because the
 same integer draw feeds every lane through the same arithmetic.
 
+## Fixed beams
+
+A run with `lpp = 0` collides the incoming particles themselves rather than
+partons out of a hadron, so there is no $\tau$ sampling and no
+[luminosity](10-hadronic.md): the initial state is fixed by the run card's
+two beam energies and the two beams' own pole masses. Everything the initial
+state contributes follows from those four numbers.
+
+In the laboratory the beams are on shell along $\pm z$ at the energies the
+card gives,
+
+$$
+p_a = \big(E_a,\, 0,\, 0,\, +\sqrt{E_a^2 - m_a^2}\big), \qquad
+p_b = \big(E_b,\, 0,\, 0,\, -\sqrt{E_b^2 - m_b^2}\big),
+$$
+
+and the partonic invariant is the square of their sum,
+
+$$
+\hat s = (p_a + p_b)^2 = m_a^2 + m_b^2 + 2\big(E_a E_b + |\vec p_a|\,|\vec p_b|\big).
+$$
+
+This is $(E_a + E_b)^2$ only when both beams are massless *and* carry equal
+energy; two massless beams of unequal energy collide at $4E_aE_b$, and two
+60 and 70 GeV beams at 250 GeV each collide at $\sqrt{\hat s} = 499.99275$ GeV
+rather than 500.
+
+The matrix element and the channel maps work in the partonic centre of mass,
+where the two beams share one momentum magnitude and split the energy by
+their masses:
+
+$$
+E_a^\ast = \frac{\hat s + m_a^2 - m_b^2}{2\sqrt{\hat s}}, \qquad
+E_b^\ast = \frac{\hat s - m_a^2 + m_b^2}{2\sqrt{\hat s}}, \qquad
+|\vec p^{\;\ast}| = \frac{\lambda^{1/2}(\hat s, m_a^2, m_b^2)}{2\sqrt{\hat s}},
+$$
+
+with the [Källén function](https://en.wikipedia.org/wiki/K%C3%A4ll%C3%A9n_function)
+$\lambda(x,y,z) = x^2 + y^2 + z^2 - 2xy - 2yz - 2zx$. The same $\sqrt{\hat s}$
+is what the outgoing map is built on, so the external set the amplitude is
+handed conserves four-momentum by construction; deriving the beams and the map
+from one initial state is what keeps it that way.
+
+### The flux
+
+The flux factor $F$ of the
+[cross-section formula](01-pipeline.md#the-cross-section) is the
+[Møller](https://en.wikipedia.org/wiki/Luminosity_(scattering_theory)#Relativistic_form)
+invariant, the relative-velocity factor written covariantly:
+
+$$
+F = 4\sqrt{(p_a\!\cdot\!p_b)^2 - m_a^2 m_b^2}
+  = 2\,\lambda^{1/2}(\hat s, m_a^2, m_b^2)
+  = 4\,|\vec p^{\;\ast}|\sqrt{\hat s}.
+$$
+
+For massless beams $\lambda^{1/2}(\hat s, 0, 0) = \hat s$ and this is the
+familiar $2\hat s$. For massive ones it is *smaller*, by
+
+$$
+1 - \frac{F}{2\hat s} = \frac{m_a^2 + m_b^2}{\hat s} + O\!\left(\frac{m^4}{\hat s^2}\right),
+$$
+
+3.46% on the 60/70 GeV pair above — a deficit that goes straight onto
+$\sigma = F^{-1}\!\int d\Phi_n\,|\mathcal{M}|^2$ if the massless form is used
+where it does not apply.
+
+### Two frames, one event
+
+The laboratory and the partonic centre of mass differ by a boost along $z$ of
+rapidity
+
+$$
+y_{\rm cm} = \tfrac12 \ln\frac{p^0 + p^3}{p^0 - p^3}, \qquad
+p^0 = E_a + E_b, \quad p^3 = |\vec p_a| - |\vec p_b|,
+$$
+
+which vanishes for beams of equal energy and mass and is $5.4\times10^{-3}$ for
+the 60/70 GeV pair. That is the whole difference between the frame the
+[cuts](10-hadronic.md#cuts) are applied in and the frame the momenta are
+generated and recorded in: rapidity is not invariant under it, so a
+configuration is carried into the laboratory before the cut filter reads it,
+while the event record keeps the centre-of-mass momenta.
+
+> **MadGraph compatibility.** `genps.f` forms exactly this
+> $\hat s$ (`stot = m1**2 + m2**2 + 2*(pi1(0)*pi2(0) - pi1(3)*pi2(3))`, the
+> second beam's $p_z$ negative), takes the flux as
+> `1d0/(2d0*SQRT(LAMBDA(s, m(1)**2, m(2)**2)))`, and generates in the partonic
+> centre of mass. Rather than boosting, it shifts: `genps.f` stores the beam
+> system's rapidity as `cm_rap` and `kin_functions.f`'s `rap()` adds it to every
+> rapidity a cut reads. The two agree on every cut in this crate's filter —
+> transverse momentum, invariant masses and rapidity *differences* are all
+> invariant under a $z$ boost, and the single-leg rapidity picks up exactly
+> $y_{\rm cm}$ either way. They part only on a single-leg *energy* threshold,
+> which MadGraph compares against the centre-of-mass energy; no banked run card
+> sets one.
+
 ## Frames
 
 The helicity-summed $|\mathcal{M}|^2$ is a Lorentz invariant and could be

@@ -25,6 +25,7 @@ use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -379,9 +380,10 @@ struct SampleSource<'s, 'a> {
     unweighter: Unweighter,
     rng: ChaCha8Rng,
     seed: u64,
-    /// `μF` from the run card, used when nothing in the matrix element moves with
-    /// `αs` and so no per-event scale prescription was installed.
-    static_scale: f64,
+    /// The card the run was set up from, which supplies the record's scale where
+    /// nothing in the matrix element moves with `αs` and so no per-event scale
+    /// prescription was installed.
+    card: &'s RunCard,
     alpha_qed: f64,
     momenta: Vec<V>,
 }
@@ -392,7 +394,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         records: &'s [SubprocessRecord],
         unweighter: Unweighter,
         seed: u64,
-        static_scale: f64,
+        card: &'s RunCard,
         alpha_qed: f64,
     ) -> Self {
         SampleSource {
@@ -402,7 +404,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
             unweighter,
             rng: ChaCha8Rng::seed_from_u64(seed),
             seed,
-            static_scale,
+            card,
             alpha_qed,
             momenta: Vec::new(),
         }
@@ -437,27 +439,13 @@ impl EventSource for SampleSource<'_, '_> {
             .chain(self.momenta.iter())
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])
             .collect();
-        // The scales the matrix element itself ran at, so the record reports the
-        // run rather than a second prescription compiled off the same card.
-        let (scale, alpha_qcd) =
-            match self
-                .integrand
-                .event_scales_at(&self.momenta, point.channel, &point.u)
-            {
-                Some(Ok(scales)) => {
-                    let alpha_s = self
-                        .integrand
-                        .alpha_s_source()
-                        .map(|r| r.eval(scales.mu_r))
-                        .unwrap_or(0.0);
-                    (scalup(&scales), alpha_s)
-                }
-                // A point the scale prescription rejects has no scale to report, so the
-                // source stops rather than inventing one, and the strategy reports a
-                // sample it could not fill.
-                Some(Err(_)) => return None,
-                None => (self.static_scale, 0.0),
-            };
+        // A point the scale prescription rejects has no scale to report, so the
+        // source stops rather than inventing one, and the strategy reports a
+        // sample it could not fill.
+        let (scale, alpha_qcd) = self
+            .integrand
+            .record_scales(&self.momenta, point.channel, &point.u, self.card)
+            .ok()?;
         let header = EventHeader {
             process_id: PROCESS_ID,
             // The strategy imposes the file's weight convention; this slot is
@@ -575,8 +563,6 @@ fn generate_sample(
     rc: &RunCard,
     nevents: usize,
 ) -> Result<EmitSummary, IntegrateError> {
-    let sqrt_s = rc.ebeam1 + rc.ebeam2;
-
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
@@ -588,6 +574,7 @@ fn generate_sample(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
+    let beams = FixedBeams::from_run_card(rc, &legs);
     let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -600,7 +587,7 @@ fn generate_sample(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, model, evaluated, rc)
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
@@ -655,10 +642,6 @@ fn generate_sample(
     );
     report_scan(&scan, artifact, args.scan_points, rule);
 
-    // A model with no strong coupling installs no per-event scale prescription, and
-    // no cross section depended on a factorisation scale; the run card's own is
-    // then what the record reports.
-    let static_scale = rc.dsqrt_q2fact1.max(rc.dsqrt_q2fact2);
     let alpha_qed = evaluated
         .param_values
         .get("aEW")
@@ -670,7 +653,7 @@ fn generate_sample(
         &records,
         scan,
         args.seed ^ GEN_SEED_OFFSET,
-        static_scale,
+        rc,
         alpha_qed,
     );
 
@@ -680,7 +663,7 @@ fn generate_sample(
         sigma_pb: artifact.sigma_pb,
         sigma_err_pb: artifact.sigma_err_pb,
         beam_pdg,
-        beam_energy: [sqrt_s / 2.0, sqrt_s / 2.0],
+        beam_energy: [rc.ebeam1, rc.ebeam2],
         // No parton densities on a fixed-energy run, so both beams report none.
         pdf_group: [0, 0],
         pdf_set: [0, 0],
@@ -854,9 +837,9 @@ fn check_channel_keys(
     let derived: Vec<ChannelKey> = integ
         .channel_ids()
         .iter()
-        .map(|id| ChannelKey::GroupDiagram {
+        .map(|id| ChannelKey::GroupChannel {
             group: id.group,
-            diagram: id.diagram,
+            channel: id.channel,
         })
         .collect();
     if artifact.channels.len() != derived.len() {
@@ -1351,10 +1334,11 @@ mod tests {
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
 
+        let legs = process_external_legs(rep, &model, &evaluated);
         let mut integ = FixedBeamIntegrand::new(
             bounds.iter().collect(),
             &cuts,
-            rc.ebeam1 + rc.ebeam2,
+            FixedBeams::from_run_card(&rc, &legs),
             masses,
             avg,
         );
@@ -1374,7 +1358,7 @@ mod tests {
             .collect();
         let scan = Unweighter::scan(&integ, grids.iter().map(|g| (g, 2_000)), 3);
 
-        let mut source = SampleSource::new(&integ, &records, scan, 11, 91.188, 0.0075);
+        let mut source = SampleSource::new(&integ, &records, scan, 11, &rc, 0.0075);
         let first: Vec<_> = (0..40)
             .map(|_| source.next_event().expect("an event"))
             .map(|e| (e.record, e.weight))

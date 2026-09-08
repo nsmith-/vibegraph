@@ -103,9 +103,11 @@ fn a_smeft_model_integrates_through_ufo_dir_and_records_its_identity() {
         "the two restrict cards of this model produce the same digest, so the \
          digest cannot see which card a run used"
     );
-    // 36 diagrams, one channel each. A count that moved would mean the suffix
-    // selected a different vertex set than the row the sigma gate measures.
-    assert_eq!(artifact.channels.len(), 36);
+    // 36 diagrams over two integration configurations: MadGraph's channel mapping
+    // calls the SM current and the SMEFT structures on one s-channel boson one
+    // topology, leaving one channel per boson. A count that moved would mean the
+    // suffix selected a different vertex set than the row the sigma gate measures.
+    assert_eq!(artifact.channels.len(), 2);
     // Smoke only: `validate_sigma.rs` gates this against MadGraph's 2.2223 pb.
     assert!(
         (1.5..3.0).contains(&artifact.sigma_pb),

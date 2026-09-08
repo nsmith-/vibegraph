@@ -91,6 +91,12 @@ harness = false
 name = "amplitude_oracle"
 harness = false
 
+# The coupling gate reads the committed coupling tables and the vendored/interned
+# models, so it too runs on a bare clone.
+[[test]]
+name = "coupling_oracle"
+harness = false
+
 # The diagram gate is hermetic for the same reason: the committed
 # `diagrams.json` and the committed `.mg5` scripts are all it reads. When a
 # process directory happens to sit beside them it also prints that directory's

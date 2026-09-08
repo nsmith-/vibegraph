@@ -84,16 +84,17 @@ const R_UNIMPL: &str = "cuts::detect_unimplemented — parsed and detected rathe
                         so a value off the default is already a hard error";
 const R_PTGMIN: &str = "cuts::detect_unimplemented, and cuts::Cuts::compile, which raises the \
                         photon pT threshold to it";
-const R_SDE_STRATEGY: &str = "hadronic::EventScaleSource::draws_configuration, which reads it \
-                              together with tmin_for_channel: the per-point integration \
-                              configuration the cluster scale is taken in is drawn from the \
-                              squared amplitude only at 1, the value at which matrix1.f's \
-                              enhancement weight AMP2_c * CC_c collapses to AMP2_c. At 2 the \
-                              squared amplitude is discarded there and the weight is a product \
-                              of propagator denominators this crate does not form, so the \
-                              scale keeps the channel the point was sampled in — which is a \
-                              partition choice of ours rather than MadEvent's, and is why no \
-                              banked row that clusters carries that value";
+const R_SDE_STRATEGY: &str = "hadronic::EventScaleSource::weights_configurations_by_amp2, which \
+                              reads it together with tmin_for_channel: matrix1.f weights \
+                              integration configuration c by AMP2_c * CC_c, and genps.f's \
+                              get_channel_cut collapses CC_c to 1 exactly at 1 with \
+                              tmin_for_channel = -1. At 2 the squared amplitude is discarded \
+                              and the weight is that product of inverse propagator \
+                              denominators alone (coupling.cluster.graph.ChannelSet.\
+                              channel_cuts). The field therefore reaches every per-event \
+                              quantity that follows a configuration: the channel a point's \
+                              cluster scale is taken in, and — through SELECT_COLOR's ICONFIG \
+                              — the colour flow its event record is written with";
 const R_XQCUT: &str = "cuts::detect_unimplemented, and ScaleChoice::from_run_card, which \
                        refuses a card that switches matching on";
 
@@ -159,15 +160,20 @@ const P_CHCLUSTER: &str = "restricts the clustering to the integration channel's
                            with them the scales read off the resulting tree. The test sits \
                            outside any matching switch, so it applies to an ordinary run";
 const P_TMIN_FOR_CHANNEL: &str = "limits the non-singular reach of a t-channel integration \
-                                  channel, and off its default it also turns get_channel_cut \
-                                  from the constant 1 into a product of propagator \
-                                  denominators, which is the enhancement weight this crate does \
-                                  not form. The field is read -- \
-                                  EventScaleSource::draws_configuration tests it beside \
-                                  SDE_strategy and declines to draw a configuration off the \
-                                  conjunction -- but declining is not implementing it, so the \
-                                  refusal here is what stands between such a card and a cross \
-                                  section taken under a rule that does not describe it";
+                                  channel: off its default it multiplies get_channel_cut by an \
+                                  exponential suppression of every spacelike line below \
+                                  t/s_tot = tmin, and at SDE_strategy = 1 it is that \
+                                  suppression alone that replaces the constant 1. Neither is \
+                                  formed here -- the channel weight this crate builds is \
+                                  get_channel_cut's SDE_strategy = 2 branch, the \
+                                  denominator product without the tmin factor, and at \
+                                  SDE_strategy = 1 genps.f reads an uninitialised t in that \
+                                  factor anyway. The field is read -- \
+                                  EventScaleSource::weights_configurations_by_amp2 tests it \
+                                  beside SDE_strategy -- but reading is not implementing it, so \
+                                  the refusal here is what stands between such a card and a \
+                                  configuration weight taken under a rule that does not \
+                                  describe it";
 const P_NHEL: &str = "Monte-Carlo over helicities in place of the explicit sum, which changes \
                       both the estimator and the per-event weight";
 const P_LIMHEL: &str = "the threshold below which MadGraph drops a helicity configuration; \

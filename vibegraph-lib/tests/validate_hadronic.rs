@@ -239,7 +239,7 @@ fn subsampler_summary(integ: &ProtonIntegrand<'_>) -> Vec<ChannelSummary> {
         .iter()
         .zip(integ.channel_samplers())
         .map(|(id, s)| ChannelSummary {
-            channel: format!("group {} diagram {}", id.group, id.diagram),
+            channel: format!("group {} channel {}", id.group, id.channel),
             sampler: s.clone(),
         })
         .collect()
@@ -325,6 +325,7 @@ fn run_seed_mapped(
 /// numbers for `p p → ℓ⁺ℓ⁻ j` differ by `1.75%` — `415.42` against `422.84` —
 /// which is three times the fixed-scale row's tolerance and well outside either
 /// run's Monte-Carlo error, so the confusion would not be a small one.
+#[derive(Clone, Copy)]
 enum ScaleShape {
     /// Both scales pinned at [`MU_F`], applied once rather than per point.
     FixedAtMz,
@@ -393,7 +394,19 @@ fn run_seed_shaped(
         *summary = subsampler_summary(&integ);
     }
     integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
-    integ.integrate(neval, niter, seed)
+    let result = integ.integrate(neval, niter, seed);
+    // The per-point scale-configuration draw falls back to the sampling channel
+    // when the squared amplitude it draws from is not finite, which is the only
+    // way a NaN `AMP2` reaches production without saying anything. The counter
+    // exists to be read; reading it here is what makes the path loud.
+    assert_eq!(
+        integ.scale_draw_fallbacks(),
+        0,
+        "the scale-configuration draw fell back to the sampling channel on {} points: \
+         their squared amplitudes summed to something the draw could not normalise",
+        integ.scale_draw_fallbacks(),
+    );
+    result
 }
 
 /// The unweighted mean of independent seeds, its error, and the scatter of the
@@ -1789,7 +1802,15 @@ const JJ_RUN: &str = "pp_to_jj";
 
 /// Independent seeds the `j j` cross section is measured on, for the reason the
 /// ℓℓj sweep gives.
-const JJ_SEEDS: &[u64] = &[20260810, 20260811, 20260812];
+///
+/// Five rather than three, and the same five [`probe_jj_budget_ladder`] walks its
+/// rungs with, because this is the arm whose measured distance from
+/// [`JJ_MAX_REL`] is smallest: a three-seed mean carries the estimator's own
+/// scatter into a bound that only has room for the disagreement. The two extra
+/// seeds move the reading from `+3.659e-3` to `+3.329e-3` and χ²/dof from `0.80`
+/// on two degrees of freedom to `1.40` on four, which is the same statistic
+/// measured rather than a different one.
+const JJ_SEEDS: &[u64] = &[20260810, 20260811, 20260812, 20260813, 20260814];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const JJ_ADAPT_SURVEY: usize = 8_000;
 const JJ_ADAPT_ITERS: usize = 5;
@@ -1822,11 +1843,24 @@ const JJ_NITER: usize = 10;
 /// partition gap at `1.0e-3` against its own `9.6e-4` Monte Carlo. What is left
 /// is Monte Carlo, so the pull is asserted too. Measured `+0.33 %` / `+0.26 %` /
 /// `+0.25 %` / `+0.30 %` over a `75 000`–`600 000` ladder at five seeds a rung.
+///
+/// This is the tightest measured cell in the file, and named as such rather than
+/// left to be rediscovered: over [`JJ_SEEDS`] at the gate budget the row reads
+/// `+3.329e-3`, so `0.005` clears it by `1.5x`. The residual is a converged
+/// offset the seeds resolve, not a spread they scatter over — per-seed `rel` runs
+/// `+9.6e-4` to `+5.1e-3` about a mean the budget ladder holds flat to `0.08 %` —
+/// so the margin is what the reference's own `0.22 %` error leaves after the
+/// offset, and no budget on either side shrinks it. A change that moves this row
+/// by another `0.15 %` fails the gate, which is the reading intended: the
+/// threshold does not move.
 const JJ_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
 /// errors — the guard the scalar pull cannot be. The gate budget is the ladder's
 /// worst rung and measures `1.40` over five seeds there, against `0.44`, `0.82`
-/// and `1.21` at the three rungs above it.
+/// and `1.21` at the three rungs above it. The gate forms it over the same five,
+/// so the bound and the statistic it bounds carry the same four degrees of
+/// freedom; at three it had two, wide enough for a converged row to post an
+/// alarming value and a scattered one an unremarkable one.
 const JJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// MadGraph's own concrete subprocesses for a banked run, one entry per
@@ -2164,7 +2198,7 @@ fn probe_jj_budget_ladder() {
     let evaluated = EvaluatedModel::from_model(model.clone());
     let set = load_pdf_set();
     let pdf = set.member(0).expect("PDF member 0");
-    let seeds = [20260810u64, 20260811, 20260812, 20260813, 20260814];
+    let seeds = JJ_SEEDS;
 
     eprintln!("── {JJ_RUN}: MG {mg:.6e} ± {mg_err:.3e} pb ──");
     let groups = groups_for(JJ_PROCESS, &model, &evaluated, &rc);
@@ -2176,7 +2210,7 @@ fn probe_jj_budget_ladder() {
     for &neval in &[75_000usize, 150_000, 300_000, 600_000] {
         let mut summary = Vec::new();
         let mut runs: Vec<SeedResult> = Vec::new();
-        for &seed in &seeds {
+        for &seed in seeds {
             let (sigma, err) = run_seed_shaped(
                 &groups,
                 &amps,
@@ -2594,8 +2628,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                     // The reconstruction is only worth reading if it reproduces
                     // what the integrand itself evaluated this point at.
                     let drawn = integ.channel_ids()[0];
-                    if g == drawn.group && d.config_of_diagram[drawn.diagram].unwrap_or(1) == config
-                    {
+                    if g == drawn.group && drawn.channel + 1 == config {
                         assert_eq!(
                             (s.mu_r, s.mu_f),
                             (ev.scales.mu_r, ev.scales.mu_f),
@@ -2978,6 +3011,219 @@ fn probe_recarded_budget_ladder() {
                 mean / mg - 1.0
             );
         }
+    }
+}
+
+/// The three-seed σ gates of this file, each with the two further seeds that
+/// bring it to AGENTS.md's five.
+///
+/// The first three of every entry are the gate's own seed list, so the five-seed
+/// reading below contains the three-seed one and the difference between them is
+/// exactly what the extra seeds buy. The extensions follow the budget ladders'
+/// convention of continuing each family's run of consecutive seeds.
+const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
+    (
+        "dy_default",
+        &[20260719, 20260720, 20260721, 20260722, 20260723],
+        DY_MAX_REL,
+        DY_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "dy_mmll_60_120",
+        &[20260719, 20260720, 20260721, 20260722, 20260723],
+        DY_MAX_REL,
+        DY_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_bb_fixed",
+        &[20260801, 20260802, 20260803, 20260804, 20260805],
+        BB_MAX_REL,
+        BB_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_jj",
+        &[20260810, 20260811, 20260812, 20260813, 20260814],
+        JJ_MAX_REL,
+        JJ_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_bb",
+        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_MAX_REL,
+        RECARDED_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_bb_qcd2",
+        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_MAX_REL,
+        RECARDED_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_llj",
+        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_MAX_REL,
+        RECARDED_MAX_CHI2_PER_DOF,
+    ),
+    (
+        "pp_to_ll_scalefact2",
+        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_MAX_REL,
+        RECARDED_MAX_CHI2_PER_DOF,
+    ),
+];
+
+/// Every three-seed σ bound in this file read against five seeds at its own gate
+/// budget — the headroom census behind the seed counts.
+///
+/// [`combine_seeds`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
+/// gate forms it on two: wide enough that a converged row can post an alarming
+/// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` is
+/// five. The bounds those three-seed rows are held to were calibrated on
+/// five-seed budget ladders, so bound and statistic do not have the same degrees
+/// of freedom behind them. This prints both readings — the gate's three seeds and
+/// the same three plus two — with each bound's ratio to the five-seed value, so
+/// how much of each row's margin is the comparison and how much is the seed count
+/// is a measurement rather than an inference.
+///
+/// One rung, every three-seed arm; the budget ladders above are where the other
+/// axis lives. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_hadronic_seed_headroom() {
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let mut census = Vec::new();
+
+    for &(arm, seeds, max_rel, max_chi2) in HEADROOM_ARMS {
+        // Each arm's run card, banked σ, process and budget, exactly as its gate
+        // takes them.
+        let (rc, mg, mg_err, process, budget, shape, expect_alpha_s) = match arm {
+            "dy_default" | "dy_mmll_60_120" => {
+                let (run, card) = if arm == "dy_default" {
+                    ("default", "dy13_default_run_card.dat")
+                } else {
+                    ("mmll_60_120", "dy13_mmll_run_card.dat")
+                };
+                let (mg, mg_err) = banked(run).expect("banked Drell-Yan reference");
+                let rc = RunCard::parse_file(&validation_dir().join(card)).expect("run card");
+                (
+                    rc,
+                    mg,
+                    mg_err,
+                    DY_PROCESS,
+                    (DY_ADAPT_SURVEY, DY_ADAPT_ITERS, DY_NEVAL, DY_NITER),
+                    ScaleShape::FixedAtMz,
+                    false,
+                )
+            }
+            _ => {
+                if !dyn_run_present("probe_hadronic_seed_headroom", arm) {
+                    continue;
+                }
+                let run_dir = validation_dir().join("output").join(arm);
+                let rc =
+                    RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("run card");
+                let (mg, mg_err) = banked_llj_sigma(&run_dir);
+                let (process, budget, shape) = match arm {
+                    "pp_to_bb_fixed" => (
+                        BB_PROCESS,
+                        (BB_ADAPT_SURVEY, BB_ADAPT_ITERS, BB_NEVAL, BB_NITER),
+                        ScaleShape::FixedAtMz,
+                    ),
+                    "pp_to_jj" => (
+                        JJ_PROCESS,
+                        (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, JJ_NEVAL, JJ_NITER),
+                        ScaleShape::PerEvent,
+                    ),
+                    _ => {
+                        let (_, process, neval, _) = RECARDED_ROWS
+                            .iter()
+                            .find(|(run, ..)| *run == arm)
+                            .expect("a re-carded row");
+                        (
+                            *process,
+                            (
+                                RECARDED_ADAPT_SURVEY,
+                                RECARDED_ADAPT_ITERS,
+                                *neval,
+                                RECARDED_NITER,
+                            ),
+                            ScaleShape::PerEvent,
+                        )
+                    }
+                };
+                let expect_alpha_s = process != "p p > l+ l-";
+                (rc, mg, mg_err, process, budget, shape, expect_alpha_s)
+            }
+        };
+
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        eprintln!("── {arm} ({process}): MG {mg:.6e} ± {mg_err:.3e} pb ──");
+
+        let mut summary = Vec::new();
+        let mut runs: Vec<SeedResult> = Vec::new();
+        for &seed in seeds {
+            let t = std::time::Instant::now();
+            let (sigma, err) = run_seed_shaped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                budget,
+                seed,
+                expect_alpha_s,
+                &mut summary,
+                true,
+                shape,
+            );
+            eprintln!(
+                "  seed {seed}: σ = {sigma:.6e} ± {err:.3e} pb | rel {:+.4e} | {:.1} s",
+                sigma / mg - 1.0,
+                t.elapsed().as_secs_f64()
+            );
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: sigma,
+                sigma_err_pb: err,
+            });
+        }
+
+        let read = |n: usize| {
+            let (mean, mean_err, chi2) = combine_seeds(&runs[..n]);
+            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+            let rel = mean / mg - 1.0;
+            eprintln!(
+                "  {n} seeds: σ = {mean:.6e} ± {mean_err:.3e} pb | rel {rel:+.4e} | \
+                 pull {pull:+.2} | χ²/dof {chi2:.2}"
+            );
+            (rel, pull, chi2)
+        };
+        let (rel3, pull3, chi23) = read(3);
+        let (rel5, pull5, chi25) = read(seeds.len());
+        let line = format!(
+            "HEADROOM {arm:<22} | rel {rel3:+.3e} (3) {rel5:+.3e} (5) vs {max_rel} -> {:5.1}x | \
+             χ²/dof {chi23:.2} (3) {chi25:.2} (5) vs {max_chi2} -> {:5.1}x | \
+             pull {pull3:+.2} (3) {pull5:+.2} (5) vs 3.0 -> {:5.1}x",
+            max_rel / rel5.abs(),
+            max_chi2 / chi25,
+            3.0 / pull5.abs(),
+        );
+        eprintln!("  {line}");
+        census.push(line);
+    }
+    eprintln!("\n──────── census ({} arms) ────────", census.len());
+    for line in &census {
+        eprintln!("{line}");
     }
 }
 

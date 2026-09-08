@@ -20,7 +20,7 @@ pipeline:
 | Per-point $\lvert\mathcal{M}\rvert^2$ against MadGraph's Fortran | $\le 10^{-12}$ relative, sized for summation order | global phases, flow relabellings |
 | Per-flow JAMPs, per-diagram amplitudes per helicity | one fitted unit phase per process | a swapped pair of flows with identical JAMPs |
 | Cross sections | statistical, at the reference's own uncertainty | a missed region a fixed seed happens not to expose |
-| Event samples | weighted Kolmogorov–Smirnov and $\chi^2$ tests per observable | tails, correlations between columns |
+| Event samples | weighted Kolmogorov–Smirnov and $\chi^2$ tests per observable, and the incoming legs' $(E, p_z, m)$ and the reported `SCALUP`/`AQCDUP` against the banked record at the precision that record prints them to | tails, correlations between columns, a beam built differently that lands on the same momenta, and a scale prescription both sides get wrong the same way |
 
 A convention claim, "this sign comes for free", is treated as a hypothesis
 until a test exists that would fail if it were false. A passing gate that
@@ -36,7 +36,14 @@ rather than a headline pull, and scan the budget as a second axis. Event
 samples are compared distribution by distribution against MadGraph's
 banked samples with tests that take the overweight events' weights into
 account, since treating them as unit weight misstates exactly the tail
-that is hardest to sample.
+that is hardest to sample. Not every column of an event sample is a
+distribution, though: at fixed beams the incoming legs and, under a fixed
+scale card, the reported scales are constants of the process, and there
+they are compared as an equality against the banked record — to the
+precision the file prints, read off the file's own spelling rather than
+assumed from a dialect. Which of the two comparisons applies is read off
+the samples rather than declared, so a prescription that collapsed to a
+constant is reported as one.
 
 ## Layers, and what each may assume
 

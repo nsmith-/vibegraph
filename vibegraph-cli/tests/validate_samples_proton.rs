@@ -26,6 +26,12 @@
 //! flavour column is the first comparison of the realised populations against
 //! MadGraph's own sample.
 //!
+//! And the **incoming legs**, which here are not constants of the process: each
+//! beam's energy is a momentum fraction times the run card's, drawn from the
+//! parton luminosities, so its column is a weighted KS against MadGraph's own
+//! and is the first comparison of the realised `x` spectra. The fixed-beam rows
+//! compare the same legs as an equality, since there they are constants.
+//!
 //! And, on the Drell-Yan pair, **`dσ/dm_ll` in absolute picobarns** down to the
 //! card's own threshold ([`the_drell_yan_mass_spectrum_is_binned_against_madgraph`]):
 //! the per-row columns below are shape statements, and the σ gates elsewhere are
@@ -57,7 +63,7 @@ mod manifest;
 #[path = "../../vibegraph-lib/tests/common/leshouche.rs"]
 mod leshouche;
 
-use report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
+use report::{CategoryCount, Chi2Cell, FieldCell, KsCell, SamplesRow, SeedSample, Stopwatch};
 
 /// The PDF set both banked runs were generated with.
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
@@ -299,6 +305,129 @@ impl Generator {
     }
 }
 
+// The row specifications the gates below take, one const per cell. Named rather
+// than written inline at each call so the seed-headroom probe measures the same
+// specifications the gates do rather than a copy of them; what each row is *for*
+// is on its own test.
+const LLJ_FIXED_ROW: Row = Row {
+    run: "pp_to_llj_fixed",
+    events: "run_01",
+    key: "pp_to_llj_fixed",
+    variant: None,
+    process: "p p > l+ l- j QCD=2 QED=2",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const LLJ_DYN_ROW: Row = Row {
+    run: "pp_to_llj_dyn",
+    events: "run_01",
+    key: "pp_to_llj_dyn",
+    variant: None,
+    process: "p p > l+ l- j QCD=2 QED=2",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const BB_FIXED_ROW: Row = Row {
+    run: "pp_to_bb_fixed",
+    events: "run_01",
+    key: "pp_to_bb_fixed",
+    variant: None,
+    process: "p p > b b~ QCD=2",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const JJ_ROW: Row = Row {
+    run: "pp_to_jj",
+    events: "run_01",
+    key: "pp_to_jj",
+    variant: None,
+    process: "p p > j j",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: DIJET_SCANS,
+};
+
+const BB_ROW: Row = Row {
+    run: "pp_to_bb",
+    events: "run_01",
+    key: "pp_to_bb",
+    variant: None,
+    process: "p p > b b~",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const BB_QCD2_ROW: Row = Row {
+    run: "pp_to_bb_qcd2",
+    events: "run_01",
+    key: "pp_to_bb_qcd2",
+    variant: None,
+    process: "p p > b b~ QCD=2",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const LLJ_ROW: Row = Row {
+    run: "pp_to_llj",
+    events: "run_01",
+    key: "pp_to_llj",
+    variant: None,
+    process: "p p > l+ l- j",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+const SCALEFACT2_ROW: Row = Row {
+    run: "pp_to_ll_scalefact2",
+    events: "run_01",
+    key: "pp_to_ll_scalefact2",
+    variant: None,
+    process: "p p > l+ l-",
+    run_card: None,
+    neval: NEVAL,
+    niter: NITER,
+    mode: "gate",
+    scans: &[],
+};
+
+/// Every gate row above, in the order the tests declare them — the set
+/// `probe_proton_samples_p_floor_headroom` sweeps.
+const ALL_GATE_ROWS: &[&Row] = &[
+    &LLJ_FIXED_ROW,
+    &LLJ_DYN_ROW,
+    &BB_FIXED_ROW,
+    &JJ_ROW,
+    &BB_ROW,
+    &BB_QCD2_ROW,
+    &LLJ_ROW,
+    &SCALEFACT2_ROW,
+    &DY_ROWS[0],
+    &DY_ROWS[1],
+];
+
 /// One row: integrate the banked cards once, then generate and compare a sample
 /// per seed.
 ///
@@ -400,6 +529,15 @@ fn check_row(row_spec: &Row) {
                 ));
             }
         }
+        for (what, columns) in [("incoming", &found.beams), ("reported", &found.scales)] {
+            for cell in columns {
+                eprintln!("             {}", cell.describe());
+                let Some(line) = cell.disagreement(what, P_FLOOR) else {
+                    continue;
+                };
+                failures.push(format!("seed {seed:#010x} {line}"));
+            }
+        }
 
         row.constant_observables = found.constant.clone();
         row.single_category = found
@@ -442,17 +580,28 @@ fn check_row(row_spec: &Row) {
                         .collect(),
                 })
                 .collect(),
+            beams: found.beams.iter().map(FieldCell::of).collect(),
+            scales: found.scales.iter().map(FieldCell::of).collect(),
         });
     }
 
     row.finish();
     eprintln!(
-        "  min KS p {:.3e} ({}), min chi2 p {:.3e} ({}) over {} seeds",
+        "  min KS p {:.3e} ({}), min chi2 p {:.3e} ({}), worst incoming {} \
+         (dev {:.4e} against tol {:.2e}, min beam KS p {:.3e}) over {} seeds",
         row.min_ks_p,
         row.worst_ks_observable,
         row.min_chi2_p,
         row.worst_chi2_column,
+        row.worst_beam_field,
+        row.max_beam_dev,
+        row.beam_tol,
+        row.min_beam_ks_p,
         GEN_SEEDS.len()
+    );
+    eprintln!(
+        "  worst reported {} (dev {:.4e} against tol {:.2e}, min scale KS p {:.3e})",
+        row.worst_scale_field, row.max_scale_dev, row.scale_tol, row.min_scale_ks_p,
     );
     row.status = match mode {
         "gate" => {
@@ -478,18 +627,7 @@ fn check_row(row_spec: &Row) {
 
 #[test]
 fn generated_proton_events_agree_with_madgraphs_banked_ones() {
-    check_row(&Row {
-        run: "pp_to_llj_fixed",
-        events: "run_01",
-        key: "pp_to_llj_fixed",
-        variant: None,
-        process: "p p > l+ l- j QCD=2 QED=2",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&LLJ_FIXED_ROW);
 }
 
 /// The scale-moved twin of the row above: same generate line, same budget, the
@@ -499,18 +637,7 @@ fn generated_proton_events_agree_with_madgraphs_banked_ones() {
 /// a sample assembled by the binary rather than a scalar cross section.
 #[test]
 fn generated_llj_dyn_events_agree_with_madgraphs_banked_ones() {
-    check_row(&Row {
-        run: "pp_to_llj_dyn",
-        events: "run_01",
-        key: "pp_to_llj_dyn",
-        variant: None,
-        process: "p p > l+ l- j QCD=2 QED=2",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&LLJ_DYN_ROW);
 }
 
 /// The same comparison on a purely hadronic final state: no lepton column to
@@ -527,18 +654,7 @@ fn generated_llj_dyn_events_agree_with_madgraphs_banked_ones() {
 /// columns.
 #[test]
 fn generated_b_quark_events_agree_with_madgraphs_banked_ones() {
-    check_row(&Row {
-        run: "pp_to_bb_fixed",
-        events: "run_01",
-        key: "pp_to_bb_fixed",
-        variant: None,
-        process: "p p > b b~ QCD=2",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&BB_FIXED_ROW);
 }
 
 /// The two Drell-Yan cells of the `pp_to_ll` row: the committed `dy13` cards,
@@ -587,6 +703,104 @@ fn generated_drell_yan_events_agree_with_madgraphs_banked_ones() {
 #[test]
 fn generated_drell_yan_events_in_the_mass_window_agree_with_madgraphs_banked_ones() {
     check_row(&DY_ROWS[1]);
+}
+
+/// [`GEN_SEEDS`] extended to AGENTS.md's five for the headroom census below. The
+/// first three are [`GEN_SEEDS`] itself, so the probe's reading contains the
+/// gate's own.
+const HEADROOM_GEN_SEEDS: [u64; 5] = [
+    0x5A_4D_1001,
+    0x5A_4D_1002,
+    0x5A_4D_1003,
+    0x5A_4D_1004,
+    0x5A_4D_1005,
+];
+
+/// [`P_FLOOR`]'s headroom on the proton rows over five generation seeds rather
+/// than the gate's three.
+///
+/// The gate statistic is the smallest `p` over rows × seeds × columns. A minimum
+/// is the order statistic that moves most when the sample grows, so what the two
+/// extra seeds measure is how much of the gate's margin over the floor is a
+/// property of the comparison and how much is of how few draws it takes.
+///
+/// The floor itself is a designed false-positive rate against a trial count, not
+/// a tolerance: more seeds mean more draws from the null and so a lower expected
+/// minimum. The reading is therefore *how far* the minimum falls, and a fall
+/// roughly in proportion to the extra draws is the null behaving. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_proton_samples_p_floor_headroom() {
+    let mut three: Vec<(f64, String)> = Vec::new();
+    let mut five: Vec<(f64, String)> = Vec::new();
+    for row_spec in ALL_GATE_ROWS {
+        if !run_present("probe_proton_samples_p_floor_headroom", row_spec.run) {
+            continue;
+        }
+        let mg = banked_sample(row_spec.run, row_spec.events);
+        let generator = Generator::integrate(row_spec);
+        let mut row_three = (f64::INFINITY, String::new());
+        let mut row_five = (f64::INFINITY, String::new());
+        for (i, &seed) in HEADROOM_GEN_SEEDS.iter().enumerate() {
+            let ours = generator.sample(seed);
+            let found = compare(&ours, &mg, labelling_for(&ours, &mg));
+            let mut worst = (f64::INFINITY, String::new());
+            for cell in &found.ks {
+                if cell.p < worst.0 {
+                    worst = (cell.p, format!("KS {}", cell.observable));
+                }
+            }
+            for cell in &found.chi2 {
+                if cell.p < worst.0 {
+                    worst = (cell.p, format!("chi2 {}", cell.column));
+                }
+            }
+            eprintln!(
+                "  [{}] seed {seed:#010x} ({} events): worst p {:.3e} on {}",
+                row_spec.run,
+                ours.len(),
+                worst.0,
+                worst.1
+            );
+            if i < GEN_SEEDS.len() && worst.0 < row_three.0 {
+                row_three = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+            }
+            if worst.0 < row_five.0 {
+                row_five = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+            }
+        }
+        eprintln!(
+            "  ROW {:<22} mode {:<4} | 3-seed min p {:.3e} ({:.1}x floor) | 5-seed min p \
+             {:.3e} ({:.1}x floor) on {}",
+            row_spec.run,
+            row_spec.mode,
+            row_three.0,
+            row_three.0 / P_FLOOR,
+            row_five.0,
+            row_five.0 / P_FLOOR,
+            row_five.1
+        );
+        if row_spec.mode == "gate" {
+            three.push((row_three.0, format!("{} {}", row_spec.run, row_three.1)));
+            five.push((row_five.0, format!("{} {}", row_spec.run, row_five.1)));
+        }
+    }
+    let pick = |v: &[(f64, String)]| {
+        v.iter()
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .expect("a gating row")
+            .clone()
+    };
+    let (p3, w3) = pick(&three);
+    let (p5, w5) = pick(&five);
+    eprintln!(
+        "\nHEADROOM samples_proton P_FLOOR {P_FLOOR:.0e} | 3 seeds over {} gating rows: min p \
+         {p3:.3e} ({:.1}x) on {w3} | 5 seeds: min p {p5:.3e} ({:.1}x) on {w5}",
+        three.len(),
+        p3 / P_FLOOR,
+        p5 / P_FLOOR,
+    );
 }
 
 /// Bin edges for `dσ/dm_ll`, in GeV.
@@ -802,18 +1016,7 @@ fn generated_dijet_events_agree_with_madgraphs_banked_ones() {
     ) {
         return;
     }
-    check_row(&Row {
-        run: "pp_to_jj",
-        events: "run_01",
-        key: "pp_to_jj",
-        variant: None,
-        process: "p p > j j",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: DIJET_SCANS,
-    });
+    check_row(&JJ_ROW);
 }
 
 // ───────────── the rows re-carded off MadGraph's internal parton densities ──────
@@ -838,18 +1041,7 @@ fn generated_bb_recarded_events_agree_with_madgraphs_banked_ones() {
     ) {
         return;
     }
-    check_row(&Row {
-        run: "pp_to_bb",
-        events: "run_01",
-        key: "pp_to_bb",
-        variant: None,
-        process: "p p > b b~",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&BB_ROW);
 }
 
 /// The explicit-order spelling of the row above, on its own banked run.
@@ -861,18 +1053,7 @@ fn generated_bb_qcd2_recarded_events_agree_with_madgraphs_banked_ones() {
     ) {
         return;
     }
-    check_row(&Row {
-        run: "pp_to_bb_qcd2",
-        events: "run_01",
-        key: "pp_to_bb_qcd2",
-        variant: None,
-        process: "p p > b b~ QCD=2",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&BB_QCD2_ROW);
 }
 
 /// `pp_to_llj_dyn`'s card with `mmll` back at 0 — the low-mass lepton-pair
@@ -885,18 +1066,7 @@ fn generated_llj_recarded_events_agree_with_madgraphs_banked_ones() {
     ) {
         return;
     }
-    check_row(&Row {
-        run: "pp_to_llj",
-        events: "run_01",
-        key: "pp_to_llj",
-        variant: None,
-        process: "p p > l+ l- j",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&LLJ_ROW);
 }
 
 /// Drell-Yan with the event-by-event scales doubled: the only banked sample
@@ -910,16 +1080,5 @@ fn generated_scalefact2_events_agree_with_madgraphs_banked_ones() {
     ) {
         return;
     }
-    check_row(&Row {
-        run: "pp_to_ll_scalefact2",
-        events: "run_01",
-        key: "pp_to_ll_scalefact2",
-        variant: None,
-        process: "p p > l+ l-",
-        run_card: None,
-        neval: NEVAL,
-        niter: NITER,
-        mode: "gate",
-        scans: &[],
-    });
+    check_row(&SCALEFACT2_ROW);
 }

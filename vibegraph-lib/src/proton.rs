@@ -86,16 +86,17 @@ use thread_local::ThreadLocal;
 use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
-use crate::coupling::scales::{EventScales, ScaleError};
+use crate::coupling::cluster::graph::ChannelSet;
+use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
-    boost_z, compile_class, compile_scale_source, components, constant_scale_report,
-    initial_spin_color_average, make_subs_scale_aware, process_external_legs, report_channel_maps,
-    BoundSubprocess, ChannelIntegration, EventScaleSource, HadronicError, PointScales,
-    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
-    VEGAS_ALPHA_MAPPED,
+    boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
+    components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
+    process_external_legs, report_channel_maps, BoundSubprocess, ChannelIntegration,
+    EventScaleSource, HadronicError, PointScales, RunningCouplingReport, SampledChannel,
+    SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -940,7 +941,7 @@ const SURVEY_CHUNK: usize = 128;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChannelId {
     pub group: usize,
-    pub diagram: usize,
+    pub channel: usize,
 }
 
 /// An accepted point, reconstructed from the coordinates it was drawn at.
@@ -1091,6 +1092,17 @@ pub struct ProtonIntegrand<'a> {
     /// Points whose `AMP2` carried no probability at all, where the draw kept the
     /// sampling channel instead.
     scale_draw_fallbacks: AtomicU64,
+    /// Per flavour group, the channel forests MadEvent's enhancement weight is a
+    /// product over, where the run card makes that weight something other than the
+    /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
+    config_weights: Option<Vec<ChannelSet>>,
+    /// Whether any flavour group's matrix element moves with the strong coupling.
+    ///
+    /// The prescription is compiled whatever the answer — the parton densities
+    /// consume its factorisation scale — and so is the coupling, which the event
+    /// record reports. What this decides is whether the integrand rebinds its
+    /// amplitudes per point: with no `αs` in them there is nothing to rebind.
+    alpha_s_dependent: bool,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1201,7 +1213,10 @@ impl<'a> ProtonIntegrand<'a> {
         let mut channel_ids = Vec::new();
         let mut channel_samplers = Vec::new();
         for (gi, g) in groups.groups().iter().enumerate() {
-            for (di, d) in g.diagrams().iter().enumerate() {
+            for (di, d) in channel_diagrams(g.diagrams(), model)
+                .into_iter()
+                .enumerate()
+            {
                 // The baked-in energy is unread through `ScaledChannel`, which takes
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
@@ -1216,7 +1231,7 @@ impl<'a> ProtonIntegrand<'a> {
                 channels.push(Box::new(channel));
                 channel_ids.push(ChannelId {
                     group: gi,
-                    diagram: di,
+                    channel: di,
                 });
             }
         }
@@ -1245,6 +1260,8 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
+            config_weights: None,
+            alpha_s_dependent: false,
         })
     }
 
@@ -1301,6 +1318,7 @@ impl<'a> ProtonIntegrand<'a> {
         alpha_s: Option<&AlphaSInfo>,
     ) -> Result<RunningCouplingReport, ProtonError> {
         let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
+        self.alpha_s_dependent = awareness.depends_on_alpha_s;
         // Unlike a fixed-beam run, the factorisation scale has a consumer whatever
         // the matrix element is made of, so the prescription is compiled even when
         // nothing moves with the strong coupling.
@@ -1310,13 +1328,22 @@ impl<'a> ProtonIntegrand<'a> {
             .iter()
             .map(|g| (g.evaluator(), g.diagrams()))
             .collect();
+        self.config_weights = compile_configuration_weights(&subprocesses, model, evaluated, card)?;
         let source = compile_scale_source(
             &subprocesses,
             model,
             evaluated,
             card,
             alpha_s,
-            awareness.depends_on_alpha_s,
+            // The record reports `αs(μR)` on every run that has a strong coupling
+            // to report, so it is built whether or not the matrix element moves
+            // with it. At hadron beams that is the set's own tabulation wherever
+            // `pdlabel` delegates the running to it.
+            evaluated.alpha_s().is_some() || awareness.depends_on_alpha_s,
+            // No banked hadron-beam run selects one of `setscales.f`'s closed
+            // forms, so a scale taken under one here would feed the parton
+            // densities with nothing on the other side of it.
+            ClosedForms::Refuse,
         )?;
         // Every pooled sampling channel has to name a channel of its own group's
         // forests: that pairing is the whole of how a drawn channel reaches the
@@ -1325,11 +1352,11 @@ impl<'a> ProtonIntegrand<'a> {
             assert_eq!(sets.len(), self.groups.groups().len());
             for id in &self.channel_ids {
                 assert!(
-                    id.diagram < sets[id.group].diagram_count(),
-                    "sampling channel (group {}, diagram {}) has no forest in a set of {}",
+                    id.channel < sets[id.group].len(),
+                    "sampling channel (group {}, channel {}) has no forest in a set of {}",
                     id.group,
-                    id.diagram,
-                    sets[id.group].diagram_count()
+                    id.channel,
+                    sets[id.group].len()
                 );
             }
         }
@@ -1623,17 +1650,25 @@ impl<'a> ProtonIntegrand<'a> {
     ) -> SampledChannel {
         let [v] = scale_u else { return channel };
         let sub = &sc.subs[channel.group];
-        if let Some(alpha_s) = self.amp2_alpha_s {
-            sub.set_alpha_s(alpha_s);
-        }
         let eval = self.groups.groups()[channel.group].evaluator();
         let mut buf = sc.amp2_buf.borrow_mut();
         let amp2 = &mut buf[..eval.n_configs()];
-        sub.eval_amp2(cm, amp2);
+        match &self.config_weights {
+            None => {
+                if let Some(alpha_s) = self.amp2_alpha_s {
+                    sub.set_alpha_s(alpha_s);
+                }
+                sub.eval_amp2(cm, amp2);
+            }
+            Some(sets) => {
+                let momenta: Vec<[f64; 4]> = cm.iter().map(components).collect();
+                sets[channel.group].channel_cuts(&momenta, self.s_had, amp2);
+            }
+        }
         match select_index(amp2, *v) {
             Some(c) => SampledChannel {
                 group: channel.group,
-                diagram: eval.config_diagrams()[c],
+                channel: c,
             },
             // Every diagram amplitude vanished here, so the coherent sum does too
             // and this point carries no weight whichever channel names its scale.
@@ -1676,12 +1711,12 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// The pooled sampling channel `j` as the scale prescription names it: the
-    /// flavour group it was built for, and its diagram inside that group.
+    /// flavour group it was built for, and its channel inside that group.
     fn sampled_channel(&self, j: usize) -> SampledChannel {
         let id = self.channel_ids[j];
         SampledChannel {
             group: id.group,
-            diagram: id.diagram,
+            channel: id.channel,
         }
     }
 
@@ -1702,6 +1737,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// prescription was applied once at installation and a matrix element with no
     /// strong coupling has none to move, so both return without touching the pools.
     fn apply_scale(&self, sc: &ProtonScratch<'a>, mu_r: f64) {
+        if !self.alpha_s_dependent {
+            return;
+        }
         if self.scales.constant_scales().is_some() {
             return;
         }
@@ -1889,6 +1927,10 @@ impl<'a> ProtonIntegrand<'a> {
         let mut amp2 = vec![0.0; eval.n_configs()];
         let mut jamp2 = vec![0.0; eval.n_flows()];
         sub.eval_diagonals(argument, &mut hel_m2, &mut amp2, &mut jamp2);
+        if let Some(sets) = &self.config_weights {
+            let momenta: Vec<[f64; 4]> = argument.iter().map(components).collect();
+            sets[group].channel_cuts(&momenta, self.s_had, &mut amp2);
+        }
         let drawn = eval.select_helicity(&hel_m2, u[2])?;
         let (_, order) = g.event_legs(member, ordering);
 
@@ -2968,10 +3010,10 @@ mod tests {
         assert_eq!(integ.channel_grid_ndim(), 2 + 5);
         let ids: Vec<ChannelId> = integ.channel_ids().to_vec();
         for (g, group) in groups.groups().iter().enumerate() {
-            for d in 0..group.diagrams().len() {
+            for d in 0..channel_diagrams(group.diagrams(), &evaluated).len() {
                 assert!(ids.contains(&ChannelId {
                     group: g,
-                    diagram: d
+                    channel: d
                 }));
             }
         }
@@ -3728,7 +3770,7 @@ mod tests {
     /// pins the argument.
     #[test]
     fn at_fixed_energy_the_integrand_is_the_partonic_cross_section_times_luminosity() {
-        use crate::hadronic::FixedBeamIntegrand;
+        use crate::hadronic::{FixedBeamIntegrand, FixedBeams};
 
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
@@ -3759,7 +3801,7 @@ mod tests {
                 let mut fixed = FixedBeamIntegrand::new(
                     vec![amp],
                     cuts,
-                    sqrt_shat,
+                    FixedBeams::massless(sqrt_shat),
                     masses.clone(),
                     g.spin_color_average(),
                 );
@@ -3823,7 +3865,7 @@ mod tests {
     /// against itself.
     #[test]
     fn at_fixed_energy_each_group_carries_its_own_symmetry_factor() {
-        use crate::hadronic::FixedBeamIntegrand;
+        use crate::hadronic::{FixedBeamIntegrand, FixedBeams};
 
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
@@ -3871,7 +3913,7 @@ mod tests {
                 let mut fixed = FixedBeamIntegrand::new(
                     vec![amp],
                     cuts,
-                    sqrt_shat,
+                    FixedBeams::massless(sqrt_shat),
                     masses.clone(),
                     g.spin_color_average(),
                 );
