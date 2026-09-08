@@ -552,6 +552,15 @@ pub struct SamplesRow {
     pub scale_tol: f64,
     /// The smallest KS p-value over the scale fields that vary per event.
     pub min_scale_ks_p: f64,
+    /// Scale fields whose reading is reported and never enforced, with why. The
+    /// row's other scale fields gate at its `mode`, and `worst_scale_field` and
+    /// the deviations beside it are the *enforced* fields' — a field reported
+    /// under this heading is measured here and nowhere else.
+    pub unenforced_scale_fields: Vec<String>,
+    pub unenforced_scale_reason: Option<String>,
+    pub worst_unenforced_scale_field: String,
+    pub max_unenforced_scale_dev: f64,
+    pub unenforced_scale_tol: f64,
     pub per_seed: Vec<SeedSample>,
     pub note: Option<String>,
     /// Wall-clock seconds this row's own measurement took; `None` where the gate
@@ -589,6 +598,11 @@ impl SamplesRow {
             max_scale_dev: 0.0,
             scale_tol: 0.0,
             min_scale_ks_p: 1.0,
+            unenforced_scale_fields: Vec::new(),
+            unenforced_scale_reason: None,
+            worst_unenforced_scale_field: String::new(),
+            max_unenforced_scale_dev: 0.0,
+            unenforced_scale_tol: 0.0,
             per_seed: Vec::new(),
             note: None,
             duration_s: None,
@@ -611,6 +625,15 @@ impl SamplesRow {
     /// whose other columns still gate.
     pub fn with_scale_mode(mut self, scale_mode: &'static str) -> Self {
         self.scale_mode = scale_mode;
+        self
+    }
+
+    /// Name the scale fields this row reports without enforcing, and why. They
+    /// leave the enforced reduction in [`finish`](Self::finish) and are reduced
+    /// on their own instead, so the cell shows both what gates and what does not.
+    pub fn with_unenforced_scales(mut self, fields: &[&str], reason: &str) -> Self {
+        self.unenforced_scale_fields = fields.iter().map(|f| f.to_string()).collect();
+        self.unenforced_scale_reason = Some(reason.to_string());
         self
     }
 
@@ -654,12 +677,19 @@ impl SamplesRow {
         self.beam_tol = worst.tol;
         self.min_beam_ks_p = worst.min_ks_p;
 
-        let scales: Vec<&FieldCell> = self.per_seed.iter().flat_map(|s| &s.scales).collect();
+        let unenforced = |c: &&FieldCell| self.unenforced_scale_fields.contains(&c.field);
+        let all: Vec<&FieldCell> = self.per_seed.iter().flat_map(|s| &s.scales).collect();
+        let (skipped, scales): (Vec<&FieldCell>, Vec<&FieldCell>) =
+            all.into_iter().partition(unenforced);
         let worst = worst_field(&scales);
         self.worst_scale_field = worst.field;
         self.max_scale_dev = worst.max_dev;
         self.scale_tol = worst.tol;
         self.min_scale_ks_p = worst.min_ks_p;
+        let worst = worst_field(&skipped);
+        self.worst_unenforced_scale_field = worst.field;
+        self.max_unenforced_scale_dev = worst.max_dev;
+        self.unenforced_scale_tol = worst.tol;
 
         self.single_category.sort();
         self.single_category.dedup();

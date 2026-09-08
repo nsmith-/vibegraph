@@ -472,47 +472,24 @@ const ROWS: &[Row] = &[
     },
 ];
 
-/// The rows whose matrix element does not move with the strong coupling.
+/// Why the six colour-toy rows report no `AQCDUP` and MadGraph's records do.
 ///
-/// `use_running_coupling` compiles no per-event scale prescription there — with
-/// no parton densities to read and no `αs` in the amplitude, neither scale it
-/// would produce has a consumer — so the record falls back to the run card's own
-/// factorisation scale and reports no strong coupling at all. MadGraph runs
-/// `setclscales` regardless of what its matrix element depends on, so its banked
-/// records on exactly these rows carry a clustered `SCALUP` and `αs(μR)`, and
-/// the two records disagree on both scale columns while every distribution and
-/// every cross section agrees. That is what makes the columns informational
-/// here.
-///
-/// Spelled out rather than read off the integrand, and asserted against it: a
-/// row that stopped installing a prescription it used to install would otherwise
-/// turn its own gate informational with nobody deciding it had.
-const NO_SCALE_PRESCRIPTION: &[&str] = &[
-    "ee_to_mumu",
-    "ee_to_ee",
-    "ee_to_ttx",
-    "ee_to_wpwm",
-    "ee_to_zh",
-    "uux_to_mumu",
-    "ee_to_mumua",
-    "ee_to_tatah",
-    "ee_to_mumu_tata_qcd0",
-    "ud_to_epemud_qcd0",
-    "ee_to_mumu_smlimit",
-    "ee_to_ttx_smlimit",
-    "ee_to_wpwm_cw",
-    "ee_to_ttx_dipole",
-    "ee_to_zh_smeft",
-    "ee_to_mumu_4f",
-    "tata_to_ttx_tensor4f",
-    "ee_to_ttx_smeft",
-    "ll_to_qqx_toy_dipole",
-    "ll_to_qqx_toy_tensor",
-    "ll_to_qqx_toy_yukawa",
-    "qqx_to_o8o8_toy_dcolor",
-    "p3r3_to_p3r3_toy_epsilon",
-    "p3r3_to_p3r3_toy_sextet",
-];
+/// Their UFO declares no `aS` among its external parameters, so the generated
+/// parameter card carries no `SMINPUTS` block and this crate has no `αs(M_Z)` to
+/// run: the prescription is compiled for the scales, the coupling is not built,
+/// and every record reports `AQCDUP = 0`. MadGraph fills the same gap from a
+/// literal — `export_v4.py` logs `aS not define as external parameter adding
+/// it!` (it is in each of these runs' `build.log`) and injects `aS = 0.138`
+/// beside `G = 4.1643`, which are not the same number: `setrun.f` recovers
+/// `αs(M_Z)` from `G` as `G²/(4π) = 1.3799843265950287`
+/// ([`common::UNDECLARED_ALPHA_S_MZ`]), ten times the `aS` injected beside it.
+/// Reproducing that would put a coupling of 0.43 at 500 GeV into the record of a
+/// model with no strong interaction in it, on the strength of a literal the two
+/// halves of which disagree — so `SCALUP`, which needs no coupling, gates here
+/// like every other row's, and `AQCDUP` is measured and reported instead.
+const UNDECLARED_ALPHA_S_REASON: &str =
+    "the model declares no aS, so no coupling is built and the record reports none; MadGraph \
+     injects aS = 0.138 beside G = 4.1643 and runs from the latter's 1.3799843265950287";
 
 /// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
 /// free at `dynamical_scale_choice = -1`.
@@ -690,11 +667,16 @@ fn generate(
 /// What one seed's comparison found that disagrees, split by which mode governs
 /// it: the outgoing columns, the incoming legs and the reported scales each
 /// carry their own.
+///
+/// `unenforced_scales` is the reading of a scale field the row reports and does
+/// not enforce, kept apart from `scales` so a row can gate on one scale field
+/// while reporting another.
 #[derive(Default)]
 struct Disagreements {
     columns: Vec<String>,
     beams: Vec<String>,
     scales: Vec<String>,
+    unenforced_scales: Vec<String>,
 }
 
 /// One field family's columns as the per-seed log prints them.
@@ -723,6 +705,7 @@ fn compare_seed(
     ours: &EventSample,
     theirs: &EventSample,
     labelling: Labelling,
+    unenforced: &[&str],
     row: &mut SamplesRow,
 ) -> Disagreements {
     let found = compare(ours, theirs, labelling);
@@ -773,7 +756,19 @@ fn compare_seed(
         }
     }
     below.beams = field_disagreements(key, seed, "incoming", &found.beams);
-    below.scales = field_disagreements(key, seed, "reported", &found.scales);
+    let (skipped, enforced): (Vec<&FieldColumn>, Vec<&FieldColumn>) = found
+        .scales
+        .iter()
+        .partition(|c| unenforced.contains(&c.field.as_str()));
+    let lines = |columns: Vec<&FieldColumn>| {
+        columns
+            .into_iter()
+            .filter_map(|cell| cell.disagreement("reported", P_FLOOR))
+            .map(|line| format!("[{key}] seed {seed:#010x} {line}"))
+            .collect::<Vec<_>>()
+    };
+    below.scales = lines(enforced);
+    below.unenforced_scales = lines(skipped);
 
     row.constant_observables = found.constant.clone();
     row.single_category = found
@@ -832,9 +827,6 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Which rows' incoming legs departed from the banked record at all, asserted
     // empty at the end.
     let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
-    // Rows whose integrand disagrees with `NO_SCALE_PRESCRIPTION` about whether a
-    // per-event scale prescription was installed at all.
-    let mut prescription_surprises: Vec<String> = Vec::new();
     for row in ROWS {
         let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
@@ -851,26 +843,47 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
             );
-            // The incoming legs are enforced wherever the outgoing ones are: a row
-            // is informational on all of its columns or on none of them.
+            // Every column is enforced at the row's own mode: the outgoing
+            // distributions, the incoming legs and the scales the record reports
+            // alike. A row is informational on all of them or on none.
             let beams = row.mode;
-            // The reported scales are enforced wherever a prescription computed
-            // them, and measured where the record falls back to the run card.
-            let installed = integ.scale_source().is_some();
-            let declared = !NO_SCALE_PRESCRIPTION.contains(&row.key);
-            if installed != declared {
-                prescription_surprises.push(format!(
-                    "[{}] installs {} per-event scale prescription; NO_SCALE_PRESCRIPTION says \
-                     it installs {}",
-                    row.key,
-                    if installed { "a" } else { "no" },
-                    if declared { "one" } else { "none" },
-                ));
-            }
-            let scales = if installed { row.mode } else { "info" };
+            let scales = row.mode;
+            // Every banked fixed-beam card asks for a scale, so every row has a
+            // prescription to report one from. A row that compiled none would
+            // report the card's constant where MadGraph reports what its own card
+            // asked for, and the columns below would be comparing two different
+            // questions.
+            assert!(
+                integ.scale_source().is_some(),
+                "[{}] compiled no per-event scale prescription, so its record has \
+                 no scale of its own to report",
+                row.key
+            );
+            // The one field this crate does not reproduce, and the measured cause:
+            // a model with no `aS` gives no coupling to run, and MadGraph fills the
+            // gap from a literal of its own.
+            let built_a_coupling = integ.alpha_s_source().is_some();
+            let no_coupling = common::UNDECLARED_ALPHA_S_RUNS.contains(&row.key);
+            assert_eq!(
+                built_a_coupling,
+                !no_coupling,
+                "[{}] {} a running coupling, and UNDECLARED_ALPHA_S_RUNS says its model \
+                 declares {} strong coupling",
+                row.key,
+                if built_a_coupling {
+                    "built"
+                } else {
+                    "built no"
+                },
+                if no_coupling { "no" } else { "a" },
+            );
+            let unenforced: &[&str] = if no_coupling { &["AQCDUP"] } else { &[] };
             let mut report = SamplesRow::new(row.key, row.process, row.mode)
                 .with_beam_mode(beams)
                 .with_scale_mode(scales);
+            if no_coupling {
+                report = report.with_unenforced_scales(unenforced, UNDECLARED_ALPHA_S_REASON);
+            }
             report.p_floor = P_FLOOR;
             report.mg_events = mg.len();
             report.sigma_mg_pb = mg.sigma_pb;
@@ -889,7 +902,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     Labelling::Fine => "fine",
                     Labelling::Coarse => "coarse",
                 };
-                let found = compare_seed(row.key, seed, &ours, &mg, l, &mut report);
+                let found = compare_seed(row.key, seed, &ours, &mg, l, unenforced, &mut report);
                 if !found.beams.is_empty() {
                     beams_disagreed.insert(row.key);
                 }
@@ -897,6 +910,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     (row.mode, found.columns),
                     (beams, found.beams),
                     (scales, found.scales),
+                    ("info", found.unenforced_scales),
                 ] {
                     if mode == "gate" {
                         failures.extend(what);
@@ -925,6 +939,14 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                 report.scale_tol,
                 report.min_scale_ks_p,
             );
+            if !report.unenforced_scale_fields.is_empty() {
+                eprintln!(
+                    "  reported and not enforced: {} {:.4e} against a {:.2e} tolerance",
+                    report.worst_unenforced_scale_field,
+                    report.max_unenforced_scale_dev,
+                    report.unenforced_scale_tol,
+                );
+            }
             report.status = match row.mode {
                 "gate" => {
                     let outgoing = report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR;
@@ -955,12 +977,6 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     assert!(
         beams_disagreed.is_empty(),
         "these rows' incoming legs depart from MadGraph's record: {beams_disagreed:?}"
-    );
-    // Which rows compile a per-event scale prescription decides which rows can
-    // gate on the scales they report, so the two must not drift apart silently.
-    assert!(
-        prescription_surprises.is_empty(),
-        "scale-prescription declarations out of date:\n{prescription_surprises:#?}"
     );
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
 }
@@ -1341,7 +1357,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         let mut flat_mumu = Spectrum::new(MLL_EDGES);
         let mut flat_tata = Spectrum::new(MLL_EDGES);
         let mut rng = ChaCha8Rng::seed_from_u64(FLAT_SEED ^ 0xFFFF);
-        let mut u = vec![0.0; integ.channel_grid_ndim()];
+        let mut u = vec![0.0; integ.point_ndim()];
         let mut momenta = Vec::new();
         for _ in 0..FLAT_DRAWS {
             let jac = grid.draw(&mut rng, &mut u);
@@ -1541,14 +1557,15 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
-    integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
-        .expect("run card scale prescription compiles");
+    // No scale prescription: the sampler here is the one resonant diagram's
+    // channel, which names no configuration of the 25 the prescription would be
+    // compiled over, and this row's matrix element moves with no coupling that a
+    // scale could reach. The estimate below is the same either way.
     integ.use_multichannel(&resonant, &evaluated, 2_000, 1, SEED);
     assert_eq!(integ.channel_count(), 1, "one channel, so no α mixture");
 
     let mut rng = ChaCha8Rng::seed_from_u64(HWINDOW_SEED);
-    let mut u = vec![0.0; integ.channel_grid_ndim()];
+    let mut u = vec![0.0; integ.point_ndim()];
     let mut momenta = Vec::new();
     let (mut sum, mut sum_sq, mut inside) = (0.0, 0.0, 0usize);
     for _ in 0..HWINDOW_DRAWS {
