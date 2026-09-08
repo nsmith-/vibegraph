@@ -1096,6 +1096,13 @@ pub struct ProtonIntegrand<'a> {
     /// product over, where the run card makes that weight something other than the
     /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
     config_weights: Option<Vec<ChannelSet>>,
+    /// Whether any flavour group's matrix element moves with the strong coupling.
+    ///
+    /// The prescription is compiled whatever the answer — the parton densities
+    /// consume its factorisation scale — and so is the coupling, which the event
+    /// record reports. What this decides is whether the integrand rebinds its
+    /// amplitudes per point: with no `αs` in them there is nothing to rebind.
+    alpha_s_dependent: bool,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1254,6 +1261,7 @@ impl<'a> ProtonIntegrand<'a> {
             scale_draw_fallbacks: AtomicU64::new(0),
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
+            alpha_s_dependent: false,
         })
     }
 
@@ -1310,6 +1318,7 @@ impl<'a> ProtonIntegrand<'a> {
         alpha_s: Option<&AlphaSInfo>,
     ) -> Result<RunningCouplingReport, ProtonError> {
         let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
+        self.alpha_s_dependent = awareness.depends_on_alpha_s;
         // Unlike a fixed-beam run, the factorisation scale has a consumer whatever
         // the matrix element is made of, so the prescription is compiled even when
         // nothing moves with the strong coupling.
@@ -1326,7 +1335,11 @@ impl<'a> ProtonIntegrand<'a> {
             evaluated,
             card,
             alpha_s,
-            awareness.depends_on_alpha_s,
+            // The record reports `αs(μR)` on every run that has a strong coupling
+            // to report, so it is built whether or not the matrix element moves
+            // with it. At hadron beams that is the set's own tabulation wherever
+            // `pdlabel` delegates the running to it.
+            evaluated.alpha_s().is_some() || awareness.depends_on_alpha_s,
             // No banked hadron-beam run selects one of `setscales.f`'s closed
             // forms, so a scale taken under one here would feed the parton
             // densities with nothing on the other side of it.
@@ -1724,6 +1737,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// prescription was applied once at installation and a matrix element with no
     /// strong coupling has none to move, so both return without touching the pools.
     fn apply_scale(&self, sc: &ProtonScratch<'a>, mu_r: f64) {
+        if !self.alpha_s_dependent {
+            return;
+        }
         if self.scales.constant_scales().is_some() {
             return;
         }

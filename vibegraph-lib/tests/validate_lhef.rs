@@ -61,7 +61,7 @@ use vibegraph::hadronic::{
     FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
-use vibegraph::lhef::build::{scalup, EventHeader, SubprocessRecord, WeightNormalisation};
+use vibegraph::lhef::build::{EventHeader, SubprocessRecord, WeightNormalisation};
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{
     LheEvent, LheInit, LheProcess, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING,
@@ -545,20 +545,11 @@ fn generate_and_check(row: &Row) {
             .chain(momenta.iter())
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])
             .collect();
-        // The scale the matrix element itself ran at, when one was installed; a
-        // process with no strong coupling has none, and the run card's own
-        // factorisation scale stands in.
-        let (scale, alpha_qcd) = match integ.event_scales_at(&momenta, point.channel, &point.u) {
-            Some(scales) => {
-                let scales = scales.expect("the scale prescription accepts a sampled point");
-                let alpha_s = integ
-                    .alpha_s_source()
-                    .map(|r| r.eval(scales.mu_r))
-                    .expect("a scale-aware run has a running coupling");
-                (scalup(&scales), alpha_s)
-            }
-            None => (run_card.dsqrt_q2fact1.max(run_card.dsqrt_q2fact2), 0.0),
-        };
+        // The scales the record reports, from the shipped generator's own call, so
+        // a round trip is over the fields the binary writes.
+        let (scale, alpha_qcd) = integ
+            .record_scales(&momenta, point.channel, &point.u, &run_card)
+            .expect("the scale prescription accepts a sampled point");
         generated.push((
             selection.subprocess,
             selection.helicity,

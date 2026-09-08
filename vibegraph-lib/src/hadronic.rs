@@ -133,11 +133,10 @@ pub enum HadronicError {
 /// Holds the compiled [`ScaleChoice`], the channel forests its clustering branch
 /// consults, and the running coupling that turns `μR` into `αs(μR)`.
 ///
-/// The coupling is constructed only on request. `coupling::alphas` refuses a
-/// `pdlabel` whose `αs` MadGraph delegates to LHAPDF, and a matrix element with no
-/// strong coupling in it has no reason to meet that refusal, so a caller whose
-/// amplitudes report [`ScaleAwareAmplitude::depends_on_alpha_s`] false asks for no
-/// coupling and runs regardless of the label.
+/// The coupling is constructed only on request, which is what lets a caller that
+/// has no use for one run regardless of the label: `coupling::alphas` refuses a
+/// `pdlabel` whose `αs` MadGraph delegates to LHAPDF, and only a caller holding
+/// that set's tabulation can resolve it.
 #[derive(Clone, Debug)]
 pub struct EventScaleSource {
     kind: ScaleSourceKind,
@@ -273,19 +272,23 @@ impl EventScaleSource {
     /// Compile a run card's prescription. `channels` carries one channel set per
     /// subprocess a sampling channel can be drawn from and is consulted only by
     /// the clustering branch; `needs_alpha_s` decides whether a running coupling
-    /// is built at all.
+    /// is built at all, and `param_card_as` is the `αs(M_Z)` it would run from —
+    /// `None` where the model declares no strong coupling, which is a refusal
+    /// rather than a default when one was asked for.
     pub fn from_run_card(
         card: &RunCard,
-        param_card_as: f64,
+        param_card_as: Option<f64>,
         grid: Option<&AlphaSInfo>,
         channels: Option<Vec<Channels>>,
         needs_alpha_s: bool,
         closed: ClosedForms,
     ) -> Result<Self, HadronicError> {
         let choice = ScaleChoice::from_run_card_for(card, closed)?;
-        let alpha_s = needs_alpha_s
-            .then(|| AlphaSSource::from_run_card(card, param_card_as, grid))
-            .transpose()?;
+        let alpha_s = match (needs_alpha_s, param_card_as) {
+            (true, Some(a_s)) => Some(AlphaSSource::from_run_card(card, a_s, grid)?),
+            (true, None) => return Err(HadronicError::MissingAlphaS),
+            (false, _) => None,
+        };
         let kind = if choice.is_fully_fixed() {
             // A fully fixed prescription returns the card's constants without
             // reading the event, so any event resolves it.
@@ -896,9 +899,9 @@ pub(crate) fn make_subs_scale_aware(
 /// makes a drawn channel nameable to the scale — channel `j` of set `g` is
 /// diagram `j` of `subprocesses[g].1`.
 ///
-/// The coupling is built only when some subprocess actually moves with it, which is
-/// what keeps a matrix element with no QCD in it away from a `pdlabel` whose
-/// `αs` lives in a PDF set the caller may not have loaded. `grid` is that set's
+/// `needs_alpha_s` decides whether a running coupling is built beside the scales.
+/// It is the caller's, because a caller that has no use for one can run against a
+/// `pdlabel` whose `αs` lives in a PDF set it never loaded. `grid` is that set's
 /// `AlphaS_*` metadata, for the label that demands it.
 pub(crate) fn compile_scale_source(
     subprocesses: &[(&AmplitudeEvaluator, &[Diagram])],
@@ -933,8 +936,14 @@ pub(crate) fn compile_scale_source(
             tables,
         });
     }
-    let param_card_as = evaluated.alpha_s().ok_or(HadronicError::MissingAlphaS)?;
-    EventScaleSource::from_run_card(card, param_card_as, grid, Some(sets), needs_alpha_s, closed)
+    EventScaleSource::from_run_card(
+        card,
+        evaluated.alpha_s(),
+        grid,
+        Some(sets),
+        needs_alpha_s,
+        closed,
+    )
 }
 
 /// The channel forests MadEvent's enhancement weight is a product over, one set
@@ -981,7 +990,11 @@ pub(crate) fn constant_scale_report(
         (Some(scales), Some(running)) => Some(running.eval(scales.mu_r)),
         _ => None,
     };
-    if let Some(alpha_s) = constant_alpha_s {
+    // The constant coupling is reported whatever the matrix element is made of —
+    // it is what a record on this run says it was evaluated at — but it is only
+    // *applied* where something reads it. Rebinding an amplitude with no `αs` in
+    // it would move nothing and is left undone rather than assumed harmless.
+    if let (Some(alpha_s), true) = (constant_alpha_s, awareness.depends_on_alpha_s) {
         for sub in subs.iter_mut() {
             sub.set_alpha_s(alpha_s);
         }
@@ -1099,6 +1112,15 @@ pub struct FixedBeamIntegrand<'a> {
     /// the run card makes that weight something other than the squared amplitude.
     /// `None` leaves every configuration draw on `AMP2`.
     config_weights: Option<ChannelSet>,
+    /// Whether any subprocess's matrix element moves with the strong coupling.
+    ///
+    /// The prescription is compiled whatever the answer, because a run card that
+    /// asks for a per-event scale gets one in the event record either way. What
+    /// this decides is whether the *integrand* reads it: with no `αs` in the
+    /// amplitude a point's value is the same at every scale, so the per-point
+    /// clustering and coupling solve are skipped and the integral is what it
+    /// would be with no prescription installed at all.
+    alpha_s_dependent: bool,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1342,6 +1364,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
             config_weights: None,
+            alpha_s_dependent: false,
         }
     }
 
@@ -1402,24 +1425,22 @@ impl<'a> FixedBeamIntegrand<'a> {
             card,
         )?
         .map(|mut sets| sets.remove(0));
-        // With no parton distributions to read and no strong coupling in the matrix
-        // element, neither scale the prescription produces has a consumer, so the
-        // prescription is not compiled at all — a process whose cluster scale this
-        // crate refuses still integrates, because its cross section does not depend
-        // on the scale that was refused.
-        if !awareness.depends_on_alpha_s {
-            self.scales = None;
-            return Ok(constant_scale_report(&mut self.subs, None, awareness));
-        }
+        self.alpha_s_dependent = awareness.depends_on_alpha_s;
         // A fixed-beam run has no parton distributions, so `pdlabel` never reaches
-        // the branch that would want a set's alpha_s tabulation.
+        // the branch that would want a set's alpha_s tabulation, and the coupling
+        // is the parameter card's own run at two loops — `setrun.f`'s `lpp = 0`
+        // branch. It is built whether or not the matrix element moves with it,
+        // because the event record reports `αs(μR)` on every run that has a strong
+        // coupling to report. A model declaring no `aS` has none to run from and
+        // gets the scales without one.
+        let needs_alpha_s = evaluated.alpha_s().is_some() || awareness.depends_on_alpha_s;
         let source = compile_scale_source(
             &[(self.subs[0].evaluator(), diagrams)],
             model,
             evaluated,
             card,
             None,
-            true,
+            needs_alpha_s,
             ClosedForms::Honour,
         )?;
         if source.constant_scales().is_none() {
@@ -1518,10 +1539,9 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///
     /// An event record has to report the scale its matrix element actually ran
     /// at, so it reads it from here rather than compiling a second prescription
-    /// off the same run card and hoping the two agree. `None` when nothing in the
-    /// matrix element moves with the strong coupling and so no prescription was
-    /// installed at all — a record then takes its factorisation scale from the run
-    /// card directly, no cross section having depended on it.
+    /// off the same run card and hoping the two agree. `None` only where no
+    /// prescription was installed at all, which is a caller that never asked for
+    /// one.
     /// `channel` is the sampling channel the point came from, which the
     /// clustering prescription reads: an event record's scale is the one its own
     /// draw implied, not the one some other channel would have given.
@@ -1549,7 +1569,15 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// implies. A constant prescription was applied once at installation, and a
     /// matrix element with no strong coupling in it has no coupling to move, so
     /// both return here without touching the momenta.
+    ///
+    /// The second case is what keeps a run card's per-event scale out of the
+    /// cross section on a process with no `αs` in it: the scale is still resolved
+    /// per event for the record, but nothing the integral is built from reads it,
+    /// so no clustering runs on the integration path and no point's value moves.
     fn apply_scale(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) {
+        if !self.alpha_s_dependent {
+            return;
+        }
         let Some(source) = &self.scales else { return };
         if source.constant_scales().is_some() {
             return;
@@ -1643,7 +1671,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             return 0.0;
         }
         let sc = self.scratch();
-        let scale_channel = self.scale_channel(sc, &ext, channel, scale_u);
+        let scale_channel = self.evaluation_channel(sc, &ext, channel, scale_u);
         let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
@@ -1725,7 +1753,11 @@ impl<'a> FixedBeamIntegrand<'a> {
                     .collect();
                 let sc = self.scratch();
                 let ext = self.externals(momenta);
-                self.matrix_element(sc, momenta, self.scale_channel(sc, &ext, channel, &scale_u))
+                self.matrix_element(
+                    sc,
+                    momenta,
+                    self.evaluation_channel(sc, &ext, channel, &scale_u),
+                )
             },
             seed,
             MULTICHANNEL_ADAPT_STREAM,
@@ -1891,7 +1923,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             return 0.0;
         }
         let sc = self.scratch();
-        let scale_channel = self.scale_channel(sc, &ext, channel, scale_u);
+        let scale_channel = self.evaluation_channel(sc, &ext, channel, scale_u);
         let m2 = self.matrix_element_at(sc, &ext, &point.momenta, scale_channel);
         if m2 == 0.0 {
             return 0.0;
@@ -1916,6 +1948,26 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// at the one the previous point left, which is what makes the drawn
     /// configuration a function of the momenta alone: the scale is not known until
     /// after the draw, so evaluating "at the event's coupling" would be circular.
+    /// The configuration a point's *evaluation* names, which is the sampling
+    /// channel wherever no coupling moves with the scale.
+    ///
+    /// The draw costs an `AMP2` evaluation per point and the configuration it
+    /// returns is read by nothing but the coupling, so a matrix element with no
+    /// `αs` in it skips it. The record takes
+    /// [`scale_channel`](Self::scale_channel) directly and so still draws.
+    fn evaluation_channel(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        ext: &[V],
+        channel: usize,
+        scale_u: &[f64],
+    ) -> usize {
+        if !self.alpha_s_dependent {
+            return channel;
+        }
+        self.scale_channel(sc, ext, channel, scale_u)
+    }
+
     fn scale_channel(
         &self,
         sc: &FixedBeamScratch<'a>,
@@ -2022,12 +2074,17 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// The `SCALUP` and `AQCDUP` a record assembled from the point drawn at `u`
     /// in `channel` reports.
     ///
-    /// The scales are the ones the matrix element itself ran at, so the record
-    /// describes the run rather than a second prescription compiled off the same
-    /// card. Where nothing in the matrix element moves with `αs` no prescription
-    /// was installed at all and neither scale had a consumer; the record then
-    /// falls back to the run card's own factorisation scale, and reports no
-    /// strong coupling because none was built.
+    /// The scales come from the run card's own prescription, so the record says
+    /// what that card asked for rather than what some second prescription
+    /// compiled off it would give. A card asking for a per-event scale gets one
+    /// here whether or not the matrix element moves with `αs` — MadGraph's
+    /// `setclscales` runs on the same condition, and a record that reported the
+    /// card's constant instead would differ from the reference on a field the
+    /// card decides. Where the amplitude carries no `αs` the value is still the
+    /// coupling that scale implies; nothing in the cross section read it.
+    ///
+    /// The fallback arm is a caller that installed no prescription at all, which
+    /// leaves the run card's own factorisation scale and no strong coupling.
     ///
     /// `Err` on a point the prescription rejects — it has no scale to report, and
     /// inventing one would put a number in the record that no weight was taken

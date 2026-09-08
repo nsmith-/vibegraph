@@ -265,10 +265,47 @@ impl RowFile {
         let ks = self.f64_at("min_scale_ks_p").unwrap_or(f64::NAN);
         format!(
             "scales: worst {field} deviates {} against the record's printed {}, \
-             min scale KS p {}{mode}",
+             min scale KS p {}{mode}{}",
             exp(dev),
             exp(tol),
             pval(ks),
+            self.unenforced_scales(),
+        )
+    }
+
+    /// The scale fields a row reports without enforcing, with the reading that
+    /// was taken and the reason it is not a verdict.
+    ///
+    /// Empty where every scale field gates, which is the ordinary case: the
+    /// clause exists so a cell can carry one measured field and one enforced one
+    /// without either being mistaken for the other.
+    fn unenforced_scales(&self) -> String {
+        let fields = self
+            .value
+            .get("unenforced_scale_fields")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        if fields.is_empty() {
+            return String::new();
+        }
+        let dev = self.f64_at("max_unenforced_scale_dev").unwrap_or(f64::NAN);
+        let tol = self.f64_at("unenforced_scale_tol").unwrap_or(f64::NAN);
+        let reason = self
+            .value
+            .get("unenforced_scale_reason")
+            .and_then(Value::as_str)
+            .unwrap_or("no reason recorded");
+        format!(
+            "; {fields} measured and not enforced, deviating {} against the record's printed {} \
+             ({reason})",
+            exp(dev),
+            exp(tol),
         )
     }
 
