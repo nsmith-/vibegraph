@@ -500,17 +500,21 @@ One line each; the note is the full record. Earlier sprints
   the repository uses `1.0`.
 
 - **Open ends the `banked-open-ends` sprint left (2026-09-07, note 36 §7)**:
-  - **An αs-free fixed-beam record writes the run card's scale** — 27
-    `samples` rows are informational on B6's `SCALUP`/`AQCDUP` column because
-    no scale prescription is compiled when the matrix element carries no
-    `αs`, so the record carries `dsqrt_q2fact` (91.188) and `AQCDUP = 0` where
-    MadGraph runs `setclscales` regardless and writes its clustered scale and
-    a running coupling (`ee_to_mumu` 91.2, `ee_to_ee` 250, `ee_to_ttx` 500).
-    σ and every shape are indifferent; the *records* differ. **A convention
-    decision, the user's**: compile the clustering on every fixed-beam run
-    and write MadGraph's numbers (27 cells flip to gate), or keep the card's
-    scale as the honest "no scale entered this matrix element" and record the
-    28 cells as a documented divergence.
+  - ~~**An αs-free fixed-beam record writes the run card's scale**~~ —
+    **decided 2026-09-07 (user)**: the card's fixed energy *is* the honest
+    record; MadGraph's clustered `SCALUP` on such a run is an artefact of its
+    shipped defaults (`fixed_ren_scale = False`, `fixed_fac_scale = False`,
+    `dynamical_scale_choice = -1` run `setclscales` regardless of whether αs
+    enters), unphysical and arbitrary there. The record does not change.
+    Instead the `samples` comparison takes a **declared** `ignore` list per
+    row in the manifest (`SCALUP`/`AQCDUP` on the 27 αs-free fixed-beam rows,
+    `AQCDUP` alone on the three Drell–Yan proton rows) with a reason, checked
+    both ways — the ignored field must be one the reason class explains
+    (no prescription compiled / `alpha_qcd == 0`) and must actually disagree,
+    so the declaration cannot outlive its cause (session B8, note 36 §7).
+    The measured MadGraph values (`ee_to_mumu` 91.2, `ee_to_ee` 250,
+    `ee_to_ttx` 500, `p3r3` 251.2964) stay in the manifest notes as the
+    record of what is being ignored.
   - **`gg_to_gg_cg`'s σ is a converged −0.22% offset** (five seeds χ²/dof
     1.01, ladder settling; the reference's error is 8.5e-4): not the scale
     formula (the replay is at 0.999 of budget) and not the process
