@@ -736,3 +736,22 @@ gates on all six. A third MadGraph defect for note 07's register. Two tests
 moved with the newly compiled stream and were re-pointed (`point_ndim()`;
 the Higgs-window probe no longer installs a prescription its one-channel
 sampler cannot satisfy — its window reading is bit-for-bit unchanged).
+
+### 7.2 Post-close-out: the CI failure (2026-09-08)
+
+PR #6's `banked` job failed on every push while `fmt`, `test` and `docs`
+passed: B3's `the_channel_count_is_madgraphs_configuration_count` read
+`ICOLAMP`'s dimensions off each run's generated `coloramps.inc`, which the
+reference bundle does not carry (it ships no generated Fortran beyond
+`leshouche.inc` and `matrix*_orig.f`), so a fetching checkout had nothing to
+read. The 38-row pass recorded in §5 was a work-area measurement only.
+Fixed (`1fbfabe`) the way `diagrams.json` is done: `extract_configs.py`
+writes NCOLOR and the configuration count of every single-subprocess run to
+a committed `configs.json` in the `refs` stage (`pixi run extract-configs`),
+the gate reads that, and the manifest declares it as the `channel-counts-mg`
+standalone. 41 rows now, the three 2→1 amplitude-only rows included since
+the process string comes from the `mg_amplitude` table where a row has no σ.
+Lesson for the register: a gate that reads a work-area file the bundle does
+not list passes locally and only locally — the bundle's member list in
+`assemble_bundle.sh` is the contract, and a new banked input either joins it
+(a bundle re-cut) or is extracted into a committed reference.
