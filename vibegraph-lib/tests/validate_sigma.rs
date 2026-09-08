@@ -3810,68 +3810,46 @@ const CONTROL_BOUND_FACTOR: f64 = 100.0;
 /// directory holding one subprocess those leading dimensions are the colour-flow
 /// count and the number of integration configurations MadEvent runs — the channel
 /// set the multichannel sampler here is built on, and the columns its colour draw
-/// is masked with. Reading them off the generated file is independent of every
-/// table in the amplitude bank: they come from MadGraph's own exporter rather than
-/// from a dump this repository asked it for, so a channel set that drifted from
-/// `IdentifyConfigTag` fails here whether or not the per-process tables were
-/// regenerated with it.
+/// is masked with. They come from MadGraph's own exporter rather than from a dump
+/// this repository asked it for, so a channel set that drifted from
+/// `IdentifyConfigTag` fails here whether or not the per-process amplitude tables
+/// were regenerated with it. The committed `validation/madgraph/configs.json`
+/// carries them (`extract_configs.py`, the same route as `diagrams.json`), which
+/// is what lets the check run on a checkout holding the reference bundle rather
+/// than a MadGraph work area — the bundle carries no generated Fortran beyond
+/// the two files the other gates parse.
 ///
 /// Only single-subprocess directories take part: a grouped one writes one
 /// `nconfigs` over the whole group, which no single subprocess's diagrams
-/// determine.
+/// determine, and the extractor leaves those rows out.
 #[test]
 fn the_channel_count_is_madgraphs_configuration_count() {
+    #[derive(Deserialize)]
+    struct Dims {
+        flows: usize,
+        configs: usize,
+    }
+    // The process string of every single-subprocess row: the amplitude rows carry
+    // one in their `mg_amplitude` table, the rest in the sigma reference.
     let text = std::fs::read_to_string(reference_path()).unwrap();
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
-    let unbundled = common::manifest::unbundled_rows();
-    let mut checked = 0usize;
+    let mut processes = common::manifest::mg_amplitude_processes();
     for (dir, e) in &banked {
-        if !matches!(run_presence(dir, &unbundled), RunPresence::Present) {
-            continue;
-        }
-        let subprocesses = output_dir().join(dir).join("SubProcesses");
-        let mut dirs: Vec<PathBuf> = std::fs::read_dir(&subprocesses)
-            .unwrap_or_else(|err| panic!("[{dir}] {}: {err}", subprocesses.display()))
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|p| {
-                p.is_dir()
-                    && p.file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with('P'))
-            })
-            .collect();
-        dirs.sort();
-        assert_eq!(
-            dirs.len(),
-            1,
-            "[{dir}] a banked fixed-beam run holds one subprocess directory"
-        );
-        let inc = std::fs::read_to_string(dirs[0].join("coloramps.inc"))
-            .unwrap_or_else(|err| panic!("[{dir}] coloramps.inc: {err}"));
-        let dims: Vec<usize> = inc
-            .lines()
-            .find_map(|l| {
-                l.trim()
-                    .to_uppercase()
-                    .strip_prefix("LOGICAL ICOLAMP(")
-                    .map(String::from)
-            })
-            .unwrap_or_else(|| panic!("[{dir}] coloramps.inc declares no ICOLAMP"))
-            .trim_end_matches(')')
-            .split(',')
-            .map(|f| f.trim().parse().expect("an ICOLAMP dimension is a count"))
-            .collect();
-        let [flows, configs, subprocs] = dims[..] else {
-            panic!("[{dir}] ICOLAMP has {} dimensions", dims.len());
-        };
-        assert_eq!(
-            subprocs, 1,
-            "[{dir}] the directory groups several subprocesses"
-        );
-
+        processes
+            .entry(dir.clone())
+            .or_insert_with(|| e.process.clone());
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/configs.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let counts: BTreeMap<String, Dims> = serde_json::from_str(&text).unwrap();
+    let mut checked = 0usize;
+    for (dir, dims) in &counts {
+        let process = processes.get(dir).unwrap_or_else(|| {
+            panic!("[{dir}] in configs.json but in no table that names its process")
+        });
         let model = row_model(dir);
-        let sets = common::generate_with(&e.process, model.as_ref());
+        let sets = common::generate_with(process, model.as_ref());
         let non_empty: Vec<_> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
         assert_eq!(
             non_empty.len(),
@@ -3882,20 +3860,22 @@ fn the_channel_count_is_madgraphs_configuration_count() {
             .unwrap_or_else(|err| panic!("[{dir}] compile: {err}"));
         assert_eq!(
             (evaluator.n_flows(), evaluator.n_configs()),
-            (flows, configs),
+            (dims.flows, dims.configs),
             "[{dir}] (NCOLOR, integration configurations) against MadGraph's own \
              ICOLAMP declaration"
         );
         println!(
-            "{dir}: {} diagrams -> {configs} integration configurations over {flows} \
-             colour flows, MadGraph's own count",
-            non_empty[0].diagrams.len()
+            "{dir}: {} diagrams -> {} integration configurations over {} colour flows, \
+             MadGraph's own count",
+            non_empty[0].diagrams.len(),
+            dims.configs,
+            dims.flows,
         );
         checked += 1;
     }
     assert!(
         checked >= 30,
-        "only {checked} banked runs carried a single-subprocess coloramps.inc"
+        "only {checked} banked runs carried a single-subprocess ICOLAMP declaration"
     );
 }
 

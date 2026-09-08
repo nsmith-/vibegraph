@@ -110,6 +110,7 @@ The MadGraph work area is the cache — an existing process directory is never
 rebuilt — while the extractions are cheap pure functions of it and always rerun,
 so a reference that moved shows up as a diff. Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
+`validation/madgraph/configs.json`,
 `validation/alphas/reference.csv`) are regenerated only when the banked phase-space
 points, the process list, or the pinned MadGraph version change — never to make a
 failing gate pass. A reference that moves is a finding; diagnose it before

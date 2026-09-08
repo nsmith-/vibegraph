@@ -1145,6 +1145,13 @@ inputs = ["validation/madgraph/diagrams.json", "validation/madgraph/scripts/*.mg
 rationale = "Per-process diagram counts against MadGraph's own enumeration. Everything it reads is committed and the whole set — the two 2 -> 6 rows included — enumerates in 1.5 s, so the column runs on a bare clone."
 
 [[standalone]]
+key = "channel-counts-mg"
+layer = "banked"
+targets = ["vibegraph-lib/tests/validate_sigma.rs"]
+inputs = ["validation/madgraph/configs.json"]
+rationale = "NCOLOR and the integration-configuration count of every single-subprocess run against the ICOLAMP dimensions MadGraph's own exporter declared, extracted to configs.json so the check needs no generated Fortran the bundle does not carry. It is what pins the multichannel channel set to MadGraph's IdentifyConfigTag partition independently of the amplitude tables."
+
+[[standalone]]
 key = "amplitudes-mg"
 layer = "hermetic"
 targets = ["vibegraph-lib/tests/amplitude_oracle.rs"]
