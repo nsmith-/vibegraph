@@ -695,3 +695,44 @@ sleep-based watcher shells (eight of them) had to be killed by hand.
 Sessions integrated on a sprint branch, main touched only by note commits,
 proved cleaner than the per-session merges to main of earlier sprints: two
 manifest conflicts, both note-text, both trivial.
+
+### 7.1 Post-close-out: B8, the fixed-beam scale record (user decision)
+
+The close-out left one convention open: an αs-free fixed-beam matrix element
+compiled no scale prescription, so its record wrote the run card's
+`dsqrt_q2fact` and `AQCDUP = 0` where MadGraph — under the card's shipped
+defaults, `dynamical_scale_choice = -1` with both `fixed_*_scale = False` —
+runs `setclscales` regardless and writes the clustered scale and a running
+coupling. **The user's decision (2026-09-07): be faithful to the default.**
+The record carries what the banked card produces; anyone who wants no
+clustering on such a run re-cards the banked run. A declared per-row
+`ignore` list for the field, proposed and briefly accepted the same day, was
+reversed within the hour as unfaithful to the reference and its
+implementation discarded uncommitted.
+
+**Landed B8 (`2803e17`).** `use_running_coupling` compiles the prescription
+and the coupling from the card alone; a new `alpha_s_dependent` flag decides
+only whether the *integrand* reads them (no clustering or configuration draw
+on the integration path where no coupling moves), while `record_scales`
+still draws and clusters for the record; `param_card_as` became
+`Option<f64>` because the colour-toy UFOs declare no `aS` and the
+unconditional `MissingAlphaS` refusal killed the gate. σ bit-identical on
+all 45 `integrals` cells (stash/pop diff, every field); census unchanged at
+178 / 171 ✅ / 7 ⚠️ / 4 ⏳ / 22; `NO_SCALE_PRESCRIPTION` and the inferred
+scale mode removed — a fixed-beam row that compiles no prescription now
+fails. `SCALUP` and `AQCDUP` enforced at printed precision on every row
+they were informational on (`ee_to_mumu` 91.2 / 0.1179977, `ee_to_ee` 250,
+`ee_to_ttx` 500, `p3r3` 251.2964 at 7.9e-6 inside a 5e-5 budget, `pp_to_ll`
+0.1300027), with one residual: **`AQCDUP` on the six toy rows whose UFO
+declares no `aS`** (`ll_to_qqx_toy_*`, `qqx_to_o8o8_toy_dcolor`,
+`p3r3_to_p3r3_toy_*`). MadGraph's `export_v4.py:7076-7079` injects `aS =
+0.138` beside `G = 4.1643` with a `CRITICAL` log line (in each banked
+`build.log`), and `setrun.f` runs from `G`'s `1.3799843265950287` — the two
+halves disagree by a factor of ten. B8 declined to write a strong coupling
+into a model with no strong interaction and landed that field measured,
+reported with the reason, and cause-checked (`alpha_s_source().is_some()`
+asserted equal to the row not being in `UNDECLARED_ALPHA_S_RUNS`); `SCALUP`
+gates on all six. A third MadGraph defect for note 07's register. Two tests
+moved with the newly compiled stream and were re-pointed (`point_ndim()`;
+the Higgs-window probe no longer installs a prescription its one-channel
+sampler cannot satisfy — its window reading is bit-for-bit unchanged).
