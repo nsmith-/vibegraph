@@ -501,20 +501,19 @@ One line each; the note is the full record. Earlier sprints
 
 - **Open ends the `banked-open-ends` sprint left (2026-09-07, note 36 §7)**:
   - ~~**An αs-free fixed-beam record writes the run card's scale**~~ —
-    **decided 2026-09-07 (user)**: the card's fixed energy *is* the honest
-    record; MadGraph's clustered `SCALUP` on such a run is an artefact of its
-    shipped defaults (`fixed_ren_scale = False`, `fixed_fac_scale = False`,
-    `dynamical_scale_choice = -1` run `setclscales` regardless of whether αs
-    enters), unphysical and arbitrary there. The record does not change.
-    Instead the `samples` comparison takes a **declared** `ignore` list per
-    row in the manifest (`SCALUP`/`AQCDUP` on the 27 αs-free fixed-beam rows,
-    `AQCDUP` alone on the three Drell–Yan proton rows) with a reason, checked
-    both ways — the ignored field must be one the reason class explains
-    (no prescription compiled / `alpha_qcd == 0`) and must actually disagree,
-    so the declaration cannot outlive its cause (session B8, note 36 §7).
-    The measured MadGraph values (`ee_to_mumu` 91.2, `ee_to_ee` 250,
-    `ee_to_ttx` 500, `p3r3` 251.2964) stay in the manifest notes as the
-    record of what is being ignored.
+    **decided 2026-09-07 (user): be faithful to the run card's default.**
+    The banked value is what the card's `dynamical_scale_choice = -1` with
+    both `fixed_*_scale = False` produces — MadGraph runs `setclscales`
+    whether or not αs enters — so the record must carry the clustered
+    `SCALUP` and the running `AQCDUP` at it, on every such run. Anyone who
+    wants no clustering on an αs-free run changes the run card that
+    generates the banked value (fix the scales), never the comparison. The
+    earlier alternative — a declared per-row `ignore` list for the field —
+    was considered the same day and rejected as unfaithful to the reference.
+    Session B8 (note 36 §7) compiles the scale source on every fixed-beam
+    run whose card is not fully fixed and writes `αs(μR)` from the card's
+    `aS` (fixed beams) or the PDF grid (proton rows), flipping the 27 + 3
+    scale columns to enforced with σ bit-identical everywhere.
   - **`gg_to_gg_cg`'s σ is a converged −0.22% offset** (five seeds χ²/dof
     1.01, ladder settling; the reference's error is 8.5e-4): not the scale
     formula (the replay is at 0.999 of budget) and not the process
