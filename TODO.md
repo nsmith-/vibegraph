@@ -551,17 +551,22 @@ One line each; the note is the full record. Earlier sprints
     representative diagram is ours-first, MadGraph's is its-first; they
     coincide where `MG_DIAGRAM_ORDER` is the identity and nothing measures the
     rest (a sampling-efficiency difference at most, never a wrong answer).
-  - **`AQCDUP` on the six toy rows whose UFO declares no `aS`** is measured,
-    not enforced (B8, note 36 §7.1): MadGraph injects `aS = 0.138` beside
-    `G = 4.1643` (`export_v4.py:7076-7079`, a `CRITICAL` line in each banked
-    `build.log`) and runs from `G`'s `1.3799843265950287`, a self-inconsistent
-    fallback in a model with no strong interaction. `SCALUP` gates on all
-    six. Reproducing the injected value (one constant, the one
-    `validate_alphas` already uses to replay those runs) would enforce the
-    field; the user's call whether a coupling that means nothing there is
-    worth writing for the gate's sake. Cause machine-checked either way.
-  - **Two MadGraph defects for note 07**: the `aS`/`G` injection above, and
-    `genps.f` under `sde_strat = 1` with
+  - ~~**`AQCDUP` on the six toy rows whose UFO declares no `aS`**~~ —
+    **decided 2026-09-07 (user): leave it as is.** The record writes `0`
+    ("no strong coupling entered this event") and the field stays measured,
+    not enforced, against MadGraph's injected value (B8, note 36 §7.1; the
+    defect is in note 07 §3). MadGraph injects `aS = 0.138` beside
+    `G = 4.1643` (`export_v4.py:7076`, a `CRITICAL` line in each banked
+    `build.log`) and runs from `G`'s `1.3799843265950287` — a literal its
+    own code flags, in a model with no strong interaction, so there is no
+    definition to be faithful to (unlike the clustered `SCALUP`, which the
+    event's own kinematics define). `SCALUP` gates on all six; the cause is
+    machine-checked (`alpha_s_source()` absent exactly on
+    `UNDECLARED_ALPHA_S_RUNS`). The route to a gated field, if ever wanted,
+    is model-side: declare `aS` in the two toy UFOs and re-bank the six runs.
+  - ~~**Two MadGraph defects for note 07**~~ — **recorded 2026-09-07** (note 07
+    §3 and §4, three rows incl. the seven-digit literal writer): the `aS`/`G`
+    injection above, and `genps.f` under `sde_strat = 1` with
     `tmin_for_channel ≠ -1` evaluates `if (t.lt.tmin_for_channel)` with `t`
     uninitialised (its only assignment sits inside `if (sde_strat.eq.2)`).
     Unreachable here — `tmin_for_channel` off default is refused.
