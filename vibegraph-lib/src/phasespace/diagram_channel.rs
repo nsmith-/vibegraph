@@ -110,6 +110,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::ufo::EvaluatedModel;
 
+use super::beams::{beam_momenta, beam_momenta_m2, kallen};
 use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel, SubsystemMemo};
 
 /// The propagator pole a subsystem's invariant sits on: the timelike line's mass
@@ -1189,28 +1190,6 @@ fn collect_node_resonances<F: Real>(node: &Node<F>, out: &mut Vec<Resonance<F>>)
     }
 }
 
-/// The two incoming beam four-momenta in the CM frame at `sqrt_s` for beam masses
-/// `ma`, `mb`: beam `0` along `+z`, beam `1` along `−z`, both on shell.
-fn beam_momenta<F: Real>(sqrt_s: F, ma: F, mb: F) -> [LorentzVector<F>; 2] {
-    beam_momenta_m2(sqrt_s, ma * ma, mb * mb)
-}
-
-/// [`beam_momenta`] taking invariants rather than masses, so the incoming line can
-/// be *spacelike* (`ma2 < 0`) — which is what an interior rung of a peripheral
-/// chain scatters. A negative `ma2` gives `e_a < |k|`, the sign that the line is off
-/// shell in the spacelike direction; nothing downstream assumes otherwise.
-fn beam_momenta_m2<F: Real>(sqrt_s: F, ma2: F, mb2: F) -> [LorentzVector<F>; 2] {
-    let two = F::one() + F::one();
-    let s = sqrt_s * sqrt_s;
-    let e_a = (s + ma2 - mb2) / (two * sqrt_s);
-    let e_b = (s + mb2 - ma2) / (two * sqrt_s);
-    let k = kallen(s, ma2, mb2).max(F::zero()).sqrt() / (two * sqrt_s);
-    [
-        LorentzVector::new(e_a, F::zero(), F::zero(), k),
-        LorentzVector::new(e_b, F::zero(), F::zero(), -k),
-    ]
-}
-
 /// Split the outgoing legs across a spacelike line into `(emitted, recoil)` masks,
 /// `emitted` on beam `0`'s side. The stored `momentum` marks the externals on one
 /// side of the cut (feyngraph's routing sign-decorates them, so only the nonzero
@@ -1298,28 +1277,6 @@ fn spine_chain<F: Real>(
 }
 
 // ── Sampling & Jacobian ──────────────────────────────────────────────────────
-
-/// Källén function, evaluated as `(a−b−c)² − 4bc` rather than as the expanded
-/// `a²+b²+c²−2(ab+bc+ca)`.
-///
-/// The expanded form adds and subtracts terms of order `a²` to reach a result that
-/// can be many orders smaller — a soft emission leaves `λ(ŝ, 0, ŝ_rest)` at `10` out
-/// of terms of order `10¹⁰`, so the answer carries only a few correct digits, and a
-/// one-ulp change in `ŝ_rest` moves `√λ` by `1e-6`. That is not merely inaccurate:
-/// the sampler's walk and the density evaluate it at inputs that differ in the last
-/// ulp (one drew the invariant, the other rebuilt it from momenta), so an
-/// ill-conditioned `λ` makes the two describe measurably different maps. The
-/// grouped form cancels once, at `a−b−c`, and holds the same configuration to
-/// `1e-11`.
-///
-/// It is not unconditionally stable: at the two-body threshold `(a−b−c)²` and `4bc`
-/// approach each other and cancel in turn. That regime is where `λ → 0` and the
-/// LIPS factor it feeds vanishes with it, so the error rides a weight going to zero.
-fn kallen<F: Real>(a: F, b: F, c: F) -> F {
-    let four = F::from(4).expect("4 fits the scalar field");
-    let d = a - b - c;
-    d * d - four * b * c
-}
 
 /// CM momentum magnitude of a 2-body split of invariant `s` into masses² `sl`,`sr`.
 fn p_star<F: Real>(s: F, sqrt_s: F, sl: F, sr: F) -> F {

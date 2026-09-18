@@ -58,6 +58,7 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -85,7 +86,20 @@ const SEED: u64 = 20_260_719;
 const SCAN_SEED: u64 = 0x5CA7_0FF0;
 /// Independent generation seeds. The spread across them is what the σ comparison
 /// is made against.
-const GEN_SEEDS: [u64; 4] = [0xE7E7_0001, 0xE7E7_0002, 0xE7E7_0003, 0xE7E7_0004];
+///
+/// Five, AGENTS.md's standard, because the σ comparison is a *pull* on a
+/// four-seed mean and the mean's own error is estimated from the same four
+/// draws: at four seeds the worst reading here was `|pull| 1.98` against
+/// [`SIGMA_PULL_LIMIT`], and the fifth seed moves it to `1.56` without moving
+/// any relative distance by more than `0.14 %`. What the extra seed buys is the
+/// error on the mean, not the mean.
+const GEN_SEEDS: [u64; 5] = [
+    0xE7E7_0001,
+    0xE7E7_0002,
+    0xE7E7_0003,
+    0xE7E7_0004,
+    0xE7E7_0005,
+];
 /// Trials per generation seed. Fixing the trial count rather than the event count
 /// bounds the runtime of a low-efficiency row.
 const TRIALS_PER_SEED: usize = 150_000;
@@ -101,9 +115,36 @@ const MIN_BIN_EVENTS: f64 = 25.0;
 
 /// Limits on the σ comparison: the seed-mean of the unweighted σ against the
 /// VEGAS integral, in units of the combined error and as a relative deviation.
+///
+/// Measured over [`GEN_SEEDS`] on the five rows below, worst first: `|pull|`
+/// `1.56` (`ee_to_tatah` against VEGAS) and `|rel|` `0.577 %` (`ee_to_mumua`
+/// against the weighted reference), so the two bounds clear their readings by
+/// `2.2x` and `5.2x`.
+///
+/// The pull is the statistic to watch rather than the relative distance. Its
+/// denominator carries the seed mean's own error, which falls as `1/√n` in the
+/// seed count and in the trials a seed spends, so a residual that is not Monte
+/// Carlo grows the pull without bound while `rel` stays where it is — the reading
+/// `validate_sigma`'s `PULL_REPORTED_NOT_ASSERTED` exists to refuse. What the
+/// rows show at five seeds is `rel` against VEGAS of `−0.141`, `+0.039`,
+/// `−0.110`, `−0.358` and `−0.325 %`, four of five negative: a single pass over
+/// the frozen grids does not inherit VEGAS's inverse-variance combination of
+/// iterations, so the two estimators are not expected to agree exactly. The
+/// spread is well inside both bounds and the sign pattern is not yet a
+/// measurement of anything — it is recorded here so that a run in which it
+/// sharpens is visible as a change rather than as a first observation.
 const SIGMA_PULL_LIMIT: f64 = 3.5;
 const SIGMA_REL_LIMIT: f64 = 0.03;
 /// Limits on the shape comparison, per observable.
+///
+/// Both are set on the trial count rather than on the observed deviations: the
+/// comparison is about seventy-five judged bins across five rows, so the largest
+/// of that many standard normal draws sits near `2.7` and a per-bin bound of `5`
+/// is a false-positive rate rather than a tolerance. Measured over [`GEN_SEEDS`]
+/// the worst readings are χ²/dof `1.25` and a bin pull of `2.54`, both on
+/// `ee_to_tatah`'s `cos θ`, clearing the bounds by `2.4x` and `2.0x`. A bound of
+/// this kind is *supposed* to sit near twice its extremum; more room would mean
+/// it had stopped rejecting.
 const SHAPE_CHI2_LIMIT: f64 = 3.0;
 const SHAPE_PULL_LIMIT: f64 = 5.0;
 
@@ -171,7 +212,6 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
     let card_path = output_dir().join(row.dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
     assert_eq!(run_card.beam_mode(), BeamMode::FixedEnergy);
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.dir));
@@ -185,6 +225,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -197,7 +238,7 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");

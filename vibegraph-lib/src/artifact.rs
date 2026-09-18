@@ -58,7 +58,15 @@ use crate::vegas::VegasGrid;
 /// caller: it refuses to replay a `format_version < 7` artifact's `sigma_pb` as
 /// `XSECUP` when the run card selects the clustering scale
 /// ([`crate::coupling::scales::ScaleChoice::needs_channels`]).
-pub const FORMAT_VERSION: u32 = 7;
+/// `8` changes no field either. What moved is what a [`ChannelKey`]'s index
+/// counts: the channels are now one per integration configuration of MadGraph's
+/// channel mapping rather than one per diagram, so on a process where that
+/// mapping merges diagrams or drops a contact one, a version-7 file's grids
+/// belong to channels this build does not have. That shows up as a channel-count
+/// mismatch at replay wherever the two differ, and where they do not the grids
+/// still describe the same channels — so, as with `7`, a version-7 file decodes
+/// directly and keeps its own recorded version.
+pub const FORMAT_VERSION: u32 = 8;
 
 /// The oldest schema version [`IntegrateArtifact::read_from_path`] still decodes.
 pub const OLDEST_READABLE_VERSION: u32 = 3;
@@ -101,12 +109,12 @@ pub enum ArtifactError {
 pub enum ChannelKey {
     /// The whole map, undecomposed: one grid carrying the entire integral.
     Whole,
-    /// One diagram's channel of a per-diagram multichannel over a single
-    /// subprocess (fixed-energy beams).
-    Diagram { diagram: usize },
-    /// One diagram of one flavour group of a hadronic decomposition, whose
-    /// channels are pooled across groups into a single mixture.
-    GroupDiagram { group: usize, diagram: usize },
+    /// One integration channel of a multichannel over a single subprocess
+    /// (fixed-energy beams).
+    Channel { channel: usize },
+    /// One integration channel of one flavour group of a hadronic decomposition,
+    /// whose channels are pooled across groups into a single mixture.
+    GroupChannel { group: usize, channel: usize },
 }
 
 /// The map a channel's coordinates are drawn through, as the rule-based
@@ -535,7 +543,7 @@ impl v3::IntegrateArtifact {
                     key: if sole {
                         ChannelKey::Whole
                     } else {
-                        ChannelKey::Diagram { diagram: j }
+                        ChannelKey::Channel { channel: j }
                     },
                     alpha: c.alpha,
                     neval: c.neval,
@@ -777,9 +785,9 @@ mod tests {
         let mut artifact = sample_artifact();
         artifact.channels = (0..4)
             .map(|j| ChannelGrid {
-                key: ChannelKey::GroupDiagram {
+                key: ChannelKey::GroupChannel {
                     group: j / 2,
-                    diagram: j % 2,
+                    channel: j % 2,
                 },
                 alpha: 0.1 * (j + 1) as f64,
                 neval: 1000 * (j + 1),
@@ -931,9 +939,9 @@ mod tests {
         assert_eq!(
             keys,
             vec![
-                ChannelKey::Diagram { diagram: 0 },
-                ChannelKey::Diagram { diagram: 1 },
-                ChannelKey::Diagram { diagram: 2 },
+                ChannelKey::Channel { channel: 0 },
+                ChannelKey::Channel { channel: 1 },
+                ChannelKey::Channel { channel: 2 },
             ]
         );
         for (j, c) in upgraded.channels.iter().enumerate() {
@@ -994,9 +1002,9 @@ mod tests {
             run_card: RunCard::default(),
             channels: (0..3)
                 .map(|j| V4ChannelGrid {
-                    key: ChannelKey::GroupDiagram {
+                    key: ChannelKey::GroupChannel {
                         group: j / 2,
-                        diagram: j % 2,
+                        channel: j % 2,
                     },
                     alpha: 0.25 * (j + 1) as f64,
                     neval: 1000,
@@ -1023,9 +1031,9 @@ mod tests {
         for (j, c) in upgraded.channels.iter().enumerate() {
             assert_eq!(
                 c.key,
-                ChannelKey::GroupDiagram {
+                ChannelKey::GroupChannel {
                     group: j / 2,
-                    diagram: j % 2
+                    channel: j % 2
                 }
             );
             assert_eq!(c.alpha.to_bits(), (0.25 * (j + 1) as f64).to_bits());
@@ -1116,9 +1124,9 @@ mod tests {
             run_card: RunCard::default(),
             channels: vec![
                 V5ChannelGrid {
-                    key: ChannelKey::GroupDiagram {
+                    key: ChannelKey::GroupChannel {
                         group: 0,
-                        diagram: 0,
+                        channel: 0,
                     },
                     alpha: 0.25,
                     neval: 1000,
@@ -1129,9 +1137,9 @@ mod tests {
                     sampler: Some(sampler(Some(0.4))),
                 },
                 V5ChannelGrid {
-                    key: ChannelKey::GroupDiagram {
+                    key: ChannelKey::GroupChannel {
                         group: 0,
-                        diagram: 1,
+                        channel: 1,
                     },
                     alpha: 0.75,
                     neval: 1000,

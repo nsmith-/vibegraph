@@ -79,6 +79,7 @@ Run the hermetic suite for everything. On top of it:
 | diagram enumeration, subprocess classification | `pixi run -e madgraph validate-diagrams` |
 | `helas/color/`, the flow root, anything reordering the colour basis | `pixi run -e madgraph validate-color-cf` **and** `validate-color-flow-tags` **and** `validate-amplitudes` |
 | `coupling/` — αs RGE, μR/μF | `pixi run -e madgraph validate-alphas`, `validate-scales`, `validate-scale-couplings` |
+| `ufo/` parameter or coupling evaluation, a vendored model, a restrict card | `pixi run -e madgraph validate-couplings` |
 | kT clustering, `coupling/cluster/` | the three above, plus the oracle-layer `pixi run -e madgraph validate-kt-cluster` |
 | phase space, channel maps, VEGAS, multichannel budgets | `pixi run -e madgraph validate-sigma`, `validate-hadronic` |
 | unweighting, event selection | `pixi run -e madgraph validate-unweighting`, `validate-generate-proton` |
@@ -109,6 +110,7 @@ The MadGraph work area is the cache — an existing process directory is never
 rebuilt — while the extractions are cheap pure functions of it and always rerun,
 so a reference that moved shows up as a diff. Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
+`validation/madgraph/configs.json`,
 `validation/alphas/reference.csv`) are regenerated only when the banked phase-space
 points, the process list, or the pinned MadGraph version change — never to make a
 failing gate pass. A reference that moves is a finding; diagnose it before
