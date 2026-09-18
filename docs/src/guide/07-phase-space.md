@@ -330,9 +330,23 @@ A run with `lpp = 0` collides the incoming particles themselves rather than
 partons out of a hadron, so there is no $\tau$ sampling and no
 [luminosity](10-hadronic.md): the initial state is fixed by the run card's
 two beam energies and the two beams' own pole masses. Everything the initial
-state contributes follows from those four numbers.
+state contributes follows from those four numbers: the partonic invariant
+$\hat s$ (which is $(E_a + E_b)^2$ only for massless beams of equal energy),
+the centre-of-mass beam momenta the matrix element and the channel maps are
+built on, the flux factor of the
+[cross-section formula](01-pipeline.md#the-cross-section) — the Møller
+invariant $F = 2\,\lambda^{1/2}(\hat s, m_a^2, m_b^2)$, which reduces to
+$2\hat s$ for massless beams and is a few per cent smaller for beams of
+tens of GeV at hundreds — and the boost between the laboratory frame the
+[cuts](10-hadronic.md#cuts) are applied in and the centre-of-mass frame the
+momenta are generated and recorded in. Deriving all four from one initial
+state is what keeps the beams the amplitude sees, the beams the maps sample
+and the $\sqrt{\hat s}$ the outgoing map is built on from ever disagreeing.
 
-In the laboratory the beams are on shell along $\pm z$ at the energies the
+<details>
+<summary>The kinematics in full</summary>
+
+**The invariant.** In the laboratory the beams are on shell along $\pm z$ at the energies the
 card gives,
 
 $$
@@ -367,9 +381,7 @@ is what the outgoing map is built on, so the external set the amplitude is
 handed conserves four-momentum by construction; deriving the beams and the map
 from one initial state is what keeps it that way.
 
-### The flux
-
-The flux factor $F$ of the
+**The flux.** The flux factor $F$ of the
 [cross-section formula](01-pipeline.md#the-cross-section) is the
 [Møller](https://en.wikipedia.org/wiki/Luminosity_(scattering_theory)#Relativistic_form)
 invariant, the relative-velocity factor written covariantly:
@@ -391,9 +403,7 @@ $$
 $\sigma = F^{-1}\!\int d\Phi_n\,|\mathcal{M}|^2$ if the massless form is used
 where it does not apply.
 
-### Two frames, one event
-
-The laboratory and the partonic centre of mass differ by a boost along $z$ of
+**Two frames, one event.** The laboratory and the partonic centre of mass differ by a boost along $z$ of
 rapidity
 
 $$
@@ -407,6 +417,8 @@ the 60/70 GeV pair. That is the whole difference between the frame the
 generated and recorded in: rapidity is not invariant under it, so a
 configuration is carried into the laboratory before the cut filter reads it,
 while the event record keeps the centre-of-mass momenta.
+
+</details>
 
 > **MadGraph compatibility.** `genps.f` forms exactly this
 > $\hat s$ (`stot = m1**2 + m2**2 + 2*(pi1(0)*pi2(0) - pi1(3)*pi2(3))`, the
