@@ -14,6 +14,18 @@
 //!   pinned in the library's own tests and the flow tags against
 //!   `leshouche.inc`, but until here nothing had compared the *realised*
 //!   frequencies against MadGraph's realised frequencies.
+//! * The **incoming legs**. Every kinematic observable is built from the
+//!   outgoing state, so the beams are the one part of the record no distribution
+//!   reaches. At fixed beams they are constants of the process, and the
+//!   comparison is an equality at the banked file's own printed precision rather
+//!   than a p-value — see [`samples::beam_columns`](vibegraph::validation::samples::beam_columns).
+//! * The **reported scales**. `SCALUP` and `AQCDUP` say what the matrix element
+//!   was evaluated at, and no shape or cross section reaches them: a run whose
+//!   records name a scale nothing computed agrees on every other column here.
+//!   The two fields are filled by
+//!   [`FixedBeamIntegrand::record_scales`](vibegraph::hadronic::FixedBeamIntegrand::record_scales) —
+//!   the shipped generator's own call — so the column measures the record the
+//!   binary would write, not a second assembly built for the comparison.
 //!
 //! # How the two samples are made comparable
 //!
@@ -40,8 +52,12 @@
 //! # What this gate provably cannot detect
 //!
 //! * Anything both sides get right about *shape* and wrong about *normalisation*:
-//!   every statistic here is computed on normalised distributions, and the
-//!   absolute cross section is the `integrals` category's business.
+//!   every KS and χ² statistic here is computed on normalised distributions, and
+//!   the absolute cross section is the `integrals` category's business.
+//! * A beam construction that reproduces MadGraph's momenta for the wrong
+//!   reason. The incoming-leg columns are an equality against the record, so
+//!   they see a beam that is built differently, not one that is built badly and
+//!   lands in the same place.
 //! * Correlations between columns. Each observable is compared on its own
 //!   marginal, so two samples with identical marginals and different correlations
 //!   pass.
@@ -50,6 +66,7 @@
 //!   question is decided by a binned comparison
 //!   ([`the_low_m_ll_region_is_binned_against_madgraph`]) and not by a p-value.
 
+use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -60,6 +77,7 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    FixedBeams,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::lhef::build::{EventHeader, SubprocessRecord};
@@ -71,11 +89,15 @@ use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::EvaluatedModel;
 use vibegraph::unweight::Unweighter;
-use vibegraph::validation::samples::{compare, labelling_for, Chi2Column, EventSample, Spectrum};
+use vibegraph::validation::samples::{
+    compare, labelling_for, Chi2Column, EventSample, FieldColumn, FieldKind, Spectrum,
+};
 
 mod common;
 
-use common::report::{CategoryCount, Chi2Cell, KsCell, SamplesRow, SeedSample, Stopwatch};
+use common::report::{
+    CategoryCount, Chi2Cell, FieldCell, KsCell, SamplesRow, SeedSample, Stopwatch,
+};
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
 /// the grids the events are drawn on are the ones that gate integrates over.
@@ -110,8 +132,8 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 ///
 /// The measured minimum over every gating row and three seeds is `1.573e-4`
 /// (`ee_to_wpwm`, `pt(w+)`; per-seed `2.727e-2`, `1.116e-2`, `1.573e-4`), with
-/// `ee_to_wpwm_cw` at `7.791e-4`, `qqx_to_o8o8_toy_dcolor` at `9.361e-4`,
-/// `ddx_to_epemg` at `1.846e-3` and `uux_to_ttx_4f` at `2.079e-3` behind it,
+/// `ee_to_wpwm_cw` at `7.791e-4`, `ddx_to_epemg` at `1.846e-3` and
+/// `uux_to_ttx_4f` at `2.079e-3` behind it,
 /// against `3.6e-6` and `0` for the two rows that used to disagree.
 /// `ee_to_wpwm` is the row to watch: it sits only `1.6x` above the floor.
 /// `ee_to_mumua` is informational and so not among these — its `pt(a)` column
@@ -132,6 +154,22 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// land on the latter. The column sitting closest to this floor is measuring the
 /// reference's sample rather than this side's — see the `ee_to_mumua` `samples`
 /// note in `validation/manifest.toml`.
+///
+/// Two extra seeds do not move it. `probe_samples_p_floor_headroom` repeats the
+/// whole comparison over [`GEN_SEEDS`] plus two more: the five-seed minimum over
+/// the gating rows is the same `1.573e-4` on the same `ee_to_wpwm` `pt(w+)` and
+/// the same seed, with the two new seeds reading `4.765e-2` and `1.962e-2` on
+/// that row. Fifteen of the thirty-two gating rows move their own minimum
+/// downward, none below `5.483e-3`.
+///
+/// That is the reading this floor is built to give, and it is why `1.6x` above
+/// it is not a margin running out. The statistic is the smallest of some
+/// hundreds of draws from a distribution that is uniform when the two samples
+/// agree, so its distance from the floor is set by how many draws are taken:
+/// two thirds again as many seeds lower the expected minimum by the same
+/// factor, which raises the rate at which a green run flags rather than
+/// lowering it. Adding seeds is therefore not a remedy here, unlike on a σ row
+/// whose statistic is a mean.
 ///
 /// Never loosened after a failure: a column that falls below this is recorded,
 /// the row is marked informational with the measurement in its note, and the
@@ -248,32 +286,36 @@ const ROWS: &[Row] = &[
         process: "u d > e+ e- u d QCD=0",
         neval: 60_000,
         niter: 6,
-        // Kinematics and SPINUP agree (min KS p 1.0e-1, SPINUP chi2 p 0.43-0.73
-        // over three seeds), but ICOLUP does not: chi2 642-664 on 1 dof (p ~ 0)
-        // on every seed, a sharp and seed-stable colour-connectivity
-        // disagreement rather than a marginal miss. Measured and reported
-        // rather than gated; see validation/manifest.toml's note.
-        mode: "info",
+        // The row whose `ICOLUP` column is the colour draw's own gate: every one
+        // of its 21 integration channels admits exactly one of its two flows, so
+        // the written column is the configuration share and nothing else, and its
+        // run card is the only banked one setting `sde_strategy = 2` with more
+        // than one flow.
+        mode: "gate",
     },
     // ── the SMEFTsim ladder and the toy models, under their own UFO ──
     // Every row of both non-Standard-Model families whose banked run this crate
     // can reproduce: the four SM-limit rows, the six Wilson-coefficient rows with
-    // an event sample, the capstone, and all six toy-model rows. `gg_to_gg_cg`
-    // and `wpwm_to_wpwmz_cw` are absent because their banked run cards select
-    // `dynamical_scale_choice = 3` and `nhel = 1`, neither of which this crate's
-    // integration path honours.
+    // an event sample, the capstone, and all six toy-model rows.
+    // `wpwm_to_wpwmz_cw` is absent because its banked run card selects
+    // `nhel = 1`, which this crate's integration path does not honour;
+    // `gg_to_gg_cg` is here at MadGraph's own `dynamical_scale_choice = 3`.
     //
     // The model each row is generated under is the one its manifest entry names,
     // through `common::model_for_row`, so a SMEFT sample is drawn from a SMEFT
     // matrix element rather than from a same-named Standard-Model one.
     //
-    // What these cells do *not* see is the beam configuration: every observable
-    // here is built from the outgoing legs alone, so a difference in how the
-    // incoming momenta are constructed is invisible to all of them. It is not
-    // hypothetical — `qqx_to_o8o8_toy_dcolor` and the two `p3r3` rows have massive
-    // incoming particles that this crate puts on the light cone, which moves their
-    // cross sections by 6 to 7% (their `integrals` cells) and leaves every column
-    // below comfortably above the floor.
+    // The beam configuration is compared by the incoming-leg columns rather than
+    // by any of the observables, which are built from the outgoing legs alone;
+    // the toy rows with massive incoming particles are what those columns are
+    // there for.
+    Row {
+        key: "gg_to_gg_cg",
+        process: "g g > g g NP<=1",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
     Row {
         key: "ee_to_mumu_smlimit",
         process: "e+ e- > mu+ mu-",
@@ -430,6 +472,25 @@ const ROWS: &[Row] = &[
     },
 ];
 
+/// Why the six colour-toy rows report no `AQCDUP` and MadGraph's records do.
+///
+/// Their UFO declares no `aS` among its external parameters, so the generated
+/// parameter card carries no `SMINPUTS` block and this crate has no `αs(M_Z)` to
+/// run: the prescription is compiled for the scales, the coupling is not built,
+/// and every record reports `AQCDUP = 0`. MadGraph fills the same gap from a
+/// literal — `export_v4.py` logs `aS not define as external parameter adding
+/// it!` (it is in each of these runs' `build.log`) and injects `aS = 0.138`
+/// beside `G = 4.1643`, which are not the same number: `setrun.f` recovers
+/// `αs(M_Z)` from `G` as `G²/(4π) = 1.3799843265950287`
+/// ([`common::UNDECLARED_ALPHA_S_MZ`]), ten times the `aS` injected beside it.
+/// Reproducing that would put a coupling of 0.43 at 500 GeV into the record of a
+/// model with no strong interaction in it, on the strength of a literal the two
+/// halves of which disagree — so `SCALUP`, which needs no coupling, gates here
+/// like every other row's, and `AQCDUP` is measured and reported instead.
+const UNDECLARED_ALPHA_S_REASON: &str =
+    "the model declares no aS, so no coupling is built and the record reports none; MadGraph \
+     injects aS = 0.138 beside G = 4.1643 and runs from the latter's 1.3799843265950287";
+
 /// The four `l+ l- j` partonic rows: the ones whose run cards leave both scales
 /// free at `dynamical_scale_choice = -1`.
 const LLJ_PARTON_KEYS: [&str; 4] = [
@@ -486,7 +547,6 @@ fn with_integrand<R>(
         "[{}] the comparison assumes the lab frame is the partonic centre of mass",
         row.key
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     // The model a row's events were generated against, not the Standard Model:
     // the manifest names a vendored UFO directory and a restrict card for the
@@ -508,6 +568,7 @@ fn with_integrand<R>(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -520,7 +581,7 @@ fn with_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");
@@ -536,12 +597,21 @@ fn with_integrand<R>(
 
 /// Generate one seed's worth of events off frozen grids.
 ///
-/// The header's scalar fields play no part in any observable here, so they are
-/// left as NaN rather than filled with a plausible-looking number: this record is
-/// a view of an event's legs, not a file's event.
+/// `SCALUP` and `AQCDUP` come from
+/// [`FixedBeamIntegrand::record_scales`], which is the call the shipped
+/// generator makes, so the scale columns compare the record the binary would
+/// write. `AQEDUP` is left NaN and compared by nothing: no cross section here
+/// runs the electromagnetic coupling, so the field is a parameter-card constant
+/// on both sides and would compare the parameter card to itself.
+///
+/// A point whose scale the prescription refuses stops the row rather than being
+/// dropped: `use_running_coupling` already resolved the scale at setup, so a
+/// refusal here is a surprise, and quietly skipping the point would bias the
+/// sample being compared.
 fn generate(
     integ: &FixedBeamIntegrand,
     records: &[SubprocessRecord],
+    run_card: &RunCard,
     uw: &mut Unweighter,
     seed: u64,
 ) -> EventSample {
@@ -568,12 +638,15 @@ fn generate(
             [beams[1].e(), beams[1].px(), beams[1].py(), beams[1].pz()],
         ];
         external.extend(momenta.iter().map(|p| [p.e(), p.px(), p.py(), p.pz()]));
+        let (scale, alpha_qcd) = integ
+            .record_scales(&momenta, point.channel, &point.u, run_card)
+            .expect("an accepted point's scales are the ones its own weight was taken at");
         let header = EventHeader {
             process_id: 1,
             weight: point.weight,
-            scale: f64::NAN,
+            scale,
             alpha_qed: f64::NAN,
-            alpha_qcd: f64::NAN,
+            alpha_qcd,
         };
         let event = records[selection.subprocess]
             .event(&external, &selection.helicity, selection.flow, header)
@@ -591,16 +664,50 @@ fn generate(
     }
 }
 
+/// What one seed's comparison found that disagrees, split by which mode governs
+/// it: the outgoing columns, the incoming legs and the reported scales each
+/// carry their own.
+///
+/// `unenforced_scales` is the reading of a scale field the row reports and does
+/// not enforce, kept apart from `scales` so a row can gate on one scale field
+/// while reporting another.
+#[derive(Default)]
+struct Disagreements {
+    columns: Vec<String>,
+    beams: Vec<String>,
+    scales: Vec<String>,
+    unenforced_scales: Vec<String>,
+}
+
+/// One field family's columns as the per-seed log prints them.
+fn field_lines(columns: &[FieldColumn]) -> String {
+    columns
+        .iter()
+        .map(|cell| format!("             {}\n", cell.describe()))
+        .collect()
+}
+
+/// The columns of one field family that fall outside what the banked record
+/// allows, under the row and seed that measured them.
+fn field_disagreements(key: &str, seed: u64, what: &str, columns: &[FieldColumn]) -> Vec<String> {
+    columns
+        .iter()
+        .filter_map(|cell| cell.disagreement(what, P_FLOOR))
+        .map(|line| format!("[{key}] seed {seed:#010x} {line}"))
+        .collect()
+}
+
 /// Compare one generated sample against MadGraph's, filling in a report row's
-/// per-seed entry and returning the columns that fell below the floor.
+/// per-seed entry and returning what disagreed.
 fn compare_seed(
     key: &str,
     seed: u64,
     ours: &EventSample,
     theirs: &EventSample,
     labelling: Labelling,
+    unenforced: &[&str],
     row: &mut SamplesRow,
-) -> Vec<String> {
+) -> Disagreements {
     let found = compare(ours, theirs, labelling);
     let worst = found
         .worst_ks()
@@ -627,10 +734,13 @@ fn compare_seed(
         );
     }
 
-    let mut below = Vec::new();
+    eprint!("{}", field_lines(&found.beams));
+    eprint!("{}", field_lines(&found.scales));
+
+    let mut below = Disagreements::default();
     for cell in &found.ks {
         if cell.p < P_FLOOR {
-            below.push(format!(
+            below.columns.push(format!(
                 "[{key}] seed {seed:#010x} KS {} p {:.3e} (D {:.4}) below the {P_FLOOR:.0e} floor",
                 cell.observable, cell.p, cell.d
             ));
@@ -638,13 +748,27 @@ fn compare_seed(
     }
     for cell in &found.chi2 {
         if cell.p < P_FLOOR {
-            below.push(format!(
+            below.columns.push(format!(
                 "[{key}] seed {seed:#010x} chi2 {} p {:.3e} ({:.1}/{} dof) below the \
                  {P_FLOOR:.0e} floor",
                 cell.column, cell.p, cell.chi2, cell.dof
             ));
         }
     }
+    below.beams = field_disagreements(key, seed, "incoming", &found.beams);
+    let (skipped, enforced): (Vec<&FieldColumn>, Vec<&FieldColumn>) = found
+        .scales
+        .iter()
+        .partition(|c| unenforced.contains(&c.field.as_str()));
+    let lines = |columns: Vec<&FieldColumn>| {
+        columns
+            .into_iter()
+            .filter_map(|cell| cell.disagreement("reported", P_FLOOR))
+            .map(|line| format!("[{key}] seed {seed:#010x} {line}"))
+            .collect::<Vec<_>>()
+    };
+    below.scales = lines(enforced);
+    below.unenforced_scales = lines(skipped);
 
     row.constant_observables = found.constant.clone();
     row.single_category = found
@@ -666,6 +790,8 @@ fn compare_seed(
             })
             .collect(),
         chi2: found.chi2.iter().map(chi2_cell).collect(),
+        beams: found.beams.iter().map(FieldCell::of).collect(),
+        scales: found.scales.iter().map(FieldCell::of).collect(),
     });
     below
 }
@@ -698,6 +824,9 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
     // Columns below the floor on a row the manifest marks informational: reported
     // in full, never enforced, and tracked in the backlog instead.
     let mut informational: Vec<String> = Vec::new();
+    // Which rows' incoming legs departed from the banked record at all, asserted
+    // empty at the end.
+    let mut beams_disagreed: BTreeSet<&'static str> = BTreeSet::new();
     for row in ROWS {
         let clock = Stopwatch::start();
         let mg = banked_sample(row.key);
@@ -707,20 +836,60 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             mg.len(),
             mg.sigma_pb
         );
-        with_integrand(row, |integ, records, _| {
+        with_integrand(row, |integ, records, run_card| {
             let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
             let mut uw = Unweighter::scan(
                 integ,
                 channels.iter().map(|c| (&c.grid, c.neval)),
                 SCAN_SEED,
             );
-            let mut report = SamplesRow::new(row.key, row.process, row.mode);
+            // Every column is enforced at the row's own mode: the outgoing
+            // distributions, the incoming legs and the scales the record reports
+            // alike. A row is informational on all of them or on none.
+            let beams = row.mode;
+            let scales = row.mode;
+            // Every banked fixed-beam card asks for a scale, so every row has a
+            // prescription to report one from. A row that compiled none would
+            // report the card's constant where MadGraph reports what its own card
+            // asked for, and the columns below would be comparing two different
+            // questions.
+            assert!(
+                integ.scale_source().is_some(),
+                "[{}] compiled no per-event scale prescription, so its record has \
+                 no scale of its own to report",
+                row.key
+            );
+            // The one field this crate does not reproduce, and the measured cause:
+            // a model with no `aS` gives no coupling to run, and MadGraph fills the
+            // gap from a literal of its own.
+            let built_a_coupling = integ.alpha_s_source().is_some();
+            let no_coupling = common::UNDECLARED_ALPHA_S_RUNS.contains(&row.key);
+            assert_eq!(
+                built_a_coupling,
+                !no_coupling,
+                "[{}] {} a running coupling, and UNDECLARED_ALPHA_S_RUNS says its model \
+                 declares {} strong coupling",
+                row.key,
+                if built_a_coupling {
+                    "built"
+                } else {
+                    "built no"
+                },
+                if no_coupling { "no" } else { "a" },
+            );
+            let unenforced: &[&str] = if no_coupling { &["AQCDUP"] } else { &[] };
+            let mut report = SamplesRow::new(row.key, row.process, row.mode)
+                .with_beam_mode(beams)
+                .with_scale_mode(scales);
+            if no_coupling {
+                report = report.with_unenforced_scales(unenforced, UNDECLARED_ALPHA_S_REASON);
+            }
             report.p_floor = P_FLOOR;
             report.mg_events = mg.len();
             report.sigma_mg_pb = mg.sigma_pb;
             let mut labelling = None;
             for &seed in &GEN_SEEDS {
-                let ours = generate(integ, records, &mut uw, seed);
+                let ours = generate(integ, records, run_card, &mut uw, seed);
                 if ours.len() < EVENTS_PER_SEED {
                     failures.push(format!(
                         "[{}] seed {seed:#010x} produced {} of {EVENTS_PER_SEED} events",
@@ -733,23 +902,57 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     Labelling::Fine => "fine",
                     Labelling::Coarse => "coarse",
                 };
-                let found = compare_seed(row.key, seed, &ours, &mg, l, &mut report);
-                if row.mode == "gate" {
-                    failures.extend(found);
-                } else {
-                    informational.extend(found);
+                let found = compare_seed(row.key, seed, &ours, &mg, l, unenforced, &mut report);
+                if !found.beams.is_empty() {
+                    beams_disagreed.insert(row.key);
+                }
+                for (mode, what) in [
+                    (row.mode, found.columns),
+                    (beams, found.beams),
+                    (scales, found.scales),
+                    ("info", found.unenforced_scales),
+                ] {
+                    if mode == "gate" {
+                        failures.extend(what);
+                    } else {
+                        informational.extend(what);
+                    }
                 }
             }
             report.finish();
             eprintln!(
-                "  min KS p {:.3e}, min chi2 p {:.3e} over {} seeds",
+                "  min KS p {:.3e}, min chi2 p {:.3e}, worst incoming {} {:.4e} against a \
+                 {:.2e} tolerance (min beam KS p {:.3e}) over {} seeds",
                 report.min_ks_p,
                 report.min_chi2_p,
+                report.worst_beam_field,
+                report.max_beam_dev,
+                report.beam_tol,
+                report.min_beam_ks_p,
                 GEN_SEEDS.len()
             );
+            eprintln!(
+                "  worst reported {} {:.4e} against a {:.2e} tolerance (min scale KS p {:.3e}), \
+                 {scales}",
+                report.worst_scale_field,
+                report.max_scale_dev,
+                report.scale_tol,
+                report.min_scale_ks_p,
+            );
+            if !report.unenforced_scale_fields.is_empty() {
+                eprintln!(
+                    "  reported and not enforced: {} {:.4e} against a {:.2e} tolerance",
+                    report.worst_unenforced_scale_field,
+                    report.max_unenforced_scale_dev,
+                    report.unenforced_scale_tol,
+                );
+            }
             report.status = match row.mode {
                 "gate" => {
-                    if report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR {
+                    let outgoing = report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR;
+                    let legs = beams != "gate" || report.beams_agree(P_FLOOR);
+                    let reported = scales != "gate" || report.scales_agree(P_FLOOR);
+                    if outgoing && legs && reported {
                         "pass"
                     } else {
                         "fail"
@@ -766,7 +969,119 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             "informational rows below the floor (measured, not enforced):\n{informational:#?}"
         );
     }
+    // No row's incoming legs may depart from the banked record at all, including
+    // the rows whose *outgoing* columns are informational and so could not report
+    // it as a failure. The set is asserted rather than the failures alone because
+    // that is what makes the statement "every beam agrees" rather than "every
+    // enforced beam agrees".
+    assert!(
+        beams_disagreed.is_empty(),
+        "these rows' incoming legs depart from MadGraph's record: {beams_disagreed:?}"
+    );
     assert!(failures.is_empty(), "samples gate failures:\n{failures:#?}");
+}
+
+/// [`GEN_SEEDS`] extended to AGENTS.md's five, for the headroom census below.
+/// The first three are [`GEN_SEEDS`] itself, so the probe's reading contains the
+/// gate's own and the difference between them is what the two extra seeds add.
+const HEADROOM_GEN_SEEDS: [u64; 5] = [
+    0x5A_4D_0001,
+    0x5A_4D_0002,
+    0x5A_4D_0003,
+    0x5A_4D_0004,
+    0x5A_4D_0005,
+];
+
+/// [`P_FLOOR`]'s headroom over five seeds rather than the gate's three.
+///
+/// The gate statistic is the smallest `p` over rows × seeds × columns, and a
+/// minimum is the order statistic that moves most when the sample grows: two
+/// extra seeds add two thirds again as many draws from the null distribution, so
+/// the five-seed minimum can only fall. What this measures is how far it falls —
+/// whether the gate's margin over the floor is a property of the comparison or of
+/// how few draws the gate takes.
+///
+/// Reported per row as the minimum `p` over that row's seeds and columns, with
+/// the three-seed and five-seed minima side by side and the row's ratio to
+/// [`P_FLOOR`]. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_samples_p_floor_headroom() {
+    let mut three: Vec<(f64, String)> = Vec::new();
+    let mut five: Vec<(f64, String)> = Vec::new();
+    for row in ROWS {
+        let mg = banked_sample(row.key);
+        with_integrand(row, |integ, records, run_card| {
+            let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
+            let mut uw = Unweighter::scan(
+                integ,
+                channels.iter().map(|c| (&c.grid, c.neval)),
+                SCAN_SEED,
+            );
+            let mut labelling = None;
+            let mut row_three = (f64::INFINITY, String::new());
+            let mut row_five = (f64::INFINITY, String::new());
+            for (i, &seed) in HEADROOM_GEN_SEEDS.iter().enumerate() {
+                let ours = generate(integ, records, run_card, &mut uw, seed);
+                let l = *labelling.get_or_insert_with(|| labelling_for(&ours, &mg));
+                let found = compare(&ours, &mg, l);
+                let mut worst = (f64::INFINITY, String::new());
+                for cell in &found.ks {
+                    if cell.p < worst.0 {
+                        worst = (cell.p, format!("KS {}", cell.observable));
+                    }
+                }
+                for cell in &found.chi2 {
+                    if cell.p < worst.0 {
+                        worst = (cell.p, format!("chi2 {}", cell.column));
+                    }
+                }
+                eprintln!(
+                    "  [{}] seed {seed:#010x} ({} events): worst p {:.3e} on {}",
+                    row.key,
+                    ours.len(),
+                    worst.0,
+                    worst.1
+                );
+                if i < GEN_SEEDS.len() && worst.0 < row_three.0 {
+                    row_three = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+                }
+                if worst.0 < row_five.0 {
+                    row_five = (worst.0, format!("seed {seed:#010x} {}", worst.1));
+                }
+            }
+            eprintln!(
+                "  ROW {:<28} mode {:<4} | 3-seed min p {:.3e} ({:.1}x floor) | \
+                 5-seed min p {:.3e} ({:.1}x floor) on {}",
+                row.key,
+                row.mode,
+                row_three.0,
+                row_three.0 / P_FLOOR,
+                row_five.0,
+                row_five.0 / P_FLOOR,
+                row_five.1
+            );
+            if row.mode == "gate" {
+                three.push((row_three.0, format!("{} {}", row.key, row_three.1)));
+                five.push((row_five.0, format!("{} {}", row.key, row_five.1)));
+            }
+        });
+    }
+    let pick = |v: &[(f64, String)]| {
+        v.iter()
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .expect("a gating row")
+            .clone()
+    };
+    let (p3, w3) = pick(&three);
+    let (p5, w5) = pick(&five);
+    eprintln!(
+        "\nHEADROOM samples P_FLOOR {P_FLOOR:.0e} | 3 seeds over {} gating rows: min p \
+         {p3:.3e} ({:.2}x) on {w3} | 5 seeds: min p {p5:.3e} ({:.2}x) on {w5}",
+        three.len(),
+        p3 / P_FLOOR,
+        p5 / P_FLOOR,
+    );
 }
 
 /// The mutation probe: the statistics have to *catch* something, or a run of
@@ -800,6 +1115,49 @@ fn the_gate_rejects_a_sample_from_a_different_process() {
             worst.p < P_FLOOR,
             "{a} against {b} passed the {P_FLOOR:.0e} floor at p = {:.3e}",
             worst.p
+        );
+    }
+
+    // The incoming-leg columns need their own probe, because the pairs above are
+    // all at the same beams and none of them exercises one. `ee_to_mumu` and
+    // `ee_to_mumu_smlimit` are the same process at 45.6 and 250 GeV per beam, so
+    // the columns have to reject it on the beams alone; `ee_to_ttx` against
+    // `gg_to_ttx` is the opposite case and is here to state the blind spot as a
+    // measurement rather than as a claim — two genuinely different processes
+    // whose beams are byte-identical records, which these columns cannot and
+    // should not separate.
+    for (a, b, rejects) in [
+        ("ee_to_mumu", "ee_to_mumu_smlimit", true),
+        ("ee_to_ttx", "gg_to_ttx", false),
+    ] {
+        let (sa, sb) = (banked_sample(a), banked_sample(b));
+        let found = compare(&sa, &sb, labelling_for(&sa, &sb));
+        let worst = found
+            .worst_beam_constant()
+            .expect("both runs are at fixed beams");
+        let FieldKind::Constant {
+            theirs,
+            ours,
+            max_dev,
+            tol,
+        } = worst.kind
+        else {
+            unreachable!("worst_beam_constant returns a constant column")
+        };
+        eprintln!(
+            "  {a} against {b}: worst incoming {} {ours:.8e} against {theirs:.8e}, \
+             deviation {max_dev:.4e} against a {tol:.2e} tolerance",
+            worst.field
+        );
+        assert_eq!(
+            !worst.agrees(P_FLOOR),
+            rejects,
+            "{a} against {b}: the incoming-leg columns {} it",
+            if rejects {
+                "failed to reject"
+            } else {
+                "rejected"
+            }
         );
     }
 }
@@ -852,7 +1210,7 @@ fn the_llj_parton_rows_take_a_per_event_cluster_scale() {
         let mut integ = FixedBeamIntegrand::new(
             bounds.iter().collect(),
             &cuts,
-            run_card.ebeam1 + run_card.ebeam2,
+            FixedBeams::from_run_card(&run_card, &legs),
             final_masses,
             spin_color_avg,
         );
@@ -965,7 +1323,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         }
     }
 
-    with_integrand(row, |integ, records, _| {
+    with_integrand(row, |integ, records, run_card| {
         // 1. The production sampler, pooled over the same seeds the gate uses.
         let (channels, _) = integ.adapt_grids(row.neval, row.niter, SEED);
         let mut uw = Unweighter::scan(
@@ -977,7 +1335,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         let mut ours_tata = Spectrum::new(MLL_EDGES);
         let mut sigma_sum = 0.0;
         for &seed in &GEN_SEEDS {
-            let sample = generate(integ, records, &mut uw, seed);
+            let sample = generate(integ, records, run_card, &mut uw, seed);
             sigma_sum += sample.sigma_pb;
             for (event, &w) in sample.events.iter().zip(&sample.weights) {
                 let event = canonical(event, Labelling::Fine);
@@ -999,7 +1357,7 @@ fn the_low_m_ll_region_is_binned_against_madgraph() {
         let mut flat_mumu = Spectrum::new(MLL_EDGES);
         let mut flat_tata = Spectrum::new(MLL_EDGES);
         let mut rng = ChaCha8Rng::seed_from_u64(FLAT_SEED ^ 0xFFFF);
-        let mut u = vec![0.0; integ.channel_grid_ndim()];
+        let mut u = vec![0.0; integ.point_ndim()];
         let mut momenta = Vec::new();
         for _ in 0..FLAT_DRAWS {
             let jac = grid.draw(&mut rng, &mut u);
@@ -1154,7 +1512,6 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
 
     let card_path = output_dir().join(row.key).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(row.key));
     let sets = common::generate(row.process);
@@ -1165,6 +1522,8 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
         .collect();
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
+    let sqrt_s = beams.sqrt_s();
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -1197,15 +1556,16 @@ fn the_higgs_pole_window_is_measured_against_madgraph() {
     );
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
-    integ
-        .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
-        .expect("run card scale prescription compiles");
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
+    // No scale prescription: the sampler here is the one resonant diagram's
+    // channel, which names no configuration of the 25 the prescription would be
+    // compiled over, and this row's matrix element moves with no coupling that a
+    // scale could reach. The estimate below is the same either way.
     integ.use_multichannel(&resonant, &evaluated, 2_000, 1, SEED);
     assert_eq!(integ.channel_count(), 1, "one channel, so no α mixture");
 
     let mut rng = ChaCha8Rng::seed_from_u64(HWINDOW_SEED);
-    let mut u = vec![0.0; integ.channel_grid_ndim()];
+    let mut u = vec![0.0; integ.point_ndim()];
     let mut momenta = Vec::new();
     let (mut sum, mut sum_sq, mut inside) = (0.0, 0.0, 0usize);
     for _ in 0..HWINDOW_DRAWS {
@@ -1354,7 +1714,6 @@ fn with_mumua_integrand<R>(
         run_card.ebeam1, run_card.ebeam2,
         "the comparison assumes the lab frame is the partonic centre of mass"
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(KEY));
@@ -1381,6 +1740,7 @@ fn with_mumua_integrand<R>(
     );
 
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -1393,7 +1753,7 @@ fn with_mumua_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     integ
         .use_running_coupling(&diagrams, &model, &evaluated, &run_card)
         .expect("run card scale prescription compiles");

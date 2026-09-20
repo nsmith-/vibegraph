@@ -177,9 +177,9 @@ const AMP2_REL_TOL: f64 = 1e-12;
 /// derived partition turns out to be one group per diagram fails here, and an
 /// unlisted row that merges fails too.
 ///
-/// This crate's own configurations stay one per diagram, which is finer, so the
-/// comparison folds ours into MadGraph's accumulators. What is not folded is the
-/// integration: a merged accumulator is one channel to MadGraph and several to us.
+/// A merged accumulator is one integration channel on both sides, so the reason a
+/// row is listed is also the reason its channel set is coarser than its diagram
+/// count.
 const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
     (
         "ee_to_ee",
@@ -1010,13 +1010,6 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     // indices, because the two enumeration orders differ (`MG_DIAGRAM_ORDER`) and a
     // sequence of group sizes would compare two orderings rather than two partitions.
     let our_counts = evaluator.config_amp_counts().to_vec();
-    if !our_counts.iter().all(|&n| n == 1) {
-        return Err(format!(
-            "[{name}] a configuration owns several amplitudes {our_counts:?}, so a \
-             configuration cannot be named by its diagram"
-        )
-        .into());
-    }
     let derived = config_groups(&set.diagrams, model.as_ref());
     let ours_grouped: BTreeSet<BTreeSet<usize>> = derived
         .iter()
@@ -1067,8 +1060,26 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         }
         None => {}
     }
-    // Where MadGraph merges, our own configurations stay one per diagram, so the
-    // comparison folds ours into its accumulators rather than the other way round.
+    // The colour flows a configuration admits are the union over its diagrams,
+    // where MadGraph writes the column of one representative
+    // (`get_icolamp_lines` takes `mapconfig`'s diagram per config). The two are the
+    // same column only while a configuration's diagrams agree, so that is asserted
+    // rather than assumed — it is the claim the merged `ICOLAMP` mask rests on.
+    let per_diagram_flows = evaluator.leading_color_flows();
+    for (c, group) in derived.iter().enumerate() {
+        for &d in group {
+            if per_diagram_flows.reached_by(d) != evaluator.config_flows(c) {
+                return Err(format!(
+                    "[{name}] configuration {c} admits {:?} over its diagrams {group:?} \
+                     while diagram {d} alone reaches {:?}, so the union this crate masks \
+                     with is not the representative column MadGraph writes",
+                    evaluator.config_flows(c),
+                    per_diagram_flows.reached_by(d)
+                )
+                .into());
+            }
+        }
+    }
     let merges = derived.iter().any(|group| group.len() > 1);
     let merge = KNOWN_CONFIG_MERGE.iter().find(|(k, _)| *k == name);
     match (merges, merge) {
@@ -1094,7 +1105,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     // `run_config_amps` returns them: the diagram behind each, through the banked
     // diagram order.
     let mg_amp_index: Vec<usize> = evaluator
-        .config_diagrams()
+        .config_amp_diagrams()
         .iter()
         .map(|&d| order[d])
         .collect();
@@ -1276,8 +1287,8 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         // The configuration-selection weight, against MadGraph's own AMP() the
         // same way. A configuration owning several amplitudes is MadGraph's
         // coherent `|Σ AMP|²` (the `config_map` branch of `get_amp2_lines`), and
-        // is formed that way here so a grouping ours sums incoherently cannot
-        // pass unnoticed.
+        // is formed that way here from the banked amplitudes so an accumulator
+        // summed incoherently on this side cannot pass unnoticed.
         if let (Some(amps), false) = (detail.amps.as_ref(), table.amp2_groups.is_empty()) {
             let mut mg_amp2 = vec![0.0f64; derived.len()];
             for row in amps {
@@ -1288,36 +1299,10 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                     *acc += coherent.norm_sqr();
                 }
             }
-            // A group of one is our own configuration and is read off the evaluator,
-            // over every helicity rather than only the tabulated ones. A group of
-            // several is MadGraph's coherent sum, which no single configuration of
-            // ours holds, so it is folded here from the configuration amplitudes at
-            // the tabulated helicities — the same rows `mg_amp2` sums over.
-            if merges {
-                for (ci, group) in derived.iter().enumerate() {
-                    let slots: Vec<usize> = group
-                        .iter()
-                        .map(|d| {
-                            evaluator
-                                .config_diagrams()
-                                .iter()
-                                .position(|c| c == d)
-                                .expect("a grouped diagram carries a configuration")
-                        })
-                        .collect();
-                    our_amp2[ci] = 0.0;
-                    for &hi in &detail.helicities {
-                        let hel = &table.helicities[hi];
-                        let ours_cfg = bound.run_config_amps(&pt.momenta, hel, &mut scratch);
-                        let coherent = slots
-                            .iter()
-                            .fold(C::new(0.0, 0.0), |sum, &s| sum + ours_cfg[s]);
-                        our_amp2[ci] += coherent.norm_sqr();
-                    }
-                }
-            } else {
-                bound.eval_amp2(&pt.momenta, &mut scratch, &mut our_amp2);
-            }
+            // Ours is read off the evaluator, over every helicity rather than only
+            // the tabulated ones: the combinations MadGraph omits carry no
+            // amplitude, which the zero check above is what establishes.
+            bound.eval_amp2(&pt.momenta, &mut scratch, &mut our_amp2);
             let norm = mg_amp2.iter().cloned().fold(0.0f64, f64::max).max(1e-300);
             for (ci, (a, b)) in our_amp2.iter().zip(&mg_amp2).enumerate() {
                 let dev = (a - b).abs() / norm;

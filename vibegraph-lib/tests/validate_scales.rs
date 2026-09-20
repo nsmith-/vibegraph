@@ -69,7 +69,7 @@ use vibegraph::coupling::alphas::{asmz_from_param_card, AlphaSSource, RunningAlp
 use vibegraph::coupling::cluster::configs::{derive_channels_permuted, DerivedChannels};
 use vibegraph::coupling::cluster::graph::ColorTable;
 use vibegraph::coupling::scales::{
-    ClusterInput, DynamicalChoice, ScaleChoice, ScaleError, ScaleEvent,
+    ClosedForms, ClusterInput, DynamicalChoice, ScaleChoice, ScaleError, ScaleEvent,
 };
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::particles::ParticleId;
@@ -90,6 +90,10 @@ enum Coverage {
     /// The card fixes every scale, so no clustering enters and the printed
     /// fields are run-card constants.
     Fixed,
+    /// The card selects one of `setscales.f`'s closed forms, which reads the
+    /// event's momenta and no channel forests at all. The integer is the card's
+    /// own `dynamical_scale_choice`.
+    ClosedForm(i64),
     /// The run is declared but its scales are not replayed against its record,
     /// for the reason it carries. Each reason is itself asserted, so a blocker
     /// that lifts fails the gate and asks for the run to be promoted.
@@ -100,6 +104,9 @@ fn coverage(run: &str) -> Coverage {
     if let Some((_, why)) = DECLINED_RUNS.iter().find(|(name, _)| *name == run) {
         return Coverage::Declined(*why);
     }
+    if let Some((_, choice)) = CLOSED_FORM_RUNS.iter().find(|(name, _)| *name == run) {
+        return Coverage::ClosedForm(*choice);
+    }
     if FIXED_SCALE_RUNS.contains(&run) {
         return Coverage::Fixed;
     }
@@ -108,9 +115,19 @@ fn coverage(run: &str) -> Coverage {
     }
     panic!(
         "banked run {run} is in none of this gate's inventories: add it to CLUSTERED_RUNS, \
-         FIXED_SCALE_RUNS or DECLINED_RUNS"
+         CLOSED_FORM_RUNS, FIXED_SCALE_RUNS or DECLINED_RUNS"
     )
 }
+
+/// Every run whose scales are one of `setscales.f`'s closed forms, with the
+/// `dynamical_scale_choice` its card selects.
+///
+/// These read the event's momenta and nothing else — no merge graph, no
+/// integration channel — so the replay hands them no channel forests, and the
+/// scale is a function of the record alone. That makes them the one family here
+/// with no channel ambiguity to resolve: every event is answered by the first
+/// and only candidate, and a miss cannot be a wrong channel.
+const CLOSED_FORM_RUNS: &[(&str, i64)] = &[("gg_to_gg_cg", 3)];
 
 /// Every run whose scales come out of the clustering, replayed event by event.
 const CLUSTERED_RUNS: &[&str] = &[
@@ -187,12 +204,6 @@ enum Declined {
     /// candidate pair, every merge, both scales — against those intermediates,
     /// given the channel and the carried flags.
     InstrumentedDump,
-    /// MadGraph wrote a closed-form `dynamical_scale_choice` this crate
-    /// transcribes but declines to honour, so no prescription compiles: the
-    /// formulas for `1`–`5` keep their unit tests and no cross section reads
-    /// them, and [`ScaleChoice::from_run_card`] returns `UnhonouredScaleChoice`
-    /// rather than approximating one. The integer is the card's own value.
-    UnhonouredChoice(i64),
     /// The run card is refused outright, so there is no prescription and no
     /// `αs` source either.
     RefusedRunCard,
@@ -201,7 +212,6 @@ enum Declined {
 /// Every declared run whose scales are not replayed, with its reason.
 const DECLINED_RUNS: &[(&str, Declined)] = &[
     ("bbx_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
-    ("gg_to_gg_cg", Declined::UnhonouredChoice(3)),
     ("uux_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
     ("wpwm_to_wpwmz_cw", Declined::RefusedRunCard),
 ];
@@ -294,6 +304,7 @@ fn declared_runs() -> Vec<&'static str> {
         .chain(FIXED_SCALE_RUNS)
         .copied()
         .chain(DECLINED_RUNS.iter().map(|(name, _)| *name))
+        .chain(CLOSED_FORM_RUNS.iter().map(|(name, _)| *name))
         .collect();
     names.sort_unstable();
     let mut unique = names.clone();
@@ -569,6 +580,20 @@ impl MuTriple {
     }
 }
 
+/// The closed-form branch of `setscales.f`, which reads the momenta and no
+/// channel forests.
+fn closed_form(
+    choice: &ScaleChoice,
+    incoming: &[[f64; 4]; 2],
+    outgoing: &[[f64; 4]],
+) -> Result<MuTriple, ScaleError> {
+    let scales = choice.scales(&ScaleEvent {
+        incoming: *incoming,
+        outgoing,
+    })?;
+    Ok(MuTriple([scales.mu_r, scales.mu_f[0], scales.mu_f[1]]))
+}
+
 /// The fixed-scale branch, which reads no kinematics at all.
 fn fixed(choice: &ScaleChoice) -> Result<MuTriple, ScaleError> {
     let scales = choice.scales(&ScaleEvent {
@@ -616,13 +641,15 @@ fn run_card(run: &Path) -> RunCard {
 #[test]
 fn every_banked_run_uses_the_clustering_default() {
     for (name, run) in banked_runs() {
-        // A run whose card is refused, or whose card asks for a prescription
-        // this crate declines, has no compiled `ScaleChoice` to classify. What
-        // its card says is asserted by
-        // [`declined_runs_decline_for_the_declared_reason`] instead.
+        // A run whose card is refused has no compiled `ScaleChoice` to classify;
+        // what its card says is asserted by
+        // [`declined_runs_decline_for_the_declared_reason`] instead. A run whose
+        // card selects one of `setscales.f`'s closed forms is the exception this
+        // test is about, and its own choice is asserted against
+        // [`CLOSED_FORM_RUNS`] where it is replayed.
         if matches!(
             coverage(&name),
-            Coverage::Declined(Declined::RefusedRunCard | Declined::UnhonouredChoice(_))
+            Coverage::Declined(Declined::RefusedRunCard) | Coverage::ClosedForm(_)
         ) {
             continue;
         }
@@ -685,25 +712,6 @@ fn declined_runs_decline_for_the_declared_reason() {
                     dump.display()
                 );
             }
-            Declined::UnhonouredChoice(choice) => {
-                let card =
-                    RunCard::parse_file(&card_path).unwrap_or_else(|e| panic!("{name}: {e}"));
-                assert_eq!(
-                    card.int("dynamical_scale_choice"),
-                    choice,
-                    "{name}: declared dynamical_scale_choice"
-                );
-                let refused = ScaleChoice::from_run_card(&card);
-                assert!(
-                    matches!(
-                        refused,
-                        Err(ScaleError::UnhonouredScaleChoice { choice: got }) if got == choice
-                    ),
-                    "{name}: dynamical_scale_choice {choice} is no longer refused \
-                     ({refused:?}) — the run has an oracle now and belongs in a replaying \
-                     inventory"
-                );
-            }
             Declined::RefusedRunCard => {
                 let refused = RunCard::parse_file(&card_path);
                 assert!(
@@ -748,10 +756,25 @@ struct Replay {
 /// to reproduce all of them.
 fn replay(choice: &ScaleChoice, channels: Option<&Channels>, event: &Event) -> Replay {
     let Some(channels) = channels else {
-        let mu = fixed(choice).expect("a fixed-scale card resolves without an event");
+        if choice.is_fully_fixed() {
+            return Replay {
+                mu: fixed(choice).expect("a fixed-scale card resolves without an event"),
+                spread: MuTriple::default(),
+                config: 1,
+            };
+        }
+        // A closed form: the momenta and nothing else, so there is one candidate
+        // rather than one per integration channel, and the only budget it needs
+        // is what the record's own printed momenta move it by.
+        let mu = closed_form(choice, &event.incoming, &event.outgoing)
+            .expect("a closed form resolves from the momenta alone");
+        let mut scales = |incoming: &[[f64; 4]; 2], outgoing: &[[f64; 4]]| {
+            closed_form(choice, incoming, outgoing)
+        };
+        let spread = momentum_spread(&mut scales, event, mu);
         return Replay {
             mu,
-            spread: MuTriple::default(),
+            spread,
             config: 1,
         };
     };
@@ -800,6 +823,7 @@ fn banked_events_reproduce_every_printed_scale() {
     let runs = banked_runs();
     let mut clustered: Vec<String> = Vec::new();
     let mut fixed_runs: Vec<String> = Vec::new();
+    let mut closed_form_runs: Vec<String> = Vec::new();
     let mut declined: Vec<String> = Vec::new();
     let mut total_events = 0usize;
     let mut total_comparisons = 0usize;
@@ -812,7 +836,7 @@ fn banked_events_reproduce_every_printed_scale() {
             continue;
         }
         let card = run_card(run);
-        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let choice = ScaleChoice::from_run_card_for(&card, ClosedForms::Honour).expect("compiled");
         let events = parse_events(run);
         let channels = match coverage(name) {
             // A fixed scale reads no kinematics, so the replay hands it no
@@ -825,6 +849,18 @@ fn banked_events_reproduce_every_printed_scale() {
             Coverage::Clustered => {
                 clustered.push(name.clone());
                 Some(channels_for(name, run))
+            }
+            // A closed form reads the momenta and no merge graph, so it is handed
+            // no channels either: passing them would let the clustering answer for
+            // a prescription that never consults it.
+            Coverage::ClosedForm(choice) => {
+                assert_eq!(
+                    card.int("dynamical_scale_choice"),
+                    choice,
+                    "{name}: declared dynamical_scale_choice"
+                );
+                closed_form_runs.push(name.clone());
+                None
             }
             Coverage::Declined(_) => unreachable!("declined runs are skipped above"),
         };
@@ -924,15 +960,23 @@ fn banked_events_reproduce_every_printed_scale() {
         present(FIXED_SCALE_RUNS, &runs),
         "the set of runs whose scales are run-card constants changed"
     );
+    let closed_declared: Vec<&str> = CLOSED_FORM_RUNS.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        closed_form_runs,
+        present(&closed_declared, &runs),
+        "the set of runs whose scales are one of setscales.f's closed forms changed"
+    );
     println!(
         "scales: {total_comparisons} comparisons over {total_events} events in {} runs \
          within their printing budget, worst {:.3} of budget ({} in {}); \
-         {} fixed-scale, {} declined ({})",
-        clustered.len() + fixed_runs.len(),
+         {} fixed-scale, {} closed-form ({}), {} declined ({})",
+        clustered.len() + fixed_runs.len() + closed_form_runs.len(),
         worst.0,
         worst.2,
         worst.1,
         fixed_runs.len(),
+        closed_form_runs.len(),
+        closed_form_runs.join(", "),
         declined.len(),
         declined.join(", ")
     );
@@ -1030,12 +1074,12 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
     let runs = banked_runs();
     for (name, run) in &runs {
         let channels = match coverage(name) {
-            Coverage::Fixed => None,
+            Coverage::Fixed | Coverage::ClosedForm(_) => None,
             Coverage::Declined(_) => continue,
             Coverage::Clustered => Some(channels_for(name, run)),
         };
         let card = run_card(run);
-        let choice = ScaleChoice::from_run_card(&card).expect("compiled");
+        let choice = ScaleChoice::from_run_card_for(&card, ClosedForms::Honour).expect("compiled");
         let params = ParamCard::from_file(&run.join("Cards/param_card.dat")).expect("param card");
 
         let a_s = alpha_s_mz(name, &params);
@@ -1083,9 +1127,12 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
 
     // Every declared run except the two the LHE cannot replay and the
     // byte-identical duplicate.
+    let closed: Vec<&str> = CLOSED_FORM_RUNS.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         runs_checked,
-        present(CLUSTERED_RUNS, &runs).len() + present(FIXED_SCALE_RUNS, &runs).len()
+        present(CLUSTERED_RUNS, &runs).len()
+            + present(FIXED_SCALE_RUNS, &runs).len()
+            + present(&closed, &runs).len()
     );
     println!(
         "AQCDUP from the computed scale: {events_checked} events across {runs_checked} runs, \
@@ -1711,12 +1758,11 @@ fn banked_hadronic_runs_clear_the_factorisation_floor() {
     let mut reachable: Vec<String> = Vec::new();
     let mut global = (f64::INFINITY, String::new());
     for (name, run) in banked_runs() {
-        // A run whose card this crate refuses, or whose prescription it
-        // declines, compiles nothing to replay; both have `lpp = 0` and so
-        // could reach no floor anyway.
+        // A run whose card this crate refuses compiles nothing to replay, and it
+        // has `lpp = 0` and so could reach no floor anyway.
         if matches!(
             coverage(&name),
-            Coverage::Declined(Declined::RefusedRunCard | Declined::UnhonouredChoice(_))
+            Coverage::Declined(Declined::RefusedRunCard)
         ) {
             continue;
         }

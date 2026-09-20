@@ -1,0 +1,166 @@
+{
+  "bbx_to_ccx_emmm_qcd0": {
+    "configs": 615,
+    "flows": 1
+  },
+  "bbx_to_h_identity": {
+    "configs": 1,
+    "flows": 1
+  },
+  "ddx_to_epemg": {
+    "configs": 4,
+    "flows": 1
+  },
+  "ee_to_ee": {
+    "configs": 3,
+    "flows": 1
+  },
+  "ee_to_mumu": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_mumu_4f": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_mumu_smlimit": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_mumu_tata_qcd0": {
+    "configs": 25,
+    "flows": 1
+  },
+  "ee_to_mumua": {
+    "configs": 8,
+    "flows": 1
+  },
+  "ee_to_tatah": {
+    "configs": 5,
+    "flows": 1
+  },
+  "ee_to_ttx": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_ttx_dipole": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_ttx_smeft": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_ttx_smlimit": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_wpwm": {
+    "configs": 3,
+    "flows": 1
+  },
+  "ee_to_wpwm_cw": {
+    "configs": 3,
+    "flows": 1
+  },
+  "ee_to_zh": {
+    "configs": 1,
+    "flows": 1
+  },
+  "ee_to_zh_smeft": {
+    "configs": 2,
+    "flows": 1
+  },
+  "gg_to_gg": {
+    "configs": 3,
+    "flows": 6
+  },
+  "gg_to_gg_cg": {
+    "configs": 6,
+    "flows": 9
+  },
+  "gg_to_h_cpeven": {
+    "configs": 1,
+    "flows": 1
+  },
+  "gg_to_h_cpodd": {
+    "configs": 1,
+    "flows": 1
+  },
+  "gg_to_ttx": {
+    "configs": 3,
+    "flows": 2
+  },
+  "gg_to_ttx_smlimit": {
+    "configs": 3,
+    "flows": 2
+  },
+  "gg_to_ttx_smlimit_qcd2": {
+    "configs": 4,
+    "flows": 3
+  },
+  "gu_to_epemu": {
+    "configs": 4,
+    "flows": 1
+  },
+  "gux_to_epemux": {
+    "configs": 4,
+    "flows": 1
+  },
+  "ll_to_qqx_toy_dipole": {
+    "configs": 1,
+    "flows": 1
+  },
+  "ll_to_qqx_toy_tensor": {
+    "configs": 1,
+    "flows": 1
+  },
+  "ll_to_qqx_toy_yukawa": {
+    "configs": 2,
+    "flows": 1
+  },
+  "p3r3_to_p3r3_toy_epsilon": {
+    "configs": 2,
+    "flows": 2
+  },
+  "p3r3_to_p3r3_toy_sextet": {
+    "configs": 2,
+    "flows": 2
+  },
+  "qqx_to_o8o8_toy_dcolor": {
+    "configs": 3,
+    "flows": 3
+  },
+  "tata_to_ttx_tensor4f": {
+    "configs": 3,
+    "flows": 1
+  },
+  "ud_to_epemud_qcd0": {
+    "configs": 21,
+    "flows": 2
+  },
+  "uux_to_ccx_emmm_qcd0": {
+    "configs": 579,
+    "flows": 1
+  },
+  "uux_to_epemg": {
+    "configs": 4,
+    "flows": 1
+  },
+  "uux_to_mumu": {
+    "configs": 2,
+    "flows": 1
+  },
+  "uux_to_ttx_4f": {
+    "configs": 3,
+    "flows": 2
+  },
+  "uux_to_uux": {
+    "configs": 2,
+    "flows": 2
+  },
+  "wpwm_to_wpwmz_cw": {
+    "configs": 21,
+    "flows": 1
+  }
+}

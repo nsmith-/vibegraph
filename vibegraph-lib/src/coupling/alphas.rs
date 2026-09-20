@@ -27,6 +27,23 @@
 //! **overrides** it with the value tabulated for the PDF label. See
 //! [`RunningAlphaS::from_run_card`].
 //!
+//! # Below the perturbative solve
+//!
+//! The Newton iteration has no root once `Q` approaches the scale where the
+//! `nf = 3` evolution diverges, and the closed-form seed it starts from stops
+//! being positive before that: below roughly `0.4` GeV at two loops and `0.51`
+//! GeV at three (`αs(M_Z) = 0.118`; both move up with `αs(M_Z)`, to `0.66` and
+//! `0.83` at `0.130`), the solve returns a NaN or a negative coupling rather
+//! than failing. [`RunningAlphaS::eval`] refuses such a scale instead of
+//! returning what the iteration produced. MadGraph reaches the same region and
+//! marks part of it with a sentinel — `NEWTON1` returns `9d98` where the
+//! one-loop denominator has already gone non-positive — but nothing downstream
+//! of it tests for that value, so a run there is one whose matrix elements were
+//! evaluated at a coupling of `1e99`. A stopped run is what this crate returns
+//! instead, for the reason
+//! [`coupling::scales`](crate::coupling::scales) gives at greater length: an
+//! unphysical number that keeps flowing is worse than one that stops.
+//!
 //! # What this module deliberately does not cover
 //!
 //! With `pdlabel = lhapdf` MadGraph links `Source/alfas_functions_lhapdf.f`
@@ -172,12 +189,21 @@ impl RunningAlphaS {
 
     /// `αs(q)`.
     ///
-    /// Panics on a non-positive `q`, as the Fortran stops on one: a scale of
-    /// zero means the caller's kinematics are degenerate, and continuing would
-    /// silently feed a garbage coupling to the matrix element.
+    /// # Panics
+    ///
+    /// On a non-positive `q`, as the Fortran stops on one: a scale of zero means
+    /// the caller's kinematics are degenerate, and continuing would silently feed
+    /// a garbage coupling to the matrix element.
+    ///
+    /// On a `q` the evolution does not reach — a few hundred MeV, where the
+    /// `nf = 3` solve has no positive root left and returns a NaN or a negative
+    /// coupling. Refusing is the same decision made one paragraph up for a
+    /// non-positive scale: the value the iteration produced there is not a
+    /// coupling, and every caller of this function multiplies it into a matrix
+    /// element.
     pub fn eval(&self, q: f64) -> f64 {
         assert!(q > 0.0, "alpha_s evaluated at a non-positive scale q = {q}");
-        if q < BMASS {
+        let alpha = if q < BMASS {
             if q < CMASS {
                 newton1(2.0 * (q / CMASS).ln(), self.alpha_c, self.nloop, 3)
             } else {
@@ -185,7 +211,18 @@ impl RunningAlphaS {
             }
         } else {
             newton1(2.0 * (q / ZMASS).ln(), self.asmz, self.nloop, 5)
-        }
+        };
+        // A NaN fails this comparison, which is the point: the negated form is
+        // what routes both a NaN and a negative iterate into the refusal.
+        assert!(
+            alpha > 0.0 && alpha.is_finite(),
+            "the {:?}-loop evolution from alpha_s(M_Z) = {} returns {alpha} at q = {q} GeV \
+             rather than a coupling: q is at or below the scale where the nf = 3 solve stops \
+             having a positive root",
+            self.nloop,
+            self.asmz,
+        );
+        alpha
     }
 
     /// The evolution MadGraph would run with for `card`, given the parameter
@@ -409,6 +446,48 @@ mod tests {
         assert_eq!(a.eval(BMASS), alpha_b);
         assert!((a.eval(CMASS) - alpha_c).abs() < 1e-12 * alpha_c);
         assert!((a.eval(ZMASS) - a.asmz()).abs() < 1e-12 * a.asmz());
+    }
+
+    /// The two-loop solve stops having a positive root a few hundred MeV up, and
+    /// what it returns below that is a NaN rather than a coupling.
+    ///
+    /// The pin is the *refusal*: without it `eval` hands a NaN to whichever
+    /// matrix element asked, where it becomes a NaN weight that the sampler's
+    /// `if !(w > 0.0)` guards drop as an ordinary rejected point — a silently
+    /// missing region rather than a stopped run.
+    #[test]
+    #[should_panic(expected = "rather than a coupling")]
+    fn a_scale_below_the_perturbative_solve_is_refused() {
+        RunningAlphaS::new(0.118, NLoop::Two).unwrap().eval(0.3);
+    }
+
+    /// The refusal's boundary is where the solve fails, not a round number
+    /// chosen for it: at `αs(M_Z) = 0.118` two loops evolve down to `0.4` GeV and
+    /// three only to `0.52`, and a larger coupling moves both up.
+    ///
+    /// Read as a control on the test above: `0.3` GeV is refused because nothing
+    /// usable comes back, while every scale this table calls reachable returns a
+    /// coupling that rises as the scale falls.
+    #[test]
+    fn the_refusal_starts_where_the_solve_does_not_reach() {
+        for (asmz, nloop, reachable, refused) in [
+            (0.118, NLoop::One, 0.15, 0.14),
+            (0.118, NLoop::Two, 0.41, 0.40),
+            (0.118, NLoop::Three, 0.52, 0.51),
+            (0.130, NLoop::Two, 0.66, 0.65),
+            (0.130, NLoop::Three, 0.84, 0.83),
+        ] {
+            let a = RunningAlphaS::new(asmz, nloop).unwrap();
+            let value = a.eval(reachable);
+            assert!(
+                value > a.eval(1.0) && value.is_finite(),
+                "alpha_s({reachable}) = {value} at asmz {asmz}, {nloop:?} loops"
+            );
+            assert!(
+                std::panic::catch_unwind(|| a.eval(refused)).is_err(),
+                "alpha_s({refused}) at asmz {asmz}, {nloop:?} loops was not refused"
+            );
+        }
     }
 
     #[test]

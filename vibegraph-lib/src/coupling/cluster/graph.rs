@@ -194,6 +194,67 @@ impl ChannelSet {
         (1u32 << self.n_external) - 1
     }
 
+    /// `get_channel_cut` (`genps.f:1817`): MadEvent's per-configuration
+    /// enhancement weight where the run card's `SDE_strategy` makes it a product
+    /// of inverse propagator denominators rather than the squared amplitude.
+    ///
+    /// `momenta` are the external four-momenta in process order, incoming first,
+    /// each with positive energy — the array MadGraph's matrix element is called
+    /// with. `s_tot` is the collider invariant (`common/to_stot/`), which enters
+    /// only as the `s_tot·1e-10` offset keeping a spacelike denominator away from
+    /// zero. `out` takes one weight per channel.
+    ///
+    /// The walk covers the forest's first `nexternal - 3` lines — its genuine
+    /// propagators, the ones `props.inc` gives a mass and a width — and so skips
+    /// the closing line a channel with a spacelike chain carries. Each line's
+    /// momentum is the sum of its daughters', an incoming external entering with a
+    /// minus sign, and the line contributes `1/(t - m²)²` where it is spacelike and
+    /// `1/((t - m²)² + m²Γ²)` where it is timelike.
+    ///
+    /// # Panics
+    ///
+    /// If `out` is not one entry per channel.
+    pub fn channel_cuts(&self, momenta: &[[f64; 4]], s_tot: f64, out: &mut [f64]) {
+        assert_eq!(
+            out.len(),
+            self.configs.len(),
+            "the channel-cut weights must cover the integration channels"
+        );
+        let n_lines = self.n_external.saturating_sub(3);
+        let mut ptemp: Vec<[f64; 4]> = Vec::with_capacity(n_lines);
+        for (weight, forest) in out.iter_mut().zip(&self.configs) {
+            ptemp.clear();
+            *weight = 1.0;
+            for line in forest.lines.iter().take(n_lines) {
+                let mut p = [0.0; 4];
+                for daughter in line.daughters {
+                    match usize::try_from(daughter) {
+                        Ok(leg) if leg > 0 => {
+                            let sign = if leg <= self.n_incoming { -1.0 } else { 1.0 };
+                            for (a, b) in p.iter_mut().zip(&momenta[leg - 1]) {
+                                *a += sign * b;
+                            }
+                        }
+                        _ => {
+                            for (a, b) in p.iter_mut().zip(&ptemp[(-daughter) as usize - 1]) {
+                                *a += b;
+                            }
+                        }
+                    }
+                }
+                let t = p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3];
+                let gap = t - line.mass * line.mass;
+                *weight /= if line.tprid != 0 {
+                    let regulated = t - line.mass * line.mass + s_tot * 1e-10;
+                    regulated * regulated
+                } else {
+                    gap * gap + (line.mass * line.width).powi(2)
+                };
+                ptemp.push(p);
+            }
+        }
+    }
+
     /// `filmap`: the merge table of each subprocess, for the channel being
     /// integrated.
     ///

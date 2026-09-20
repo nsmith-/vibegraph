@@ -77,6 +77,10 @@ use std::time::Instant;
 use serde::Serialize;
 use serde_json::{json, Value};
 use vibegraph::artifact::ChannelSampler;
+// `validation::samples` is itself behind the feature, and this module is shared
+// with the hermetic tests, which build without it.
+#[cfg(feature = "extended-validation")]
+use vibegraph::validation::samples::{FieldColumn, FieldKind};
 
 /// The schema version the files below are written under.
 pub const SCHEMA: u32 = 1;
@@ -369,6 +373,67 @@ pub struct CategoryCount {
     pub theirs: f64,
 }
 
+/// One incoming leg's field, compared against the banked record's.
+///
+/// A fixed-beam run holds each field at one value, so the cell carries the two
+/// records' values, the largest per-event departure between them and what the
+/// banked file's own printing allows (`kind = "constant"`). A hadron beam's
+/// fields vary with the momentum fraction and the cell carries a weighted
+/// two-sample Kolmogorov–Smirnov instead (`kind = "distribution"`). Which one a
+/// field takes is read off the samples.
+#[derive(Debug, Clone, Serialize)]
+pub struct FieldCell {
+    /// `beam1 E`, `beam1 pz`, `beam1 m`, and the same for the second beam.
+    pub field: String,
+    pub kind: &'static str,
+    /// The banked record's value and ours furthest from it — a constant field.
+    pub theirs: Option<f64>,
+    pub ours: Option<f64>,
+    /// The largest `|ours − theirs|` over every event of both samples, and the
+    /// tolerance the banked record's printed precision implies.
+    pub max_dev: Option<f64>,
+    pub tol: Option<f64>,
+    /// The KS statistic and its p-value — a varying field.
+    pub d: Option<f64>,
+    pub p: Option<f64>,
+}
+
+#[cfg(feature = "extended-validation")]
+impl FieldCell {
+    /// A shared comparison's incoming-leg column as the report row records it.
+    pub fn of(column: &FieldColumn) -> Self {
+        let mut cell = FieldCell {
+            field: column.field.clone(),
+            kind: "constant",
+            theirs: None,
+            ours: None,
+            max_dev: None,
+            tol: None,
+            d: None,
+            p: None,
+        };
+        match column.kind {
+            FieldKind::Constant {
+                theirs,
+                ours,
+                max_dev,
+                tol,
+            } => {
+                cell.theirs = Some(theirs);
+                cell.ours = Some(ours);
+                cell.max_dev = Some(max_dev);
+                cell.tol = Some(tol);
+            }
+            FieldKind::Distribution { d, p } => {
+                cell.kind = "distribution";
+                cell.d = Some(d);
+                cell.p = Some(p);
+            }
+        }
+        cell
+    }
+}
+
 /// One generation seed's comparison against the banked sample.
 #[derive(Debug, Clone, Serialize)]
 pub struct SeedSample {
@@ -378,6 +443,55 @@ pub struct SeedSample {
     pub sigma_pb: f64,
     pub ks: Vec<KsCell>,
     pub chi2: Vec<Chi2Cell>,
+    pub beams: Vec<FieldCell>,
+    /// `SCALUP` and `AQCDUP`, compared the same way the incoming legs are.
+    pub scales: Vec<FieldCell>,
+}
+
+/// A family of [`FieldCell`]s reduced to what a row reports about it.
+struct WorstField {
+    field: String,
+    max_dev: f64,
+    tol: f64,
+    min_ks_p: f64,
+}
+
+/// The constant field furthest outside the reference's printed precision and the
+/// smallest KS p-value among those that vary.
+///
+/// The constants are ranked by the deviation as a *multiple of their own
+/// tolerance*, since two fields printed at different exponents do not share one;
+/// where no constant departed at all, the reported field is the varying one with
+/// the smallest `p`, so a family that is entirely distributions still names
+/// something.
+fn worst_field(cells: &[&FieldCell]) -> WorstField {
+    let mut worst = WorstField {
+        field: String::new(),
+        max_dev: 0.0,
+        tol: 0.0,
+        min_ks_p: 1.0,
+    };
+    let ratio = |c: &&FieldCell| match (c.max_dev, c.tol) {
+        (Some(dev), Some(tol)) if dev > 0.0 => dev / tol.max(f64::MIN_POSITIVE),
+        _ => 0.0,
+    };
+    let constants = cells.iter().filter(|c| c.kind == "constant");
+    if let Some(cell) = constants.max_by(|a, b| ratio(a).total_cmp(&ratio(b))) {
+        worst.field = cell.field.clone();
+        worst.max_dev = cell.max_dev.unwrap_or(0.0);
+        worst.tol = cell.tol.unwrap_or(0.0);
+    }
+    let varying = cells
+        .iter()
+        .filter_map(|c| c.p.map(|p| (p, &c.field)))
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    if let Some((p, field)) = varying {
+        worst.min_ks_p = p;
+        if worst.field.is_empty() {
+            worst.field = field.clone();
+        }
+    }
+    worst
 }
 
 /// One measured `samples` cell.
@@ -414,6 +528,39 @@ pub struct SamplesRow {
     /// Categorical columns with a single category, where a homogeneity test has
     /// no degrees of freedom (a colourless process has one colour flow).
     pub single_category: Vec<String>,
+    /// The incoming-leg comparison's own mode. A row whose outgoing columns are
+    /// enforced can still carry a recorded disagreement on its beams, so this is
+    /// separate from `mode` — and `mode` is what the manifest declares for the
+    /// cell as a whole.
+    pub beam_mode: &'static str,
+    /// The constant incoming-leg field furthest outside the banked record's
+    /// printed precision, over every seed, with its deviation and tolerance in
+    /// GeV.
+    pub worst_beam_field: String,
+    pub max_beam_dev: f64,
+    pub beam_tol: f64,
+    /// The smallest KS p-value over the incoming-leg fields that vary per event.
+    pub min_beam_ks_p: f64,
+    /// The reported scales' own mode, separate from `mode` for the same reason
+    /// `beam_mode` is: a row whose distributions are enforced can carry a
+    /// recorded disagreement on what its records say they were evaluated at.
+    pub scale_mode: &'static str,
+    /// The constant scale field furthest outside the banked record's printed
+    /// precision, over every seed, with its deviation and tolerance.
+    pub worst_scale_field: String,
+    pub max_scale_dev: f64,
+    pub scale_tol: f64,
+    /// The smallest KS p-value over the scale fields that vary per event.
+    pub min_scale_ks_p: f64,
+    /// Scale fields whose reading is reported and never enforced, with why. The
+    /// row's other scale fields gate at its `mode`, and `worst_scale_field` and
+    /// the deviations beside it are the *enforced* fields' — a field reported
+    /// under this heading is measured here and nowhere else.
+    pub unenforced_scale_fields: Vec<String>,
+    pub unenforced_scale_reason: Option<String>,
+    pub worst_unenforced_scale_field: String,
+    pub max_unenforced_scale_dev: f64,
+    pub unenforced_scale_tol: f64,
     pub per_seed: Vec<SeedSample>,
     pub note: Option<String>,
     /// Wall-clock seconds this row's own measurement took; `None` where the gate
@@ -441,6 +588,21 @@ impl SamplesRow {
             worst_chi2_column: String::new(),
             constant_observables: Vec::new(),
             single_category: Vec::new(),
+            beam_mode: mode,
+            worst_beam_field: String::new(),
+            max_beam_dev: 0.0,
+            beam_tol: 0.0,
+            min_beam_ks_p: 1.0,
+            scale_mode: mode,
+            worst_scale_field: String::new(),
+            max_scale_dev: 0.0,
+            scale_tol: 0.0,
+            min_scale_ks_p: 1.0,
+            unenforced_scale_fields: Vec::new(),
+            unenforced_scale_reason: None,
+            worst_unenforced_scale_field: String::new(),
+            max_unenforced_scale_dev: 0.0,
+            unenforced_scale_tol: 0.0,
             per_seed: Vec::new(),
             note: None,
             duration_s: None,
@@ -450,6 +612,41 @@ impl SamplesRow {
     pub fn with_variant(mut self, variant: &str) -> Self {
         self.variant = Some(variant.to_string());
         self
+    }
+
+    /// Record the incoming-leg column as measured but not enforced, on a row
+    /// whose other columns still gate.
+    pub fn with_beam_mode(mut self, beam_mode: &'static str) -> Self {
+        self.beam_mode = beam_mode;
+        self
+    }
+
+    /// Record the reported-scale columns as measured but not enforced, on a row
+    /// whose other columns still gate.
+    pub fn with_scale_mode(mut self, scale_mode: &'static str) -> Self {
+        self.scale_mode = scale_mode;
+        self
+    }
+
+    /// Name the scale fields this row reports without enforcing, and why. They
+    /// leave the enforced reduction in [`finish`](Self::finish) and are reduced
+    /// on their own instead, so the cell shows both what gates and what does not.
+    pub fn with_unenforced_scales(mut self, fields: &[&str], reason: &str) -> Self {
+        self.unenforced_scale_fields = fields.iter().map(|f| f.to_string()).collect();
+        self.unenforced_scale_reason = Some(reason.to_string());
+        self
+    }
+
+    /// Whether the reported-scale columns agree, on the same terms as the
+    /// incoming legs.
+    pub fn scales_agree(&self, p_floor: f64) -> bool {
+        self.max_scale_dev <= self.scale_tol && self.min_scale_ks_p >= p_floor
+    }
+
+    /// Whether the incoming-leg columns agree: every constant field inside the
+    /// banked record's printed precision, every varying one above the floor.
+    pub fn beams_agree(&self, p_floor: f64) -> bool {
+        self.max_beam_dev <= self.beam_tol && self.min_beam_ks_p >= p_floor
     }
 
     /// Reduce the per-seed cells to the row's metric: the smallest p-value over
@@ -473,6 +670,27 @@ impl SamplesRow {
             self.min_chi2_p = cell.p;
             self.worst_chi2_column = cell.column.clone();
         }
+        let beams: Vec<&FieldCell> = self.per_seed.iter().flat_map(|s| &s.beams).collect();
+        let worst = worst_field(&beams);
+        self.worst_beam_field = worst.field;
+        self.max_beam_dev = worst.max_dev;
+        self.beam_tol = worst.tol;
+        self.min_beam_ks_p = worst.min_ks_p;
+
+        let unenforced = |c: &&FieldCell| self.unenforced_scale_fields.contains(&c.field);
+        let all: Vec<&FieldCell> = self.per_seed.iter().flat_map(|s| &s.scales).collect();
+        let (skipped, scales): (Vec<&FieldCell>, Vec<&FieldCell>) =
+            all.into_iter().partition(unenforced);
+        let worst = worst_field(&scales);
+        self.worst_scale_field = worst.field;
+        self.max_scale_dev = worst.max_dev;
+        self.scale_tol = worst.tol;
+        self.min_scale_ks_p = worst.min_ks_p;
+        let worst = worst_field(&skipped);
+        self.worst_unenforced_scale_field = worst.field;
+        self.max_unenforced_scale_dev = worst.max_dev;
+        self.unenforced_scale_tol = worst.tol;
+
         self.single_category.sort();
         self.single_category.dedup();
     }
