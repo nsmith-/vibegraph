@@ -33,8 +33,11 @@ The pieces:
   the $3n-4$ kinematic degrees of freedom of $n$ on-shell momenta with
   fixed total momentum. [Phase space](07-phase-space.md) describes it and
   the maps used to sample it.
-- $F$ is the **flux factor**, $2\hat s$ for massless incoming
-  partons, which normalises the amplitude to a rate per unit incident flux.
+- $F$ is the **flux factor**, which normalises the amplitude to a rate per
+  unit incident flux. It is the Møller invariant
+  $4\sqrt{(p_a\!\cdot\!p_b)^2 - m_a^2m_b^2} = 2\lambda^{1/2}(\hat s, m_a^2, m_b^2)$,
+  which reduces to the familiar $2\hat s$ when both incoming particles are
+  massless; [phase space](07-phase-space.md#the-flux) derives it.
 
 The integral has no closed form for anything but the simplest processes, so
 it is done by Monte Carlo: draw random points in phase space, evaluate the

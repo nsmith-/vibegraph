@@ -60,6 +60,7 @@
 
 use std::f64::consts::PI;
 
+pub mod beams;
 pub mod channel;
 pub mod diagram_channel;
 pub mod rambo;

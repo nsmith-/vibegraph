@@ -146,6 +146,8 @@
 | 1.2.2 | ALOHA symmetry reduction created non-gauge-invariant result for scalar octet | Scalar color-8 particle (e.g. sgluon) | Test gauge invariance check (Ward identity) for scalar-octet processes |
 | 2.9.21 | Rare ALOHA-generated code did not compile | Specific Lorentz structure combinations (version-dependent) | Run compilation test for all ALOHA routines generated from a test UFO model |
 
+| 3.7.1, found here | A UFO with no `aS` parameter gets one injected by the Fortran exporter: `export_v4.py` (`prepare_couplings`, ~l. 7076) logs `CRITICAL: aS not define as external parameter adding it!` and appends `aS = 0.138` **and** `G = 4.1643` as internal parameters — mutually inconsistent (`G = 2√(π·aS)` gives 1.317 for 0.138; 4.1643 is `aS = 1.380`). `setrun.f` then runs `αs(M_Z)` from `G`, so every event of such a model carries `AQCDUP` from a strong coupling of 1.38 in a model with no strong interaction (banked: `AQCDUP ≈ 0.43` at 250–500 GeV on the six `vibegraph_toy_*` rows; the `CRITICAL` line is in each `build.log`) | Any model that declares no `aS` external parameter — the two authored toy UFOs here | Do not reproduce the injected value; `AQCDUP` on those rows is measured and not enforced (note 36 §7.1), with the cause asserted (`alpha_s_source()` absent exactly on `UNDECLARED_ALPHA_S_RUNS`). `validate_alphas` replays MadGraph's own events from `G`'s 1.3799843265950287 to reproduce its field, never ours |
+| 3.7.1, found here | The Fortran writer prints a long UFO literal at seven significant digits: `gHza`'s `0.4583333333333333` (11/24) becomes `4.583333D-01`, so the generated `MATRIX1` runs on a `GC_303` that differs from the model's own Python evaluation by 1.2e-8 (`ee_to_zh_smeft`, `wpwm_to_wpwmz_cw`); MadGraph's Python `model_reader` on the same card agrees with this crate to 1e-14 on every coupling of every banked row | Any coupling built from a UFO literal with more than seven significant digits | The coupling oracle (`coupling_oracle.rs`, 41 rows) compares against Python as the arbiter and reports Fortran, with the known writer deviations listed by name; the `ee_to_zh_smeft` amplitude cell stays informational rather than matching a rounded reference on purpose (note 35 §3 E1, note 36 B5) |
 ---
 
 ### 4. Phase-Space / Integration Bugs
@@ -171,6 +173,7 @@
 | RAMBO | Massive Newton–Raphson: limited to 6 iterations; no error raised after non-convergence, just print statement | Very tight mass sum near ECM (ΣM → ECM) | Test convergence for ΣM/ECM = 0.999; raise an exception on non-convergence |
 | RAMBO | Overflow check for massive particles has sign error (`> 5` instead of `< 5`): warning never fires | High multiplicity, high energy | Fix check; test that overflow warning fires for wt > 174 |
 
+| 3.7.1, found here | `genps.f`: under `sde_strat = 1` with `tmin_for_channel ≠ -1` the branch `if (t.lt.tmin_for_channel)` reads `t` **uninitialised** — its only assignment sits inside `if (sde_strat.eq.2)` (`get_channel_cut`, ~l. 1817). Unreachable in this suite: every banked run has `tmin_for_channel = -1`, and this crate refuses the field off default | `sde_strategy = 1` with a non-default `tmin_for_channel` | Keep refusing `tmin_for_channel ≠ -1` (`IgnoredPhysics`); a future row exercising it has no defined reference behaviour to compare against (note 36 B3) |
 ---
 
 ### 5. Diagram Generation Bugs

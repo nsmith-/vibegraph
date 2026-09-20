@@ -10,9 +10,10 @@
 //! # What this gate covers that the bit-exact net cannot
 //!
 //! The per-point `amplitude_oracle` net is blind to everything *outside* the
-//! matrix element: the flux factor `1/(2 s-hat)`, the initial-state spin/colour
+//! matrix element: the beam configuration and the flux it implies, the
+//! initial-state spin/colour
 //! average, identical-particle and phase-space symmetry factors, the cut filter,
-//! and the beam/phase-space measure. A wrong constant in any of those leaves the
+//! and the phase-space measure. A wrong constant in any of those leaves the
 //! per-point |M|^2 bit-exact yet moves the cross section. This gate is the coarse
 //! instrument that sees those.
 //!
@@ -117,9 +118,10 @@ use rand_chacha::ChaCha8Rng;
 use vibegraph::artifact::ChannelSampler;
 use vibegraph::cuts::Cuts;
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
+    channel_diagrams, compile_subprocesses, initial_spin_color_average, process_external_legs,
+    FixedBeamIntegrand, FixedBeams,
 };
-use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use vibegraph::phasespace::{AlphaAdaptation, GEV2_TO_PB};
@@ -136,6 +138,21 @@ use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
 /// expected; 3.5 leaves headroom over the nominal 3-sigma target without
 /// admitting a genuine normalisation error (which shows up as a many-sigma pull
 /// once the budget makes `err_vg` small).
+///
+/// This is a false-positive rate against a trial count, not a tolerance, and it
+/// is read that way. `probe_gate_row_seed_headroom` sweeps every gated row over
+/// five seeds at its own plan budget: the worst pull per row runs `0.51`
+/// (`gg_to_ttx`) to `2.65` (`ddx_to_epemg`), with a median near `1.5`. That is
+/// what a correctly sized bound on the maximum of five roughly standard-normal
+/// draws looks like — the expected maximum is about `1.16` and the bound is
+/// crossed once in some hundreds of rows — so a row reading "only" twice inside
+/// this limit is the instrument working rather than a margin running out. A
+/// limit with more room than that would have stopped rejecting.
+///
+/// The one row the sweep puts *above* it is `ee_to_mumua` at `3.56`, which is
+/// the row [`PULL_REPORTED_NOT_ASSERTED`] names and the measurement that keeps
+/// that list from being vacuous: without the exemption the gate would fail on a
+/// disagreement it has separately established is the reference's own.
 const PULL_LIMIT: f64 = 3.5;
 
 /// The gated rows whose pull is reported rather than asserted, and why the pull
@@ -191,10 +208,14 @@ const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
 /// cost lands almost entirely on the α survey, so the row runs in 17 s at its
 /// gate budget against 16 s at a twentieth of it.
 ///
+/// `gg_to_gg_cg` is here for the same reason on a different operator: `O_G`'s
+/// higher-derivative four-gluon vertex carries `cG` alongside the strong
+/// coupling, so its pool entry is not a monomial in `G` either.
+///
 /// Membership is asserted in both directions in [`with_integrand`]: a row that
 /// stopped falling back would leave a stale entry here, and one that started
 /// would be a silent hundredfold on the banked layer.
-const SCALE_FALLBACK_ROWS: [&str; 1] = ["gg_to_ttx_smlimit_qcd2"];
+const SCALE_FALLBACK_ROWS: [&str; 2] = ["gg_to_gg_cg", "gg_to_ttx_smlimit_qcd2"];
 
 /// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
 const SEED: u64 = 20_260_719;
@@ -221,9 +242,6 @@ enum Plan {
     /// measured and recorded rather than absorbed into a widened `rel_tol`, and
     /// the arm a demotion lands on.
     ///
-    /// The attribute keeps the rung available while every row happens to be
-    /// enforced; it is what [`plan_for`] returns for a row that is not.
-    #[allow(dead_code)]
     Info {
         neval: usize,
         niter: usize,
@@ -434,11 +452,27 @@ fn plan_for(dir: &str) -> Plan {
         // channel other than the first, and both are numerically identical to
         // what they were when every point was clustered in channel 1: over five
         // seeds at this budget and at four times it
-        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 3.9e-3 and
-        // 5.6e-3 with means +2.8e-3 / +4.3e-3, flat across the ladder and inside
-        // twice the banked run's own 0.21% and 0.20% Monte-Carlo error.
-        // `rel_tol` is set at 0.01 by that spread rather than by the reference's
-        // error, which is the tighter of the two here.
+        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 4.2e-3 and
+        // 6.3e-3 at one times, 2.8e-3 and 5.5e-3 at four, with means +3.0e-3 /
+        // +4.5e-3 falling to +2.2e-3 / +4.2e-3 — inside twice the banked runs'
+        // own 0.21% and 0.20% Monte-Carlo error. `rel_tol` is set at 0.01 by that
+        // spread rather than by the reference's error, which is the tighter of
+        // the two here.
+        //
+        // `ddx_to_epemg` is the narrower of the pair and the narrowest σ cell in
+        // this file: its worst seed sits `1.6x` inside `rel_tol` and its worst
+        // pull `1.3x` inside `PULL_LIMIT`. Neither margin is a seed accident. The
+        // residual is a converged offset — mean `+0.45%` at this budget and
+        // `+0.42%` at four times it — against a reference whose own error is
+        // `0.20%`, so what the bound has room for after the offset is another
+        // `0.35%`. The pull cannot run away with budget the way a systematic's
+        // usually does, because the combined error here is the reference's:
+        // quadrupling the points halves `err_vg` and leaves the worst pull at
+        // `2.62` against `2.65`, its saturation value `rel / (σ_MG err / σ_MG)`
+        // ≈ `2.2` plus seed scatter. Spending four times the points is what
+        // would buy margin on `rel` — it is measured at `5.5e-3` worst there —
+        // and that is a budget decision this row's ladder has not been asked to
+        // make.
         "uux_to_epemg" | "ddx_to_epemg" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -462,10 +496,17 @@ fn plan_for(dir: &str) -> Plan {
         //
         // `rel_tol` 0.005 is set from the larger of the reference's own
         // Monte-Carlo error (0.18% and 0.20%) and the measured five-seed spread
-        // (worst |rel| 1.35e-3 and 1.51e-3 at this budget, 1.53e-3 and 1.20e-3 at
-        // four times it — `probe_llj_parton_seed_stability`), with headroom over
-        // both. It is not fitted to the achieved central value, which is smaller
-        // than either.
+        // (worst |rel| 1.84e-3 and 2.63e-3 at this budget, 1.27e-3 and 1.37e-3 at
+        // four times it — `probe_llj_parton_seed_stability`). It is not fitted to
+        // the achieved central value, which is smaller than either: the five-seed
+        // means are +7.3e-4 and −6.3e-4.
+        //
+        // `gux_to_epemux`'s worst seed clears `rel_tol` by `1.9x`, and the
+        // distinction that matters is that this is spread and not an offset. One
+        // seed of the five lands at −2.63e-3 where the other four are inside
+        // 8.7e-4, and quadrupling the budget takes the worst to 1.37e-3 and the
+        // mean to −1.4e-4. A bound whose margin is eaten by the estimator's own
+        // scatter is bought back with points rather than with tolerance.
         "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -552,50 +593,75 @@ fn plan_for(dir: &str) -> Plan {
             rel_tol: 0.005,
         },
         // ── the toy models' cross sections ──────────────────────────────────
-        // Colour-singlet incoming legs, where this crate's fixed-beam convention and
-        // MadGraph's agree.
+        // Colour-singlet incoming legs at 10 GeV, where the two conventions differ
+        // by 2e-7 relative: an O(m^2/s-hat) flux deficit cancelled by an |M|^2
+        // excess of the same size.
         "ll_to_qqx_toy_dipole" | "ll_to_qqx_toy_tensor" => Plan::Gate {
             neval: 40_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // The three rows with *massive* incoming particles, measured and not
-        // enforced. `FixedBeamIntegrand` puts both beams on the light cone at
-        // `sqrt(s-hat)/2` and takes the flux as `1/(2 s-hat)`; MadGraph puts each beam
-        // on its own mass shell at the run card's energy and boosts to the partonic
-        // centre of mass, which its banked events show directly (`p3 r3` at 60 and
-        // 70 GeV records incoming `pz = +-241.350` and `E = 248.696 / 251.296`, so
-        // even `s-hat` differs -- 499.99275 against 500). Every other fixed-energy row
-        // in the suite has massless incoming particles, so nothing here could see it.
+        // The three rows with *massive* incoming particles: 60 and 70 GeV diquark
+        // beams at 250 + 250, and 50 GeV `qt qt~` at the same. They are the suite's
+        // only test of the initial state a fixed-energy run actually collides --
+        // `s-hat = m_a^2 + m_b^2 + 2(E_a E_b + |p_a||p_b|)` rather than
+        // `(E_1 + E_2)^2`, beams on their own mass shells in the partonic centre of
+        // mass, and the Moller flux `2 lambda^(1/2)(s-hat, m_a^2, m_b^2)` rather
+        // than `2 s-hat`. The flux alone is 3.46% smaller on the diquark rows.
         //
-        // The size is localised, not inferred. A 200-node Gauss-Legendre quadrature
-        // of the same amplitudes over `cos(theta)` reproduces this side's own Monte
-        // Carlo under the massless-beam convention (-6.77e-2 / -6.06e-2 / -6.76e-2
-        // against the sweeps' -6.77e-2 / -6.03e-2 / -6.73e-2) and lands on the banked
-        // sigma under MadGraph's (-7.8e-4, -2.1e-4, -5.2e-4, against reference errors
-        // of 1.0e-3, 4.3e-4 and 4.6e-4). Its control is `ee_to_ttx_smlimit`, whose
-        // massless beams make the two conventions identical and both -1.3e-4 of the
-        // bank.
+        // The kinematics themselves are fixed by a finer oracle than a cross
+        // section, these rows' incoming-leg columns in `validate_samples`: the
+        // beams this integrand evaluates at are MadGraph's banked record to its
+        // printed precision (`E = 248.69635439 / 251.29639211`,
+        // `pz = +-241.35011226` on `p3 r3`; `pz = +-244.94897428` on `qt qt~`).
+        // What this cell adds is that the flux and the frame the amplitude is
+        // evaluated in follow, neither of which is visible in a momentum.
         //
-        // The ladder is what says this is not sampling: rel holds at -6.7e-2, -6.0e-2
-        // and -6.7e-2 from a quarter of the budget to four times it while the pull
-        // grows from -43 to -63, -42 to -113 and -47 to -120.
+        // `rel_tol` is the toy-row convention, set from the measured five-seed
+        // spread (`probe_non_sm_seed_stability`) and not from the achieved central
+        // value: worst |rel| 1.9e-3, 1.0e-3 and 1.1e-3 over the seeds at chi2/dof
+        // 0.98, 0.99 and 0.68, inverse-variance means -9.1e-4, +6.9e-5 and -2.4e-4.
+        // The ladders converge rather than drift -- `p3 r3` epsilon reads +3.6e-3 /
+        // +1.3e-3 / +8.0e-4 / +6.2e-4 / +2.2e-4 from a quarter of the budget to four
+        // times it -- which is what says the residual is sampling.
         "qqx_to_o8o8_toy_dcolor" | "p3r3_to_p3r3_toy_epsilon" | "p3r3_to_p3r3_toy_sextet" => {
-            Plan::Info {
+            Plan::Gate {
                 neval: 40_000,
                 niter: 6,
-                reason: "massive incoming legs: this side builds them massless at \
-                         sqrt(s-hat)/2 with flux 1/(2 s-hat), MadGraph on shell at the card \
-                         energy in the partonic centre of mass",
+                rel_tol: 0.005,
             }
         }
-        // ── the two rows whose banked run card this crate refuses ───────────
-        // Neither script asks for these settings; MadGraph chose them for the
+        // The one banked row integrated at one of `setscales.f`'s closed forms
+        // rather than at the clustering: MadGraph chose
+        // `dynamical_scale_choice = 3` — half the sum of final-state transverse
+        // masses — for this process itself, the row's own `.mg5` script asking
+        // for no scale at all.
+        //
+        // Measured and reported rather than asserted, because the residual is a
+        // converged offset with no attribution yet. The five seeds are mutually
+        // consistent at chi2/dof 1.01 and their inverse-variance mean sits at
+        // rel -2.21e-3, which is 2.6x the reference's own 8.5e-4 relative error,
+        // and the budget ladder settles rather than shrinks (rel +4.9e-4 /
+        // -1.2e-3 / -1.2e-3 / -2.9e-3 / -2.9e-3 across a sixteenfold budget). So
+        // it is not sampling. What it is not, either, is the scale formula: the
+        // per-event replay reproduces both printed scales on all 10 000 banked
+        // events inside their own printing budget, worst 0.999 of it, with
+        // AQCDUP recovered from the computed mu_R on every one. And it is not
+        // the process's own convergence: `gg_to_gg` is the same final state
+        // under a run card differing in this one field, and sits at rel +9.8e-6.
+        // The offset therefore lives in what those two comparisons do not cover
+        // — the coupling this row's matrix element runs at across the whole cut
+        // region, rather than on the events MadGraph kept.
+        "gg_to_gg_cg" => Plan::Info {
+            neval: 40_000,
+            niter: 6,
+            reason: "sigma is a converged -0.22% below the bank, seed-consistent at chi2/dof \
+                     1.01, while the per-event scale replay reproduces every banked event's \
+                     SCALUP and AQCDUP: measured and reported until the offset is attributed",
+        },
+        // ── the row whose banked run card this crate refuses ────────────────
+        // Its script does not ask for the setting; MadGraph chose it for the
         // process, and the run card is part of the reference.
-        "gg_to_gg_cg" => Plan::Skip(
-            "MadGraph ran it at dynamical_scale_choice = 3, and the closed forms for 1-5 \
-             are computed nowhere a cross section reads them",
-        ),
         "wpwm_to_wpwmz_cw" => Plan::Skip(
             "MadGraph ran it at nhel = 1, Monte-Carlo over helicities, which the run card \
              parser refuses because it changes both the estimator and the per-event weight",
@@ -889,7 +955,6 @@ fn with_integrand<R>(
         BeamMode::FixedEnergy,
         "[{dir}] banked as fixed-energy but run card is not lpp=0"
     );
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
 
     let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
@@ -904,6 +969,7 @@ fn with_integrand<R>(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, &model, &evaluated);
+    let beams = FixedBeams::from_run_card(&run_card, &legs);
     let cuts = Cuts::compile(&run_card, &legs)
         .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
@@ -918,7 +984,7 @@ fn with_integrand<R>(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
     // Evaluate alpha_s at the run card's own per-event renormalisation scale, the way
     // MadGraph does, rather than at the param card's value. Installed before the
     // multichannel adaptation so the alpha survey sees the integrand the integration
@@ -946,7 +1012,20 @@ fn with_integrand<R>(
             trajectory: Vec::new(),
             variance_shares: Vec::new(),
         });
-    f(&integ, &report)
+    let out = f(&integ, &report);
+    // The per-point scale-configuration draw falls back to the sampling channel
+    // when the squared amplitude it draws from is not finite, which is the only
+    // way a NaN `AMP2` reaches production without saying anything. The counter
+    // exists to be read; reading it here is what makes the path loud.
+    assert_eq!(
+        integ.scale_draw_fallbacks(),
+        0,
+        "[{dir}] the scale-configuration draw fell back to the sampling channel on \
+         {} points: their squared amplitudes summed to something the draw could not \
+         normalise",
+        integ.scale_draw_fallbacks(),
+    );
+    out
 }
 
 /// Seed-stability sweep for the resonant multichannel rows: integrate each across
@@ -1063,13 +1142,107 @@ fn probe_smeft_capstone_seed_stability() {
     );
 }
 
+/// The seeds every headroom measurement in this file is formed over — AGENTS.md's
+/// standard, and the same five the per-family sweeps above use so their numbers
+/// and this one's are the same statistic.
+const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+
+/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against the spread of five
+/// seeds at that row's own plan budget — the headroom census behind the
+/// single-seed gate.
+///
+/// The gate spends one seed, so what it asserts is one draw from a distribution
+/// it never sees. That is sound only while the bound sits well outside the whole
+/// distribution, and "well outside" is a measurement: this prints, per row, the
+/// worst `|rel|` and `|pull|` over the five seeds, the χ²/dof of the seeds about
+/// their own inverse-variance mean, and the ratio of each bound to the worst
+/// value under it. A ratio near one is a row whose next sampling-stream change
+/// fails the gate on the draw rather than on the physics.
+///
+/// It subsumes no per-family sweep: those carry a budget ladder beside the seeds,
+/// which is the axis that separates a sampling residual from a defect, and this
+/// one deliberately does not — one rung, every gated row, so the census is a
+/// single command. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_gate_row_seed_headroom() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let unbundled = common::manifest::unbundled_rows();
+    let mut lines = Vec::new();
+    for (dir, e) in &banked {
+        let Plan::Gate {
+            neval,
+            niter,
+            rel_tol,
+        } = plan_for(dir)
+        else {
+            continue;
+        };
+        if !matches!(run_presence(dir, &unbundled), RunPresence::Present) {
+            eprintln!("── {dir}: run directory absent, skipped ──");
+            continue;
+        }
+        eprintln!(
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter}, rel_tol {rel_tol} ──",
+            e.sigma_pb,
+            e.sigma_err_pb,
+            100.0 * e.sigma_err_pb / e.sigma_pb
+        );
+        let mut runs = Vec::new();
+        for seed in HEADROOM_SEEDS {
+            let t = std::time::Instant::now();
+            let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
+            let (pull, rel) = compare(s, err, e);
+            eprintln!(
+                "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+7.2} | \
+                 rel {rel:+.3e} | chi2/dof {chi2:.2} | {:.1} s",
+                t.elapsed().as_secs_f64()
+            );
+            runs.push((s, err, pull, rel));
+        }
+        let w: f64 = runs.iter().map(|(_, err, _, _)| 1.0 / (err * err)).sum();
+        let mean: f64 = runs
+            .iter()
+            .map(|(s, err, _, _)| s / (err * err))
+            .sum::<f64>()
+            / w;
+        let chi2: f64 = runs
+            .iter()
+            .map(|(s, err, _, _)| ((s - mean) / err).powi(2))
+            .sum::<f64>()
+            / (runs.len() - 1) as f64;
+        let worst_rel = runs.iter().fold(0.0f64, |a, (_, _, _, r)| a.max(r.abs()));
+        let worst_pull = runs.iter().fold(0.0f64, |a, (_, _, p, _)| a.max(p.abs()));
+        let line = format!(
+            "HEADROOM {dir:<26} {neval:>7}x{niter} | rel_tol {rel_tol:.4} vs worst |rel| \
+             {worst_rel:.3e} -> {:5.1}x | PULL_LIMIT {PULL_LIMIT} vs worst |pull| \
+             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | chi2/dof {chi2:.2}",
+            rel_tol / worst_rel,
+            PULL_LIMIT / worst_pull,
+            mean / e.sigma_pb - 1.0,
+        );
+        eprintln!("  {line}");
+        lines.push(line);
+    }
+    eprintln!(
+        "\n──────── census ({} gated rows, {} seeds) ────────",
+        lines.len(),
+        HEADROOM_SEEDS.len()
+    );
+    for line in &lines {
+        eprintln!("{line}");
+    }
+}
+
 /// The rows the σ gate reaches beyond the Standard Model: the SMEFTsim ladder's
 /// own cross sections and the toy models'. Every one of them has a banked
 /// fixed-energy σ and is measured here, gated or not.
-const NON_SM_SIGMA_ROWS: [&str; 16] = [
+const NON_SM_SIGMA_ROWS: [&str; 17] = [
     "ee_to_mumu_smlimit",
     "gg_to_ttx_smlimit",
     "gg_to_ttx_smlimit_qcd2",
+    "gg_to_gg_cg",
     "ee_to_ttx_smlimit",
     "ee_to_wpwm_cw",
     "ee_to_ttx_dipole",
@@ -2214,7 +2387,6 @@ fn probe_scale_cost() {
     ] {
         let card_path = output_dir().join(dir).join("Cards/run_card.dat");
         let run_card = RunCard::parse_file(&card_path).expect("run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2225,6 +2397,7 @@ fn probe_scale_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&run_card, &legs);
         let cuts = Cuts::compile(&run_card, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2238,7 +2411,7 @@ fn probe_scale_cost() {
 
         let build = || {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg)
+            FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg)
         };
         let plain = build();
         let mut scaled = build();
@@ -2323,7 +2496,6 @@ fn probe_scale_draw_cost() {
             .collect();
         let off = RunCard::parse(&patched).expect("patched run card parses");
 
-        let sqrt_s = live.ebeam1 + live.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2334,6 +2506,7 @@ fn probe_scale_draw_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&live, &legs);
         let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2347,7 +2520,7 @@ fn probe_scale_draw_cost() {
 
         let build = |rc: &RunCard| {
             let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-            let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+            let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
             integ
                 .use_running_coupling(&diagrams, &model, &evaluated, rc)
                 .expect("scale prescription compiles");
@@ -2426,7 +2599,6 @@ fn probe_event_readout_cost() {
         let text = std::fs::read_to_string(output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("run card readable");
         let live = RunCard::parse(&text).expect("banked run card parses");
-        let sqrt_s = live.ebeam1 + live.ebeam2;
         let model = common::sm_model();
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(process);
@@ -2437,6 +2609,7 @@ fn probe_event_readout_cost() {
             .collect();
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&live, &legs);
         let cuts = Cuts::compile(&live, &legs).expect("compile cuts");
         let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
             .iter()
@@ -2448,7 +2621,7 @@ fn probe_event_readout_cost() {
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let mut integ = FixedBeamIntegrand::new(amps, &cuts, sqrt_s, final_masses.clone(), avg);
+        let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses.clone(), avg);
         integ
             .use_running_coupling(&diagrams, &model, &evaluated, &live)
             .expect("scale prescription compiles");
@@ -2871,7 +3044,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                 let set = &sets[0];
                 assert_eq!(
                     integ.channel_count(),
-                    set.diagram_count(),
+                    set.len(),
                     "[{dir}] the sampling channels and the channel forests were built \
                      from different diagram slices, so this sweep is not a sweep over \
                      configurations"
@@ -2907,7 +3080,7 @@ fn probe_cluster_scale_spread_over_configurations() {
                         worst[k] = worst[k].max(hi[k] / lo[k] - 1.0);
                     }
                 }
-                Some((set.len(), set.unmapped_channels(), kept, worst))
+                Some((set.len(), kept, worst))
             },
         );
         match report {
@@ -2915,8 +3088,8 @@ fn probe_cluster_scale_spread_over_configurations() {
                 "{dir}: no per-event prescription — nothing in this row's cross section \
                  reads a scale"
             ),
-            Some((configs, unmapped, kept, worst)) => println!(
-                "{dir}: {configs} configs ({unmapped} unmapped) over {kept} points | \
+            Some((configs, kept, worst)) => println!(
+                "{dir}: {configs} configs over {kept} points | \
                  worst spread mu_R {:.3e} | mu_F1 {:.3e} | mu_F2 {:.3e}",
                 worst[0], worst[1], worst[2]
             ),
@@ -3176,20 +3349,21 @@ fn probe_channel_map_degeneracy() {
         let entry = &banked[dir];
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate(&entry.process);
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let beams = FixedBeams::from_run_card(&run_card, &legs);
+        let sqrt_s = beams.sqrt_s();
         let cuts = Cuts::compile(&run_card, &legs).expect("cuts compile");
         let floor = cuts.spacelike_floor();
         let diagrams: Vec<_> = sets
             .iter()
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
-        let channels: Vec<DiagramChannel<f64>> = diagrams
-            .iter()
+        let channels: Vec<DiagramChannel<f64>> = channel_diagrams(&diagrams, &evaluated)
+            .into_iter()
             .map(|d| DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor))
             .collect();
 
@@ -3629,6 +3803,82 @@ const CONTROL_BOUND_FACTOR: f64 = 100.0;
 /// contact diagram, whose tree spans the whole final state — passes that trivially,
 /// so the count of points only a bounded channel reaches is reported beside it and
 /// is what says whether the process constrains anything.
+/// The integration channels are MadGraph's own, counted from the very run each row
+/// is compared against.
+///
+/// `coloramps.inc` declares `ICOLAMP(maxflows, nconfigs, nsubproc)`. On a process
+/// directory holding one subprocess those leading dimensions are the colour-flow
+/// count and the number of integration configurations MadEvent runs — the channel
+/// set the multichannel sampler here is built on, and the columns its colour draw
+/// is masked with. They come from MadGraph's own exporter rather than from a dump
+/// this repository asked it for, so a channel set that drifted from
+/// `IdentifyConfigTag` fails here whether or not the per-process amplitude tables
+/// were regenerated with it. The committed `validation/madgraph/configs.json`
+/// carries them (`extract_configs.py`, the same route as `diagrams.json`), which
+/// is what lets the check run on a checkout holding the reference bundle rather
+/// than a MadGraph work area — the bundle carries no generated Fortran beyond
+/// the two files the other gates parse.
+///
+/// Only single-subprocess directories take part: a grouped one writes one
+/// `nconfigs` over the whole group, which no single subprocess's diagrams
+/// determine, and the extractor leaves those rows out.
+#[test]
+fn the_channel_count_is_madgraphs_configuration_count() {
+    #[derive(Deserialize)]
+    struct Dims {
+        flows: usize,
+        configs: usize,
+    }
+    // The process string of every single-subprocess row: the amplitude rows carry
+    // one in their `mg_amplitude` table, the rest in the sigma reference.
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    let mut processes = common::manifest::mg_amplitude_processes();
+    for (dir, e) in &banked {
+        processes
+            .entry(dir.clone())
+            .or_insert_with(|| e.process.clone());
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/configs.json");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let counts: BTreeMap<String, Dims> = serde_json::from_str(&text).unwrap();
+    let mut checked = 0usize;
+    for (dir, dims) in &counts {
+        let process = processes.get(dir).unwrap_or_else(|| {
+            panic!("[{dir}] in configs.json but in no table that names its process")
+        });
+        let model = row_model(dir);
+        let sets = common::generate_with(process, model.as_ref());
+        let non_empty: Vec<_> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+        assert_eq!(
+            non_empty.len(),
+            1,
+            "[{dir}] the enumeration produced several subprocesses"
+        );
+        let evaluator = AmplitudeEvaluator::compile(non_empty[0], model.as_ref())
+            .unwrap_or_else(|err| panic!("[{dir}] compile: {err}"));
+        assert_eq!(
+            (evaluator.n_flows(), evaluator.n_configs()),
+            (dims.flows, dims.configs),
+            "[{dir}] (NCOLOR, integration configurations) against MadGraph's own \
+             ICOLAMP declaration"
+        );
+        println!(
+            "{dir}: {} diagrams -> {} integration configurations over {} colour flows, \
+             MadGraph's own count",
+            non_empty[0].diagrams.len(),
+            dims.configs,
+            dims.flows,
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 30,
+        "only {checked} banked runs carried a single-subprocess ICOLAMP declaration"
+    );
+}
+
 ///
 /// The control is the second half. The same channels with every bound pushed out by
 /// [`CONTROL_BOUND_FACTOR`] have to *lose* accepted points somewhere, or the pass
@@ -3670,13 +3920,14 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
         }
         let run_card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat"))
             .expect("banked run card parses");
-        let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
         let model = row_model(dir);
         let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
         let sets = common::generate_with(&entry.process, model.as_ref());
         let evals = compile_subprocesses(&sets, &model, &evaluated).expect("compile subprocesses");
         let rep = &evals[0];
         let legs = process_external_legs(rep, &model, &evaluated);
+        let fixed_beams = FixedBeams::from_run_card(&run_card, &legs);
+        let sqrt_s = fixed_beams.sqrt_s();
         let cuts = Cuts::compile(&run_card, &legs).expect("run card cuts compile");
         let floor = cuts.spacelike_floor();
 
@@ -3686,22 +3937,15 @@ fn every_bounded_channel_set_covers_its_own_fiducial_region() {
             .iter()
             .map(|&id| evaluated.mass(id))
             .collect();
-        let beams: Vec<LorentzVector<f64>> = (0..n_in)
-            .map(|a| {
-                let m = evaluated.mass(particles[a]);
-                let e = sqrt_s / 2.0;
-                let pz = (e * e - m * m).max(0.0).sqrt();
-                LorentzVector::new(e, 0.0, 0.0, if a == 0 { pz } else { -pz })
-            })
-            .collect();
+        let beams: Vec<LorentzVector<f64>> = fixed_beams.momenta().to_vec();
 
         let diagrams: Vec<_> = sets
             .iter()
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
         let build = |cap: Option<f64>| -> Vec<DiagramChannel<f64>> {
-            diagrams
-                .iter()
+            channel_diagrams(&diagrams, &evaluated)
+                .into_iter()
                 .map(|d| {
                     let ch = DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor);
                     match cap {
@@ -3981,8 +4225,6 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
 
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let run_card = RunCard::parse_file(&card_path).expect("real run card parses");
-    let sqrt_s = run_card.ebeam1 + run_card.ebeam2;
-
     let model = row_model(dir);
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(dir));
 
@@ -4016,12 +4258,13 @@ fn channel_set(dir: &str, process: &str) -> (Vec<vibegraph::phasespace::DiagramC
             }
         })
         .collect();
+    let sqrt_s = FixedBeams::from_run_card(&run_card, &legs).sqrt_s();
     let cuts = Cuts::compile(&run_card, &legs)
         .unwrap_or_else(|e| panic!("[{dir}] run card activates a cut vibegraph cannot apply: {e}"));
     let floor = cuts.spacelike_floor();
 
-    let built = diagrams
-        .iter()
+    let built = channel_diagrams(&diagrams, &evaluated)
+        .into_iter()
         .map(|d| {
             DiagramChannel::from_diagram_regulated(d, &evaluated, sqrt_s, floor)
                 .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
