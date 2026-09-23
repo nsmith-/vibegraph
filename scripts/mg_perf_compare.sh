@@ -18,10 +18,12 @@
 #              `eval_m2/forward/*` rows of benches/eval_strategies.rs, divided
 #              by the bench's points-per-iteration batch size. Never the
 #              `amplitude_oracle` timing report (its extended-validation build
-#              compiles per-node cross-checks into the eval loop). The bench's
-#              own row set comes from validation/manifest.toml's
-#              `mg_amplitude` tables, so it and mg_timings.json are always
-#              generated from the same registry.
+#              compiles per-node cross-checks into the eval loop). The bench
+#              covers a representative SM subset of validation/manifest.toml's
+#              `mg_amplitude` rows (BENCH_ROWS), reading each row's process
+#              card from that table, so every joined row compares the same
+#              card on both sides; mg_timings.json rows outside the subset are
+#              listed as unjoined.
 #
 # Runs the forward (scalar) bench rows only; SIMD lane-width questions are the
 # separate AVX-512 kit (scripts/dump_lane_asm.sh, note 18 §5). RUSTFLAGS is
@@ -35,9 +37,9 @@
 # joins are visible).
 #
 # A process on only one side of the mg_timings.json / criterion join is
-# reported, not silently dropped: either the manifest gained a row the bench
-# has not been re-run against, or a bench row's compiled MATRIX1 module and
-# timing entry do not exist yet.
+# reported, not silently dropped: an mg_amplitude row outside the bench's
+# subset (or one the bench has not been re-run against), or a bench row whose
+# compiled MATRIX1 module and timing entry do not exist yet.
 #
 # Output: fingerprint + table on stdout; the same as markdown + TSV in
 # target/mg-perf/mg_compare_<os>_<arch>.{md,tsv} for banking in the perf

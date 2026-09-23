@@ -382,3 +382,181 @@ MG net's tolerances, never bit-for-bit against the pre-change output. The
 `pack_lane_points` / `eval_m2_lanes_packed` split is **order-preserving** (the same
 two operations, same order, one call boundary moved) and the lane-identity test
 holds exactly.
+
+## x86 AVX-512 re-measurement (Emerald Rapids, 2026-09-23)
+
+**Status: lanes lose to scalar on AVX-512 silicon too, and by more than on ARM;
+the cause is an inlining failure in the lane field's arithmetic, not the vector
+width.** This section supersedes the lane-width reading of the AVX2 sections
+above (see "What this corrects").
+
+Host: Intel Xeon family 6 model 207 (Emerald Rapids, 5th-gen Xeon Scalable) at
+2.1 GHz, a 4-vCPU Firecracker microVM under KVM, 15 GiB. Full AVX-512 (F/DQ/BW/VL,
+FP16, BF16) plus AMX. `rustc 1.94.1`; `RUSTFLAGS="-C target-cpu=native"` resolves
+to `emeraldrapids`, whose LLVM tuning carries `prefer-256-bit`. Bench profile
+(`release`, fat LTO), tree at `02e8b25`.
+
+### Per-event ratio to scalar
+
+Every bar is 16 events, so `lanesN ÷ forward` is per event, and >1 is slower.
+The first run covered all 23 SM rows the bench then carried (it stopped at the
+first 2→1 row, see the bench note below):
+
+| 23 SM rows | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| median | 5.24× | 7.98× | 9.84× |
+| suite Σ (cost-weighted) | 7.11× | 9.24× | 10.50× |
+| suite Σ, `_prepacked` | 7.07× | 8.74× | 10.55× |
+
+The bench now carries a fixed 8-row representative SM set. Re-run on it:
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 8.2 | 4.25× | 6.01× | 7.92× |
+| `ee_to_wpwm` | 31.0 | 5.84× | 8.91× | 11.24× |
+| `uux_to_uux` | 13.0 | 4.90× | 6.28× | 8.03× |
+| `gg_to_gg` | 39.4 | 4.29× | 6.31× | 8.70× |
+| `gg_to_ttx` | 24.6 | 5.28× | 6.92× | 8.85× |
+| `ee_to_mumua` | 34.5 | 6.98× | 9.71× | 11.35× |
+| `ee_to_mumu_tata_qcd0` | 152.2 | 7.37× | 9.58× | 11.47× |
+| `uux_to_ccx_emmm_qcd0` | 3093.6 | 7.71× | 10.10× | 11.81× |
+| **median** | | **5.56×** | **7.92×** | **10.04×** |
+| **suite Σ** | | **7.59×** | **9.97×** | **11.71×** |
+
+Three things read straight off these tables:
+
+- **Every width loses on every row**, by 4–12×, worse than the M3's 2.4–8×.
+- **The loss grows with width.** Real SIMD makes an event cheaper as the pack
+  widens; here each doubling costs more per event. That points to work that
+  scales with `N`: calls and copies, not arithmetic.
+- **The transpose is still exonerated**: on the 8-row run `_prepacked` sits
+  −6.6% … +1.7% of the lane bar. The 23-row run's one large cell
+  (`gu_to_epemu` `lanes2_prepacked`, +23%) is *slower* with the transpose
+  removed, so it is noise, not a transpose cost.
+
+Run-to-run noise on this VM, from `forward` in the two runs of the same binary
+(`ee_to_mumu` 8.4 / 8.2, `ee_to_wpwm` 29.9 / 31.0, `gg_to_gg` 40.4 / 39.4 µs):
+**≈2–4%**. Each configuration is one run. Every conclusion below rests on
+differences of 3× or more.
+
+### The disassembly: packed leaves, called out of line
+
+Per `fill_arenas` monomorphisation in the timed binary. FP counts are the
+arithmetic mnemonics (`v{fmadd…,mul,add,sub,div,sqrt}{pd,sd}`). `arith calls`
+are calls into `numeric-array` / `generic-array` / `num_complex`:
+
+| instance | insns | packed pd (xmm / ymm) | scalar sd | calls | arith calls | memcpy |
+|---|--:|--:|--:|--:|--:|--:|
+| scalar `f64` (two copies) | 3 693 / 4 217 | 12+54 / 138+82 | 494 / 793 | ≈190 | 0 | 0 |
+| lane instance A | 11 867 | 198 / 51 | 0 | 860 | 634 | 15 |
+| lane instance B | 30 999 | 1 / 0 | 6 | 1 587 | 1 254 | 90 |
+| lane instance C | 24 465 | 1 / 0 | 2 | 1 497 | 1 254 | 19 |
+
+The lane bodies contain almost no floating-point arithmetic. In the two widest,
+1–6 FP ops sit among 25–31k instructions. All of their arithmetic is in about
+1 250 out-of-line calls. For the widest body those break down as:
+
+| callee | calls | what it carries |
+|---|--:|---|
+| `GenericArray::from_iter` | 769 | every elementwise `+ − × ÷` and `neg` |
+| `NumericArray` `Float::mul_add` | 245 | every `cmul`/`cmul_add`/dot FMA |
+| `NumericArray::clone` | 124 | operand copies |
+| `num_complex` `Complex::mul` | 92 | `Instr::MulScalarC`, `Scale*C`, `impl_mul_for_array` with a complex scalar |
+
+The callees are correctly vectorised. `mul_add` for N = 2 / 4 / 8 compiles to 1
+xmm, 1 ymm and 2 ymm `vfmadd213pd`. But each call reads its operands through
+pointers, writes its result to memory and ends in `vzeroupper`. The N = 8 body
+also bounces its result through the stack. The `from_iter` bodies are worse: an
+unrolled *scalar* loop (`vdivsd`/`vmulsd`) with a compare-and-branch per
+element, because `GenericArray::from_iter` checks the iterator length. So a lane
+operation costs a call plus several memory round-trips, and part of the
+arithmetic runs one element at a time. That is the per-event cost that grows
+with `N`.
+
+The inlining attributes explain it. `numeric-array` 0.6.1's operator impls are
+`#[inline(always)]`, but they forward to `GenericArray::zip`/`map` →
+`FromIterator::from_iter`, which is a soft `#[inline]` in `generic-array`
+1.4.4. `NumericArray`'s `Float` methods and `num_complex`'s operators are also
+only `#[inline]`. None of these crates is ours. `#[inline(always)]` on our
+callers does not propagate into callees, so **no attribute in this tree can
+force the inlining**. The only in-tree lever is the `Complex::mul` row. Routing
+it through `cmul` removes 92 of about 1 250 calls, and `cmul` then calls the
+out-of-line `mul_add`.
+
+No zmm arithmetic is emitted anywhere. `lanes8` is two ymm halves, which is the
+`prefer-256-bit` tuning. Testing zmm is premature until the lane ops inline:
+with them out of line, it would only measure call overhead.
+
+### Force-inlining probe: `-C llvm-args=-inline-threshold=2000`
+
+Raising LLVM's inline threshold (default 225) is the only way to force those
+callees inline without changing crates. It is a global codegen flag, so it is a
+probe, not a fix. The same bench in a separate target dir:
+
+| instance | insns | packed pd (xmm / ymm) | arith calls | memcpy |
+|---|--:|--:|--:|--:|
+| lane A | 4 903 | 97 / 105 | 64 | 5 |
+| lane B | 23 126 | 8 / 737 | 63 | 75 |
+| lane C | 7 572 | 53 / 291 | 64 | 6 |
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 7.5 | 1.59× | 1.42× | 5.83× |
+| `ee_to_wpwm` | 33.2 | 1.97× | 1.71× | 6.81× |
+| `uux_to_uux` | 12.8 | 1.63× | 1.37× | 6.22× |
+| `gg_to_gg` | 40.2 | 1.66× | 1.44× | 6.25× |
+| `gg_to_ttx` | 24.6 | 1.62× | 1.44× | 6.24× |
+| `ee_to_mumua` | 34.3 | 1.78× | 1.80× | 7.33× |
+| `ee_to_mumu_tata_qcd0` | 153.6 | 1.73× | 1.73× | 7.17× |
+| `uux_to_ccx_emmm_qcd0` | 3179.5 | 1.64× | 1.75× | 7.11× |
+| **median** | | **1.65×** | **1.57×** | **6.53×** |
+| **suite Σ** | | **1.64×** | **1.74×** | **7.09×** |
+
+- **Inlining is most of the story.** `lanes2`/`lanes4` go from 5.6× / 7.9× of
+  scalar to 1.65× / 1.57×. The scalar path is within noise of the default build
+  (suite Σ `forward` +2.6%).
+- **It is not sufficient.** No width reaches parity. `lanes8` still inlines
+  badly: its instance keeps 75 `memcpy`s, the 128-byte `LaneField<8>`
+  temporaries and 512-byte `ComplexVector`s the `get_unchecked` episode above
+  already flagged. The 41 surviving `Complex::mul` calls are in-tree code.
+- Ideal packed arithmetic would put `lanes4` below 1× of scalar, around 0.3–0.5×
+  once the interpreter's per-instruction dispatch is amortised over the pack.
+  1.6× measures the lane field's remaining overhead, not a SIMD ceiling.
+
+### What this corrects in the sections above
+
+- The AVX2 tables are Δ% *within* one strategy. They never gave the lane ÷
+  scalar ratio, so "lanes8 −35%" said nothing about whether lanes pay. On this
+  evidence they did not on that host either.
+- Their width-to-width differences ("lanes4 benefits least") measured call and
+  copy overhead, not SIMD width: every lane build here is dominated by
+  out-of-line calls. FMA's win on the lanes is at least partly an inlining-cost
+  side effect. Fewer, fused operations mean fewer calls, which is equally
+  consistent with the `vpermpd`/`vblendpd` drop recorded there.
+- `zmm`=0 on the AVX2 host was true by construction, not a measurement.
+- `scripts/dump_lane_asm.sh` had the same blind spot: it counted packed ops per
+  function, and the out-of-line leaves census as packed. It now reports
+  `calls` / `arith_calls` per function and an inlining verdict. Its width verdict
+  reads packed arithmetic on zmm rather than any zmm use, because this
+  prefer-256-bit build still touches zmm in moves and compares.
+
+### Bench changes
+
+`eval_strategies` stopped at `bbx_to_h_identity`, a 2→1 row where RAMBO needs
+two final-state momenta. Every row after it names a SMEFTsim or toy UFO model,
+yet the bench built every row against the interned SM, so the four `*_smlimit`
+rows were silently timing plain SM processes. The bench now carries a fixed
+representative SM set (`BENCH_ROWS`). It reads each row's process string from
+its `mg_amplitude` table and rejects a row that names a model of its own.
+`mg_perf_compare.sh` lists the `mg_timings.json` rows outside the set as
+unjoined.
+
+### Reproduce
+
+```
+RUSTFLAGS="-C target-cpu=native" cargo bench -p vibegraph-lib --bench eval_strategies -- --save-baseline <name>
+RUSTFLAGS="-C target-cpu=native" scripts/dump_lane_asm.sh 'fill_arenas'
+# force-inlining probe, kept out of the main target dir:
+CARGO_TARGET_DIR=target/probe-inline RUSTFLAGS="-C target-cpu=native -C llvm-args=-inline-threshold=2000" \
+    cargo bench -p vibegraph-lib --bench eval_strategies
+```
