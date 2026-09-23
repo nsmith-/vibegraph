@@ -653,6 +653,37 @@ own scalar:
   is why the baseline lane ratios look so large: baseline `lanes2` (1.8 ms per 16
   events on `uux_to_ccx_emmm_qcd0`) already beats v3 *scalar* (3.2 ms).
 
+### Relaxed scalar multiply-add
+
+Every multiply-add now goes through `Real::mul_add_fast`: `Float::mul_add` where
+`HARDWARE_FMA` holds, `self * a + b` otherwise. `clippy.toml` bans
+`f64::mul_add`, `f32::mul_add` and `num_traits::Float::mul_add` everywhere else.
+A probe with one planted call of each kind confirmed both are caught. Scalar and
+lanes run the same operations on every target, so the lane-vs-scalar tests are
+bit-exact everywhere again, and `LaneField`'s own `Float::mul_add` keeps its
+single-rounding contract.
+
+Baseline x86-64 target, scalar `forward` µs per 16 events. "Before" is the
+software-FMA build (rustc 1.94, idle machine). "After" is rustc 1.98, pinned to
+one core while another job shared the VM, so cells carry a few percent of
+contention against a 2–4× effect:
+
+| process | before | after | speedup | after ÷ v3 scalar |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 19.7 | 8.7 | 2.28× | 1.04× |
+| `ee_to_wpwm` | 102.8 | 35.9 | 2.86× | 1.10× |
+| `uux_to_uux` | 34.3 | 14.3 | 2.39× | 1.09× |
+| `gg_to_gg` | 115.6 | 48.7 | 2.37× | 1.20× |
+| `gg_to_ttx` | 89.7 | 28.5 | 3.15× | 1.10× |
+| `ee_to_mumua` | 144.7 | 41.9 | 3.45× | 1.21× |
+| `ee_to_mumu_tata_qcd0` | 671.2 | 179.0 | 3.75× | 1.15× |
+| `uux_to_ccx_emmm_qcd0` | 14 066 | 3 713 | 3.79× | 1.18× |
+
+The amplitude oracle's residuals against MadGraph on the baseline target stay
+at the same 1e-16 to 6e-11 scale per process. The largest move is an
+improvement: `ee_to_mumu_tata_qcd0`'s worst per-event residual went from 6.0e-12
+to 2.8e-14.
+
 ### Reproduce
 
 ```

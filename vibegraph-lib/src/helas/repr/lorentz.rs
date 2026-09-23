@@ -18,18 +18,18 @@ use super::vectorspace::{impl_vectorspace, ArrayBacked};
 use super::{r, ri, Real, C};
 
 // Complex multiply-accumulate expressed through the real multiply-add
-// (`F::mul_add`), which lowers to a hardware FMA on both scalar `f64` and the SIMD
-// lane field where the target has one. The lane type implements `Float::mul_add`
-// (a method) but not the `num_traits::MulAdd` trait, so `Complex::mul_add` is
-// unavailable there; routing through the real `mul_add` keeps one code path for
-// every `F: Real`. One shared path also keeps the lane result bit-identical to the
-// scalar one wherever the lane `mul_add` fuses (`lane_field::FUSED_MUL_ADD`).
+// (`Real::mul_add_fast`): a hardware FMA on both scalar `f64` and the SIMD lane
+// field where the target has one, a product and a sum where it does not. The lane
+// type implements `Float::mul_add` (a method) but not the `num_traits::MulAdd`
+// trait, so `Complex::mul_add` is unavailable there; routing through the real
+// multiply-add keeps one code path for every `F: Real`, which is also what keeps
+// each lane bit-identical to the scalar result.
 
 /// Complex product `a * b` (three real FMAs after the leading `re`/`im` products).
 #[inline(always)]
 fn cmul<F: Real>(a: C<F>, b: C<F>) -> C<F> {
-    let re = (-a.im).mul_add(b.im, a.re * b.re);
-    let im = a.re.mul_add(b.im, a.im * b.re);
+    let re = (-a.im).mul_add_fast(b.im, a.re * b.re);
+    let im = a.re.mul_add_fast(b.im, a.im * b.re);
     C::new(re, im)
 }
 
@@ -48,8 +48,8 @@ fn mul_neg_i<F: Real>(z: C<F>) -> C<F> {
 /// Complex multiply-add `a * b + c`.
 #[inline(always)]
 fn cmul_add<F: Real>(a: C<F>, b: C<F>, c: C<F>) -> C<F> {
-    let re = a.re.mul_add(b.re, c.re) - a.im * b.im;
-    let im = a.re.mul_add(b.im, a.im.mul_add(b.re, c.im));
+    let re = a.re.mul_add_fast(b.re, c.re) - a.im * b.im;
+    let im = a.re.mul_add_fast(b.im, a.im.mul_add_fast(b.re, c.im));
     C::new(re, im)
 }
 
@@ -280,9 +280,9 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Momentum magnitude squared |p|² = px² + py² + pz²
     #[inline(always)]
     pub fn p3_squared(self) -> F {
-        self.0[3].mul_add(
+        self.0[3].mul_add_fast(
             self.0[3],
-            self.0[2].mul_add(self.0[2], self.0[1] * self.0[1]),
+            self.0[2].mul_add_fast(self.0[2], self.0[1] * self.0[1]),
         )
     }
 
@@ -295,7 +295,7 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     /// Invariant mass squared m² = E² - |p|².
     #[inline(always)]
     pub fn m2(self) -> F {
-        self.e().mul_add(self.e(), -self.p3_squared())
+        self.e().mul_add_fast(self.e(), -self.p3_squared())
     }
 
     /// Invariant mass m = √(E² - |p|²).
@@ -433,9 +433,9 @@ impl<F: Real, V: Variance> ComplexVector<F, V> {
         let o = &other.0;
         let acc = |sel: fn(&C<F>) -> F| {
             let a = sel(&self.0[0]) * o[0];
-            let a = (-sel(&self.0[1])).mul_add(o[1], a);
-            let a = (-sel(&self.0[2])).mul_add(o[2], a);
-            (-sel(&self.0[3])).mul_add(o[3], a)
+            let a = (-sel(&self.0[1])).mul_add_fast(o[1], a);
+            let a = (-sel(&self.0[2])).mul_add_fast(o[2], a);
+            (-sel(&self.0[3])).mul_add_fast(o[3], a)
         };
         C::new(acc(|c| c.re), acc(|c| c.im))
     }

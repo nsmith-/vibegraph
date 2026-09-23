@@ -796,26 +796,20 @@ coverage. What is left below is what still refuses, and why.
     under v3, so the lane-vs-scalar tests run there in exact mode. Adopting
     needs a consumer (the two items below), a `lanes4` σ/event gate against the
     scalar path, and a decision on whether the baseline asset batches too.
+  - Multiply-adds are `Real::mul_add_fast` everywhere: a hardware FMA where the
+    target has one, a product and a sum otherwise, with direct `mul_add` banned
+    by `clippy.toml`. That took the baseline build's scalar `forward` from
+    2.4–4.5× slower than v3 to 1.04–1.21×, and scalar and lanes are
+    bit-identical on every target again.
   - Re-measure on ARM, where `wide` is NEON `f64x2` and wider packs are pairs
     of it.
-- **Scalar `mul_add` on non-FMA targets** — `f64::mul_add` always fuses, so on a
-  target without hardware FMA (the baseline `x86_64-unknown-linux-musl` and
-  `x86_64-apple-darwin` release assets) every one is a software-FMA library
-  call. Measured on the same host: scalar `forward` is **2.4–4.5× slower** on
-  the baseline target than under `x86-64-v3` (`ee_to_mumu` 19.7 vs 8.3 µs,
-  `uux_to_ccx_emmm_qcd0` 14.1 vs 3.2 ms per 16 events). The lane field already
-  relaxes this: its `mul_add` is a hardware FMA where one exists and a product
-  and a sum otherwise (`lane_field::FUSED_MUL_ADD`). The scalar path could do
-  the same through a `Real` method with that contract. It is a production
-  numerics change on the baseline target only, at rounding level, and CI's MG
-  gate runs under v3 alone, so it needs a baseline-target run of the amplitude
-  oracle to go with it. Alternatively, `algebraic_*` below would subsume it.
 - **Associative float arithmetic (`f64::algebraic_*`)** — stable on 1.98 (CI's
   stable), not on 1.94. The ops license reassociation and contraction, so LLVM
   may form FMAs where the target has them and emit mul + add where it does not.
-  That removes the software-FMA cost above without hand-written `mul_add`, and
-  lets the scalar complex multiply use the packed `vmulpd`+`vaddsubpd` idiom the
-  shared real-FMA path gave up. Costs to weigh:
+  `Real::mul_add_fast` already removes the software-FMA cost on non-FMA
+  targets explicitly. What algebraic ops could add is freedom for LLVM to pick
+  the packed `vmulpd`+`vaddsubpd` complex-multiply idiom the shared real-FMA path
+  gave up, and to reassociate reductions. Costs to weigh:
   - Results depend on codegen: inlining context and opt level may contract
     differently. Every test asserting bit identity between two call sites of the
     same kernels would need auditing, not only lane-vs-scalar: helicity

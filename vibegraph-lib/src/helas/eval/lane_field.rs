@@ -8,14 +8,14 @@
 //! inline into the evaluator's dispatch loop. Every other `Float` method runs
 //! per lane through `f64`'s own method.
 //!
-//! Where the target has a hardware FMA ([`FUSED_MUL_ADD`]), each lane is
-//! bit-identical to the scalar `f64` computation: the packed operations are the
-//! IEEE-exact ones (correctly rounded `+ − × ÷ sqrt`, sign-bit `abs`/`neg`,
-//! single-rounding FMA), and everything else is literally the `f64` method.
-//! Without one, `mul_add` is a packed product and a packed sum, rounding twice,
-//! while scalar `f64::mul_add` still fuses (in software). Each lane then agrees
-//! with scalar to rounding, not bit for bit. That is the price of never calling
-//! a software FMA per lane.
+//! Each lane is bit-identical to the scalar `f64` computation: the packed
+//! operations are the IEEE-exact ones (correctly rounded `+ − × ÷ sqrt`, sign-bit
+//! `abs`/`neg`), and everything else is literally the `f64` method. The
+//! multiply-add the evaluator uses, [`Real::mul_add_fast`], is a packed hardware
+//! FMA where [`HARDWARE_FMA`] holds and a packed product and sum otherwise, the
+//! same operations scalar `f64` performs under that method. `Float::mul_add`
+//! keeps its single-rounding contract on every target (a software FMA per lane
+//! where there is no hardware one); nothing on the evaluation path calls it.
 //!
 //! Comparisons keep the pack-level semantics the lane-uniformity contract in
 //! [`super::lanes`] is written against: `==` holds when every lane is equal, and
@@ -30,14 +30,9 @@ use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use num_traits::{Float, FloatConst, Num, NumCast, One, ToPrimitive, Zero};
 
-/// Whether the lane field's `mul_add` is a single-rounding hardware FMA on this
-/// target. It is exactly when `wide`'s packed `mul_add` lowers to one: an x86
-/// target with `fma` enabled (x86-64-v3 and up) or aarch64 NEON. When it holds,
-/// every lane is bit-identical to scalar `f64`.
-pub const FUSED_MUL_ADD: bool = cfg!(any(
-    target_feature = "fma",
-    all(target_arch = "aarch64", target_feature = "neon")
-));
+#[cfg(test)]
+use crate::helas::repr::Real;
+use crate::helas::repr::HARDWARE_FMA;
 
 /// Lane-width marker: `Lanes<N>: SupportedLanes<N>` holds for every width with
 /// a packed representation.
@@ -67,7 +62,8 @@ pub trait LanePack<const N: usize>:
     fn to_array(self) -> [f64; N];
     fn sqrt(self) -> Self;
     fn abs(self) -> Self;
-    /// `self * a + b`: one rounding where [`FUSED_MUL_ADD`], two otherwise.
+    /// `self * a + b`: one rounding where [`HARDWARE_FMA`], two otherwise
+    /// (`wide`'s own contract).
     fn mul_add(self, a: Self, b: Self) -> Self;
 }
 
@@ -395,10 +391,17 @@ where
     fn abs(self) -> Self {
         Self(self.0.abs())
     }
-    /// Single rounding where [`FUSED_MUL_ADD`]; a product and a sum otherwise.
+    /// Single rounding on every target: the packed FMA where [`HARDWARE_FMA`]
+    /// holds, a software FMA per lane otherwise.
     #[inline(always)]
+    #[allow(clippy::disallowed_methods)] // the contract-preserving fallback
     fn mul_add(self, a: Self, b: Self) -> Self {
-        Self(LanePack::mul_add(self.0, a.0, b.0))
+        if HARDWARE_FMA {
+            Self(LanePack::mul_add(self.0, a.0, b.0))
+        } else {
+            let (x, a, b) = (self.to_array(), a.to_array(), b.to_array());
+            Self::from_array(std::array::from_fn(|k| x[k].mul_add(a[k], b[k])))
+        }
     }
 
     lanewise_unary!(
@@ -455,10 +458,12 @@ mod tests {
 
     /// Every packed operation against the scalar `f64` operation, bit for bit,
     /// on values chosen to exercise rounding (non-representable quotients, an
-    /// FMA whose unfused product rounds differently) and signed zero. `mul_add`
-    /// is pinned to the semantics [`FUSED_MUL_ADD`] claims for this target: the
-    /// fused result where it holds, the product-then-sum result where it does
-    /// not, so a flag that disagreed with the packed op would fail here.
+    /// FMA whose unfused product rounds differently) and signed zero.
+    /// `Float::mul_add` is pinned to single rounding on every target, and
+    /// `mul_add_fast` to the scalar `f64::mul_add_fast`, which is fused exactly
+    /// where [`HARDWARE_FMA`] claims. `wide`'s packed multiply-add is pinned to the
+    /// same flag, so a flag that disagreed with the packed op would fail here.
+    #[allow(clippy::disallowed_methods)] // compares against the fused reference
     fn packed_ops_match_scalar<const N: usize>()
     where
         Lanes<N>: SupportedLanes<N>,
@@ -482,10 +487,24 @@ mod tests {
         check(x / y, &|k| xs[k] / ys[k], "div");
         check(-x, &|k| -xs[k], "neg");
         check(x.abs().sqrt(), &|k| xs[k].abs().sqrt(), "sqrt");
-        if FUSED_MUL_ADD {
-            check(x.mul_add(y, z), &|k| xs[k].mul_add(ys[k], zs[k]), "mul_add");
-        } else {
-            check(x.mul_add(y, z), &|k| xs[k] * ys[k] + zs[k], "mul_add");
+        check(x.mul_add(y, z), &|k| xs[k].mul_add(ys[k], zs[k]), "mul_add");
+        check(
+            x.mul_add_fast(y, z),
+            &|k| xs[k].mul_add_fast(ys[k], zs[k]),
+            "mul_add_fast",
+        );
+        let packed = LanePack::mul_add(x.0, y.0, z.0).to_array();
+        for k in 0..N {
+            let want = if HARDWARE_FMA {
+                xs[k].mul_add(ys[k], zs[k])
+            } else {
+                xs[k] * ys[k] + zs[k]
+            };
+            assert_eq!(
+                packed[k].to_bits(),
+                want.to_bits(),
+                "packed mul_add lane {k} (N = {N})"
+            );
         }
         check(x.atan2(y), &|k| xs[k].atan2(ys[k]), "atan2");
     }
@@ -500,6 +519,7 @@ mod tests {
     /// The `mul_add` probe above only discriminates if some lane's unfused
     /// `x*y + z` rounds differently from the fused one.
     #[test]
+    #[allow(clippy::disallowed_methods)] // the fused reference itself
     fn mul_add_probe_separates_fused_from_unfused() {
         let (x, y, z) = (0.1_f64, 3.0_f64, -1e-17_f64);
         assert_ne!((x * y + z).to_bits(), x.mul_add(y, z).to_bits());

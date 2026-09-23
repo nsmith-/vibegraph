@@ -5,9 +5,9 @@
 //! one `eval_m2` pass over `N` phase-space points at once: every elementwise
 //! floating-point op (`+ - * /`, `sqrt`, `min`, `max`, `abs`, `signum`) executes
 //! the identical scalar operation independently per lane, so each extracted lane
-//! is bit-identical to the scalar `eval_m2` at the same point wherever the lane
-//! `mul_add` is a hardware FMA ([`FUSED_MUL_ADD`](super::lane_field::FUSED_MUL_ADD)),
-//! and agrees to rounding where it is not.
+//! is bit-identical to the scalar `eval_m2` at the same point. Multiply-adds go
+//! through [`Real::mul_add_fast`](crate::helas::repr::Real::mul_add_fast) on both
+//! sides, so fused or not, scalar and lanes round alike.
 //!
 //! # Lane-uniformity contract
 //!
