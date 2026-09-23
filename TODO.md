@@ -779,18 +779,60 @@ coverage. What is left below is what still refuses, and why.
   shared real-FMA path is a measurement, on both x86 and ARM. The in-house
   design stays at note 32 §2 S9.
 - **Lane batching into production** — the lane field is a `wide`-backed
-  `LaneField<N>` (`helas/eval/lane_field.rs`). On Emerald Rapids every lane op
-  inlines and lanes beat scalar per event at every width: 1.75× / 3.1× / 4.0×
-  throughput at N = 2 / 4 / 8, lanes8 on genuine zmm. The `numeric-array` field
-  it replaced lost 5.6–10× to scalar through ~1 250 out-of-line calls per
-  `fill_arenas`. (`x86-avx2-perf-study-results.md`, AVX-512 section.) Open:
+  `LaneField<N>` (`helas/eval/lane_field.rs`). Every lane op inlines, and on
+  Emerald Rapids lanes beat scalar per event at every width on all three x86
+  codegen levels (median cost vs that build's own scalar):
+
+  | build | lanes2 | lanes4 | lanes8 |
+  |---|--:|--:|--:|
+  | `target-cpu=native` (AVX-512) | 0.57× | 0.32× | 0.25× |
+  | `x86-64-v3` (AVX2) | 0.59× | 0.33× | 0.34× |
+  | baseline x86-64 (SSE2) | 0.18× | 0.17× | 0.18× |
+
+  (`x86-avx2-perf-study-results.md`, AVX-512 section.) Open:
+  - **Validate and adopt lane-batched eval for the `x86-64-v3` release asset**
+    (`release.yml`'s `-v3` musl leg). There N = 4 is the natural width: lanes8
+    is two ymm halves and buys nothing over lanes4. CI already builds and tests
+    under v3, so the lane-vs-scalar tests run there in exact mode. Adopting
+    needs a consumer (the two items below), a `lanes4` σ/event gate against the
+    scalar path, and a decision on whether the baseline asset batches too.
   - Re-measure on ARM, where `wide` is NEON `f64x2` and wider packs are pairs
     of it.
-  - The default x86-64 target has no FMA, so every `mul_add`, scalar and lane
-    alike, is a libm `fma` call. Whether shipped binaries should raise the
-    baseline (e.g. `x86-64-v3`) or dispatch at runtime is a separate decision.
-  - The consumers below (per-lane scales, an `F`-generic end-to-end chain) are
-    what turn the lane speedup into integrator throughput.
+- **Scalar `mul_add` on non-FMA targets** — `f64::mul_add` always fuses, so on a
+  target without hardware FMA (the baseline `x86_64-unknown-linux-musl` and
+  `x86_64-apple-darwin` release assets) every one is a software-FMA library
+  call. Measured on the same host: scalar `forward` is **2.4–4.5× slower** on
+  the baseline target than under `x86-64-v3` (`ee_to_mumu` 19.7 vs 8.3 µs,
+  `uux_to_ccx_emmm_qcd0` 14.1 vs 3.2 ms per 16 events). The lane field already
+  relaxes this: its `mul_add` is a hardware FMA where one exists and a product
+  and a sum otherwise (`lane_field::FUSED_MUL_ADD`). The scalar path could do
+  the same through a `Real` method with that contract. It is a production
+  numerics change on the baseline target only, at rounding level, and CI's MG
+  gate runs under v3 alone, so it needs a baseline-target run of the amplitude
+  oracle to go with it. Alternatively, `algebraic_*` below would subsume it.
+- **Associative float arithmetic (`f64::algebraic_*`)** — stable on 1.98 (CI's
+  stable), not on 1.94. The ops license reassociation and contraction, so LLVM
+  may form FMAs where the target has them and emit mul + add where it does not.
+  That removes the software-FMA cost above without hand-written `mul_add`, and
+  lets the scalar complex multiply use the packed `vmulpd`+`vaddsubpd` idiom the
+  shared real-FMA path gave up. Costs to weigh:
+  - Results depend on codegen: inlining context and opt level may contract
+    differently. Every test asserting bit identity between two call sites of the
+    same kernels would need auditing, not only lane-vs-scalar: helicity
+    expansion vs per-combination sum, `schedule.rs` alternative orders,
+    batched-vs-unbatched VEGAS, fixed-seed event bytes.
+  - They are inherent `f64` methods, so generic `F: Real` code needs a trait
+    hook. `wide`'s intrinsic-backed ops carry no fast-math flags, so the lane
+    field would keep its explicit `mul_add`.
+  - The workspace declares no `rust-version`. Adopting means declaring one.
+- **Kernel ILP survey** — a prelude to, or instead of, `algebraic_*`: rewrite
+  serial accumulation chains in the kernels into independent partial sums where
+  the dependency chain dominates. E.g. `ComplexVector::dot` is `cmul` then three
+  chained `cmul_add`s, about 7 dependent FP ops; two interleaved chains make it
+  about 5. Whether the shorter chain beats the out-of-order overlap already
+  available across neighbouring dispatch-loop instructions is a per-kernel
+  measurement. Reassociating changes rounding identically on scalar and lanes,
+  so lane-vs-scalar identity is unaffected; the MG gate judges it.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)

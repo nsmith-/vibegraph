@@ -8,12 +8,14 @@
 //! inline into the evaluator's dispatch loop. Every other `Float` method runs
 //! per lane through `f64`'s own method.
 //!
-//! Each lane is bit-identical to the scalar `f64` computation: the packed
-//! operations are the IEEE-exact ones (correctly rounded `+ − × ÷ sqrt`, sign-bit
-//! `abs`/`neg`, single-rounding FMA), and everything else is literally the `f64`
-//! method. `wide`'s own `mul_add` rounds twice when the target has no FMA unit,
-//! while `f64::mul_add` always fuses, so the packed FMA is used only where it is
-//! a hardware FMA and the per-lane `f64::mul_add` otherwise.
+//! Where the target has a hardware FMA ([`FUSED_MUL_ADD`]), each lane is
+//! bit-identical to the scalar `f64` computation: the packed operations are the
+//! IEEE-exact ones (correctly rounded `+ − × ÷ sqrt`, sign-bit `abs`/`neg`,
+//! single-rounding FMA), and everything else is literally the `f64` method.
+//! Without one, `mul_add` is a packed product and a packed sum, rounding twice,
+//! while scalar `f64::mul_add` still fuses (in software). Each lane then agrees
+//! with scalar to rounding, not bit for bit. That is the price of never calling
+//! a software FMA per lane.
 //!
 //! Comparisons keep the pack-level semantics the lane-uniformity contract in
 //! [`super::lanes`] is written against: `==` holds when every lane is equal, and
@@ -27,6 +29,15 @@ use std::num::FpCategory;
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use num_traits::{Float, FloatConst, Num, NumCast, One, ToPrimitive, Zero};
+
+/// Whether the lane field's `mul_add` is a single-rounding hardware FMA on this
+/// target. It is exactly when `wide`'s packed `mul_add` lowers to one: an x86
+/// target with `fma` enabled (x86-64-v3 and up) or aarch64 NEON. When it holds,
+/// every lane is bit-identical to scalar `f64`.
+pub const FUSED_MUL_ADD: bool = cfg!(any(
+    target_feature = "fma",
+    all(target_arch = "aarch64", target_feature = "neon")
+));
 
 /// Lane-width marker: `Lanes<N>: SupportedLanes<N>` holds for every width with
 /// a packed representation.
@@ -56,8 +67,8 @@ pub trait LanePack<const N: usize>:
     fn to_array(self) -> [f64; N];
     fn sqrt(self) -> Self;
     fn abs(self) -> Self;
-    /// `self * a + b` with a single rounding.
-    fn fused_mul_add(self, a: Self, b: Self) -> Self;
+    /// `self * a + b`: one rounding where [`FUSED_MUL_ADD`], two otherwise.
+    fn mul_add(self, a: Self, b: Self) -> Self;
 }
 
 macro_rules! impl_lane_pack {
@@ -84,19 +95,8 @@ macro_rules! impl_lane_pack {
                 <$pack>::abs(self)
             }
             #[inline(always)]
-            fn fused_mul_add(self, a: Self, b: Self) -> Self {
-                // `wide` fuses exactly when the target has a hardware FMA; without
-                // one it rounds the product separately, so fall back to the
-                // always-fused `f64::mul_add` per lane.
-                if cfg!(any(
-                    target_feature = "fma",
-                    all(target_arch = "aarch64", target_feature = "neon")
-                )) {
-                    <$pack>::mul_add(self, a, b)
-                } else {
-                    let (x, a, b) = (self.to_array(), a.to_array(), b.to_array());
-                    <$pack>::new(std::array::from_fn(|k| x[k].mul_add(a[k], b[k])))
-                }
+            fn mul_add(self, a: Self, b: Self) -> Self {
+                <$pack>::mul_add(self, a, b)
             }
         }
 
@@ -395,9 +395,10 @@ where
     fn abs(self) -> Self {
         Self(self.0.abs())
     }
+    /// Single rounding where [`FUSED_MUL_ADD`]; a product and a sum otherwise.
     #[inline(always)]
     fn mul_add(self, a: Self, b: Self) -> Self {
-        Self(self.0.fused_mul_add(a.0, b.0))
+        Self(LanePack::mul_add(self.0, a.0, b.0))
     }
 
     lanewise_unary!(
@@ -454,7 +455,10 @@ mod tests {
 
     /// Every packed operation against the scalar `f64` operation, bit for bit,
     /// on values chosen to exercise rounding (non-representable quotients, an
-    /// FMA whose unfused product rounds differently) and signed zero.
+    /// FMA whose unfused product rounds differently) and signed zero. `mul_add`
+    /// is pinned to the semantics [`FUSED_MUL_ADD`] claims for this target: the
+    /// fused result where it holds, the product-then-sum result where it does
+    /// not, so a flag that disagreed with the packed op would fail here.
     fn packed_ops_match_scalar<const N: usize>()
     where
         Lanes<N>: SupportedLanes<N>,
@@ -478,12 +482,16 @@ mod tests {
         check(x / y, &|k| xs[k] / ys[k], "div");
         check(-x, &|k| -xs[k], "neg");
         check(x.abs().sqrt(), &|k| xs[k].abs().sqrt(), "sqrt");
-        check(x.mul_add(y, z), &|k| xs[k].mul_add(ys[k], zs[k]), "mul_add");
+        if FUSED_MUL_ADD {
+            check(x.mul_add(y, z), &|k| xs[k].mul_add(ys[k], zs[k]), "mul_add");
+        } else {
+            check(x.mul_add(y, z), &|k| xs[k] * ys[k] + zs[k], "mul_add");
+        }
         check(x.atan2(y), &|k| xs[k].atan2(ys[k]), "atan2");
     }
 
     #[test]
-    fn packed_ops_bit_identical_to_scalar() {
+    fn packed_ops_match_scalar_bitwise() {
         packed_ops_match_scalar::<2>();
         packed_ops_match_scalar::<4>();
         packed_ops_match_scalar::<8>();

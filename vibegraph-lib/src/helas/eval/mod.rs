@@ -109,7 +109,7 @@ pub mod op_census {
 pub use ast::{Ast, ParseAstError};
 pub use compile::{config_groups, AmplitudeEvaluator};
 pub use error::{CompileError, EvalError, RootDiagramError};
-pub use lane_field::{LaneField, Lanes, SupportedLanes};
+pub use lane_field::{LaneField, Lanes, SupportedLanes, FUSED_MUL_ADD};
 pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
 pub use root_diagram::compile_diagram_ast;

@@ -622,13 +622,36 @@ predicts: wider is cheaper per event. Against the `NumericArray` build that is a
 smallest processes and the other is the largest, so it is not simply size, and
 this run does not isolate the cause.
 
-**Correctness.** `eval_m2_lanes_bit_identical_to_scalar` and
-`lanes4_lanes8_pack_unpack_bit_identical` pass both on the default x86-64 target
-(SSE2, the per-lane FMA fallback) and under `target-cpu=native` (packed
-AVX-512 + FMA). New unit tests pin every packed op bit-for-bit against `f64` at
-N = 2 / 4 / 8. The `mul_add` probe is checked to actually separate fused from
-unfused rounding, so it would fail if the fallback were missing. The scalar path
-is unchanged code.
+**Correctness.** `eval_m2_lanes_match_scalar` and `lanes4_lanes8_match_scalar`
+compare every lane against scalar `eval_m2`. Where the lane `mul_add` is a
+hardware FMA (`FUSED_MUL_ADD`: x86 `fma`, aarch64 NEON) the comparison is bit for
+bit, and it passes under `x86-64-v3` (CI's flags) and `target-cpu=native`. On
+the baseline x86-64 target the lane `mul_add` is a packed product and sum, which
+rounds twice, while scalar `f64::mul_add` still fuses in software. The
+comparison there is relative, bounded by `LANE_UNFUSED_REL_TOL = 1e-10`.
+Measured over the 118 compared lanes: typically 1e-16 to 8e-15, worst 2.0e-13 on
+the deliberately ill-conditioned off-axis regime. Unit tests pin every packed op
+bit for bit against `f64` at N = 2 / 4 / 8, with `mul_add` pinned to whichever
+semantics `FUSED_MUL_ADD` claims for the target, so the flag cannot drift from
+`wide`'s own per-width condition. The scalar path is unchanged code.
+
+### The two x86 release builds
+
+`release.yml` ships a baseline `x86_64-unknown-linux-musl` asset and a
+`-C target-cpu=x86-64-v3` one. Same host, same 8 rows, each build against its
+own scalar:
+
+| build | forward µs/16 ev (`ee_to_mumu` … `uux_to_ccx_emmm_qcd0`) | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `x86-64-v3` (AVX2 + FMA) | 8.3 … 3 157 | 0.59× | 0.33× | 0.34× |
+| baseline (SSE2) | 19.7 … 14 066 | 0.18× | 0.17× | 0.18× |
+
+- Under v3, lanes8 is two ymm halves and buys nothing over lanes4. N = 4 is
+  that target's width.
+- **The baseline scalar path is 2.4–4.5× slower than v3's.** Every
+  `f64::mul_add` there is a software FMA call. The lanes avoid that call, which
+  is why the baseline lane ratios look so large: baseline `lanes2` (1.8 ms per 16
+  events on `uux_to_ccx_emmm_qcd0`) already beats v3 *scalar* (3.2 ms).
 
 ### Reproduce
 

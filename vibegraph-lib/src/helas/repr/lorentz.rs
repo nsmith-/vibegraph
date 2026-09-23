@@ -17,12 +17,13 @@ use super::numbers::{Charge, SpinorHelicity};
 use super::vectorspace::{impl_vectorspace, ArrayBacked};
 use super::{r, ri, Real, C};
 
-// Complex multiply-accumulate expressed through the real fused multiply-add
-// (`F::mul_add`). This lowers to a hardware FMA on both scalar `f64` and the SIMD
-// lane field: the lane type implements `Float::mul_add` (a method) but not the
-// `num_traits::MulAdd` trait, so `Complex::mul_add` is unavailable there — routing
-// through the real `mul_add` keeps one code path that fuses on every `F: Real`.
-// A single shared path also keeps the lane result bit-identical to the scalar one.
+// Complex multiply-accumulate expressed through the real multiply-add
+// (`F::mul_add`), which lowers to a hardware FMA on both scalar `f64` and the SIMD
+// lane field where the target has one. The lane type implements `Float::mul_add`
+// (a method) but not the `num_traits::MulAdd` trait, so `Complex::mul_add` is
+// unavailable there; routing through the real `mul_add` keeps one code path for
+// every `F: Real`. One shared path also keeps the lane result bit-identical to the
+// scalar one wherever the lane `mul_add` fuses (`lane_field::FUSED_MUL_ADD`).
 
 /// Complex product `a * b` (three real FMAs after the leading `re`/`im` products).
 #[inline(always)]

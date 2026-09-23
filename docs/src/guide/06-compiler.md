@@ -247,8 +247,10 @@ nothing more.
 The scalar type `F` is a trait. Instantiating the bound amplitude at
 `F = LaneField<N>`, a packed SIMD vector of $N$ `f64`s, evaluates $N$
 phase-space points in one pass. Every operation acts per lane, and the packed
-ones are the IEEE-exact instructions (`+ − × ÷`, `sqrt`, a single-rounding
-FMA), so each lane's result is bit for bit the scalar result at that point. The one thing that can break this
+ones are the IEEE-exact instructions (`+ − × ÷`, `sqrt`, and a single-rounding
+FMA on targets that have one), so each lane's result is bit for bit the scalar
+result at that point. Without a hardware FMA the lane multiply-add rounds twice
+and lanes agree with scalar to rounding. The one thing that can break this
 is a data-dependent branch on `F`, which on a lane pack reduces to a single
 boolean and applies one formula to every lane. The evaluator's contract is
 that every such branch is lane-uniform by construction. They all sit in

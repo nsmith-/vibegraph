@@ -5,7 +5,9 @@
 //! one `eval_m2` pass over `N` phase-space points at once: every elementwise
 //! floating-point op (`+ - * /`, `sqrt`, `min`, `max`, `abs`, `signum`) executes
 //! the identical scalar operation independently per lane, so each extracted lane
-//! is bit-identical to the scalar `eval_m2` at the same point.
+//! is bit-identical to the scalar `eval_m2` at the same point wherever the lane
+//! `mul_add` is a hardware FMA ([`FUSED_MUL_ADD`](super::lane_field::FUSED_MUL_ADD)),
+//! and agrees to rounding where it is not.
 //!
 //! # Lane-uniformity contract
 //!
@@ -13,7 +15,7 @@
 //! comparisons on `LaneField` (`==`, `<`, `>=`, `is_sign_positive`) reduce to a
 //! single `bool` (lexicographic over the whole pack), so an `if predicate(F)`
 //! evaluates ONE branch for the entire lane pack. If two lanes want different
-//! branches the wrong formula is applied to one of them and bit-identity is lost.
+//! branches the wrong formula is applied to one of them, and that lane is wrong.
 //!
 //! Every such branch on the `eval_m2` hot path lives in the external-wavefunction
 //! builders (`vxxxxx`, `weyl_ixxxxx`) and the vector propagator, and each predicate
@@ -34,8 +36,8 @@
 //!   exactly-at-rest lane mixed with a moving lane would diverge, which RAMBO /
 //!   phase-space sampling does not produce.
 //!
-//! Callers must therefore batch kinematically-homogeneous points. The bit-identity
-//! gate (`eval_m2_lanes_bit_identical`) pins this against the scalar path across all
+//! Callers must therefore batch kinematically-homogeneous points. The lane gate
+//! (`eval_m2_lanes_match_scalar`) pins this against the scalar path across all
 //! MG-validated processes on random, z-beam, and threshold-adjacent batches.
 
 use super::lane_field::{LaneField, Lanes, SupportedLanes};

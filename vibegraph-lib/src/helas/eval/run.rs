@@ -808,7 +808,8 @@ impl<'a> BoundAmplitude<'a, f64> {
 
 /// Color- and helicity-summed |M|² for `N` phase-space points in one lane-batched
 /// pass. `points[k]` is the external 4-momenta of point `k` in [`eval_m2`] order;
-/// the returned lane `k` is bit-identical to the scalar [`eval_m2`] at `points[k]`,
+/// the returned lane `k` equals the scalar [`eval_m2`] at `points[k]` (bit for
+/// bit where the lane `mul_add` is a hardware FMA, to rounding otherwise),
 /// provided the batch is kinematically homogeneous (see the [`lanes`](super::lanes)
 /// contract). `amp` is a lane amplitude from [`BoundAmplitude::broadcast_lanes`].
 ///
@@ -4292,9 +4293,40 @@ mod tests {
         }
     }
 
-    /// Each extracted lane of the SIMD-batched [`eval_m2_lanes`] is **bit-identical**
-    /// (equal f64 bits) to the scalar [`eval_m2`](BoundAmplitude::eval_m2) at the same
-    /// point, for every process in the MG-validated suite, across three kinematically
+    /// Relative deviation allowed between a lane and scalar `eval_m2` on a target
+    /// whose lane `mul_add` rounds twice (no hardware FMA) while scalar
+    /// `f64::mul_add` fuses. Measured on the default x86-64 target over the 118
+    /// lanes the two tests below compare: typically 1e-16–8e-15, worst 2.0e-13
+    /// (`u d > e+ e- u d`, the deliberately ill-conditioned off-axis regime). The
+    /// bound keeps 500× headroom over that and stays ten orders of magnitude
+    /// below the O(1) error of a lane that took the wrong branch.
+    const LANE_UNFUSED_REL_TOL: f64 = 1e-10;
+
+    /// A lane of [`eval_m2_lanes`] against scalar `eval_m2` at the same point:
+    /// bit for bit where the lane field's `mul_add` is a hardware FMA
+    /// ([`FUSED_MUL_ADD`](super::super::lane_field::FUSED_MUL_ADD)), which makes
+    /// the two float sequences identical; to [`LANE_UNFUSED_REL_TOL`] otherwise.
+    /// A lane that took the wrong branch of a lane-divergent predicate is wrong
+    /// by far more than either criterion, which is what both modes pin.
+    fn assert_lane_matches_scalar(scalar: f64, lane: f64, ctx: std::fmt::Arguments<'_>) {
+        if super::super::lane_field::FUSED_MUL_ADD {
+            assert_eq!(
+                scalar.to_bits(),
+                lane.to_bits(),
+                "{ctx}: scalar {scalar} vs lane {lane} not bit-identical"
+            );
+        } else {
+            let rel = ((lane - scalar) / scalar).abs();
+            assert!(
+                rel <= LANE_UNFUSED_REL_TOL,
+                "{ctx}: scalar {scalar} vs lane {lane}, relative {rel:e} > {LANE_UNFUSED_REL_TOL:e}"
+            );
+        }
+    }
+
+    /// Each extracted lane of the SIMD-batched [`eval_m2_lanes`] matches the scalar
+    /// [`eval_m2`](BoundAmplitude::eval_m2) at the same point — bit for bit where
+    /// the lane `mul_add` fuses, per [`assert_lane_matches_scalar`] — for every process in the MG-validated suite, across three kinematically
     /// homogeneous batch regimes: partonic-CM z-beams, generic off-axis momenta, and
     /// threshold-adjacent (near-rest final-state) z-beams. Homogeneity keeps every
     /// data-dependent branch in the external-wavefunction builders lane-uniform (see
@@ -4303,7 +4335,7 @@ mod tests {
     /// lane-uniformity claim: a mixed-branch batch would silently apply one branch to
     /// all lanes and break the assertion.
     #[test]
-    fn eval_m2_lanes_bit_identical_to_scalar() {
+    fn eval_m2_lanes_match_scalar() {
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
 
@@ -4312,10 +4344,10 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::phasespace::rambo_massless;
 
-        // Two lanes suffice to pin bit-identity: `transpose_points`/`eval_m2_lanes`
-        // are generic over the width, so N=2 exercises the full pack/eval/unpack path.
-        // (`lanes4_lanes8_pack_unpack_bit_identical` covers the wider widths on one
-        // small process.)
+        // Two lanes suffice: `transpose_points`/`eval_m2_lanes` are generic over the
+        // width, so N=2 exercises the full pack/eval/unpack path.
+        // (`lanes4_lanes8_match_scalar` covers the wider widths on one small
+        // process.)
         const N: usize = 2;
 
         let model = sm_model(SMRestrict::Default);
@@ -4384,12 +4416,10 @@ mod tests {
                     let lanes = eval_m2_lanes(&lane_amp, &point_refs, &mut lane_scratch);
 
                     for k in 0..N {
-                        assert_eq!(
-                            scalar[k].to_bits(),
-                            lanes[k].to_bits(),
-                            "[{process}] regime {r} lane {k}: scalar {} vs lane {} not bit-identical",
+                        assert_lane_matches_scalar(
                             scalar[k],
-                            lanes[k]
+                            lanes[k],
+                            format_args!("[{process}] regime {r} lane {k}"),
                         );
                     }
                 }
@@ -4397,11 +4427,11 @@ mod tests {
         }
     }
 
-    /// The lane pack/eval/unpack path is bit-identical to scalar at the wider widths
+    /// The lane pack/eval/unpack path matches scalar at the wider widths
     /// `N ∈ {4, 8}` too, on one light process — the width-4/8 counterpart to the
     /// full-suite N=2 gate above (which pins every process at N=2).
     #[test]
-    fn lanes4_lanes8_pack_unpack_bit_identical() {
+    fn lanes4_lanes8_match_scalar() {
         use rand::rngs::StdRng;
         use rand::SeedableRng;
 
@@ -4443,7 +4473,7 @@ mod tests {
             let lanes = eval_m2_lanes(&lane_amp, &refs, &mut lscratch);
             for k in 0..M {
                 let scalar = amp.eval_m2(&batch[k], &mut sscratch);
-                assert_eq!(scalar.to_bits(), lanes[k].to_bits(), "N={M} lane {k}");
+                assert_lane_matches_scalar(scalar, lanes[k], format_args!("N={M} lane {k}"));
             }
         }
 
