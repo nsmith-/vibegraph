@@ -1,4 +1,4 @@
-# 36 — MadEvent phase-space map survey, and a soft-shaped 2-body angle (2026-09-07)
+# 37 — MadEvent phase-space map survey, and a soft-shaped 2-body angle (2026-09-07)
 
 Two things, from one user observation: the 1→2 splitting in the phase-space
 map draws its decay angle isotropically, while a splitting kernel goes like
@@ -7,6 +7,11 @@ with that structure improve `p p > l+ l- j`'s convergence, and (§1) which of
 MadEvent's maps are we not using yet. §1 is read off `genps.f`, `myamp.f`
 (`set_peaks`), `dsample.f` (`sample_get_x`, `setgrid`) and `transpole.f` in
 the pinned `mg5amcnlo` submodule; §3 is the measurement; §4 the decisions.
+
+**§6 supersedes §2.3's conclusion**: measured on proton beams at twenty
+seeds, the shaped angle on the *lepton pair* halves `p p > l+ l- j`'s
+evaluations. It is available as `--map-split-angle soft-all`; making it the
+default waits on a gate-cell decision (§6.3).
 
 ## 1. MadEvent's maps against ours
 
@@ -381,3 +386,174 @@ What it takes here, and why it did not fit this session:
 Filed in TODO as its own item with these three parts; the flag is not
 exposed until the code exists, so no artifact can claim a map that was not
 run.
+
+## 6. The hadronic measurements, and the rules they set (2026-09-23)
+
+Run on the M3 Max host with the PDF set, off `main@02e8b25` (the
+`banked-open-ends` merge, which the branch was rebased onto; that merge
+already took artifact schema 8, so the map choices are schema **9**).
+Protocol as §3.1 but at twenty seeds per arm (20260719–38), `-j 16`, the
+banked runs' own cards: `dy13_default` (`p p > e+ e-`), `pp_to_jj`,
+`pp_to_bb`, `pp_to_llj`; the partonic `g u > e+ e- u` extended to 160 seeds
+for the reason below. Figure of merit: evaluations the stop needs for a
+χ²-scaled 0.1%, as a ratio of arm means with its standard error; where a
+row stops on the `--min-iters` floor on every seed (`pp_to_bb`) the count
+carries nothing, and the ratio is of `δ²·N` (the χ²-scaled error squared
+times the evaluations, i.e. variance per point) instead. σ per arm is the
+inverse-variance mean over seeds; every arm below is inside 0.6σ of its
+baseline except where stated.
+
+### 6.1 Results
+
+| row | arm | evaluations (M, mean ± sd) | ratio to baseline |
+|---|---|---|---|
+| `p p > e+ e-` | log (baseline) | 2.14 ± 0.33 | — |
+| | inverse-square | 2.28 ± 0.24 | 1.06 ± 0.05 |
+| `p p > j j` | log (baseline) | 1.90 ± 0.22 | — |
+| | inverse-square | 1.47 ± 0.14 | **0.77 ± 0.03** |
+| `p p > b b~` | log (baseline) | 0.72 (floor) | — |
+| | inverse-square | 0.72 (floor) | **0.65 ± 0.05** in `δ²N` |
+| `p p > l+ l- j` | isotropic, log (baseline) | 18.3 ± 3.2 | — |
+| | inverse-square | 18.8 ± 2.5 | 1.03 ± 0.05 |
+| | windowed | 9.9 ± 3.0 | 0.54 ± 0.04 |
+| | soft-all | 9.2 ± 0.8 | **0.50 ± 0.02** |
+| | soft-all + inverse-square | 8.9 ± 0.5 | 0.48 ± 0.02 |
+| `g u > e+ e- u` (160 seeds) | isotropic (baseline) | 1.06 ± 0.26 | — |
+| | windowed | 0.96 ± 0.29 | 0.91 ± 0.03 |
+| | soft-all | 0.90 ± 0.24 | **0.85 ± 0.02** |
+| `g g > g u u~` | soft-emission (baseline) | 3.77 ± 0.97 | — |
+| | soft-all | 3.85 ± 1.09 | 1.02 ± 0.09 |
+| `u u~ > g g g` | derived rungs (baseline) | 3.23 ± 0.20 | — |
+| | reversed rungs | 3.27 ± 0.26 | 1.01 ± 0.02 |
+
+Readings:
+
+- **llj's lepton pair is where the shape pays.** §2.3 was right that llj
+  has no gluon-daughter split and wrong to conclude the angle was not its
+  residual: the one boosted composite split, `Z*/γ* → l⁺l⁻`, is the lever.
+  The window alone (both leptons held above `ptl`) takes most of it, and the
+  `1/(E₁E₂)` shape the rest — with a far narrower seed spread (sd 0.8M
+  against 3.0M), which is the heavy-tail signature note 34's cut-edge diagnosis
+  predicted: the isotropic draw spends its weight tail on leptons at the
+  `pT` edge. That is note 34 §2's S5 lever, reached from the angle side.
+- **`τ` measures the way MadEvent's rule predicts.** `1/τ²` wins where
+  nothing spans the final state and loses on Drell–Yan, where the `Z` peak
+  sits in `τ` itself; on llj it is neutral, alone or with `soft-all`. It is
+  not the default yet — §6.3.
+- **Two three-seed readings of §5.1 did not survive twenty seeds**:
+  `reversed` rungs (4–14% better at three seeds, 1.01 ± 0.02 at twenty) and
+  the lepton-pair window being *worse* than the shape's floor alone (it is
+  better than isotropic at every seed count past three).
+- **A 2σ σ-pull that was noise.** On `g u > e+ e- u` both shaped arms read
+  σ high against isotropic: +1.6σ at 20 seeds, +2.2σ at 60 — growing with
+  statistics, the signature of a bias. Before 160 seeds settled it at
+  +0.36σ, the one mechanism that could bias the map was pinned directly: the
+  window can only exclude accepted phase space if some accepted point sits
+  below a subsystem's energy floor, and
+  `no_accepted_configuration_sits_below_an_energy_floor` finds none over
+  183 424 accepted points in three longitudinally boosted frames, closest
+  approach 1.0007 of the floor.
+
+### 6.2 The rules
+
+`MapOptions::resolve`, with the numbers above in its doc comment:
+
+- `split_angle`: `soft-emission` where some split has a single gluon or photon
+  daughter, else `isotropic` — the rule of §4, validated green on this host.
+- `tau`: `log`.
+- `rung_order`: `derived`.
+
+The two measured improvements, `soft-all` and MadEvent's `τ` rule, each took
+one banked gate cell over its threshold when made the default, and each time
+the physics check that needs no reference says the map did not move anything
+(§6.3). Both cells are at-threshold statistics, the class this repository
+settles by matching the statistic to its calibration and never by widening,
+and that is the user's decision; so the rules stay where they validated and
+both maps ship as options. Flipping either rule is a one-line change to
+`resolve` once its cell is decided.
+
+`auto` reproduces the earlier runs of its arms bit for bit (the Drell–Yan
+baseline and the dijet `inverse-square` run, seed 20260719), which is the
+check that the flag path builds the channels the measured arms did.
+
+### 6.3 The two cells that hold the defaults back
+
+**`pp_to_llj_dyn` integrals, under `soft-all`.** The σ gate is fine (+0.23%
+from MadGraph, pull +0.69); its scatter guard — `χ²/dof` of five seeds about
+their mean, limit 4.0 — reads 4.17. One seed, 20260732, sits about 3.6σ below
+the other four, and it reads low under *every* map (CLI at the gate's
+budget: 414.99 isotropic, 414.83 `soft-all`, against ≈ 416.3). The new probe
+`probe_llj_dyn_scatter_guard_calibration` runs the gate's own configuration
+over forty seeds, the gate's five first:
+
+| map | 40-seed χ²/dof | spread / quoted | quintet χ²/dof | above 4.0 |
+|---|---|---|---|---|
+| isotropic | 0.91 | 0.95 | 2.17, 0.89, 0.14, 1.71, 0.48, 0.85, 0.82, 1.25 | 0 of 8 |
+| `soft-all` | 0.91 | 0.91 | **4.17**, 0.82, 0.16, 0.63, 1.32, 0.20, 0.27, 0.48 | 1 of 8 |
+
+The estimator's error is honest under both maps and the calibration does not
+move; the gate's five seeds drew a one-in-eight quintet.
+
+**`pp_to_jj` samples, under MadEvent's `τ` rule.**
+
+With MadEvent's `τ` rule as the default, the banked layer failed one cell:
+`pp_to_jj`'s event sample, whose flavour composition is χ²-compared with
+MadGraph's banked 10 000 events per seed against a `1e-4` floor. One seed
+read p = 2.8e-5 (128.1 / 70 dof); the three-seed sum was 325 / 212 against
+267 / 210 under the log map — both above expectation, the reference's own
+flavour χ² already sitting high.
+
+Whether the map moved the physics is a question that needs no reference:
+two samples of our own, 200 000 events each, integrated and generated under
+`log` and under `inverse-square`, compare at **χ² 40.5 / 47** on the weighted
+flavour composition, with the same-map seed-against-seed controls at 47.6 / 47
+and 47.7 / 46. That comparison is about twice as sensitive per category as
+the gate's, so a composition shift large enough to move the gate's χ² would
+show there plainly; none does. Effective sample sizes are ≈ 19 700 of 20 000 on
+both maps, so overweights are not it either. The cell's failure is our new
+samples' fluctuation against a reference that already reads high.
+
+The detector MadEvent's rule would read (`ProcessShape::whole_state_resonance`)
+is in place and pinned.
+
+### 6.4 A bug the `τ` map exposed
+
+`ProtonIntegrand::probe_scale` checks at setup that some cut-passing point
+clears the factorisation-scale floor, drawing flat `u` through the run's own
+`τ` map. Under `1/τ²` those draws crowd at `ŝ_min`, so a card whose support
+is only *partly* below the floor read as wholly below it and was refused —
+caught by three existing unit tests. It is live for anyone choosing
+`--map-tau inverse-square`, so it is fixed although the default does not
+reach it. The probe asks about support, not
+sampling, so it now always draws `τ` logarithmically. A new unit test
+(`both_tau_maps_integrate_a_known_function`) pins both maps' Jacobians
+against `∫ τ^(−1/2) dτ/τ` analytically, each to 0.2%.
+
+### 6.5 Two defects in `main` the rebase surfaced
+
+`main`'s artifact reader matched `FORMAT_VERSION | 6` after `banked-open-ends`
+moved `FORMAT_VERSION` to 8, so a **version-7 artifact was refused** although
+the schema doc says it decodes; and `generate`'s scale-draw guard compared
+against `FORMAT_VERSION`, so a version-7 artifact on a clustering-scale card
+was **refused as pre-draw** although version 7 is the draw's own version.
+Schema 9 reads 6 through 8 through one upgrade, and the guard compares
+against `SCALE_DRAW_VERSION = 7`.
+
+### 6.6 Validation
+
+Recorded on the final code (M3 Max, 2026-09-23): `cargo fmt --all --check`
+and `cargo clippy --workspace --all-targets -- -D warnings` clean; the
+hermetic suite green, including the new tests (the rule on real processes,
+the whole-state-resonance detector, the energy-floor bias oracle, both `τ`
+maps' Jacobians, versions 6–8 of the artifact reading back under the legacy
+maps); **`pixi run --skip-deps validate` exit 0, 178 measured cells — 171 ✅,
+7 ⚠️, 4 ⏳, 22 uncovered — the same census as `main`**, 547 s wall.
+`pixi run validate-sigma-2to6` (the long tier, informational) was run with
+`soft-all` as the default: `bbx_to_ccx_emmm_qcd0` +0.38% (pull +1.13),
+`uux_to_ccx_emmm_qcd0` +0.33% (pull +0.92), inside the rows' recorded
+1.1% five-seed band. Under the final rules those rows have no gluon or photon
+leg, so their draws are the legacy ones.
+
+The two rounds that failed on the way are §6.3's cells: with MadEvent's `τ`
+rule default, `pp_to_jj` samples (flavour χ² p 2.8e-5); with `soft-all`
+default, `pp_to_llj_dyn` integrals (scatter guard 4.17).

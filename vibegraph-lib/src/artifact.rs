@@ -744,7 +744,7 @@ mod tests {
         }
     }
 
-    /// A file written at version 6 or 7 carries no map choices; it reads back
+    /// A file written at version 6, 7 or 8 carries no map choices; it reads back
     /// under the maps every such run used, with its own version intact.
     #[test]
     fn a_pre_maps_artifact_reads_back_under_the_legacy_maps() {
@@ -767,37 +767,41 @@ mod tests {
             chi2_per_dof: f64,
         }
         let a = sample_artifact();
-        let old = V7Artifact {
-            format_version: 7,
-            process: a.process.clone(),
-            model: a.model.clone(),
-            pdf_set: a.pdf_set.clone(),
-            pdf_member: a.pdf_member,
-            mu_f: a.mu_f,
-            sqrt_s_had: a.sqrt_s_had,
-            neval: a.neval,
-            niter: a.niter,
-            seed: a.seed,
-            run_card: a.run_card.clone(),
-            channels: a.channels.clone(),
-            sigma_pb: a.sigma_pb,
-            sigma_err_pb: a.sigma_err_pb,
-            chi2_per_dof: a.chi2_per_dof,
-        };
         let dir =
             std::env::temp_dir().join(format!("vibegraph-artifact-test-v7-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("v7.bin.zst");
-        let raw = bincode::serialize(&old).unwrap();
-        std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
+        // 7 and 8 are the versions a reader that matched only the current version
+        // and 6 would refuse; 6 is the oldest of the shared schema.
+        for version in 6..=8 {
+            let old = V7Artifact {
+                format_version: version,
+                process: a.process.clone(),
+                model: a.model.clone(),
+                pdf_set: a.pdf_set.clone(),
+                pdf_member: a.pdf_member,
+                mu_f: a.mu_f,
+                sqrt_s_had: a.sqrt_s_had,
+                neval: a.neval,
+                niter: a.niter,
+                seed: a.seed,
+                run_card: a.run_card.clone(),
+                channels: a.channels.clone(),
+                sigma_pb: a.sigma_pb,
+                sigma_err_pb: a.sigma_err_pb,
+                chi2_per_dof: a.chi2_per_dof,
+            };
+            let path = dir.join(format!("v{version}.bin.zst"));
+            let raw = bincode::serialize(&old).unwrap();
+            std::fs::write(&path, zstd::encode_all(raw.as_slice(), ZSTD_LEVEL).unwrap()).unwrap();
 
-        let reloaded = IntegrateArtifact::read_from_path(&path).expect("version 7 reads");
-        assert_eq!(reloaded.format_version, 7);
-        assert_eq!(reloaded.maps, MapChoices::LEGACY);
-        assert_eq!(reloaded.sigma_pb.to_bits(), a.sigma_pb.to_bits());
-        assert_eq!(reloaded.channels.len(), 1);
-
-        std::fs::remove_file(&path).ok();
+            let reloaded = IntegrateArtifact::read_from_path(&path)
+                .unwrap_or_else(|e| panic!("version {version} does not read: {e}"));
+            assert_eq!(reloaded.format_version, version);
+            assert_eq!(reloaded.maps, MapChoices::LEGACY);
+            assert_eq!(reloaded.sigma_pb.to_bits(), a.sigma_pb.to_bits());
+            assert_eq!(reloaded.channels.len(), 1);
+            std::fs::remove_file(&path).ok();
+        }
         std::fs::remove_dir(&dir).ok();
     }
 

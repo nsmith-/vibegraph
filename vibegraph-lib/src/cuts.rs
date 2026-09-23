@@ -1604,6 +1604,73 @@ mod tests {
     /// invariant draws, and the estimator survives that only because the region
     /// given up is entirely outside the cuts — which is this test's claim, taken
     /// over every subsystem of the final state at once.
+    /// The energy floor is a bound, not a scale: no configuration the cuts accept
+    /// puts any subsystem below it, in the partonic frame or in a frame boosted
+    /// along the beam axis. A shaped angular draw confines itself to the window
+    /// the floor admits, so an accepted point outside it would be a region that
+    /// channel can never generate while its density still reports it — a bias,
+    /// not a variance. Uses `g u > e+ e- u`'s legs and its banked card thresholds.
+    #[test]
+    fn no_accepted_configuration_sits_below_an_energy_floor() {
+        use crate::phasespace::channel::PhaseSpaceMap;
+        use crate::phasespace::rng::SubStream;
+        use crate::phasespace::RamboChannel;
+
+        let legs = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(2, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(2, 0.0),
+        ];
+        let cuts = Cuts::compile(
+            &card("20 = ptj\n10 = ptl\n5 = etaj\n2.5 = etal\n0.4 = drll\n0.4 = drjl\n"),
+            &legs,
+        )
+        .unwrap();
+        let floors: Vec<f64> = (0u64..8).map(|m| cuts.energy_floor(m)).collect();
+        assert_eq!(
+            floors[0b111], 40.0,
+            "every leg must carry a floor for this to check anything"
+        );
+
+        let rambo = RamboChannel::<f64>::new(500.0, vec![0.0; 3]);
+        let mut stream = SubStream::from_stream(0xE_F100, 3);
+        let (mut accepted, mut tightest) = (0usize, f64::INFINITY);
+        for _ in 0..200_000 {
+            let u = stream.uniforms::<f64>(rambo.ndim());
+            let out = rambo.sample(&u).momenta;
+            let (b1, b2) = beams(250.0);
+            let momenta = vec![b1, b2, out[0], out[1], out[2]];
+            if !cuts.pass(&momenta) {
+                continue;
+            }
+            accepted += 1;
+            // A longitudinal boost moves no pT, so the bound must survive one; the
+            // rapidity is the widest a 13 TeV collision gives a 500 GeV system.
+            for y in [0.0f64, 1.5, -2.5] {
+                let (ch, sh) = (y.cosh(), y.sinh());
+                for (mask, &floor) in floors.iter().enumerate().skip(1) {
+                    let e: f64 = (0..3)
+                        .filter(|slot| mask & (1 << slot) != 0)
+                        .map(|slot| {
+                            let p = momenta[2 + slot];
+                            ch * p.e() + sh * p.pz()
+                        })
+                        .sum();
+                    assert!(
+                        e >= floor,
+                        "an accepted point puts subsystem {mask:03b} at E {e} (y = {y}), below \
+                         its floor {floor}"
+                    );
+                    tightest = tightest.min(e / floor);
+                }
+            }
+        }
+        assert!(accepted > 5_000, "only {accepted} accepted points");
+        eprintln!("{accepted} accepted, closest approach to an energy floor {tightest:.4}");
+    }
+
     #[test]
     fn no_accepted_configuration_sits_below_a_subsystem_floor() {
         use crate::phasespace::channel::PhaseSpaceMap;

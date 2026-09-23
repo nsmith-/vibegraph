@@ -133,8 +133,8 @@ impl From<Allocation> for BlockAllocation {
 /// ([`SplitAngle`]); `auto` lets the rule read the process.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum SplitAngleArg {
-    /// Soft-emission where the process has a gluon or photon emission split,
-    /// isotropic otherwise.
+    /// `soft-emission` where some split has a gluon or photon daughter,
+    /// `isotropic` otherwise.
     Auto,
     /// Flat in `cos θ` and `φ` against the collision-CM axes.
     Isotropic,
@@ -178,23 +178,28 @@ pub struct MapArgs {
     ///
     /// Every choice is a parametrisation of the same phase space — none moves the
     /// cross section, only the evaluations needed to reach an accuracy. `auto`
-    /// picks `soft-emission` where the process has a split it shapes (measured
-    /// −30% on `u u~ > g g g`, three seeds) and `isotropic`, the map every banked
-    /// row used, elsewhere. The choice is recorded in the artifact and replayed by
-    /// `vibegraph generate`.
+    /// picks `soft-emission` where the process has a split it shapes (0.67× the
+    /// evaluations on `u u~ > g g g`) and `isotropic` elsewhere. `soft-all`
+    /// measures better still where it differs — half the evaluations on
+    /// `p p > l+ l- j`, 0.85× on `g u > e+ e- u` — and is worth asking for on
+    /// processes with a lepton pair or other boosted decay. On a `2 → 2` process
+    /// no split moves and every choice is the same map. The choice is recorded in
+    /// the artifact and replayed by `vibegraph generate`.
     #[arg(long = "map-split-angle", value_enum, default_value_t = SplitAngleArg::Auto)]
     pub split_angle: SplitAngleArg,
 
     /// How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
     ///
-    /// `auto` is `log`, the map every banked hadronic row used; `inverse-square`
-    /// is MadEvent's, unmeasured here.
+    /// `auto` is `log`, the map every banked hadronic row was integrated under.
+    /// `inverse-square` is MadEvent's choice when no resonance spans the final
+    /// state, and measures better there (0.77× the evaluations on `p p > j j`,
+    /// 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
     pub tau: TauMapArg,
 
     /// The order a peripheral (t-channel) chain draws its rungs in.
     ///
-    /// `auto` is `derived`; `reversed` exists to be measured against it.
+    /// `auto` is `derived`; `reversed` reads 1.01 ± 0.02 of it on `u u~ > g g g`.
     #[arg(long = "map-rung-order", value_enum, default_value_t = RungOrderArg::Auto)]
     pub rung_order: RungOrderArg,
 }

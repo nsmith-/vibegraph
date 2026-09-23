@@ -339,26 +339,31 @@ event sample is always drawn from the maps its grids were trained on.
   density $\propto 1/(E_1E_2)$ in the angle measured from the parent's
   direction of flight is exactly $dz/(z(1-z))$, regulated at both ends by
   the pair's own mass through $\beta < 1$. `soft-emission` applies that map
-  to the splits with a single gluon or photon daughter and is what `auto`
-  picks when the process has one (measured −30% in evaluations on
-  $u\bar u \to ggg$, three seeds; inert by construction elsewhere, where the
-  draws are bit-identical to the isotropic ones). Either shape is confined
-  to the angles at which both daughters clear the energy floor the cuts
-  imply, because a $1/E$ map left to run down to the kinematic edge spends
-  most of its draws below the $p_T$ threshold that rejects them.
-  `windowed` is that confinement alone, and `soft-all` the shape on every
-  split.
+  to the splits with a single gluon or photon daughter, and `soft-all` to
+  every split whose parent moves. Either shape is confined to the angles at
+  which both daughters clear the energy floor the cuts imply, because a
+  $1/E$ map left to run down to the kinematic edge spends most of its draws
+  below the $p_T$ threshold that rejects them; `windowed` is that
+  confinement alone. `auto` picks `soft-emission` where there is such a
+  split, a third fewer evaluations on $u\bar u \to ggg$. `soft-all`
+  measured best everywhere it was tried — half the evaluations on
+  $pp \to \ell^+\ell^- j$, where the shaped split is the lepton pair's — and
+  is the one to ask for there. A $2 \to 2$ process has no split whose parent
+  moves, so there every choice is the isotropic map.
 - **The $\tau = \hat s/s$ draw** of a proton-beam run (`--map-tau`): the
   logarithmic map of the [hadronic chapter](10-hadronic.md), or MadEvent's
-  $1/\tau^2$.
+  $1/\tau^2$. `auto` keeps the logarithm. MadEvent takes $1/\tau^2$ unless a
+  resonance spans the whole final state, whose peak then sits in $\tau$;
+  here that measures a quarter fewer evaluations on dijets and slightly
+  more on Drell–Yan, and is available as `inverse-square`.
 - **The order of a ladder's rungs** (`--map-rung-order`): as the diagram's
   spacelike lines nest outward from beam 0, or reversed, which exists to be
-  measured against.
+  measured against and measures the same.
 
 MadEvent leaves the decay angle to its adaptive grid — its `one_tree` draws
 $\cos\theta$ and $\phi$ flat too — and shapes its invariants partly with the
 same analytic transforms used here and partly by pre-warping the grid; note
-36 in the research notes lists every map it applies against these.
+37 in the research notes lists every map it applies against these.
 
 ## Random numbers
 
