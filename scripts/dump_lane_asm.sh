@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: [RUSTFLAGS=...] dump_lane_asm.sh [symbol-regex]
 #
-# Confirms whether the SIMD lane-batched eval path (F = NumericArray<f64, N>)
+# Confirms whether the SIMD lane-batched eval path (F = LaneField<N>)
 # actually compiles to packed vector instructions. Builds the eval_strategies
 # bench (honoring RUSTFLAGS from the environment, e.g.
 #     RUSTFLAGS="-C target-cpu=native" scripts/dump_lane_asm.sh
@@ -21,8 +21,8 @@
 # Packed instructions in a leaf function do not show the lane path is
 # vectorised: when the leaves stay out of line, every lane op is a call plus a
 # memory round-trip, and the leaves themselves still census as packed. Each
-# row therefore also counts `calls` and `arith_calls` — calls into
-# numeric-array / generic-array / num_complex arithmetic — and a lane
+# row therefore also counts `calls` and `arith_calls` — calls into the lane
+# field (`LaneField`, `wide`) or num_complex arithmetic — and a lane
 # `fill_arenas` with nonzero `arith_calls` is not inlined, whatever its
 # packed count.
 #
@@ -44,7 +44,7 @@
 # e.g. `scripts/dump_lane_asm.sh 'ffv_vout|vxxxxx'`.
 set -euo pipefail
 
-PATTERN="${1:-helas::eval::kernel::|helas::eval::run::(eval_m2|apply|fill_arenas)|helas::wavefn::|repr::lorentz::weyl_ixxxxx|NumericArray}"
+PATTERN="${1:-helas::eval::kernel::|helas::eval::run::(eval_m2|apply|fill_arenas)|helas::wavefn::|repr::lorentz::weyl_ixxxxx|lane_field|LaneField}"
 OUT_DIR="target/lane-asm"
 
 BUILD_OUTPUT=$(cargo bench -p vibegraph-lib --bench eval_strategies --no-run 2>&1)
@@ -99,7 +99,7 @@ collecting {
     if ($0 ~ /[ \t]v(fn?m(add|sub)[0-9]*|mul|add|sub|div|sqrt)pd[ \t]/ && $0 ~ /zmm[0-9]/) zmm_pd++
     if ($0 ~ /[ \t](callq?|bl)[ \t]/) {
         calls++
-        if ($0 ~ /NumericArray|GenericArray|num_complex/) arith_calls++
+        if ($0 ~ /LaneField|lane_field|wide::|num_complex/) arith_calls++
     }
 }
 END { flush() }

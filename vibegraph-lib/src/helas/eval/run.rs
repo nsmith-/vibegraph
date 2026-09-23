@@ -11,15 +11,12 @@ use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use num_traits::{FromPrimitive, Zero};
 
-use numeric_array::generic_array::typenum::Const as LaneLen;
-use numeric_array::generic_array::IntoArrayLength;
-use numeric_array::NumericArray;
-
 use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
 use super::kernel;
-use super::lanes::{transpose_points, unpack, LaneField};
+use super::lane_field::{LaneField, Lanes, SupportedLanes};
+use super::lanes::{transpose_points, unpack};
 use super::layout::{Instr, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
@@ -795,20 +792,16 @@ impl<'a> BoundAmplitude<'a, f64> {
     /// [`eval_m2_lanes`]: fn@eval_m2_lanes
     pub fn broadcast_lanes<const N: usize>(&self) -> BoundAmplitude<'a, LaneField<N>>
     where
-        LaneLen<N>: IntoArrayLength,
+        Lanes<N>: SupportedLanes<N>,
         LaneField<N>: Real,
     {
         let consts_c = self
             .consts_c
             .iter()
-            .map(|z| C::new(NumericArray::splat(z.re), NumericArray::splat(z.im)))
+            .map(|z| C::new(LaneField::splat(z.re), LaneField::splat(z.im)))
             .collect();
-        let consts_f = self
-            .consts_f
-            .iter()
-            .map(|&x| NumericArray::splat(x))
-            .collect();
-        let cf = self.cf.iter().map(|&x| NumericArray::splat(x)).collect();
+        let consts_f = self.consts_f.iter().map(|&x| LaneField::splat(x)).collect();
+        let cf = self.cf.iter().map(|&x| LaneField::splat(x)).collect();
         BoundAmplitude::new(self.eval, consts_c, consts_f, cf)
     }
 }
@@ -826,7 +819,7 @@ pub fn eval_m2_lanes<const N: usize>(
     scratch: &mut ScratchSpace<LaneField<N>>,
 ) -> [f64; N]
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let momenta = pack_lane_points(points);
@@ -844,7 +837,7 @@ pub fn pack_lane_points<const N: usize>(
     points: &[&[LorentzVector<f64>]; N],
 ) -> Vec<LorentzVector<LaneField<N>>>
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     transpose_points(points)
@@ -859,7 +852,7 @@ pub fn eval_m2_lanes_packed<const N: usize>(
     scratch: &mut ScratchSpace<LaneField<N>>,
 ) -> [f64; N]
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     unpack(amp.eval_m2(momenta, scratch))
@@ -4440,7 +4433,7 @@ mod tests {
             amp: &BoundAmplitude<'_, f64>,
             batch: &[Vec<LorentzVector<f64>>; M],
         ) where
-            LaneLen<M>: IntoArrayLength,
+            Lanes<M>: SupportedLanes<M>,
             LaneField<M>: Real,
         {
             let lane_amp = amp.broadcast_lanes::<M>();

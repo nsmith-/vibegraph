@@ -765,30 +765,32 @@ coverage. What is left below is what still refuses, and why.
   helicity-summed evaluation per accepted event), so single-helicity evaluation
   never became the hot path. Re-sequence under whatever first needs a single
   fixed helicity in a loop. (Note 23 §E2.)
-- **The lane-FMA commit's scalar toll, and `MulAdd` for `NumericArray`** —
+- **The lane-FMA commit's scalar toll, and `MulAdd` for the lane field** —
   `be76771` shared one real-FMA complex path between the scalar and lane fields
-  (lanes −22–35%) because `Complex<NumericArray>` lacks `num_traits::MulAdd`,
+  (lanes −22–35%) because `Complex<NumericArray>` lacked `num_traits::MulAdd`,
   and its own message recorded the price: scalar `forward` +3.5%, shipped as-is
   since `forward` is the least-used path — but lanes never entered production,
   so the toll lands on the production evaluator. The in-house workaround trait
   was killed clean by its pre-registered criterion (note 32 S9): the packed
   idiom is x86-specific and forcing it on this ARM host cost 8–9%, the opposite
-  of a win. The clean long-term fix is an upstream `numeric_array` contribution
-  implementing `num_traits::MulAdd` (the orphan rule forbids it in-tree); the
-  in-house design stays at note 32 §2 S9 for whoever revisits this on x86.
-- **Lane field inlining** — on Emerald Rapids (AVX-512) every lane width loses
-  to scalar per event, 5.6× / 7.9× / 10.0× median at N = 2 / 4 / 8, and the
-  loss grows with width. The lane `fill_arenas` bodies hold almost no FP
-  arithmetic: it sits in ~1 250 out-of-line calls into `generic-array`'s
-  soft-`#[inline]` `from_iter` (every elementwise op, and a scalar
-  per-element loop there), `NumericArray`'s `Float::mul_add` and
-  `num_complex`'s `Mul`, whose bodies are correctly packed. No attribute in this
-  tree can force them inline. `-C llvm-args=-inline-threshold=2000` brings
-  lanes2/lanes4 to 1.65× / 1.57× and leaves lanes8 at 6.5× with 75 `memcpy`s,
-  so inlining is necessary, not sufficient. Next: a lane field whose
-  arithmetic inlines by construction (a crate swap behind a `num_traits::Float`
-  newtype), gated on the call census in `scripts/dump_lane_asm.sh` before any
-  bench. (`x86-avx2-perf-study-results.md`, AVX-512 section.)
+  of a win. The lane field is now the local `LaneField<N>`, so implementing
+  `num_traits::MulAdd` for it is no longer an orphan-rule problem, and
+  `Complex<LaneField<N>>` can get `Complex::mul_add`. Whether that beats the
+  shared real-FMA path is a measurement, on both x86 and ARM. The in-house
+  design stays at note 32 §2 S9.
+- **Lane batching into production** — the lane field is a `wide`-backed
+  `LaneField<N>` (`helas/eval/lane_field.rs`). On Emerald Rapids every lane op
+  inlines and lanes beat scalar per event at every width: 1.75× / 3.1× / 4.0×
+  throughput at N = 2 / 4 / 8, lanes8 on genuine zmm. The `numeric-array` field
+  it replaced lost 5.6–10× to scalar through ~1 250 out-of-line calls per
+  `fill_arenas`. (`x86-avx2-perf-study-results.md`, AVX-512 section.) Open:
+  - Re-measure on ARM, where `wide` is NEON `f64x2` and wider packs are pairs
+    of it.
+  - The default x86-64 target has no FMA, so every `mul_add`, scalar and lane
+    alike, is a libm `fma` call. Whether shipped binaries should raise the
+    baseline (e.g. `x86-64-v3`) or dispatch at runtime is a separate decision.
+  - The consumers below (per-lane scales, an `F`-generic end-to-end chain) are
+    what turn the lane speedup into integrator throughput.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)

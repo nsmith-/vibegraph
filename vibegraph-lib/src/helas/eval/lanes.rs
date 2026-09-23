@@ -1,7 +1,7 @@
 //! SIMD lane-batched evaluation of `eval_m2`.
 //!
 //! The evaluator and repr layers are generic over the scalar field `F: Real`.
-//! Choosing `F = NumericArray<f64, N>` (an `N`-wide elementwise SIMD array) runs
+//! Choosing `F = LaneField<N>` (an `N`-wide packed SIMD vector) runs
 //! one `eval_m2` pass over `N` phase-space points at once: every elementwise
 //! floating-point op (`+ - * /`, `sqrt`, `min`, `max`, `abs`, `signum`) executes
 //! the identical scalar operation independently per lane, so each extracted lane
@@ -10,7 +10,7 @@
 //! # Lane-uniformity contract
 //!
 //! The one way this breaks is a *data-dependent branch on `F`*. Elementwise
-//! comparisons on `NumericArray` (`==`, `<`, `>=`, `is_sign_positive`) reduce to a
+//! comparisons on `LaneField` (`==`, `<`, `>=`, `is_sign_positive`) reduce to a
 //! single `bool` (lexicographic over the whole pack), so an `if predicate(F)`
 //! evaluates ONE branch for the entire lane pack. If two lanes want different
 //! branches the wrong formula is applied to one of them and bit-identity is lost.
@@ -38,25 +38,17 @@
 //! gate (`eval_m2_lanes_bit_identical`) pins this against the scalar path across all
 //! MG-validated processes on random, z-beam, and threshold-adjacent batches.
 
-use numeric_array::generic_array::typenum::Const;
-use numeric_array::generic_array::{ConstArrayLength, GenericArray, IntoArrayLength};
-use numeric_array::NumericArray;
-
+use super::lane_field::{LaneField, Lanes, SupportedLanes};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
-
-/// The scalar field for an `N`-wide lane pack: `N` phase-space points fed through
-/// one `eval_m2` pass. `N` is a plain `usize` const generic; the
-/// `Const<N>: IntoArrayLength` bound bridges it to numeric-array's typenum length.
-pub type LaneField<const N: usize> = NumericArray<f64, ConstArrayLength<N>>;
 
 /// Pack one f64 per lane into a single lane value.
 #[inline]
 pub(super) fn pack<const N: usize>(lanes: [f64; N]) -> LaneField<N>
 where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
 {
-    NumericArray::new(GenericArray::from_array(lanes))
+    LaneField::from_array(lanes)
 }
 
 /// Transpose `N` scalar phase-space points — each a slice of the external momenta
@@ -66,7 +58,7 @@ pub(super) fn transpose_points<const N: usize>(
     points: &[&[LorentzVector<f64>]; N],
 ) -> Vec<LorentzVector<LaneField<N>>>
 where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let n_ext = points[0].len();
@@ -86,7 +78,7 @@ where
 #[inline]
 pub(super) fn unpack<const N: usize>(lanes: LaneField<N>) -> [f64; N]
 where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
 {
-    std::array::from_fn(|k| lanes[k])
+    lanes.to_array()
 }

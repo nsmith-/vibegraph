@@ -62,10 +62,10 @@ pub mod vectorspace;
 ///      integrator share one channel map instead of copying it per thread.
 ///
 /// The zero/one bounds are method-based (`Zero`/`One`, inherited through `Float`)
-/// rather than the associated-const `ConstZero`/`ConstOne`: SIMD lane types whose
-/// width is a runtime-length array (`numeric_array::NumericArray`) cannot supply a
-/// `const ZERO`/`const ONE`, but do implement the method forms, so batching one
-/// `eval_m2` call over several phase-space points needs only this weaker bound.
+/// rather than the associated-const `ConstZero`/`ConstOne`: a SIMD lane type
+/// needs only the method forms (`LaneField` builds its zero by splatting at run
+/// time), so batching one `eval_m2` call over several phase-space points needs
+/// only this weaker bound.
 ///
 /// Both `f32` and `f64` implement this automatically.
 pub trait Real:

@@ -385,9 +385,11 @@ holds exactly.
 
 ## x86 AVX-512 re-measurement (Emerald Rapids, 2026-09-23)
 
-**Status: lanes lose to scalar on AVX-512 silicon too, and by more than on ARM;
-the cause is an inlining failure in the lane field's arithmetic, not the vector
-width.** This section supersedes the lane-width reading of the AVX2 sections
+**Status: with the `numeric-array` lane field, lanes lost to scalar on AVX-512
+silicon too, by more than on ARM. The cause was an inlining failure in the lane
+field's arithmetic, not the vector width. Replacing the lane field with a
+`wide`-backed newtype makes every width beat scalar: 4.0× per-event throughput
+at N = 8 (see "The fix").** This section supersedes the lane-width reading of the AVX2 sections
 above (see "What this corrects").
 
 Host: Intel Xeon family 6 model 207 (Emerald Rapids, 5th-gen Xeon Scalable) at
@@ -550,6 +552,83 @@ representative SM set (`BENCH_ROWS`). It reads each row's process string from
 its `mg_amplitude` table and rejects a row that names a model of its own.
 `mg_perf_compare.sh` lists the `mg_timings.json` rows outside the set as
 unjoined.
+
+### The fix: `LaneField<N>` over `wide`
+
+The lane field is now `LaneField<N>` (`helas/eval/lane_field.rs`), a newtype over
+`wide::f64x2` / `f64x4` / `f64x8` that implements `num_traits::Float` and
+`FloatConst` itself. It replaces the `NumericArray<f64, N>` alias.
+
+**Candidates considered**, by fit with `Real = Float + FloatConst + Copy + …`:
+
+- **`wide` 1.7** is statically dispatched on the target's enabled vector units,
+  on stable. Each op is one intrinsic, so even its soft `#[inline]` bodies inline
+  reliably. It has `f64x2`/`f64x4`/`f64x8`, which are exactly the swept widths,
+  and `f64x8` uses zmm whenever `avx512f` is on, bypassing LLVM's
+  `prefer-256-bit`. It has no `num_traits` impls, so the newtype supplies them.
+- **`fearless_simd` 1.0** and **`pulp`** are built for runtime multiversioning:
+  every vector carries a SIMD-level token (`f64x4<S> { val, simd: S }`). `Float`'s
+  token-less constructors (`zero()`, `NumCast::from`, `FloatConst::PI()`) have no
+  token to build from. Adopting either means restructuring the evaluator around
+  their `dispatch!` entry points rather than `F: Real`. That buys runtime CPU
+  dispatch (no `target-cpu=native` needed), which is a separate decision.
+- **`simba`** has its own `SimdRealField` trait family and no `num_traits::Float`
+  impl. Adopting it means rewriting the `Real` bound across the library.
+- **`std::simd`** is nightly-only, and the repository builds on stable.
+
+**What the newtype does.** `+ − × ÷`, `neg`, `sqrt`, `abs` and `mul_add` are the
+packed `wide` operation. Every other `Float` method runs per lane through `f64`'s
+own method. The packed ones are IEEE-exact, so each lane stays bit-identical to
+scalar with one exception, which is handled: `wide`'s `mul_add` rounds twice when
+the target has no hardware FMA, while `f64::mul_add` always fuses. The packed FMA
+is used only under `target_feature = "fma"` (or aarch64 NEON), and the per-lane
+`f64::mul_add` otherwise. Comparisons and the `Float` predicates reproduce
+numeric-array's pack-level reductions, which the lane-uniformity contract is
+written against: lexicographic `partial_cmp`, all-lanes `==`, any/all predicates
+as documented in the module.
+
+**Census** (`dump_lane_asm.sh 'fill_arenas'`, `target-cpu=native`):
+
+| instance | insns | packed pd (xmm / ymm / zmm) | scalar sd | arith calls | memcpy |
+|---|--:|--:|--:|--:|--:|
+| lanes2 | 5 467 | 1 742 / 0 / 0 | 0 | 0 | 1 |
+| lanes4 | 5 738 | 0 / 1 734 / 0 | 0 | 0 | 1 |
+| lanes8 | 6 090 | 0 / 0 / 1 734 | 0 | 0 | 11 |
+
+Every lane op inlines, the widths land on exactly the register class they should,
+lanes8 is genuine 8×f64 AVX-512, and the bodies shrank 2–5×.
+
+**Bench** (8-row set, same host and flags; `forward` within noise of the
+`NumericArray` build):
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 8.0 | 0.57× | 0.30× | 0.24× |
+| `ee_to_wpwm` | 30.5 | 0.62× | 0.42× | 0.34× |
+| `uux_to_uux` | 13.0 | 0.57× | 0.30× | 0.26× |
+| `gg_to_gg` | 43.4 | 0.59× | 0.32× | 0.23× |
+| `gg_to_ttx` | 24.8 | 0.59× | 0.33× | 0.23× |
+| `ee_to_mumua` | 33.9 | 0.57× | 0.33× | 0.26× |
+| `ee_to_mumu_tata_qcd0` | 163.5 | 0.50× | 0.31× | 0.23× |
+| `uux_to_ccx_emmm_qcd0` | 3047.1 | 0.58× | 0.37× | 0.33× |
+| **median** | | **0.57×** | **0.32×** | **0.25×** |
+| **suite Σ** | | **0.58×** | **0.37×** | **0.32×** |
+
+**Lanes now beat scalar at every width on every row.** Per-event throughput is
+1.75× / 3.1× / 4.0× (median) at N = 2 / 4 / 8, and the ordering is the one SIMD
+predicts: wider is cheaper per event. Against the `NumericArray` build that is a
+~10× / ~25× / ~40× per-event speedup of the lane path. `ee_to_wpwm` and
+`uux_to_ccx_emmm_qcd0` gain least at N = 8 (0.34× / 0.33×). One is among the
+smallest processes and the other is the largest, so it is not simply size, and
+this run does not isolate the cause.
+
+**Correctness.** `eval_m2_lanes_bit_identical_to_scalar` and
+`lanes4_lanes8_pack_unpack_bit_identical` pass both on the default x86-64 target
+(SSE2, the per-lane FMA fallback) and under `target-cpu=native` (packed
+AVX-512 + FMA). New unit tests pin every packed op bit-for-bit against `f64` at
+N = 2 / 4 / 8. The `mul_add` probe is checked to actually separate fused from
+unfused rounding, so it would fail if the fallback were missing. The scalar path
+is unchanged code.
 
 ### Reproduce
 

@@ -5,7 +5,7 @@
 //! evaluator changes.
 //!
 //! The `forward` benchmark is the scalar `eval_m2`; `lanes{N}` runs the SIMD
-//! lane-batched [`eval_m2_lanes`] with `F = NumericArray<f64, N>` over the same
+//! lane-batched [`eval_m2_lanes`] with `F = LaneField<N>` over the same
 //! points, chunked `N` at a time. Comparing `lanes{N}` to `forward` at equal
 //! per-point work measures the SIMD speedup and the best width `N` for the host.
 //!
@@ -19,12 +19,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Cr
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use numeric_array::generic_array::typenum::Const;
-use numeric_array::generic_array::IntoArrayLength;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::{
     eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, AmplitudeEvaluator, BoundAmplitude,
-    LaneField, ScaleAwareAmplitude,
+    LaneField, Lanes, ScaleAwareAmplitude, SupportedLanes,
 };
 use vibegraph::helas::repr::Real;
 use vibegraph::helas::LorentzVector;
@@ -44,7 +42,7 @@ fn bench_lanes<const N: usize>(
     amp: &BoundAmplitude<'_, f64>,
     points: &[Vec<LorentzVector<f64>>],
 ) where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let lane_amp = amp.broadcast_lanes::<N>();
@@ -78,7 +76,7 @@ fn bench_lanes_prepacked<const N: usize>(
     amp: &BoundAmplitude<'_, f64>,
     points: &[Vec<LorentzVector<f64>>],
 ) where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let lane_amp = amp.broadcast_lanes::<N>();
