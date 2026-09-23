@@ -833,6 +833,14 @@ coverage. What is left below is what still refuses, and why.
   available across neighbouring dispatch-loop instructions is a per-kernel
   measurement. Reassociating changes rounding identically on scalar and lanes,
   so lane-vs-scalar identity is unaffected; the MG gate judges it.
+  **Pilot on `dot`: null.** Emerald Rapids, `target-cpu=native`, A/B/A/B runs
+  over the 8 bench rows. The two-chain `dot` moved the median by −0.2%
+  (`forward`), +2.4% (`lanes4`) and −1.6% (`lanes8`), inside the control
+  runs' own 0.9–3.4% median drift, with cells scattering both ways. Not kept.
+  Before surveying further kernels, establish that the evaluator is
+  latency-bound at all: IPC / top-down counters on a host that exposes a PMU.
+  The Firecracker VM used here has none (no `cpu` event source). A high IPC
+  would mean chain-splitting has nothing to recover.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
