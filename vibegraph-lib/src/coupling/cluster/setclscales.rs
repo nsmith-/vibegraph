@@ -559,6 +559,9 @@ fn walk_tree(channel: &Channel<'_>, clustering: &Clustering, n: usize, p: &[[f64
     for leg in 1..=n {
         ipart[1usize << (leg - 1)] = [leg, 0];
     }
+    // Indexed so a clustering holding fewer merges than the leg count implies panics
+    // here, where an iterator's `take` would stop short and carry on.
+    #[allow(clippy::needless_range_loop)]
     for step in 0..n.saturating_sub(3) {
         let merge = &clustering.merges[step];
         // The provenance walk compares the *lab* transverse momenta of the

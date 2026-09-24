@@ -1,34 +1,42 @@
 #!/usr/bin/env bash
-# A/B the evaluator's two instruction dispatchers on the `eval_strategies` bench:
-# the `match` loop against the tail-call-threaded handlers (`threaded-dispatch`,
-# which needs nightly for `become`). Both arms build with the same pinned nightly
-# and the same RUSTFLAGS, so the compiler is not a variable; each arm keeps its own
-# target directory, so criterion's per-arm results never overwrite each other.
+# Sweep the evaluator's instruction dispatchers against its execution orders on the
+# `eval_strategies` bench: the `match` loop and the tail-call-threaded handlers
+# (`threaded-dispatch`, which needs nightly for `become`), each under every
+# `VIBEGRAPH_EVAL_SCHEDULE` order given. Both arms build with the same pinned nightly,
+# the same RUSTFLAGS and the `eval-schedule-study` feature, so neither the compiler nor
+# the schedule hook is a variable between them; each arm keeps its own target
+# directory. The order is chosen when a program is built, so one binary per arm
+# serves every schedule.
 #
-# The arms run interleaved, A B A B ..., so host drift lands on both; the summary
-# takes the median of each arm's per-round criterion point estimates and prints
-# threaded/match per row and benchmark.
+# Cells run round-robin, so host drift lands on all of them; the summary is the
+# geometric mean over rows of each cell's median-over-rounds time, relative to
+# `match` under the production order.
 #
-# Usage: scripts/bench_dispatch.sh [rounds] [criterion filter]
+# Usage: scripts/bench_dispatch.sh [rounds] [schedules...]
+#   default schedules: opblocked arena opwin32
 #   VIBEGRAPH_NIGHTLY    toolchain (default: the pin below, shared with ci.yml)
 #   RUSTFLAGS            codegen flags for both arms (default: -C target-cpu=native)
+#   BENCH_FILTER         criterion filter (default: forward, lanes4, lanes8)
 set -euo pipefail
 
 rounds="${1:-2}"
-filter="${2:-eval_m2/(forward|lanes[248])/}"
+shift || true
+schedules=("$@")
+[ ${#schedules[@]} -gt 0 ] || schedules=(opblocked arena opwin32)
+filter="${BENCH_FILTER:-eval_m2/(forward|lanes[48])/}"
 toolchain="${VIBEGRAPH_NIGHTLY:-nightly-2026-09-24}"
 export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-out="$root/target/dispatch-ab"
+out="$root/target/dispatch-sweep"
+rm -rf "$out"
 mkdir -p "$out"
 
-build() { # <arm> [cargo args...]
-    local arm="$1"
-    shift
-    CARGO_TARGET_DIR="$root/target/dispatch-$arm" cargo "+$toolchain" bench \
-        -p vibegraph-lib --bench eval_strategies --no-run --message-format=json "$@" |
+build() { # <arm> <features>
+    CARGO_TARGET_DIR="$root/target/dispatch-$1" cargo "+$toolchain" bench \
+        -p vibegraph-lib --bench eval_strategies --no-run --features "$2" \
+        --message-format=json |
         python3 -c 'import json,sys
 for l in sys.stdin:
     m = json.loads(l)
@@ -36,56 +44,44 @@ for l in sys.stdin:
         print(m["executable"])'
 }
 
-match_bin="$(build match)"
-threaded_bin="$(build threaded --features threaded-dispatch)"
+declare -A bin
+bin[match]="$(build match eval-schedule-study)"
+bin[threaded]="$(build threaded eval-schedule-study,threaded-dispatch)"
 
 for r in $(seq 1 "$rounds"); do
-    for arm in match threaded; do
-        bin="${arm}_bin"
-        echo "round $r: $arm" >&2
-        # Criterion writes under the bench's working directory's target/criterion;
-        # a per-arm, per-round directory keeps every estimate on disk.
-        dir="$out/$arm-$r"
-        mkdir -p "$dir"
-        (cd "$dir" && CRITERION_HOME="$dir/criterion" "${!bin}" --bench --noplot "$filter" >"$dir/log.txt")
+    for sched in "${schedules[@]}"; do
+        for arm in match threaded; do
+            dir="$out/$arm@$sched-$r"
+            mkdir -p "$dir"
+            echo "round $r: $arm @ $sched" >&2
+            (cd "$root/vibegraph-lib" &&
+                VIBEGRAPH_EVAL_SCHEDULE="$sched" CRITERION_HOME="$dir/criterion" \
+                    "${bin[$arm]}" --bench --noplot "$filter" >"$dir/log.txt")
+        done
     done
 done
 
-python3 - "$out" "$rounds" <<'EOF'
-import json, pathlib, statistics, sys
-out, rounds = pathlib.Path(sys.argv[1]), int(sys.argv[2])
-
-def estimates(arm):
-    per = {}
-    for r in range(1, rounds + 1):
-        base = out / f"{arm}-{r}" / "criterion" / "eval_m2"
-        for est in base.glob("*/*/new/estimates.json"):
-            bench, row = est.parts[-4], est.parts[-3]
-            per.setdefault((row, bench), []).append(
-                json.loads(est.read_text())["median"]["point_estimate"])
-    return {k: statistics.median(v) for k, v in per.items()}
-
-m, t = estimates("match"), estimates("threaded")
-benches = sorted({b for _, b in m}, key=lambda b: (b != "forward", b))
-rows = sorted({r for r, _ in m})
-print("threaded / match, median over rounds of criterion's median (<1 is faster)")
-print(f"{'row':<24}" + "".join(f"{b:>10}" for b in benches))
-ratios = {b: [] for b in benches}
-for row in rows:
-    cells = []
+python3 - "$out" <<'EOF'
+import collections, json, math, pathlib, statistics, sys
+out = pathlib.Path(sys.argv[1])
+est = collections.defaultdict(list)
+for d in out.iterdir():
+    cell = d.name.rsplit("-", 1)[0]
+    for e in (d / "criterion" / "eval_m2").glob("*/*/new/estimates.json"):
+        est[(cell, e.parts[-4], e.parts[-3])].append(
+            json.loads(e.read_text())["median"]["point_estimate"])
+cells = sorted({c for c, _, _ in est}, key=lambda c: (c.split("@")[1], c))
+benches = sorted({b for _, b, _ in est}, key=lambda b: (b != "forward", b))
+rows = sorted({r for _, _, r in est})
+ref = "match@opblocked"
+print(f"geomean over {len(rows)} rows of time / {ref} [per-row min..max]")
+print(f"{'cell':<22}" + "".join(f"{b:>22}" for b in benches))
+for c in cells:
+    line = f"{c:<22}"
     for b in benches:
-        if (row, b) in m and (row, b) in t:
-            q = t[(row, b)] / m[(row, b)]
-            ratios[b].append(q)
-            cells.append(f"{q:>10.3f}")
-        else:
-            cells.append(f"{'-':>10}")
-    print(f"{row:<24}" + "".join(cells))
-print(f"{'median':<24}" + "".join(f"{statistics.median(ratios[b]):>10.3f}" for b in benches))
-print()
-print("match-arm time per event, µs")
-print(f"{'row':<24}" + "".join(f"{b:>10}" for b in benches))
-for row in rows:
-    print(f"{row:<24}" + "".join(
-        f"{m[(row, b)] / 16 / 1e3:>10.3f}" if (row, b) in m else f"{'-':>10}" for b in benches))
+        q = [statistics.median(est[(c, b, r)]) / statistics.median(est[(ref, b, r)])
+             for r in rows if est.get((c, b, r)) and est.get((ref, b, r))]
+        g = math.exp(sum(map(math.log, q)) / len(q))
+        line += f"{g:>8.3f} [{min(q):.2f}..{max(q):.2f}]"
+    print(line)
 EOF
