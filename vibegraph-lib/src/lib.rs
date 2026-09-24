@@ -1,3 +1,7 @@
+// The threaded instruction dispatcher's handlers chain through `become`.
+#![cfg_attr(feature = "threaded-dispatch", feature(explicit_tail_calls))]
+#![cfg_attr(feature = "threaded-dispatch", allow(incomplete_features))]
+
 pub mod artifact;
 pub mod budget;
 pub mod cache;

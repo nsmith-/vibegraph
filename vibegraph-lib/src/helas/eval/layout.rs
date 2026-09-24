@@ -100,6 +100,11 @@ impl std::fmt::Debug for OperandRef {
 /// arena, etc.); variadic/mixed-class operands are a `(start, len)` slice of the shared
 /// [`Program::operands`] table.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(
+    feature = "threaded-dispatch",
+    derive(strum::EnumCount, strum::EnumDiscriminants),
+    strum_discriminants(name(InstrOpcode))
+)]
 pub(super) enum Instr {
     /// Complex-pool read (coupling or imaginary rational) → a zero-momentum scalar.
     ComplexConst {
@@ -507,6 +512,10 @@ pub(super) struct Program {
     /// Destination slot of each instruction (`dest[pos]`), within the arena its
     /// output class fixes — the write index the forward pass uses.
     pub(super) dest: Box<[u32]>,
+    /// Each instruction's opcode, then a halt sentinel: the stream the threaded
+    /// dispatcher reads its next handler from.
+    #[cfg(feature = "threaded-dispatch")]
+    pub(super) opcodes: Box<[u8]>,
     /// Per-node index within its result arena (`loc[id]`), for the debug /
     /// `extended-validation` cross-check that reconstructs every node's slot. The
     /// forward pass reads `dest` instead, so this is absent from a release build.
@@ -1168,6 +1177,8 @@ impl Program {
         };
 
         Program {
+            #[cfg(feature = "threaded-dispatch")]
+            opcodes: super::threaded::opcodes(&instrs),
             instrs: instrs.into_boxed_slice(),
             dest: dest.into_boxed_slice(),
             #[cfg(any(debug_assertions, feature = "extended-validation"))]

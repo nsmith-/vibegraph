@@ -91,6 +91,33 @@ jobs:
       # second compile wave without adding coverage.
       - run: cargo test --locked --workspace
 
+  # The tail-call-threaded evaluator dispatcher (`threaded-dispatch`) is written in
+  # `become`, a nightly-only language feature, so no stable job compiles it. This
+  # one keeps it building, lint-clean and bit-identical to the `match` loop (its
+  # unit test compares the two dispatchers' read-outs) on a pinned nightly —
+  # pinned so an upstream nightly regression cannot turn a merge red, and bumped
+  # deliberately together with `scripts/bench_dispatch.sh`'s default. Advisory:
+  # the feature is a dispatch study, never enabled in a shipped build.
+  threaded-dispatch:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-09-24
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: threaded-dispatch
+          cache-on-failure: true
+
+      - run: cargo clippy -p vibegraph-lib --all-targets --features threaded-dispatch --locked -- -D warnings
+
+      - run: cargo test -p vibegraph-lib --lib --features threaded-dispatch --locked
+
   banked:
     needs: test
     runs-on: ubuntu-latest

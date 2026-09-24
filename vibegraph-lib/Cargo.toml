@@ -18,6 +18,11 @@ bench-internals = []
 # swept over the orders without a rebuild. A study hook: without it the module is not
 # compiled and the evaluator emits arena order. Never enable in normal builds.
 eval-schedule-study = []
+# Dispatches the evaluator's instruction stream through tail-call-threaded handlers
+# (`become`) instead of a `match` loop. Needs a nightly toolchain for the
+# `explicit_tail_calls` language feature; a dispatch study, never enabled in
+# normal builds.
+threaded-dispatch = []
 
 [lints]
 workspace = true

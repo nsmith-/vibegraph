@@ -17,7 +17,7 @@ use super::fold::{ExtLeg, Folded};
 use super::kernel;
 use super::lane_field::{LaneField, Lanes, SupportedLanes};
 use super::lanes::{transpose_points, unpack};
-use super::layout::{Instr, RootKind, N_ARENAS};
+use super::layout::{Instr, OperandRef, Program, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
 use super::tree::Tree;
@@ -997,15 +997,93 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
         scratch.fills += 1;
     }
     scratch.ensure_sizes(&prog.arena_sizes);
-    let ops = &prog.operands;
-    let mom_ops = &prog.mom_operands;
-    let consts_c = env.consts_c;
-    let consts_f = env.consts_f;
-    // Every arena is taken once, as a local slice, through split field borrows. Held that
-    // way its `ptr`/`len` pair stays in registers for the whole pass; read back through
-    // `scratch.<arena>` per instruction the pair has to be reloaded from the `Vec` header
-    // each time, because an arena store is a write the compiler cannot prove misses it.
-    let ScratchSpace {
+    {
+        let ScratchSpace {
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ..
+        } = &mut *scratch;
+        // Every arena is taken once, as a local slice, through split field borrows. Held
+        // that way its `ptr`/`len` pair stays in registers for the whole pass; read back
+        // through `scratch.<arena>` per instruction the pair has to be reloaded from the
+        // `Vec` header each time, because an arena store is a write the compiler cannot
+        // prove misses it.
+        let mut arenas = Arenas {
+            reals: reals.as_mut_slice(),
+            scalars: scalars.as_mut_slice(),
+            vectors: vectors.as_mut_slice(),
+            multivectors: multivectors.as_mut_slice(),
+            fin: fin.as_mut_slice(),
+            fout: fout.as_mut_slice(),
+            moms: moms.as_slice(),
+            ops: &prog.operands,
+            mom_ops: &prog.mom_operands,
+            consts_c: env.consts_c,
+            consts_f: env.consts_f,
+        };
+        dispatch(prog, env, &mut arenas);
+    }
+
+    validate_arenas(folded, env, scratch);
+}
+
+/// Run the instruction stream: through the tail-call-threaded handlers under the
+/// `threaded-dispatch` feature, through a `match` loop otherwise.
+#[inline(always)]
+fn dispatch<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: &mut Arenas<'_, F>) {
+    #[cfg(all(test, feature = "threaded-dispatch"))]
+    if MATCH_DISPATCH.get() {
+        return match_loop(prog, env, arenas);
+    }
+    #[cfg(feature = "threaded-dispatch")]
+    super::threaded::run(prog, env, arenas);
+    #[cfg(not(feature = "threaded-dispatch"))]
+    match_loop(prog, env, arenas);
+}
+
+#[cfg(all(test, feature = "threaded-dispatch"))]
+thread_local! {
+    /// Routes this thread's passes through the `match` loop under `threaded-dispatch`,
+    /// so the two dispatchers can be compared in one build.
+    pub(super) static MATCH_DISPATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[inline(always)]
+#[cfg_attr(all(feature = "threaded-dispatch", not(test)), allow(dead_code))]
+fn match_loop<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: &mut Arenas<'_, F>) {
+    for (instr, &loc) in prog.instrs.iter().zip(prog.dest.iter()) {
+        step(*instr, loc as usize, arenas, env);
+    }
+}
+
+/// The per-pass views [`step`] reads and writes: the result arenas as local slices, and
+/// the program's operand tables and constant pools.
+pub(super) struct Arenas<'s, F: Real> {
+    pub(super) reals: &'s mut [F],
+    pub(super) scalars: &'s mut [C<F>],
+    pub(super) vectors: &'s mut [ComplexVector<F>],
+    pub(super) multivectors: &'s mut [Multivector<F>],
+    pub(super) fin: &'s mut [Bispinor<F, Ket>],
+    pub(super) fout: &'s mut [Bispinor<F, Bra>],
+    pub(super) moms: &'s [LorentzVector<F>],
+    pub(super) ops: &'s [OperandRef],
+    pub(super) mom_ops: &'s [(u32, i8)],
+    pub(super) consts_c: &'s [C<F>],
+    pub(super) consts_f: &'s [F],
+}
+
+/// Execute one instruction, writing its result to slot `loc` of the arena its output
+/// class selects. Always inlined: into the `match` loop it is the loop body, and into a
+/// threaded handler whose opcode is a compile-time constant the `match` folds to that
+/// one arm.
+#[inline(always)]
+pub(super) fn step<F: Real>(instr: Instr, loc: usize, a: &mut Arenas<'_, F>, env: &EvalEnv<'_, F>) {
+    let Arenas {
         reals,
         scalars,
         vectors,
@@ -1013,352 +1091,336 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
         fin,
         fout,
         moms,
-        ..
-    } = &mut *scratch;
-    let reals = reals.as_mut_slice();
-    let scalars = scalars.as_mut_slice();
-    let vectors = vectors.as_mut_slice();
-    let multivectors = multivectors.as_mut_slice();
-    let fin = fin.as_mut_slice();
-    let fout = fout.as_mut_slice();
-    let moms = moms.as_slice();
-
-    for (instr, &loc) in prog.instrs.iter().zip(prog.dest.iter()) {
-        let loc = loc as usize;
-        match *instr {
-            Instr::ComplexConst { pool } => scalars[loc] = consts_c[pool as usize],
-            Instr::RealConst { pool } => reals[loc] = consts_f[pool as usize],
-            Instr::ExternalScalar { leg } => {
-                let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
-                    panic!("external scalar leg produced a non-scalar slot");
-                };
-                scalars[loc] = s.value;
-            }
-            Instr::ExternalVector { leg } => {
-                let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
-                    panic!("external vector leg produced a non-vector slot");
-                };
-                vectors[loc] = v.eps;
-            }
-            Instr::ExternalFin { leg } => {
-                let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
-                    panic!("external ket leg produced a non-fermion-in slot");
-                };
-                fin[loc] = f.spinor;
-            }
-            Instr::ExternalFout { leg } => {
-                let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
-                    panic!("external bra leg produced a non-fermion-out slot");
-                };
-                fout[loc] = f.spinor;
-            }
-            Instr::PropagateScalar {
-                input,
-                mass,
-                width,
-                mom,
-            } => {
-                let out = kernel::propagate_scalar_bare(
-                    scalars[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
-                );
-                scalars[loc] = out;
-            }
-            Instr::PropagateVector {
-                input,
-                mass,
-                width,
-                mom,
-            } => {
-                let out = kernel::propagate_vector_bare(
-                    &vectors[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
-                );
-                vectors[loc] = out;
-            }
-            Instr::PropagateFin {
-                input,
-                mass,
-                width,
-                mom,
-            } => {
-                let out = kernel::propagate_fin_bare(
-                    &fin[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
-                );
-                fin[loc] = out;
-            }
-            Instr::PropagateFout {
-                input,
-                mass,
-                width,
-                mom,
-            } => {
-                let out = kernel::propagate_fout_bare(
-                    &fout[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
-                );
-                fout[loc] = out;
-            }
-            Instr::AddScalar { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut value = scalars[slice[0].index()];
-                for op in &slice[1..] {
-                    value = value + scalars[op.index()];
-                }
-                scalars[loc] = value;
-            }
-            Instr::AddVector { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut eps = vectors[slice[0].index()];
-                for op in &slice[1..] {
-                    eps = eps + vectors[op.index()];
-                }
-                vectors[loc] = eps;
-            }
-            Instr::AddFin { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = fin[slice[0].index()];
-                for op in &slice[1..] {
-                    spinor = spinor + fin[op.index()];
-                }
-                fin[loc] = spinor;
-            }
-            Instr::AddFout { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = fout[slice[0].index()];
-                for op in &slice[1..] {
-                    spinor = spinor + fout[op.index()];
-                }
-                fout[loc] = spinor;
-            }
-            Instr::MulScalarC { a, b } => {
-                scalars[loc] = scalars[a as usize] * scalars[b as usize];
-            }
-            Instr::MulScalarR { s, r } => {
-                scalars[loc] = scalars[s as usize] * reals[r as usize];
-            }
-            Instr::ScaleVecC { v, scale } => {
-                vectors[loc] = vectors[v as usize] * scalars[scale as usize];
-            }
-            Instr::ScaleVecR { v, scale } => {
-                vectors[loc] = vectors[v as usize] * reals[scale as usize];
-            }
-            Instr::ScaleFinC { f, scale } => {
-                fin[loc] = fin[f as usize] * scalars[scale as usize];
-            }
-            Instr::ScaleFinR { f, scale } => {
-                fin[loc] = fin[f as usize] * reals[scale as usize];
-            }
-            Instr::ScaleFoutC { f, scale } => {
-                fout[loc] = fout[f as usize] * scalars[scale as usize];
-            }
-            Instr::ScaleFoutR { f, scale } => {
-                fout[loc] = fout[f as usize] * reals[scale as usize];
-            }
-            Instr::GammaVout { bra, ket, reversed } => {
-                let out =
-                    kernel::gamma_vout_bare(&fout[bra as usize], &fin[ket as usize], reversed);
-                vectors[loc] = out;
-            }
-            Instr::FfvVout {
-                bra,
-                ket,
-                gl,
-                gr,
-                reversed,
-            } => {
-                let out = kernel::ffv_vout_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
-                    reversed,
-                );
-                vectors[loc] = out;
-            }
-            Instr::GammaFin { v, f } => {
-                let eps = vectors[v as usize];
-                let out = kernel::off_shell_fin_bare(&eps, &fin[f as usize]);
-                fin[loc] = out;
-            }
-            Instr::GammaFout { v, f } => {
-                let eps = vectors[v as usize];
-                let out = kernel::off_shell_fout_bare(&eps, &fout[f as usize]);
-                fout[loc] = out;
-            }
-            Instr::FfvFin { v, f, gl, gr } => {
-                let eps = vectors[v as usize];
-                let out = kernel::ffv_fin_bare(
-                    &eps,
-                    &fin[f as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
-                );
-                fin[loc] = out;
-            }
-            Instr::FfvFout { v, f, gl, gr } => {
-                let eps = vectors[v as usize];
-                let out = kernel::ffv_fout_bare(
-                    &eps,
-                    &fout[f as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
-                );
-                fout[loc] = out;
-            }
-            Instr::ProjFin { f, chirality } => {
-                let out = kernel::proj_fin_bare(&fin[f as usize], chirality);
-                fin[loc] = out;
-            }
-            Instr::ProjFout { f, chirality } => {
-                let out = kernel::proj_fout_bare(&fout[f as usize], chirality);
-                fout[loc] = out;
-            }
-            Instr::Gamma5Fin { f } => {
-                let out = kernel::gamma5_fin_bare(&fin[f as usize]);
-                fin[loc] = out;
-            }
-            Instr::Gamma5Fout { f } => {
-                let out = kernel::gamma5_fout_bare(&fout[f as usize]);
-                fout[loc] = out;
-            }
-            Instr::Bilinear {
-                bra,
-                ket,
-                chirality,
-            } => {
-                let out = kernel::scalar_bilinear_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                    chirality,
-                );
-                scalars[loc] = out;
-            }
-            Instr::Pseudoscalar { bra, ket } => {
-                let out =
-                    kernel::pseudoscalar_bilinear_bare(&fout[bra as usize], &fin[ket as usize]);
-                scalars[loc] = out;
-            }
-            Instr::Metric { a, b } => {
-                let out = kernel::metric_bare(&vectors[a as usize], &vectors[b as usize]);
-                scalars[loc] = out;
-            }
-            Instr::MetricVout { v } => {
-                let out = kernel::metric_vout_bare(&vectors[v as usize]);
-                vectors[loc] = out;
-            }
-            Instr::EpsilonVout { a, b, c } => {
-                let out = kernel::epsilon_vout_bare(
-                    &vectors[a as usize],
-                    &vectors[b as usize],
-                    &vectors[c as usize],
-                );
-                vectors[loc] = out;
-            }
-            Instr::EpsilonAmp { a, b, c, d } => {
-                let out = kernel::epsilon_amp_bare(
-                    &vectors[a as usize],
-                    &vectors[b as usize],
-                    &vectors[c as usize],
-                    &vectors[d as usize],
-                );
-                scalars[loc] = out;
-            }
-            Instr::PMom { mom } => {
-                let out = kernel::pmom_bare(&moms[mom as usize]);
-                vectors[loc] = out;
-            }
-            Instr::PMomOut { start, len } => {
-                let slice = &mom_ops[start as usize..(start + len) as usize];
-                let mut acc = LorentzVector::zero();
-                for &(mid, sign) in slice {
-                    let p = moms[mid as usize];
-                    acc = if sign < 0 { acc - p } else { acc + p };
-                }
-                let neg = -acc;
-                vectors[loc] = kernel::pmom_bare(&neg);
-            }
-            Instr::FierzOut {
-                bra,
-                ket,
-                reversed_order,
-            } => {
-                let out =
-                    kernel::fierz_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
-                multivectors[loc] = out;
-            }
-            Instr::MultivectorFin { m, f } => {
-                let out = kernel::multivector_fin_bare(&multivectors[m as usize], &fin[f as usize]);
-                fin[loc] = out;
-            }
-            Instr::MultivectorFout { m, f } => {
-                let out =
-                    kernel::multivector_fout_bare(&multivectors[m as usize], &fout[f as usize]);
-                fout[loc] = out;
-            }
-            Instr::FierzPair { m, bra, ket } => {
-                let out = kernel::fierz_pair_bare(
-                    &multivectors[m as usize],
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                );
-                scalars[loc] = out;
-            }
-            Instr::SigmaVout {
-                bra,
-                ket,
-                v,
-                negate,
-            } => {
-                let out = kernel::sigma_vout_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                    &vectors[v as usize],
-                    negate,
-                );
-                vectors[loc] = out;
-            }
-            Instr::SigmaMv { a, b } => {
-                let out = kernel::sigma_mv_bare(&vectors[a as usize], &vectors[b as usize]);
-                multivectors[loc] = out;
-            }
-            Instr::SigmaOut {
-                bra,
-                ket,
-                reversed_order,
-            } => {
-                let out =
-                    kernel::sigma_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
-                multivectors[loc] = out;
-            }
-            Instr::ScaleMvC { m, scale } => {
-                multivectors[loc] = multivectors[m as usize] * scalars[scale as usize];
-            }
-            Instr::ScaleMvR { m, scale } => {
-                multivectors[loc] = multivectors[m as usize] * reals[scale as usize];
-            }
-            Instr::AddMultivector { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut acc = multivectors[slice[0].index()];
-                for op in &slice[1..] {
-                    acc = acc + multivectors[op.index()];
-                }
-                multivectors[loc] = acc;
-            }
-            Instr::Flows | Instr::Hels | Instr::Configs => {}
+        ops,
+        mom_ops,
+        consts_c,
+        consts_f,
+    } = a;
+    match instr {
+        Instr::ComplexConst { pool } => scalars[loc] = consts_c[pool as usize],
+        Instr::RealConst { pool } => reals[loc] = consts_f[pool as usize],
+        Instr::ExternalScalar { leg } => {
+            let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
+                panic!("external scalar leg produced a non-scalar slot");
+            };
+            scalars[loc] = s.value;
         }
+        Instr::ExternalVector { leg } => {
+            let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
+                panic!("external vector leg produced a non-vector slot");
+            };
+            vectors[loc] = v.eps;
+        }
+        Instr::ExternalFin { leg } => {
+            let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
+                panic!("external ket leg produced a non-fermion-in slot");
+            };
+            fin[loc] = f.spinor;
+        }
+        Instr::ExternalFout { leg } => {
+            let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
+                panic!("external bra leg produced a non-fermion-out slot");
+            };
+            fout[loc] = f.spinor;
+        }
+        Instr::PropagateScalar {
+            input,
+            mass,
+            width,
+            mom,
+        } => {
+            let out = kernel::propagate_scalar_bare(
+                scalars[input as usize],
+                &moms[mom as usize],
+                reals[mass as usize],
+                reals[width as usize],
+            );
+            scalars[loc] = out;
+        }
+        Instr::PropagateVector {
+            input,
+            mass,
+            width,
+            mom,
+        } => {
+            let out = kernel::propagate_vector_bare(
+                &vectors[input as usize],
+                &moms[mom as usize],
+                reals[mass as usize],
+                reals[width as usize],
+            );
+            vectors[loc] = out;
+        }
+        Instr::PropagateFin {
+            input,
+            mass,
+            width,
+            mom,
+        } => {
+            let out = kernel::propagate_fin_bare(
+                &fin[input as usize],
+                &moms[mom as usize],
+                reals[mass as usize],
+                reals[width as usize],
+            );
+            fin[loc] = out;
+        }
+        Instr::PropagateFout {
+            input,
+            mass,
+            width,
+            mom,
+        } => {
+            let out = kernel::propagate_fout_bare(
+                &fout[input as usize],
+                &moms[mom as usize],
+                reals[mass as usize],
+                reals[width as usize],
+            );
+            fout[loc] = out;
+        }
+        Instr::AddScalar { start, len } => {
+            let slice = &ops[start as usize..(start + len) as usize];
+            let mut value = scalars[slice[0].index()];
+            for op in &slice[1..] {
+                value = value + scalars[op.index()];
+            }
+            scalars[loc] = value;
+        }
+        Instr::AddVector { start, len } => {
+            let slice = &ops[start as usize..(start + len) as usize];
+            let mut eps = vectors[slice[0].index()];
+            for op in &slice[1..] {
+                eps = eps + vectors[op.index()];
+            }
+            vectors[loc] = eps;
+        }
+        Instr::AddFin { start, len } => {
+            let slice = &ops[start as usize..(start + len) as usize];
+            let mut spinor = fin[slice[0].index()];
+            for op in &slice[1..] {
+                spinor = spinor + fin[op.index()];
+            }
+            fin[loc] = spinor;
+        }
+        Instr::AddFout { start, len } => {
+            let slice = &ops[start as usize..(start + len) as usize];
+            let mut spinor = fout[slice[0].index()];
+            for op in &slice[1..] {
+                spinor = spinor + fout[op.index()];
+            }
+            fout[loc] = spinor;
+        }
+        Instr::MulScalarC { a, b } => {
+            scalars[loc] = scalars[a as usize] * scalars[b as usize];
+        }
+        Instr::MulScalarR { s, r } => {
+            scalars[loc] = scalars[s as usize] * reals[r as usize];
+        }
+        Instr::ScaleVecC { v, scale } => {
+            vectors[loc] = vectors[v as usize] * scalars[scale as usize];
+        }
+        Instr::ScaleVecR { v, scale } => {
+            vectors[loc] = vectors[v as usize] * reals[scale as usize];
+        }
+        Instr::ScaleFinC { f, scale } => {
+            fin[loc] = fin[f as usize] * scalars[scale as usize];
+        }
+        Instr::ScaleFinR { f, scale } => {
+            fin[loc] = fin[f as usize] * reals[scale as usize];
+        }
+        Instr::ScaleFoutC { f, scale } => {
+            fout[loc] = fout[f as usize] * scalars[scale as usize];
+        }
+        Instr::ScaleFoutR { f, scale } => {
+            fout[loc] = fout[f as usize] * reals[scale as usize];
+        }
+        Instr::GammaVout { bra, ket, reversed } => {
+            let out = kernel::gamma_vout_bare(&fout[bra as usize], &fin[ket as usize], reversed);
+            vectors[loc] = out;
+        }
+        Instr::FfvVout {
+            bra,
+            ket,
+            gl,
+            gr,
+            reversed,
+        } => {
+            let out = kernel::ffv_vout_bare(
+                &fout[bra as usize],
+                &fin[ket as usize],
+                scalars[gl as usize],
+                scalars[gr as usize],
+                reversed,
+            );
+            vectors[loc] = out;
+        }
+        Instr::GammaFin { v, f } => {
+            let eps = vectors[v as usize];
+            let out = kernel::off_shell_fin_bare(&eps, &fin[f as usize]);
+            fin[loc] = out;
+        }
+        Instr::GammaFout { v, f } => {
+            let eps = vectors[v as usize];
+            let out = kernel::off_shell_fout_bare(&eps, &fout[f as usize]);
+            fout[loc] = out;
+        }
+        Instr::FfvFin { v, f, gl, gr } => {
+            let eps = vectors[v as usize];
+            let out = kernel::ffv_fin_bare(
+                &eps,
+                &fin[f as usize],
+                scalars[gl as usize],
+                scalars[gr as usize],
+            );
+            fin[loc] = out;
+        }
+        Instr::FfvFout { v, f, gl, gr } => {
+            let eps = vectors[v as usize];
+            let out = kernel::ffv_fout_bare(
+                &eps,
+                &fout[f as usize],
+                scalars[gl as usize],
+                scalars[gr as usize],
+            );
+            fout[loc] = out;
+        }
+        Instr::ProjFin { f, chirality } => {
+            let out = kernel::proj_fin_bare(&fin[f as usize], chirality);
+            fin[loc] = out;
+        }
+        Instr::ProjFout { f, chirality } => {
+            let out = kernel::proj_fout_bare(&fout[f as usize], chirality);
+            fout[loc] = out;
+        }
+        Instr::Gamma5Fin { f } => {
+            let out = kernel::gamma5_fin_bare(&fin[f as usize]);
+            fin[loc] = out;
+        }
+        Instr::Gamma5Fout { f } => {
+            let out = kernel::gamma5_fout_bare(&fout[f as usize]);
+            fout[loc] = out;
+        }
+        Instr::Bilinear {
+            bra,
+            ket,
+            chirality,
+        } => {
+            let out =
+                kernel::scalar_bilinear_bare(&fout[bra as usize], &fin[ket as usize], chirality);
+            scalars[loc] = out;
+        }
+        Instr::Pseudoscalar { bra, ket } => {
+            let out = kernel::pseudoscalar_bilinear_bare(&fout[bra as usize], &fin[ket as usize]);
+            scalars[loc] = out;
+        }
+        Instr::Metric { a, b } => {
+            let out = kernel::metric_bare(&vectors[a as usize], &vectors[b as usize]);
+            scalars[loc] = out;
+        }
+        Instr::MetricVout { v } => {
+            let out = kernel::metric_vout_bare(&vectors[v as usize]);
+            vectors[loc] = out;
+        }
+        Instr::EpsilonVout { a, b, c } => {
+            let out = kernel::epsilon_vout_bare(
+                &vectors[a as usize],
+                &vectors[b as usize],
+                &vectors[c as usize],
+            );
+            vectors[loc] = out;
+        }
+        Instr::EpsilonAmp { a, b, c, d } => {
+            let out = kernel::epsilon_amp_bare(
+                &vectors[a as usize],
+                &vectors[b as usize],
+                &vectors[c as usize],
+                &vectors[d as usize],
+            );
+            scalars[loc] = out;
+        }
+        Instr::PMom { mom } => {
+            let out = kernel::pmom_bare(&moms[mom as usize]);
+            vectors[loc] = out;
+        }
+        Instr::PMomOut { start, len } => {
+            let slice = &mom_ops[start as usize..(start + len) as usize];
+            let mut acc = LorentzVector::zero();
+            for &(mid, sign) in slice {
+                let p = moms[mid as usize];
+                acc = if sign < 0 { acc - p } else { acc + p };
+            }
+            let neg = -acc;
+            vectors[loc] = kernel::pmom_bare(&neg);
+        }
+        Instr::FierzOut {
+            bra,
+            ket,
+            reversed_order,
+        } => {
+            let out =
+                kernel::fierz_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
+            multivectors[loc] = out;
+        }
+        Instr::MultivectorFin { m, f } => {
+            let out = kernel::multivector_fin_bare(&multivectors[m as usize], &fin[f as usize]);
+            fin[loc] = out;
+        }
+        Instr::MultivectorFout { m, f } => {
+            let out = kernel::multivector_fout_bare(&multivectors[m as usize], &fout[f as usize]);
+            fout[loc] = out;
+        }
+        Instr::FierzPair { m, bra, ket } => {
+            let out = kernel::fierz_pair_bare(
+                &multivectors[m as usize],
+                &fout[bra as usize],
+                &fin[ket as usize],
+            );
+            scalars[loc] = out;
+        }
+        Instr::SigmaVout {
+            bra,
+            ket,
+            v,
+            negate,
+        } => {
+            let out = kernel::sigma_vout_bare(
+                &fout[bra as usize],
+                &fin[ket as usize],
+                &vectors[v as usize],
+                negate,
+            );
+            vectors[loc] = out;
+        }
+        Instr::SigmaMv { a, b } => {
+            let out = kernel::sigma_mv_bare(&vectors[a as usize], &vectors[b as usize]);
+            multivectors[loc] = out;
+        }
+        Instr::SigmaOut {
+            bra,
+            ket,
+            reversed_order,
+        } => {
+            let out =
+                kernel::sigma_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
+            multivectors[loc] = out;
+        }
+        Instr::ScaleMvC { m, scale } => {
+            multivectors[loc] = multivectors[m as usize] * scalars[scale as usize];
+        }
+        Instr::ScaleMvR { m, scale } => {
+            multivectors[loc] = multivectors[m as usize] * reals[scale as usize];
+        }
+        Instr::AddMultivector { start, len } => {
+            let slice = &ops[start as usize..(start + len) as usize];
+            let mut acc = multivectors[slice[0].index()];
+            for op in &slice[1..] {
+                acc = acc + multivectors[op.index()];
+            }
+            multivectors[loc] = acc;
+        }
+        Instr::Flows | Instr::Hels | Instr::Configs => {}
     }
-
-    validate_arenas(folded, env, scratch);
 }
 
 /// One-shot cross-check of the whole compiled typed stream against the static analysis:

@@ -63,6 +63,9 @@ mod root_lorentz;
 #[cfg(test)]
 mod rooting_soundness;
 mod run;
+// Tail-call-threaded dispatch of the instruction stream (nightly `explicit_tail_calls`).
+#[cfg(feature = "threaded-dispatch")]
+mod threaded;
 // Alternative topological execution orders for the compiled instruction stream, and the
 // structural metrics that judge them. A study hook: the order production emits lives
 // with the lowering in `layout.rs`, and this module exists only under `cfg(test)` or the
