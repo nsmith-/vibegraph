@@ -15,7 +15,7 @@ use crate::helas::repr::vectorspace::impl_mul_for_array;
 
 use super::numbers::{Charge, SpinorHelicity};
 use super::vectorspace::{impl_vectorspace, ArrayBacked};
-use super::{r, ri, Real, C};
+use super::{r, Real, C};
 
 // Complex multiply-accumulate expressed through the real multiply-add
 // (`Real::mul_add_fast`): a hardware FMA on both scalar `f64` and the SIMD lane
@@ -529,11 +529,11 @@ impl DiracAdjoint for Ket {
     /// `σ̄·v = [[v₀−v₃, −(v₁−iv₂)], [−(v₁+iv₂), v₀+v₃]]`.
     #[inline(always)]
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
-        let i = ri(F::one());
+        let iv2 = mul_i(v[2]);
         let v0_p_v3 = v[0] + v[3];
         let v0_m_v3 = v[0] - v[3];
-        let v1_m_iv2 = v[1] - i * v[2];
-        let v1_p_iv2 = v[1] + i * v[2];
+        let v1_m_iv2 = v[1] - iv2;
+        let v1_p_iv2 = v[1] + iv2;
 
         // ψ_L ← (σ·v) ψ_R
         let l1 = cmul_add(v0_p_v3, psi[2], cmul(v1_m_iv2, psi[3]));
@@ -577,11 +577,11 @@ impl DiracAdjoint for Bra {
     /// so that a plain dot with a ket reproduces the Lorentz scalar `ψ̄ v̸ ket`.
     #[inline(always)]
     fn slash_bispinor<F: Real>(psi: &[C<F>; 4], v: &[C<F>; 4]) -> [C<F>; 4] {
-        let i = ri(F::one());
+        let iv2 = mul_i(v[2]);
         let v0_p_v3 = v[0] + v[3];
         let v0_m_v3 = v[0] - v[3];
-        let v1_m_iv2 = v[1] - i * v[2];
-        let v1_p_iv2 = v[1] + i * v[2];
+        let v1_m_iv2 = v[1] - iv2;
+        let v1_p_iv2 = v[1] + iv2;
 
         [
             cmul_add(v0_m_v3, psi[2], -cmul(v1_p_iv2, psi[3])),
@@ -868,10 +868,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let b = cmul(fo[3], fi[1]);
         let c = cmul(fo[2], fi[1]);
         let d = cmul(fo[3], fi[0]);
-        ComplexVector(
-            [a + b, -(c + d), ri(F::one()) * (c - d), b - a],
-            PhantomData,
-        )
+        ComplexVector([a + b, -(c + d), mul_i(c - d), b - a], PhantomData)
     }
 
     /// Right current
@@ -897,7 +894,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         let b = cmul(fo[1], fi[3]);
         let c = cmul(fo[0], fi[3]);
         let d = cmul(fo[1], fi[2]);
-        ComplexVector([a + b, c + d, -ri(F::one()) * (c - d), a - b], PhantomData)
+        ComplexVector([a + b, c + d, mul_neg_i(c - d), a - b], PhantomData)
     }
 
     /// Scalar bilinear contraction: `f̄ Γ f` where `Γ` encodes chirality.
