@@ -210,21 +210,25 @@ at about 27 000 live slots and fits in cache. Roots are pinned live to the
 end, and no instruction writes over its own operands.
 
 The instruction order is the one property of a program that changes no
-value. Production emits nodes grouped by instruction kind within each
-dependency level, so that the interpreter's single indirect dispatch sees
-long runs of one variant and the CPU's branch predictor, which predicts an
-indirect jump from its recent history, guesses right.[^dispatch] Alternative
-schedules exist as a study hook, with metrics for operand distance,
-live-set width, dispatch-run length and critical-path depth.
+value. Production emits nodes grouped by dependency level, and by
+instruction kind within each level. The level grouping puts independent
+instructions next to each other, so an out-of-order core overlaps them
+instead of waiting on each producer in turn. The kind grouping gives the
+interpreter's dispatch jump long runs of one variant to predict on.[^dispatch]
+Alternative schedules exist as a study hook, with metrics for operand
+distance, live-set width, dispatch-run length and critical-path depth.
 
 [^dispatch]: A loop with one `match` per instruction is a *switch-dispatch*
-    interpreter, and its cost is dominated by that one mispredictable
-    jump. The classic remedy is *direct threading*: each instruction's
-    handler jumps straight to the next handler, giving the predictor one
-    site per instruction kind. A safe-Rust version needs guaranteed tail
-    calls, which is the nightly `become` feature, so it stays a tracked
-    option rather than a pass. Threading the dispatch through function
-    pointers was measured and rejected as slower.
+    interpreter, which funnels every instruction through one indirect jump.
+    The classic remedy is *direct threading*: each instruction's handler
+    jumps straight to the next one, giving the predictor one site per
+    instruction kind. In safe Rust that needs guaranteed tail calls, the
+    nightly `become` feature. The `threaded-dispatch` cargo feature builds
+    that interpreter. On x86 it ties the `match` loop. The same levels with
+    kinds interleaved also run as fast as the production order, so on that
+    core the level grouping carries the whole win, and history-based
+    predictors handle the single jump well. Threading the dispatch through
+    function pointers was measured and rejected as slower.
 
 ## Interpretation and kernels
 

@@ -114,7 +114,7 @@ jobs:
           shared-key: threaded-dispatch
           cache-on-failure: true
 
-      - run: cargo clippy -p vibegraph-lib --all-targets --features threaded-dispatch --locked -- -D warnings
+      - run: cargo clippy -p vibegraph-lib --all-targets --features threaded-dispatch,eval-schedule-study --locked -- -D warnings
 
       - run: cargo test -p vibegraph-lib --lib --features threaded-dispatch --locked
 

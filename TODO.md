@@ -443,15 +443,23 @@ above); the entries here are the eventual features.
   card's requested parameters plus the per-event |M|² ratio written back as an
   extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
   as monomials fall back to the exact re-evaluation path automatically.
-- **Direct-threaded interpreter dispatch** (performance, on hold) — the
-  evaluator is a switch-dispatch interpreter: one `match` per instruction,
-  whose indirect jump is what the op-blocked schedule (note 31 E1b) exists to
-  make predictable. Direct threading — each handler tail-calling the next —
-  gives the branch predictor one site per instruction kind and is the classic
-  next step; in safe Rust it needs guaranteed tail calls, i.e. the nightly
-  `become` feature, so it waits on that stabilising. Function-pointer threading
-  was measured and rejected (+7.7%, note 31 E2), so the win, if any, is in
-  the tail-call form specifically.
+- **Tail-call-threaded dispatch: built, measured, a tie** — the
+  `threaded-dispatch` feature (nightly `become`) runs the instruction stream
+  through one handler per `Instr` kind, each tail-calling the next. It is
+  bit-identical to the `match` loop (unit-tested, anti-vacuity checked) and
+  ties it on Cascade Lake: +1.6% `forward`, +1.5–5.2% lanes. Not adopted. An
+  advisory nightly CI job keeps it building. The order study it prompted
+  settles what op-blocking buys. A level-mixed control (same ASAP levels,
+  variants round-robin, mean run 2–3) matches op-blocked under both
+  dispatchers, while arena order costs 24–26%. The win is level grouping,
+  which puts independent instructions adjacent, not dispatch predictability,
+  so the production order stays. One exception: lanes8 on the 2→6 is 15–18%
+  faster in arena / `minlive` order, a working-set effect (2.4 MB of
+  op-blocked arenas against a 1 MiB L2) that the `f64`-byte, lane-blind
+  `SCHEDULE_BYTE_LIMIT` fallback cannot see. A lane-aware fallback is open,
+  measure-first, at the width lanes would ship at. On the M3 Max, a
+  `levelmix` run would say whether E1's run-length attribution holds there.
+  (`threaded-dispatch-study-results.md`.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α
   then stay fixed. An alternating scheme — train the grids with α fixed,

@@ -683,11 +683,15 @@ pub(super) fn instr_kinds(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<u8> {
 /// dependency level. Every node's operands sit at a strictly lower level, so ordering
 /// by level and permuting freely inside a level is always topological.
 ///
-/// The forward pass dispatches on the [`Instr`] discriminant through a single indirect
-/// branch, whose prediction accuracy is set by how long the stream stays on one variant.
-/// Interning order interleaves variants nearly every instruction; grouping them within a
-/// level turns that into runs of one discriminant. Which values each instruction reads
-/// and writes is untouched, so the arithmetic and the amplitude are bit-for-bit the same.
+/// Two things make this order fast, and which one dominates depends on the core.
+/// Ordering by level puts mutually independent instructions next to each other, so an
+/// out-of-order core overlaps them across the dispatch jump; interning order places each
+/// producer right before its consumer and serialises the latency chain. Grouping by
+/// variant inside a level gives the dispatch branch runs of one discriminant to predict
+/// on. On x86 the level structure alone carries the win: the same levels with variants
+/// interleaved run as fast, under the `match` loop and the threaded dispatcher alike.
+/// Which values each instruction reads and writes is untouched, so the arithmetic and
+/// the amplitude are bit-for-bit the same.
 pub(super) fn op_blocked_order(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
     let level = asap_levels(ast);
     let kind = instr_kinds(ast, an);
@@ -701,10 +705,11 @@ pub(super) fn op_blocked_order(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeI
 ///
 /// Grouping by variant stretches some values' lifetimes, so the arenas grow — a
 /// helicity-pruned 2 → 6 goes 0.31 MB → 0.46 MB, and the unpruned one 3.7 MB → 5.8 MB —
-/// and both are still faster that way, because what the order trades against is the
-/// dispatch, not the working set. This limit sits a few times above the largest of those,
-/// so it fires on nothing measured; it bounds the footprint of a program far larger than
-/// any built today, where the growth could stop being free.
+/// and at `f64` both are still faster that way. The limit is lane-blind: a lane pack
+/// multiplies the footprint by its width, and at eight lanes the pruned 2 → 6 already
+/// runs faster in interning order, its op-blocked arenas more than twice a 1 MiB L2.
+/// This limit sits a few times above the largest `f64` footprint, so it fires on nothing
+/// measured; it bounds the footprint of a program far larger than any built today.
 const SCHEDULE_BYTE_LIMIT: usize = 16 << 20;
 
 /// Result-arena slot of every node under one execution order, and the peak number of
