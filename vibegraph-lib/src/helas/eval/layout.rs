@@ -277,6 +277,26 @@ pub(super) enum Instr {
         c: u32,
         d: u32,
     },
+    /// `P` read-off of an input line: its structure momentum is the momentum-table entry
+    /// `mom` (the operand's momentum id), promoted to a vector current.
+    PMom {
+        mom: u32,
+    },
+    /// `P` read-off of a vertex's output leg: `−Σ` over the input operands' momentum-table
+    /// entries, indexed by `[start, start+len)` into [`Program::mom_operands`].
+    PMomOut {
+        start: u32,
+        len: u32,
+    },
+    /// Variadic per-flow-JAMP amplitude root: computes nothing (its children's scalars
+    /// are read out by the multi-flow evaluator).
+    Flows,
+    /// Variadic per-helicity-combination root: computes nothing (its children's scalars
+    /// are read out by the helicity-summed evaluator).
+    Hels,
+    /// Variadic root bundle: computes nothing (the amplitude root and the
+    /// per-configuration diagram amplitudes under it are read out after the pass).
+    Configs,
     /// The cut fermion line of a tensor-tensor contact as a Clifford element;
     /// `reversed_order` is the two lines' relative index order.
     FierzOut {
@@ -300,6 +320,21 @@ pub(super) enum Instr {
         bra: u32,
         ket: u32,
     },
+    /// Clifford element scaled by a complex scalar.
+    ScaleMvC {
+        m: u32,
+        scale: u32,
+    },
+    /// Clifford element scaled by a bare real.
+    ScaleMvR {
+        m: u32,
+        scale: u32,
+    },
+    /// Sum of Clifford elements, over `[start, start+len)` of the operand table.
+    AddMultivector {
+        start: u32,
+        len: u32,
+    },
     /// `(ψ̄ Σ^{μν} ψ) v_ν` → vector current. `negate` carries the two −1s the rooting
     /// resolves — a line read against the vertex's adjoint, and the free index on the
     /// second Lorentz slot — which are the same sign.
@@ -321,41 +356,6 @@ pub(super) enum Instr {
         ket: u32,
         reversed_order: bool,
     },
-    /// Clifford element scaled by a complex scalar.
-    ScaleMvC {
-        m: u32,
-        scale: u32,
-    },
-    /// Clifford element scaled by a bare real.
-    ScaleMvR {
-        m: u32,
-        scale: u32,
-    },
-    /// Sum of Clifford elements, over `[start, start+len)` of the operand table.
-    AddMultivector {
-        start: u32,
-        len: u32,
-    },
-    /// `P` read-off of an input line: its structure momentum is the momentum-table entry
-    /// `mom` (the operand's momentum id), promoted to a vector current.
-    PMom {
-        mom: u32,
-    },
-    /// `P` read-off of a vertex's output leg: `−Σ` over the input operands' momentum-table
-    /// entries, indexed by `[start, start+len)` into [`Program::mom_operands`].
-    PMomOut {
-        start: u32,
-        len: u32,
-    },
-    /// Variadic per-flow-JAMP amplitude root: computes nothing (its children's scalars
-    /// are read out by the multi-flow evaluator).
-    Flows,
-    /// Variadic per-helicity-combination root: computes nothing (its children's scalars
-    /// are read out by the helicity-summed evaluator).
-    Hels,
-    /// Variadic root bundle: computes nothing (the amplitude root and the
-    /// per-configuration diagram amplitudes under it are read out after the pass).
-    Configs,
 }
 
 /// The number of [`Instr`] variants, and so of distinct [`Instr::kind`]s.
@@ -369,6 +369,11 @@ impl Instr {
     /// A dense index per variant, `0..N_KINDS`: the grouping key of
     /// [`op_blocked_order`], whose run lengths over the stream are what the forward
     /// pass's dispatch branch predicts on, and the threaded dispatcher's opcode.
+    ///
+    /// The variants are declared in `kind` order, so this is the identity on the enum
+    /// tag and compiles to a load of it. A permutation compiles to a table lookup, and
+    /// in the threaded handlers that lookup's cost pushed the soft-`#[inline]` kernels
+    /// out of line.
     pub(super) fn kind(&self) -> u8 {
         match self {
             Instr::ComplexConst { .. } => 0,
