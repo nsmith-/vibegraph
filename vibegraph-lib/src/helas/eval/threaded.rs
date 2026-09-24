@@ -20,53 +20,63 @@
 //! textually shared between the two dispatchers, and any difference between them is the
 //! dispatch.
 
-use super::layout::{Instr, InstrOpcode, Program};
+use super::layout::{Instr, Program, N_KINDS};
 use super::run::{step, Arenas, EvalEnv};
 use crate::helas::repr::Real;
 
-/// The interpreter state every handler receives: the arenas and the program's
-/// per-instruction streams. Handlers share one signature, as `become` requires.
-struct Vm<'v, 's, 'e, F: Real> {
-    arenas: &'v mut Arenas<'s, F>,
-    env: &'v EvalEnv<'e, F>,
-    instrs: &'v [Instr],
-    dest: &'v [u32],
-    opcodes: &'v [u8],
+/// One threaded instruction: the instruction, its destination slot, and the opcode of
+/// the instruction after it — so a handler finds its successor's handler in the record
+/// it has already loaded, rather than in a second stream.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Threaded {
+    instr: Instr,
+    dest: u32,
+    next: u8,
 }
 
-type Handler<F> = for<'x, 'v, 's, 'e> fn(&'x mut Vm<'v, 's, 'e, F>, usize);
+/// A program's instruction stream in threaded form.
+#[derive(Clone, Debug)]
+pub(super) struct Code {
+    first: u8,
+    steps: Box<[Threaded]>,
+}
+
+/// The interpreter state every handler receives. Handlers share one signature, as
+/// `become` requires; the arenas sit in it by value, one load from the handler's
+/// argument away.
+struct Vm<'s, 'e, F: Real> {
+    arenas: Arenas<'s, F>,
+    env: &'s EvalEnv<'e, F>,
+}
+
+type Handler<F> = for<'x, 's, 'e, 'c> fn(&'x mut Vm<'s, 'e, F>, &'c [Threaded]);
 
 /// Run `prog`'s instruction stream over `arenas`.
-pub(super) fn run<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: &mut Arenas<'_, F>) {
-    let mut vm = Vm {
-        arenas,
-        env,
-        instrs: &prog.instrs,
-        dest: &prog.dest,
-        opcodes: &prog.opcodes,
-    };
-    let first = vm.opcodes[0];
-    (Table::<F>::HANDLERS[first as usize])(&mut vm, 0);
+pub(super) fn run<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: Arenas<'_, F>) {
+    let mut vm = Vm { arenas, env };
+    let code = &prog.threaded;
+    (Table::<F>::HANDLERS[code.first as usize])(&mut vm, &code.steps);
 }
 
-/// Execute instruction `pc`, whose opcode is `OP`, then tail-call the next one's handler.
-fn handler<F: Real, const OP: u8>(vm: &mut Vm<'_, '_, '_, F>, pc: usize) {
-    let instr = vm.instrs[pc];
-    if InstrOpcode::from(&instr) as u8 == OP {
-        step(instr, vm.dest[pc] as usize, vm.arenas, vm.env);
+/// Execute the first instruction of `rest`, whose opcode is `OP`, then tail-call the
+/// next one's handler on the remainder.
+fn handler<F: Real, const OP: u8>(vm: &mut Vm<'_, '_, F>, rest: &[Threaded]) {
+    let [cur, tail @ ..] = rest else {
+        unreachable!()
+    };
+    if cur.instr.kind() == OP {
+        step(&cur.instr, cur.dest as usize, &mut vm.arenas, vm.env);
     } else {
-        unreachable!("opcode stream disagrees with instruction {pc}");
+        unreachable!()
     }
-    let next = pc + 1;
-    let op = vm.opcodes[next];
-    become (Table::<F>::HANDLERS[op as usize])(vm, next)
+    become (Table::<F>::HANDLERS[cur.next as usize])(vm, tail)
 }
 
 /// The sentinel after the last instruction: returns out of the handler chain.
-fn halt<F: Real>(_: &mut Vm<'_, '_, '_, F>, _: usize) {}
+fn halt<F: Real>(_: &mut Vm<'_, '_, F>, _: &[Threaded]) {}
 
-fn bad_opcode<F: Real>(_: &mut Vm<'_, '_, '_, F>, pc: usize) {
-    unreachable!("no handler for the opcode at {pc}");
+fn bad_opcode<F: Real>(_: &mut Vm<'_, '_, F>, _: &[Threaded]) {
+    unreachable!("no handler for this opcode")
 }
 
 struct Table<F>(core::marker::PhantomData<F>);
@@ -91,21 +101,28 @@ handler_table!(
     27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52
 );
 
-const _: () = assert!(
-    N_HANDLERS == <Instr as strum::EnumCount>::COUNT,
-    "one handler per instruction variant"
-);
+const _: () = assert!(N_HANDLERS == N_KINDS, "one handler per instruction kind");
 
-/// The opcode of the sentinel ending every opcode stream.
-pub(super) const HALT: u8 = u8::MAX;
+/// The opcode that ends every threaded stream.
+const HALT: u8 = u8::MAX;
 
-/// The opcode stream of `instrs`, terminated by [`HALT`].
-pub(super) fn opcodes(instrs: &[Instr]) -> Box<[u8]> {
-    instrs
+/// Thread `instrs` (with their destination slots `dest`).
+pub(super) fn thread(instrs: &[Instr], dest: &[u32]) -> Code {
+    let op = Instr::kind;
+    let steps = instrs
         .iter()
-        .map(|i| InstrOpcode::from(i) as u8)
-        .chain([HALT])
-        .collect()
+        .zip(dest)
+        .enumerate()
+        .map(|(k, (&instr, &dest))| Threaded {
+            instr,
+            dest,
+            next: instrs.get(k + 1).map_or(HALT, op),
+        })
+        .collect();
+    Code {
+        first: instrs.first().map_or(HALT, op),
+        steps,
+    }
 }
 
 #[cfg(test)]

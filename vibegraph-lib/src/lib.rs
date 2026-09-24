@@ -1,4 +1,6 @@
-// The threaded instruction dispatcher's handlers chain through `become`.
+// The threaded instruction dispatcher's handlers chain through `become`. rustc still
+// marks the feature incomplete; the dispatcher is a study behind its own feature, and
+// its unit test pins it bit for bit to the `match` loop.
 #![cfg_attr(feature = "threaded-dispatch", feature(explicit_tail_calls))]
 #![cfg_attr(feature = "threaded-dispatch", allow(incomplete_features))]
 

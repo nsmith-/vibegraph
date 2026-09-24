@@ -100,11 +100,6 @@ impl std::fmt::Debug for OperandRef {
 /// arena, etc.); variadic/mixed-class operands are a `(start, len)` slice of the shared
 /// [`Program::operands`] table.
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(
-    feature = "threaded-dispatch",
-    derive(strum::EnumCount, strum::EnumDiscriminants),
-    strum_discriminants(name(InstrOpcode))
-)]
 pub(super) enum Instr {
     /// Complex-pool read (coupling or imaginary rational) → a zero-momentum scalar.
     ComplexConst {
@@ -363,11 +358,17 @@ pub(super) enum Instr {
     Configs,
 }
 
+/// The number of [`Instr`] variants, and so of distinct [`Instr::kind`]s.
+#[cfg_attr(
+    not(any(test, feature = "eval-schedule-study", feature = "threaded-dispatch")),
+    allow(dead_code)
+)]
+pub(super) const N_KINDS: usize = 53;
+
 impl Instr {
-    /// The variant's index in declaration order — the jump-table entry the forward
-    /// pass's single dispatch site selects. Its run lengths over the instruction
-    /// stream are what that indirect branch's predictability is made of, which is what
-    /// [`op_blocked_order`] schedules for.
+    /// A dense index per variant, `0..N_KINDS`: the grouping key of
+    /// [`op_blocked_order`], whose run lengths over the stream are what the forward
+    /// pass's dispatch branch predicts on, and the threaded dispatcher's opcode.
     pub(super) fn kind(&self) -> u8 {
         match self {
             Instr::ComplexConst { .. } => 0,
@@ -429,7 +430,7 @@ impl Instr {
     /// Human-readable variant name, for the study's per-kind tables.
     #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
     pub(super) fn kind_name(kind: u8) -> &'static str {
-        const NAMES: [&str; 53] = [
+        const NAMES: [&str; N_KINDS] = [
             "ComplexConst",
             "RealConst",
             "ExternalScalar",
@@ -512,10 +513,9 @@ pub(super) struct Program {
     /// Destination slot of each instruction (`dest[pos]`), within the arena its
     /// output class fixes — the write index the forward pass uses.
     pub(super) dest: Box<[u32]>,
-    /// Each instruction's opcode, then a halt sentinel: the stream the threaded
-    /// dispatcher reads its next handler from.
+    /// The instruction stream in the threaded dispatcher's form.
     #[cfg(feature = "threaded-dispatch")]
-    pub(super) opcodes: Box<[u8]>,
+    pub(super) threaded: super::threaded::Code,
     /// Per-node index within its result arena (`loc[id]`), for the debug /
     /// `extended-validation` cross-check that reconstructs every node's slot. The
     /// forward pass reads `dest` instead, so this is absent from a release build.
@@ -1178,7 +1178,7 @@ impl Program {
 
         Program {
             #[cfg(feature = "threaded-dispatch")]
-            opcodes: super::threaded::opcodes(&instrs),
+            threaded: super::threaded::thread(&instrs, &dest),
             instrs: instrs.into_boxed_slice(),
             dest: dest.into_boxed_slice(),
             #[cfg(any(debug_assertions, feature = "extended-validation"))]

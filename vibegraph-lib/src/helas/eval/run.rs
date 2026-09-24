@@ -1013,7 +1013,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
         // through `scratch.<arena>` per instruction the pair has to be reloaded from the
         // `Vec` header each time, because an arena store is a write the compiler cannot
         // prove misses it.
-        let mut arenas = Arenas {
+        let arenas = Arenas {
             reals: reals.as_mut_slice(),
             scalars: scalars.as_mut_slice(),
             vectors: vectors.as_mut_slice(),
@@ -1026,7 +1026,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
             consts_c: env.consts_c,
             consts_f: env.consts_f,
         };
-        dispatch(prog, env, &mut arenas);
+        dispatch(prog, env, arenas);
     }
 
     validate_arenas(folded, env, scratch);
@@ -1035,7 +1035,7 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
 /// Run the instruction stream: through the tail-call-threaded handlers under the
 /// `threaded-dispatch` feature, through a `match` loop otherwise.
 #[inline(always)]
-fn dispatch<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: &mut Arenas<'_, F>) {
+fn dispatch<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: Arenas<'_, F>) {
     #[cfg(all(test, feature = "threaded-dispatch"))]
     if MATCH_DISPATCH.get() {
         return match_loop(prog, env, arenas);
@@ -1055,9 +1055,9 @@ thread_local! {
 
 #[inline(always)]
 #[cfg_attr(all(feature = "threaded-dispatch", not(test)), allow(dead_code))]
-fn match_loop<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: &mut Arenas<'_, F>) {
+fn match_loop<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, mut arenas: Arenas<'_, F>) {
     for (instr, &loc) in prog.instrs.iter().zip(prog.dest.iter()) {
-        step(*instr, loc as usize, arenas, env);
+        step(instr, loc as usize, &mut arenas, env);
     }
 }
 
@@ -1082,7 +1082,12 @@ pub(super) struct Arenas<'s, F: Real> {
 /// threaded handler whose opcode is a compile-time constant the `match` folds to that
 /// one arm.
 #[inline(always)]
-pub(super) fn step<F: Real>(instr: Instr, loc: usize, a: &mut Arenas<'_, F>, env: &EvalEnv<'_, F>) {
+pub(super) fn step<F: Real>(
+    instr: &Instr,
+    loc: usize,
+    a: &mut Arenas<'_, F>,
+    env: &EvalEnv<'_, F>,
+) {
     let Arenas {
         reals,
         scalars,
@@ -1096,7 +1101,7 @@ pub(super) fn step<F: Real>(instr: Instr, loc: usize, a: &mut Arenas<'_, F>, env
         consts_c,
         consts_f,
     } = a;
-    match instr {
+    match *instr {
         Instr::ComplexConst { pool } => scalars[loc] = consts_c[pool as usize],
         Instr::RealConst { pool } => reals[loc] = consts_f[pool as usize],
         Instr::ExternalScalar { leg } => {
