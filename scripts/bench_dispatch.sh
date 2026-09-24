@@ -44,19 +44,20 @@ for l in sys.stdin:
         print(m["executable"])'
 }
 
-declare -A bin
-bin[match]="$(build match eval-schedule-study)"
-bin[threaded]="$(build threaded eval-schedule-study,threaded-dispatch)"
+# Plain variables, not an associative array: macOS ships bash 3.2.
+match_bin="$(build match eval-schedule-study)"
+threaded_bin="$(build threaded eval-schedule-study,threaded-dispatch)"
 
 for r in $(seq 1 "$rounds"); do
     for sched in "${schedules[@]}"; do
         for arm in match threaded; do
+            if [ "$arm" = match ]; then bin="$match_bin"; else bin="$threaded_bin"; fi
             dir="$out/$arm@$sched-$r"
             mkdir -p "$dir"
             echo "round $r: $arm @ $sched" >&2
             (cd "$root/vibegraph-lib" &&
                 VIBEGRAPH_EVAL_SCHEDULE="$sched" CRITERION_HOME="$dir/criterion" \
-                    "${bin[$arm]}" --bench --noplot "$filter" >"$dir/log.txt")
+                    "$bin" --bench --noplot "$filter" >"$dir/log.txt")
         done
     done
 done
