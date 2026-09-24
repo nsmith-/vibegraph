@@ -684,6 +684,55 @@ at the same 1e-16 to 6e-11 scale per process. The largest move is an
 improvement: `ee_to_mumu_tata_qcd0`'s worst per-event residual went from 6.0e-12
 to 2.8e-14.
 
+### Algebraic float arithmetic (`f64::algebraic_*`, rustc 1.98): not adopted
+
+The prototype was a feature-gated study hook on top of `Real::mul_add_fast`, and
+it is not merged.
+- **Hook:** `Real` got explicit impls for `f32`, `f64` and `LaneField` in place
+  of the blanket one, so `f64` could override kernel-arithmetic methods. The
+  lane field kept its explicit ops.
+- **Variants:**
+  - **v1:** multiply-adds as algebraic mul + add.
+  - **v2:** every op in `cmul`/`cmul_add`/dots/`slash_bispinor`/`m2`.
+  - **vw:** v2 plus the vector-space macros and the dispatch-loop
+    `AddScalar`/`MulScalar*`.
+- **Protocol:** three interleaved rounds per target on one pinned core, with
+  per-round ratios against a no-feature control.
+
+Median `forward` effect across the 8 rows (positive = slower; control drift
+1–9% per row):
+
+| target | v1 | v2 | vw |
+|---|--:|--:|--:|
+| native (AVX-512) | +9.8 … +17.7% on 6 of 8 rows | +3.6 … +14.2% | −2.2 … +9.0%, mostly ≈ 0 |
+| `x86-64-v3` | −3.5 … +7.3% | −6.8 … +2.5% | −1.7 … +5.6% |
+| default | −4.8 … +2.3% | −2.1 … +5.2% | −4.2 … +1.3% |
+
+The lane code was census-identical between control and vw, yet it moved −2.8% to
++9.7% between the two builds. Code layout alone moves this bench by up to ~10%,
+so single-digit effects here are not resolvable.
+
+**Why v1 is slower.** Given algebraic mul and add, LLVM's SLP vectorizer packs
+each complex product's re/im pair into `vmulpd` + `vaddsubpd` + shuffles before
+FMA formation can see it. In `fill_arenas` on native, scalar FMAs go 534 → 172,
+`vaddsubpd` 35 → 98 and `vshufpd` 82 → 162 (v3: 407 → 176 FMAs). On this core
+the packed-complex form is slower than the scalar FMAs it replaced. Allowing
+reassociation everywhere (v2, vw) brings the FMAs back and trims 3–5% of static
+instructions, but no time.
+
+**Costs, measured under vw:**
+- `eval_m2_lanes_match_scalar` and `lanes4_lanes8_match_scalar` fail on both
+  the default target and v3. 69–73 of the 118 lane comparisons differ, worst
+  1 265 ulp (1.8e-13 relative).
+- `test_fierz_reconstruction` fails on v3. The same bilinear computed through
+  `fierz_coefficients().scalar()` and `scalar_bilinear()` differs
+  (`im` 2.6e-18 vs 0), because the two inlining contexts contract differently.
+- The helicity-expansion, alternative-schedule, batched-VEGAS and fixed-seed
+  bit-identity tests all still passed.
+- The amplitude oracle stays 42/42 at the control's residual scale.
+
+Verdict: no speedup to pay for results that depend on the inliner.
+
 ### Reproduce
 
 ```

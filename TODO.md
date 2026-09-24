@@ -803,23 +803,22 @@ coverage. What is left below is what still refuses, and why.
     bit-identical on every target again.
   - Re-measure on ARM, where `wide` is NEON `f64x2` and wider packs are pairs
     of it.
-- **Associative float arithmetic (`f64::algebraic_*`)** — stable on 1.98 (CI's
-  stable), not on 1.94. The ops license reassociation and contraction, so LLVM
-  may form FMAs where the target has them and emit mul + add where it does not.
-  `Real::mul_add_fast` already removes the software-FMA cost on non-FMA
-  targets explicitly. What algebraic ops could add is freedom for LLVM to pick
-  the packed `vmulpd`+`vaddsubpd` complex-multiply idiom the shared real-FMA path
-  gave up, and to reassociate reductions. Costs to weigh:
-  - Results depend on codegen: inlining context and opt level may contract
-    differently. Every test asserting bit identity between two call sites of the
-    same kernels would need auditing, not only lane-vs-scalar: helicity
-    expansion vs per-combination sum, `schedule.rs` alternative orders,
-    batched-vs-unbatched VEGAS, fixed-seed event bytes.
-  - They are inherent `f64` methods, so generic `F: Real` code needs a trait
-    hook. `wide`'s intrinsic-backed ops carry no fast-math flags, so the lane
-    field would keep its explicit `mul_add`.
-  - The workspace declares no `rust-version`. Adopting means declaring one.
-- **Kernel ILP survey** — a prelude to, or instead of, `algebraic_*`: rewrite
+- **Associative float arithmetic (`f64::algebraic_*`): studied, not adopted.**
+  A feature-gated prototype made the scalar kernels' arithmetic algebraic in
+  three variants: multiply-adds only; every kernel op; every kernel op plus the
+  vector-space and dispatch-loop sums and products. It was measured A/B/A/B on
+  the default, `x86-64-v3` and native targets. No variant beats noise anywhere.
+  Algebraic mul + add on native is +2% to +18% *slower*, because the SLP
+  vectorizer packs re/im pairs into `vmulpd` + `vaddsubpd` + shuffles before
+  FMA formation: scalar FMAs in `fill_arenas` drop 534 → 172. The costs:
+  - Lane-vs-scalar bit identity fails on every target (up to 1 265 ulp).
+  - `test_fierz_reconstruction` fails on v3, because one bilinear contracts
+    differently in two inlining contexts.
+
+  The MadGraph oracle stays green. Revisit only with a concrete kernel whose
+  timing needs it. (`x86-avx2-perf-study-results.md`, "Algebraic float
+  arithmetic".)
+- **Kernel ILP survey** — rewrite
   serial accumulation chains in the kernels into independent partial sums where
   the dependency chain dominates. E.g. `ComplexVector::dot` is `cmul` then three
   chained `cmul_add`s, about 7 dependent FP ops; two interleaved chains make it
