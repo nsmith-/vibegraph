@@ -169,6 +169,15 @@ gain along with them.
   show the win growing with run length at fixed level grouping, so run length
   matters on that core. How much of E1's −17.9% is level grouping was never
   measured; a `levelmix` run there would say.
+- **The size of the win reproduces across hosts; its mechanism may not.**
+  Op-blocked against arena order is −19.2% geomean on `forward` here (sweep B,
+  `match`; per row −12.9% to −24.3%). E1 measured −17.9% (−8.9% to −22.6%) on
+  the M3 Max, and E1b −17.34% in production. The fuller −11% to −30% per row of
+  note 31 §6.8 is the whole sprint (E1b + E2 + E2b), not the order alone. What
+  differs between the hosts is the attribution. E1's `opwin` controls grew with
+  run length at fixed level grouping, while here `levelmix` (runs of 2–3) loses
+  nothing. The two cores' indirect predictors and out-of-order windows (the M3's
+  is several times larger) are candidate causes, unmeasured.
 - **Lanes care much less about order**: 1–6% on lanes4/lanes8 against 20–27%
   on `forward`. A lane instruction is 2–8× the arithmetic for the same
   dispatch and the same dependency chain.
