@@ -20,7 +20,6 @@
 //! | [`ForbiddenSChannel`](Unsupported::ForbiddenSChannel) | `$$ A` | the same filter, inverted |
 //! | [`ForbiddenOnShellSChannel`](Unsupported::ForbiddenOnShellSChannel) | `$ A` | a per-channel on-shell veto in the integrand |
 //! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | stitched core and decay enumerations |
-//! | [`DecayProcess`](Unsupported::DecayProcess) | `t > w+ b` (1→n) | rest-frame phase space and partial widths |
 //! | [`Polarization`](Unsupported::Polarization) | `w+{0}`, `z{T}`, `e-{L}` | a restricted helicity loop per leg |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
@@ -158,12 +157,6 @@ pub enum Unsupported {
          have to be enumerated separately and joined at the resonance"
     )]
     DecayChain { process: String },
-    /// A 1→n process, integrated by MadGraph to a partial width.
-    #[error(
-        "'{process}': 1→n decay processes are not supported yet — they need rest-frame \
-         phase space and a width run mode"
-    )]
-    DecayProcess { process: String },
     /// More than two initial particles: no phase space or flux here or in
     /// MadEvent describes one.
     #[error("'{process}': {n} initial-state particles; a process has one or two")]
@@ -525,8 +518,7 @@ fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
         refused.push(Unsupported::DecayChain { process: process() });
     }
     match def.initial().count() {
-        2 => {}
-        1 => refused.push(Unsupported::DecayProcess { process: process() }),
+        1 | 2 => {}
         n => refused.push(Unsupported::InitialState {
             process: process(),
             n,
@@ -665,7 +657,6 @@ mod tests {
                 Unsupported::Polarization { .. } => "pol",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
-                Unsupported::DecayProcess { .. } => "1>n",
                 Unsupported::DecayChain { .. } => ",",
                 Unsupported::MixedMultiplicity { .. } => "mlm",
                 Unsupported::MixedInitialStates { .. } => "mixed",
@@ -675,7 +666,7 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["set", "launch", ">", "$", "[]", "pol", "^2", "1>n", "mixed", ",", "mlm"]
+            ["set", "launch", ">", "$", "[]", "pol", "^2", "mixed", ",", "mlm"]
         );
     }
 
