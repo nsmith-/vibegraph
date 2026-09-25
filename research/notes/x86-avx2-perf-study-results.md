@@ -736,12 +736,12 @@ Verdict: no speedup to pay for results that depend on the inliner.
 ### Kernel microbenchmarks (`benches/lorentz_kernels.rs`)
 
 A leaf-kernel change that is below the 8-process bench's resolution is judged on
-the kernel itself. `lorentz_kernels` times the production `ComplexVector::dot` and
-ket `Bispinor::slash` for `f64` and `LaneField<4>`, in two shapes:
+the kernel itself. `lorentz_kernels` times the production Lorentz kernels through
+their public API, for `f64` and `LaneField<4>`, in two shapes:
 - `throughput`: 1024 independent calls.
-- `chain`: each result feeds every component of the next call's input, so the
-  time is the critical-path latency. Each chain is constructed to stay O(1),
-  and the bench asserts it never reaches overflow or subnormals.
+- `chain`: each result feeds the next call's input, so the time is the
+  critical-path latency from that input. Each chain is constructed to stay
+  O(1), and the bench asserts it never reaches overflow or subnormals.
 
 **`dot` as two accumulation chains**, A/B/A/B, one pinned core, per-round
 change (B vs A):
@@ -757,6 +757,67 @@ The `slash` rows are unchanged code between the two builds and move −5.7% to
 +6.2%: that is the noise floor. Adopted on these kernel merits, although the
 8-process bench showed a null. The amplitude oracle's residuals move only in
 their last printed digits, and the lane-vs-scalar tests stay exact.
+
+**Survey of the remaining serial chains.** Every kernel with a serial
+accumulation was rewritten and added to the bench before the change:
+- `dot4` (the Weyl-matrix rows of `apply` and `clifford_product`, and
+  `epsilon4`'s final contraction) takes `dot`'s two-chain form, and `dot` now
+  calls it.
+- `dot_lorentz` splits each real sum into two partials.
+- `scalar_bilinear(Both)` is `dot4` instead of four chained multiply-adds.
+- `AsymRank2Tensor::contract` sums one independent partial per spatial axis.
+- `contract_vector` is written out over each row's three non-zero entries. The
+  old loop over all four columns included a multiply-add by the zero diagonal,
+  which the compiler cannot drop.
+- `contract_vectors` is `a · (T b)`, built on `contract_vector`, instead of a
+  six-step fold.
+- `fierz_pairing` adds its four grade terms as a tree.
+
+Already flat, and unchanged: the chiral currents, `tensor_bilinear`, the
+`epsilon_cofactors` minors, `to_weyl_matrix` and `from_weyl_matrix`.
+
+A/B/A/B over three rounds, one pinned core. Each cell is the range of the
+per-round change, as throughput / chain, in %:
+
+| kernel | native f64 | native lanes4 | default f64 | default lanes4 |
+|---|---|---|---|---|
+| `dot` | −5…−3 / −4…−3 | +2…+5 / −1…+3 | −4…+5 / −2…+2 | −7…+1 / −3…+6 |
+| `dot_lorentz` | −1…+1 / −10…−7 | −2…+1 / −9…−7 | −2…+3 / −9…−6 | −5…+3 / −2…−0 |
+| `scalar_bilinear` | −4…−1 / −17…−14 | −5…+5 / −20…−16 | −19…−14 / +14…+23 | −2…+3 / +1…+9 |
+| `epsilon4` | −3…+5 / −6…+60 | −10…+1 / −4…−0 | −6…−4 / −5…+1 | −1…+4 / −9…−4 |
+| `tensor_contract` | −6…−1 / −7…+36 | +2…+10 / −12…−3 | −1…+4 / −10…−8 | −6…−4 / −5…+0 |
+| `tensor_contract_vectors` | −22…−18 / −28…−5 | −21…−17 / −24…−19 | −23…−21 / −24…−22 | −32…−25 / −17…−16 |
+| `tensor_contract_vector` | −40…−34 / −21…−20 | −25…−23 / −20…−16 | −29…−29 / −43…−39 | −50…−46 / −49…−45 |
+| `fierz_pairing` | −4…−3 / −36…−33 | −15…+7 / −3…+3 | −2…+2 / −6…+3 | −7…+8 / −5…+6 |
+| `apply` | −2…+4 / −3…+2 | +1…+10 / −5…+6 | −5…−3 / +0…+7 | −1…+7 / −4…+5 |
+| `slash` | −1…+4 / −6…−2 | −5…+5 / −3…+4 | −4…+3 / −1…+2 | −8…+6 / +1…+6 |
+
+Reading it:
+- **Noise.** `slash` is unchanged code, and `dot` computes the same arithmetic
+  in both builds. Both move within about ±6%.
+- **Outliers.** Round 3 on native has three outlier cells: `epsilon4` chain
+  +60%, `tensor_contract` chain +36%, and `contract_vectors` chain −5% against
+  −28% in the other rounds. A native-only A/B/C rerun, three rounds, the
+  variant C reverting only `contract`, shows those cells were a disturbance:
+  - `tensor_contract` chain: −6% (`f64`) and −12% (lanes4), consistently.
+    Throughput is unchanged.
+  - `fierz_pairing` `f64` chain: 45 → 30 µs with the new `contract`, 36 µs
+    without it. Its critical path runs through the bivector term.
+- **Clear wins.** `contract_vector` (−16% to −50% in every cell) and
+  `contract_vectors` (−16% to −32%) do less work as well as having shorter
+  paths. `dot_lorentz` gains 7–10% in chain everywhere except default lanes4.
+- **The one regression.** `scalar_bilinear`'s default-target `f64` chain is
+  14–23% slower. That target's throughput gains 14–19%, and native's chain
+  gains 14–20%. Without hardware FMA, `mul_add_fast` is a multiply and an add,
+  so a serial chain's dependency from the accumulator is a single add per term
+  and the split buys less.
+- **Neutral.** `apply` is within noise: its four rows are already
+  independent, so `dot4`'s one extra add is all that changes. `epsilon4`
+  moves within noise too, apart from the outlier.
+
+All rewrites are kept. The throughput shape is what the dispatch loop mostly
+presents, and it improves or holds in every cell except native-lanes4 `apply`
+and `tensor_contract`, which are within noise.
 
 ### Reproduce
 

@@ -836,11 +836,21 @@ coverage. What is left below is what still refuses, and why.
     8-process eval bench it was a null (−0.2% / +2.4% / −1.6%): the dispatch
     loop's out-of-order overlap hides most kernel latency. It is kept on its
     kernel merits.
-  - Next candidates: `dot4`, `dot_lorentz`, the currents and bilinears, and
-    `AsymRank2Tensor`'s contractions. Add each to `lorentz_kernels` before
-    changing it. An IPC / top-down reading on a host with a PMU would say how
-    much of the evaluator's time is latency-bound at all; the Firecracker VM
-    used here exposes no `cpu` event source.
+  - **Survey: done.** All the remaining serial chains are rewritten and
+    benched:
+    - `dot4` (and `scalar_bilinear(Both)` through it), `dot_lorentz`, and
+      `AsymRank2Tensor::contract`, `contract_vector` and `contract_vectors`;
+    - `fierz_pairing`'s sum.
+
+    Clear wins: `contract_vector` −16% to −50% and `contract_vectors` −16% to
+    −32% in every cell, `dot_lorentz` chain −7% to −10%, and `fierz_pairing`'s
+    native `f64` chain −34%. The one regression is `scalar_bilinear`'s
+    default-target `f64` chain, +14% to +23%, against a −14% to −19%
+    throughput gain there. The currents, `tensor_bilinear` and the ε cofactors
+    were already flat. The table is in `x86-avx2-perf-study-results.md`.
+  - Still open: an IPC / top-down reading on a host with a PMU, to say how much
+    of the evaluator's time is latency-bound at all. The Firecracker VM used
+    here exposes no `cpu` event source.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
