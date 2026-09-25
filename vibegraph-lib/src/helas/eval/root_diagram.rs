@@ -533,10 +533,10 @@ impl DiagramEvalTree {
     /// vertex's [`build_sign`](super::diagram_eval::VertexInfo::build_sign) (VVS
     /// `pure_metric`, FFS scalar-sink, crossed-pair). Each vertex's sign depends on which
     /// leg the rooting made its output, so this is only rooting-invariant when read off a
-    /// tree built at the canonical `VtxIdx(0)` rooting — which [`compile_single_diagram`]
-    /// does, folding the result into `fermi_sign` so the honest (sign-free) currents stay
-    /// root-invariant. Mirrors [`yang_mills_vvv_sign`], which carries the VVV vertex sign
-    /// the same way.
+    /// tree built at one fixed rooting — the diagram's [anchor](Diagram::anchor), which
+    /// [`compile_single_diagram`] roots at, folding the result into `fermi_sign` so the
+    /// honest (sign-free) currents stay root-invariant. Mirrors [`yang_mills_vvv_sign`],
+    /// which carries the VVV vertex sign the same way.
     pub(super) fn build_convention_sign(&self) -> i8 {
         let mut sign = 1i8;
         for id in self.iter() {
@@ -554,12 +554,12 @@ impl DiagramEvalTree {
     /// each vertex's [`reversed_sign`](super::diagram_eval::VertexInfo::reversed_sign).
     /// Like [`build_convention_sign`](Self::build_convention_sign), it depends on the
     /// rooting (a fermion→vector sink under one rooting is a fermion-continuing current
-    /// under another), so [`compile_single_diagram`] folds `P_canonical · P_live` into
+    /// under another), so [`compile_single_diagram`] folds `P_anchor · P_live` into
     /// `fermi_sign`: `P_live` cancels the parity the runtime `resolve_bra_ket` actually
-    /// applies on the live tree, and `P_canonical` reinstates the canonical one. When the
-    /// live rooting coincides with the canonical `VtxIdx(0)` (every diagram whose chosen
-    /// root is vertex 0) the two are equal and the factor is `+1`; when they differ this
-    /// correction is what keeps the re-rooted amplitude equal to the canonical one.
+    /// applies on the live tree, and `P_anchor` reinstates the anchor-rooted one. When the
+    /// live rooting is the anchor rooting the two are equal and the factor is `+1`; when
+    /// they differ this correction is what keeps the re-rooted amplitude equal to the
+    /// anchor-rooted one.
     pub(super) fn reversed_convention_sign(&self) -> i8 {
         let mut sign = 1i8;
         for id in self.iter() {
@@ -580,100 +580,13 @@ impl std::fmt::Display for DiagramEvalTree {
     }
 }
 
-// ───────────────────────── Fermion-line sign (test oracle) ─────────────────────────
+// ───────────────────── Fermion-line sign from the baked adjoint ─────────────────────
 //
-// The production spine sign is derived from the baked spinor adjoint
-// ([`spine_sign_from_flow`]). The independent `spin_map`-tracing implementation below
-// is retained as the cross-check oracle for `spine_sign_from_flow_matches_heuristic`.
-
-/// Trace the fermion line that enters `start_vtx` at ordered ray slot `in_ray`,
-/// following spinor connectivity until it reaches an external leg.
-///
-/// Connectivity comes from *our* recomputed `spin_map` (UFOModel `LorentzStructure`),
-/// indexed by the vertex's ordered ray slots — which are exactly the owned diagram's
-/// `Vertex.rays`, since `Diagram::from_view` records them in interaction-slot order.
-/// Returns the external leg index where the line terminates and every vertex the line
-/// passes through, in trace order.
-#[cfg(test)]
-fn trace_fermion_line(
-    diagram: &Diagram,
-    model: &UFOModel,
-    start_vtx: VtxIdx,
-    in_ray: RaySlot,
-) -> (LegIdx, Vec<VtxIdx>) {
-    let mut vtx = start_vtx;
-    let mut in_ray = in_ray;
-    let mut path = Vec::new();
-    // Tree diagrams terminate; the bound only guards against pathological loops.
-    for _ in 0..1024 {
-        let vertex = diagram.vertex(vtx);
-        let group = vertex_flow_group(model, vertex.interaction, vertex.flow_group);
-        let out_ray = group.partner(in_ray.0);
-        path.push(vtx);
-        match vertex.rays[out_ray] {
-            Ray::Leg(li) => return (li, path),
-            Ray::Prop { prop, end } => {
-                let (next_vtx, next_slot) = diagram.prop(prop).endpoints[1 - end];
-                vtx = next_vtx;
-                in_ray = next_slot;
-            }
-        }
-    }
-    panic!("fermion line trace did not terminate");
-}
-
-/// Whether a vertex's fermion bilinear carries a Dirac matrix, read straight off the
-/// UFO operator list rather than off the rooted tree.
-#[cfg(test)]
-fn vertex_carries_dirac_matrix(diagram: &Diagram, model: &UFOModel, vtx: VtxIdx) -> bool {
-    use crate::ufo::lorentz::LorentzOp;
-    let vertex = diagram.vertex(vtx);
-    let def = model.vertex_def(vertex.interaction);
-    let group = vertex_flow_group(model, vertex.interaction, vertex.flow_group);
-    group.lorentz.iter().any(|&pos| {
-        model.lorentz_struct(def.lorentz[pos]).expr.iter().any(|t| {
-            t.ops
-                .iter()
-                .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. }))
-        })
-    })
-}
-
-/// Relative fermion sign that feyngraph's connectivity-based `view.sign()` omits.
-///
-/// Independent `spin_map`-tracing oracle for [`spine_sign_from_flow`]; see there for
-/// the derivation. Detected structurally by tracing each external fermion line: one
-/// −1 per internal propagator on a *Dirac-matrix-carrying* line with at least one
-/// initial-state endpoint, and one −1 per final–final line.
-#[cfg(test)]
-fn reversed_line_propagator_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
-    let n_in = diagram.n_in;
-    let mut visited: HashSet<LegIdx> = HashSet::new();
-    let mut sign: i8 = 1;
-    for leg in &diagram.legs {
-        let li = leg.leg_idx;
-        // A Dirac fermion leg (UFO spin code 2); mirrors the rest of this file.
-        if leg.spin.abs() != 2 || !visited.insert(li) {
-            continue;
-        }
-        let (attach_vtx, attach_slot) = diagram.leg_attachment(li);
-        let (other, path) = trace_fermion_line(diagram, model, attach_vtx, attach_slot);
-        visited.insert(other);
-        let crossed = li.0 >= n_in && other.0 >= n_in;
-        let gauge = path
-            .iter()
-            .any(|&v| vertex_carries_dirac_matrix(diagram, model, v));
-        if !crossed && gauge && (path.len() - 1) % 2 == 1 {
-            sign = -sign;
-        }
-        if crossed {
-            sign = -sign;
-        }
-    }
-    sign
-}
-
-// ──────────────────────── Spine sign from baked adjoint ────────────────────────
+// The fermion-line sign `fermi_sign` carries is a property of the diagram
+// (`Diagram::fermion_line_sign`, folded into `Diagram::sign`). The derivation below reads
+// the same sign off a rooted evaluation tree instead — from the spinor adjoint the
+// rooting baked into it — and is the independent cross-check debug builds hold every
+// compiled diagram to.
 
 /// One half of a fermion line, as seen descending from the vertex it closes at.
 #[derive(Clone, Copy)]
@@ -733,64 +646,55 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> FermionHalf
     }
 }
 
-/// Derive the fermion-line sign corrections purely from the baked spinor adjoint, using
-/// only the rooted evaluation tree we already build — no second graph walk. (The
-/// `spin_map`-tracing `reversed_line_propagator_sign` is kept as a test oracle and proven
-/// equivalent by `spine_sign_from_flow_matches_heuristic`.)
+/// The fermion-line sign of [`Diagram::fermion_line_sign`], derived from a rooted tree's
+/// baked spinor adjoint rather than from the diagram's lines.
 ///
-/// A fermion line terminates at any vertex node that outputs a non-fermion yet has two
-/// fermion children: an FFV/FFS current rooted at its boson leg, or the root
-/// contraction. Each fermion line meets exactly one such sink, so every line is
-/// counted once.
-///
-/// The two flips below both come from the same place: which UFO slot each external
-/// wavefunction is bound to. Diagram enumeration binds slots in the *all-incoming*
-/// identity, so an outgoing leg is bound to its antiparticle's slot; the reference
-/// HELAS bookkeeping binds them in the all-outgoing identity, so an *incoming* leg is
-/// bound to its antiparticle's slot. A vertex slot pairs with a definite spinor adjoint
-/// (the pair-first slot takes the ket, the pair-second the bra), so the two bindings
-/// disagree exactly on the legs neither convention crosses the same way:
-///
-/// * A line with at least one **initial-state** endpoint is bound against its own
-///   arrow at every vertex (the initial leg always, and a mixed line's final leg
-///   because [`mixed_line_final_legs`] restores its physical wavefunction while the
-///   slot stays the all-incoming one). Reading a bilinear against its slot arrow
-///   replaces each vertex structure by `C Γᵀ C⁻¹`, which for `Γ = γ^μ P_χ` is
-///   `−γ^μ P_χ̄`: the chirality flip is applied per vertex by
-///   [`chiral_correction`](super::root_lorentz), and one of the `V` minus signs is
-///   supplied by
-///   [`reversed_convention_sign`](DiagramEvalTree::reversed_convention_sign) at the
-///   line's single vector-rooted sink. The remaining `V − 1` — one per internal fermion
-///   propagator on the line — are this flip. Pinned by the uux 2→6 per-diagram oracle
-///   for the initial–initial case and by `u d > e+ e- u d QCD=0`, whose 35 diagrams
-///   split 24/11 on whether a *mixed* quark line carries the propagator, for the mixed
-///   case.
-///
-///   **A line whose every bilinear is Dirac-matrix-free takes none of it.** `C Γᵀ C⁻¹`
-///   is `Γ` itself for `Identity`, `Gamma5` and the bare chiral projectors, so a line
-///   built only from those — a chain of Yukawa-type vertices, with no `Gamma` and no
-///   `Sigma` anywhere on it — reverses into itself and carries no propagator sign at
-///   all. Measured on `qt qt~ > o8 o8` in the toy colour model, whose s-channel
-///   (no fermion propagator) and t/u-channel (one) diagrams must enter the JAMPs with
-///   the *same* sign to reproduce MadGraph's `|M|²`. A line that carries a Dirac matrix
-///   anywhere keeps the propagator count, including the mixed gauge/Yukawa case: the
-///   `b` line of `b b~ > c c~ e+ e- mu+ mu- QCD=0`, one photon vertex and one `b b~ H`
-///   vertex across one propagator, is bit-for-bit against MadGraph only with the −1.
-///   Which vertex on a mixed line owns which factor is not resolved by any oracle in
-///   the suite — every measured case is decided by the all-or-nothing form above.
-/// * A **crossed line** — both endpoints final-state, kept in the all-incoming
-///   (conjugate-wavefunction) representation — is bound *along* its arrow at every
-///   vertex, so it takes no per-propagator factor; its single −1 is the operator
-///   reordering of the conjugated pair relative to the reference's physical pair.
-///   Invisible while every diagram of a process has the same crossed-line count
-///   (uniform sign); exposed and pinned by Bhabha, where the s-channel has one crossed
-///   line and the t-channel none, and its propagator-independence by `g g > t t~`,
-///   whose s-channel top line carries no propagator and whose t/u-channel lines carry
-///   one.
+/// A fermion line closes at the one vertex node where both of its legs are inputs: the
+/// root contraction, a two-fermion current rooted at its boson leg, or a four-fermion
+/// current rooted at a leg of its *other* line — which outputs a fermion and still
+/// closes this one. Every node's closed pairs are read, so every line is counted once;
+/// descending both halves from where it closes recovers the line's ends, its internal
+/// propagators and whether any vertex on it carries a Dirac matrix, which is all the
+/// sign reads.
 pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
+    closed_line_sign(tree, |_| true)
+}
+
+/// The fermion-line sign of the lines a tree closes at a *fermion-output* tensor
+/// current: a four-fermion vertex whose cyclic structure goes through the rank-2 tensor
+/// path, rooted at a leg of one of its lines and closing the other.
+///
+/// [`compile_single_diagram`] divides these back out of the diagram's line sign at the
+/// anchor rooting, so a line that closes at such a current there takes no line sign.
+/// This is a convention of the tensor-path kernel, which cuts the index cycle at one
+/// fermion line, read at the one rooting the convention signs are defined at. Measured
+/// against MadGraph standalone on processes where an emission leaves a four-fermion
+/// contact by one of its lines: with the tensor contact, `ta+ ta- > t t~ a` (`O_leQt3`)
+/// and `lt~ lt > qt qt~ vt` in the toy model reproduce MadGraph's `|M|²` only with the
+/// factor (and miss by up to 20% without it); with the vector contact of `O_ll`,
+/// `e+ e- > mu+ mu- a` reproduces it only without — a tree-rooted four-fermion current
+/// takes every line sign the diagram carries.
+fn fermion_current_line_sign(tree: &DiagramEvalTree) -> i8 {
+    closed_line_sign(tree, |node| {
+        matches!(
+            node,
+            EvalNode::OffShellCurrent {
+                adjoint: Some(_),
+                info,
+                ..
+            } if info.tensor()
+        )
+    })
+}
+
+/// The product of the line signs of the lines closed at the vertex nodes `at` selects.
+fn closed_line_sign(tree: &DiagramEvalTree, at: impl Fn(&EvalNode) -> bool) -> i8 {
     let mut sign = 1i8;
     for id in tree.iter() {
         let node = tree.value(id);
+        if !at(node) {
+            continue;
+        }
         let (children, fermion_pairs, sink) = match node {
             EvalNode::ContractAmplitude {
                 children,
@@ -799,7 +703,6 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
                 ..
             }
             | EvalNode::OffShellCurrent {
-                adjoint: None,
                 children,
                 fermion_pairs,
                 info,
@@ -807,7 +710,7 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
             } => (children, fermion_pairs, info),
             _ => continue,
         };
-        // Every line the vertex closes, one at a two-fermion sink and two at a
+        // Every line the vertex closes, one at a two-fermion sink and up to two at a
         // four-fermion one; a line's two ends are named by the vertex's own pairing,
         // not by their order in the child list.
         for &(a, b) in fermion_pairs {
@@ -1056,10 +959,11 @@ pub(super) fn root_tree(
 }
 
 /// Root a diagram at an explicit vertex (bypassing [`choose_root`]). Used to build the
-/// canonical `VtxIdx(0)` tree for the rooting-invariant convention sign
-/// ([`DiagramEvalTree::build_convention_sign`], [`spine_sign_from_flow`]) whenever the
-/// live evaluation tree is rooted elsewhere — either by [`canonical_root`] in production
-/// or by a soundness-harness override.
+/// anchor-rooted tree the rooting-convention signs are read from
+/// ([`DiagramEvalTree::build_convention_sign`],
+/// [`DiagramEvalTree::reversed_convention_sign`]) whenever the live evaluation tree is
+/// rooted elsewhere — either by [`canonical_root`] in production or by a
+/// soundness-harness override.
 pub(super) fn root_tree_at(
     diagram: &Diagram,
     model: &UFOModel,
@@ -1164,18 +1068,19 @@ fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
 ///
 /// The honest vector current is root-invariant, but a VVV vertex needs a −1 relative
 /// to it whenever it sits at a vector *output* (source) leg rather than the amplitude
-/// sink. The convention reference roots at `VtxIdx(0)`, so exactly the VVV vertices at
-/// indices `1..` are sources; each contributes a −1. Deriving the sign from the *fixed*
-/// diagram (vertex 0 is the canonical root) rather than the live evaluation rooting decouples
-/// it from the root choice: the honest current handles the tensor contraction root-
-/// invariantly and this scalar carries the antisymmetric-vertex sign, so their product
-/// reproduces the `VtxIdx(0)` amplitude bit-for-bit for every re-rooting.
+/// sink. The convention reference roots the diagram at its [anchor](Diagram::anchor),
+/// so exactly the VVV vertices other than the anchor are sources; each contributes a
+/// −1. Deriving the sign from the anchor rather than from the live evaluation rooting
+/// decouples it from the root choice: the honest current handles the tensor contraction
+/// root-invariantly and this scalar carries the antisymmetric-vertex sign, so their
+/// product reproduces the anchor-rooted amplitude for every re-rooting.
 fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+    let anchor = diagram.anchor();
     let sources = diagram
         .vertices
         .iter()
-        .skip(1)
-        .filter(|v| is_yang_mills_vvv(model, v.interaction))
+        .enumerate()
+        .filter(|&(v, vertex)| VtxIdx(v) != anchor && is_yang_mills_vvv(model, vertex.interaction))
         .count();
     if sources % 2 == 0 {
         1
@@ -1187,40 +1092,47 @@ fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
 /// Compile a single diagram into an evaluable [`DiagramEval`].
 ///
 /// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
-/// attaches the per-diagram metadata (external-leg count, symmetry factor, and the
-/// fermion-adjoint sign, including the initial-state spine correction derived from the
-/// baked spinor adjoint via [`spine_sign_from_flow`], plus the Yang-Mills VVV vertex
-/// sign from [`yang_mills_vvv_sign`]).
+/// attaches the per-diagram metadata: external-leg count, symmetry factor, and
+/// `fermi_sign` — the diagram's own relative Fermi sign ([`Diagram::sign`]) times the
+/// HELAS convention signs of this evaluator's kernels (the tensor-current line
+/// sign, the Yang-Mills source sign, the build and reversed-bilinear signs), each read
+/// at the rooting that takes the diagram's [anchor](Diagram::anchor) as the amplitude
+/// vertex.
 pub(super) fn compile_single_diagram(
     diagram: &Diagram,
     model: &UFOModel,
     chain: &[u8],
 ) -> Result<DiagramEval, CompileError> {
     let tree = root_tree(diagram, model, chain)?;
-    // The rooting-convention signs (`build_convention_sign`, `spine_sign_from_flow`) depend
-    // on the output-leg orientation the rooting chose, but the honest currents do not. To
-    // keep the amplitude root-invariant, read those signs off the *canonical* `VtxIdx(0)`
-    // tree rather than the live evaluation tree. The live tree coincides with the canonical
-    // one for every diagram whose chosen root ([`canonical_root`]) is vertex 0 (all 2→2
-    // processes, whose vertices tie on external-leg count); it diverges when the chosen
-    // root is elsewhere, and then the separate canonical tree carries the signs.
-    let canonical_owned;
-    let canonical = if choose_root(diagram) == VtxIdx(0) {
+    // The rooting-convention signs (`fermion_current_line_sign`, `build_convention_sign`,
+    // `reversed_convention_sign`) depend on the output leg each vertex was rooted at, but
+    // the honest currents do not.
+    // To keep the amplitude root-invariant, read them off the tree rooted at the anchor
+    // rather than off the live evaluation tree; the two are one tree whenever the chosen
+    // root ([`canonical_root`]) is the anchor, and otherwise the anchor-rooted tree is
+    // built for its signs alone.
+    debug_assert_eq!(
+        spine_sign_from_flow(&tree),
+        diagram.fermion_line_sign(model),
+        "the rooted tree and the diagram's lines disagree on the fermion-line sign"
+    );
+    let anchor = diagram.anchor();
+    let reference_owned;
+    let reference = if choose_root(diagram) == anchor {
         &tree
     } else {
-        canonical_owned = root_tree_at(diagram, model, chain, VtxIdx(0))?;
-        &canonical_owned
+        reference_owned = root_tree_at(diagram, model, chain, anchor)?;
+        &reference_owned
     };
     // The runtime `resolve_bra_ket` applies the live tree's reversed-bilinear parity
     // (`tree.reversed_convention_sign()`); multiplying by it cancels that and by the
-    // canonical parity reinstates the rooting-invariant one. When the live tree is the
-    // canonical one the product is `+1` and the runtime sign is left untouched; otherwise
-    // it re-expresses the live parity in the canonical frame.
+    // reference parity reinstates the rooting-invariant one. When the live tree is the
+    // reference the product is `+1` and the runtime sign is left untouched.
     let fermi_sign = diagram.sign
-        * spine_sign_from_flow(canonical)
+        * fermion_current_line_sign(reference)
         * yang_mills_vvv_sign(diagram, model)
-        * canonical.build_convention_sign()
-        * canonical.reversed_convention_sign()
+        * reference.build_convention_sign()
+        * reference.reversed_convention_sign()
         * tree.reversed_convention_sign();
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
@@ -1340,10 +1252,9 @@ mod tests {
     }
 
     /// The Yang-Mills VVV sign fires only where a triple-vector vertex is a source: a
-    /// process with a VVV vertex off the canonical root exercises a −1, a VVV-free
-    /// process is uniformly +1, and a process whose canonical root *is* the VVV (all
-    /// its VVVs at index 0) stays +1. Guards `is_yang_mills_vvv`'s detection and the
-    /// index-`1..` source count that make the fix bit-exact at production rooting.
+    /// process with a VVV vertex off the anchor exercises a −1, and a VVV-free process is
+    /// uniformly +1. Guards `is_yang_mills_vvv`'s detection and the off-anchor source
+    /// count.
     #[test]
     fn yang_mills_vvv_sign_fires_only_for_source_vvv() {
         let model = sm_model(SMRestrict::Default);
@@ -1374,18 +1285,19 @@ mod tests {
         // `tests/amplitude_oracle.rs` (miscounting it would flip that amplitude).
     }
 
-    /// Number of diagrams of `process` whose canonical `VtxIdx(0)` tree fires each
-    /// rooting-convention sign channel. Rooting at the canonical vertex is what
-    /// production uses and what the `fermi_sign` lift reads, so a channel that fires
-    /// here is a channel [`compile_single_diagram`] genuinely carries.
+    /// Number of diagrams of `process` that fire each sign channel `fermi_sign` carries:
+    /// the Yang-Mills source sign, the diagram's fermion-line sign, and the build and
+    /// reversed-bilinear signs of its anchor-rooted tree — the tree
+    /// [`compile_single_diagram`] reads them from — so a channel that fires here is one
+    /// production genuinely carries.
     fn channel_counts(model: &UFOModel, process: &str) -> (usize, usize, usize, usize) {
         let (mut vvv, mut spine, mut build, mut reversed) = (0, 0, 0, 0);
         for set in generate(process) {
             for diagram in &set.diagrams {
                 let chain = vec![0u8; diagram.vertices.len()];
-                let t = root_tree_at(diagram, model, &chain, VtxIdx(0)).unwrap();
+                let t = root_tree_at(diagram, model, &chain, diagram.anchor()).unwrap();
                 vvv += (yang_mills_vvv_sign(diagram, model) < 0) as usize;
-                spine += (spine_sign_from_flow(&t) < 0) as usize;
+                spine += (diagram.fermion_line_sign(model) < 0) as usize;
                 build += (t.build_convention_sign() < 0) as usize;
                 reversed += (t.reversed_convention_sign() < 0) as usize;
             }
@@ -1449,10 +1361,12 @@ mod tests {
         );
     }
 
-    /// The adjoint-derived spine sign must agree with the `spin_map`-tracing heuristic for
-    /// every diagram, across processes with and without off-shell fermion spines.
+    /// The diagram's fermion-line sign, read off its lines, must agree with the same sign
+    /// derived from the baked spinor adjoint of a rooted tree — at every rooting, so the
+    /// sign is shown to be a property of the diagram and not of where it is rooted —
+    /// across processes with and without off-shell fermion lines.
     #[test]
-    fn spine_sign_from_flow_matches_heuristic() {
+    fn fermion_line_sign_matches_the_rooted_tree_derivation() {
         let model = sm_model(SMRestrict::Default);
         let processes = [
             "e+ e- > mu+ mu-",
@@ -1460,6 +1374,7 @@ mod tests {
             "u u~ > d d~",
             "e+ e- > mu+ mu- ta+ ta-",
             "u d > e+ e- u d QCD=0",
+            "g g > t t~",
             // An all-Yukawa quark line, and the same topology with a gauge vertex on it.
             "b b~ > h h",
             "b b~ > a h",
@@ -1469,25 +1384,28 @@ mod tests {
             for set in generate(process) {
                 for (i, diagram) in set.diagrams.iter().enumerate() {
                     let chain = vec![0u8; diagram.vertices.len()];
-                    let tree = root_tree(diagram, &model, &chain).expect("rooting failed");
-                    let from_flow = spine_sign_from_flow(&tree);
-                    let heuristic = reversed_line_propagator_sign(diagram, &model);
-                    assert_eq!(
-                        from_flow, heuristic,
-                        "spine sign mismatch in `{process}` diagram {i}: \
-                         adjoint={from_flow} heuristic={heuristic}"
-                    );
-                    if from_flow < 0 {
+                    let from_lines = diagram.fermion_line_sign(&model);
+                    for root in 0..diagram.vertices.len() {
+                        let tree = root_tree_at(diagram, &model, &chain, VtxIdx(root))
+                            .expect("rooting failed");
+                        let from_tree = spine_sign_from_flow(&tree);
+                        assert_eq!(
+                            from_tree, from_lines,
+                            "fermion-line sign mismatch in `{process}` diagram {i} rooted \
+                             at vertex {root}: tree={from_tree} lines={from_lines}"
+                        );
+                    }
+                    if from_lines < 0 {
                         flipped_total += 1;
                     }
                 }
             }
         }
-        // The e+e-→μ+μ-τ+τ- e-spine class (8 diagrams) must actually exercise a flip,
-        // so the agreement above is not vacuous.
+        // The e+e-→μ+μ-τ+τ- e-line class (8 diagrams) must actually exercise a flip, so
+        // the agreement above is not vacuous.
         assert!(
             flipped_total >= 8,
-            "expected at least the 8 e-spine flips, saw {flipped_total}"
+            "expected at least the 8 e-line flips, saw {flipped_total}"
         );
     }
 
@@ -1510,14 +1428,12 @@ mod tests {
                 .iter()
                 .flat_map(|set| set.diagrams.clone())
                 .map(|diagram| {
-                    let chain = vec![0u8; diagram.vertices.len()];
-                    let tree = root_tree_at(&diagram, &model, &chain, VtxIdx(0)).unwrap();
                     let fermion_props = diagram
                         .props
                         .iter()
                         .filter(|p| model.particle(p.particle).spin.abs() == 2)
                         .count();
-                    (fermion_props, spine_sign_from_flow(&tree))
+                    (fermion_props, diagram.fermion_line_sign(&model))
                 })
                 .collect()
         };
@@ -1573,24 +1489,13 @@ mod tests {
         for set in generate("u d > e+ e- u d QCD=0") {
             let n_in = set.diagrams[0].n_in;
             for diagram in &set.diagrams {
-                let chain = vec![0u8; diagram.vertices.len()];
-                let tree = root_tree_at(diagram, &model, &chain, VtxIdx(0)).unwrap();
-                let sign = spine_sign_from_flow(&tree);
-                // Classify by where the diagram's internal fermion propagator sits.
-                let mut visited: HashSet<LegIdx> = HashSet::new();
+                let sign = diagram.fermion_line_sign(&model);
+                // Classify by where the diagram's internal fermion propagator sits: one
+                // propagator per vertex a line passes through beyond the first.
                 let (mut on_mixed, mut on_crossed) = (0usize, 0usize);
-                for leg in &diagram.legs {
-                    let li = leg.leg_idx;
-                    if leg.spin.abs() != 2 || !visited.insert(li) {
-                        continue;
-                    }
-                    let (attach_vtx, attach_slot) = diagram.leg_attachment(li);
-                    let (other, path) =
-                        trace_fermion_line(diagram, &model, attach_vtx, attach_slot);
-                    visited.insert(other);
-                    // One propagator per vertex the line passes through beyond the first.
-                    let n_props = path.len() - 1;
-                    if li.0 >= n_in && other.0 >= n_in {
+                for line in diagram.fermion_lines(&model) {
+                    let n_props = line.vertices.len() - 1;
+                    if line.legs.iter().all(|l| l.0 >= n_in) {
                         on_crossed += n_props;
                     } else {
                         on_mixed += n_props;
@@ -1634,10 +1539,7 @@ mod tests {
         let ttx: Vec<i8> = generate("g g > t t~")
             .iter()
             .flat_map(|set| set.diagrams.iter())
-            .map(|d| {
-                let chain = vec![0u8; d.vertices.len()];
-                spine_sign_from_flow(&root_tree_at(d, &model, &chain, VtxIdx(0)).unwrap())
-            })
+            .map(|d| d.fermion_line_sign(&model))
             .collect();
         assert_eq!(
             ttx,
@@ -1804,16 +1706,21 @@ mod tests {
         );
 
         // And the distinction is reachable: a five-vector process puts such a contact at
-        // a vertex the canonical rooting does not root at, which is exactly where a
-        // Yang-Mills source sign is counted.
+        // a vertex other than the anchor, which is exactly where a Yang-Mills source sign
+        // is counted.
         let opts = ParsingOptions::default();
         let card = parse_proc_card("generate w+ w- > w+ w- z NP<=1", &opts).unwrap();
         let sets = generate_from_proc_card(&card, &model).unwrap();
-        let contacts_off_root =
-            sets.iter()
-                .flat_map(|s| s.diagrams.iter())
-                .filter(|d| {
-                    d.vertices.iter().skip(1).any(|v| {
+        let contacts_off_root = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter())
+            .filter(|d| {
+                let anchor = d.anchor().0;
+                d.vertices
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, _)| i != anchor)
+                    .any(|(_, v)| {
                         let def = model.vertex_def(v.interaction);
                         def.particles.len() >= 4
                             && def.particles.iter().all(|&p| model.particle(p).spin == 3)
@@ -1823,11 +1730,11 @@ mod tests {
                                 })
                             })
                     })
-                })
-                .count();
+            })
+            .count();
         assert!(
             contacts_off_root > 0,
-            "no diagram places a momentum-bearing vector contact off the canonical root"
+            "no diagram places a momentum-bearing vector contact off the anchor"
         );
     }
 }

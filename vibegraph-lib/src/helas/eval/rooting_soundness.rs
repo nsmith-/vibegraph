@@ -4,7 +4,8 @@
 //! internal edges but must not change the physics. The whole amplitude machinery —
 //! momentum routing, Lorentz-output rooting, fermion-spine signs — was originally
 //! validated only for feyngraph's `VtxIdx(0)` orientation; the convention signs are read
-//! off that canonical rooting so the honest currents stay root-invariant. This module
+//! off one fixed rooting, at the diagram's anchor, so the honest currents stay
+//! root-invariant. This module
 //! drives the [`super::root_diagram`] test hook to re-root diagrams and asserts the |M|²
 //! is invariant under the root choice, which is what lets production root each diagram at
 //! [`canonical_root`](super::root_diagram) instead.
@@ -16,7 +17,7 @@
 //! bit-for-bit even when it is correct.
 //!
 //! Full sweep (passes — the rooting-dependent convention signs are lifted to the
-//! diagram's `fermi_sign` at the canonical rooting; see `research/notes/19` §V5):
+//! diagram's `fermi_sign` at the anchor rooting; see `research/notes/19` §V5):
 //! ```text
 //! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
 //!     --lib helas::eval::rooting_soundness::all_rootings_preserve_amplitude \
@@ -47,8 +48,9 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 /// off-shell current momenta are accumulated in a different order), so agreement against
 /// the baseline is never bit-for-bit and the floor is *looser* than the amplitude-level
 /// reordering `tests/amplitude_oracle.rs` pins at 1e-12. The rooting-dependent **signs**
-/// are all lifted to the diagram's `fermi_sign` (build-convention, spine, reversed-
-/// bilinear — all computed at the canonical `VtxIdx(0)` rooting), so a surviving
+/// are all lifted to the diagram's `fermi_sign` (build-convention and reversed-bilinear
+/// computed at the anchor rooting, the fermion-line sign carried by the diagram itself),
+/// so a surviving
 /// deviation here is pure double-precision reassociation: the observed worst case across
 /// the MG-validated suite is 2.2e-11 (`e+e-→τ+τ-H`, an 8-momentum sum). This rides a few×
 /// above that floor and still an enormous margin below any sign/structure error (O(1)).
@@ -234,8 +236,8 @@ fn record(
 /// fermion-spine signs (see `research/notes/19` §V5).
 ///
 /// This passes: the honest currents are rooting-invariant tensors and every
-/// rooting-dependent convention sign (build-convention, spine, reversed-bilinear) is
-/// lifted to the diagram's `fermi_sign` at the canonical `VtxIdx(0)` rooting. Ignored
+/// rooting-dependent convention sign (build-convention, reversed-bilinear) is lifted to
+/// the diagram's `fermi_sign` at the anchor rooting. Ignored
 /// only because the full O(Σ vertices) recompile sweep is slow; run it explicitly after
 /// touching the rooting / Lorentz-output / fermion-sign machinery.
 #[test]
