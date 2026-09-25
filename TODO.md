@@ -185,6 +185,13 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
+- **`e+ e- > w+ w-` at 500 GeV reads −2.3e-3 below a fresh MadEvent run, with
+  error bars that look underestimated** (measured during the polarization
+  session, note 38 §4 P1). `vibegraph integrate` at the default budget, seeds 1–5:
+  pulls −1.2 to −1.9 and seed χ²/dof ≈ 2.4 against a 10k-event MadEvent run on the
+  pinned tree. `w+{T} w-` shows the same offset, so polarization does not cause it.
+  First step: compare with the banked `ee_to_wpwm` σ row (its energy and
+  budget), then run a 20-seed ladder before calling it a bias.
 - **`pp_to_llj_dyn` scatter guard under `--map-split-angle soft-all`** (note
   37 §6.3; the user's decision). As the default, `soft-all` halves llj's
   evaluations but takes this cell's five-seed `χ²/dof` to 4.17 against 4.0.
