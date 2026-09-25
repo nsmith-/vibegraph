@@ -301,6 +301,39 @@ search on, as `find_optimal_process_orders` does (`:2095`).
   and the §1.3 multi-leg decay assignment.
 - `docs/src/guide/03-diagrams.md` is rewritten to describe the new grammar.
 
+**Landed** (2026-09-25; `34d6d45` grammar, check and resolution, `1f5f924`
+oracle, `f67f787` guide). `diagrams::parse` (AST), `diagrams::check`
+(`check_supported`, `Unsupported`, `SupportedCard`) and `diagrams::resolve`
+(names against the model, and MadGraph's `ProcessDefinition` field for field).
+The oracle banks 132 cards through `MasterCmd` with generation stubbed
+(`validation/madgraph/dump_proc_grammar.py` → `proc_grammar.json`); the
+hermetic `proc_grammar_oracle` test agrees on all 92 MadGraph reads and
+refuses all 40 it refuses. Every supported card enumerates the same diagram
+sets as before (51 banked scripts plus extra cards, per-subprocess diagram
+hashes), with one deliberate exception: `/ X` for a charged `X` now forbids
+both orientations, as MadGraph's |PDG| test does (the selector forbade one).
+Measured with MadGraph's own generation:
+
+- *Duplicates* (§1.4): `Duplicate process` fires only for identical
+  amplitudes, process number included. `generate p p > e+ e-` + `add process
+  u u~ > e+ e-` generates `u u~ > e+ e-` twice (also under one `@1`);
+  identical lines with different (or implicit) `@N` generate twice;
+  `--no_warning=duplicate` drops the second copy. G1 refuses any subprocess
+  reached from two lines, flag or not.
+- *Decay assignment* (§1.3, `combine_decay_chain_processes`): when the number
+  of decays equals the number of decaying core legs, decays go to legs in
+  order (`z z, z > e+ e-, z > mu+ mu-` → one ME, ee+μμ); otherwise every
+  combination with repetition of the decays of that particle
+  (`z z, z > e+ e-` → both ee; three decays over two Z → six MEs; `z > l+ l-`
+  → ee/ee, ee/μμ, μμ/μμ).
+
+Corrections to this note: MadGraph's spacing fix-up regex only ever matches
+`]`, so `p p>e+ e-` is a MadGraph error (and one here); only `=`, `<=`, `==`,
+`>` are valid order operators (the old parser accepted `<`, `>=`, `!=`, `===`);
+`EW=n` on the SM is accepted by MadGraph and constrains nothing (refused
+here); `/` forbids by |PDG|; `set` lines after `launch` are run-card edits
+(refused as `LaunchDialogue`).
+
 ### S1: signs to the diagrams stage (validation-dev; before D2)
 
 Per §3.3. Gate: every amplitude row byte-identical; `rooting_soundness`

@@ -429,9 +429,9 @@ above); the entries here are the eventual features.
 
 - **`process-grammar`** (feature, next; note 38) — MadGraph LO process parity
   without MLM and NLO. Sessions:
-  - **G1**: full parser, the one `check_supported` scan and the narrowed
-    `SupportedCard`, gated against MadGraph's own parser. Closes every silent
-    row in note 38 §2.
+  - **G1** ✅ landed (`34d6d45`, `1f5f924`, `f67f787`): full parser, the one
+    `check_supported` scan and the narrowed `SupportedCard`, gated against
+    MadGraph's own parser. Closes every silent row in note 38 §2.
   - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
     `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
     sufficient oracle.
