@@ -1089,6 +1089,15 @@ impl<'a> BoundSubprocess<'a> {
         }
     }
 
+    /// The strong coupling a scale-aware subprocess is at; `None` for one bound
+    /// once at the parameter card's own.
+    pub(crate) fn alpha_s(&self) -> Option<f64> {
+        match &self.amp {
+            SubAmplitude::Fixed(_) => None,
+            SubAmplitude::Running(amp) => Some(amp.borrow().alpha_s()),
+        }
+    }
+
     pub(crate) fn eval_m2(&self, momenta: &[V]) -> f64 {
         let scratch = &mut self.scratch.borrow_mut();
         match &self.amp {
@@ -1138,6 +1147,148 @@ impl<'a> BoundSubprocess<'a> {
             }
         }
     }
+}
+
+/// A subprocess's amplitudes with its forbidden on-shell s-channels (`$`)
+/// zeroed: one prototype per pattern of zeroed lines, evaluated at the coupling
+/// the subprocess itself is bound at.
+pub(crate) struct VetoedAmplitudes<'a> {
+    veto: &'a OnShellVeto,
+    /// Indexed by pattern; `None` at `0` (the whole amplitude, the subprocess
+    /// itself) and where no diagram survives.
+    protos: Vec<Option<SubprocessProto<'a>>>,
+}
+
+impl<'a> VetoedAmplitudes<'a> {
+    /// Every pattern amplitude starts scale-aware at the parameter card's own
+    /// coupling, and follows whatever coupling the subprocess is moved to.
+    pub(crate) fn new(
+        veto: &'a OnShellVeto,
+        sub: &SubprocessProto<'a>,
+        evaluated: &EvaluatedModel,
+    ) -> Self {
+        assert_eq!(
+            veto.n_configs(),
+            sub.evaluator().n_configs(),
+            "a veto flags its own subprocess's configurations"
+        );
+        let protos = veto
+            .amplitudes()
+            .map(|eval| {
+                eval.map(|eval| SubprocessProto {
+                    symmetry_factor: sub.symmetry_factor,
+                    amp: ProtoAmplitude::Running(ScaleAwareAmplitude::new(eval, evaluated)),
+                })
+            })
+            .collect();
+        VetoedAmplitudes { veto, protos }
+    }
+
+    fn bind(&self) -> BoundVetoed<'a> {
+        BoundVetoed {
+            veto: self.veto,
+            subs: self
+                .protos
+                .iter()
+                .map(|p| p.as_ref().map(SubprocessProto::bind))
+                .collect(),
+        }
+    }
+}
+
+/// One thread's copy of a [`VetoedAmplitudes`].
+pub(crate) struct BoundVetoed<'a> {
+    veto: &'a OnShellVeto,
+    subs: Vec<Option<BoundSubprocess<'a>>>,
+}
+
+impl<'a> BoundVetoed<'a> {
+    /// The amplitude with `pattern`'s lines zeroed, moved to `main`'s coupling,
+    /// or `None` where no diagram survives.
+    fn part(&self, pattern: u32, main: &BoundSubprocess<'_>) -> Option<&BoundSubprocess<'a>> {
+        let part = self.subs[pattern as usize].as_ref()?;
+        if let Some(alpha_s) = main.alpha_s() {
+            part.set_alpha_s(alpha_s);
+        }
+        Some(part)
+    }
+}
+
+pub(crate) fn bind_vetoes<'a>(
+    vetoes: &[Option<VetoedAmplitudes<'a>>],
+) -> Vec<Option<BoundVetoed<'a>>> {
+    vetoes
+        .iter()
+        .map(|v| v.as_ref().map(VetoedAmplitudes::bind))
+        .collect()
+}
+
+pub(crate) fn vetoed_of<'s, 'a>(
+    vetoed: &'s [Option<BoundVetoed<'a>>],
+    i: usize,
+) -> Option<&'s BoundVetoed<'a>> {
+    vetoed.get(i).and_then(Option::as_ref)
+}
+
+/// `main`'s `|M|²` at `ext` with its marked lines zeroed where they are on
+/// their windows: the whole amplitude where none is.
+pub(crate) fn vetoed_m2(
+    vetoed: Option<&BoundVetoed<'_>>,
+    main: &BoundSubprocess<'_>,
+    ext: &[V],
+) -> f64 {
+    if let Some(v) = vetoed {
+        let pattern = v.veto.pattern(ext);
+        if pattern != 0 {
+            return v.part(pattern, main).map_or(0.0, |part| part.eval_m2(ext));
+        }
+    }
+    main.eval_m2(ext)
+}
+
+/// Zero the configurations in `weights` whose lines are zeroed at `ext`;
+/// `false` where no line is and `weights` is untouched.
+pub(crate) fn mask_zeroed(
+    vetoed: Option<&BoundVetoed<'_>>,
+    ext: &[V],
+    weights: &mut [f64],
+) -> bool {
+    let Some(v) = vetoed else { return false };
+    let pattern = v.veto.pattern(ext);
+    if pattern == 0 {
+        return false;
+    }
+    v.veto.mask(pattern, weights);
+    true
+}
+
+/// Where a marked line is zeroed at `ext`, the per-helicity `|M'_h|²` of the
+/// amplitude with it removed, with that amplitude's evaluator, and its per-flow
+/// `JAMP2` written into `jamp2` in the whole amplitude's flow indexing (flows it
+/// does not reach at zero). `None` where no line is zeroed, leaving `jamp2` the
+/// caller's.
+pub(crate) fn zeroed_diagonals<'a>(
+    vetoed: Option<&BoundVetoed<'a>>,
+    main: &BoundSubprocess<'a>,
+    ext: &[V],
+    jamp2: &mut [f64],
+) -> Option<(&'a AmplitudeEvaluator, Vec<f64>)> {
+    let v = vetoed?;
+    let pattern = v.veto.pattern(ext);
+    if pattern == 0 {
+        return None;
+    }
+    let (eval, flow_map) = v.veto.amplitude(pattern)?;
+    let part = v.part(pattern, main)?;
+    let mut hel_m2 = vec![0.0; eval.helicities().len()];
+    let mut amp2 = vec![0.0; eval.n_configs()];
+    let mut own = vec![0.0; eval.n_flows()];
+    part.eval_diagonals(ext, &mut hel_m2, &mut amp2, &mut own);
+    jamp2.iter_mut().for_each(|j| *j = 0.0);
+    for (f, &g) in flow_map.iter().enumerate() {
+        jamp2[g] = own[f];
+    }
+    Some((eval, hel_m2))
 }
 
 /// What turning a set of subprocesses scale-aware revealed about them.
@@ -1418,10 +1569,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// The maps the installed multichannel map was built under, or `None` under
     /// flat RAMBO.
     maps: Option<MapChoices>,
-    /// Per subprocess, the forbidden on-shell s-channel veto (`$`) its value is
-    /// weighted by ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or
-    /// `None` for a subprocess, leaves the value the plain `Σ|M|²`.
-    vetoes: Vec<Option<OnShellVeto>>,
+    /// Per subprocess, the amplitudes with forbidden on-shell s-channels (`$`)
+    /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
+    /// for a subprocess, leaves its matrix element whole.
+    vetoes: Vec<Option<VetoedAmplitudes<'a>>>,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1445,10 +1596,8 @@ struct FixedBeamScratch<'a> {
     /// Reused `AMP2` buffer for the configuration draw, one entry per integration
     /// configuration of the subprocess the channel forests were derived from.
     amp2_buf: RefCell<Vec<f64>>,
-    /// Reused per-configuration veto flags and `AMP2`, sized to the widest vetoed
-    /// subprocess; empty without a veto.
-    veto_flags: RefCell<Vec<bool>>,
-    veto_amp2: RefCell<Vec<f64>>,
+    /// This thread's copies of [`FixedBeamIntegrand::vetoes`], per subprocess.
+    vetoed: Vec<Option<BoundVetoed<'a>>>,
 }
 
 /// The phase-space map a [`FixedBeamIntegrand`] draws through.
@@ -1680,22 +1829,24 @@ impl<'a> FixedBeamIntegrand<'a> {
         }
     }
 
-    /// Weight each subprocess's `|M|²` by MadEvent's forbidden on-shell veto
-    /// (`$`): the share `Σ_c AMP2_c (1 − V_c) / Σ_d AMP2_d` of the configurations
-    /// whose marked lines are off their window at the point ([`OnShellVeto`]).
-    /// The configuration a point's scale is clustered in, and the one an event's
-    /// colour flow is drawn in, are drawn among the configurations left standing,
-    /// as MadEvent only ever produces a point in a configuration that kept it.
+    /// Evaluate each subprocess's matrix element as MadEvent does under a
+    /// forbidden on-shell s-channel (`$`): with every marked propagator zeroed
+    /// on its window ([`OnShellVeto`]). The configuration a point's scale is
+    /// clustered in, and the one an event's colour flow is drawn in, are drawn
+    /// from that matrix element's own `AMP2`, which leaves out the configurations
+    /// carrying a zeroed line.
     ///
-    /// `vetoes` holds one entry per subprocess, in subprocess order. `AMP2` is
-    /// taken at the coupling the point's `|M|²` is, as MadEvent's matrix element
-    /// forms both at once.
+    /// `vetoes` holds one entry per subprocess, in subprocess order.
     ///
     /// # Panics
     ///
     /// If `vetoes` is neither empty nor one entry per subprocess, or a veto's
     /// configuration count is not its subprocess's.
-    pub fn use_onshell_veto(&mut self, vetoes: Vec<Option<OnShellVeto>>) {
+    pub fn use_onshell_veto(
+        &mut self,
+        vetoes: &'a [Option<OnShellVeto>],
+        evaluated: &EvaluatedModel,
+    ) {
         if vetoes.is_empty() {
             return;
         }
@@ -1704,75 +1855,15 @@ impl<'a> FixedBeamIntegrand<'a> {
             self.subs.len(),
             "one on-shell veto entry per subprocess"
         );
-        for (veto, sub) in vetoes.iter().zip(&self.subs) {
-            if let Some(veto) = veto {
-                assert_eq!(
-                    veto.n_configs(),
-                    sub.evaluator().n_configs(),
-                    "a veto flags its own subprocess's configurations"
-                );
-            }
-        }
-        self.vetoes = vetoes;
-        self.reset_scratch();
-    }
-
-    /// The veto on subprocess `i`, if it has one.
-    fn veto(&self, i: usize) -> Option<&OnShellVeto> {
-        self.vetoes.get(i).and_then(Option::as_ref)
-    }
-
-    fn veto_buffer_len(&self) -> usize {
-        self.vetoes
+        self.vetoes = vetoes
             .iter()
-            .flatten()
-            .map(OnShellVeto::n_configs)
-            .max()
-            .unwrap_or(0)
-    }
-
-    /// Subprocess `i`'s veto factor at `ext`, at the coupling `sub` is bound at:
-    /// `1` where it has no veto or no configuration is vetoed, so a point off
-    /// every window costs no `AMP2`.
-    fn veto_factor(
-        &self,
-        sc: &FixedBeamScratch<'a>,
-        i: usize,
-        sub: &BoundSubprocess<'a>,
-        ext: &[V],
-    ) -> f64 {
-        let Some(veto) = self.veto(i) else {
-            return 1.0;
-        };
-        let n = veto.n_configs();
-        let mut flags = sc.veto_flags.borrow_mut();
-        if !veto.mark(ext, &mut flags[..n]) {
-            return 1.0;
-        }
-        let mut amp2 = sc.veto_amp2.borrow_mut();
-        sub.eval_amp2(ext, &mut amp2[..n]);
-        OnShellVeto::factor(&amp2[..n], &flags[..n])
-    }
-
-    /// Zero the configurations of subprocess `i` vetoed at `ext` in `weights`;
-    /// `false` where nothing was vetoed and `weights` is untouched.
-    fn mask_vetoed(
-        &self,
-        sc: &FixedBeamScratch<'a>,
-        i: usize,
-        ext: &[V],
-        weights: &mut [f64],
-    ) -> bool {
-        let Some(veto) = self.veto(i) else {
-            return false;
-        };
-        let n = veto.n_configs();
-        let mut flags = sc.veto_flags.borrow_mut();
-        if !veto.mark(ext, &mut flags[..n]) {
-            return false;
-        }
-        OnShellVeto::mask(weights, &flags[..n]);
-        true
+            .zip(&self.subs)
+            .map(|(veto, sub)| {
+                veto.as_ref()
+                    .map(|v| VetoedAmplitudes::new(v, sub, evaluated))
+            })
+            .collect();
+        self.reset_scratch();
     }
 
     /// Ask for particular phase-space maps before a multichannel map is built;
@@ -1825,8 +1916,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             scale_buf: RefCell::new(Vec::with_capacity(self.final_masses.len())),
             last_coupling: Cell::new((f64::NAN, f64::NAN)),
             amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
-            veto_flags: RefCell::new(vec![false; self.veto_buffer_len()]),
-            veto_amp2: RefCell::new(vec![0.0; self.veto_buffer_len()]),
+            vetoed: bind_vetoes(&self.vetoes),
         })
     }
 
@@ -2126,10 +2216,7 @@ impl<'a> FixedBeamIntegrand<'a> {
 
         let mut m2 = 0.0;
         for (i, sub) in sc.subs.iter().enumerate() {
-            let kept = self.veto_factor(sc, i, sub, ext);
-            if kept != 0.0 {
-                m2 += sub.symmetry_factor() * sub.eval_m2(ext) * kept;
-            }
+            m2 += sub.symmetry_factor() * vetoed_m2(vetoed_of(&sc.vetoed, i), sub, ext);
         }
         m2
     }
@@ -2443,7 +2530,10 @@ impl<'a> FixedBeamIntegrand<'a> {
         // A configuration whose marked line is on its window rejected this point
         // in MadEvent, so its scale is never clustered there. Where every one of
         // them did, the subprocess carries no weight here and any channel serves.
-        if self.mask_vetoed(sc, 0, ext, &mut amp2) && amp2.iter().all(|&w| w == 0.0) {
+        if self.config_weights.is_none()
+            && mask_zeroed(vetoed_of(&sc.vetoed, 0), ext, &mut amp2)
+            && amp2.iter().all(|&w| w == 0.0)
+        {
             return channel;
         }
         match select_index(&amp2, *v) {
@@ -2689,7 +2779,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             .subs
             .iter()
             .enumerate()
-            .map(|(i, s)| s.eval_m2(&ext) * self.veto_factor(sc, i, s, &ext))
+            .map(|(i, s)| vetoed_m2(vetoed_of(&sc.vetoed, i), s, &ext))
             .collect();
         let subprocess = select_index(&m2, u[0])?;
         let sub = &sc.subs[subprocess];
@@ -2699,15 +2789,24 @@ impl<'a> FixedBeamIntegrand<'a> {
         let mut amp2 = vec![0.0; eval.n_configs()];
         let mut jamp2 = vec![0.0; eval.n_flows()];
         sub.eval_diagonals(&ext, &mut hel_m2, &mut amp2, &mut jamp2);
-        if let Some(set) = &self.config_weights {
-            let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
-            set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
+        match &self.config_weights {
+            Some(set) => {
+                let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
+                set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
+            }
+            None => {
+                mask_zeroed(vetoed_of(&sc.vetoed, subprocess), &ext, &mut amp2);
+            }
         }
-        self.mask_vetoed(sc, subprocess, &ext, &mut amp2);
+        let helicity =
+            match zeroed_diagonals(vetoed_of(&sc.vetoed, subprocess), sub, &ext, &mut jamp2) {
+                Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
+                None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
+            };
 
         Some(EventSelection {
             subprocess,
-            helicity: eval.select_helicity(&hel_m2, u[1])?.to_vec(),
+            helicity,
             flow: eval.select_color_flow(&amp2, &jamp2, [u[2], u[3]])?,
         })
     }

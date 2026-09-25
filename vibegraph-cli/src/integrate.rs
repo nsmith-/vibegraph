@@ -759,7 +759,7 @@ fn integrate_hadronic(
         args.maps.options(),
     )
     .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
-    integ.use_onshell_veto(vetoes);
+    integ.use_onshell_veto(&vetoes, evaluated);
     // Both scales and the strong coupling come from the run card; the coupling is
     // the PDF set's own tabulation, which is what the densities were fitted with.
     let scale_report = integ
@@ -859,7 +859,7 @@ fn integrate_fixed_energy(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
-    integ.use_onshell_veto(vetoes);
+    integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the

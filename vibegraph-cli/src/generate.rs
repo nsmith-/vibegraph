@@ -603,7 +603,7 @@ fn generate_sample(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
-    integ.use_onshell_veto(vetoes);
+    integ.use_onshell_veto(&vetoes, evaluated);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
@@ -1054,7 +1054,7 @@ fn generate_proton_sample(
         MapOptions::fixed(artifact.maps),
     )
     .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
-    integ.use_onshell_veto(vetoes);
+    integ.use_onshell_veto(&vetoes, evaluated);
     integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;
