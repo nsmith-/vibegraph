@@ -199,6 +199,9 @@ dump-proc-grammar = "python validation/madgraph/dump_proc_grammar.py"
 # Run the s-channel / WEIGHTED / five-flavour card corpus through MadGraph's own
 # diagram generation — the census the hermetic schannel_census test compares against
 dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
+# Run the decay-chain card corpus through MadGraph's generation and matrix-element
+# combination — the census the hermetic decay_chain_census test compares against
+dump-decay-chain-census = "python validation/madgraph/dump_decay_chain_census.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
 # MadEvent partial widths of the 1 -> n decay rows over several seeds, and the
