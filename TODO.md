@@ -436,8 +436,9 @@ above); the entries here are the eventual features.
   - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
     `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
     sufficient oracle.
-  - **S2**: `>` and `$$` as diagram filters on `Prop.momentum`, with the
-    direction pin.
+  - **S2** ✅ landed (`c52e4f7`, the docs commit after it): `>`/`$$` filters inside the
+    WEIGHTED search, `WEIGHTED<=n`, the five-flavour `p`/`j` rewrite, MadGraph
+    census (43/43 generated cards) and two σ rows in agreement.
   - **D1**: 1→n decays, gated on partial widths.
   - **D2**: decay chains stitched from separate enumerations, gated on
     container equality against the filtered full final state.

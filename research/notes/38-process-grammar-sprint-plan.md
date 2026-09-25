@@ -351,6 +351,58 @@ green; the container canonical form round-trips over every banked process.
   - an or-multiparticle `define v = z | a`.
 - Plus one σ row each for `>` and `$$`.
 
+**Landed** (2026-09-25; `c52e4f7` filters, five-flavour labels and
+census, the docs commit after it guide and notes). `diagrams::schannel` filters converted
+diagrams on `Prop.momentum`: a non-spacelike line is s-channel, and its
+oriented id is the particle when the line's energy, evaluated at E_in = n_out,
+E_out = n_in (so the Σp_in − Σp_out ambiguity of the representation drops
+out), is positive along `endpoints[0] → endpoints[1]`, the antiparticle
+otherwise. The filter runs inside the automatic WEIGHTED search, so
+`u u~ > a > d d~` lands at WEIGHTED = 4 as in MadGraph. `>` and `$$` are
+lifted from `Unsupported`; `WEIGHTED<=n`/`=n` is lifted too, as the same
+per-diagram bound the search uses (`==`/`>` stay refused: MadGraph adds a
+squared-order constraint for them). A process line with no diagram is now
+`DiagramError::NoDiagrams`, MadGraph's `NoDiagramException`. On import, `p`
+and `j` follow `add_default_multiparticles` (`madgraph_interface.py:6042`):
+b b~ added when the model's b is massless, removed when massive, the photon
+removed; replayed from the card's history so a label defined through `p`
+after the import sees the rewrite.
+
+- *Census* (`validation/madgraph/dump_schannel_census.py` →
+  `schannel_census.json`, hermetic `schannel_census` test): 57 cards through
+  MadGraph's own generation, 43 generated and matched subprocess for
+  subprocess, count and per-diagram oriented s-channel multiset; 6 refused
+  by both (`u d~ > w- > e+ ve`, `p p > w- > e+ ve`, `e+ e- > z a > mu+ mu- a`,
+  `u d~ > e+ ve $$ w+`, `e+ e- > mu+ mu- WEIGHTED<=3`, one `/ j` card); 8
+  one-initial cards banked for D1 and refused here as decays. Flipping the
+  orientation sign fails 10 cards; disabling the five-flavour rewrite fails
+  21 cards.
+- *σ rows* (e+e- at 500 GeV, MadGraph's default run card, pinned MadEvent
+  via `mg5_pinned.sh`, 10k events; `vibegraph integrate`, seeds 1–5):
+  `e+ e- > z > mu+ mu-` MadGraph 0.05221 ± 0.000019 pb, here mean 0.052206
+  (−0.007 %), pulls −0.84 … 0.53; `e+ e- > e+ e- $$ z` MadGraph
+  157.5 ± 0.11 pb, here mean 157.56 (+0.04 %), pulls −0.78 … 1.66. Known-wrong
+  comparisons: the unrestricted `e+ e- > mu+ mu-` there is 0.4196 pb.
+- *Unchanged enumeration*: the 51 banked scripts and 23 extra cards dump
+  identical per-subprocess diagram lists (Debug-string digest) at `77f9868`
+  and after, except the massless-b cards, which gain exactly their b
+  subprocesses. No banked validation card uses a massless-b model with `p`
+  or `j`.
+
+Corrections to this note and to G1: MadGraph emits **no** gauge-invariance
+warning for `>` or `$$`; the only statement is the 1.4.3 release note on
+`$$` (`UpdateNotes.txt:2149`). The warning logged here quotes it. The
+SMEFTsim restrictions in reach (`massless`, `SMlimit_massless`, every
+`vg_*`) keep MB = 4.18, so SMEFTsim cards stay four-flavour; only the SM's
+`no_b_mass`, `no_masses` and `zeromass_ckm` switch.
+
+For D1 (one initial particle, MadGraph banked in the census): `>` is the
+same membership filter over every propagator except the decaying particle's
+own line (`t > w+ > b e+ ve` keeps its one diagram, `t > w- > …` has none);
+`$$` likewise ignores that line (`t > b e+ ve $$ t` keeps its diagram,
+`$$ w+` empties it, `h > e+ e- mu+ mu- $$ h` keeps it, `$$ z` empties it).
+Every propagator is oriented away from the decaying particle.
+
 ### D1: 1→n decay processes (feature-dev; after G1)
 
 - `n_in = 1` through enumeration and phase space: rest-frame generation,

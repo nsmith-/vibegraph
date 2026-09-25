@@ -5,6 +5,13 @@
 //! or-multiparticle, which only a required s-channel may use). Labels are
 //! matched case-insensitively, as MadGraph does for every model whose particle
 //! names do not differ by case alone.
+//!
+//! Importing a model rewrites `p` and `j` (MadGraph's
+//! `add_default_multiparticles`: a massless b joins them, a massive one leaves),
+//! which needs the model. The table therefore keeps the card's `define`s and
+//! model imports in order, and [`AliasTable::replay`] rebuilds it with a
+//! caller-supplied rewrite at each import, so that a label defined through `p`
+//! after the import sees the rewritten `p`.
 
 use std::collections::HashMap;
 
@@ -15,10 +22,23 @@ use super::parse::MultiparticleDef;
 pub struct AliasTable {
     plain: HashMap<String, Vec<String>>,
     or: HashMap<String, Vec<Vec<String>>>,
+    /// Everything applied since [`default_sm`](Self::default_sm), in order.
+    history: Vec<AliasEvent>,
+}
+
+/// One change to an [`AliasTable`], kept so the table can be rebuilt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AliasEvent {
+    Define(MultiparticleDef),
+    Insert(String, Vec<String>),
+    ModelImport,
 }
 
 impl AliasTable {
-    /// Default SM multiparticle aliases from `input/multiparticles_default.txt`.
+    /// Default SM multiparticle aliases from `input/multiparticles_default.txt`,
+    /// as they stand after MadGraph's start-up `import model sm`: the table
+    /// begins with a model import, so a model given to [`replay`](Self::replay)
+    /// rewrites `p` and `j` even for a card that imports none.
     pub fn default_sm() -> Self {
         let proton: Vec<String> = ["g", "u", "c", "d", "s", "u~", "c~", "d~", "s~"]
             .map(String::from)
@@ -33,6 +53,7 @@ impl AliasTable {
         AliasTable {
             plain,
             or: HashMap::new(),
+            history: vec![AliasEvent::ModelImport],
         }
     }
 
@@ -49,6 +70,11 @@ impl AliasTable {
     /// so far, and the `/` exclusions removed. A later `define` of the same label
     /// replaces the earlier one.
     pub fn apply(&mut self, def: &MultiparticleDef) {
+        self.history.push(AliasEvent::Define(def.clone()));
+        self.apply_define(def);
+    }
+
+    fn apply_define(&mut self, def: &MultiparticleDef) {
         let key = def.alias.to_lowercase();
         let expand = |names: &[String]| -> Vec<String> {
             names.iter().flat_map(|n| self.expand_name(n)).collect()
@@ -70,9 +96,55 @@ impl AliasTable {
 
     /// Insert or overwrite a plain label.
     pub fn insert(&mut self, alias: String, particles: Vec<String>) {
+        self.history
+            .push(AliasEvent::Insert(alias.clone(), particles.clone()));
+        self.set_plain(&alias, particles);
+    }
+
+    fn set_plain(&mut self, alias: &str, particles: Vec<String>) {
         let key = alias.to_lowercase();
         self.or.remove(&key);
         self.plain.insert(key, particles);
+    }
+
+    /// Record an `import model`. The table itself is unchanged: what an import
+    /// does to the labels depends on the model, and is applied by
+    /// [`replay`](Self::replay).
+    pub fn model_import(&mut self) {
+        self.history.push(AliasEvent::ModelImport);
+    }
+
+    /// The table rebuilt from the defaults, with `on_import` applied to it at
+    /// every recorded model import (the first one being MadGraph's start-up
+    /// import) and every later `define` expanded through the result.
+    pub fn replay(&self, on_import: &mut dyn FnMut(&mut AliasTable)) -> AliasTable {
+        let mut table = AliasTable::default_sm();
+        table.history.clear();
+        for event in &self.history {
+            match event {
+                AliasEvent::Define(def) => table.apply(def),
+                AliasEvent::Insert(alias, members) => table.insert(alias.clone(), members.clone()),
+                AliasEvent::ModelImport => {
+                    on_import(&mut table);
+                    table.history.push(AliasEvent::ModelImport);
+                }
+            }
+        }
+        table
+    }
+
+    /// The members of a plain label, if it is one.
+    pub fn plain_members(&self, name: &str) -> Option<&[String]> {
+        self.plain.get(&name.to_lowercase()).map(Vec::as_slice)
+    }
+
+    /// Replace the members of an existing plain label without recording the
+    /// change: the rewrite a model import makes, which [`replay`](Self::replay)
+    /// re-derives from the model rather than from the history.
+    pub fn rewrite_plain(&mut self, name: &str, members: Vec<String>) {
+        if self.plain.contains_key(&name.to_lowercase()) {
+            self.set_plain(name, members);
+        }
     }
 
     /// Whether `name` is a label of either kind.
