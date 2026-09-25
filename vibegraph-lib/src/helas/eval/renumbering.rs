@@ -42,6 +42,12 @@ const SM_EXTRAS: &[&str] = &[
     "u u~ > u u~ u u~",
     "e+ e- > W+ W- Z",
     "g g > t t~ g",
+    // 1 → n decays: the decaying particle is the one incoming leg, every line
+    // s-channel.
+    "t > b e+ ve a",
+    "t > w+ b g",
+    "z > e+ e- mu+ mu-",
+    "h > e+ e- mu+ mu-",
 ];
 
 /// Processes in the manifest rows' own models that the rows themselves do not reach: an
@@ -188,6 +194,13 @@ fn point(set: &DiagramSet, evaluated: &EvaluatedModel) -> Vec<LorentzVector<f64>
         .chain(&set.particles_out)
         .map(|n| evaluated.mass(model.particle_id(n).expect("external particle in model")))
         .collect();
+    if set.particles_in.len() == 1 {
+        // A decay at rest: the products share the mother's mass.
+        let mut rng = ChaCha8Rng::seed_from_u64(0x5151);
+        let mut momenta = vec![LorentzVector::new(masses[0], 0.0, 0.0, 0.0)];
+        momenta.extend(rambo_massive(masses[0], &masses[1..], &mut rng));
+        return momenta;
+    }
     let sqrt_s = 1.5 * masses.iter().sum::<f64>() + 300.0;
     let (m1, m2) = (masses[0], masses[1]);
     let e1 = (sqrt_s * sqrt_s + m1 * m1 - m2 * m2) / (2.0 * sqrt_s);
