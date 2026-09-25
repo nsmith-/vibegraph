@@ -301,33 +301,46 @@ The 2→6 row, µs/event, per round:
   locality or live width, must keep both.
 - **The counters agree** (Instruments' CPU Counters template in its default
   bottleneck mode, via `scripts/xctrace_bottlenecks.sh`, no `sudo`). Shares of
-  cycles over the last 9 s of a 10 s `--profile-time` loop, one run each; a
-  repeat of the `gg_to_gg` pair reproduced them to within 1.5 points.
+  cycles over the last 9 s of a 10 s `--profile-time` loop, one run per cell;
+  a repeat of the `match` `gg_to_gg` op-blocked / shuffled pair reproduced it
+  to within 1.5 points.
 
-  | run | useful | delivery | processing | discarded |
-  |---|--:|--:|--:|--:|
-  | 2→6, `match`, op-blocked | 73.9% | 0.7% | 24.1% | 1.3% |
-  | 2→6, `match`, `levelmix` | 73.6% | 2.0% | 23.2% | 1.1% |
-  | 2→6, `match`, `levelshuffle` | 33.3% | 6.1% | 14.1% | 46.5% |
-  | 2→6, `match`, arena | 57.2% | 3.0% | 35.9% | 3.9% |
-  | 2→6, threaded, op-blocked | 74.5% | 0.6% | 23.8% | 1.0% |
-  | 2→6, threaded, `levelshuffle` | 41.7% | 5.3% | 13.3% | 39.7% |
-  | `gg_to_gg`, `match`, op-blocked | 79.2% | 9.2% | 3.2% | 8.3% |
-  | `gg_to_gg`, `match`, `levelshuffle` | 82.7% | 9.6% | 3.5% | 4.2% |
-  | `gg_to_gg`, `match`, arena | 64.8% | 14.9% | 15.8% | 4.6% |
+  Each cell is useful / delivery / processing / discarded, in percent:
+
+  | run | `match` | threaded |
+  |---|--:|--:|
+  | 2→6, op-blocked | 73.9 / 0.7 / 24.1 / 1.3 | 74.5 / 0.6 / 23.8 / 1.0 |
+  | 2→6, `levelmix` | 73.6 / 2.0 / 23.2 / 1.1 | 74.9 / 0.7 / 23.3 / 1.1 |
+  | 2→6, `levelshuffle` | 33.3 / 6.1 / 14.1 / 46.5 | 41.7 / 5.3 / 13.3 / 39.7 |
+  | 2→6, arena | 57.2 / 3.0 / 35.9 / 3.9 | 61.1 / 0.9 / 35.3 / 2.7 |
+  | `gg_to_gg`, op-blocked | 79.2 / 9.2 / 3.2 / 8.3 | 86.3 / 5.2 / 4.8 / 3.7 |
+  | `gg_to_gg`, `levelmix` | 79.5 / 11.1 / 3.1 / 6.2 | 89.4 / 5.5 / 3.6 / 1.5 |
+  | `gg_to_gg`, `levelshuffle` | 82.7 / 9.6 / 3.5 / 4.2 | 90.0 / 5.4 / 3.4 / 1.2 |
+  | `gg_to_gg`, arena | 64.8 / 14.9 / 15.8 / 4.6 | 67.9 / 4.7 / 25.7 / 1.7 |
 
   - **Shuffling the 2→6 flushes nearly half the cycles** (discarded 46.5%,
     against 1.3% op-blocked and 1.1% for the periodic interleave). Useful work
     falls by 2.22×, where the timing measured 2.21×. Shuffled `gg_to_gg`
-    discards *less* than op-blocked: the predictor has memorised the short
-    stream.
+    discards *less* than op-blocked, under both dispatchers: the predictor has
+    memorised the short stream.
   - **Arena order loses to processing stalls, not discards.** Processing goes
-    24.1 → 35.9% on the 2→6 and 3.2 → 15.8% on `gg_to_gg`, while discards
-    stay under 5%. The useful-share ratios, 1.29 and 1.22, match the timings
-    of 1.285 and 1.23. That is the dependency-chain mechanism, measured.
-  - **Threaded dispatch has the `match` loop's breakdown at op-blocked**, and
-    discards a little less when shuffled (39.7% against 46.5%), not enough to
-    matter.
+    24.1 → 35.9% on the 2→6 and 3.2 → 15.8% on `gg_to_gg`, while discards stay
+    under 5%. The useful-share ratios, 1.29 and 1.22, match the timings of
+    1.285 and 1.23. That is the dependency-chain mechanism, measured.
+  - **On the 2→6 the dispatchers are indistinguishable** in every order but
+    the shuffle, where threading discards a little less (39.7% against 46.5%)
+    and still loses.
+  - **On `gg_to_gg`, threading does what it promises.** Discards drop from
+    4–8% to 1–4%, and instruction-delivery stalls roughly halve (9–15% → 5%).
+    One branch site per handler predicts and fetches better on a small, hot
+    program. Threaded is nonetheless 4–10% *slower* there, with a higher useful
+    share, because "useful" counts cycles spent retiring instructions, not
+    physics done. Each handler retires 7 more instructions than the `match`
+    arm (§5): a frame record, four `Vm` loads, and the stream and kind checks.
+    Threading wins its stalls back and spends the difference on that overhead.
+    A handler that kept its arena pointers in registers and needed no frame
+    record would bank the prediction gain; that is the version worth building
+    before threading is written off.
 
   "Discarded" is Apple's bucket for work flushed after any misprediction,
   mostly branches, not a pure indirect-branch count. An exact count needs a
@@ -400,9 +413,12 @@ lanes4. Symbolicated against each binary's symbol table.
   nightly, and would put an incomplete language feature (`explicit_tail_calls`
   still warns as incomplete) into the evaluator. The feature, its bit-identity
   test and the advisory `threaded-dispatch` CI job keep it from rotting until
-  `become` stabilises. Revisit on a core with a weaker indirect predictor, or
-  once handlers can keep arena pointers in registers across the chain (today
-  every handler reloads them from `Vm`).
+  `become` stabilises. The prediction gain is real and measured: on
+  `gg_to_gg` threading cuts discards from 8.3% to 3.7% and delivery stalls
+  from 9.2% to 5.2% (§4). What spends it is 7 extra instructions per handler
+  (§5). The next step, if any, is a handler with the hottest arena pointers
+  as arguments and no frame record, keeping every panic path off the handler
+  so it compiles as a leaf function.
 - **A lane-aware order fallback** (open, measure-first): pick `minlive` or
   arena order when `arena bytes × lane width` exceeds L2, which is exactly the
   lanes8 2→6 cell. `Program` is built once per evaluator and shared by every
