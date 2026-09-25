@@ -443,15 +443,46 @@ above); the entries here are the eventual features.
   card's requested parameters plus the per-event |M|² ratio written back as an
   extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
   as monomials fall back to the exact re-evaluation path automatically.
-- **Direct-threaded interpreter dispatch** (performance, on hold) — the
-  evaluator is a switch-dispatch interpreter: one `match` per instruction,
-  whose indirect jump is what the op-blocked schedule (note 31 E1b) exists to
-  make predictable. Direct threading — each handler tail-calling the next —
-  gives the branch predictor one site per instruction kind and is the classic
-  next step; in safe Rust it needs guaranteed tail calls, i.e. the nightly
-  `become` feature, so it waits on that stabilising. Function-pointer threading
-  was measured and rejected (+7.7%, note 31 E2), so the win, if any, is in
-  the tail-call form specifically.
+- **Tail-call-threaded dispatch: built, measured, not adopted** — one
+  handler per `Instr` kind, each tail-calling the next through nightly
+  `become`, bit-identical to the `match` loop. It does not beat it on the
+  hosts that matter: +1.6% `forward` on Cascade Lake; on the M3 Max +11%
+  scalar and +4–6% lanes under the Rust ABI. Under LLVM's `preserve_none`
+  convention, with the arenas as register arguments, it ties at lanes8 and
+  loses 1.4% at lanes4 and 6% at scalar. The code is archived under the
+  `study/threaded-dispatch` tag. Revisit only if `become` stabilises and
+  hardware changes the picture. An LLVM / rustc bug found on the way
+  (x86-64 `preserve_none` + indirect `musttail` with 12 arguments: "ran
+  out of registers", which rustc drops into a silent miscompile) has
+  reproducers ready and is not filed yet.
+  The benchmark harness has a memory-layout confound: one row moves by up
+  to 22% with the process's environment size. `scripts/bench_schedule.sh`
+  varies the layout across rounds. Scalar single-layout sweeps carry a few
+  points of error.
+  The order study it prompted shows op-blocking doing two jobs, on both
+  hosts. Level grouping puts independent instructions adjacent, and arena
+  order loses 19% to it on every program. A predictable order matters on
+  programs too long for the branch predictor to memorise: shuffling the 2→6
+  within its levels costs 2.2× on the M3 Max under either dispatcher, with
+  40–47% of cycles discarded (Instruments' counters), while op-blocked runs
+  and a periodic interleave cost nothing. So the production
+  order stays, and any replacement must keep both. One exception, Cascade
+  Lake only: lanes8 on the 2→6 is 15–18% faster in arena / `minlive` order, a
+  working-set effect (2.4 MB of op-blocked arenas against a 1 MiB L2; the M3's
+  16 MiB L2 shows none) that the `f64`-byte, lane-blind `SCHEDULE_BYTE_LIMIT`
+  fallback cannot see. A lane-aware fallback is open, measure-first, at the
+  width lanes would ship at. The 2→6 shuffle has not been run on x86.
+  (`threaded-dispatch-study-results.md`.)
+- **`hypot` in the fermion propagators** (performance, small) —
+  `propagate_fin_bare` / `propagate_fout_bare` take `ComplexFloat::recip` of
+  the denominator `q² − m² + imΓ`, which is num_complex's overflow-safe
+  reciprocal: a libm `hypot` call per propagator. On the M3 Max it is ≈1% of
+  the 2→6's scalar evaluation. At lanes4 it runs once per lane beside two
+  `memset_pattern16` calls from the lane field's per-lane fallback, ≈2–3%.
+  The denominator is never near overflow, so `conj / norm_sqr` suffices, the
+  form `propagate_vector_bare`'s division already takes. It changes rounding,
+  so it must clear the amplitude oracle and the banked gates.
+  (`threaded-dispatch-study-results.md` §5.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α
   then stay fixed. An alternating scheme — train the grids with α fixed,

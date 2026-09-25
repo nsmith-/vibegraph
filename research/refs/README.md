@@ -106,6 +106,11 @@ pre-arXiv or paywalled papers the script cannot fetch — RAMBO, Lepage's 1978
 VEGAS paper, QGRAF, Byckling & Kajantie, Neyman, Schwartz, Zippel — by journal
 reference only. The comment at the end of the script's table lists them.
 
+The research notes cite one computer-architecture paper by reference only, not
+fetched: Rohou, Swamy & Seznec, "Branch Prediction and the Performance of
+Interpreters — Don't Trust Folklore", CGO 2015
+(`notes/threaded-dispatch-study-results.md`).
+
 ## OCR for scanned PDFs (HELAS)
 
 The HELAS manual (`papers/helas.pdf`) is a scanned document and requires OCR.
