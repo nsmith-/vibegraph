@@ -2,7 +2,7 @@
 # Sweep the evaluator's instruction dispatchers against its execution orders on the
 # `eval_strategies` bench: the `match` loop and the tail-call-threaded handlers
 # (`threaded-dispatch`, which needs nightly for `become`), each under every
-# `VIBEGRAPH_EVAL_SCHEDULE` order given. Both arms build with the same pinned nightly,
+# `VIBEGRAPH_EVAL_SCHEDULE` order given. Every arm builds with the same pinned nightly,
 # the same RUSTFLAGS and the `eval-schedule-study` feature, so neither the compiler nor
 # the schedule hook is a variable between them; each arm keeps its own target
 # directory. The order is chosen when a program is built, so one binary per arm
@@ -14,10 +14,19 @@
 # thread cannot be pinned to a performance core, and a round that lands on an
 # efficiency core runs about 2x slow.
 #
+# Each round also pads the environment by a different length (the same for every arm
+# in the round). A process's memory layout follows its environment and moves a single
+# row by up to ~25% on the M3 Max, in a different direction per binary, so a sweep that
+# ran every round in one layout would compare layouts as much as dispatchers; the min
+# over rounds is each cell's best layout among those drawn.
+#
 # Usage: scripts/bench_dispatch.sh [rounds] [schedules...]
 #   default schedules: opblocked arena opwin32
+#   DISPATCH_ARMS        arms to sweep (default: match threaded); `preservenone` is the
+#                        threaded handlers under the `preserve_none` calling convention;
+#                        `name=path` runs a prebuilt eval_strategies binary as arm `name`
 #   VIBEGRAPH_NIGHTLY    toolchain (default: the pin below, shared with ci.yml)
-#   RUSTFLAGS            codegen flags for both arms (default: -C target-cpu=native)
+#   RUSTFLAGS            codegen flags for every arm (default: -C target-cpu=native)
 #   BENCH_FILTER         criterion filter (default: forward, lanes4, lanes8)
 set -euo pipefail
 
@@ -46,19 +55,36 @@ for l in sys.stdin:
         print(m["executable"])'
 }
 
-# Plain variables, not an associative array: macOS ships bash 3.2.
-match_bin="$(build match eval-schedule-study)"
-threaded_bin="$(build threaded eval-schedule-study,threaded-dispatch)"
+read -r -a arms <<<"${DISPATCH_ARMS:-match threaded}"
+features() { # <arm>
+    case "$1" in
+    match) echo eval-schedule-study ;;
+    threaded) echo eval-schedule-study,threaded-dispatch ;;
+    preservenone) echo eval-schedule-study,preserve-none-dispatch ;;
+    *) echo "unknown arm $1" >&2 && exit 1 ;;
+    esac
+}
+# One variable per arm, not an associative array: macOS ships bash 3.2.
+names=()
+for arm in "${arms[@]}"; do
+    case "$arm" in
+    *=*) eval "bin_${arm%%=*}=\"${arm#*=}\"" ;;
+    *) eval "bin_$arm=\"\$(build $arm $(features "$arm"))\"" ;;
+    esac
+    names+=("${arm%%=*}")
+done
 
+pads=(0 200 640 1500 3000 5000 96 900)
 for r in $(seq 1 "$rounds"); do
+    pad="$(printf '%*s' "${pads[$(((r - 1) % ${#pads[@]}))]}" '' | tr ' ' x)"
     for sched in "${schedules[@]}"; do
-        for arm in match threaded; do
-            if [ "$arm" = match ]; then bin="$match_bin"; else bin="$threaded_bin"; fi
+        for arm in "${names[@]}"; do
+            eval "bin=\$bin_$arm"
             dir="$out/$arm@$sched-$r"
             mkdir -p "$dir"
             echo "round $r: $arm @ $sched" >&2
             (cd "$root/vibegraph-lib" &&
-                VIBEGRAPH_EVAL_SCHEDULE="$sched" CRITERION_HOME="$dir/criterion" \
+                VIBEGRAPH_BENCH_PAD="$pad" VIBEGRAPH_EVAL_SCHEDULE="$sched" CRITERION_HOME="$dir/criterion" \
                     "$bin" --bench --noplot "$filter" >"$dir/log.txt")
         done
     done

@@ -3,6 +3,7 @@
 // its unit test pins it bit for bit to the `match` loop.
 #![cfg_attr(feature = "threaded-dispatch", feature(explicit_tail_calls))]
 #![cfg_attr(feature = "threaded-dispatch", allow(incomplete_features))]
+#![cfg_attr(feature = "preserve-none-dispatch", feature(rust_preserve_none_cc))]
 
 pub mod artifact;
 pub mod budget;

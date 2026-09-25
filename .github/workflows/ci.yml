@@ -115,8 +115,10 @@ jobs:
           cache-on-failure: true
 
       - run: cargo clippy -p vibegraph-lib --all-targets --features threaded-dispatch,eval-schedule-study --locked -- -D warnings
+      - run: cargo clippy -p vibegraph-lib --all-targets --features preserve-none-dispatch,eval-schedule-study --locked -- -D warnings
 
       - run: cargo test -p vibegraph-lib --lib --features threaded-dispatch --locked
+      - run: cargo test -p vibegraph-lib --lib --features preserve-none-dispatch --locked
 
   banked:
     needs: test

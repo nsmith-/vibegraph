@@ -41,43 +41,259 @@ pub(super) struct Code {
     steps: Box<[Threaded]>,
 }
 
-/// The interpreter state every handler receives. Handlers share one signature, as
-/// `become` requires; the arenas sit in it by value, one load from the handler's
-/// argument away.
-struct Vm<'s, 'e, F: Real> {
-    arenas: Arenas<'s, F>,
-    env: &'s EvalEnv<'e, F>,
-}
+/// Handlers that take the stream and one pointer to the interpreter state: under the
+/// Rust ABI, whose eight argument registers hold no more, and under `preserve_none` off
+/// AArch64 (see the other `abi` below).
+#[cfg(not(all(feature = "preserve-none-dispatch", target_arch = "aarch64")))]
+mod abi {
+    use super::*;
 
-type Handler<F> = for<'x, 's, 'e, 'c> fn(&'x mut Vm<'s, 'e, F>, &'c [Threaded]);
-
-/// Run `prog`'s instruction stream over `arenas`.
-pub(super) fn run<F: Real>(prog: &Program, env: &EvalEnv<'_, F>, arenas: Arenas<'_, F>) {
-    let mut vm = Vm { arenas, env };
-    let code = &prog.threaded;
-    (Table::<F>::HANDLERS[code.first as usize])(&mut vm, &code.steps);
-}
-
-/// Execute the first instruction of `rest`, whose opcode is `OP`, then tail-call the
-/// next one's handler on the remainder.
-fn handler<F: Real, const OP: u8>(vm: &mut Vm<'_, '_, F>, rest: &[Threaded]) {
-    let [cur, tail @ ..] = rest else {
-        unreachable!()
-    };
-    if cur.instr.kind() == OP {
-        step(&cur.instr, cur.dest as usize, &mut vm.arenas, vm.env);
-    } else {
-        unreachable!()
+    /// The interpreter state every handler receives. Handlers share one signature, as
+    /// `become` requires; the arenas sit in it by value, one load from the handler's
+    /// argument away.
+    pub(super) struct Vm<'s, 'e, F: Real> {
+        arenas: Arenas<'s, F>,
+        env: &'s EvalEnv<'e, F>,
     }
-    become (Table::<F>::HANDLERS[cur.next as usize])(vm, tail)
+
+    /// Run `prog`'s instruction stream over `arenas`.
+    pub(in super::super) fn run<F: Real>(
+        prog: &Program,
+        env: &EvalEnv<'_, F>,
+        arenas: Arenas<'_, F>,
+    ) {
+        let mut vm = Vm { arenas, env };
+        let code = &prog.threaded;
+        (Table::<F>::HANDLERS[code.first as usize])(&mut vm, &code.steps);
+    }
+
+    macro_rules! handlers {
+        ($abi:literal) => {
+            pub(super) type Handler<F> =
+                for<'x, 's, 'e, 'c> extern $abi fn(&'x mut Vm<'s, 'e, F>, &'c [Threaded]);
+
+            /// Execute the first instruction of `rest`, whose opcode is `OP`, then
+            /// tail-call the next one's handler on the remainder.
+            pub(super) extern $abi fn handler<F: Real, const OP: u8>(
+                vm: &mut Vm<'_, '_, F>,
+                rest: &[Threaded],
+            ) {
+                let [cur, tail @ ..] = rest else {
+                    unreachable!()
+                };
+                if cur.instr.kind() == OP {
+                    step(&cur.instr, cur.dest as usize, &mut vm.arenas, vm.env);
+                } else {
+                    unreachable!()
+                }
+                become (Table::<F>::HANDLERS[cur.next as usize])(vm, tail)
+            }
+
+            /// The sentinel after the last instruction: returns out of the handler chain.
+            pub(super) extern $abi fn halt<F: Real>(_: &mut Vm<'_, '_, F>, _: &[Threaded]) {}
+
+            pub(super) extern $abi fn bad_opcode<F: Real>(
+                _: &mut Vm<'_, '_, F>,
+                _: &[Threaded],
+            ) {
+                unreachable!("no handler for this opcode")
+            }
+        };
+    }
+
+    #[cfg(not(feature = "preserve-none-dispatch"))]
+    handlers!("Rust");
+    // No callee-saved registers, so a handler whose instruction body needs many
+    // registers takes them without saving its caller's on every instruction.
+    #[cfg(feature = "preserve-none-dispatch")]
+    handlers!("rust-preserve-none");
 }
 
-/// The sentinel after the last instruction: returns out of the handler chain.
-fn halt<F: Real>(_: &mut Vm<'_, '_, F>, _: &[Threaded]) {}
+/// Handlers under `preserve_none` on AArch64, which leaves every register caller-saved:
+/// a handler whose instruction body needs many registers takes them without saving its
+/// caller's, which under the Rust ABI it does on every instruction it dispatches. The
+/// convention also passes 24 integer arguments in registers there, enough to carry
+/// every hot arena through the chain instead of reloading it from memory in each
+/// handler.
+///
+/// AArch64 only: x86-64's `preserve_none` has 12 argument registers, and with all of
+/// them in use LLVM loads an indirect tail call's target into the last one (`rax`),
+/// handing the callee its own address as an argument.
+#[cfg(all(feature = "preserve-none-dispatch", target_arch = "aarch64"))]
+mod abi {
+    use super::super::layout::OperandRef;
+    use super::*;
+    use crate::helas::repr::lorentz::{
+        Bispinor, Bra, ComplexVector, Ket, LorentzVector, Multivector,
+    };
+    use crate::helas::repr::C;
 
-fn bad_opcode<F: Real>(_: &mut Vm<'_, '_, F>, _: &[Threaded]) {
-    unreachable!("no handler for this opcode")
+    /// What a handler reaches through memory rather than its arguments: the constant pools
+    /// and the evaluation environment, which few instructions read.
+    pub(super) struct Cold<'s, 'e, F: Real> {
+        consts_c: &'s [C<F>],
+        consts_f: &'s [F],
+        env: &'s EvalEnv<'e, F>,
+    }
+
+    /// A handler's arguments: the rest of the stream, then every arena an instruction
+    /// body indexes on its hot path, one register pair per slice, so none of them is
+    /// reloaded from memory between instructions.
+    pub(super) type Handler<F> = for<'c, 's, 'k, 'e> extern "rust-preserve-none" fn(
+        &'c [Threaded],
+        &'s mut [F],
+        &'s mut [C<F>],
+        &'s mut [ComplexVector<F>],
+        &'s mut [Multivector<F>],
+        &'s mut [Bispinor<F, Ket>],
+        &'s mut [Bispinor<F, Bra>],
+        &'s [LorentzVector<F>],
+        &'s [OperandRef],
+        &'s [(u32, i8)],
+        &'k Cold<'s, 'e, F>,
+    );
+
+    /// Execute the first instruction of `rest`, whose opcode is `OP`, then tail-call
+    /// the next one's handler on the remainder.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) extern "rust-preserve-none" fn handler<'s, F: Real, const OP: u8>(
+        rest: &[Threaded],
+        reals: &'s mut [F],
+        scalars: &'s mut [C<F>],
+        vectors: &'s mut [ComplexVector<F>],
+        multivectors: &'s mut [Multivector<F>],
+        fin: &'s mut [Bispinor<F, Ket>],
+        fout: &'s mut [Bispinor<F, Bra>],
+        moms: &'s [LorentzVector<F>],
+        ops: &'s [OperandRef],
+        mom_ops: &'s [(u32, i8)],
+        cold: &Cold<'s, '_, F>,
+    ) {
+        let [cur, tail @ ..] = rest else {
+            unreachable!()
+        };
+        let mut a = Arenas {
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ops,
+            mom_ops,
+            consts_c: cold.consts_c,
+            consts_f: cold.consts_f,
+        };
+        if cur.instr.kind() == OP {
+            step(&cur.instr, cur.dest as usize, &mut a, cold.env);
+        } else {
+            unreachable!()
+        }
+        let Arenas {
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ops,
+            mom_ops,
+            ..
+        } = a;
+        become (Table::<F>::HANDLERS[cur.next as usize])(
+            tail,
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ops,
+            mom_ops,
+            cold,
+        )
+    }
+
+    /// The sentinel after the last instruction: returns out of the handler chain.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) extern "rust-preserve-none" fn halt<F: Real>(
+        _: &[Threaded],
+        _: &mut [F],
+        _: &mut [C<F>],
+        _: &mut [ComplexVector<F>],
+        _: &mut [Multivector<F>],
+        _: &mut [Bispinor<F, Ket>],
+        _: &mut [Bispinor<F, Bra>],
+        _: &[LorentzVector<F>],
+        _: &[OperandRef],
+        _: &[(u32, i8)],
+        _: &Cold<'_, '_, F>,
+    ) {
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) extern "rust-preserve-none" fn bad_opcode<F: Real>(
+        _: &[Threaded],
+        _: &mut [F],
+        _: &mut [C<F>],
+        _: &mut [ComplexVector<F>],
+        _: &mut [Multivector<F>],
+        _: &mut [Bispinor<F, Ket>],
+        _: &mut [Bispinor<F, Bra>],
+        _: &[LorentzVector<F>],
+        _: &[OperandRef],
+        _: &[(u32, i8)],
+        _: &Cold<'_, '_, F>,
+    ) {
+        unreachable!("no handler for this opcode")
+    }
+
+    /// Run `prog`'s instruction stream over `arenas`.
+    pub(in super::super) fn run<F: Real>(
+        prog: &Program,
+        env: &EvalEnv<'_, F>,
+        arenas: Arenas<'_, F>,
+    ) {
+        let Arenas {
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ops,
+            mom_ops,
+            consts_c,
+            consts_f,
+        } = arenas;
+        let cold = Cold {
+            consts_c,
+            consts_f,
+            env,
+        };
+        let code = &prog.threaded;
+        (Table::<F>::HANDLERS[code.first as usize])(
+            &code.steps,
+            reals,
+            scalars,
+            vectors,
+            multivectors,
+            fin,
+            fout,
+            moms,
+            ops,
+            mom_ops,
+            &cold,
+        );
+    }
 }
+
+pub(super) use abi::run;
+use abi::{bad_opcode, halt, handler, Handler};
 
 struct Table<F>(core::marker::PhantomData<F>);
 

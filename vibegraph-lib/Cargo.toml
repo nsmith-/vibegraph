@@ -23,6 +23,11 @@ eval-schedule-study = []
 # `explicit_tail_calls` language feature; a dispatch study, never enabled in
 # normal builds.
 threaded-dispatch = []
+# The threaded handlers under LLVM's `preserve_none` calling convention (nightly
+# `rust_preserve_none_cc`): no callee-saved registers, so a handler never saves the
+# registers its instruction body uses. On AArch64 the handlers also carry the arenas as
+# register arguments. A dispatch study, never enabled in normal builds.
+preserve-none-dispatch = ["threaded-dispatch"]
 
 [lints]
 workspace = true

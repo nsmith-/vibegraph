@@ -5,7 +5,11 @@ bit-identical to the `match` loop, and does not beat it. At the production
 order it is +1.6% `forward`, +1.5% lanes4 and +5.2% lanes8 on Cascade Lake,
 and +8.6% / +2.1% / +1.0% on the M3 Max (geomean over the 8 bench rows). It
 stays behind the nightly-only `threaded-dispatch` feature, and nothing ships on
-it. The execution order has two jobs, and op-blocking does both. On every
+it. Under LLVM's `preserve_none` convention, with the arenas carried as
+register arguments (AArch64 only), it recovers 4–6 points against the Rust ABI.
+It then ties at lanes8 and trails by 1.4% at lanes4 and 6% at scalar (§6, M3
+Max, layout-randomised). The execution order has two jobs, and op-blocking does
+both. On every
 program, ASAP-level grouping keeps independent instructions adjacent; arena
 order loses 19% to it on both hosts. On a program too long for the branch
 predictor to memorise (the 2→6, 36 523 instructions), the order must also be
@@ -380,10 +384,15 @@ lanes4. Symbolicated against each binary's symbol table.
       and length pairs do not fit the argument registers a `become` chain
       carries.
     - the remaining-stream check and the kind check.
-  - Those six extra memory operations per VM instruction are the likely source
-    of threaded's +5–9% on this core, not isolated here. A version that could
-    win needs its hottest arena pointers as arguments and handlers that never
-    call a panic directly, so they compile as leaf functions.
+  - `Metric` is one of the lean handlers, and it understates the cost. A census
+    of every handler's prologue in the same binary finds callee-saved register
+    saves on top of the frame record. At `f64`, 16 of the 53 handlers save
+    between 2 and 16 registers, among them the propagators (14 registers each),
+    the multivector `Fin`/`Fout` kernels (16) and the external wavefunctions (6).
+    At lanes4, 32 of 53 save up to 18. The `match` loop saves those registers
+    once per pass, in `fill_arenas`'s prologue. A threaded handler saves and
+    restores them on every instruction it dispatches, because `become` keeps the
+    Rust ABI and every handler is a fresh callee. §6 removes this cost.
 - **Two costs common to both arms, found on the way.** In the 2→6 the fermion
   propagators call libm `hypot` once per execution: `ComplexFloat::recip` on
   the propagator denominator is num_complex's overflow-safe reciprocal. That is
@@ -403,7 +412,128 @@ lanes4. Symbolicated against each binary's symbol table.
   what each instruction costs. The static comparison above is the finer
   evidence.
 
-## 6. What this leaves
+## 6. The `preserve_none` calling convention
+
+`become` guarantees a tail call and nothing else: the handlers keep the Rust
+ABI, with its callee-saved registers and eight argument registers. LLVM's
+`preserve_none` convention is the one threaded interpreters use to drop both
+(CPython's tail-calling interpreter does). No register is callee-saved, and on
+AArch64 arguments go in `x20`–`x28`, then `x0`–`x7` and `x9`–`x15`, 24 in all.
+rustc exposes it on the pinned nightly as `extern "rust-preserve-none"` under
+`#![feature(rust_preserve_none_cc)]`, and it composes with `become` through the
+handler table. The `preserve-none-dispatch` feature (implying
+`threaded-dispatch`) builds the handlers this way. Two steps, each
+bit-identical to the `match` loop under the dispatcher test, with 807 lib tests
+passing:
+
+- **Step 1, the convention alone.** Same handlers, same `Vm` argument. The
+  prologue census (§5) drops to no callee-saved saves at `f64` and lanes2, 1
+  handler at lanes4 and 2 at lanes8, down from 32 / 22 / 32 / 45 instances. The
+  stack loads and stores in handler code fall 43% at `f64`, 19% at lanes4 and
+  12% at lanes8. The frame record stays in all 53: it comes from the handlers
+  being non-leaf, not from the convention.
+- **Step 2, the arenas as arguments.** Each handler takes the rest of the
+  stream and nine slices: the six result arenas, the momenta, the operand table
+  and the momentum operands, 20 registers in all. One pointer carries the
+  constant pools and the environment. The arena pointers and their bounds stay
+  in registers down the whole chain, and the per-handler `Vm` loads are gone. The
+  cost is new stack traffic. Only `x20`–`x28` survive a call into a Rust-ABI
+  function, so the arena arguments in `x0`–`x15` spill around every
+  out-of-line kernel or panic call. Stack loads and stores go back up, to 675
+  at `f64` against step 1's 342. That is still below the Rust ABI's per-call
+  saves, since they sit on the call paths, not in the prologue.
+
+### x86-64: an LLVM bug, so step 2 is AArch64-only
+
+Built for `x86_64-apple-darwin` and run under Rosetta, step 2 segfaults in the
+dispatcher test. The Rust-ABI handlers pass there. A standalone probe narrows
+it to a codegen bug:
+- The probe is a `preserve_none` function that `become`s itself through a
+  function-pointer table.
+- It is correct with up to 11 integer arguments.
+- It returns garbage at 12 under `-O` and segfaults at `-O0`.
+- A plain (non-tail) call with 12 arguments is correct.
+
+The assembly shows the cause. x86-64's `preserve_none` passes 12 arguments in
+registers, `rax` last. With all 12 in use, LLVM loads the indirect tail call's
+target into `rax` (`movq (%r10), %rax; jmpq *%rax`), and the callee receives
+its own address as its last argument. Step 2 needs 20 argument registers, so
+it cannot work there even without the bug.
+
+Off AArch64, `preserve-none-dispatch` builds step 1: the `Vm` handlers under
+`preserve_none`, with 3 argument registers. Its x86-64 build passes the
+dispatcher test under Rosetta. Its timing on x86-64 is not measured. The bug is
+not reported upstream yet. The probe is 25 lines and would make a clean LLVM
+issue.
+
+
+
+The first two `preserve_none` sweeps disagreed on the scalar rows by more than
+their own round-to-round spread, and the `match` binary, byte-for-byte the same
+file in both, moved by +10% on the 2→6 and −17% on `ee_to_mumu` between them.
+Every round of a sweep ran in one memory layout, and the layout, not the code,
+moved. It follows the process's environment:
+
+- `ee_to_mumu` under `match` runs in 3.92 µs with 0–128 bytes of extra
+  environment, 4.80 µs (+22%) with 136–300 bytes and again around 640, and
+  3.9–4.0 µs everywhere from 768 bytes to 8 KiB. Each point is steady to 1%.
+- The three variables `bench_dispatch.sh` exports put the `match` binary in
+  that slow window. The unchanged `preserve_none` step-1 binary reproduced to
+  0.3% across both sweeps, and the step-2 binary sits in its own slow window
+  (5.06 against 4.18 µs) at a different padding.
+- The mechanism is not isolated. The windows are not periodic, and a
+  standalone three-row run did not reproduce the 2→6's slow state, so heap
+  placement after the preceding benchmarks in the same process is a likelier
+  mechanism than stack alignment alone.
+
+`bench_dispatch.sh` now pads the environment by a different length each round,
+the same for every arm, and min over rounds takes each cell's best layout among
+those drawn. Two consequences:
+- The M3 Max scalar figures of §4 were measured in a single layout. The lanes
+  columns moved by at most 2 points between layouts here, but a single scalar
+  row can move by 10–22%, so their scalar geomeans carry a few points of layout
+  error. The Cascade Lake medians were not examined for it.
+- The shuffle's 2.2× on the 2→6 is far outside it and stands.
+
+### Result
+
+M3 Max, op-blocked order, min over 6 rounds in 6 layouts, geomean over the 8
+rows of time relative to `match`:
+
+| arm | scalar | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `preserve_none` step 1 | 1.101 [1.06..1.18] | 1.041 [1.01..1.08] | 1.017 [0.99..1.05] |
+| `preserve_none` step 2 | 1.063 [1.01..1.11] | 1.014 [0.98..1.04] | 0.998 [0.98..1.03] |
+
+A second 6-layout sweep ran `match`, the Rust-ABI handlers and step 2:
+
+| arm | scalar | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| threaded, Rust ABI | 1.113 [1.07..1.20] | 1.063 [1.04..1.10] | 1.043 [1.02..1.07] |
+| `preserve_none` step 2 | 1.058 [1.01..1.11] | 1.013 [0.99..1.03] | 1.000 [0.99..1.02] |
+
+- **Step 2 reproduces** across the two sweeps to half a point on every width.
+- **Against the Rust ABI, `preserve_none` with register arenas recovers 4–6
+  points:** 5.5 at scalar, 5.0 at lanes4 and 4.3 at lanes8.
+- **The two steps split that gain.** Comparing across the two sweeps, step 1,
+  dropping the register saves, is worth 1.2 / 2.2 / 2.6 points. Step 2, the
+  arenas in registers, adds 3.8 / 2.7 / 1.9. The second step needs the first:
+  under the Rust ABI, 20 argument registers do not exist.
+- The Rust-ABI arm's §4 figures (1.087 / 1.021 / 1.010) came from a single
+  layout. Under randomised layouts it is 1.113 / 1.063 / 1.043.
+
+- **Step 2 beats step 1 on every scalar row and on 15 of the 16 lanes rows.**
+  Keeping the arenas in registers is worth more than the spills it adds around
+  calls.
+- **At lanes8 it ties the `match` loop, and it wins on four rows by 1–2%.** At
+  lanes4 it is within 1.5%. At scalar precision it still loses 6%, with the 2→6
+  11% behind.
+- **What remains is structural at scalar width.** It is the frame record, the
+  argument spills around out-of-line calls, and the per-instruction stream and
+  kind checks. Those are fixed costs per VM instruction, so they weigh most
+  where an instruction is cheapest, and the `match` loop pays none of them.
+
+## 7. What this leaves
 
 - **Production order: unchanged.** Op-blocked is the best or tied order for
   both dispatchers on every width and both hosts but one cell (Cascade Lake
@@ -415,10 +545,14 @@ lanes4. Symbolicated against each binary's symbol table.
   test and the advisory `threaded-dispatch` CI job keep it from rotting until
   `become` stabilises. The prediction gain is real and measured: on
   `gg_to_gg` threading cuts discards from 8.3% to 3.7% and delivery stalls
-  from 9.2% to 5.2% (§4). What spends it is 7 extra instructions per handler
-  (§5). The next step, if any, is a handler with the hottest arena pointers
-  as arguments and no frame record, keeping every panic path off the handler
-  so it compiles as a leaf function.
+  from 9.2% to 5.2% (§4). The Rust ABI spends it on per-handler register
+  saves and arena reloads (§5). Under `preserve_none` with the arenas as
+  arguments, both are gone and threaded ties `match` at lanes8 and loses 1.4%
+  at lanes4 and 6% at scalar (§6). That is still no case for adoption: nightly
+  twice over, for a tie at best. The step left untried is a leaf handler, with
+  every panic path moved behind a `preserve_none` cold call, so it drops the
+  frame record and the argument spills around it. Only the out-of-line kernel
+  calls would still spill.
 - **A lane-aware order fallback** (open, measure-first): pick `minlive` or
   arena order when `arena bytes × lane width` exceeds L2, which is exactly the
   lanes8 2→6 cell. `Program` is built once per evaluator and shared by every
@@ -436,6 +570,8 @@ scripts/bench_dispatch.sh 3 opblocked levelmix arena     # §3 sweep B's design
 scripts/bench_dispatch.sh 2 opblocked arena dfs minlive opwin32
 scripts/bench_dispatch.sh 3 opblocked levelmix levelshuffle   # §4 sweep B
 # the summary is min over rounds, which rejects E-core runs on Apple silicon
+DISPATCH_ARMS="match threaded preservenone" scripts/bench_dispatch.sh 6 opblocked  # §6
+# (rounds cycle through environment paddings; name=path adds a prebuilt binary as an arm)
 # Apple silicon bottleneck breakdown (useful / delivery / processing / discarded):
 scripts/xctrace_bottlenecks.sh <eval_strategies binary> 'eval_m2/forward/uux_to_ccx_emmm_qcd0$' \
     opblocked levelmix levelshuffle arena

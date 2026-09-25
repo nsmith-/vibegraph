@@ -448,7 +448,14 @@ above); the entries here are the eventual features.
   through one handler per `Instr` kind, each tail-calling the next. It is
   bit-identical to the `match` loop (unit-tested, anti-vacuity checked). It
   does not beat it: +1.6% `forward` on Cascade Lake, +8.6% on the M3 Max,
-  0–6% on lanes. Not adopted. An advisory nightly CI job keeps it building.
+  0–6% on lanes. Under LLVM's `preserve_none` convention
+  (`preserve-none-dispatch`, nightly `rust_preserve_none_cc`), with the
+  arenas carried as register arguments, it ties at lanes8 and loses 1.4% at
+  lanes4 and 6% at scalar. Not adopted. An advisory nightly CI job keeps both
+  builds building. The benchmark harness has a memory-layout confound: one
+  row moves by up to 22% with the process's environment size.
+  `bench_dispatch.sh` now varies the layout across rounds. Scalar
+  single-layout sweeps carry a few points of error.
   The order study it prompted shows op-blocking doing two jobs, on both
   hosts. Level grouping puts independent instructions adjacent, and arena
   order loses 19% to it on every program. A predictable order matters on
