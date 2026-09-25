@@ -660,24 +660,29 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     closed_line_sign(tree, |_| true)
 }
 
-/// The fermion-line sign of the lines a tree closes at a *fermion-output* current: a
-/// four-fermion vertex rooted at a leg of one of its lines, closing the other.
+/// The fermion-line sign of the lines a tree closes at a *fermion-output* tensor
+/// current: a four-fermion vertex whose cyclic structure goes through the rank-2 tensor
+/// path, rooted at a leg of one of its lines and closing the other.
 ///
 /// [`compile_single_diagram`] divides these back out of the diagram's line sign at the
 /// anchor rooting, so a line that closes at such a current there takes no line sign.
-/// This is a convention of the four-fermion current kernels, read at the one rooting
-/// the convention signs are defined at: with a tensor four-fermion contact that an
-/// emission leaves by one of its lines, `ta+ ta- > t t~ a` (`O_leQt3`) and
-/// `lt~ lt > qt qt~ vt` in the toy model reproduce MadGraph's `|M|²` only with it, and
-/// miss by up to 20% without it.
+/// This is a convention of the tensor-path kernel, which cuts the index cycle at one
+/// fermion line, read at the one rooting the convention signs are defined at. Measured
+/// against MadGraph standalone on processes where an emission leaves a four-fermion
+/// contact by one of its lines: with the tensor contact, `ta+ ta- > t t~ a` (`O_leQt3`)
+/// and `lt~ lt > qt qt~ vt` in the toy model reproduce MadGraph's `|M|²` only with the
+/// factor (and miss by up to 20% without it); with the vector contact of `O_ll`,
+/// `e+ e- > mu+ mu- a` reproduces it only without — a tree-rooted four-fermion current
+/// takes every line sign the diagram carries.
 fn fermion_current_line_sign(tree: &DiagramEvalTree) -> i8 {
     closed_line_sign(tree, |node| {
         matches!(
             node,
             EvalNode::OffShellCurrent {
                 adjoint: Some(_),
+                info,
                 ..
-            }
+            } if info.tensor()
         )
     })
 }
@@ -1089,7 +1094,7 @@ fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
 /// Roots the diagram into its evaluation tree (topology + Lorentz structures) and
 /// attaches the per-diagram metadata: external-leg count, symmetry factor, and
 /// `fermi_sign` — the diagram's own relative Fermi sign ([`Diagram::sign`]) times the
-/// HELAS convention signs of this evaluator's kernels (the four-fermion current line
+/// HELAS convention signs of this evaluator's kernels (the tensor-current line
 /// sign, the Yang-Mills source sign, the build and reversed-bilinear signs), each read
 /// at the rooting that takes the diagram's [anchor](Diagram::anchor) as the amplitude
 /// vertex.

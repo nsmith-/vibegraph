@@ -81,6 +81,10 @@ pub struct RootedTerm {
     /// (`Cγ^{μT}C⁻¹ = −γ^μ`, `Cσ^{μνT}C⁻¹ = −σ^{μν}`, against `C·1ᵀ·C⁻¹ = 1` and
     /// `Cγ⁵ᵀC⁻¹ = γ⁵`), so a line built only from the second takes no reversal sign.
     pub carries_dirac_matrix: bool,
+    /// Whether this term's index graph is cyclic, so that it is evaluated through the
+    /// rank-2 tensor path (see [`LorentzEvalTree::build_at_leg`]) rather than as a rooted
+    /// tree.
+    pub tensor: bool,
     /// Resolved primitive with output fiber fixed.
     pub tree: LorentzEvalTree,
 }
@@ -1714,6 +1718,7 @@ pub fn root_term(
             .ops
             .iter()
             .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })),
+        tensor: cyclic_index_graph(term),
         tree,
     })
 }
