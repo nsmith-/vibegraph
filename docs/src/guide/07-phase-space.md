@@ -488,6 +488,51 @@ while the event record keeps the centre-of-mass momenta.
 > which MadGraph compares against the centre-of-mass energy; no banked run card
 > sets one.
 
+## Decays at rest
+
+A proc card with one initial particle, `generate t > b e+ ve`, is a
+$1 \to n$ decay, and what it measures is the particle's **partial width**
+into that final state rather than a cross section:
+
+$$
+\Gamma = \frac{1}{2M}\,\frac{1}{(2s+1)\,N_c}\int d\Phi_n\;S\,\sum|\mathcal{M}|^2,
+$$
+
+the decaying particle of pole mass $M$ at rest, $(2s+1)N_c$ its spin and
+colour states averaged over, $d\Phi_n$ the phase space of the products at
+total momentum $(M, 0, 0, 0)$, and $S$ the final state's identical-particle
+factor. The flux $F$ of a scattering becomes $2M$, and the invariant the
+outgoing map is built on becomes $M$; nothing else in the integrand changes,
+and the same [channel maps](#channels-from-diagrams) serve it: with one
+incoming leg every internal line is an s-channel, so each channel is the
+all-timelike tree. `vibegraph integrate` reports the width in GeV
+(`Γ = … GeV`), whatever the beams on the run card say.
+
+MadEvent reads the run card of a decay run its own way, and so does this
+crate. With no run card, the default is MadGraph's decay default: the LO
+card with every cut removed. With one, its cuts are honoured, applied to the
+products in the rest frame (MadEvent's `cuts.f` has no frame to boost to
+with one incoming particle), except the $\hat s$ window, which `cuts.f` reads
+only for two. The renormalisation scale is the particle's mass unless the
+card fixes one, and the factorisation scales are the card's constants —
+`setcuts.f`'s `nincoming = 1` branch, which also switches the parton
+densities off — so no dynamical scale prescription is ever evaluated for a
+decay.
+
+> **What is validated.** Every open two-body width of the SM UFO's own
+> `decays.py` (19 channels of $t$, $W^+$, $Z$ and $H$) is reproduced to
+> $5\times10^{-13}$, and $\sum|\mathcal{M}|^2$ at fixed rest-frame points
+> matches both those widths and MadGraph's standalone matrix element for the
+> many-body decays, interfering diagrams included, to $10^{-12}$.
+> `t > w+ b`, `t > b e+ ve`, `h > e+ e- mu+ mu-` and `z > e+ e-`, two of them
+> again under lepton and $b$ cuts, are compared over ten seeds each against the
+> exact width where one is known and against MadEvent's ten-seed mean
+> otherwise (`vibegraph-cli/tests/cli_decay.rs`). `h > e+ e- mu+ mu-` has an
+> exact width because its one diagram factorises into two off-shell $Z$ lines,
+> integrated by quadrature; there this crate's seeds agree with it, and
+> MadEvent's sit 0.14% below it at 10k events and 0.05% below at 100k,
+> converging on it with budget.
+
 ## Frames
 
 The helicity-summed $|\mathcal{M}|^2$ is a Lorentz invariant and could be
