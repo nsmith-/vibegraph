@@ -291,10 +291,16 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
     failures
 }
 
+/// A vertex's interaction and, per ray, the external legs beyond it and whether it is a
+/// forced line.
+type SlotFreeVertex = (usize, Vec<(Vec<usize>, bool)>);
+/// Sign, symmetry factor and vertices, sorted.
+type SlotFree = (i8, usize, Vec<SlotFreeVertex>);
+
 /// A description of a diagram that ignores which slot of a vertex each line binds to: per
 /// vertex its interaction and, per ray, the external legs beyond it and whether the ray
 /// is a forced line; with the sign and symmetry factor.
-fn slot_free(d: &Diagram) -> (i8, usize, Vec<(usize, Vec<(Vec<usize>, bool)>)>) {
+fn slot_free(d: &Diagram) -> SlotFree {
     use crate::diagrams::diagram::{Ray, VtxIdx};
     let beyond = |from: VtxIdx, ray: Ray| -> Vec<usize> {
         let (start, via) = match ray {
@@ -322,7 +328,7 @@ fn slot_free(d: &Diagram) -> (i8, usize, Vec<(usize, Vec<(Vec<usize>, bool)>)>) 
         legs.sort_unstable();
         legs
     };
-    let mut vertices: Vec<(usize, Vec<(Vec<usize>, bool)>)> = d
+    let mut vertices: Vec<SlotFreeVertex> = d
         .vertices
         .iter()
         .enumerate()
