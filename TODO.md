@@ -453,8 +453,9 @@ above); the entries here are the eventual features.
   hosts. Level grouping puts independent instructions adjacent, and arena
   order loses 19% to it on every program. A predictable order matters on
   programs too long for the branch predictor to memorise: shuffling the 2→6
-  within its levels costs 2.2× on the M3 Max under either dispatcher, while
-  op-blocked runs and a periodic interleave cost nothing. So the production
+  within its levels costs 2.2× on the M3 Max under either dispatcher, with
+  40–47% of cycles discarded (Instruments' counters), while op-blocked runs
+  and a periodic interleave cost nothing. So the production
   order stays, and any replacement must keep both. One exception, Cascade
   Lake only: lanes8 on the 2→6 is 15–18% faster in arena / `minlive` order, a
   working-set effect (2.4 MB of op-blocked arenas against a 1 MiB L2; the M3's

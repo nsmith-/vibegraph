@@ -10,8 +10,8 @@ program, ASAP-level grouping keeps independent instructions adjacent; arena
 order loses 19% to it on both hosts. On a program too long for the branch
 predictor to memorise (the 2→6, 36 523 instructions), the order must also be
 predictable. A random order within the levels costs 2.2× there on the M3 Max,
-under either dispatcher, while op-blocked runs and a periodic interleave cost
-nothing (§4). The production order is not a `match`-dispatch workaround, and it
+under either dispatcher, and Instruments' counters show 40–47% of its cycles
+discarded. Op-blocked runs and a periodic interleave cost nothing (§4). The production order is not a `match`-dispatch workaround, and it
 stays.**
 
 Host: Intel Xeon, family 6 model 85 stepping 7 (Cascade Lake), 2.8 GHz, 4-vCPU
@@ -291,8 +291,7 @@ The 2→6 row, µs/event, per round:
   instructions × ~12 cycles at ~4 GHz is ≈ 110 µs, which matches. The penalty
   shrinks with lane width, 2.21× → 1.56× → 1.31×, as a fixed per-dispatch cost
   diluted by 4 and 8 lanes of arithmetic would. A locality effect would grow
-  with the bytes moved. The inference comes from arithmetic and scaling, not
-  counters; macOS gives no PMU access here without `sudo`.
+  with the bytes moved. The counters below confirm it.
 - **Threaded dispatch does not rescue an unpredictable stream** (2.16× against
   2.21×). A per-handler branch site still has to predict a random successor.
 - **So op-blocking does two jobs.** Level grouping serves every program;
@@ -300,6 +299,39 @@ The 2→6 row, µs/event, per round:
   predictor's history. Its runs are one way to be predictable, and a periodic
   interleave is another. A future order that trades against op-blocking, for
   locality or live width, must keep both.
+- **The counters agree** (Instruments' CPU Counters template in its default
+  bottleneck mode, via `scripts/xctrace_bottlenecks.sh`, no `sudo`). Shares of
+  cycles over the last 9 s of a 10 s `--profile-time` loop, one run each; a
+  repeat of the `gg_to_gg` pair reproduced them to within 1.5 points.
+
+  | run | useful | delivery | processing | discarded |
+  |---|--:|--:|--:|--:|
+  | 2→6, `match`, op-blocked | 73.9% | 0.7% | 24.1% | 1.3% |
+  | 2→6, `match`, `levelmix` | 73.6% | 2.0% | 23.2% | 1.1% |
+  | 2→6, `match`, `levelshuffle` | 33.3% | 6.1% | 14.1% | 46.5% |
+  | 2→6, `match`, arena | 57.2% | 3.0% | 35.9% | 3.9% |
+  | 2→6, threaded, op-blocked | 74.5% | 0.6% | 23.8% | 1.0% |
+  | 2→6, threaded, `levelshuffle` | 41.7% | 5.3% | 13.3% | 39.7% |
+  | `gg_to_gg`, `match`, op-blocked | 79.2% | 9.2% | 3.2% | 8.3% |
+  | `gg_to_gg`, `match`, `levelshuffle` | 82.7% | 9.6% | 3.5% | 4.2% |
+  | `gg_to_gg`, `match`, arena | 64.8% | 14.9% | 15.8% | 4.6% |
+
+  - **Shuffling the 2→6 flushes nearly half the cycles** (discarded 46.5%,
+    against 1.3% op-blocked and 1.1% for the periodic interleave). Useful work
+    falls by 2.22×, where the timing measured 2.21×. Shuffled `gg_to_gg`
+    discards *less* than op-blocked: the predictor has memorised the short
+    stream.
+  - **Arena order loses to processing stalls, not discards.** Processing goes
+    24.1 → 35.9% on the 2→6 and 3.2 → 15.8% on `gg_to_gg`, while discards
+    stay under 5%. The useful-share ratios, 1.29 and 1.22, match the timings
+    of 1.285 and 1.23. That is the dependency-chain mechanism, measured.
+  - **Threaded dispatch has the `match` loop's breakdown at op-blocked**, and
+    discards a little less when shuffled (39.7% against 46.5%), not enough to
+    matter.
+
+  "Discarded" is Apple's bucket for work flushed after any misprediction,
+  mostly branches, not a pure indirect-branch count. An exact count needs a
+  counter-selecting template saved from the Instruments GUI.
 - **Cascade Lake is untested against the shuffle.** §3's claim that
   op-blocking's win "is not dispatch predictability" holds only for streams the
   predictor memorises, and the 2→6 was not shuffled there. The E1 run-length
@@ -388,6 +420,9 @@ scripts/bench_dispatch.sh 3 opblocked levelmix arena     # §3 sweep B's design
 scripts/bench_dispatch.sh 2 opblocked arena dfs minlive opwin32
 scripts/bench_dispatch.sh 3 opblocked levelmix levelshuffle   # §4 sweep B
 # the summary is min over rounds, which rejects E-core runs on Apple silicon
+# Apple silicon bottleneck breakdown (useful / delivery / processing / discarded):
+scripts/xctrace_bottlenecks.sh <eval_strategies binary> 'eval_m2/forward/uux_to_ccx_emmm_qcd0$' \
+    opblocked levelmix levelshuffle arena
 cargo +nightly-2026-09-24 test -p vibegraph-lib --lib \
     --features threaded-dispatch,eval-schedule-study -- threaded schedule
 # order metrics (mean run, live bytes, distances):
