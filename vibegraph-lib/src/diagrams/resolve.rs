@@ -53,6 +53,16 @@ pub enum ResolveError {
         pol: String,
         why: &'static str,
     },
+    /// MadGraph's `check_polarization`: a final-state particle appears both
+    /// polarized and otherwise (or with overlapping polarizations), as in
+    /// `p p > z{T} z`. MadGraph asks whether to continue and a batch run
+    /// answers no.
+    #[error(
+        "'{0}' carries a polarization that overlaps another final-state leg of the same \
+         particle; MadGraph calls this syntax ambiguous ('p p > z{{T}} z') and does not \
+         guarantee its symmetry factor"
+    )]
+    AmbiguousPolarization(String),
     #[error("decay processes cannot carry {0}")]
     DecayConstraint(&'static str),
     #[error("processes with different numbers of initial particles cannot be combined")]
@@ -307,6 +317,14 @@ pub fn resolve_card(
         let def = &p.line.definition;
         let aliases = model_aliases(&p.aliases, model);
         let resolved = resolve_definition(def, Some(p.id), &aliases, model)?;
+        let legs: Vec<(bool, Vec<i64>, Vec<i64>)> = resolved
+            .legs
+            .iter()
+            .map(|l| (l.state, l.ids.clone(), l.polarization.clone()))
+            .collect();
+        if !polarizations_unambiguous(&legs) {
+            return Err(ResolveError::AmbiguousPolarization(p.line.text.clone()));
+        }
         if def.decay_chains.is_empty() {
             check_negative_orders(&resolved)?;
         } else {
@@ -478,6 +496,62 @@ fn required_ids(
         }
     }
     Ok(out)
+}
+
+/// MadGraph's `ProcessDefinition.check_polarization`
+/// (`base_objects.py:3869`), over `(final state, PDG codes, helicity codes)`
+/// per leg: `false` when a final-state particle is reachable from two legs
+/// whose polarizations are not either identical lists or disjoint, an
+/// unpolarized leg counting as every helicity. Initial-state legs are not
+/// looked at.
+pub fn polarizations_unambiguous(legs: &[(bool, Vec<i64>, Vec<i64>)]) -> bool {
+    let all: Vec<i64> = (-3..=3).collect();
+    let mut seen: BTreeMap<i64, Vec<Vec<i64>>> = BTreeMap::new();
+    for (state, ids, pol) in legs {
+        if !state {
+            continue;
+        }
+        for id in ids {
+            match seen.get_mut(id) {
+                None => {
+                    let first = if pol.is_empty() {
+                        all.clone()
+                    } else {
+                        pol.clone()
+                    };
+                    seen.insert(*id, vec![first]);
+                }
+                Some(lists) if pol.is_empty() => {
+                    if *lists != [all.clone()] {
+                        return false;
+                    }
+                }
+                Some(lists) => {
+                    if lists.contains(pol) {
+                        continue;
+                    }
+                    if pol.iter().any(|h| lists.iter().any(|l| l.contains(h))) {
+                        return false;
+                    }
+                    lists.push(pol.clone());
+                }
+            }
+        }
+    }
+    true
+}
+
+/// A polarized leg's helicity codes, read against the particles the leg may
+/// be.
+pub fn leg_polarization_codes(
+    model: &UFOModel,
+    particle: &LegParticle,
+    token: &str,
+    pol: &str,
+    aliases: &AliasTable,
+) -> Result<Vec<i64>, ResolveError> {
+    let particles = leg_particles(model, particle, token, aliases)?;
+    polarization_codes(token, pol, &particles)
 }
 
 /// `extract_process`'s polarization reader, which needs the particle's spin

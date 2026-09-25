@@ -309,26 +309,36 @@ fn stitch_set(
 ) -> Result<ChainSet, String> {
     let n_in = core.particles_in.len();
 
-    // The final state with every decayed particle replaced by its products, and which
-    // block each final-state position belongs to: 0 for a core leg, `i + 1` for the
-    // products of the `i`-th decay.
+    // The final state with every decayed particle replaced by its products, each with its
+    // polarization, and which block each final-state position belongs to: 0 for a core
+    // leg, `i + 1` for the products of the `i`-th decay.
     let mut particles_out = Vec::new();
+    let mut polarizations = core.polarizations[..n_in].to_vec();
     let mut block = Vec::new();
     for (pos, name) in core.particles_out.iter().enumerate() {
         match assignment.iter().position(|a| a.0 == pos) {
             Some(index) => {
-                for product in &assignment[index].2.set.particles_out {
+                let decay = &assignment[index].2.set;
+                for (product, pol) in decay.particles_out.iter().zip(&decay.polarizations[1..]) {
                     particles_out.push(product.clone());
+                    polarizations.push(pol.clone());
                     block.push(index + 1);
                 }
             }
             None => {
                 particles_out.push(name.clone());
+                polarizations.push(core.polarizations[n_in + pos].clone());
                 block.push(0);
             }
         }
     }
-    let permutations = block_permutations(&particles_out, &block);
+    // Particles are identical only with the same polarization.
+    let species: Vec<String> = particles_out
+        .iter()
+        .zip(&polarizations[n_in..])
+        .map(|(name, pol)| format!("{name}{pol:?}"))
+        .collect();
+    let permutations = block_permutations(&species, &block);
 
     let decay_diagrams: Vec<&[Diagram]> = assignment
         .iter()
@@ -419,6 +429,7 @@ fn stitch_set(
         set: DiagramSet {
             particles_in: core.particles_in.clone(),
             particles_out,
+            polarizations,
             diagrams,
         },
     })

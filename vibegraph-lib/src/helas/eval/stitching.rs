@@ -85,6 +85,20 @@ const CASES: &[Case] = &[
         card: "g b > w- t, t > w+ b",
         chain: |_| vec![r(6, &["W+", "b"], vec![])],
     },
+    // Yang-Mills vertices: three-gluon, four-gluon and electroweak quartic vertices, whose
+    // convention signs are read at the diagram's anchor.
+    Case {
+        card: "g g > t t~ g, t > w+ b",
+        chain: |_| vec![r(6, &["W+", "b"], vec![])],
+    },
+    Case {
+        card: "u u~ > z g g g, z > e+ e-",
+        chain: |_| vec![r(23, &["e+", "e-"], vec![])],
+    },
+    Case {
+        card: "e+ e- > w+ w- z, z > mu+ mu-",
+        chain: |_| vec![r(23, &["mu+", "mu-"], vec![])],
+    },
     // Hadronic labels: every core subprocess, each lepton flavour.
     Case {
         card: "p p > z j, z > l+ l-",
@@ -160,6 +174,7 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
     let mut failures = Vec::new();
     let stitched = generate(case.card, model);
     let (mut n_sets, mut n_diagrams, mut n_amps, mut worst_amp) = (0, 0, 0, 0.0f64);
+    let (mut n_contact, mut n_slot_order) = (0, 0);
     for set in stitched.iter().filter(|s| !s.diagrams.is_empty()) {
         n_sets += 1;
         let sub = format!(
@@ -179,6 +194,11 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
             reference.iter().map(|d| (d.canonical(model), d)).collect();
         let ours_set: HashSet<&CanonicalDiagram> = ours.iter().collect();
         n_diagrams += ours.len();
+        n_contact += set
+            .diagrams
+            .iter()
+            .filter(|d| d.vertices.iter().any(|v| v.rays.len() == 4))
+            .count();
         if ours_set.len() != ours.len() {
             failures.push(format!(
                 "{sub}: {} stitched diagrams repeat",
@@ -188,8 +208,34 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
         if theirs.len() != reference.len() {
             failures.push(format!("{sub}: filtered diagrams repeat"));
         }
-        let missing = ours.iter().filter(|c| !theirs.contains_key(*c)).count();
-        let extra = theirs.keys().filter(|c| !ours_set.contains(c)).count();
+        // Container equality is blind to which of two identical-particle slots of a
+        // vertex a line binds to (a false inequality): pair what is left by a
+        // slot-order-free description of the graph, and let the amplitudes confirm.
+        let mut partner: HashMap<&CanonicalDiagram, &Diagram> = HashMap::new();
+        let mut unmatched_theirs: Vec<(&CanonicalDiagram, &Diagram)> = theirs
+            .iter()
+            .filter(|(c, _)| !ours_set.contains(c))
+            .map(|(c, d)| (c, *d))
+            .collect();
+        let mut missing = 0;
+        for c in &ours {
+            if let Some(d) = theirs.get(c) {
+                partner.insert(c, d);
+                continue;
+            }
+            let key = slot_free(c.diagram());
+            match unmatched_theirs
+                .iter()
+                .position(|(t, _)| slot_free(t.diagram()) == key)
+            {
+                Some(i) => {
+                    partner.insert(c, unmatched_theirs.swap_remove(i).1);
+                    n_slot_order += 1;
+                }
+                None => missing += 1,
+            }
+        }
+        let extra = unmatched_theirs.len();
         if missing > 0 || extra > 0 {
             failures.push(format!(
                 "{sub}: {} stitched, {} filtered; {missing} stitched not among the filtered, \
@@ -214,7 +260,7 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
         let momenta = point(set, evaluated);
         for (d, c) in set.diagrams.iter().zip(&ours) {
             let a = single_diagram_amplitudes(set, d, model, evaluated, &momenta);
-            let b = single_diagram_amplitudes(set, theirs[c], model, evaluated, &momenta);
+            let b = single_diagram_amplitudes(set, partner[c], model, evaluated, &momenta);
             n_amps += 1;
             let scale = a.iter().map(|z| z.norm()).fold(0.0, f64::max);
             let diff = a
@@ -233,14 +279,69 @@ fn compare(case: &Case, model: &UFOModel, evaluated: &EvaluatedModel) -> Vec<Str
         }
     }
     println!(
-        "{}: {n_sets} sets, {n_diagrams} diagrams equal as containers, {n_amps} amplitude \
-         comparisons, worst relative {worst_amp:.1e}",
-        case.card
+        "{}: {n_sets} sets, {n_diagrams} diagrams ({n_contact} with a four-point vertex), \
+         {} equal as containers and {n_slot_order} up to identical-slot order, {n_amps} \
+         amplitude comparisons, worst relative {worst_amp:.1e}",
+        case.card,
+        n_diagrams - n_slot_order
     );
     if n_sets == 0 {
         failures.push(format!("{}: nothing stitched", case.card));
     }
     failures
+}
+
+/// A description of a diagram that ignores which slot of a vertex each line binds to: per
+/// vertex its interaction and, per ray, the external legs beyond it and whether the ray
+/// is a forced line; with the sign and symmetry factor.
+fn slot_free(d: &Diagram) -> (i8, usize, Vec<(usize, Vec<(Vec<usize>, bool)>)>) {
+    use crate::diagrams::diagram::{Ray, VtxIdx};
+    let beyond = |from: VtxIdx, ray: Ray| -> Vec<usize> {
+        let (start, via) = match ray {
+            Ray::Leg(l) => return vec![l.0],
+            Ray::Prop { prop, end } => (d.props[prop.0].endpoints[1 - end].0, prop),
+        };
+        let mut legs = Vec::new();
+        let mut stack = vec![(start, via)];
+        let mut seen = vec![false; d.vertices.len()];
+        seen[from.0] = true;
+        while let Some((v, came)) = stack.pop() {
+            if std::mem::replace(&mut seen[v.0], true) {
+                continue;
+            }
+            for &r in &d.vertices[v.0].rays {
+                match r {
+                    Ray::Leg(l) => legs.push(l.0),
+                    Ray::Prop { prop, end } if prop != came => {
+                        stack.push((d.props[prop.0].endpoints[1 - end].0, prop))
+                    }
+                    Ray::Prop { .. } => {}
+                }
+            }
+        }
+        legs.sort_unstable();
+        legs
+    };
+    let mut vertices: Vec<(usize, Vec<(Vec<usize>, bool)>)> = d
+        .vertices
+        .iter()
+        .enumerate()
+        .map(|(vi, v)| {
+            let mut rays: Vec<(Vec<usize>, bool)> = v
+                .rays
+                .iter()
+                .map(|&r| {
+                    let forced = matches!(r, Ray::Prop { prop, .. }
+                        if d.props[prop.0].onshell == OnShell::Forced);
+                    (beyond(VtxIdx(vi), r), forced)
+                })
+                .collect();
+            rays.sort();
+            (v.interaction.0, rays)
+        })
+        .collect();
+    vertices.sort();
+    (d.sign, d.symmetry_factor, vertices)
 }
 
 fn chain_size(chain: &[Resonance]) -> usize {

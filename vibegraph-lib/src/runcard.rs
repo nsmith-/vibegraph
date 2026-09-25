@@ -104,6 +104,9 @@ enum Def {
     S(&'static str),
     /// Opaque list/dict-valued parameter; default is an empty payload.
     O,
+    /// Opaque list-valued parameter whose MadGraph default is not empty, stored
+    /// as the payload MadGraph writes into a card.
+    L(&'static str),
 }
 
 impl Def {
@@ -114,6 +117,7 @@ impl Def {
             Def::B(b) => ParamValue::Bool(b),
             Def::S(s) => ParamValue::Str(s.to_string()),
             Def::O => ParamValue::Opaque(String::new()),
+            Def::L(s) => ParamValue::Opaque(s.to_string()),
         }
     }
 }
@@ -138,6 +142,11 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error(
+        "run card sets me_frame = '{value}': a frame is a list of leg numbers, such as \
+         '1, 2' (the partonic centre of mass)"
+    )]
+    BadFrame { value: String },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -223,6 +232,23 @@ impl RunCard {
             .get(name)
             .unwrap_or_else(|| panic!("no such parameter: {name}"))
             .as_i64()
+    }
+
+    /// MadGraph's `frame_id` for the card's `me_frame`: the legs whose summed
+    /// momentum defines the rest frame a matrix element that is not Lorentz
+    /// invariant is evaluated in, as `Σ 2^n` over the listed leg numbers
+    /// (`update_system_parameter_for_include`, `banner.py:4705`). The default
+    /// `[1, 2]` is 6, which MadEvent treats as "no boost": the partonic
+    /// centre-of-mass momenta it generates reach the matrix element unchanged
+    /// (`auto_dsig_v4.inc:134`). The card's own `frame_id` is not read, since
+    /// MadGraph overwrites it from `me_frame`.
+    pub fn frame_id(&self) -> Result<i64, RunCardError> {
+        let raw = self
+            .values
+            .get("me_frame")
+            .expect("me_frame is a recognized parameter")
+            .as_str();
+        frame_id_of(raw)
     }
 
     /// Iterate all resolved (name, value) pairs.
@@ -335,6 +361,7 @@ impl RunCard {
         // After the beam check, which is what makes a beam-dependent
         // classification decidable.
         classes::refuse_ignored_physics(&values, lpp1, lpp2)?;
+        frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         Ok(RunCard {
             nevents: i("nevents"),
@@ -354,6 +381,30 @@ impl RunCard {
             values,
         })
     }
+}
+
+/// `frame_id` of an `me_frame` payload: `[1, 2]`, `1, 2` and `1 2` are all the
+/// same list. An empty list is refused: MadGraph would boost into the rest
+/// frame of no momentum at all.
+fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
+    let bad = || RunCardError::BadFrame {
+        value: raw.to_string(),
+    };
+    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    let legs = inner
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.parse::<u32>().map_err(|_| bad()))
+        .collect::<Result<Vec<_>, _>>()?;
+    if legs.is_empty() {
+        return Err(bad());
+    }
+    legs.iter().try_fold(0i64, |acc, &n| {
+        1i64.checked_shl(n)
+            .filter(|_| n < 62)
+            .map(|bit| acc + bit)
+            .ok_or_else(bad)
+    })
 }
 
 /// Split a raw card line into `(value, name)`, or `None` for comment / blank /
@@ -498,7 +549,7 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     // ── output / frame ───────────────────────────────────────────────────
     ("lhe_version", Def::F(3.0)),
     ("boost_event", Def::S("False")),
-    ("me_frame", Def::O),
+    ("me_frame", Def::L("1, 2")),
     ("frame_id", Def::I(6)),
     ("event_norm", Def::S("average")),
     ("keep_log", Def::S("normal")),
@@ -794,6 +845,29 @@ mod tests {
         assert_eq!(rc.get("pt_min_pdg").unwrap().as_str(), "{6: 100}");
     }
 
+    /// `frame_id` is MadGraph's `Σ 2^n` over `me_frame`, whatever the list's
+    /// spelling, and 6 for the default: the partonic centre of mass.
+    #[test]
+    fn me_frame_reads_as_madgraphs_frame_id() {
+        assert_eq!(RunCard::default().frame_id().unwrap(), 6);
+        assert_eq!(RunCard::parse("").unwrap().frame_id().unwrap(), 6);
+        for spelling in ["1, 2", "[1, 2]", "[1,2]", "1 2", "2, 1"] {
+            let rc = RunCard::parse(&format!("  {spelling} = me_frame\n")).unwrap();
+            assert_eq!(rc.frame_id().unwrap(), 6, "{spelling}");
+        }
+        let rc = RunCard::parse("  3, 4 = me_frame\n").unwrap();
+        assert_eq!(rc.frame_id().unwrap(), 24);
+        for bad in ["[]", "a, b", "1, 99"] {
+            assert!(
+                matches!(
+                    RunCard::parse(&format!("  {bad} = me_frame\n")),
+                    Err(RunCardError::BadFrame { .. })
+                ),
+                "{bad}"
+            );
+        }
+    }
+
     #[test]
     fn unknown_param_is_hard_error() {
         let err = RunCard::parse("  10 = ptlx ! typo\n").unwrap_err();
@@ -946,6 +1020,20 @@ mod tests {
                 }
                 // Opaque list/dict params: name recognized, payload not compared.
                 Def::O => {}
+                // A list with a non-empty default: the same integers.
+                Def::L(s) => {
+                    let ours: Vec<i64> = s
+                        .split(',')
+                        .map(|t| t.trim().parse().expect("an integer list"))
+                        .collect();
+                    let theirs: Vec<i64> = actual
+                        .as_array()
+                        .unwrap_or_else(|| panic!("'{name}': dump {actual} is not a list"))
+                        .iter()
+                        .map(|v| v.as_i64().expect("an integer"))
+                        .collect();
+                    assert_eq!(ours, theirs, "'{name}': table {s:?} vs dump {actual}");
+                }
             }
         }
     }

@@ -17,7 +17,7 @@ in parallel on evaluator PRs (user, 2026-09-25). Sprint sessions stay out of
 informational, one clause each: `ee_to_wpwm_cw` (a single |M|² point at 2.08e-12);
 `ee_to_zh_smeft` (MadGraph's Python-to-Fortran writer rounds the UFO's `11/24`
 literal in `GC_303` to seven digits — a defect on its side, note 35 §3 E1);
-`wpwm_to_wpwmz_cw` (the five-vector residual, |M|² 2.20e3); the two `NGRAPHS`
+`wpwm_to_wpwmz_cw` (the `O_W` residual, |M|² 2.79e1; the SM part agrees, note 39 §5); the two `NGRAPHS`
 diagram counts (a counting convention, not an amplitude); `ee_to_mumua` (a fixed
 +1.04% ours-high residual in the radiative-return windows, reference-adjudicated
 but unattributed); and `gg_to_gg_cg`'s σ (a converged −0.22% offset). Each has a
@@ -185,6 +185,13 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
+- **`e+ e- > w+ w-` at 500 GeV reads −2.3e-3 below a fresh MadEvent run, with
+  error bars that look underestimated** (measured during the polarization
+  session, note 38 §4 P1). `vibegraph integrate` at the default budget, seeds 1–5:
+  pulls −1.2 to −1.9 and seed χ²/dof ≈ 2.4 against a 10k-event MadEvent run on the
+  pinned tree. `w+{T} w-` shows the same offset, so polarization does not cause it.
+  First step: compare with the banked `ee_to_wpwm` σ row (its energy and
+  budget), then run a 20-seed ladder before calling it a bias.
 - **`pp_to_llj_dyn` scatter guard under `--map-split-angle soft-all`** (note
   37 §6.3; the user's decision). As the default, `soft-all` halves llj's
   evaluations but takes this cell's five-seed `χ²/dof` to 4.17 against 4.0.
@@ -243,8 +250,10 @@ At most three lines each; the note is the full record. Earlier sprints
   residue distribution (max 1.4 ulps over 1088 sums) is in `abedb81`'s tests
   if its tolerance is ever revisited.
 - **`wpwm_to_wpwmz_cw`'s diagram pairing, and the five-vector residual behind
-  it** (note 35 §10.5). The row's `amplitudes` cell reports |M|² 2.20e3 rather
-  than "no comparison", but the configuration partition itself is still
+  it** (note 35 §10.5; note 39 §5). The row's `amplitudes` cell reports |M|²
+  2.79e1 (2.20e3 before the vector-vertex sign fix of note 39; the Standard-Model
+  `w+ w- > w+ w- z` now agrees with MadGraph standalone to 3.7e-12, so the
+  remainder is `O_W`'s) rather than "no comparison", but the configuration partition itself is still
   uncompared, and the cheap route to it is falsified: the two partitions agree
   on the multiset of group sizes and on nothing finer, ours being the
   contiguous diagrams 62–221 against MadGraph's 2–186 with three gaps, so no
@@ -435,8 +444,17 @@ above); the entries here are the eventual features.
     MadGraph's own parser. Closes every silent row in note 38 §2.
   - **S1** ✅ landed (`93fff0f`, `2d99872`; note 38 §4 S1 Landed): `Diagram` carries the
     full Fermi sign, `Diagram::anchor` replaces `VtxIdx(0)`, and `Diagram::canonical`
-    gives container equality. Two findings remain open: the all-vector contact sign
-    (wrong for `g g > g g g`), and the `u u~ > t t~ g NP<=1` four-quark mismatch.
+    gives container equality. Its two open findings are closed by **C4V** (note 39):
+    the vector-vertex convention signs were wrong in three places — the Yang–Mills
+    source sign on the triple-gluon vertex (`u u~ > g g`, `u g > u g`,
+    `u u~ > g g g`, `t t~ > g g` wrong), the four-vector contact sign as a source and,
+    for gluons, as the anchor (`g g > g g g`, `e+ e- > w+ w- z`), and a missing −1 on
+    the gluon-pair–scalar vertex as a scalar source. `u u~ > t t~ g NP<=1` was the
+    first of these, not a four-quark defect. Gated by `tests/gluon_parke_taylor.rs`
+    and the MadGraph-standalone JAMP tables of `tests/standalone_jamps.rs`.
+    Still open (note 39 §5): `w+ w- > e+ e-` (a W pair at the anchor beside a
+    final-state fermion line; banked as a known disagreement) and `O_W`'s residual in
+    `wpwm_to_wpwmz_cw` (|M|² 2.79e1).
   - **S2** ✅ landed (`c52e4f7`, the docs commit after it): `>`/`$$` filters inside the
     WEIGHTED search, `WEIGHTED<=n`, the five-flavour `p`/`j` rewrite, MadGraph
     census (43/43 generated cards) and two σ rows in agreement.
@@ -450,8 +468,7 @@ above); the entries here are the eventual features.
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
     leg-count ladder that decides whether a MadSpin-style step is ever needed.
   - **S3**: `$` as a pointwise SDE-weighted integrand.
-  - **P1**: polarized external particles (a restricted helicity loop, with the
-    `me_frame` frame dependence pinned and `B_FRAME` reclassified).
+  - **P1** ✅ landed (`3b3f71e`, `3c023b2`; note 38 §4 P1 Landed): polarized external legs, NHEL/IDEN census against MadGraph (35 cards), six gated amplitude rows, `me_frame` consumed with a boosted-frame mutation pin, σ(`e+ e- > w+{0} w-`) +5e-4 over five seeds.
   - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
     grouping.
 

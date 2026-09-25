@@ -77,6 +77,9 @@ pub struct AmplitudeEvaluator {
     ext_particle_ids: Vec<ParticleId>,
     /// All valid helicity combinations (precomputed)
     helicities: Vec<Vec<i32>>,
+    /// Per external leg, the helicities a polarized leg is restricted to, or
+    /// `None` for a leg summed over all its states.
+    polarizations: Vec<Option<Vec<i32>>>,
     /// Number of color flows (NCOLOR): the JAMP count. `1` for color-free and
     /// single-color-structure processes.
     n_flows: usize,
@@ -182,11 +185,38 @@ impl AmplitudeEvaluator {
             }
         }
 
+        // A polarized leg sums over its listed helicities only, in the order the
+        // card listed them; every other leg over all of its states.
+        let polarizations = set.polarizations.clone();
+        if polarizations.len() != ext_particle_ids.len() {
+            return Err(EvalError::TopologyError(format!(
+                "{} polarizations for {} external legs",
+                polarizations.len(),
+                ext_particle_ids.len()
+            )));
+        }
         let helicity_states = ext_particle_ids
             .iter()
-            .map(|&pid| {
+            .zip(&polarizations)
+            .enumerate()
+            .map(|(leg, (&pid, pol))| {
                 let particle = model.particle(pid);
-                helicity_states_for_spin(particle.spin, particle.mass_param == "ZERO")
+                let states = particle
+                    .helicity_states()
+                    .ok_or(EvalError::UnsupportedSpin(particle.spin.abs()))?;
+                match pol {
+                    None => Ok(states),
+                    Some(listed)
+                        if !listed.is_empty() && listed.iter().all(|h| states.contains(h)) =>
+                    {
+                        Ok(listed.clone())
+                    }
+                    Some(listed) => Err(EvalError::Polarization {
+                        leg: leg + 1,
+                        particle: particle.name.clone(),
+                        listed: listed.clone(),
+                    }),
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         let helicities = cartesian_helicity_product(&helicity_states);
@@ -309,6 +339,7 @@ impl AmplitudeEvaluator {
             n_diagrams,
             ext_particle_ids,
             helicities,
+            polarizations,
             n_flows,
             cf_matrix: basis.cf_matrix,
             leg_colors,
@@ -359,6 +390,21 @@ impl AmplitudeEvaluator {
     /// Return the valid helicity combinations.
     pub fn helicities(&self) -> &[Vec<i32>] {
         &self.helicities
+    }
+
+    /// Per external leg in process order, the helicities a polarized leg is
+    /// restricted to, or `None` for a leg summed over all its states.
+    ///
+    /// A polarized squared amplitude is not Lorentz invariant: it is the value
+    /// in the frame the momenta are given in, which for every caller here is
+    /// the partonic centre-of-mass frame, MadGraph's default `me_frame`.
+    pub fn polarizations(&self) -> &[Option<Vec<i32>>] {
+        &self.polarizations
+    }
+
+    /// Whether any leg is polarized.
+    pub fn is_polarized(&self) -> bool {
+        self.polarizations.iter().any(Option::is_some)
     }
 
     /// The helicity combination drawn with probability
@@ -862,20 +908,6 @@ fn config_tag(diagram: &Diagram, model: &UFOModel) -> ConfigTag {
 /// combination and the pruned sum stays bit-for-bit; see
 /// [`AmplitudeEvaluator::prune_zero_helicities`]).
 const HEL_PRUNE_REL: f64 = 1e-24;
-
-fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
-    // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
-    // A massless vector has no longitudinal mode (and `vxxxxx`'s massless branch
-    // only defines helicities ±1), so 0 is dropped from its state list.
-    match (spin_code.abs(), massless) {
-        (1, _) => Ok(vec![0]),               // scalar
-        (2, _) => Ok(vec![-1, 1]),           // fermion
-        (3, false) => Ok(vec![-1, 0, 1]),    // massive vector
-        (3, true) => Ok(vec![-1, 1]),        // massless vector
-        (5, _) => Ok(vec![-2, -1, 0, 1, 2]), // spin-2 (future-proof)
-        (other, _) => Err(EvalError::UnsupportedSpin(other)),
-    }
-}
 
 fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
     let mut out = vec![Vec::new()];

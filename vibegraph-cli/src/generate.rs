@@ -24,8 +24,8 @@ use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, FixedBeamIntegrand,
-    InitialState, Observable,
+    compile_subprocesses, initial_spin_color_average, process_external_legs,
+    refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -572,6 +572,7 @@ fn generate_sample(
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
     let bounds: Vec<_> = evals
         .iter()
         .map(|e| BoundAmplitude::<f64>::bind(e, evaluated))

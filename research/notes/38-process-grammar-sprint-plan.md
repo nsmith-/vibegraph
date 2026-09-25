@@ -649,6 +649,116 @@ carried MadGraph's filtering-time artificial vertex, dropping the `W` of
   - a mutation pin that evaluates the default-frame card in a boosted frame
     and must disagree.
 
+**Landed** (2026-09-25; `3b3f71e` feature, `3c023b2` rows, the docs commit after
+them guide and notes). `Unsupported::Polarization` is gone; `{A}` and the other propagator
+codes stay `PropagatorPolarization`, and a polarization on a particle a decay
+chain decays (or on a decay's own initial leg) is the new
+`DecayedPolarization`. `SupportedLeg` carries the text between the braces,
+enumeration reads it into MadGraph's codes per concrete particle, and
+`DiagramSet.polarizations` carries each leg's `NHEL` list to
+`AmplitudeEvaluator::compile`, which sums over the product of the lists. The
+diagrams are the unpolarized ones. MadGraph facts pinned, all at `b7687064`
+unless a run is named:
+
+- *Helicities* are the listed codes in the listed order
+  (`get_helicity_matrix`, `helas_objects.py:4834`), MadGraph's own `NHEL`.
+  `{T}` is `[1, -1]`, `{L}`/`{R}` are −1/+1 for every spin (`L` on a vector
+  only logs a warning, `madgraph_interface.py:5122`), and a comma in the
+  braces is a decay separator: `a{0,T}` is a MadGraph parse error, `a{0T}` is
+  the concatenation.
+- *Averaging* (`get_denominator_factor`, `helas_objects.py:4910`): a
+  polarized incoming leg contributes `len(polarization)` in place of its
+  spin states. Generated code: `DATA IDEN/ 2/` for `e+ e-{L} > mu+ mu-`
+  (`matrix1_optim.f:89` of this sprint's run). The census has `e+{R} e-{L}`
+  at 1, `u{L} u~ > z{0} g` at 18, `g{R} g > t t~` at 128, `g{T} g` at 256.
+  `initial_spin_color_average` follows it.
+- *Identical particles* key on `(id, polarization)`
+  (`identical_particle_factor`, `base_objects.py:3742`): `z{0} z{0}` and
+  `z{T} z{T}` are 1/2, `z{L} z{R}` and `z{0} z{T}` are 1.
+  `hadronic::outgoing_symmetry_factor` and `Subprocess::symmetry_factor`
+  follow it; within a line the deduplication key is `(name, polarization)`
+  as in MadGraph's `tag = zip(prod, polids)` (`diagram_generation.py:1765`).
+- *Helicity 0 on a massless boson* is kept by the parser
+  (`madgraph_interface.py:5180`) and removed at generation, all zeros for an
+  initial leg and one for a final leg (`diagram_generation.py:1751`,
+  `:1791`); a leg left empty drops the assignment. `u u~ > v{0} g` with
+  `v = z a` generates `u u~ > z{0} g` alone; `e+ e- > a{0} z` and
+  `g{0} g > t t~` are `NoDiagramException`.
+- *Ambiguity* (`check_polarization`, `base_objects.py:3869`, called at
+  `madgraph_interface.py:3324`): an outgoing particle both polarized and not,
+  or with overlapping unequal lists, makes MadGraph ask, and a batch run
+  answers no and raises `InvalidCmd` (`p p > z{T} z`, `z{L} z{T}`,
+  `z{RL} z{LR}`, `a{0} a`). Ported as `resolve::polarizations_unambiguous`
+  and refused in both `resolve_card` and enumeration.
+- *Frame*: `me_frame` defaults to `[1, 2]` (`banner.py:4296`), `frame_id =
+  Σ 2^n` over it (`banner.py:4705`), and `auto_dsig_v4.inc:134` boosts only
+  when `frame_id != 6`. The polarized run's `run_card.dat` shows
+  `1, 2 = me_frame` and `Source/run_card.inc` sets `FRAME_ID = 6`; the frame
+  block is displayed only for a polarized *massive* leg (`banner.py:5027`,
+  and the `e-{L}` run's card has no such line). `create_default_for_process`
+  changes no frame default.
+
+Refused here though MadGraph generates: a code that is no helicity state of
+the particle (`z{2}`, `h{R}`), a code listed twice (`z{00}`), and two lines
+whose same-particle subprocesses would both count a helicity state
+(`z{0} h` + `z h`); lines that split a process by disjoint polarizations
+(`z{0} h` + `z{T} h`) are accepted. A fixed-energy card whose subprocesses
+average differently is refused (`InconsistentSpinAverage`), and flavour
+groups only join subprocesses polarized alike. `me_frame` moved to
+`Consumed` (`RunCard::frame_id`, read by `hadronic::refuse_polarized_frame`
+for a polarized massive leg); its stored default is now MadGraph's `1, 2`;
+`frame_id` is `IgnoredBenign` as a system parameter MadGraph recomputes.
+
+- *Census* (`dump_polarization_census.py` → `polarization_census.json`,
+  hermetic `polarization_census`): 35 cards through MadGraph's generation
+  and `HelasMatrixElement`; 24 generated and matched subprocess for
+  subprocess on legs, `NHEL` set and `IDEN` (`pp_z0_j`'s 12 included), 7
+  refused by both, 4 refused here only (above).
+- *Amplitude rows* (hermetic `amplitude_oracle`, gated, `bundled = false`):
+  `ee_to_wp0wmt`, `ee_to_wp0wm`, `ee_to_z0h`, `uux_to_ztg`,
+  `ee_to_mumu_eml`, `ee_to_tlt`, each against MadGraph's own `NHEL` table
+  per diagram and per flow; worst |M|² 2.2e-13, per-diagram ≤ 6.0e-15.
+  Landed informational, promoted once every level agreed.
+- *Frame* (`polarization_frame`, and `proton` unit tests): at the banked
+  centre-of-mass points this side reproduces MadGraph; boosted by
+  β = (0.3, −0.2, 0.5) the polarized massive rows move 0.32–0.95 away while
+  the helicity sums stay within 1.6e-14 and the massless `e-{L}` row within
+  2.5e-14. The proton integrand of `u u~ > z{0} g` reproduces a
+  centre-of-mass assembly to 1.5e-12 and sits 6.7 (relative) from the
+  laboratory one. A finding on the way: the banked W points sit on the card's
+  printed `MW = 80.419`, 6e-8 off the derived mass both programs evaluate
+  with, and an off-shell W's helicity sum moves by ~2e-8 under that boost
+  (∝ β²); the invariance control therefore projects on shell first. The
+  amplitude gate is unaffected, since both sides share the points.
+- *σ* (`e+ e- > w+{0} w-`, 500 GeV, MadGraph's default card, pinned
+  MadEvent, 10k events: 0.2578 ± 0.00047 pb; `vibegraph integrate`, seeds
+  1–5): mean 0.257932 (+5.1e-4), pulls −0.02 … +0.48, seed χ²/dof 0.97,
+  VEGAS χ²/dof 0.31–2.61. Decomposition: `w+{T} w-` here 6.93829 against
+  MadGraph's 6.954 ± 0.011 and `w+ w-` 7.19601 against 7.2123 ± 0.011 (both
+  −2.3e-3, pulls −1.2 … −1.9; the unpolarized row is the same offset, so it
+  is not polarization); `w+{0}` + `w+{T}` = `w+ w-` to 3.0e-5 across
+  independent seeds, and pointwise to 3.8e-16 in any frame (an external
+  leg's helicities add incoherently, so no interference is lost).
+- *Samples* (`vibegraph generate`, 20000 events × 3 seeds against the 10000
+  of the MadEvent run): the W+ `SPINUP` is 0 on every event on both sides;
+  the W− distribution χ² 1.45/2, 0.35/2, 2.70/2; the beams 0.73/1, 0.37/1,
+  0.80/1.
+- *Decays* (after D1 merged): `t > w+{0} b` and `t > w+{T} b` match
+  MadGraph's NHEL and IDEN (6) in the census; the decaying particle itself,
+  `t{L} > w+ b` (MadGraph: IDEN 3), is refused as `DecayedPolarization`,
+  since at rest its helicity is a spin projection on an axis nothing pins.
+  `initial_spin_color_average`, `refuse_polarized_frame` and the
+  `InconsistentSpinAverage` check read the incoming legs generically, so a
+  decay's single leg goes through them unchanged.
+- *Unchanged unpolarized enumeration*: the 31 Standard-Model banked scripts and 12
+  extra cards (`p p > j j`, `p p > l+ l- j`, `p p > w+ w- j`, `u u~ > z z`,
+  two-line cards, a five-flavour card, …) dump byte-identical
+  per-subprocess diagram lists (`Debug` of every diagram, 1892 subprocess
+  entries, 383 populated, 2890 diagrams) at `65edb40` and at `3c023b2`; the
+  unpolarized helicity order is unchanged, and `amplitude_oracle`'s 42
+  earlier rows pass unchanged.
+
+
 ### E1: event records and `add process` completion (feature-dev; after D2)
 
 - Status-2 resonance records with mother pointers, and colour through decays.

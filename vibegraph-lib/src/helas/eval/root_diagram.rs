@@ -1040,16 +1040,14 @@ impl std::fmt::Display for DiagramEval {
 
 /// True iff `interaction` is a Yang-Mills triple-vector (VVV) vertex: a **three-leg**
 /// all-vector vertex whose Lorentz structure carries a momentum (`P`) factor. Its
-/// rooted vector current ([`super::root_lorentz`]) is built honestly (`+V^μ`), so
-/// relative to MadGraph it needs a −1 at every rooting where the vertex is a *source*
-/// (off-shell vector current), supplied rooting-invariantly by [`yang_mills_vvv_sign`].
+/// rooted vector current ([`super::root_lorentz`]) is built honestly (`+V^μ`); the
+/// convention sign a colourless one takes as a source is [`yang_mills_vvv_sign`]'s.
 ///
 /// The leg count is part of the predicate, not a consequence of the momentum test: a
 /// contact of four or more vectors *can* carry momenta (SMEFTsim's `VVVV2`/`VVVV3` and
-/// the five-vector structures of `O_W` all do), and such a vertex already takes the
-/// contact `−1` [`super::root_lorentz::LorentzEvalTree::build_at_leg`] applies to every
-/// all-vector structure of four legs or more. Without the arity test it would take both
-/// signs wherever it sits at a non-root vertex.
+/// the five-vector structures of `O_W` all do), and such a vertex is a contact, signed
+/// by [`vector_contact_sign`]. Without the arity test it would take both signs wherever
+/// it sits off the anchor.
 fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
     use crate::ufo::lorentz::LorentzOp;
     let def = model.vertex_def(interaction);
@@ -1064,23 +1062,144 @@ fn is_yang_mills_vvv(model: &UFOModel, interaction: VertexId) -> bool {
         })
 }
 
-/// The rooting-invariant sign a diagram picks up from its Yang-Mills (VVV) vertices.
+/// Whether any leg of `interaction` carries colour (an antiparticle stores its
+/// representation negated, so a singlet is `±1`).
+fn is_coloured(model: &UFOModel, interaction: VertexId) -> bool {
+    model
+        .vertex_def(interaction)
+        .particles
+        .iter()
+        .any(|&p| model.particle(p).color.abs() != 1)
+}
+
+/// True iff `interaction` joins exactly two vectors and one scalar.
+fn is_vvs(model: &UFOModel, interaction: VertexId) -> bool {
+    let def = model.vertex_def(interaction);
+    let spins: Vec<i32> = def
+        .particles
+        .iter()
+        .map(|&p| model.particle(p).spin)
+        .collect();
+    spins.len() == 3
+        && spins.iter().filter(|&&s| s == 3).count() == 2
+        && spins.iter().filter(|&&s| s == 1).count() == 1
+}
+
+/// The particle each vertex outputs when the diagram is rooted at its
+/// [anchor](Diagram::anchor): the propagator on its path to the anchor, `None` for the
+/// anchor itself. A function of the graph and the anchor alone, so every numbering of
+/// one diagram gives the same assignment.
+fn anchor_rooted_outputs(diagram: &Diagram) -> Vec<Option<ParticleId>> {
+    let anchor = diagram.anchor();
+    let mut out = vec![None; diagram.vertices.len()];
+    let mut seen = vec![false; diagram.vertices.len()];
+    seen[anchor.0] = true;
+    let mut stack = vec![anchor];
+    while let Some(v) = stack.pop() {
+        for ray in &diagram.vertex(v).rays {
+            let Ray::Prop { prop, .. } = ray else {
+                continue;
+            };
+            let p = diagram.prop(*prop);
+            for &(w, _) in &p.endpoints {
+                if !seen[w.0] {
+                    seen[w.0] = true;
+                    out[w.0] = Some(p.particle);
+                    stack.push(w);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The rooting-invariant sign a diagram picks up from its colourless Yang-Mills (VVV)
+/// vertices.
 ///
-/// The honest vector current is root-invariant, but a VVV vertex needs a −1 relative
-/// to it whenever it sits at a vector *output* (source) leg rather than the amplitude
-/// sink. The convention reference roots the diagram at its [anchor](Diagram::anchor),
-/// so exactly the VVV vertices other than the anchor are sources; each contributes a
-/// −1. Deriving the sign from the anchor rather than from the live evaluation rooting
-/// decouples it from the root choice: the honest current handles the tensor contraction
-/// root-invariantly and this scalar carries the antisymmetric-vertex sign, so their
-/// product reproduces the anchor-rooted amplitude for every re-rooting.
+/// The honest vector current is root-invariant, but a colourless VVV vertex (γWW, ZWW
+/// and their SMEFT structures) needs a −1 relative to it whenever it sits at a vector
+/// *output* (source) leg rather than the amplitude sink. The convention reference roots
+/// the diagram at its [anchor](Diagram::anchor), so exactly the colourless VVV vertices
+/// other than the anchor are sources; each contributes a −1. Deriving the sign from the
+/// anchor rather than from the live evaluation rooting decouples it from the root
+/// choice: the honest current handles the tensor contraction root-invariantly and this
+/// scalar carries the antisymmetric-vertex sign, so their product reproduces the
+/// anchor-rooted amplitude for every re-rooting.
+///
+/// A triple-gluon vertex takes no such sign in either role. Its colour factor `f^{abc}`
+/// is antisymmetric as well, and the colour decomposition carries that half of the
+/// vertex's antisymmetry: with a −1 at every gluon source, `u u~ > g g` and every other
+/// process putting a triple-gluon source beside a quark-line anchor has the wrong
+/// relative sign between its gluon-exchange and quark-exchange diagrams, and violates
+/// the gauge Ward identity (the same-helicity `u u~ > g g` amplitudes do not vanish).
 fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
     let anchor = diagram.anchor();
     let sources = diagram
         .vertices
         .iter()
         .enumerate()
-        .filter(|&(v, vertex)| VtxIdx(v) != anchor && is_yang_mills_vvv(model, vertex.interaction))
+        .filter(|&(v, vertex)| {
+            VtxIdx(v) != anchor
+                && is_yang_mills_vvv(model, vertex.interaction)
+                && !is_coloured(model, vertex.interaction)
+        })
+        .count();
+    if sources % 2 == 0 {
+        1
+    } else {
+        -1
+    }
+}
+
+/// The rooting-invariant sign of a diagram's all-vector contacts (four or more vector
+/// legs), relative to the `−1`
+/// [`super::root_lorentz::LorentzEvalTree::build_at_leg`] gives every such vertex.
+///
+/// A colourless contact (`WWZZ`, `WWAA`, `WWWW`, the SMEFT multi-vector structures)
+/// keeps that `−1` only as the [anchor](Diagram::anchor) — the amplitude sink of the
+/// convention rooting — and takes none as a source. A gluon contact takes none in
+/// either role, the same as the triple-gluon vertex beside it
+/// ([`yang_mills_vvv_sign`]). The factor returned here cancels the kernel's `−1` for
+/// every contact that should not carry it.
+fn vector_contact_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+    let anchor = diagram.anchor();
+    let cancelled = diagram
+        .vertices
+        .iter()
+        .enumerate()
+        .filter(|&(v, vertex)| {
+            let def = model.vertex_def(vertex.interaction);
+            def.particles.len() >= 4
+                && def.particles.iter().all(|&p| model.particle(p).spin == 3)
+                && (VtxIdx(v) != anchor || is_coloured(model, vertex.interaction))
+        })
+        .count();
+    if cancelled % 2 == 0 {
+        1
+    } else {
+        -1
+    }
+}
+
+/// The rooting-invariant sign of a diagram's gluon-pair–scalar vertices (the effective
+/// `ggH` coupling): a −1 for each that, in the anchor-rooted tree, produces an
+/// off-shell scalar current from its two gluons. As the amplitude sink, or producing a
+/// gluon current, it takes none.
+///
+/// It is the scalar-output sign the colourless pure-metric `VVS` vertex takes through
+/// its build sign, and it sets the relative sign of Higgs and gluon exchange: in
+/// `t t~ > g g` with `O_HG` the s-channel Higgs diagram is exactly such a source.
+fn gluon_scalar_current_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+    let outputs = anchor_rooted_outputs(diagram);
+    let sources = diagram
+        .vertices
+        .iter()
+        .zip(&outputs)
+        .filter(|&(vertex, out)| {
+            is_vvs(model, vertex.interaction)
+                && is_coloured(model, vertex.interaction)
+                && out.is_some_and(|p| model.particle(p).spin == 1)
+        })
         .count();
     if sources % 2 == 0 {
         1
@@ -1095,7 +1214,8 @@ fn yang_mills_vvv_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
 /// attaches the per-diagram metadata: external-leg count, symmetry factor, and
 /// `fermi_sign` — the diagram's own relative Fermi sign ([`Diagram::sign`]) times the
 /// HELAS convention signs of this evaluator's kernels (the tensor-current line
-/// sign, the Yang-Mills source sign, the build and reversed-bilinear signs), each read
+/// sign, the Yang-Mills source sign, the vector-contact and gluon-scalar-current
+/// signs, the build and reversed-bilinear signs), each read
 /// at the rooting that takes the diagram's [anchor](Diagram::anchor) as the amplitude
 /// vertex.
 pub(super) fn compile_single_diagram(
@@ -1131,6 +1251,8 @@ pub(super) fn compile_single_diagram(
     let fermi_sign = diagram.sign
         * fermion_current_line_sign(reference)
         * yang_mills_vvv_sign(diagram, model)
+        * vector_contact_sign(diagram, model)
+        * gluon_scalar_current_sign(diagram, model)
         * reference.build_convention_sign()
         * reference.reversed_convention_sign()
         * tree.reversed_convention_sign();

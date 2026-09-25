@@ -330,8 +330,9 @@ impl Tree for LorentzEvalTree {
 /// Yang-Mills (VVV) vertex needs relative to it is *not* a property of the rooted
 /// current (which would make it depend on the output-leg choice); it is a
 /// rooting-invariant per-vertex sign carried at the diagram level by
-/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per non-root VVV
-/// vertex so `σ_V·(honest current)` matches MadGraph independent of the root.
+/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per colourless VVV
+/// vertex off the anchor so `σ_V·(honest current)` matches MadGraph independent of
+/// the root.
 fn vector_out_node(child: usize) -> LorentzEvalNode {
     LorentzEvalNode::MetricVout { v: child }
 }
@@ -643,7 +644,9 @@ impl LorentzEvalTree {
         // one interaction whose structures range over pure metrics, momentum products
         // and Levi-Civita tensors, and a term-by-term test would give the same vertex
         // different signs (and leave the Levi-Civita-only terms, which carry no Metric
-        // at all, unsigned). Applying it here also covers those terms.
+        // at all, unsigned). Applying it here also covers those terms. Where the −1
+        // survives is a diagram-level convention: `root_diagram::vector_contact_sign`
+        // cancels it for every contact that should not carry it.
         if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
             metric_vertex_applied = true;
             sign = -sign;

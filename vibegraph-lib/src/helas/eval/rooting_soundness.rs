@@ -467,6 +467,7 @@ fn momentum_slashed_chain_is_rooting_invariant() {
                 let one = DiagramSet {
                     particles_in: set.particles_in.clone(),
                     particles_out: set.particles_out.clone(),
+                    polarizations: set.polarizations.clone(),
                     diagrams: vec![d.clone()],
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
@@ -611,6 +612,7 @@ fn four_fermion_currents_are_rooting_invariant() {
             let one = DiagramSet {
                 particles_in: set.particles_in.clone(),
                 particles_out: set.particles_out.clone(),
+                polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
@@ -742,6 +744,7 @@ fn tensor_four_fermion_currents_are_rooting_invariant() {
             let one = DiagramSet {
                 particles_in: set.particles_in.clone(),
                 particles_out: set.particles_out.clone(),
+                polarizations: set.polarizations.clone(),
                 diagrams: vec![(*diagram).clone()],
             };
             let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();
@@ -863,6 +866,7 @@ fn literal_sigma_currents_are_rooting_invariant() {
                 let one = DiagramSet {
                     particles_in: set.particles_in.clone(),
                     particles_out: set.particles_out.clone(),
+                    polarizations: set.polarizations.clone(),
                     diagrams: vec![(*diagram).clone()],
                 };
                 let ev = AmplitudeEvaluator::compile(&one, model.as_ref()).unwrap();

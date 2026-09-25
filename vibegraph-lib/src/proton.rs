@@ -94,9 +94,9 @@ use crate::diagrams::DiagramSet;
 use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
     components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
-    process_external_legs, report_channel_maps, BoundSubprocess, ChannelIntegration,
-    EventScaleSource, HadronicError, PointScales, RunningCouplingReport, SampledChannel,
-    SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
+    ChannelIntegration, EventScaleSource, HadronicError, PointScales, RunningCouplingReport,
+    SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -153,6 +153,9 @@ pub struct Subprocess {
     pub incoming: [i32; 2],
     /// PDG codes of the outgoing legs, in the group's shared leg order.
     pub outgoing: Vec<i32>,
+    /// The helicities each outgoing leg is polarized to, `None` where it is
+    /// summed over, in the same order. Every member of a group shares them.
+    pub outgoing_polarizations: Vec<Option<Vec<i32>>>,
     /// SU(3) rep of every leg, in the group's shared leg order (incoming first),
     /// read off *this* member's own compiled amplitude.
     ///
@@ -182,13 +185,20 @@ impl Subprocess {
     }
 
     /// This subprocess's identical-particle symmetry factor `1/Π_s n_s!`, from its
-    /// own outgoing flavours ([`identical_particle_factor`]).
+    /// own outgoing flavours and their polarizations ([`identical_particle_factor`]):
+    /// two legs of one particle count as identical only when they are polarized
+    /// alike, as in MadGraph's `identical_particle_factor`.
     ///
     /// Read from the concrete assignment rather than from the group's
     /// representative, because the outgoing multiset is what the factor counts and
     /// nothing in the grouping rule holds it fixed across members.
     pub fn symmetry_factor(&self) -> f64 {
-        identical_particle_factor(&self.outgoing)
+        let legs: Vec<_> = self
+            .outgoing
+            .iter()
+            .zip(&self.outgoing_polarizations)
+            .collect();
+        identical_particle_factor(&legs)
     }
 }
 
@@ -618,11 +628,7 @@ fn worst_rel(a: &[f64], b: &[f64]) -> f64 {
 
 /// `u u~ > e+ e- g`-style label for an enumerated subprocess.
 fn label(set: &DiagramSet) -> String {
-    format!(
-        "{} > {}",
-        set.particles_in.join(" "),
-        set.particles_out.join(" ")
-    )
+    set.label()
 }
 
 /// Where the survey left the channel selection weights: the spread of `αⱼ` and the
@@ -692,6 +698,7 @@ pub fn derive_flavor_groups(
         let cuts = Cuts::compile(card, &legs)?;
         compiled.push((evaluator, legs, cuts));
     }
+    refuse_polarized_frame(card, compiled.iter().map(|(e, ..)| e), model)?;
     progress::step(
         progress::stage::COMPILE,
         compiled.len() as u64,
@@ -726,12 +733,15 @@ pub fn derive_flavor_groups(
         })
         .collect();
 
+    // Members of a group share the representative's initial-state average and
+    // its per-leg helicity sums, so a polarized subprocess only ever joins one
+    // polarized the same way, whatever its probe trace.
     let mut partition: Vec<Vec<usize>> = Vec::new();
     for i in 0..compiled.len() {
-        match partition
-            .iter_mut()
-            .find(|g| worst_rel(&traces[g[0]], &traces[i]) < GROUP_REL_TOL)
-        {
+        match partition.iter_mut().find(|g| {
+            compiled[g[0]].0.polarizations() == compiled[i].0.polarizations()
+                && worst_rel(&traces[g[0]], &traces[i]) < GROUP_REL_TOL
+        }) {
             Some(group) => group.push(i),
             None => partition.push(vec![i]),
         }
@@ -739,6 +749,9 @@ pub fn derive_flavor_groups(
 
     for (a, ga) in partition.iter().enumerate() {
         for gb in &partition[a + 1..] {
+            if compiled[ga[0]].0.polarizations() != compiled[gb[0]].0.polarizations() {
+                continue;
+            }
             let rel = worst_rel(&traces[ga[0]], &traces[gb[0]]);
             if rel <= GROUP_SEPARATION_MIN {
                 return Err(ProtonError::DegenerateGroups {
@@ -812,6 +825,7 @@ pub fn derive_flavor_groups(
                 Ok(Subprocess {
                     incoming: [legs[0].pdg, legs[1].pdg],
                     outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
+                    outgoing_polarizations: evaluator.polarizations()[2..].to_vec(),
                     colors: evaluator.external_colors().iter().map(|l| l.rep).collect(),
                     flows,
                     flow_permutation,
@@ -2587,6 +2601,7 @@ mod tests {
             let subprocess = Subprocess {
                 incoming: [legs[0].pdg, legs[1].pdg],
                 outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
+                outgoing_polarizations: evaluator.polarizations()[2..].to_vec(),
                 colors: evaluator.external_colors().iter().map(|l| l.rep).collect(),
                 flows,
                 flow_permutation,
@@ -3395,6 +3410,137 @@ mod tests {
              this oracle could not see it dropped"
         );
         assert!(worst < 2e-12, "pointwise disagreement {worst:.3e}");
+    }
+
+    /// A polarized group's matrix element is evaluated in the partonic centre of
+    /// mass, which is MadGraph's default `me_frame`.
+    ///
+    /// The oracle assembles the integrand from the polarized matrix element at
+    /// the centre-of-mass point, with the mirrored ordering from an explicitly
+    /// enumerated `u~ u > z{0} g`, and the integrand must reproduce it. The same
+    /// assembly at the laboratory-frame point must not: a longitudinal Z's
+    /// helicity is not boost invariant, so an integrand that handed its matrix
+    /// element the laboratory momenta would sit a finite fraction away. That
+    /// second half is what makes the first a statement about the frame.
+    #[test]
+    fn a_polarized_group_is_evaluated_in_the_partonic_centre_of_mass() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let process = "u u~ > z{0} g QCD=1 QED=1";
+        let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        assert_eq!(groups.groups().len(), 1);
+        let g = &groups.groups()[0];
+        assert!(g.evaluator().is_polarized());
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+
+        let mirror_set = enumerate("u~ u > z{0} g QCD=1 QED=1", &m)
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("the mirrored ordering enumerates");
+        // Unpruned: the pruned evaluator's helicity set is only valid in the
+        // centre of mass, and the laboratory assembly evaluates elsewhere.
+        let direct_eval = AmplitudeEvaluator::compile(g.diagram_set(), &m).expect("compiles");
+        let direct = BoundAmplitude::<f64>::bind(&direct_eval, &evaluated);
+        let mirror_unpruned_eval =
+            AmplitudeEvaluator::compile(&mirror_set, &m).expect("mirror compiles");
+        let mirror_unpruned = BoundAmplitude::<f64>::bind(&mirror_unpruned_eval, &evaluated);
+
+        let combiner = rebuild_channels(&groups, &evaluated, 400.0);
+        let cuts = g.cuts();
+        let lips_2pi = (2.0 * PI).powi(4 - 3 * 2);
+        let tau_min = cuts.shat_min() / (SQRT_S_HAD * SQRT_S_HAD);
+        let q2 = [MU_F * MU_F, MU_F * MU_F];
+        let (mut sd, mut sm) = (direct.scratch_space(), mirror_unpruned.scratch_space());
+
+        let mut stream = SubStream::from_stream(0xF4A3_0001, 3);
+        let (mut worst_cm, mut worst_lab, mut checked) = (0.0f64, 0.0f64, 0);
+        for trial in 0..200 {
+            let u = stream.uniforms::<f64>(integ.point_ndim());
+            let channel = trial % integ.channel_count();
+            let tau = tau_min.powf(1.0 - u[0]);
+            let y_max = -0.5 * tau.ln();
+            let y = (2.0 * u[1] - 1.0) * y_max;
+            let (x1, x2) = (tau.sqrt() * y.exp(), tau.sqrt() * (-y).exp());
+            let sqrt_shat = (tau * SQRT_S_HAD * SQRT_S_HAD).sqrt();
+            let jac = (1.0 / tau_min).ln() * 2.0 * y_max;
+            let point = combiner.sample_channel_at(channel, sqrt_shat, &u[2..]);
+            let e_cm = sqrt_shat / 2.0;
+            let mut cm = vec![V::new(e_cm, 0.0, 0.0, e_cm), V::new(e_cm, 0.0, 0.0, -e_cm)];
+            cm.extend_from_slice(&point.momenta);
+            let e_beam = SQRT_S_HAD / 2.0;
+            let beta = (x1 - x2) / (x1 + x2);
+            let mut lab = vec![
+                V::new(x1 * e_beam, 0.0, 0.0, x1 * e_beam),
+                V::new(x2 * e_beam, 0.0, 0.0, -x2 * e_beam),
+            ];
+            lab.extend(point.momenta.iter().map(|p| boost_z(*p, beta)));
+            if !cuts.pass(&lab) || beta.abs() < 0.1 {
+                continue;
+            }
+            let assemble = |frame: &[V], sd: &mut _, sm: &mut _| {
+                let (d, r) = (
+                    direct.eval_m2(frame, sd),
+                    mirror_unpruned.eval_m2(frame, sm),
+                );
+                let term = pdf.xfx_q2(2, x1, q2[0]) * pdf.xfx_q2(-2, x2, q2[1]) * d
+                    + pdf.xfx_q2(-2, x1, q2[0]) * pdf.xfx_q2(2, x2, q2[1]) * r;
+                let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
+                jac * flux * lips_2pi * g.spin_color_average() * term * point.weight
+            };
+            let in_cm = assemble(&cm, &mut sd, &mut sm);
+            let in_lab = assemble(&lab, &mut sd, &mut sm);
+            let got = integ.value_in_channel(channel, &u);
+            worst_cm = worst_cm.max((got - in_cm).abs() / in_cm.abs());
+            worst_lab = worst_lab.max((got - in_lab).abs() / in_lab.abs());
+            checked += 1;
+        }
+        eprintln!(
+            "{checked} points: the integrand is {worst_cm:.3e} from the centre-of-mass \
+             assembly and {worst_lab:.3e} from the laboratory one"
+        );
+        assert!(checked > 20, "only {checked} points were checked");
+        // Reassociation noise between two orders of the same products, measured
+        // at 1.5e-12; a frame error moves the value by a finite fraction.
+        assert!(
+            worst_cm < 1e-11,
+            "centre-of-mass assembly off by {worst_cm:.3e}"
+        );
+        assert!(
+            worst_lab > 1e-2,
+            "the laboratory assembly is only {worst_lab:.3e} away, so these points cannot \
+             tell the frame apart"
+        );
+    }
+
+    /// A polarized massive leg refuses a run card naming any frame but the
+    /// partonic centre of mass; a massless polarized leg, and an unpolarized
+    /// process, take any.
+    #[test]
+    fn a_polarized_massive_leg_refuses_another_frame() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let mut text = String::from("  3, 4 = me_frame\n");
+        text.push_str("  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n");
+        text.push_str("  lhapdf = pdlabel\n  247000 = lhaid\n  20.0 = ptj\n");
+        let boosted = RunCard::parse(&text).expect("run card");
+        assert_eq!(boosted.frame_id().unwrap(), 24);
+        let groups = |process: &str, card: &RunCard| {
+            derive_flavor_groups(enumerate(process, &m), &m, &evaluated, card)
+        };
+        assert!(matches!(
+            groups("u u~ > z{0} g", &boosted),
+            Err(ProtonError::Hadronic(HadronicError::PolarizedFrame {
+                frame_id: 24,
+                ..
+            }))
+        ));
+        assert!(groups("u u~ > z{0} g", &llj_card()).is_ok());
+        assert!(groups("u{L} u~ > a g", &boosted).is_ok());
+        assert!(groups("u u~ > z g", &boosted).is_ok());
     }
 
     /// A bound amplitude paired with the wrong group is refused. Crossing the pairing

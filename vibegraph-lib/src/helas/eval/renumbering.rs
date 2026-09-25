@@ -57,6 +57,9 @@ const SM_EXTRAS: &[&str] = &[
     "e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~",
     "u u~ > t t~ g, t > w+ b",
     "e+ e- > w+ w-, w+ > j j, w- > j j",
+    "g g > t t~ g, t > w+ b",
+    "u u~ > z g g g, z > e+ e-",
+    "e+ e- > w+ w- z, z > mu+ mu-",
 ];
 
 /// Processes in the manifest rows' own models that the rows themselves do not reach: an
@@ -243,6 +246,7 @@ pub(super) fn single_diagram_amplitudes(
     let single = DiagramSet {
         particles_in: set.particles_in.clone(),
         particles_out: set.particles_out.clone(),
+        polarizations: set.polarizations.clone(),
         diagrams: vec![diagram.clone()],
     };
     let evaluator = AmplitudeEvaluator::compile(&single, model).expect("compile one diagram");
