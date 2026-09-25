@@ -411,6 +411,7 @@ fn parse_command(verb: &str, rest: &str, aliases: &mut AliasTable) -> Result<Com
                 let Some((name, options)) = rest.split_first() else {
                     return Err(ParseError::Import(line()));
                 };
+                aliases.model_import();
                 Command::ImportModel {
                     import: parse_model_import(name),
                     options: options.to_vec(),
@@ -989,6 +990,7 @@ impl ProcCardAst {
         for command in &self.commands {
             match command {
                 Command::ImportModel { .. } => {
+                    aliases.model_import();
                     out.clear();
                     ordinal = 0;
                 }

@@ -1,6 +1,8 @@
 mod common;
 
-use vibegraph::diagrams::{parse_proc_card, ParsingOptions, Unsupported};
+use vibegraph::diagrams::{
+    generate_from_proc_card, parse_proc_card, DiagramError, ParsingOptions, Unsupported,
+};
 
 fn total_diagrams(sets: &[vibegraph::diagrams::DiagramSet]) -> usize {
     sets.iter().map(|s| s.diagrams.len()).sum()
@@ -84,9 +86,8 @@ fn test_generate_uux_to_ddx_explicit_qed() {
     );
 }
 
-/// Required s-channels: the check refuses them until the s-channel filter exists.
+/// Required s-channels keep only the diagrams with that s-channel propagator.
 #[test]
-#[ignore = "required s-channels are refused until the s-channel diagram filter exists"]
 fn test_generate_ee_to_mumu_required_z() {
     let sets = common::generate("e+ e- > Z > mu+ mu-");
     assert_eq!(
@@ -96,11 +97,14 @@ fn test_generate_ee_to_mumu_required_z() {
     );
 }
 
-/// Forbidden mediators: e+e- → μ+μ- with both γ and Z forbidden gives zero diagrams.
+/// Forbidden mediators: e+e- → μ+μ- with both γ and Z forbidden has no
+/// diagram, which is an error, as MadGraph's `NoDiagramException` is.
 #[test]
 fn test_no_diagrams_when_both_mediators_forbidden() {
-    let sets = common::generate("e+ e- > mu+ mu- / a Z");
-    assert_eq!(total_diagrams(&sets), 0);
+    let card =
+        parse_proc_card("generate e+ e- > mu+ mu- / a Z", &ParsingOptions::default()).unwrap();
+    let result = generate_from_proc_card(&card, common::sm_model().as_ref());
+    assert!(matches!(result, Err(DiagramError::NoDiagrams { .. })));
 }
 
 /// A second `/` is not a second restriction list: MadGraph's expression takes

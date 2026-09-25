@@ -1,0 +1,8196 @@
+{
+ "metadata": {
+  "generator": "validation/madgraph/dump_schannel_census.py",
+  "madgraph": "research/refs/mg5amcnlo",
+  "smeftsim": "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO (as @SMEFTSIM@)"
+ },
+ "cases": [
+  {
+   "name": "ee_z_mumu",
+   "card": "generate e+ e- > z > mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_a_mumu",
+   "card": "generate e+ e- > a > mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       22
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_mumu",
+   "card": "generate e+ e- > mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_or_inline_mumu",
+   "card": "generate e+ e- > z | a > mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_or_label_mumu",
+   "card": "define v = z | a\ngenerate e+ e- > v > mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "udx_wp_epve",
+   "card": "generate u d~ > w+ > e+ ve",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u d~ > e+ ve",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -11,
+      12
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "udx_wm_epve",
+   "card": "generate u d~ > w- > e+ ve",
+   "error": "NoDiagramException: No amplitudes generated from process Process: u d~ > w-> e+ ve WEIGHTED=4 @1. Please enter a valid process"
+  },
+  {
+   "name": "ee_zh_mumubbx",
+   "card": "generate e+ e- > z h > mu+ mu- b b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu- b b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      -5,
+      5,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       23,
+       23,
+       25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_za_mumua",
+   "card": "generate e+ e- > z a > mu+ mu- a",
+   "error": "NoDiagramException: No amplitudes generated from process Process: e+ e- > z a> mu+ mu- a WEIGHTED=8 @1. Please enter a valid process"
+  },
+  {
+   "name": "ee_label_and",
+   "card": "define zh = z h\ngenerate e+ e- > zh > mu+ mu- b b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu- b b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      -5,
+      5,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       23,
+       23,
+       25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_ttx_wpbwmbx",
+   "card": "generate e+ e- > t t~ > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > w+ b w- b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       -6,
+       6,
+       22
+      ],
+      [
+       -6,
+       6,
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_t_wpbwmbx",
+   "card": "generate e+ e- > t > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > w+ b w- b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 7,
+     "s_channels": [
+      [
+       -6,
+       6,
+       22
+      ],
+      [
+       -6,
+       6,
+       23
+      ],
+      [
+       5,
+       6,
+       22
+      ],
+      [
+       5,
+       6,
+       23
+      ],
+      [
+       6,
+       22,
+       24
+      ],
+      [
+       6,
+       23,
+       24
+      ],
+      [
+       6,
+       24
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_wpbwmbx",
+   "card": "generate e+ e- > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > w+ b w- b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 61,
+     "s_channels": [
+      [
+       -24,
+       -6
+      ],
+      [
+       -24,
+       -6,
+       22
+      ],
+      [
+       -24,
+       -6,
+       23
+      ],
+      [
+       -24,
+       22
+      ],
+      [
+       -24,
+       22,
+       22
+      ],
+      [
+       -24,
+       22,
+       23
+      ],
+      [
+       -24,
+       22,
+       23
+      ],
+      [
+       -24,
+       22,
+       25
+      ],
+      [
+       -24,
+       23
+      ],
+      [
+       -24,
+       23,
+       23
+      ],
+      [
+       -24,
+       23,
+       25
+      ],
+      [
+       -24,
+       25
+      ],
+      [
+       -6,
+       -5,
+       22
+      ],
+      [
+       -6,
+       -5,
+       23
+      ],
+      [
+       -6,
+       6,
+       22
+      ],
+      [
+       -6,
+       6,
+       23
+      ],
+      [
+       -5,
+       22,
+       22
+      ],
+      [
+       -5,
+       22,
+       23
+      ],
+      [
+       -5,
+       22,
+       23
+      ],
+      [
+       -5,
+       22,
+       25
+      ],
+      [
+       -5,
+       23,
+       23
+      ],
+      [
+       -5,
+       23,
+       25
+      ],
+      [
+       5,
+       6,
+       22
+      ],
+      [
+       5,
+       6,
+       23
+      ],
+      [
+       5,
+       22,
+       22
+      ],
+      [
+       5,
+       22,
+       23
+      ],
+      [
+       5,
+       22,
+       23
+      ],
+      [
+       5,
+       22,
+       25
+      ],
+      [
+       5,
+       23,
+       23
+      ],
+      [
+       5,
+       23,
+       25
+      ],
+      [
+       6,
+       22,
+       24
+      ],
+      [
+       6,
+       23,
+       24
+      ],
+      [
+       6,
+       24
+      ],
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22,
+       24
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23,
+       24
+      ],
+      [
+       22,
+       23,
+       24
+      ],
+      [
+       22,
+       24
+      ],
+      [
+       22,
+       24,
+       25
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23,
+       24
+      ],
+      [
+       23,
+       23,
+       25
+      ],
+      [
+       23,
+       23,
+       25
+      ],
+      [
+       23,
+       24
+      ],
+      [
+       23,
+       24,
+       25
+      ],
+      [
+       24,
+       25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_ttx_wpbwmbx",
+   "card": "generate u u~ > t t~ > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_wp_epve",
+   "card": "generate p p > w+ > e+ ve",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c s~ > e+ ve",
+     "initial": [
+      -3,
+      4
+     ],
+     "final": [
+      -11,
+      12
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    },
+    {
+     "process": "u d~ > e+ ve",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -11,
+      12
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_wm_epve",
+   "card": "generate p p > w- > e+ ve",
+   "error": "NoDiagramException: No amplitudes generated from process Process: g/u/c/d/s/u~/c~/d~/s~ g/u/c/d/s/u~/c~/d~/s~ > w-> e+ ve WEIGHTED=4 @1. Please enter a valid process"
+  },
+  {
+   "name": "pp_z_epemj",
+   "card": "generate p p > z > e+ e- j",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > e+ e- g",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g c~ > e+ e- c~",
+     "initial": [
+      -4,
+      21
+     ],
+     "final": [
+      -11,
+      -4,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       -4,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e- g",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g s~ > e+ e- s~",
+     "initial": [
+      -3,
+      21
+     ],
+     "final": [
+      -11,
+      -3,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       -3,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e- g",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g u~ > e+ e- u~",
+     "initial": [
+      -2,
+      21
+     ],
+     "final": [
+      -11,
+      -2,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       -2,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e- g",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g d~ > e+ e- d~",
+     "initial": [
+      -1,
+      21
+     ],
+     "final": [
+      -11,
+      -1,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       -1,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g d > e+ e- d",
+     "initial": [
+      1,
+      21
+     ],
+     "final": [
+      -11,
+      1,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       1,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g u > e+ e- u",
+     "initial": [
+      2,
+      21
+     ],
+     "final": [
+      -11,
+      2,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       2,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g s > e+ e- s",
+     "initial": [
+      3,
+      21
+     ],
+     "final": [
+      -11,
+      3,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       3,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g c > e+ e- c",
+     "initial": [
+      4,
+      21
+     ],
+     "final": [
+      -11,
+      4,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       4,
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_ttx_wpbwmbx",
+   "card": "generate p p > t t~ > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > w+ b w- b~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > w+ b w- b~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > w+ b w- b~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > w+ b w- b~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [
+       -6,
+       6
+      ],
+      [
+       -6,
+       6
+      ],
+      [
+       -6,
+       6,
+       21
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_wpbwmbx",
+   "card": "generate u u~ > w+ b w- b~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 16,
+     "s_channels": [
+      [
+       -6,
+       -5,
+       21
+      ],
+      [
+       -6,
+       6,
+       21
+      ],
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       6,
+       21
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_wpbwmbx_no_ttx",
+   "card": "generate u u~ > w+ b w- b~ $$ t t~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 13,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_wpbwmbx_no_t",
+   "card": "generate u u~ > w+ b w- b~ $$ t",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 14,
+     "s_channels": [
+      [
+       -6,
+       -5,
+       21
+      ],
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_wpbwmbx_no_tx",
+   "card": "generate u u~ > w+ b w- b~ $$ t~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 14,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       6,
+       21
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_wpbwmbx_no_ttx",
+   "card": "generate e+ e- > w+ b w- b~ $$ t t~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > w+ b w- b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 49,
+     "s_channels": [
+      [
+       -24,
+       22
+      ],
+      [
+       -24,
+       22,
+       22
+      ],
+      [
+       -24,
+       22,
+       23
+      ],
+      [
+       -24,
+       22,
+       23
+      ],
+      [
+       -24,
+       22,
+       25
+      ],
+      [
+       -24,
+       23
+      ],
+      [
+       -24,
+       23,
+       23
+      ],
+      [
+       -24,
+       23,
+       25
+      ],
+      [
+       -24,
+       25
+      ],
+      [
+       -5,
+       22,
+       22
+      ],
+      [
+       -5,
+       22,
+       23
+      ],
+      [
+       -5,
+       22,
+       23
+      ],
+      [
+       -5,
+       22,
+       25
+      ],
+      [
+       -5,
+       23,
+       23
+      ],
+      [
+       -5,
+       23,
+       25
+      ],
+      [
+       5,
+       22,
+       22
+      ],
+      [
+       5,
+       22,
+       23
+      ],
+      [
+       5,
+       22,
+       23
+      ],
+      [
+       5,
+       22,
+       25
+      ],
+      [
+       5,
+       23,
+       23
+      ],
+      [
+       5,
+       23,
+       25
+      ],
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22
+      ],
+      [
+       22,
+       22,
+       24
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23
+      ],
+      [
+       22,
+       23,
+       24
+      ],
+      [
+       22,
+       23,
+       24
+      ],
+      [
+       22,
+       24
+      ],
+      [
+       22,
+       24,
+       25
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23
+      ],
+      [
+       23,
+       23,
+       24
+      ],
+      [
+       23,
+       23,
+       25
+      ],
+      [
+       23,
+       23,
+       25
+      ],
+      [
+       23,
+       24
+      ],
+      [
+       23,
+       24,
+       25
+      ],
+      [
+       24,
+       25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_wpbwmbx_no_ttx",
+   "card": "generate p p > w+ b w- b~ $$ t t~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > w+ b w- b~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 13,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > w+ b w- b~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 13,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > w+ b w- b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 13,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > w+ b w- b~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 13,
+     "s_channels": [
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       22
+      ],
+      [
+       21,
+       23
+      ],
+      [
+       21,
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g g > w+ b w- b~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 6
+     },
+     "diagrams": 26,
+     "s_channels": [
+      [],
+      [],
+      [
+       -5,
+       21,
+       22
+      ],
+      [
+       -5,
+       21,
+       23
+      ],
+      [
+       -5,
+       21,
+       25
+      ],
+      [
+       -5,
+       22
+      ],
+      [
+       -5,
+       22
+      ],
+      [
+       -5,
+       23
+      ],
+      [
+       -5,
+       23
+      ],
+      [
+       -5,
+       25
+      ],
+      [
+       -5,
+       25
+      ],
+      [
+       5,
+       21,
+       22
+      ],
+      [
+       5,
+       21,
+       23
+      ],
+      [
+       5,
+       21,
+       25
+      ],
+      [
+       5,
+       22
+      ],
+      [
+       5,
+       22
+      ],
+      [
+       5,
+       23
+      ],
+      [
+       5,
+       23
+      ],
+      [
+       5,
+       25
+      ],
+      [
+       5,
+       25
+      ],
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ],
+      [
+       25
+      ],
+      [
+       25
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "udx_epve_no_wp",
+   "card": "generate u d~ > e+ ve $$ w+",
+   "error": "NoDiagramException: No amplitudes generated from process Process: u d~ > e+ ve $$ w+ WEIGHTED=4 @1. Please enter a valid process"
+  },
+  {
+   "name": "udx_epve_no_wm",
+   "card": "generate u d~ > e+ ve $$ w-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u d~ > e+ ve",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -11,
+      12
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_mumu_no_z",
+   "card": "generate e+ e- > mu+ mu- $$ z",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > mu+ mu-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -13,
+      13
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       22
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_ee_no_a",
+   "card": "generate e+ e- > e+ e- $$ a",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > e+ e-",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "both_restrictions",
+   "card": "generate e+ e- > t t~ > w+ b w- b~ $$ z",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "e+ e- > w+ b w- b~",
+     "initial": [
+      -11,
+      11
+     ],
+     "final": [
+      -24,
+      -5,
+      5,
+      24
+     ],
+     "orders": {
+      "WEIGHTED": 8
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -6,
+       6,
+       22
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_a_ddx",
+   "card": "generate u u~ > a > d d~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       22
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_ddx_no_g",
+   "card": "generate u u~ > d d~ $$ g",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_ddx",
+   "card": "generate u u~ > d d~",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "uux_z_epemg",
+   "card": "generate u u~ > z > e+ e- g",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > e+ e- g",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "weighted_le",
+   "card": "generate u u~ > d d~ WEIGHTED<=4",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [
+       21
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "weighted_eq",
+   "card": "generate u u~ > d d~ WEIGHTED=4",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [
+       21
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "weighted_too_low",
+   "card": "generate e+ e- > mu+ mu- WEIGHTED<=3",
+   "error": "NoDiagramException: No amplitudes generated from process Process: e+ e- > mu+ mu- WEIGHTED=3 @1. Please enter a valid process"
+  },
+  {
+   "name": "weighted_pp",
+   "card": "generate p p > e+ e- j WEIGHTED<=5",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > e+ e- g",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g c~ > e+ e- c~",
+     "initial": [
+      -4,
+      21
+     ],
+     "final": [
+      -11,
+      -4,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       -4,
+       22
+      ],
+      [
+       -4,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e- g",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g s~ > e+ e- s~",
+     "initial": [
+      -3,
+      21
+     ],
+     "final": [
+      -11,
+      -3,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       -3,
+       22
+      ],
+      [
+       -3,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e- g",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g u~ > e+ e- u~",
+     "initial": [
+      -2,
+      21
+     ],
+     "final": [
+      -11,
+      -2,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       -2,
+       22
+      ],
+      [
+       -2,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e- g",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g d~ > e+ e- d~",
+     "initial": [
+      -1,
+      21
+     ],
+     "final": [
+      -11,
+      -1,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       -1,
+       22
+      ],
+      [
+       -1,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g d > e+ e- d",
+     "initial": [
+      1,
+      21
+     ],
+     "final": [
+      -11,
+      1,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       1,
+       22
+      ],
+      [
+       1,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g u > e+ e- u",
+     "initial": [
+      2,
+      21
+     ],
+     "final": [
+      -11,
+      2,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       2,
+       22
+      ],
+      [
+       2,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g s > e+ e- s",
+     "initial": [
+      3,
+      21
+     ],
+     "final": [
+      -11,
+      3,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       3,
+       22
+      ],
+      [
+       3,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "g c > e+ e- c",
+     "initial": [
+      4,
+      21
+     ],
+     "final": [
+      -11,
+      4,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 5
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [
+       4,
+       22
+      ],
+      [
+       4,
+       23
+      ],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "weighted_with_qcd",
+   "card": "generate p p > j j WEIGHTED<=4 QCD<=1",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c~ c~ > c~ c~",
+     "initial": [
+      -4,
+      -4
+     ],
+     "final": [
+      -4,
+      -4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c~ s~ > c~ s~",
+     "initial": [
+      -4,
+      -3
+     ],
+     "final": [
+      -4,
+      -3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u~ c~ > u~ c~",
+     "initial": [
+      -4,
+      -2
+     ],
+     "final": [
+      -4,
+      -2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c~ d~ > c~ d~",
+     "initial": [
+      -4,
+      -1
+     ],
+     "final": [
+      -4,
+      -1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c~ d~ > u~ s~",
+     "initial": [
+      -4,
+      -1
+     ],
+     "final": [
+      -3,
+      -2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d c~ > d c~",
+     "initial": [
+      -4,
+      1
+     ],
+     "final": [
+      -4,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u c~ > u c~",
+     "initial": [
+      -4,
+      2
+     ],
+     "final": [
+      -4,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u c~ > d s~",
+     "initial": [
+      -4,
+      2
+     ],
+     "final": [
+      -3,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s c~ > s c~",
+     "initial": [
+      -4,
+      3
+     ],
+     "final": [
+      -4,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -24
+      ]
+     ]
+    },
+    {
+     "process": "s c~ > d u~",
+     "initial": [
+      -4,
+      3
+     ],
+     "final": [
+      -2,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -24
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > c c~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > s s~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > u u~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > d d~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s~ s~ > s~ s~",
+     "initial": [
+      -3,
+      -3
+     ],
+     "final": [
+      -3,
+      -3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u~ s~ > c~ d~",
+     "initial": [
+      -3,
+      -2
+     ],
+     "final": [
+      -4,
+      -1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u~ s~ > u~ s~",
+     "initial": [
+      -3,
+      -2
+     ],
+     "final": [
+      -3,
+      -2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d~ s~ > d~ s~",
+     "initial": [
+      -3,
+      -1
+     ],
+     "final": [
+      -3,
+      -1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d s~ > u c~",
+     "initial": [
+      -3,
+      1
+     ],
+     "final": [
+      -4,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d s~ > d s~",
+     "initial": [
+      -3,
+      1
+     ],
+     "final": [
+      -3,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u s~ > u s~",
+     "initial": [
+      -3,
+      2
+     ],
+     "final": [
+      -3,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "s s~ > c c~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > s s~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > u u~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > d d~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c s~ > c s~",
+     "initial": [
+      -3,
+      4
+     ],
+     "final": [
+      -3,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       24
+      ]
+     ]
+    },
+    {
+     "process": "c s~ > u d~",
+     "initial": [
+      -3,
+      4
+     ],
+     "final": [
+      -1,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    },
+    {
+     "process": "u~ u~ > u~ u~",
+     "initial": [
+      -2,
+      -2
+     ],
+     "final": [
+      -2,
+      -2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u~ d~ > u~ d~",
+     "initial": [
+      -2,
+      -1
+     ],
+     "final": [
+      -2,
+      -1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d u~ > s c~",
+     "initial": [
+      -2,
+      1
+     ],
+     "final": [
+      -4,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       -24
+      ]
+     ]
+    },
+    {
+     "process": "d u~ > d u~",
+     "initial": [
+      -2,
+      1
+     ],
+     "final": [
+      -2,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -24
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > c c~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > s s~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > u u~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s u~ > s u~",
+     "initial": [
+      -2,
+      3
+     ],
+     "final": [
+      -2,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c u~ > c u~",
+     "initial": [
+      -2,
+      4
+     ],
+     "final": [
+      -2,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c u~ > s d~",
+     "initial": [
+      -2,
+      4
+     ],
+     "final": [
+      -1,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d~ d~ > d~ d~",
+     "initial": [
+      -1,
+      -1
+     ],
+     "final": [
+      -1,
+      -1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d d~ > c c~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > s s~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > u u~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > d d~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u d~ > c s~",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -3,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       24
+      ]
+     ]
+    },
+    {
+     "process": "u d~ > u d~",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -1,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       24
+      ]
+     ]
+    },
+    {
+     "process": "s d~ > c u~",
+     "initial": [
+      -1,
+      3
+     ],
+     "final": [
+      -2,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s d~ > s d~",
+     "initial": [
+      -1,
+      3
+     ],
+     "final": [
+      -1,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c d~ > c d~",
+     "initial": [
+      -1,
+      4
+     ],
+     "final": [
+      -1,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d d > d d",
+     "initial": [
+      1,
+      1
+     ],
+     "final": [
+      1,
+      1
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u d > u d",
+     "initial": [
+      1,
+      2
+     ],
+     "final": [
+      1,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d s > d s",
+     "initial": [
+      1,
+      3
+     ],
+     "final": [
+      1,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c d > c d",
+     "initial": [
+      1,
+      4
+     ],
+     "final": [
+      1,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c d > u s",
+     "initial": [
+      1,
+      4
+     ],
+     "final": [
+      2,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u u > u u",
+     "initial": [
+      2,
+      2
+     ],
+     "final": [
+      2,
+      2
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u s > c d",
+     "initial": [
+      2,
+      3
+     ],
+     "final": [
+      1,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u s > u s",
+     "initial": [
+      2,
+      3
+     ],
+     "final": [
+      2,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u c > u c",
+     "initial": [
+      2,
+      4
+     ],
+     "final": [
+      2,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "s s > s s",
+     "initial": [
+      3,
+      3
+     ],
+     "final": [
+      3,
+      3
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c s > c s",
+     "initial": [
+      3,
+      4
+     ],
+     "final": [
+      3,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c c > c c",
+     "initial": [
+      4,
+      4
+     ],
+     "final": [
+      4,
+      4
+     ],
+     "orders": {
+      "QCD": 1,
+      "WEIGHTED": 4
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      []
+     ]
+    }
+   ]
+  },
+  {
+   "name": "decay_t_bepve",
+   "card": "generate t > b e+ ve",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "t > b e+ ve",
+     "initial": [
+      6
+     ],
+     "final": [
+      -11,
+      5,
+      12
+     ],
+     "orders": {},
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    }
+   ]
+  },
+  {
+   "name": "decay_t_bepve_no_wp",
+   "card": "generate t > b e+ ve $$ w+",
+   "error": "NoDiagramException: No amplitudes generated from process Process: t > b e+ ve $$ w+ @1. Please enter a valid process"
+  },
+  {
+   "name": "decay_t_bepve_no_t",
+   "card": "generate t > b e+ ve $$ t",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "t > b e+ ve",
+     "initial": [
+      6
+     ],
+     "final": [
+      -11,
+      5,
+      12
+     ],
+     "orders": {},
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    }
+   ]
+  },
+  {
+   "name": "decay_t_wp_bepve",
+   "card": "generate t > w+ > b e+ ve",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "t > b e+ ve",
+     "initial": [
+      6
+     ],
+     "final": [
+      -11,
+      5,
+      12
+     ],
+     "orders": {},
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    }
+   ]
+  },
+  {
+   "name": "decay_t_wm_bepve",
+   "card": "generate t > w- > b e+ ve",
+   "error": "NoDiagramException: No amplitudes generated from process Process: t > w-> b e+ ve @1. Please enter a valid process"
+  },
+  {
+   "name": "decay_h_zz",
+   "card": "generate h > e+ e- mu+ mu-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "h > e+ e- mu+ mu-",
+     "initial": [
+      25
+     ],
+     "final": [
+      -13,
+      -11,
+      11,
+      13
+     ],
+     "orders": {},
+     "diagrams": 1,
+     "s_channels": [
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "decay_h_zz_no_z",
+   "card": "generate h > e+ e- mu+ mu- $$ z",
+   "error": "NoDiagramException: No amplitudes generated from process Process: h > e+ e- mu+ mu- $$ z @1. Please enter a valid process"
+  },
+  {
+   "name": "decay_h_zz_no_h",
+   "card": "generate h > e+ e- mu+ mu- $$ h",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "h > e+ e- mu+ mu-",
+     "initial": [
+      25
+     ],
+     "final": [
+      -13,
+      -11,
+      11,
+      13
+     ],
+     "orders": {},
+     "diagrams": 1,
+     "s_channels": [
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "four_flavour_pp_ll",
+   "card": "import model sm\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_pp_ll",
+   "card": "import model sm-no_b_mass\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b b~ > e+ e-",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_pp_jj",
+   "card": "import model sm-no_b_mass\ngenerate p p > j j",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b~ b~ > b~ b~",
+     "initial": [
+      -5,
+      -5
+     ],
+     "final": [
+      -5,
+      -5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c~ b~ > c~ b~",
+     "initial": [
+      -5,
+      -4
+     ],
+     "final": [
+      -5,
+      -4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s~ b~ > s~ b~",
+     "initial": [
+      -5,
+      -3
+     ],
+     "final": [
+      -5,
+      -3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u~ b~ > u~ b~",
+     "initial": [
+      -5,
+      -2
+     ],
+     "final": [
+      -5,
+      -2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d~ b~ > d~ b~",
+     "initial": [
+      -5,
+      -1
+     ],
+     "final": [
+      -5,
+      -1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d b~ > d b~",
+     "initial": [
+      -5,
+      1
+     ],
+     "final": [
+      -5,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u b~ > u b~",
+     "initial": [
+      -5,
+      2
+     ],
+     "final": [
+      -5,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s b~ > s b~",
+     "initial": [
+      -5,
+      3
+     ],
+     "final": [
+      -5,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c b~ > c b~",
+     "initial": [
+      -5,
+      4
+     ],
+     "final": [
+      -5,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "b b~ > b b~",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "b b~ > c c~",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "b b~ > s s~",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "b b~ > u u~",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "b b~ > d d~",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "b b~ > g g",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g b~ > g b~",
+     "initial": [
+      -5,
+      21
+     ],
+     "final": [
+      -5,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -5
+      ]
+     ]
+    },
+    {
+     "process": "c~ c~ > c~ c~",
+     "initial": [
+      -4,
+      -4
+     ],
+     "final": [
+      -4,
+      -4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c~ s~ > c~ s~",
+     "initial": [
+      -4,
+      -3
+     ],
+     "final": [
+      -4,
+      -3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u~ c~ > u~ c~",
+     "initial": [
+      -4,
+      -2
+     ],
+     "final": [
+      -4,
+      -2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c~ d~ > c~ d~",
+     "initial": [
+      -4,
+      -1
+     ],
+     "final": [
+      -4,
+      -1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d c~ > d c~",
+     "initial": [
+      -4,
+      1
+     ],
+     "final": [
+      -4,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u c~ > u c~",
+     "initial": [
+      -4,
+      2
+     ],
+     "final": [
+      -4,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s c~ > s c~",
+     "initial": [
+      -4,
+      3
+     ],
+     "final": [
+      -4,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c c~ > b b~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > c c~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > s s~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > u u~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > d d~",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > g g",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c~ b > b c~",
+     "initial": [
+      -4,
+      5
+     ],
+     "final": [
+      -4,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g c~ > g c~",
+     "initial": [
+      -4,
+      21
+     ],
+     "final": [
+      -4,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -4
+      ]
+     ]
+    },
+    {
+     "process": "s~ s~ > s~ s~",
+     "initial": [
+      -3,
+      -3
+     ],
+     "final": [
+      -3,
+      -3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u~ s~ > u~ s~",
+     "initial": [
+      -3,
+      -2
+     ],
+     "final": [
+      -3,
+      -2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d~ s~ > d~ s~",
+     "initial": [
+      -3,
+      -1
+     ],
+     "final": [
+      -3,
+      -1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d s~ > d s~",
+     "initial": [
+      -3,
+      1
+     ],
+     "final": [
+      -3,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u s~ > u s~",
+     "initial": [
+      -3,
+      2
+     ],
+     "final": [
+      -3,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s s~ > b b~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > c c~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > s s~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > u u~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > d d~",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > g g",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "c s~ > c s~",
+     "initial": [
+      -3,
+      4
+     ],
+     "final": [
+      -3,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s~ b > b s~",
+     "initial": [
+      -3,
+      5
+     ],
+     "final": [
+      -3,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g s~ > g s~",
+     "initial": [
+      -3,
+      21
+     ],
+     "final": [
+      -3,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -3
+      ]
+     ]
+    },
+    {
+     "process": "u~ u~ > u~ u~",
+     "initial": [
+      -2,
+      -2
+     ],
+     "final": [
+      -2,
+      -2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u~ d~ > u~ d~",
+     "initial": [
+      -2,
+      -1
+     ],
+     "final": [
+      -2,
+      -1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d u~ > d u~",
+     "initial": [
+      -2,
+      1
+     ],
+     "final": [
+      -2,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u u~ > b b~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > c c~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > s s~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > u u~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > d d~",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > g g",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "s u~ > s u~",
+     "initial": [
+      -2,
+      3
+     ],
+     "final": [
+      -2,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c u~ > c u~",
+     "initial": [
+      -2,
+      4
+     ],
+     "final": [
+      -2,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u~ b > b u~",
+     "initial": [
+      -2,
+      5
+     ],
+     "final": [
+      -2,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g u~ > g u~",
+     "initial": [
+      -2,
+      21
+     ],
+     "final": [
+      -2,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -2
+      ]
+     ]
+    },
+    {
+     "process": "d~ d~ > d~ d~",
+     "initial": [
+      -1,
+      -1
+     ],
+     "final": [
+      -1,
+      -1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "d d~ > b b~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > c c~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > s s~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > u u~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > d d~",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > g g",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "u d~ > u d~",
+     "initial": [
+      -1,
+      2
+     ],
+     "final": [
+      -1,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s d~ > s d~",
+     "initial": [
+      -1,
+      3
+     ],
+     "final": [
+      -1,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c d~ > c d~",
+     "initial": [
+      -1,
+      4
+     ],
+     "final": [
+      -1,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d~ b > b d~",
+     "initial": [
+      -1,
+      5
+     ],
+     "final": [
+      -1,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g d~ > g d~",
+     "initial": [
+      -1,
+      21
+     ],
+     "final": [
+      -1,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       -1
+      ]
+     ]
+    },
+    {
+     "process": "d d > d d",
+     "initial": [
+      1,
+      1
+     ],
+     "final": [
+      1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u d > u d",
+     "initial": [
+      1,
+      2
+     ],
+     "final": [
+      1,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d s > d s",
+     "initial": [
+      1,
+      3
+     ],
+     "final": [
+      1,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "c d > c d",
+     "initial": [
+      1,
+      4
+     ],
+     "final": [
+      1,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "d b > d b",
+     "initial": [
+      1,
+      5
+     ],
+     "final": [
+      1,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g d > g d",
+     "initial": [
+      1,
+      21
+     ],
+     "final": [
+      1,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       1
+      ]
+     ]
+    },
+    {
+     "process": "u u > u u",
+     "initial": [
+      2,
+      2
+     ],
+     "final": [
+      2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "u s > u s",
+     "initial": [
+      2,
+      3
+     ],
+     "final": [
+      2,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u c > u c",
+     "initial": [
+      2,
+      4
+     ],
+     "final": [
+      2,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "u b > u b",
+     "initial": [
+      2,
+      5
+     ],
+     "final": [
+      2,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g u > g u",
+     "initial": [
+      2,
+      21
+     ],
+     "final": [
+      2,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       2
+      ]
+     ]
+    },
+    {
+     "process": "s s > s s",
+     "initial": [
+      3,
+      3
+     ],
+     "final": [
+      3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c s > c s",
+     "initial": [
+      3,
+      4
+     ],
+     "final": [
+      3,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "s b > s b",
+     "initial": [
+      3,
+      5
+     ],
+     "final": [
+      3,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g s > g s",
+     "initial": [
+      3,
+      21
+     ],
+     "final": [
+      3,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       3
+      ]
+     ]
+    },
+    {
+     "process": "c c > c c",
+     "initial": [
+      4,
+      4
+     ],
+     "final": [
+      4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "c b > c b",
+     "initial": [
+      4,
+      5
+     ],
+     "final": [
+      4,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 1,
+     "s_channels": [
+      []
+     ]
+    },
+    {
+     "process": "g c > g c",
+     "initial": [
+      4,
+      21
+     ],
+     "final": [
+      4,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       4
+      ]
+     ]
+    },
+    {
+     "process": "b b > b b",
+     "initial": [
+      5,
+      5
+     ],
+     "final": [
+      5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [],
+      []
+     ]
+    },
+    {
+     "process": "g b > g b",
+     "initial": [
+      5,
+      21
+     ],
+     "final": [
+      5,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       5
+      ]
+     ]
+    },
+    {
+     "process": "g g > b b~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -5,
+      5
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > c c~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -4,
+      4
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > s s~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -3,
+      3
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > u u~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -2,
+      2
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > d d~",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      -1,
+      1
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 3,
+     "s_channels": [
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    },
+    {
+     "process": "g g > g g",
+     "initial": [
+      21,
+      21
+     ],
+     "final": [
+      21,
+      21
+     ],
+     "orders": {
+      "WEIGHTED": 2
+     },
+     "diagrams": 4,
+     "s_channels": [
+      [],
+      [],
+      [],
+      [
+       21
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_no_masses",
+   "card": "import model sm-no_masses\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b b~ > e+ e-",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_zeromass_ckm",
+   "card": "import model sm-zeromass_ckm\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b b~ > e+ e-",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_define_before",
+   "card": "define p = g u u~\nimport model sm-no_b_mass\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     -2,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b b~ > e+ e-",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_define_after",
+   "card": "import model sm-no_b_mass\ndefine p = g u u~\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     -2
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_define_through_p",
+   "card": "import model sm-no_b_mass\ndefine q = p / g\ngenerate q q > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3,
+     5,
+     -5
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     5,
+     -2,
+     -4,
+     -1,
+     -3,
+     -5
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "b b~ > e+ e-",
+     "initial": [
+      -5,
+      5
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "four_flavour_define_b",
+   "card": "define p = p b b~\nimport model sm\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "name": "five_flavour_forbidden_j",
+   "card": "import model sm-no_b_mass\ngenerate u u~ > e+ e- g / j",
+   "error": "NoDiagramException: No amplitudes generated from process Process: u u~ > e+ e- g / g u c d s b u c d s b WEIGHTED=5 @1. Please enter a valid process"
+  },
+  {
+   "name": "five_flavour_smeftsim",
+   "card": "import model @SMEFTSIM@-SMlimit_massless\ngenerate p p > e+ e-",
+   "multiparticles": {
+    "p": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ],
+    "j": [
+     21,
+     2,
+     4,
+     1,
+     3,
+     -2,
+     -4,
+     -1,
+     -3
+    ]
+   },
+   "subprocesses": [
+    {
+     "process": "c c~ > e+ e-",
+     "initial": [
+      -4,
+      4
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "s s~ > e+ e-",
+     "initial": [
+      -3,
+      3
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "u u~ > e+ e-",
+     "initial": [
+      -2,
+      2
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    },
+    {
+     "process": "d d~ > e+ e-",
+     "initial": [
+      -1,
+      1
+     ],
+     "final": [
+      -11,
+      11
+     ],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "diagrams": 2,
+     "s_channels": [
+      [
+       22
+      ],
+      [
+       23
+      ]
+     ]
+    }
+   ]
+  }
+ ]
+}
