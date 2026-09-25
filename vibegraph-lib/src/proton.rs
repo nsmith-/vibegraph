@@ -104,10 +104,11 @@ use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
+use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
-    identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, DiagramChannel, PhaseSpaceMap,
-    RamboChannel, ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
+    identical_particle_factor, kleiss_pittau_step, AlphaAdaptation, PhaseSpaceMap, RamboChannel,
+    ScaledChannel, ScaledMultiChannel, GEV2_TO_PB,
 };
 use crate::progress;
 use crate::runcard::RunCard;
@@ -1072,9 +1073,11 @@ pub struct ProtonIntegrand<'a> {
     /// Total hadronic invariant `s = (E₁+E₂)²` (head-on beams).
     s_had: f64,
     sqrt_s_had: f64,
-    /// Lower support of the logarithmic `τ = ŝ/s` map, `ŝ_min/s`.
+    /// Lower support of the `τ = ŝ/s` map, `ŝ_min/s`.
     tau_min: f64,
     ln_inv_tau_min: f64,
+    /// The maps this integrand was built under, every choice settled.
+    maps: MapChoices,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
     scales: EventScaleSource,
@@ -1160,7 +1163,38 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
     ) -> Result<Self, ProtonError> {
-        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true)
+        Self::build(
+            groups,
+            amps,
+            model,
+            pdf,
+            sqrt_s_had,
+            mu_f,
+            true,
+            MapOptions::default(),
+        )
+    }
+
+    /// [`new`](Self::new) under particular phase-space maps: every choice `maps`
+    /// names is taken as asked, every other one settled by [`MapOptions::resolve`]
+    /// from the process. A generator replaying an artifact names every choice the
+    /// artifact banked.
+    pub fn new_with_maps(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        model: &EvaluatedModel,
+        pdf: &'a PdfMember,
+        sqrt_s_had: f64,
+        mu_f: f64,
+        maps: MapOptions,
+    ) -> Result<Self, ProtonError> {
+        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, maps)
+    }
+
+    /// The maps this integrand samples under, every choice settled — what an
+    /// artifact banks so a generator rebuilds the same channels and `τ` draw.
+    pub fn maps(&self) -> MapChoices {
+        self.maps
     }
 
     /// [`new`](Self::new) with the peripheral channels' fiducial transfer bound
@@ -1177,7 +1211,16 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
     ) -> Result<Self, ProtonError> {
-        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, false)
+        Self::build(
+            groups,
+            amps,
+            model,
+            pdf,
+            sqrt_s_had,
+            mu_f,
+            false,
+            MapOptions::default(),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1189,6 +1232,7 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
         bound_transfer: bool,
+        map_options: MapOptions,
     ) -> Result<Self, ProtonError> {
         if amps.len() != groups.groups().len() {
             return Err(ProtonError::AmplitudeCount {
@@ -1208,7 +1252,22 @@ impl<'a> ProtonIntegrand<'a> {
             }
         }
 
-        let floor = cuts.spacelike_floor();
+        let shape = ProcessShape::of(
+            groups
+                .groups()
+                .iter()
+                .flat_map(|g| channel_diagrams(g.diagrams(), model)),
+            model,
+            sqrt_s_had,
+            cuts,
+        );
+        let maps = map_options.resolve(&shape);
+        tracing::info!(
+            "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
+            maps.describe(&map_options),
+            shape.soft_emission_splits,
+            shape.max_rungs
+        );
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
         let mut channel_samplers = Vec::new();
@@ -1220,8 +1279,7 @@ impl<'a> ProtonIntegrand<'a> {
                 // The baked-in energy is unread through `ScaledChannel`, which takes
                 // the event's own; the collider energy is the well-formed value to
                 // leave it at.
-                let channel = DiagramChannel::from_diagram_regulated(d, model, sqrt_s_had, floor)
-                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots));
+                let channel = maps.channel(d, model, sqrt_s_had, cuts);
                 let channel = if bound_transfer {
                     channel
                 } else {
@@ -1253,6 +1311,7 @@ impl<'a> ProtonIntegrand<'a> {
             sqrt_s_had,
             tau_min,
             ln_inv_tau_min: (1.0 / tau_min).ln(),
+            maps,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n_out as i32),
             scales: EventScaleSource::constant(mu_f),
             scratch: ThreadLocal::new(),
@@ -1397,7 +1456,11 @@ impl<'a> ProtonIntegrand<'a> {
         let mut any_passed_cuts = false;
         for _ in 0..SCALE_PROBE_DRAWS {
             let u: Vec<f64> = (0..ndim).map(|_| rng.random::<f64>()).collect();
-            let m = self.map_point(&u);
+            // The probe asks whether any accepted point clears the floor, not how the
+            // run samples. The logarithmic `τ` spreads its draws over the whole `ŝ`
+            // range; a steeper map crowds them at `ŝ_min`, where a card that is only
+            // partly below the floor would read as wholly below it.
+            let m = self.map_point_with(TauMap::Log, &u);
             let pt = self
                 .combiner
                 .draw_in_channel_at(0, m.sqrt_shat, &u[OUTER_NDIM..]);
@@ -1532,8 +1595,26 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// Map a VEGAS point's outer coordinates to the partonic system.
+    ///
+    /// `τ` is drawn over `[τ_min, 1]` by the banked [`TauMap`]: the logarithmic
+    /// `τ = τ_min^(1−u)` with `dτ/du = τ ln(1/τ_min)`, or the inverse-square
+    /// `τ = 1/(1/τ_min − u(1/τ_min − 1))` with `dτ/du = τ²(1/τ_min − 1)`. Either
+    /// measure carries one power of `τ` that the `1/(x₁x₂)` of the luminosity
+    /// cancels (the type's doc), so what enters the Jacobian is `(dτ/du)/τ`.
     fn map_point(&self, u: &[f64]) -> OuterPoint {
-        let tau = self.tau_min.powf(1.0 - u[0]);
+        self.map_point_with(self.maps.tau, u)
+    }
+
+    /// [`map_point`](Self::map_point) under a named `τ` map rather than the run's.
+    fn map_point_with(&self, tau_map: TauMap, u: &[f64]) -> OuterPoint {
+        let (tau, dtau_du_over_tau) = match tau_map {
+            TauMap::Log => (self.tau_min.powf(1.0 - u[0]), self.ln_inv_tau_min),
+            TauMap::InverseSquare => {
+                let k = 1.0 / self.tau_min - 1.0;
+                let tau = 1.0 / (1.0 / self.tau_min - u[0] * k);
+                (tau, tau * k)
+            }
+        };
         let sqrt_tau = tau.sqrt();
         let y_max = -0.5 * tau.ln();
         let y = (2.0 * u[1] - 1.0) * y_max;
@@ -1541,7 +1622,7 @@ impl<'a> ProtonIntegrand<'a> {
             x1: sqrt_tau * y.exp(),
             x2: sqrt_tau * (-y).exp(),
             sqrt_shat: (tau * self.s_had).sqrt(),
-            jac: self.ln_inv_tau_min * 2.0 * y_max,
+            jac: dtau_du_over_tau * 2.0 * y_max,
         }
     }
 
@@ -2207,10 +2288,74 @@ mod tests {
     use crate::hadronic::{channel_share, CHANNEL_STREAM_BASE, VEGAS_NBINS};
     use crate::lhef::build::SubprocessRecord;
     use crate::pdf::grid::SubGrid;
+    use crate::phasespace::DiagramChannel;
     use crate::ufo::sm::{sm_model, SMRestrict};
     use crate::vegas::VegasGrid;
     use std::collections::BTreeSet;
     use std::sync::Arc;
+
+    /// An integrand under the maps every banked row was integrated under, for the
+    /// tests that invert the logarithmic `τ` map by hand.
+    fn legacy_integrand<'a>(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        evaluated: &EvaluatedModel,
+        pdf: &'a PdfMember,
+    ) -> Result<ProtonIntegrand<'a>, ProtonError> {
+        ProtonIntegrand::new_with_maps(
+            groups,
+            amps,
+            evaluated,
+            pdf,
+            SQRT_S_HAD,
+            MU_F,
+            MapOptions::fixed(MapChoices::LEGACY),
+        )
+    }
+
+    /// Both `τ` maps carry the Jacobian their draw implies: the flat average of
+    /// the outer weight times a smooth `h(τ)` reproduces `∫ h(τ) dτ/τ` over
+    /// `[τ_min, 1]` analytically, with the `1/τ` the luminosity cancels restored.
+    /// A wrong measure on either map misses by far more than the error.
+    #[test]
+    fn both_tau_maps_integrate_a_known_function() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let tau_min = integ.tau_min();
+        // `τ^(−1/2)` sits between the two maps' densities, so both estimate it
+        // with a small variance and a wrong measure on either shows at many σ.
+        let p = -0.5f64;
+        let exact = (1.0 - tau_min.powf(p)) / p;
+        for map in [TauMap::Log, TauMap::InverseSquare] {
+            let mut stream = SubStream::from_stream(0x7A0_2222, 5);
+            let n = 400_000;
+            let (mut sum, mut sq) = (0.0f64, 0.0f64);
+            for _ in 0..n {
+                let u = stream.uniforms::<f64>(2);
+                let pt = integ.map_point_with(map, &u);
+                let tau = pt.x1 * pt.x2;
+                let y_max = -0.5 * tau.ln();
+                // `jac` is `(dτ/du)/τ · 2 y_max`; the rapidity factor belongs to the
+                // `y` draw, so it is divided out to leave `∫ dτ/τ`.
+                let v = pt.jac / (2.0 * y_max) * tau.powf(p);
+                sum += v;
+                sq += v * v;
+            }
+            let mean = sum / n as f64;
+            let err = ((sq / n as f64 - mean * mean) / n as f64).sqrt();
+            eprintln!("{map:?}: {mean:.6} ± {err:.1e} against {exact:.6}");
+            assert!(
+                (mean - exact).abs() < 5.0 * err,
+                "{map:?}: {mean} ± {err} against the exact {exact}"
+            );
+        }
+    }
 
     /// The multi-subprocess hadronic process the grouping rule is measured on:
     /// two beam multiparticles, two coupling classes, and a jet that is a gluon
@@ -3139,8 +3284,7 @@ mod tests {
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
 
         // The mirrored ordering of each group, compiled from its own proc card.
         let mirrored: Vec<BoundAmplitude<f64>> = Vec::new();
@@ -3676,8 +3820,7 @@ mod tests {
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
 
         // A jet above `ptj` recoiling against a dilepton pair above `mmll` needs
         // `√ŝ ≥ √(mmll² + ptj²) + ptj`.
@@ -3779,8 +3922,7 @@ mod tests {
             .expect("flavour groups");
         let amps = bind_all(&groups, &evaluated);
         let pdf = probe_pdf();
-        let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-            .expect("integrand");
+        let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
 
         let cuts = groups.groups()[0].cuts();
         let masses = groups.groups()[0].final_masses();
@@ -3892,8 +4034,7 @@ mod tests {
 
         for (i, alive) in [vec![2, -2], vec![1, -1]].into_iter().enumerate() {
             let pdf = probe_pdf_restricted(&alive);
-            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
-                .expect("integrand");
+            let integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
             let u0 = 1.0 - tau.ln() / integ.tau_min().ln();
             let y_max = -0.5 * tau.ln();
             let jac = (1.0 / integ.tau_min()).ln() * 2.0 * y_max;

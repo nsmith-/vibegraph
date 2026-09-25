@@ -47,6 +47,7 @@ use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::scalup;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
+use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
     identical_particle_factor, AlphaAdaptation, Channel, Combiner, DiagramChannel, MultiChannel,
@@ -1121,6 +1122,12 @@ pub struct FixedBeamIntegrand<'a> {
     /// clustering and coupling solve are skipped and the integral is what it
     /// would be with no prescription installed at all.
     alpha_s_dependent: bool,
+    /// What the caller asked of the phase-space maps; read when the multichannel
+    /// map is built, every unnamed choice settled by the rule then.
+    map_options: MapOptions,
+    /// The maps the installed multichannel map was built under, or `None` under
+    /// flat RAMBO.
+    maps: Option<MapChoices>,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1365,7 +1372,48 @@ impl<'a> FixedBeamIntegrand<'a> {
             scale_draw_fallbacks: AtomicU64::new(0),
             config_weights: None,
             alpha_s_dependent: false,
+            map_options: MapOptions::default(),
+            maps: None,
         }
+    }
+
+    /// Ask for particular phase-space maps before a multichannel map is built;
+    /// every choice left unnamed is settled by [`MapOptions::resolve`] from the
+    /// diagrams then. Has no effect on a map already installed.
+    pub fn set_map_options(&mut self, options: MapOptions) {
+        self.map_options = options;
+    }
+
+    /// The maps the installed multichannel map was built under — what an artifact
+    /// banks so a generator rebuilds the same channels — or `None` under flat RAMBO.
+    pub fn maps(&self) -> Option<MapChoices> {
+        self.maps
+    }
+
+    /// One channel per integration configuration under the map options, settling the unnamed
+    /// choices from the diagrams themselves and recording what was settled on.
+    fn build_channels(
+        &mut self,
+        diagrams: &[Diagram],
+        model: &EvaluatedModel,
+    ) -> Vec<DiagramChannel<f64>> {
+        let channels = channel_diagrams(diagrams, model);
+        let shape = ProcessShape::of(channels.iter().copied(), model, self.sqrt_s, self.cuts);
+        let choices = self.map_options.resolve(&shape);
+        let built: Vec<DiagramChannel<f64>> = channels
+            .into_iter()
+            .map(|d| choices.channel(d, model, self.sqrt_s, self.cuts))
+            .collect();
+        if !built.is_empty() {
+            tracing::info!(
+                "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
+                choices.describe(&self.map_options),
+                shape.soft_emission_splits,
+                shape.max_rungs
+            );
+            self.maps = Some(choices);
+        }
+        built
     }
 
     /// This thread's evaluation context, forked from the integrand's own
@@ -1721,15 +1769,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         n_iter: usize,
         seed: u64,
     ) -> Option<AlphaAdaptation<f64>> {
-        let floor = self.cuts.spacelike_floor();
-        let cuts = &self.cuts;
-        let built: Vec<DiagramChannel<f64>> = channel_diagrams(diagrams, model)
-            .into_iter()
-            .map(|d| {
-                DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
-                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
-            })
-            .collect();
+        let built = self.build_channels(diagrams, model);
         if built.is_empty() {
             return None;
         }
@@ -1794,15 +1834,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         model: &EvaluatedModel,
         alphas: &[f64],
     ) -> Option<Result<(), usize>> {
-        let floor = self.cuts.spacelike_floor();
-        let cuts = &self.cuts;
-        let built: Vec<DiagramChannel<f64>> = channel_diagrams(diagrams, model)
-            .into_iter()
-            .map(|d| {
-                DiagramChannel::from_diagram_regulated(d, model, self.sqrt_s, floor)
-                    .with_timelike_floors(&|slots| cuts.timelike_floor(slots))
-            })
-            .collect();
+        let built = self.build_channels(diagrams, model);
         if built.is_empty() {
             return None;
         }
