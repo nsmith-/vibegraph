@@ -54,7 +54,8 @@ language:
 | Feature | Status |
 |---|---|
 | `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
-| decay chains `A > B C, B > D E` | refused until stitched decay enumeration exists |
+| decay chains `A > B C, B > D E` | enumerated (see below); refused for integration until phase space keeps each resonance in its Breit–Wigner window |
+| overall orders on a decay chain (`@1 QED=2` after the process number) | refused |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
 | `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
@@ -74,6 +75,40 @@ and the same enumeration is available for a single decay on its own
 (`enumerate_decay`), which is what joining decays onto a core process
 builds on. Mixing processes with different numbers of initial particles is
 a MadGraph error and stays one.
+
+**Decay chains** are enumerated by stitching, as MadGraph generates them: the
+core (`p p > t t~`) and each decay (`t > w+ b`, recursively for a decay with
+decays of its own) are enumerated separately, each with its own
+lowest-order search, and each decay's diagrams are glued onto the matching
+final-state leg of each core diagram. The leg becomes an internal line,
+flagged *forced on shell* (MadGraph's `onshell = True`), and the decay's
+products take its place in the final state, so `e+ e- > t t~, t > w+ b,
+t~ > w- b~` has the final state `w+ b w- b~`. Which decay goes to which leg
+follows MadGraph: as many decays as decaying legs go to them in order
+(`e+ e- > z z, z > e+ e-, z > mu+ mu-` is one subprocess, `e+ e- mu+ mu-`);
+otherwise every combination of the decays with repetition, each unordered
+combination once (`z > l+ l-` on two Z bosons gives `ee ee`, `ee μμ` and
+`μμ μμ`). A decay whose particle is in no core final state is an error here;
+MadGraph drops it with a warning, which usually means a nested decay lost its
+parentheses.
+
+One difference from MadGraph is deliberate. MadGraph keeps each decay's
+products on the legs it assigned and divides by a factor for identical decay
+chains, dropping the interference between assignments. Here the stitched
+diagrams are closed under every permutation of identical final-state
+particles, so a stitched subprocess is exactly the set of diagrams of the
+undecayed final state in which every chain resonance is an s-channel line
+with its stated products, and the final state's own identical-particle
+factor applies: `e+ e- > z z, z > e+ e-` has four diagrams (MadGraph two,
+over a factor 2). Where the core itself holds the resonance with the same
+products (`e+ e- > z e+ e-, z > e+ e-`), one diagram would carry two lines
+either of which could be the decay's, and the card is refused.
+
+Integrating a decay chain needs phase space that keeps each forced line
+within `bwcutoff` widths of its mass, as MadEvent does; until it has it, the
+check refuses decay chains for integration and event generation, and
+`check_enumerable` with `generate_decay_chains` is the library entry point
+for their diagrams.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
@@ -279,6 +314,17 @@ hermetic: the census is committed to the repository as `validation/madgraph/diag
 The decay census (`t > b e+ ve a`, `z > e+ e- mu+ mu-`, `w+ > j j`, …) is
 compared against MadGraph's own generation of the same cards.
 
+Decay chains are held to two oracles. The stitched diagrams of each case are
+compared, as owned diagrams up to renumbering and including their signs and
+forced lines, with the diagrams of the undecayed final state that hold every
+chain resonance with its products, and each pair is compared amplitude by
+amplitude, helicity by helicity and colour flow by colour flow. And a census
+of decay-chain cards against MadGraph's own combination
+(`validation/madgraph/decay_chain_census.json`) compares the subprocesses,
+their final-state order with the products in place, and per subprocess
+MadGraph's diagram count against the stitched diagrams whose forced lines
+lead to the legs MadGraph assigned.
+
 ## Where it lives
 
 [`vibegraph::diagrams`](../api/vibegraph/diagrams/index.html):
@@ -290,7 +336,10 @@ for names against the model,
 labels, [`selector`](../api/vibegraph/diagrams/selector/index.html) for the
 coupling-order filter handed to feyngraph,
 [`schannel`](../api/vibegraph/diagrams/schannel/index.html) for the
-s-channel filter on converted diagrams, and
+s-channel filter on converted diagrams and the resonance matching decay
+chains are compared with, and
 [`diagram`](../api/vibegraph/diagrams/diagram/index.html) for the owned
-diagram. `parse_proc_card` (parse and check) and `generate_from_proc_card`
-are the entry points.
+diagram, its propagators' on-shell flags and its provenance (the process
+number and the decay-chain nodes it was stitched from). `parse_proc_card`
+(parse and check) and `generate_from_proc_card` are the entry points;
+`check_enumerable` and `generate_decay_chains` enumerate decay chains.

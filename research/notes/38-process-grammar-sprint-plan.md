@@ -584,6 +584,83 @@ carried MadGraph's filtering-time artificial vertex, dropping the `W` of
   t~ > w- b~`; a nested `(t > w+ b, w+ > …)`.
 - Plus the diagram census against MadGraph for decay-chain cards.
 
+**Landed** (2026-09-25; `c933976` stitching, `337b5c3` MadGraph census, `ff290ae` merge of
+`f67c8d0` (C4V, P1), the docs commit after them). `diagrams::chain` enumerates the core and each decay (recursively, each with its own
+lowest-WEIGHTED search, via the `1 → n` path) and glues each decay onto the matching
+final-state leg of each core diagram: the leg and the decay's incoming leg become one
+propagator from the core vertex into the decay vertex, `Prop::onshell = OnShell::Forced`,
+and the products replace the leg in place (`get_legs_with_decays`, `base_objects.py:3667`).
+Decays go to legs as `combine_decay_chain_processes` assigns them
+(`helas_objects.py:5510`–`5566`: in order when the counts match, the out-of-order branch,
+else every combination with repetition, an unordered combination once). The stitched graph's
+momenta (`Diagram::tree_momentum`) and sign (`Diagram::fermion_pairing_sign` × the line
+sign) are rebuilt from the graph; symmetry factor is the parts' product (1 on every tree).
+Then every permutation of identical final-state particles *between* blocks (core legs, each
+decay's products) is applied and each graph kept once.
+
+- *Representation* (§3.2). `Prop::onshell: OnShell {Free, Forced, Forbidden}` (in the
+  canonical key); `Diagram::provenance: Provenance { process: u32 (@N), decays:
+  Vec<DecayOrigin { node: ChainNode, prop: PropIdx }> }` (not in the key). `ChainNode` is the
+  preorder index of the decay on the card (core 0; `(t > w+ b, w+ > e+ ve), t~ > w- b~` →
+  1, 2, 3). D3 reads the `Forced` lines (mass and width from `Prop::particle`); S3 sets
+  `Forbidden`; E1's mother pointers are `Diagram::final_state_side` of each forced line.
+- *Check*. One check, one variant: `check_supported` still refuses `DecayChain` (reason now:
+  the BW window); `check_enumerable` is the same scan without that refusal and returns an
+  `EnumerableCard` whose card cannot be taken out, consumed only by
+  `generate_decay_chains`. D3 lifts it by deleting the variant, the `Scope` parameter and
+  `EnumerableCard`. New refusals: `Unsupported::ChainOrders` (`@N QED=2` overall orders,
+  which in MadGraph also cap each part and switch off its search), and
+  `DiagramError::DecayChain` for a decay whose particle is in no core final state (MadGraph
+  drops it with a warning, `diagram_generation.py:1405`), a core subprocess no decay applies
+  to (MadGraph keeps it undecayed), mixed post-decay multiplicities, and the ambiguous case
+  below.
+- *Oracle 1, container equality* (`helas::eval::stitching`): stitched against the
+  undecayed final state enumerated at the stitched `WEIGHTED` order and filtered by
+  `schannel::match_resonances` (s-channel, oriented id, final-state side = stated products
+  recursively), matched lines flagged forced. Ten cases, 147 diagrams: `e+ e- > z z, z >
+  e+ e-` 4, `…, z > e+ e-, z > mu+ mu-` 2, `e+ e- > t t~, t > w+ b, t~ > w- b~` 2, nested
+  `(t > w+ b, w+ > e+ ve)` 2, `u u~ > t t~ g, t > w+ b` 5, `g b > w- t, t > w+ b` 2,
+  `g g > t t~ g, t > w+ b` 16 (one 4-gluon), `u u~ > z g g g, z > e+ e-` 50 (two 4-gluon),
+  `e+ e- > w+ w- z, z > mu+ mu-` 16, `p p > z j, z > l+ l-` 24 subprocesses / 48. All
+  equal as containers except two of `w+ w- z`, which bind the forced `Z` and an s-channel
+  `Z` to the two `Z` slots of `W W Z Z` / `H Z Z` in the other order — S1's documented false
+  inequality; the test pairs them by a slot-order-free description. *Oracle 2*: all 147
+  pairs' per-helicity, per-flow single-diagram amplitudes agree, worst 1.2e-16 relative
+  (bit-equal except the two slot-swapped pairs), on the merged tree (C4V's anchor-read
+  vector-contact signs included).
+- *Mutations*: dropping the between-block permutations fails oracle 1 (`z z, z > e+ e-`: 2
+  stitched, 4 filtered). A naive sign (core × decays, not rebuilt) **passes the six brief
+  cases** — block insertion never changes the pairing parity, and crossed lines keep their
+  flip — and fails only on the added `g b > w- t, t > w+ b` (the initial `b` line gains the
+  `t` propagator; a global sign, so only container equality and per-diagram amplitudes see
+  it, never |M|²).
+- *Finding: ambiguous forced line.* `e+ e- > z e+ e-, z > e+ e-`: the core holds its own
+  s-channel `Z → e+ e-`, so after permutation one graph is stitched twice with a different
+  line forced (64 stitched against 60 filtered graphs). Refused (`DecayChain`, "ambiguous").
+- *Oracle 3, MadGraph census* (`validation/madgraph/dump_decay_chain_census.py` →
+  `decay_chain_census.json`, hermetic `decay_chain_census` test; `HelasMultiProcess` on the
+  pinned checkout): 19 cards, 17 stitched and matched on 54 (process, decays), final state
+  order included, MadGraph's per-ME diagram count equal to the stitched diagrams whose
+  forced lines lead to MadGraph's blocks; 2 refused (a two-particle "decay", refused by both;
+  the dropped `w+` decay, refused here by design). MadGraph does **not** permute identical
+  particles between decays: it divides by `identical_decay_chain_factor`
+  (`helas_objects.py:4581`), 2 for `z z, z > e+ e-`, where here the permuted diagrams (+2)
+  and the final state's 2!·2! = 4 apply. So the σ of such a card differs from MadGraph's by
+  the interference between pairings (D3: gate σ first on cards without identical particles
+  across decays). `trim_diagrams(decay_ids)` (`:1270`) removes nothing: it only flags the
+  decaying external legs `onshell = True`.
+- *S1 correction*: `Diagram::renumbered` (hence `canonical`) swapped a flipped
+  propagator's endpoints without conjugating its particle, so two equal graphs whose
+  enumerations oriented a charged line oppositely could compare unequal. `Prop::particle`
+  is the particle of the slot at `endpoints[1]` (pinned on all 2656 census diagrams, 3397
+  charged lines, with momentum and sign rebuilt from the graph); `renumbered` and
+  `canonical` now take the model and conjugate. `renumbering_preserves_signs_and_amplitudes`
+  stays at 0 failures with seven chain cards added (three with VVV/VVVV vertices, whose
+  signs are read at a stitched diagram's anchor).
+- *Unchanged enumeration*: the 51 banked scripts and 14 extra cards dump identical
+  per-subprocess diagrams (legs, props' particle/endpoints/momentum, vertices, sign, symmetry
+  factor) at `f67c8d0` and after the merge: 2550 diagrams (and 2537 at `a3c4c06` before it).
+
 ### D3: decay-chain phase space, σ and the sampler ladder (performance-dev or feature-dev; after D2)
 
 - Forced BW windows (`gForceBW = 1`, `bwcutoff`) in the channel maps.
