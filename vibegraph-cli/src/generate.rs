@@ -25,7 +25,7 @@ use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, FixedBeamIntegrand, FixedBeams,
+    refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -48,7 +48,10 @@ use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAUL
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::integrate::{load_pdf_set, process_string, IntegrateError, NO_PDF, PDF_MEMBER};
+use crate::integrate::{
+    initial_state, is_decay, load_pdf_set, load_run_card, process_string, IntegrateError, NO_PDF,
+    PDF_MEMBER,
+};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
@@ -387,6 +390,8 @@ struct SampleSource<'s, 'a> {
     card: &'s RunCard,
     alpha_qed: f64,
     momenta: Vec<V>,
+    /// The factor from the integrand's natural units to the file's.
+    unit: f64,
 }
 
 impl<'s, 'a> SampleSource<'s, 'a> {
@@ -408,6 +413,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
             card,
             alpha_qed,
             momenta: Vec::new(),
+            unit: integrand.observable().per_natural_unit(),
         }
     }
 
@@ -435,7 +441,7 @@ impl EventSource for SampleSource<'_, '_> {
         )?;
         let externals: Vec<[f64; 4]> = self
             .integrand
-            .beams()
+            .incoming()
             .iter()
             .chain(self.momenta.iter())
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])
@@ -471,7 +477,7 @@ impl EventSource for SampleSource<'_, '_> {
     }
 
     fn sigma_pb(&self) -> f64 {
-        self.unweighter.sigma_from_events() * GEV2_TO_PB
+        self.unweighter.sigma_from_events() * self.unit
     }
 }
 
@@ -504,9 +510,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let rc = config
-        .load_run_card()
-        .map_err(|e| err(format!("failed to load run card: {e}")))?;
+    let rc = load_run_card(&config, &parsed)?;
 
     tui::state::describe_model(
         &model_id.label(),
@@ -518,7 +522,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     tui::state::describe_process(&process);
     tui::state::note_channels(artifact.channels.len());
 
-    let hadronic = rc.beam_mode() == BeamMode::Proton;
+    let hadronic = !is_decay(&parsed) && rc.beam_mode() == BeamMode::Proton;
     let mut mismatches = card_mismatches(&artifact, &model_id, &process, &rc);
     // A fixed-energy run reads no parton distributions, and the artifact says so;
     // the flag is only meaningful on the hadronic path.
@@ -576,7 +580,7 @@ fn generate_sample(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
-    let beams = FixedBeams::from_run_card(rc, &legs);
+    let initial = initial_state(rc, &legs)?;
     let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -589,7 +593,7 @@ fn generate_sample(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
@@ -633,7 +637,11 @@ fn generate_sample(
         .map(|e| SubprocessRecord::new(e, model, evaluated))
         .collect::<Result<_, _>>()
         .map_err(|e| err(format!("cannot build a subprocess record: {e}")))?;
-    let beam_pdg = beam_pdg(&records)?;
+    let (beam_pdg, beam_energy) = match initial {
+        InitialState::Beams(_) => (beam_pdg(&records)?, [rc.ebeam1, rc.ebeam2]),
+        InitialState::Decay(decay) => (decay_pdg(&records)?, [decay.mass(), 0.0]),
+    };
+    let observable = initial.observable();
 
     let rule = max_rule(args);
     let scan = Unweighter::scan_with(
@@ -645,7 +653,7 @@ fn generate_sample(
         args.seed ^ SCAN_SEED_OFFSET,
         rule,
     );
-    report_scan(&scan, artifact, args.scan_points, rule);
+    report_scan(&scan, artifact, args.scan_points, rule, observable);
 
     let alpha_qed = evaluated
         .param_values
@@ -668,8 +676,9 @@ fn generate_sample(
         sigma_pb: artifact.sigma_pb,
         sigma_err_pb: artifact.sigma_err_pb,
         beam_pdg,
-        beam_energy: [rc.ebeam1, rc.ebeam2],
-        // No parton densities on a fixed-energy run, so both beams report none.
+        beam_energy,
+        // No parton densities on a fixed-energy or a decay run, so both beams
+        // report none.
         pdf_group: [0, 0],
         pdf_set: [0, 0],
         process_id: PROCESS_ID,
@@ -678,7 +687,7 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header: Some(file_header(args, artifact, strategy.as_ref())),
+        header: Some(file_header(args, artifact, strategy.as_ref(), observable)),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -688,6 +697,7 @@ fn generate_sample(
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
+        observable,
     );
     Ok(summary)
 }
@@ -697,7 +707,13 @@ fn generate_sample(
 ///
 /// The draw count and the rule are both printed because between them they set the
 /// maxima every overweight number the run goes on to print is measured against.
-fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudget, rule: MaxRule) {
+fn report_scan(
+    scan: &Unweighter,
+    artifact: &IntegrateArtifact,
+    budget: ScanBudget,
+    rule: MaxRule,
+    observable: Observable,
+) {
     let draws = budget.total_draws(artifact.channels.iter().map(|c| c.neval));
     let per_channel = match budget {
         ScanBudget::PerChannel(n) => format!("{n} per channel"),
@@ -705,13 +721,14 @@ fn report_scan(scan: &Unweighter, artifact: &IntegrateArtifact, budget: ScanBudg
             "each channel's share of the integration budget".to_string()
         }
     };
-    let efficiency = artifact.sigma_pb / (scan.total_w_max() * GEV2_TO_PB);
+    let unit = observable.per_natural_unit();
+    let efficiency = artifact.sigma_pb / (scan.total_w_max() * unit);
     tui::state::note_unweighting_efficiency(efficiency);
     info!(
         "scan:     {draws} points over {} channels ({per_channel}), sum w_max {:.6e}, \
          predicted efficiency {efficiency:.4e}",
         artifact.channels.len(),
-        scan.total_w_max() * GEV2_TO_PB,
+        scan.total_w_max() * unit,
     );
     match rule {
         MaxRule::Extremum => info!("maxima:   the largest weight each channel's scan saw"),
@@ -754,13 +771,21 @@ fn file_header(
     args: &GenerateArgs,
     artifact: &IntegrateArtifact,
     strategy: &dyn UnweightStrategy,
+    observable: Observable,
 ) -> String {
+    let quantity = match observable {
+        Observable::CrossSection => "sigma",
+        // MadEvent's decay-run convention: `XSECUP` and `XWGTUP` carry the
+        // width, in GeV, where a scattering run's carry picobarns.
+        Observable::PartialWidth => "width (XSECUP and XWGTUP in GeV)",
+    };
     format!(
-        "process {}\nartifact {}\nintegration sigma {:.6e} +- {:.6e} pb\nseed {}\n{}",
+        "process {}\nartifact {}\nintegration {quantity} {:.6e} +- {:.6e} {}\nseed {}\n{}",
         artifact.process,
         args.artifact.display(),
         artifact.sigma_pb,
         artifact.sigma_err_pb,
+        observable.unit(),
         args.seed,
         strategy.describe(),
     )
@@ -1037,7 +1062,13 @@ fn generate_proton_sample(
         args.seed ^ SCAN_SEED_OFFSET,
         rule,
     );
-    report_scan(&scan, artifact, args.scan_points, rule);
+    report_scan(
+        &scan,
+        artifact,
+        args.scan_points,
+        rule,
+        Observable::CrossSection,
+    );
 
     let alpha_qed = evaluated
         .param_values
@@ -1069,7 +1100,12 @@ fn generate_proton_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
-        header: Some(file_header(args, artifact, strategy.as_ref())),
+        header: Some(file_header(
+            args,
+            artifact,
+            strategy.as_ref(),
+            Observable::CrossSection,
+        )),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -1079,6 +1115,7 @@ fn generate_proton_sample(
         source.sigma_pb(),
         &summary,
         strategy.as_ref(),
+        Observable::CrossSection,
     );
     Ok(summary)
 }
@@ -1123,6 +1160,23 @@ fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
     Ok(beams)
 }
 
+/// `IDBMUP` for a decay run: the decaying particle's PDG code and `0`, as MadEvent
+/// writes it — the second beam slot is empty, since there is no second incoming
+/// particle.
+fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
+    let mother = records[0].pdg()[0];
+    if records
+        .iter()
+        .any(|r| r.n_in() != 1 || r.pdg()[0] != mother)
+    {
+        return Err(err(
+            "the subprocesses do not share one decaying particle, so one <init> block cannot \
+             describe them",
+        ));
+    }
+    Ok([mother, 0])
+}
+
 /// The banked channel weights have to be a usable selection distribution before
 /// they are installed, since the combiner asserts rather than reports.
 fn check_alphas(alphas: &[f64]) -> Result<(), IntegrateError> {
@@ -1145,7 +1199,9 @@ fn report(
     sample_sigma: f64,
     summary: &EmitSummary,
     strategy: &dyn UnweightStrategy,
+    observable: Observable,
 ) {
+    let (symbol, unit) = (observable.symbol(), observable.unit());
     info!("process:  {}", artifact.process);
     info!("strategy: {}", strategy.describe());
     info!(
@@ -1162,14 +1218,14 @@ fn report(
         stats.ratio_max
     );
     info!(
-        "σ:        {sample_sigma:.6} pb from the sample vs {:.6} ± {:.6} pb from the integration \
-         ({:+.3}%)",
+        "{symbol}:        {sample_sigma:.6} {unit} from the sample vs {:.6} ± {:.6} {unit} from \
+         the integration ({:+.3}%)",
         artifact.sigma_pb,
         artifact.sigma_err_pb,
         100.0 * (sample_sigma / artifact.sigma_pb - 1.0)
     );
     info!(
-        "file:     IDWTUP = {}, XSECUP = {:.6e} pb, XMAXUP = {:.6e}",
+        "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",
         strategy.weight_strategy().as_i32(),
         summary.xsec_pb,
         summary.xmax
@@ -1180,6 +1236,7 @@ fn report(
 mod tests {
     use super::*;
     use vibegraph::artifact::{ChannelGrid, ChannelKey, FORMAT_VERSION};
+    use vibegraph::hadronic::FixedBeams;
     use vibegraph::phasespace::maps::MapChoices;
     use vibegraph::ufo::sm::SMRestrict;
     use vibegraph::vegas::VegasGrid;

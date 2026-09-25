@@ -136,6 +136,10 @@ CORPUS = [
     ("ee_z2_h", "generate e+ e- > z{2} h"),
     ("ee_z00_h", "generate e+ e- > z{00} h"),
     ("ee_z_hR", "generate e+ e- > z h{R}"),
+    # 1 -> n decays: a polarized decay product, and the decaying particle.
+    ("decay_t_wp0_b", "generate t > w+{0} b"),
+    ("decay_t_wpT_b", "generate t > w+{T} b"),
+    ("decay_tL_wp_b", "generate t{L} > w+ b"),
     # Two process lines over the same final state.
     ("add_disjoint", "generate e+ e- > z{0} h\nadd process e+ e- > z{T} h"),
     ("add_overlap", "generate e+ e- > z{0} h\nadd process e+ e- > z h"),

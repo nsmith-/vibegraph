@@ -4980,7 +4980,9 @@
      "orders": {},
      "diagrams": 1,
      "s_channels": [
-      []
+      [
+       24
+      ]
      ]
     }
    ]
@@ -5031,7 +5033,9 @@
      "orders": {},
      "diagrams": 1,
      "s_channels": [
-      []
+      [
+       24
+      ]
      ]
     }
    ]
@@ -5077,7 +5081,9 @@
      "orders": {},
      "diagrams": 1,
      "s_channels": [
-      []
+      [
+       24
+      ]
      ]
     }
    ]
@@ -5130,6 +5136,7 @@
      "diagrams": 1,
      "s_channels": [
       [
+       23,
        23
       ]
      ]
@@ -5184,6 +5191,7 @@
      "diagrams": 1,
      "s_channels": [
       [
+       23,
        23
       ]
      ]

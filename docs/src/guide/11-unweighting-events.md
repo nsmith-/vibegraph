@@ -129,6 +129,26 @@ test, so the departure is on the record and cannot drift
 (`vibegraph-lib/src/lhef/build.rs`). The jet-count memo on the
 [scale](10-hadronic.md#scales) path is the other place the same line is drawn.
 
+### Decay runs
+
+A [decay](07-phase-space.md#decays-at-rest) writes its events in MadEvent's
+decay-run convention. `<init>` names the decaying particle as beam 1, with
+its mass as the beam energy, and leaves beam 2 empty (`IDBMUP = 6 0`,
+`EBMUP = 173 0` for a top). `XSECUP`, and `XWGTUP` under `IDWTUP = -4`, carry
+the partial width in GeV where a scattering run's carry picobarns. Each event
+starts with the mother at rest, status $-1$, and every product points back at
+it alone, mothers `1 0` rather than the range `1 1` (`unwgt.f` zeroes the
+second pointer when there is one incoming particle). `SCALUP` is the larger
+of the card's two factorisation scales and `AQCDUP` is $\alpha_s$ at the
+renormalisation scale, the particle's mass by default — both fixed for every
+event, as MadEvent fixes them. Two fields differ from MadEvent's file:
+`PDFSUP` is `0` here, as on every fixed-energy run, where MadEvent writes the
+card's `lhaid` even without parton densities; and MadEvent writes an
+intermediate resonance within its Breit–Wigner window (the $W$ in
+`t > b e+ ve`) as a status-2 record, which this writer does for no process.
+`vibegraph check-events` reads an empty second beam as a decay run and
+expects one incoming leg per event there.
+
 ## Seeds and reproducibility
 
 A `generate` run is a pure function of the artifact, the cards and a seed.

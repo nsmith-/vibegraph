@@ -3295,6 +3295,193 @@
    ]
   },
   {
+   "name": "decay_t_wp0_b",
+   "card": "generate t > w+{0} b",
+   "subprocesses": [
+    {
+     "process": "t > w+{0} b @1",
+     "legs": [
+      [
+       6,
+       false,
+       []
+      ],
+      [
+       24,
+       true,
+       [
+        0
+       ]
+      ],
+      [
+       5,
+       true,
+       []
+      ]
+     ],
+     "helicities": [
+      [
+       1,
+       0,
+       -1
+      ],
+      [
+       1,
+       0,
+       1
+      ],
+      [
+       -1,
+       0,
+       -1
+      ],
+      [
+       -1,
+       0,
+       1
+      ]
+     ],
+     "iden": 6,
+     "identical": 1
+    }
+   ]
+  },
+  {
+   "name": "decay_t_wpT_b",
+   "card": "generate t > w+{T} b",
+   "subprocesses": [
+    {
+     "process": "t > w+{T} b @1",
+     "legs": [
+      [
+       6,
+       false,
+       []
+      ],
+      [
+       24,
+       true,
+       [
+        1,
+        -1
+       ]
+      ],
+      [
+       5,
+       true,
+       []
+      ]
+     ],
+     "helicities": [
+      [
+       1,
+       1,
+       -1
+      ],
+      [
+       1,
+       1,
+       1
+      ],
+      [
+       1,
+       -1,
+       -1
+      ],
+      [
+       1,
+       -1,
+       1
+      ],
+      [
+       -1,
+       1,
+       -1
+      ],
+      [
+       -1,
+       1,
+       1
+      ],
+      [
+       -1,
+       -1,
+       -1
+      ],
+      [
+       -1,
+       -1,
+       1
+      ]
+     ],
+     "iden": 6,
+     "identical": 1
+    }
+   ]
+  },
+  {
+   "name": "decay_tL_wp_b",
+   "card": "generate t{L} > w+ b",
+   "subprocesses": [
+    {
+     "process": "t{L} > w+ b @1",
+     "legs": [
+      [
+       6,
+       false,
+       [
+        -1
+       ]
+      ],
+      [
+       24,
+       true,
+       []
+      ],
+      [
+       5,
+       true,
+       []
+      ]
+     ],
+     "helicities": [
+      [
+       -1,
+       -1,
+       -1
+      ],
+      [
+       -1,
+       -1,
+       1
+      ],
+      [
+       -1,
+       0,
+       -1
+      ],
+      [
+       -1,
+       0,
+       1
+      ],
+      [
+       -1,
+       1,
+       -1
+      ],
+      [
+       -1,
+       1,
+       1
+      ]
+     ],
+     "iden": 3,
+     "identical": 1
+    }
+   ]
+  },
+  {
    "name": "add_disjoint",
    "card": "generate e+ e- > z{0} h\nadd process e+ e- > z{T} h",
    "subprocesses": [

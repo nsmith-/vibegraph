@@ -316,6 +316,10 @@ fn re(pattern: &str) -> Regex {
     Regex::new(pattern).expect("a MadGraph grammar expression compiles")
 }
 
+/// A terminal colour sequence (ANSI CSI: `ESC [` parameters, a final byte).
+/// MadGraph writes its banner into the `proc_card_mg5.dat` of an output directory
+/// with these around the `#` of each line; they carry no card content.
+static ANSI_CSI: LazyLock<Regex> = LazyLock::new(|| re(r"\x1b\[[0-9;?]*[ -/]*[@-~]"));
 /// `check_process_format`: one or two `>` not followed by a digit (`QCD^2>2`).
 static SEPARATOR: LazyLock<Regex> = LazyLock::new(|| re(r">\D"));
 /// `extract_process`'s spacing fix-up. MadGraph writes a character class meant to
@@ -358,7 +362,7 @@ pub fn parse_proc_card_ast(content: &str) -> Result<ProcCardAst, ParseError> {
 
     for raw in content.lines() {
         let mut line = std::mem::take(&mut continued);
-        line.push_str(raw.trim());
+        line.push_str(ANSI_CSI.replace_all(raw, "").trim());
         if let Some(head) = line.strip_suffix('\\') {
             continued = head.to_owned();
             continue;
@@ -1243,6 +1247,17 @@ mod tests {
         assert_eq!(ast.commands.len(), 3);
         assert_eq!(ast.model().unwrap().name, "sm");
         assert_eq!(ast.processes()[0].line.text, "x x > e+ e-");
+    }
+
+    #[test]
+    fn terminal_colour_codes_around_a_banner_are_ignored() {
+        let ast = parse_proc_card_ast(
+            "\x1b[1;31m#*  WARNING: UNKNOWN DEVELOPMENT VERSION.  *\x1b[1;0m\n\
+             import model sm\ngenerate e+ e- > mu+ mu-\n",
+        )
+        .unwrap();
+        assert_eq!(ast.commands.len(), 2);
+        assert_eq!(ast.processes()[0].line.text, "e+ e- > mu+ mu-");
     }
 
     #[test]

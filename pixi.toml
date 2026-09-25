@@ -205,6 +205,17 @@ dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
 dump-polarization-census = "python validation/madgraph/dump_polarization_census.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
+# MadEvent partial widths of the 1 -> n decay rows over several seeds, and the
+# t > b e+ ve histograms the decay sample row compares against
+generate-decay-widths = "bash validation/madgraph/gen_decay_widths.sh"
+# The SM UFO's analytic two-body widths (decays.py) as MadGraph's model_reader
+# evaluates them on restrict_default — the hermetic 1 -> 2 width oracle
+dump-sm-decay-widths = "python validation/madgraph/dump_sm_decay_widths.py"
+# h > e+ e- mu+ mu- by quadrature over its two off-shell Z lines: the exact width
+# the decay gate holds both MadEvent and this crate to
+decay-semianalytic = "python validation/madgraph/decay_semianalytic.py"
+# MadGraph standalone |M|^2 for 1 -> n decays at fixed rest-frame points
+generate-decay-amplitudes = "python validation/madgraph/gen_decay_amplitudes.py"
 # Hadronic cross-section gate: sigma(pp->e+e-) on both dy13 run cards against the
 # banked MG reference, and sigma(pp->l+l-j) against the banked pp_to_llj_fixed
 # run — all of them through the general flavour-group path, each swept over three

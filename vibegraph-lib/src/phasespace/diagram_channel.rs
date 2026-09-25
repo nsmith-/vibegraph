@@ -342,8 +342,9 @@ impl<F: Real> DiagramChannel<F> {
     /// with an unregulated spacelike pole.
     ///
     /// Outgoing-leg masses and each internal line's mass/width are read from
-    /// `model`. Only meaningful for a `2 → n` process; the beams are externals
-    /// `0..n_in`.
+    /// `model`. The incoming legs are externals `0..n_in`: two beams, or on a
+    /// `1 → n` decay the decaying particle, every internal line of which is
+    /// timelike, so the channel is the all-timelike tree at `sqrt_s = M`.
     pub fn from_diagram(diagram: &Diagram, model: &EvaluatedModel, sqrt_s: F) -> Self {
         Self::from_diagram_regulated(diagram, model, sqrt_s, F::zero())
     }
@@ -416,9 +417,15 @@ impl<F: Real> DiagramChannel<F> {
                 cast(model.mass(particle))
             })
             .collect();
+        // A decay's one incoming leg sits alone in slot `0`: it has no spacelike
+        // line (`Prop::is_spacelike`), so nothing reads the second slot.
         let beam_masses = [
             cast(model.mass(diagram.legs[0].particle)),
-            cast(model.mass(diagram.legs[1].particle)),
+            if n_in == 2 {
+                cast(model.mass(diagram.legs[1].particle))
+            } else {
+                F::zero()
+            },
         ];
 
         // Timelike subsystems drive the decay tree; spacelike lines are peripheral.

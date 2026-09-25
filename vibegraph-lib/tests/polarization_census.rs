@@ -16,7 +16,7 @@
 //!   polarization-aware identical-particle factor are pinned;
 //! - where MadGraph refused, this side refuses too.
 //!
-//! Four cards MadGraph accepts are refused here on purpose, each named in
+//! Five cards MadGraph accepts are refused here on purpose, each named in
 //! [`DELIBERATE_REFUSALS`] with the reason.
 //!
 //! What the comparison cannot see: the helicity combinations are compared as
@@ -48,6 +48,11 @@ const DELIBERATE_REFUSALS: &[(&str, &str)] = &[
         "ee_z_hR",
         "a scalar has no helicity +1; MadGraph's sxxxxx ignores NHEL, so the card \
          silently means the unpolarized one",
+    ),
+    (
+        "decay_tL_wp_b",
+        "the decaying particle is at rest, where its helicity is a spin projection on the \
+         axis the wavefunction routine picks; no amplitude row pins that convention",
     ),
     (
         "add_overlap",

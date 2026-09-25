@@ -298,6 +298,55 @@ impl RunCard {
         Self::parse(&text)
     }
 
+    /// MadGraph's out-of-the-box run card for a `1 → n` decay process: the LO
+    /// defaults with every cut removed (`banner.py`'s `create_default_for_process`,
+    /// which calls `remove_all_cut` when `ninitial == 1`), `SDE_strategy = 1`
+    /// (forced there for one initial particle) and systematics off.
+    ///
+    /// `remove_all_cut` resets each of the card's cut parameters by name: a
+    /// boolean to false, a `min` to `0`, a `max` to `-1`, a rapidity bound to
+    /// `-1` and anything else to `0`. [`DECAY_CUT_RESETS`] is that rule applied to
+    /// every cut parameter whose LO default it moves.
+    pub fn decay_default() -> Self {
+        let mut values = Self::default().values;
+        for (name, value) in DECAY_CUT_RESETS {
+            values.insert((*name).to_string(), value.to_value());
+        }
+        values.insert("SDE_strategy".to_string(), ParamValue::Int(1));
+        values.insert("use_syst".to_string(), ParamValue::Bool(false));
+        Self::from_values(values).expect("the decay defaults are self-consistent")
+    }
+
+    /// This card as MadEvent runs it for the decay of a particle of pole mass
+    /// `mass` (`setcuts.f`, the `nincoming = 1` branch).
+    ///
+    /// A decay has no parton densities, so both beams become fixed-energy ones at
+    /// `M/2`. The renormalisation scale is fixed at `M` unless the card already
+    /// fixes it, and both factorisation scales are fixed at the card's own
+    /// `dsqrt_q2fact1`/`dsqrt_q2fact2` — so no dynamical prescription, clustering
+    /// or otherwise, is ever evaluated for a decay, whatever
+    /// `dynamical_scale_choice` says. Systematics are switched off.
+    pub fn for_decay(&self, mass: f64) -> Self {
+        let mut values = self.values.clone();
+        let mut set = |name: &str, value: ParamValue| {
+            values.insert(name.to_string(), value);
+        };
+        set("lpp1", ParamValue::Int(0));
+        set("lpp2", ParamValue::Int(0));
+        set("ebeam1", ParamValue::Float(mass / 2.0));
+        set("ebeam2", ParamValue::Float(mass / 2.0));
+        if !self.fixed_ren_scale {
+            set("scale", ParamValue::Float(mass));
+            set("fixed_ren_scale", ParamValue::Bool(true));
+        }
+        set("fixed_fac_scale", ParamValue::Bool(true));
+        set("fixed_fac_scale1", ParamValue::Bool(true));
+        set("fixed_fac_scale2", ParamValue::Bool(true));
+        set("use_syst", ParamValue::Bool(false));
+        Self::from_values(values)
+            .expect("a decay card relaxes the beam checks, never tightens them")
+    }
+
     fn from_values(values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
         let f = |name: &str| values.get(name).expect("known param").as_f64();
         let i = |name: &str| values.get(name).expect("known param").as_i64();
@@ -673,6 +722,39 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("mxx_only_part_antipart", Def::O),
 ];
 
+/// The cut parameters whose LO default `remove_all_cut` moves, with the value it
+/// moves them to — the whole difference between [`RunCard::default`] and
+/// [`RunCard::decay_default`] on the cuts. Every other cut parameter already sits
+/// at its reset value.
+const DECAY_CUT_RESETS: &[(&str, Def)] = &[
+    ("deltaeta", Def::F(-1.0)),
+    ("dparameter", Def::F(0.0)),
+    ("draa", Def::F(0.0)),
+    ("draj", Def::F(0.0)),
+    ("dral", Def::F(0.0)),
+    ("drjj", Def::F(0.0)),
+    ("drjl", Def::F(0.0)),
+    ("drll", Def::F(0.0)),
+    ("etaa", Def::F(-1.0)),
+    ("etaj", Def::F(-1.0)),
+    ("etal", Def::F(-1.0)),
+    ("ktdurham", Def::F(0.0)),
+    ("pta", Def::F(0.0)),
+    ("ptj", Def::F(0.0)),
+    ("ptl", Def::F(0.0)),
+    ("ptlund", Def::F(0.0)),
+];
+
+/// The value `remove_all_cut` resets a cut parameter to, where that differs from
+/// its LO default ([`DECAY_CUT_RESETS`]). Both are values at which MadGraph's
+/// `cuts.f` leaves the cut off.
+pub fn decay_cut_reset(name: &str) -> Option<ParamValue> {
+    DECAY_CUT_RESETS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, d)| d.to_value())
+}
+
 /// The MadGraph LO default value for a recognized parameter, or `None` for an
 /// unknown name.
 pub fn param_default(name: &str) -> Option<ParamValue> {
@@ -954,5 +1036,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Transcription oracle for [`RunCard::decay_default`]: every cut parameter
+    /// as `banner.py`'s `remove_all_cut` leaves it, dumped from MadGraph's own
+    /// `RunCardLO` into `validation/madgraph/runcard_decay_defaults.json`
+    /// (`dump_runcard_defaults.py`). A reset missing from [`DECAY_CUT_RESETS`]
+    /// leaves that cut at its scattering default, and a decay with no run card
+    /// then gets a cut MadGraph's does not have.
+    #[test]
+    fn decay_defaults_match_banner_py_remove_all_cut() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/runcard_decay_defaults.json"
+        );
+        let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            panic!(
+                "missing decay-defaults oracle {path}: {e}\n\
+                 run `pixi run -e madgraph dump-runcard-defaults` to (re)generate it"
+            )
+        });
+        let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let card = RunCard::decay_default();
+        let mut compared = 0;
+        for (name, expected) in dump.as_object().expect("oracle is a JSON object") {
+            let canonical = canonical_name(name)
+                .unwrap_or_else(|| panic!("cut parameter '{name}' is not in the defaults table"));
+            let actual = card.get(canonical).expect("every canonical name resolves");
+            match (actual, expected) {
+                (ParamValue::Opaque(_), _) => continue,
+                (ParamValue::Bool(b), e) => assert_eq!(e.as_bool(), Some(*b), "'{name}'"),
+                (v, e) => {
+                    let e = e.as_f64().unwrap_or_else(|| panic!("'{name}': {e}"));
+                    assert_eq!(v.as_f64(), e, "'{name}': decay default vs remove_all_cut");
+                }
+            }
+            compared += 1;
+        }
+        assert!(compared > 90, "compared only {compared} cut parameters");
+        assert_eq!(card.int("SDE_strategy"), 1);
+        assert!(!card.get("use_syst").unwrap().as_bool());
+    }
+
+    /// The `setcuts.f` decay branch: both scales fixed, `μR` at the mass unless
+    /// the card fixed it already, no parton densities.
+    #[test]
+    fn a_decay_reads_the_card_as_madevent_does() {
+        let floating = RunCard::decay_default().for_decay(173.0);
+        assert_eq!((floating.lpp1, floating.lpp2), (0, 0));
+        assert_eq!((floating.ebeam1, floating.ebeam2), (86.5, 86.5));
+        assert!(floating.fixed_ren_scale && floating.fixed_fac_scale);
+        assert!(floating.get("fixed_fac_scale1").unwrap().as_bool());
+        assert!(floating.get("fixed_fac_scale2").unwrap().as_bool());
+        assert_eq!(floating.scale, 173.0);
+        assert_eq!(floating.dsqrt_q2fact1, 91.188);
+
+        let fixed = RunCard::parse("T = fixed_ren_scale\n70 = scale\n")
+            .unwrap()
+            .for_decay(173.0);
+        assert_eq!(fixed.scale, 70.0, "a fixed renormalisation scale is kept");
     }
 }

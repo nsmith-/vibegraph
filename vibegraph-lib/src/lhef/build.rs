@@ -287,8 +287,15 @@ impl SubprocessRecord {
         let tags = self.flows.flow(flow);
         // Every leg leaving the hard process descends from the whole initial
         // state, so its mother range spans the incoming legs; an incoming leg has
-        // no mother in the record.
-        let outgoing_mothers = [1, self.n_in as i32];
+        // no mother in the record. A decay's products name the decaying particle
+        // alone, `(1, 0)` rather than the range `(1, 1)`: MadEvent's `unwgt.f`
+        // zeroes the second mother of every line whose first is `1` when
+        // `nincoming = 1`.
+        let outgoing_mothers = if self.n_in == 1 {
+            [1, 0]
+        } else {
+            [1, self.n_in as i32]
+        };
         let particles = (0..self.n_ext())
             .map(|leg| LheParticle {
                 pdg: self.pdg[leg],

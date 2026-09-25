@@ -55,7 +55,6 @@ language:
 |---|---|
 | `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
 | decay chains `A > B C, B > D E` | refused until stitched decay enumeration exists |
-| 1→n decay processes (`t > w+ b`) | refused until rest-frame phase space exists |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
 | `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
@@ -66,8 +65,15 @@ language:
 
 Benign `set` options (paths, compilers, `group_subprocesses`, …) and
 commands such as `output` and `display` are accepted and change nothing.
-Mixing processes with different numbers of initial particles is a MadGraph
-error and stays one.
+
+A process with one initial particle (`generate t > b e+ ve`) is a `1 → n`
+decay, integrated to a [partial width](07-phase-space.md#decays-at-rest).
+It is enumerated like any other process — every diagram with the decaying
+particle as its one incoming leg, every internal line then an s-channel —
+and the same enumeration is available for a single decay on its own
+(`enumerate_decay`), which is what joining decays onto a core process
+builds on. Mixing processes with different numbers of initial particles is
+a MadGraph error and stays one.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
@@ -127,7 +133,12 @@ combinations summed over are the product of each leg's own list — MadGraph's
   polarized with overlapping lists (`p p > z{T} z`, `z{L} z{T}`), is
   refused: MadGraph calls it ambiguous and a batch run stops there.
 
-Three things MadGraph accepts are refused here: a code that is no helicity
+In a `1 → n` decay the outgoing legs may be polarized (`t > w+{0} b`), and
+the decaying particle averages over its states as an incoming leg does; the
+decaying particle itself may not be (`t{L} > w+ b`), since at rest its
+helicity is a spin projection on an axis the wavefunction routine picks.
+
+Three more things MadGraph accepts are refused here: a code that is no helicity
 state of the particle (`z{2}`, `h{R}`: MadGraph hands the number to the
 wavefunction routine regardless), a code listed twice (`z{00}`, which
 MadGraph would sum twice), and two process lines whose subprocesses of the
@@ -265,6 +276,8 @@ look: the counts have caught by-hand census claims that were wrong, and a
 count that agrees with the census MadGraph wrote for the same card is what licenses the
 per-diagram amplitude comparison in the next chapter. The comparison is
 hermetic: the census is committed to the repository as `validation/madgraph/diagrams.json`.
+The decay census (`t > b e+ ve a`, `z > e+ e- mu+ mu-`, `w+ > j j`, …) is
+compared against MadGraph's own generation of the same cards.
 
 ## Where it lives
 

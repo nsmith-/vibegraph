@@ -27,7 +27,9 @@
 //!   (`setcuts.f:399`, `cuts.f:485`); `ptll` as `ptll·|ptll|` against
 //!   `(Σpx)²+(Σpy)²` (`setcuts.f:479`, `cuts.f:462`).
 //! - **ŝ window** compares `(p₁+p₂)²` against `dsqrt_shat²` /
-//!   `dsqrt_shatmax²` (`cuts.f:312`).
+//!   `dsqrt_shatmax²` (`cuts.f:312`), on a process with two incoming legs only:
+//!   `cuts.f` guards it with `nincoming.eq.2`, so a decay, whose `ŝ` is its pole
+//!   mass squared, never reads it.
 //! - **Class membership** (`setcuts.f:217`): a final leg is a jet if
 //!   `|pdg| ≤ min(maxjetflavor,6)` or `|pdg| = 21`; a b if
 //!   `maxjetflavor < |pdg| ≤ 5`; a charged lepton if `|pdg| ∈ {11,13,15}`; a
@@ -45,7 +47,7 @@ use thiserror::Error;
 
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
-use crate::runcard::{param_default, ParamValue, RunCard};
+use crate::runcard::{decay_cut_reset, param_default, ParamValue, RunCard};
 
 /// One external leg's identity, the classification input for [`Cuts::compile`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -349,6 +351,7 @@ impl Cuts {
 
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
+        let two_incoming = incoming.len() == 2;
         let shat_min_hint = shat_min_hint(rc, legs, &infos, &single);
 
         tracing::debug!(
@@ -368,8 +371,12 @@ impl Cuts {
                 .filter(|(_, l)| l.is_final)
                 .map(|(i, _)| i)
                 .collect(),
-            shat_min_sq: dsqrt_shat * dsqrt_shat,
-            shat_max_sq: if dsqrt_shatmax == -1.0 {
+            shat_min_sq: if two_incoming {
+                dsqrt_shat * dsqrt_shat
+            } else {
+                0.0
+            },
+            shat_max_sq: if dsqrt_shatmax == -1.0 || !two_incoming {
                 -1.0
             } else {
                 dsqrt_shatmax * dsqrt_shatmax
@@ -662,7 +669,10 @@ fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
         let (Some(cur), Some(def)) = (rc.get(name), param_default(name)) else {
             continue;
         };
-        if *cur != def {
+        // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
+        // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
+        // exactly as their LO defaults do.
+        if *cur != def && Some(cur) != decay_cut_reset(name).as_ref() {
             return Err(CutError::UnimplementedCutActive {
                 name: name.to_string(),
                 value: describe(cur),

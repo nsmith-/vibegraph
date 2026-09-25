@@ -226,14 +226,51 @@ fn an_order_the_model_does_not_define_is_refused() {
     assert!(err.contains("not an order of this model"), "{err}");
 }
 
-/// A 1→n process is refused by the check, before enumeration.
+/// 1→n decays enumerate with one incoming leg: the diagram census against
+/// MadGraph's own generation at the pinned version (`import model sm`, one
+/// `generate` per row), subprocess by subprocess.
 #[test]
-fn a_decay_process_is_refused_by_the_check() {
-    let err = parse_proc_card("generate t > w+ b", &ParsingOptions::default()).unwrap_err();
+fn decay_processes_match_madgraphs_diagram_census() {
+    for (process, subprocesses, diagrams) in [
+        ("t > w+ b", 1, 1),
+        ("t > b e+ ve", 1, 1),
+        ("h > e+ e- mu+ mu-", 1, 1),
+        ("z > e+ e-", 1, 1),
+        ("t > b e+ ve a", 1, 4),
+        ("t > w+ b g", 1, 2),
+        ("z > e+ e- a", 1, 2),
+        ("w+ > j j", 2, 2),
+        ("h > b b~ g", 1, 2),
+        ("z > e+ e- mu+ mu-", 1, 8),
+        ("h > w+ e- ve~", 1, 1),
+    ] {
+        let sets = common::generate(process);
+        let populated: Vec<_> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+        assert_eq!(populated.len(), subprocesses, "{process}: subprocesses");
+        assert_eq!(total_diagrams(&sets), diagrams, "{process}: diagrams");
+        for set in populated {
+            assert_eq!(set.particles_in.len(), 1, "{process}");
+            assert!(set.diagrams.iter().all(|d| d.n_in == 1), "{process}");
+        }
+    }
+}
+
+/// A card cannot mix decays with scattering processes: MadGraph refuses the
+/// second line (`madgraph_interface.py`), and so does the check.
+#[test]
+fn a_decay_cannot_share_a_card_with_a_scattering_process() {
+    let err = parse_proc_card(
+        "generate t > w+ b\nadd process e+ e- > mu+ mu-\n",
+        &ParsingOptions::default(),
+    )
+    .unwrap_err();
     let vibegraph::diagrams::DiagramError::Unsupported(all) = err else {
         panic!("{err}");
     };
-    assert!(matches!(all.0[..], [Unsupported::DecayProcess { .. }]));
+    assert!(matches!(
+        all.0[..],
+        [Unsupported::MixedInitialStates { .. }]
+    ));
 }
 
 /// `/ w+` forbids the W propagator in either orientation: MadGraph compares

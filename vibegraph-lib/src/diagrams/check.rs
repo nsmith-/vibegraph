@@ -18,7 +18,6 @@
 //! |---|---|---|
 //! | [`ForbiddenOnShellSChannel`](Unsupported::ForbiddenOnShellSChannel) | `$ A` | a per-channel on-shell veto in the integrand |
 //! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | stitched core and decay enumerations |
-//! | [`DecayProcess`](Unsupported::DecayProcess) | `t > w+ b` (1→n) | rest-frame phase space and partial widths |
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
@@ -177,22 +176,20 @@ pub enum Unsupported {
          have to be enumerated separately and joined at the resonance"
     )]
     DecayChain { process: String },
-    /// A 1→n process, integrated by MadGraph to a partial width.
-    #[error(
-        "'{process}': 1→n decay processes are not supported yet — they need rest-frame \
-         phase space and a width run mode"
-    )]
-    DecayProcess { process: String },
     /// More than two initial particles: no phase space or flux here or in
     /// MadEvent describes one.
     #[error("'{process}': {n} initial-state particles; a process has one or two")]
     InitialState { process: String, n: usize },
     /// A polarization on a leg a decay chain decays, `p p > w+{0} w-, w+ >
     /// e+ ve`: the resonance is then a propagator, and MadGraph replaces its
-    /// numerator by the projection on the named helicities.
+    /// numerator by the projection on the named helicities. Also a polarized
+    /// decaying particle of a `1 → n` process, `t{L} > w+ b`: at rest its
+    /// helicity is a spin projection on an axis the wavefunction routine
+    /// chooses, which nothing here pins against MadGraph.
     #[error(
-        "'{process}': polarization '{leg}' is on a particle the line decays, which makes it \
-         a helicity projection of the resonance's propagator; that is not supported"
+        "'{process}': polarization '{leg}' is on a particle the line decays, which is not \
+         supported: a decay chain's resonance would need a helicity-projected propagator, and \
+         a decaying particle at rest a spin axis pinned against MadGraph"
     )]
     DecayedPolarization { process: String, leg: String },
     /// The propagator-only polarization codes (`{A}` auxiliary, `{G}` metric,
@@ -553,14 +550,16 @@ fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
         refused.push(Unsupported::DecayChain { process: process() });
     }
     match def.initial().count() {
-        2 => {}
-        1 => refused.push(Unsupported::DecayProcess { process: process() }),
+        1 | 2 => {}
         n => refused.push(Unsupported::InitialState {
             process: process(),
             n,
         }),
     }
-    check_definition(def, &process(), false, refused);
+    // The initial leg of a 1 -> n line is the decaying particle, as it is in a
+    // decay chain's own decay.
+    let decay = def.initial().count() == 1;
+    check_definition(def, &process(), decay, refused);
 }
 
 /// The features of a definition and of its decays. The number of initial
@@ -702,7 +701,6 @@ mod tests {
                 Unsupported::ForbiddenOnShellSChannel { .. } => "$",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
-                Unsupported::DecayProcess { .. } => "1>n",
                 Unsupported::DecayChain { .. } => ",",
                 Unsupported::MixedMultiplicity { .. } => "mlm",
                 Unsupported::MixedInitialStates { .. } => "mixed",
@@ -712,7 +710,7 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["set", "launch", "$", "[]", "^2", "1>n", "mixed", ",", "mlm"]
+            ["set", "launch", "$", "[]", "^2", "mixed", ",", "mlm"]
         );
     }
 
@@ -798,6 +796,11 @@ mod tests {
         assert!(decayed
             .iter()
             .any(|u| matches!(u, Unsupported::DecayedPolarization { leg, .. } if leg == "w+{0}")));
+        assert!(matches!(
+            refused("generate t{L} > w+ b")[..],
+            [Unsupported::DecayedPolarization { .. }]
+        ));
+        assert!(check("generate t > w+{0} b").is_ok());
         let resonance = refused("generate p p > w+ w-, w+{0} > e+ ve");
         assert!(resonance
             .iter()

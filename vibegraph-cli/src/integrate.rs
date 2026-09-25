@@ -14,6 +14,14 @@
 //!   convolution over any final multiplicity, sampled by a resonance-aware
 //!   per-diagram multichannel map whose integral is split channel by channel, one
 //!   VEGAS grid each.
+//!
+//! A `1 → n` proc card (`generate t > b e+ ve`) is a third mode, whatever the
+//! beams say: the partial width of the decaying particle at rest, in GeV, through
+//! the same multichannel map as a fixed-energy run. MadEvent reads the run card
+//! of a decay run its own way — no parton densities, the renormalisation scale at
+//! the particle's mass, every cut applied in the rest frame, and with no card a
+//! default that has every cut removed — and so does this command
+//! ([`RunCard::decay_default`], [`RunCard::for_decay`]).
 
 use std::path::PathBuf;
 
@@ -27,13 +35,12 @@ use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions, SupportedCard};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, FixedBeams,
-    RunningCouplingReport,
+    refuse_polarized_frame, ChannelIntegration, DecayAtRest, FixedBeamIntegrand, FixedBeams,
+    InitialState, Observable, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
-use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -412,6 +419,30 @@ pub(crate) fn load_pdf_set(
     })
 }
 
+/// Whether the card's processes are `1 → n` decays, which the check guarantees
+/// all of them are when the first is.
+pub(crate) fn is_decay(parsed: &SupportedCard) -> bool {
+    parsed
+        .processes
+        .first()
+        .is_some_and(|p| p.initial.len() == 1)
+}
+
+/// The run card a run over `parsed` reads: the `--run-card` file, or without one
+/// MadGraph's own default for the process, which for a decay has every cut
+/// removed.
+pub(crate) fn load_run_card(
+    config: &GlobalConfig,
+    parsed: &SupportedCard,
+) -> Result<RunCard, IntegrateError> {
+    let card = if is_decay(parsed) {
+        config.load_decay_run_card()
+    } else {
+        config.load_run_card()
+    };
+    card.map_err(|e| err(format!("failed to load run card: {e}")))
+}
+
 /// The canonical string of the proc card's first process, for artifact metadata.
 pub fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
     let spec = parsed
@@ -434,6 +465,8 @@ fn recorded_mu_f(report: &RunningCouplingReport) -> f64 {
 /// The metadata printed and banked for a completed run, independent of beam mode.
 struct RunOutput {
     process: String,
+    /// What the integral measures: a cross section, or a decay's partial width.
+    observable: Observable,
     pdf_set: String,
     mu_f: f64,
     sqrt_s: f64,
@@ -446,19 +479,22 @@ struct RunOutput {
 }
 
 /// Convert one channel's integration into the artifact record, with its term's
-/// integral and error in picobarns and the composition its map was built by.
+/// integral and error in the observable's reported unit (picobarns, or GeV for a
+/// decay) and the composition its map was built by.
 fn bank_channel(
     key: ChannelKey,
     c: &ChannelIntegration,
     sampler: Option<ChannelSampler>,
+    observable: Observable,
 ) -> ChannelGrid {
+    let unit = observable.per_natural_unit();
     ChannelGrid {
         key,
         alpha: c.alpha,
         neval: c.neval,
         grid: c.grid.clone(),
-        sigma_pb: c.result.integral * GEV2_TO_PB,
-        sigma_err_pb: c.result.std_dev * GEV2_TO_PB,
+        sigma_pb: c.result.integral * unit,
+        sigma_err_pb: c.result.std_dev * unit,
         chi2_per_dof: c.result.chi2_per_dof,
         sampler,
     }
@@ -492,9 +528,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
-    let rc = config
-        .load_run_card()
-        .map_err(|e| err(format!("failed to load run card: {e}")))?;
+    let rc = load_run_card(&config, &parsed)?;
     tui::state::describe_model(
         &model_id.label(),
         &model_id.digest,
@@ -507,6 +541,9 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     let evaluated = EvaluatedModel::from_model(model.clone());
 
     let output = match rc.beam_mode() {
+        _ if is_decay(&parsed) => {
+            integrate_fixed_energy(args, &parsed, &model, &evaluated, &rc, process)?
+        }
         BeamMode::Proton => {
             integrate_proton(args, &parsed, &model, &evaluated, &rc, process, network)?
         }
@@ -527,13 +564,24 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         ));
     }
 
-    let sigma_pb = output.result.integral * GEV2_TO_PB;
-    let sigma_err_pb = output.result.std_dev * GEV2_TO_PB;
+    let observable = output.observable;
+    let sigma_pb = output.result.integral * observable.per_natural_unit();
+    let sigma_err_pb = output.result.std_dev * observable.per_natural_unit();
 
     info!("process:  {}", output.process);
     info!("model:    {} ({})", model_id.label(), model_id.digest);
-    info!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
-    info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+    match observable {
+        Observable::CrossSection => {
+            info!("PDF set:  {} (member {PDF_MEMBER})", output.pdf_set);
+            info!("√s:       {} GeV,  μF = {} GeV", output.sqrt_s, output.mu_f);
+        }
+        Observable::PartialWidth => {
+            info!(
+                "decay:    at rest, M = {} GeV, no parton densities",
+                output.sqrt_s
+            );
+        }
+    }
     let conv = &output.convergence;
     info!(
         "VEGAS:    {} evals over {} iters, seed {} (χ²/dof = {:.3})",
@@ -587,7 +635,16 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     }
     // The command's result, and the reason `stdout` carries nothing else: a
     // caller pipes this to read the cross section, at any verbosity.
-    tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"));
+    // A partial width spans many decades — `h > e+ e- mu+ mu-` is `2e-7` GeV —
+    // so it is printed to six significant figures rather than six decimals.
+    match observable {
+        Observable::CrossSection => {
+            tui::result_line(format_args!("σ = {sigma_pb:.6} ± {sigma_err_pb:.6} pb"))
+        }
+        Observable::PartialWidth => {
+            tui::result_line(format_args!("Γ = {sigma_pb:.6e} ± {sigma_err_pb:.6e} GeV"))
+        }
+    }
 
     let artifact = IntegrateArtifact {
         format_version: FORMAT_VERSION,
@@ -716,11 +773,13 @@ fn integrate_hadronic(
                 },
                 c,
                 Some(sampler.clone()),
+                Observable::CrossSection,
             )
         })
         .collect();
     Ok(RunOutput {
         process,
+        observable: Observable::CrossSection,
         pdf_set: args.pdf_set.clone(),
         mu_f: recorded_mu_f(&scale_report),
         sqrt_s: sqrt_s_had,
@@ -731,11 +790,14 @@ fn integrate_hadronic(
     })
 }
 
-/// Fixed-energy partonic beams (`lpp = 0`): resonance-aware multichannel integration
-/// with no PDF. The subprocess(es) and their external state are generated from the
-/// caller's proc card, and a per-diagram [`MultiChannel`] combiner — α-adapted to the
-/// process's own `Σ|M|²` — replaces flat RAMBO as the VEGAS integrand map so narrow
-/// Breit–Wigner peaks converge (unbiased, same σ̂; flat RAMBO under-samples them).
+/// Fixed-energy partonic beams (`lpp = 0`), or a `1 → n` decay at rest:
+/// resonance-aware multichannel integration with no PDF. The subprocess(es) and
+/// their external state are generated from the caller's proc card, and a
+/// per-diagram [`MultiChannel`] combiner — α-adapted to the process's own `Σ|M|²`
+/// — replaces flat RAMBO as the VEGAS integrand map so narrow Breit–Wigner peaks
+/// converge (unbiased, same σ̂; flat RAMBO under-samples them).
+///
+/// [`MultiChannel`]: vibegraph::phasespace::MultiChannel
 fn integrate_fixed_energy(
     args: &IntegrateArgs,
     parsed: &SupportedCard,
@@ -756,8 +818,8 @@ fn integrate_fixed_energy(
 
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
-    let beams = FixedBeams::from_run_card(rc, &legs);
-    let sqrt_s = beams.sqrt_s();
+    let initial = initial_state(rc, &legs)?;
+    let sqrt_s = initial.sqrt_s();
     let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
@@ -771,7 +833,7 @@ fn integrate_fixed_energy(
         .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, beams, final_masses, spin_color_avg);
+    let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.set_map_options(args.maps.options());
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
@@ -794,6 +856,7 @@ fn integrate_fixed_energy(
     );
     Ok(RunOutput {
         process,
+        observable: initial.observable(),
         pdf_set: NO_PDF.to_string(),
         // No parton distributions, so no factorisation scale enters the integral.
         mu_f: 0.0,
@@ -806,6 +869,7 @@ fn integrate_fixed_energy(
                     ChannelKey::Channel { channel: j },
                     c,
                     integ.channel_samplers().get(j).cloned(),
+                    initial.observable(),
                 )
             })
             .collect(),
@@ -813,4 +877,19 @@ fn integrate_fixed_energy(
         result,
         convergence,
     })
+}
+
+/// The initial state a compiled process and the run card describe: the decaying
+/// particle at rest for a `1 → n` process, otherwise the card's two fixed-energy
+/// beams on the incoming legs' mass shells.
+pub(crate) fn initial_state(
+    rc: &RunCard,
+    legs: &[vibegraph::cuts::ExternalLeg],
+) -> Result<InitialState, IntegrateError> {
+    if legs.iter().filter(|l| !l.is_final).count() == 1 {
+        let decay = DecayAtRest::from_legs(legs).map_err(|e| err(e.to_string()))?;
+        Ok(decay.into())
+    } else {
+        Ok(FixedBeams::from_run_card(rc, legs).into())
+    }
 }
