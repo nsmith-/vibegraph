@@ -683,13 +683,15 @@ pub(super) fn instr_kinds(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<u8> {
 /// dependency level. Every node's operands sit at a strictly lower level, so ordering
 /// by level and permuting freely inside a level is always topological.
 ///
-/// Two things make this order fast, and which one dominates depends on the core.
-/// Ordering by level puts mutually independent instructions next to each other, so an
-/// out-of-order core overlaps them across the dispatch jump; interning order places each
-/// producer right before its consumer and serialises the latency chain. Grouping by
-/// variant inside a level gives the dispatch branch runs of one discriminant to predict
-/// on. On x86 the level structure alone carries the win: the same levels with variants
-/// interleaved run as fast, under the `match` loop and the threaded dispatcher alike.
+/// Two things make this order fast. Ordering by level puts mutually independent
+/// instructions next to each other, so an out-of-order core overlaps them across the
+/// dispatch jump; interning order places each producer right before its consumer and
+/// serialises the latency chain. Grouping by variant inside a level makes the variant
+/// sequence the dispatch branch sees predictable. A small program's stream repeats every
+/// point, and the predictor learns it in any order. A program of tens of thousands of
+/// instructions exceeds what it can learn, and there a random order within the levels
+/// costs a mispredict per instruction — twice the runtime on the 2 → 6, under either
+/// dispatcher.
 /// Which values each instruction reads and writes is untouched, so the arithmetic and
 /// the amplitude are bit-for-bit the same.
 pub(super) fn op_blocked_order(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {

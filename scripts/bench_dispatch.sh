@@ -9,8 +9,10 @@
 # serves every schedule.
 #
 # Cells run round-robin, so host drift lands on all of them; the summary is the
-# geometric mean over rows of each cell's median-over-rounds time, relative to
-# `match` under the production order.
+# geometric mean over rows of each cell's min-over-rounds time, relative to
+# `match` under the production order. Min, not median: on Apple silicon a
+# thread cannot be pinned to a performance core, and a round that lands on an
+# efficiency core runs about 2x slow.
 #
 # Usage: scripts/bench_dispatch.sh [rounds] [schedules...]
 #   default schedules: opblocked arena opwin32
@@ -63,7 +65,7 @@ for r in $(seq 1 "$rounds"); do
 done
 
 python3 - "$out" <<'EOF'
-import collections, json, math, pathlib, statistics, sys
+import collections, json, math, pathlib, sys
 out = pathlib.Path(sys.argv[1])
 est = collections.defaultdict(list)
 for d in out.iterdir():
@@ -80,7 +82,7 @@ print(f"{'cell':<22}" + "".join(f"{b:>22}" for b in benches))
 for c in cells:
     line = f"{c:<22}"
     for b in benches:
-        q = [statistics.median(est[(c, b, r)]) / statistics.median(est[(ref, b, r)])
+        q = [min(est[(c, b, r)]) / min(est[(ref, b, r)])
              for r in rows if est.get((c, b, r)) and est.get((ref, b, r))]
         g = math.exp(sum(map(math.log, q)) / len(q))
         line += f"{g:>8.3f} [{min(q):.2f}..{max(q):.2f}]"

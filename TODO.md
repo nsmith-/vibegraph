@@ -446,19 +446,21 @@ above); the entries here are the eventual features.
 - **Tail-call-threaded dispatch: built, measured, a tie** — the
   `threaded-dispatch` feature (nightly `become`) runs the instruction stream
   through one handler per `Instr` kind, each tail-calling the next. It is
-  bit-identical to the `match` loop (unit-tested, anti-vacuity checked) and
-  ties it on Cascade Lake: +1.6% `forward`, +1.5–5.2% lanes. Not adopted. An
-  advisory nightly CI job keeps it building. The order study it prompted
-  settles what op-blocking buys. A level-mixed control (same ASAP levels,
-  variants round-robin, mean run 2–3) matches op-blocked under both
-  dispatchers, while arena order costs 24–26%. The win is level grouping,
-  which puts independent instructions adjacent, not dispatch predictability,
-  so the production order stays. One exception: lanes8 on the 2→6 is 15–18%
-  faster in arena / `minlive` order, a working-set effect (2.4 MB of
-  op-blocked arenas against a 1 MiB L2) that the `f64`-byte, lane-blind
-  `SCHEDULE_BYTE_LIMIT` fallback cannot see. A lane-aware fallback is open,
-  measure-first, at the width lanes would ship at. On the M3 Max, a
-  `levelmix` run would say whether E1's run-length attribution holds there.
+  bit-identical to the `match` loop (unit-tested, anti-vacuity checked). It
+  does not beat it: +1.6% `forward` on Cascade Lake, +8.6% on the M3 Max,
+  0–6% on lanes. Not adopted. An advisory nightly CI job keeps it building.
+  The order study it prompted shows op-blocking doing two jobs, on both
+  hosts. Level grouping puts independent instructions adjacent, and arena
+  order loses 19% to it on every program. A predictable order matters on
+  programs too long for the branch predictor to memorise: shuffling the 2→6
+  within its levels costs 2.2× on the M3 Max under either dispatcher, while
+  op-blocked runs and a periodic interleave cost nothing. So the production
+  order stays, and any replacement must keep both. One exception, Cascade
+  Lake only: lanes8 on the 2→6 is 15–18% faster in arena / `minlive` order, a
+  working-set effect (2.4 MB of op-blocked arenas against a 1 MiB L2; the M3's
+  16 MiB L2 shows none) that the `f64`-byte, lane-blind `SCHEDULE_BYTE_LIMIT`
+  fallback cannot see. A lane-aware fallback is open, measure-first, at the
+  width lanes would ship at. The 2→6 shuffle has not been run on x86.
   (`threaded-dispatch-study-results.md`.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α

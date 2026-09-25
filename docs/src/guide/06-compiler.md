@@ -213,8 +213,11 @@ The instruction order is the one property of a program that changes no
 value. Production emits nodes grouped by dependency level, and by
 instruction kind within each level. The level grouping puts independent
 instructions next to each other, so an out-of-order core overlaps them
-instead of waiting on each producer in turn. The kind grouping gives the
-interpreter's dispatch jump long runs of one variant to predict on.[^dispatch]
+instead of waiting on each producer in turn. The kind grouping makes the
+sequence the interpreter's dispatch jump sees predictable. On a small program
+the branch predictor learns any fixed sequence, since it repeats every event.
+On a large one (the $2\to6$ runs 36 523 instructions) it cannot, and a
+random order within the levels runs 2.2× slower.[^dispatch]
 Alternative schedules exist as a study hook, with metrics for operand
 distance, live-set width, dispatch-run length and critical-path depth.
 
@@ -224,11 +227,11 @@ distance, live-set width, dispatch-run length and critical-path depth.
     jumps straight to the next one, giving the predictor one site per
     instruction kind. In safe Rust that needs guaranteed tail calls, the
     nightly `become` feature. The `threaded-dispatch` cargo feature builds
-    that interpreter. On x86 it ties the `match` loop. The same levels with
-    kinds interleaved also run as fast as the production order, so on that
-    core the level grouping carries the whole win, and history-based
-    predictors handle the single jump well. Threading the dispatch through
-    function pointers was measured and rejected as slower.
+    that interpreter. It ties the `match` loop on x86 and loses to it on
+    Apple M3. History-based predictors handle the single jump well, and one
+    site per kind cannot predict a random successor either. Threading the
+    dispatch through function pointers was measured and rejected as
+    slower.
 
 ## Interpretation and kernels
 

@@ -1,14 +1,18 @@
 # Tail-call-threaded dispatch and the execution order — results
 
-**Status: CLOSED (2026-09-24). Threaded dispatch through `become` works, is
-bit-identical to the `match` loop, and ties it at the production order: +1.6%
-`forward`, +1.5% lanes4, +5.2% lanes8 (geomean over the 8 bench rows, 3
-rounds). It stays behind the nightly-only `threaded-dispatch` feature, and
-nothing ships on it. The execution-order question it raised gets a sharper
-answer than note 31 E1 could give. On this host, op-blocking's scalar win over
-arena order (24–26%) comes from its ASAP-level structure, not its run lengths:
-a level-mixed control with mean runs of 2–3 matches it under both dispatchers.
-So the production order is not a dispatch workaround, and it stays.**
+**Status: CLOSED (2026-09-25). Threaded dispatch through `become` works, is
+bit-identical to the `match` loop, and does not beat it. At the production
+order it is +1.6% `forward`, +1.5% lanes4 and +5.2% lanes8 on Cascade Lake,
+and +8.6% / +2.1% / +1.0% on the M3 Max (geomean over the 8 bench rows). It
+stays behind the nightly-only `threaded-dispatch` feature, and nothing ships on
+it. The execution order has two jobs, and op-blocking does both. On every
+program, ASAP-level grouping keeps independent instructions adjacent; arena
+order loses 19% to it on both hosts. On a program too long for the branch
+predictor to memorise (the 2→6, 36 523 instructions), the order must also be
+predictable. A random order within the levels costs 2.2× there on the M3 Max,
+under either dispatcher, while op-blocked runs and a periodic interleave cost
+nothing (§4). The production order is not a `match`-dispatch workaround, and it
+stays.**
 
 Host: Intel Xeon, family 6 model 85 stepping 7 (Cascade Lake), 2.8 GHz, 4-vCPU
 Firecracker VM, 15 GiB, 32 KiB L1d / 1 MiB L2 per core / 33 MiB L3. AVX-512
@@ -152,7 +156,10 @@ gain along with them.
   measured the same. Threading comes out ahead only on short-run orders,
   `opwin32` (runs of 12–14, `forward` 1.055 → 1.028) and `levelmix` (runs of
   2–3, 1.007 → 0.997), and both differences are inside the noise.
-- **Op-blocking's win is the level structure, not the runs.** Note 31 E1
+- **Op-blocking's win is the level structure, not the runs — on programs the
+  predictor can memorise.** §4 qualifies this bullet: `levelmix`'s interleave
+  is periodic, and a random within-level order costs 2.2× on the 2→6 on the
+  M3 Max. Note 31 E1
   attributed its −17.9% (M3 Max) to run length, from the `opwin` controls. The
   expectation that threaded dispatch would make op-blocking redundant rests on
   that attribution. `levelmix` is the sharper control. It is op-blocked's ASAP
@@ -176,8 +183,8 @@ gain along with them.
   note 31 §6.8 is the whole sprint (E1b + E2 + E2b), not the order alone. What
   differs between the hosts is the attribution. E1's `opwin` controls grew with
   run length at fixed level grouping, while here `levelmix` (runs of 2–3) loses
-  nothing. The two cores' indirect predictors and out-of-order windows (the M3's
-  is several times larger) are candidate causes, unmeasured.
+  nothing. §4 re-measures the M3 Max and resolves this: `levelmix` loses nothing
+  there either.
 - **Lanes care much less about order**: 1–6% on lanes4/lanes8 against 20–27%
   on `forward`. A lane instruction is 2–8× the arithmetic for the same
   dispatch and the same dependency chain.
@@ -194,11 +201,117 @@ gain along with them.
   is evaluated at `f64` bytes and is lane-blind; this branch rewrites its
   comment to say so.
 
-## 4. What this leaves
+## 4. Apple M3 Max, and the shuffle control
+
+Host: Apple M3 Max, 12 P-cores (128 KiB L1d, 16 MiB shared L2 per P-cluster) +
+4 E-cores, macOS 15.7, `nightly-2026-09-24` (aarch64), `-C target-cpu=native`
+(apple-m3), bench profile. Tree `2008fbf`. The host was a working desktop (load
+average 3.7–5). Measured with `scripts/bench_dispatch.sh` and the same
+binaries driven round by round.
+
+**The estimator is min over rounds.** macOS cannot pin a thread to a P-core,
+and on this host whole stretches of a cell ran about 2.1× slow, the E-core
+ratio: in sweep A, 83 of 192 cell × bench × row entries had rounds differing by
+more than 1.5×, all near 2.1×. Min over rounds rejects those runs, and this is
+the protocol note 31 used on the same machine. After a 4th round of the three
+cells where it mattered, 181 of 192 entries have at least two rounds within 10%
+of their minimum, and no min-over-rounds ratio is near 2×. The median is not
+usable here: it puts `threaded@opblocked` at 1.275 on `forward`.
+
+**Sweep A**: 3 rounds (4 for `match@opblocked`, `threaded@opblocked` and
+`match@levelmix`), min over rounds, relative to `match@opblocked`:
+
+| cell | `forward` | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `threaded@opblocked` | 1.087 [1.05..1.19] | 1.021 [0.98..1.10] | 1.010 [0.97..1.07] |
+| `match@levelmix` | 1.005 [0.99..1.05] | 0.998 [0.98..1.01] | 0.999 [0.98..1.01] |
+| `threaded@levelmix` | 1.107 [1.04..1.19] | 1.064 [1.03..1.11] | 1.043 [1.03..1.07] |
+| `match@opwin32` | 1.051 [0.99..1.25] | 1.018 [0.98..1.11] | 1.008 [0.99..1.07] |
+| `threaded@opwin32` | 1.125 [1.04..1.36] | 1.075 [1.03..1.19] | 1.049 [1.03..1.12] |
+| `match@arena` | 1.239 [1.14..1.30] | 1.105 [1.07..1.13] | 1.038 [0.98..1.07] |
+| `threaded@arena` | 1.392 [1.28..1.46] | 1.142 [1.10..1.16] | 1.087 [1.04..1.12] |
+
+- **Threaded dispatch loses on the M3 Max**: +8.7% `forward`, 1–7% on lanes.
+  The M3's predictor gives threading even less to win than Cascade Lake's.
+- **Op-blocked against arena order is −19.3% on `forward`**, the same as
+  Cascade Lake's −19.2% and E1's −17.9%. Lanes are 4–10%.
+- **`levelmix` matches op-blocked on the M3 Max too** (1.005 / 0.998 / 0.999).
+  E1's run-length attribution does not reproduce: the `opwin` penalty E1 saw is
+  here too (`opwin32` 1.051), but mean runs of 2–3 in a periodic pattern cost
+  nothing.
+- **The lanes8 working-set flip is absent.** The 2→6 at lanes8 is 0.980 in arena
+  order, against Cascade Lake's 0.837. Its 2.4 MB of op-blocked arenas fit the
+  M3's 16 MiB L2.
+
+**The confound, and the shuffle.** `levelmix` deals variants round-robin, so
+inside a level the dispatch sequence is periodic, and a history-based indirect
+predictor learns periodic sequences. It separates run length from level
+structure, but not predictability from level structure.
+`Schedule::LevelShuffle` keeps the same levels and orders each one with a
+fixed-seed ChaCha8 shuffle. That gives the same operand distances, peak bytes
+and mean runs (2.2–3.2) as `levelmix`, with nothing periodic to learn.
+
+**Sweep B**: rebuilt binaries at `2008fbf`, min over rounds. There are 3 rounds
+for `opblocked` and `levelmix`, and 2 for `levelshuffle`: round 3 stalled
+overnight at 100% CPU and was discarded. The 2→6's rounds agree to 0.03% even
+so.
+
+| cell | `forward` | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `threaded@opblocked` | 1.114 [1.07..1.20] | 1.063 [1.03..1.10] | 1.042 [1.02..1.07] |
+| `match@levelmix` | 1.003 [0.96..1.05] | 0.994 [0.96..1.02] | 0.999 [0.97..1.01] |
+| `threaded@levelmix` | 1.108 [1.04..1.19] | 1.063 [1.02..1.11] | 1.044 [1.02..1.07] |
+| `match@levelshuffle` | 1.089 [0.95..2.21] | 1.052 [0.97..1.56] | 1.042 [0.99..1.31] |
+| `threaded@levelshuffle` | 1.193 [1.04..2.16] | 1.108 [1.02..1.57] | 1.076 [1.03..1.33] |
+
+The rebuild moved `threaded@opblocked` by 2–4% against sweep A, from the same
+source apart from a study-only function. That is the scale of
+code-layout noise between two builds.
+
+The 2→6 row, µs/event, per round:
+
+| cell | `forward` | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `match@opblocked` | 87.60 / 87.66 / 87.58 | 50.65 / 50.88 / 50.60 | 54.62 / 54.71 / 54.67 |
+| `match@levelmix` | 88.17 / 88.31 / 88.42 | 50.47 / 50.43 / 50.50 | 54.67 / 54.72 / 54.58 |
+| `match@levelshuffle` | 193.21 / 193.25 | 78.90 / 78.77 | 71.44 / 71.47 |
+| `threaded@levelshuffle` | 188.83 / 189.44 | 79.37 / 79.51 | 72.62 / 72.56 |
+
+### Reading
+
+- **On the seven small programs a random order within the levels costs
+  nothing** (`match` scalar 0.95–1.02). The stream repeats every event, and a
+  history-based predictor learns a fixed sequence of a few hundred dispatches
+  whatever its order. What arena order loses on them (14–29%) is therefore not
+  dispatch: a random order is fine and arena order is not. It is the level
+  structure, dependent instructions back to back, as §3 found on Cascade Lake.
+- **On the 2→6, predictability matters, and badly.** Shuffling costs 2.2× on
+  `forward` (+105 µs/event) under both dispatchers. The periodic interleave and
+  op-blocked's runs cost nothing. At about one mispredict per instruction, 36.5k
+  instructions × ~12 cycles at ~4 GHz is ≈ 110 µs, which matches. The penalty
+  shrinks with lane width, 2.21× → 1.56× → 1.31×, as a fixed per-dispatch cost
+  diluted by 4 and 8 lanes of arithmetic would. A locality effect would grow
+  with the bytes moved. The inference comes from arithmetic and scaling, not
+  counters; macOS gives no PMU access here without `sudo`.
+- **Threaded dispatch does not rescue an unpredictable stream** (2.16× against
+  2.21×). A per-handler branch site still has to predict a random successor.
+- **So op-blocking does two jobs.** Level grouping serves every program;
+  predictable order serves the long ones, where a stream stops fitting the
+  predictor's history. Its runs are one way to be predictable, and a periodic
+  interleave is another. A future order that trades against op-blocking, for
+  locality or live width, must keep both.
+- **Cascade Lake is untested against the shuffle.** §3's claim that
+  op-blocking's win "is not dispatch predictability" holds only for streams the
+  predictor memorises, and the 2→6 was not shuffled there. The E1 run-length
+  story on the M3 Max was half right. Run length is not what matters, but
+  predictability is, once the program is long.
+
+## 5. What this leaves
 
 - **Production order: unchanged.** Op-blocked is the best or tied order for
-  both dispatchers on every width but one cell. The threaded dispatcher gives
-  no reason to revisit it.
+  both dispatchers on every width and both hosts but one cell (Cascade Lake
+  lanes8 2→6). It gives both level grouping and a predictable stream. The
+  threaded dispatcher gives no reason to revisit it.
 - **Threaded dispatch: not adopted, kept buildable.** It ties at best, needs
   nightly, and would put an incomplete language feature (`explicit_tail_calls`
   still warns as incomplete) into the evaluator. The feature, its bit-identity
@@ -211,13 +324,18 @@ gain along with them.
   lanes8 2→6 cell. `Program` is built once per evaluator and shared by every
   `F`, so this needs a per-width program or a per-width order. Size the
   payoff at the width a production lane path would use: lanes4 is where lanes
-  would ship on a v3 target, and there the effect is absent.
+  would ship on a v3 target, and there the effect is absent. On the M3 Max it
+  is absent at every width (16 MiB L2). Any fallback order must stay
+  predictable on long programs (§4): a live-width order that dispatches
+  randomly would trade an L2 miss for a mispredict per instruction.
 
 ## Reproduce
 
 ```
-scripts/bench_dispatch.sh 3 opblocked levelmix arena     # sweep B's design
+scripts/bench_dispatch.sh 3 opblocked levelmix arena     # §3 sweep B's design
 scripts/bench_dispatch.sh 2 opblocked arena dfs minlive opwin32
+scripts/bench_dispatch.sh 3 opblocked levelmix levelshuffle   # §4 sweep B
+# the summary is min over rounds, which rejects E-core runs on Apple silicon
 cargo +nightly-2026-09-24 test -p vibegraph-lib --lib \
     --features threaded-dispatch,eval-schedule-study -- threaded schedule
 # order metrics (mean run, live bytes, distances):
