@@ -127,6 +127,11 @@ pub enum HadronicError {
          is fitted down to, so the cross section this card asks for is zero by construction"
     )]
     FactorisationScaleBelowFloor,
+    #[error(
+        "the decaying particle (PDG {pdg}) has pole mass {mass} GeV: a decay needs a massive \
+         particle to have a rest frame to decay in"
+    )]
+    MasslessDecay { pdg: i32, mass: f64 },
 }
 
 /// The run card's per-event scale prescription, bound to one process.
@@ -660,6 +665,176 @@ impl FixedBeams {
     }
 }
 
+/// The initial state of a `1 → n` decay: one particle of pole mass `M` at rest.
+///
+/// The rest frame is the frame MadEvent generates a decay in (`genps.f` sets
+/// `stot = M²` for one incoming particle) and the one it writes the event record
+/// in, with the mother's momentum `(M, 0, 0, 0)`. The master formula's flux is
+/// `1/(2M)`:
+///
+/// ```text
+/// Γ = 1/(2M) · 1/(n_spin n_colour) · Σ ∫ dΦ_n S |M|²,
+/// ```
+///
+/// with `dΦ_n` over the decay products at total momentum `(M, 0, 0, 0)` and `S` the
+/// identical-particle factor of the final state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DecayAtRest {
+    mass: f64,
+}
+
+impl DecayAtRest {
+    /// A particle of pole mass `mass` at rest.
+    ///
+    /// # Panics
+    ///
+    /// If `mass` is not positive: a massless or zero-mass particle has no rest
+    /// frame and decays to nothing.
+    pub fn new(mass: f64) -> Self {
+        assert!(
+            mass > 0.0,
+            "a decaying particle needs a positive pole mass, got {mass}"
+        );
+        DecayAtRest { mass }
+    }
+
+    /// The decay a compiled process's single incoming leg describes.
+    ///
+    /// `Err` with the mass when the leg is massless, which no decay has.
+    ///
+    /// # Panics
+    ///
+    /// If `legs` does not start with exactly one incoming leg.
+    pub fn from_legs(legs: &[ExternalLeg]) -> Result<Self, HadronicError> {
+        assert!(
+            legs.len() >= 2 && !legs[0].is_final && legs[1].is_final,
+            "a decay begins with exactly one incoming leg"
+        );
+        if !(legs[0].mass > 0.0) {
+            return Err(HadronicError::MasslessDecay {
+                pdg: legs[0].pdg,
+                mass: legs[0].mass,
+            });
+        }
+        Ok(Self::new(legs[0].mass))
+    }
+
+    /// The pole mass `M`, which is also the invariant mass the decay products
+    /// share.
+    pub fn mass(&self) -> f64 {
+        self.mass
+    }
+}
+
+/// What an integrand's integral measures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Observable {
+    /// A `2 → n` cross section, reported in picobarns.
+    CrossSection,
+    /// A `1 → n` partial width, reported in GeV — which is also what MadEvent
+    /// writes in `XSECUP` and `XWGTUP` for a decay run.
+    PartialWidth,
+}
+
+impl Observable {
+    /// The factor from the integral's natural units (GeV⁻² for a cross section,
+    /// GeV for a width) to the reported ones.
+    pub fn per_natural_unit(self) -> f64 {
+        match self {
+            Observable::CrossSection => GEV2_TO_PB,
+            Observable::PartialWidth => 1.0,
+        }
+    }
+
+    /// The reported unit.
+    pub fn unit(self) -> &'static str {
+        match self {
+            Observable::CrossSection => "pb",
+            Observable::PartialWidth => "GeV",
+        }
+    }
+
+    /// The quantity's usual symbol.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Observable::CrossSection => "σ",
+            Observable::PartialWidth => "Γ",
+        }
+    }
+}
+
+/// The fixed initial state a [`FixedBeamIntegrand`] is evaluated in: two beams at
+/// fixed energies, or one particle decaying at rest.
+///
+/// Everything the integrand reads off the initial state is here — the invariant
+/// mass the outgoing map generates at, the incoming momenta the amplitude and the
+/// event record take, the flux, and the boost to the frame the cuts read — so a
+/// scattering and a decay differ in nothing downstream but these.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum InitialState {
+    Beams(FixedBeams),
+    Decay(DecayAtRest),
+}
+
+impl From<FixedBeams> for InitialState {
+    fn from(beams: FixedBeams) -> Self {
+        InitialState::Beams(beams)
+    }
+}
+
+impl From<DecayAtRest> for InitialState {
+    fn from(decay: DecayAtRest) -> Self {
+        InitialState::Decay(decay)
+    }
+}
+
+impl InitialState {
+    /// The invariant mass of the initial state: `√ŝ` for two beams, `M` for a
+    /// decay.
+    pub fn sqrt_s(&self) -> f64 {
+        match self {
+            InitialState::Beams(b) => b.sqrt_s(),
+            InitialState::Decay(d) => d.mass,
+        }
+    }
+
+    /// The incoming momenta in the frame the integrand works in: the partonic
+    /// centre of mass for two beams, the rest frame for a decay.
+    pub fn momenta(&self) -> Vec<V> {
+        match self {
+            InitialState::Beams(b) => b.momenta().to_vec(),
+            InitialState::Decay(d) => vec![LorentzVector::new(d.mass, 0.0, 0.0, 0.0)],
+        }
+    }
+
+    /// The `1/F` the master formula multiplies: the Møller flux for two beams,
+    /// `1/(2M)` for a decay.
+    pub fn inverse_flux(&self) -> f64 {
+        match self {
+            InitialState::Beams(b) => b.inverse_flux(),
+            InitialState::Decay(d) => 1.0 / (2.0 * d.mass),
+        }
+    }
+
+    /// The `z` velocity from the frame the momenta are built in to the one the
+    /// cuts read. A decay's cuts read its rest frame, as `cuts.f` does for one
+    /// incoming particle (no boost is applied there when `nincoming = 1`).
+    pub fn lab_beta(&self) -> f64 {
+        match self {
+            InitialState::Beams(b) => b.lab_beta(),
+            InitialState::Decay(_) => 0.0,
+        }
+    }
+
+    /// What the integral over this initial state measures.
+    pub fn observable(&self) -> Observable {
+        match self {
+            InitialState::Beams(_) => Observable::CrossSection,
+            InitialState::Decay(_) => Observable::PartialWidth,
+        }
+    }
+}
+
 /// Compile every non-empty subprocess of a generated proc card into a
 /// helicity-pruned evaluator, requiring that they share one external-particle
 /// sequence so a single RAMBO mass list and one cut filter serve them all.
@@ -921,6 +1096,19 @@ pub(crate) fn compile_scale_source(
             .collect::<Vec<(i64, i32)>>(),
         card.maxjetflavor,
     );
+    // Channel forests are MadGraph's 2 → n clustering input. A decay has none, and
+    // needs none: its scales are fixed before a prescription is compiled
+    // (`RunCard::for_decay`), so nothing clusters it.
+    if subprocesses.iter().all(|(rep, _)| rep.n_in() == 1) {
+        return EventScaleSource::from_run_card(
+            card,
+            evaluated.alpha_s(),
+            grid,
+            None,
+            needs_alpha_s,
+            closed,
+        );
+    }
     let mut sets = Vec::with_capacity(subprocesses.len());
     for (rep, diagrams) in subprocesses {
         let derived = derive_channels(
@@ -1073,12 +1261,15 @@ pub struct FixedBeamIntegrand<'a> {
     spin_color_avg: f64,
     /// The `(2π)^{4−3n}` measure factor.
     lips_2pi: f64,
-    /// The incoming momenta in the partonic centre of mass, on their own mass
-    /// shells ([`FixedBeams::momenta`]) — the configuration every evaluation,
-    /// scale and event record in this integrand is made in.
-    beam_momenta: [V; 2],
-    /// `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))`, the Møller flux the master formula divides
-    /// by.
+    /// The initial state the integrand was built on: two beams, or one particle
+    /// decaying at rest.
+    initial: InitialState,
+    /// The incoming momenta ([`InitialState::momenta`]): two beams in the partonic
+    /// centre of mass, or the decaying particle at rest — the configuration every
+    /// evaluation, scale and event record in this integrand is made in.
+    incoming: Vec<V>,
+    /// The master formula's `1/F` ([`InitialState::inverse_flux`]): the Møller
+    /// flux `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))` of two beams, `1/(2M)` for a decay.
     inverse_flux: f64,
     /// The `z` velocity that carries a centre-of-mass momentum into the laboratory
     /// frame the cut filter reads. Exactly zero whenever the two frames coincide,
@@ -1337,19 +1528,22 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///   (a single subprocess for a fully-specified initial state), each weighted
     ///   by its own identical-particle symmetry factor.
     /// * `cuts` — the compiled cut filter.
-    /// * `beams` — the initial state, from the run card's energies and the incoming
-    ///   legs' pole masses ([`FixedBeams::from_run_card`]).
+    /// * `initial` — the initial state: two beams from the run card's energies and
+    ///   the incoming legs' pole masses ([`FixedBeams::from_run_card`]), or a
+    ///   particle decaying at rest ([`DecayAtRest::from_legs`]), which makes the
+    ///   integral a partial width.
     /// * `final_masses` — outgoing pole masses in leg order (the RAMBO targets).
     /// * `spin_color_avg` — the initial-state average ([`initial_spin_color_average`]).
     pub fn new(
         amps: Vec<&'a BoundAmplitude<'a, f64>>,
         cuts: &'a Cuts,
-        beams: FixedBeams,
+        initial: impl Into<InitialState>,
         final_masses: Vec<f64>,
         spin_color_avg: f64,
     ) -> Self {
+        let initial = initial.into();
         let n = final_masses.len();
-        let sqrt_s = beams.sqrt_s();
+        let sqrt_s = initial.sqrt_s();
         let subs = amps.into_iter().map(SubprocessProto::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
@@ -1361,9 +1555,10 @@ impl<'a> FixedBeamIntegrand<'a> {
             final_masses,
             spin_color_avg,
             lips_2pi: (2.0 * PI).powi(4 - 3 * n as i32),
-            beam_momenta: beams.momenta(),
-            inverse_flux: beams.inverse_flux(),
-            lab_beta: beams.lab_beta(),
+            initial,
+            incoming: initial.momenta(),
+            inverse_flux: initial.inverse_flux(),
+            lab_beta: initial.lab_beta(),
             vegas_alpha: VEGAS_ALPHA,
             scales: None,
             scratch: ThreadLocal::new(),
@@ -1455,6 +1650,11 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// The scale is resolved once here on a sampled, cut-passing phase-space point,
     /// so a prescription this crate refuses — an unimplemented clustering above all —
     /// stops the run at setup instead of at the first VEGAS point.
+    ///
+    /// On a decay the card is read as MadEvent reads it for one incoming particle
+    /// ([`RunCard::for_decay`]): the renormalisation scale is the decaying
+    /// particle's mass unless the card fixes it, and the factorisation scales are
+    /// the card's constants, so no event is ever clustered.
     pub fn use_running_coupling(
         &mut self,
         diagrams: &[Diagram],
@@ -1462,6 +1662,14 @@ impl<'a> FixedBeamIntegrand<'a> {
         evaluated: &EvaluatedModel,
         card: &RunCard,
     ) -> Result<RunningCouplingReport, HadronicError> {
+        let decay_card;
+        let card = match self.initial {
+            InitialState::Beams(_) => card,
+            InitialState::Decay(decay) => {
+                decay_card = card.for_decay(decay.mass());
+                &decay_card
+            }
+        };
         let awareness = make_subs_scale_aware(&mut self.subs, evaluated);
         // The enhancement weight the configuration draws follow is a property of
         // the run card, not of the scale, so it is installed whether or not a
@@ -1575,11 +1783,23 @@ impl<'a> FixedBeamIntegrand<'a> {
         momenta: &[V],
         channel: usize,
     ) -> Result<PointScales, ScaleError> {
+        if let Some(scales) = source.constant_scales() {
+            return Ok(PointScales::Scales(scales));
+        }
+        // A decay's scales are fixed when the prescription is installed
+        // (`RunCard::for_decay`), so a prescription that reads the event only ever
+        // meets two beams.
+        let [a, b] = self.incoming[..] else {
+            unreachable!("a per-event scale prescription on a decay")
+        };
         let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(momenta.iter().map(components));
-        let beams = self.beam_momenta.map(|p| components(&p));
-        source.point_scales(beams, &buf, SampledChannel::sole(channel))
+        source.point_scales(
+            [components(&a), components(&b)],
+            &buf,
+            SampledChannel::sole(channel),
+        )
     }
 
     /// The scales this integrand evaluates a point at, when a prescription was
@@ -2155,11 +2375,21 @@ impl<'a> FixedBeamIntegrand<'a> {
         u.split_at(grid_ndim)
     }
 
-    /// The two incoming momenta in the partonic centre of mass, on their own mass
-    /// shells along ±z: the beam configuration every evaluation in this integrand
-    /// is made in, and the one an event record carries.
-    pub fn beams(&self) -> [V; 2] {
-        self.beam_momenta
+    /// The incoming momenta every evaluation in this integrand is made in, and the
+    /// ones an event record carries: two beams in the partonic centre of mass, on
+    /// their own mass shells along ±z, or the decaying particle at rest.
+    pub fn incoming(&self) -> &[V] {
+        &self.incoming
+    }
+
+    /// The initial state the integrand was built on.
+    pub fn initial_state(&self) -> InitialState {
+        self.initial
+    }
+
+    /// What the integral measures, and so the unit it is reported in.
+    pub fn observable(&self) -> Observable {
+        self.initial.observable()
     }
 
     /// Whether an external configuration passes the compiled cuts.
@@ -2182,8 +2412,8 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// The external momenta an amplitude is evaluated at: the beams, then the
     /// outgoing legs.
     fn externals(&self, momenta: &[V]) -> Vec<V> {
-        let mut ext = Vec::with_capacity(2 + momenta.len());
-        ext.extend_from_slice(&self.beams());
+        let mut ext = Vec::with_capacity(self.incoming.len() + momenta.len());
+        ext.extend_from_slice(&self.incoming);
         ext.extend_from_slice(momenta);
         ext
     }
@@ -2266,10 +2496,12 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self.final_masses
     }
 
-    /// Integrate the cross section with VEGAS, returning `(σ, Δσ)` in picobarns.
+    /// Integrate with VEGAS, returning `(σ, Δσ)` in picobarns — or, on a decay,
+    /// `(Γ, ΔΓ)` in GeV ([`Observable::per_natural_unit`]).
     pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
         let result = self.adapt_grids(neval, niter, seed).1;
-        (result.integral * GEV2_TO_PB, result.std_dev * GEV2_TO_PB)
+        let unit = self.observable().per_natural_unit();
+        (result.integral * unit, result.std_dev * unit)
     }
 
     /// Run VEGAS adaptation over the mixture map as a single integral, returning
@@ -3503,7 +3735,7 @@ mod tests {
         // The diagonals the draws are supposed to follow, taken directly.
         let eval = integ.subprocess_evaluator(0);
         let mut scratch = bounds[0].scratch_space();
-        let mut ext = integ.beams().to_vec();
+        let mut ext = integ.incoming().to_vec();
         ext.extend_from_slice(&momenta);
         let mut hel_m2 = vec![0.0; eval.helicities().len()];
         let mut amp2 = vec![0.0; eval.n_configs()];
@@ -3832,7 +4064,9 @@ mod tests {
         assert!((beams.sqrt_s() - 499.99275).abs() < 5e-6);
         let integ = FixedBeamIntegrand::new(Vec::new(), &cuts, beams, final_masses.clone(), 1.0);
 
-        let [a, b] = integ.beams();
+        let &[a, b] = integ.incoming() else {
+            panic!("two beams");
+        };
         assert!((a.m2() - 3600.0).abs() < 1e-6, "beam 0 off its mass shell");
         assert!((b.m2() - 4900.0).abs() < 1e-6, "beam 1 off its mass shell");
 
@@ -3911,7 +4145,9 @@ mod tests {
             let pt = 100.0;
             V::new(pt * y.cosh(), pt * phi.cos(), pt * phi.sin(), pt * y.sinh())
         };
-        let [a, b] = integ.beams();
+        let &[a, b] = integ.incoming() else {
+            panic!("two beams");
+        };
         for (y, lab_pass) in [(-0.998, true), (0.998, false)] {
             let ext = vec![a, b, leg(y, 0.0), leg(y, PI / 2.0)];
             assert_eq!(
