@@ -34,7 +34,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-OUT="$HERE/output"
+# The process directories are scratch: everything the gate reads is in the
+# JSON, and a directory left in output/ would be one the banked gates' run
+# inventories do not name.
+OUT="${DECAY_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/vg-decay-widths-XXXXXX")}"
 RESULT_JSON="$HERE/decay_width_reference.json"
 SEEDS="${SEEDS:-$(seq -s " " 20260925 20260934)}"
 
