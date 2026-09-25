@@ -53,14 +53,13 @@ language:
 
 | Feature | Status |
 |---|---|
-| `>` required s-channels, or-multiparticles, `$$` | refused until the s-channel diagram filter exists |
 | `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
 | decay chains `A > B C, B > D E` | refused until stitched decay enumeration exists |
 | 1→n decay processes (`t > w+ b`) | refused until rest-frame phase space exists |
 | polarized legs `{0}` `{T}` `{L}` `{R}` | refused until the restricted helicity loop exists |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}` | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
-| `WEIGHTED<=n` | refused |
+| `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
 | `[QCD]`, `[real=QCD]`, `!a!` | refused: NLO |
 | `add process` with another final-state multiplicity | refused: needs jet merging |
 | `set` of a physics-bearing option off its default | refused |
@@ -85,7 +84,14 @@ orientation, as MadGraph's does.
 
 **Multiparticle labels** (`p`, `j`, `l+`, …) are aliases for lists of
 particles. The Standard Model's default aliases match MadGraph's, and
-`define` lines add more. A process with aliased legs expands to the
+`define` lines add more. Importing a model rewrites `p` and `j` as MadGraph
+does: when the model's b quark is massless (`sm-no_b_mass`, `sm-no_masses`,
+`sm-zeromass_ckm`) `b b~` join them, the five-flavour scheme, and when it is
+massive they leave; a label defined *through* `p` afterwards sees the
+rewritten one, while a `define p = …` after the import is taken as written.
+So `import model sm-no_b_mass` + `generate p p > e+ e-` includes
+`b b~ > e+ e-`. (The SMEFTsim restrictions in the validation set, `massless`
+included, keep the b massive and stay four-flavour.) A process with aliased legs expands to the
 Cartesian product over every leg's members, each concrete process being
 submitted for enumeration separately; `p p > l+ l- j` expands to a few dozen
 of them. The [proton beams](10-hadronic.md) chapter is about what happens to
@@ -101,7 +107,25 @@ for exactly that many and `>` for more. When a card gives no constraint,
 MadGraph's rule applies: orders are weighted by the model's hierarchy (in
 the SM, `QCD` counts once and `QED` twice) and the lowest weighted order
 that produces any diagram is selected, so `p p > j j` is pure QCD at leading
-order and the electroweak diagrams enter only if asked for.
+order and the electroweak diagrams enter only if asked for. `WEIGHTED<=n`
+(or `WEIGHTED=n`) asks for that weighted bound directly: `u u~ > d d~
+WEIGHTED<=4` keeps the gluon, photon, Z and W diagrams where the automatic
+choice keeps the gluon alone.
+
+**S-channel restrictions** select diagrams by their timelike propagators.
+`e+ e- > z > mu+ mu-` keeps the diagrams with an s-channel Z; `$$ t t~`
+drops every diagram with an s-channel top of either kind. Several names
+between the `>` must all be present (`> z h >`), and `|` gives alternatives
+(`> z | a >`, or `define v = z | a` then `> v >`). A propagator is named as it
+flows towards the final state, as MadGraph names it, so `u d~ > w- > e+ ve`
+has no diagram (its W is a W+), and `$$ t` alone keeps the diagrams with an
+s-channel t~. The restrictions act inside the automatic order search, as in
+MadGraph: `u u~ > a > d d~` is found at the electroweak order because the
+QCD order has no diagram with an s-channel photon. They change which
+diagrams are summed, nothing else — there is no Breit–Wigner window, and
+dropping part of a gauge-invariant set is in general not gauge invariant,
+which is logged as a warning. A process line none of whose subprocesses has
+a diagram is an error, as it is in MadGraph.
 
 ## Enumeration
 
@@ -183,6 +207,14 @@ polarizations, restriction lists, the coupling-order dictionaries MadGraph
 derives, process numbers, decay chains), and requires that every card
 MadGraph refuses is refused here too.
 
+The s-channel restrictions, explicit `WEIGHTED` bounds and the five-flavour
+rewrite have a census of their own against MadGraph's generation
+(`validation/madgraph/schannel_census.json`): for each card, every
+subprocess with its diagram count and, per diagram, the ids of its s-channel
+propagators as MadGraph orients them, compared by a hermetic test. Reading
+a propagator the wrong way round changes those ids, so the census pins the
+orientation, not only the counts.
+
 Diagram counts are the first thing compared against MadGraph, for every
 process in the validation set, and they are a sharper oracle than they
 look: the counts have caught by-hand census claims that were wrong, and a
@@ -199,7 +231,9 @@ its backlog table, [`resolve`](../api/vibegraph/diagrams/resolve/index.html)
 for names against the model,
 [`alias`](../api/vibegraph/diagrams/alias/index.html) for the multiparticle
 labels, [`selector`](../api/vibegraph/diagrams/selector/index.html) for the
-coupling-order filter handed to feyngraph, and
+coupling-order filter handed to feyngraph,
+[`schannel`](../api/vibegraph/diagrams/schannel/index.html) for the
+s-channel filter on converted diagrams, and
 [`diagram`](../api/vibegraph/diagrams/diagram/index.html) for the owned
 diagram. `parse_proc_card` (parse and check) and `generate_from_proc_card`
 are the entry points.
