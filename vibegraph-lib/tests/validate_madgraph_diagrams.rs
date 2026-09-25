@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 
 use common::report::{DiagramsRow, Stopwatch};
 use libtest_mimic::{Arguments, Failed, Trial};
-use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet, ParsingOptions};
+use vibegraph::diagrams::parse::Command;
+use vibegraph::diagrams::{self, generate_from_proc_card, DiagramSet};
 use vibegraph::ufo::UFOModel;
 
 #[derive(Debug, serde::Deserialize)]
@@ -287,9 +288,15 @@ fn run_trial(key: &str, mg_counts: &DiagramCounts) -> Result<(), Failed> {
         .into());
     }
 
-    let opts = ParsingOptions::default();
-    let card = diagrams::parse_proc_card(&script_content, &opts)
+    // The script's `launch` dialogue edits the run card of MadGraph's own run,
+    // which decides nothing about the diagrams; everything else goes through the
+    // same check a proc card does.
+    let mut ast = diagrams::parse_proc_card_ast(&script_content)
         .map_err(|e| Failed::from(format!("cannot parse .mg5 script: {e}")))?;
+    ast.commands
+        .retain(|c| !matches!(c, Command::Launch { .. }));
+    let card = diagrams::check_supported(&ast)
+        .map_err(|e| Failed::from(format!("unsupported .mg5 script: {e}")))?;
 
     // Extract first process from the card (should be 'generate' line)
     let process_str = card

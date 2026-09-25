@@ -558,7 +558,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
 fn generate_sample(
     args: &GenerateArgs,
     artifact: &IntegrateArtifact,
-    parsed: &vibegraph::diagrams::ParsedProcCard,
+    parsed: &vibegraph::diagrams::SupportedCard,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -982,7 +982,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
 fn generate_proton_sample(
     args: &GenerateArgs,
     artifact: &IntegrateArtifact,
-    parsed: &vibegraph::diagrams::ParsedProcCard,
+    parsed: &vibegraph::diagrams::SupportedCard,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,

@@ -35,6 +35,9 @@ peg = "0.8.6"
 rustpython-parser = "0.3"
 thiserror = "2.0.18"
 itertools = "0.14.0"
+# MadGraph states its process grammar as Python regular expressions; the parser
+# applies the same expressions, which is what keeps the two readings in step.
+regex = "1"
 rustc-hash = "2"
 serde = { version = "1.0", features = ["derive"] }
 bincode = "1.3"

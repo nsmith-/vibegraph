@@ -1,11 +1,16 @@
-//! Process grammar parser and diagram generation interface.
+//! Process grammar and diagram generation interface.
 //!
-//! Translates MadGraph-style process strings (`p p > e+ e- j QCD<=2 @1`) and
-//! `proc_card.dat` files into feyngraph diagram-generation calls.
+//! A `proc_card.dat` goes through three stages before feyngraph sees it:
 //!
-//! Particle names are resolved case-insensitively, as in MadGraph: a proc card may
-//! spell a leg `z`, `w+`, or `h` where the UFO model names it `Z`, `W+`, `H`. Tokens
-//! are canonicalized to the model's casing before diagram generation.
+//! 1. [`parse::parse_proc_card_ast`] reads the whole of MadGraph's process
+//!    language into a [`ProcCardAst`], dropping nothing;
+//! 2. [`check::check_supported`] refuses, all at once, every feature this
+//!    generator does not honour, and narrows the card to a [`SupportedCard`];
+//! 3. enumeration resolves the names against the model (case-insensitively, as
+//!    MadGraph does: a card may spell a leg `z` where the UFO says `Z`) and
+//!    generates the diagrams of every concrete subprocess.
+//!
+//! [`parse_proc_card`] runs the first two.
 //!
 //! ## Typical usage
 //!
@@ -14,38 +19,45 @@
 //! use vibegraph::ufo::UFOModel;
 //!
 //! let model = UFOModel::load(ufo_path, None).expect("failed to load UFO model");
-//! let opts  = ParsingOptions::default();
-//! let card  = parse_proc_card("generate e+ e- > mu+ mu-", &opts).expect("failed to parse process");
+//! let card  = parse_proc_card("generate e+ e- > mu+ mu-", &ParsingOptions::default())
+//!     .expect("failed to parse process");
 //! let sets  = generate_from_proc_card(&card, &model).expect("diagram generation failed");
 //! println!("{} diagram sets generated", sets.len());
 //! ```
 
 pub mod alias;
+pub mod check;
 pub mod diagram;
 pub mod parse;
+pub mod resolve;
 pub mod selector;
 
 pub use alias::AliasTable;
+pub use check::{
+    check_supported, AmplitudeOrder, SupportedCard, SupportedLeg, SupportedProcess, Unsupported,
+    UnsupportedCard,
+};
 pub use diagram::{ConvertError, Diagram};
 pub use parse::{
-    CouplingConstraint, CouplingOp, ModelImport, MultiparticleDef, ParsedProcCard, ParsingOptions,
-    ProcessSpec,
+    parse_proc_card_ast, CouplingConstraint, CouplingOp, LegParticle, ModelImport,
+    MultiparticleDef, ProcCardAst,
 };
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
 use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
 use feyngraph::DiagramGenerator;
+use itertools::Itertools;
 use thiserror::Error;
 use tracing::{debug, info, info_span, trace};
 
 use crate::progress;
 use crate::ufo::UFOModel;
 
-use alias::expand_process;
-use parse::parse_proc_card as inner_parse_proc_card;
-use selector::build_selector;
+use resolve::{check_order_name, forbidden_propagator_names, leg_names, ResolveError};
+use selector::{build_selector, ConcreteProcess};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -53,8 +65,20 @@ use selector::build_selector;
 pub enum DiagramError {
     #[error("Process parse error: {0}")]
     Parse(#[from] parse::ParseError),
-    #[error("Unknown particle '{0}'")]
-    UnknownParticle(String),
+    #[error("{0}")]
+    Unsupported(#[from] UnsupportedCard),
+    #[error("{0}")]
+    Resolve(#[from] ResolveError),
+    #[error(
+        "subprocess '{subprocess}' is produced by two process lines ('{first}' and '{second}'); \
+         both would be added to the cross section, so the card is refused rather than \
+         counting it twice"
+    )]
+    DuplicateSubprocess {
+        subprocess: String,
+        first: String,
+        second: String,
+    },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("diagram conversion error: {0}")]
@@ -63,13 +87,6 @@ pub enum DiagramError {
     Pool(#[from] rayon::ThreadPoolBuildError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error(
-        "squared-order constraint `{0}` is not supported: this generator selects diagrams by \
-         their coupling orders and squares the whole amplitude, so it cannot restrict the \
-         *interference* terms a `^2` constraint names. Ask for the amplitude-level order \
-         instead (`{1}<=n`), which keeps every term a diagram of that order contributes to"
-    )]
-    SquaredOrder(String, String),
 }
 
 // ── Output type ───────────────────────────────────────────────────────────────
@@ -83,32 +100,45 @@ pub struct DiagramSet {
 
 // ── Public parsing API ────────────────────────────────────────────────────────
 
-/// Parse a `proc_card.dat` file from disk.
+/// Options for [`parse_proc_card`].
+///
+/// There are none to set: every construct is parsed, and [`check_supported`]
+/// alone decides what is refused, so no caller can opt into a card whose
+/// meaning would be silently narrowed.
+#[derive(Debug, Clone, Default)]
+pub struct ParsingOptions {}
+
+/// Parse a `proc_card.dat` file from disk and check it.
 pub fn parse_proc_card_file(
     path: &Path,
     opts: &ParsingOptions,
-) -> Result<ParsedProcCard, DiagramError> {
+) -> Result<SupportedCard, DiagramError> {
     let content = std::fs::read_to_string(path)?;
     parse_proc_card(content.as_str(), opts)
 }
 
-/// Parse a `proc_card.dat` from a string.
+/// Parse a `proc_card.dat` from a string and check it: a card with any
+/// unsupported feature is refused with every such feature listed.
 pub fn parse_proc_card(
     content: &str,
-    opts: &ParsingOptions,
-) -> Result<ParsedProcCard, DiagramError> {
-    let card = inner_parse_proc_card(content, opts)?;
+    _opts: &ParsingOptions,
+) -> Result<SupportedCard, DiagramError> {
+    let ast = parse_proc_card_ast(content)?;
+    let card = check_supported(&ast)?;
     let _span = info_span!("proc_card").entered();
-    for spec in &card.processes {
-        info!("generate {spec}");
+    for process in &card.processes {
+        info!("generate {process} @{}", process.id);
     }
-    for def in &card.defines {
-        let except = if def.except.is_empty() {
-            String::new()
-        } else {
-            format!(" / {}", def.except.join(" "))
-        };
-        debug!("define {} = {}{except}", def.alias, def.particles.join(" "));
+    for command in &ast.commands {
+        if let parse::Command::Define(def) = command {
+            let groups: Vec<String> = def.groups.iter().map(|g| g.join(" ")).collect();
+            let except = if def.except.is_empty() {
+                String::new()
+            } else {
+                format!(" / {}", def.except.join(" "))
+            };
+            debug!("define {} = {}{except}", def.alias, groups.join(" | "));
+        }
     }
     Ok(card)
 }
@@ -139,12 +169,12 @@ pub enum EnumerationPool {
     Ambient,
 }
 
-/// High-level entry point: parse + expand + generate diagrams for every process
-/// in a `ParsedProcCard`, on a single thread.
+/// High-level entry point: expand and generate diagrams for every process of a
+/// checked card, on a single thread.
 ///
 /// Returns one `DiagramSet` per concrete particle assignment across all processes.
 pub fn generate_from_proc_card(
-    proc_card: &ParsedProcCard,
+    proc_card: &SupportedCard,
     model: &UFOModel,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     generate_from_proc_card_in(proc_card, model, EnumerationPool::default())
@@ -156,7 +186,7 @@ pub fn generate_from_proc_card(
 /// identity are fixed by the topology and assignment enumeration, not by how the
 /// work is scheduled. It is a timing knob only.
 pub fn generate_from_proc_card_in(
-    proc_card: &ParsedProcCard,
+    proc_card: &SupportedCard,
     model: &UFOModel,
     pool: EnumerationPool,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
@@ -172,16 +202,45 @@ pub fn generate_from_proc_card_in(
     }
 }
 
-fn enumerate(
-    proc_card: &ParsedProcCard,
-    model: &UFOModel,
-) -> Result<Vec<DiagramSet>, DiagramError> {
+/// A subprocess's identity: the unordered content of each side.
+type SubprocessKey = (Vec<String>, Vec<String>);
+
+fn subprocess_key(initial: &[String], final_state: &[String]) -> SubprocessKey {
+    let mut i = initial.to_vec();
+    i.sort();
+    let mut f = final_state.to_vec();
+    f.sort();
+    (i, f)
+}
+
+fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramSet>, DiagramError> {
     let _span = info_span!("enumerate").entered();
     let started = Instant::now();
-    let aliases = AliasTable::from_defines(&proc_card.defines);
     let mut sets = Vec::new();
-    for spec in &proc_card.processes {
-        sets.extend(generate_from_process_spec(spec, model, &aliases)?);
+    // Every process line's subprocesses are summed into one cross section, so a
+    // subprocess two lines both produce would be counted twice. MadGraph's own
+    // duplicate check compares whole amplitudes, process number included, and
+    // lets exactly this through (`generate p p > e+ e-` then `add process
+    // u u~ > e+ e-` generates `u u~ > e+ e-` twice), so the refusal here is on
+    // the subprocess alone.
+    let mut owner: HashMap<SubprocessKey, usize> = HashMap::new();
+    for (index, process) in proc_card.processes.iter().enumerate() {
+        let process_sets = generate_from_process(process, model)?;
+        for set in process_sets.iter().filter(|s| !s.diagrams.is_empty()) {
+            let key = subprocess_key(&set.particles_in, &set.particles_out);
+            if let Some(first) = owner.insert(key, index) {
+                return Err(DiagramError::DuplicateSubprocess {
+                    subprocess: format!(
+                        "{} > {}",
+                        set.particles_in.join(" "),
+                        set.particles_out.join(" ")
+                    ),
+                    first: proc_card.processes[first].to_string(),
+                    second: process.to_string(),
+                });
+            }
+        }
+        sets.extend(process_sets);
     }
     let diagrams: usize = sets.iter().map(|s| s.diagrams.len()).sum();
     let populated = sets.iter().filter(|s| !s.diagrams.is_empty()).count();
@@ -193,10 +252,19 @@ fn enumerate(
     Ok(sets)
 }
 
-/// Generate diagrams for a single parsed `ProcessSpec`.
+/// A process with its names resolved against the model: the model particles
+/// each leg may be, in label-member order, and the forbidden propagators.
+struct ExpandedProcess {
+    initial: Vec<Vec<String>>,
+    final_state: Vec<Vec<String>>,
+    forbidden_particles: Vec<String>,
+    orders: Vec<AmplitudeOrder>,
+}
+
+/// Generate diagrams for one process of a checked card.
 ///
-/// Expands multiparticle aliases, builds a `DiagramSelector` for each concrete
-/// particle assignment, then calls `feyngraph::generate_diagrams`.
+/// Resolves the legs against the model, builds a `DiagramSelector` for each
+/// concrete particle assignment, then calls `feyngraph::generate_diagrams`.
 ///
 /// When the process has no explicit coupling constraints, the WEIGHTED coupling
 /// order filter is applied automatically: the minimum WEIGHTED value that produces
@@ -204,33 +272,49 @@ fn enumerate(
 /// This mirrors MadGraph's default behaviour of selecting the lowest perturbative
 /// order.  WEIGHTED = Σ_i (hierarchy_i × n_i) where hierarchy comes from the
 /// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM).
-fn generate_from_process_spec(
-    spec: &ProcessSpec,
+fn generate_from_process(
+    process: &SupportedProcess,
     model: &UFOModel,
-    aliases: &AliasTable,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
-    // A `^2` constraint bounds the order of an interference term in |M|^2, which is
-    // a statement about pairs of diagrams; nothing downstream of here can express one,
-    // and dropping it silently would answer a different question than the one asked —
-    // the amplitude-level bound over the same order, whose cross section differs.
-    if let Some(c) = spec.coupling_constraints.iter().find(|c| c.squared) {
-        return Err(DiagramError::SquaredOrder(c.to_string(), c.name.clone()));
+    // MadGraph accepts `EW` on a model whose order is called `QED` (and the
+    // reverse), then constrains the name as written, which no vertex carries:
+    // the constraint does nothing. Refusing an order the model does not define
+    // is the one reading that cannot silently do nothing.
+    for order in &process.orders {
+        check_order_name(model, &order.name)?;
     }
+    let legs = |legs: &[SupportedLeg]| -> Result<Vec<Vec<String>>, ResolveError> {
+        legs.iter()
+            .map(|l| leg_names(model, &l.particle, &l.token, &process.aliases))
+            .collect()
+    };
+    let expanded = ExpandedProcess {
+        initial: legs(&process.initial)?,
+        final_state: legs(&process.final_state)?,
+        forbidden_particles: forbidden_propagator_names(
+            model,
+            &process.forbidden_particles,
+            &process.aliases,
+        )?,
+        orders: process.orders.clone(),
+    };
 
     // Generate abstract graph topologies once for this (n_external, n_loops=0) combination.
     // All concrete subprocesses share the same topology set; reusing it avoids re-running
     // the O(n!) topology search for every one of the potentially thousands of particle
     // assignments produced by alias expansion (e.g. p p > q q~ l+ l- l+ l- has ~11k combos).
-    let n_ext = spec.initial.len() + spec.final_state.len();
+    let n_ext = expanded.initial.len() + expanded.final_state.len();
     let cached_topologies = generate_topologies(n_ext, &model.topo);
 
     // The model's own per-order caps ride on top of whatever the process asked for,
     // but they never decide whether the automatic WEIGHTED search runs: MadGraph
     // applies them (`Process.check_expansion_orders`) only after
     // `find_optimal_process_orders` has looked at the process's own orders.
-    let auto_weighted = spec.coupling_constraints.is_empty();
-    let capped = capped_spec(spec, model);
-    let spec = capped.as_ref().unwrap_or(spec);
+    let auto_weighted = expanded.orders.is_empty();
+    let expanded = ExpandedProcess {
+        orders: capped_orders(&expanded.orders, model),
+        ..expanded
+    };
 
     if auto_weighted {
         // No explicit constraints: discover the minimum WEIGHTED order.
@@ -241,7 +325,7 @@ fn generate_from_process_spec(
 
         let mut w = min_w;
         loop {
-            let sets = generate_sets_inner(spec, model, aliases, Some(w), &cached_topologies)?;
+            let sets = generate_sets_inner(&expanded, model, Some(w), &cached_topologies)?;
             if sets.iter().any(|s| !s.diagrams.is_empty()) {
                 debug!("lowest WEIGHTED order with diagrams: {w}");
                 return Ok(sets);
@@ -254,33 +338,24 @@ fn generate_from_process_spec(
             w += 1;
         }
     } else {
-        generate_sets_inner(spec, model, aliases, None, &cached_topologies)
+        generate_sets_inner(&expanded, model, None, &cached_topologies)
     }
 }
 
-/// `spec` with the model's `expansion_order` caps folded into its coupling
-/// constraints, or `None` when the model caps nothing (every model in reach:
-/// `expansion_order` is 99 throughout the SM and SMEFTsim, and SMEFTsim's
-/// `NPprop = 0` falls outside MadGraph's `0 < v < 99` window).
+/// `orders` with the model's `expansion_order` caps folded in (every model in
+/// reach caps nothing: `expansion_order` is 99 throughout the SM and SMEFTsim,
+/// and SMEFTsim's `NPprop = 0` falls outside MadGraph's `0 < v < 99` window).
 ///
 /// MadGraph's `Process.check_expansion_orders` writes the cap straight into the
 /// process's `orders` dict — lowering an order the process bounded above the cap,
 /// and adding one it left unconstrained. `orders` there means `<=`, so an
 /// explicit constraint using any other comparison is left alone rather than
 /// reinterpreted.
-fn capped_spec(spec: &ProcessSpec, model: &UFOModel) -> Option<ProcessSpec> {
-    let caps = crate::ufo::expansion_order_caps(&model.expansion_order);
-    if caps.is_empty() {
-        return None;
-    }
-    let mut out = spec.clone();
-    for (order, cap) in caps {
+fn capped_orders(orders: &[AmplitudeOrder], model: &UFOModel) -> Vec<AmplitudeOrder> {
+    let mut out = orders.to_vec();
+    for (order, cap) in crate::ufo::expansion_order_caps(&model.expansion_order) {
         let cap = cap as i64;
-        match out
-            .coupling_constraints
-            .iter_mut()
-            .find(|c| c.name == order && !c.squared)
-        {
+        match out.iter_mut().find(|c| c.name == order) {
             Some(c) if matches!(c.op, CouplingOp::Le | CouplingOp::Eq) => {
                 if c.value > cap {
                     debug!("{order}<={} lowered to the model's cap {cap}", c.value);
@@ -288,15 +363,14 @@ fn capped_spec(spec: &ProcessSpec, model: &UFOModel) -> Option<ProcessSpec> {
                 }
             }
             Some(_) => {}
-            None => out.coupling_constraints.push(CouplingConstraint {
+            None => out.push(AmplitudeOrder {
                 name: order,
-                squared: false,
                 op: CouplingOp::Le,
                 value: cap,
             }),
         }
     }
-    Some(out)
+    out
 }
 
 /// Pre-generate all abstract graph topologies for `n_ext` external legs at tree level.
@@ -326,9 +400,8 @@ fn generate_topologies(n_ext: usize, topo_model: &feyngraph::model::Model) -> Ve
 /// Coupling constraints are enforced during particle assignment, not topology
 /// generation, so no topology filtering is needed here.
 fn generate_sets_inner(
-    spec: &ProcessSpec,
+    process: &ExpandedProcess,
     model: &UFOModel,
-    aliases: &AliasTable,
     max_weighted: Option<usize>,
     cached_topologies: &[Topology],
 ) -> Result<Vec<DiagramSet>, DiagramError> {
@@ -353,47 +426,35 @@ fn generate_sets_inner(
     // silently drop subprocesses like `g d > e+ e- d` when the first
     // final-state combo tried for that initial (e.g. `g d > e+ e- g`) has no
     // diagrams at the active WEIGHTED bound.
-    let mut seen_processes: std::collections::HashSet<(Vec<String>, Vec<String>)> =
+    let mut seen_processes: std::collections::HashSet<SubprocessKey> =
         std::collections::HashSet::new();
 
-    // MadGraph resolves particle names case-insensitively, so a proc card may spell
-    // a leg `z`, `w+`, or `h` where the UFO model names it `Z`, `W+`, `H`. Canonicalize
-    // each token to the model's casing before it reaches the charge check or feyngraph.
-    // An exact match wins; a token with no case-insensitive match is left unchanged so
-    // feyngraph still reports a genuinely unknown particle.
-    let canon: std::collections::HashMap<String, &str> = model
-        .particles
-        .keys()
-        .map(|k| (k.to_lowercase(), k.as_str()))
+    // Each leg independently takes each of its particles; the Cartesian product
+    // over the legs, initial side outermost, is the concrete subprocess list.
+    // For `p p > e+ e-` this yields 9 × 9 = 81 candidates.
+    let initial_combos: Vec<Vec<String>> = process
+        .initial
+        .iter()
+        .cloned()
+        .multi_cartesian_product()
         .collect();
-    let canonicalize = |name: &str| -> String {
-        if model.particles.contains_key(name) {
-            name.to_owned()
-        } else {
-            canon
-                .get(&name.to_lowercase())
-                .map(|s| (*s).to_owned())
-                .unwrap_or_else(|| name.to_owned())
-        }
-    };
+    let final_combos: Vec<Vec<String>> = process
+        .final_state
+        .iter()
+        .cloned()
+        .multi_cartesian_product()
+        .collect();
 
-    for concrete in expand_process(spec, aliases) {
+    for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
         candidates += 1;
-        let mut concrete = concrete;
-        for n in concrete
-            .initial
-            .iter_mut()
-            .chain(concrete.final_state.iter_mut())
-            .chain(concrete.forbidden_particles.iter_mut())
-        {
-            *n = canonicalize(n);
-        }
+        let concrete = ConcreteProcess {
+            initial,
+            final_state,
+            forbidden_particles: process.forbidden_particles.clone(),
+            orders: process.orders.clone(),
+        };
 
-        let mut initial_sorted = concrete.initial.clone();
-        initial_sorted.sort();
-        let mut final_sorted = concrete.final_state.clone();
-        final_sorted.sort();
-        if !seen_processes.insert((initial_sorted, final_sorted)) {
+        if !seen_processes.insert(subprocess_key(&concrete.initial, &concrete.final_state)) {
             duplicates += 1;
             continue;
         }

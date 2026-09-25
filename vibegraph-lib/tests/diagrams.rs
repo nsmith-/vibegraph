@@ -1,6 +1,6 @@
 mod common;
 
-use vibegraph::diagrams::{parse_proc_card, AliasTable, ParsingOptions};
+use vibegraph::diagrams::{parse_proc_card, ParsingOptions, Unsupported};
 
 fn total_diagrams(sets: &[vibegraph::diagrams::DiagramSet]) -> usize {
     sets.iter().map(|s| s.diagrams.len()).sum()
@@ -16,10 +16,10 @@ fn test_parse_proc_card_string() {
 
 #[test]
 fn test_alias_table_built_from_defines() {
-    let card = "define myp = u d\ngenerate myp > e+ e-\n";
+    let card = "define myp = u d\ngenerate myp myp > e+ e-\n";
     let opts = ParsingOptions::default();
     let parsed = parse_proc_card(card, &opts).unwrap();
-    let table = AliasTable::from_defines(&parsed.defines);
+    let table = &parsed.processes[0].aliases;
     assert_eq!(table.expand_name("myp"), vec!["u", "d"]);
 }
 
@@ -84,9 +84,9 @@ fn test_generate_uux_to_ddx_explicit_qed() {
     );
 }
 
-/// Required s-channel filtering not yet implemented.
+/// Required s-channels: the check refuses them until the s-channel filter exists.
 #[test]
-#[ignore = "required_s_channel filtering not yet implemented (selector.rs TODO)"]
+#[ignore = "required s-channels are refused until the s-channel diagram filter exists"]
 fn test_generate_ee_to_mumu_required_z() {
     let sets = common::generate("e+ e- > Z > mu+ mu-");
     assert_eq!(
@@ -99,8 +99,19 @@ fn test_generate_ee_to_mumu_required_z() {
 /// Forbidden mediators: e+e- → μ+μ- with both γ and Z forbidden gives zero diagrams.
 #[test]
 fn test_no_diagrams_when_both_mediators_forbidden() {
-    let sets = common::generate("e+ e- > mu+ mu- / a / Z");
+    let sets = common::generate("e+ e- > mu+ mu- / a Z");
     assert_eq!(total_diagrams(&sets), 0);
+}
+
+/// A second `/` is not a second restriction list: MadGraph's expression takes
+/// the last one, and the first is left among the legs, where it is no particle.
+#[test]
+fn a_second_slash_is_an_error() {
+    assert!(parse_proc_card(
+        "generate e+ e- > mu+ mu- / a / Z",
+        &ParsingOptions::default()
+    )
+    .is_err());
 }
 
 /// Forbidden propagator in uu~ → gg leaves only the s-channel gluon diagram.
@@ -130,12 +141,11 @@ fn a_squared_order_constraint_is_a_hard_error() {
     let opts = ParsingOptions::default();
     let model = common::sm_model();
 
-    let card = parse_proc_card("generate e+ e- > mu+ mu- QED^2==2", &opts).unwrap();
-    let text = match vibegraph::diagrams::generate_from_proc_card(&card, model.as_ref()) {
+    let text = match parse_proc_card("generate e+ e- > mu+ mu- QED^2==2", &opts) {
         Err(e) => e.to_string(),
-        Ok(sets) => panic!(
-            "a squared-order constraint enumerated {} diagrams instead of being refused",
-            total_diagrams(&sets)
+        Ok(card) => panic!(
+            "a squared-order constraint was accepted: {}",
+            card.processes[0]
         ),
     };
     assert!(text.contains("QED^2==2"), "{text}");
@@ -148,4 +158,95 @@ fn a_squared_order_constraint_is_a_hard_error() {
                 .expect("the same legs without the `^2` enumerate")
         ) > 0
     );
+}
+
+fn enumerate(card: &str) -> Result<Vec<vibegraph::diagrams::DiagramSet>, String> {
+    let model = common::sm_model();
+    let card = parse_proc_card(card, &ParsingOptions::default()).map_err(|e| e.to_string())?;
+    vibegraph::diagrams::generate_from_proc_card(&card, model.as_ref()).map_err(|e| e.to_string())
+}
+
+/// Two process lines that reach the same subprocess would both be summed into
+/// the cross section. MadGraph lets this through whenever the two lines' process
+/// numbers differ (and `p p > e+ e-` with `u u~ > e+ e-` even under the same
+/// number); here it is refused, `--no_warning=duplicate` or not.
+#[test]
+fn a_subprocess_reached_from_two_lines_is_refused() {
+    for card in [
+        "generate p p > e+ e-\nadd process u u~ > e+ e-\n",
+        "generate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @2\n",
+        "generate e+ e- > mu+ mu-\nadd process e- e+ > mu- mu+ --no_warning=duplicate\n",
+    ] {
+        let Err(err) = enumerate(card) else {
+            panic!("{card} enumerated");
+        };
+        assert!(err.contains("two process lines"), "{card}: {err}");
+    }
+    let sets = enumerate("generate p p > e+ e-\nadd process p p > mu+ mu-\n").unwrap();
+    assert_eq!(
+        sets.iter().filter(|s| !s.diagrams.is_empty()).count(),
+        8,
+        "disjoint lines enumerate side by side"
+    );
+}
+
+/// An integer leg is a PDG code: `21` is a gluon, not two particles named `1`.
+#[test]
+fn pdg_code_legs_enumerate_as_their_particles() {
+    let by_code = enumerate("generate 11 -11 > 13 -13").unwrap();
+    let by_name = enumerate("generate e- e+ > mu- mu+").unwrap();
+    assert_eq!(by_code[0].particles_in, by_name[0].particles_in);
+    assert_eq!(by_code[0].diagrams.len(), 2);
+    assert_eq!(
+        total_diagrams(&enumerate("generate 21 21 > 21 21").unwrap()),
+        4
+    );
+}
+
+/// `generate` discards the processes before it, as MadGraph's does.
+#[test]
+fn a_second_generate_starts_over() {
+    let sets = enumerate("generate e+ e- > mu+ mu-\ngenerate e+ e- > ta+ ta-\n").unwrap();
+    assert_eq!(sets.len(), 1);
+    assert_eq!(sets[0].particles_out, ["ta+", "ta-"]);
+}
+
+/// An order the model does not define constrains nothing in MadGraph (which
+/// accepts `EW` on a model whose order is `QED`, then bounds the name as
+/// written); here it is refused.
+#[test]
+fn an_order_the_model_does_not_define_is_refused() {
+    let Err(err) = enumerate("generate e+ e- > mu+ mu- EW=2") else {
+        panic!("EW=2 enumerated");
+    };
+    assert!(err.contains("not an order of this model"), "{err}");
+}
+
+/// A 1→n process is refused by the check, before enumeration.
+#[test]
+fn a_decay_process_is_refused_by_the_check() {
+    let err = parse_proc_card("generate t > w+ b", &ParsingOptions::default()).unwrap_err();
+    let vibegraph::diagrams::DiagramError::Unsupported(all) = err else {
+        panic!("{err}");
+    };
+    assert!(matches!(all.0[..], [Unsupported::DecayProcess { .. }]));
+}
+
+/// `/ w+` forbids the W propagator in either orientation: MadGraph compares
+/// |PDG code| (`diagram_generation.py`, the `abs(...) in forbidden_particles`
+/// test), and `e+ e- > e+ ve e- ve~` keeps 20 of its 56 diagrams under `/ w+`,
+/// `/ w-` and `/ w+ w-` alike (MadGraph's own generation at the pinned
+/// version). Forbidding only the named orientation keeps 26 or 44 — a
+/// different diagram set for each spelling of the same restriction.
+#[test]
+fn a_forbidden_particle_is_forbidden_in_either_orientation() {
+    let count = |card: &str| total_diagrams(&enumerate(card).unwrap());
+    assert_eq!(count("generate e+ e- > e+ ve e- ve~"), 56);
+    for forbid in ["w+", "w-", "w+ w-", "24", "-24"] {
+        assert_eq!(
+            count(&format!("generate e+ e- > e+ ve e- ve~ / {forbid}")),
+            20,
+            "/ {forbid}"
+        );
+    }
 }

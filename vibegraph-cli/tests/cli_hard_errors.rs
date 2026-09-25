@@ -89,7 +89,7 @@ fn cli_decay_chain_proc_card_is_refused() {
     );
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("decay-chain process syntax is not supported"),
+        stderr.contains("decay chains (',') are not supported yet"),
         "got:\n{stderr}"
     );
 }
@@ -133,7 +133,7 @@ fn cli_reads_the_proc_card_from_stdin_for_a_dash() {
     );
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("decay-chain process syntax is not supported"),
+        stderr.contains("decay chains (',') are not supported yet"),
         "got:\n{stderr}"
     );
 }

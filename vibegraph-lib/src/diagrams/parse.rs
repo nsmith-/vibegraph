@@ -1,145 +1,294 @@
-//! MadGraph-style process string parser.
+//! MadGraph proc-card grammar: every command, and every process definition in full.
 //!
-//! Implements the same sequential modifier-stripping algorithm used by MadGraph5_aMC@NLO's
-//! `extract_process` (madgraph/interface/madgraph_interface.py, line 4822). Each modifier
-//! is stripped from the process string in a fixed order using plain string operations;
-//! the residual `initial > final` tokens are whitespace-split.
+//! The parser mirrors MadGraph5_aMC@NLO's own command interface
+//! (`madgraph/interface/madgraph_interface.py`): `extract_process` for a process
+//! line, `extract_decay_chain_process` for one with decay chains, `do_define` for
+//! multiparticle labels, and `precmd`'s line handling (`#` comments, `;` command
+//! separators, `\` continuations). Where MadGraph states its grammar as regular
+//! expressions, the same expressions are applied here, in the same order, so the
+//! two agree on every edge the expressions define — including the ones that look
+//! accidental (`p p>e+ e-` is not a process to MadGraph, and it is not one here).
+//!
+//! Nothing is dropped: the result is a [`ProcCardAst`] that records every
+//! feature a card names, supported or not. Deciding what this generator can
+//! honour is [`super::check::check_supported`]'s job, and resolving names
+//! against a model is [`super::resolve`]'s; this module needs neither a model
+//! nor a policy.
 
 use std::fmt::Display;
+use std::sync::LazyLock;
 
+use regex::Regex;
 use thiserror::Error;
+
+use super::alias::AliasTable;
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Error)]
+/// A card MadGraph itself would refuse to read.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ParseError {
-    #[error("process string has no '>' separator: '{0}'")]
-    NoSeparator(String),
-    #[error("too many '>' separators (found {found}, expected 1 or 2): '{input}'")]
-    TooManySeparators { found: usize, input: String },
-    #[error("empty particle list on {side} side of '>'")]
-    EmptyLeg { side: &'static str },
-    #[error("malformed process tag (expected '@N'): '{0}'")]
-    BadTag(String),
-    #[error("forbidden hard s-channel (`$$`) not allowed — removing s-channels can violate gauge invariance; set ParsingOptions::allow_forbidden_s_channels = true to override")]
-    ForbiddenSChannelDisabled,
-    #[error("forbidden on-shell s-channel (`$`) not allowed — set ParsingOptions::allow_forbidden_onsh_s_channels = true to override")]
-    ForbiddenOnshSChannelDisabled,
-    #[error("loop spec (`[...]`) not allowed in this context — set ParsingOptions::allow_loop_spec = true to override")]
-    LoopSpecDisabled,
-    #[error("malformed loop spec — unclosed '[': '{0}'")]
-    UnclosedLoopSpec(String),
-    #[error("malformed particle token '{0}'")]
-    BadParticleTok(String),
+    #[error("wrong use of '>' in '{0}': a process needs one or two '>' separators")]
+    Separators(String),
+    #[error("no initial-state particle before '>' in '{0}'")]
+    NoInitialState(String),
+    #[error("no final-state particle in '{0}'")]
+    NoFinalState(String),
     #[error(
-        "decay-chain process syntax is not supported: '{0}' separates a hard \
-         process from a decay chain with ','"
+        "'{token}' in '{line}' is not a particle: legs are separated by whitespace, and \
+         '>', '/', '$' and '|' must stand apart from particle names"
     )]
-    DecayChainUnsupported(String),
+    BadLeg { token: String, line: String },
+    #[error("particle repeat count 0 in '{0}' would remove the leg")]
+    ZeroRepeat(String),
+    #[error("only an initial-state photon ('a' or '22') can be tagged, not '{0}'")]
+    TaggedInitial(String),
+    #[error("multiparticle label '{0}' cannot be tagged")]
+    TaggedMultiparticle(String),
+    #[error(
+        "'{0}' is an or-multiparticle (defined with '|'), which can only name a required \
+         s-channel"
+    )]
+    OrMultiparticle(String),
+    #[error("'|' separates alternatives only in a required s-channel list: '{0}'")]
+    OrInRestriction(String),
+    #[error("malformed polarization in '{0}': expected 'name{{...}}' with nothing after '}}'")]
+    Polarization(String),
+    #[error(
+        "coupling-order constraint '{name}{op}{value}' uses '{op}': MadGraph accepts only \
+         '=', '<=', '==' and '>'"
+    )]
+    OrderOperator {
+        name: String,
+        op: String,
+        value: i64,
+    },
+    #[error("coupling-order value in '{0}' does not fit an integer")]
+    OrderValue(String),
+    #[error(
+        "NLO mode '{0}' in '[...]' is not one of all, real, virt, sqrvirt, tree, noborn, \
+         LOonly, only"
+    )]
+    LoopMode(String),
+    #[error("process number in '{0}' does not fit an integer")]
+    BadTag(String),
+    #[error("parentheses do not balance in '{0}'")]
+    Parentheses(String),
+    #[error("missing ')' closing a decay chain in '{0}'")]
+    MissingParenthesis(String),
+    #[error("'[...]' cannot be combined with decay chains: '{0}'")]
+    LoopSpecWithDecayChain(String),
+    #[error("'{0}' needs a process after it")]
+    MissingProcess(String),
+    #[error("'add' takes 'process' or 'model', not '{0}'")]
+    BadAdd(String),
+    #[error("malformed 'define': {0}")]
+    Define(String),
+    #[error("'import' needs a kind and an argument: '{0}'")]
+    Import(String),
+    #[error("the card ends inside a '\\' line continuation")]
+    DanglingContinuation,
 }
 
-// ── Options ───────────────────────────────────────────────────────────────────
+// ── The syntax tree ───────────────────────────────────────────────────────────
 
-/// Controls which syntax features are accepted during parsing.
-#[derive(Debug, Clone)]
-pub struct ParsingOptions {
-    /// If false, `$$` (forbidden hard s-channels) is rejected with an error.
-    ///
-    /// Removing s-channels with `$$` can break gauge invariance — e.g. excluding
-    /// the Z propagator from a process that requires it for amplitude cancellations.
-    /// Set to `true` only when the model supports this restriction.
-    pub allow_forbidden_s_channels: bool,
-    /// If false, `$` (forbidden on-shell s-channels) is rejected with an error.
-    pub allow_forbidden_onsh_s_channels: bool,
-    /// If false, loop specs `[QCD]` / `[all=QCD]` cause an error instead of being silently dropped.
-    pub allow_loop_spec: bool,
+/// A whole `proc_card.dat`, command by command, in the order MadGraph runs them.
+///
+/// The effective process list is not stored: `generate` and `import model`
+/// discard every earlier process, and a label means whatever `define` said last
+/// before the line that uses it, so both are properties of the sequence. See
+/// [`ProcCardAst::processes`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ProcCardAst {
+    pub commands: Vec<Command>,
 }
 
-impl Default for ParsingOptions {
-    fn default() -> Self {
-        Self {
-            allow_forbidden_s_channels: false, // reject $$ by default for gauge safety
-            allow_forbidden_onsh_s_channels: true,
-            allow_loop_spec: true,
+/// One command of a card.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Command {
+    /// `import model NAME[-RESTRICT] [options]`. Discards every earlier process.
+    ImportModel {
+        import: ModelImport,
+        /// Everything after the model name (`-modelname`, `--noprefix`, ...).
+        options: Vec<String>,
+    },
+    /// Any other `import` (`import command FILE`, `import banner FILE`, ...).
+    Import { kind: String, args: Vec<String> },
+    /// `define LABEL [=] members... [/ excluded...]`.
+    Define(MultiparticleDef),
+    /// `generate PROCESS`: discards every earlier process, then adds this one.
+    Generate(ProcessLine),
+    /// `add process PROCESS`: adds a process to the current list.
+    AddProcess(ProcessLine),
+    /// `add model PATH ...`: merges a second model into the current one.
+    AddModel(Vec<String>),
+    /// `set OPTION VALUE...`, an interface option.
+    Set { option: String, args: Vec<String> },
+    /// `launch [args]`, with the lines a script feeds to its questions up to
+    /// `done`: those are run-card and param-card edits, not interface commands.
+    Launch {
+        args: Vec<String>,
+        dialogue: Vec<String>,
+    },
+    /// Every other command, verbatim (`output`, `display`, `help`, ...).
+    Other { verb: String, args: String },
+}
+
+/// Information extracted from an `import model` directive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelImport {
+    /// Model name (e.g. "sm", "loop_sm").
+    pub name: String,
+    /// Optional restrict variant (e.g. "no_b_mass" from "sm-no_b_mass").
+    pub restrict_variant: Option<String>,
+}
+
+/// A `define` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiparticleDef {
+    pub alias: String,
+    /// The members as written. One group is an ordinary multiparticle; several
+    /// (`define v = z | a`) make an or-multiparticle, whose groups are
+    /// alternatives.
+    pub groups: Vec<Vec<String>>,
+    /// Particles subtracted via the optional `/ except` clause.
+    pub except: Vec<String>,
+}
+
+impl MultiparticleDef {
+    /// Whether the label was defined with `|`.
+    pub fn is_or(&self) -> bool {
+        self.groups.len() > 1
+    }
+}
+
+/// The argument of a `generate` or `add process` command.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProcessLine {
+    /// The process text as MadGraph reads it: whitespace-normalized, flags removed.
+    pub text: String,
+    /// `--` options on the line (`--no_warning=duplicate`, `--optimize`, ...).
+    pub flags: Vec<String>,
+    pub definition: ProcessDefinition,
+}
+
+/// MadGraph's `ProcessDefinition`, with names as written.
+///
+/// Names are resolved to PDG codes against a model by [`super::resolve`];
+/// label membership is already decided here, since `define` is part of the card.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ProcessDefinition {
+    /// Initial legs first, then final legs, each repeat count already expanded.
+    pub legs: Vec<Leg>,
+    /// Required s-channels (`> A B >`): alternatives (split at `|`), each a list of
+    /// names that must all appear.
+    pub required_s_channels: Vec<Vec<String>>,
+    /// `/ A B`: particles that may not appear as a propagator.
+    pub forbidden_particles: Vec<String>,
+    /// `$$ A B`: particles that may not appear as an s-channel propagator.
+    pub forbidden_s_channels: Vec<String>,
+    /// `$ A B`: particles that may not go on shell in an s-channel.
+    pub forbidden_onsh_s_channels: Vec<String>,
+    /// Coupling-order constraints, left to right as written.
+    pub orders: Vec<CouplingConstraint>,
+    /// `[option = orders]`.
+    pub loop_spec: Option<LoopSpec>,
+    /// `@N`.
+    pub tag: Option<u32>,
+    /// `ORDER=n` after the `@N` of a decay-chain line: bounds on the whole chain.
+    pub overall_orders: Vec<(String, i64)>,
+    /// Whether this is the core of a decay chain, which MadGraph reads without
+    /// turning `==` / `>` amplitude constraints into squared-order ones.
+    pub chain_core: bool,
+    /// `, (A > B C, ...)`: one entry per decay, each possibly with its own chains.
+    pub decay_chains: Vec<ProcessDefinition>,
+}
+
+impl ProcessDefinition {
+    pub fn initial(&self) -> impl Iterator<Item = &Leg> {
+        self.legs.iter().filter(|l| l.state == LegState::Initial)
+    }
+
+    pub fn final_state(&self) -> impl Iterator<Item = &Leg> {
+        self.legs.iter().filter(|l| l.state == LegState::Final)
+    }
+}
+
+/// Initial or final state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LegState {
+    Initial,
+    Final,
+}
+
+/// One external leg.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Leg {
+    pub state: LegState,
+    pub particle: LegParticle,
+    /// The token as written, without polarization braces or tag marks: `2e+`
+    /// for a leg that came from a repeat count, which is what lets resolution
+    /// notice a model particle whose name starts with a digit.
+    pub token: String,
+    /// The text between `{` and `}`, as written.
+    pub polarization: Option<String>,
+    /// `!a!`: a tagged photon.
+    pub tagged: bool,
+}
+
+/// What a leg names, in the order MadGraph tries the readings.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LegParticle {
+    /// A multiparticle label (`p`, `j`, or one from `define`).
+    Label(String),
+    /// An integer: a PDG code (`11`, `-11`, `21`).
+    Pdg(i64),
+    /// A model particle name.
+    Name(String),
+}
+
+impl Display for LegParticle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LegParticle::Label(s) | LegParticle::Name(s) => f.write_str(s),
+            LegParticle::Pdg(c) => write!(f, "{c}"),
         }
     }
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-/// A single external leg in a process specification.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParticleLeg {
-    /// Particle name or alias (may not be a concrete model particle yet).
-    pub name: String,
-    /// Duplication count (`2e+` → count=2, name="e+"). Always ≥ 1.
-    pub count: usize,
-}
-
-/// Coupling order comparison operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Coupling order comparison operator — MadGraph's accepted set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CouplingOp {
-    /// `=` — treated as `<=` for amplitude orders (MadGraph semantics).
+    /// `=` — an upper bound, as `<=`.
     Eq,
-    /// `==` — exact equality on amplitude order.
-    ExactEq,
-    /// `===` — alias for `==` in MadGraph.
-    StrictEq,
     /// `<=`
     Le,
-    /// `<`
-    Lt,
-    /// `>=`
-    Ge,
-    /// `>`
+    /// `==` — exact equality.
+    ExactEq,
+    /// `>` — a strict lower bound.
     Gt,
-    /// `!=`
-    Ne,
-}
-
-/// One coupling order constraint extracted from the process string.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CouplingConstraint {
-    /// Coupling name, e.g. `"QCD"`.
-    pub name: String,
-    /// True if the token was `NAME^2` (squared-order constraint).
-    pub squared: bool,
-    pub op: CouplingOp,
-    pub value: i64,
-}
-
-/// A fully parsed simple process specification.
-#[derive(Debug, Clone)]
-pub struct ProcessSpec {
-    pub initial: Vec<ParticleLeg>,
-    /// Required s-channel particles, from `A > X Y > B` (middle segment).
-    pub required_s_channels: Vec<String>,
-    pub final_state: Vec<ParticleLeg>,
-    /// Forbidden propagators, from `/ X Y`.
-    pub forbidden_particles: Vec<String>,
-    /// Forbidden hard s-channels, from `$$ X Y`.
-    pub forbidden_s_channels: Vec<String>,
-    /// Forbidden on-shell s-channels, from `$ X Y`.
-    pub forbidden_onsh_s_channels: Vec<String>,
-    /// In the order they appear in the process string.
-    pub coupling_constraints: Vec<CouplingConstraint>,
-    /// Process tag from `@N`; `None` if absent.
-    pub tag: Option<u32>,
 }
 
 impl Display for CouplingOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             CouplingOp::Eq => "=",
-            CouplingOp::ExactEq => "==",
-            CouplingOp::StrictEq => "===",
             CouplingOp::Le => "<=",
-            CouplingOp::Lt => "<",
-            CouplingOp::Ge => ">=",
+            CouplingOp::ExactEq => "==",
             CouplingOp::Gt => ">",
-            CouplingOp::Ne => "!=",
         })
     }
+}
+
+/// One coupling-order constraint as written.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CouplingConstraint {
+    /// The order name as written (`QCD`, `WEIGHTED`, `aEW`), without `^2`.
+    pub name: String,
+    /// `NAME^2`: a bound on the squared amplitude's order.
+    pub squared: bool,
+    pub op: CouplingOp,
+    pub value: i64,
 }
 
 impl Display for CouplingConstraint {
@@ -152,513 +301,723 @@ impl Display for CouplingConstraint {
     }
 }
 
-impl Display for ProcessSpec {
-    /// The legs and the coupling-order constraints, spelled the way MadGraph's
-    /// own generate line spells them. Carrying the orders is what keeps two
-    /// specs that differ only in an order constraint from printing identically.
-    /// The other modifiers — required and forbidden s-channels, forbidden
-    /// propagators, the `@N` tag — are still dropped, so this is not a round trip.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let initial = self
-            .initial
-            .iter()
-            .map(|leg| {
-                if leg.count > 1 {
-                    format!("{}{}", leg.count, leg.name)
-                } else {
-                    leg.name.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        let final_state = self
-            .final_state
-            .iter()
-            .map(|leg| {
-                if leg.count > 1 {
-                    format!("{}{}", leg.count, leg.name)
-                } else {
-                    leg.name.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        write!(f, "{} > {}", initial, final_state)?;
-        for constraint in &self.coupling_constraints {
-            write!(f, " {constraint}")?;
-        }
-        Ok(())
-    }
+/// `[option = orders]`, the loop / perturbation specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopSpec {
+    /// `real`, `virt`, `tree`, ...; `None` for a bare `[QCD]`.
+    pub option: Option<String>,
+    /// The perturbed orders as written (`QCD`, `all`, ...).
+    pub orders: Vec<String>,
 }
 
-/// A `define alias = particles... [/ except...]` command.
-#[derive(Debug, Clone)]
-pub struct MultiparticleDef {
-    pub alias: String,
-    /// Particle names on the RHS (before any `/`).
-    pub particles: Vec<String>,
-    /// Particles subtracted via the optional `/ except` clause.
-    pub except: Vec<String>,
+// ── MadGraph's expressions ───────────────────────────────────────────────────
+
+fn re(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("a MadGraph grammar expression compiles")
 }
 
-/// Information extracted from an `import model` directive.
-#[derive(Debug, Clone)]
-pub struct ModelImport {
-    /// Model name (e.g. "sm", "loop_sm").
-    pub name: String,
-    /// Optional restrict variant (e.g. "no_b_mass" from "sm-no_b_mass").
-    pub restrict_variant: Option<String>,
-}
+/// `check_process_format`: one or two `>` not followed by a digit (`QCD^2>2`).
+static SEPARATOR: LazyLock<Regex> = LazyLock::new(|| re(r">\D"));
+/// `extract_process`'s spacing fix-up. MadGraph writes a character class meant to
+/// cover `[ ] / , $ > |`, but as Python parses it the class closes early and the
+/// expression only ever matches a `]` between two non-blanks.
+static BRACKET_SPACING: LazyLock<Regex> = LazyLock::new(|| re(r"(\S)(\])(\S)"));
+static PROC_NUMBER: LazyLock<Regex> = LazyLock::new(|| re(r"^(.+)@\s*(\d+)\s*(.*)$"));
+static CHAIN_PROC_NUMBER: LazyLock<Regex> =
+    LazyLock::new(|| re(r"^(.+)@\s*(\d+)\s*((\w+\s*<?=\s*\d+\s*)*)$"));
+static CHAIN_ORDER: LazyLock<Regex> = LazyLock::new(|| re(r"^(.*?)\s*(\w+)\s*<?=\s*(\d+)\s*$"));
+static PERTURBATION: LazyLock<Regex> = LazyLock::new(|| {
+    re(r"^(?P<proc>.+>.+)\s*\[\s*((?P<option>\w+)\s*=)?\s*(?P<pert>(\w+\s*)*)\s*\]\s*(?P<rest>.*)$")
+});
+static ORDER: LazyLock<Regex> = LazyLock::new(|| {
+    re(
+        r"^(?P<before>.+>.+)\s+(?P<name>(\w|(\^2))+)\s*(?P<type>(=|(<=)|(==)|(===)|(!=)|(>=)|<|>))\s*(?P<value>-?\d+)\s*?(?P<after>.*)",
+    )
+});
+static FORBIDDEN_BEFORE_DOLLAR: LazyLock<Regex> =
+    LazyLock::new(|| re(r"^(.+)\s*/\s*(.+\s*)(\$.*)$"));
+static FORBIDDEN: LazyLock<Regex> = LazyLock::new(|| re(r"^(.+)\s*/\s*(.+\s*)$"));
+static FORBIDDEN_S: LazyLock<Regex> = LazyLock::new(|| re(r"^(.+)\s*\$\s*\$\s*(.+)\s*$"));
+static FORBIDDEN_ONSH: LazyLock<Regex> = LazyLock::new(|| re(r"^(.+)\s*\$\s*(.+)\s*$"));
+static REQUIRED: LazyLock<Regex> = LazyLock::new(|| re(r"^(.+?)>(.+?)>(.+)$"));
 
-/// The result of parsing an entire `proc_card.dat` file.
-#[derive(Debug, Clone)]
-pub struct ParsedProcCard {
-    /// Model import directive if present (e.g. `import model sm-no_b_mass`).
-    pub model: Option<ModelImport>,
-    /// All `define` commands, in order.
-    pub defines: Vec<MultiparticleDef>,
-    /// All processes from `generate` and `add process` commands, in order.
-    pub processes: Vec<ProcessSpec>,
-}
+const NLO_MODES: [&str; 8] = [
+    "all", "real", "virt", "sqrvirt", "tree", "noborn", "LOonly", "only",
+];
 
-// ── Top-level parse functions ─────────────────────────────────────────────────
+// ── Card ──────────────────────────────────────────────────────────────────────
 
-/// Parse a `proc_card.dat` string into a `ParsedProcCard`.
-pub fn parse_proc_card(content: &str, opts: &ParsingOptions) -> Result<ParsedProcCard, ParseError> {
-    let mut card = ParsedProcCard {
-        model: None,
-        defines: Vec::new(),
-        processes: Vec::new(),
-    };
+/// Parse a `proc_card.dat` (or a MadGraph batch script) into its commands.
+///
+/// Commands are case-sensitive, as in MadGraph: `Generate` is not a command.
+pub fn parse_proc_card_ast(content: &str) -> Result<ProcCardAst, ParseError> {
+    let mut commands = Vec::new();
+    let mut aliases = AliasTable::default_sm();
+    let mut launch: Option<(Vec<String>, Vec<String>)> = None;
+    let mut continued = String::new();
 
     for raw in content.lines() {
-        let line = strip_inline_comment(raw).trim().to_owned();
-        if line.is_empty() {
+        let mut line = std::mem::take(&mut continued);
+        line.push_str(raw.trim());
+        if let Some(head) = line.strip_suffix('\\') {
+            continued = head.to_owned();
             continue;
         }
-        let lower = line.to_lowercase();
-
-        if let Some(rest) = lower.strip_prefix("import model ") {
-            let rest_original = &line[line.len() - rest.len()..];
-            card.model = Some(parse_model_import(rest_original)?);
-        } else if let Some(rest) = lower.strip_prefix("generate ") {
-            let rest_original = &line[line.len() - rest.len()..];
-            card.processes
-                .push(parse_process_string(rest_original, opts)?);
-        } else if lower.starts_with("add ") {
-            // "add process ..."
-            let tokens: Vec<&str> = line.splitn(3, char::is_whitespace).collect();
-            if tokens.len() >= 3 && tokens[1].to_lowercase() == "process" {
-                card.processes.push(parse_process_string(tokens[2], opts)?);
+        let line = line.split('#').next().unwrap_or("");
+        for sub in line.split(';') {
+            let sub = sub.trim();
+            if sub.is_empty() {
+                continue;
             }
-        } else if let Some(rest) = lower.strip_prefix("define ") {
-            let rest_original = &line[line.len() - rest.len()..];
-            card.defines.push(parse_define_line(rest_original)?);
+            let (verb, rest) = match sub.split_once(char::is_whitespace) {
+                Some((v, r)) => (v, r.trim()),
+                None => (sub, ""),
+            };
+            if let Some((args, dialogue)) = launch.as_mut() {
+                if verb == "done" {
+                    commands.push(Command::Launch {
+                        args: std::mem::take(args),
+                        dialogue: std::mem::take(dialogue),
+                    });
+                    launch = None;
+                } else {
+                    dialogue.push(sub.to_owned());
+                }
+                continue;
+            }
+            if verb == "launch" {
+                launch = Some((split_arg(rest), Vec::new()));
+                continue;
+            }
+            commands.push(parse_command(verb, rest, &mut aliases)?);
         }
-        // silently skip: output, launch, set, etc.
     }
-
-    Ok(card)
+    if !continued.is_empty() {
+        return Err(ParseError::DanglingContinuation);
+    }
+    if let Some((args, dialogue)) = launch {
+        commands.push(Command::Launch { args, dialogue });
+    }
+    Ok(ProcCardAst { commands })
 }
 
-/// Parse a single MadGraph process string (e.g. `"p p > e+ e- j QCD<=2 @1"`).
-pub fn parse_process_string(s: &str, opts: &ParsingOptions) -> Result<ProcessSpec, ParseError> {
-    let mut line = s.trim().to_owned();
-
-    // Step 0: reject decay-chain syntax outright. ',' has no other meaning
-    // anywhere in this grammar, so its presence unambiguously marks a decay
-    // chain rather than a hard process. Checked before any stripping so it
-    // fires regardless of where the comma sits relative to @N/[...]/$$/$//.
-    if line.contains(',') {
-        return Err(ParseError::DecayChainUnsupported(line));
-    }
-
-    // Step 1: strip process tag @N
-    let tag = strip_proc_tag(&mut line)?;
-
-    // Step 2: strip loop spec [...]
-    strip_loop_spec(&mut line, opts)?;
-
-    // Step 3: strip coupling order constraints (repeated)
-    let coupling_constraints = strip_coupling_orders(&mut line);
-
-    // Step 4: strip / forbidden particles (before $$ and $)
-    let forbidden_particles = strip_forbidden_particles(&mut line);
-
-    // Step 5: strip $$ forbidden s-channels (before $ to avoid prefix collision)
-    let forbidden_s_channels = strip_forbidden_s_channels(&mut line, opts)?;
-
-    // Step 6: strip $ forbidden on-shell s-channels
-    let forbidden_onsh_s_channels = strip_forbidden_onsh_s_channels(&mut line, opts)?;
-
-    // Step 7 & 8: parse the remaining "initial > [required >] final"
-    let (initial, required_s_channels, final_state) = parse_process_body(&line)?;
-
-    Ok(ProcessSpec {
-        initial,
-        required_s_channels,
-        final_state,
-        forbidden_particles,
-        forbidden_s_channels,
-        forbidden_onsh_s_channels,
-        coupling_constraints,
-        tag,
+/// One command line other than `launch`.
+fn parse_command(verb: &str, rest: &str, aliases: &mut AliasTable) -> Result<Command, ParseError> {
+    let args: Vec<String> = split_arg(rest);
+    let line = || format!("{verb} {rest}");
+    Ok(match verb {
+        "import" => match args.split_first() {
+            Some((kind, rest)) if kind.starts_with("model") => {
+                let Some((name, options)) = rest.split_first() else {
+                    return Err(ParseError::Import(line()));
+                };
+                Command::ImportModel {
+                    import: parse_model_import(name),
+                    options: options.to_vec(),
+                }
+            }
+            Some((kind, rest)) if !rest.is_empty() => Command::Import {
+                kind: kind.clone(),
+                args: rest.to_vec(),
+            },
+            _ => return Err(ParseError::Import(line())),
+        },
+        "define" => {
+            let def = parse_define_line(rest)?;
+            aliases.apply(&def);
+            Command::Define(def)
+        }
+        "generate" => Command::Generate(parse_process_line(verb, &args, aliases)?),
+        "add" => match args.split_first() {
+            Some((kind, rest)) if kind == "process" => {
+                Command::AddProcess(parse_process_line("add process", rest, aliases)?)
+            }
+            Some((kind, rest)) if kind == "model" && !rest.is_empty() => {
+                Command::AddModel(rest.to_vec())
+            }
+            Some((kind, _)) if kind != "process" && kind != "model" => {
+                return Err(ParseError::BadAdd(kind.clone()))
+            }
+            _ => return Err(ParseError::MissingProcess(line())),
+        },
+        "set" if !args.is_empty() => Command::Set {
+            option: args[0].clone(),
+            args: args[1..].to_vec(),
+        },
+        _ => Command::Other {
+            verb: verb.to_owned(),
+            args: rest.to_owned(),
+        },
     })
 }
 
-/// Parse a `define` line body: `alias = particles... [/ except...]`.
+/// MadGraph's `split_arg`: whitespace-separated words, quotes kept together.
+fn split_arg(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for c in line.chars() {
+        match quote {
+            Some(q) => {
+                cur.push(c);
+                if c == q {
+                    quote = None;
+                }
+            }
+            None if c.is_whitespace() => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            None => {
+                if c == '\'' || c == '"' {
+                    quote = Some(c);
+                }
+                cur.push(c);
+            }
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+/// Parse an `import model` argument: `sm`, `sm-no_b_mass`, a path.
+fn parse_model_import(spec: &str) -> ModelImport {
+    let spec = spec.trim();
+    match spec.find('-') {
+        Some(dash) => ModelImport {
+            name: spec[..dash].to_owned(),
+            restrict_variant: Some(spec[dash + 1..].to_owned()),
+        },
+        None => ModelImport {
+            name: spec.to_owned(),
+            restrict_variant: None,
+        },
+    }
+}
+
+/// Parse a `define` line body: `alias [=] members... [| members...] [/ except...]`.
 pub fn parse_define_line(s: &str) -> Result<MultiparticleDef, ParseError> {
-    let Some(eq_pos) = s.find('=') else {
-        return Err(ParseError::NoSeparator(s.to_owned()));
+    let spaced = s
+        .replace('=', " = ")
+        .replace('|', " | ")
+        .replace('/', " / ");
+    let mut args = split_arg(&spaced);
+    if args.len() < 2 {
+        return Err(ParseError::Define(format!(
+            "'{s}' needs a label and at least one particle"
+        )));
+    }
+    if args[1] == "=" {
+        args.remove(1);
+        if args.len() < 2 {
+            return Err(ParseError::Define(format!(
+                "'{s}' needs at least one particle after '='"
+            )));
+        }
+    }
+    if args.iter().any(|a| a == "=") {
+        return Err(ParseError::Define(format!(
+            "'{s}': '=' may only follow the label"
+        )));
+    }
+    let alias = args.remove(0);
+    let (members, except) = match args.iter().position(|a| a == "/") {
+        Some(i) => (args[..i].to_vec(), args[i + 1..].to_vec()),
+        None => (args, Vec::new()),
     };
-    let alias = s[..eq_pos].trim().to_owned();
-    let rhs = s[eq_pos + 1..].trim();
-
-    // Split on `/` to separate particles from except list.
-    let (particles_part, except_part) = if let Some(slash) = rhs.find('/') {
-        (&rhs[..slash], &rhs[slash + 1..])
-    } else {
-        (rhs, "")
-    };
-
-    let particles = tokenize_names(particles_part);
-    let except = tokenize_names(except_part);
-
+    let groups = split_alternatives(members);
+    if groups.is_empty() {
+        return Err(ParseError::Define(format!("'{s}' has no members")));
+    }
     Ok(MultiparticleDef {
         alias,
-        particles,
+        groups,
         except,
     })
 }
 
-/// Parse an `import model` directive.
-/// Examples: "sm", "loop_sm", "sm-no_b_mass", "loop_sm-no_top"
-fn parse_model_import(s: &str) -> Result<ModelImport, ParseError> {
-    let model_spec = s.trim();
-
-    // Split on the first '-' after the model name to extract restrict variant.
-    // Models are typically: "sm", "loop_sm", etc.
-    // Variants: "sm-no_b_mass", "loop_sm-no_b_mass"
-    if let Some(dash_pos) = model_spec.find('-') {
-        let name = model_spec[..dash_pos].to_owned();
-        let restrict_variant = model_spec[dash_pos + 1..].to_owned();
-        Ok(ModelImport {
-            name,
-            restrict_variant: Some(restrict_variant),
-        })
-    } else {
-        Ok(ModelImport {
-            name: model_spec.to_owned(),
-            restrict_variant: None,
-        })
-    }
-}
-
-// ── Stripping helpers ─────────────────────────────────────────────────────────
-
-fn strip_inline_comment(line: &str) -> &str {
-    line.split('#').next().unwrap_or("")
-}
-
-/// Step 1: extract and remove `@N` process tag from the end of `line`.
-fn strip_proc_tag(line: &mut String) -> Result<Option<u32>, ParseError> {
-    let Some(at) = line.rfind('@') else {
-        return Ok(None);
-    };
-    let tail = line[at + 1..].trim();
-    if tail.chars().all(|c| c.is_ascii_digit()) && !tail.is_empty() {
-        let tag: u32 = tail.parse().map_err(|_| ParseError::BadTag(line.clone()))?;
-        line.truncate(at);
-        return Ok(Some(tag));
-    }
-    // '@' present but not followed by digits — not a process tag.
-    Ok(None)
-}
-
-/// Step 2: remove `[...]` loop spec from `line`; contents are discarded for LO.
-fn strip_loop_spec(line: &mut String, opts: &ParsingOptions) -> Result<(), ParseError> {
-    let Some(open) = line.find('[') else {
-        return Ok(());
-    };
-    let Some(close) = line[open..].find(']').map(|i| open + i) else {
-        return Err(ParseError::UnclosedLoopSpec(line.clone()));
-    };
-    if !opts.allow_loop_spec {
-        return Err(ParseError::LoopSpecDisabled);
-    }
-    line.replace_range(open..=close, "");
-    Ok(())
-}
-
-/// Step 3: extract all `NAME OP VALUE` coupling order constraints from `line`.
-///
-/// Handles both spaced (`QCD <= 2`) and compact (`QCD<=2`) forms.
-/// Only the region after the first `>` is searched, so the process-body `>`
-/// separator is never confused with a `>` coupling-order operator.
-fn strip_coupling_orders(line: &mut String) -> Vec<CouplingConstraint> {
-    let mut constraints = Vec::new();
-
-    while let Some(gt) = line.find('>') {
-        // Own the post-separator region to avoid borrow conflicts.
-        let region: String = line[gt + 1..].to_owned();
-
-        if let Some((start_in_region, end_in_region, c)) = find_rightmost_coupling_order(&region) {
-            constraints.push(c);
-            // Convert region-relative offsets to full-string offsets.
-            let abs_start = gt + 1 + start_in_region;
-            let abs_end = gt + 1 + end_in_region;
-            line.replace_range(abs_start..abs_end, "");
+/// Split a name list into its `|`-separated alternatives, dropping empty ones.
+fn split_alternatives(names: Vec<String>) -> Vec<Vec<String>> {
+    let mut groups = Vec::new();
+    let mut current = Vec::new();
+    for name in names {
+        if name == "|" {
+            if !current.is_empty() {
+                groups.push(std::mem::take(&mut current));
+            }
         } else {
-            break;
+            current.push(name);
         }
     }
-
-    // The strip runs right to left, which is MadGraph's own algorithm; the field
-    // is stated left to right so it reads as the process string does.
-    constraints.reverse();
-    constraints
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    groups
 }
 
-/// Scan `s` for the rightmost `NAME OP VALUE` pattern (with optional whitespace
-/// around OP). Returns `(start, end, constraint)` byte offsets into `s`.
-///
-/// NAME = `[A-Za-z][A-Za-z0-9_]*(^2)?`
-/// OP   = one of `===`, `==`, `<=`, `>=`, `!=`, `<`, `>`, `=`
-/// VALUE = `-?\d+`
-///
-/// The match must start after whitespace or at the start of the string, so that
-/// particle names like `e+` or `mu-` in the final-state list are not confused
-/// with coupling names.
-fn find_rightmost_coupling_order(s: &str) -> Option<(usize, usize, CouplingConstraint)> {
-    let bytes = s.as_bytes();
-    let mut best: Option<(usize, usize, CouplingConstraint)> = None;
-    let mut i = 0;
+// ── Process line ──────────────────────────────────────────────────────────────
 
-    while i < s.len() {
-        // The coupling name must start at the beginning of the region or after whitespace.
-        let preceded_by_ws = i == 0 || bytes[i - 1].is_ascii_whitespace();
-        if !preceded_by_ws || !bytes[i].is_ascii_alphabetic() {
-            i += 1;
-            continue;
-        }
-
-        let name_start = i;
-
-        // Scan the base name: letters, digits, underscores.
-        while i < s.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
-            i += 1;
-        }
-        let base_end = i;
-
-        // Check for optional `^2` squared-order suffix.
-        let squared = i + 1 < s.len() && bytes[i] == b'^' && bytes[i + 1] == b'2';
-        if squared {
-            i += 2;
-        }
-
-        let name = s[name_start..base_end].to_owned();
-
-        // Skip optional whitespace before operator.
-        let ws_before_op = i;
-        while i < s.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-
-        // Try to match an operator.
-        let (op, op_len) = if s[i..].starts_with("===") {
-            (CouplingOp::StrictEq, 3)
-        } else if s[i..].starts_with("==") {
-            (CouplingOp::ExactEq, 2)
-        } else if s[i..].starts_with("<=") {
-            (CouplingOp::Le, 2)
-        } else if s[i..].starts_with(">=") {
-            (CouplingOp::Ge, 2)
-        } else if s[i..].starts_with("!=") {
-            (CouplingOp::Ne, 2)
-        } else if i < s.len() && bytes[i] == b'<' {
-            (CouplingOp::Lt, 1)
-        } else if i < s.len() && bytes[i] == b'>' {
-            (CouplingOp::Gt, 1)
-        } else if i < s.len() && bytes[i] == b'=' {
-            (CouplingOp::Eq, 1)
-        } else {
-            // No operator — reset cursor to just after the name.
-            i = ws_before_op;
-            continue;
-        };
-        i += op_len;
-
-        // Skip optional whitespace after operator.
-        while i < s.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-
-        // Match optional minus sign and digits.
-        let val_start = i;
-        if i < s.len() && bytes[i] == b'-' {
-            i += 1;
-        }
-        let digits_start = i;
-        while i < s.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-
-        if i == digits_start {
-            // No digits found — not a valid value. Reset.
-            i = ws_before_op;
-            continue;
-        }
-
-        let value: i64 = s[val_start..i].parse().unwrap_or(0);
-        best = Some((
-            name_start,
-            i,
-            CouplingConstraint {
-                name,
-                squared,
-                op,
-                value,
-            },
-        ));
-        // Continue scanning — we want the rightmost occurrence.
+/// Parse the arguments of a `generate` / `add process` command, as `do_add`
+/// does: flags come out first, then the text goes to the decay-chain reader
+/// when it has a `,` and to the plain one otherwise.
+fn parse_process_line(
+    verb: &str,
+    args: &[String],
+    aliases: &AliasTable,
+) -> Result<ProcessLine, ParseError> {
+    let (flags, words): (Vec<String>, Vec<String>) =
+        args.iter().cloned().partition(|a| a.starts_with("--"));
+    if words.is_empty() {
+        return Err(ParseError::MissingProcess(verb.to_owned()));
     }
-
-    best
-}
-
-/// Step 4: extract `/` forbidden-particle list (appearing after the last `>`).
-fn strip_forbidden_particles(line: &mut String) -> Vec<String> {
-    // Find the last `>` first; the `/` must come after it to be a restriction.
-    let after_last_gt = match line.rfind('>') {
-        Some(pos) => pos + 1,
-        None => 0,
-    };
-    let search_region = &line[after_last_gt..];
-
-    let Some(slash_rel) = search_region.find('/') else {
-        return Vec::new();
-    };
-    let slash = after_last_gt + slash_rel;
-
-    // Stop before `$` or `$$` if present.
-    let tail = &line[slash + 1..];
-    let stop = tail.find('$').map(|i| slash + 1 + i).unwrap_or(line.len());
-    let particles = tokenize_names(&line[slash + 1..stop]);
-
-    line.replace_range(slash..stop, "");
-    particles
-}
-
-/// Step 5: extract `$$` forbidden s-channel list.
-fn strip_forbidden_s_channels(
-    line: &mut String,
-    opts: &ParsingOptions,
-) -> Result<Vec<String>, ParseError> {
-    let Some(pos) = line.find("$$") else {
-        return Ok(Vec::new());
-    };
-    if !opts.allow_forbidden_s_channels {
-        return Err(ParseError::ForbiddenSChannelDisabled);
-    }
-    let particles = tokenize_names(&line[pos + 2..]);
-    line.truncate(pos);
-    Ok(particles)
-}
-
-/// Step 6: extract `$` forbidden on-shell s-channel list (after `$$` is gone).
-fn strip_forbidden_onsh_s_channels(
-    line: &mut String,
-    opts: &ParsingOptions,
-) -> Result<Vec<String>, ParseError> {
-    let Some(pos) = line.find('$') else {
-        return Ok(Vec::new());
-    };
-    if !opts.allow_forbidden_onsh_s_channels {
-        return Err(ParseError::ForbiddenOnshSChannelDisabled);
-    }
-    let particles = tokenize_names(&line[pos + 1..]);
-    line.truncate(pos);
-    Ok(particles)
-}
-
-/// `(initial legs, required s-channel names, final legs)`.
-type ProcessBody = (Vec<ParticleLeg>, Vec<String>, Vec<ParticleLeg>);
-
-/// Steps 7–8: split the residual `"initial [> required] > final"` on `>`.
-fn parse_process_body(line: &str) -> Result<ProcessBody, ParseError> {
-    // Count `>` in the residual.
-    let parts: Vec<&str> = line.splitn(4, '>').collect();
-    match parts.len() {
-        1 => Err(ParseError::NoSeparator(line.to_owned())),
-        2 => {
-            let initial = parse_leg_list(parts[0], "initial")?;
-            let final_state = parse_leg_list(parts[1], "final")?;
-            Ok((initial, Vec::new(), final_state))
-        }
-        3 => {
-            let initial = parse_leg_list(parts[0], "initial")?;
-            let required: Vec<String> = tokenize_names(parts[1]);
-            let final_state = parse_leg_list(parts[2], "final")?;
-            Ok((initial, required, final_state))
-        }
-        _ => Err(ParseError::TooManySeparators {
-            found: parts.len() - 1,
-            input: line.to_owned(),
-        }),
-    }
-}
-
-fn parse_leg_list(s: &str, side: &'static str) -> Result<Vec<ParticleLeg>, ParseError> {
-    let legs: Result<Vec<_>, _> = s.split_whitespace().map(parse_particle_leg).collect();
-    let legs = legs?;
-    if legs.is_empty() {
-        return Err(ParseError::EmptyLeg { side });
-    }
-    // Expand duplication: `ParticleLeg { count: 2, name: "e+" }` → `[e+, e+]`
-    Ok(legs
-        .into_iter()
-        .flat_map(|leg| {
-            (0..leg.count).map(move |_| ParticleLeg {
-                name: leg.name.clone(),
-                count: 1,
-            })
-        })
-        .collect())
-}
-
-fn parse_particle_leg(tok: &str) -> Result<ParticleLeg, ParseError> {
-    if tok.is_empty() {
-        return Err(ParseError::BadParticleTok(tok.to_owned()));
-    }
-    let mut chars = tok.chars();
-    let first = chars.next().unwrap();
-
-    // Leading non-zero digit → duplication count.
-    if first.is_ascii_digit() && first != '0' {
-        let count = first.to_digit(10).unwrap() as usize;
-        let name = &tok[1..];
-        if name.is_empty() {
-            return Err(ParseError::BadParticleTok(tok.to_owned()));
-        }
-        return Ok(ParticleLeg {
-            name: name.to_owned(),
-            count,
-        });
-    }
-
-    // Otherwise: entire token is the particle name (including PDG codes like "11").
-    Ok(ParticleLeg {
-        name: tok.to_owned(),
-        count: 1,
+    let text = words.join(" ");
+    let definition = parse_definition(&text, aliases)?;
+    Ok(ProcessLine {
+        text,
+        flags,
+        definition,
     })
 }
 
-/// Split whitespace and return non-empty name tokens.
-fn tokenize_names(s: &str) -> Vec<String> {
-    s.split_whitespace()
-        .filter(|t| !t.is_empty())
-        .map(String::from)
-        .collect()
+fn parse_definition(text: &str, aliases: &AliasTable) -> Result<ProcessDefinition, ParseError> {
+    check_process_format(text)?;
+    if text.contains(',') {
+        if text.contains('[') || text.contains(']') {
+            return Err(ParseError::LoopSpecWithDecayChain(text.to_owned()));
+        }
+        return Ok(extract_decay_chain_process(text, false, None, aliases)?.0);
+    }
+    extract_process(text, None, Vec::new(), false, aliases)
+}
+
+/// `check_process_format`: balanced parentheses, and one or two `>` per part.
+fn check_process_format(text: &str) -> Result<(), ParseError> {
+    if text.matches('(').count() != text.matches(')').count() {
+        return Err(ParseError::Parentheses(text.to_owned()));
+    }
+    let flat = text.replace(['(', ')'], " ");
+    for part in flat.split(',') {
+        let n = SEPARATOR.find_iter(part).count();
+        if n != 1 && n != 2 {
+            return Err(ParseError::Separators(part.trim().to_owned()));
+        }
+    }
+    Ok(())
+}
+
+/// Parse a single process string against the default labels, as the argument
+/// of a `generate` line.
+pub fn parse_process_string(s: &str) -> Result<ProcessDefinition, ParseError> {
+    parse_definition(&split_arg(s).join(" "), &AliasTable::default_sm())
+}
+
+/// `extract_decay_chain_process`: the core process up to the first `,` or `)`,
+/// then each decay, recursing into a parenthesised group. Returns the definition
+/// and the unread remainder.
+fn extract_decay_chain_process(
+    line: &str,
+    mut level_down: bool,
+    mut tag: Option<u32>,
+    aliases: &AliasTable,
+) -> Result<(ProcessDefinition, String), ParseError> {
+    let mut line = line.to_owned();
+    let mut overall_orders = Vec::new();
+    if let Some(c) = CHAIN_PROC_NUMBER.captures(&line) {
+        tag = Some(parse_tag(&c[2], &line)?);
+        let mut order_line = c[3].to_owned();
+        line = c[1].to_owned();
+        while let Some(o) = CHAIN_ORDER.captures(&order_line) {
+            let value = o[3]
+                .parse()
+                .map_err(|_| ParseError::OrderValue(order_line.clone()))?;
+            overall_orders.push((o[2].to_owned(), value));
+            order_line = o[1].to_owned();
+        }
+        overall_orders.reverse();
+    }
+
+    let mut index_comma = line.find(',');
+    let core_text = match first_of(index_comma, line.find(')')) {
+        Some(i) => &line[..i],
+        None => &line[..],
+    };
+    let mut core = extract_process(core_text, tag, overall_orders, true, aliases)?;
+
+    while let Some(comma) = index_comma {
+        line = line[comma + 1..].to_owned();
+        if line.trim().is_empty() {
+            break;
+        }
+        let mut index_par = line.find(')');
+        if line.trim_start().starts_with('(') {
+            if let Some(par) = index_par.filter(|&par| !line[..par].contains(',')) {
+                let start = line.find('(').expect("the line starts with '('");
+                line = format!("{} {}", &line[start + 1..par], &line[par + 1..]);
+                index_par = line.find(')');
+            }
+        }
+        let decay = if line.trim_start().starts_with('(') {
+            let inner = line.trim_start()[1..].to_owned();
+            let (decay, rest) = extract_decay_chain_process(&inner, true, None, aliases)?;
+            line = rest;
+            index_comma = line.find(',');
+            index_par = line.find(')');
+            decay
+        } else {
+            index_comma = line.find(',');
+            let text = match first_of(index_comma, index_par) {
+                Some(i) => &line[..i],
+                None => &line[..],
+            };
+            extract_process(text, None, Vec::new(), false, aliases)?
+        };
+        core.decay_chains.push(decay);
+
+        if level_down {
+            let Some(par) = index_par else {
+                return Err(ParseError::MissingParenthesis(line));
+            };
+            if index_comma.is_some_and(|comma| par < comma) {
+                line = line[par + 1..].to_owned();
+                level_down = false;
+                break;
+            }
+        }
+    }
+    if level_down {
+        let Some(par) = line.find(')') else {
+            return Err(ParseError::MissingParenthesis(line));
+        };
+        line = line[par + 1..].to_owned();
+    }
+    Ok((core, line))
+}
+
+/// The earlier of two optional positions.
+fn first_of(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+fn parse_tag(digits: &str, line: &str) -> Result<u32, ParseError> {
+    digits
+        .parse()
+        .map_err(|_| ParseError::BadTag(line.to_owned()))
+}
+
+/// `extract_process`: strip the modifiers from the back of the line in
+/// MadGraph's order — `@N`, `[...]`, coupling orders, `/`, `$$`, `$`, then the
+/// required s-channels between two `>` — and read the legs that remain.
+fn extract_process(
+    line: &str,
+    mut tag: Option<u32>,
+    overall_orders: Vec<(String, i64)>,
+    chain_core: bool,
+    aliases: &AliasTable,
+) -> Result<ProcessDefinition, ParseError> {
+    let orig = line.trim().to_owned();
+    let n_sep = SEPARATOR.find_iter(line).count();
+    if n_sep != 1 && n_sep != 2 {
+        return Err(ParseError::Separators(orig));
+    }
+    let mut line = BRACKET_SPACING.replace_all(line, "$1 $2 $3").into_owned();
+
+    if let Some(c) = PROC_NUMBER.captures(&line) {
+        tag = Some(parse_tag(&c[2], &orig)?);
+        line = format!("{}{}", &c[1], &c[3]);
+    }
+
+    let mut loop_spec = None;
+    if let Some(c) = PERTURBATION.captures(&line) {
+        let option = c.name("option").map(|m| m.as_str().to_owned());
+        if let Some(o) = &option {
+            if !NLO_MODES.contains(&o.as_str()) {
+                return Err(ParseError::LoopMode(o.clone()));
+            }
+        }
+        let orders = c
+            .name("pert")
+            .map(|m| m.as_str().split_whitespace().map(String::from).collect())
+            .unwrap_or_default();
+        loop_spec = Some(LoopSpec { option, orders });
+        line = format!("{}{}", &c["proc"], &c["rest"]);
+    }
+
+    let mut orders = Vec::new();
+    while let Some(c) = ORDER.captures(&line) {
+        let raw_name = &c["name"];
+        let value: i64 = c["value"]
+            .parse()
+            .map_err(|_| ParseError::OrderValue(orig.clone()))?;
+        let (name, squared) = match raw_name.strip_suffix("^2") {
+            Some(base) => (base.to_owned(), true),
+            None => (raw_name.to_owned(), false),
+        };
+        let op = match &c["type"] {
+            "=" => CouplingOp::Eq,
+            "<=" => CouplingOp::Le,
+            "==" => CouplingOp::ExactEq,
+            ">" => CouplingOp::Gt,
+            other => {
+                return Err(ParseError::OrderOperator {
+                    name: raw_name.to_owned(),
+                    op: other.to_owned(),
+                    value,
+                })
+            }
+        };
+        orders.push(CouplingConstraint {
+            name,
+            squared,
+            op,
+            value,
+        });
+        line = format!("{} {}", &c["before"], &c["after"]);
+    }
+    orders.reverse();
+
+    let mut forbidden_particles = String::new();
+    let slash = line.find('/');
+    let dollar = line.find('$');
+    if slash.is_some_and(|s| s > 0) {
+        if dollar > slash {
+            if let Some(c) = FORBIDDEN_BEFORE_DOLLAR.captures(&line) {
+                forbidden_particles = c[2].to_owned();
+                line = format!("{}{}", &c[1], &c[3]);
+            }
+        } else if let Some(c) = FORBIDDEN.captures(&line) {
+            forbidden_particles = c[2].to_owned();
+            line = c[1].to_owned();
+        }
+    }
+    let mut forbidden_s = String::new();
+    if let Some(c) = FORBIDDEN_S.captures(&line) {
+        forbidden_s = c[2].to_owned();
+        line = c[1].to_owned();
+    }
+    let mut forbidden_onsh = String::new();
+    if let Some(c) = FORBIDDEN_ONSH.captures(&line) {
+        forbidden_onsh = c[2].to_owned();
+        line = c[1].to_owned();
+    }
+    let mut required = String::new();
+    if let Some(c) = REQUIRED.captures(&line) {
+        required = c[2].to_owned();
+        line = format!("{}>{}", &c[1], &c[3]);
+    }
+
+    let legs = extract_legs(&line, &orig, aliases)?;
+
+    Ok(ProcessDefinition {
+        legs,
+        required_s_channels: split_alternatives(names(&required, &orig)?),
+        forbidden_particles: restriction(&forbidden_particles, &orig, aliases)?,
+        forbidden_s_channels: restriction(&forbidden_s, &orig, aliases)?,
+        forbidden_onsh_s_channels: restriction(&forbidden_onsh, &orig, aliases)?,
+        orders,
+        loop_spec,
+        tag,
+        overall_orders,
+        chain_core,
+        decay_chains: Vec::new(),
+    })
+}
+
+/// The names of a restriction list. A modifier symbol left among them is a
+/// modifier MadGraph's expressions did not take off the line (`/ h $$ w+ $ z`
+/// leaves `$$` in the `/` list), which MadGraph then fails to read as a particle.
+fn names(text: &str, orig: &str) -> Result<Vec<String>, ParseError> {
+    let names = split_arg(text);
+    if let Some(bad) = names
+        .iter()
+        .find(|n| n.contains(['>', '$', '/', '[', ']', '(', ')', ',']))
+    {
+        return Err(ParseError::BadLeg {
+            token: bad.clone(),
+            line: orig.to_owned(),
+        });
+    }
+    Ok(names)
+}
+
+/// A restriction list: names only, no alternatives.
+fn restriction(text: &str, orig: &str, aliases: &AliasTable) -> Result<Vec<String>, ParseError> {
+    let names = names(text, orig)?;
+    if names.iter().any(|n| n == "|") {
+        return Err(ParseError::OrInRestriction(text.trim().to_owned()));
+    }
+    if let Some(or) = names.iter().find(|n| aliases.is_or_label(n)) {
+        return Err(ParseError::OrMultiparticle(or.clone()));
+    }
+    Ok(names)
+}
+
+/// The leg loop of `extract_process`.
+fn extract_legs(line: &str, orig: &str, aliases: &AliasTable) -> Result<Vec<Leg>, ParseError> {
+    let mut legs = Vec::new();
+    let mut state = LegState::Initial;
+    for word in split_arg(line) {
+        if word == ">" {
+            if legs.is_empty() {
+                return Err(ParseError::NoInitialState(orig.to_owned()));
+            }
+            state = LegState::Final;
+            continue;
+        }
+        let (part, tagged) = strip_tag(&word);
+        if tagged && state == LegState::Initial && part != "a" && part != "22" {
+            return Err(ParseError::TaggedInitial(part));
+        }
+
+        let (name, polarization) = match part.split_once('{') {
+            Some((name, pol)) => match pol.split_once('}') {
+                Some((pol, "")) => (name.to_owned(), Some(pol.to_owned())),
+                _ => return Err(ParseError::Polarization(word.clone())),
+            },
+            None => (part.clone(), None),
+        };
+        if name.is_empty() || name.contains(['>', '$', '/', '|', '[', ']', '(', ')', ',']) {
+            return Err(ParseError::BadLeg {
+                token: word.clone(),
+                line: orig.to_owned(),
+            });
+        }
+
+        let (particle, repeat) = classify_leg(&name, aliases)?;
+        if let LegParticle::Label(label) = &particle {
+            if tagged && state == LegState::Final {
+                return Err(ParseError::TaggedMultiparticle(label.clone()));
+            }
+        }
+        if repeat == 0 {
+            return Err(ParseError::ZeroRepeat(orig.to_owned()));
+        }
+        for _ in 0..repeat {
+            legs.push(Leg {
+                state,
+                particle: particle.clone(),
+                token: name.clone(),
+                polarization: polarization.clone(),
+                tagged,
+            });
+        }
+    }
+    if !legs.iter().any(|l| l.state == LegState::Final) {
+        return Err(ParseError::NoFinalState(orig.to_owned()));
+    }
+    Ok(legs)
+}
+
+/// `!a!` (or `2!a!`): the tag marks off, and whether there were any.
+fn strip_tag(word: &str) -> (String, bool) {
+    if word.len() > 1 && word.starts_with('!') && word.ends_with('!') {
+        return (word[1..word.len() - 1].to_owned(), true);
+    }
+    if let Some(bang) = word.find('!') {
+        if word.ends_with('!')
+            && word.matches('!').count() == 2
+            && word[..bang].chars().all(|c| c.is_ascii_digit())
+        {
+            return (word.replace('!', ""), true);
+        }
+    }
+    (word.to_owned(), false)
+}
+
+/// MadGraph's reading order for a leg: a label, then a PDG code, then a
+/// particle name; a leading digit is a repeat count only when none of those
+/// match. Whether a model particle carries the whole token as its name is left
+/// to resolution, which sees the model.
+fn classify_leg(name: &str, aliases: &AliasTable) -> Result<(LegParticle, u32), ParseError> {
+    let label = |name: &str| -> Result<Option<LegParticle>, ParseError> {
+        if !aliases.is_label(name) {
+            return Ok(None);
+        }
+        if aliases.is_or_label(name) {
+            return Err(ParseError::OrMultiparticle(name.to_owned()));
+        }
+        Ok(Some(LegParticle::Label(name.to_owned())))
+    };
+    if let Some(l) = label(name)? {
+        return Ok((l, 1));
+    }
+    let digits = name.strip_prefix('-').unwrap_or(name);
+    if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+        let code = name.parse().map_err(|_| ParseError::BadLeg {
+            token: name.to_owned(),
+            line: name.to_owned(),
+        })?;
+        return Ok((LegParticle::Pdg(code), 1));
+    }
+    let mut chars = name.chars();
+    if let Some(first) = chars.next().filter(char::is_ascii_digit) {
+        let rest = chars.as_str();
+        if !rest.is_empty() {
+            let count = first.to_digit(10).expect("an ASCII digit");
+            let particle = label(rest)?.unwrap_or_else(|| LegParticle::Name(rest.to_owned()));
+            return Ok((particle, count));
+        }
+    }
+    Ok((LegParticle::Name(name.to_owned()), 1))
+}
+
+// ── Command sequence semantics ───────────────────────────────────────────────
+
+/// One process of the card's effective list.
+#[derive(Debug, Clone)]
+pub struct CardProcess<'a> {
+    pub line: &'a ProcessLine,
+    /// MadGraph's process number: the `@N` if given, otherwise the line's
+    /// position among the `generate` / `add process` lines since the last reset.
+    pub id: u32,
+    /// The labels as defined when the line was read.
+    pub aliases: AliasTable,
+}
+
+impl ProcCardAst {
+    /// The processes MadGraph would hold after running the card: `generate` and
+    /// `import model` discard what came before, `add process` appends.
+    pub fn processes(&self) -> Vec<CardProcess<'_>> {
+        let mut out = Vec::new();
+        let mut aliases = AliasTable::default_sm();
+        let mut ordinal = 0u32;
+        for command in &self.commands {
+            match command {
+                Command::ImportModel { .. } => {
+                    out.clear();
+                    ordinal = 0;
+                }
+                Command::Define(def) => aliases.apply(def),
+                Command::Generate(line) | Command::AddProcess(line) => {
+                    if matches!(command, Command::Generate(_)) {
+                        out.clear();
+                        ordinal = 0;
+                    }
+                    ordinal += 1;
+                    out.push(CardProcess {
+                        line,
+                        id: line.definition.tag.unwrap_or(ordinal),
+                        aliases: aliases.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The last `import model`, if any.
+    pub fn model(&self) -> Option<&ModelImport> {
+        self.commands.iter().rev().find_map(|c| match c {
+            Command::ImportModel { import, .. } => Some(import),
+            _ => None,
+        })
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -667,229 +1026,228 @@ fn tokenize_names(s: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn opts() -> ParsingOptions {
-        ParsingOptions {
-            allow_forbidden_s_channels: true,
-            ..Default::default()
-        }
+    fn parse(s: &str) -> ProcessDefinition {
+        parse_process_string(s).expect("parse failed")
     }
 
-    fn parse(s: &str) -> ProcessSpec {
-        parse_process_string(s, &opts()).expect("parse failed")
+    fn names<'a>(legs: impl Iterator<Item = &'a Leg>) -> Vec<String> {
+        legs.map(|l| l.particle.to_string()).collect()
     }
 
     #[test]
-    fn test_simple_process() {
+    fn simple_process() {
         let p = parse("e+ e- > mu+ mu-");
-        assert_eq!(p.initial.len(), 2);
-        assert_eq!(p.final_state.len(), 2);
-        assert_eq!(p.initial[0].name, "e+");
-        assert_eq!(p.final_state[1].name, "mu-");
-        assert!(p.coupling_constraints.is_empty());
+        assert_eq!(names(p.initial()), ["e+", "e-"]);
+        assert_eq!(names(p.final_state()), ["mu+", "mu-"]);
+        assert!(p.orders.is_empty());
         assert!(p.tag.is_none());
     }
 
     #[test]
-    fn test_proc_tag() {
-        let p = parse("e+ e- > mu+ mu- @1");
+    fn tag_then_orders_parses_both() {
+        let p = parse("p p > j j @1 QED=0");
         assert_eq!(p.tag, Some(1));
-        assert_eq!(p.initial.len(), 2);
+        assert_eq!(names(p.final_state()), ["j", "j"]);
+        assert_eq!(p.orders.len(), 1);
+        assert_eq!(p.orders[0].to_string(), "QED=0");
     }
 
     #[test]
-    fn test_coupling_order_le() {
-        let p = parse("p p > e+ e- j QCD<=2");
-        assert_eq!(p.coupling_constraints.len(), 1);
-        let c = &p.coupling_constraints[0];
-        assert_eq!(c.name, "QCD");
-        assert_eq!(c.op, CouplingOp::Le);
-        assert_eq!(c.value, 2);
-        assert!(!c.squared);
-        // Process body should be parsed correctly despite the order strip.
-        assert_eq!(p.initial.len(), 2);
-        assert_eq!(p.final_state.len(), 3);
-    }
-
-    #[test]
-    fn test_coupling_order_gt_disambiguation() {
-        // This tests the key ambiguity: `>` after final state is a coupling op, not a separator.
+    fn coupling_order_gt_after_final_state_is_an_order() {
         let p = parse("e+ e- > mu+ mu- QCD > 2");
-        assert_eq!(p.coupling_constraints.len(), 1);
-        assert_eq!(p.coupling_constraints[0].op, CouplingOp::Gt);
-        assert_eq!(p.final_state.len(), 2);
+        assert_eq!(p.orders[0].op, CouplingOp::Gt);
+        assert_eq!(names(p.final_state()), ["mu+", "mu-"]);
         assert!(p.required_s_channels.is_empty());
     }
 
     #[test]
-    fn test_coupling_order_exact() {
-        let p = parse("e+ e- > mu+ mu- QED == 4");
-        assert_eq!(p.coupling_constraints[0].op, CouplingOp::ExactEq);
-        assert_eq!(p.coupling_constraints[0].value, 4);
+    fn orders_read_left_to_right() {
+        let p = parse("p p > t t~ QCD<=2 QED==0 QCD^2>4");
+        let written: Vec<String> = p.orders.iter().map(|o| o.to_string()).collect();
+        assert_eq!(written, ["QCD<=2", "QED==0", "QCD^2>4"]);
     }
 
     #[test]
-    fn test_required_s_channel() {
-        let p = parse("e+ e- > Z > mu+ mu-");
-        assert_eq!(p.required_s_channels, vec!["Z"]);
-        assert_eq!(p.initial.len(), 2);
-        assert_eq!(p.final_state.len(), 2);
+    fn operators_madgraph_refuses_are_errors() {
+        for op in ["<", ">=", "!=", "==="] {
+            let r = parse_process_string(&format!("e+ e- > mu+ mu- QED{op}2"));
+            assert!(
+                matches!(r, Err(ParseError::OrderOperator { .. })),
+                "{op}: {r:?}"
+            );
+        }
     }
 
     #[test]
-    fn test_forbidden_particles() {
-        let p = parse("p p > e+ e- / t");
-        assert_eq!(p.forbidden_particles, vec!["t"]);
-        assert_eq!(p.initial.len(), 2);
+    fn required_s_channels_are_or_of_and() {
+        let p = parse("e+ e- > z a | h > mu+ mu-");
+        assert_eq!(
+            p.required_s_channels,
+            vec![vec!["z".to_owned(), "a".to_owned()], vec!["h".to_owned()]]
+        );
     }
 
     #[test]
-    fn test_forbidden_hard_s_channel() {
-        let p = parse("p p > e+ e- $$ Z");
-        assert_eq!(p.forbidden_s_channels, vec!["Z"]);
+    fn restrictions_are_parsed_and_kept() {
+        let p = parse("p p > e+ e- $ z $$ w+ / h");
+        assert_eq!(p.forbidden_particles, ["h"]);
+        assert_eq!(p.forbidden_s_channels, ["w+"]);
+        assert_eq!(p.forbidden_onsh_s_channels, ["z"]);
+    }
+
+    /// MadGraph strips `/`, then `$$`, then `$`, each with one greedy expression,
+    /// so only some orders of the three read; the others leave a modifier among
+    /// the names, and MadGraph fails on it as a particle.
+    #[test]
+    fn restriction_order_follows_madgraphs_expressions() {
+        for line in [
+            "p p > e+ e- / h $$ w+ $ z",
+            "p p > e+ e- $$ w+ $ z",
+            "p p > e+ e- / h $$ w+",
+        ] {
+            assert!(
+                matches!(parse_process_string(line), Err(ParseError::BadLeg { .. })),
+                "{line}"
+            );
+        }
+        let p = parse("p p > e+ e- $$ w+ / h");
+        assert_eq!(p.forbidden_particles, ["h"]);
+        assert_eq!(p.forbidden_s_channels, ["w+"]);
     }
 
     #[test]
-    fn test_forbidden_hard_s_channel_disabled() {
-        let strict = ParsingOptions::default(); // allow_forbidden_s_channels = false
-        let result = parse_process_string("p p > e+ e- $$ Z", &strict);
-        assert!(matches!(result, Err(ParseError::ForbiddenSChannelDisabled)));
+    fn pdg_codes_are_codes_not_repeat_counts() {
+        let p = parse("11 -11 > 21 21");
+        assert_eq!(
+            p.legs
+                .iter()
+                .map(|l| l.particle.clone())
+                .collect::<Vec<_>>(),
+            [11, -11, 21, 21].map(LegParticle::Pdg)
+        );
     }
 
     #[test]
-    fn test_forbidden_onsh_s_channel() {
-        let p = parse("p p > e+ e- $ Z");
-        assert_eq!(p.forbidden_onsh_s_channels, vec!["Z"]);
+    fn a_leading_digit_is_a_repeat_count() {
+        let p = parse("e+ e- > 2e+ 2j");
+        assert_eq!(names(p.final_state()), ["e+", "e+", "j", "j"]);
+        assert_eq!(p.legs[2].token, "2e+");
+        assert!(matches!(p.legs[4].particle, LegParticle::Label(_)));
     }
 
     #[test]
-    fn decay_chain_comma_is_rejected() {
-        let result = parse_process_string("p p > t t~, t > w+ b", &opts());
-        assert!(matches!(result, Err(ParseError::DecayChainUnsupported(_))));
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("decay-chain process syntax is not supported"));
+    fn unspaced_separators_are_not_legs() {
+        assert!(matches!(
+            parse_process_string("p p>e+ e-"),
+            Err(ParseError::BadLeg { .. })
+        ));
     }
 
     #[test]
-    fn decay_chain_comma_after_tag_is_rejected() {
-        let result = parse_process_string("p p > t t~, t > w+ b @1", &opts());
-        assert!(matches!(result, Err(ParseError::DecayChainUnsupported(_))));
+    fn polarization_and_tags_are_kept() {
+        let p = parse("e+ e- > w+{0} w-{T}");
+        assert_eq!(p.legs[2].polarization.as_deref(), Some("0"));
+        assert_eq!(p.legs[3].polarization.as_deref(), Some("T"));
+        let p = parse("!a! e- > e- a");
+        assert!(p.legs[0].tagged);
     }
 
     #[test]
-    fn comma_free_processes_still_parse() {
-        parse("p p > e+ e- $$ Z");
-        parse("p p > e+ e- [QCD]");
+    fn loop_spec_is_kept() {
+        let p = parse("p p > e+ e- [real=QCD]");
+        let spec = p.loop_spec.as_ref().unwrap();
+        assert_eq!(spec.option.as_deref(), Some("real"));
+        assert_eq!(spec.orders, ["QCD"]);
+        assert_eq!(names(p.final_state()), ["e+", "e-"]);
     }
 
     #[test]
-    fn test_duplication() {
-        let p = parse("2e+ > mu+ mu-");
-        assert_eq!(p.initial.len(), 2);
-        assert!(p.initial.iter().all(|l| l.name == "e+"));
+    fn decay_chains_nest() {
+        let p = parse("p p > t t~, (t > w+ b, w+ > j j), (t~ > w- b~, w- > l- vl~)");
+        assert_eq!(p.decay_chains.len(), 2);
+        assert_eq!(p.decay_chains[0].decay_chains.len(), 1);
+        assert_eq!(names(p.decay_chains[1].initial()), ["t~"]);
+        assert_eq!(
+            names(p.decay_chains[1].decay_chains[0].final_state()),
+            ["l-", "vl~"]
+        );
     }
 
     #[test]
-    fn test_multiple_coupling_constraints() {
-        let p = parse("p p > t t~ QCD<=2 QED==0");
-        assert_eq!(p.coupling_constraints.len(), 2);
+    fn chain_tag_takes_overall_orders() {
+        let p = parse("p p > t t~, t > w+ b @2 QED=2");
+        assert_eq!(p.tag, Some(2));
+        assert_eq!(p.overall_orders, [("QED".to_owned(), 2)]);
+        assert!(p.orders.is_empty());
     }
 
     #[test]
-    fn test_squared_order() {
-        let p = parse("e+ e- > mu+ mu- QCD^2 <= 4");
-        assert!(p.coupling_constraints[0].squared);
-        assert_eq!(p.coupling_constraints[0].name, "QCD");
+    fn generate_resets_and_add_appends() {
+        let ast = parse_proc_card_ast(
+            "generate e+ e- > mu+ mu-\nadd process e+ e- > ta+ ta- @5\n\
+             add process e+ e- > e+ e-\ngenerate e+ e- > a a\nadd process e+ e- > z z\n",
+        )
+        .unwrap();
+        let ids: Vec<(u32, String)> = ast
+            .processes()
+            .iter()
+            .map(|p| (p.id, p.line.text.clone()))
+            .collect();
+        assert_eq!(
+            ids,
+            [(1, "e+ e- > a a".to_owned()), (2, "e+ e- > z z".to_owned())]
+        );
     }
 
     #[test]
-    fn test_proc_card_basic() {
-        let card = r#"
-# A simple proc card
-generate e+ e- > mu+ mu-
-add process e+ e- > ta+ ta-
-define myp = u d
-"#;
-        let parsed = parse_proc_card(card, &opts()).expect("proc_card parse failed");
-        assert_eq!(parsed.processes.len(), 2);
-        assert_eq!(parsed.defines.len(), 1);
-        assert_eq!(parsed.defines[0].alias, "myp");
-        assert_eq!(parsed.defines[0].particles, vec!["u", "d"]);
+    fn malformed_add_process_is_an_error() {
+        assert!(parse_proc_card_ast("add process").is_err());
+        assert!(parse_proc_card_ast("add process e+ e-").is_err());
+        assert!(parse_proc_card_ast("add proces e+ e- > a a").is_err());
     }
 
     #[test]
-    fn test_define_with_except() {
-        let d = parse_define_line("q = p / g").unwrap();
+    fn define_with_or_and_except() {
+        let d = parse_define_line("v = z | a").unwrap();
+        assert!(d.is_or());
+        let d = parse_define_line("q p / g").unwrap();
         assert_eq!(d.alias, "q");
-        assert_eq!(d.except, vec!["g"]);
+        assert_eq!(d.groups, [vec!["p".to_owned()]]);
+        assert_eq!(d.except, ["g"]);
     }
 
     #[test]
-    fn test_loop_spec_silently_ignored() {
-        let p = parse("p p > e+ e- [QCD]");
-        // Loop spec stripped; process body still parsed.
-        assert_eq!(p.initial.len(), 2);
-    }
-
-    #[test]
-    fn test_loop_spec_disabled() {
-        let no_loop = ParsingOptions {
-            allow_loop_spec: false,
-            ..opts()
-        };
-        let result = parse_process_string("p p > e+ e- [QCD]", &no_loop);
-        assert!(matches!(result, Err(ParseError::LoopSpecDisabled)));
-    }
-
-    #[test]
-    fn test_model_import_basic() {
-        let card = r#"
-import model sm
-generate e+ e- > mu+ mu-
-"#;
-        let parsed = parse_proc_card(card, &opts()).expect("proc_card parse failed");
-        assert!(parsed.model.is_some());
-        let model = parsed.model.unwrap();
-        assert_eq!(model.name, "sm");
-        assert_eq!(model.restrict_variant, None);
-    }
-
-    #[test]
-    fn test_model_import_with_variant() {
-        let card = r#"
-import model sm-no_b_mass
-generate e+ e- > mu+ mu-
-"#;
-        let parsed = parse_proc_card(card, &opts()).expect("proc_card parse failed");
-        assert!(parsed.model.is_some());
-        let model = parsed.model.unwrap();
-        assert_eq!(model.name, "sm");
-        assert_eq!(model.restrict_variant, Some("no_b_mass".to_string()));
-    }
-
-    /// The printed form carries the coupling orders, so two specs that enumerate
-    /// different diagram sets cannot print the same string. The validation
-    /// report identifies a row's measurement by this string.
-    #[test]
-    fn display_keeps_the_coupling_order_constraints() {
-        assert_eq!(parse("p p > b b~").to_string(), "p p > b b~");
-        assert_eq!(parse("p p > b b~ QCD=2").to_string(), "p p > b b~ QCD=2");
-        assert_ne!(
-            parse("p p > b b~").to_string(),
-            parse("p p > b b~ QCD=2").to_string()
-        );
+    fn launch_dialogue_is_one_command() {
+        let ast = parse_proc_card_ast(
+            "generate e+ e- > mu+ mu-\noutput x\nlaunch\n  set ebeam1 45.6\n  done\n",
+        )
+        .unwrap();
+        assert_eq!(ast.commands.len(), 3);
         assert_eq!(
-            parse("p p > l+ l- j QCD=2 QED=2").to_string(),
-            "p p > l+ l- j QCD=2 QED=2"
+            ast.commands[2],
+            Command::Launch {
+                args: vec![],
+                dialogue: vec!["set ebeam1 45.6".to_owned()]
+            }
         );
-        // Every operator spelling, and the squared-order marker.
-        assert_eq!(
-            parse("e+ e- > mu+ mu- QCD<=1 QED<2 QCD^2==4 QED>=1 QCD!=3").to_string(),
-            "e+ e- > mu+ mu- QCD<=1 QED<2 QCD^2==4 QED>=1 QCD!=3"
-        );
-        // The orders sit after the legs however those were spelled: a `2j`
-        // multiplicity is expanded at parse time and prints as repeated legs.
-        assert_eq!(parse("e+ e- > 2j QCD=2").to_string(), "e+ e- > j j QCD=2");
+    }
+
+    #[test]
+    fn comments_semicolons_and_continuations() {
+        let ast = parse_proc_card_ast(
+            "import model sm # the SM\ndefine x = u ; generate x x > \\\n e+ e-\n",
+        )
+        .unwrap();
+        assert_eq!(ast.commands.len(), 3);
+        assert_eq!(ast.model().unwrap().name, "sm");
+        assert_eq!(ast.processes()[0].line.text, "x x > e+ e-");
+    }
+
+    #[test]
+    fn model_import_with_variant() {
+        let ast = parse_proc_card_ast("import model sm-no_b_mass\n").unwrap();
+        let m = ast.model().unwrap();
+        assert_eq!(m.name, "sm");
+        assert_eq!(m.restrict_variant.as_deref(), Some("no_b_mass"));
     }
 }

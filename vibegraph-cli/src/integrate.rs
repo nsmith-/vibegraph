@@ -24,7 +24,7 @@ use vibegraph::artifact::{
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{generate_from_proc_card_in, ParsedProcCard, ParsingOptions};
+use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions, SupportedCard};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
     FixedBeamIntegrand, FixedBeams, RunningCouplingReport,
@@ -412,7 +412,7 @@ pub(crate) fn load_pdf_set(
 }
 
 /// The canonical string of the proc card's first process, for artifact metadata.
-pub fn process_string(parsed: &ParsedProcCard) -> Result<String, IntegrateError> {
+pub fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
     let spec = parsed
         .processes
         .first()
@@ -625,7 +625,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
 /// decomposition.
 fn integrate_proton(
     args: &IntegrateArgs,
-    parsed: &ParsedProcCard,
+    parsed: &SupportedCard,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -655,7 +655,7 @@ fn integrate_proton(
 #[allow(clippy::too_many_arguments)]
 fn integrate_hadronic(
     args: &IntegrateArgs,
-    parsed: &ParsedProcCard,
+    parsed: &SupportedCard,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
@@ -737,7 +737,7 @@ fn integrate_hadronic(
 /// Breit–Wigner peaks converge (unbiased, same σ̂; flat RAMBO under-samples them).
 fn integrate_fixed_energy(
     args: &IntegrateArgs,
-    parsed: &ParsedProcCard,
+    parsed: &SupportedCard,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     rc: &RunCard,
