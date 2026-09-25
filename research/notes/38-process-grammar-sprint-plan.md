@@ -479,6 +479,98 @@ Every propagator is oriented away from the decaying particle.
   `h > e+ e- mu+ mu-` and `z > e+ e-`, plus one sample.
 - D1's enumeration is the decay-side building block for D2.
 
+**Landed** (2026-09-25; `596c32b` check and `enumerate_decay`, `49f3ab0`
+decay run card, `11dcd0a` integrand, CLI and event file, `fa07c04` gates,
+`d86c226` census dump fix, `046282e` renumbering over decays, the docs
+commit after them). A 1→n line passes `check_supported`; mixing initial-state
+counts stays refused. `diagrams::enumerate_decay` runs one decay's
+enumeration (lowest-WEIGHTED search included) as a unit and refuses a
+process without exactly one initial particle; it returns a
+`Vec<DiagramSet>` since a decay with labels (`w+ > j j`) has several
+assignments. `hadronic::InitialState` is `Beams(FixedBeams)` or
+`Decay(DecayAtRest)`; the decay supplies `√s = M`, incoming `(M,0,0,0)`, flux
+`1/(2M)`, no boost, and `Observable::PartialWidth` (GeV), and the same
+`FixedBeamIntegrand` and per-diagram channels serve it (every line timelike,
+so every channel is the all-timelike tree). No `helas/eval` change was
+needed: helicity pruning already skips `n_in != 2`, and the evaluator took
+an incoming massive fermion, vector or scalar unchanged (per-point `|M|²`
+below). `hadronic.rs`, `cuts.rs`, `lhef/build.rs`, `diagram_channel.rs`
+(`beam_masses` slot 1 on a decay), `runcard.rs`, `config.rs` and the two CLI
+commands are the touched files outside `diagrams/`.
+
+- *MadEvent's decay run* (pinned checkout, 3.7.1 per its `VERSION`):
+  `banner.py:4784` writes a decay's default card with `remove_all_cut()`,
+  `:5045` forces `sde_strategy = 1`; `setcuts.f:137` (`nincoming.eq.1`) sets
+  `lpp = 0`, `ebeam = M/2`, `scale = M` and `fixed_ren_scale` unless the card
+  fixes it, both `fixed_fac_scale` true. So cuts *are* applied, by `cuts.f`
+  in the rest frame, except the ŝ window (`cuts.f:310`, `nincoming.eq.2`).
+  Measured on `t > w+ b` with `dsqrt_q2fact = 50/60`, `scale = 70`: SCALUP
+  60 = max of the fixed factorisation scales; AQCDUP αs(M_t) = 0.1076279
+  unless `fixed_ren_scale` (then αs(70) = 0.1229055); `dynamical_scale_choice
+  = 3` changes nothing. `RunCard::decay_default` and `RunCard::for_decay`
+  transcribe this (`runcard_decay_defaults.json` pins the 107 cut resets),
+  and `use_running_coupling` applies `for_decay` itself on a decay.
+- *Event file* (MadEvent, `t > b e+ ve`): `<init>` `6 0 1.730000e+02
+  0.000000e+00 0 0 247000 247000 -4 1`, XSECUP = width in GeV; per event the
+  top status −1 at rest (pz printed 1e-14), products' mothers `1 0`
+  (`unwgt.f:741`), XWGTUP = width, SCALUP 91.188, AQCDUP 0.1076279. Matched
+  field by field except PDFSUP (0 here, as for every fixed-energy run) and
+  MadEvent's status-2 `W` inside its BW window (no intermediate records here
+  for any process; E1). `check-events` reads an empty beam 2 as a decay.
+- *Two-body* (`sm_decay_widths.json`: `decays.py` via `model_reader` on
+  `restrict_default`): 19 open channels of t, W+, Z, H to ≤ 5e-13 in Γ and
+  1e-12 in `Σ|M|²` at four orientations. *Many-body `|M|²`*
+  (`decay_amplitudes.json`, MadGraph standalone `SMATRIX`, 24 points each):
+  `t > b e+ ve` 5.7e-14, `h > e+ e- mu+ mu-` 1.7e-14, `z > e+ e- mu+ mu-`
+  (8 diagrams) 1.3e-12, `t > b e+ ve a` 3.3e-14.
+- *Widths* (`cli_decay`, ten seeds at `--target-rel 2e-3`; MadEvent ten
+  seeds of 10k events; each mean ± max(quoted, spread/√n)):
+
+  | row | exact | MadEvent | here | pull |
+  |---|---|---|---|---|
+  | `t > w+ b` | 1.4914721 | 1.491506 ± 2.3e-5 | 1.491582 ± 1.6e-4 | +0.71 vs exact |
+  | `z > e+ e-` | 0.08396539 | 0.08396686 ± 1.3e-6 | 0.08397159 ± 8.7e-6 | +0.71 vs exact |
+  | `h > e+ e- mu+ mu-` | 2.4193128e-7 | 2.416009e-7 ± 1.5e-10 | 2.421078e-7 ± 1.4e-10 | +1.25 vs exact |
+  | `t > b e+ ve` | — | 0.1632493 ± 4.4e-5 | 0.1632357 ± 4.0e-5 | −0.23 vs MG |
+  | `h > 4l`, ptl 10 etal 2.5 drll 0.4 mmll 12 | — | 8.121266e-8 ± 1.0e-10 | 8.125823e-8 ± 6.1e-11 | +0.38 vs MG |
+  | `t > b e+ ve`, ptb 20 etab 2.5 ptl 15 etal 2.5 drbl 0.4 | — | 0.1418069 ± 5.8e-5 | 0.1417557 ± 4.4e-5 | −0.71 vs MG |
+
+  Our χ²/dof over seeds 0.54–1.85. The `h > e+ e- mu+ mu-` exact width is a
+  quadrature over the two off-shell Z lines (`decay_semianalytic.py`, 3e-9).
+  **MadEvent is the one that misses there**: 10k-event seeds −0.14% (−2.2σ of
+  their mean; 24 runs over three setups all ≈ 2.416), seed scatter 1.33× the
+  quoted error, three 100k-event seeds −0.05% — it converges up with budget.
+  Here: thirty seeds at 120k×10 +1.25σ, five at 480k×20 −0.3σ, twelve with
+  the lepton pairs swapped +0.7σ. Flat RAMBO is useless as a control (seeds
+  scatter 10% against a 0.6% quote). A five-seed first cut of this row read
+  +3.5σ against the 10-seed MadEvent mean: the seed set was the high tail of
+  our own (thirty-seed) distribution and the reference was the low-biased one.
+- *Sample* (`t > b e+ ve`, 10k unit-weight events vs MadEvent's 10k):
+  m(e+ ve) χ²/dof 1.15 over 16 bins, m(b e+) 0.84 over 17, every bin within
+  4σ; AQCDUP equal to MadEvent's 0.1076279 within 5e-7.
+- *Unchanged 2 → n*: the binary at the S1 head (`65edb40`) and this branch
+  write byte-identical artifacts and 500-event LHE files, same seeds, fixed
+  budget, for `e+ e- > mu+ mu-` (45.6 GeV beams), `e+ e- > mu+ mu- ta+ ta-
+  QCD=0` (250 GeV), `u u~ > g g g` (250 GeV, ptj 20, clustering scale) and
+  `p p > e+ e-` (NNPDF23). The shared paths are unchanged for two incoming
+  legs by construction (`point_scales_of`'s constant short-cut returns what
+  the constant source returned; the ŝ window and channel forests branch on
+  one incoming leg). One relaxation: `detect_unimplemented` accepts
+  `remove_all_cut`'s reset values of `ktdurham`/`ptlund`/`dparameter`/
+  `deltaeta`, which `cuts.f`'s `> 0` guards leave off, so a 2 → n card
+  carrying them is no longer refused.
+
+Findings for later: VEGAS refinement makes a constant integrand noisy (a
+two-body width after grid refinement reads ±0.03% instead of exact — the
+bins follow the first iteration's sampling noise), so a single-channel
+two-body run should skip refinement; `SDE_strategy = 2` on a decay card is
+refused (channel forests are 2 → n only); a user's decay card with a
+proton-beam-only physics field off default is refused at parse although a
+decay ignores it. The S2 census dump sliced decay diagrams as if they still
+carried MadGraph's filtering-time artificial vertex, dropping the `W` of
+`t > b e+ ve` and one `Z` of `h > e+ e- mu+ mu-`; fixed and regenerated
+(only those five cards change).
+
 ### D2: decay-chain enumeration by stitching (feature-dev; after S1, S2, D1)
 
 - Core and decay enumerations are glued at the resonance, which becomes an

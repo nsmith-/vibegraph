@@ -139,6 +139,17 @@ impl GlobalConfig {
             None => Ok(RunCard::default()),
         }
     }
+
+    /// [`load_run_card`](Self::load_run_card) for a `1 → n` decay process, whose
+    /// card without a file is MadGraph's default for a decay
+    /// ([`RunCard::decay_default`]: every cut removed) rather than the
+    /// scattering one.
+    pub fn load_decay_run_card(&self) -> Result<RunCard, RunCardError> {
+        match &self.run_card_path {
+            Some(path) => RunCard::parse_file(path),
+            None => Ok(RunCard::decay_default()),
+        }
+    }
 }
 
 #[cfg(test)]

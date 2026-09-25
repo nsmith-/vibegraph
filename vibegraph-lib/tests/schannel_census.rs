@@ -16,8 +16,10 @@
 //! - where MadGraph refused, enumeration refuses too;
 //! - the members of `p` and `j` after the card, as sets.
 //!
-//! Cards with one initial particle are banked for when 1→n processes are
-//! supported; until then this side must refuse them as a decay process.
+//! Cards with one initial particle are `1 → n` decays, compared like any other:
+//! MadGraph's `>` and `$$` read a decay's s-channels on their own path
+//! (`diagram_generation.py`, the `ninitial == 1` branch), and its per-diagram
+//! s-channel list leaves out the line the decaying particle enters on.
 //!
 //! What the comparison cannot see: which diagram is which beyond its
 //! s-channel content (two diagrams with the same s-channels are
@@ -28,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::Value;
-use vibegraph::diagrams::check::{check_supported, Unsupported};
+use vibegraph::diagrams::check::check_supported;
 use vibegraph::diagrams::parse::parse_proc_card_ast;
 use vibegraph::diagrams::resolve::model_aliases;
 use vibegraph::diagrams::schannel::s_channel_ids;
@@ -107,7 +109,6 @@ fn banked(case: &Value) -> Census {
 enum Outcome {
     Census(Census, BTreeMap<String, Vec<i64>>),
     Refused(String),
-    DecayPending,
 }
 
 fn enumerate(card: &str) -> Outcome {
@@ -117,13 +118,6 @@ fn enumerate(card: &str) -> Outcome {
     };
     let supported = match check_supported(&ast) {
         Ok(c) => c,
-        Err(e)
-            if e.0
-                .iter()
-                .any(|u| matches!(u, Unsupported::DecayProcess { .. })) =>
-        {
-            return Outcome::DecayPending
-        }
         Err(e) => return Outcome::Refused(e.to_string()),
     };
     let model = model_for(card);
@@ -185,18 +179,13 @@ fn schannel_census_matches_madgraph() {
     let doc = reference();
     let cases = doc["cases"].as_array().expect("cases");
     let mut failures = Vec::new();
-    let (mut generated, mut refused, mut pending) = (0, 0, 0);
+    let (mut generated, mut refused, mut decays) = (0, 0, 0);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let card = case["card"].as_str().unwrap();
         let outcome = enumerate(card);
+        decays += usize::from(name.starts_with("decay_"));
         match (case.get("error"), outcome) {
-            (_, Outcome::DecayPending) => {
-                if !name.starts_with("decay_") {
-                    failures.push(format!("{name}: refused as a decay process"));
-                }
-                pending += 1;
-            }
             (Some(_), Outcome::Refused(_)) => refused += 1,
             (Some(err), Outcome::Census(ours, _)) => failures.push(format!(
                 "{name}: MadGraph refuses ({err}), here {}",
@@ -242,8 +231,8 @@ fn schannel_census_matches_madgraph() {
         }
     }
     eprintln!(
-        "{} cards: {generated} generated and matched, {refused} refused by both, {pending} \
-         decay cards pending 1→n support",
+        "{} cards: {generated} generated and matched, {refused} refused by both, {decays} of \
+         them decays",
         cases.len()
     );
     assert!(

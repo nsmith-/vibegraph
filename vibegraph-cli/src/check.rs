@@ -120,13 +120,21 @@ pub fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
     Ok(())
 }
 
+/// Whether `<init>` describes a decay run: MadEvent's convention names the
+/// decaying particle as beam 1, at its mass, and leaves beam 2 empty — no
+/// particle and no energy.
+fn is_decay_run(init: &LheInit) -> bool {
+    init.beam_pdg[1] == 0 && init.beam_energy[1] == 0.0
+}
+
 fn check_init(init: &LheInit, complaints: &mut Vec<Complaint>) {
     let mut say = |what: String| complaints.push(Complaint { event: None, what });
 
     if init.processes.is_empty() {
         say("<init> declares no processes".into());
     }
-    for (beam, energy) in init.beam_energy.iter().enumerate() {
+    let beams = if is_decay_run(init) { 1 } else { 2 };
+    for (beam, energy) in init.beam_energy.iter().enumerate().take(beams) {
         if !energy.is_finite() || *energy <= 0.0 {
             say(format!("<init> beam {} energy is {energy}", beam + 1));
         }
@@ -202,8 +210,12 @@ fn check_event(
         .iter()
         .filter(|p| p.status == STATUS_OUTGOING)
         .collect();
-    if incoming.len() != 2 {
-        say(format!("has {} incoming legs, not 2", incoming.len()));
+    let expected_incoming = if is_decay_run(init) { 1 } else { 2 };
+    if incoming.len() != expected_incoming {
+        say(format!(
+            "has {} incoming legs, not {expected_incoming}",
+            incoming.len()
+        ));
     }
     if outgoing.is_empty() {
         say("has no outgoing legs".into());

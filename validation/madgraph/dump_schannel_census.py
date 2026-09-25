@@ -15,7 +15,8 @@ MadGraph raised or, for every amplitude it holds afterwards:
                    particle as it flows towards the final state), the whole
                    list sorted: a multiset of multisets, independent of
                    diagram order and numbering. For one initial particle
-                   the decaying particle's own line is not among them.
+                   every propagator is among them, the decaying particle's
+                   own line not being a propagator.
 
 plus the members of ``p`` and ``j`` after the card, which is where MadGraph's
 switch to the five-flavour scheme on importing a model with a massless b shows
@@ -67,12 +68,14 @@ def _error(e):
 
 
 def _s_channels(diagram, model, ninitial):
-    # The last vertex is the n->0 one; a decay's diagrams carry one more,
-    # artificial, vertex for the decaying particle's own line, which the
-    # required-s-channel filter skips too (`diagram_generation.py:720`).
-    last = -2 if ninitial == 1 else -1
+    # The last vertex is the n->0 one. While a decay's diagrams are being
+    # filtered they carry one more, artificial, vertex for the decaying
+    # particle's own line, which is why the required-s-channel filter skips the
+    # last two there (`diagram_generation.py:720`); the diagrams an amplitude
+    # keeps no longer carry it (`h > e+ e- mu+ mu-` stores its two Z vertices
+    # and the H vertex), so here the last vertex alone is skipped either way.
     ids = []
-    for vertex in diagram.get("vertices")[:last]:
+    for vertex in diagram.get("vertices")[:-1]:
         sid = vertex.get_s_channel_id(model, ninitial)
         if sid:
             ids.append(sid)

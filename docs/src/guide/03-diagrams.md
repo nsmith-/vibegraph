@@ -55,7 +55,6 @@ language:
 |---|---|
 | `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
 | decay chains `A > B C, B > D E` | refused until stitched decay enumeration exists |
-| 1→n decay processes (`t > w+ b`) | refused until rest-frame phase space exists |
 | polarized legs `{0}` `{T}` `{L}` `{R}` | refused until the restricted helicity loop exists |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}` | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
@@ -67,8 +66,15 @@ language:
 
 Benign `set` options (paths, compilers, `group_subprocesses`, …) and
 commands such as `output` and `display` are accepted and change nothing.
-Mixing processes with different numbers of initial particles is a MadGraph
-error and stays one.
+
+A process with one initial particle (`generate t > b e+ ve`) is a `1 → n`
+decay, integrated to a [partial width](07-phase-space.md#decays-at-rest).
+It is enumerated like any other process — every diagram with the decaying
+particle as its one incoming leg, every internal line then an s-channel —
+and the same enumeration is available for a single decay on its own
+(`enumerate_decay`), which is what joining decays onto a core process
+builds on. Mixing processes with different numbers of initial particles is
+a MadGraph error and stays one.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
@@ -221,6 +227,8 @@ look: the counts have caught by-hand census claims that were wrong, and a
 count that agrees with the census MadGraph wrote for the same card is what licenses the
 per-diagram amplitude comparison in the next chapter. The comparison is
 hermetic: the census is committed to the repository as `validation/madgraph/diagrams.json`.
+The decay census (`t > b e+ ve a`, `z > e+ e- mu+ mu-`, `w+ > j j`, …) is
+compared against MadGraph's own generation of the same cards.
 
 ## Where it lives
 

@@ -84,6 +84,8 @@ pub enum DiagramError {
         first: String,
         second: String,
     },
+    #[error("'{process}' has {n_in} initial-state particles; a decay has exactly one")]
+    NotADecay { process: String, n_in: usize },
     /// MadGraph's `NoDiagramException`: a process line none of whose
     /// subprocesses has a diagram is an error, not an empty contribution.
     #[error("no diagrams for '{process}': no subprocess it describes has a diagram")]
@@ -209,6 +211,27 @@ pub fn generate_from_proc_card_in(
             .build()?
             .install(|| enumerate(proc_card, model)),
     }
+}
+
+/// Enumerate one `1 → n` decay on its own: one [`DiagramSet`] per concrete
+/// assignment of its legs (`w+ > j j` has one per quark pair), every diagram with
+/// the decaying particle as external leg `0` and `n_in = 1`.
+///
+/// This is the enumeration a `1 → n` process line runs, exposed as a unit so a
+/// decay can be enumerated apart from any process it attaches to. The automatic
+/// lowest-`WEIGHTED` search runs over the decay alone, as MadGraph's
+/// `DecayChainAmplitude` generates each decay as a separate amplitude.
+pub fn enumerate_decay(
+    decay: &SupportedProcess,
+    model: &UFOModel,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    if decay.initial.len() != 1 {
+        return Err(DiagramError::NotADecay {
+            process: decay.to_string(),
+            n_in: decay.initial.len(),
+        });
+    }
+    generate_from_process(decay, model)
 }
 
 /// A subprocess's identity: the unordered content of each side.

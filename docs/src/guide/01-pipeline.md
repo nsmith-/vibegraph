@@ -52,6 +52,11 @@ convolved with those densities and summed over the parton flavours that can
 initiate the process; [proton beams](10-hadronic.md) covers this, together
 with the scale choices it introduces.
 
+A process with a single incoming particle, `t > b e+ ve`, is a decay: the
+same integral with the flux replaced by $2M$ at the particle's rest mass
+measures its partial width $\Gamma$ in GeV instead of a cross section
+([decays at rest](07-phase-space.md#decays-at-rest)).
+
 ## Events
 
 A Monte Carlo integration visits phase-space points with a density of its

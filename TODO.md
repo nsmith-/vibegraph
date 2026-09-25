@@ -440,7 +440,11 @@ above); the entries here are the eventual features.
   - **S2** ✅ landed (`c52e4f7`, the docs commit after it): `>`/`$$` filters inside the
     WEIGHTED search, `WEIGHTED<=n`, the five-flavour `p`/`j` rewrite, MadGraph
     census (43/43 generated cards) and two σ rows in agreement.
-  - **D1**: 1→n decays, gated on partial widths.
+  - **D1** ✅ landed (`596c32b`, `49f3ab0`, `11dcd0a`, `fa07c04`, `d86c226`, `046282e`;
+    note 38 §4 D1 Landed): 1→n decays to a partial width in GeV and a MadEvent-convention
+    decay LHEF; widths within 1.25σ of exact (decays.py, quadrature) or MadEvent over ten
+    seeds, where MadEvent's own `h > e+ e- mu+ mu-` sits −0.14% low; `enumerate_decay`
+    for D2.
   - **D2**: decay chains stitched from separate enumerations, gated on
     container equality against the filtered full final state.
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
