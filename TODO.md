@@ -7,9 +7,10 @@ gate.
 
 **Current position**: **between sprints.** The `banked-open-ends` validation
 sprint closed 2026-09-07; note 36 §7 is its close-out record and PR #6 carries it.
-**Next**: the **`process-grammar`** feature sprint (note 38), which takes a feature
-slot in place of the performance slot the rhythm would give (still open for the
-user, note 38 §5). The performance candidates stay in the backlog below.
+**Next**: the **`process-grammar`** feature sprint (note 38). It takes the slot
+the rhythm would give to performance, because performance work is already running
+in parallel on evaluator PRs (user, 2026-09-25). Sprint sessions stay out of
+`helas/eval` where they can.
 
 **Census**, counted from `validation/manifest.toml`: **178 measured cells — 171 ✅,
 7 ⚠️ — plus 4 ⏳ at the long tier and 22 uncovered.** The cells that stay
@@ -442,11 +443,22 @@ above); the entries here are the eventual features.
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
     leg-count ladder that decides whether a MadSpin-style step is ever needed.
   - **S3**: `$` as a pointwise SDE-weighted integrand.
+  - **P1**: polarized external particles (a restricted helicity loop, with the
+    `me_frame` frame dependence pinned and `B_FRAME` reclassified).
   - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
     grouping.
 
-  Open for the user (note 38 §5): whether squared orders and polarized external
-  bosons, both LO features descoped earlier, join this sprint.
+  Polarized intermediate resonances (a change to the propagator in
+  `helas/eval`) stay refused, with their own entry below.
+- **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
+  2026-09-25). They need complex amplitudes grouped by coupling order, which is
+  also what reweighting in a coupling would use. That is a sizable `helas/eval`
+  refactor, deferred until the open evaluator performance PRs land. G1 parses
+  them and `check_supported` refuses them.
+- **Polarized intermediate resonances** (`p p > w+{0} w-, w+ > e+ ve`, and the
+  propagator codes `{A}`/`{G}`/`{H}`/`{Q}`/`{W}`/`{S}`). A helicity-projected
+  propagator numerator in `helas/eval`. Refused by `check_supported` until then
+  (note 38 §4 P1).
 
 - **`madgraph-style-enumeration`** (research, unscheduled) — feyngraph
   enumerates topology-first (QGRAF-style orderly generation, then particle

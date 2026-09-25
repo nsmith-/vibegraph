@@ -3,7 +3,7 @@
 **Status: PLANNED (scope decision 2026-09-25, user).** No session has run.
 
 The sprint that closes the gap between MadGraph's leading-order process
-language and ours, everywhere except MLM matching and NLO. Three
+language and ours, everywhere except MLM matching and NLO. Four
 deliverables, as asked:
 
 1. **A full-featured proc-card parser** into a data structure that mirrors
@@ -14,7 +14,8 @@ deliverables, as asked:
 2. **The s-channel restriction syntax** (`>` required, `$$` forbidden, `$`
    forbidden on-shell), or-multiparticles, and `add process` over processes
    with the same final-state multiplicity.
-3. **Decays**: 1→n decay processes, and decay-chain syntax
+3. **Polarized external particles** (`w+{0}`, `z{T}`, fermion `{L}`/`{R}`).
+4. **Decays**: 1→n decay processes, and decay-chain syntax
    (`p p > t t~ h h, (t > w+ b, w+ > j j), (t~ > w- b~, w- > l- vl~)`), with
    decay chains enumerated by stitching separate feyngraph enumerations
    together.
@@ -365,6 +366,46 @@ green; the container canonical form round-trips over every banked process.
   `p p > l+ l- $ z`).
 - Informational: the complement identity of §1.2 against `p p > l+ l-`.
 
+### P1: polarized external particles (feature-dev; after G1)
+
+- `{0}`, `{T}`, `{L}`, `{R}`, `{±1}` on external legs restrict that leg's
+  helicity loop. `{T}` means ±1. `{0}` on a massless boson is kept and
+  bypassed at generation time, as MadGraph does
+  (`madgraph_interface.py:5175`). Fermion helicities go through the same
+  path.
+- **The frame is part of the answer.** Unlike the helicity sum, a polarized
+  |M|² is not Lorentz invariant. MadGraph evaluates it after
+  `boost_to_frame` into the rest frame of the particles listed in the run
+  card's `me_frame` (`Template/LO/SubProcesses/genps.f:1759`). The default,
+  `[1, 2]`, is the partonic centre-of-mass frame, which our evaluators already
+  require. So:
+  - the default frame needs no new code, only a test that would fail if the
+    evaluation frame were different;
+  - a non-default `me_frame` on a polarized card is refused until the boost
+    exists;
+  - `me_frame` moves out of `IgnoredBenign` in `runcard/classes.rs`, since
+    `B_FRAME` argues from "every amplitude here is Lorentz invariant", which
+    stops being true. Its stored-default mismatch (empty against MadGraph's
+    `[1, 2]`) is fixed at the same time.
+- **Initial-state polarization:** the spin-averaging denominator for a
+  polarized incoming leg is pinned against MadGraph's `IDEN`, not assumed.
+- **Event records:** `SPINUP` of a polarized leg is its fixed helicity.
+- **Not in P1: polarized intermediate resonances**
+  (`p p > w+{0} w-, w+ > e+ ve`) and the propagator-only codes
+  `{A}`/`{G}`/`{H}`/`{Q}`/`{W}`/`{S}`. They replace the resonance's
+  propagator numerator with a helicity projection, which is a change to the
+  `helas/eval` propagator (the area the performance PRs are editing), not to
+  the helicity loop. `check_supported` refuses them, with a backlog entry.
+  `{A}` on an external leg is a MadGraph error and stays one
+  (`helas_objects.py:686`).
+- Gates:
+  - amplitude rows against MadGraph for `e+ e- > w+{0} w-{T}`,
+    `p p > z{0} j` and a polarized fermion leg;
+  - one σ row;
+  - the `samples` category on `SPINUP`;
+  - a mutation pin that evaluates the default-frame card in a boosted frame
+    and must disagree.
+
 ### E1: event records and `add process` completion (feature-dev; after D2)
 
 - Status-2 resonance records with mother pointers, and colour through decays.
@@ -386,12 +427,19 @@ green; the container canonical form round-trips over every banked process.
   what is unsupported (§3.1).
 - **2026-09-25 (user):** the stitching oracle is diagram-container equality;
   sign resolution moves to the diagrams stage (§3.3).
-- **Open (user):** the parity goal also covers two LO features that earlier
-  decisions descoped: squared-order constraints (note 35 §7 D4) and polarized
-  external bosons (`w+{0}`). G1 parses both and refuses them in the check. Do
-  they join this sprint or stay refused?
-- **Open (user):** by the working rhythm, the next slot is performance. This
-  plan assumes the user is taking a feature slot instead.
+- **2026-09-25 (user): polarized external particles join the sprint** (session
+  P1). At the matrix-element level this only restricts the helicity loop.
+- **2026-09-25 (user): squared-order constraints stay refused, shelved.**
+  Supporting them means extracting the complex amplitudes grouped by
+  coupling order. That is also what reweighting in a coupling needs, so it is
+  worth doing, but it is a sizable refactor of `helas/eval`, where several
+  open performance PRs are working. G1 parses `^2` constraints in full and
+  `check_supported` refuses them.
+- **2026-09-25 (user): the working rhythm.** Performance work is already
+  running in parallel on PRs that mostly touch the evaluator, so this feature
+  sprint takes the slot. Sessions should stay out of `helas/eval` where they
+  can. The exception is S1, which removes sign factors from there: it lands
+  after, or rebases onto, whichever evaluator PRs are open at the time.
 
 ## 6. Risks
 
