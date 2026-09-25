@@ -46,9 +46,9 @@ lines, PDG-code legs and `@N` downstream are all **silently** mishandled, so the
 sprint's first session (G1) closes those before any feature lands.
 
 **Open, and the user's call** (nothing here is blocked on code):
-- whether the repository is made public — `acceptance.yml` 404s on the release
-  assets while it is private, because the script downloads unauthenticated by
-  design (gate-hygiene entry below);
+- the repository is now public (confirmed 2026-09-25: the `refdata-7` release
+  asset downloads unauthenticated), so `acceptance.yml`'s release-asset 404 should
+  be gone; see the gate-hygiene entry below;
 - reading the first green `acceptance.yml` run, whenever that is, since the
   workflow has still never passed;
 - switching GitHub Pages to the "GitHub Actions" source in the repository
@@ -349,7 +349,8 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Gate + tooling hygiene
 
-- **`acceptance.yml` has still never passed, and needs the repo to be public**
+- **`acceptance.yml` has still never passed**. It needed the repo to be public,
+  which it now is (2026-09-25); the next run is the first that can pass
   — `v0.1.0` published all four binaries, but acceptance 404s on
   `releases/download/...`: the script downloads unauthenticated *by design*, so
   it can reproduce on a clean VM with no checkout and no token, and a private
@@ -435,8 +436,9 @@ above); the entries here are the eventual features.
   - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
     `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
     sufficient oracle.
-  - **S2**: `>` and `$$` as diagram filters on `Prop.momentum`, with the
-    direction pin.
+  - **S2** ✅ landed (`c52e4f7`, the docs commit after it): `>`/`$$` filters inside the
+    WEIGHTED search, `WEIGHTED<=n`, the five-flavour `p`/`j` rewrite, MadGraph
+    census (43/43 generated cards) and two σ rows in agreement.
   - **D1**: 1→n decays, gated on partial widths.
   - **D2**: decay chains stitched from separate enumerations, gated on
     container equality against the filtered full final state.

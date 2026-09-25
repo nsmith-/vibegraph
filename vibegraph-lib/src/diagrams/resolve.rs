@@ -174,6 +174,78 @@ fn restriction_particles<'m>(
     Ok(out)
 }
 
+/// A card's labels as they stand under `model`.
+///
+/// MadGraph rewrites `p` and `j` on every `import model`
+/// (`add_default_multiparticles`, `madgraph_interface.py:6042`), starting with
+/// the `import model sm` it runs on start-up: when the model's b quark
+/// (PDG 5) is massless and the label lacks it, `b b~` is appended (the
+/// five-flavour scheme); when it is massive and the label has it, it is
+/// removed. The photon is removed as well, since no model here perturbs in
+/// QED. A model without a PDG-5 particle leaves the labels alone. Only a
+/// label as it stood at the import is rewritten: `define p = ...` after the
+/// import is taken as written, while a label defined through `p` after it
+/// sees the rewritten `p`.
+pub fn model_aliases(aliases: &AliasTable, model: &UFOModel) -> AliasTable {
+    aliases.replay(&mut |table| rewrite_default_multiparticles(table, model))
+}
+
+fn rewrite_default_multiparticles(table: &mut AliasTable, model: &UFOModel) {
+    let Some(b) = particle_by_pdg(model, 5) else {
+        return;
+    };
+    let massless = b.mass_param == "ZERO" || model.params.zeros.contains(&b.mass_param);
+    let pdg = |member: &str| member_particle(model, member).ok().map(|p| p.pdg_code);
+    for label in ["p", "j"] {
+        let Some(members) = table.plain_members(label) else {
+            continue;
+        };
+        let mut members = members.to_vec();
+        let remove = |members: &mut Vec<String>, code: i64| {
+            if let Some(i) = members.iter().position(|m| pdg(m) == Some(code)) {
+                members.remove(i);
+            }
+        };
+        if members.iter().any(|m| pdg(m) == Some(5)) {
+            if !massless {
+                remove(&mut members, 5);
+                remove(&mut members, -5);
+            }
+        } else if massless {
+            members.push(b.name.clone());
+            members.push(b.antiname.clone());
+        }
+        remove(&mut members, 22);
+        table.rewrite_plain(label, members);
+    }
+}
+
+/// The required s-channels of a definition as MadGraph's or-list of and-lists
+/// of PDG codes.
+pub fn required_s_channel_ids(
+    groups: &[Vec<String>],
+    aliases: &AliasTable,
+    model: &UFOModel,
+) -> Result<Vec<Vec<i64>>, ResolveError> {
+    required_ids(groups, aliases, model)
+}
+
+/// A `$$` list as PDG codes, as written: MadGraph compares them with the
+/// oriented s-channel id, so `$$ t` does not forbid an s-channel `t~`.
+pub fn forbidden_s_channel_ids(
+    names: &[String],
+    aliases: &AliasTable,
+    model: &UFOModel,
+) -> Result<Vec<i64>, ResolveError> {
+    let mut out: Vec<i64> = Vec::new();
+    for p in restriction_particles(model, names, aliases)? {
+        if !out.contains(&p.pdg_code) {
+            out.push(p.pdg_code);
+        }
+    }
+    Ok(out)
+}
+
 /// The model's coupling-order names.
 pub fn check_order_name(model: &UFOModel, name: &str) -> Result<(), ResolveError> {
     if model.order_hierarchy.contains_key(name) {
@@ -233,7 +305,8 @@ pub fn resolve_card(
     let mut n_initial: Option<usize> = None;
     for p in ast.processes() {
         let def = &p.line.definition;
-        let resolved = resolve_definition(def, Some(p.id), &p.aliases, model)?;
+        let aliases = model_aliases(&p.aliases, model);
+        let resolved = resolve_definition(def, Some(p.id), &aliases, model)?;
         if def.decay_chains.is_empty() {
             check_negative_orders(&resolved)?;
         } else {

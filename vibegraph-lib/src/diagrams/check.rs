@@ -16,14 +16,12 @@
 //!
 //! | Variant | MadGraph feature | Lifted by |
 //! |---|---|---|
-//! | [`RequiredSChannel`](Unsupported::RequiredSChannel) | `> A >`, or-multiparticles | a diagram filter on s-channel propagators |
-//! | [`ForbiddenSChannel`](Unsupported::ForbiddenSChannel) | `$$ A` | the same filter, inverted |
 //! | [`ForbiddenOnShellSChannel`](Unsupported::ForbiddenOnShellSChannel) | `$ A` | a per-channel on-shell veto in the integrand |
 //! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | stitched core and decay enumerations |
 //! | [`Polarization`](Unsupported::Polarization) | `w+{0}`, `z{T}`, `e-{L}` | a restricted helicity loop per leg |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
-//! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED<=4` | routing it to the automatic WEIGHTED filter |
+//! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order (not planned) |
 //! | [`LoopSpec`](Unsupported::LoopSpec) | `[QCD]`, `[real=QCD]` | NLO |
 //! | [`PhotonTag`](Unsupported::PhotonTag) | `!a!` | NLO |
 //! | [`MixedMultiplicity`](Unsupported::MixedMultiplicity) | `add process` with another final-state count | MLM merging |
@@ -72,7 +70,14 @@ pub struct SupportedProcess {
     pub final_state: Vec<SupportedLeg>,
     /// `/ A B`, as written.
     pub forbidden_particles: Vec<String>,
-    /// Amplitude-level coupling-order constraints, left to right.
+    /// `> A B | C >`, as written: alternatives, each a list of names that must
+    /// all be s-channel propagators of a kept diagram.
+    pub required_s_channels: Vec<Vec<String>>,
+    /// `$$ A B`, as written: names no s-channel propagator of a kept diagram
+    /// may carry.
+    pub forbidden_s_channels: Vec<String>,
+    /// Amplitude-level coupling-order constraints, left to right. A
+    /// `WEIGHTED` entry is always `<=` or `=`.
     pub orders: Vec<AmplitudeOrder>,
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
@@ -102,11 +107,12 @@ impl Display for AmplitudeOrder {
 }
 
 impl Display for SupportedProcess {
-    /// The legs and the coupling-order constraints, spelled the way MadGraph's
-    /// own generate line spells them. Carrying the orders is what keeps two
-    /// processes that differ only in an order constraint from printing
-    /// identically. The forbidden particles and the process number are not
-    /// printed, so this is not a round trip.
+    /// The legs, the s-channel restrictions and the coupling-order
+    /// constraints, spelled the way MadGraph's own generate line spells them.
+    /// Carrying everything that selects diagrams is what keeps two processes
+    /// that differ only in a constraint from printing identically. The
+    /// forbidden particles and the process number are not printed, so this is
+    /// not a round trip.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let side = |legs: &[SupportedLeg]| {
             legs.iter()
@@ -114,7 +120,19 @@ impl Display for SupportedProcess {
                 .collect::<Vec<_>>()
                 .join(" ")
         };
-        write!(f, "{} > {}", side(&self.initial), side(&self.final_state))?;
+        write!(f, "{} > ", side(&self.initial))?;
+        if !self.required_s_channels.is_empty() {
+            let alternatives: Vec<String> = self
+                .required_s_channels
+                .iter()
+                .map(|a| a.join(" "))
+                .collect();
+            write!(f, "{} > ", alternatives.join(" | "))?;
+        }
+        write!(f, "{}", side(&self.final_state))?;
+        if !self.forbidden_s_channels.is_empty() {
+            write!(f, " $$ {}", self.forbidden_s_channels.join(" "))?;
+        }
         for order in &self.orders {
             write!(f, " {order}")?;
         }
@@ -128,20 +146,6 @@ impl Display for SupportedProcess {
 /// documentation for the table of variants and what lifts each.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unsupported {
-    /// Required s-channels, `A B > X > C D`, including or-multiparticles. The
-    /// filter keeps a diagram only if it has the named s-channel propagators;
-    /// it needs the s-channel predicate on a diagram's propagator momenta.
-    #[error(
-        "'{process}': required s-channels ('> ... >') are not supported yet — they filter \
-         diagrams by their s-channel propagators, which this generator does not do"
-    )]
-    RequiredSChannel { process: String },
-    /// Forbidden s-channels, `$$ A`: the complement of the required filter.
-    #[error(
-        "'{process}': forbidden s-channels ('$$') are not supported yet — they drop \
-         diagrams by their s-channel propagators, which this generator does not do"
-    )]
-    ForbiddenSChannel { process: String },
     /// Forbidden on-shell s-channels, `$ A`: every diagram is kept, and the
     /// phase-space region where the named propagator is within its
     /// Breit–Wigner window is vetoed in the channels that contain it.
@@ -187,8 +191,16 @@ pub enum Unsupported {
          instead (e.g. 'QED<=n'), which keeps every term a diagram of that order contributes to"
     )]
     SquaredOrder { process: String, constraint: String },
-    /// A constraint on MadGraph's `WEIGHTED` order.
-    #[error("'{process}': the WEIGHTED order constraint '{constraint}' is not supported yet")]
+    /// `WEIGHTED==n` or `WEIGHTED>n`. MadGraph turns an `==` or `>` amplitude
+    /// constraint into a squared-order one as well, which bounds interference
+    /// terms rather than diagrams. `WEIGHTED<=n` and `WEIGHTED=n` are
+    /// supported: they bound each diagram's weighted order, the filter the
+    /// automatic order search uses.
+    #[error(
+        "'{process}': the WEIGHTED constraint '{constraint}' is not supported: MadGraph reads \
+         '==' and '>' as squared-order constraints on interference terms. 'WEIGHTED<=n' is \
+         supported"
+    )]
     WeightedOrder { process: String, constraint: String },
     /// A loop / perturbation specification, `[QCD]`, `[real=QCD]`.
     #[error(
@@ -531,12 +543,6 @@ fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
 /// particles is checked on the line only: a decay has one by construction.
 fn check_definition(def: &ProcessDefinition, text: &str, refused: &mut Vec<Unsupported>) {
     let process = || text.to_owned();
-    if !def.required_s_channels.is_empty() {
-        refused.push(Unsupported::RequiredSChannel { process: process() });
-    }
-    if !def.forbidden_s_channels.is_empty() {
-        refused.push(Unsupported::ForbiddenSChannel { process: process() });
-    }
     if !def.forbidden_onsh_s_channels.is_empty() {
         refused.push(Unsupported::ForbiddenOnShellSChannel { process: process() });
     }
@@ -571,7 +577,7 @@ fn check_definition(def: &ProcessDefinition, text: &str, refused: &mut Vec<Unsup
                 process: process(),
                 constraint: order.to_string(),
             });
-        } else if order.name == "WEIGHTED" {
+        } else if order.name == "WEIGHTED" && !matches!(order.op, CouplingOp::Le | CouplingOp::Eq) {
             refused.push(Unsupported::WeightedOrder {
                 process: process(),
                 constraint: order.to_string(),
@@ -597,6 +603,8 @@ fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedPro
         initial: legs(&mut def.initial()),
         final_state: legs(&mut def.final_state()),
         forbidden_particles: def.forbidden_particles.clone(),
+        required_s_channels: def.required_s_channels.clone(),
+        forbidden_s_channels: def.forbidden_s_channels.clone(),
         orders: def
             .orders
             .iter()
@@ -652,7 +660,6 @@ mod tests {
             .iter()
             .map(|u| match u {
                 Unsupported::SetOption { .. } => "set",
-                Unsupported::RequiredSChannel { .. } => ">",
                 Unsupported::ForbiddenOnShellSChannel { .. } => "$",
                 Unsupported::Polarization { .. } => "pol",
                 Unsupported::LoopSpec { .. } => "[]",
@@ -666,16 +673,19 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["set", "launch", ">", "$", "[]", "pol", "^2", "mixed", ",", "mlm"]
+            ["set", "launch", "$", "[]", "pol", "^2", "mixed", ",", "mlm"]
         );
     }
 
+    /// `>` and `$$` reach the narrow type as written, and print in
+    /// MadGraph's spelling.
     #[test]
-    fn forbidden_s_channels_are_refused() {
-        assert!(matches!(
-            refused("generate p p > e+ e- $$ z")[..],
-            [Unsupported::ForbiddenSChannel { .. }]
-        ));
+    fn s_channel_restrictions_are_carried() {
+        let card = check("define v = z | a\ngenerate e+ e- > v h | z > mu+ mu- h $$ t t~").unwrap();
+        let p = &card.processes[0];
+        assert_eq!(p.required_s_channels, [vec!["v", "h"], vec!["z"]]);
+        assert_eq!(p.forbidden_s_channels, ["t", "t~"]);
+        assert_eq!(p.to_string(), "e+ e- > v h | z > mu+ mu- h $$ t t~");
     }
 
     #[test]
@@ -743,10 +753,14 @@ mod tests {
 
     #[test]
     fn weighted_and_alias_orders() {
-        assert!(matches!(
-            refused("generate e+ e- > mu+ mu- WEIGHTED<=4")[..],
-            [Unsupported::WeightedOrder { .. }]
-        ));
+        assert!(check("generate e+ e- > mu+ mu- WEIGHTED<=4").is_ok());
+        assert!(check("generate e+ e- > mu+ mu- WEIGHTED=4").is_ok());
+        for op in ["==", ">"] {
+            assert!(matches!(
+                refused(&format!("generate e+ e- > mu+ mu- WEIGHTED{op}4"))[..],
+                [Unsupported::WeightedOrder { .. }]
+            ));
+        }
         assert!(matches!(
             refused("generate e+ e- > mu+ mu- aEW=1")[..],
             [Unsupported::SquaredOrder { .. }]

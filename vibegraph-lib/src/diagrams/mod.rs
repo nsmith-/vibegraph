@@ -30,6 +30,7 @@ pub mod check;
 pub mod diagram;
 pub mod parse;
 pub mod resolve;
+pub mod schannel;
 pub mod selector;
 
 pub use alias::AliasTable;
@@ -51,12 +52,16 @@ use feyngraph::topology::{Topology, TopologyGenerator, TopologyModel};
 use feyngraph::DiagramGenerator;
 use itertools::Itertools;
 use thiserror::Error;
-use tracing::{debug, info, info_span, trace};
+use tracing::{debug, info, info_span, trace, warn};
 
 use crate::progress;
 use crate::ufo::UFOModel;
 
-use resolve::{check_order_name, forbidden_propagator_names, leg_names, ResolveError};
+use resolve::{
+    check_order_name, forbidden_propagator_names, forbidden_s_channel_ids, leg_names,
+    model_aliases, required_s_channel_ids, ResolveError,
+};
+use schannel::SChannelFilter;
 use selector::{build_selector, ConcreteProcess};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -81,6 +86,10 @@ pub enum DiagramError {
     },
     #[error("'{process}' has {n_in} initial-state particles; a decay has exactly one")]
     NotADecay { process: String, n_in: usize },
+    /// MadGraph's `NoDiagramException`: a process line none of whose
+    /// subprocesses has a diagram is an error, not an empty contribution.
+    #[error("no diagrams for '{process}': no subprocess it describes has a diagram")]
+    NoDiagrams { process: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("diagram conversion error: {0}")]
@@ -249,6 +258,11 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     let mut owner: HashMap<SubprocessKey, usize> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
         let process_sets = generate_from_process(process, model)?;
+        if process_sets.iter().all(|s| s.diagrams.is_empty()) {
+            return Err(DiagramError::NoDiagrams {
+                process: process.to_string(),
+            });
+        }
         for set in process_sets.iter().filter(|s| !s.diagrams.is_empty()) {
             let key = subprocess_key(&set.particles_in, &set.particles_out);
             if let Some(first) = owner.insert(key, index) {
@@ -276,13 +290,21 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
 }
 
 /// A process with its names resolved against the model: the model particles
-/// each leg may be, in label-member order, and the forbidden propagators.
+/// each leg may be, in label-member order, the forbidden propagators, and the
+/// s-channel restrictions.
 struct ExpandedProcess {
     initial: Vec<Vec<String>>,
     final_state: Vec<Vec<String>>,
     forbidden_particles: Vec<String>,
+    /// The coupling-order constraints feyngraph selects on; `WEIGHTED` is not
+    /// among them.
     orders: Vec<AmplitudeOrder>,
+    schannels: SChannelFilter,
 }
+
+/// The name MadGraph gives the hierarchy-weighted sum of a diagram's coupling
+/// orders.
+const WEIGHTED: &str = "WEIGHTED";
 
 /// Generate diagrams for one process of a checked card.
 ///
@@ -294,7 +316,13 @@ struct ExpandedProcess {
 /// any diagrams is found iteratively, then only diagrams at that value are kept.
 /// This mirrors MadGraph's default behaviour of selecting the lowest perturbative
 /// order.  WEIGHTED = Σ_i (hierarchy_i × n_i) where hierarchy comes from the
-/// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM).
+/// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM). An explicit
+/// `WEIGHTED<=n` is that same filter at a bound the card chose.
+///
+/// The s-channel restrictions filter the converted diagrams inside the search,
+/// as they do inside MadGraph's (`find_optimal_process_orders` generates each
+/// trial with the process's required and forbidden s-channels): an order whose
+/// diagrams they all remove moves the search on.
 fn generate_from_process(
     process: &SupportedProcess,
     model: &UFOModel,
@@ -303,23 +331,50 @@ fn generate_from_process(
     // reverse), then constrains the name as written, which no vertex carries:
     // the constraint does nothing. Refusing an order the model does not define
     // is the one reading that cannot silently do nothing.
-    for order in &process.orders {
+    for order in process.orders.iter().filter(|o| o.name != WEIGHTED) {
         check_order_name(model, &order.name)?;
     }
+    let aliases = model_aliases(&process.aliases, model);
     let legs = |legs: &[SupportedLeg]| -> Result<Vec<Vec<String>>, ResolveError> {
         legs.iter()
-            .map(|l| leg_names(model, &l.particle, &l.token, &process.aliases))
+            .map(|l| leg_names(model, &l.particle, &l.token, &aliases))
             .collect()
     };
+    let schannels = SChannelFilter {
+        required: required_s_channel_ids(&process.required_s_channels, &aliases, model)?,
+        forbidden: forbidden_s_channel_ids(&process.forbidden_s_channels, &aliases, model)?,
+    };
+    if !schannels.is_empty() {
+        // MadGraph's own caution, from the release that introduced `$$`
+        // (UpdateNotes, 1.4.3): selecting diagrams by their s-channels is in
+        // general not gauge invariant. It prints nothing at generation time.
+        warn!(
+            "'{process}' selects diagrams by their s-channel propagators; the result is in \
+             general not gauge invariant"
+        );
+    }
+    // `WEIGHTED<=n` (the check admits no other comparison) bounds the diagrams'
+    // weighted order; the leftmost constraint wins, as for every order.
+    let explicit_weighted = process
+        .orders
+        .iter()
+        .find(|o| o.name == WEIGHTED)
+        .map(|o| o.value.max(0) as usize);
     let expanded = ExpandedProcess {
         initial: legs(&process.initial)?,
         final_state: legs(&process.final_state)?,
         forbidden_particles: forbidden_propagator_names(
             model,
             &process.forbidden_particles,
-            &process.aliases,
+            &aliases,
         )?,
-        orders: process.orders.clone(),
+        orders: process
+            .orders
+            .iter()
+            .filter(|o| o.name != WEIGHTED)
+            .cloned()
+            .collect(),
+        schannels,
     };
 
     // Generate abstract graph topologies once for this (n_external, n_loops=0) combination.
@@ -333,7 +388,7 @@ fn generate_from_process(
     // but they never decide whether the automatic WEIGHTED search runs: MadGraph
     // applies them (`Process.check_expansion_orders`) only after
     // `find_optimal_process_orders` has looked at the process's own orders.
-    let auto_weighted = expanded.orders.is_empty();
+    let auto_weighted = process.orders.is_empty();
     let expanded = ExpandedProcess {
         orders: capped_orders(&expanded.orders, model),
         ..expanded
@@ -361,7 +416,7 @@ fn generate_from_process(
             w += 1;
         }
     } else {
-        generate_sets_inner(&expanded, model, None, &cached_topologies)
+        generate_sets_inner(&expanded, model, explicit_weighted, &cached_topologies)
     }
 }
 
@@ -530,10 +585,20 @@ fn generate_sets_inner(
 
         // Module boundary: convert feyngraph's borrowed views into owned, UFO-resolved
         // diagrams here and drop the container. feyngraph views never escape `diagrams/`.
-        let diagrams = container
+        let mut diagrams = container
             .views()
             .map(|view| Diagram::from_view(&view, model))
             .collect::<Result<Vec<_>, _>>()?;
+        let enumerated = diagrams.len();
+        diagrams.retain(|d| process.schannels.keeps(d, model));
+        if diagrams.len() != enumerated {
+            debug!(
+                "{} > {}: the s-channel restrictions keep {} of {enumerated} diagrams",
+                in_refs.join(" "),
+                out_refs.join(" "),
+                diagrams.len()
+            );
+        }
 
         let subprocess = format!("{} > {}", in_refs.join(" "), out_refs.join(" "));
         if !diagrams.is_empty() {
@@ -626,11 +691,11 @@ mod tests {
         let count = |model: &UFOModel, process: &str| -> usize {
             let card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
                 .unwrap();
-            generate_from_proc_card(&card, model)
-                .unwrap()
-                .iter()
-                .map(|s| s.diagrams.len())
-                .sum()
+            match generate_from_proc_card(&card, model) {
+                Ok(sets) => sets.iter().map(|s| s.diagrams.len()).sum(),
+                Err(DiagramError::NoDiagrams { .. }) => 0,
+                Err(e) => panic!("{process}: {e}"),
+            }
         };
 
         let plain = sm_model(SMRestrict::Default);

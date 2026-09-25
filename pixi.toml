@@ -196,6 +196,9 @@ dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
 # Run the proc-card grammar corpus through MadGraph's own parser — the oracle the
 # hermetic proc_grammar_oracle test compares this crate's parser against
 dump-proc-grammar = "python validation/madgraph/dump_proc_grammar.py"
+# Run the s-channel / WEIGHTED / five-flavour card corpus through MadGraph's own
+# diagram generation — the census the hermetic schannel_census test compares against
+dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
 # Hadronic cross-section gate: sigma(pp->e+e-) on both dy13 run cards against the
