@@ -361,11 +361,8 @@ impl<F: Real, V: Variance> VectorRepr<F, V> for ComplexVector<F, V> {
 
     fn dot(&self, other: &Self::Dual) -> Self::Scalar {
         // Dual basis has the metric built in, so the contraction is a simple dot
-        // product. Two independent accumulation chains, joined by one add, keep
-        // the dependent path to about five operations instead of eight.
-        let even = cmul_add(self.0[2], other.0[2], cmul(self.0[0], other.0[0]));
-        let odd = cmul_add(self.0[3], other.0[3], cmul(self.0[1], other.0[1]));
-        even + odd
+        // product.
+        dot4(self.0, other.0)
     }
 
     fn dualize(&self) -> Self::Dual {
@@ -430,13 +427,13 @@ impl<F: Real, V: Variance> ComplexVector<F, V> {
     pub fn dot_lorentz(&self, other: &LorentzVector<F, V>) -> C<F> {
         // Here the variance is THE SAME for both, so we need to manually insert the
         // metric signs in the contraction. Each term is complex×real, so the real and
-        // imaginary parts accumulate through independent real FMA chains.
+        // imaginary parts are independent real sums, each split into two partial
+        // sums joined by one subtraction.
         let o = &other.0;
         let acc = |sel: fn(&C<F>) -> F| {
-            let a = sel(&self.0[0]) * o[0];
-            let a = (-sel(&self.0[1])).mul_add_fast(o[1], a);
-            let a = (-sel(&self.0[2])).mul_add_fast(o[2], a);
-            (-sel(&self.0[3])).mul_add_fast(o[3], a)
+            let even = (-sel(&self.0[2])).mul_add_fast(o[2], sel(&self.0[0]) * o[0]);
+            let odd = sel(&self.0[3]).mul_add_fast(o[3], sel(&self.0[1]) * o[1]);
+            even - odd
         };
         C::new(acc(|c| c.re), acc(|c| c.im))
     }
@@ -497,13 +494,14 @@ pub trait DiracAdjoint: sealed::Sealed + Copy + PartialEq + Eq + 'static {
 }
 
 /// Contract one length-4 complex row against a length-4 complex column.
+///
+/// Two independent accumulation chains, joined by one add, keep the dependent path
+/// to about five operations instead of the eight of a single chain.
 #[inline(always)]
 fn dot4<F: Real>(a: [C<F>; 4], b: [C<F>; 4]) -> C<F> {
-    cmul_add(
-        a[0],
-        b[0],
-        cmul_add(a[1], b[1], cmul_add(a[2], b[2], cmul(a[3], b[3]))),
-    )
+    let even = cmul_add(a[2], b[2], cmul(a[0], b[0]));
+    let odd = cmul_add(a[3], b[3], cmul(a[1], b[1]));
+    even + odd
 }
 
 /// Marker for ket spinors (`u`/`v` columns).
@@ -920,10 +918,7 @@ impl<F: Real, Adj: DiracAdjoint> SpinorRepr<F, Adj> for Bispinor<F, Adj> {
         match chirality {
             Chirality::Left => cmul_add(fo[0], fi[0], cmul(fo[1], fi[1])),
             Chirality::Right => cmul_add(fo[2], fi[2], cmul(fo[3], fi[3])),
-            Chirality::Both => {
-                let l = cmul_add(fo[0], fi[0], cmul(fo[1], fi[1]));
-                cmul_add(fo[2], fi[2], cmul_add(fo[3], fi[3], l))
-            }
+            Chirality::Both => dot4(*fo, *fi),
         }
     }
 
@@ -1223,9 +1218,12 @@ impl<F: Real> AsymRank2Tensor<F> {
     pub fn contract(&self, other: &Self) -> C<F> {
         let s = &other.0;
         let t = &self.0;
-        let spatial = cmul_add(t[3], s[3], cmul_add(t[4], s[4], cmul(t[5], s[5])));
-        let boost = cmul_add(t[0], s[0], cmul_add(t[1], s[1], cmul(t[2], s[2])));
-        (spatial - boost) * (F::one() + F::one())
+        // One independent partial sum per spatial axis `i`: the rotation-like slot
+        // `(j,k)` minus the boost-like slot `(0,i)`.
+        let x = cmul_add(t[5], s[5], -cmul(t[0], s[0]));
+        let y = cmul_add(t[4], s[4], -cmul(t[1], s[1]));
+        let z = cmul_add(t[3], s[3], -cmul(t[2], s[2]));
+        (x + y + z) * (F::one() + F::one())
     }
 
     /// Lower (equivalently raise) both indices: `T_{μν} = g_{μα} g_{νβ} T^{αβ}`.
@@ -1259,12 +1257,18 @@ impl<F: Real> AsymRank2Tensor<F> {
         &self,
         v: &ComplexVector<F, Contravariant>,
     ) -> ComplexVector<F, Contravariant> {
-        let vl = v.dualize();
-        ComplexVector::new(std::array::from_fn(|mu| {
-            (0..4).fold(C::zero(), |acc, nu| {
-                cmul_add(self.get(mu, nu), vl.0[nu], acc)
-            })
-        }))
+        // Written out over the three non-zero entries of each row, with the metric
+        // folded into the tensor's signs: `v_0 = v^0`, `v_i = −v^i`. Each row is one
+        // two-term chain plus an independent product.
+        let t = &self.0;
+        let n = t.map(|x| -x);
+        let v = &v.0;
+        ComplexVector::new([
+            cmul_add(n[0], v[1], cmul(n[1], v[2])) + cmul(n[2], v[3]),
+            cmul_add(n[0], v[0], cmul(n[3], v[2])) + cmul(n[4], v[3]),
+            cmul_add(n[1], v[0], cmul(t[3], v[1])) + cmul(n[5], v[3]),
+            cmul_add(n[2], v[0], cmul(t[4], v[1])) + cmul(t[5], v[2]),
+        ])
     }
 
     /// `T^{μν} a_μ b_ν`, lowering the two contravariant arguments here.
@@ -1274,15 +1278,8 @@ impl<F: Real> AsymRank2Tensor<F> {
         a: &ComplexVector<F, Contravariant>,
         b: &ComplexVector<F, Contravariant>,
     ) -> C<F> {
-        let al = a.dualize();
-        let bl = b.dualize();
-        Self::INDEX_PAIRS
-            .iter()
-            .enumerate()
-            .fold(C::zero(), |acc, (s, &(mu, nu))| {
-                let anti = cmul(al.0[mu], bl.0[nu]) - cmul(al.0[nu], bl.0[mu]);
-                cmul_add(self.0[s], anti, acc)
-            })
+        // `a_μ (T^{μν} b_ν)`: the one-index contraction, then a dot product.
+        a.dot(&self.contract_vector(b).lower())
     }
 }
 
@@ -1623,7 +1620,7 @@ impl<F: Real> Multivector<F> {
         let vectors = self.vector().dualize().dot(&other.vector());
         let axials = self.axial().dualize().dot(&other.axial());
         let bivectors = self.bivector().contract(&other.bivector()) * half;
-        scalars + vectors - axials + bivectors
+        (scalars + vectors) + (bivectors - axials)
     }
 }
 
