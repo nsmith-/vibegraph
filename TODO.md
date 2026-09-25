@@ -446,8 +446,7 @@ above); the entries here are the eventual features.
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
     leg-count ladder that decides whether a MadSpin-style step is ever needed.
   - **S3**: `$` as a pointwise SDE-weighted integrand.
-  - **P1**: polarized external particles (a restricted helicity loop, with the
-    `me_frame` frame dependence pinned and `B_FRAME` reclassified).
+  - **P1** ✅ landed (`3b3f71e`, `3c023b2`; note 38 §4 P1 Landed): polarized external legs, NHEL/IDEN census against MadGraph (35 cards), six gated amplitude rows, `me_frame` consumed with a boosted-frame mutation pin, σ(`e+ e- > w+{0} w-`) +5e-4 over five seeds.
   - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
     grouping.
 

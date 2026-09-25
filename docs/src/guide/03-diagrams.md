@@ -56,8 +56,7 @@ language:
 | `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
 | decay chains `A > B C, B > D E` | refused until stitched decay enumeration exists |
 | 1→n decay processes (`t > w+ b`) | refused until rest-frame phase space exists |
-| polarized legs `{0}` `{T}` `{L}` `{R}` | refused until the restricted helicity loop exists |
-| propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}` | refused |
+| propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
 | `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
 | `[QCD]`, `[real=QCD]`, `!a!` | refused: NLO |
@@ -100,6 +99,51 @@ added to one cross section, so a subprocess reached from two lines
 (`generate p p > e+ e-` then `add process u u~ > e+ e-`) is refused rather
 than counted twice. MadGraph accepts that card and generates `u u~ > e+ e-`
 twice.
+
+**Polarized legs** restrict an external leg to named helicities, with
+MadGraph's codes: `{0}` longitudinal, `{T}` the two transverse states, `{L}`
+and `{R}` helicity −1 and +1 (for a vector `{L}` is still −1, not
+longitudinal), `{+1}`/`{-1}` and the other signed codes, and any
+concatenation of them (`{0T}`). A comma is not a separator, as in MadGraph,
+where it starts a decay. The restriction applies to the helicity sum only:
+the diagrams are those of the unpolarized process, and the helicity
+combinations summed over are the product of each leg's own list — MadGraph's
+`NHEL` table for the card, row for row. What else follows MadGraph exactly:
+
+- A polarized *incoming* leg averages over the helicities it lists, not over
+  its particle's states: `e+ e-{L} > mu+ mu-` divides by 2 where the
+  unpolarized card divides by 4, the cross section of a fully polarized beam.
+  This is MadGraph's `IDEN`.
+- Two outgoing legs are identical, for the `1/n!` symmetry factor, only when
+  they are the same particle polarized alike: `z{0} z{0}` carries `1/2`,
+  `z{0} z{T}` carries 1. A polarized and an unpolarized leg of one particle
+  are different subprocesses throughout — deduplication, grouping,
+  labels.
+- Helicity 0 on a massless boson is kept by the parser and dropped at
+  generation, and an assignment left with no helicity is dropped with it:
+  `define v = z a` then `u u~ > v{0} g` generates `u u~ > z{0} g` alone, and
+  `e+ e- > a{0} z` has no subprocess and is an error.
+- A card where the same outgoing particle is both polarized and not, or
+  polarized with overlapping lists (`p p > z{T} z`, `z{L} z{T}`), is
+  refused: MadGraph calls it ambiguous and a batch run stops there.
+
+Three things MadGraph accepts are refused here: a code that is no helicity
+state of the particle (`z{2}`, `h{R}`: MadGraph hands the number to the
+wavefunction routine regardless), a code listed twice (`z{00}`, which
+MadGraph would sum twice), and two process lines whose subprocesses of the
+same particles would both count some helicity state (`e+ e- > z{0} h` with
+`add process e+ e- > z h`). Lines that split one process by disjoint
+polarizations (`z{0} h` and `z{T} h`) add up to it, as they should.
+
+A polarized squared amplitude is not Lorentz invariant when a *massive* leg
+is polarized, since a massive particle's helicity depends on the frame.
+MadGraph evaluates it in the rest frame its run card's `me_frame` names,
+by default `[1, 2]`, the partonic centre of mass. That is the frame every
+evaluator here is handed, so the default needs nothing; a run card naming
+another frame is refused for such a process. A massless leg's helicity is
+invariant, and a helicity sum is too, so neither a massless polarization nor
+an unpolarized process cares. In an event record a polarized leg's `SPINUP`
+is its helicity, one fixed value for a single-state polarization.
 
 **Coupling orders** constrain how many powers of each coupling the diagrams
 may carry. `QCD=2 QED=2` keeps diagrams with at most two of each; `==` asks
