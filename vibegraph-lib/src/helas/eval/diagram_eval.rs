@@ -260,7 +260,8 @@ impl VertexInfo {
 
     /// The rooting-convention sign of this vertex, common to all its `(color, lorentz)`
     /// terms (see [`VertexTerm::build_sign`]). Product of these over a diagram's vertices,
-    /// evaluated at the canonical `VtxIdx(0)` rooting, is the diagram's
+    /// evaluated at the rooting that takes the diagram's anchor as the amplitude vertex,
+    /// is the diagram's
     /// [`build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign).
     pub(super) fn build_sign(&self) -> i8 {
         let mut it = self.terms.iter().map(|t| t.build_sign());

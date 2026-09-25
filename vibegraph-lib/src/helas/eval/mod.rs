@@ -57,6 +57,8 @@ mod rescale;
 #[cfg(any(test, feature = "bench-internals"))]
 #[cfg_attr(not(test), allow(dead_code))]
 mod prop_harness;
+#[cfg(test)]
+mod renumbering;
 mod root_diagram;
 mod root_lorentz;
 #[cfg(test)]

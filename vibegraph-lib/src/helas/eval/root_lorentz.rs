@@ -65,13 +65,14 @@ pub struct RootedTerm {
     /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
     /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
-    /// per-diagram scalar computed from the *canonical* `VtxIdx(0)` rooting
-    /// ([`DiagramEvalTree::build_convention_sign`]) and carried in the diagram's `fermi_sign`.
+    /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
+    /// amplitude vertex ([`DiagramEvalTree::build_convention_sign`]) and carried in the
+    /// diagram's `fermi_sign`.
     pub build_sign: i8,
     /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
     /// contributes (see [`term_reversed_parity`]). Like `build_sign` it depends on the
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
-    /// at the canonical rooting ([`DiagramEvalTree::reversed_convention_sign`]).
+    /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`]).
     pub reversed_sign: i8,
     /// Whether this term's bilinear carries a Dirac matrix — a `Gamma` or a `Sigma` —
     /// rather than being built from `Identity`, `Gamma5` and the chiral projectors
@@ -947,8 +948,8 @@ fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegA
 /// leg adjoint in `flows`, so it is knowable at compile time here. `idx` is the corrected
 /// output leg (post [`correct_spin_index_for_flow`]), matching the routing `build_child`
 /// performs. Like the build-convention sign, this depends on the rooting, so it is lifted
-/// to a per-diagram scalar evaluated at the canonical `VtxIdx(0)` rooting
-/// ([`DiagramEvalTree::reversed_convention_sign`]).
+/// to a per-diagram scalar evaluated at the rooting that takes the diagram's anchor as
+/// the amplitude vertex ([`DiagramEvalTree::reversed_convention_sign`]).
 fn term_reversed_parity(
     term: &LorentzTerm,
     idx: Option<usize>,
@@ -2310,7 +2311,7 @@ mod tests {
         // VVS1: Metric(1,2) rooted at amplitude → plain Metric contraction. The
         // pure-metric vertex's −1 is the rooting-convention `build_sign`, carried
         // separately from `coeff` (it is lifted per-vertex into the diagram's
-        // `fermi_sign` at the canonical rooting).
+        // `fermi_sign` at the anchor rooting).
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],
