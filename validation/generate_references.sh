@@ -92,6 +92,9 @@ stage_refs() {
   vg_say ">>> runcard_defaults.json — MadGraph's own RunCardLO defaults"
   python "$MG/dump_runcard_defaults.py"
 
+  vg_say ">>> proc_grammar.json — MadGraph's own parser over the proc-card corpus"
+  python "$MG/dump_proc_grammar.py"
+
   vg_say ">>> alphas/reference.csv — MadGraph's alfas_functions.f on a grid"
   bash "$VG_VALIDATION_DIR/alphas/gen_reference.sh"
 
