@@ -399,8 +399,9 @@ lanes4. Symbolicated against each binary's symbol table.
   the propagator denominator is num_complex's overflow-safe reciprocal. That is
   ≈1% of scalar time. At lanes4 the call runs once per lane, alongside two
   `memset_pattern16` calls from the lane field's per-lane fallback, ≈2–3% in
-  all. It is a backlog item, since a plain reciprocal changes rounding and must
-  clear the amplitude oracle.
+  all. Fixed since: the propagators now take `Complex::inv` (`conj / |z|²`),
+  and the evaluator makes no `hypot` calls; the amplitude oracle and the
+  banked gates pass.
 - **Two artefacts not to chase.** `libsystem_kernel` at ~4.5% in every
   profile is wall-clock samples taken while the thread was blocked (criterion's
   gnuplot probe, a rayon latch), not CPU time. Samples on the dylib import
