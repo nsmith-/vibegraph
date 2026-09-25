@@ -7,8 +7,9 @@ gate.
 
 **Current position**: **between sprints.** The `banked-open-ends` validation
 sprint closed 2026-09-07; note 36 §7 is its close-out record and PR #6 carries it.
-**Next**: the performance slot by the rhythm, with candidates in the performance
-backlog below.
+**Next**: the **`process-grammar`** feature sprint (note 38), which takes a feature
+slot in place of the performance slot the rhythm would give (still open for the
+user, note 38 §5). The performance candidates stay in the backlog below.
 
 **Census**, counted from `validation/manifest.toml`: **178 measured cells — 171 ✅,
 7 ⚠️ — plus 4 ⏳ at the long tier and 22 uncovered.** The cells that stay
@@ -28,6 +29,20 @@ Every extension beyond that — BSM UFO support, other beam configurations,
 polarization, decay chains — is in the feature backlog under "Descoped from v1",
 and every descoped surface a card can still reach must be a **hard error**,
 never a silent acceptance.
+
+**Scope decision (user, 2026-09-25)**: the release goal widens to **MadGraph
+leading-order process parity, without MLM matching and without NLO**. That adds
+decay-chain syntax, 1→n decay processes, the s-channel restrictions (`>`, `$`,
+`$$`), or-multiparticles and `add process` over processes with the same final-state
+multiplicity. MLM, then NLO, follow in later sprints, and the data structures
+passed along the pipeline leave room for both (note 38 §3.2). The hard-error rule
+is enforced in one place: the proc card is parsed in full into MadGraph's
+`ProcessDefinition` shape, and a single check refuses every unsupported feature
+before anything downstream reads the card (note 38 §3.1). Its `Unsupported` enum
+is the feature backlog against MadGraph. Audited 2026-09-25 (note 38 §2): today
+`>`, `$`, `[…]`, `set` lines, a second `generate`, duplicates across process
+lines, PDG-code legs and `@N` downstream are all **silently** mishandled, so the
+sprint's first session (G1) closes those before any feature lands.
 
 **Open, and the user's call** (nothing here is blocked on code):
 - whether the repository is made public — `acceptance.yml` 404s on the release
@@ -404,13 +419,34 @@ above); the entries here are the eventual features.
 - **Beam configurations beyond unpolarized `p p` and fixed-energy partonic** —
   antiproton beams (`lpp = -1`, Tevatron), mixed configurations, lepton-PDF /
   photon beams. `RunCard::parse` admits exactly (0,0) and (1,1) today.
-- **Decay-chain process syntax** (`p p > t t~, t > w+ b`) and 1→n
-  single-particle decay processes — the grammar and the phase space both
-  assume a 2→n hard process.
+- ~~Decay-chain process syntax and 1→n decay processes~~ — brought into scope
+  2026-09-25; see `process-grammar` below.
 - **Custom UFO propagators** (`propagators.py`, UFO 2.0) — parse the file and
   thread the propagator forms through the HELAS compiler.
 
 ### In-scope features
+
+- **`process-grammar`** (feature, next; note 38) — MadGraph LO process parity
+  without MLM and NLO. Sessions:
+  - **G1**: full parser, the one `check_supported` scan and the narrowed
+    `SupportedCard`, gated against MadGraph's own parser. Closes every silent
+    row in note 38 §2.
+  - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
+    `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
+    sufficient oracle.
+  - **S2**: `>` and `$$` as diagram filters on `Prop.momentum`, with the
+    direction pin.
+  - **D1**: 1→n decays, gated on partial widths.
+  - **D2**: decay chains stitched from separate enumerations, gated on
+    container equality against the filtered full final state.
+  - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
+    leg-count ladder that decides whether a MadSpin-style step is ever needed.
+  - **S3**: `$` as a pointwise SDE-weighted integrand.
+  - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
+    grouping.
+
+  Open for the user (note 38 §5): whether squared orders and polarized external
+  bosons, both LO features descoped earlier, join this sprint.
 
 - **`madgraph-style-enumeration`** (research, unscheduled) — feyngraph
   enumerates topology-first (QGRAF-style orderly generation, then particle
