@@ -25,7 +25,7 @@
 
 use crate::ufo::UFOModel;
 
-use super::diagram::{Diagram, Prop};
+use super::diagram::{Diagram, LegIdx, Prop, PropIdx};
 
 /// Required and forbidden s-channels of one process, as PDG codes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -99,6 +99,132 @@ fn towards_final_state(prop: &Prop, n_in: usize, n_ext: usize) -> bool {
         .sum();
     debug_assert!(energy != 0, "a timelike line carries energy");
     energy > 0
+}
+
+/// A decay-chain resonance a diagram must hold, for selecting the diagrams of an
+/// undecayed final state that a decay chain describes: an s-channel line carrying
+/// `particle` (as it flows towards the final state) whose final-state side is exactly
+/// `daughters` plus the final-state sides of its `decays`, each of those a resonance of
+/// the same kind inside it.
+///
+/// It generalises [`SChannelFilter`]'s membership test to what the line leads to, and
+/// is what a stitched decay chain is compared against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resonance {
+    /// PDG code, oriented towards the final state.
+    pub particle: i64,
+    /// The final-state particles the resonance decays to directly, by name.
+    pub daughters: Vec<String>,
+    /// Resonances among its products, each with its own products.
+    pub decays: Vec<Resonance>,
+}
+
+impl Resonance {
+    /// The final-state particles the resonance ends in, its decays' included, sorted.
+    fn content(&self) -> Vec<String> {
+        let mut all = self.daughters.clone();
+        all.extend(self.decays.iter().flat_map(Resonance::content));
+        all.sort();
+        all
+    }
+}
+
+/// The propagators of `diagram` that the `chain` resonances are, in the order of a
+/// depth-first walk of `chain` (a resonance before its decays), or `None` when the
+/// diagram does not hold every one of them on distinct, non-overlapping lines.
+///
+/// `names` are the external particles' names, incoming first. With identical particles
+/// a diagram may hold the chain in more than one way; the first assignment found is
+/// returned.
+pub fn match_resonances(
+    diagram: &Diagram,
+    model: &UFOModel,
+    names: &[String],
+    chain: &[Resonance],
+) -> Option<Vec<PropIdx>> {
+    let sides: Vec<Option<(i64, Vec<LegIdx>)>> = (0..diagram.props.len())
+        .map(|p| {
+            let prop = &diagram.props[p];
+            let id = oriented_s_channel_id(prop, diagram, model)?;
+            Some((id, diagram.final_state_side(PropIdx(p))?))
+        })
+        .collect();
+    let mut chosen = Vec::new();
+    let all_final: Vec<LegIdx> = (diagram.n_in..diagram.n_ext()).map(LegIdx).collect();
+    assign(chain, &all_final, &sides, names, &mut chosen).then_some(chosen)
+}
+
+/// Place `resonances`, siblings inside the final-state legs `within`, onto propagators
+/// not yet in `chosen`, disjoint from each other; on success `chosen` holds them and
+/// their decays in walk order.
+fn assign(
+    resonances: &[Resonance],
+    within: &[LegIdx],
+    sides: &[Option<(i64, Vec<LegIdx>)>],
+    names: &[String],
+    chosen: &mut Vec<PropIdx>,
+) -> bool {
+    let Some((first, rest)) = resonances.split_first() else {
+        return true;
+    };
+    let content = first.content();
+    for (p, side) in sides.iter().enumerate() {
+        let Some((id, legs)) = side else { continue };
+        if *id != first.particle
+            || chosen.contains(&PropIdx(p))
+            || !legs.iter().all(|l| within.contains(l))
+        {
+            continue;
+        }
+        let mut names_here: Vec<String> = legs.iter().map(|l| names[l.0].clone()).collect();
+        names_here.sort();
+        if names_here != content {
+            continue;
+        }
+        let mark = chosen.len();
+        chosen.push(PropIdx(p));
+        // The decays sit inside this line; the siblings outside it.
+        let outside: Vec<LegIdx> = within
+            .iter()
+            .copied()
+            .filter(|l| !legs.contains(l))
+            .collect();
+        if assign(&first.decays, legs, sides, names, chosen)
+            && direct_daughters_match(first, legs, &chosen[mark + 1..], sides, names)
+            && assign(rest, &outside, sides, names, chosen)
+        {
+            return true;
+        }
+        chosen.truncate(mark);
+    }
+    false
+}
+
+/// Whether the legs of `legs` outside the lines of the resonance's decays (the first
+/// `decays.len()` top-level entries of `inner`, which lists them in walk order) are its
+/// stated direct daughters.
+fn direct_daughters_match(
+    resonance: &Resonance,
+    legs: &[LegIdx],
+    inner: &[PropIdx],
+    sides: &[Option<(i64, Vec<LegIdx>)>],
+    names: &[String],
+) -> bool {
+    let mut covered: Vec<LegIdx> = Vec::new();
+    for p in inner {
+        if let Some((_, side)) = &sides[p.0] {
+            covered.extend(side);
+        }
+    }
+    let mut direct: Vec<String> = legs
+        .iter()
+        .filter(|l| !covered.contains(l))
+        .map(|l| names[l.0].clone())
+        .collect();
+    direct.sort();
+    let mut stated = resonance.daughters.clone();
+    stated.sort();
+    direct == stated
 }
 
 #[cfg(test)]

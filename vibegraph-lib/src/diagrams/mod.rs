@@ -26,6 +26,7 @@
 //! ```
 
 pub mod alias;
+mod chain;
 pub mod check;
 pub mod diagram;
 pub mod parse;
@@ -35,8 +36,8 @@ pub mod selector;
 
 pub use alias::AliasTable;
 pub use check::{
-    check_supported, AmplitudeOrder, SupportedCard, SupportedLeg, SupportedProcess, Unsupported,
-    UnsupportedCard,
+    check_enumerable, check_supported, AmplitudeOrder, EnumerableCard, SupportedCard, SupportedLeg,
+    SupportedProcess, Unsupported, UnsupportedCard,
 };
 pub use diagram::{ConvertError, Diagram};
 pub use parse::{
@@ -87,6 +88,10 @@ pub enum DiagramError {
     },
     #[error("'{process}' has {n_in} initial-state particles; a decay has exactly one")]
     NotADecay { process: String, n_in: usize },
+    /// A decay-chain line whose decays cannot be stitched onto its core the way it is
+    /// written.
+    #[error("decay chain '{process}': {reason}")]
+    DecayChain { process: String, reason: String },
     /// MadGraph's `NoDiagramException`: a process line none of whose
     /// subprocesses has a diagram is an error, not an empty contribution.
     #[error("no diagrams for '{process}': no subprocess it describes has a diagram")]
@@ -268,6 +273,25 @@ pub fn enumerate_decay(
         });
     }
     generate_from_process(decay, model)
+}
+
+/// Enumerate the diagrams of a card whose decay chains are accepted for enumeration
+/// only ([`check_enumerable`]), on a single thread.
+///
+/// A decay-chain line gives one [`DiagramSet`] per core subprocess and combination of
+/// decays, its final state with every decayed particle replaced by its products in place,
+/// and its diagrams stitched from the core's and the decays' separate enumerations: each
+/// decayed particle is an internal line flagged [`OnShell::Forced`], recorded with its
+/// decay-chain node in the diagram's [`Provenance`]. Every other line enumerates as
+/// [`generate_from_proc_card`] would.
+///
+/// [`OnShell::Forced`]: diagram::OnShell::Forced
+/// [`Provenance`]: diagram::Provenance
+pub fn generate_decay_chains(
+    card: &EnumerableCard,
+    model: &UFOModel,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    generate_from_proc_card(card.card(), model)
 }
 
 /// A leg as a subprocess's identity sees it: the particle and, for a
@@ -493,6 +517,21 @@ const WEIGHTED: &str = "WEIGHTED";
 /// trial with the process's required and forbidden s-channels): an order whose
 /// diagrams they all remove moves the search on.
 fn generate_from_process(
+    process: &SupportedProcess,
+    model: &UFOModel,
+) -> Result<Vec<DiagramSet>, DiagramError> {
+    if !process.decays.is_empty() {
+        return chain::generate_chain(process, model);
+    }
+    let mut sets = generate_undecayed(process, model)?;
+    for diagram in sets.iter_mut().flat_map(|s| s.diagrams.iter_mut()) {
+        diagram.provenance.process = process.id;
+    }
+    Ok(sets)
+}
+
+/// [`generate_from_process`] for a process without decays.
+fn generate_undecayed(
     process: &SupportedProcess,
     model: &UFOModel,
 ) -> Result<Vec<DiagramSet>, DiagramError> {

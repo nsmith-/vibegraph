@@ -13,7 +13,10 @@ use super::compile::AmplitudeEvaluator;
 use super::root_diagram::compile_single_diagram;
 use super::run::BoundAmplitude;
 use crate::diagrams::diagram::{Diagram, VtxIdx};
-use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+use crate::diagrams::{
+    check_enumerable, generate_decay_chains, generate_from_proc_card, parse_proc_card,
+    parse_proc_card_ast, DiagramSet, ParsingOptions,
+};
 use crate::helas::color::colorize::colorize_process;
 use crate::helas::LorentzVector;
 use crate::phasespace::rambo_massive;
@@ -48,6 +51,15 @@ const SM_EXTRAS: &[&str] = &[
     "t > w+ b g",
     "z > e+ e- mu+ mu-",
     "h > e+ e- mu+ mu-",
+    // Decay chains: diagrams stitched from separate core and decay enumerations, with
+    // identical particles permuted between decays.
+    "e+ e- > z z, z > e+ e-",
+    "e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~",
+    "u u~ > t t~ g, t > w+ b",
+    "e+ e- > w+ w-, w+ > j j, w- > j j",
+    "g g > t t~ g, t > w+ b",
+    "u u~ > z g g g, z > e+ e-",
+    "e+ e- > w+ w- z, z > mu+ mu-",
 ];
 
 /// Processes in the manifest rows' own models that the rows themselves do not reach: an
@@ -168,9 +180,17 @@ fn census_processes() -> Vec<(String, Arc<UFOModel>, String)> {
     out
 }
 
-fn generate(process: &str, model: &UFOModel) -> Vec<DiagramSet> {
+/// The diagram sets of one process line; a decay chain is stitched
+/// ([`generate_decay_chains`]).
+pub(super) fn generate(process: &str, model: &UFOModel) -> Vec<DiagramSet> {
+    let text = format!("generate {process}");
+    if process.contains(',') {
+        let ast = parse_proc_card_ast(&text).unwrap();
+        let card = check_enumerable(&ast).unwrap();
+        return generate_decay_chains(&card, model).unwrap();
+    }
     let opts = ParsingOptions::default();
-    let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
+    let card = parse_proc_card(&text, &opts).unwrap();
     generate_from_proc_card(&card, model).unwrap()
 }
 
@@ -186,7 +206,7 @@ const AMP_REL_TOL: f64 = 1e-10;
 const AMP_MAX_DIAGRAMS: usize = 40;
 
 /// A generic phase-space point for `set`, on shell with `evaluated`'s masses.
-fn point(set: &DiagramSet, evaluated: &EvaluatedModel) -> Vec<LorentzVector<f64>> {
+pub(super) fn point(set: &DiagramSet, evaluated: &EvaluatedModel) -> Vec<LorentzVector<f64>> {
     let model = evaluated.model();
     let masses: Vec<f64> = set
         .particles_in
@@ -216,7 +236,7 @@ fn point(set: &DiagramSet, evaluated: &EvaluatedModel) -> Vec<LorentzVector<f64>
 
 /// Every helicity's per-flow amplitudes of a one-diagram set, in the evaluator's
 /// helicity and flow order.
-fn single_diagram_amplitudes(
+pub(super) fn single_diagram_amplitudes(
     set: &DiagramSet,
     diagram: &Diagram,
     model: &UFOModel,
@@ -246,7 +266,7 @@ fn single_diagram_amplitudes(
 /// Two renumberings of `d`: a random one, and one that also moves whichever vertex is
 /// numbered 0 away from index 0 (when there is more than one vertex), so every
 /// convention still keyed to an index rather than to the graph is exercised.
-fn renumberings(d: &Diagram, rng: &mut ChaCha8Rng) -> Vec<(Vec<usize>, Diagram)> {
+fn renumberings(d: &Diagram, model: &UFOModel, rng: &mut ChaCha8Rng) -> Vec<(Vec<usize>, Diagram)> {
     let n_v = d.vertices.len();
     let n_p = d.props.len();
     let mut out = Vec::new();
@@ -259,7 +279,7 @@ fn renumberings(d: &Diagram, rng: &mut ChaCha8Rng) -> Vec<(Vec<usize>, Diagram)>
         let mut prop_order: Vec<usize> = (0..n_p).collect();
         prop_order.shuffle(rng);
         let flip: Vec<bool> = (0..n_p).map(|_| rng.random::<bool>()).collect();
-        let renumbered = d.renumbered(&vertex_order, &prop_order, &flip);
+        let renumbered = d.renumbered(&vertex_order, &prop_order, &flip, model);
         out.push((vertex_order, renumbered));
     }
     out
@@ -301,7 +321,7 @@ fn renumbering_preserves_signs_and_amplitudes() {
             if set.diagrams.is_empty() || !seen.insert((key.clone(), sub.clone())) {
                 continue;
             }
-            let canonical: HashSet<_> = set.diagrams.iter().map(Diagram::canonical).collect();
+            let canonical: HashSet<_> = set.diagrams.iter().map(|d| d.canonical(&model)).collect();
             if canonical.len() != set.diagrams.len() {
                 failures.push(format!(
                     "{key} | {sub}: {} diagrams have only {} distinct canonical forms",
@@ -314,8 +334,8 @@ fn renumbering_preserves_signs_and_amplitudes() {
             let momenta = with_amps.then(|| point(&set, &evaluated));
             for (di, d) in set.diagrams.iter().enumerate() {
                 n_diagrams += 1;
-                let c = d.canonical();
-                if c.diagram().canonical() != c {
+                let c = d.canonical(&model);
+                if c.diagram().canonical(&model) != c {
                     failures.push(format!(
                         "{key} | {sub} | diagram {di}: canonical form not idempotent"
                     ));
@@ -330,10 +350,10 @@ fn renumbering_preserves_signs_and_amplitudes() {
                 let base_amps = momenta
                     .as_ref()
                     .map(|m| single_diagram_amplitudes(&set, d, &model, &evaluated, m));
-                for (vertex_order, r) in renumberings(d, &mut rng) {
+                for (vertex_order, r) in renumberings(d, &model, &mut rng) {
                     let tag = format!("{key} | {sub} | diagram {di} | order {vertex_order:?}");
                     n_anchor_moved += (r.anchor() != VtxIdx(0)) as usize;
-                    if r.canonical() != d.canonical() {
+                    if r.canonical(&model) != d.canonical(&model) {
                         failures.push(format!("{tag}: canonical forms differ"));
                     }
                     if vertex_order[r.anchor().0] != d.anchor().0 {
@@ -386,4 +406,76 @@ fn renumbering_preserves_signs_and_amplitudes() {
         "{} renumbering failures",
         failures.len()
     );
+}
+
+/// What a diagram stitched together from separate enumerations has to rebuild from the
+/// graph is what the enumeration hands over: on every census diagram, the sign is the
+/// fermion-pairing parity times the line sign, every propagator's momentum is the
+/// graph's [`Diagram::tree_momentum`], and every propagator names the particle of the
+/// interaction slot at `endpoints[1]` (and its antiparticle at `endpoints[0]`).
+///
+/// Each fails if the rebuilt rule is a different function of the graph from the one the
+/// enumeration applies, on any census diagram that tells them apart.
+#[test]
+fn graph_rebuilt_fields_reproduce_the_enumeration() {
+    use crate::diagrams::diagram::{antiparticle, PropIdx};
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut failures: Vec<String> = Vec::new();
+    let (mut n_diagrams, mut n_props, mut n_charged) = (0, 0, 0);
+    for (key, model, process) in census_processes() {
+        for set in generate(&process, &model) {
+            let sub = format!(
+                "{} > {}",
+                set.particles_in.join(" "),
+                set.particles_out.join(" ")
+            );
+            if set.diagrams.is_empty() || !seen.insert((key.clone(), sub.clone())) {
+                continue;
+            }
+            for (di, d) in set.diagrams.iter().enumerate() {
+                n_diagrams += 1;
+                let tag = format!("{key} | {sub} | diagram {di}");
+                let rebuilt = d.fermion_pairing_sign(&model) * d.fermion_line_sign(&model);
+                if rebuilt != d.sign {
+                    failures.push(format!("{tag}: sign {} rebuilt as {rebuilt}", d.sign));
+                }
+                for (pi, p) in d.props.iter().enumerate() {
+                    n_props += 1;
+                    let momentum = d.tree_momentum(PropIdx(pi));
+                    if momentum != p.momentum {
+                        failures.push(format!(
+                            "{tag} prop {pi}: momentum {:?} rebuilt as {momentum:?}",
+                            p.momentum
+                        ));
+                    }
+                    let slot = |end: usize| {
+                        let (v, s) = p.endpoints[end];
+                        model.vertex_def(d.vertex(v).interaction).particles[s.0]
+                    };
+                    n_charged += usize::from(antiparticle(&model, p.particle) != p.particle);
+                    if slot(1) != p.particle || slot(0) != antiparticle(&model, p.particle) {
+                        failures.push(format!(
+                            "{tag} prop {pi}: particle {} between slots {} and {}",
+                            model.particle(p.particle).name,
+                            model.particle(slot(0)).name,
+                            model.particle(slot(1)).name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "{n_diagrams} diagrams, {n_props} propagators ({n_charged} not self-conjugate), {} \
+         failures",
+        failures.len()
+    );
+    for f in failures.iter().take(40) {
+        println!("  {f}");
+    }
+    assert!(
+        n_charged > 100,
+        "too few charged propagators to pin the orientation"
+    );
+    assert!(failures.is_empty(), "{} rebuild failures", failures.len());
 }

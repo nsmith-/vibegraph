@@ -199,6 +199,9 @@ dump-proc-grammar = "python validation/madgraph/dump_proc_grammar.py"
 # Run the s-channel / WEIGHTED / five-flavour card corpus through MadGraph's own
 # diagram generation — the census the hermetic schannel_census test compares against
 dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
+# Run the decay-chain card corpus through MadGraph's generation and matrix-element
+# combination — the census the hermetic decay_chain_census test compares against
+dump-decay-chain-census = "python validation/madgraph/dump_decay_chain_census.py"
 # Run the polarized-leg card corpus through MadGraph's own generation and bank
 # each matrix element's legs, NHEL table and IDEN — the census the hermetic
 # polarization_census test compares against

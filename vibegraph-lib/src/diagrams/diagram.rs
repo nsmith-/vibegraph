@@ -67,11 +67,64 @@ pub struct Leg {
 /// An internal propagator. Momentum flows `endpoints[0] → endpoints[1]`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Prop {
+    /// The particle flowing `endpoints[0] → endpoints[1]`, with the momentum: the particle
+    /// of the interaction slot at `endpoints[1]`, whose particles are all read incoming.
     pub particle: ParticleId,
     /// The two `(vertex, ray-slot)` endpoints this line connects.
     pub endpoints: [(VtxIdx, RaySlot); 2],
     /// Signed combination of external momenta (entry `i` = coefficient of external `i`).
+    ///
+    /// Of the combinations momentum conservation allows, the one without the last
+    /// external momentum: the external legs on the side of the line that does not hold
+    /// the last leg, incoming ones `+1` and outgoing ones `−1`, negated when that side is
+    /// at `endpoints[1]` ([`Diagram::tree_momentum`]).
     pub momentum: Vec<i8>,
+    /// MadGraph's `onshell` flag for this line.
+    pub onshell: OnShell,
+}
+
+/// MadGraph's per-propagator `onshell` flag (`Leg.onshell`, written out as `gForceBW`).
+///
+/// It changes nothing about the amplitude; it tells phase space what to do with the
+/// line's invariant mass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum OnShell {
+    /// No constraint (`None`): the line is whatever the amplitude makes it.
+    #[default]
+    Free,
+    /// Forced on shell (`True`, `gForceBW = 1`): a decay-chain resonance, whose invariant
+    /// mass is kept within `bwcutoff` widths of its mass.
+    Forced,
+    /// Forbidden on shell (`False`, `gForceBW = 2`): an `$ A` line, whose window is vetoed
+    /// in the integration channels that contain it.
+    Forbidden,
+}
+
+/// A node of a process line's decay chain: `0` is the core, and the decays are numbered
+/// from `1` in the order they are written, a decay's own decays straight after it
+/// (`p p > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~`: `t` 1, `w+` 2, `t~` 3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ChainNode(pub usize);
+
+/// Where one decay of a stitched diagram hangs: the chain node whose enumeration it came
+/// from, and the propagator its decaying particle became.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DecayOrigin {
+    pub node: ChainNode,
+    pub prop: PropIdx,
+}
+
+/// Where a diagram came from on the proc card.
+///
+/// Bookkeeping, not part of the graph: [`CanonicalDiagram`] equality ignores it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Provenance {
+    /// MadGraph's process number of the card line (`@N`, or its position among the
+    /// process lines).
+    pub process: u32,
+    /// For a decay-chain diagram, every decay stitched into it, the core being the rest.
+    /// Empty for any other diagram.
+    pub decays: Vec<DecayOrigin>,
 }
 
 impl Prop {
@@ -126,6 +179,8 @@ pub struct Diagram {
     pub symmetry_factor: usize,
     /// Number of incoming external legs.
     pub n_in: usize,
+    /// The card line and decay-chain nodes the diagram was enumerated from.
+    pub provenance: Provenance,
 }
 
 /// One fermion line of a diagram ([`Diagram::fermion_lines`]).
@@ -140,11 +195,12 @@ pub struct FermionLine {
 
 /// A [`Diagram`] under its canonical internal numbering ([`Diagram::canonical`]).
 ///
-/// Equality and hashing compare every field of the renumbered diagram — legs,
-/// propagators with their particles, endpoints, slots and momenta, vertices with their
-/// interaction, flow group and slot-ordered rays, the sign and the symmetry factor — so
-/// two canonical forms are equal exactly when the diagrams are equal up to renumbering
-/// their internal vertices and propagators. Slot order within a vertex is part of the
+/// Equality and hashing compare every graph field of the renumbered diagram — legs,
+/// propagators with their particles, endpoints, slots, momenta and on-shell flags,
+/// vertices with their interaction, flow group and slot-ordered rays, the sign and the
+/// symmetry factor — so two canonical forms are equal exactly when the diagrams are equal
+/// up to renumbering their internal vertices and propagators. The
+/// [`provenance`](Diagram::provenance) is not compared. Slot order within a vertex is part of the
 /// identity: it is the UFO interaction's particle order, so two diagrams that bind the
 /// same lines to a vertex's slots in different orders are different diagrams here even
 /// where the vertex is symmetric under the swap.
@@ -247,6 +303,7 @@ impl Diagram {
                 particle: pid,
                 endpoints: [(VtxIdx(v0), RaySlot(s0)), (VtxIdx(v1), RaySlot(s1))],
                 momentum: p.momentum(),
+                onshell: OnShell::Free,
             });
         }
 
@@ -298,6 +355,7 @@ impl Diagram {
             sign: view.sign(),
             symmetry_factor: view.symmetry_factor(),
             n_in,
+            provenance: Provenance::default(),
         };
         diagram.sign *= diagram.fermion_line_sign(model);
         Ok(diagram)
@@ -337,14 +395,16 @@ impl Diagram {
     ///
     /// New vertex `i` is old vertex `vertex_order[i]`; new propagator `j` is old
     /// propagator `prop_order[j]`, with its orientation reversed when `flip[j]` (its
-    /// endpoints swapped and its momentum negated, so the momentum it carries along the
-    /// line is unchanged). Legs, rays' slot order, sign and symmetry factor are carried
-    /// over, so the result is the same graph under another internal numbering.
+    /// endpoints swapped, its momentum negated and its particle conjugated, so what flows
+    /// along the line is unchanged). Legs, rays' slot order, sign, symmetry factor and
+    /// provenance are carried over, so the result is the same graph under another
+    /// internal numbering.
     pub fn renumbered(
         &self,
         vertex_order: &[usize],
         prop_order: &[usize],
         flip: &[bool],
+        model: &UFOModel,
     ) -> Diagram {
         assert_eq!(vertex_order.len(), self.vertices.len());
         assert_eq!(prop_order.len(), self.props.len());
@@ -366,14 +426,17 @@ impl Diagram {
                 let p = &self.props[old];
                 let mut endpoints = p.endpoints.map(|(v, slot)| (VtxIdx(new_vertex[v.0]), slot));
                 let mut momentum = p.momentum.clone();
+                let mut particle = p.particle;
                 if flip {
                     endpoints.swap(0, 1);
                     momentum.iter_mut().for_each(|c| *c = -*c);
+                    particle = antiparticle(model, particle);
                 }
                 Prop {
-                    particle: p.particle,
+                    particle,
                     endpoints,
                     momentum,
+                    onshell: p.onshell,
                 }
             })
             .collect();
@@ -401,6 +464,10 @@ impl Diagram {
                 }
             })
             .collect();
+        let mut provenance = self.provenance.clone();
+        for decay in &mut provenance.decays {
+            decay.prop = PropIdx(new_prop[decay.prop.0]);
+        }
         Diagram {
             legs: self.legs.clone(),
             props,
@@ -408,6 +475,7 @@ impl Diagram {
             sign: self.sign,
             symmetry_factor: self.symmetry_factor,
             n_in: self.n_in,
+            provenance,
         }
     }
 
@@ -533,6 +601,91 @@ impl Diagram {
         sign
     }
 
+    /// The parity of the external fermions paired by line: the fermion lines' end legs,
+    /// each pair lower index first and the pairs in the order of their lower index, read
+    /// as a permutation of the legs, `+1` when even. With
+    /// [`fermion_line_sign`](Self::fermion_line_sign) it makes up [`sign`](Self::sign);
+    /// on an enumerated diagram it is feyngraph's `view.sign()`, which counts the same
+    /// inversions (a tree has no closed fermion loop).
+    pub fn fermion_pairing_sign(&self, model: &UFOModel) -> i8 {
+        let order: Vec<usize> = self
+            .fermion_lines(model)
+            .iter()
+            .flat_map(|line| line.legs.map(|l| l.0))
+            .collect();
+        let inversions = (0..order.len())
+            .flat_map(|i| (i + 1..order.len()).map(move |j| (i, j)))
+            .filter(|&(i, j)| order[i] > order[j])
+            .count();
+        if inversions % 2 == 0 {
+            1
+        } else {
+            -1
+        }
+    }
+
+    /// Whether each external leg is on the `endpoints[0]` side of `prop`: reached from
+    /// that endpoint's vertex without crossing the line.
+    fn legs_on_start_side(&self, prop: PropIdx) -> Vec<bool> {
+        let mut on_side = vec![false; self.legs.len()];
+        let mut seen = vec![false; self.vertices.len()];
+        let mut stack = vec![self.prop(prop).endpoints[0].0];
+        while let Some(v) = stack.pop() {
+            if std::mem::replace(&mut seen[v.0], true) {
+                continue;
+            }
+            for &ray in &self.vertex(v).rays {
+                match ray {
+                    Ray::Leg(li) => on_side[li.0] = true,
+                    Ray::Prop { prop: p, end } if p != prop => {
+                        stack.push(self.prop(p).endpoints[1 - end].0)
+                    }
+                    Ray::Prop { .. } => {}
+                }
+            }
+        }
+        on_side
+    }
+
+    /// The momentum `prop` carries `endpoints[0] → endpoints[1]`, from the graph alone, in
+    /// the representation [`Prop::momentum`] documents: the external legs on the side
+    /// without the last leg, incoming `+1` and outgoing `−1`, negated when that side is
+    /// at `endpoints[1]`.
+    pub fn tree_momentum(&self, prop: PropIdx) -> Vec<i8> {
+        let start = self.legs_on_start_side(prop);
+        let last = self.legs.len() - 1;
+        let (side, orientation) = if start[last] { (false, -1) } else { (true, 1) };
+        start
+            .iter()
+            .zip(&self.legs)
+            .map(|(&s, leg)| match (s == side, leg.incoming) {
+                (false, _) => 0,
+                (true, true) => orientation,
+                (true, false) => -orientation,
+            })
+            .collect()
+    }
+
+    /// The external legs on the side of `prop` that holds no incoming leg, in index order,
+    /// or `None` when both sides hold one (a spacelike line). For a timelike line these are
+    /// the final-state particles whose momenta the line carries.
+    pub fn final_state_side(&self, prop: PropIdx) -> Option<Vec<LegIdx>> {
+        let start = self.legs_on_start_side(prop);
+        let incoming_at_start = (0..self.n_in).any(|i| start[i]);
+        let incoming_at_end = (0..self.n_in).any(|i| !start[i]);
+        let side = match (incoming_at_start, incoming_at_end) {
+            (true, false) => false,
+            (false, true) => true,
+            _ => return None,
+        };
+        Some(
+            (0..self.legs.len())
+                .filter(|&i| start[i] == side)
+                .map(LegIdx)
+                .collect(),
+        )
+    }
+
     /// The diagram's anchor: of the vertices with the fewest rays, the first in canonical
     /// order ([`canonical`](Self::canonical)).
     ///
@@ -556,13 +709,13 @@ impl Diagram {
     /// Vertices are numbered in depth-first preorder from the vertex external leg 0
     /// attaches to, descending through each vertex's rays in slot order. Each propagator
     /// takes the number of the vertex it leads to, less one, and is oriented with
-    /// `endpoints[0]` at the end the walk reaches first (its momentum negated where that
-    /// reverses it). The walk reads only the labelled external legs and slot order, so
+    /// `endpoints[0]` at the end the walk reaches first (its momentum negated and its
+    /// particle conjugated where that reverses it). The walk reads only the labelled external legs and slot order, so
     /// every numbering of one diagram has the same canonical form, and two diagrams with
     /// the same canonical form differ only in numbering.
-    pub fn canonical(&self) -> CanonicalDiagram {
+    pub fn canonical(&self, model: &UFOModel) -> CanonicalDiagram {
         let (vertex_order, prop_order, flip) = self.canonical_numbering();
-        CanonicalDiagram(self.renumbered(&vertex_order, &prop_order, &flip))
+        CanonicalDiagram(self.renumbered(&vertex_order, &prop_order, &flip, model))
     }
 
     /// The [`canonical`](Self::canonical) numbering as [`renumbered`](Self::renumbered)
@@ -624,6 +777,17 @@ impl Diagram {
         }
         unreachable!("every external leg attaches to a vertex")
     }
+}
+
+/// The antiparticle of `particle` (itself when self-conjugate).
+pub fn antiparticle(model: &UFOModel, particle: ParticleId) -> ParticleId {
+    let p = model.particle(particle);
+    if p.name == p.antiname {
+        return particle;
+    }
+    model
+        .particle_id(&p.antiname)
+        .expect("a model particle's antiparticle is in the model")
 }
 
 fn resolve_particle(model: &UFOModel, name: &str) -> Result<ParticleId, ConvertError> {
