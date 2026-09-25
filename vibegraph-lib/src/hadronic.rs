@@ -114,6 +114,25 @@ pub enum HadronicError {
          particle content, but the generated subprocesses differ"
     )]
     InconsistentExternals,
+    #[error(
+        "the subprocesses of this fixed-energy card average over different numbers of \
+         initial-state helicities ({first} against {other}), so no single initial-state \
+         average covers their sum"
+    )]
+    InconsistentSpinAverage { first: f64, other: f64 },
+    #[error(
+        "{process} polarizes the massive leg '{particle}', so its squared amplitude depends \
+         on the frame it is evaluated in, and the run card's me_frame names frame_id \
+         {frame_id}; only MadGraph's default, the partonic centre of mass (me_frame = 1, 2; \
+         frame_id 6), is supported"
+    )]
+    PolarizedFrame {
+        process: String,
+        particle: String,
+        frame_id: i64,
+    },
+    #[error("run card: {0}")]
+    RunCard(#[from] crate::runcard::RunCardError),
     #[error("run card scale prescription: {0}")]
     Scale(#[from] ScaleError),
     #[error("running strong coupling: {0}")]
@@ -517,16 +536,29 @@ fn spin_state_count(spin_code: i32, massless: bool) -> usize {
 /// masses, so a process supplies its own averaging denominator instead of a
 /// hand-coded constant (`1/(2·2·3·3) = 1/36` for a quark–antiquark initial state,
 /// `1/(2·2) = 1/4` for `e⁺e⁻`, `1/(2·8·2·8) = 1/256` for `gg`).
+///
+/// A polarized incoming leg counts the helicities it lists, not its particle's
+/// states, as MadGraph's `IDEN` does (`get_denominator_factor`,
+/// `helas_objects.py:4910`): `e+ e-{L} > mu+ mu-` averages by `1/2`, and the
+/// cross section is the one of a fully polarized beam.
 pub fn initial_spin_color_average(
     eval: &AmplitudeEvaluator,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
 ) -> f64 {
     let mut denom = 1.0f64;
-    for &id in eval.external_particles().iter().take(eval.n_in()) {
+    for (&id, pol) in eval
+        .external_particles()
+        .iter()
+        .zip(eval.polarizations())
+        .take(eval.n_in())
+    {
         let particle = model.particle(id);
         let massless = evaluated.mass(id) == 0.0;
-        let n_spin = spin_state_count(particle.spin, massless);
+        let n_spin = match pol {
+            Some(listed) => listed.len(),
+            None => spin_state_count(particle.spin, massless),
+        };
         let n_color = particle.color.unsigned_abs() as usize;
         denom *= (n_spin * n_color) as f64;
     }
@@ -687,7 +719,73 @@ pub fn compile_subprocesses(
     {
         return Err(HadronicError::InconsistentExternals);
     }
+    // The fixed-energy integrand divides the summed matrix element by one
+    // initial-state average; polarized incoming legs can make it differ.
+    let average = initial_spin_color_average(&evals[0], model, evaluated);
+    for e in &evals[1..] {
+        let other = initial_spin_color_average(e, model, evaluated);
+        if other != average {
+            return Err(HadronicError::InconsistentSpinAverage {
+                first: 1.0 / average,
+                other: 1.0 / other,
+            });
+        }
+    }
     Ok(evals)
+}
+
+/// Refuse a run card whose `me_frame` is not the partonic centre of mass for a
+/// process with a polarized massive leg.
+///
+/// A massive particle's helicity is not Lorentz invariant, so neither is a
+/// squared amplitude restricted to some of its helicities: it is the value in
+/// one frame, and MadGraph takes that frame from `me_frame`. Every evaluator
+/// here is handed partonic centre-of-mass momenta, which is MadGraph's default
+/// (`frame_id` 6, where MadEvent evaluates the momenta it generated
+/// unboosted). A massless leg's helicity is invariant, and a sum over all of a
+/// leg's helicities is too, so only a polarized massive leg makes the frame
+/// matter — the same condition under which MadGraph shows the frame block in
+/// its run card (`banner.py:5027`).
+pub fn refuse_polarized_frame<'a>(
+    card: &RunCard,
+    evaluators: impl IntoIterator<Item = &'a AmplitudeEvaluator>,
+    model: &UFOModel,
+) -> Result<(), HadronicError> {
+    let frame_id = card.frame_id()?;
+    if frame_id == 6 {
+        return Ok(());
+    }
+    for eval in evaluators {
+        for (&id, pol) in eval.external_particles().iter().zip(eval.polarizations()) {
+            let particle = model.particle(id);
+            if pol.is_some() && particle.mass_param != "ZERO" {
+                let names: Vec<&str> = eval
+                    .external_particles()
+                    .iter()
+                    .map(|&p| model.particle(p).name.as_str())
+                    .collect();
+                return Err(HadronicError::PolarizedFrame {
+                    process: names.join(" "),
+                    particle: particle.name.clone(),
+                    frame_id,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `1 / Π_s n_s!` over a compiled subprocess's outgoing legs, two legs counting
+/// as identical when they are the same particle with the same polarization, as
+/// in MadGraph's `identical_particle_factor` (`base_objects.py:3742`, keyed on
+/// `(id, polarization)`): `z{0} z{0}` is `1/2`, `z{0} z{T}` is `1`.
+pub fn outgoing_symmetry_factor(eval: &AmplitudeEvaluator) -> f64 {
+    let n_in = eval.n_in();
+    let legs: Vec<_> = eval.external_particles()[n_in..]
+        .iter()
+        .zip(&eval.polarizations()[n_in..])
+        .collect();
+    identical_particle_factor(&legs)
 }
 
 /// What one subprocess of a summed matrix element computes, carrying no
@@ -735,7 +833,7 @@ impl<'a> SubprocessProto<'a> {
     pub(crate) fn fixed(amp: &'a BoundAmplitude<'a, f64>) -> Self {
         let eval = amp.evaluator();
         SubprocessProto {
-            symmetry_factor: identical_particle_factor(&eval.external_particles()[eval.n_in()..]),
+            symmetry_factor: outgoing_symmetry_factor(eval),
             amp: ProtoAmplitude::Fixed(amp),
         }
     }
@@ -2479,7 +2577,7 @@ mod tests {
         let evaluated = EvaluatedModel::from_model(m.clone());
         let factor = |proc: &str| {
             let eval = build_evaluator(proc, &m, &evaluated);
-            identical_particle_factor(&eval.external_particles()[eval.n_in()..])
+            outgoing_symmetry_factor(&eval)
         };
         assert_eq!(factor("g g > g g"), 0.5);
         assert_eq!(factor("g g > t t~"), 1.0);
@@ -2487,6 +2585,11 @@ mod tests {
         assert_eq!(factor("e+ e- > mu+ mu-"), 1.0);
         assert_eq!(factor("u u~ > g g"), 0.5);
         assert_eq!(factor("u u~ > d d~"), 1.0);
+        // Polarization tells two legs of one particle apart, as in MadGraph's
+        // IDEN (`polarization_census` pins the same against MadGraph itself).
+        assert_eq!(factor("e+ e- > z{0} z{0}"), 0.5);
+        assert_eq!(factor("e+ e- > z{0} z{T}"), 1.0);
+        assert_eq!(factor("e+ e- > z{L} z{R}"), 1.0);
     }
 
     /// A summed matrix element weights each subprocess by *its own* factor.

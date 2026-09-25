@@ -199,6 +199,10 @@ dump-proc-grammar = "python validation/madgraph/dump_proc_grammar.py"
 # Run the s-channel / WEIGHTED / five-flavour card corpus through MadGraph's own
 # diagram generation — the census the hermetic schannel_census test compares against
 dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
+# Run the polarized-leg card corpus through MadGraph's own generation and bank
+# each matrix element's legs, NHEL table and IDEN — the census the hermetic
+# polarization_census test compares against
+dump-polarization-census = "python validation/madgraph/dump_polarization_census.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
 # Hadronic cross-section gate: sigma(pp->e+e-) on both dy13 run cards against the

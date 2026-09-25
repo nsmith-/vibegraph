@@ -81,6 +81,25 @@ pub struct Particle {
 }
 
 impl Particle {
+    /// The helicity states an on-shell external leg of this particle sums
+    /// over, as MadGraph's `NHEL` values, or `None` for a spin with no
+    /// wavefunction routine here. The UFO spin code is `2s+1`, negative for
+    /// ghosts. A massless vector has no longitudinal mode (`vxxxxx`'s massless
+    /// branch defines only ±1). The values are MadGraph's
+    /// `Particle.get_helicity_states` (`base_objects.py:469`) as a set; the
+    /// order it reverses for an antiparticle is not kept.
+    pub fn helicity_states(&self) -> Option<Vec<i32>> {
+        let massless = self.mass_param == "ZERO";
+        match (self.spin.abs(), massless) {
+            (1, _) => Some(vec![0]),
+            (2, _) => Some(vec![-1, 1]),
+            (3, false) => Some(vec![-1, 0, 1]),
+            (3, true) => Some(vec![-1, 1]),
+            (5, _) => Some(vec![-2, -1, 0, 1, 2]),
+            _ => None,
+        }
+    }
+
     /// Return the antiparticle, assigning `python_name` as its variable name.
     pub fn make_anti(&self, python_name: impl Into<String>) -> Particle {
         Particle {

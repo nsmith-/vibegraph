@@ -26,8 +26,9 @@ use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions, SupportedCard};
 use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs, ChannelIntegration,
-    FixedBeamIntegrand, FixedBeams, RunningCouplingReport,
+    compile_subprocesses, initial_spin_color_average, process_external_legs,
+    refuse_polarized_frame, ChannelIntegration, FixedBeamIntegrand, FixedBeams,
+    RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::{PdfMember, PdfSet};
@@ -747,6 +748,7 @@ fn integrate_fixed_energy(
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
     let bounds: Vec<_> = evals
         .iter()
         .map(|e| BoundAmplitude::<f64>::bind(e, evaluated))

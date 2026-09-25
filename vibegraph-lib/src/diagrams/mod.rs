@@ -59,7 +59,8 @@ use crate::ufo::UFOModel;
 
 use resolve::{
     check_order_name, forbidden_propagator_names, forbidden_s_channel_ids, leg_names,
-    model_aliases, required_s_channel_ids, ResolveError,
+    leg_polarization_codes, model_aliases, polarizations_unambiguous, required_s_channel_ids,
+    ResolveError,
 };
 use schannel::SChannelFilter;
 use selector::{build_selector, ConcreteProcess};
@@ -104,7 +105,42 @@ pub enum DiagramError {
 pub struct DiagramSet {
     pub particles_in: Vec<String>,
     pub particles_out: Vec<String>,
+    /// Per external leg, incoming first: the helicities a polarized leg is
+    /// restricted to, as MadGraph's `NHEL` values in the order the card listed
+    /// them, or `None` for a leg summed over all its states.
+    pub polarizations: Vec<Option<Vec<i32>>>,
     pub diagrams: Vec<Diagram>,
+}
+
+impl DiagramSet {
+    /// Whether any leg is polarized.
+    pub fn is_polarized(&self) -> bool {
+        self.polarizations.iter().any(Option::is_some)
+    }
+
+    /// `u u~ > z{0} g`: the subprocess with each polarized leg's helicities.
+    pub fn label(&self) -> String {
+        let n_in = self.particles_in.len();
+        let side = |names: &[String], offset: usize| {
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| match &self.polarizations.get(offset + i) {
+                    Some(Some(h)) => format!(
+                        "{name}{{{}}}",
+                        h.iter().map(i32::to_string).collect::<Vec<_>>().join(",")
+                    ),
+                    _ => name.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        format!(
+            "{} > {}",
+            side(&self.particles_in, 0),
+            side(&self.particles_out, n_in)
+        )
+    }
 }
 
 // ── Public parsing API ────────────────────────────────────────────────────────
@@ -211,15 +247,81 @@ pub fn generate_from_proc_card_in(
     }
 }
 
-/// A subprocess's identity: the unordered content of each side.
-type SubprocessKey = (Vec<String>, Vec<String>);
+/// A leg as a subprocess's identity sees it: the particle and, for a
+/// polarized leg, its helicities.
+type KeyLeg = (String, Option<Vec<i32>>);
 
-fn subprocess_key(initial: &[String], final_state: &[String]) -> SubprocessKey {
-    let mut i = initial.to_vec();
+/// A subprocess's identity: the unordered content of each side. A polarized
+/// leg and an unpolarized one of the same particle are different content, as
+/// they are in MadGraph's own deduplication (`diagram_generation.py:1765`
+/// keys the final state on `(id, polarization)`).
+type SubprocessKey = (Vec<KeyLeg>, Vec<KeyLeg>);
+
+fn subprocess_key(
+    initial: &[String],
+    final_state: &[String],
+    polarizations: &[Option<Vec<i32>>],
+) -> SubprocessKey {
+    let side = |names: &[String], pols: &[Option<Vec<i32>>]| {
+        let mut legs: Vec<KeyLeg> = names.iter().cloned().zip(pols.iter().cloned()).collect();
+        legs.sort();
+        legs
+    };
+    let (pi, pf) = polarizations.split_at(initial.len());
+    (side(initial, pi), side(final_state, pf))
+}
+
+/// The unordered particle content of each side, without polarizations.
+type FlavourKey = (Vec<String>, Vec<String>);
+
+fn flavour_key(set: &DiagramSet) -> FlavourKey {
+    let mut i = set.particles_in.clone();
     i.sort();
-    let mut f = final_state.to_vec();
+    let mut f = set.particles_out.clone();
     f.sort();
     (i, f)
+}
+
+/// One helicity state of a subprocess: the unordered `(particle, helicity)`
+/// content of each side.
+type SummedState = (Vec<(String, i32)>, Vec<(String, i32)>);
+
+/// Every helicity state a subprocess sums over, each as the unordered
+/// `(particle, helicity)` content of each side: the physical states two
+/// subprocesses of the same particles would both count.
+fn summed_states(
+    set: &DiagramSet,
+    model: &UFOModel,
+) -> Result<std::collections::HashSet<SummedState>, DiagramError> {
+    let names: Vec<&String> = set.particles_in.iter().chain(&set.particles_out).collect();
+    let states = names
+        .iter()
+        .zip(&set.polarizations)
+        .map(|(name, pol)| match pol {
+            Some(h) => Ok(h.clone()),
+            None => {
+                let particle = model
+                    .particles
+                    .get(name.as_str())
+                    .ok_or_else(|| ResolveError::UnknownParticle((*name).clone()))?;
+                Ok(particle.helicity_states().unwrap_or_default())
+            }
+        })
+        .collect::<Result<Vec<_>, ResolveError>>()?;
+    let n_in = set.particles_in.len();
+    let mut out = std::collections::HashSet::new();
+    for combo in states.iter().multi_cartesian_product() {
+        let mut legs: Vec<(String, i32)> = names
+            .iter()
+            .zip(combo)
+            .map(|(n, h)| ((*n).clone(), *h))
+            .collect();
+        let mut fin = legs.split_off(n_in);
+        legs.sort();
+        fin.sort();
+        out.insert((legs, fin));
+    }
+    Ok(out)
 }
 
 fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramSet>, DiagramError> {
@@ -232,7 +334,12 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     // lets exactly this through (`generate p p > e+ e-` then `add process
     // u u~ > e+ e-` generates `u u~ > e+ e-` twice), so the refusal here is on
     // the subprocess alone.
-    let mut owner: HashMap<SubprocessKey, usize> = HashMap::new();
+    //
+    // Two lines may produce the same particles with polarizations that sum
+    // over disjoint helicity states (`e+ e- > z{0} h` and `e+ e- > z{T} h`):
+    // those add without double counting and are kept. Any state both would
+    // count is refused.
+    let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
         let process_sets = generate_from_process(process, model)?;
         if process_sets.iter().all(|s| s.diagrams.is_empty()) {
@@ -240,19 +347,22 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
                 process: process.to_string(),
             });
         }
-        for set in process_sets.iter().filter(|s| !s.diagrams.is_empty()) {
-            let key = subprocess_key(&set.particles_in, &set.particles_out);
-            if let Some(first) = owner.insert(key, index) {
-                return Err(DiagramError::DuplicateSubprocess {
-                    subprocess: format!(
-                        "{} > {}",
-                        set.particles_in.join(" "),
-                        set.particles_out.join(" ")
-                    ),
-                    first: proc_card.processes[first].to_string(),
-                    second: process.to_string(),
-                });
+        for (offset, set) in process_sets.iter().enumerate() {
+            if set.diagrams.is_empty() {
+                continue;
             }
+            let earlier = owner.entry(flavour_key(set)).or_default();
+            for &(first, at) in earlier.iter().filter(|(line, _)| *line != index) {
+                let states = summed_states(set, model)?;
+                if !summed_states(&sets[at], model)?.is_disjoint(&states) {
+                    return Err(DiagramError::DuplicateSubprocess {
+                        subprocess: set.label(),
+                        first: proc_card.processes[first].to_string(),
+                        second: process.to_string(),
+                    });
+                }
+            }
+            earlier.push((index, sets.len() + offset));
         }
         sets.extend(process_sets);
     }
@@ -272,11 +382,70 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
 struct ExpandedProcess {
     initial: Vec<Vec<String>>,
     final_state: Vec<Vec<String>>,
+    /// Per leg, incoming first: a polarized leg's helicity codes as the card
+    /// wrote them, before any concrete particle is chosen.
+    polarizations: Vec<Option<LegPolarization>>,
     forbidden_particles: Vec<String>,
     /// The coupling-order constraints feyngraph selects on; `WEIGHTED` is not
     /// among them.
     orders: Vec<AmplitudeOrder>,
     schannels: SChannelFilter,
+}
+
+/// A polarized leg of a process line, before a concrete particle is chosen.
+struct LegPolarization {
+    /// The leg as written, `w+{0}`, for error messages.
+    text: String,
+    codes: Vec<i64>,
+}
+
+/// A polarized leg's helicities on one concrete particle, or `None` when none
+/// is left and MadGraph drops the assignment.
+///
+/// Helicity 0 of a massless boson is kept by MadGraph's parser, so that a
+/// multiparticle mixing massive and massless bosons can be polarized
+/// longitudinally, and removed at generation (`diagram_generation.py:1751`
+/// and `:1791`); a leg left with no helicity drops the assignment. Codes
+/// MadGraph reads but that are no helicity state of the particle (`z{2}`,
+/// `h{R}`) and a code listed twice (`z{00}`), which MadGraph would sum twice,
+/// are refused rather than handed to the wavefunction routines.
+fn concrete_polarization(
+    model: &UFOModel,
+    name: &str,
+    pol: &LegPolarization,
+) -> Result<Option<Vec<i32>>, ResolveError> {
+    let particle = model
+        .particles
+        .get(name)
+        .ok_or_else(|| ResolveError::UnknownParticle(name.to_owned()))?;
+    let massless = particle.mass_param == "ZERO";
+    let err = |why| ResolveError::Polarization {
+        leg: name.to_owned(),
+        pol: pol.text.clone(),
+        why,
+    };
+    let codes: Vec<i32> = pol
+        .codes
+        .iter()
+        .filter(|&&c| !(c == 0 && massless && matches!(particle.spin.abs(), 3 | 5)))
+        .map(|&c| c as i32)
+        .collect();
+    if codes.is_empty() {
+        return Ok(None);
+    }
+    let states = particle
+        .helicity_states()
+        .ok_or_else(|| err("the particle's spin has no helicity states here"))?;
+    if codes.iter().any(|c| !states.contains(c)) {
+        return Err(err("a listed helicity is not a state of the particle"));
+    }
+    let mut unique = codes.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    if unique.len() != codes.len() {
+        return Err(err("a helicity is listed twice and would be summed twice"));
+    }
+    Ok(Some(codes))
 }
 
 /// The name MadGraph gives the hierarchy-weighted sum of a diagram's coupling
@@ -317,6 +486,53 @@ fn generate_from_process(
             .map(|l| leg_names(model, &l.particle, &l.token, &aliases))
             .collect()
     };
+    let polarization = |l: &SupportedLeg| -> Result<Option<LegPolarization>, ResolveError> {
+        l.polarization
+            .as_ref()
+            .map(|pol| {
+                Ok(LegPolarization {
+                    text: l.to_string(),
+                    codes: leg_polarization_codes(model, &l.particle, &l.token, pol, &aliases)?,
+                })
+            })
+            .transpose()
+    };
+    let polarizations = process
+        .initial
+        .iter()
+        .chain(&process.final_state)
+        .map(polarization)
+        .collect::<Result<Vec<_>, _>>()?;
+    let ids = |l: &SupportedLeg| -> Result<Vec<i64>, ResolveError> {
+        leg_names(model, &l.particle, &l.token, &aliases)?
+            .iter()
+            .map(|n| {
+                model
+                    .particles
+                    .get(n.as_str())
+                    .map(|p| p.pdg_code)
+                    .ok_or_else(|| ResolveError::UnknownParticle(n.clone()))
+            })
+            .collect()
+    };
+    let n_in = process.initial.len();
+    let checked = process
+        .initial
+        .iter()
+        .chain(&process.final_state)
+        .zip(&polarizations)
+        .enumerate()
+        .map(|(i, (l, p))| {
+            Ok((
+                i >= n_in,
+                ids(l)?,
+                p.as_ref().map(|p| p.codes.clone()).unwrap_or_default(),
+            ))
+        })
+        .collect::<Result<Vec<_>, ResolveError>>()?;
+    if !polarizations_unambiguous(&checked) {
+        return Err(ResolveError::AmbiguousPolarization(process.to_string()).into());
+    }
     let schannels = SChannelFilter {
         required: required_s_channel_ids(&process.required_s_channels, &aliases, model)?,
         forbidden: forbidden_s_channel_ids(&process.forbidden_s_channels, &aliases, model)?,
@@ -340,6 +556,7 @@ fn generate_from_process(
     let expanded = ExpandedProcess {
         initial: legs(&process.initial)?,
         final_state: legs(&process.final_state)?,
+        polarizations,
         forbidden_particles: forbidden_propagator_names(
             model,
             &process.forbidden_particles,
@@ -466,6 +683,7 @@ fn generate_sets_inner(
     let mut candidates = 0usize;
     let mut duplicates = 0usize;
     let mut charge_kills = 0usize;
+    let mut dropped_polarizations = 0usize;
     // Deduplicate on (sorted initial, sorted final): a concrete subprocess is
     // identified by the *unordered* content of each side, so a card whose
     // final-state slots draw on intersecting alias sets (`p p > j j`) yields
@@ -500,7 +718,7 @@ fn generate_sets_inner(
         .multi_cartesian_product()
         .collect();
 
-    for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
+    'assignments: for (initial, final_state) in itertools::iproduct!(initial_combos, final_combos) {
         candidates += 1;
         let concrete = ConcreteProcess {
             initial,
@@ -509,7 +727,30 @@ fn generate_sets_inner(
             orders: process.orders.clone(),
         };
 
-        if !seen_processes.insert(subprocess_key(&concrete.initial, &concrete.final_state)) {
+        let mut polarizations = Vec::with_capacity(process.polarizations.len());
+        for (name, pol) in concrete
+            .initial
+            .iter()
+            .chain(&concrete.final_state)
+            .zip(&process.polarizations)
+        {
+            match pol {
+                None => polarizations.push(None),
+                Some(pol) => match concrete_polarization(model, name, pol)? {
+                    Some(h) => polarizations.push(Some(h)),
+                    None => {
+                        dropped_polarizations += 1;
+                        continue 'assignments;
+                    }
+                },
+            }
+        }
+
+        if !seen_processes.insert(subprocess_key(
+            &concrete.initial,
+            &concrete.final_state,
+            &polarizations,
+        )) {
             duplicates += 1;
             continue;
         }
@@ -590,6 +831,7 @@ fn generate_sets_inner(
         sets.push(DiagramSet {
             particles_in: concrete.initial,
             particles_out: concrete.final_state,
+            polarizations,
             diagrams,
         });
         progress::step(progress::stage::ENUMERATE, sets.len() as u64, None);
@@ -601,7 +843,7 @@ fn generate_sets_inner(
     if sets.iter().any(|s| !s.diagrams.is_empty()) {
         debug!(
             "{candidates} alias-expanded assignments: {duplicates} duplicate, {charge_kills} \
-             charge-violating, {} enumerated",
+             charge-violating, {dropped_polarizations} with no helicity left, {} enumerated",
             sets.len()
         );
     }

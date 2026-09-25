@@ -5,7 +5,7 @@
 //! this generator can honour, and reports *every* one it cannot rather than the
 //! first. What it hands on is a [`SupportedCard`], a narrower type with no field
 //! for a refused feature: code downstream cannot read a `$` restriction or a
-//! polarization, because the type it is given has nowhere to hold one.
+//! decay chain, because the type it is given has nowhere to hold one.
 //! Supporting a feature means giving it a field here, and removing its
 //! [`Unsupported`] variant, in the same change as the code that honours it.
 //!
@@ -19,7 +19,7 @@
 //! | [`ForbiddenOnShellSChannel`](Unsupported::ForbiddenOnShellSChannel) | `$ A` | a per-channel on-shell veto in the integrand |
 //! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | stitched core and decay enumerations |
 //! | [`DecayProcess`](Unsupported::DecayProcess) | `t > w+ b` (1→n) | rest-frame phase space and partial widths |
-//! | [`Polarization`](Unsupported::Polarization) | `w+{0}`, `z{T}`, `e-{L}` | a restricted helicity loop per leg |
+//! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
 //! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order (not planned) |
@@ -47,7 +47,8 @@ use thiserror::Error;
 
 use super::alias::AliasTable;
 use super::parse::{
-    Command, CouplingOp, LegParticle, ModelImport, ProcCardAst, ProcessDefinition, ProcessLine,
+    Command, CouplingOp, LegParticle, LegState, ModelImport, ProcCardAst, ProcessDefinition,
+    ProcessLine,
 };
 
 // ── The narrow type ───────────────────────────────────────────────────────────
@@ -90,6 +91,20 @@ pub struct SupportedLeg {
     pub particle: LegParticle,
     /// The token as written (`2e+` for a leg from a repeat count).
     pub token: String,
+    /// The text between `{` and `}` of a polarized leg (`0`, `T`, `L`, `+1`),
+    /// as written. Its helicity codes need the particle's spin, so they are
+    /// read where the model is.
+    pub polarization: Option<String>,
+}
+
+impl Display for SupportedLeg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.particle)?;
+        if let Some(pol) = &self.polarization {
+            write!(f, "{{{pol}}}")?;
+        }
+        Ok(())
+    }
 }
 
 /// An amplitude-level coupling-order constraint: a bound on the order of each
@@ -117,7 +132,7 @@ impl Display for SupportedProcess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let side = |legs: &[SupportedLeg]| {
             legs.iter()
-                .map(|l| l.particle.to_string())
+                .map(|l| l.to_string())
                 .collect::<Vec<_>>()
                 .join(" ")
         };
@@ -172,13 +187,14 @@ pub enum Unsupported {
     /// MadEvent describes one.
     #[error("'{process}': {n} initial-state particles; a process has one or two")]
     InitialState { process: String, n: usize },
-    /// A polarized external leg, `w+{0}`, `z{T}`, `e-{L}`: that leg's helicity
-    /// sum restricted to the named states.
+    /// A polarization on a leg a decay chain decays, `p p > w+{0} w-, w+ >
+    /// e+ ve`: the resonance is then a propagator, and MadGraph replaces its
+    /// numerator by the projection on the named helicities.
     #[error(
-        "'{process}': polarized leg '{leg}' is not supported yet — it restricts the leg's \
-         helicity sum and fixes the frame the squared amplitude is evaluated in"
+        "'{process}': polarization '{leg}' is on a particle the line decays, which makes it \
+         a helicity projection of the resonance's propagator; that is not supported"
     )]
-    Polarization { process: String, leg: String },
+    DecayedPolarization { process: String, leg: String },
     /// The propagator-only polarization codes (`{A}` auxiliary, `{G}` metric,
     /// `{H}`, `{Q}`, `{W}`, `{S}`), which replace a resonance's propagator
     /// numerator by a projection.
@@ -544,12 +560,18 @@ fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
             n,
         }),
     }
-    check_definition(def, &process(), refused);
+    check_definition(def, &process(), false, refused);
 }
 
 /// The features of a definition and of its decays. The number of initial
 /// particles is checked on the line only: a decay has one by construction.
-fn check_definition(def: &ProcessDefinition, text: &str, refused: &mut Vec<Unsupported>) {
+/// `decay` marks a decay's own definition, whose initial leg is the resonance.
+fn check_definition(
+    def: &ProcessDefinition,
+    text: &str,
+    decay: bool,
+    refused: &mut Vec<Unsupported>,
+) {
     let process = || text.to_owned();
     if !def.forbidden_onsh_s_channels.is_empty() {
         refused.push(Unsupported::ForbiddenOnShellSChannel { process: process() });
@@ -560,23 +582,31 @@ fn check_definition(def: &ProcessDefinition, text: &str, refused: &mut Vec<Unsup
     if def.legs.iter().any(|l| l.tagged) {
         refused.push(Unsupported::PhotonTag { process: process() });
     }
+    let decayed: Vec<&LegParticle> = def
+        .decay_chains
+        .iter()
+        .filter_map(|d| d.initial().next())
+        .map(|l| &l.particle)
+        .collect();
     for leg in &def.legs {
         if let Some(pol) = &leg.polarization {
             let leg_text = format!("{}{{{pol}}}", leg.token);
             let projection = pol
                 .chars()
                 .any(|c| matches!(c.to_ascii_uppercase(), 'A' | 'G' | 'H' | 'Q' | 'W' | 'S'));
-            refused.push(if projection {
-                Unsupported::PropagatorPolarization {
+            if projection {
+                refused.push(Unsupported::PropagatorPolarization {
                     process: process(),
                     leg: leg_text,
-                }
-            } else {
-                Unsupported::Polarization {
+                });
+            } else if (leg.state == LegState::Final && decayed.contains(&&leg.particle))
+                || (decay && leg.state == LegState::Initial)
+            {
+                refused.push(Unsupported::DecayedPolarization {
                     process: process(),
                     leg: leg_text,
-                }
-            });
+                });
+            }
         }
     }
     for order in &def.orders {
@@ -593,7 +623,7 @@ fn check_definition(def: &ProcessDefinition, text: &str, refused: &mut Vec<Unsup
         }
     }
     for decay in &def.decay_chains {
-        check_definition(decay, text, refused);
+        check_definition(decay, text, true, refused);
     }
 }
 
@@ -603,6 +633,7 @@ fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedPro
         legs.map(|l| SupportedLeg {
             particle: l.particle.clone(),
             token: l.token.clone(),
+            polarization: l.polarization.clone(),
         })
         .collect()
     };
@@ -669,7 +700,6 @@ mod tests {
             .map(|u| match u {
                 Unsupported::SetOption { .. } => "set",
                 Unsupported::ForbiddenOnShellSChannel { .. } => "$",
-                Unsupported::Polarization { .. } => "pol",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
                 Unsupported::DecayProcess { .. } => "1>n",
@@ -682,7 +712,7 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["set", "launch", "$", "[]", "pol", "^2", "1>n", "mixed", ",", "mlm"]
+            ["set", "launch", "$", "[]", "^2", "1>n", "mixed", ",", "mlm"]
         );
     }
 
@@ -748,16 +778,30 @@ mod tests {
         .is_ok());
     }
 
+    /// An external leg's polarization reaches the narrow type as written; a
+    /// propagator projection, and a polarization on a resonance a decay chain
+    /// decays, do not.
     #[test]
-    fn propagator_polarizations_are_told_apart() {
+    fn polarizations_on_external_legs_are_carried_and_on_propagators_refused() {
+        let card = check("generate e+ e-{L} > w+{0} w-{T}").unwrap();
+        let p = &card.processes[0];
+        assert_eq!(p.initial[1].polarization.as_deref(), Some("L"));
+        assert_eq!(p.final_state[0].polarization.as_deref(), Some("0"));
+        assert_eq!(p.final_state[1].polarization.as_deref(), Some("T"));
+        assert_eq!(p.initial[0].polarization, None);
+        assert_eq!(p.to_string(), "e+ e-{L} > w+{0} w-{T}");
         assert!(matches!(
             refused("generate e+ e- > z{A} a")[..],
             [Unsupported::PropagatorPolarization { .. }]
         ));
-        assert!(matches!(
-            refused("generate e+ e- > z{T} a")[..],
-            [Unsupported::Polarization { .. }]
-        ));
+        let decayed = refused("generate p p > w+{0} w-, w+ > e+ ve");
+        assert!(decayed
+            .iter()
+            .any(|u| matches!(u, Unsupported::DecayedPolarization { leg, .. } if leg == "w+{0}")));
+        let resonance = refused("generate p p > w+ w-, w+{0} > e+ ve");
+        assert!(resonance
+            .iter()
+            .any(|u| matches!(u, Unsupported::DecayedPolarization { leg, .. } if leg == "w+{0}")));
     }
 
     #[test]

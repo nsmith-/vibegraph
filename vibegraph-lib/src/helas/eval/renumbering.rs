@@ -213,6 +213,7 @@ fn single_diagram_amplitudes(
     let single = DiagramSet {
         particles_in: set.particles_in.clone(),
         particles_out: set.particles_out.clone(),
+        polarizations: set.polarizations.clone(),
         diagrams: vec![diagram.clone()],
     };
     let evaluator = AmplitudeEvaluator::compile(&single, model).expect("compile one diagram");
