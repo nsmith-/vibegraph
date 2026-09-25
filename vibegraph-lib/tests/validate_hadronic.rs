@@ -3683,6 +3683,87 @@ fn without_amp2_weights(text: &str) -> String {
         .collect()
 }
 
+/// What `sigma_llj_dynamical_scale_vs_mg`'s scatter guard reads under the
+/// production maps, at the gate's own configuration, over forty seeds.
+///
+/// The guard forms `χ²/dof` of five seeds about their mean with their quoted
+/// errors and fails above [`LLJ_MAX_CHI2_PER_DOF`]. Whether that threshold is
+/// calibrated is a property of the estimator, not of any five seeds: this reports
+/// the forty-seed `χ²/dof`, the realised seed spread against the mean quoted
+/// error, and how many of the eight disjoint quintets cross the threshold.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_dyn_scatter_guard_calibration() {
+    const SEEDS: u64 = 40;
+    if !dyn_run_present("probe_llj_dyn_scatter_guard_calibration", LLJ_DYN_RUN) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    let mut summary = Vec::new();
+    let runs: Vec<SeedResult> = (0..SEEDS)
+        .map(|k| {
+            let seed = LLJ_SEEDS[0] + k;
+            let (sigma_pb, sigma_err_pb) = run_seed_shaped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+                seed,
+                true,
+                &mut summary,
+                true,
+                ScaleShape::PerEvent,
+            );
+            eprintln!("  seed {seed}: {sigma_pb:.3} ± {sigma_err_pb:.3} pb");
+            SeedResult {
+                seed,
+                sigma_pb,
+                sigma_err_pb,
+            }
+        })
+        .collect();
+    let (mean, _, chi2) = combine_seeds(&runs);
+    let n = runs.len() as f64;
+    let sd = (runs
+        .iter()
+        .map(|r| (r.sigma_pb - mean).powi(2))
+        .sum::<f64>()
+        / (n - 1.0))
+        .sqrt();
+    let quoted = runs.iter().map(|r| r.sigma_err_pb).sum::<f64>() / n;
+    let quintets: Vec<f64> = runs.chunks(5).map(|q| combine_seeds(q).2).collect();
+    let over = quintets
+        .iter()
+        .filter(|&&c| c > LLJ_MAX_CHI2_PER_DOF)
+        .count();
+    eprintln!(
+        "── {LLJ_DYN_RUN} at {LLJ_NEVAL} x {LLJ_NITER}: {SEEDS} seeds, χ²/dof {chi2:.2}, \
+         sd {:.3}% against mean quoted {:.3}% (ratio {:.2}), quintet χ²/dof {quintets:.2?}, \
+         {over} of {} above {LLJ_MAX_CHI2_PER_DOF}",
+        100.0 * sd / mean,
+        100.0 * quoted / mean,
+        sd / quoted,
+        quintets.len(),
+    );
+}
+
 /// Where `p p > l+ l- j`'s sampling variance actually lives.
 ///
 /// The row costs several times MadGraph's evaluations for the same accuracy and

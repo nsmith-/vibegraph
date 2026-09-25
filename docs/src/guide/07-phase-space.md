@@ -160,6 +160,17 @@ How each sampled invariant is drawn depends on what the diagram puts there:
   draw over its kinematic range, whose lower edge is the subsystem's mass
   threshold raised to whatever floor the process's cuts imply.
 
+The decay *angle* of each two-body split is isotropic in the parent's rest
+frame, with one exception. A split with a massless vector, a gluon or a
+photon, as one daughter carries a splitting kernel's soft enhancement,
+$1/z$ or $1/(z(1-z))$ in the daughters' energy fractions, which an isotropic
+draw leaves in the weight. Such a split measures its angle from the parent's
+direction of flight and draws it with a density $\propto 1/(E_1 E_2)$ in the
+daughters' collision-frame energies, which is $dz/(z(1-z))$, confined to the
+angles at which both daughters clear the energy the cuts imply for them. A
+parent at rest has no direction of flight, and the map is the isotropic one
+there.
+
 A **spacelike** (t-channel) line is not a subsystem mass but a momentum
 transfer $t \le 0$, and a diagram carrying spacelike lines is decomposed as
 a *spine*: an ordered chain of peripheral emissions off one beam, each rung
@@ -309,6 +320,50 @@ rules never let a channel stop sampling its own region.
 Identical particles in the final state divide the measure by
 $\prod_s n_s!$, applied per subprocess since it depends on the outgoing
 multiset, not on the matrix element.
+
+### Map choices
+
+A decomposition leaves a few things open that are choices of map rather
+than of physics: every option below is a different parametrisation of the
+same phase space, so the estimator is unbiased under any of them and what
+moves is the variance of the weight — the evaluations a run needs to reach
+an accuracy. `vibegraph integrate` exposes each as a `--map-*` flag whose
+default, `auto`, is a rule that reads the process; the settled choices are
+banked in the artifact and `generate` rebuilds its channels from those, so an
+event sample is always drawn from the maps its grids were trained on.
+
+- **The two-body decay angle** (`--map-split-angle`). The isotropic draw
+  above is flat in $\cos\theta$ against the collision-CM axes. A massless
+  emission's splitting kernel goes like $1/z$ or $1/(z(1-z))$ in the
+  parent's energy fraction $z = E_1/E$, and since $E_1 E_2 = E^2 z(1-z)$ a
+  density $\propto 1/(E_1E_2)$ in the angle measured from the parent's
+  direction of flight is exactly $dz/(z(1-z))$, regulated at both ends by
+  the pair's own mass through $\beta < 1$. `soft-emission` applies that map
+  to the splits with a single gluon or photon daughter, and `soft-all` to
+  every split whose parent moves. Either shape is confined to the angles at
+  which both daughters clear the energy floor the cuts imply, because a
+  $1/E$ map left to run down to the kinematic edge spends most of its draws
+  below the $p_T$ threshold that rejects them; `windowed` is that
+  confinement alone. `auto` picks `soft-emission` where there is such a
+  split, a third fewer evaluations on $u\bar u \to ggg$. `soft-all`
+  measured best everywhere it was tried — half the evaluations on
+  $pp \to \ell^+\ell^- j$, where the shaped split is the lepton pair's — and
+  is the one to ask for there. A $2 \to 2$ process has no split whose parent
+  moves, so there every choice is the isotropic map.
+- **The $\tau = \hat s/s$ draw** of a proton-beam run (`--map-tau`): the
+  logarithmic map of the [hadronic chapter](10-hadronic.md), or MadEvent's
+  $1/\tau^2$. `auto` keeps the logarithm. MadEvent takes $1/\tau^2$ unless a
+  resonance spans the whole final state, whose peak then sits in $\tau$;
+  here that measures a quarter fewer evaluations on dijets and slightly
+  more on Drell–Yan, and is available as `inverse-square`.
+- **The order of a ladder's rungs** (`--map-rung-order`): as the diagram's
+  spacelike lines nest outward from beam 0, or reversed, which exists to be
+  measured against and measures the same.
+
+MadEvent leaves the decay angle to its adaptive grid — its `one_tree` draws
+$\cos\theta$ and $\phi$ flat too — and shapes its invariants partly with the
+same analytic transforms used here and partly by pre-warping the grid; note
+37 in the research notes lists every map it applies against these.
 
 ## Random numbers
 
