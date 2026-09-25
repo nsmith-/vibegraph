@@ -432,9 +432,10 @@ above); the entries here are the eventual features.
   - **G1**: full parser, the one `check_supported` scan and the narrowed
     `SupportedCard`, gated against MadGraph's own parser. Closes every silent
     row in note 38 §2.
-  - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
-    `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
-    sufficient oracle.
+  - **S1** ✅ (`93fff0f`, `2d99872`; note 38 §4 S1 Landed): `Diagram` carries the
+    full Fermi sign, `Diagram::anchor` replaces `VtxIdx(0)`, and `Diagram::canonical`
+    gives container equality. Two findings remain open: the all-vector contact sign
+    (wrong for `g g > g g g`), and the `u u~ > t t~ g NP<=1` four-quark mismatch.
   - **S2**: `>` and `$$` as diagram filters on `Prop.momentum`, with the
     direction pin.
   - **D1**: 1→n decays, gated on partial widths.
