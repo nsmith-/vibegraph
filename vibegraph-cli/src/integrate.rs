@@ -32,13 +32,16 @@ use vibegraph::artifact::{
 };
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::Cuts;
-use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions, SupportedCard};
+use vibegraph::diagrams::{
+    forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
+};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, ChannelIntegration, DecayAtRest, FixedBeamIntegrand, FixedBeams,
     InitialState, Observable, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
+use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
 use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
@@ -365,6 +368,15 @@ impl std::error::Error for IntegrateError {}
 
 fn err(msg: impl Into<String>) -> IntegrateError {
     IntegrateError::Message(msg.into())
+}
+
+/// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
+/// without them.
+pub(crate) fn forbidden_onshell(
+    parsed: &SupportedCard,
+    model: &UFOModel,
+) -> Result<Vec<i64>, IntegrateError> {
+    forbidden_onshell_ids(parsed, model).map_err(|e| err(e.to_string()))
 }
 
 impl IntegrateArgs {
@@ -725,8 +737,12 @@ fn integrate_hadronic(
 
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    let forbidden = forbidden_onshell(parsed, model)?;
+    let markings = subprocess_markings(&sets, &forbidden, model);
     let groups = derive_flavor_groups(sets, model, evaluated, rc)
         .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
+    let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
+        .map_err(|e| err(e.to_string()))?;
     let amps: Vec<BoundAmplitude<f64>> = groups
         .groups()
         .iter()
@@ -743,6 +759,7 @@ fn integrate_hadronic(
         args.maps.options(),
     )
     .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+    integ.use_onshell_veto(vetoes);
     // Both scales and the strong coupling come from the run card; the coupling is
     // the PDF set's own tabulation, which is what the densities were fitted with.
     let scale_report = integ
@@ -810,6 +827,14 @@ fn integrate_fixed_energy(
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let vetoes = subprocess_vetoes(
+        &sets,
+        &evals,
+        &forbidden_onshell(parsed, model)?,
+        evaluated,
+        rc,
+    )
+    .map_err(|e| err(e.to_string()))?;
     refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
     let bounds: Vec<_> = evals
         .iter()
@@ -834,6 +859,7 @@ fn integrate_fixed_energy(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
+    integ.use_onshell_veto(vetoes);
     integ.set_map_options(args.maps.options());
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the

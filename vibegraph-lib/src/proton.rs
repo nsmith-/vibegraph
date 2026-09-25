@@ -102,6 +102,7 @@ use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
+use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
@@ -1120,6 +1121,10 @@ pub struct ProtonIntegrand<'a> {
     /// record reports. What this decides is whether the integrand rebinds its
     /// amplitudes per point: with no `αs` in them there is nothing to rebind.
     alpha_s_dependent: bool,
+    /// Per flavour group, the forbidden on-shell s-channel veto (`$`) its terms
+    /// are weighted by ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or
+    /// `None` for a group, leaves the group's terms the plain `|M|²`.
+    vetoes: Vec<Option<OnShellVeto>>,
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1143,6 +1148,10 @@ struct ProtonScratch<'a> {
     /// Reused `AMP2` buffer for the configuration draw, sized to the widest
     /// group's configuration count.
     amp2_buf: RefCell<Vec<f64>>,
+    /// Reused per-configuration veto flags and `AMP2`, sized to the widest vetoed
+    /// group; empty without a veto.
+    veto_flags: RefCell<Vec<bool>>,
+    veto_amp2: RefCell<Vec<f64>>,
 }
 
 impl<'a> ProtonIntegrand<'a> {
@@ -1335,6 +1344,7 @@ impl<'a> ProtonIntegrand<'a> {
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
             alpha_s_dependent: false,
+            vetoes: Vec::new(),
         })
     }
 
@@ -1354,8 +1364,99 @@ impl<'a> ProtonIntegrand<'a> {
                 mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
+                veto_flags: RefCell::new(vec![false; self.veto_buffer_len()]),
+                veto_amp2: RefCell::new(vec![0.0; self.veto_buffer_len()]),
             }
         })
+    }
+
+    /// Weight each flavour group's terms by MadEvent's forbidden on-shell veto
+    /// (`$`), as [`FixedBeamIntegrand::use_onshell_veto`] does a subprocess's:
+    /// the direct and the mirrored term each by the share of `AMP2` its own
+    /// argument leaves to the configurations off their windows, and the scale's
+    /// and the colour flow's configurations drawn among those.
+    ///
+    /// `vetoes` holds one entry per group, in group order
+    /// ([`crate::onshell::group_vetoes`]).
+    ///
+    /// [`FixedBeamIntegrand::use_onshell_veto`]: crate::hadronic::FixedBeamIntegrand::use_onshell_veto
+    ///
+    /// # Panics
+    ///
+    /// If `vetoes` is neither empty nor one entry per group, or a veto's
+    /// configuration count is not its group's.
+    pub fn use_onshell_veto(&mut self, vetoes: Vec<Option<OnShellVeto>>) {
+        if vetoes.is_empty() {
+            return;
+        }
+        assert_eq!(
+            vetoes.len(),
+            self.groups.groups().len(),
+            "one on-shell veto entry per flavour group"
+        );
+        for (veto, g) in vetoes.iter().zip(self.groups.groups()) {
+            if let Some(veto) = veto {
+                assert_eq!(
+                    veto.n_configs(),
+                    g.evaluator().n_configs(),
+                    "a veto flags its own group's configurations"
+                );
+            }
+        }
+        self.vetoes = vetoes;
+        self.reset_scratch();
+    }
+
+    fn veto_buffer_len(&self) -> usize {
+        self.vetoes
+            .iter()
+            .flatten()
+            .map(OnShellVeto::n_configs)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Group `g`'s veto factor at the matrix-element argument `momenta`, at the
+    /// coupling `sub` is bound at; `1` where nothing is vetoed.
+    fn veto_factor(
+        &self,
+        sc: &ProtonScratch<'a>,
+        g: usize,
+        sub: &BoundSubprocess<'a>,
+        momenta: &[V],
+    ) -> f64 {
+        let Some(veto) = self.vetoes.get(g).and_then(Option::as_ref) else {
+            return 1.0;
+        };
+        let n = veto.n_configs();
+        let mut flags = sc.veto_flags.borrow_mut();
+        if !veto.mark(momenta, &mut flags[..n]) {
+            return 1.0;
+        }
+        let mut amp2 = sc.veto_amp2.borrow_mut();
+        sub.eval_amp2(momenta, &mut amp2[..n]);
+        OnShellVeto::factor(&amp2[..n], &flags[..n])
+    }
+
+    /// Zero group `g`'s configurations vetoed at `momenta` in `weights`; `false`
+    /// where nothing was vetoed and `weights` is untouched.
+    fn mask_vetoed(
+        &self,
+        sc: &ProtonScratch<'a>,
+        g: usize,
+        momenta: &[V],
+        weights: &mut [f64],
+    ) -> bool {
+        let Some(veto) = self.vetoes.get(g).and_then(Option::as_ref) else {
+            return false;
+        };
+        let n = veto.n_configs();
+        let mut flags = sc.veto_flags.borrow_mut();
+        if !veto.mark(momenta, &mut flags[..n]) {
+            return false;
+        }
+        OnShellVeto::mask(weights, &flags[..n]);
+        true
     }
 
     /// Discard every thread's evaluation context, so the next point forks a fresh
@@ -1702,17 +1803,23 @@ impl<'a> ProtonIntegrand<'a> {
 
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
-        for (g, sub) in self.groups.groups().iter().zip(&sc.subs) {
+        for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             let [direct, reflected] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let mut term = 0.0;
             if direct != 0.0 {
-                term += direct * sub.eval_m2(&cm);
+                let kept = self.veto_factor(sc, gi, sub, &cm);
+                if kept != 0.0 {
+                    term += direct * sub.eval_m2(&cm) * kept;
+                }
             }
             // Zero for a group whose beams carry one parton ([`FlavorGroup::has_mirror`]),
             // so such a group costs one matrix element per point rather than two.
             if reflected != 0.0 {
                 g.mirror_into(&cm, &mut mirror);
-                term += reflected * sub.eval_m2(&mirror);
+                let kept = self.veto_factor(sc, gi, sub, &mirror);
+                if kept != 0.0 {
+                    term += reflected * sub.eval_m2(&mirror) * kept;
+                }
             }
             acc += g.spin_color_average() * term;
         }
@@ -1759,6 +1866,12 @@ impl<'a> ProtonIntegrand<'a> {
                 let momenta: Vec<[f64; 4]> = cm.iter().map(components).collect();
                 sets[channel.group].channel_cuts(&momenta, self.s_had, amp2);
             }
+        }
+        // A configuration whose marked line is on its window rejected this point
+        // in MadEvent, so its scale is never clustered there. Where every one of
+        // the group's did, the group carries no weight here and any channel serves.
+        if self.mask_vetoed(sc, channel.group, cm, amp2) && amp2.iter().all(|&w| w == 0.0) {
+            return channel;
         }
         match select_index(amp2, *v) {
             Some(c) => SampledChannel {
@@ -1967,16 +2080,16 @@ impl<'a> ProtonIntegrand<'a> {
 
         let mut m2 = Vec::with_capacity(sc.subs.len());
         let mut terms = Vec::with_capacity(sc.subs.len());
-        for (g, sub) in self.groups.groups().iter().zip(&sc.subs) {
+        for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
             let lumi = g.symmetry_weighted_luminosity_rows(&f1, &f2);
             let direct = if lumi[0] != 0.0 {
-                sub.eval_m2(&event.cm)
+                sub.eval_m2(&event.cm) * self.veto_factor(sc, gi, sub, &event.cm)
             } else {
                 0.0
             };
             let reflected = if lumi[1] != 0.0 {
                 g.mirror_into(&event.cm, &mut mirror);
-                sub.eval_m2(&mirror)
+                sub.eval_m2(&mirror) * self.veto_factor(sc, gi, sub, &mirror)
             } else {
                 0.0
             };
@@ -2026,6 +2139,7 @@ impl<'a> ProtonIntegrand<'a> {
             let momenta: Vec<[f64; 4]> = argument.iter().map(components).collect();
             sets[group].channel_cuts(&momenta, self.s_had, &mut amp2);
         }
+        self.mask_vetoed(sc, group, argument, &mut amp2);
         let drawn = eval.select_helicity(&hel_m2, u[2])?;
         let (_, order) = g.event_legs(member, ordering);
 

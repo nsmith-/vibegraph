@@ -91,6 +91,14 @@ pub enum DiagramError {
     /// subprocesses has a diagram is an error, not an empty contribution.
     #[error("no diagrams for '{process}': no subprocess it describes has a diagram")]
     NoDiagrams { process: String },
+    /// Two process lines of one card name different `$` lists. The generated
+    /// subprocesses do not record which line produced them, so one veto has to
+    /// serve the whole card.
+    #[error(
+        "'{a}' and '{b}' forbid different on-shell s-channels ('$'); a card whose process \
+         lines differ in their '$' list is not supported"
+    )]
+    MixedOnShellVeto { a: String, b: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
     #[error("diagram conversion error: {0}")]
@@ -247,6 +255,35 @@ pub fn generate_from_proc_card_in(
             .build()?
             .install(|| enumerate(proc_card, model)),
     }
+}
+
+/// The card's forbidden on-shell s-channels (`$ A`) as PDG codes, read as the
+/// `$$` list is: the particle as written, compared against a propagator's
+/// oriented s-channel id, so `$ t` leaves an s-channel `t~` alone. Every
+/// process line has to name the same set (empty included), since the veto is
+/// installed on the integrand the card's subprocesses share.
+pub fn forbidden_onshell_ids(
+    proc_card: &SupportedCard,
+    model: &UFOModel,
+) -> Result<Vec<i64>, DiagramError> {
+    let mut common: Option<(&SupportedProcess, Vec<i64>)> = None;
+    for process in &proc_card.processes {
+        let aliases = model_aliases(&process.aliases, model);
+        let mut ids =
+            forbidden_s_channel_ids(&process.forbidden_onshell_s_channels, &aliases, model)?;
+        ids.sort_unstable();
+        match &common {
+            None => common = Some((process, ids)),
+            Some((first, seen)) if *seen != ids => {
+                return Err(DiagramError::MixedOnShellVeto {
+                    a: first.to_string(),
+                    b: process.to_string(),
+                })
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(common.map(|(_, ids)| ids).unwrap_or_default())
 }
 
 /// Enumerate one `1 → n` decay on its own: one [`DiagramSet`] per concrete

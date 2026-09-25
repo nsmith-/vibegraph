@@ -45,6 +45,7 @@ use crate::helas::eval::{
 };
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::scalup;
+use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
@@ -1417,6 +1418,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// The maps the installed multichannel map was built under, or `None` under
     /// flat RAMBO.
     maps: Option<MapChoices>,
+    /// Per subprocess, the forbidden on-shell s-channel veto (`$`) its value is
+    /// weighted by ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or
+    /// `None` for a subprocess, leaves the value the plain `Σ|M|²`.
+    vetoes: Vec<Option<OnShellVeto>>,
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1440,6 +1445,10 @@ struct FixedBeamScratch<'a> {
     /// Reused `AMP2` buffer for the configuration draw, one entry per integration
     /// configuration of the subprocess the channel forests were derived from.
     amp2_buf: RefCell<Vec<f64>>,
+    /// Reused per-configuration veto flags and `AMP2`, sized to the widest vetoed
+    /// subprocess; empty without a veto.
+    veto_flags: RefCell<Vec<bool>>,
+    veto_amp2: RefCell<Vec<f64>>,
 }
 
 /// The phase-space map a [`FixedBeamIntegrand`] draws through.
@@ -1667,7 +1676,103 @@ impl<'a> FixedBeamIntegrand<'a> {
             alpha_s_dependent: false,
             map_options: MapOptions::default(),
             maps: None,
+            vetoes: Vec::new(),
         }
+    }
+
+    /// Weight each subprocess's `|M|²` by MadEvent's forbidden on-shell veto
+    /// (`$`): the share `Σ_c AMP2_c (1 − V_c) / Σ_d AMP2_d` of the configurations
+    /// whose marked lines are off their window at the point ([`OnShellVeto`]).
+    /// The configuration a point's scale is clustered in, and the one an event's
+    /// colour flow is drawn in, are drawn among the configurations left standing,
+    /// as MadEvent only ever produces a point in a configuration that kept it.
+    ///
+    /// `vetoes` holds one entry per subprocess, in subprocess order. `AMP2` is
+    /// taken at the coupling the point's `|M|²` is, as MadEvent's matrix element
+    /// forms both at once.
+    ///
+    /// # Panics
+    ///
+    /// If `vetoes` is neither empty nor one entry per subprocess, or a veto's
+    /// configuration count is not its subprocess's.
+    pub fn use_onshell_veto(&mut self, vetoes: Vec<Option<OnShellVeto>>) {
+        if vetoes.is_empty() {
+            return;
+        }
+        assert_eq!(
+            vetoes.len(),
+            self.subs.len(),
+            "one on-shell veto entry per subprocess"
+        );
+        for (veto, sub) in vetoes.iter().zip(&self.subs) {
+            if let Some(veto) = veto {
+                assert_eq!(
+                    veto.n_configs(),
+                    sub.evaluator().n_configs(),
+                    "a veto flags its own subprocess's configurations"
+                );
+            }
+        }
+        self.vetoes = vetoes;
+        self.reset_scratch();
+    }
+
+    /// The veto on subprocess `i`, if it has one.
+    fn veto(&self, i: usize) -> Option<&OnShellVeto> {
+        self.vetoes.get(i).and_then(Option::as_ref)
+    }
+
+    fn veto_buffer_len(&self) -> usize {
+        self.vetoes
+            .iter()
+            .flatten()
+            .map(OnShellVeto::n_configs)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Subprocess `i`'s veto factor at `ext`, at the coupling `sub` is bound at:
+    /// `1` where it has no veto or no configuration is vetoed, so a point off
+    /// every window costs no `AMP2`.
+    fn veto_factor(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        i: usize,
+        sub: &BoundSubprocess<'a>,
+        ext: &[V],
+    ) -> f64 {
+        let Some(veto) = self.veto(i) else {
+            return 1.0;
+        };
+        let n = veto.n_configs();
+        let mut flags = sc.veto_flags.borrow_mut();
+        if !veto.mark(ext, &mut flags[..n]) {
+            return 1.0;
+        }
+        let mut amp2 = sc.veto_amp2.borrow_mut();
+        sub.eval_amp2(ext, &mut amp2[..n]);
+        OnShellVeto::factor(&amp2[..n], &flags[..n])
+    }
+
+    /// Zero the configurations of subprocess `i` vetoed at `ext` in `weights`;
+    /// `false` where nothing was vetoed and `weights` is untouched.
+    fn mask_vetoed(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        i: usize,
+        ext: &[V],
+        weights: &mut [f64],
+    ) -> bool {
+        let Some(veto) = self.veto(i) else {
+            return false;
+        };
+        let n = veto.n_configs();
+        let mut flags = sc.veto_flags.borrow_mut();
+        if !veto.mark(ext, &mut flags[..n]) {
+            return false;
+        }
+        OnShellVeto::mask(weights, &flags[..n]);
+        true
     }
 
     /// Ask for particular phase-space maps before a multichannel map is built;
@@ -1720,6 +1825,8 @@ impl<'a> FixedBeamIntegrand<'a> {
             scale_buf: RefCell::new(Vec::with_capacity(self.final_masses.len())),
             last_coupling: Cell::new((f64::NAN, f64::NAN)),
             amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
+            veto_flags: RefCell::new(vec![false; self.veto_buffer_len()]),
+            veto_amp2: RefCell::new(vec![0.0; self.veto_buffer_len()]),
         })
     }
 
@@ -1989,12 +2096,19 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// Each subprocess enters weighted by its own identical-particle factor, so a
     /// summed matrix element whose terms have different outgoing multisets is right
     /// term by term. The survey sees the same weighting the integral does.
-    fn matrix_element(&self, sc: &FixedBeamScratch<'a>, momenta: &[V], channel: usize) -> f64 {
+    fn matrix_element(
+        &self,
+        sc: &FixedBeamScratch<'a>,
+        momenta: &[V],
+        channel: usize,
+        scale_u: &[f64],
+    ) -> f64 {
         let ext = self.externals(momenta);
         if !self.passes_cuts(&ext) {
             return 0.0;
         }
-        self.matrix_element_at(sc, &ext, momenta, channel)
+        let scale_channel = self.evaluation_channel(sc, &ext, channel, scale_u);
+        self.matrix_element_at(sc, &ext, momenta, scale_channel)
     }
 
     /// [`matrix_element`](Self::matrix_element) for a point whose externals
@@ -2011,8 +2125,11 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.apply_scale(sc, momenta, channel);
 
         let mut m2 = 0.0;
-        for sub in &sc.subs {
-            m2 += sub.symmetry_factor() * sub.eval_m2(ext);
+        for (i, sub) in sc.subs.iter().enumerate() {
+            let kept = self.veto_factor(sc, i, sub, ext);
+            if kept != 0.0 {
+                m2 += sub.symmetry_factor() * sub.eval_m2(ext) * kept;
+            }
         }
         m2
     }
@@ -2109,13 +2226,7 @@ impl<'a> FixedBeamIntegrand<'a> {
                 let scale_u: Vec<f64> = (0..scale_ndim)
                     .map(|_| scale_draw.borrow_mut().next_uniform::<f64>())
                     .collect();
-                let sc = self.scratch();
-                let ext = self.externals(momenta);
-                self.matrix_element(
-                    sc,
-                    momenta,
-                    self.evaluation_channel(sc, &ext, channel, &scale_u),
-                )
+                self.matrix_element(self.scratch(), momenta, channel, &scale_u)
             },
             seed,
             MULTICHANNEL_ADAPT_STREAM,
@@ -2329,6 +2440,12 @@ impl<'a> FixedBeamIntegrand<'a> {
         let sub = &sc.subs[0];
         let mut amp2 = sc.amp2_buf.borrow_mut();
         self.configuration_weights(sub, ext, &mut amp2);
+        // A configuration whose marked line is on its window rejected this point
+        // in MadEvent, so its scale is never clustered there. Where every one of
+        // them did, the subprocess carries no weight here and any channel serves.
+        if self.mask_vetoed(sc, 0, ext, &mut amp2) && amp2.iter().all(|&w| w == 0.0) {
+            return channel;
+        }
         match select_index(&amp2, *v) {
             Some(c) => c,
             // Every diagram amplitude vanished here, so the coherent sum does too
@@ -2568,7 +2685,12 @@ impl<'a> FixedBeamIntegrand<'a> {
         // cluster scale reads it.
         self.apply_scale(sc, momenta, channel);
 
-        let m2: Vec<f64> = sc.subs.iter().map(|s| s.eval_m2(&ext)).collect();
+        let m2: Vec<f64> = sc
+            .subs
+            .iter()
+            .enumerate()
+            .map(|(i, s)| s.eval_m2(&ext) * self.veto_factor(sc, i, s, &ext))
+            .collect();
         let subprocess = select_index(&m2, u[0])?;
         let sub = &sc.subs[subprocess];
         let eval = sub.evaluator();
@@ -2581,6 +2703,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             let momenta: Vec<[f64; 4]> = ext.iter().map(components).collect();
             set.channel_cuts(&momenta, self.sqrt_s * self.sqrt_s, &mut amp2);
         }
+        self.mask_vetoed(sc, subprocess, &ext, &mut amp2);
 
         Some(EventSelection {
             subprocess,
