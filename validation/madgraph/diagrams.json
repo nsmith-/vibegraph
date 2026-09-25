@@ -37,6 +37,12 @@
       },
       "total_diagrams": 11
     },
+    "ee_to_mumu_eml": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ll": 2
+      },
+      "total_diagrams": 2
+    },
     "ee_to_mumu_smlimit": {
       "diagrams_by_subprocess": {
         "P1_ll_ll": 2
@@ -60,6 +66,12 @@
         "P1_ll_taptamh": 5
       },
       "total_diagrams": 5
+    },
+    "ee_to_tlt": {
+      "diagrams_by_subprocess": {
+        "P1_ll_tLtx": 2
+      },
+      "total_diagrams": 2
     },
     "ee_to_ttx": {
       "diagrams_by_subprocess": {
@@ -85,6 +97,18 @@
       },
       "total_diagrams": 2
     },
+    "ee_to_wp0wm": {
+      "diagrams_by_subprocess": {
+        "P1_ll_wp0wm": 3
+      },
+      "total_diagrams": 3
+    },
+    "ee_to_wp0wmt": {
+      "diagrams_by_subprocess": {
+        "P1_ll_wp0wmT": 3
+      },
+      "total_diagrams": 3
+    },
     "ee_to_wpwm": {
       "diagrams_by_subprocess": {
         "P1_ll_wpwm": 3
@@ -96,6 +120,12 @@
         "P1_ll_wpwm": 7
       },
       "total_diagrams": 7
+    },
+    "ee_to_z0h": {
+      "diagrams_by_subprocess": {
+        "P1_ll_z0h": 1
+      },
+      "total_diagrams": 1
     },
     "ee_to_zh": {
       "diagrams_by_subprocess": {
@@ -285,6 +315,12 @@
     "uux_to_uux": {
       "diagrams_by_subprocess": {
         "P1_qq_qq": 2
+      },
+      "total_diagrams": 2
+    },
+    "uux_to_ztg": {
+      "diagrams_by_subprocess": {
+        "P1_qq_zTg": 2
       },
       "total_diagrams": 2
     },

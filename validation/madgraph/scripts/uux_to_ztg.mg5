@@ -1,0 +1,14 @@
+# MadGraph5 batch script: u u~ > z{T} g at LO
+#
+# Why this exact process:
+#   - A transverse massive vector beside a gluon in a coloured process: the
+#     polarization restricts the Z's helicities and leaves the gluon's sum.
+generate u u~ > z{T} g
+output uux_to_ztg -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

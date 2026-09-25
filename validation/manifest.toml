@@ -1010,6 +1010,112 @@ amplitudes = { tier = "hermetic", mode = "gate", note = "the sextet Clebsch-Gord
 integrals = { tier = "banked", mode = "gate", note = "sigma = 0.00241622 +- 1.624e-6 pb against MadGraph's 0.00241530 +- 1.1174e-6 pb: pull +0.47, rel +3.80e-4, chi2/dof 1.08 at 40000 x 6. The initial state a fixed-energy run collides: s-hat = m_a^2 + m_b^2 + 2(E_a E_b + |p_a||p_b|) from the run card's two energies and the incoming legs' pole masses, both beams on their own mass shells in the partonic centre of mass, and the Moller flux 2 lambda^(1/2)(s-hat, m_a^2, m_b^2) in place of the massless 2 s-hat. This row is one of the suite's three with massive incoming particles, so nothing else here measures any of it. The kinematics themselves are fixed by a finer oracle, this row's own incoming-leg column in the samples gate: the beams the integrand evaluates at are the banked record's to its printed precision (m = 60 and 70 GeV, E = 248.69635439 / 251.29639211, pz = +-241.35011226, so s-hat is 499.99275^2 and not 500^2). What this cell adds is that the flux and the frame the amplitude is evaluated in follow -- neither is visible in a momentum. rel_tol 0.005 is the toy-row convention, set from the measured five-seed spread and not from the achieved central value: worst |rel| 1.1e-3 over the seeds at chi2/dof 0.68, inverse-variance mean -2.4e-4 of the bank. The budget ladder converges rather than drifts -- rel +3.4e-3 / +8.0e-4 / +3.8e-4 / +6.9e-5 / -8.9e-5 at a quarter, a half, one, two and four times the budget." }
 samples = { tier = "banked", mode = "gate", note = "The sextet K6/K6Bar Clebsch coefficients as an event sample, with the sextet internal so no external leg carries two colour lines. Over three generation seeds at 20000 x 4, 20000 events each against MadGraph's 10000: worst KS p 7.558e-2 on y(pdg9000052) and worst categorical chi2 p 3.627e-1 on ICOLUP, both above the 1e-4 floor on every seed. As on the epsilon row, ICOLUP is the whole categorical comparison. The KS and chi-squared columns compare normalised distributions of the outgoing legs, so they are blind to the absolute normalisation -- that is the integrals cell. The incoming legs are compared separately, as an equality against the banked record at the precision that file prints them to (5.0e-9 GeV on the momenta, from the eleven significant digits of MadGraph's Fortran dialect), and they AGREE: worst departure 1.9825e-9 GeV on beam1 E, 0.40 of that bound and nothing but the record's own rounding -- this side computes E = 248.69635439 / 251.29639211 and pz = +-241.35011226, the file spells the same eleven digits. The m = 60 and 70 GeV masses agree exactly, and s-hat is 499.99275^2 on both sides. Both beams are on their own mass shells, at the run card's energy in the partonic centre of mass. Identical on all three generation seeds, as a construction rather than a statistic. The column is enforced. The reported scales are compared beside the legs, at the seven significant digits rw_events.f writes the <event> line with: MadGraph's Python re-serialisation prints the same fields two digits wider, and those two are padding, so reading the spelling alone would compare against digits the reference never wrote. SCALUP gates: SCALUP reads 251.2964 against 251.2964, 7.889e-06 inside the 5.0e-05 the printing allows, so the clustering reproduces the reference's own factorisation scale on this crate's own momenta. AQCDUP is measured and not enforced, and the cause is measured with it: this model declares no aS among its external parameters, the generated parameter card carries no SMINPUTS block, and with no alphas(M_Z) to run from no coupling is built and every record reports 0 against MadGraph's 0.4333599. MadGraph fills the same gap from a literal -- export_v4.py logs 'aS not define as external parameter adding it!', which is in this run's own build.log, and injects aS = 0.138 beside G = 4.1643; setrun.f then recovers alphas(M_Z) from G as G^2/(4pi) = 1.3799843265950287, ten times the aS injected beside it. Reproducing a coupling of 0.4333599 in a model with no strong interaction, on the strength of a fallback whose two halves disagree by a factor of ten, is the one thing here this crate declines to do." }
 
+# ──────────────────────────── the polarized rows ─────────────────────────────
+#
+# External legs restricted to named helicities (`w+{0}`, `z{T}`, `e-{L}`). A
+# polarized |M|^2 sums a subset of the helicity combinations, so what these
+# rows gate is that the subset is MadGraph's own NHEL table and that every
+# combination in it matches per diagram; the averaging factor of a polarized
+# incoming leg and the polarization-aware identical-particle factor are pinned
+# against MadGraph's IDEN by the hermetic `polarization_census` test. Their
+# runs exist in a local work area only.
+
+[[process]]
+key = "ee_to_wp0wmt"
+process = "e+ e- > w+{0} w-{T}"
+script = "validation/madgraph/scripts/ee_to_wp0wmt.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "Both W legs polarized, one longitudinal and one transverse: vxxxxx's helicity-0 vector and the two transverse ones, each alone in its leg's helicity sum, through the triple-gauge vertex and the neutrino exchange."
+artifacts = ["output/ee_to_wp0wmt", "amplitudes/ee_to_wp0wmt.json", "couplings/ee_to_wp0wmt.json"]
+mg_amplitude = { process = "e+ e- > W+{0} W-{T}", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 241 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the helicity table is MadGraph's own 8-row NHEL (W+ at 0 alone, W- at +-1), compared per diagram: |M|^2 max_rel 3.48e-14 on the grid and 2.00e-14 on the event set, per-diagram 3.72e-15, per-flow 2.23e-15, JAMP2 1.11e-14 (G = +1i), the three configurations at 3.87e-15. Restricting the helicity sum is not a restriction MadGraph's IDEN sees on a final-state leg, so the averaging is unchanged; polarization_census pins that" }
+integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card" }
+samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
+[[process]]
+key = "ee_to_wp0wm"
+process = "e+ e- > w+{0} w-"
+script = "validation/madgraph/scripts/ee_to_wp0wm.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "One longitudinal W beside an unpolarized one: the polarized cross section and event sample, and one term of the decomposition of e+ e- > w+ w- by the W+ helicity."
+artifacts = ["output/ee_to_wp0wm", "amplitudes/ee_to_wp0wm.json", "couplings/ee_to_wp0wm.json"]
+mg_amplitude = { process = "e+ e- > W+{0} W-", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 251 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "|M|^2 max_rel 1.46e-13 on the grid and 2.97e-14 on the event set, per-diagram 5.67e-15, per-flow 7.05e-15, JAMP2 1.92e-14 (G = +1i), the three configurations at 5.06e-15, over MadGraph's own 12-row NHEL table" }
+integrals = { tier = "uncovered", note = "measured against this row's MadEvent run with the CLI over five seeds, not by a registered gate: the run is outside the reference bundle" }
+samples = { tier = "uncovered", note = "SPINUP compared against this row's MadEvent event file with the CLI, not by a registered gate: the run is outside the reference bundle" }
+
+[[process]]
+key = "ee_to_z0h"
+process = "e+ e- > z{0} h"
+script = "validation/madgraph/scripts/ee_to_z0h.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "A longitudinal Z against an external scalar: the helicity-0 polarization vector alone in the Z's sum, on the VVS vertex."
+artifacts = ["output/ee_to_z0h", "amplitudes/ee_to_z0h.json", "couplings/ee_to_z0h.json"]
+mg_amplitude = { process = "e+ e- > Z{0} H", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 257 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the longitudinal Z alone: |M|^2 max_rel 2.21e-13 on the grid and 7.70e-15 on the event set, per-diagram 5.96e-15, JAMP2 7.18e-15 (G = +1i), over MadGraph's own 4-row NHEL table" }
+integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card" }
+samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
+[[process]]
+key = "uux_to_ztg"
+process = "u u~ > z{T} g"
+script = "validation/madgraph/scripts/uux_to_ztg.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "A transverse Z beside a gluon in a coloured process: the polarization restricts one massive vector's sum and leaves a massless one's, under a colour average of 1/9."
+artifacts = ["output/uux_to_ztg", "amplitudes/uux_to_ztg.json", "couplings/uux_to_ztg.json"]
+mg_amplitude = { process = "u u~ > Z{T} g", pdgs_in = [2, -2], pdgs_out = [23, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 263 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the transverse Z beside a summed gluon: |M|^2 max_rel 4.46e-14 on the grid and 5.85e-15 on the event set, per-diagram 2.05e-15, JAMP2 5.61e-15 (G = -1i), over MadGraph's own 16-row NHEL table" }
+integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card" }
+samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
+[[process]]
+key = "ee_to_mumu_eml"
+process = "e+ e-{L} > mu+ mu-"
+script = "validation/madgraph/scripts/ee_to_mumu_eml.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "A polarized incoming fermion: one helicity of the electron beam, the leg MadGraph's IDEN then averages over one state rather than two."
+artifacts = ["output/ee_to_mumu_eml", "amplitudes/ee_to_mumu_eml.json", "couplings/ee_to_mumu_eml.json"]
+mg_amplitude = { process = "e+ e-{L} > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 269 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the left-handed electron alone: |M|^2 max_rel 2.36e-14 on the grid and 6.53e-15 on the event set, per-diagram 4.04e-15, JAMP2 6.69e-15 (G = -1i), over MadGraph's own 8-row NHEL table. |M|^2 here is before IDEN, which is 2 for this card (DATA IDEN/ 2/ in its matrix1_optim.f) and is pinned by polarization_census" }
+integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card; this row's averaging factor is pinned against MadGraph's IDEN by the hermetic polarization_census test" }
+samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
+[[process]]
+key = "ee_to_tlt"
+process = "e+ e- > t{L} t~"
+script = "validation/madgraph/scripts/ee_to_tlt.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+rationale = "A polarized massive fermion in the final state: its helicity is not Lorentz invariant, so this is the row where the frame the matrix element is evaluated in is part of the answer."
+artifacts = ["output/ee_to_tlt", "amplitudes/ee_to_tlt.json", "couplings/ee_to_tlt.json"]
+mg_amplitude = { process = "e+ e- > t{L} t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 271 }
+[process.categories]
+diagrams = { tier = "hermetic", mode = "gate" }
+amplitudes = { tier = "hermetic", mode = "gate", note = "the left-handed top alone: |M|^2 max_rel 1.87e-14 on the grid and 7.13e-15 on the event set, per-diagram 4.77e-15, JAMP2 7.03e-15 (G = +1i), over MadGraph's own 8-row NHEL table. MadGraph's values are the partonic centre-of-mass ones (me_frame = [1, 2]); polarization_frame evaluates the same points boosted and they move by 0.32" }
+integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card" }
+samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
 # Process-independent checks, run once per invocation of their layer and
