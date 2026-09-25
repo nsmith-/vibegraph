@@ -46,9 +46,9 @@ lines, PDG-code legs and `@N` downstream are all **silently** mishandled, so the
 sprint's first session (G1) closes those before any feature lands.
 
 **Open, and the user's call** (nothing here is blocked on code):
-- whether the repository is made public — `acceptance.yml` 404s on the release
-  assets while it is private, because the script downloads unauthenticated by
-  design (gate-hygiene entry below);
+- the repository is now public (confirmed 2026-09-25: the `refdata-7` release
+  asset downloads unauthenticated), so `acceptance.yml`'s release-asset 404 should
+  be gone; see the gate-hygiene entry below;
 - reading the first green `acceptance.yml` run, whenever that is, since the
   workflow has still never passed;
 - switching GitHub Pages to the "GitHub Actions" source in the repository
@@ -349,7 +349,8 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Gate + tooling hygiene
 
-- **`acceptance.yml` has still never passed, and needs the repo to be public**
+- **`acceptance.yml` has still never passed**. It needed the repo to be public,
+  which it now is (2026-09-25); the next run is the first that can pass
   — `v0.1.0` published all four binaries, but acceptance 404s on
   `releases/download/...`: the script downloads unauthenticated *by design*, so
   it can reproduce on a clean VM with no checkout and no token, and a private
