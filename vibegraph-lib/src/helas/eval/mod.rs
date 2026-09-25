@@ -64,6 +64,8 @@ mod root_lorentz;
 #[cfg(test)]
 mod rooting_soundness;
 mod run;
+#[cfg(test)]
+mod stitching;
 // Alternative topological execution orders for the compiled instruction stream, and the
 // structural metrics that judge them. A study hook: the order production emits lives
 // with the lowering in `layout.rs`, and this module exists only under `cfg(test)` or the
