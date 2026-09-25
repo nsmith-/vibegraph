@@ -207,6 +207,66 @@ fn two_body_squared_amplitudes_match_the_models_analytic_decays() {
     }
 }
 
+/// The many-body decays one level below their widths: `Σ|M|²` at fixed
+/// rest-frame points against MadGraph's standalone `SMATRIX` for the same
+/// process (`validation/madgraph/decay_amplitudes.json`,
+/// `gen_decay_amplitudes.py`), on and off the resonances the diagrams carry.
+///
+/// `SMATRIX` divides by `IDEN`, the mother's spin and colour states times the
+/// final state's identical-particle factor, which is exactly the factor this
+/// crate's integrand multiplies `Σ|M|²` by: the comparison is of that product.
+/// `z > e+ e- mu+ mu-` (eight diagrams, photon and Z exchange, a massive
+/// vector mother) and `t > b e+ ve a` (four diagrams, the photon off every
+/// charged line) are where interference would show a relative sign or a
+/// mother-wavefunction convention the one-diagram rows cannot. What it cannot
+/// see is the amplitude's overall phase, and anything past `|M|²`.
+#[test]
+fn many_body_squared_amplitudes_match_madgraph_standalone() {
+    #[derive(serde::Deserialize)]
+    struct Case {
+        process: String,
+        points: Vec<Vec<[f64; 4]>>,
+        smatrix: Vec<f64>,
+    }
+    #[derive(serde::Deserialize)]
+    struct File {
+        cases: Vec<Case>,
+    }
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../validation/madgraph/decay_amplitudes.json"
+    );
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let file: File = serde_json::from_str(&text).expect("decay_amplitudes.json parses");
+    for case in &file.cases {
+        let decay = Decay::new(&case.process);
+        let eval = &decay.evals[0];
+        let avg = initial_spin_color_average(eval, &decay.model, &decay.evaluated);
+        let bound = BoundAmplitude::<f64>::bind(eval, &decay.evaluated);
+        let mut scratch = bound.scratch_space();
+        let mut worst = 0.0f64;
+        for (point, &expected) in case.points.iter().zip(&case.smatrix) {
+            let p: Vec<V> = point
+                .iter()
+                .map(|&[e, x, y, z]| V::new(e, x, y, z))
+                .collect();
+            let ours = avg * bound.eval_m2(&p, &mut scratch);
+            let rel = (ours / expected - 1.0).abs();
+            worst = worst.max(rel);
+            assert!(
+                rel < 1e-9,
+                "{}: Σ|M|²/IDEN = {ours:e}, MadGraph {expected:e} at {point:?}",
+                case.process
+            );
+        }
+        println!(
+            "{:<18} {} points, worst relative difference {worst:.1e}",
+            case.process,
+            case.points.len()
+        );
+    }
+}
+
 /// Budget ladder behind the `h > e+ e- mu+ mu-` width row, and an unmapped
 /// control: the resonance-aware map against VEGAS over flat RAMBO, which shapes
 /// nothing and so cannot mis-cover the region where the first-drawn `Z` is the
