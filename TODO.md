@@ -462,6 +462,16 @@ above); the entries here are the eventual features.
   fallback cannot see. A lane-aware fallback is open, measure-first, at the
   width lanes would ship at. The 2→6 shuffle has not been run on x86.
   (`threaded-dispatch-study-results.md`.)
+- **`hypot` in the fermion propagators** (performance, small) —
+  `propagate_fin_bare` / `propagate_fout_bare` take `ComplexFloat::recip` of
+  the denominator `q² − m² + imΓ`, which is num_complex's overflow-safe
+  reciprocal: a libm `hypot` call per propagator. On the M3 Max it is ≈1% of
+  the 2→6's scalar evaluation. At lanes4 it runs once per lane beside two
+  `memset_pattern16` calls from the lane field's per-lane fallback, ≈2–3%.
+  The denominator is never near overflow, so `conj / norm_sqr` suffices, the
+  form `propagate_vector_bare`'s division already takes. It changes rounding,
+  so it must clear the amplitude oracle and the banked gates.
+  (`threaded-dispatch-study-results.md` §5.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α
   then stay fixed. An alternating scheme — train the grids with α fixed,

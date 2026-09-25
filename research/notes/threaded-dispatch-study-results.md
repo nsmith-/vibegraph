@@ -306,7 +306,59 @@ The 2→6 row, µs/event, per round:
   story on the M3 Max was half right. Run length is not what matters, but
   predictability is, once the program is long.
 
-## 5. What this leaves
+## 5. Profile: what a threaded handler costs beyond the `match` arm
+
+samply 0.13 at 4 kHz, 15 s per profile, on both arms of §4's M3 Max build
+(`CARGO_PROFILE_BENCH_DEBUG=line-tables-only`, same flags and features),
+running criterion's `--profile-time` loop on `gg_to_gg` and the 2→6, scalar and
+lanes4. Symbolicated against each binary's symbol table.
+
+- **Arm-level breakdowns match to 0.5 points.** Interpreter work is 78.8% /
+  79.3% (`match` / threaded) on `gg_to_gg` scalar, 75.8 / 76.3 at lanes4, 91.9 /
+  92.2 on the 2→6 scalar and 89.6 / 90.1 at lanes4. The criterion loop,
+  read-out and external wavefunctions take the same share in both.
+- **No accidental overhead in the threaded arm.** There is no `memcpy` or
+  `memmove`, no allocation in the hot loop (malloc's 0.3% is evaluator
+  construction), and no kernel called out of line in any of the 212 handler
+  instances.
+- **The `Metric` opcode, instruction by instruction** (`f64`, the hottest in
+  both profiles):
+  - The `match` arm is 40 instructions plus the loop's shared 10-instruction
+    dispatch block: 50 per VM instruction. The arena pointers and lengths stay
+    in registers across the loop.
+  - The threaded handler is 57 instructions. Its body is the arm's instruction
+    sequence exactly: the same 20 floating-point ops, 5 paired loads and 1
+    store. The +7 are structural:
+    - a frame-record push and pop. The cold panic calls make every handler
+      non-leaf, and the Apple arm64 ABI then requires a frame record.
+    - four loads of arena pointers and lengths from `Vm`. Six arenas' pointer
+      and length pairs do not fit the argument registers a `become` chain
+      carries.
+    - the remaining-stream check and the kind check.
+  - Those six extra memory operations per VM instruction are the likely source
+    of threaded's +5–9% on this core, not isolated here. A version that could
+    win needs its hottest arena pointers as arguments and handlers that never
+    call a panic directly, so they compile as leaf functions.
+- **Two costs common to both arms, found on the way.** In the 2→6 the fermion
+  propagators call libm `hypot` once per execution: `ComplexFloat::recip` on
+  the propagator denominator is num_complex's overflow-safe reciprocal. That is
+  ≈1% of scalar time. At lanes4 the call runs once per lane, alongside two
+  `memset_pattern16` calls from the lane field's per-lane fallback, ≈2–3% in
+  all. It is a backlog item, since a plain reciprocal changes rounding and must
+  clear the amplitude oracle.
+- **Two artefacts not to chase.** `libsystem_kernel` at ~4.5% in every
+  profile is wall-clock samples taken while the thread was blocked (criterion's
+  gnuplot probe, a rayon latch), not CPU time. Samples on the dylib import
+  stubs symbolicate to whatever text symbol precedes the stub section, here
+  `RawVec::reserve`, which reads as a per-event allocation that does not exist.
+- **Sample skid rules out a ledger.** The dispatch tail (next-opcode load to
+  `br`) holds 41% of a `gg_to_gg` handler's samples, and the `match` loop's
+  dispatch block 42% of `fill_arenas`'s. A sample lands on whichever
+  instruction waits to retire, so those shares say where the core waits, not
+  what each instruction costs. The static comparison above is the finer
+  evidence.
+
+## 6. What this leaves
 
 - **Production order: unchanged.** Op-blocked is the best or tied order for
   both dispatchers on every width and both hosts but one cell (Cascade Lake
