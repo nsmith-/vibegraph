@@ -360,11 +360,12 @@ impl<F: Real, V: Variance> VectorRepr<F, V> for ComplexVector<F, V> {
     type Dual = ComplexVector<F, V::Dual>;
 
     fn dot(&self, other: &Self::Dual) -> Self::Scalar {
-        // Dual basis has the metric built in, so the contraction is a simple dot product
-        let acc = cmul(self.0[0], other.0[0]);
-        let acc = cmul_add(self.0[1], other.0[1], acc);
-        let acc = cmul_add(self.0[2], other.0[2], acc);
-        cmul_add(self.0[3], other.0[3], acc)
+        // Dual basis has the metric built in, so the contraction is a simple dot
+        // product. Two independent accumulation chains, joined by one add, keep
+        // the dependent path to about five operations instead of eight.
+        let even = cmul_add(self.0[2], other.0[2], cmul(self.0[0], other.0[0]));
+        let odd = cmul_add(self.0[3], other.0[3], cmul(self.0[1], other.0[1]));
+        even + odd
     }
 
     fn dualize(&self) -> Self::Dual {

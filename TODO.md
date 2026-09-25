@@ -818,22 +818,29 @@ coverage. What is left below is what still refuses, and why.
   The MadGraph oracle stays green. Revisit only with a concrete kernel whose
   timing needs it. (`x86-avx2-perf-study-results.md`, "Algebraic float
   arithmetic".)
-- **Kernel ILP survey** — rewrite
-  serial accumulation chains in the kernels into independent partial sums where
-  the dependency chain dominates. E.g. `ComplexVector::dot` is `cmul` then three
-  chained `cmul_add`s, about 7 dependent FP ops; two interleaved chains make it
-  about 5. Whether the shorter chain beats the out-of-order overlap already
-  available across neighbouring dispatch-loop instructions is a per-kernel
-  measurement. Reassociating changes rounding identically on scalar and lanes,
-  so lane-vs-scalar identity is unaffected; the MG gate judges it.
-  **Pilot on `dot`: null.** Emerald Rapids, `target-cpu=native`, A/B/A/B runs
-  over the 8 bench rows. The two-chain `dot` moved the median by −0.2%
-  (`forward`), +2.4% (`lanes4`) and −1.6% (`lanes8`), inside the control
-  runs' own 0.9–3.4% median drift, with cells scattering both ways. Not kept.
-  Before surveying further kernels, establish that the evaluator is
-  latency-bound at all: IPC / top-down counters on a host that exposes a PMU.
-  The Firecracker VM used here has none (no `cpu` event source). A high IPC
-  would mean chain-splitting has nothing to recover.
+- **Kernel ILP survey** — rewrite serial accumulation chains in the Lorentz
+  kernels into independent partial sums, judged kernel by kernel on
+  `benches/lorentz_kernels.rs`. That bench times the production kernels through
+  their public API, in a throughput shape and a latency-chain shape, for `f64`
+  and `LaneField<4>`. Reassociating changes rounding identically on scalar and
+  lanes, so lane-vs-scalar identity is unaffected; the MG gate judges it.
+  - **`ComplexVector::dot`: adopted.** The two-chain form (about 5 dependent
+    ops instead of 8) measured, A/B/A/B on Emerald Rapids:
+    - latency chain −18% to −21% for native `f64`, native lanes4 and default
+      `f64`;
+    - throughput −4% to −6% (native `f64`) and −13% to −18% (default `f64`);
+    - default-target lanes4 neutral: SSE2 lanes are limited by instruction
+      count, not latency.
+
+    The unchanged `slash` rows put the noise floor at about ±6% per cell. On the
+    8-process eval bench it was a null (−0.2% / +2.4% / −1.6%): the dispatch
+    loop's out-of-order overlap hides most kernel latency. It is kept on its
+    kernel merits.
+  - Next candidates: `dot4`, `dot_lorentz`, the currents and bilinears, and
+    `AsymRank2Tensor`'s contractions. Add each to `lorentz_kernels` before
+    changing it. An IPC / top-down reading on a host with a PMU would say how
+    much of the evaluator's time is latency-bound at all; the Firecracker VM
+    used here exposes no `cpu` event source.
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)

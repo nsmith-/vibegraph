@@ -733,6 +733,31 @@ instructions, but no time.
 
 Verdict: no speedup to pay for results that depend on the inliner.
 
+### Kernel microbenchmarks (`benches/lorentz_kernels.rs`)
+
+A leaf-kernel change that is below the 8-process bench's resolution is judged on
+the kernel itself. `lorentz_kernels` times the production `ComplexVector::dot` and
+ket `Bispinor::slash` for `f64` and `LaneField<4>`, in two shapes:
+- `throughput`: 1024 independent calls.
+- `chain`: each result feeds every component of the next call's input, so the
+  time is the critical-path latency. Each chain is constructed to stay O(1),
+  and the bench asserts it never reaches overflow or subnormals.
+
+**`dot` as two accumulation chains**, A/B/A/B, one pinned core, per-round
+change (B vs A):
+
+| target | field | throughput | chain |
+|---|---|---|---|
+| native | `f64` | −3.9 / −4.5 / −6.4% | −18.1 / −18.9 / −19.1% |
+| native | lanes4 | −1.6 / −2.7 / −3.5% | −18.4 / −19.5 / −19.0% |
+| default | `f64` | −17.7 / −16.3 / −12.6% | −20.6 / −21.1 / −21.0% |
+| default | lanes4 | −1.2 / +2.4 / +5.4% | +3.5 / +1.6 / +0.4% |
+
+The `slash` rows are unchanged code between the two builds and move −5.7% to
++6.2%: that is the noise floor. Adopted on these kernel merits, although the
+8-process bench showed a null. The amplitude oracle's residuals move only in
+their last printed digits, and the lane-vs-scalar tests stay exact.
+
 ### Reproduce
 
 ```
