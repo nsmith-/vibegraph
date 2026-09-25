@@ -59,6 +59,11 @@ pub(super) enum Schedule {
     /// stream changes variant at nearly every instruction. It keeps op-blocking's level
     /// structure — independent instructions adjacent — and discards its runs.
     LevelMix,
+    /// The same ASAP levels in the same sequence, each level's nodes in a seeded random
+    /// order. Round-robin dealing leaves a periodic variant sequence that a
+    /// history-based branch predictor learns; a shuffle leaves the dispatch nothing
+    /// to learn, while the level structure is unchanged.
+    LevelShuffle,
 }
 
 impl Schedule {
@@ -69,6 +74,7 @@ impl Schedule {
             "minlive" | "min-live" => Some(Schedule::MinLive),
             "opblocked" | "op-blocked" => Some(Schedule::OpBlocked),
             "levelmix" | "level-mix" => Some(Schedule::LevelMix),
+            "levelshuffle" | "level-shuffle" => Some(Schedule::LevelShuffle),
             _ => name
                 .strip_prefix("opwin")
                 .and_then(|w| w.parse().ok())
@@ -85,11 +91,12 @@ impl Schedule {
             Schedule::OpBlocked => "opblocked".to_string(),
             Schedule::OpWindow(w) => format!("opwin{w}"),
             Schedule::LevelMix => "levelmix".to_string(),
+            Schedule::LevelShuffle => "levelshuffle".to_string(),
         }
     }
 
     /// Every order the study measures, default first.
-    pub(super) const ALL: [Schedule; 8] = [
+    pub(super) const ALL: [Schedule; 9] = [
         Schedule::Arena,
         Schedule::DepthFirst,
         Schedule::MinLive,
@@ -98,6 +105,7 @@ impl Schedule {
         Schedule::OpWindow(128),
         Schedule::OpWindow(512),
         Schedule::LevelMix,
+        Schedule::LevelShuffle,
     ];
 }
 
@@ -144,6 +152,7 @@ pub(super) fn build_order(ast: &Ast<Const>, an: &NodeAnalysis, sched: Schedule) 
         Schedule::OpBlocked => super::layout::op_blocked_order(ast, an),
         Schedule::OpWindow(w) => op_windowed(ast, an, w),
         Schedule::LevelMix => level_mixed(ast, an),
+        Schedule::LevelShuffle => level_shuffled(ast, an),
     };
     debug_assert!(is_topological(ast, &order));
     order
@@ -368,6 +377,28 @@ fn level_mixed(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
     }
     order
         .sort_unstable_by_key(|&id| (level[id as usize], rank[id as usize], kind[id as usize], id));
+    order
+}
+
+/// [`Schedule::LevelShuffle`]: op-blocked's level sequence, each level shuffled by a
+/// fixed-seed generator so every build of a program emits the same order.
+fn level_shuffled(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+    let level = asap_levels(ast);
+    let mut order = super::layout::op_blocked_order(ast, an);
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_5A);
+    let mut start = 0;
+    while start < order.len() {
+        let lvl = level[order[start] as usize];
+        let end = start
+            + order[start..]
+                .iter()
+                .take_while(|&&id| level[id as usize] == lvl)
+                .count();
+        order[start..end].shuffle(&mut rng);
+        start = end;
+    }
     order
 }
 
