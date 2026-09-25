@@ -6,6 +6,11 @@ default) and writes a flat ``{name: value}`` map to
 ``validation/madgraph/runcard_defaults.json``. The Rust ``runcard`` defaults
 table is compared against this file per-parameter.
 
+It also writes ``validation/madgraph/runcard_decay_defaults.json``: every cut
+parameter as ``remove_all_cut`` leaves it, which is what ``banner.py`` does to
+the default card of a process with one initial particle. The Rust
+``RunCard::decay_default`` is compared against that one.
+
 Reads the pinned ``research/refs/mg5amcnlo`` submodule, whose run-card parameter
 set this transcription tracks; ``MG5AMCNLO_PATH`` overrides the checkout root.
 """
@@ -16,6 +21,7 @@ import sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _out = os.path.join(_here, "runcard_defaults.json")
+_out_decay = os.path.join(_here, "runcard_decay_defaults.json")
 
 
 def _candidate_roots():
@@ -81,6 +87,12 @@ def main():
     with open(_out, "w") as fh:
         json.dump(defaults, fh, indent=2, sort_keys=True)
     print(f"wrote {len(defaults)} run-card defaults to {_out}")
+
+    card.remove_all_cut()
+    decay = {name: _jsonable(card[name]) for name in sorted(card.cuts_parameter)}
+    with open(_out_decay, "w") as fh:
+        json.dump(decay, fh, indent=2, sort_keys=True)
+    print(f"wrote {len(decay)} decay-default cut parameters to {_out_decay}")
 
 
 if __name__ == "__main__":
