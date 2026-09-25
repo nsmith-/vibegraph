@@ -339,6 +339,72 @@ here); `/` forbids by |PDG|; `set` lines after `launch` are run-card edits
 Per §3.3. Gate: every amplitude row byte-identical; `rooting_soundness`
 green; the container canonical form round-trips over every banked process.
 
+**Landed** (`93fff0f`, `2d99872`, 2026-09-25). Measured first, on a census of every
+manifest row's process in its own model, 18 extra SM processes and 5 four-fermion
+contact-emission processes: every diagram, every colour chain, the tree rooted at
+every vertex.
+
+- **The factors.** feyngraph's `view.sign()` is the parity of the external fermions
+  paired by line (class a, a graph property). The spine sign is class a as well: it
+  counts, per fermion line, its ends, its internal propagators and whether it carries
+  a Dirac matrix; on the 2553 (diagram, chain) pairs of the first census it never
+  varied with the rooting. It is now `Diagram::fermion_line_sign`, folded into
+  `Diagram::sign` at conversion. The rooted-tree derivation is a debug-build
+  cross-check on every compiled diagram, and it counts every closed line: it used to
+  skip a line closed at a four-fermion current rooted at a fermion leg, which is where
+  the cross-check first fired. The Yang-Mills source sign, the build sign and the
+  reversed-bilinear sign of the reference rooting are class b (kernel compensations),
+  and each varies with which vertex is the reference root (214, 92 and 12 of the 2553
+  pairs, their product 234): that choice was feyngraph's `VtxIdx(0)`, the only class-c
+  dependence. `helas/eval` now reads all three at `Diagram::anchor`. The live tree's
+  reversed parity is class b and invariant.
+- **feyngraph's vertex 0 is not "the vertex leg 0 attaches to".** It is in 2475 of the
+  2517 census diagrams. The other 42 (`g g > g g g` 6, `g g > t t~ g` 1,
+  `W+ W- > W+ W- Z NP<=1` 35) put leg 0 on a four-point contact, and feyngraph numbers
+  a three-point vertex first. The sign product differs between the two choices on 53
+  (diagram, chain) pairs, so the choice carries physics. `Diagram::anchor` is "the first
+  lowest-arity vertex in canonical order", which reproduces it.
+- **Canonical form.** `Diagram::canonical`: depth-first from leg 0's vertex, rays in slot
+  order, propagators numbered and oriented by the walk. `CanonicalDiagram` is `Eq + Hash`
+  on every field (sign and symmetry factor included). It is idempotent, and it keeps the
+  diagrams of every census subprocess distinct.
+- **Gates.** `renumbering_preserves_signs_and_amplitudes` renumbers every census diagram
+  twice, with the anchor forced off index 0. It checks exact `fermi_sign` for every chain,
+  the same anchor and canonical form, and per-helicity, per-flow amplitudes to 1e-10.
+  Against `c7037dd`'s `helas` it fails 658 times; on `93fff0f` it passes on 2641 diagrams
+  (6838 signs, 1960 amplitude comparisons). No physics change in `93fff0f`: a
+  per-diagram dump of `fermi_sign` and the bits of every per-helicity, per-flow
+  single-diagram amplitude is byte-identical to `c7037dd` on 2898 diagrams. Mutation:
+  dropping the line sign from `Diagram::sign` fails 9 `amplitude_oracle` rows.
+- **`2d99872` is a physics fix**, found by the cross-check and adjudicated against
+  MadGraph standalone (5 points each, `MG/ours` against the 1/4 helicity average).
+  `93fff0f` keeps the old rule, where a line closed at a fermion-output four-fermion
+  current takes no line sign. That is right for the tensor contact:
+  `ta+ ta- > t t~ a` (`O_leQt3`) comes out 0.25000 ± 3e-6, and the toy
+  `lt~ lt > qt qt~ vt` 0.25 exactly; counting the line misses by up to 20%. It is wrong
+  for the vector contact: `e+ e- > mu+ mu- a NP<=1` (`vg_c4l`) comes out 0.21–0.49
+  under it and 0.25 exactly without it. `2d99872` confines the rule to tensor-path
+  vertices. Every census diagram outside four-fermion contact emission is unchanged.
+- **Open, not fixed (outside S1):**
+  - The contact sign is wrong for all-vector contacts next to a Yang-Mills vertex.
+    With the anchor at a three-point vertex, `g g > g g g` misses the exact five-gluon
+    Parke–Taylor `|M|²`: the ratio varies 2.15e3–2.90e3 over six points. It also
+    misses the per-flow six-gluon MHV amplitudes on 30/30 helicity configurations.
+    Taking the all-vector contact's −1 only at the anchor (and none elsewhere), with
+    the anchor at leg 0's vertex, gives a ratio constant to 12 digits at five gluons.
+    It matches every six-gluon MHV flow to 6e-10, and leaves every `amplitude_oracle`
+    row unchanged except `wpwm_to_wpwmz_cw`, which moves from 2.20e3 to 2.79e1.
+  - `u u~ > t t~ g NP<=1` under `vg_c4q` misses MadGraph standalone by a varying
+    factor under either line rule (`MG/ours` 0.0147–0.0277 against 1/36), so a second
+    defect sits in four-quark contacts with a gluon emission.
+- **Blind spots of container equality.** Slot order is part of the identity, so two
+  containers that bind identical particles to a symmetric vertex's slots in a
+  different order compare unequal (a false inequality, never a false equality). A
+  sign convention that is a wrong *function of the graph* passes renumbering and
+  equality alike; only the amplitude oracles see it. The production root's tie-break
+  still reads vertex indices, so equal containers agree to rounding (≤1e-10), not
+  bit-for-bit.
+
 ### S2: `>` and `$$` as diagram filters (feature-dev; after G1)
 
 - Per §3.4, with MadGraph's warning about gauge invariance.

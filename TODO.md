@@ -433,9 +433,10 @@ above); the entries here are the eventual features.
   - **G1** ✅ landed (`34d6d45`, `1f5f924`, `f67f787`): full parser, the one
     `check_supported` scan and the narrowed `SupportedCard`, gated against
     MadGraph's own parser. Closes every silent row in note 38 §2.
-  - **S1**: sign resolution moves from `helas/eval` into the diagrams stage (the
-    `VtxIdx(0)`-anchored factors), so that diagram-container equality is a
-    sufficient oracle.
+  - **S1** ✅ landed (`93fff0f`, `2d99872`; note 38 §4 S1 Landed): `Diagram` carries the
+    full Fermi sign, `Diagram::anchor` replaces `VtxIdx(0)`, and `Diagram::canonical`
+    gives container equality. Two findings remain open: the all-vector contact sign
+    (wrong for `g g > g g g`), and the `u u~ > t t~ g NP<=1` four-quark mismatch.
   - **S2** ✅ landed (`c52e4f7`, the docs commit after it): `>`/`$$` filters inside the
     WEIGHTED search, `WEIGHTED<=n`, the five-flavour `p`/`j` rewrite, MadGraph
     census (43/43 generated cards) and two σ rows in agreement.
