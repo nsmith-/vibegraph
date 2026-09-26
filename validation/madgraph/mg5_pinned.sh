@@ -30,11 +30,14 @@
 #
 # Usage: bash validation/madgraph/mg5_pinned.sh <script.mg5>
 #        (paths inside the script must be absolute — the cwd is temporary)
+#        VG_MG5_ROOT=<dir> runs a copy of the pinned tree instead, which is how a
+#        generator applies a patch from validation/madgraph/patches/ without
+#        touching the checkout the source-level gates read.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-MG5_ROOT="$ROOT/research/refs/mg5amcnlo"
+MG5_ROOT="${VG_MG5_ROOT:-$ROOT/research/refs/mg5amcnlo}"
 
 [ $# -eq 1 ] || {
   echo "usage: bash ${BASH_SOURCE[0]} <script.mg5>" >&2

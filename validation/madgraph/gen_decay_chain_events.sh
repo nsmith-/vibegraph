@@ -22,15 +22,18 @@
 #   veto_chain      e+ e- > mu+ mu- z $ z, z > e+ e-          ee500
 #                   a `$` on the core of a decay chain (cross section only).
 #
-# Usage: PATH=<madgraph env>/bin:$PATH bash validation/madgraph/gen_decay_chain_events.sh
-#        ROWS="pp_ttx_lep_dyn" SEEDS="1 2" ... to run a subset.
-#        DECAY_CHAIN_EVENTS_WORK=<dir> keeps the process directories and the
-#        event files there (default: a fresh temporary directory).
+# Usage: pixi run -e madgraph generate-decay-chain-events
+#        ROWS="pp_ttx_lep_dyn" SEEDS="1 2" ... to run a subset; rows not run
+#        keep their committed entries.
+#        DECAY_CHAIN_EVENTS_WORK=<dir> holds the process directories and the
+#        event files (default validation/madgraph/work/decay_chain_events),
+#        cached as madevent_seeds.sh describes.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-OUT="${DECAY_CHAIN_EVENTS_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/vg-chain-events-XXXXXX")}"
+. "$HERE/madevent_seeds.sh"
+OUT="${DECAY_CHAIN_EVENTS_WORK:-$HERE/work/decay_chain_events}"
 RESULT_JSON="${RESULT_JSON:-$HERE/decay_chain_events_reference.json}"
 SEEDS="${SEEDS:-$(seq -s " " 20260926 20260930)}"
 
@@ -51,64 +54,17 @@ ALL_ROWS=(
 )
 SELECTED="${ROWS:-pp_ttx_lep_dyn ttx_nested zz_ee dy_two_procs veto_chain}"
 
-# Generate one process directory (idempotent); `;` separates the card's lines.
-generate_dir() {
-  local procdir="$1" lines="$2"
-  if [ ! -f "$procdir/bin/generate_events" ]; then
-    echo ">>> generating $lines into $procdir ..." >&2
-    local script
-    script="$(mktemp -t gen_events_XXXX).mg5"
-    {
-      printf 'import model sm\n'
-      printf '%s\n' "$lines" | tr ';' '\n'
-      printf 'output %s -nojpeg\n' "$procdir"
-    } > "$script"
-    bash "$HERE/mg5_pinned.sh" "$script" >&2
-    rm -f "$script"
-  fi
-  local cfg="$procdir/Cards/me5_configuration.txt"
-  grep -vE '^\s*#?\s*(automatic_html_opening|notification_center|run_mode|nb_core)\s*=' "$cfg" > "$cfg.tmp"
-  printf 'automatic_html_opening = False\nnotification_center = False\nrun_mode = 2\nnb_core = 2\n' >> "$cfg.tmp"
-  mv "$cfg.tmp" "$cfg"
-}
-
-# Install a run card with its iseed and a 10k-event budget, run madevent, and
-# echo "<sigma> <err> <wall>" (pb) from results.dat.
-run_one() {
-  local procdir="$1" card="$2" seed="$3" tag="$4"
-  python3 - "$card" "$procdir/Cards/run_card.dat" "$seed" <<'PY'
-import re, sys
-src, dst, seed = sys.argv[1:4]
-text = open(src).read()
-text, n = re.subn(r"^\s*\S+\s*=\s*iseed\b", "  %s = iseed" % seed, text, flags=re.M)
-assert n == 1, "iseed not found exactly once"
-text, n = re.subn(r"^\s*\S+\s*=\s*nevents\b", "  10000 = nevents", text, flags=re.M)
-assert n == 1, "nevents not found exactly once"
-open(dst, "w").write(text)
-PY
-  local log="$OUT/events_$tag.log"
-  echo ">>> [$tag] madevent, iseed $seed ..." >&2
-  rm -rf "$procdir/Events/run_$tag"
-  local started
-  started="$(date +%s)"
-  "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
-    echo "!!! [$tag] generate_events failed; see $log" >&2
-    tail -40 "$log" >&2
-    exit 1
-  }
-  local wall=$(( $(date +%s) - started ))
-  awk -v wall="$wall" 'NR==1{printf "%.10g %.10g %d\n", $1, $2, wall}' "$procdir/SubProcesses/results.dat"
-}
-
-RESULTS="$OUT/rows.txt"
+RESULTS="$OUT/rows_$$.txt"
 : > "$RESULTS"
 for row in "${ALL_ROWS[@]}"; do
   IFS='|' read -r name lines card <<< "$row"
   case " $SELECTED " in *" $name "*) ;; *) continue ;; esac
   procdir="$OUT/$name"
-  generate_dir "$procdir" "$lines"
+  mes_generate_dir "$procdir" "$lines"
   for seed in $SEEDS; do
-    read -r sigma err wall < <(run_one "$procdir" "$HERE/$card" "$seed" "${name}_$seed")
+    mes_install_card "$HERE/$card" "$procdir/Cards/run_card.dat" "nevents=10000" "$seed"
+    result="$(mes_run_seed "$procdir" "${name}_$seed" "$OUT/events_${name}_$seed.log")"
+    read -r sigma err wall <<< "$result"
     lhe="$procdir/Events/run_${name}_$seed/unweighted_events.lhe.gz"
     printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$name" "$lines" "$card" "$seed" "$sigma" "$err" "$wall" "$lhe" \
       | tee -a "$RESULTS" >&2
@@ -117,3 +73,4 @@ done
 
 python3 "$HERE/summarise_decay_chain_events.py" "$RESULTS" "$RESULT_JSON" \
   "$ROOT/research/refs/mg5amcnlo/VERSION"
+rm -f "$RESULTS"
