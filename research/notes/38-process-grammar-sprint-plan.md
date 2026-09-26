@@ -1102,3 +1102,116 @@ for a polarized massive leg); its stored default is now MadGraph's `1, 2`;
   the ladder degrades faster than ME cost alone explains, that is a sampler
   finding for the performance backlog, not a reason to reopen MadSpin
   without the data.
+
+## 7. Close-out plan (user, 2026-09-26: the new reference is banked on another host)
+
+The close-out has three phases, in order:
+1. **Z1**, in this container, after E1 merges.
+2. **B1**, on the bank host, which builds `refdata-8`.
+3. **Z2**, wherever `refdata-8` can be fetched.
+
+The sprint closes when Z2 is green.
+
+### 7.1 Why a new bundle is needed
+
+The sprint produced MadGraph references three ways. The bundle has to carry only the third.
+
+- **Committed scalars and tables: nothing to bank.** Each has a generator script, and B1 re-runs it only as a reproduction check.
+  - The census JSONs: `proc_grammar`, `schannel_census`, `decay_chain_census`, `polarization_census`.
+  - `sm_decay_widths.json`, `decay_amplitudes.json`, `runcard_decay_defaults.json`.
+  - C4V's `standalone/*.json`.
+  - The six polarized rows' `amplitudes/` and `couplings/` tables.
+- **Committed MadEvent σ scalars: B1 re-measures them.**
+  - `decay_width_reference.json` (D1), `decay_chain_sigma_reference.json` (D3), `onshell_veto_reference.json` (S3).
+  - These were measured here on the pinned 3.7.1 tree. The gates read the committed JSON, so they already run on any checkout. B1 regenerates them on the bank host and compares within seed error. It never pins bits (AGENTS.md: ULP exactness is never the target).
+- **Runs a gate needs on disk: B1 banks them.**
+  - The six polarized `[[process]]` rows marked `bundled = false`: `ee_to_wp0wmt`, `ee_to_wp0wm`, `ee_to_z0h`, `uux_to_ztg`, `ee_to_mumu_eml`, `ee_to_tlt`. Their process directories lived in a worktree that no longer exists.
+  - Every σ or samples cell measured through the CLI rather than a registered gate:
+    - P1's `e+ e- > w+{0} w-` σ and `SPINUP` sample;
+    - S2's `e+ e- > z > mu+ mu-` and `e+ e- > e+ e- $$ z` σ rows, recorded in the S2 Landed paragraph but not in the manifest;
+    - E1's decay-chain sample and two-`@N` sample;
+    - D1's `t > b e+ ve` sample.
+  - Wherever a gate reads events (`samples`, per-event `SCALUP`/`AQCDUP`, LHEF record conventions), it needs the MadEvent run itself.
+
+### 7.2 Z1: close-out in this container (validation-dev; after E1)
+
+1. **Run the whole banked layer once, end to end.** `pixi run --skip-deps validate` on the merged tree against `refdata-7`, collator included.
+   - No session ran it. Each ran its own subset, and one banked regression, `validate_scales`, was found only by accident.
+   - Fix whatever fails, and report every rendered cell.
+2. **Register every new row.**
+   - Add a `[[process]]` row with `bundled = false` and `status = "planned"` for each run in the third category of §7.1, with its script under `validation/madgraph/scripts/`, its `categories` and its target test.
+   - A cell measured only by hand stays `uncovered` with a note until B1 banks its run. A report is evidence only if every green cell is a recorded measurement.
+3. **Wire the generators so B1 needs one command.**
+   - Add a stage to `validation/generate_references.sh`, and a pixi task wherever one is missing, for:
+     - `gen_decay_widths.sh`, `gen_decay_chain_sigma.sh`, `gen_onshell_veto.sh`;
+     - `gen_standalone_jamps.py` (C4V: not wired; it needs the staged `output/models`);
+     - E1's generators;
+     - the S2 and P1 σ/sample runs;
+     - the four census dumps.
+   - Each stage is cached the same way the existing ones are, so an existing process directory is never rebuilt.
+4. **Seed policy for every MadEvent reference.**
+   - The 4e study measured MadEvent's quoted σ errors at χ²/dof 3–14 across seeds, including full-process runs.
+   - So every new reference is ≥5 seeds (≥10 for a gate tighter than 0.3%), stored per seed. The gate reads mean ± max(quoted, spread/√n), as D1, D3 and S3 already do.
+   - Write that rule into the manifest header, and make the generators emit the per-seed table.
+5. **The `FFV2P1D_1` defect.**
+   - Commit S3's one-line ALOHA fix as a patch file that `gen_onshell_veto.sh` applies to a copy of the pinned tree, and record it in the row's rationale.
+   - The `u u~ > w+ b w- b~ $ t t~` row stays `info` until its remaining ~2% is explained.
+   - Draft the upstream MadGraph report: the routine, the one-line diff, and a card that reproduces it. It goes in `research/notes/07-*` alongside the other MadGraph defects, for the user to file.
+6. **Bookkeeping.**
+   - `TODO.md`:
+     - `process-grammar` moves to "Closed-sprint history" in at most three lines;
+     - "Current position" is set to "waiting on refdata-8";
+     - every open finding moves to the validation backlog:
+       - `w+ w- > e+ e-` (note 39 §5);
+       - the O_W residual of `wpwm_to_wpwmz_cw`;
+       - the ~2% on the `$ t t~` row;
+       - the `e+ e- > w+ w-` −0.23% offset;
+       - MadEvent's `dummy_cuts` leakage (27/500k);
+       - `$` lists that differ across process lines;
+       - `ChainOrders` with `==`/`>`;
+     - every performance item moves to the performance backlog: decay-angle maps (ε_unw falls 16× on the fully decayed `t t~ h h`), and skipping VEGAS refinement for a constant two-body integrand;
+     - the shelved features stay listed: squared orders, polarized resonances, MLM, NLO.
+   - Note 38 gets a §8 close-out record.
+   - The guide builds (`mdbook build docs` if the tool is present).
+
+**Gates:** `cargo fmt --all --check`, clippy on the extended-validation targets, `cargo test --workspace`, and the full `pixi run --skip-deps validate`, each with its output tail.
+
+### 7.3 B1: banking `refdata-8` on the bank host
+
+The bank host needs:
+- a checkout at the Z1 commit;
+- the submodule at its pin (`b7687064`, MadGraph 3.7.1);
+- the pixi `madgraph` env, gfortran and LHAPDF, with both PDF sets fetched.
+
+Run the pinned tree through `validation/madgraph/mg5_pinned.sh`. The packaged 3.5.7 `mg5_aMC` crashes in `generate_events` (seen on linux-64, 2026-09-25); record whether it also does on the bank host.
+
+1. **Start from the current bank.** `pixi run fetch-refdata` unpacks `refdata-7` into `validation/madgraph/output/`, so no existing run is regenerated. The generators are cached on existing process directories.
+2. **Generate.** Run `pixi run -e madgraph generate-references` with Z1's stages. That builds the `bundled = false` rows' process directories and runs, and regenerates the committed scalars and tables.
+3. **Reproduction check before bundling.**
+   - Diff every regenerated committed JSON against the committed one:
+     - census and grammar files must match exactly (they are structural);
+     - MadEvent scalars must agree within their seed errors;
+     - amplitude and standalone tables must agree at the rounding scale.
+   - A structural difference is a finding. Stop and report it; don't overwrite.
+4. **Gate on the host.** Run `pixi run --skip-deps validate` against the work area, so every new row's gate runs against its fresh run before the bundle is frozen.
+5. **Assemble and publish.**
+   - `bash validation/madgraph/assemble_bundle.sh` gives `vibegraph-refdata-8.tar.zst`.
+   - Publish it as the `refdata-8` release asset.
+   - Update `[refdata]` in `validation/manifest.toml`: `version`, `archive`, `url`, `sha256`, `size_bytes`.
+   - Drop `bundled = false` and `status = "planned"` on the rows it now carries.
+   - Commit, with the host, MadGraph version and wall time in the message body.
+
+### 7.4 Z2: re-verify from the published bundle
+
+On a machine that has never generated a run, meaning this container with `validation/madgraph/output` removed, or CI:
+1. `pixi run fetch-refdata` verifies the `refdata-8` hash.
+2. Run `pixi run validate`.
+3. Only now, and only where agreement is demonstrated, move each new σ and samples cell from `uncovered`/`info` to `gate`.
+
+Then the sprint is closed.
+
+### 7.5 Left for the user at close
+
+- Whether to open the PR from `claude/cool-einstein-aehc0f` to `main`. It carries the whole sprint plus C4V.
+- The next slot: MLM, then NLO (planned in a later session), and the performance backlog.
+- Filing the MadGraph `FFV2P1D_1` report upstream.
