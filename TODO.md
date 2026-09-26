@@ -527,34 +527,6 @@ above); the entries here are the eventual features.
   points (seed sweep, χ²/dof) before deciding; note that stratification
   changes the sampling order, so it cannot be bit-for-bit against banked
   artifacts.
-- **|M|² by term rewriting** (research) — the helicity-summed |M|² is
-  algebraically a sum over helicities of a current chain times its conjugate;
-  completeness relations replace the external helicity sums by `p̸ + m` /
-  `−g^{μν}` insertions and trace identities reduce the closed fermion lines to
-  scalar products of momenta. An e-graph seeded with those identities (the
-  `helas::eval::egraph` seam) could extract a specialised |M|² program with no
-  helicity loop at all, kept beside the per-helicity program event generation
-  needs. The same explicit-invariant form is the natural input to a phase-space
-  map derived from the integrand's own structure rather than read off
-  propagator poles. Both are gated on the extraction prerequisites note 15 §4.1
-  lists. **Feasibility (note 38)**: a 10–50× per-point win at 2 → 2 and small
-  2 → 3. From 2 → 4 the *intermediate* expansion grows as D² × a factorial in
-  trace length, but that is compile-time; the simplified form's size decides
-  the per-point cost and is unmeasured (FORM on `ee_to_mumua` and
-  `ee_to_mumu_tata_qcd0`; functional reconstruction skips the swell). The
-  evaluator's 50–62% profile share caps the integration stage at 2.0–2.7×
-  either way. The trace stage is a normalizer, not an e-graph job. The first
-  step is a hand-derived llj trace |M|² with a pre-registered kill (< 1.3× on
-  `pp_to_llj_dyn` CPU-to-target); helicity sampling (next entry) targets the
-  expensive rows directly.
-- **Helicity sampling (`nhel = 1`) — offline gain measurement first** (note 38
-  §7). One helicity combination per point, drawn with `p_h` and weighted
-  `1/p_h`, saves up to `N_kept / sharing` of the evaluator per point, about 9× on
-  the 2 → 6. The extra variance `∫(Σ_h f_h²/p_h − f²)` is computable from
-  `eval_hel_m2` vectors recorded on an existing run. Report
-  `(V + ΔV)·c₁` against `V·c_sum` per row before building a sampler. Changes the
-  estimator: seed-sweep gate, no bit-for-bit against banked σ. Would also make
-  `wpwm_to_wpwmz_cw`'s `nhel = 1` card reachable.
 
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. `derive_flavor_groups` partitions subprocesses by sampled

@@ -4,10 +4,18 @@ The question (user): replace the explicit helicity sum in the integrand with
 completeness relations — `Σ u ū = p̸ + m`, `Σ v v̄ = p̸ − m`, `Σ ε_μ ε*_ν = −g_μν
 (+ p_μ p_ν / M²)` — so that `Σ_hel |M|²` becomes Dirac traces contracted into
 scalar products of momenta. Would that speed up the integration stage a lot, and
-is egglog the tool for it? This is the feature-backlog item "|M|² by term
-rewriting" examined against what the evaluator and the profiles have measured.
-Nothing here was built; the numbers are from notes 15, 30, 31 and 32, and the
-cost estimates in §3 are counting arguments, marked as such.
+is egglog the tool for it? Examined against what the evaluator and the
+profiles have measured. Nothing here was built; the numbers are from notes 15,
+30, 31 and 32, and the cost estimates in §3 are counting arguments, marked as
+such.
+
+**Status: backlog topic, low priority** (user, 2026-09-26). This note is the
+whole record; it has no `TODO.md` entry. It carries two measurable follow-ups
+(§7): the trace-form |M|² with its pre-registered kill and the final-size
+scaling question, and helicity sampling as the direct lever on the expensive
+rows. An idea the topic also covers: the explicit-invariant form of |M|² is the
+natural input to a phase-space map derived from the integrand's own structure
+rather than read off propagator poles.
 
 ## 0. Verdict
 
@@ -205,7 +213,7 @@ approach out; it just has to be produced too.
    draws from `eval_hel_m2`, and colour selection draws from `eval_jamp2`
    (per-flow `Σ_hel |JAMP_i|²`). A trace program can supply JAMP2 as flow-diagonal
    blocks but has no per-helicity content, so it would sit *beside* the
-   per-helicity program (as the backlog entry already says), doubling the
+   per-helicity program, doubling the
    compile surface per subprocess.
 5. **A side benefit: the trace form is Lorentz invariant.** It depends only on
    invariants, so it has no partonic-CM, beams-along-z contract (the pruned
