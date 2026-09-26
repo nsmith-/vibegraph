@@ -1316,3 +1316,133 @@ Then the sprint is closed.
 - Whether to open the PR from `claude/cool-einstein-aehc0f` to `main`. It carries the whole sprint plus C4V.
 - The next slot: MLM, then NLO (planned in a later session), and the performance backlog.
 - Filing the MadGraph `FFV2P1D_1` report upstream.
+
+## 8. Close-out record
+
+### 8.1 Z1 (2026-09-26, this container, on `pg-z1` from `14029ce`)
+
+Commits: `14cf297` generators and `generate-references`, `5a79098` the patched
+`$ t t~` reference, `a8cc5ce` manifest registrations, and the docs commit after
+them. After them, on the edited tree: `cargo fmt --check` and clippy on the
+extended-validation targets clean, `cargo test --workspace` 1232 passed and 0
+failed, and `validate_scales`, `validate_alphas`, `validate_madgraph_diagrams` and
+the `$ t t~` row rerun green under release-debug (that row now reads the patched
+reference: +1.92%, pull +4.62, informational as before).
+
+**The banked layer end to end.** `validation/validate.sh` (what
+`pixi run --skip-deps validate` runs) on the merged base against `refdata-7`,
+clippy on the extended-validation targets and the collator included:
+exit 0. Clippy clean; 58 test targets, 0 failures (the heaviest,
+`cli_onshell_veto`, 2143 s with the `$ t t~` row); the collator: 59 rows × 4
+categories, 190 measured cells, 183 ✅ and 7 ⚠️, 4 ⏳ at the oracle layer (the two
+2→6 rows' σ and samples) and 42 covered-by or uncovered, "the measured cells are
+the declared cells". Every ⚠️ is a standing, documented one (`gg_to_gg` and
+`gg_to_gg_cg` diagram-count conventions, `gg_to_gg_cg`'s −0.22% σ, the
+`ee_to_wpwm_cw`, `ee_to_zh_smeft` and `wpwm_to_wpwmz_cw` amplitude cells,
+`ee_to_mumua`'s samples). Nothing failed, so nothing here is attributable to the
+flavour-group scale finding; `validate_scales` passes on this base. `pythia-consumption`
+runs in its own environment and was not run. The manifest's registrations (below)
+were written while the gates ran; they add rows and entries and change no cell a
+gate writes, and the collator re-run on the final manifest reads the same.
+
+**Registered rows.** The polarized six (`ee_to_wp0wmt`, `ee_to_wp0wm`, `ee_to_z0h`,
+`uux_to_ztg`, `ee_to_mumu_eml`, `ee_to_tlt`) are now `status = "planned"` beside
+their `bundled = false`: their runs lived in a work area that no longer exists.
+S2's two σ rows are new `[[process]]` rows, `ee_to_mumu_zonly` (`e+ e- > z > mu+
+mu-`) and `ee_to_ee_nsz` (`e+ e- > e+ e- $$ z`), planned and unbundled, with
+scripts whose `launch` runs at the first seed of their seeded reference. P1's σ and
+`SPINUP` cells stay on `ee_to_wp0wm`, `uncovered` with the hand measurement in the
+note. Every row a run-sweeping gate would meet is declared in its inventory now
+(`validate_scales`' `CLUSTERED_RUNS`, `validate_alphas`'
+`SCALUP_IS_THE_RENORMALISATION_SCALE`), since both assert that every banked run is
+named and the six polarized rows were in neither. The sprint's gates are registered
+as `[[standalone]]` entries: `proc-grammar`, `schannel-census`,
+`decay-chain-census`, `polarization-census`, `polarization-frame`,
+`standalone-jamps`, `onshell-veto`, `decay-chain-events` (beside the existing
+`decay-two-body`, `decay-widths`, `decay-chain-sigma`, `runcard-decay-defaults`).
+
+**Correction to §7.1–7.2: D1's and E1's samples need no banked run.** Their gates
+(`cli_decay`'s sample test, `cli_decay_chain_events`) read committed summaries —
+histograms, categorical counts and 300 replay events — that `gen_decay_widths.sh`
+and `gen_decay_chain_events.sh` write from their own runs, so they already run on
+any checkout. Registering those runs as `[[process]]` rows would put decay and
+decay-chain runs in `output/`, where `validate_scales` asserts an inventory, and
+`extract_sigma.py`, `extract_configs.py` and `color_cf_oracle` would pick them up
+with no plan for a decay or a chain. They are therefore not `[[process]]` rows;
+what B1 reproduces for them is the committed summary (§8.2). The one thing banking
+them would add is `validate_lhef`'s byte-for-byte round trip over MadEvent's
+status-2 records and multi-process `<init>`, which is worth a row of its own once a
+decay-chain run has a `validate_scales` inventory class.
+
+**Generators.** `validation/madgraph/madevent_seeds.sh` holds the per-seed MadEvent
+loop the five seeded generators share: a process directory that exists is not
+regenerated, and a seed that finished under a byte-identical run card is read back
+from `Events/run_<tag>/vg_seed_result.txt`; `VG_FORCE=1` re-runs. Their work areas
+moved from temporary directories to `validation/madgraph/work/` (git-ignored,
+outside the bundle), and a subset run (`ROWS=`, `SEEDS=`) keeps the committed rows
+it did not run. `gen_decay_chain_sigma.sh` carries `zz_emu_cut`'s twenty seeds in
+its row, so one call reproduces the committed table. New:
+`gen_grammar_sigma.sh` (S2's `>`/`$$` rows and P1's `w+{0}`, `w+{T}` and unpolarized
+`w+ w-`, each beside its unrestricted control, five seeds, on each process's own
+generated card at 500 GeV). `generate_references.sh` gained a `seeds` stage (the
+five generators) and the `refs` stage the three census dumps, `dump_sm_decay_widths`,
+`decay_semianalytic`, `gen_decay_amplitudes` and `gen_standalone_jamps.py all`;
+pixi tasks `generate-decay-chain-sigma`, `generate-decay-chain-events`,
+`generate-onshell-veto`, `generate-grammar-sigma`, `generate-standalone-jamps`.
+Dry run (stub `generate_events`, every process directory pre-made): first pass 62
+seeds run and no generation, second pass 0 runs and 62 read back; a committed card
+edited re-runs exactly the 14 seeds that read it; `VG_FORCE=1` re-runs. Fresh run
+with the pinned MadGraph (`ROWS="t_wb t_bev" SEEDS=20260925`, 43 s): both widths
+and the whole `t_bev` histogram block reproduce the committed ones exactly, and the
+rerun reads both back in 0.5 s.
+
+**Seed policy** is in the manifest header: ≥ 5 seeds (≥ 10 under a gate tighter
+than 0.3%), stored per seed, read as the inverse-variance mean with
+max(quoted, spread/√n).
+
+**`FFV2P1D_1`.** Traced to its line: `parse_expression`'s momentum flip rewrites
+`P(` to `-P(`, and in the `1D` numerator's `P(-1,id)**2` that reads as `-(p²)`
+(note 07 appendix, with the upstream draft). The fix writes the square as a
+product; generated with and without it, only the odd-slot fermion routine
+changes. `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch` is applied
+by `gen_onshell_veto.sh` to a copy of the pinned tree for the `uu_tt` row, and the
+unpatched reading is kept as `uu_tt_mg371`. Regenerated here, five seeds:
+MadEvent 0.04888 ± 0.00020 pb (seed χ²/dof 5.9; seed 20260929 reads 0.04804, 1.8%
+below the other four) against this side's 0.04982 ± 0.00004, +1.9%. The row stays
+`info`; the ~2% is in the validation backlog.
+
+**Bookkeeping.** `TODO.md` (current position, history, validation and performance
+backlogs, pipeline table), README scope and feature table, the extended-validation
+skill's stage list. The guide builds with mdbook 0.4.52 with the `katex` preprocessor removed from a scratch copy of `book.toml`
+(`mdbook-katex` is not installed here and has no prebuilt Linux asset); every
+page and link resolved, so only the math rendering is unchecked.
+
+### 8.2 What B1 generates
+
+`pixi run -e madgraph generate-references` on a work area unpacked from
+`refdata-7`:
+- **madgraph stage**: the eight planned rows' process directories and runs
+  (`build.sh`, cached on the directories `refdata-7` already holds).
+- **seeds stage** (all new on that host, so every seed runs; about 230 MadEvent
+  runs): `decay_width_reference.json` (60), `decay_chain_sigma_reference.json`
+  (45), `decay_chain_events_reference.json` (25), `onshell_veto_reference.json`
+  (70, including the patched-tree copy), `grammar_sigma_reference.json` (35, new).
+  Each committed table is a reproduction check: the seeds should read what they
+  read here within their spread (on this host the first `t_wb`/`t_bev` seeds
+  reproduced bit for bit).
+- **refs stage**: every committed census and table, which must match exactly
+  (structural) or at rounding (amplitude and standalone tables).
+- `configs.json` and `sigma_reference.json` gain entries for the eight planned
+  rows (fixed-energy runs, one subprocess each): expected additions, not changes.
+  `diagrams.json` does not change (its keys are the rows declared `diagrams`
+  hermetic, which already include the polarized six).
+- Then B1's host gate run meets the eight runs for the first time in
+  `validate_scales`, `validate_alphas`, `validate_lhef` and `color_cf_oracle`,
+  which sweep every banked run; a failure there is a finding for Z2, not a
+  reason to drop the run.
+
+### 8.3 Z1s
+
+_Placeholder for Z1s (per-flavour-group scale clustering in `proton.rs`, E1's
+finding, with the dynamic-scale hadronic σ rows re-measured): to be filled when it
+merges._
