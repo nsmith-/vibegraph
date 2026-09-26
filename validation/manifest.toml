@@ -87,6 +87,27 @@
 # timings. One compiled module can serve more than one row's `amplitudes` gate
 # (`pp_to_ll_qcd0` generates the table `uux_to_mumu` also reads), so this table
 # is present only on the row that owns the generation.
+#
+# ## MadEvent references: the seed policy
+#
+# One MadEvent run is one draw, and its quoted error is not its spread: across
+# seeds MadEvent's own cross sections have scattered at chi2/dof 3-14 against
+# the errors they quote, full-process runs included, and on two rows its seeds
+# reached the answer only with more budget per run. So every MadEvent cross
+# section or width banked as a reference is
+#
+#   * at least five seeds, and at least ten where the gate reading it is tighter
+#     than 0.3%;
+#   * stored per seed (iseed, value, quoted error), never as a combined mean, so
+#     the spread is on the record beside the quote;
+#   * read by its gate as the seeds' inverse-variance mean with the uncertainty
+#     max(quoted, spread / sqrt(n)): "quoted" the inverse-variance error of the
+#     seeds' own quotes, "spread" their sample standard deviation.
+#
+# The generators under `validation/madgraph/` that source `madevent_seeds.sh`
+# write that per-seed table. The cross sections in `sigma_reference.json` and
+# `hadronic_sigma_reference.json` predate the rule and are single runs; a row
+# moved onto a seeded reference says so in its cell.
 
 schema = 1
 
@@ -1018,7 +1039,9 @@ samples = { tier = "banked", mode = "gate", note = "The sextet K6/K6Bar Clebsch 
 # combination in it matches per diagram; the averaging factor of a polarized
 # incoming leg and the polarization-aware identical-particle factor are pinned
 # against MadGraph's IDEN by the hermetic `polarization_census` test. Their
-# runs exist in a local work area only.
+# amplitude and coupling tables are committed; their MadEvent runs lived in a
+# work area that no longer exists, so each row is planned until the next bundle
+# carries its run (the scripts are unchanged, and build.sh regenerates them).
 
 [[process]]
 key = "ee_to_wp0wmt"
@@ -1027,6 +1050,7 @@ script = "validation/madgraph/scripts/ee_to_wp0wmt.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "Both W legs polarized, one longitudinal and one transverse: vxxxxx's helicity-0 vector and the two transverse ones, each alone in its leg's helicity sum, through the triple-gauge vertex and the neutrino exchange."
 artifacts = ["output/ee_to_wp0wmt", "amplitudes/ee_to_wp0wmt.json", "couplings/ee_to_wp0wmt.json"]
 mg_amplitude = { process = "e+ e- > W+{0} W-{T}", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 241 }
@@ -1043,14 +1067,15 @@ script = "validation/madgraph/scripts/ee_to_wp0wm.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "One longitudinal W beside an unpolarized one: the polarized cross section and event sample, and one term of the decomposition of e+ e- > w+ w- by the W+ helicity."
 artifacts = ["output/ee_to_wp0wm", "amplitudes/ee_to_wp0wm.json", "couplings/ee_to_wp0wm.json"]
 mg_amplitude = { process = "e+ e- > W+{0} W-", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 251 }
 [process.categories]
 diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "|M|^2 max_rel 1.46e-13 on the grid and 2.97e-14 on the event set, per-diagram 5.67e-15, per-flow 7.05e-15, JAMP2 1.92e-14 (G = +1i), the three configurations at 5.06e-15, over MadGraph's own 12-row NHEL table" }
-integrals = { tier = "uncovered", note = "measured against this row's MadEvent run with the CLI over five seeds, not by a registered gate: the run is outside the reference bundle" }
-samples = { tier = "uncovered", note = "SPINUP compared against this row's MadEvent event file with the CLI, not by a registered gate: the run is outside the reference bundle" }
+integrals = { tier = "uncovered", note = "measured by hand, not by a registered gate: `vibegraph integrate` seeds 1-5 at 500 GeV read 0.257932 pb against one MadEvent run's 0.2578 +- 0.00047 (+5.1e-4, pulls -0.02 ... +0.48, seed chi2/dof 0.97); the decomposition w+{0} + w+{T} = w+ w- holds to 3.0e-5 across seeds and to 3.8e-16 pointwise, and the unpolarized w+ w- and the w+{T} term both sit 2.3e-3 below their single MadEvent runs. The seeded reference is gen_grammar_sigma.sh's wp0_wm, wpt_wm and wp_wm rows (grammar_sigma_reference.json, not yet generated); a gate reading them fills this cell" }
+samples = { tier = "uncovered", note = "measured by hand, not by a registered gate: three `vibegraph generate` seeds of 20000 events against this row's MadEvent run of 10000, the W+ SPINUP 0 on every event on both sides, the W- SPINUP distribution chi2 1.45/2, 0.35/2, 2.70/2 and the beams 0.73/1, 0.37/1, 0.80/1. The run itself is this row's run_01, which the next bundle carries" }
 
 [[process]]
 key = "ee_to_z0h"
@@ -1059,6 +1084,7 @@ script = "validation/madgraph/scripts/ee_to_z0h.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "A longitudinal Z against an external scalar: the helicity-0 polarization vector alone in the Z's sum, on the VVS vertex."
 artifacts = ["output/ee_to_z0h", "amplitudes/ee_to_z0h.json", "couplings/ee_to_z0h.json"]
 mg_amplitude = { process = "e+ e- > Z{0} H", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 257 }
@@ -1075,6 +1101,7 @@ script = "validation/madgraph/scripts/uux_to_ztg.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "A transverse Z beside a gluon in a coloured process: the polarization restricts one massive vector's sum and leaves a massless one's, under a colour average of 1/9."
 artifacts = ["output/uux_to_ztg", "amplitudes/uux_to_ztg.json", "couplings/uux_to_ztg.json"]
 mg_amplitude = { process = "u u~ > Z{T} g", pdgs_in = [2, -2], pdgs_out = [23, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 263 }
@@ -1091,6 +1118,7 @@ script = "validation/madgraph/scripts/ee_to_mumu_eml.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "A polarized incoming fermion: one helicity of the electron beam, the leg MadGraph's IDEN then averages over one state rather than two."
 artifacts = ["output/ee_to_mumu_eml", "amplitudes/ee_to_mumu_eml.json", "couplings/ee_to_mumu_eml.json"]
 mg_amplitude = { process = "e+ e-{L} > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 269 }
@@ -1107,6 +1135,7 @@ script = "validation/madgraph/scripts/ee_to_tlt.mg5"
 class = "single-channel"
 n_final = 2
 bundled = false
+status = "planned"
 rationale = "A polarized massive fermion in the final state: its helicity is not Lorentz invariant, so this is the row where the frame the matrix element is evaluated in is part of the answer."
 artifacts = ["output/ee_to_tlt", "amplitudes/ee_to_tlt.json", "couplings/ee_to_tlt.json"]
 mg_amplitude = { process = "e+ e- > t{L} t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 271 }
@@ -1115,6 +1144,47 @@ diagrams = { tier = "hermetic", mode = "gate" }
 amplitudes = { tier = "hermetic", mode = "gate", note = "the left-handed top alone: |M|^2 max_rel 1.87e-14 on the grid and 7.13e-15 on the event set, per-diagram 4.77e-15, JAMP2 7.03e-15 (G = +1i), over MadGraph's own 8-row NHEL table. MadGraph's values are the partonic centre-of-mass ones (me_frame = [1, 2]); polarization_frame evaluates the same points boosted and they move by 0.32" }
 integrals = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized cross section is measured on the one-longitudinal-W card" }
 samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized event record is measured on the one-longitudinal-W card" }
+
+# ─────────────────────────── s-channel restrictions ──────────────────────────
+#
+# `> A` and `$$ A` are diagram filters on the process line. Which diagrams each
+# keeps is pinned card by card against MadGraph's own generation by the
+# hermetic `schannel_census` standalone gate; these rows carry the cross
+# sections. Their runs do not exist yet: each script's iseed is the first seed
+# of the per-seed reference gen_grammar_sigma.sh banks, and the next bundle
+# carries the run.
+
+[[process]]
+key = "ee_to_mumu_zonly"
+process = "e+ e- > z > mu+ mu-"
+script = "validation/madgraph/scripts/ee_to_mumu_zonly.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+status = "planned"
+rationale = "`> z` as a filter: of e+ e- > mu+ mu-'s two s-channel diagrams only the Z's is kept, so the cross section is the Z term alone without the gamma-Z interference, a factor of eight below the unrestricted process at 500 GeV."
+artifacts = ["output/ee_to_mumu_zonly", "grammar_sigma_reference.json#ee_z_only"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the card's diagram set (one diagram, its oriented s-channel Z) is matched against MadGraph's generation by the hermetic schannel_census gate (case ee_z_mumu); this row's own diagrams.json entry comes with its run" }
+amplitudes = { tier = "covered-by", rows = ["ee_to_mumu"], note = "the filter selects diagrams and changes none: the kept Z diagram is the one ee_to_mumu gates per diagram and per helicity" }
+integrals = { tier = "uncovered", note = "measured by hand, not by a registered gate: `vibegraph integrate` seeds 1-5 at 500 GeV on MadGraph's default card read a mean 0.052206 pb against one MadEvent run's 0.05221 +- 1.9e-5 (-0.007%, pulls -0.84 ... +0.53); the unrestricted process there is 0.4196 pb. The seeded reference is gen_grammar_sigma.sh's ee_z_only row beside its ee_mumu control (grammar_sigma_reference.json, not yet generated); a gate reading it fills this cell" }
+samples = { tier = "uncovered", note = "nothing compares this row's events yet; its run is the first seed of the planned reference" }
+
+[[process]]
+key = "ee_to_ee_nsz"
+process = "e+ e- > e+ e- $$ z"
+script = "validation/madgraph/scripts/ee_to_ee_nsz.mg5"
+class = "single-channel"
+n_final = 2
+bundled = false
+status = "planned"
+rationale = "`$$ z` as a filter on Bhabha scattering: the s-channel Z diagram goes and the t-channel Z exchange stays, so the filter has to read each propagator's direction and not only its particle."
+artifacts = ["output/ee_to_ee_nsz", "grammar_sigma_reference.json#ee_no_sz"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the `$$` filter is matched against MadGraph's generation by the hermetic schannel_census gate on e+ e- > e+ e- $$ a and e+ e- > mu+ mu- $$ z, not on this card; this row's own diagrams.json entry comes with its run" }
+amplitudes = { tier = "covered-by", rows = ["ee_to_ee"], note = "the filter selects diagrams and changes none: the kept diagrams are ee_to_ee's, gated there per diagram and per helicity" }
+integrals = { tier = "uncovered", note = "measured by hand, not by a registered gate: `vibegraph integrate` seeds 1-5 at 500 GeV on MadGraph's default card read a mean 157.56 pb against one MadEvent run's 157.5 +- 0.11 (+0.04%, pulls -0.78 ... +1.66). The seeded reference is gen_grammar_sigma.sh's ee_no_sz row beside its ee_ee control (grammar_sigma_reference.json, not yet generated); a gate reading it fills this cell" }
+samples = { tier = "uncovered", note = "nothing compares this row's events yet; its run is the first seed of the planned reference" }
 
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
@@ -1361,3 +1431,66 @@ layer = "hermetic"
 targets = ["vibegraph-lib/src/runcard.rs (unit tests)"]
 inputs = ["validation/madgraph/runcard_decay_defaults.json"]
 rationale = "The run card a decay reads without one — every cut as banner.py's remove_all_cut leaves it — against MadGraph's own RunCardLO after that call."
+
+# The process-grammar gates: MadGraph's own parser and generation as censuses of
+# proc cards, and the MadEvent references for the decay, decay-chain, `$` and
+# event-record features. Each reads committed JSON, so none needs the bundle.
+
+[[standalone]]
+key = "proc-grammar"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/proc_grammar_oracle.rs"]
+inputs = ["validation/madgraph/proc_grammar.json"]
+rationale = "MadGraph's own proc-card parser (MasterCmd with generation stubbed) over 132 cards, against diagrams::parse, check and resolve: every card MadGraph reads is read here to the same ProcessDefinition, field for field, and every card it refuses is refused. Regenerated by pixi run -e madgraph dump-proc-grammar."
+
+[[standalone]]
+key = "schannel-census"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/schannel_census.rs"]
+inputs = ["validation/madgraph/schannel_census.json"]
+rationale = "The `>` and `$$` filters, WEIGHTED bounds and the five-flavour p/j rewrite against MadGraph's own generation on 57 cards: per subprocess, the diagram count and the multiset of every diagram's oriented s-channel ids, and the cards both refuse. Flipping the orientation sign fails 10 cards, disabling the five-flavour rewrite 21. Regenerated by pixi run -e madgraph dump-schannel-census."
+
+[[standalone]]
+key = "decay-chain-census"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/decay_chain_census.rs"]
+inputs = ["validation/madgraph/decay_chain_census.json"]
+rationale = "Decay-chain stitching against MadGraph's combined matrix elements (HelasMultiProcess) on 24 cards: every (process, decays) MadGraph combines, the final state with each decay substituted in place, and its per-matrix-element diagram count against the stitched diagrams whose forced lines lead to MadGraph's blocks. MadGraph keeps one pairing of identical particles across decays and divides by identical_decay_chain_factor; this crate keeps every pairing, and the gate states that difference rather than hiding it. Regenerated by pixi run -e madgraph dump-decay-chain-census."
+
+[[standalone]]
+key = "polarization-census"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/polarization_census.rs"]
+inputs = ["validation/madgraph/polarization_census.json"]
+rationale = "Polarized legs against MadGraph's generation on 35 cards: per matrix element the legs with their polarization, the NHEL table the generated code sums over, IDEN (the averaging of a polarized incoming leg) and the (pdg, polarization)-keyed identical-particle factor, and the cards both refuse. Regenerated by pixi run -e madgraph dump-polarization-census."
+
+[[standalone]]
+key = "polarization-frame"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/polarization_frame.rs"]
+inputs = ["validation/madgraph/amplitudes/<polarized row>.json"]
+rationale = "The frame a polarized massive leg's helicity is defined in: at the banked centre-of-mass points this side reproduces MadGraph, and boosted the polarized rows move by 0.32-0.95 while their helicity sums and the massless e-{L} row stay invariant to rounding, so a comparison made in the wrong frame cannot pass."
+
+[[standalone]]
+key = "standalone-jamps"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/standalone_jamps.rs"]
+inputs = ["validation/madgraph/standalone/<key>.json", "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"]
+rationale = "Per-helicity, per-flow JAMPs of processes no MadEvent row carries (five gluons, u u~ > g g g, u g > u g, e+ e- > w+ w- z, w+ w- > w+ w-, t t~ > g g under O_HG), against MadGraph standalone output at a few points under one fitted unit-modulus constant: the contact-vertex signs next to Yang-Mills vertices, where |M|^2 alone is too coarse. Regenerated by pixi run -e madgraph generate-standalone-jamps."
+note = "w+ w- > e+ e- is compared and not enforced: its neutrino exchange comes out with the wrong sign relative to the photon and Z s-channel, while e+ e- > w+ w-, the same graphs crossed, agrees."
+
+[[standalone]]
+key = "onshell-veto"
+layer = "hermetic"
+targets = ["vibegraph-cli/tests/cli_onshell_veto.rs"]
+inputs = ["validation/madgraph/onshell_veto_reference.json", "validation/madgraph/onshell_ee_run_card.dat", "validation/madgraph/onshell_t_bev_run_card.dat", "validation/madgraph/onshell_uu_run_card.dat", "validation/madgraph/dy13_default_run_card.dat", "fetched PDF set (the proton row, under extended-validation)"]
+rationale = "Forbidden on-shell s-channels (`$ A`) through the shipped binary against MadEvent on the same proc and run cards, five seeds a side: e+ e- > mu+ mu- $ z on the Z pole and at 100 GeV inside the window, at 100 GeV with bwcutoff 3 and at 200 GeV outside it, t > b e+ ve $ w+ (one incoming leg), and under extended-validation p p > e+ e- $ z and u u~ > w+ b w- b~ $ t t~. Each against its unrestricted process as the known-wrong control. At 100 GeV the rows separate |M'|^2 (the marked lines zeroed on their window, which is what MadEvent integrates) from |M|^2 weighted by the surviving configurations' AMP2 share, 0.93% and 35 standard errors apart. Regenerated by pixi run -e madgraph generate-onshell-veto."
+note = "u u~ > w+ b w- b~ $ t t~ is reported, not gated, beyond requiring both windows to be zeroed. MadGraph 3.7.1's ALOHA never zeroes the top line (FFV2P1D_1, validation/madgraph/patches/aloha-p1d-flipped-fermion.patch), so its reference row is generated on a patched copy of the pinned tree and the unpatched reading is kept as uu_tt_mg371; with the patch MadEvent still reads about 2% below this side and moves down with budget where this side does not, which is unexplained."
+
+[[standalone]]
+key = "decay-chain-events"
+layer = "banked"
+targets = ["vibegraph-cli/tests/cli_decay_chain_events.rs"]
+inputs = ["fetched PDF set", "validation/madgraph/decay_chain_events_reference.json", "validation/madgraph/decay_chain_pp13_dyn_run_card.dat", "validation/madgraph/decay_chain_ee500_run_card.dat", "validation/madgraph/dy13_mmll_run_card.dat"]
+rationale = "Decay-chain and two-@N event files through the shipped binary against five pooled MadEvent runs per card: the status-2 resonance trees and their frequencies (forced lines always, free lines inside their windows), each record's SPINUP, colour and momentum rules, the resonance masses inside their windows, the process split of a two-@N card (one <init> entry per process, IDPRUP per event), a `$` on a chain's core, and MadEvent's own 300 events replayed through the scale prescription (every SCALUP reproduced by one of the event's configurations, AQCDUP to the printed digit). Regenerated by pixi run -e madgraph generate-decay-chain-events."
+note = "SCALUP and AQCDUP binned against MadEvent's sample are informational: a multi-group dynamic-scale hadronic point is clustered in the flavour group the sampler drew, not in the one its event is labelled with, which the binned columns cannot resolve."
