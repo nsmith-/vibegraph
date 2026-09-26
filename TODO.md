@@ -538,11 +538,14 @@ above); the entries here are the eventual features.
   map derived from the integrand's own structure rather than read off
   propagator poles. Both are gated on the extraction prerequisites note 15 §4.1
   lists. **Feasibility (note 38)**: a 10–50× per-point win at 2 → 2 and small
-  2 → 3, but the pair sum grows as D² and loses to the recycled helicity program
-  from about 2 → 4. The evaluator's 50–62% profile share caps the integration
-  stage at 2.0–2.7×. The trace stage is a normalizer, not an e-graph job. The
-  first step is a hand-derived llj trace |M|² with a pre-registered kill (< 1.3×
-  on `pp_to_llj_dyn` CPU-to-target); helicity sampling (next entry) targets the
+  2 → 3. From 2 → 4 the *intermediate* expansion grows as D² × a factorial in
+  trace length, but that is compile-time; the simplified form's size decides
+  the per-point cost and is unmeasured (FORM on `ee_to_mumua` and
+  `ee_to_mumu_tata_qcd0`; functional reconstruction skips the swell). The
+  evaluator's 50–62% profile share caps the integration stage at 2.0–2.7×
+  either way. The trace stage is a normalizer, not an e-graph job. The first
+  step is a hand-derived llj trace |M|² with a pre-registered kill (< 1.3× on
+  `pp_to_llj_dyn` CPU-to-target); helicity sampling (next entry) targets the
   expensive rows directly.
 - **Helicity sampling (`nhel = 1`) — offline gain measurement first** (note 38
   §7). One helicity combination per point, drawn with `p_h` and weighted

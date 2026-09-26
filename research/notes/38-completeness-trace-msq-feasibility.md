@@ -17,9 +17,12 @@ lot":** the evaluator is 50–62% of the integrand wherever it has been profiled
 (note 30 §7.1), so an infinitely fast |M|² bounds the stage at 2.0–2.7×, and the
 processes where the trace form wins are the ones that already integrate in
 seconds. **Where the integration time actually goes (2 → 4 and up) the trace
-form loses to the helicity program**: the interference sum grows as the square
-of the diagram count, and a trace's term count grows factorially with its
-length, which grows linearly with the vertices on the fermion loop.
+form's runtime cost is unknown, not settled**: the *intermediate* expansion
+grows as the square of the diagram count times a factorial in trace length,
+but that is a compile-time cost, and the simplified result can be far shorter
+(§3.1). No compact forms are known for the massive/electroweak 2 → 4 rows, and
+every multi-leg generator evaluates them numerically, but that is precedent,
+not a bound. The final-size scaling is a measurement (§7).
 
 **egglog is the wrong engine for the part that does the work.** Trace evaluation
 and index contraction are a terminating, confluent normalization, where an
@@ -97,10 +100,9 @@ line, plus the two external `p̸`. Diagram counts are MadGraph's
 | `uux_to_ccx_emmm_qcd0` | 579 | 167 910 | four loops | ≫10⁶ | 89 052 |
 | `wpwm_to_wpwmz_cw` | 222 | 24 753 | — (bosonic, gauge cancellations) | large | — |
 
-Simplification (momentum conservation, on-shell conditions, collecting terms)
-removes a lot, and a polynomial optimizer removes more, but the D² growth and
-the factorial growth both remain. The ordering is the standard one in the
-literature:
+These columns are the *intermediate* expansion, which is paid once at compile
+time. The per-point cost is set by the simplified expression, which §3.1
+discusses. The historical ordering:
 
 - **The 2 → 2 closed forms are tiny.** `gg → gg` is
   `(9/2) g⁴ (3 − tu/s² − su/t² − st/u²)`, and `e⁺e⁻ → μ⁺μ⁻` through γ/Z is a few
@@ -114,6 +116,43 @@ literature:
   2 → 4 for this reason. Four-fermion LEP2 generators (EXCALIBUR, Berends–Kleiss–
   Pittau 1994) and every multi-leg generator since (MadGraph, COMIX, …) moved to
   helicity amplitudes for the same reason.
+
+### 3.1 Intermediate swell is not final size
+
+The expanded trace sum is routinely orders of magnitude longer than the
+simplified |M|². Gauge invariance cancels whole classes of terms, and the
+result is pinned by its poles and factorization limits, so it can collapse:
+
+- `gg → gg`: 6 diagrams (one with a four-gluon vertex) and ghost or
+  physical-polarization terms in the intermediate state, one line out.
+- `e⁺e⁻ → q q̄ g`: `∝ (x₁² + x₂²)/((1 − x₁)(1 − x₂))`.
+- `gg → ggg`, helicity-summed (Gottschalk–Sivers 1980; Berends et al. 1981):
+  `∝ (Σ_{i<j} s_ij⁴) · Σ_{perms} 1/(s₁₂ s₂₃ s₃₄ s₄₅ s₅₁)` — 25 diagrams in,
+  one symmetric expression out. It is compact because at five points every
+  non-vanishing helicity amplitude is MHV (Parke–Taylor).
+
+What the evidence does not show is that the collapse persists. The famous
+compact forms are massless, ≤ 5 points, and mostly pure QCD or a single vector
+boson. At six gluons non-MHV amplitudes enter and no comparably compact
+helicity-summed form is known. `e⁺e⁻ → 4 partons` (Ellis–Ross–Terrano 1981) runs
+to pages. None is known for the massive, finite-width, electroweak four-fermion
+rows here. The compact forms also depend on the right variables (spinor
+products, partial fractions in the `s_ij`); a naive monomial basis in the
+3n − 10 independent invariants can stay large even when a short form exists.
+
+Two consequences:
+
+- **The 2 → 4 runtime verdict is open.** It is decided by the size of the
+  simplified, CSE'd expression against the helicity program's ~10⁴ flops, and
+  that is measurable (§7).
+- **The swell itself can be skipped.** Functional reconstruction (Peraro,
+  arXiv:1608.01902; FiniteFlow, arXiv:1905.08019; for spinor-helicity ansätze,
+  De Laurentis–Maître, arXiv:1904.04067) samples a numerical evaluator at exact
+  rational or finite-field kinematics and reconstructs the rational function
+  directly, never forming the trace expansion. The existing evaluator would be
+  the sampler. It is generic over `F: Real`, but finite-field evaluation needs
+  a square-root-free parametrization of the kinematics (momentum twistors),
+  because external spinors involve `√(E ± p_z)`.
 
 ## 4. The Amdahl bound on the integration stage
 
@@ -206,7 +245,11 @@ The trace pipeline has three stages, and the e-graph suits only the last:
   CSE in `lower.rs` covers the CSE half.
 
 So egglog helps in the middle stage and only once §4.1's extractor exists. It is
-not on the critical path to a first measurement.
+not on the critical path to a first measurement. §3.1 makes that middle stage
+the one that matters, since it is where the short form is found. But finding a
+compact form by saturating a huge expanded input is the hard way round;
+reconstruction against an ansatz is the established tool, and an e-graph fits
+as a post-pass on an already-reconstructed expression.
 
 ## 7. Recommendation
 
@@ -222,6 +265,13 @@ not on the critical path to a first measurement.
    - Only a pass justifies the symbolic pipeline (in-tree trace normalizer →
      polynomial → Horner/CSE, auto-selected per subprocess below a diagram-count
      threshold, per-helicity program kept for events).
+   - *The scaling question (§3.1), separately*: obtain the simplified,
+     Horner/CSE-optimized `Σ_hel |M|²` for `ee_to_mumua` (2 → 3, 8 diagrams)
+     and `ee_to_mumu_tata_qcd0` (2 → 4, 25 diagrams), offline with FORM, and
+     count its flops against the evaluator's per-point cost. If the 2 → 4
+     expression is well under the helicity program, the "loses from 2 → 4"
+     precedent does not hold for these rows and the per-point case reopens
+     (the Amdahl cap of §4 still applies to the stage).
 2. **For the stated goal, integration speed, measure helicity sampling first.**
    MadEvent's `nhel = 1` evaluates one helicity combination per point, drawn
    with adapted probabilities `p_h`, and weights by `1/p_h`. MadGraph chose it
@@ -253,6 +303,9 @@ not on the critical path to a first measurement.
 - Berends, Kleiss, Pittau, "EXCALIBUR", Nucl. Phys. B424 (1994) 308, and
   Comput. Phys. Commun. 85 (1995) 437: four-fermion production by helicity
   amplitudes.
+- Peraro, arXiv:1608.01902, and FiniteFlow, arXiv:1905.08019: functional
+  reconstruction over finite fields; De Laurentis, Maître, arXiv:1904.04067:
+  analytic forms from numerical evaluations with spinor-helicity ansätze.
 - Kuipers, Ruijl, Vermaseren, "Code optimization in FORM", arXiv:1310.7007:
   Horner + CSE for large polynomials.
 - Zhang et al., egglog (note 14); note 15 §4.1 for the extraction blocker.
