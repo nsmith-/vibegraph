@@ -638,6 +638,22 @@ coverage. What is left below is what still refuses, and why.
 
 ## ⚡ Performance backlog
 
+- **MadEvent's `cumulated_time` denominator moved by half between hosts**
+  (`mg-comparison-cascade-lake-results.md`). On a Cascade Lake VM, both
+  `MATRIX1` and our integrand run 3.0× slower than on the M3 Max, and the
+  per-point ratio holds at 0.87×. MadEvent's summed job CPU grows only
+  1.1–1.6×, so time to accuracy reads 1.67× there against 3.84× on the M3,
+  and throughput 3.97× against 8.76×.
+  - Most of that CPU is per-job work other than the matrix element.
+  - Open question: is the M3 figure inflated by 16 concurrent jobs over 12
+    performance and 4 efficiency cores? Re-run the M3 pass with
+    `nb_core = 12`, or pinned to performance cores, and compare its
+    `cumulated_time`.
+  - Also open: which part of a MadEvent job the non-`MATRIX1` CPU is.
+- **`validation/madgraph/host_info.py` reads only macOS `sysctl`.** On Linux
+  the CPU block of `mg_timings.json` and `timings.json` is null. Read
+  `/proc/cpuinfo` (model name, family / model / stepping, logical CPUs) and
+  `/proc/meminfo` there.
 - **S5 — the phase-space map's lower edge lands on the cut edge** (note 34 §2).
   With a small timelike floor the map's lower edge coincides with the fiducial
   boundary and concentrates the residual `ΔR`/`pT` weight there (`pp_to_llj`
