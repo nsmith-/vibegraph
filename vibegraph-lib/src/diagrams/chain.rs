@@ -624,7 +624,12 @@ fn glue(core: &Diagram, parts: &[(usize, ChainNode, &Diagram)]) -> Diagram {
 
 /// `diagram` with its final-state legs relabelled, final-state position `i` moving to
 /// `permutation[i]`, and its momenta and sign rebuilt from the graph.
-fn relabelled(diagram: &Diagram, permutation: &[usize], n_in: usize, model: &UFOModel) -> Diagram {
+pub(super) fn relabelled(
+    diagram: &Diagram,
+    permutation: &[usize],
+    n_in: usize,
+    model: &UFOModel,
+) -> Diagram {
     let map = |l: LegIdx| {
         if l.0 < n_in {
             l

@@ -1030,6 +1030,107 @@ for a polarized massive leg); its stored default is now MadGraph's `1, 2`;
 - Gates: the `samples` category against MadGraph for one decay-chain run and
   one two-`@N` run.
 
+**Landed** (2026-09-26; the E1 commits on `pg-e1`). `generate` writes decay-chain
+events with their resonances; one `<init>` entry per `@N`; `add process` groups by
+content; `$` on a chain's core; `PDFSUP` as MadEvent's.
+
+- *MadEvent's record rules* (read from `addmothers.f`, `unwgt.f:737`, `myamp.f:76`, and
+  five MadEvent 3.7.1 runs of 10k events per card, `gen_decay_chain_events.sh`). The
+  records are the s-channel lines of `ICONFIG` that `cut_bw` leaves `OnBW` (`addmothers.f:253`,
+  `ickkw = 0`): forced lines (always, inside their windows), **and free lines inside
+  `bwcutoff·Γ` with `Γ/M < 0.1`** — in plain processes too (`ee_to_mumu` at 91.2 GeV, the `Z`
+  of `p p > mu+ mu- / a`), and inside chains (the `W` of `t > b e+ ve`: 49101 of 50000
+  `p p > t t~, t > b e+ ve, t~ > b~ mu- vm~` events carry both `W`s, 897 one, 2 none). A line
+  with a same-flavour daughter: external daughter → dropped; else the forced one wins, else the
+  one nearer its pole (`myamp.f:146`). Order: incoming, resonances, outgoing legs in process
+  order; the resonances run `i = -ns … -1` over `configs.inc`'s propagators, so parents
+  precede children but **sibling order depends on the configuration** (`gg` s-channel config
+  `t W+ t~ W-`, t-channel configs `t~ W- t W+`: 946 against 762 of 2000 `gg` events).
+  Mothers: top-level `1 2` (`1 0` on a decay, `unwgt.f:741`), nested and daughters `k k`
+  (`ttx_nested`: `W+` → `4 4` under the `t` at 4). Colour: `elim_indices` — the daughters'
+  lines with colour/anticolour pairs contracted (`t` → `501 0` with the `b`'s 501, `W` → `0 0`);
+  none written for a flow outside the configuration's leading-colour set (`is_LC`). Mass: the
+  virtuality; `SPINUP` 9; momentum the daughters' sum (0 of 199099 records violate either rule
+  on MadEvent's side). Identical decays (`e+ e- > z z, z > e+ e-`): `NSYM = 1`, one pairing,
+  the `Z`s over legs `(3,4)`, `(5,6)`.
+- *Here.* `lhef::resonance::SubprocessResonances` resolves each configuration's timelike lines
+  (oriented PDG, representation, `prwidth_tmp`, forced) from its representative diagram
+  (`AmplitudeEvaluator::config_diagram`) and applies `cut_bw`'s flag rule;
+  `select_config_and_flow` returns the configuration the colour flow was drawn in (same
+  variates, so the flow is unchanged), and on a chain the draw is restricted to configurations
+  whose forced lines are inside their windows (`mask_unadmitted`), which picks the pairing on
+  identical decays. `SubprocessRecord::event_with_intermediates` writes MadEvent's layout;
+  siblings are ordered by lowest outgoing leg, not by MadGraph's configuration tag (positions
+  carry no physics). **Decision: records for decay-chain cards only.** MadEvent also writes
+  free on-window lines for plain processes; matching that changes every existing LHE file
+  (the `Z` of `e+ e- > mu+ mu-` at the pole, the `W` of `t > b e+ ve`), so it is left as a
+  follow-up behind the unchanged-output rule. Flavour-group members take the representative's
+  line or its conjugate by the charge of the legs below (`member_line_pdg`); the model's
+  antiparticle entries carry `color = -1/-8` for singlets/octets (`make_anti` negates every
+  colour, UFO's `anti()` does not), handled locally.
+- *Gates* (`cli_decay_chain_events`, `decay_chain_events_reference.json`; ours two generation
+  seeds × 20k events, χ² homogeneity with this side's weights, p floor 1e-4):
+  `pp_ttx_lep_dyn` trees p 0.099, `SPINUP` 0.93, m(t) 0.17, m(t̄) 1.8e-3, m(W+) 0.17,
+  m(W−) 0.021, pT(t) 0.52, y(t) 0.99; `SCALUP` 0.76 and `AQCDUP` 0.27 informational (below).
+  An eight-seed probe (two integrations × four generations, 20k each) read m(t̄) p 0.02–0.89 and
+  m(W−) 0.01–0.40; MadEvent's own m(W−) against its m(W+) reads p 0.04, so the low values follow
+  the fixed reference. `ttx_nested` (nested forced `W+` under the `t`, undecayed `W-`): one tree,
+  `SPINUP` 0.77, masses 0.16–0.47. `zz_ee`: every event two `Z` records on their windows, m(Z)
+  informational (p 0.81). Every record on both sides satisfies the colour and momentum rules.
+  Pythia 8.312 reads a 2000-event chain sample 2000/2000 at process level and through the full
+  shower (`validation/pythia`, third sample); an `e+ e-` nested sample with an undecayed `W-`
+  is consumed 2000/2000 too, with Pythia decaying the `W-` itself.
+- *Scales* (item 4). MadEvent's own 300 events replayed through `coupling::scales`: every
+  `SCALUP` is reproduced by one of the event's configurations (worst 2.8e-7 relative) and
+  `AQCDUP` = αs(μR) to 5.0e-8 (the printed digit). `q q̄` events take √(m_T(t)·m_T(t̄))
+  (`reweight.f:1032`'s `mt2last`), `g g` the larger m_T, at the tops' virtualities. No code
+  change was needed except the `.or. gForceBW = 1` branch, now in `kt.rs`'s `cut_bw` with the
+  forced-first identical-daughter rule (`ForestLine::forced`); it moves nothing on SM tops
+  (Γ/M = 0.009). **Finding, not fixed:** the first 400 of our own generated events reproduce
+  their `SCALUP` in 253 replays (the `q q̄` ones in 9 of 55): `ProtonIntegrand` clusters a point's scale in the flavour group the
+  *sampler* drew, and the event is labelled with the group its luminosity-weighted `|M|²` draws,
+  so a `q q̄` event can carry the `g g` clustering and vice versa. MadEvent integrates each
+  group separately. Invisible on `p p > t t~` (both tops at the pole mass, equal m_T) and in
+  the binned `SCALUP` (p 0.76); it is a property of every multi-group dynamic-scale hadronic
+  run, and fixing it (a scale per group per point) changes σ of existing cards, so it is left
+  for a later session.
+- *`@N`* (`dy_two_procs`: `p p > e+ e- / z @1`, `add process p p > mu+ mu- / a @2`, dy13
+  window card). MadEvent writes `NPRUP = 2`, `XSECUP` 17.215 and 627.37 pb and each event's
+  `IDPRUP`; its `@1` share 0.02672 over 50k events. Here `EmitPlan::process_ids` gives one entry
+  per `@N`, `XSECUP_p` = σ × the file's weight share, `XERRUP_p` = √((f Δσ)² + σ² f(1−f)/n),
+  `XMAXUP_p` the process's own; stochastic rounding draws the sample twice to know the split
+  first. Share of `@1` 0.02686 (buffered, pull +0.13) and 0.02678 (stochastic, +0.05); both
+  files' `<init>` split equals their own event split to 1e-6; m(ee), m(μμ) p 0.26–0.63.
+  `Subprocess::process` carries `@N` per flavour-group member; the artifact's `process` string
+  lists every line with its number on a multi-line card (one line: unchanged).
+- *`add process` by content.* The brief's `p p > t t~ j` + `p p > j t t~` is a duplicate
+  subprocess, refused since G1. `derive_flavor_groups` now puts each subprocess's outgoing legs
+  in the first's order of (mass, cut class) (`DiagramSet::with_final_order`, D2's relabelling),
+  so `p p > w+ j` + `add process p p > j w-` groups (|M|² of the reordered `d u~ > w- g` equals
+  the direct enumeration to 1e-12). Fixed energy: `InconsistentExternals` refuses any two
+  different subprocesses; with fixed beams the only multi-line cards it could admit are
+  same-content lines (duplicates, refused) or ones needing per-subprocess cuts and clustering
+  channels, so it stays.
+- *`$` on a chain.* `e+ e- > mu+ mu- z $ z, z > e+ e-` read **σ = 0** before: `onshell.rs`
+  marked the forced `Z` (oriented id 23) and zeroed it on its own window. The veto now marks
+  core lines only (not forced, not inside a decay), as MadGraph marks the core amplitude before
+  attaching decays. Against MadEvent (five seeds each): 2.97134e-4 ± 3.6e-7 against
+  2.97573e-4 ± 2.2e-7 pb, +0.15%, pull +1.05. A `$` on a decay (`h > e+ e- mu+ mu- $ z`) was
+  silently dropped; now `Unsupported::DecayOnShellVeto`. The brief's `z > e+ e- $ a` is vacuous
+  (a two-body decay has no propagator, and a zero-width photon has no window).
+- *PDFSUP.* MadEvent writes `get_pdf_id(pdlabel)` (`banner.py:3839`), not the `lhaid`: 247000
+  on every 3.7.1 fixed-energy banked run (lhaid 230000, hidden `pdlabel` `nn23lo1`), `lhaid`
+  under `pdlabel = lhapdf`. `RunCard::pdfsup` writes that on both paths; no banked LHEF gate
+  compares a fixed-energy `PDFSUP`, and the hadronic value is unchanged.
+- *Unchanged outputs* (base `580549a` binary against this branch, seed 7,
+  `--fixed-budget 4000 × 4`, 500 events buffered and stochastic): artifacts byte-identical on
+  `e+ e- > mu+ mu-`, `… mu+ mu- ta+ ta- QCD=0`, `u u~ > g g g`, `p p > e+ e-`, `t > b e+ ve`,
+  `p p > t t~` (dynamic), `e+ e- > mu+ mu- $ z`, `p p > l+ l- j`, `e+ e- > t t~, t > w+ b,
+  t~ > w- b~`; LHE files identical on the proton cards; the fixed-energy ones differ only in
+  `PDFSUP` (0 → 247000). Intended: a two-line card's artifact `process` string and its LHE
+  (header process line, `NPRUP`/entries, `IDPRUP`); chain LHE (refused before); `p p > w+ j` +
+  `j w-` (refused before).
+
 ## 5. Decisions
 
 - **2026-09-25 (user):** the release scope becomes MadGraph LO feature parity

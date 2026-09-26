@@ -41,6 +41,10 @@ pub struct ForestLine {
     pub sprop: Vec<i64>,
     pub mass: f64,
     pub width: f64,
+    /// `gForceBW = 1` (`decayBW.inc`): a decay chain forces the line on shell,
+    /// which exempts it from `cut_bw`'s narrow-width condition and gives it
+    /// priority over a same-flavour line nested in it.
+    pub forced: bool,
 }
 
 /// One integration channel's forest, plus the coupling order that decides which
@@ -435,6 +439,7 @@ mod tests {
             sprop: vec![sprop],
             mass: 0.0,
             width,
+            forced: false,
         }
     }
 

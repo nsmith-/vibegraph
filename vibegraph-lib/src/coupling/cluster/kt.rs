@@ -473,14 +473,17 @@ fn cut_bw(channel: &Channel<'_>, settings: &ClusterSettings, p: &[[f64; 4]]) -> 
         let xmass = mg_dot(&q, &q).sqrt();
         mass_of.push((index, xmass));
         let width = line.width.max(line.mass * settings.small_width_treatment);
-        let onshell =
-            (xmass - line.mass).abs() < settings.bwcutoff * width && width / line.mass < 0.1;
+        // A line a decay chain forces on shell is tagged inside its window
+        // whatever its width, `myamp.f:136`'s `.or. gForceBW = 1`.
+        let onshell = (xmass - line.mass).abs() < settings.bwcutoff * width
+            && (width / line.mass < 0.1 || line.forced);
         if !onshell {
             continue;
         }
         on_bw.push(index);
         // Only one of two nested lines carrying the same propagator may be
-        // tagged; the one further from its pole loses.
+        // tagged: a forced one wins over one that is not, and otherwise the one
+        // further from its pole loses.
         let sprop = line.sprop.get(iproc - 1).copied().unwrap_or(0);
         let mut identical = 0i32;
         for &daughter in &line.daughters {
@@ -499,8 +502,19 @@ fn cut_bw(channel: &Channel<'_>, settings: &ClusterSettings, p: &[[f64; 4]]) -> 
                 identical = daughter;
             }
         }
+        let forced = |i: i32| {
+            forest
+                .lines
+                .iter()
+                .find(|l| l.index == i)
+                .is_some_and(|l| l.forced)
+        };
         if identical > 0 {
             on_bw.retain(|&i| i != index);
+        } else if identical < 0 && forced(identical) {
+            on_bw.retain(|&i| i != index);
+        } else if identical < 0 && line.forced {
+            on_bw.retain(|&i| i != identical);
         } else if identical < 0 {
             let inner = momentum(identical, &momenta, &internal);
             let inner_mass = mg_dot(&inner, &inner).sqrt();
@@ -919,5 +933,74 @@ fn measure_pair(
     if fortran_sign(pcl[idi as usize][3]) != fortran_sign(pcl[idj as usize][3]) {
         pt2ij[idij as usize] *= TIE_BREAK;
         record.inflated = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coupling::cluster::graph::{ChannelSet, ConfigForest, ForestLine};
+
+    /// `e+ e- > mu+ mu-` through one `Z` line of width `width`, forced on shell
+    /// or not.
+    fn z_channel(width: f64, forced: bool) -> ChannelSet {
+        ChannelSet {
+            n_external: 4,
+            n_incoming: 2,
+            configs: vec![ConfigForest {
+                nqcd: 0,
+                lines: vec![ForestLine {
+                    index: -1,
+                    daughters: [4, 3],
+                    tprid: 0,
+                    sprop: vec![23],
+                    mass: 91.188,
+                    width,
+                    forced,
+                }],
+            }],
+            external_pdg: vec![vec![-11, 11, -13, 13]],
+            contributes: vec![vec![true]],
+        }
+    }
+
+    /// `cut_bw` flags a line inside `bwcutoff` widths of its pole only when it
+    /// is narrow, `Γ/M < 0.1` — unless a decay chain forces it, which
+    /// `myamp.f:136` exempts from the width condition.
+    #[test]
+    fn a_forced_line_is_tagged_whatever_its_width() {
+        let colors = ColorTable::new([(11, 1), (-11, 1), (13, 1), (-13, 1), (23, 1)], 4);
+        let settings = ClusterSettings {
+            hadronic: false,
+            ..ClusterSettings::default()
+        };
+        let e = 47.0;
+        let p = [
+            [e, 0.0, 0.0, e],
+            [e, 0.0, 0.0, -e],
+            [e, e * 0.6, 0.0, e * 0.8],
+            [e, -e * 0.6, 0.0, -e * 0.8],
+        ];
+        for (width, forced, tagged) in [
+            (2.44, false, true),
+            (2.44, true, true),
+            (12.0, false, false),
+            (12.0, true, true),
+        ] {
+            let set = z_channel(width, forced);
+            let tables = set.merge_tables(1);
+            let channel = Channel {
+                set: &set,
+                table: &tables[0],
+                colors: &colors,
+                this_config: 1,
+                iproc: 1,
+            };
+            assert_eq!(
+                !cut_bw(&channel, &settings, &p).is_empty(),
+                tagged,
+                "width {width}, forced {forced}"
+            );
+        }
     }
 }

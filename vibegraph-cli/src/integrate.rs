@@ -455,13 +455,28 @@ pub(crate) fn load_run_card(
     card.map_err(|e| err(format!("failed to load run card: {e}")))
 }
 
-/// The canonical string of the proc card's first process, for artifact metadata.
+/// The canonical string of the proc card's processes, for artifact metadata: the
+/// line itself on a one-line card, every line with its process number otherwise.
 pub fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
-    let spec = parsed
-        .processes
-        .first()
-        .ok_or_else(|| err("proc card has no process"))?;
-    Ok(format!("{spec}"))
+    match parsed.processes.as_slice() {
+        [] => Err(err("proc card has no process")),
+        [spec] => Ok(format!("{spec}")),
+        // Every line, with its process number: the lines are what the artifact's
+        // cross section sums, and the numbers are what the event file's `<init>`
+        // entries and `IDPRUP`s refer to.
+        many => Ok(many
+            .iter()
+            .map(|p| {
+                // A line with overall orders already spells its number before them.
+                if p.chain_orders.is_empty() {
+                    format!("{p} @{}", p.id)
+                } else {
+                    format!("{p}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("; ")),
+    }
 }
 
 /// The factorization scale the run artifact records: the run card's constant when

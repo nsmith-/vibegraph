@@ -133,6 +133,45 @@ impl DiagramSet {
         self.polarizations.iter().any(Option::is_some)
     }
 
+    /// The same subprocess with its outgoing legs in another order: outgoing leg
+    /// `order[i]` of `self` becomes outgoing leg `i`. Every diagram is relabelled
+    /// with it, its momenta and fermion sign rebuilt from the graph, so the result
+    /// is the enumeration the reordered process line would have produced.
+    ///
+    /// `None` when `order` is not a permutation of the outgoing legs.
+    pub fn with_final_order(&self, order: &[usize], model: &UFOModel) -> Option<DiagramSet> {
+        let n_in = self.particles_in.len();
+        let n_out = self.particles_out.len();
+        let mut seen = vec![false; n_out];
+        if order.len() != n_out
+            || order
+                .iter()
+                .any(|&k| k >= n_out || std::mem::replace(&mut seen[k], true))
+        {
+            return None;
+        }
+        // `relabelled` moves outgoing position `i` to `to[i]`.
+        let mut to = vec![0; n_out];
+        for (i, &k) in order.iter().enumerate() {
+            to[k] = i;
+        }
+        let mut polarizations = self.polarizations[..n_in].to_vec();
+        polarizations.extend(order.iter().map(|&k| self.polarizations[n_in + k].clone()));
+        Some(DiagramSet {
+            particles_in: self.particles_in.clone(),
+            particles_out: order
+                .iter()
+                .map(|&k| self.particles_out[k].clone())
+                .collect(),
+            polarizations,
+            diagrams: self
+                .diagrams
+                .iter()
+                .map(|d| chain::relabelled(d, &to, n_in, model))
+                .collect(),
+        })
+    }
+
     /// `u u~ > z{0} g`: the subprocess with each polarized leg's helicities.
     pub fn label(&self) -> String {
         let n_in = self.particles_in.len();

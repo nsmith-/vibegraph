@@ -18,6 +18,7 @@
 //! |---|---|---|
 //! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C QED>0, B > D E @1 QED=2` | a meaning for an overall order a part also constrains other than from above (not planned) |
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
+//! | [`DecayOnShellVeto`](Unsupported::DecayOnShellVeto) | `e+ e- > z h, h > e+ e- mu+ mu- $ z` | marking a decay's own propagators, per decay |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
 //! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order (not planned) |
@@ -220,6 +221,21 @@ pub enum Unsupported {
          a decaying particle at rest a spin axis pinned against MadGraph"
     )]
     DecayedPolarization { process: String, leg: String },
+    /// A forbidden on-shell s-channel (`$ A`) on a decay of a decay chain,
+    /// `e+ e- > z h, h > e+ e- mu+ mu- $ z`. MadGraph marks the decay
+    /// amplitude's own propagators; the veto here is installed from one list per
+    /// card and marks the core's propagators only, so a decay's list would go
+    /// unread. A `$` on the core of a chain is supported.
+    #[error(
+        "'{process}': the forbidden on-shell s-channel '$ {names}' is on the decay \
+         '{decay}', which is not supported: the veto marks the core process's propagators \
+         only. A '$' on the core of the chain is supported"
+    )]
+    DecayOnShellVeto {
+        process: String,
+        decay: String,
+        names: String,
+    },
     /// The propagator-only polarization codes (`{A}` auxiliary, `{G}` metric,
     /// `{H}`, `{Q}`, `{W}`, `{S}`), which replace a resonance's propagator
     /// numerator by a projection.
@@ -674,8 +690,28 @@ fn check_definition(
         }
     }
     for decay in &def.decay_chains {
+        if !decay.forbidden_onsh_s_channels.is_empty() {
+            refused.push(Unsupported::DecayOnShellVeto {
+                process: process(),
+                decay: decay_text(decay),
+                names: decay.forbidden_onsh_s_channels.join(" "),
+            });
+        }
         check_definition(decay, text, true, refused);
     }
+}
+
+/// A decay as its legs spell it, `h > e+ e- mu+ mu-`.
+fn decay_text(def: &ProcessDefinition) -> String {
+    let side = |state: LegState| {
+        def.legs
+            .iter()
+            .filter(|l| l.state == state)
+            .map(|l| l.token.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    format!("{} > {}", side(LegState::Initial), side(LegState::Final))
 }
 
 /// A checked definition as the narrow type.
@@ -765,6 +801,28 @@ mod tests {
 
     fn refused(card: &str) -> Vec<Unsupported> {
         check(card).expect_err("the card is refused").0
+    }
+
+    /// A `$` on a decay of a chain is refused, at any depth, while one on the
+    /// chain's core, and one on a `1 → n` process line, are supported.
+    #[test]
+    fn a_forbidden_onshell_line_on_a_decay_is_refused() {
+        for card in [
+            "generate e+ e- > z h, h > e+ e- mu+ mu- $ z",
+            "generate p p > t t~, (t > w+ b, w+ > e+ ve $ a), t~ > w- b~",
+        ] {
+            let all = refused(card);
+            assert!(
+                matches!(all.as_slice(), [Unsupported::DecayOnShellVeto { .. }]),
+                "{card}: {all:?}"
+            );
+        }
+        for card in [
+            "generate e+ e- > mu+ mu- z $ z, z > e+ e-",
+            "generate t > b e+ ve $ w+",
+        ] {
+            assert!(check(card).is_ok(), "{card}");
+        }
     }
 
     #[test]

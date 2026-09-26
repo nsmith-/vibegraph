@@ -480,11 +480,21 @@ above); the entries here are the eventual features.
     performance item.
   - **S3** ✅ landed (`fdd0f34`, `c46d268`, `7a1eb52`; note 38 §4 S3 Landed): `$` zeroes every marked propagator on its window in the amplitude (MadGraph's `P1D`), not an SDE reweighting; six rows agree with MadEvent over five seeds (lepton pairs in and out of the Z window, `t > b e+ ve $ w+`, Drell–Yan); the `$ t t~` row is off by MadGraph 3.7.1's `FFV2P1D_1` sign defect, and a residual ~2% against the patched MadEvent is open.
   - **P1** ✅ landed (`3b3f71e`, `3c023b2`; note 38 §4 P1 Landed): polarized external legs, NHEL/IDEN census against MadGraph (35 cards), six gated amplitude rows, `me_frame` consumed with a boosted-frame mutation pin, σ(`e+ e- > w+{0} w-`) +5e-4 over five seeds.
+  - **E1** ✅ landed (note 38 §4 E1 Landed): decay-chain events with MadEvent's
+    status-2 records (forced lines, and free lines inside their windows; mothers, colour,
+    virtualities), gated against five MadEvent runs per card (`cli_decay_chain_events`) and
+    read 2000/2000 by Pythia; `@N` → one `<init>` entry per process and `IDPRUP` (split within
+    0.13σ of MadEvent); `add process` grouped by content; `$` on a chain's core (was σ = 0;
+    now +0.15% of MadEvent), `$` on a decay refused; `PDFSUP` as MadEvent's
+    `get_pdf_id(pdlabel)`. Open follow-ups: (1) a hadronic point's scale is clustered in the
+    sampled flavour group, not the event's (253 of 400 own events replay their `SCALUP`;
+    MadEvent's 300 all do) — a per-group scale changes σ of existing dynamic-scale cards;
+    (2) MadEvent's status-2 records for free on-window lines of plain processes are not
+    written (would change every existing LHE file); (3) `$` on a decay of a chain;
+    (4) sibling order of records follows the lowest leg, not MadGraph's configuration tag.
   - **Close-out** (note 38 §7): Z1 here after E1: the full banked layer end to end,
     new rows registered, generators wired, seed policy, bookkeeping. B1 on the bank
     host: `refdata-8`. Z2: re-verify from the published bundle.
-  - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
-    grouping.
 
   Polarized intermediate resonances (a change to the propagator in
   `helas/eval`) stay refused, with their own entry below.

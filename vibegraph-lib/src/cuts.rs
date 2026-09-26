@@ -73,7 +73,7 @@ use crate::ufo::EvaluatedModel;
 /// MadGraph's `small_width_treatment` default, the floor on every width as a
 /// fraction of its mass. The run card cannot move it: a value off the default is
 /// refused at parse.
-const SMALL_WIDTH_TREATMENT: f64 = 1e-6;
+pub(crate) const SMALL_WIDTH_TREATMENT: f64 = 1e-6;
 
 /// One propagator a decay chain forces on shell: the final-state legs whose
 /// momenta it carries, and the pole it is kept near.
@@ -977,6 +977,14 @@ fn describe(v: &ParamValue) -> String {
         ParamValue::Bool(b) => b.to_string(),
         ParamValue::Str(s) | ParamValue::Opaque(s) => format!("'{s}'"),
     }
+}
+
+/// The cut class `cuts.f` files an outgoing particle under — `j`, `b`, `l` or
+/// `a` — or `None` for one no class-keyed cut reads.
+pub fn cut_class(pdg: i32, maxjetflavor: i64) -> Option<char> {
+    classify(0, &ExternalLeg::outgoing(pdg, 0.0), maxjetflavor)
+        .letter
+        .map(letter_char)
 }
 
 fn classify(idx: usize, leg: &ExternalLeg, maxjetflavor: i64) -> LegInfo {

@@ -465,6 +465,25 @@ impl AmplitudeEvaluator {
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
     pub fn select_color_flow(&self, amp2: &[f64], jamp2: &[f64], u: [f64; 2]) -> Option<usize> {
+        self.select_config_and_flow(amp2, jamp2, u)
+            .map(|selection| selection.flow)
+    }
+
+    /// [`select_color_flow`](Self::select_color_flow), keeping the configuration
+    /// the flow was drawn in.
+    ///
+    /// The configuration is MadEvent's `ICONFIG` for the record: besides masking
+    /// the flow draw, it is the diagram whose s-channel propagators `addmothers`
+    /// writes as intermediate records, so an event's colour flow and its
+    /// resonance structure come from the same configuration. The draw consumes
+    /// exactly the variates `select_color_flow` does, so the flow is the same
+    /// either way.
+    pub fn select_config_and_flow(
+        &self,
+        amp2: &[f64],
+        jamp2: &[f64],
+        u: [f64; 2],
+    ) -> Option<ColorSelection> {
         // Asserted rather than debug-asserted for the reason `select_helicity`
         // gives: a short weight vector draws from a prefix and returns a label that
         // looks valid.
@@ -479,13 +498,33 @@ impl AmplitudeEvaluator {
             "jamp2 weights must cover the color flows"
         );
         match select_index(amp2, u[0]) {
-            Some(c) => select_flow_reached_by(jamp2, self.config_flows(c), u[1]),
+            Some(c) => {
+                let reached = self.config_flows(c);
+                let flow = select_flow_reached_by(jamp2, reached, u[1])?;
+                Some(ColorSelection {
+                    config: Some(c),
+                    flow,
+                    leading: reached.get(flow).copied().unwrap_or(false),
+                })
+            }
             // No configuration carries weight here (or the process has none), so
             // there is nothing to condition on and the draw runs over every flow —
             // the same fallback `SELECT_COLOR` takes when its masked cumulant ends
             // at zero.
-            None => select_flow(jamp2, u[1]),
+            None => select_flow(jamp2, u[1]).map(|flow| ColorSelection {
+                config: None,
+                flow,
+                leading: false,
+            }),
         }
+    }
+
+    /// The diagram an integration configuration is written from: the first of
+    /// its members, as an index into the diagram set the evaluator was compiled
+    /// from — the representative MadGraph's `configs.inc` writes.
+    pub fn config_diagram(&self, config: usize) -> Option<usize> {
+        let start: usize = self.config_spans.get(..config)?.iter().sum();
+        self.config_amp_diagrams.get(start).copied()
     }
 
     /// Return the number of color flows (NCOLOR).
@@ -791,6 +830,20 @@ pub const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "g u~ > e+ e- u~ QCD=2 QED=2",
     "u d > e+ e- u d QCD=0",
 ];
+
+/// What [`AmplitudeEvaluator::select_config_and_flow`] draws for one event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ColorSelection {
+    /// The integration configuration drawn `∝ AMP2`, `None` where no
+    /// configuration carried weight and the flow was drawn unmasked.
+    pub config: Option<usize>,
+    /// The colour flow.
+    pub flow: usize,
+    /// Whether the configuration reaches the flow at leading colour: MadEvent's
+    /// `SELECT_COLOR` returns a negative `ICOL` otherwise, and `addmothers`
+    /// then writes no intermediate record for the event.
+    pub leading: bool,
+}
 
 /// The diagrams MadGraph gives an integration configuration — and therefore an
 /// `AMP2` accumulator and an `ICOLAMP` column — as indices into `diagrams`.
@@ -1244,8 +1297,25 @@ mod tests {
                     Some(want),
                     "amp2 {amp2:?} at u = [{u0}, {u1}]"
                 );
+                // The configuration the flow was drawn in comes back with it, the
+                // other one of the two, and reaches the flow at leading colour.
+                let drawn = eval
+                    .select_config_and_flow(&amp2, &jamp2, [u0, u1])
+                    .expect("a draw");
+                assert_eq!(drawn.flow, want);
+                assert_eq!(drawn.config, Some(1 - want));
+                assert!(drawn.leading);
             }
         }
+        // Each configuration is written from its first diagram.
+        for c in 0..eval.n_configs() {
+            let first: usize = eval.config_amp_counts()[..c].iter().sum();
+            assert_eq!(
+                eval.config_diagram(c),
+                Some(eval.config_amp_diagrams()[first])
+            );
+        }
+        assert_eq!(eval.config_diagram(eval.n_configs()), None);
     }
 
     /// A colourless process reduces the rule to a no-op: one flow, one all-admitting

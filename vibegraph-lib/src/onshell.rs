@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::diagrams::diagram::{Diagram, Prop};
+use crate::diagrams::diagram::{Diagram, OnShell, Prop};
 use crate::diagrams::schannel::oriented_s_channel_id;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{compile_class, HadronicError};
@@ -136,14 +136,38 @@ fn final_side_legs(momentum: &[i8], n_in: usize) -> Vec<usize> {
         .collect()
 }
 
-/// The marked s-channel lines of `diagram`: those whose oriented id is in
-/// `forbidden`.
+/// The marked s-channel lines of `diagram`: those of the process line's own
+/// core whose oriented id is in `forbidden`.
+///
+/// On a decay chain the `$` list is the core process's, and MadGraph marks the
+/// core amplitude's propagators before any decay is attached
+/// (`diagram_generation.py:781` runs per amplitude of the `DecayChainAmplitude`).
+/// The line a decay forces on shell is the core's external leg there, not one of
+/// its propagators, and every line inside a decay belongs to the decay's own
+/// amplitude, so neither is marked: a forced `Z` read as a `$ z` line would be
+/// zeroed exactly on the window the chain requires it to be in.
 fn marked_lines<'d>(
     diagram: &'d Diagram,
     forbidden: &'d [i64],
     model: &'d UFOModel,
 ) -> impl Iterator<Item = &'d Prop> + 'd {
+    let forced: Vec<Vec<usize>> = diagram
+        .props
+        .iter()
+        .filter(|p| p.onshell == OnShell::Forced)
+        .map(|p| final_side_legs(&p.momentum, diagram.n_in))
+        .collect();
     diagram.props.iter().filter(move |prop| {
+        if prop.onshell == OnShell::Forced {
+            return false;
+        }
+        let legs = final_side_legs(&prop.momentum, diagram.n_in);
+        if forced
+            .iter()
+            .any(|decay| legs.iter().all(|l| decay.contains(l)))
+        {
+            return false;
+        }
         oriented_s_channel_id(prop, diagram, model).is_some_and(|id| forbidden.contains(&id))
     })
 }
@@ -675,6 +699,54 @@ mod tests {
         // other orientation and is MadGraph's no-op.
         assert!(veto("u d~ > e+ ve", &["w+"], &evaluated, WINDOW).is_some());
         assert!(veto("u d~ > e+ ve", &["w-"], &evaluated, WINDOW).is_none());
+    }
+
+    /// `e+ e- > mu+ mu- z $ z, z > e+ e-`: the `$` is the core's, so it marks
+    /// the core's own s-channel `Z` lines (into `mu+ mu-`, and into the whole
+    /// final state) and never the `Z` the chain
+    /// forces into `e+ e-` — which, marked, would be zeroed on the very window
+    /// the chain holds it in — nor anything inside a decay.
+    #[test]
+    fn a_chain_cores_veto_leaves_the_forced_line_alone() {
+        let evaluated = EvaluatedModel::from_model(sm_model(SMRestrict::Default));
+        let model = evaluated.model();
+        let z = [particle(model, "z").pdg_code];
+        let chain = sets("e+ e- > mu+ mu- z, z > e+ e-", model).remove(0);
+        let (mu, e) = {
+            let at = |name: &str| {
+                chain
+                    .particles_out
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, n)| n.as_str() == name)
+                    .map(|(i, _)| i + 2)
+                    .collect::<Vec<_>>()
+            };
+            ([at("mu+")[0], at("mu-")[0]], [at("e+")[0], at("e-")[0]])
+        };
+        let sorted = |mut v: Vec<usize>| {
+            v.sort_unstable();
+            v
+        };
+        let (mu, e) = (sorted(mu.to_vec()), sorted(e.to_vec()));
+        let mut marked_mu = false;
+        for d in &chain.diagrams {
+            for line in marked_lines(d, &z, model) {
+                assert_ne!(line.onshell, OnShell::Forced);
+                let legs = sorted(final_side_legs(&line.momentum, d.n_in));
+                // A core line: into mu+ mu-, or the s-channel into the whole
+                // final state; never the decay's e+ e- nor anything below it.
+                assert!(
+                    !legs.iter().all(|l| e.contains(l)),
+                    "a marked line inside the decay: {legs:?}"
+                );
+                marked_mu |= legs == mu;
+            }
+            // Every diagram forces the Z into e+ e-.
+            assert!(d.props.iter().any(|p| p.onshell == OnShell::Forced
+                && sorted(final_side_legs(&p.momentum, d.n_in)) == e));
+        }
+        assert!(marked_mu, "the core carries its own Z into mu+ mu-");
     }
 
     /// With `Γ_Z` raised past `M_Z/10` the line is still zeroed on its window:

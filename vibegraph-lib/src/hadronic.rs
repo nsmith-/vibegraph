@@ -45,6 +45,7 @@ use crate::helas::eval::{
 };
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::lhef::build::scalup;
+use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
@@ -1573,6 +1574,10 @@ pub struct FixedBeamIntegrand<'a> {
     /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
     /// for a subprocess, leaves its matrix element whole.
     vetoes: Vec<Option<VetoedAmplitudes<'a>>>,
+    /// Per subprocess, the timelike lines of every configuration
+    /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
+    /// configuration draw on `AMP2` alone.
+    resonances: &'a [SubprocessResonances],
 }
 
 /// One thread's private half of a [`FixedBeamIntegrand`].
@@ -1700,6 +1705,11 @@ pub struct EventSelection {
     /// Index into the subprocess's colour-flow basis, and so into its
     /// [`ColorFlowTags`](crate::helas::color::flow_tags::ColorFlowTags) table.
     pub flow: usize,
+    /// The integration configuration the flow was drawn in, `None` where none
+    /// carried weight.
+    pub config: Option<usize>,
+    /// Whether that configuration reaches the flow at leading colour.
+    pub leading: bool,
 }
 
 /// The diagrams the integration channels are built from: one per configuration of
@@ -1826,7 +1836,29 @@ impl<'a> FixedBeamIntegrand<'a> {
             map_options: MapOptions::default(),
             maps: None,
             vetoes: Vec::new(),
+            resonances: &[],
         }
+    }
+
+    /// Draw an event's configuration only among those whose forced
+    /// Breit–Wigner lines are inside their windows at the event's momenta
+    /// ([`SubprocessResonances::mask_unadmitted`]), as MadEvent writes an event
+    /// from a channel whose `cut_bw` passed. The configuration names the
+    /// resonances [`select_event`](Self::select_event)'s caller writes.
+    ///
+    /// `resonances` holds one entry per subprocess, in subprocess order; empty
+    /// leaves the draw unrestricted, and so does a subprocess with no forced
+    /// line.
+    ///
+    /// # Panics
+    ///
+    /// If `resonances` is neither empty nor one entry per subprocess.
+    pub fn use_resonances(&mut self, resonances: &'a [SubprocessResonances]) {
+        assert!(
+            resonances.is_empty() || resonances.len() == self.subs.len(),
+            "one resonance table per subprocess"
+        );
+        self.resonances = resonances;
     }
 
     /// Evaluate each subprocess's matrix element as MadEvent does under a
@@ -2798,16 +2830,23 @@ impl<'a> FixedBeamIntegrand<'a> {
                 mask_zeroed(vetoed_of(&sc.vetoed, subprocess), &ext, &mut amp2);
             }
         }
+        if let Some(table) = self.resonances.get(subprocess) {
+            let outgoing: Vec<[f64; 4]> = momenta.iter().map(components).collect();
+            table.mask_unadmitted(&mut amp2, &outgoing);
+        }
         let helicity =
             match zeroed_diagonals(vetoed_of(&sc.vetoed, subprocess), sub, &ext, &mut jamp2) {
                 Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
                 None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
             };
+        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]])?;
 
         Some(EventSelection {
             subprocess,
             helicity,
-            flow: eval.select_color_flow(&amp2, &jamp2, [u[2], u[3]])?,
+            flow: color.flow,
+            config: color.config,
+            leading: color.leading,
         })
     }
 
