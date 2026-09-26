@@ -43,6 +43,7 @@
 
 use super::grid::SubGrid;
 use super::{flavor_slot, FlavorRow, FLAVOR_SLOTS};
+use crate::helas::repr::Real;
 
 /// Raised when an evaluation point lies inside the grid's overall extent but in
 /// none of its subgrids — a gap between bands, which a well-formed `lhagrid1`
@@ -565,15 +566,15 @@ fn ddx_logx(sg: &SubGrid, logxs: &[f64], ix: usize, iq: usize, ifl: usize) -> f6
 }
 
 /// Cubic from stored coefficients `[a, b, c, d]`: `a·t³ + b·t² + c·t + d`,
-/// in Horner form over fused multiply-adds. The stored monomial coefficients
+/// in Horner form over [`Real::mul_add_fast`] (fused where the target has FMA). The stored monomial coefficients
 /// *are* the Horner coefficients, so this is an evaluation-order change and not
 /// a different polynomial.
 #[inline]
 fn cubic_x(t: f64, coeffs: &[f64]) -> f64 {
     coeffs[0]
-        .mul_add(t, coeffs[1])
-        .mul_add(t, coeffs[2])
-        .mul_add(t, coeffs[3])
+        .mul_add_fast(t, coeffs[1])
+        .mul_add_fast(t, coeffs[2])
+        .mul_add_fast(t, coeffs[3])
 }
 
 /// Cubic Hermite on `[0,1]` from edge values `vl, vh` and edge slopes

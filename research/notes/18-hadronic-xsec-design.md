@@ -715,6 +715,11 @@ becomes the written audit + the decision record, and H7 ships scalar-only.
      `fill_arenas`, `eval_m2_lanes`), reporting packed-double instruction
      counts and xmm/ymm/zmm register usage per function; full disassembly
      lands in `target/lane-asm/`. How to read it:
+     - Read the `arith_calls` column and the `inlining:` line first. A lane
+       `fill_arenas` that calls out to lane arithmetic is call-bound, and its
+       callees census as packed whatever the lanes actually cost. The
+       Emerald Rapids run found exactly that (`x86-avx2-perf-study-results.md`,
+       AVX-512 section).
      - The signal is packed-double mnemonics (`…pd`) on **zmm** registers —
        genuine 8-lane AVX-512. xmm presence alone means nothing (scalar x86-64
        float math also lives in xmm, with `…sd` mnemonics).

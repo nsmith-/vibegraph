@@ -47,6 +47,12 @@ from pathlib import Path
 from host_info import host_block
 
 HERE = Path(__file__).resolve().parent
+
+# The conda activation exports its own LDFLAGS, which suppresses MadGraph's
+# make_opts `STDLIB` default, so a `pdlabel = lhapdf` run needs the C++ runtime
+# named explicitly for madevent's link against libpdf.a: libc++ on macOS,
+# libstdc++ elsewhere, where `-lc++` would fail the link instead.
+CXX_RUNTIME = " -lc++" if sys.platform == "darwin" else " -lstdc++"
 ROOT = HERE.parent.parent
 SCRIPTS = HERE / "scripts"
 
@@ -150,7 +156,7 @@ def time_script_process(process, out_dir, logs):
     """A process whose whole life is one .mg5 script: generate, output and launch."""
     driver = Path(tempfile.mkstemp(prefix=f"vg_time_{process}_", suffix=".mg5")[1])
     driver.write_text(driver_for(process, out_dir, launch=True))
-    env = dict(os.environ, LDFLAGS=os.environ.get("LDFLAGS", "") + " -lc++")
+    env = dict(os.environ, LDFLAGS=os.environ.get("LDFLAGS", "") + CXX_RUNTIME)
     status, elapsed, stamped = run_timed(
         ["bash", str(HERE / "mg5_pinned.sh"), str(driver)],
         logs / f"{process}.timed.log",
@@ -182,7 +188,7 @@ def time_dy13(name, out_dir, logs):
     proc_dir = out_dir / name
     driver = Path(tempfile.mkstemp(prefix="vg_time_dy13_", suffix=".mg5")[1])
     driver.write_text(f"generate p p > e+ e-\noutput {proc_dir} -nojpeg\n")
-    env = dict(os.environ, LDFLAGS=os.environ.get("LDFLAGS", "") + " -lc++")
+    env = dict(os.environ, LDFLAGS=os.environ.get("LDFLAGS", "") + CXX_RUNTIME)
     env["LHAPDF_DATA_PATH"] = os.pathsep.join(
         p for p in [str(ROOT / "validation/pdf"), os.environ.get("LHAPDF_DATA_PATH", "")] if p
     )

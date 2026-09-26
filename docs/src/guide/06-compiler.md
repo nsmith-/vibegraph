@@ -210,21 +210,29 @@ at about 27 000 live slots and fits in cache. Roots are pinned live to the
 end, and no instruction writes over its own operands.
 
 The instruction order is the one property of a program that changes no
-value. Production emits nodes grouped by instruction kind within each
-dependency level, so that the interpreter's single indirect dispatch sees
-long runs of one variant and the CPU's branch predictor, which predicts an
-indirect jump from its recent history, guesses right.[^dispatch] Alternative
-schedules exist as a study hook, with metrics for operand distance,
-live-set width, dispatch-run length and critical-path depth.
+value. Production emits nodes grouped by dependency level, and by
+instruction kind within each level. The level grouping puts independent
+instructions next to each other, so an out-of-order core overlaps them
+instead of waiting on each producer in turn. The kind grouping makes the
+sequence the interpreter's dispatch jump sees predictable. On a small program
+the branch predictor learns any fixed sequence, since it repeats every event.
+On a large one (the $2\to6$ runs 36 523 instructions) it cannot, and a
+random order within the levels runs 2.2× slower.[^dispatch]
+Alternative schedules exist as a study hook, with metrics for operand
+distance, live-set width, dispatch-run length and critical-path depth.
 
 [^dispatch]: A loop with one `match` per instruction is a *switch-dispatch*
-    interpreter, and its cost is dominated by that one mispredictable
-    jump. The classic remedy is *direct threading*: each instruction's
-    handler jumps straight to the next handler, giving the predictor one
-    site per instruction kind. A safe-Rust version needs guaranteed tail
-    calls, which is the nightly `become` feature, so it stays a tracked
-    option rather than a pass. Threading the dispatch through function
-    pointers was measured and rejected as slower.
+    interpreter, which funnels every instruction through one indirect jump.
+    The classic remedy is *direct threading*: each instruction's handler
+    jumps straight to the next one, giving the predictor one site per
+    instruction kind. In safe Rust that needs guaranteed tail calls, the
+    nightly `become` feature. That interpreter was built and measured,
+    including under LLVM's `preserve_none` calling convention, and it does
+    not beat the `match` loop on x86 or on Apple M3: history-based
+    predictors handle the single jump well, and one site per kind cannot
+    predict a random successor either. The study and its code are archived
+    under the `study/threaded-dispatch` tag. Threading the dispatch through
+    function pointers was measured and rejected as slower.
 
 ## Interpretation and kernels
 
@@ -245,9 +253,14 @@ nothing more.
 ## SIMD lanes
 
 The scalar type `F` is a trait. Instantiating the bound amplitude at
-`F = NumericArray<f64, N>` evaluates $N$ phase-space points in one pass,
-every elementwise operation acting per lane, so each lane's result is bit
-for bit the scalar result at that point. The one thing that can break this
+`F = LaneField<N>`, a packed SIMD vector of $N$ `f64`s, evaluates $N$
+phase-space points in one pass. Every operation acts per lane, and the packed
+ones are the IEEE-exact instructions (`+ − × ÷`, `sqrt`), so each lane's result
+is bit for bit the scalar result at that point. Multiply-adds are a hardware
+FMA where the target has one and a product and a sum where it does not, on the
+scalar path and the lanes alike, so they never break the correspondence; they
+only make results differ at rounding level between an FMA build and a non-FMA
+build. The one thing that can break this
 is a data-dependent branch on `F`, which on a lane pack reduces to a single
 boolean and applies one formula to every lane. The evaluator's contract is
 that every such branch is lane-uniform by construction. They all sit in
