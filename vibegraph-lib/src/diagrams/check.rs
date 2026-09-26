@@ -16,8 +16,7 @@
 //!
 //! | Variant | MadGraph feature | Lifted by |
 //! |---|---|---|
-//! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | Breit–Wigner windows on the forced resonances in phase space (enumeration exists: [`check_enumerable`]) |
-//! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C, B > D E @1 QED=2` | bounds on the stitched diagrams' orders, and their effect on each part's order search |
+//! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C QED>0, B > D E @1 QED=2` | a meaning for an overall order a part also constrains other than from above (not planned) |
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
 //! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
 //! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
@@ -86,10 +85,14 @@ pub struct SupportedProcess {
     pub orders: Vec<AmplitudeOrder>,
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
+    /// The overall orders of a decay-chain line (`@1 QED=2`), as upper bounds on
+    /// every stitched diagram's orders; each part's [`orders`](Self::orders)
+    /// already carries them folded in. Empty on a decay and on a line without
+    /// overall orders.
+    pub chain_orders: Vec<AmplitudeOrder>,
     /// The decays of a decay-chain line, each with its own decays, in the order written
     /// (`p p > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` has `t > w+ b`, holding
-    /// `w+ > e+ ve`, then `t~ > w- b~`). Empty unless the card was checked with
-    /// [`check_enumerable`]: [`check_supported`] refuses decay chains.
+    /// `w+ > e+ ve`, then `t~ > w- b~`). Empty on a line without decays.
     pub decays: Vec<SupportedProcess>,
 }
 
@@ -135,8 +138,8 @@ impl Display for SupportedProcess {
     /// the decays, spelled the way MadGraph's own generate line spells them.
     /// Carrying everything that selects diagrams is what keeps two processes
     /// that differ only in a constraint from printing identically. The
-    /// forbidden particles and the process number are not printed, so this is
-    /// not a round trip.
+    /// forbidden particles are not printed, nor the process number except before
+    /// a decay chain's overall orders, so this is not a round trip.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let side = |legs: &[SupportedLeg]| {
             legs.iter()
@@ -170,6 +173,12 @@ impl Display for SupportedProcess {
                 write!(f, ", ({decay})")?;
             }
         }
+        if !self.chain_orders.is_empty() {
+            write!(f, " @{}", self.id)?;
+            for order in &self.chain_orders {
+                write!(f, " {}={}", order.name, order.value)?;
+            }
+        }
         Ok(())
     }
 }
@@ -180,24 +189,21 @@ impl Display for SupportedProcess {
 /// documentation for the table of variants and what lifts each.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unsupported {
-    /// Decay chains, `p p > t t~, t > w+ b`, for integration and event generation.
-    ///
-    /// Their diagrams are enumerated (stitched core and decay enumerations, with each
-    /// resonance forced on shell); what is missing is the phase space that honours the
-    /// forced flag. Integrating the stitched diagrams without it would give a different
-    /// cross section from MadGraph's, which keeps each resonance within `bwcutoff` widths.
-    /// [`check_enumerable`] is the same check without this refusal.
+    /// An overall coupling order on a decay-chain line (`@1 QED=2` after the process
+    /// number) that one of the chain's parts also constrains with `==` or `>`.
+    /// MadGraph folds an overall order into each part's own orders as the lesser of
+    /// the two upper bounds (`diagram_generation.py:570`); a part's lower or exact
+    /// bound on the same order has no counterpart there.
     #[error(
-        "'{process}': decay chains (',') are not supported yet for integration — each \
-         resonance has to be kept within its Breit-Wigner window, which phase space does \
-         not do yet"
+        "'{process}': the overall order '{order}' is also constrained by '{constraint}' in \
+         a part of the chain; an overall order caps each part's upper bound, and a lower \
+         or exact bound on the same order has no meaning beside it"
     )]
-    DecayChain { process: String },
-    /// Overall coupling orders on a decay-chain line (`@1 QED=2` after the process
-    /// number): a bound on the stitched diagrams' orders, which in MadGraph also caps
-    /// each part's own orders and switches off its lowest-order search.
-    #[error("'{process}': overall orders on a decay chain ('{orders}') are not supported")]
-    ChainOrders { process: String, orders: String },
+    ChainOrders {
+        process: String,
+        order: String,
+        constraint: String,
+    },
     /// More than two initial particles: no phase space or flux here or in
     /// MadEvent describes one.
     #[error("'{process}': {n} initial-state particles; a process has one or two")]
@@ -461,40 +467,6 @@ const BENIGN_COMMANDS: &[&str] = &[
 
 /// Check every feature of a card at once, and narrow it to what is supported.
 pub fn check_supported(ast: &ProcCardAst) -> Result<SupportedCard, UnsupportedCard> {
-    check(ast, Scope::Integration)
-}
-
-/// A card whose diagrams can be enumerated, decay chains included, but which may not be
-/// integrated: [`check_supported`] refuses it or would, for its decay chains alone.
-///
-/// Its only use is [`generate_decay_chains`](super::generate_decay_chains); the card
-/// inside cannot be taken out, so it cannot reach an integrand.
-#[derive(Debug, Clone)]
-pub struct EnumerableCard(SupportedCard);
-
-impl EnumerableCard {
-    /// The checked card, decays included.
-    pub fn card(&self) -> &SupportedCard {
-        &self.0
-    }
-}
-
-/// [`check_supported`] without its refusal of decay chains, which lacks only the phase
-/// space: the card's diagrams can be enumerated, and nothing else.
-pub fn check_enumerable(ast: &ProcCardAst) -> Result<EnumerableCard, UnsupportedCard> {
-    check(ast, Scope::Enumeration).map(EnumerableCard)
-}
-
-/// What a checked card may be used for.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Scope {
-    /// Enumeration, integration and event generation.
-    Integration,
-    /// Diagram enumeration only: decay chains pass.
-    Enumeration,
-}
-
-fn check(ast: &ProcCardAst, scope: Scope) -> Result<SupportedCard, UnsupportedCard> {
     let mut refused = Vec::new();
 
     for command in &ast.commands {
@@ -557,7 +529,7 @@ fn check(ast: &ProcCardAst, scope: Scope) -> Result<SupportedCard, UnsupportedCa
     for card_process in ast.processes() {
         let line = card_process.line;
         let before = refused.len();
-        check_line(line, scope, &mut refused);
+        check_line(line, &mut refused);
         let def = &line.definition;
         let n_in = def.initial().count();
         let n_out = def.final_state().count();
@@ -576,7 +548,14 @@ fn check(ast: &ProcCardAst, scope: Scope) -> Result<SupportedCard, UnsupportedCa
             Some(_) => {}
         }
         if refused.len() == before {
-            processes.push(narrow(def, card_process.id, card_process.aliases));
+            let mut process = narrow(
+                def,
+                card_process.id,
+                card_process.aliases,
+                &def.overall_orders,
+            );
+            process.chain_orders = overall_orders(&def.overall_orders);
+            processes.push(process);
         }
     }
 
@@ -591,7 +570,7 @@ fn check(ast: &ProcCardAst, scope: Scope) -> Result<SupportedCard, UnsupportedCa
 }
 
 /// The unsupported features of one process line.
-fn check_line(line: &ProcessLine, scope: Scope, refused: &mut Vec<Unsupported>) {
+fn check_line(line: &ProcessLine, refused: &mut Vec<Unsupported>) {
     let process = || line.text.clone();
     for flag in &line.flags {
         if flag != "--no_warning=duplicate" {
@@ -602,19 +581,14 @@ fn check_line(line: &ProcessLine, scope: Scope, refused: &mut Vec<Unsupported>) 
         }
     }
     let def = &line.definition;
-    if !def.decay_chains.is_empty() && scope == Scope::Integration {
-        refused.push(Unsupported::DecayChain { process: process() });
-    }
-    if !def.overall_orders.is_empty() {
-        let orders: Vec<String> = def
-            .overall_orders
-            .iter()
-            .map(|(name, value)| format!("{name}={value}"))
-            .collect();
-        refused.push(Unsupported::ChainOrders {
-            process: process(),
-            orders: orders.join(" "),
-        });
+    for (name, value) in &def.overall_orders {
+        if let Some(constraint) = part_bound_other_than_above(def, name) {
+            refused.push(Unsupported::ChainOrders {
+                process: process(),
+                order: format!("{name}={value}"),
+                constraint,
+            });
+        }
     }
     match def.initial().count() {
         1 | 2 => {}
@@ -627,6 +601,20 @@ fn check_line(line: &ProcessLine, scope: Scope, refused: &mut Vec<Unsupported>) 
     // decay chain's own decay.
     let decay = def.initial().count() == 1;
     check_definition(def, &process(), decay, refused);
+}
+
+/// A constraint on the order `name`, in `def` or any of its decays, that is not an
+/// upper bound, as written.
+fn part_bound_other_than_above(def: &ProcessDefinition, name: &str) -> Option<String> {
+    def.orders
+        .iter()
+        .find(|o| o.name == name && !matches!(o.op, CouplingOp::Le | CouplingOp::Eq))
+        .map(|o| o.to_string())
+        .or_else(|| {
+            def.decay_chains
+                .iter()
+                .find_map(|d| part_bound_other_than_above(d, name))
+        })
 }
 
 /// The features of a definition and of its decays. The number of initial
@@ -691,7 +679,42 @@ fn check_definition(
 }
 
 /// A checked definition as the narrow type.
-fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedProcess {
+/// Overall orders as upper bounds.
+fn overall_orders(overall: &[(String, i64)]) -> Vec<AmplitudeOrder> {
+    overall
+        .iter()
+        .map(|(name, value)| AmplitudeOrder {
+            name: name.clone(),
+            op: CouplingOp::Le,
+            value: *value,
+        })
+        .collect()
+}
+
+/// A part's own orders with each overall order folded in as MadGraph folds it
+/// (`diagram_generation.py:570`): the lesser of the part's upper bound and the
+/// overall one, or the overall one where the part has none. A part carrying any
+/// order then skips the lowest-order search, as MadGraph's does
+/// (`diagram_generation.py:1972`).
+fn capped_by_overall(orders: &mut Vec<AmplitudeOrder>, overall: &[(String, i64)]) {
+    for (name, value) in overall {
+        match orders.iter_mut().find(|o| &o.name == name) {
+            Some(o) => o.value = o.value.min(*value),
+            None => orders.push(AmplitudeOrder {
+                name: name.clone(),
+                op: CouplingOp::Le,
+                value: *value,
+            }),
+        }
+    }
+}
+
+fn narrow(
+    def: &ProcessDefinition,
+    id: u32,
+    aliases: AliasTable,
+    overall: &[(String, i64)],
+) -> SupportedProcess {
     let legs = |legs: &mut dyn Iterator<Item = &super::parse::Leg>| {
         legs.map(|l| SupportedLeg {
             particle: l.particle.clone(),
@@ -700,6 +723,16 @@ fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedPro
         })
         .collect()
     };
+    let mut orders: Vec<AmplitudeOrder> = def
+        .orders
+        .iter()
+        .map(|o| AmplitudeOrder {
+            name: o.name.clone(),
+            op: o.op,
+            value: o.value,
+        })
+        .collect();
+    capped_by_overall(&mut orders, overall);
     SupportedProcess {
         id,
         initial: legs(&mut def.initial()),
@@ -708,19 +741,12 @@ fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedPro
         required_s_channels: def.required_s_channels.clone(),
         forbidden_s_channels: def.forbidden_s_channels.clone(),
         forbidden_onshell_s_channels: def.forbidden_onsh_s_channels.clone(),
-        orders: def
-            .orders
-            .iter()
-            .map(|o| AmplitudeOrder {
-                name: o.name.clone(),
-                op: o.op,
-                value: o.value,
-            })
-            .collect(),
+        orders,
+        chain_orders: Vec::new(),
         decays: def
             .decay_chains
             .iter()
-            .map(|decay| narrow(decay, id, aliases.clone()))
+            .map(|decay| narrow(decay, id, aliases.clone(), overall))
             .collect(),
         aliases,
     }
@@ -770,14 +796,54 @@ mod tests {
                 Unsupported::SetOption { .. } => "set",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
-                Unsupported::DecayChain { .. } => ",",
                 Unsupported::MixedMultiplicity { .. } => "mlm",
                 Unsupported::MixedInitialStates { .. } => "mixed",
                 Unsupported::LaunchDialogue { .. } => "launch",
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed", ",", "mlm"]);
+        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed", "mlm"]);
+    }
+
+    /// A decay chain's overall orders fold into every part as the lesser upper
+    /// bound, and ride on the line as the bound on the stitched diagrams.
+    #[test]
+    fn overall_orders_cap_every_part_and_bound_the_chain() {
+        let card =
+            check("generate p p > t t~ QED=1, (t > w+ b, w+ > e+ ve) @3 QED=2 QCD=2").unwrap();
+        let p = &card.processes[0];
+        let bounds = |orders: &[AmplitudeOrder]| {
+            orders
+                .iter()
+                .map(|o| (o.name.clone(), o.op, o.value))
+                .collect::<Vec<_>>()
+        };
+        use CouplingOp::{Eq, Le};
+        // The core's own `QED=1` is the lesser bound and keeps its spelling.
+        assert_eq!(
+            bounds(&p.orders),
+            [("QED".into(), Eq, 1), ("QCD".into(), Le, 2)]
+        );
+        assert_eq!(
+            bounds(&p.decays[0].orders),
+            [("QED".into(), Le, 2), ("QCD".into(), Le, 2)]
+        );
+        assert_eq!(
+            bounds(&p.decays[0].decays[0].orders),
+            [("QED".into(), Le, 2), ("QCD".into(), Le, 2)]
+        );
+        assert_eq!(
+            bounds(&p.chain_orders),
+            [("QED".into(), Le, 2), ("QCD".into(), Le, 2)]
+        );
+        assert!(p.decays[0].chain_orders.is_empty());
+        assert!(p.to_string().ends_with(" @3 QED=2 QCD=2"), "{p}");
+        // A part's lower bound on an overall order has no meaning beside it.
+        let refusal = refused("generate p p > t t~ QED>0, t > w+ b @1 QED=2");
+        assert!(matches!(
+            &refusal[..],
+            [Unsupported::ChainOrders { constraint, .. }] if constraint == "QED>0"
+        ));
     }
 
     /// `>`, `$` and `$$` reach the narrow type as written, and print in

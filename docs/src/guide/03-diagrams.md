@@ -53,8 +53,8 @@ language:
 
 | Feature | Status |
 |---|---|
-| decay chains `A > B C, B > D E` | enumerated (see below); refused for integration until phase space keeps each resonance in its Breit–Wigner window |
-| overall orders on a decay chain (`@1 QED=2` after the process number) | refused |
+| decay chains `A > B C, B > D E` | supported (see below); `generate` refuses their events until the event record carries the resonances |
+| overall orders on a decay chain (`@1 QED=2` after the process number) | supported, except beside a part's own `==` or `>` bound on the same order |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
 | `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
@@ -103,11 +103,21 @@ over a factor 2). Where the core itself holds the resonance with the same
 products (`e+ e- > z e+ e-, z > e+ e-`), one diagram would carry two lines
 either of which could be the decay's, and the card is refused.
 
-Integrating a decay chain needs phase space that keeps each forced line
-within `bwcutoff` widths of its mass, as MadEvent does; until it has it, the
-check refuses decay chains for integration and event generation, and
-`check_enumerable` with `generate_decay_chains` is the library entry point
-for their diagrams.
+Overall orders after the process number (`p p > t t~, t > w+ b @1 QED=4`)
+act as MadGraph's do: each part's own upper bound on an order becomes the
+lesser of it and the overall one (or the overall one where the part has
+none), which also switches off that part's lowest-order search, and a
+stitched diagram whose summed orders exceed an overall bound is removed.
+`p p > t t~, t > w+ b, t~ > w- b~ @1 QED=4` therefore keeps the
+$q\bar q \to \gamma/Z \to t\bar t$ diagrams the default search drops,
+and `@1 QED=2` removes them again after stitching.
+
+A decay chain integrates with each forced line held within `bwcutoff` widths
+of its mass, as MadEvent does ([Phase space](07-phase-space.md#decay-chains)).
+Its events are refused for now: MadEvent writes each forced resonance as a
+status-2 record whose mother pointers a parton shower reads to keep the
+resonance's mass and shower its products as a system of their own, and a
+file without those records would read to a shower as all hard-process legs.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
@@ -326,7 +336,10 @@ of decay-chain cards against MadGraph's own combination
 (`validation/madgraph/decay_chain_census.json`) compares the subprocesses,
 their final-state order with the products in place, and per subprocess
 MadGraph's diagram count against the stitched diagrams whose forced lines
-lead to the legs MadGraph assigned.
+lead to the legs MadGraph assigned. Five of its cards carry overall orders,
+among them the pair `@1 QED=2` and `@1 QED=4` on `p p > t t~` with both tops
+decayed, which differ only in whether the electroweak production diagrams
+survive the bound on the stitched diagram.
 
 ## Where it lives
 
@@ -344,5 +357,5 @@ chains are compared with, and
 [`diagram`](../api/vibegraph/diagrams/diagram/index.html) for the owned
 diagram, its propagators' on-shell flags and its provenance (the process
 number and the decay-chain nodes it was stitched from). `parse_proc_card`
-(parse and check) and `generate_from_proc_card` are the entry points;
-`check_enumerable` and `generate_decay_chains` enumerate decay chains.
+(parse and check) and `generate_from_proc_card` are the entry points, decay
+chains included.

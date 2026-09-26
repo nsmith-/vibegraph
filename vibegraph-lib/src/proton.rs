@@ -88,7 +88,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
 use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
-use crate::cuts::{CutError, Cuts, ExternalLeg};
+use crate::cuts::{CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
@@ -699,7 +699,8 @@ pub fn derive_flavor_groups(
                 mass: leg.mass,
             });
         }
-        let cuts = Cuts::compile(card, &legs)?;
+        let cuts =
+            Cuts::compile_with(card, &legs, &ForcedResonances::of(&set.diagrams, evaluated))?;
         compiled.push((evaluator, legs, cuts));
     }
     refuse_polarized_frame(card, compiled.iter().map(|(e, ..)| e), model)?;

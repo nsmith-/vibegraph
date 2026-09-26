@@ -21,7 +21,7 @@ use tracing::{info, warn};
 use vibegraph::artifact::{ChannelKey, IntegrateArtifact, SCALE_DRAW_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
-use vibegraph::cuts::Cuts;
+use vibegraph::cuts::{Cuts, ForcedResonances};
 use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
@@ -338,6 +338,30 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
     Err(err(msg))
 }
 
+/// Refuse to write events for a decay-chain card.
+///
+/// MadEvent writes every forced resonance of a decay chain as a status-2 record
+/// with its decay products' mother pointers on it. A parton shower reads those
+/// records to keep each resonance's mass fixed and to shower its products as a
+/// system of their own; this generator writes no intermediate records, and the
+/// same final state without them reads to a shower as all hard-process legs, which
+/// moves the resonance line shapes with no error to show for it. The cross
+/// section needs no records, so `integrate` takes these cards.
+fn refuse_decay_chain_events(
+    parsed: &vibegraph::diagrams::SupportedCard,
+) -> Result<(), IntegrateError> {
+    match parsed.processes.iter().find(|p| !p.decays.is_empty()) {
+        None => Ok(()),
+        Some(p) => Err(err(format!(
+            "'{p}' is a decay chain, and its events are not written yet: each forced \
+             resonance needs a status-2 record carrying its decay products' mother \
+             pointers, without which a parton shower treats the products as hard-process \
+             legs and distorts the resonance line shapes. `vibegraph integrate` measures \
+             its cross section"
+        ))),
+    }
+}
+
 /// The one thing a schema-identical format bump can still break: format version 7
 /// changes no field, but it changes what a clustering-scale artifact's `sigma_pb`
 /// means (see [`vibegraph::artifact::FORMAT_VERSION`]'s doc). An artifact written
@@ -491,13 +515,14 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
         )));
     }
 
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
-
     let opts = ParsingOptions::default();
     let parsed = crate::read_proc_card(&args.proc_card, &opts)
         .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
     let process = process_string(&parsed)?;
+    refuse_decay_chain_events(&parsed)?;
+
+    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
 
     let config = GlobalConfig {
         ufo_search_path: crate::assets::resolve_ufo_search_path(
@@ -590,16 +615,17 @@ fn generate_sample(
     let rep = &evals[0];
     let legs = process_external_legs(rep, model, evaluated);
     let initial = initial_state(rc, &legs)?;
-    let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+    let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
+        .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
         .collect();
     let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
-    let diagrams: Vec<_> = sets
-        .iter()
-        .flat_map(|s| s.diagrams.iter().cloned())
-        .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);

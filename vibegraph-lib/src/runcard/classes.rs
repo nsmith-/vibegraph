@@ -73,6 +73,12 @@ const R_SCALES: &str = "coupling::scales::ScaleChoice::from_run_card ('d' arrive
                         clustering's d parameter)";
 const R_MAXJETFLAVOR: &str = "cuts::Cuts::compile, through the leg classification, and the \
                               colour table the clustering asks which flavours count as jets";
+const R_CUT_DECAYS: &str = "cuts::Cuts::compile_with, which at F switches the cuts off on every \
+                            leg a decay chain's forced lines produce (setcuts.f:192)";
+const R_BWCUTOFF: &str = "cuts::Cuts::compile_with, the half-width in widths of each decay-chain \
+                          window (myamp.f:179) and of the channel maps' forced draws; and \
+                          coupling::scales::ScaleChoice::from_run_card, whose clustering \
+                          reads it for the on-shell test";
 const R_CUT_LITERAL: &str = "cuts::Cuts::compile, by literal name";
 const R_CUT_SINGLE: &str = "cuts::Cuts::compile's single-leg block; the name is built as \
                             pt{c} / e{c}max / eta{c}min and so on over the jet, b, photon and \
@@ -130,8 +136,6 @@ const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_
                      {'default': False}, which is a second reason not to compare it";
 const B_BIAS_PARAMETERS: &str = "the bias module's payload; a bias module is itself refused, \
                                  so nothing ever reads it";
-const B_CUT_DECAYS: &str = "selects whether legs produced by a decay chain receive cuts, and \
-                            decay-chain process syntax is refused, so no such leg exists";
 const B_FRAME_ID: &str = "a system parameter: MadGraph recomputes it from me_frame as the sum of \
                           2^n over the listed legs whatever a card writes \
                           (banner.py:4705), so me_frame is what is read instead";
@@ -255,8 +259,8 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM, when: Applicability::Always }),
     ("keep_log",                IgnoredBenign(B_JOB)),
     ("auto_ptj_mjj",            IgnoredBenign(B_MLM)),
-    ("bwcutoff",                Consumed(R_SCALES)),
-    ("cut_decays",              IgnoredBenign(B_CUT_DECAYS)),
+    ("bwcutoff",                Consumed(R_BWCUTOFF)),
+    ("cut_decays",              Consumed(R_CUT_DECAYS)),
     ("dsqrt_shat",              Consumed(R_CUT_LITERAL)),
     ("dsqrt_shatmax",           Consumed(R_CUT_LITERAL)),
     ("nhel",                    IgnoredPhysics { why: P_NHEL, when: Applicability::Always }),

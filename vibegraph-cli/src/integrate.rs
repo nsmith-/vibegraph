@@ -31,7 +31,7 @@ use vibegraph::artifact::{
     ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
 };
 use vibegraph::config::GlobalConfig;
-use vibegraph::cuts::Cuts;
+use vibegraph::cuts::{Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
 };
@@ -845,17 +845,17 @@ fn integrate_fixed_energy(
     let legs = process_external_legs(rep, model, evaluated);
     let initial = initial_state(rc, &legs)?;
     let sqrt_s = initial.sqrt_s();
-    let cuts = Cuts::compile(rc, &legs).map_err(|e| err(format!("failed to compile cuts: {e}")))?;
+    let diagrams: Vec<_> = sets
+        .iter()
+        .flat_map(|s| s.diagrams.iter().cloned())
+        .collect();
+    let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
+        .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
     let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
         .iter()
         .map(|&id| evaluated.mass(id))
         .collect();
     let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
-
-    let diagrams: Vec<_> = sets
-        .iter()
-        .flat_map(|s| s.diagrams.iter().cloned())
-        .collect();
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
