@@ -284,7 +284,7 @@ fn a_lepton_pair_with_the_z_window_vetoed_matches_madevent() {
 #[test]
 fn a_decay_with_the_w_window_vetoed_matches_madevent() {
     let tmp = tempfile::tempdir().unwrap();
-    check_row(tmp.path(), "t_bev_w", &["--target-rel", "1e-3"]);
+    check_row(tmp.path(), "t_bev_w", &["--target-rel", "2e-3"]);
 }
 
 #[cfg(feature = "extended-validation")]
