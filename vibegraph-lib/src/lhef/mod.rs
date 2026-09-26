@@ -93,6 +93,7 @@ pub mod emit;
 pub mod observables;
 pub mod parse;
 pub mod record;
+pub mod resonance;
 pub mod write;
 
 /// The LHE version this writer emits and the parser accepts.
@@ -125,6 +126,18 @@ pub enum LhefError {
         got_ext: usize,
         got_flows: usize,
     },
+    #[error(
+        "the daughters of the intermediate {pdg} leave colour lines ({colors} open, {anticolors} \
+         open anticolour) that do not fit its colour representation {rep}"
+    )]
+    IntermediateColor {
+        pdg: i32,
+        rep: i32,
+        colors: usize,
+        anticolors: usize,
+    },
+    #[error("intermediate resonances {a} and {b} carry the same outgoing legs, so neither is the other's mother")]
+    IntermediateNesting { a: i32, b: i32 },
     #[error("line {line}: {reason}")]
     Malformed { line: usize, reason: String },
     #[error("no <init> block")]

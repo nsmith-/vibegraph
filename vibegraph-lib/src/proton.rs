@@ -88,7 +88,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
 use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
-use crate::cuts::{CutError, Cuts, ExternalLeg, ForcedResonances};
+use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{
@@ -105,6 +105,7 @@ use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
+use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
@@ -153,6 +154,8 @@ const PROBE_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// event of this group is finally labelled with.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Subprocess {
+    /// The process number (`@N`) of the card line this subprocess came from.
+    pub process: u32,
     /// PDG codes of the two incoming partons, in the enumerated beam order.
     pub incoming: [i32; 2],
     /// PDG codes of the outgoing legs, in the group's shared leg order.
@@ -676,7 +679,12 @@ pub fn derive_flavor_groups(
         return Err(ProtonError::NoSubprocess);
     }
 
+    let sets = content_ordered(sets, model, evaluated, card)?;
     let labels: Vec<String> = sets.iter().map(label).collect();
+    let processes: Vec<u32> = sets
+        .iter()
+        .map(|s| s.diagrams[0].provenance.process)
+        .collect();
 
     let mut compiled = Vec::with_capacity(sets.len());
     for (set, process) in sets.iter().zip(&labels) {
@@ -828,6 +836,7 @@ pub fn derive_flavor_groups(
                     .reindexed(&flow_permutation)
                     .expect("flow_permutation is a permutation of this basis");
                 Ok(Subprocess {
+                    process: processes[i],
                     incoming: [legs[0].pdg, legs[1].pdg],
                     outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
                     outgoing_polarizations: evaluator.polarizations()[2..].to_vec(),
@@ -866,6 +875,66 @@ pub fn derive_flavor_groups(
     }
 
     Ok(FlavorGroups { groups })
+}
+
+/// Put every subprocess's outgoing legs in the first one's order of mass and cut
+/// class, where its own order differs and its content allows it.
+///
+/// Process lines of one card are summed into one phase-space map and one cut
+/// filter, and both are laid out by outgoing leg: the map's masses and the cut
+/// classes (`j`, `b`, `l`, `a`) per slot. Two lines that list the same kinds of
+/// particle in different orders (`p p > w+ j` and `add process p p > j w-`)
+/// describe final states that agree once the legs are paired by content, which
+/// is how MadGraph, integrating each process on its own, sees them. Each outgoing
+/// slot of the first subprocess takes the first leg of the other with the same
+/// mass and class, so legs already in order stay where they are; a subprocess
+/// whose content does not match is left as enumerated, for the checks below to
+/// refuse.
+fn content_ordered(
+    sets: Vec<DiagramSet>,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    card: &RunCard,
+) -> Result<Vec<DiagramSet>, ProtonError> {
+    let maxjetflavor = card.maxjetflavor;
+    let keys = |set: &DiagramSet| -> Vec<(u64, Option<char>)> {
+        set.particles_out
+            .iter()
+            .map(|name| match model.particle_id(name) {
+                Some(id) => (
+                    evaluated.mass(id).to_bits(),
+                    cut_class(model.particle(id).pdg_code as i32, maxjetflavor),
+                ),
+                None => (f64::NAN.to_bits(), None),
+            })
+            .collect()
+    };
+    let Some(first) = sets.first() else {
+        return Ok(sets);
+    };
+    let reference = keys(first);
+    sets.into_iter()
+        .map(|set| {
+            let own = keys(&set);
+            if own == reference || own.len() != reference.len() {
+                return Ok(set);
+            }
+            let mut used = vec![false; own.len()];
+            let mut order = Vec::with_capacity(own.len());
+            for key in &reference {
+                match (0..own.len()).find(|&j| !used[j] && own[j] == *key) {
+                    Some(j) => {
+                        used[j] = true;
+                        order.push(j);
+                    }
+                    None => return Ok(set),
+                }
+            }
+            Ok(set
+                .with_final_order(&order, model)
+                .expect("a matching of every slot is a permutation"))
+        })
+        .collect()
 }
 
 /// Pair up two subprocesses' colour flows: `π[f]` is the flow of `member`'s basis
@@ -1015,6 +1084,11 @@ pub struct ProtonSelection {
     /// without their bases agreeing. A beam exchange permutes the legs of a flow
     /// rather than the flows, and so does not touch it either.
     pub flow: usize,
+    /// The integration configuration of the group the flow was drawn in, `None`
+    /// where none carried weight.
+    pub config: Option<usize>,
+    /// Whether that configuration reaches the flow at leading colour.
+    pub leading: bool,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -1129,6 +1203,10 @@ pub struct ProtonIntegrand<'a> {
     /// zeroed ([`use_onshell_veto`](Self::use_onshell_veto)). Empty, or `None`
     /// for a group, leaves its matrix element whole.
     vetoes: Vec<Option<VetoedAmplitudes<'a>>>,
+    /// Per group, the timelike lines of every configuration
+    /// ([`use_resonances`](Self::use_resonances)). Empty leaves the event
+    /// configuration draw on `AMP2` alone.
+    resonances: &'a [SubprocessResonances],
 }
 
 /// One thread's private half of a [`ProtonIntegrand`].
@@ -1347,7 +1425,24 @@ impl<'a> ProtonIntegrand<'a> {
             config_weights: None,
             alpha_s_dependent: false,
             vetoes: Vec::new(),
+            resonances: &[],
         })
+    }
+
+    /// Draw an event's configuration only among those whose forced
+    /// Breit–Wigner lines are inside their windows at the event's momenta, as
+    /// [`FixedBeamIntegrand::use_resonances`](crate::hadronic::FixedBeamIntegrand::use_resonances)
+    /// does; `resonances` holds one entry per group, or none.
+    ///
+    /// # Panics
+    ///
+    /// If `resonances` is neither empty nor one entry per group.
+    pub fn use_resonances(&mut self, resonances: &'a [SubprocessResonances]) {
+        assert!(
+            resonances.is_empty() || resonances.len() == self.groups.groups().len(),
+            "one resonance table per flavour group"
+        );
+        self.resonances = resonances;
     }
 
     /// This thread's evaluation context, forked from the integrand's own
@@ -1649,6 +1744,11 @@ impl<'a> ProtonIntegrand<'a> {
             self.scale_draw_ndim()
         );
         u.split_at(grid_ndim)
+    }
+
+    /// The flavour groups this integrand sums.
+    pub fn groups(&self) -> &'a FlavorGroups {
+        self.groups
     }
 
     /// The strong coupling's source, once a run card installed one.
@@ -2099,13 +2199,20 @@ impl<'a> ProtonIntegrand<'a> {
             None => eval.select_helicity(&hel_m2, u[2])?,
         };
         let (_, order) = g.event_legs(member, ordering);
+        if let Some(table) = self.resonances.get(group) {
+            let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
+            table.mask_unadmitted(&mut amp2, &outgoing);
+        }
+        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]])?;
 
         Some(ProtonSelection {
             group,
             member,
             ordering,
             helicity: order.iter().map(|&leg| drawn[leg]).collect(),
-            flow: eval.select_color_flow(&amp2, &jamp2, [u[3], u[4]])?,
+            flow: color.flow,
+            config: color.config,
+            leading: color.leading,
         })
     }
 
@@ -2670,6 +2777,7 @@ mod tests {
             let flows = evaluator.color_flow_tags().clone();
             let flow_permutation = (0..evaluator.n_flows()).collect();
             let subprocess = Subprocess {
+                process: 1,
                 incoming: [legs[0].pdg, legs[1].pdg],
                 outgoing: legs[2..].iter().map(|l| l.pdg).collect(),
                 outgoing_polarizations: evaluator.polarizations()[2..].to_vec(),
@@ -2941,6 +3049,61 @@ mod tests {
                 }
                 println!();
             }
+        }
+    }
+
+    /// `p p > w+ j @1` and `add process p p > j w- @2` list the same kinds of
+    /// particle in different orders. Each subprocess is put in the first line's
+    /// order of mass and cut class, so the card groups instead of being refused
+    /// for its slot-ordered masses, every member keeps its line's process number,
+    /// and a reordered subprocess is the one its reordered line would enumerate:
+    /// the same `|M|²` at the same momenta.
+    #[test]
+    fn process_lines_group_by_content_rather_than_slot_order() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = parse_proc_card(
+            "generate p p > w+ j @1\nadd process p p > j w- @2\n",
+            &ParsingOptions::default(),
+        )
+        .expect("proc card");
+        let sets = generate_from_proc_card(&card, &m).expect("enumeration");
+        let groups = derive_flavor_groups(sets, &m, &evaluated, &RunCard::default())
+            .expect("lines of the same content group");
+        let mw = evaluated.mass(m.particle_id("W+").expect("W+"));
+        let mut processes = BTreeSet::new();
+        for g in groups.groups() {
+            assert_eq!(g.final_masses(), [mw, 0.0]);
+            for member in g.members() {
+                processes.insert(member.process);
+                let w = member.outgoing[0];
+                assert_eq!(w.abs(), 24, "the W leads: {:?}", member.outgoing);
+                assert_eq!(member.process, if w > 0 { 1 } else { 2 });
+            }
+        }
+        assert_eq!(processes, BTreeSet::from([1, 2]));
+
+        let reordered = enumerate("d u~ > g w-", &m)
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("a subprocess")
+            .with_final_order(&[1, 0], &m)
+            .expect("a permutation");
+        let direct = enumerate("d u~ > w- g", &m)
+            .into_iter()
+            .find(|s| !s.diagrams.is_empty())
+            .expect("a subprocess");
+        assert_eq!(reordered.particles_out, direct.particles_out);
+        let a = compile_class(&reordered, &m, &evaluated).expect("compiles");
+        let b = compile_class(&direct, &m, &evaluated).expect("compiles");
+        let (ba, bb) = (
+            BoundAmplitude::<f64>::bind(&a, &evaluated),
+            BoundAmplitude::<f64>::bind(&b, &evaluated),
+        );
+        let (mut sa, mut sb) = (ba.scratch_space(), bb.scratch_space());
+        for point in probe_momenta(&[mw, 0.0], None, 7) {
+            let (ma, mb) = (ba.eval_m2(&point, &mut sa), bb.eval_m2(&point, &mut sb));
+            assert!((ma / mb - 1.0).abs() < 1e-12, "{ma} against {mb}");
         }
     }
 

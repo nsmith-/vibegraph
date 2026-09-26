@@ -103,8 +103,10 @@ pub struct EmitPlan {
     pub pdf_group: [i32; 2],
     /// `PDFSUP`.
     pub pdf_set: [i32; 2],
-    /// `LPRUP` of the single process entry every event refers back to.
-    pub process_id: i32,
+    /// `LPRUP` of every process entry, one per process number (`@N`) of the
+    /// card, in the order the `<init>` block lists them. Every event's `IDPRUP`
+    /// names one of them.
+    pub process_ids: Vec<i32>,
     /// Lines after the process entry, `<generator>` among them.
     pub trailer: Vec<String>,
     /// Free-form provenance for the `<header>` block.
@@ -142,6 +144,8 @@ pub enum EmitError {
         wanted: usize,
         drawn: usize,
     },
+    /// An event names a process the plan does not declare.
+    UndeclaredProcess(i32),
 }
 
 impl std::fmt::Display for EmitError {
@@ -151,6 +155,10 @@ impl std::fmt::Display for EmitError {
             EmitError::Exhausted { wanted, drawn } => write!(
                 f,
                 "the generator ran out of trials after {drawn} events, {wanted} were asked for"
+            ),
+            EmitError::UndeclaredProcess(id) => write!(
+                f,
+                "an event names process {id}, which the file's <init> block does not declare"
             ),
         }
     }
@@ -181,24 +189,110 @@ pub trait UnweightStrategy {
     ) -> Result<EmitSummary, EmitError>;
 }
 
+/// One process's share of a sample: the summed generator weight of its events
+/// and the largest one among them.
+#[derive(Clone, Copy, Debug, Default)]
+struct ProcessShare {
+    weight: f64,
+    max_weight: f64,
+}
+
 /// Assemble the `<init>` block from the plan and the sample-dependent fields a
-/// strategy has resolved.
-fn init_block(plan: &EmitPlan, strategy: WeightStrategy, xsec_pb: f64, xmax: f64) -> LheInit {
+/// strategy has resolved: the file's cross section and, per process id of the
+/// plan, that process's share of the sample.
+///
+/// A single process takes the whole cross section and the integration's error.
+/// With several, process `p` takes `XSECUP_p = σ·f_p`, `f_p` its share of the
+/// sample's generator weight, and `XERRUP_p` the integration's relative error on
+/// that plus the share's own sampling error over `n` events,
+/// `√((f_p·Δσ)² + σ²·f_p(1 − f_p)/n)`: the process split is measured by the
+/// sample, not by the integration, whose channels sum every process at once.
+/// `XMAXUP_p` is `xmax` of the process's own largest weight.
+fn init_block(
+    plan: &EmitPlan,
+    strategy: WeightStrategy,
+    xsec_pb: f64,
+    shares: &[ProcessShare],
+    events: usize,
+    xmax: impl Fn(f64) -> f64,
+) -> LheInit {
+    let total: f64 = shares.iter().map(|s| s.weight).sum();
+    let processes = if plan.process_ids.len() <= 1 {
+        let max_weight = shares.iter().map(|s| s.max_weight).fold(0.0f64, f64::max);
+        vec![LheProcess {
+            xsec_pb,
+            xerr_pb: plan.sigma_err_pb,
+            xmax: xmax(max_weight),
+            id: plan.process_ids.first().copied().unwrap_or(1),
+        }]
+    } else {
+        plan.process_ids
+            .iter()
+            .zip(shares)
+            .map(|(&id, share)| {
+                let f = if total > 0.0 {
+                    share.weight / total
+                } else {
+                    0.0
+                };
+                let sampling = if events > 0 {
+                    xsec_pb * xsec_pb * f * (1.0 - f) / events as f64
+                } else {
+                    0.0
+                };
+                LheProcess {
+                    xsec_pb: xsec_pb * f,
+                    xerr_pb: ((f * plan.sigma_err_pb).powi(2) + sampling).sqrt(),
+                    xmax: xmax(share.max_weight),
+                    id,
+                }
+            })
+            .collect()
+    };
     LheInit {
         beam_pdg: plan.beam_pdg,
         beam_energy: plan.beam_energy,
         pdf_group: plan.pdf_group,
         pdf_set: plan.pdf_set,
         weight_strategy: strategy,
-        processes: vec![LheProcess {
-            xsec_pb,
-            xerr_pb: plan.sigma_err_pb,
-            xmax,
-            id: plan.process_id,
-        }],
+        processes,
         trailer: plan.trailer.clone(),
         source: None,
     }
+}
+
+/// Each process id's share of `events`, in the plan's order.
+fn process_shares<'e>(
+    plan: &EmitPlan,
+    events: impl IntoIterator<Item = (&'e LheEvent, f64)>,
+) -> Result<Vec<ProcessShare>, EmitError> {
+    let mut shares = vec![ProcessShare::default(); plan.process_ids.len().max(1)];
+    for (record, weight) in events {
+        add_share(plan, &mut shares, record.process_id, weight)?;
+    }
+    Ok(shares)
+}
+
+/// Add one event of generator weight `weight` to its process's share. An event
+/// whose `IDPRUP` the plan does not list is refused: the file would name a
+/// process its `<init>` block does not declare.
+fn add_share(
+    plan: &EmitPlan,
+    shares: &mut [ProcessShare],
+    process_id: i32,
+    weight: f64,
+) -> Result<(), EmitError> {
+    let slot = if plan.process_ids.len() <= 1 {
+        0
+    } else {
+        plan.process_ids
+            .iter()
+            .position(|&id| id == process_id)
+            .ok_or(EmitError::UndeclaredProcess(process_id))?
+    };
+    shares[slot].weight += weight;
+    shares[slot].max_weight = shares[slot].max_weight.max(weight);
+    Ok(())
 }
 
 /// Take `n` accepted events from the source, or report how far it got.
@@ -269,7 +363,15 @@ impl UnweightStrategy for Buffer {
         let normalisation = WeightNormalisation::new(xsec_pb, mean);
         let xmax = normalisation.xwgtup(max_source_weight);
 
-        let init = init_block(plan, self.weight_strategy(), xsec_pb, xmax);
+        let shares = process_shares(plan, events.iter().map(|e| (&e.record, e.weight)))?;
+        let init = init_block(
+            plan,
+            self.weight_strategy(),
+            xsec_pb,
+            &shares,
+            events.len(),
+            |w| normalisation.xwgtup(w),
+        );
         let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
         let mut weight_sum = 0.0;
         for event in &events {
@@ -335,6 +437,43 @@ impl StochasticRounding {
     pub fn new(seed: u64) -> Self {
         StochasticRounding { seed }
     }
+
+    /// Run the pass without writing, returning each process's written-event count
+    /// as its share and the total written.
+    fn count_shares(
+        &self,
+        source: &mut dyn EventSource,
+        plan: &EmitPlan,
+    ) -> Result<(Vec<ProcessShare>, usize), EmitError> {
+        let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
+        rng.set_stream(ROUNDING_STREAM);
+        let mut shares = vec![ProcessShare::default(); plan.process_ids.len()];
+        let mut written = 0usize;
+        let mut drawn = 0usize;
+        while written < plan.nevents {
+            let Some(event) = source.next_event() else {
+                return Err(EmitError::Exhausted {
+                    wanted: plan.nevents,
+                    drawn,
+                });
+            };
+            drawn += 1;
+            let copies = stochastic_multiplicity(event.weight, &mut rng);
+            written += copies as usize;
+            if copies > 0 {
+                // Every written copy carries unit weight, so a process's largest
+                // written weight is one.
+                add_share(plan, &mut shares, event.record.process_id, copies as f64)?;
+                let slot = plan
+                    .process_ids
+                    .iter()
+                    .position(|&id| id == event.record.process_id)
+                    .unwrap_or(0);
+                shares[slot].max_weight = 1.0;
+            }
+        }
+        Ok((shares, written))
+    }
 }
 
 impl UnweightStrategy for StochasticRounding {
@@ -355,7 +494,25 @@ impl UnweightStrategy for StochasticRounding {
         plan: &EmitPlan,
         sink: &mut dyn Write,
     ) -> Result<EmitSummary, EmitError> {
-        let init = init_block(plan, self.weight_strategy(), plan.sigma_pb, 1.0);
+        // Several processes need their shares in `<init>` before the first event
+        // is written, so the sample is drawn once to count them and then again, the
+        // source restarted and the rounding stream reseeded, to write it: the two
+        // passes are the same sequence, so the shares are the file's own.
+        let (shares, counted) = if plan.process_ids.len() > 1 {
+            let counted = self.count_shares(source, plan)?;
+            source.restart();
+            counted
+        } else {
+            (vec![ProcessShare::default()], 0)
+        };
+        let init = init_block(
+            plan,
+            self.weight_strategy(),
+            plan.sigma_pb,
+            &shares,
+            counted,
+            |_| 1.0,
+        );
         let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
@@ -490,7 +647,7 @@ mod tests {
             beam_energy: [45.6, 45.6],
             pdf_group: [0, 0],
             pdf_set: [0, 0],
-            process_id: 1,
+            process_ids: vec![1],
             trailer: Vec::new(),
             header: None,
         }
@@ -666,5 +823,110 @@ mod tests {
                 .expect_err("a short source must be refused");
             assert!(matches!(err, EmitError::Exhausted { wanted: 10, .. }));
         }
+    }
+
+    /// A source whose `k`-th event belongs to process `ids[k % ids.len()]`.
+    struct TwoProcesses {
+        inner: FixedWeights,
+        ids: Vec<i32>,
+    }
+
+    impl EventSource for TwoProcesses {
+        fn next_event(&mut self) -> Option<WeightedEvent> {
+            let k = self.inner.next;
+            let mut event = self.inner.next_event()?;
+            event.record.process_id = self.ids[k % self.ids.len()];
+            Some(event)
+        }
+        fn restart(&mut self) {
+            self.inner.restart();
+        }
+        fn sigma_pb(&self) -> f64 {
+            self.inner.sigma_pb()
+        }
+    }
+
+    /// A file of several process numbers declares one `<init>` entry per
+    /// number, each carrying its process's share of the sample: under `-4` the
+    /// share of the written weight, under `+3` the share of the written events —
+    /// which a streaming pass can know before its first event only by drawing the
+    /// sample once and replaying it.
+    #[test]
+    fn several_processes_each_declare_their_own_share() {
+        // Process 2 takes the second and fourth of every five events.
+        let weights = vec![1.0, 1.0, 2.5, 1.0, 1.0];
+        let ids = vec![1, 2, 1, 2, 1];
+        let sigma = 30.0;
+        let mut several = plan(400, sigma);
+        several.process_ids = vec![1, 2];
+        for strategy in [
+            Box::new(Buffer) as Box<dyn UnweightStrategy>,
+            Box::new(StochasticRounding::new(11)),
+        ] {
+            let mut source = TwoProcesses {
+                inner: FixedWeights::new(weights.clone(), sigma),
+                ids: ids.clone(),
+            };
+            let (text, _) = emit_to_string(strategy.as_ref(), &mut source, &several);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            let declared: Vec<(i32, f64)> = file
+                .init
+                .processes
+                .iter()
+                .map(|p| (p.id, p.xsec_pb))
+                .collect();
+            assert_eq!(declared.len(), 2, "{}", strategy.describe());
+            let total: f64 = file.events.iter().map(|e| e.weight).sum();
+            for (id, xsec) in &declared {
+                let own: f64 = file
+                    .events
+                    .iter()
+                    .filter(|e| e.process_id == *id)
+                    .map(|e| e.weight)
+                    .sum();
+                assert!(
+                    (xsec / (sigma * own / total) - 1.0).abs() < 1e-6,
+                    "{}: process {id} declares {xsec} pb for a {own}/{total} share",
+                    strategy.describe()
+                );
+            }
+            let summed: f64 = declared.iter().map(|(_, x)| x).sum();
+            assert!((summed / sigma - 1.0).abs() < 1e-6);
+            // Every declared XMAXUP bounds its own process's written weights.
+            for p in &file.init.processes {
+                let largest = file
+                    .events
+                    .iter()
+                    .filter(|e| e.process_id == p.id)
+                    .map(|e| e.weight)
+                    .fold(0.0f64, f64::max);
+                assert!(
+                    largest <= p.xmax * (1.0 + 1e-6),
+                    "{largest} above {}",
+                    p.xmax
+                );
+            }
+        }
+        // One process keeps the integration's error and the single entry.
+        let mut source = FixedWeights::new(weights, sigma);
+        let (text, _) = emit_to_string(&Buffer, &mut source, &plan(40, sigma));
+        let file = LheFile::parse(&text).expect("parses");
+        assert_eq!(file.init.processes.len(), 1);
+        assert_eq!(file.init.processes[0].xerr_pb, 0.01 * sigma);
+    }
+
+    /// An event naming a process the plan does not declare is refused.
+    #[test]
+    fn an_undeclared_process_is_refused() {
+        let mut plan = plan(10, 1.0);
+        plan.process_ids = vec![1, 3];
+        let mut source = TwoProcesses {
+            inner: FixedWeights::new(vec![1.0], 1.0),
+            ids: vec![1, 2],
+        };
+        let err = Buffer
+            .emit(&mut source, &plan, &mut Vec::new())
+            .expect_err("process 2 is not declared");
+        assert!(matches!(err, EmitError::UndeclaredProcess(2)));
     }
 }

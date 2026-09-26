@@ -251,6 +251,28 @@ impl RunCard {
         frame_id_of(raw)
     }
 
+    /// The `PDFSUP` MadEvent writes for this card: `get_pdf_id(pdlabel)`
+    /// (`banner.py:3839`), the `lhaid` when `pdlabel` is `lhapdf` and otherwise
+    /// the LHAPDF id of the built-in set the label names, `0` for a label naming
+    /// none.
+    ///
+    /// It is read off `pdlabel` whatever the beams: a fixed-energy card keeps
+    /// the default `nn23lo1` and MadEvent 3.7.1 writes `247000` for it although
+    /// nothing reads a parton density (every such banked run does, `lhaid`
+    /// `230000` notwithstanding).
+    pub fn pdfsup(&self) -> i32 {
+        match self.pdlabel.as_str() {
+            "lhapdf" => i32::try_from(self.lhaid).unwrap_or(0),
+            "cteq6_m" => 10000,
+            "cteq6_l" => 10041,
+            "cteq6l1" => 10042,
+            "nn23lo" => 246800,
+            "nn23lo1" => 247000,
+            "nn23nlo" => 244800,
+            _ => 0,
+        }
+    }
+
     /// Iterate all resolved (name, value) pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
         self.values.iter().map(|(k, v)| (k.as_str(), v))
@@ -1095,5 +1117,28 @@ mod tests {
             .unwrap()
             .for_decay(173.0);
         assert_eq!(fixed.scale, 70.0, "a fixed renormalisation scale is kept");
+    }
+
+    /// `PDFSUP` is MadEvent's `get_pdf_id(pdlabel)`: the `lhaid` only when the
+    /// label is `lhapdf`, the built-in set's id otherwise — `247000` on a
+    /// fixed-energy card that leaves `pdlabel` at its default, whatever `lhaid`
+    /// says, as every banked MadGraph 3.7.1 lepton-collider run writes.
+    #[test]
+    fn pdfsup_is_read_off_pdlabel() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        assert_eq!(card("  0 = lpp1\n  0 = lpp2\n").pdfsup(), 247000);
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  none = pdlabel1\n  none = pdlabel2\n").pdfsup(),
+            247000
+        );
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            230000
+        );
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  247000 = lhaid\n").pdfsup(),
+            247000
+        );
+        assert_eq!(card("  cteq6l1 = pdlabel\n").pdfsup(), 10042);
     }
 }

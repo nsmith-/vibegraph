@@ -22,25 +22,24 @@ use vibegraph::artifact::{ChannelKey, IntegrateArtifact, SCALE_DRAW_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::{Cuts, ForcedResonances};
-use vibegraph::diagrams::{generate_from_proc_card_in, ParsingOptions};
+use vibegraph::diagrams::{generate_from_proc_card_in, DiagramSet, ParsingOptions, SupportedCard};
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
     refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
-use vibegraph::lhef::build::{scalup, EventHeader, SubprocessRecord};
+use vibegraph::lhef::build::{scalup, EventHeader, Intermediate, SubprocessRecord};
 use vibegraph::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, StochasticRounding, UnweightStrategy, WeightedEvent,
 };
+use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use vibegraph::lhef::write::generator_element;
 use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{
-    derive_flavor_groups, BeamOrdering, FlavorGroups, ProtonIntegrand, ProtonSelection,
-};
+use vibegraph::proton::{derive_flavor_groups, BeamOrdering, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -62,8 +61,6 @@ type V = LorentzVector<f64>;
 
 /// Default output file.
 const DEFAULT_OUTPUT: &str = "events.lhe";
-/// `LPRUP` of the single `<init>` process entry every event refers back to.
-const PROCESS_ID: i32 = 1;
 /// Seed offsets, so the weight scan, the event generation and a strategy's own
 /// draws never share a stream with each other or with the integration.
 const SCAN_SEED_OFFSET: u64 = 0x5CA7_0000;
@@ -338,30 +335,6 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
     Err(err(msg))
 }
 
-/// Refuse to write events for a decay-chain card.
-///
-/// MadEvent writes every forced resonance of a decay chain as a status-2 record
-/// with its decay products' mother pointers on it. A parton shower reads those
-/// records to keep each resonance's mass fixed and to shower its products as a
-/// system of their own; this generator writes no intermediate records, and the
-/// same final state without them reads to a shower as all hard-process legs, which
-/// moves the resonance line shapes with no error to show for it. The cross
-/// section needs no records, so `integrate` takes these cards.
-fn refuse_decay_chain_events(
-    parsed: &vibegraph::diagrams::SupportedCard,
-) -> Result<(), IntegrateError> {
-    match parsed.processes.iter().find(|p| !p.decays.is_empty()) {
-        None => Ok(()),
-        Some(p) => Err(err(format!(
-            "'{p}' is a decay chain, and its events are not written yet: each forced \
-             resonance needs a status-2 record carrying its decay products' mother \
-             pointers, without which a parton shower treats the products as hard-process \
-             legs and distorts the resonance line shapes. `vibegraph integrate` measures \
-             its cross section"
-        ))),
-    }
-}
-
 /// The one thing a schema-identical format bump can still break: format version 7
 /// changes no field, but it changes what a clustering-scale artifact's `sigma_pb`
 /// means (see [`vibegraph::artifact::FORMAT_VERSION`]'s doc). An artifact written
@@ -417,9 +390,16 @@ struct SampleSource<'s, 'a> {
     momenta: Vec<V>,
     /// The factor from the integrand's natural units to the file's.
     unit: f64,
+    /// Per subprocess, its card line's process number (`IDPRUP`).
+    process_of: &'s [i32],
+    /// Per subprocess, the resonances its records list; empty on a card without
+    /// decay chains.
+    resonances: &'s [SubprocessResonances],
+    tally: ResonanceTally,
 }
 
 impl<'s, 'a> SampleSource<'s, 'a> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         integrand: &'s FixedBeamIntegrand<'a>,
         records: &'s [SubprocessRecord],
@@ -427,6 +407,8 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         seed: u64,
         card: &'s RunCard,
         alpha_qed: f64,
+        process_of: &'s [i32],
+        resonances: &'s [SubprocessResonances],
     ) -> Self {
         SampleSource {
             integrand,
@@ -439,6 +421,9 @@ impl<'s, 'a> SampleSource<'s, 'a> {
             alpha_qed,
             momenta: Vec::new(),
             unit: integrand.observable().per_natural_unit(),
+            process_of,
+            resonances,
+            tally: ResonanceTally::default(),
         }
     }
 
@@ -479,7 +464,7 @@ impl EventSource for SampleSource<'_, '_> {
             .record_scales(&self.momenta, point.channel, &point.u, self.card)
             .ok()?;
         let header = EventHeader {
-            process_id: PROCESS_ID,
+            process_id: self.process_of[selection.subprocess],
             // The strategy imposes the file's weight convention; this slot is
             // overwritten before the record is written.
             weight: 0.0,
@@ -487,9 +472,18 @@ impl EventSource for SampleSource<'_, '_> {
             alpha_qed: self.alpha_qed,
             alpha_qcd,
         };
-        let record = self.records[selection.subprocess]
-            .event(&externals, &selection.helicity, selection.flow, header)
-            .ok()?;
+        let record = event_record(
+            &self.records[selection.subprocess],
+            &externals,
+            &selection.helicity,
+            selection.flow,
+            header,
+            self.resonances
+                .get(selection.subprocess)
+                .map(|table| (table, None)),
+            (selection.config, selection.leading),
+            &mut self.tally,
+        )?;
         Some(WeightedEvent {
             record,
             weight: point.weight,
@@ -499,10 +493,102 @@ impl EventSource for SampleSource<'_, '_> {
     fn restart(&mut self) {
         self.unweighter = self.pristine.clone();
         self.rng = ChaCha8Rng::seed_from_u64(self.seed);
+        self.tally = ResonanceTally::default();
     }
 
     fn sigma_pb(&self) -> f64 {
         self.unweighter.sigma_from_events() * self.unit
+    }
+}
+
+/// Events written without the intermediate records their configuration names.
+#[derive(Clone, Copy, Debug, Default)]
+struct ResonanceTally {
+    /// Events whose colour flow their configuration does not reach at leading
+    /// colour, for which MadEvent's `addmothers` writes no intermediate either.
+    subleading: u64,
+    /// Events whose intermediates could not be given a colour their daughters
+    /// fit, written without them rather than with a wrong one.
+    refused: u64,
+}
+
+/// One event's record, with the resonances of its configuration as status-2
+/// records where `resonances` names a table: the lines MadEvent's `cut_bw` flags
+/// at the event's momenta ([`SubprocessResonances::on_shell`]), each carrying the
+/// PDG code `pdgs[config][line]` where the record's flavours differ from the
+/// table's, its own otherwise.
+#[allow(clippy::too_many_arguments)]
+fn event_record(
+    record: &SubprocessRecord,
+    externals: &[[f64; 4]],
+    helicity: &[i32],
+    flow: usize,
+    header: EventHeader,
+    resonances: Option<(&SubprocessResonances, Option<&[Vec<i32>]>)>,
+    (config, leading): (Option<usize>, bool),
+    tally: &mut ResonanceTally,
+) -> Option<vibegraph::lhef::record::LheEvent> {
+    let Some((table, pdgs)) = resonances else {
+        return record.event(externals, helicity, flow, header).ok();
+    };
+    let Some(config) = config.filter(|_| leading) else {
+        tally.subleading += 1;
+        return record.event(externals, helicity, flow, header).ok();
+    };
+    let lines = table.lines(config);
+    let intermediates: Vec<Intermediate> = table
+        .on_shell(config, &externals[record.n_in()..])
+        .into_iter()
+        .map(|i| Intermediate {
+            pdg: pdgs.map_or(lines[i].pdg, |p| p[config][i]),
+            color: lines[i].color,
+            slots: lines[i].slots,
+        })
+        .collect();
+    match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
+        Ok(event) => Some(event),
+        Err(
+            vibegraph::lhef::LhefError::IntermediateColor { .. }
+            | vibegraph::lhef::LhefError::IntermediateNesting { .. },
+        ) => {
+            tally.refused += 1;
+            record.event(externals, helicity, flow, header).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+/// Whether any process line of the card carries decays, which is when an event
+/// record lists its resonances.
+fn has_decay_chains(parsed: &SupportedCard) -> bool {
+    parsed.processes.iter().any(|p| !p.decays.is_empty())
+}
+
+/// The `LPRUP` of every process the card declares: its process numbers, each
+/// once, in increasing order.
+fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
+    let mut ids: Vec<i32> = parsed.processes.iter().map(|p| p.id as i32).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// Say how many events went out without the intermediates their configuration
+/// names.
+fn report_resonances(tally: ResonanceTally, written: usize) {
+    if tally.subleading > 0 {
+        info!(
+            "resonances: {} of {written} events carry a colour flow their configuration reaches \
+             only below leading colour and list no intermediate record, as MadEvent's do",
+            tally.subleading
+        );
+    }
+    if tally.refused > 0 {
+        warn!(
+            "resonances: {} of {written} events list no intermediate record because a \
+             resonance's daughters leave colour lines that do not fit it",
+            tally.refused
+        );
     }
 }
 
@@ -519,7 +605,6 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     let parsed = crate::read_proc_card(&args.proc_card, &opts)
         .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
     let process = process_string(&parsed)?;
-    refuse_decay_chain_events(&parsed)?;
 
     let artifact = IntegrateArtifact::read_from_path(&args.artifact)
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
@@ -627,9 +712,35 @@ fn generate_sample(
         .collect();
     let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
 
+    // The subprocesses `compile_subprocesses` kept, in the evaluators' order.
+    let compiled_sets: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+    let process_of: Vec<i32> = compiled_sets
+        .iter()
+        .map(|s| s.diagrams[0].provenance.process as i32)
+        .collect();
+    let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
+        compiled_sets
+            .iter()
+            .zip(&evals)
+            .map(|(set, eval)| {
+                SubprocessResonances::new(
+                    eval,
+                    &set.diagrams,
+                    model,
+                    evaluated,
+                    rc.float("bwcutoff"),
+                )
+            })
+            .collect::<Result<_, _>>()
+            .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?
+    } else {
+        Vec::new()
+    };
+
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
+    integ.use_resonances(&resonances);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
@@ -704,6 +815,8 @@ fn generate_sample(
         args.seed ^ GEN_SEED_OFFSET,
         rc,
         alpha_qed,
+        &process_of,
+        &resonances,
     );
 
     let strategy = weight_strategy(args);
@@ -713,11 +826,11 @@ fn generate_sample(
         sigma_err_pb: artifact.sigma_err_pb,
         beam_pdg,
         beam_energy,
-        // No parton densities on a fixed-energy or a decay run, so both beams
-        // report none.
+        // No parton densities on a fixed-energy or a decay run; `PDFSUP` is
+        // still MadEvent's, read off the card's `pdlabel`.
         pdf_group: [0, 0],
-        pdf_set: [0, 0],
-        process_id: PROCESS_ID,
+        pdf_set: [rc.pdfsup(); 2],
+        process_ids: process_ids(parsed),
         trailer: vec![generator_element(
             "vibegraph",
             env!("CARGO_PKG_VERSION"),
@@ -727,6 +840,7 @@ fn generate_sample(
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
+    report_resonances(source.tally, summary.drawn);
     report(
         artifact,
         source.stats(),
@@ -950,6 +1064,13 @@ struct ProtonSampleSource<'s, 'a> {
     rng: ChaCha8Rng,
     seed: u64,
     alpha_qed: f64,
+    /// Per group, the resonances its records list; empty on a card without
+    /// decay chains.
+    resonances: &'s [SubprocessResonances],
+    /// `[group][member][config][line]`: the PDG code a resonance line of the
+    /// group's representative carries in a member.
+    member_pdgs: &'s [Vec<Vec<Vec<i32>>>],
+    tally: ResonanceTally,
 }
 
 impl<'s, 'a> ProtonSampleSource<'s, 'a> {
@@ -959,6 +1080,8 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
         unweighter: Unweighter,
         seed: u64,
         alpha_qed: f64,
+        resonances: &'s [SubprocessResonances],
+        member_pdgs: &'s [Vec<Vec<Vec<i32>>>],
     ) -> Self {
         ProtonSampleSource {
             integrand,
@@ -968,11 +1091,10 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             rng: ChaCha8Rng::seed_from_u64(seed),
             seed,
             alpha_qed,
+            resonances,
+            member_pdgs,
+            tally: ResonanceTally::default(),
         }
-    }
-
-    fn record(&self, selection: &ProtonSelection) -> Option<&SubprocessRecord> {
-        self.records[selection.group][selection.member][ordering_slot(selection.ordering)].as_ref()
     }
 }
 
@@ -1004,8 +1126,9 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             .alpha_s_source()
             .map(|source| source.eval(event.scales.mu_r))
             .unwrap_or(0.0);
+        let member = &self.integrand.groups().groups()[selection.group].members()[selection.member];
         let header = EventHeader {
-            process_id: PROCESS_ID,
+            process_id: member.process as i32,
             // The strategy imposes the file's weight convention; this slot is
             // overwritten before the record is written.
             weight: 0.0,
@@ -1013,10 +1136,24 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             alpha_qed: self.alpha_qed,
             alpha_qcd,
         };
-        let record = self
-            .record(&selection)?
-            .event(&externals, &selection.helicity, selection.flow, header)
-            .ok()?;
+        let resonances = self.resonances.get(selection.group).map(|table| {
+            (
+                table,
+                Some(self.member_pdgs[selection.group][selection.member].as_slice()),
+            )
+        });
+        let records: &FlavorRecords = self.records;
+        let record = event_record(
+            records[selection.group][selection.member][ordering_slot(selection.ordering)]
+                .as_ref()?,
+            &externals,
+            &selection.helicity,
+            selection.flow,
+            header,
+            resonances,
+            (selection.config, selection.leading),
+            &mut self.tally,
+        )?;
         Some(WeightedEvent {
             record,
             weight: point.weight,
@@ -1026,6 +1163,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
     fn restart(&mut self) {
         self.unweighter = self.pristine.clone();
         self.rng = ChaCha8Rng::seed_from_u64(self.seed);
+        self.tally = ResonanceTally::default();
     }
 
     fn sigma_pb(&self) -> f64 {
@@ -1062,6 +1200,11 @@ fn generate_proton_sample(
         .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
     let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
         .map_err(|e| err(e.to_string()))?;
+    let (resonances, member_pdgs) = if has_decay_chains(parsed) {
+        group_resonances(&groups, model, evaluated, rc.float("bwcutoff"))?
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let amps: Vec<BoundAmplitude<f64>> = groups
         .groups()
         .iter()
@@ -1092,6 +1235,7 @@ fn generate_proton_sample(
 
     let records = flavor_records(&groups, model, evaluated)?;
     let beam_pdg = hadron_beam_pdg(rc)?;
+    integ.use_resonances(&resonances);
 
     let rule = max_rule(args);
     let scan = Unweighter::scan_with(
@@ -1122,6 +1266,8 @@ fn generate_proton_sample(
         scan,
         args.seed ^ GEN_SEED_OFFSET,
         alpha_qed,
+        &resonances,
+        &member_pdgs,
     );
 
     let strategy = weight_strategy(args);
@@ -1134,8 +1280,8 @@ fn generate_proton_sample(
         // MadGraph writes the LHAPDF id in `PDFSUP` and leaves `PDFGUP` at zero,
         // the accord's "the set is named by its LHAPDF id alone" spelling.
         pdf_group: [0, 0],
-        pdf_set: [rc.lhaid as i32; 2],
-        process_id: PROCESS_ID,
+        pdf_set: [rc.pdfsup(); 2],
+        process_ids: process_ids(parsed),
         trailer: vec![generator_element(
             "vibegraph",
             env!("CARGO_PKG_VERSION"),
@@ -1150,6 +1296,7 @@ fn generate_proton_sample(
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
+    report_resonances(source.tally, summary.drawn);
     report(
         artifact,
         source.unweighter.stats(),
@@ -1159,6 +1306,61 @@ fn generate_proton_sample(
         Observable::CrossSection,
     );
     Ok(summary)
+}
+
+/// Every flavour group's resonance lines, and the PDG code each line carries in
+/// each of the group's members (`[group][member][config][line]`).
+///
+/// A group's lines are its representative's; a member's line is the same
+/// flavour or its antiparticle ([`member_line_pdg`]), resolved here once so a
+/// member whose resonance neither describes is refused before any event is drawn.
+#[allow(clippy::type_complexity)]
+fn group_resonances(
+    groups: &FlavorGroups,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    bwcutoff: f64,
+) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), IntegrateError> {
+    let mut tables = Vec::with_capacity(groups.groups().len());
+    let mut pdgs = Vec::with_capacity(groups.groups().len());
+    for group in groups.groups() {
+        let table = SubprocessResonances::new(
+            group.evaluator(),
+            group.diagrams(),
+            model,
+            evaluated,
+            bwcutoff,
+        )
+        .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
+        let mut members = Vec::with_capacity(group.members().len());
+        for member in group.members() {
+            let mut configs = Vec::with_capacity(group.evaluator().n_configs());
+            for config in 0..group.evaluator().n_configs() {
+                let lines = table
+                    .lines(config)
+                    .iter()
+                    .map(|line| {
+                        member_line_pdg(line, table.outgoing(), &member.outgoing, model).ok_or_else(
+                            || {
+                                err(format!(
+                                    "the resonance {} of {} has no flavour in the subprocess \
+                                     with outgoing {:?} that shares its matrix element",
+                                    line.pdg,
+                                    group.diagram_set().label(),
+                                    member.outgoing
+                                ))
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<i32>, _>>()?;
+                configs.push(lines);
+            }
+            members.push(configs);
+        }
+        tables.push(table);
+        pdgs.push(members);
+    }
+    Ok((tables, pdgs))
 }
 
 /// `IDBMUP` for a hadron-collider run, from the run card's beam labels.
@@ -1472,7 +1674,9 @@ mod tests {
             .collect();
         let scan = Unweighter::scan(&integ, grids.iter().map(|g| (g, 2_000)), 3);
 
-        let mut source = SampleSource::new(&integ, &records, scan, 11, &rc, 0.0075);
+        let process_of = vec![1; records.len()];
+        let mut source =
+            SampleSource::new(&integ, &records, scan, 11, &rc, 0.0075, &process_of, &[]);
         let first: Vec<_> = (0..40)
             .map(|_| source.next_event().expect("an event"))
             .map(|e| (e.record, e.weight))
