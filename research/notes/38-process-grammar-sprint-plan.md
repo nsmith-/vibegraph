@@ -871,6 +871,18 @@ for a polarized massive leg); its stored default is now MadGraph's `1, 2`;
   can. The exception is S1, which removes sign factors from there: it lands
   after, or rebases onto, whichever evaluator PRs are open at the time.
 
+- **2026-09-26 (user): identical particles across decays keep the full
+  permutation.** MadGraph does not permute identical final-state particles
+  between decays: it keeps one pairing and divides by
+  `identical_decay_chain_factor` (`helas_objects.py:4581`), dropping the
+  interference between pairings (D2 Landed). We keep every pairing, with the
+  interference and the final state's own identical-particle factor. This is a
+  deliberate, documented deviation, so a decay-chain σ with identical particles
+  across decays is not expected to equal MadGraph's. D3 gates σ on cards without
+  that overlap, and reports the overlapping cards against MadGraph only as
+  informational, with the expected difference being the interference between
+  pairings.
+
 ## 6. Risks
 
 - **The container-equality oracle is only as strong as S1.** If any sign that

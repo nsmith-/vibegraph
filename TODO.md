@@ -468,6 +468,9 @@ above); the entries here are the eventual features.
     the filtered final state on 10 cases (147 diagrams, amplitudes to 1.2e-16) and to
     MadGraph's census on 17 cards; `check_enumerable`/`generate_decay_chains` only, the
     `DecayChain` refusal stays for D3.
+  - Decision (user, 2026-09-26): identical particles across decays keep the full
+    permutation and its interference, a documented deviation from MadGraph's
+    `identical_decay_chain_factor` (note 38 §5).
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
     leg-count ladder that decides whether a MadSpin-style step is ever needed.
   - **S3**: `$` as a pointwise SDE-weighted integrand.
