@@ -382,3 +382,449 @@ MG net's tolerances, never bit-for-bit against the pre-change output. The
 `pack_lane_points` / `eval_m2_lanes_packed` split is **order-preserving** (the same
 two operations, same order, one call boundary moved) and the lane-identity test
 holds exactly.
+
+## x86 AVX-512 re-measurement (Emerald Rapids, 2026-09-23)
+
+**Status: with the `numeric-array` lane field, lanes lost to scalar on AVX-512
+silicon too, by more than on ARM. The cause was an inlining failure in the lane
+field's arithmetic, not the vector width. Replacing the lane field with a
+`wide`-backed newtype makes every width beat scalar: 4.0× per-event throughput
+at N = 8 (see "The fix").** This section supersedes the lane-width reading of the AVX2 sections
+above (see "What this corrects").
+
+Host: Intel Xeon family 6 model 207 (Emerald Rapids, 5th-gen Xeon Scalable) at
+2.1 GHz, a 4-vCPU Firecracker microVM under KVM, 15 GiB. Full AVX-512 (F/DQ/BW/VL,
+FP16, BF16) plus AMX. `rustc 1.94.1`; `RUSTFLAGS="-C target-cpu=native"` resolves
+to `emeraldrapids`, whose LLVM tuning carries `prefer-256-bit`. Bench profile
+(`release`, fat LTO), tree at `02e8b25`.
+
+### Per-event ratio to scalar
+
+Every bar is 16 events, so `lanesN ÷ forward` is per event, and >1 is slower.
+The first run covered all 23 SM rows the bench then carried (it stopped at the
+first 2→1 row, see the bench note below):
+
+| 23 SM rows | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| median | 5.24× | 7.98× | 9.84× |
+| suite Σ (cost-weighted) | 7.11× | 9.24× | 10.50× |
+| suite Σ, `_prepacked` | 7.07× | 8.74× | 10.55× |
+
+The bench now carries a fixed 8-row representative SM set. Re-run on it:
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 8.2 | 4.25× | 6.01× | 7.92× |
+| `ee_to_wpwm` | 31.0 | 5.84× | 8.91× | 11.24× |
+| `uux_to_uux` | 13.0 | 4.90× | 6.28× | 8.03× |
+| `gg_to_gg` | 39.4 | 4.29× | 6.31× | 8.70× |
+| `gg_to_ttx` | 24.6 | 5.28× | 6.92× | 8.85× |
+| `ee_to_mumua` | 34.5 | 6.98× | 9.71× | 11.35× |
+| `ee_to_mumu_tata_qcd0` | 152.2 | 7.37× | 9.58× | 11.47× |
+| `uux_to_ccx_emmm_qcd0` | 3093.6 | 7.71× | 10.10× | 11.81× |
+| **median** | | **5.56×** | **7.92×** | **10.04×** |
+| **suite Σ** | | **7.59×** | **9.97×** | **11.71×** |
+
+Three things read straight off these tables:
+
+- **Every width loses on every row**, by 4–12×, worse than the M3's 2.4–8×.
+- **The loss grows with width.** Real SIMD makes an event cheaper as the pack
+  widens; here each doubling costs more per event. That points to work that
+  scales with `N`: calls and copies, not arithmetic.
+- **The transpose is still exonerated**: on the 8-row run `_prepacked` sits
+  −6.6% … +1.7% of the lane bar. The 23-row run's one large cell
+  (`gu_to_epemu` `lanes2_prepacked`, +23%) is *slower* with the transpose
+  removed, so it is noise, not a transpose cost.
+
+Run-to-run noise on this VM, from `forward` in the two runs of the same binary
+(`ee_to_mumu` 8.4 / 8.2, `ee_to_wpwm` 29.9 / 31.0, `gg_to_gg` 40.4 / 39.4 µs):
+**≈2–4%**. Each configuration is one run. Every conclusion below rests on
+differences of 3× or more.
+
+### The disassembly: packed leaves, called out of line
+
+Per `fill_arenas` monomorphisation in the timed binary. FP counts are the
+arithmetic mnemonics (`v{fmadd…,mul,add,sub,div,sqrt}{pd,sd}`). `arith calls`
+are calls into `numeric-array` / `generic-array` / `num_complex`:
+
+| instance | insns | packed pd (xmm / ymm) | scalar sd | calls | arith calls | memcpy |
+|---|--:|--:|--:|--:|--:|--:|
+| scalar `f64` (two copies) | 3 693 / 4 217 | 12+54 / 138+82 | 494 / 793 | ≈190 | 0 | 0 |
+| lane instance A | 11 867 | 198 / 51 | 0 | 860 | 634 | 15 |
+| lane instance B | 30 999 | 1 / 0 | 6 | 1 587 | 1 254 | 90 |
+| lane instance C | 24 465 | 1 / 0 | 2 | 1 497 | 1 254 | 19 |
+
+The lane bodies contain almost no floating-point arithmetic. In the two widest,
+1–6 FP ops sit among 25–31k instructions. All of their arithmetic is in about
+1 250 out-of-line calls. For the widest body those break down as:
+
+| callee | calls | what it carries |
+|---|--:|---|
+| `GenericArray::from_iter` | 769 | every elementwise `+ − × ÷` and `neg` |
+| `NumericArray` `Float::mul_add` | 245 | every `cmul`/`cmul_add`/dot FMA |
+| `NumericArray::clone` | 124 | operand copies |
+| `num_complex` `Complex::mul` | 92 | `Instr::MulScalarC`, `Scale*C`, `impl_mul_for_array` with a complex scalar |
+
+The callees are correctly vectorised. `mul_add` for N = 2 / 4 / 8 compiles to 1
+xmm, 1 ymm and 2 ymm `vfmadd213pd`. But each call reads its operands through
+pointers, writes its result to memory and ends in `vzeroupper`. The N = 8 body
+also bounces its result through the stack. The `from_iter` bodies are worse: an
+unrolled *scalar* loop (`vdivsd`/`vmulsd`) with a compare-and-branch per
+element, because `GenericArray::from_iter` checks the iterator length. So a lane
+operation costs a call plus several memory round-trips, and part of the
+arithmetic runs one element at a time. That is the per-event cost that grows
+with `N`.
+
+The inlining attributes explain it. `numeric-array` 0.6.1's operator impls are
+`#[inline(always)]`, but they forward to `GenericArray::zip`/`map` →
+`FromIterator::from_iter`, which is a soft `#[inline]` in `generic-array`
+1.4.4. `NumericArray`'s `Float` methods and `num_complex`'s operators are also
+only `#[inline]`. None of these crates is ours. `#[inline(always)]` on our
+callers does not propagate into callees, so **no attribute in this tree can
+force the inlining**. The only in-tree lever is the `Complex::mul` row. Routing
+it through `cmul` removes 92 of about 1 250 calls, and `cmul` then calls the
+out-of-line `mul_add`.
+
+No zmm arithmetic is emitted anywhere. `lanes8` is two ymm halves, which is the
+`prefer-256-bit` tuning. Testing zmm is premature until the lane ops inline:
+with them out of line, it would only measure call overhead.
+
+### Force-inlining probe: `-C llvm-args=-inline-threshold=2000`
+
+Raising LLVM's inline threshold (default 225) is the only way to force those
+callees inline without changing crates. It is a global codegen flag, so it is a
+probe, not a fix. The same bench in a separate target dir:
+
+| instance | insns | packed pd (xmm / ymm) | arith calls | memcpy |
+|---|--:|--:|--:|--:|
+| lane A | 4 903 | 97 / 105 | 64 | 5 |
+| lane B | 23 126 | 8 / 737 | 63 | 75 |
+| lane C | 7 572 | 53 / 291 | 64 | 6 |
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 7.5 | 1.59× | 1.42× | 5.83× |
+| `ee_to_wpwm` | 33.2 | 1.97× | 1.71× | 6.81× |
+| `uux_to_uux` | 12.8 | 1.63× | 1.37× | 6.22× |
+| `gg_to_gg` | 40.2 | 1.66× | 1.44× | 6.25× |
+| `gg_to_ttx` | 24.6 | 1.62× | 1.44× | 6.24× |
+| `ee_to_mumua` | 34.3 | 1.78× | 1.80× | 7.33× |
+| `ee_to_mumu_tata_qcd0` | 153.6 | 1.73× | 1.73× | 7.17× |
+| `uux_to_ccx_emmm_qcd0` | 3179.5 | 1.64× | 1.75× | 7.11× |
+| **median** | | **1.65×** | **1.57×** | **6.53×** |
+| **suite Σ** | | **1.64×** | **1.74×** | **7.09×** |
+
+- **Inlining is most of the story.** `lanes2`/`lanes4` go from 5.6× / 7.9× of
+  scalar to 1.65× / 1.57×. The scalar path is within noise of the default build
+  (suite Σ `forward` +2.6%).
+- **It is not sufficient.** No width reaches parity. `lanes8` still inlines
+  badly: its instance keeps 75 `memcpy`s, the 128-byte `LaneField<8>`
+  temporaries and 512-byte `ComplexVector`s the `get_unchecked` episode above
+  already flagged. The 41 surviving `Complex::mul` calls are in-tree code.
+- Ideal packed arithmetic would put `lanes4` below 1× of scalar, around 0.3–0.5×
+  once the interpreter's per-instruction dispatch is amortised over the pack.
+  1.6× measures the lane field's remaining overhead, not a SIMD ceiling.
+
+### What this corrects in the sections above
+
+- The AVX2 tables are Δ% *within* one strategy. They never gave the lane ÷
+  scalar ratio, so "lanes8 −35%" said nothing about whether lanes pay. On this
+  evidence they did not on that host either.
+- Their width-to-width differences ("lanes4 benefits least") measured call and
+  copy overhead, not SIMD width: every lane build here is dominated by
+  out-of-line calls. FMA's win on the lanes is at least partly an inlining-cost
+  side effect. Fewer, fused operations mean fewer calls, which is equally
+  consistent with the `vpermpd`/`vblendpd` drop recorded there.
+- `zmm`=0 on the AVX2 host was true by construction, not a measurement.
+- `scripts/dump_lane_asm.sh` had the same blind spot: it counted packed ops per
+  function, and the out-of-line leaves census as packed. It now reports
+  `calls` / `arith_calls` per function and an inlining verdict. Its width verdict
+  reads packed arithmetic on zmm rather than any zmm use, because this
+  prefer-256-bit build still touches zmm in moves and compares.
+
+### Bench changes
+
+`eval_strategies` stopped at `bbx_to_h_identity`, a 2→1 row where RAMBO needs
+two final-state momenta. Every row after it names a SMEFTsim or toy UFO model,
+yet the bench built every row against the interned SM, so the four `*_smlimit`
+rows were silently timing plain SM processes. The bench now carries a fixed
+representative SM set (`BENCH_ROWS`). It reads each row's process string from
+its `mg_amplitude` table and rejects a row that names a model of its own.
+`mg_perf_compare.sh` lists the `mg_timings.json` rows outside the set as
+unjoined.
+
+### The fix: `LaneField<N>` over `wide`
+
+The lane field is now `LaneField<N>` (`helas/eval/lane_field.rs`), a newtype over
+`wide::f64x2` / `f64x4` / `f64x8` that implements `num_traits::Float` and
+`FloatConst` itself. It replaces the `NumericArray<f64, N>` alias.
+
+**Candidates considered**, by fit with `Real = Float + FloatConst + Copy + …`:
+
+- **`wide` 1.7** is statically dispatched on the target's enabled vector units,
+  on stable. Each op is one intrinsic, so even its soft `#[inline]` bodies inline
+  reliably. It has `f64x2`/`f64x4`/`f64x8`, which are exactly the swept widths,
+  and `f64x8` uses zmm whenever `avx512f` is on, bypassing LLVM's
+  `prefer-256-bit`. It has no `num_traits` impls, so the newtype supplies them.
+- **`fearless_simd` 1.0** and **`pulp`** are built for runtime multiversioning:
+  every vector carries a SIMD-level token (`f64x4<S> { val, simd: S }`). `Float`'s
+  token-less constructors (`zero()`, `NumCast::from`, `FloatConst::PI()`) have no
+  token to build from. Adopting either means restructuring the evaluator around
+  their `dispatch!` entry points rather than `F: Real`. That buys runtime CPU
+  dispatch (no `target-cpu=native` needed), which is a separate decision.
+- **`simba`** has its own `SimdRealField` trait family and no `num_traits::Float`
+  impl. Adopting it means rewriting the `Real` bound across the library.
+- **`std::simd`** is nightly-only, and the repository builds on stable.
+
+**What the newtype does.** `+ − × ÷`, `neg`, `sqrt`, `abs` and `mul_add` are the
+packed `wide` operation. Every other `Float` method runs per lane through `f64`'s
+own method. The packed ones are IEEE-exact, so each lane stays bit-identical to
+scalar with one exception, which is handled: `wide`'s `mul_add` rounds twice when
+the target has no hardware FMA, while `f64::mul_add` always fuses. The packed FMA
+is used only under `target_feature = "fma"` (or aarch64 NEON), and the per-lane
+`f64::mul_add` otherwise. Comparisons and the `Float` predicates reproduce
+numeric-array's pack-level reductions, which the lane-uniformity contract is
+written against: lexicographic `partial_cmp`, all-lanes `==`, any/all predicates
+as documented in the module.
+
+**Census** (`dump_lane_asm.sh 'fill_arenas'`, `target-cpu=native`):
+
+| instance | insns | packed pd (xmm / ymm / zmm) | scalar sd | arith calls | memcpy |
+|---|--:|--:|--:|--:|--:|
+| lanes2 | 5 467 | 1 742 / 0 / 0 | 0 | 0 | 1 |
+| lanes4 | 5 738 | 0 / 1 734 / 0 | 0 | 0 | 1 |
+| lanes8 | 6 090 | 0 / 0 / 1 734 | 0 | 0 | 11 |
+
+Every lane op inlines, the widths land on exactly the register class they should,
+lanes8 is genuine 8×f64 AVX-512, and the bodies shrank 2–5×.
+
+**Bench** (8-row set, same host and flags; `forward` within noise of the
+`NumericArray` build):
+
+| process | forward µs/16 ev | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 8.0 | 0.57× | 0.30× | 0.24× |
+| `ee_to_wpwm` | 30.5 | 0.62× | 0.42× | 0.34× |
+| `uux_to_uux` | 13.0 | 0.57× | 0.30× | 0.26× |
+| `gg_to_gg` | 43.4 | 0.59× | 0.32× | 0.23× |
+| `gg_to_ttx` | 24.8 | 0.59× | 0.33× | 0.23× |
+| `ee_to_mumua` | 33.9 | 0.57× | 0.33× | 0.26× |
+| `ee_to_mumu_tata_qcd0` | 163.5 | 0.50× | 0.31× | 0.23× |
+| `uux_to_ccx_emmm_qcd0` | 3047.1 | 0.58× | 0.37× | 0.33× |
+| **median** | | **0.57×** | **0.32×** | **0.25×** |
+| **suite Σ** | | **0.58×** | **0.37×** | **0.32×** |
+
+**Lanes now beat scalar at every width on every row.** Per-event throughput is
+1.75× / 3.1× / 4.0× (median) at N = 2 / 4 / 8, and the ordering is the one SIMD
+predicts: wider is cheaper per event. Against the `NumericArray` build that is a
+~10× / ~25× / ~40× per-event speedup of the lane path. `ee_to_wpwm` and
+`uux_to_ccx_emmm_qcd0` gain least at N = 8 (0.34× / 0.33×). One is among the
+smallest processes and the other is the largest, so it is not simply size, and
+this run does not isolate the cause.
+
+**Correctness.** `eval_m2_lanes_match_scalar` and `lanes4_lanes8_match_scalar`
+compare every lane against scalar `eval_m2`. Where the lane `mul_add` is a
+hardware FMA (`FUSED_MUL_ADD`: x86 `fma`, aarch64 NEON) the comparison is bit for
+bit, and it passes under `x86-64-v3` (CI's flags) and `target-cpu=native`. On
+the baseline x86-64 target the lane `mul_add` is a packed product and sum, which
+rounds twice, while scalar `f64::mul_add` still fuses in software. The
+comparison there is relative, bounded by `LANE_UNFUSED_REL_TOL = 1e-10`.
+Measured over the 118 compared lanes: typically 1e-16 to 8e-15, worst 2.0e-13 on
+the deliberately ill-conditioned off-axis regime. Unit tests pin every packed op
+bit for bit against `f64` at N = 2 / 4 / 8, with `mul_add` pinned to whichever
+semantics `FUSED_MUL_ADD` claims for the target, so the flag cannot drift from
+`wide`'s own per-width condition. The scalar path is unchanged code.
+
+### The two x86 release builds
+
+`release.yml` ships a baseline `x86_64-unknown-linux-musl` asset and a
+`-C target-cpu=x86-64-v3` one. Same host, same 8 rows, each build against its
+own scalar:
+
+| build | forward µs/16 ev (`ee_to_mumu` … `uux_to_ccx_emmm_qcd0`) | lanes2 | lanes4 | lanes8 |
+|---|--:|--:|--:|--:|
+| `x86-64-v3` (AVX2 + FMA) | 8.3 … 3 157 | 0.59× | 0.33× | 0.34× |
+| baseline (SSE2) | 19.7 … 14 066 | 0.18× | 0.17× | 0.18× |
+
+- Under v3, lanes8 is two ymm halves and buys nothing over lanes4. N = 4 is
+  that target's width.
+- **The baseline scalar path is 2.4–4.5× slower than v3's.** Every
+  `f64::mul_add` there is a software FMA call. The lanes avoid that call, which
+  is why the baseline lane ratios look so large: baseline `lanes2` (1.8 ms per 16
+  events on `uux_to_ccx_emmm_qcd0`) already beats v3 *scalar* (3.2 ms).
+
+### Relaxed scalar multiply-add
+
+Every multiply-add now goes through `Real::mul_add_fast`: `Float::mul_add` where
+`HARDWARE_FMA` holds, `self * a + b` otherwise. `clippy.toml` bans
+`f64::mul_add`, `f32::mul_add` and `num_traits::Float::mul_add` everywhere else.
+A probe with one planted call of each kind confirmed both are caught. Scalar and
+lanes run the same operations on every target, so the lane-vs-scalar tests are
+bit-exact everywhere again, and `LaneField`'s own `Float::mul_add` keeps its
+single-rounding contract.
+
+Baseline x86-64 target, scalar `forward` µs per 16 events. "Before" is the
+software-FMA build (rustc 1.94, idle machine). "After" is rustc 1.98, pinned to
+one core while another job shared the VM, so cells carry a few percent of
+contention against a 2–4× effect:
+
+| process | before | after | speedup | after ÷ v3 scalar |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 19.7 | 8.7 | 2.28× | 1.04× |
+| `ee_to_wpwm` | 102.8 | 35.9 | 2.86× | 1.10× |
+| `uux_to_uux` | 34.3 | 14.3 | 2.39× | 1.09× |
+| `gg_to_gg` | 115.6 | 48.7 | 2.37× | 1.20× |
+| `gg_to_ttx` | 89.7 | 28.5 | 3.15× | 1.10× |
+| `ee_to_mumua` | 144.7 | 41.9 | 3.45× | 1.21× |
+| `ee_to_mumu_tata_qcd0` | 671.2 | 179.0 | 3.75× | 1.15× |
+| `uux_to_ccx_emmm_qcd0` | 14 066 | 3 713 | 3.79× | 1.18× |
+
+The amplitude oracle's residuals against MadGraph on the baseline target stay
+at the same 1e-16 to 6e-11 scale per process. The largest move is an
+improvement: `ee_to_mumu_tata_qcd0`'s worst per-event residual went from 6.0e-12
+to 2.8e-14.
+
+### Algebraic float arithmetic (`f64::algebraic_*`, rustc 1.98): not adopted
+
+The prototype was a feature-gated study hook on top of `Real::mul_add_fast`, and
+it is not merged.
+- **Hook:** `Real` got explicit impls for `f32`, `f64` and `LaneField` in place
+  of the blanket one, so `f64` could override kernel-arithmetic methods. The
+  lane field kept its explicit ops.
+- **Variants:**
+  - **v1:** multiply-adds as algebraic mul + add.
+  - **v2:** every op in `cmul`/`cmul_add`/dots/`slash_bispinor`/`m2`.
+  - **vw:** v2 plus the vector-space macros and the dispatch-loop
+    `AddScalar`/`MulScalar*`.
+- **Protocol:** three interleaved rounds per target on one pinned core, with
+  per-round ratios against a no-feature control.
+
+Median `forward` effect across the 8 rows (positive = slower; control drift
+1–9% per row):
+
+| target | v1 | v2 | vw |
+|---|--:|--:|--:|
+| native (AVX-512) | +9.8 … +17.7% on 6 of 8 rows | +3.6 … +14.2% | −2.2 … +9.0%, mostly ≈ 0 |
+| `x86-64-v3` | −3.5 … +7.3% | −6.8 … +2.5% | −1.7 … +5.6% |
+| default | −4.8 … +2.3% | −2.1 … +5.2% | −4.2 … +1.3% |
+
+The lane code was census-identical between control and vw, yet it moved −2.8% to
++9.7% between the two builds. Code layout alone moves this bench by up to ~10%,
+so single-digit effects here are not resolvable.
+
+**Why v1 is slower.** Given algebraic mul and add, LLVM's SLP vectorizer packs
+each complex product's re/im pair into `vmulpd` + `vaddsubpd` + shuffles before
+FMA formation can see it. In `fill_arenas` on native, scalar FMAs go 534 → 172,
+`vaddsubpd` 35 → 98 and `vshufpd` 82 → 162 (v3: 407 → 176 FMAs). On this core
+the packed-complex form is slower than the scalar FMAs it replaced. Allowing
+reassociation everywhere (v2, vw) brings the FMAs back and trims 3–5% of static
+instructions, but no time.
+
+**Costs, measured under vw:**
+- `eval_m2_lanes_match_scalar` and `lanes4_lanes8_match_scalar` fail on both
+  the default target and v3. 69–73 of the 118 lane comparisons differ, worst
+  1 265 ulp (1.8e-13 relative).
+- `test_fierz_reconstruction` fails on v3. The same bilinear computed through
+  `fierz_coefficients().scalar()` and `scalar_bilinear()` differs
+  (`im` 2.6e-18 vs 0), because the two inlining contexts contract differently.
+- The helicity-expansion, alternative-schedule, batched-VEGAS and fixed-seed
+  bit-identity tests all still passed.
+- The amplitude oracle stays 42/42 at the control's residual scale.
+
+Verdict: no speedup to pay for results that depend on the inliner.
+
+### Kernel microbenchmarks (`benches/lorentz_kernels.rs`)
+
+A leaf-kernel change that is below the 8-process bench's resolution is judged on
+the kernel itself. `lorentz_kernels` times the production Lorentz kernels through
+their public API, for `f64` and `LaneField<4>`, in two shapes:
+- `throughput`: 1024 independent calls.
+- `chain`: each result feeds the next call's input, so the time is the
+  critical-path latency from that input. Each chain is constructed to stay
+  O(1), and the bench asserts it never reaches overflow or subnormals.
+
+**`dot` as two accumulation chains**, A/B/A/B, one pinned core, per-round
+change (B vs A):
+
+| target | field | throughput | chain |
+|---|---|---|---|
+| native | `f64` | −3.9 / −4.5 / −6.4% | −18.1 / −18.9 / −19.1% |
+| native | lanes4 | −1.6 / −2.7 / −3.5% | −18.4 / −19.5 / −19.0% |
+| default | `f64` | −17.7 / −16.3 / −12.6% | −20.6 / −21.1 / −21.0% |
+| default | lanes4 | −1.2 / +2.4 / +5.4% | +3.5 / +1.6 / +0.4% |
+
+The `slash` rows are unchanged code between the two builds and move −5.7% to
++6.2%: that is the noise floor. Adopted on these kernel merits, although the
+8-process bench showed a null. The amplitude oracle's residuals move only in
+their last printed digits, and the lane-vs-scalar tests stay exact.
+
+**Survey of the remaining serial chains.** Every kernel with a serial
+accumulation was rewritten and added to the bench before the change:
+- `dot4` (the Weyl-matrix rows of `apply` and `clifford_product`, and
+  `epsilon4`'s final contraction) takes `dot`'s two-chain form, and `dot` now
+  calls it.
+- `dot_lorentz` splits each real sum into two partials.
+- `scalar_bilinear(Both)` is `dot4` instead of four chained multiply-adds.
+- `AsymRank2Tensor::contract` sums one independent partial per spatial axis.
+- `contract_vector` is written out over each row's three non-zero entries. The
+  old loop over all four columns included a multiply-add by the zero diagonal,
+  which the compiler cannot drop.
+- `contract_vectors` is `a · (T b)`, built on `contract_vector`, instead of a
+  six-step fold.
+- `fierz_pairing` adds its four grade terms as a tree.
+
+Already flat, and unchanged: the chiral currents, `tensor_bilinear`, the
+`epsilon_cofactors` minors, `to_weyl_matrix` and `from_weyl_matrix`.
+
+A/B/A/B over three rounds, one pinned core. Each cell is the range of the
+per-round change, as throughput / chain, in %:
+
+| kernel | native f64 | native lanes4 | default f64 | default lanes4 |
+|---|---|---|---|---|
+| `dot` | −5…−3 / −4…−3 | +2…+5 / −1…+3 | −4…+5 / −2…+2 | −7…+1 / −3…+6 |
+| `dot_lorentz` | −1…+1 / −10…−7 | −2…+1 / −9…−7 | −2…+3 / −9…−6 | −5…+3 / −2…−0 |
+| `scalar_bilinear` | −4…−1 / −17…−14 | −5…+5 / −20…−16 | −19…−14 / +14…+23 | −2…+3 / +1…+9 |
+| `epsilon4` | −3…+5 / −6…+60 | −10…+1 / −4…−0 | −6…−4 / −5…+1 | −1…+4 / −9…−4 |
+| `tensor_contract` | −6…−1 / −7…+36 | +2…+10 / −12…−3 | −1…+4 / −10…−8 | −6…−4 / −5…+0 |
+| `tensor_contract_vectors` | −22…−18 / −28…−5 | −21…−17 / −24…−19 | −23…−21 / −24…−22 | −32…−25 / −17…−16 |
+| `tensor_contract_vector` | −40…−34 / −21…−20 | −25…−23 / −20…−16 | −29…−29 / −43…−39 | −50…−46 / −49…−45 |
+| `fierz_pairing` | −4…−3 / −36…−33 | −15…+7 / −3…+3 | −2…+2 / −6…+3 | −7…+8 / −5…+6 |
+| `apply` | −2…+4 / −3…+2 | +1…+10 / −5…+6 | −5…−3 / +0…+7 | −1…+7 / −4…+5 |
+| `slash` | −1…+4 / −6…−2 | −5…+5 / −3…+4 | −4…+3 / −1…+2 | −8…+6 / +1…+6 |
+
+Reading it:
+- **Noise.** `slash` is unchanged code, and `dot` computes the same arithmetic
+  in both builds. Both move within about ±6%.
+- **Outliers.** Round 3 on native has three outlier cells: `epsilon4` chain
+  +60%, `tensor_contract` chain +36%, and `contract_vectors` chain −5% against
+  −28% in the other rounds. A native-only A/B/C rerun, three rounds, the
+  variant C reverting only `contract`, shows those cells were a disturbance:
+  - `tensor_contract` chain: −6% (`f64`) and −12% (lanes4), consistently.
+    Throughput is unchanged.
+  - `fierz_pairing` `f64` chain: 45 → 30 µs with the new `contract`, 36 µs
+    without it. Its critical path runs through the bivector term.
+- **Clear wins.** `contract_vector` (−16% to −50% in every cell) and
+  `contract_vectors` (−16% to −32%) do less work as well as having shorter
+  paths. `dot_lorentz` gains 7–10% in chain everywhere except default lanes4.
+- **The one regression.** `scalar_bilinear`'s default-target `f64` chain is
+  14–23% slower. That target's throughput gains 14–19%, and native's chain
+  gains 14–20%. Without hardware FMA, `mul_add_fast` is a multiply and an add,
+  so a serial chain's dependency from the accumulator is a single add per term
+  and the split buys less.
+- **Neutral.** `apply` is within noise: its four rows are already
+  independent, so `dot4`'s one extra add is all that changes. `epsilon4`
+  moves within noise too, apart from the outlier.
+
+All rewrites are kept. The throughput shape is what the dispatch loop mostly
+presents, and it improves or holds in every cell except native-lanes4 `apply`
+and `tensor_contract`, which are within noise.
+
+### Reproduce
+
+```
+RUSTFLAGS="-C target-cpu=native" cargo bench -p vibegraph-lib --bench eval_strategies -- --save-baseline <name>
+RUSTFLAGS="-C target-cpu=native" scripts/dump_lane_asm.sh 'fill_arenas'
+# force-inlining probe, kept out of the main target dir:
+CARGO_TARGET_DIR=target/probe-inline RUSTFLAGS="-C target-cpu=native -C llvm-args=-inline-threshold=2000" \
+    cargo bench -p vibegraph-lib --bench eval_strategies
+```

@@ -83,8 +83,8 @@
 # energy), the RNG `seed`, and the optional `profile_npoints` MATRIX1 timing
 # batch size (default 10000). `gen_amplitude.py` reads this table rather than
 # carrying its own copy, and so does `vibegraph-lib/benches/eval_strategies.rs`
-# for the process card and row set it benches against MadGraph's MATRIX1
-# timings. One compiled module can serve more than one row's `amplitudes` gate
+# for the process card of each row in the SM subset it benches against
+# MadGraph's MATRIX1 timings. One compiled module can serve more than one row's `amplitudes` gate
 # (`pp_to_ll_qcd0` generates the table `uux_to_mumu` also reads), so this table
 # is present only on the row that owns the generation.
 #

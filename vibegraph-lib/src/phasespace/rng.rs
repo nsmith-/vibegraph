@@ -44,7 +44,7 @@ pub const SCALE_DRAW_STREAM_BASE: u64 = 0x5CA1_0000;
 /// 53 bits is the full `f64` significand, so every representable `f64` in
 /// `[0, 1)` with that many mantissa bits is reachable and the result never
 /// reaches exactly `1.0`. Because the whole rule is a function of the integer
-/// `bits`, a `NumericArray` lane pack fed the same draw yields the same value
+/// `bits`, a `LaneField` lane pack fed the same draw yields the same value
 /// per lane as scalar `f64`.
 #[inline]
 pub fn u64_to_uniform<F: Real>(bits: u64) -> F {

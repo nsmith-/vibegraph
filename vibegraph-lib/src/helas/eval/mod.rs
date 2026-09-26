@@ -41,8 +41,9 @@ mod fold;
 // Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
 // the `run::apply` dispatch is `kernel::<op>(children)`.
 mod kernel;
-// SIMD lane batching: `F = NumericArray<f64, N>` runs one `eval_m2` pass over N
+// SIMD lane batching: `F = LaneField<N>` runs one `eval_m2` pass over N
 // phase-space points. See the module doc for the lane-uniformity contract.
+mod lane_field;
 mod lanes;
 mod layout;
 mod lower;
@@ -112,7 +113,7 @@ pub mod op_census {
 pub use ast::{Ast, ParseAstError};
 pub use compile::{config_groups, AmplitudeEvaluator, ColorSelection};
 pub use error::{CompileError, EvalError, RootDiagramError};
-pub use lanes::LaneField;
+pub use lane_field::{LaneField, Lanes, SupportedLanes};
 pub use op::{Const, ConstKind, Node, Op, Sym};
 pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
 pub use root_diagram::compile_diagram_ast;

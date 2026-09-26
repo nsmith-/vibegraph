@@ -1,0 +1,8 @@
+# Multiply-adds go through `Real::mul_add_fast`: a hardware FMA where the target
+# has one, a product and a sum where it does not. `mul_add` itself always rounds
+# once, which without FMA hardware is a software FMA call per use.
+disallowed-methods = [
+    { path = "f64::mul_add", reason = "use Real::mul_add_fast; without hardware FMA this is a software FMA call" },
+    { path = "f32::mul_add", reason = "use Real::mul_add_fast; without hardware FMA this is a software FMA call" },
+    { path = "num_traits::float::Float::mul_add", reason = "use Real::mul_add_fast; without hardware FMA this is a software FMA call" },
+]

@@ -15,7 +15,6 @@
 //! the already-evaluated `children` in operand order; the cross-check tests call them
 //! directly.
 
-use num_complex::ComplexFloat;
 use num_traits::Zero;
 
 use super::waveform_slot::{MultivectorWf, WaveformSlot};
@@ -64,7 +63,9 @@ pub fn propagate_fin_bare<F: Real>(
     width: F,
 ) -> Bispinor<F, Ket> {
     let num = spinor.slash(&(*q).into()) + *spinor * mass;
-    let scale = ri(-F::one()) * C::new(q.m2() - mass * mass, mass * width).recip();
+    // `inv` is conj / |z|²; `recip` guards overflow through a libm `hypot` call, and a
+    // propagator denominator is nowhere near overflow.
+    let scale = ri(-F::one()) * C::new(q.m2() - mass * mass, mass * width).inv();
     num * scale
 }
 
@@ -77,7 +78,9 @@ pub fn propagate_fout_bare<F: Real>(
     width: F,
 ) -> Bispinor<F, Bra> {
     let num = spinor.slash(&(*q).into()) + *spinor * mass;
-    let scale = ri(-F::one()) * C::new(q.m2() - mass * mass, mass * width).recip();
+    // `inv` is conj / |z|²; `recip` guards overflow through a libm `hypot` call, and a
+    // propagator denominator is nowhere near overflow.
+    let scale = ri(-F::one()) * C::new(q.m2() - mass * mass, mass * width).inv();
     num * scale
 }
 
