@@ -77,6 +77,9 @@ pub struct AmplitudeEvaluator {
     ext_particle_ids: Vec<ParticleId>,
     /// All valid helicity combinations (precomputed)
     helicities: Vec<Vec<i32>>,
+    /// Per external leg, the helicities a polarized leg is restricted to, or
+    /// `None` for a leg summed over all its states.
+    polarizations: Vec<Option<Vec<i32>>>,
     /// Number of color flows (NCOLOR): the JAMP count. `1` for color-free and
     /// single-color-structure processes.
     n_flows: usize,
@@ -182,11 +185,38 @@ impl AmplitudeEvaluator {
             }
         }
 
+        // A polarized leg sums over its listed helicities only, in the order the
+        // card listed them; every other leg over all of its states.
+        let polarizations = set.polarizations.clone();
+        if polarizations.len() != ext_particle_ids.len() {
+            return Err(EvalError::TopologyError(format!(
+                "{} polarizations for {} external legs",
+                polarizations.len(),
+                ext_particle_ids.len()
+            )));
+        }
         let helicity_states = ext_particle_ids
             .iter()
-            .map(|&pid| {
+            .zip(&polarizations)
+            .enumerate()
+            .map(|(leg, (&pid, pol))| {
                 let particle = model.particle(pid);
-                helicity_states_for_spin(particle.spin, particle.mass_param == "ZERO")
+                let states = particle
+                    .helicity_states()
+                    .ok_or(EvalError::UnsupportedSpin(particle.spin.abs()))?;
+                match pol {
+                    None => Ok(states),
+                    Some(listed)
+                        if !listed.is_empty() && listed.iter().all(|h| states.contains(h)) =>
+                    {
+                        Ok(listed.clone())
+                    }
+                    Some(listed) => Err(EvalError::Polarization {
+                        leg: leg + 1,
+                        particle: particle.name.clone(),
+                        listed: listed.clone(),
+                    }),
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         let helicities = cartesian_helicity_product(&helicity_states);
@@ -309,6 +339,7 @@ impl AmplitudeEvaluator {
             n_diagrams,
             ext_particle_ids,
             helicities,
+            polarizations,
             n_flows,
             cf_matrix: basis.cf_matrix,
             leg_colors,
@@ -359,6 +390,21 @@ impl AmplitudeEvaluator {
     /// Return the valid helicity combinations.
     pub fn helicities(&self) -> &[Vec<i32>] {
         &self.helicities
+    }
+
+    /// Per external leg in process order, the helicities a polarized leg is
+    /// restricted to, or `None` for a leg summed over all its states.
+    ///
+    /// A polarized squared amplitude is not Lorentz invariant: it is the value
+    /// in the frame the momenta are given in, which for every caller here is
+    /// the partonic centre-of-mass frame, MadGraph's default `me_frame`.
+    pub fn polarizations(&self) -> &[Option<Vec<i32>>] {
+        &self.polarizations
+    }
+
+    /// Whether any leg is polarized.
+    pub fn is_polarized(&self) -> bool {
+        self.polarizations.iter().any(Option::is_some)
     }
 
     /// The helicity combination drawn with probability
@@ -419,6 +465,25 @@ impl AmplitudeEvaluator {
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
     pub fn select_color_flow(&self, amp2: &[f64], jamp2: &[f64], u: [f64; 2]) -> Option<usize> {
+        self.select_config_and_flow(amp2, jamp2, u)
+            .map(|selection| selection.flow)
+    }
+
+    /// [`select_color_flow`](Self::select_color_flow), keeping the configuration
+    /// the flow was drawn in.
+    ///
+    /// The configuration is MadEvent's `ICONFIG` for the record: besides masking
+    /// the flow draw, it is the diagram whose s-channel propagators `addmothers`
+    /// writes as intermediate records, so an event's colour flow and its
+    /// resonance structure come from the same configuration. The draw consumes
+    /// exactly the variates `select_color_flow` does, so the flow is the same
+    /// either way.
+    pub fn select_config_and_flow(
+        &self,
+        amp2: &[f64],
+        jamp2: &[f64],
+        u: [f64; 2],
+    ) -> Option<ColorSelection> {
         // Asserted rather than debug-asserted for the reason `select_helicity`
         // gives: a short weight vector draws from a prefix and returns a label that
         // looks valid.
@@ -433,13 +498,33 @@ impl AmplitudeEvaluator {
             "jamp2 weights must cover the color flows"
         );
         match select_index(amp2, u[0]) {
-            Some(c) => select_flow_reached_by(jamp2, self.config_flows(c), u[1]),
+            Some(c) => {
+                let reached = self.config_flows(c);
+                let flow = select_flow_reached_by(jamp2, reached, u[1])?;
+                Some(ColorSelection {
+                    config: Some(c),
+                    flow,
+                    leading: reached.get(flow).copied().unwrap_or(false),
+                })
+            }
             // No configuration carries weight here (or the process has none), so
             // there is nothing to condition on and the draw runs over every flow —
             // the same fallback `SELECT_COLOR` takes when its masked cumulant ends
             // at zero.
-            None => select_flow(jamp2, u[1]),
+            None => select_flow(jamp2, u[1]).map(|flow| ColorSelection {
+                config: None,
+                flow,
+                leading: false,
+            }),
         }
+    }
+
+    /// The diagram an integration configuration is written from: the first of
+    /// its members, as an index into the diagram set the evaluator was compiled
+    /// from — the representative MadGraph's `configs.inc` writes.
+    pub fn config_diagram(&self, config: usize) -> Option<usize> {
+        let start: usize = self.config_spans.get(..config)?.iter().sum();
+        self.config_amp_diagrams.get(start).copied()
     }
 
     /// Return the number of color flows (NCOLOR).
@@ -746,6 +831,20 @@ pub const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "u d > e+ e- u d QCD=0",
 ];
 
+/// What [`AmplitudeEvaluator::select_config_and_flow`] draws for one event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ColorSelection {
+    /// The integration configuration drawn `∝ AMP2`, `None` where no
+    /// configuration carried weight and the flow was drawn unmasked.
+    pub config: Option<usize>,
+    /// The colour flow.
+    pub flow: usize,
+    /// Whether the configuration reaches the flow at leading colour: MadEvent's
+    /// `SELECT_COLOR` returns a negative `ICOL` otherwise, and `addmothers`
+    /// then writes no intermediate record for the event.
+    pub leading: bool,
+}
+
 /// The diagrams MadGraph gives an integration configuration — and therefore an
 /// `AMP2` accumulator and an `ICOLAMP` column — as indices into `diagrams`.
 ///
@@ -862,20 +961,6 @@ fn config_tag(diagram: &Diagram, model: &UFOModel) -> ConfigTag {
 /// combination and the pruned sum stays bit-for-bit; see
 /// [`AmplitudeEvaluator::prune_zero_helicities`]).
 const HEL_PRUNE_REL: f64 = 1e-24;
-
-fn helicity_states_for_spin(spin_code: i32, massless: bool) -> Result<Vec<i32>, EvalError> {
-    // UFO spin code convention is 2s+1 with negative values reserved for ghosts.
-    // A massless vector has no longitudinal mode (and `vxxxxx`'s massless branch
-    // only defines helicities ±1), so 0 is dropped from its state list.
-    match (spin_code.abs(), massless) {
-        (1, _) => Ok(vec![0]),               // scalar
-        (2, _) => Ok(vec![-1, 1]),           // fermion
-        (3, false) => Ok(vec![-1, 0, 1]),    // massive vector
-        (3, true) => Ok(vec![-1, 1]),        // massless vector
-        (5, _) => Ok(vec![-2, -1, 0, 1, 2]), // spin-2 (future-proof)
-        (other, _) => Err(EvalError::UnsupportedSpin(other)),
-    }
-}
 
 fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
     let mut out = vec![Vec::new()];
@@ -1212,8 +1297,25 @@ mod tests {
                     Some(want),
                     "amp2 {amp2:?} at u = [{u0}, {u1}]"
                 );
+                // The configuration the flow was drawn in comes back with it, the
+                // other one of the two, and reaches the flow at leading colour.
+                let drawn = eval
+                    .select_config_and_flow(&amp2, &jamp2, [u0, u1])
+                    .expect("a draw");
+                assert_eq!(drawn.flow, want);
+                assert_eq!(drawn.config, Some(1 - want));
+                assert!(drawn.leading);
             }
         }
+        // Each configuration is written from its first diagram.
+        for c in 0..eval.n_configs() {
+            let first: usize = eval.config_amp_counts()[..c].iter().sum();
+            assert_eq!(
+                eval.config_diagram(c),
+                Some(eval.config_amp_diagrams()[first])
+            );
+        }
+        assert_eq!(eval.config_diagram(eval.n_configs()), None);
     }
 
     /// A colourless process reduces the rule to a no-op: one flow, one all-admitting

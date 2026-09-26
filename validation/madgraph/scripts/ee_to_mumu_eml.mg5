@@ -1,0 +1,15 @@
+# MadGraph5 batch script: e+ e-{L} > mu+ mu- at LO
+#
+# Why this exact process:
+#   - A polarized incoming fermion: MadGraph divides by the number of listed
+#     states of that leg (one) rather than by its two spin states, so the
+#     averaging factor is 1/2 instead of 1/4.
+generate e+ e-{L} > mu+ mu-
+output ee_to_mumu_eml -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

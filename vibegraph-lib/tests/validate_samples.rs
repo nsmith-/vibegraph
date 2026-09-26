@@ -632,7 +632,7 @@ fn generate(
         let Some(selection) = integ.select_event(&momenta, point.channel, u) else {
             continue;
         };
-        let beams = integ.beams();
+        let beams = integ.incoming();
         let mut external: Vec<[f64; 4]> = vec![
             [beams[0].e(), beams[0].px(), beams[0].py(), beams[0].pz()],
             [beams[1].e(), beams[1].px(), beams[1].py(), beams[1].pz()],

@@ -13,9 +13,18 @@
 #             directory that already exists is never rebuilt, and neither is a
 #             cross-section run whose banked answer is already written. This is
 #             the expensive stage and the one a rerun is meant to skip.
+#   seeds     the MadEvent references committed as one run per seed (widths,
+#             decay-chain and `$` cross sections, the decay-chain and `@N` event
+#             summaries, the `>`/`$$`/polarized cross sections). Their process
+#             directories and runs live in validation/madgraph/work/, outside the
+#             bundle, cached the same way: an existing directory is never
+#             regenerated and a finished seed is read back
+#             (madevent_seeds.sh); the committed JSON is rewritten from them.
 #   refs      every committed reference, recomputed from the work area. These
 #             are cheap and pure functions of it, so they always rerun: that is
-#             what makes a reference that changed show up as a diff.
+#             what makes a reference that changed show up as a diff. The
+#             census dumps and the standalone tables run MadGraph's Python or
+#             its standalone output, which is minutes, not the hours of a run.
 #   bundle    the banked-reference archive, for the machines that fetch instead
 #             of generating (validation/madgraph/assemble_bundle.sh).
 #
@@ -60,6 +69,30 @@ stage_madgraph() {
   bash "$MG/gen_hadronic_sigma.sh"
 }
 
+# ── seeds ────────────────────────────────────────────────────────────────────
+
+stage_seeds() {
+  stage_banner "seeds (cached: existing process directories and finished seeds are reused)"
+  # Each generator takes RESULT_JSON as an override of its own output; one set
+  # for the whole stage would send every table to the same file.
+  unset RESULT_JSON
+
+  vg_say ">>> decay_width_reference.json — 1 -> n partial widths, ten seeds per row"
+  bash "$MG/gen_decay_widths.sh"
+
+  vg_say ">>> decay_chain_sigma_reference.json — decay-chain cross sections"
+  bash "$MG/gen_decay_chain_sigma.sh"
+
+  vg_say ">>> decay_chain_events_reference.json — decay-chain and @N event summaries"
+  bash "$MG/gen_decay_chain_events.sh"
+
+  vg_say ">>> onshell_veto_reference.json — \$ A cross sections (one row on the patched tree)"
+  bash "$MG/gen_onshell_veto.sh"
+
+  vg_say ">>> grammar_sigma_reference.json — > A, \$\$ A and polarized cross sections"
+  bash "$MG/gen_grammar_sigma.sh"
+}
+
 # ── refs ─────────────────────────────────────────────────────────────────────
 
 stage_refs() {
@@ -91,6 +124,35 @@ stage_refs() {
 
   vg_say ">>> runcard_defaults.json — MadGraph's own RunCardLO defaults"
   python "$MG/dump_runcard_defaults.py"
+
+  vg_say ">>> proc_grammar.json — MadGraph's own parser over the proc-card corpus"
+  python "$MG/dump_proc_grammar.py"
+
+  vg_say ">>> schannel_census.json — MadGraph's generation over the >, \$\$ and five-flavour cards"
+  python "$MG/dump_schannel_census.py"
+
+  vg_say ">>> decay_chain_census.json — MadGraph's combined decay-chain matrix elements"
+  python "$MG/dump_decay_chain_census.py"
+
+  vg_say ">>> polarization_census.json — MadGraph's NHEL tables and IDEN for polarized legs"
+  python "$MG/dump_polarization_census.py"
+
+  vg_say ">>> sm_decay_widths.json — the SM UFO's analytic two-body widths"
+  python "$MG/dump_sm_decay_widths.py"
+
+  vg_say ">>> decay_width_exact.json — h > e+ e- mu+ mu- by quadrature"
+  python "$MG/decay_semianalytic.py"
+
+  vg_say ">>> decay_amplitudes.json — standalone |M|^2 of the 1 -> n decays"
+  python "$MG/gen_decay_amplitudes.py"
+
+  # A SMEFTsim row imports the model build.sh stages under output/models.
+  if [ -d "$MG/output/models" ]; then
+    vg_say ">>> standalone/*.json — standalone per-helicity, per-flow JAMPs (cached per key)"
+    python "$MG/gen_standalone_jamps.py" all
+  else
+    vg_die "standalone/*.json needs the models the madgraph stage stages under output/models"
+  fi
 
   vg_say ">>> alphas/reference.csv — MadGraph's alfas_functions.f on a grid"
   bash "$VG_VALIDATION_DIR/alphas/gen_reference.sh"
@@ -125,16 +187,17 @@ stage_bundle() {
 
 STAGES=("$@")
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(deps madgraph refs bundle)
+  STAGES=(deps madgraph seeds refs bundle)
 fi
 
 for stage in "${STAGES[@]}"; do
   case "$stage" in
     deps) stage_deps ;;
     madgraph) stage_madgraph ;;
+    seeds) stage_seeds ;;
     refs) stage_refs ;;
     bundle) stage_bundle ;;
-    *) vg_die "unknown stage '$stage' (deps, madgraph, refs, bundle)" ;;
+    *) vg_die "unknown stage '$stage' (deps, madgraph, seeds, refs, bundle)" ;;
   esac
 done
 

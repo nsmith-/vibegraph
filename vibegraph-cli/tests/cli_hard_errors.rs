@@ -60,16 +60,18 @@ fn cli_polarized_beam_card_is_refused() {
     );
 }
 
+/// A forbidden on-shell s-channel on a decay of a decay chain is refused by the
+/// card check, naming the decay, before any model or artifact is read: the
+/// veto marks the core's propagators only, so the decay's list would go unread.
 #[test]
-fn cli_decay_chain_proc_card_is_refused() {
+fn cli_a_forbidden_onshell_line_on_a_decay_is_refused() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
-    let out = tempfile::tempdir().unwrap();
 
     let proc_card = cwd.path().join("proc_card.dat");
     std::fs::write(
         &proc_card,
-        "import model sm\ngenerate p p > t t~, t > w+ b\n",
+        "import model sm\ngenerate e+ e- > z h, h > e+ e- mu+ mu- $ z\n",
     )
     .unwrap();
 
@@ -78,24 +80,20 @@ fn cli_decay_chain_proc_card_is_refused() {
         .arg("integrate")
         .arg(&proc_card)
         .arg("--out")
-        .arg(out.path())
-        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .arg(cwd.path().join("out"))
         .output()
         .expect("spawn vibegraph");
 
-    assert!(
-        !output.status.success(),
-        "a decay-chain proc card must be refused"
-    );
+    assert!(!output.status.success(), "a '$' on a decay must be refused");
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("decay-chain process syntax is not supported"),
+        stderr.contains("'$ z' is on the decay") && stderr.contains("h > e+ e- mu+ mu-"),
         "got:\n{stderr}"
     );
 }
 
 /// `-` as the proc-card argument reads the card from stdin. The card piped in
-/// here carries a decay chain, and the refusal it must earn is the parser's
+/// here asks for NLO, and the refusal it must earn is the check's
 /// own — proof the bytes on stdin reached the parser, with no card file
 /// anywhere on disk.
 #[test]
@@ -123,17 +121,17 @@ fn cli_reads_the_proc_card_from_stdin_for_a_dash() {
         .stdin
         .take()
         .expect("a piped stdin")
-        .write_all(b"import model sm\ngenerate p p > t t~, t > w+ b\n")
+        .write_all(b"import model sm\ngenerate p p > t t~ [QCD]\n")
         .unwrap();
     let output = child.wait_with_output().expect("run vibegraph");
 
     assert!(
         !output.status.success(),
-        "the piped decay-chain card must be refused"
+        "the piped NLO card must be refused"
     );
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("decay-chain process syntax is not supported"),
+        stderr.contains("asks for NLO (or split-order) output"),
         "got:\n{stderr}"
     );
 }

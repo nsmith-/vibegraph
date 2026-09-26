@@ -5,17 +5,23 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **between sprints.** The `banked-open-ends` validation
-sprint closed 2026-09-07; note 36 §7 is its close-out record and PR #6 carries it.
-**Next**: the performance slot by the rhythm, with candidates in the performance
-backlog below.
+**Current position**: **waiting on `refdata-8` from the bank host** (note 38
+§7.3). The **`process-grammar`** feature sprint (note 38) closed its in-container
+work at Z1 (note 38 §8): every new reference run is registered as a planned,
+unbundled row, and `pixi run -e madgraph generate-references` is the one
+command the bank host (B1) runs to build them. Z2 then re-verifies from the
+published bundle and promotes each new cell that agrees; the sprint closes when
+Z2 is green. After it: MLM, then NLO, and the performance backlog. Performance
+work keeps running in parallel on evaluator PRs.
 
-**Census**, counted from `validation/manifest.toml`: **178 measured cells — 171 ✅,
-7 ⚠️ — plus 4 ⏳ at the long tier and 22 uncovered.** The cells that stay
+**Census**, counted from `validation/manifest.toml` (the collator at Z1,
+2026-09-26): **190 measured cells — 183 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
+42 covered-by or uncovered** over 59 rows, eight of them planned rows awaiting
+`refdata-8`. The cells that stay
 informational, one clause each: `ee_to_wpwm_cw` (a single |M|² point at 2.08e-12);
 `ee_to_zh_smeft` (MadGraph's Python-to-Fortran writer rounds the UFO's `11/24`
 literal in `GC_303` to seven digits — a defect on its side, note 35 §3 E1);
-`wpwm_to_wpwmz_cw` (the five-vector residual, |M|² 2.20e3); the two `NGRAPHS`
+`wpwm_to_wpwmz_cw` (the `O_W` residual, |M|² 2.79e1; the SM part agrees, note 39 §5); the two `NGRAPHS`
 diagram counts (a counting convention, not an amplitude); `ee_to_mumua` (a fixed
 +1.04% ours-high residual in the radiative-return windows, reference-adjudicated
 but unattributed); and `gg_to_gg_cg`'s σ (a converged −0.22% offset). Each has a
@@ -29,10 +35,24 @@ polarization, decay chains — is in the feature backlog under "Descoped from v1
 and every descoped surface a card can still reach must be a **hard error**,
 never a silent acceptance.
 
+**Scope decision (user, 2026-09-25)**: the release goal widens to **MadGraph
+leading-order process parity, without MLM matching and without NLO**. That adds
+decay-chain syntax, 1→n decay processes, the s-channel restrictions (`>`, `$`,
+`$$`), or-multiparticles and `add process` over processes with the same final-state
+multiplicity. MLM, then NLO, follow in later sprints, and the data structures
+passed along the pipeline leave room for both (note 38 §3.2). The hard-error rule
+is enforced in one place: the proc card is parsed in full into MadGraph's
+`ProcessDefinition` shape, and a single check refuses every unsupported feature
+before anything downstream reads the card (note 38 §3.1). Its `Unsupported` enum
+is the feature backlog against MadGraph. Audited 2026-09-25 (note 38 §2): today
+`>`, `$`, `[…]`, `set` lines, a second `generate`, duplicates across process
+lines, PDG-code legs and `@N` downstream are all **silently** mishandled, so the
+sprint's first session (G1) closes those before any feature lands.
+
 **Open, and the user's call** (nothing here is blocked on code):
-- whether the repository is made public — `acceptance.yml` 404s on the release
-  assets while it is private, because the script downloads unauthenticated by
-  design (gate-hygiene entry below);
+- the repository is now public (confirmed 2026-09-25: the `refdata-7` release
+  asset downloads unauthenticated), so `acceptance.yml`'s release-asset 404 should
+  be gone; see the gate-hygiene entry below;
 - reading the first green `acceptance.yml` run, whenever that is, since the
   workflow has still never passed;
 - switching GitHub Pages to the "GitHub Actions" source in the repository
@@ -59,11 +79,11 @@ runs' σ across the `refdata-4`→`refdata-5` boundary (different densities;
 | Step | Component | Status | Notes |
 |------|-----------|--------|-------|
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
-| 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
+| 2 | Feynman diagram enumeration | ✅ Done | feyngraph under MadGraph's full proc-card grammar (`diagrams::parse` → one `check_supported` → `SupportedCard`; 132-card parser census): or-multiparticles, `add process` with `@N`, `/`, `>`/`$$` filters inside the WEIGHTED search, the five-flavour `p`/`j` rewrite, 1→n decays (`enumerate_decay`), decay chains stitched onto core legs (`OnShell::Forced`, every identical-particle pairing kept), polarized legs (`{0}`/`{T}`/`{L}`/`{R}`). `Diagram::sign`/`anchor`/`canonical` give numbering-free container equality. Validated vs MadGraph diagram counts and the s-channel, decay-chain and polarization censuses (note 38) |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
 | 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28). Map choices are `--map-*` flags with measured `auto` rules, banked in the artifact (schema 9): the 2-body angle from the parent's flight direction with a `1/(z(1−z))` shape inside the cuts' energy window (the default on gluon/photon emissions, `soft-all` opt-in), and `--map-tau inverse-square` opt-in — note 37 |
-| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.905 ± 0.567** vs MG 933.230 ± 0.480; **644.203 ± 0.384** vs 644.330 ± 0.283), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **424.428 ± 0.432 pb** over three seeds vs MG 423.840 ± 1.518 (pull +0.37). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.029%** (pull +0.13) / `gux_to_epemux` **−0.165%** (pull −0.70) and σ(pp→ℓ⁺ℓ⁻j) **+0.25%** (pull +0.73), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path at their own reference-precision-sized budgets (addendum S6, note 32): `pp_to_bb` +0.05% at 75k, `pp_to_bb_qcd2` +0.01% at 75k, `pp_to_llj` +0.18% at 150k (its ladder still climbs monotonically across 75k–600k, 0.04%→0.21%, which is why it did not cut to 75k with the other three), `pp_to_ll_scalefact2` +0.02% at 75k. The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.813339e8 ± 5.496e5 pb** over three seeds vs MG 6.788500e8 ± 1.473e6, rel **+0.37%** at pull **+1.58**, at `rel_tol` 0.005 (75k, addendum S6) — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` (all figures in this row measured fresh 2026-08-05 by the addendum close-out session, note 32 S8; run `pixi run --skip-deps validate-sigma` / `validate-hadronic` to reproduce) |
-| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with **per-member colour-flow tables** — each flavour member's tags derived under the structurally-determined flow permutation, refuse-on-ambiguity — checked against MG's `leshouche.inc` (73/73 concrete subprocesses over 47 files; note 29 chain A), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
+| 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.905 ± 0.567** vs MG 933.230 ± 0.480; **644.203 ± 0.384** vs 644.330 ± 0.283), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **424.428 ± 0.432 pb** over three seeds vs MG 423.840 ± 1.518 (pull +0.37). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.029%** (pull +0.13) / `gux_to_epemux` **−0.165%** (pull −0.70) and σ(pp→ℓ⁺ℓ⁻j) **+0.25%** (pull +0.73), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path at their own reference-precision-sized budgets (addendum S6, note 32): `pp_to_bb` +0.05% at 75k, `pp_to_bb_qcd2` +0.01% at 75k, `pp_to_llj` +0.18% at 150k (its ladder still climbs monotonically across 75k–600k, 0.04%→0.21%, which is why it did not cut to 75k with the other three), `pp_to_ll_scalefact2` +0.02% at 75k. The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.813339e8 ± 5.496e5 pb** over three seeds vs MG 6.788500e8 ± 1.473e6, rel **+0.37%** at pull **+1.58**, at `rel_tol` 0.005 (75k, addendum S6) — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` (all figures in this row measured fresh 2026-08-05 by the addendum close-out session, note 32 S8; run `pixi run --skip-deps validate-sigma` / `validate-hadronic` to reproduce). **1→n decays** integrate to a partial width in GeV (flux 1/(2M), MadEvent's decay run card), within 1.25σ of the exact width or MadEvent over ten seeds; **decay chains** with MadEvent's `bwcutoff` windows on every forced line, five σ rows within 1.5σ of MadEvent; **`$ A`** as the amplitude with the marked lines zeroed on their window (MadGraph's `P1D`), six rows in agreement; polarized legs sum MadGraph's own NHEL list with its IDEN (note 38) |
+| 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with **per-member colour-flow tables** — each flavour member's tags derived under the structurally-determined flow permutation, refuse-on-ambiguity — checked against MG's `leshouche.inc` (73/73 concrete subprocesses over 47 files; note 29 chain A), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour). Decay runs write MadEvent's decay-run convention (mother at rest, status −1); decay chains write MadEvent's status-2 resonance records (forced lines, free lines inside their windows; mothers, colour, virtuality), gated against five MadEvent runs per card and read 2000/2000 by Pythia; a card with several `@N` writes one `<init>` entry per process and each event's `IDPRUP` (note 38 §4 E1) |
 
 ## Closed-sprint history
 
@@ -162,10 +182,79 @@ At most three lines each; the note is the full record. Earlier sprints
   authored toy models; 29 rows → 51). Lesson: a toy model is a validation
   instrument, not a convenience — the rows nobody would generate for their
   physics are what separated conventions every SM row agreed on.
+- **`process-grammar`** (feature, ten sessions + close-out, 2026-09-26; note 38 §8) — full proc-card grammar
+  behind one check, 1→n decays, decay chains, `>`/`$`/`$$`, polarized legs, `@N`; closes when Z2 is green.
+  Lesson: MadEvent's quoted σ error is not its spread (χ²/dof 3–14), so every reference is seeded.
 
 ---
 
 ## 🔎 Validation backlog
+
+### Open findings from `process-grammar` (note 38 §4 Landed paragraphs, §8)
+
+Until `refdata-8` is published and Z2 has run, every new σ and samples cell of
+the sprint is `uncovered` or awaits the bundle in the manifest; the rows are
+listed in note 38 §8.
+
+- **`e+ e- > w+ w-` at 500 GeV reads −2.3e-3 below a fresh MadEvent run, with
+  error bars that look underestimated** (note 38 §4 P1). `vibegraph integrate` at
+  the default budget, seeds 1–5: pulls −1.2 to −1.9 and seed χ²/dof ≈ 2.4 against
+  one 10k-event MadEvent run on the pinned tree; `w+{T} w-` shows the same offset,
+  so polarization does not cause it. A single MadEvent run is not a reference
+  (χ²/dof 3–14 across its seeds elsewhere): read it first against
+  `gen_grammar_sigma.sh`'s five-seed `wp_wm` row once B1 has banked it, then a
+  20-seed ladder here before calling it a bias.
+- **`u u~ > w+ b w- b~ $ t t~` is ~2% apart from the patched MadEvent** (note 38
+  §4 S3). With MadGraph's `FFV2P1D_1` defect patched (note 07 appendix; the
+  patch is `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch`),
+  MadEvent reads 0.0494–0.0498 pb at fixed μ = 173 against 0.0506–0.0508 here,
+  and moves down with budget (0.04934 at 50k) while this side does not, nor under
+  another split-angle map. The unrestricted fixed-μ rows agree (15.060 against
+  15.052). The row stays `info` until this is explained. First step: the seeded
+  patched reference (`gen_onshell_veto.sh`, `uu_tt`) at two budgets, then a
+  per-window decomposition (both tops outside, one inside) on both sides.
+- **`w+ w- > e+ e-` disagrees with MadGraph standalone** (note 39 §5): a W pair
+  at the anchor beside a final-state fermion line; the neutrino exchange comes
+  out with the wrong sign relative to the photon and Z s-channel while
+  `e+ e- > w+ w-` agrees. Banked as a known disagreement in
+  `standalone/wpwm_to_epem.json`.
+- **`wpwm_to_wpwmz_cw`'s `O_W` residual** (|M|² 2.79e1; note 39 §5) — see the
+  diagram-pairing entry under the standing findings below.
+- **MadEvent's `dummy_cuts` window leakage** (note 38 §5, the 4e study): 27 of
+  500k MadEvent events violated a window its `dummy_cuts` should enforce,
+  unexplained. Nothing here is gated on it; worth a look before a reference reads
+  a windowed MadEvent sample event by event.
+- **A `$` list that differs between process lines is refused**
+  (`forbidden_onshell_ids`), where MadGraph marks each process line's own list.
+  Lifting it needs the per-line marking carried per subprocess through
+  `onshell.rs`.
+- **`ChainOrders` still refuses a decay-chain part's `==`/`>` bound under an
+  overall order** (note 38 §4 D3 lifted the `<=`/`=` forms). What MadGraph does
+  with the remaining two has not been measured; a census card each is the first
+  step.
+- **E1's follow-ups** (note 38 §4 E1):
+  - MadEvent writes status-2 records for **free on-window resonances in plain
+    processes too** (the `Z` of `e+ e- > mu+ mu-` at the pole, the `W` of
+    `t > b e+ ve`); this generator writes records for decay-chain cards only,
+    since matching it changes every existing LHE file.
+  - **`$` on a decay** of a chain (`h > e+ e- mu+ mu- $ z`) is refused
+    (`Unsupported::DecayOnShellVeto`) where MadGraph accepts it.
+  - **Sibling record order** follows the lowest outgoing leg here and MadGraph's
+    configuration tag there; positions carry no physics, so no gate compares them.
+  - ~~A hadronic point's scale clustered in the sampled flavour group~~: fixed,
+    together with the mirrored-ordering scale (note 40). `pp_to_llj_dyn` moves to
+    +0.005% of MadGraph; own events replay `SCALUP` 2000/2000.
+  - **`banked_outgoing_orderings` (validate_hadronic.rs) computes pT as
+    `momentum[0].hypot(momentum[1])`**, which is E and px under the `[E, px, py, pz]`
+    layout, so the η-ordering counts it reports are wrong. Found in the scale-fix
+    session and not fixed.
+- **`make_anti` negates every colour**: the model's antiparticle entries carry
+  `color = -1/-8` for singlets and octets, where UFO's `anti()` leaves them. E1
+  handles it locally (`member_line_pdg`); the model-level quirk is untouched and
+  any new reader of `Particle::color` on an antiparticle meets it.
+- **Two D1 refusals of cards MadGraph runs**: `SDE_strategy = 2` on a decay card
+  (channel forests are 2 → n only), and a decay card with a proton-beam-only field
+  off its default (refused at parse although a decay ignores it).
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
 
@@ -227,8 +316,10 @@ At most three lines each; the note is the full record. Earlier sprints
   residue distribution (max 1.4 ulps over 1088 sums) is in `abedb81`'s tests
   if its tolerance is ever revisited.
 - **`wpwm_to_wpwmz_cw`'s diagram pairing, and the five-vector residual behind
-  it** (note 35 §10.5). The row's `amplitudes` cell reports |M|² 2.20e3 rather
-  than "no comparison", but the configuration partition itself is still
+  it** (note 35 §10.5; note 39 §5). The row's `amplitudes` cell reports |M|²
+  2.79e1 (2.20e3 before the vector-vertex sign fix of note 39; the Standard-Model
+  `w+ w- > w+ w- z` now agrees with MadGraph standalone to 3.7e-12, so the
+  remainder is `O_W`'s) rather than "no comparison", but the configuration partition itself is still
   uncompared, and the cheap route to it is falsified: the two partitions agree
   on the multiset of group sizes and on nothing finer, ours being the
   contiguous diagrams 62–221 against MadGraph's 2–186 with three gaps, so no
@@ -333,7 +424,8 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Gate + tooling hygiene
 
-- **`acceptance.yml` has still never passed, and needs the repo to be public**
+- **`acceptance.yml` has still never passed**. It needed the repo to be public,
+  which it now is (2026-09-25); the next run is the first that can pass
   — `v0.1.0` published all four binaries, but acceptance 404s on
   `releases/download/...`: the script downloads unauthenticated *by design*, so
   it can reproduce on a clean VM with no checkout and no token, and a private
@@ -404,13 +496,29 @@ above); the entries here are the eventual features.
 - **Beam configurations beyond unpolarized `p p` and fixed-energy partonic** —
   antiproton beams (`lpp = -1`, Tevatron), mixed configurations, lepton-PDF /
   photon beams. `RunCard::parse` admits exactly (0,0) and (1,1) today.
-- **Decay-chain process syntax** (`p p > t t~, t > w+ b`) and 1→n
-  single-particle decay processes — the grammar and the phase space both
-  assume a 2→n hard process.
+- ~~Decay-chain process syntax and 1→n decay processes~~ — brought into scope
+  2026-09-25 and landed in the `process-grammar` sprint (note 38).
 - **Custom UFO propagators** (`propagators.py`, UFO 2.0) — parse the file and
   thread the propagator forms through the HELAS compiler.
 
 ### In-scope features
+
+- **MLM matching** (next feature sprint after `process-grammar` closes; user,
+  2026-09-25). The grammar already parses what it needs: `add process` lines of
+  different final-state multiplicity are refused by `check_supported` with MLM as
+  the reason, and note 38 §3.2 records the room the AST and the diagram
+  container leave for its clustering hints.
+- **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
+  note 38 §3.2 says where the Born/real/virtual split would attach.
+- **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
+  2026-09-25). They need complex amplitudes grouped by coupling order, which is
+  also what reweighting in a coupling would use. That is a sizable `helas/eval`
+  refactor, deferred until the open evaluator performance PRs land. G1 parses
+  them and `check_supported` refuses them.
+- **Polarized intermediate resonances** (`p p > w+{0} w-, w+ > e+ ve`, and the
+  propagator codes `{A}`/`{G}`/`{H}`/`{Q}`/`{W}`/`{S}`). A helicity-projected
+  propagator numerator in `helas/eval`. Refused by `check_supported` until then
+  (note 38 §4 P1).
 
 - **`madgraph-style-enumeration`** (research, unscheduled) — feyngraph
   enumerates topology-first (QGRAF-style orderly generation, then particle
@@ -668,6 +776,19 @@ coverage. What is left below is what still refuses, and why.
 
 ## ⚡ Performance backlog
 
+- **Decay-angle maps for decay chains** (note 38 §4 D3, the ladder). The forced
+  invariants are Breit–Wigner-mapped exactly, but the decay angles are drawn
+  flat, and their V−A and spin-correlation shapes (max/mean a few per decay) are
+  only partly learned by a factorised VEGAS grid: ε_unw falls 2.6× on
+  `e+ e- > z z` decayed, 5.7× on `p p > t t~` and 16× on `p p > t t~ h h` fully
+  decayed (40.5 ms/event against the core's 1.9). Shaped decay-angle maps in the
+  channels are the in-sampler lever; a MadSpin-style decay step would buy roughly
+  an order of magnitude per event at eight legs. Neither is needed for
+  correctness or convergence.
+- **Skip VEGAS refinement for a constant integrand** (note 38 §4 D1). A
+  single-channel two-body width is a constant, and grid refinement turns it noisy
+  (±0.03% after refinement instead of exact) by following the first iteration's
+  sampling noise; such a run should integrate once and stop.
 - **MadEvent's `cumulated_time` denominator moved by half between hosts**
   (`mg-comparison-cascade-lake-results.md`). On a Cascade Lake VM, both
   `MATRIX1` and our integrand run 3.0× slower than on the M3 Max, and the
