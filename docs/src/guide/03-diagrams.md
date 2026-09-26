@@ -53,7 +53,8 @@ language:
 
 | Feature | Status |
 |---|---|
-| decay chains `A > B C, B > D E` | supported (see below); `generate` refuses their events until the event record carries the resonances |
+| decay chains `A > B C, B > D E` | supported (see below), events with their resonances as status-2 records |
+| `$ A` on a decay of a chain (`h > e+ e- mu+ mu- $ z`) | refused: the veto marks the core's propagators only; a `$` on the core is supported |
 | overall orders on a decay chain (`@1 QED=2` after the process number) | supported, except beside a part's own `==` or `>` bound on the same order |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
@@ -113,11 +114,19 @@ $q\bar q \to \gamma/Z \to t\bar t$ diagrams the default search drops,
 and `@1 QED=2` removes them again after stitching.
 
 A decay chain integrates with each forced line held within `bwcutoff` widths
-of its mass, as MadEvent does ([Phase space](07-phase-space.md#decay-chains)).
-Its events are refused for now: MadEvent writes each forced resonance as a
-status-2 record whose mother pointers a parton shower reads to keep the
-resonance's mass and shower its products as a system of their own, and a
-file without those records would read to a shower as all hard-process legs.
+of its mass, as MadEvent does ([Phase space](07-phase-space.md#decay-chains)),
+and its events list the resonances as status-2 records
+([Event files](11-unweighting-events.md#decay-chains)). A `$` on the chain's
+core marks the core's own s-channel lines only, as MadGraph marks the core
+amplitude before attaching the decays: the forced line is the core's external
+leg there, and read as a `$` line it would be zeroed on exactly the window the
+chain holds it in.
+
+`add process` lines are summed where their final states agree by content: each
+subprocess's outgoing legs are put in the first one's order of mass and cut
+class, so `p p > w+ j` and `add process p p > j w-` share one phase-space map.
+Lines of different final-state multiplicity stay refused (they need jet
+merging), and so does a subprocess two lines both produce.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams
