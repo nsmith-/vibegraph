@@ -37,17 +37,176 @@
 //!   if its mass exceeds 10 GeV. Single-leg cuts are skipped (`do_cuts = false`)
 //!   for neutrinos and for masses above 20 GeV (`setcuts.f:212`).
 //!
+//! - **Decay-chain windows** (`cut_bw`, `myamp.f:76`): a propagator a decay
+//!   chain forces on shell (`gForceBW = 1`) rejects the point unless
+//!   `|√(p²) − M| < bwcutoff·Γ`, with `Γ` floored at `M·small_width_treatment`
+//!   (`myamp.f:170`); a line of zero width is never tested (`myamp.f:164`). The
+//!   test is MadEvent's `this_config`'s forced lines. Every configuration of a
+//!   decay chain without identical particles across its decays forces the same
+//!   lines, so the cut is a property of the subprocess; where identical particles
+//!   let different diagrams force different leg sets, a point passes when every
+//!   forced line of *some* diagram is inside its window ([`ForcedResonances`]).
+//! - **`cut_decays`** (`setcuts.f:192`): at `F`, a final-state leg descending
+//!   from a forced line gets `do_cuts = false`, which switches off its single-leg
+//!   cuts and every pairwise `ΔR` and invariant-mass cut it takes part in; `ptll`
+//!   and `mmnl` are set without reading `do_cuts` (`setcuts.f:431`, `:473`) and
+//!   stay on. MadEvent reads the forced lines of configuration 1
+//!   (`check_decay`, `setcuts.f:995`); here a leg counts as a decay product when
+//!   it descends from a forced line in every diagram, which is the same set on a
+//!   card without identical particles across its decays.
+//!
 //! Cut families implemented here: ŝ window, single-leg pT/E/η (classes
-//! j/b/a/l), pairwise ΔR and invariant mass, `ptll`, and `mmnl`. Every other
+//! j/b/a/l), pairwise ΔR and invariant mass, `ptll`, `mmnl`, and the
+//! decay-chain Breit–Wigner windows. Every other
 //! `cut=`-tagged parameter is parse-and-detect: [`Cuts::compile`] hard-errors
 //! with [`CutError::UnimplementedCutActive`] if its value deviates from the MG
 //! default, so an active but unimplemented cut is never silently ignored.
 
 use thiserror::Error;
 
+use crate::diagrams::diagram::{Diagram, OnShell, PropIdx};
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 use crate::runcard::{decay_cut_reset, param_default, ParamValue, RunCard};
+use crate::ufo::EvaluatedModel;
+
+/// MadGraph's `small_width_treatment` default, the floor on every width as a
+/// fraction of its mass. The run card cannot move it: a value off the default is
+/// refused at parse.
+const SMALL_WIDTH_TREATMENT: f64 = 1e-6;
+
+/// One propagator a decay chain forces on shell: the final-state legs whose
+/// momenta it carries, and the pole it is kept near.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ForcedLine {
+    /// The outgoing legs the line carries, bit `k` naming the `k`-th final-state
+    /// leg.
+    pub slots: u64,
+    pub mass: f64,
+    pub width: f64,
+}
+
+impl ForcedLine {
+    /// The width the window is measured in: MadGraph's `prwidth_tmp`, the width
+    /// floored at `small_width_treatment` times the mass, or zero for a line
+    /// without width.
+    pub fn window_width(&self) -> f64 {
+        if self.width > 0.0 {
+            self.width.max(self.mass * SMALL_WIDTH_TREATMENT)
+        } else {
+            0.0
+        }
+    }
+
+    /// The window `(M − bwcutoff·Γ, M + bwcutoff·Γ)` on the line's invariant
+    /// mass (GeV), or `None` for a line of zero width, which is never cut.
+    pub fn mass_window(&self, bwcutoff: f64) -> Option<(f64, f64)> {
+        let width = self.window_width();
+        (width > 0.0).then_some((self.mass - bwcutoff * width, self.mass + bwcutoff * width))
+    }
+}
+
+/// The lines a subprocess's diagrams force on shell, one set per diagram.
+///
+/// A decay chain without identical particles across its decays forces the same
+/// lines in every diagram, and this holds one set. With identical particles the
+/// stitched diagrams are closed under their permutation, so different diagrams
+/// force different leg sets (`e+ e- > z z, z > e+ e-` forces `{e+₁ e-₁}{e+₂ e-₂}`
+/// in two diagrams and `{e+₁ e-₂}{e+₂ e-₁}` in the other two); each distinct set
+/// is kept once. The collection is closed under the same permutations, so a
+/// predicate reading it symmetrically — "every line of some set" — is symmetric
+/// under exchange of identical particles, as the identical-particle factor
+/// requires.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ForcedResonances {
+    patterns: Vec<Vec<ForcedLine>>,
+}
+
+impl ForcedResonances {
+    /// No forced line: a process without decay chains.
+    pub fn none() -> Self {
+        ForcedResonances::default()
+    }
+
+    /// The forced lines of `diagrams`, which share one external-leg order.
+    pub fn of(diagrams: &[Diagram], model: &EvaluatedModel) -> Self {
+        let mut patterns: Vec<Vec<ForcedLine>> = Vec::new();
+        for diagram in diagrams {
+            let mut lines: Vec<ForcedLine> = forced_lines(diagram, model);
+            if lines.is_empty() {
+                continue;
+            }
+            lines.sort_by(|a, b| {
+                a.slots
+                    .cmp(&b.slots)
+                    .then(a.mass.total_cmp(&b.mass))
+                    .then(a.width.total_cmp(&b.width))
+            });
+            if !patterns.contains(&lines) {
+                patterns.push(lines);
+            }
+        }
+        patterns.sort_by(|a, b| {
+            let key = |p: &Vec<ForcedLine>| p.iter().map(|l| l.slots).collect::<Vec<_>>();
+            key(a).cmp(&key(b))
+        });
+        ForcedResonances { patterns }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// The distinct sets of forced lines, one per group of diagrams that force
+    /// the same lines.
+    pub fn patterns(&self) -> &[Vec<ForcedLine>] {
+        &self.patterns
+    }
+
+    /// The outgoing legs that descend from a forced line in every diagram, bit
+    /// `k` naming the `k`-th final-state leg: the legs `cut_decays = F` leaves
+    /// uncut.
+    pub fn decay_products(&self) -> u64 {
+        self.patterns
+            .iter()
+            .map(|p| p.iter().fold(0u64, |m, l| m | l.slots))
+            .reduce(|a, b| a & b)
+            .unwrap_or(0)
+    }
+}
+
+/// The forced lines of one diagram.
+pub fn forced_lines(diagram: &Diagram, model: &EvaluatedModel) -> Vec<ForcedLine> {
+    let n_in = diagram.n_in;
+    diagram
+        .props
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.onshell == OnShell::Forced)
+        .filter_map(|(i, p)| {
+            let side = diagram.final_state_side(PropIdx(i))?;
+            let slots = side
+                .iter()
+                .filter(|l| l.0 >= n_in)
+                .fold(0u64, |m, l| m | (1u64 << (l.0 - n_in)));
+            Some(ForcedLine {
+                slots,
+                mass: model.mass(p.particle),
+                width: model.width(p.particle),
+            })
+        })
+        .collect()
+}
+
+/// One forced line as the compiled filter tests it.
+#[derive(Clone, Debug, PartialEq)]
+struct WindowCut {
+    /// Indices into the momentum slice given to [`Cuts::pass`].
+    members: Vec<usize>,
+    mass: f64,
+    /// `bwcutoff` times the line's window width.
+    half_width: f64,
+}
 
 /// One external leg's identity, the classification input for [`Cuts::compile`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -106,7 +265,8 @@ struct LegInfo {
     pdg: i32,
     letter: Option<Letter>,
     is_neutrino: bool,
-    /// Single-leg and pairwise dr/mass cuts apply (mass ≤ 20 GeV, not a neutrino).
+    /// Single-leg and pairwise dr/mass cuts apply (mass ≤ 20 GeV, not a neutrino,
+    /// and not a decay product under `cut_decays = F`).
     do_cuts: bool,
 }
 
@@ -179,6 +339,12 @@ pub struct Cuts {
     pairs: Vec<PairCut>,
     mmnl: Option<MmnlCut>,
     shat_min_hint: f64,
+    /// The decay-chain windows, one list per set of lines some diagram forces; a
+    /// point passes when every window of one list holds. Empty without a decay
+    /// chain.
+    windows: Vec<Vec<WindowCut>>,
+    /// `bwcutoff`, the window half-width in widths.
+    bwcutoff: f64,
 }
 
 /// Cut parameters implemented by [`Cuts::compile`]; every other `cut=`-tagged
@@ -263,9 +429,26 @@ fn min_separation_gap(dr2_min: f64) -> f64 {
 }
 
 impl Cuts {
-    /// Compile the run card's cuts for a specific external-leg assignment.
+    /// Compile the run card's cuts for a specific external-leg assignment of a
+    /// process without decay chains.
     pub fn compile(rc: &RunCard, legs: &[ExternalLeg]) -> Result<Cuts, CutError> {
+        Self::compile_with(rc, legs, &ForcedResonances::none())
+    }
+
+    /// Compile the run card's cuts for an external-leg assignment whose diagrams
+    /// force the lines of `forced` on shell: [`Cuts::compile`] plus the
+    /// decay-chain windows, and `cut_decays` read against the decay products.
+    pub fn compile_with(
+        rc: &RunCard,
+        legs: &[ExternalLeg],
+        forced: &ForcedResonances,
+    ) -> Result<Cuts, CutError> {
         detect_unimplemented(rc)?;
+        let uncut_products = if cut_decays(rc) {
+            0
+        } else {
+            forced.decay_products()
+        };
 
         let maxjetflavor = rc.maxjetflavor;
         let incoming: Vec<usize> = legs
@@ -279,7 +462,38 @@ impl Cuts {
             .iter()
             .enumerate()
             .filter(|(_, l)| l.is_final)
-            .map(|(idx, l)| classify(idx, l, maxjetflavor))
+            .enumerate()
+            .map(|(k, (idx, l))| {
+                let mut info = classify(idx, l, maxjetflavor);
+                if k < 64 && uncut_products & (1u64 << k) != 0 {
+                    info.do_cuts = false;
+                }
+                info
+            })
+            .collect();
+        let finals: Vec<usize> = infos.iter().map(|i| i.idx).collect();
+        let bwcutoff = rc.float("bwcutoff");
+        let windows: Vec<Vec<WindowCut>> = forced
+            .patterns()
+            .iter()
+            .map(|lines| {
+                lines
+                    .iter()
+                    .filter_map(|line| {
+                        let width = line.window_width();
+                        (width > 0.0).then(|| WindowCut {
+                            members: finals
+                                .iter()
+                                .enumerate()
+                                .filter(|(k, _)| *k < 64 && line.slots & (1u64 << k) != 0)
+                                .map(|(_, &idx)| idx)
+                                .collect(),
+                            mass: line.mass,
+                            half_width: bwcutoff * width,
+                        })
+                    })
+                    .collect()
+            })
             .collect();
 
         // Single-leg pT / E / η for classes j/b/a/l.
@@ -352,7 +566,8 @@ impl Cuts {
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
         let two_incoming = incoming.len() == 2;
-        let shat_min_hint = shat_min_hint(rc, legs, &infos, &single);
+        let shat_min_hint =
+            shat_min_hint(rc, legs, &infos, &single).max(forced_shat_floor(legs, forced, bwcutoff));
 
         tracing::debug!(
             single_leg = single.len(),
@@ -365,12 +580,7 @@ impl Cuts {
 
         Ok(Cuts {
             incoming,
-            finals: legs
-                .iter()
-                .enumerate()
-                .filter(|(_, l)| l.is_final)
-                .map(|(i, _)| i)
-                .collect(),
+            finals,
             shat_min_sq: if two_incoming {
                 dsqrt_shat * dsqrt_shat
             } else {
@@ -385,7 +595,20 @@ impl Cuts {
             pairs,
             mmnl: mmnl_cut,
             shat_min_hint,
+            windows,
+            bwcutoff,
         })
+    }
+
+    /// `bwcutoff`: how many widths either side of its pole a forced line's mass
+    /// may lie.
+    pub fn bwcutoff(&self) -> f64 {
+        self.bwcutoff
+    }
+
+    /// Whether any line of the process is forced on shell.
+    pub fn has_windows(&self) -> bool {
+        !self.windows.is_empty()
     }
 
     /// A conservative lower bound on ŝ implied by the active cuts, for a
@@ -645,6 +868,10 @@ impl Cuts {
             }
         }
 
+        if !self.windows.is_empty() && !self.windows.iter().any(|w| inside_windows(w, momenta)) {
+            return false;
+        }
+
         // mmnl: mass of the combined lepton + neutrino system.
         if let Some(m) = &self.mmnl {
             let mut sum = LorentzVector::<F>::new(F::zero(), F::zero(), F::zero(), F::zero());
@@ -662,6 +889,66 @@ impl Cuts {
 
         true
     }
+}
+
+/// Whether every forced line of one set sits inside its window,
+/// `|√(p²) − M| < bwcutoff·Γ` (`myamp.f:179`).
+fn inside_windows<F: Real>(windows: &[WindowCut], momenta: &[LorentzVector<F>]) -> bool {
+    windows.iter().all(|w| {
+        let mut sum = LorentzVector::<F>::new(F::zero(), F::zero(), F::zero(), F::zero());
+        for &i in &w.members {
+            sum = sum + momenta[i];
+        }
+        let xmass = sum.m2().max(F::zero()).sqrt();
+        (xmass - c::<F>(w.mass)).abs() < c::<F>(w.half_width)
+    })
+}
+
+/// `cut_decays`: whether decay products receive the run card's cuts.
+fn cut_decays(rc: &RunCard) -> bool {
+    matches!(rc.get("cut_decays"), Some(ParamValue::Bool(true)))
+}
+
+/// A lower bound on ŝ from the decay-chain windows: in the partonic centre of
+/// mass `√ŝ = Σ E ≥ Σ m` over any partition of the final state into systems, so
+/// the outermost forced lines of a set, each at least `M − bwcutoff·Γ`, and the
+/// remaining legs at their pole masses bound it. A point passes on some set, so
+/// the bound is the least over the sets. Zero without forced lines.
+fn forced_shat_floor(legs: &[ExternalLeg], forced: &ForcedResonances, bwcutoff: f64) -> f64 {
+    if forced.is_empty() {
+        return 0.0;
+    }
+    let finals: Vec<f64> = legs.iter().filter(|l| l.is_final).map(|l| l.mass).collect();
+    forced
+        .patterns()
+        .iter()
+        .map(|lines| {
+            let mut covered = 0u64;
+            let mut sum = 0.0f64;
+            // Widest first, so a line nested inside a cut one is skipped.
+            let mut outer: Vec<&ForcedLine> = lines.iter().collect();
+            outer.sort_by_key(|l| std::cmp::Reverse(l.slots.count_ones()));
+            for line in outer {
+                if line.slots & covered != 0 {
+                    continue;
+                }
+                let own: f64 = (0..finals.len())
+                    .filter(|&k| k < 64 && line.slots & (1u64 << k) != 0)
+                    .map(|k| finals[k].max(0.0))
+                    .sum();
+                let window = line
+                    .mass_window(bwcutoff)
+                    .map_or(0.0, |(lo, _)| lo.max(0.0));
+                sum += own.max(window);
+                covered |= line.slots;
+            }
+            sum += (0..finals.len())
+                .filter(|&k| k >= 64 || covered & (1u64 << k) == 0)
+                .map(|k| finals[k].max(0.0))
+                .sum::<f64>();
+            sum * sum
+        })
+        .fold(f64::INFINITY, f64::min)
 }
 
 fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
@@ -860,7 +1147,9 @@ fn shat_min_hint(
     if mmll > 0.0 {
         let has_ll_pair = infos.iter().enumerate().any(|(a, li)| {
             infos.iter().skip(a + 1).any(|lj| {
-                li.letter == Some(Letter::Lepton)
+                li.do_cuts
+                    && lj.do_cuts
+                    && li.letter == Some(Letter::Lepton)
                     && lj.letter == Some(Letter::Lepton)
                     && li.pdg.unsigned_abs() == lj.pdg.unsigned_abs()
                     && li.pdg * lj.pdg < 0
@@ -1744,5 +2033,269 @@ mod tests {
                 cuts.timelike_floor(0b011).sqrt(),
             );
         }
+    }
+
+    // ── decay-chain windows and cut_decays ────────────────────────────────
+
+    const MZ: f64 = 91.188;
+    const WZ: f64 = 2.441404;
+
+    /// `e+ e- > e+ e- mu+ mu-`, legs 2..6.
+    fn four_lepton_legs() -> Vec<ExternalLeg> {
+        vec![
+            ExternalLeg::incoming(-11, 0.0),
+            ExternalLeg::incoming(11, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(-13, 0.0),
+            ExternalLeg::outgoing(13, 0.0),
+        ]
+    }
+
+    fn z_line(slots: u64) -> ForcedLine {
+        ForcedLine {
+            slots,
+            mass: MZ,
+            width: WZ,
+        }
+    }
+
+    fn forced(patterns: Vec<Vec<ForcedLine>>) -> ForcedResonances {
+        ForcedResonances { patterns }
+    }
+
+    /// Outgoing legs `(a, b, c, d)` with `m(a b) = m1`, `m(c d) = m2`, `m(a d)`
+    /// and `m(c b)` far from the pole, and every leg at `pT = m/2` in the
+    /// transverse plane.
+    fn two_pairs(m1: f64, m2: f64) -> Vec<V> {
+        let (b1, b2) = beams(250.0);
+        vec![
+            b1,
+            b2,
+            V::new(m1 / 2.0, m1 / 2.0, 0.0, 0.0),
+            V::new(m1 / 2.0, -m1 / 2.0, 0.0, 0.0),
+            V::new(m2 / 2.0, 0.0, m2 / 2.0, 0.0),
+            V::new(m2 / 2.0, 0.0, -m2 / 2.0, 0.0),
+        ]
+    }
+
+    /// `|m − M| < bwcutoff·Γ` on every forced line, strictly, at the run card's
+    /// `bwcutoff`.
+    #[test]
+    fn a_forced_line_is_cut_outside_its_window() {
+        let lines = forced(vec![vec![z_line(0b0011), z_line(0b1100)]]);
+        for bwcutoff in [15.0, 5.0] {
+            let rc = card(&format!("{bwcutoff} = bwcutoff\n"));
+            let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &lines).unwrap();
+            let edge = bwcutoff * WZ;
+            assert!(cuts.pass(&two_pairs(MZ + 0.999 * edge, MZ - 0.999 * edge)));
+            assert!(!cuts.pass(&two_pairs(MZ + 1.001 * edge, MZ)));
+            assert!(!cuts.pass(&two_pairs(MZ, MZ - 1.001 * edge)));
+        }
+    }
+
+    /// A line without width is never cut (`myamp.f` tests only `prwidth > 0`), and
+    /// a width below `small_width_treatment · M` is measured at that floor.
+    #[test]
+    fn the_window_width_is_madgraphs() {
+        let rc = card("");
+        let zero = forced(vec![vec![ForcedLine {
+            slots: 0b0011,
+            mass: MZ,
+            width: 0.0,
+        }]]);
+        // The muons are not decay products here, and sit above the default `ptl`.
+        let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &zero).unwrap();
+        assert!(cuts.pass(&two_pairs(10.0, 91.0)));
+        let narrow = ForcedLine {
+            slots: 0b0011,
+            mass: MZ,
+            width: 1e-12,
+        };
+        assert_eq!(narrow.window_width(), MZ * SMALL_WIDTH_TREATMENT);
+        let cuts =
+            Cuts::compile_with(&rc, &four_lepton_legs(), &forced(vec![vec![narrow]])).unwrap();
+        let edge = 15.0 * MZ * SMALL_WIDTH_TREATMENT;
+        assert!(cuts.pass(&two_pairs(MZ + 0.99 * edge, 91.0)));
+        assert!(!cuts.pass(&two_pairs(MZ + 1.01 * edge, 91.0)));
+    }
+
+    /// Where different diagrams force different leg sets, a point passes when every
+    /// line of *one* set is inside its window.
+    #[test]
+    fn a_point_passes_on_any_one_set_of_forced_lines() {
+        let rc = card("");
+        let both = forced(vec![
+            vec![z_line(0b0011), z_line(0b1100)],
+            vec![z_line(0b1001), z_line(0b0110)],
+        ]);
+        let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &both).unwrap();
+        // Two back-to-back pairs on the pole along one axis, so the crossed pairs
+        // are collinear and massless.
+        let (b1, b2) = beams(250.0);
+        let h = MZ / 2.0;
+        let straight = vec![
+            b1,
+            b2,
+            V::new(h, h, 0.0, 0.0),
+            V::new(h, -h, 0.0, 0.0),
+            V::new(h, -h, 0.0, 0.0),
+            V::new(h, h, 0.0, 0.0),
+        ];
+        assert!(cuts.pass(&straight));
+        // The second and fourth legs exchanged: now only the crossed pairs sit on
+        // the pole.
+        let mut crossed = straight.clone();
+        crossed.swap(3, 5);
+        assert!(cuts.pass(&crossed));
+        let only_first = Cuts::compile_with(
+            &rc,
+            &four_lepton_legs(),
+            &forced(vec![vec![z_line(0b0011), z_line(0b1100)]]),
+        )
+        .unwrap();
+        assert!(!only_first.pass(&crossed));
+        assert!(!cuts.pass(&two_pairs(MZ, 20.0)));
+    }
+
+    /// `cut_decays = F` leaves a decay product uncut — single-leg and pair cuts
+    /// alike — while a leg no forced line produces keeps its cuts; `T` cuts both.
+    /// The forced line has no width here, so its window cuts nothing and only the
+    /// run card's cuts act.
+    #[test]
+    fn cut_decays_selects_whether_decay_products_are_cut() {
+        let widthless = forced(vec![vec![ForcedLine {
+            slots: 0b0011,
+            mass: MZ,
+            width: 0.0,
+        }]]);
+        let compiled =
+            |text: &str| Cuts::compile_with(&card(text), &four_lepton_legs(), &widthless).unwrap();
+        let pt_off = compiled("10 = ptl\n-1 = etal\n0 = drll\nFalse = cut_decays\n");
+        let pt_on = compiled("10 = ptl\n-1 = etal\n0 = drll\nTrue = cut_decays\n");
+        let hard = two_pairs(MZ, MZ);
+        assert!(pt_off.pass(&hard) && pt_on.pass(&hard));
+        // A decay product below `ptl`.
+        let mut soft_product = two_pairs(MZ, MZ);
+        soft_product[2] = V::new(5.0, 5.0, 0.0, 0.0);
+        assert!(pt_off.pass(&soft_product));
+        assert!(!pt_on.pass(&soft_product));
+        // A leg no forced line produces, below `ptl`: cut either way.
+        let mut soft_other = two_pairs(MZ, MZ);
+        soft_other[4] = V::new(5.0, 0.0, 5.0, 0.0);
+        assert!(!pt_off.pass(&soft_other) && !pt_on.pass(&soft_other));
+        // `drll` between the two products, nearly collinear.
+        let dr_off = compiled("0 = ptl\n-1 = etal\n0.4 = drll\nFalse = cut_decays\n");
+        let dr_on = compiled("0 = ptl\n-1 = etal\n0.4 = drll\nTrue = cut_decays\n");
+        let mut collinear = two_pairs(MZ, MZ);
+        collinear[2] = V::new(30.0, 30.0, 0.0, 0.0);
+        collinear[3] = V::new(20.0, 20.0, 0.1, 0.0);
+        assert!(dr_off.pass(&collinear));
+        assert!(!dr_on.pass(&collinear));
+    }
+
+    /// The legs `cut_decays = F` leaves uncut are the products of a forced line in
+    /// every set.
+    #[test]
+    fn decay_products_are_those_of_every_set() {
+        let paired = forced(vec![
+            vec![z_line(0b0011), z_line(0b1100)],
+            vec![z_line(0b1001), z_line(0b0110)],
+        ]);
+        assert_eq!(paired.decay_products(), 0b1111);
+        let partial = forced(vec![vec![z_line(0b0011)], vec![z_line(0b0110)]]);
+        assert_eq!(partial.decay_products(), 0b0010);
+        assert_eq!(ForcedResonances::none().decay_products(), 0);
+    }
+
+    /// Each outermost forced line holds its system above `M − bwcutoff·Γ`, so their
+    /// sum bounds `√ŝ` from below, as the pole masses of the undecayed legs do.
+    #[test]
+    fn forced_lines_bound_shat() {
+        let rc = card("0 = ptl\n0 = drll\n");
+        let lines = forced(vec![vec![z_line(0b0011), z_line(0b1100)]]);
+        let cuts = Cuts::compile_with(&rc, &four_lepton_legs(), &lines).unwrap();
+        let expected = 2.0 * (MZ - 15.0 * WZ);
+        assert!((cuts.shat_min() - expected * expected).abs() < 1e-9 * expected * expected);
+        let unforced = Cuts::compile(&rc, &four_lepton_legs()).unwrap();
+        assert_eq!(unforced.shat_min(), 0.0);
+        assert!(!unforced.has_windows() && cuts.has_windows());
+    }
+
+    /// The forced lines read off stitched diagrams: one set on a chain without
+    /// identical particles across its decays, two on one with, and the nested `W`
+    /// inside its top. The slots are the positions of the decay products in the
+    /// subprocess's own final state, which is also the evaluator's leg order.
+    #[test]
+    fn forced_lines_of_stitched_diagrams() {
+        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+        use crate::ufo::sm::{sm_model, SMRestrict};
+        let model = sm_model(SMRestrict::Default);
+        let evaluated = EvaluatedModel::from_model(model.clone());
+        let sets = |text: &str| {
+            let card = parse_proc_card(text, &ParsingOptions::default()).unwrap();
+            generate_from_proc_card(&card, &model).unwrap()
+        };
+        let slots_of = |names: &[String], wanted: &[&str]| {
+            names
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| wanted.contains(&n.as_str()))
+                .fold(0u64, |m, (k, _)| m | (1 << k))
+        };
+
+        let emu = sets("generate e+ e- > z z, z > e+ e-, z > mu+ mu-");
+        assert_eq!(emu.len(), 1);
+        let set = &emu[0];
+        // An outgoing leg carries its crossed antiparticle (`Leg::particle`), so
+        // the leg order is read against the conjugates.
+        for d in &set.diagrams {
+            let names: Vec<&str> = d.legs[2..]
+                .iter()
+                .map(|l| {
+                    let crossed = crate::diagrams::diagram::antiparticle(&model, l.particle);
+                    model.particle(crossed).name.as_str()
+                })
+                .collect();
+            assert_eq!(
+                names,
+                set.particles_out
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+            );
+        }
+        let f = ForcedResonances::of(&set.diagrams, &evaluated);
+        assert_eq!(f.patterns().len(), 1);
+        let mut got: Vec<u64> = f.patterns()[0].iter().map(|l| l.slots).collect();
+        got.sort();
+        let mut want = vec![
+            slots_of(&set.particles_out, &["e+", "e-"]),
+            slots_of(&set.particles_out, &["mu+", "mu-"]),
+        ];
+        want.sort();
+        assert_eq!(got, want);
+        assert_eq!(f.decay_products(), 0b1111);
+
+        let ee = sets("generate e+ e- > z z, z > e+ e-");
+        let f = ForcedResonances::of(&ee[0].diagrams, &evaluated);
+        assert_eq!(f.patterns().len(), 2);
+        assert_eq!(f.decay_products(), 0b1111);
+
+        let nested = sets("generate e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~");
+        let set = &nested[0];
+        let f = ForcedResonances::of(&set.diagrams, &evaluated);
+        assert_eq!(f.patterns().len(), 1);
+        let lines = &f.patterns()[0];
+        assert_eq!(lines.len(), 3);
+        let w = slots_of(&set.particles_out, &["e+", "ve"]);
+        let t = w | slots_of(&set.particles_out, &["b"]);
+        assert!(lines
+            .iter()
+            .any(|l| l.slots == w && (l.mass - 80.419).abs() < 1.0));
+        assert!(lines
+            .iter()
+            .any(|l| l.slots == t && (l.mass - 173.0).abs() < 1.0));
+        assert_eq!(f.decay_products(), (1 << set.particles_out.len()) - 1);
     }
 }
