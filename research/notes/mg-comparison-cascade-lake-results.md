@@ -1,6 +1,10 @@
 # vibegraph against MadGraph on one x86 host — results
 
 **Status: measurement record, 2026-09-26.** Tree: PR #8's branch at `cf8b2b7`.
+`main`'s phase-space map options (#7) were merged afterwards. They keep stock
+runs bit-identical: `ee_to_mumu`, `gg_to_gg` and `pp_to_jj` at seed 20260719
+reproduce §3's σ, error, iteration and evaluation counts to every printed
+digit on the merged tree.
 This note re-measures the three comparisons the README headlines, with **both
 sides on one host in one sitting**, as note 30 §1 requires. Every earlier table
 is from an Apple M3 Max.
