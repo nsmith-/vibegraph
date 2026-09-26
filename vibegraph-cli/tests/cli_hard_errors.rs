@@ -60,39 +60,34 @@ fn cli_polarized_beam_card_is_refused() {
     );
 }
 
-/// A decay-chain card integrates, but its events are refused: the file would
-/// need the forced resonances as status-2 records for a shower to read it right.
-/// The refusal comes from the proc card alone, before any artifact is read.
+/// A forbidden on-shell s-channel on a decay of a decay chain is refused by the
+/// card check, naming the decay, before any model or artifact is read: the
+/// veto marks the core's propagators only, so the decay's list would go unread.
 #[test]
-fn cli_decay_chain_events_are_refused() {
+fn cli_a_forbidden_onshell_line_on_a_decay_is_refused() {
     let home = tempfile::tempdir().unwrap();
     let cwd = tempfile::tempdir().unwrap();
 
     let proc_card = cwd.path().join("proc_card.dat");
     std::fs::write(
         &proc_card,
-        "import model sm\ngenerate p p > t t~, t > w+ b\n",
+        "import model sm\ngenerate e+ e- > z h, h > e+ e- mu+ mu- $ z\n",
     )
     .unwrap();
 
     let output = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
-        .arg("generate")
-        .arg(cwd.path().join("no_such_grid.bin.zst"))
+        .arg("integrate")
         .arg(&proc_card)
-        .arg("-o")
-        .arg(cwd.path().join("events.lhe"))
+        .arg("--out")
+        .arg(cwd.path().join("out"))
         .output()
         .expect("spawn vibegraph");
 
-    assert!(
-        !output.status.success(),
-        "events of a decay-chain proc card must be refused"
-    );
+    assert!(!output.status.success(), "a '$' on a decay must be refused");
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("is a decay chain, and its events are not written yet")
-            && stderr.contains("status-2 record"),
+        stderr.contains("'$ z' is on the decay") && stderr.contains("h > e+ e- mu+ mu-"),
         "got:\n{stderr}"
     );
 }

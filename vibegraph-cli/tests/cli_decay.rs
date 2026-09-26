@@ -384,10 +384,9 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
         String::from_utf8_lossy(&check.stderr)
     );
 
-    // <init>: MadEvent's `6 0 1.730000e+02 0.000000e+00 0 0 <lhaid> <lhaid> -4 1`
-    // on its first line. PDFSUP is the one field left out: MadEvent writes the run
-    // card's `lhaid` there even on runs with no parton densities, where this
-    // generator writes 0 for a decay as for every fixed-energy run.
+    // <init>: MadEvent's `6 0 1.730000e+02 0.000000e+00 0 0 247000 247000 -4 1`
+    // on its first line. PDFSUP is `get_pdf_id(pdlabel)` of the card, the
+    // default `nn23lo1`'s 247000, even though a decay reads no parton density.
     let mg_beams: Vec<f64> = sample.init[0]
         .split_whitespace()
         .map(|f| f.parse().unwrap())
@@ -398,6 +397,7 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
         file.init.pdf_group,
         [mg_beams[4] as i32, mg_beams[5] as i32]
     );
+    assert_eq!(file.init.pdf_set, [mg_beams[6] as i32, mg_beams[7] as i32]);
     // XSECUP is the width in GeV, as MadEvent's is: within the sample's own
     // accept/reject resolution of the integrated width.
     let xsecup = file.init.processes[0].xsec_pb;

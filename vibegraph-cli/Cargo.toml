@@ -62,6 +62,10 @@ name = "cli_decay_chain"
 required-features = ["extended-validation"]
 
 [[test]]
+name = "cli_decay_chain_events"
+required-features = ["extended-validation"]
+
+[[test]]
 name = "cli_generate_proton"
 required-features = ["extended-validation"]
 
