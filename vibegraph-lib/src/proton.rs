@@ -248,6 +248,14 @@ struct BeamSlots {
     mirrored: bool,
 }
 
+/// The index of `ordering` in a `[direct, mirrored]` pair.
+fn ordering_slot(ordering: BeamOrdering) -> usize {
+    match ordering {
+        BeamOrdering::Direct => 0,
+        BeamOrdering::Exchanged => 1,
+    }
+}
+
 /// The two per-beam flavour rows one phase-space point reads: `x·f` at
 /// `(x₁, μ²_F1)` and at `(x₂, μ²_F2)`, every flavour at once. Every subprocess
 /// summed over the point reads these same two, whatever its beam flavours.
@@ -256,6 +264,22 @@ pub fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRo
     pdf.xfx_all(x1, mu_f[0] * mu_f[0], &mut rows[0]);
     pdf.xfx_all(x2, mu_f[1] * mu_f[1], &mut rows[1]);
     rows
+}
+
+/// The lab-frame momenta of a point's mirrored physical event in the orientation
+/// the group's matrix element reads it in: every momentum rotated by π about the
+/// x axis and the two beams exchanged, so the first slot is again the beam that
+/// carries the representative's first parton.
+///
+/// This is MadEvent's view of an `IMIRROR = 2` point — it clusters the unflipped
+/// momenta with the subprocess's own flavour order — and it is the frame in which
+/// [`FlavorGroup::mirror_into`]'s argument is the partonic centre of mass.
+fn mirror_lab_into(lab: &[V], out: &mut Vec<V>) {
+    let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
+    out.clear();
+    out.push(rotate(&lab[1]));
+    out.push(rotate(&lab[0]));
+    out.extend(lab[2..].iter().map(rotate));
 }
 
 impl FlavorGroup {
@@ -1046,8 +1070,15 @@ pub struct ProtonEvent {
     pub weight: f64,
     /// Beam momentum fractions `(x₁, x₂)`.
     pub x: [f64; 2],
-    /// The scales the matrix element was evaluated at.
-    pub scales: EventScales,
+    /// Per flavour group, the scales its two beam orderings' terms were evaluated
+    /// at, `[direct, mirrored]`, each with its factorisation scales in physical
+    /// beam order; `None` where that term's factorisation scale fell below the
+    /// floor and it carries no weight, or where the group has no mirrored
+    /// ordering. Every entry is the same where the prescription does not read an
+    /// integration configuration; under the clustering each term's scale is
+    /// clustered in its own group's configurations, at the momenta its own
+    /// matrix element is evaluated at.
+    pub group_scales: Vec<[Option<EventScales>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1061,7 +1092,7 @@ pub struct ProtonEvent {
 /// The concrete flavour is the one label with no fixed-beam counterpart — a
 /// hadronic group is a sum over flavours, and which of them an event is labelled
 /// with is decided by their parton-luminosity shares at the event's own `(x₁, x₂)`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProtonSelection {
     /// Index into [`FlavorGroups::groups`].
     pub group: usize,
@@ -1089,6 +1120,9 @@ pub struct ProtonSelection {
     pub config: Option<usize>,
     /// Whether that configuration reaches the flow at leading colour.
     pub leading: bool,
+    /// The scales the drawn group's term was evaluated at — the event's own
+    /// `SCALUP` and the argument of its `AQCDUP`.
+    pub scales: EventScales,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -1123,6 +1157,13 @@ pub struct OuterPoint {
 /// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
 /// unreflected final state: the mirror is an argument to the matrix element, not a
 /// second event.
+///
+/// Each group's term is taken at **that group's own scales**: `L_g` at its `μF`,
+/// `|M_g|²` at `αs` of its `μR`. They are the same numbers for every group under a
+/// constant prescription or a closed form, and differ under the kT clustering,
+/// which clusters a group's term in one of *that group's* integration
+/// configurations — MadEvent integrates each subprocess group apart, so a point
+/// is never clustered in another group's merge graph.
 ///
 /// # Change of variables
 ///
@@ -1185,8 +1226,8 @@ pub struct ProtonIntegrand<'a> {
     /// configuration is a function of the momenta and not of whatever scale the
     /// previous point left bound. `None` where no draw runs.
     amp2_alpha_s: Option<f64>,
-    /// Points whose `AMP2` carried no probability at all, where the draw kept the
-    /// sampling channel instead.
+    /// Per-group draws whose `AMP2` carried no probability at all, where the draw
+    /// kept the group's fallback channel instead.
     scale_draw_fallbacks: AtomicU64,
     /// Per flavour group, the channel forests MadEvent's enhancement weight is a
     /// product over, where the run card makes that weight something other than the
@@ -1230,6 +1271,12 @@ struct ProtonScratch<'a> {
     /// Reused `AMP2` buffer for the configuration draw, sized to the widest
     /// group's configuration count.
     amp2_buf: RefCell<Vec<f64>>,
+    /// The last evaluated point's scales, per flavour group
+    /// ([`ProtonEvent::group_scales`]).
+    group_scales: RefCell<Vec<[Option<EventScales>; 2]>>,
+    /// The lab-frame momenta of the mirrored ordering's physical event, in the
+    /// orientation the group's matrix element reads them in.
+    lab_mirror_buf: RefCell<Vec<V>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
 }
@@ -1461,6 +1508,8 @@ impl<'a> ProtonIntegrand<'a> {
                 mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
+                group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                lab_mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 vetoed: bind_vetoes(&self.vetoes),
             }
         })
@@ -1816,6 +1865,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// the `(τ, y)` Jacobian, the flux, the `2π` measure and the luminosity-weighted
     /// sum over groups. Zero where the cuts reject the lab-frame configuration or no
     /// group carries luminosity.
+    ///
+    /// Each group's term is evaluated at that group's own scales, left in the
+    /// scratch's `group_scales` for [`event_in_channel`](Self::event_in_channel).
     fn shape(
         &self,
         sc: &ProtonScratch<'a>,
@@ -1823,28 +1875,51 @@ impl<'a> ProtonIntegrand<'a> {
         out: &[V],
         channel: SampledChannel,
         scale_u: &[f64],
-    ) -> (f64, SampledChannel) {
+    ) -> f64 {
         self.build_frames(sc, m, out);
         let cm = sc.cm_buf.borrow();
         {
             let lab = sc.lab_buf.borrow();
             if !self.cuts.pass(&lab) {
-                return (0.0, channel);
+                return 0.0;
             }
         }
-        // The configuration the scale is clustered in, drawn from this point's own
-        // squared amplitudes where the card's enhancement weight is that and
-        // nothing else. The group is the sampler's: a configuration draw names one
-        // configuration *inside* a group's forests and says nothing about which
-        // group's forests to use.
-        let channel = self.scale_channel(sc, &cm, channel, scale_u);
+        let acc = if self.scales.draws_configuration() {
+            self.per_group_sum(sc, m, &cm, channel, scale_u)
+        } else {
+            self.shared_scale_sum(sc, m, &cm, channel)
+        };
+        if acc == 0.0 {
+            return 0.0;
+        }
+        let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
+        m.jac * flux * self.lips_2pi * acc
+    }
+
+    /// The luminosity-weighted sum over groups where every group reads the same
+    /// scales: a constant prescription, or one of `setscales.f`'s closed forms,
+    /// neither of which reads an integration configuration.
+    fn shared_scale_sum(
+        &self,
+        sc: &ProtonScratch<'a>,
+        m: &OuterPoint,
+        cm: &[V],
+        channel: SampledChannel,
+    ) -> f64 {
+        let n_groups = self.groups.groups().len();
         // A point whose factorisation scale fell below the floor carries no
         // weight, and returning here is before both of the things that follow:
         // the coupling is not moved for a point that contributes nothing, and the
         // parton densities are not queried below roughly their own grid's lowest
         // tabulated `Q`, which is most of why the floor sits where it does.
-        let Some(scales) = self.event_scales_in(sc, channel) else {
-            return (0.0, channel);
+        let scales = self.event_scales_in(sc, channel);
+        {
+            let mut out = sc.group_scales.borrow_mut();
+            out.clear();
+            out.resize(n_groups, [scales, scales]);
+        }
+        let Some(scales) = scales else {
+            return 0.0;
         };
         self.apply_scale(sc, scales.mu_r);
 
@@ -1856,49 +1931,170 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            let [direct, reflected] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
-            let mut term = 0.0;
-            if direct != 0.0 {
-                term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &cm);
+            acc += self.group_term(sc, gi, g, sub, cm, &mut mirror, &f1, &f2);
+        }
+        acc
+    }
+
+    /// The luminosity-weighted sum over groups where the scale is clustered in an
+    /// integration configuration, so each term takes its own.
+    ///
+    /// MadEvent integrates each subprocess group separately, and a point's scale is
+    /// clustered in the configurations of the group whose matrix element it
+    /// evaluates, drawn `∝ AMP2_c` from that matrix element at the argument it is
+    /// evaluated at. Here every group is summed at every point, so every group
+    /// draws its own configuration from the one trailing uniform, clusters in it,
+    /// and has its parton densities read at its own `μF` and its coupling moved to
+    /// its own `μR`. A group's mirrored term is a different physical event — the
+    /// same momenta with the beams' partons exchanged — and MadEvent clusters it
+    /// as that event: the configuration is drawn from `AMP2` at the mirrored
+    /// argument `Rq` and clustered at the lab momenta rotated the same way, so
+    /// that the representative's first parton is on the first beam again. The
+    /// draws share the uniform, which correlates them without changing any one
+    /// term's distribution, and the sum is linear in each term.
+    ///
+    /// The sampling channel reaches only its own group's direct term, and only as
+    /// the draw's fallback where `AMP2` carries no probability; every other term
+    /// falls back to its group's first configuration.
+    fn per_group_sum(
+        &self,
+        sc: &ProtonScratch<'a>,
+        m: &OuterPoint,
+        cm: &[V],
+        channel: SampledChannel,
+        scale_u: &[f64],
+    ) -> f64 {
+        let &[v] = scale_u else {
+            panic!("a configuration-drawing prescription takes one trailing uniform")
+        };
+        let mut out = sc.group_scales.borrow_mut();
+        out.clear();
+        let mut rows: Option<([f64; 2], [FlavorRow; 2])> = None;
+        let mut rows_at = |mu_f: [f64; 2]| match rows {
+            Some((at, r)) if at == mu_f => r,
+            _ => {
+                let r = beam_rows(self.pdf, m.x1, m.x2, mu_f);
+                rows = Some((mu_f, r));
+                r
             }
-            // Zero for a group whose beams carry one parton ([`FlavorGroup::has_mirror`]),
-            // so such a group costs one matrix element per point rather than two.
-            if reflected != 0.0 {
-                g.mirror_into(&cm, &mut mirror);
-                term += reflected * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
+        };
+        let mut acc = 0.0;
+        let mut mirror = sc.mirror_buf.borrow_mut();
+        for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
+            let fallback = if gi == channel.group {
+                channel
+            } else {
+                SampledChannel {
+                    group: gi,
+                    channel: 0,
+                }
+            };
+            let direct = {
+                let drawn = self.scale_channel(sc, cm, fallback, v);
+                let lab = sc.lab_buf.borrow();
+                self.scales_at(sc, &lab, drawn)
+            };
+            let mirrored = if g.has_mirror() {
+                g.mirror_into(cm, &mut mirror);
+                let drawn = self.scale_channel(
+                    sc,
+                    &mirror,
+                    SampledChannel {
+                        group: gi,
+                        channel: 0,
+                    },
+                    v,
+                );
+                let lab = sc.lab_buf.borrow();
+                let mut lab_mirror = sc.lab_mirror_buf.borrow_mut();
+                mirror_lab_into(&lab, &mut lab_mirror);
+                // Clustered with the beams exchanged, so its per-beam
+                // factorisation scales come back in that order.
+                self.scales_at(sc, &lab_mirror, drawn).map(|s| EventScales {
+                    mu_r: s.mu_r,
+                    mu_f: [s.mu_f[1], s.mu_f[0]],
+                })
+            } else {
+                None
+            };
+            out.push([direct, mirrored]);
+            // A term whose factorisation scale fell below the floor carries no
+            // weight, and the densities are not read there.
+            let mut term = 0.0;
+            if let Some(scales) = direct {
+                let [f1, f2] = rows_at(scales.mu_f);
+                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                if lumi != 0.0 {
+                    self.apply_scale_to(sc, sub, scales.mu_r);
+                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
+                }
+            }
+            if let Some(scales) = mirrored {
+                let [f1, f2] = rows_at(scales.mu_f);
+                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                if lumi != 0.0 {
+                    self.apply_scale_to(sc, sub, scales.mu_r);
+                    term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
+                }
             }
             acc += g.spin_color_average() * term;
         }
-        if acc == 0.0 {
-            return (0.0, channel);
-        }
-        let flux = 1.0 / (2.0 * m.sqrt_shat * m.sqrt_shat);
-        (m.jac * flux * self.lips_2pi * acc, channel)
+        acc
     }
 
-    /// Which of the sampled group's channels names the integration configuration
-    /// this point's scale is clustered in.
+    /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
+    /// coupling its amplitudes are bound at and the density rows given.
+    #[allow(clippy::too_many_arguments)]
+    fn group_term(
+        &self,
+        sc: &ProtonScratch<'a>,
+        gi: usize,
+        g: &FlavorGroup,
+        sub: &BoundSubprocess<'a>,
+        cm: &[V],
+        mirror: &mut Vec<V>,
+        f1: &FlavorRow,
+        f2: &FlavorRow,
+    ) -> f64 {
+        let [direct, reflected] = g.symmetry_weighted_luminosity_rows(f1, f2);
+        let mut term = 0.0;
+        if direct != 0.0 {
+            term += direct * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
+        }
+        // Zero for a group whose beams carry one parton ([`FlavorGroup::has_mirror`]),
+        // so such a group costs one matrix element per point rather than two.
+        if reflected != 0.0 {
+            g.mirror_into(cm, mirror);
+            term += reflected * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, mirror);
+        }
+        g.spin_color_average() * term
+    }
+
+    /// Which of a group's channels names the integration configuration its scale
+    /// is clustered in at this point, drawn with the uniform `v`.
     ///
-    /// Without the draw it is the sampling channel the point came from. With it,
-    /// the configuration is drawn `∝ AMP2_c(p)` from the group's own squared
-    /// amplitudes and named back through *its own diagram*, the common ground
-    /// between the evaluator's configuration order and the channel forests'.
-    /// `AMP2` is formed at the coupling the amplitudes were bound at, so the drawn
-    /// configuration is a function of the momenta and not of evaluation history.
+    /// The configuration is drawn `∝ AMP2_c(p)` from the group's own squared
+    /// amplitudes (or MadEvent's channel-cut weights, where the card makes the
+    /// enhancement weight those) and named back through *its own diagram*, the
+    /// common ground between the evaluator's configuration order and the channel
+    /// forests'. `AMP2` is formed at the coupling the amplitudes were bound at, so
+    /// the drawn configuration is a function of the momenta and not of evaluation
+    /// history. `fallback` names the group and the channel kept where no
+    /// configuration carries probability.
     ///
     /// The momenta are the direct ordering's. A group's mirrored term is evaluated
-    /// at the same scale as its direct one, so there is one draw per point and not
-    /// one per ordering.
+    /// at the same scale as its direct one, so there is one draw per group per
+    /// point and not one per ordering.
     fn scale_channel(
         &self,
         sc: &ProtonScratch<'a>,
         cm: &[V],
-        channel: SampledChannel,
-        scale_u: &[f64],
+        fallback: SampledChannel,
+        v: f64,
     ) -> SampledChannel {
-        let [v] = scale_u else { return channel };
-        let sub = &sc.subs[channel.group];
-        let eval = self.groups.groups()[channel.group].evaluator();
+        let group = fallback.group;
+        let sub = &sc.subs[group];
+        let eval = self.groups.groups()[group].evaluator();
         let mut buf = sc.amp2_buf.borrow_mut();
         let amp2 = &mut buf[..eval.n_configs()];
         match &self.config_weights {
@@ -1910,34 +2106,32 @@ impl<'a> ProtonIntegrand<'a> {
             }
             Some(sets) => {
                 let momenta: Vec<[f64; 4]> = cm.iter().map(components).collect();
-                sets[channel.group].channel_cuts(&momenta, self.s_had, amp2);
+                sets[group].channel_cuts(&momenta, self.s_had, amp2);
             }
         }
         // A configuration whose marked line is on its window rejected this point
         // in MadEvent, so its scale is never clustered there. Where every one of
         // the group's did, the group carries no weight here and any channel serves.
         if self.config_weights.is_none()
-            && mask_zeroed(vetoed_of(&sc.vetoed, channel.group), cm, amp2)
+            && mask_zeroed(vetoed_of(&sc.vetoed, group), cm, amp2)
             && amp2.iter().all(|&w| w == 0.0)
         {
-            return channel;
+            return fallback;
         }
-        match select_index(amp2, *v) {
-            Some(c) => SampledChannel {
-                group: channel.group,
-                channel: c,
-            },
+        match select_index(amp2, v) {
+            Some(c) => SampledChannel { group, channel: c },
             // Every diagram amplitude vanished here, so the coherent sum does too
-            // and this point carries no weight whichever channel names its scale.
+            // and this group carries no weight whichever channel names its scale.
             None => {
                 self.scale_draw_fallbacks.fetch_add(1, Ordering::Relaxed);
-                channel
+                fallback
             }
         }
     }
 
-    /// Points on which the configuration draw found no probability and kept the
-    /// sampling channel. Expected to be zero on a run that produces anything.
+    /// Per-group configuration draws that found no probability in the group's
+    /// `AMP2` and kept the group's fallback channel. Expected to be zero on a run
+    /// that produces anything.
     pub fn scale_draw_fallbacks(&self) -> u64 {
         self.scale_draw_fallbacks.load(Ordering::Relaxed)
     }
@@ -1958,8 +2152,19 @@ impl<'a> ProtonIntegrand<'a> {
             return Some(fixed);
         }
         let lab = sc.lab_buf.borrow();
+        self.scales_at(sc, &lab, channel)
+    }
+
+    /// [`event_scales_in`](Self::event_scales_in) at lab-frame momenta `lab`,
+    /// beams first, for a prescription that reads them.
+    fn scales_at(
+        &self,
+        sc: &ProtonScratch<'a>,
+        lab: &[V],
+        channel: SampledChannel,
+    ) -> Option<EventScales> {
         match self
-            .scales_of(sc, &self.scales, &lab, channel)
+            .scales_of(sc, &self.scales, lab, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
             PointScales::Scales(scales) => Some(scales),
@@ -1994,26 +2199,39 @@ impl<'a> ProtonIntegrand<'a> {
     /// prescription was applied once at installation and a matrix element with no
     /// strong coupling has none to move, so both return without touching the pools.
     fn apply_scale(&self, sc: &ProtonScratch<'a>, mu_r: f64) {
-        if !self.alpha_s_dependent {
-            return;
-        }
-        if self.scales.constant_scales().is_some() {
-            return;
-        }
-        let Some(source) = self.scales.alpha_s() else {
+        let Some(alpha_s) = self.running_alpha_s(sc, mu_r) else {
             return;
         };
+        for sub in &sc.subs {
+            sub.set_alpha_s(alpha_s);
+        }
+    }
+
+    /// [`apply_scale`](Self::apply_scale) for one group's amplitude.
+    fn apply_scale_to(&self, sc: &ProtonScratch<'a>, sub: &BoundSubprocess<'a>, mu_r: f64) {
+        if let Some(alpha_s) = self.running_alpha_s(sc, mu_r) {
+            sub.set_alpha_s(alpha_s);
+        }
+    }
+
+    /// `αs(mu_r)` where a per-point coupling has to be bound, `None` where nothing
+    /// moves with it.
+    fn running_alpha_s(&self, sc: &ProtonScratch<'a>, mu_r: f64) -> Option<f64> {
+        if !self.alpha_s_dependent {
+            return None;
+        }
+        if self.scales.constant_scales().is_some() {
+            return None;
+        }
+        let source = self.scales.alpha_s()?;
         let (last_mu_r, last_alpha_s) = sc.last_coupling.get();
-        let alpha_s = if mu_r == last_mu_r {
+        Some(if mu_r == last_mu_r {
             last_alpha_s
         } else {
             let alpha_s = source.eval(mu_r);
             sc.last_coupling.set((mu_r, alpha_s));
             alpha_s
-        };
-        for sub in &sc.subs {
-            sub.set_alpha_s(alpha_s);
-        }
+        })
     }
 
     /// The `channel`-th term of the channel-split estimator at
@@ -2030,7 +2248,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
-        let (shape, _) = self.shape(
+        let shape = self.shape(
             self.scratch(),
             &m,
             &point.momenta,
@@ -2070,7 +2288,7 @@ impl<'a> ProtonIntegrand<'a> {
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let sc = self.scratch();
-        let (shape, drawn) = self.shape(
+        let shape = self.shape(
             sc,
             &m,
             &point.momenta,
@@ -2083,10 +2301,7 @@ impl<'a> ProtonIntegrand<'a> {
         Some(ProtonEvent {
             weight: shape * self.channel_weight(channel, &m, &point.momenta),
             x: [m.x1, m.x2],
-            // `shape` returned nonzero, so this point was not vetoed.
-            scales: self
-                .event_scales_in(sc, drawn)
-                .expect("a point carrying weight has scales"),
+            group_scales: sc.group_scales.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -2101,7 +2316,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// value that the label names:
     ///
     /// * the group `∝ avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)`, with
-    ///   the two luminosities symmetry-weighted as in the cross section;
+    ///   the two luminosities symmetry-weighted as in the cross section and each
+    ///   group's term at its own scales ([`ProtonEvent::group_scales`]), which
+    ///   become the selection's;
     /// * the `(flavour, beam ordering)` pair inside it `∝ S_i · L_i^o · |M(q or Rq)|²`,
     ///   which at fixed ordering is the member's share of the group's summed
     ///   parton luminosity at this event's `(x₁, x₂)`, times its own
@@ -2120,33 +2337,60 @@ impl<'a> ProtonIntegrand<'a> {
     /// `None` when the point carries no weight, where no label is defined.
     pub fn select_event(&self, event: &ProtonEvent, u: [f64; 5]) -> Option<ProtonSelection> {
         let sc = self.scratch();
-        // The diagonals are read at the event's own coupling, the one its |M|² was
-        // taken at.
-        self.apply_scale(sc, event.scales.mu_r);
         let mut mirror = Vec::with_capacity(event.cm.len());
-
-        let [f1, f2] = beam_rows(self.pdf, event.x[0], event.x[1], event.scales.mu_f);
+        assert_eq!(
+            event.group_scales.len(),
+            sc.subs.len(),
+            "an event carries one scale entry per flavour group"
+        );
 
         let mut m2 = Vec::with_capacity(sc.subs.len());
         let mut terms = Vec::with_capacity(sc.subs.len());
+        // Per group, the density rows each ordering's term read.
+        let mut group_rows: Vec<[[FlavorRow; 2]; 2]> = Vec::with_capacity(sc.subs.len());
+        let mut last: Option<([f64; 2], [FlavorRow; 2])> = None;
+        let mut rows_at = |mu_f: [f64; 2]| match last {
+            Some((at, r)) if at == mu_f => r,
+            _ => {
+                let r = beam_rows(self.pdf, event.x[0], event.x[1], mu_f);
+                last = Some((mu_f, r));
+                r
+            }
+        };
+        let no_rows = [[0.0; FLAVOR_SLOTS]; 2];
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            let lumi = g.symmetry_weighted_luminosity_rows(&f1, &f2);
-            let direct = if lumi[0] != 0.0 {
-                vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm)
-            } else {
-                0.0
-            };
-            let reflected = if lumi[1] != 0.0 {
-                g.mirror_into(&event.cm, &mut mirror);
-                vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror)
-            } else {
-                0.0
-            };
-            m2.push([direct, reflected]);
-            terms.push(g.spin_color_average() * (lumi[0] * direct + lumi[1] * reflected));
+            // Each ordering's diagonal is read at its own coupling and densities,
+            // the ones its term of the point's value was taken at.
+            let [direct_scales, mirrored_scales] = event.group_scales[gi];
+            let mut term_m2 = [0.0; 2];
+            let mut rows = [no_rows; 2];
+            let mut term = 0.0;
+            if let Some(scales) = direct_scales {
+                rows[0] = rows_at(scales.mu_f);
+                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&rows[0][0], &rows[0][1]);
+                if lumi != 0.0 {
+                    self.apply_scale_to(sc, sub, scales.mu_r);
+                    term_m2[0] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm);
+                }
+                term += lumi * term_m2[0];
+            }
+            if let Some(scales) = mirrored_scales {
+                rows[1] = rows_at(scales.mu_f);
+                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&rows[1][0], &rows[1][1]);
+                if lumi != 0.0 {
+                    self.apply_scale_to(sc, sub, scales.mu_r);
+                    g.mirror_into(&event.cm, &mut mirror);
+                    term_m2[1] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
+                }
+                term += lumi * term_m2[1];
+            }
+            m2.push(term_m2);
+            group_rows.push(rows);
+            terms.push(g.spin_color_average() * term);
         }
         let group = select_index(&terms, u[0])?;
         let g = &self.groups.groups()[group];
+        let [direct_rows, mirrored_rows] = group_rows[group];
 
         // One categorical draw over the group's `(member, ordering)` terms: the
         // matrix element is common to the members, so within an ordering this is the
@@ -2157,8 +2401,10 @@ impl<'a> ProtonIntegrand<'a> {
             .enumerate()
             .flat_map(|(i, member)| {
                 let s = member.symmetry_factor();
-                let lumi = g.member_luminosity_rows(i, &f1, &f2);
-                [s * lumi[0] * m2[group][0], s * lumi[1] * m2[group][1]]
+                let [direct, _] = g.member_luminosity_rows(i, &direct_rows[0], &direct_rows[1]);
+                let [_, mirrored] =
+                    g.member_luminosity_rows(i, &mirrored_rows[0], &mirrored_rows[1]);
+                [s * direct * m2[group][0], s * mirrored * m2[group][1]]
             })
             .collect();
         let picked = select_index(&weights, u[1])?;
@@ -2178,7 +2424,11 @@ impl<'a> ProtonIntegrand<'a> {
                 &mirror
             }
         };
+        let scales = event.group_scales[group][ordering_slot(ordering)]
+            .expect("a drawn ordering carries weight");
         let sub = &sc.subs[group];
+        // The helicity and colour diagonals at the drawn term's own coupling.
+        self.apply_scale_to(sc, sub, scales.mu_r);
         let eval = sub.evaluator();
         let mut hel_m2 = vec![0.0; eval.helicities().len()];
         let mut amp2 = vec![0.0; eval.n_configs()];
@@ -2213,6 +2463,7 @@ impl<'a> ProtonIntegrand<'a> {
             flow: color.flow,
             config: color.config,
             leading: color.leading,
+            scales,
         })
     }
 
@@ -2235,7 +2486,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
-        let (shape, _) = self.shape(
+        let shape = self.shape(
             self.scratch(),
             &m,
             &point.momenta,
@@ -2346,9 +2597,8 @@ impl<'a> ProtonIntegrand<'a> {
                         self.combiner
                             .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
                     scale_draw.fill_uniforms(&mut scale_u);
-                    let shape = self
-                        .shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u)
-                        .0;
+                    let shape =
+                        self.shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u);
                     // A point the cuts reject adds zero to every `Wⱼ`, so the
                     // mixture density — one evaluation per channel — is formed only
                     // for points that carry something.

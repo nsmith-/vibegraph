@@ -1124,7 +1124,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         let alpha_qcd = self
             .integrand
             .alpha_s_source()
-            .map(|source| source.eval(event.scales.mu_r))
+            .map(|source| source.eval(selection.scales.mu_r))
             .unwrap_or(0.0);
         let member = &self.integrand.groups().groups()[selection.group].members()[selection.member];
         let header = EventHeader {
@@ -1132,7 +1132,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             // The strategy imposes the file's weight convention; this slot is
             // overwritten before the record is written.
             weight: 0.0,
-            scale: scalup(&event.scales),
+            scale: scalup(&selection.scales),
             alpha_qed: self.alpha_qed,
             alpha_qcd,
         };

@@ -32,6 +32,10 @@
 //!   event by event — MadEvent's own momenta handed to this crate's scale
 //!   prescription, whose clustering must return MadEvent's `SCALUP` in one of
 //!   the event's configurations and `αs` of it must be MadEvent's `AQCDUP`.
+//!   This crate's own events are replayed the same way, on the decayed
+//!   `p p > t t~` and on `p p > l+ l- j` at the dynamical scale, and each
+//!   `SCALUP` has to come from a configuration of the flavour group the event
+//!   is labelled with.
 //! * **The process split** of a two-`@N` card: one `<init>` entry per process
 //!   number, each event's `IDPRUP`, and the share of events per process against
 //!   MadEvent's own per-process `XSECUP`.
@@ -839,12 +843,80 @@ fn madevents_own_events_replay_through_the_scale_prescription() {
         !row.replay.is_empty(),
         "the reference carries no replay events"
     );
-    let card = format!("import model sm\n{}\n", row.lines);
+    let replay = replay_scales(
+        &row.lines,
+        &madgraph_dir().join(&row.run_card),
+        &row.replay,
+        AlphaSPrinting::MadEvent,
+    );
+    println!(
+        "{} MadEvent events replayed: {} reproduce SCALUP in one of their configurations \
+         (worst relative {:.2e}), AQCDUP worst |Δ| {:.2e}",
+        replay.events,
+        replay.events - replay.missed.len(),
+        replay.worst_scale,
+        replay.worst_alpha,
+    );
+    assert!(
+        replay.missed.is_empty(),
+        "events whose SCALUP no configuration reproduces: {:?}",
+        replay.missed
+    );
+    // Half a unit in the seventh printed digit of a value near 0.1, with a
+    // hundredth of it for the last-ulp noise of both runnings.
+    assert!(
+        replay.worst_alpha < 5.05e-8,
+        "AQCDUP off by {:.2e}",
+        replay.worst_alpha
+    );
+}
+
+/// How an event file's `AQCDUP` relates to `αs(μR)`.
+#[derive(Clone, Copy, PartialEq)]
+enum AlphaSPrinting {
+    /// MadEvent's: `αs(μR)` times `π / 3.1415926`, from `AQCDUP`'s `G²/(4·3.1415926)`.
+    MadEvent,
+    /// This crate's: `αs(μR)` itself.
+    Exact,
+}
+
+/// What replaying a sample's scales through the prescription found.
+struct ScaleReplay {
+    events: usize,
+    /// Events whose `SCALUP` no configuration of their own flavour group
+    /// reproduces.
+    missed: Vec<usize>,
+    /// Of those, the ones some *other* group's configuration reproduces — the
+    /// signature of a scale clustered in the wrong group's merge graph.
+    elsewhere: usize,
+    /// Events per flavour group, and of those how many were missed.
+    per_group: Vec<(usize, usize)>,
+    worst_scale: f64,
+    worst_alpha: f64,
+}
+
+/// Replay each event's momenta through the card's scale prescription in every
+/// configuration of the flavour group its flavours belong to: one configuration
+/// has to return the event's `SCALUP` to `1e-6` relative, and `αs` of that
+/// configuration's `μR` (as `printing` says the file writes it) is compared
+/// with its `AQCDUP`.
+///
+/// The group is named by the event's own flavours, which is the label the file
+/// carries; the configuration is not in the file, so any of the group's is
+/// accepted. An event whose beams carry the group's partons exchanged is read
+/// in the group's own flavour order, rotated by π about the x axis with its
+/// beams swapped — the orientation MadEvent clusters a mirrored point in.
+fn replay_scales(
+    lines: &str,
+    run_card: &Path,
+    events: &[ReplayEvent],
+    printing: AlphaSPrinting,
+) -> ScaleReplay {
+    let card = format!("import model sm\n{}\n", lines.replace(';', "\n"));
     let parsed = parse_proc_card(&card, &Default::default()).expect("card");
     let model = sm_model(SMRestrict::Default);
     let evaluated = EvaluatedModel::from_model(model.clone());
-    let rc = RunCard::parse(&std::fs::read_to_string(madgraph_dir().join(&row.run_card)).unwrap())
-        .unwrap();
+    let rc = RunCard::parse(&std::fs::read_to_string(run_card).unwrap()).unwrap();
     let sets = generate_from_proc_card(&parsed, &model).expect("diagrams");
     let groups = derive_flavor_groups(sets, &model, &evaluated, &rc).expect("groups");
     let amps: Vec<_> = groups
@@ -871,10 +943,31 @@ fn madevents_own_events_replay_through_the_scale_prescription() {
     let alpha_s = source.alpha_s().expect("a running coupling");
     #[allow(clippy::approx_constant)]
     const TRUNCATED_PI: f64 = 3.1415926;
-    let mut missed = Vec::new();
-    let mut worst_scale = 0.0f64;
-    let mut worst_alpha = 0.0f64;
-    for (k, event) in row.replay.iter().enumerate() {
+    let n_groups = groups.groups().len();
+    // The scale in a group's configuration that reproduces `scalup`, if any.
+    let hit = |group: usize, incoming: &[[f64; 4]], outgoing: &[[f64; 4]], scalup: f64| {
+        let n_configs = groups.groups()[group].evaluator().n_configs();
+        (0..n_configs).find_map(|c| {
+            let scales = source
+                .scales(
+                    [incoming[0], incoming[1]],
+                    outgoing,
+                    SampledChannel { group, channel: c },
+                )
+                .ok()?;
+            let rel = (scales.mu_f[0].max(scales.mu_f[1]) / scalup - 1.0).abs();
+            (rel < 1e-6).then_some((rel, scales.mu_r))
+        })
+    };
+    let mut replay = ScaleReplay {
+        events: events.len(),
+        missed: Vec::new(),
+        elsewhere: 0,
+        per_group: vec![(0, 0); n_groups],
+        worst_scale: 0.0,
+        worst_alpha: 0.0,
+    };
+    for (k, event) in events.iter().enumerate() {
         let incoming: Vec<[f64; 4]> = event
             .incoming
             .iter()
@@ -887,49 +980,208 @@ fn madevents_own_events_replay_through_the_scale_prescription() {
             .collect();
         let pdg_in = [event.incoming[0][0] as i32, event.incoming[1][0] as i32];
         let pdg_out: Vec<i32> = event.outgoing.iter().map(|p| p[0] as i32).collect();
-        let group = groups
+        let (group, exchanged) = groups
             .groups()
             .iter()
-            .position(|g| {
-                g.members().iter().any(|m| {
-                    m.outgoing == pdg_out
-                        && (m.incoming == pdg_in || m.incoming == [pdg_in[1], pdg_in[0]])
+            .enumerate()
+            .find_map(|(gi, g)| {
+                g.members().iter().find_map(|m| {
+                    if m.outgoing != pdg_out {
+                        None
+                    } else if m.incoming == pdg_in {
+                        Some((gi, false))
+                    } else if m.incoming == [pdg_in[1], pdg_in[0]] {
+                        Some((gi, true))
+                    } else {
+                        None
+                    }
                 })
             })
             .expect("the event's subprocess is one of the card's");
-        let n_configs = groups.groups()[group].evaluator().n_configs();
-        let hit = (0..n_configs).find_map(|c| {
-            let scales = source
-                .scales(
-                    [incoming[0], incoming[1]],
-                    &outgoing,
-                    SampledChannel { group, channel: c },
-                )
-                .ok()?;
-            let scalup = scales.mu_f[0].max(scales.mu_f[1]);
-            let rel = (scalup / event.scalup - 1.0).abs();
-            (rel < 1e-6).then_some((rel, scales.mu_r))
-        });
-        match hit {
+        // An event whose beams carry the member's partons the other way round is
+        // clustered as MadEvent clusters a mirrored point: rotated by π about x
+        // with the beams exchanged, so the group's own flavour order reads it.
+        let (incoming, outgoing) = if exchanged {
+            let rotate = |p: &[f64; 4]| [p[0], p[1], -p[2], -p[3]];
+            (
+                vec![rotate(&incoming[1]), rotate(&incoming[0])],
+                outgoing.iter().map(rotate).collect(),
+            )
+        } else {
+            (incoming, outgoing)
+        };
+        replay.per_group[group].0 += 1;
+        match hit(group, &incoming, &outgoing, event.scalup) {
             Some((rel, mu_r)) => {
-                worst_scale = worst_scale.max(rel);
-                let aqcdup = alpha_s.eval(mu_r) * std::f64::consts::PI / TRUNCATED_PI;
-                worst_alpha = worst_alpha.max((aqcdup - event.aqcdup).abs());
+                replay.worst_scale = replay.worst_scale.max(rel);
+                let aqcdup = match printing {
+                    AlphaSPrinting::MadEvent => {
+                        alpha_s.eval(mu_r) * std::f64::consts::PI / TRUNCATED_PI
+                    }
+                    AlphaSPrinting::Exact => alpha_s.eval(mu_r),
+                };
+                replay.worst_alpha = replay.worst_alpha.max((aqcdup - event.aqcdup).abs());
             }
-            None => missed.push(k),
+            None => {
+                replay.missed.push(k);
+                replay.per_group[group].1 += 1;
+                if (0..n_groups)
+                    .any(|g| g != group && hit(g, &incoming, &outgoing, event.scalup).is_some())
+                {
+                    replay.elsewhere += 1;
+                }
+            }
         }
     }
-    println!(
-        "{} MadEvent events replayed: {} reproduce SCALUP in one of their configurations \
-         (worst relative {worst_scale:.2e}), AQCDUP worst |Δ| {worst_alpha:.2e}",
-        row.replay.len(),
-        row.replay.len() - missed.len()
-    );
-    assert!(
-        missed.is_empty(),
-        "events whose SCALUP no configuration reproduces: {missed:?}"
-    );
-    // Half a unit in the seventh printed digit of a value near 0.1, with a
-    // hundredth of it for the last-ulp noise of both runnings.
-    assert!(worst_alpha < 5.05e-8, "AQCDUP off by {worst_alpha:.2e}");
+    replay
+}
+
+/// The replay form of one of this crate's own event files: the incoming and
+/// outgoing legs in record order, and the event's `SCALUP` and `AQCDUP`.
+fn replay_events(files: &[LheFile]) -> Vec<ReplayEvent> {
+    let leg = |p: &vibegraph::lhef::record::LheParticle| {
+        [
+            f64::from(p.pdg),
+            p.momentum[0],
+            p.momentum[1],
+            p.momentum[2],
+            p.momentum[3],
+        ]
+    };
+    files
+        .iter()
+        .flat_map(|f| &f.events)
+        .map(|e| ReplayEvent {
+            incoming: e
+                .particles
+                .iter()
+                .filter(|p| p.status == STATUS_INCOMING)
+                .map(leg)
+                .collect(),
+            outgoing: e
+                .particles
+                .iter()
+                .filter(|p| p.status == STATUS_OUTGOING)
+                .map(leg)
+                .collect(),
+            scalup: e.scale,
+            aqcdup: e.alpha_qcd,
+        })
+        .collect()
+}
+
+/// Events this crate generates per card for [`our_own_events_replay_in_their_own_flavour_group`].
+const OWN_REPLAY_EVENTS: usize = 2_000;
+
+/// This crate's own generated events through its own scale prescription: every
+/// event's `SCALUP` has to be reproduced by a configuration of the flavour
+/// group the event is labelled with, and `AQCDUP` has to be `αs` of that
+/// configuration's `μR`.
+///
+/// This is the per-event statement that a point's scale is clustered in the
+/// group whose matrix element its term evaluates, and that the record carries
+/// that group's scales — MadEvent's rule, which integrates each subprocess group
+/// on its own and clusters in its configurations. Two cards whose groups
+/// cluster apart: the decayed `p p > t t~` (`q q̄` takes √(m_T(t)·m_T(t̄)),
+/// `g g` the larger m_T) and `p p > l+ l- j` at the dynamical scale (six groups,
+/// `q q̄ → ℓℓg` against `q g → ℓℓq`). A scale taken in the sampler's group
+/// instead reads 253 of 400 on the first card.
+///
+/// What it cannot see: which configuration inside the group was used, so a
+/// configuration draw with the wrong weights passes (the `samples` columns and
+/// the σ rows are what see that); the mirrored ordering, whose term takes the
+/// same scale as the direct one by construction on both sides; and an event
+/// where two groups cluster to the same scale, which is most of `p p > t t~`
+/// near threshold.
+#[test]
+fn our_own_events_replay_in_their_own_flavour_group() {
+    let reference = reference();
+    let ttx = row(&reference, "pp_ttx_lep_dyn");
+    let llj_card = madgraph_dir().join("output/pp_to_llj_dyn/Cards/run_card.dat");
+    if !llj_card.is_file() {
+        vibegraph::validation::require(
+            "our_own_events_replay_in_their_own_flavour_group",
+            "a banked run directory",
+            "pp_to_llj_dyn",
+        );
+    }
+    let cards: [(&str, String, PathBuf); 2] = [
+        (
+            "pp_ttx_lep_dyn",
+            ttx.lines.clone(),
+            madgraph_dir().join(&ttx.run_card),
+        ),
+        (
+            "pp_to_llj_dyn",
+            "generate p p > l+ l- j QCD=2 QED=2".to_string(),
+            llj_card,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (name, lines, run_card) in cards {
+        let tmp = tempfile::tempdir().unwrap();
+        let card = tmp.path().join("proc_card.dat");
+        let body: String = lines.split(';').map(|l| format!("{l}\n")).collect();
+        std::fs::write(&card, format!("import model sm\n{body}")).unwrap();
+        let (_, _, artifact) = integrate(tmp.path(), &card, &run_card, INTEGRATION_SEED, "1e-2");
+        let lhe = tmp.path().join("events.lhe");
+        vibegraph(&[
+            "generate".as_ref(),
+            artifact.as_os_str(),
+            card.as_os_str(),
+            "--run-card".as_ref(),
+            run_card.as_os_str(),
+            "--pdf-dir".as_ref(),
+            pdf_dir().as_os_str(),
+            "--seed".as_ref(),
+            GEN_SEEDS[0].to_string().as_ref(),
+            "--nevents".as_ref(),
+            OWN_REPLAY_EVENTS.to_string().as_ref(),
+            "--strategy".as_ref(),
+            "buffer".as_ref(),
+            "-o".as_ref(),
+            lhe.as_os_str(),
+        ]);
+        let file =
+            LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our own file parses");
+        let events = replay_events(std::slice::from_ref(&file));
+        let replay = replay_scales(&lines, &run_card, &events, AlphaSPrinting::Exact);
+        println!(
+            "[{name}] {} of our events replayed: {} reproduce SCALUP in their own group \
+             (worst relative {:.2e}), {} of the rest in another group's; AQCDUP worst |Δ| \
+             {:.2e}; per group (events, missed): {:?}",
+            replay.events,
+            replay.events - replay.missed.len(),
+            replay.worst_scale,
+            replay.elsewhere,
+            replay.worst_alpha,
+            replay.per_group,
+        );
+        if replay.events != OWN_REPLAY_EVENTS {
+            failures.push(format!("[{name}] {} events written", replay.events));
+        }
+        if !replay.missed.is_empty() {
+            failures.push(format!(
+                "[{name}] {} events whose SCALUP no configuration of their own group \
+                 reproduces ({} of them another group's): first {:?}",
+                replay.missed.len(),
+                replay.elsewhere,
+                &replay.missed[..replay.missed.len().min(10)]
+            ));
+        }
+        // Half a unit in the ninth printed digit of a value near 0.1, doubled
+        // for the momenta's own printed rounding reaching μR.
+        if replay.worst_alpha >= 1e-9 {
+            failures.push(format!("[{name}] AQCDUP off by {:.2e}", replay.worst_alpha));
+        }
+        // More than one group has to have been exercised, or the statement is
+        // vacuous.
+        let populated = replay.per_group.iter().filter(|(n, _)| *n > 0).count();
+        if populated < 2 {
+            failures.push(format!(
+                "[{name}] only {populated} flavour group carries events"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
