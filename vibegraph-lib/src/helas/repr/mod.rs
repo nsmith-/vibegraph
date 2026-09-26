@@ -62,16 +62,39 @@ pub mod vectorspace;
 ///      integrator share one channel map instead of copying it per thread.
 ///
 /// The zero/one bounds are method-based (`Zero`/`One`, inherited through `Float`)
-/// rather than the associated-const `ConstZero`/`ConstOne`: SIMD lane types whose
-/// width is a runtime-length array (`numeric_array::NumericArray`) cannot supply a
-/// `const ZERO`/`const ONE`, but do implement the method forms, so batching one
-/// `eval_m2` call over several phase-space points needs only this weaker bound.
+/// rather than the associated-const `ConstZero`/`ConstOne`: a SIMD lane type
+/// needs only the method forms (`LaneField` builds its zero by splatting at run
+/// time), so batching one `eval_m2` call over several phase-space points needs
+/// only this weaker bound.
 ///
 /// Both `f32` and `f64` implement this automatically.
 pub trait Real:
     num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync
 {
+    /// `self * a + b` as the target computes it fastest: one hardware FMA
+    /// (single rounding) where [`HARDWARE_FMA`] holds, a product and a sum
+    /// (two roundings) otherwise. `Float::mul_add` always rounds once, which
+    /// without FMA hardware means a software FMA per call, several times the
+    /// cost of the two-instruction form.
+    #[inline(always)]
+    #[allow(clippy::disallowed_methods)] // the one sanctioned `Float::mul_add` call
+    fn mul_add_fast(self, a: Self, b: Self) -> Self {
+        if HARDWARE_FMA {
+            self.mul_add(a, b)
+        } else {
+            self * a + b
+        }
+    }
 }
+
+/// Whether this build's target has a hardware fused multiply-add:
+/// x86 with `fma` enabled (`x86-64-v3` and up) or aarch64. It decides what
+/// [`Real::mul_add_fast`] computes, so results agree across targets to
+/// rounding, and bit for bit only between builds that agree on this flag.
+pub const HARDWARE_FMA: bool = cfg!(any(
+    target_feature = "fma",
+    all(target_arch = "aarch64", target_feature = "neon")
+));
 impl<
         F: num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync,
     > Real for F

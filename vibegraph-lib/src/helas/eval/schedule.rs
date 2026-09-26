@@ -29,7 +29,7 @@ use super::analysis::NodeAnalysis;
 use super::ast::Ast;
 use super::layout::{
     arena_elem_bytes, arena_index, arena_reads, asap_levels, instr_kinds, liveness, Liveness,
-    Program, N_ARENAS,
+    Program, N_ARENAS, N_KINDS,
 };
 use super::op::{Const, NodeId};
 use super::tree::Tree;
@@ -54,6 +54,16 @@ pub(super) enum Schedule {
     /// dependency level: long enough runs to amortize the dispatch, short enough that
     /// operands stay near their consumers and slots keep being recycled.
     OpWindow(u32),
+    /// The control for [`Schedule::OpBlocked`]: the same ASAP dependency levels in the
+    /// same sequence, but inside each level the variants are dealt round-robin, so the
+    /// stream changes variant at nearly every instruction. It keeps op-blocking's level
+    /// structure — independent instructions adjacent — and discards its runs.
+    LevelMix,
+    /// The same ASAP levels in the same sequence, each level's nodes in a seeded random
+    /// order. Round-robin dealing leaves a periodic variant sequence that a
+    /// history-based branch predictor learns; a shuffle leaves the dispatch nothing
+    /// to learn, while the level structure is unchanged.
+    LevelShuffle,
 }
 
 impl Schedule {
@@ -63,6 +73,8 @@ impl Schedule {
             "dfs" | "depth-first" => Some(Schedule::DepthFirst),
             "minlive" | "min-live" => Some(Schedule::MinLive),
             "opblocked" | "op-blocked" => Some(Schedule::OpBlocked),
+            "levelmix" | "level-mix" => Some(Schedule::LevelMix),
+            "levelshuffle" | "level-shuffle" => Some(Schedule::LevelShuffle),
             _ => name
                 .strip_prefix("opwin")
                 .and_then(|w| w.parse().ok())
@@ -78,11 +90,13 @@ impl Schedule {
             Schedule::MinLive => "minlive".to_string(),
             Schedule::OpBlocked => "opblocked".to_string(),
             Schedule::OpWindow(w) => format!("opwin{w}"),
+            Schedule::LevelMix => "levelmix".to_string(),
+            Schedule::LevelShuffle => "levelshuffle".to_string(),
         }
     }
 
     /// Every order the study measures, default first.
-    pub(super) const ALL: [Schedule; 7] = [
+    pub(super) const ALL: [Schedule; 9] = [
         Schedule::Arena,
         Schedule::DepthFirst,
         Schedule::MinLive,
@@ -90,6 +104,8 @@ impl Schedule {
         Schedule::OpWindow(32),
         Schedule::OpWindow(128),
         Schedule::OpWindow(512),
+        Schedule::LevelMix,
+        Schedule::LevelShuffle,
     ];
 }
 
@@ -135,6 +151,8 @@ pub(super) fn build_order(ast: &Ast<Const>, an: &NodeAnalysis, sched: Schedule) 
         Schedule::MinLive => min_live(ast, an),
         Schedule::OpBlocked => super::layout::op_blocked_order(ast, an),
         Schedule::OpWindow(w) => op_windowed(ast, an, w),
+        Schedule::LevelMix => level_mixed(ast, an),
+        Schedule::LevelShuffle => level_shuffled(ast, an),
     };
     debug_assert!(is_topological(ast, &order));
     order
@@ -340,6 +358,50 @@ fn op_windowed(ast: &Ast<Const>, an: &NodeAnalysis, window: u32) -> Vec<NodeId> 
     order
 }
 
+/// [`Schedule::LevelMix`]: within each ASAP level, the `r`-th node of every variant
+/// before the `r + 1`-th of any, so consecutive instructions differ in variant wherever
+/// the level holds more than one.
+fn level_mixed(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
+    let level = asap_levels(ast);
+    let kind = instr_kinds(ast, an);
+    let mut order = super::layout::op_blocked_order(ast, an);
+    let mut rank = vec![0u32; ast.len()];
+    for w in 0..order.len() {
+        let id = order[w] as usize;
+        if w > 0 {
+            let prev = order[w - 1] as usize;
+            if level[prev] == level[id] && kind[prev] == kind[id] {
+                rank[id] = rank[prev] + 1;
+            }
+        }
+    }
+    order
+        .sort_unstable_by_key(|&id| (level[id as usize], rank[id as usize], kind[id as usize], id));
+    order
+}
+
+/// [`Schedule::LevelShuffle`]: op-blocked's level sequence, each level shuffled by a
+/// fixed-seed generator so every build of a program emits the same order.
+fn level_shuffled(ast: &Ast<Const>, an: &NodeAnalysis) -> Vec<NodeId> {
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+    let level = asap_levels(ast);
+    let mut order = super::layout::op_blocked_order(ast, an);
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_5A);
+    let mut start = 0;
+    while start < order.len() {
+        let lvl = level[order[start] as usize];
+        let end = start
+            + order[start..]
+                .iter()
+                .take_while(|&&id| level[id as usize] == lvl)
+                .count();
+        order[start..end].shuffle(&mut rng);
+        start = end;
+    }
+    order
+}
+
 /// Structural metrics of one compiled program under one execution order.
 #[derive(Clone, Debug)]
 pub(super) struct ProgramMetrics {
@@ -455,7 +517,7 @@ pub(super) fn measure(
     // Discriminant runs over the emitted stream.
     let mut n_runs = 0usize;
     let mut prev = u8::MAX;
-    let mut per_kind = [(0usize, 0usize); 38];
+    let mut per_kind = [(0usize, 0usize); N_KINDS];
     for instr in prog.instrs.iter() {
         let k = instr.kind();
         per_kind[k as usize].0 += 1;
@@ -465,7 +527,7 @@ pub(super) fn measure(
             prev = k;
         }
     }
-    let mut top: Vec<(u8, usize, usize)> = (0u8..38)
+    let mut top: Vec<(u8, usize, usize)> = (0u8..N_KINDS as u8)
         .map(|k| (k, per_kind[k as usize].0, per_kind[k as usize].1))
         .filter(|&(_, c, _)| c > 0)
         .collect();

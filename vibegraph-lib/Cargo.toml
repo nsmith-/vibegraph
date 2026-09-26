@@ -45,7 +45,9 @@ ordered-float = "5"
 # The regularised incomplete gamma function, which the chi-squared p-value is:
 # a dependency-free special-function crate rather than a hand-rolled series.
 puruspe = "0.4"
-numeric-array = "0.6.1"
+# The SIMD lane field's packed vector: statically dispatched on the target's
+# enabled vector units, with one-instruction ops that inline into the evaluator.
+wide = "1.7"
 quick-xml = "0.32.0"
 sha2 = "0.11.0"
 dirs = "6"
@@ -82,6 +84,10 @@ required-features = ["bench-internals"]
 
 [[bench]]
 name = "pdf_xfx"
+harness = false
+
+[[bench]]
+name = "lorentz_kernels"
 harness = false
 
 # The amplitude gate reads committed per-process tables and needs nothing else,

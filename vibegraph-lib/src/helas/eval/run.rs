@@ -11,15 +11,12 @@ use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use num_traits::{FromPrimitive, Zero};
 
-use numeric_array::generic_array::typenum::Const as LaneLen;
-use numeric_array::generic_array::IntoArrayLength;
-use numeric_array::NumericArray;
-
 use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
 use super::kernel;
-use super::lanes::{transpose_points, unpack, LaneField};
+use super::lane_field::{LaneField, Lanes, SupportedLanes};
+use super::lanes::{transpose_points, unpack};
 use super::layout::{Instr, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
@@ -795,20 +792,16 @@ impl<'a> BoundAmplitude<'a, f64> {
     /// [`eval_m2_lanes`]: fn@eval_m2_lanes
     pub fn broadcast_lanes<const N: usize>(&self) -> BoundAmplitude<'a, LaneField<N>>
     where
-        LaneLen<N>: IntoArrayLength,
+        Lanes<N>: SupportedLanes<N>,
         LaneField<N>: Real,
     {
         let consts_c = self
             .consts_c
             .iter()
-            .map(|z| C::new(NumericArray::splat(z.re), NumericArray::splat(z.im)))
+            .map(|z| C::new(LaneField::splat(z.re), LaneField::splat(z.im)))
             .collect();
-        let consts_f = self
-            .consts_f
-            .iter()
-            .map(|&x| NumericArray::splat(x))
-            .collect();
-        let cf = self.cf.iter().map(|&x| NumericArray::splat(x)).collect();
+        let consts_f = self.consts_f.iter().map(|&x| LaneField::splat(x)).collect();
+        let cf = self.cf.iter().map(|&x| LaneField::splat(x)).collect();
         BoundAmplitude::new(self.eval, consts_c, consts_f, cf)
     }
 }
@@ -826,7 +819,7 @@ pub fn eval_m2_lanes<const N: usize>(
     scratch: &mut ScratchSpace<LaneField<N>>,
 ) -> [f64; N]
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let momenta = pack_lane_points(points);
@@ -844,7 +837,7 @@ pub fn pack_lane_points<const N: usize>(
     points: &[&[LorentzVector<f64>]; N],
 ) -> Vec<LorentzVector<LaneField<N>>>
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     transpose_points(points)
@@ -859,7 +852,7 @@ pub fn eval_m2_lanes_packed<const N: usize>(
     scratch: &mut ScratchSpace<LaneField<N>>,
 ) -> [f64; N]
 where
-    LaneLen<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     unpack(amp.eval_m2(momenta, scratch))
@@ -4299,9 +4292,20 @@ mod tests {
         }
     }
 
+    /// A lane of [`eval_m2_lanes`] against scalar `eval_m2` at the same point, bit
+    /// for bit: both run the same operation sequence on every target, their
+    /// multiply-adds included ([`Real::mul_add_fast`]). A lane that took the wrong
+    /// branch of a lane-divergent predicate fails this, which is what it pins.
+    fn assert_lane_matches_scalar(scalar: f64, lane: f64, ctx: std::fmt::Arguments<'_>) {
+        assert_eq!(
+            scalar.to_bits(),
+            lane.to_bits(),
+            "{ctx}: scalar {scalar} vs lane {lane} not bit-identical"
+        );
+    }
+
     /// Each extracted lane of the SIMD-batched [`eval_m2_lanes`] is **bit-identical**
-    /// (equal f64 bits) to the scalar [`eval_m2`](BoundAmplitude::eval_m2) at the same
-    /// point, for every process in the MG-validated suite, across three kinematically
+    /// to the scalar [`eval_m2`](BoundAmplitude::eval_m2) at the same point, for every process in the MG-validated suite, across three kinematically
     /// homogeneous batch regimes: partonic-CM z-beams, generic off-axis momenta, and
     /// threshold-adjacent (near-rest final-state) z-beams. Homogeneity keeps every
     /// data-dependent branch in the external-wavefunction builders lane-uniform (see
@@ -4310,7 +4314,7 @@ mod tests {
     /// lane-uniformity claim: a mixed-branch batch would silently apply one branch to
     /// all lanes and break the assertion.
     #[test]
-    fn eval_m2_lanes_bit_identical_to_scalar() {
+    fn eval_m2_lanes_match_scalar() {
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
 
@@ -4319,10 +4323,10 @@ mod tests {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
         use crate::phasespace::rambo_massless;
 
-        // Two lanes suffice to pin bit-identity: `transpose_points`/`eval_m2_lanes`
-        // are generic over the width, so N=2 exercises the full pack/eval/unpack path.
-        // (`lanes4_lanes8_pack_unpack_bit_identical` covers the wider widths on one
-        // small process.)
+        // Two lanes suffice: `transpose_points`/`eval_m2_lanes` are generic over the
+        // width, so N=2 exercises the full pack/eval/unpack path.
+        // (`lanes4_lanes8_match_scalar` covers the wider widths on one small
+        // process.)
         const N: usize = 2;
 
         let model = sm_model(SMRestrict::Default);
@@ -4391,12 +4395,10 @@ mod tests {
                     let lanes = eval_m2_lanes(&lane_amp, &point_refs, &mut lane_scratch);
 
                     for k in 0..N {
-                        assert_eq!(
-                            scalar[k].to_bits(),
-                            lanes[k].to_bits(),
-                            "[{process}] regime {r} lane {k}: scalar {} vs lane {} not bit-identical",
+                        assert_lane_matches_scalar(
                             scalar[k],
-                            lanes[k]
+                            lanes[k],
+                            format_args!("[{process}] regime {r} lane {k}"),
                         );
                     }
                 }
@@ -4404,11 +4406,11 @@ mod tests {
         }
     }
 
-    /// The lane pack/eval/unpack path is bit-identical to scalar at the wider widths
+    /// The lane pack/eval/unpack path matches scalar at the wider widths
     /// `N ∈ {4, 8}` too, on one light process — the width-4/8 counterpart to the
     /// full-suite N=2 gate above (which pins every process at N=2).
     #[test]
-    fn lanes4_lanes8_pack_unpack_bit_identical() {
+    fn lanes4_lanes8_match_scalar() {
         use rand::rngs::StdRng;
         use rand::SeedableRng;
 
@@ -4440,7 +4442,7 @@ mod tests {
             amp: &BoundAmplitude<'_, f64>,
             batch: &[Vec<LorentzVector<f64>>; M],
         ) where
-            LaneLen<M>: IntoArrayLength,
+            Lanes<M>: SupportedLanes<M>,
             LaneField<M>: Real,
         {
             let lane_amp = amp.broadcast_lanes::<M>();
@@ -4450,7 +4452,7 @@ mod tests {
             let lanes = eval_m2_lanes(&lane_amp, &refs, &mut lscratch);
             for k in 0..M {
                 let scalar = amp.eval_m2(&batch[k], &mut sscratch);
-                assert_eq!(scalar.to_bits(), lanes[k].to_bits(), "N={M} lane {k}");
+                assert_lane_matches_scalar(scalar, lanes[k], format_args!("N={M} lane {k}"));
             }
         }
 

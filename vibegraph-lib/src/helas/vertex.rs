@@ -1,5 +1,3 @@
-use num_complex::ComplexFloat;
-
 use crate::helas::repr::{
     lorentz::{Bispinor, ComplexVector, DiracAdjoint, SpinorRepr, VectorRepr},
     numbers::Chirality,
@@ -477,7 +475,7 @@ pub fn fvixxx<F: Real>(
         + fi.spinor.project_right().slash(&v.eps) * gc[1];
     let num = psi.slash(&q.into()) + psi * mass;
     // i^2 = -1 from the coupling and overall i factor
-    let scale = -C::new(q2 - mass * mass, mass * width).recip();
+    let scale = -C::new(q2 - mass * mass, mass * width).inv();
 
     InDiracWf::from_spinor(num * scale, q)
 }
@@ -514,7 +512,7 @@ pub fn fvoxxx<F: Real>(
     let psi = fo.spinor.project_right().slash(&v.eps) * g[0]
         + fo.spinor.project_left().slash(&v.eps) * g[1];
     let num = psi.slash(&q.into()) + psi * mass;
-    let scale = -C::new(q2 - mass * mass, mass * width).recip();
+    let scale = -C::new(q2 - mass * mass, mass * width).inv();
 
     OutDiracWf::from_spinor(num * scale, q)
 }

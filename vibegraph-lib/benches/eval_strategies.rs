@@ -1,10 +1,11 @@
-//! `eval_m2` microbenchmark across process sizes 2→2 … 2→6 (all-massless externals
-//! so plain massless RAMBO provides the kinematics), including colored NCOLOR=2/6 2→2s
-//! that exercise the CF-weighted multi-flow path. The per-process before/after
-//! yardstick for evaluator changes.
+//! `eval_m2` microbenchmark over a representative Standard-Model set, 2→2 … 2→6,
+//! including colored NCOLOR=2/6 2→2s that exercise the CF-weighted multi-flow path.
+//! Kinematics are massless RAMBO throughout: massive externals sit off shell, which
+//! the timing does not depend on. The per-process before/after yardstick for
+//! evaluator changes.
 //!
 //! The `forward` benchmark is the scalar `eval_m2`; `lanes{N}` runs the SIMD
-//! lane-batched [`eval_m2_lanes`] with `F = NumericArray<f64, N>` over the same
+//! lane-batched [`eval_m2_lanes`] with `F = LaneField<N>` over the same
 //! points, chunked `N` at a time. Comparing `lanes{N}` to `forward` at equal
 //! per-point work measures the SIMD speedup and the best width `N` for the host.
 //!
@@ -18,18 +19,19 @@ use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Cr
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use numeric_array::generic_array::typenum::Const;
-use numeric_array::generic_array::IntoArrayLength;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::{
     eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, AmplitudeEvaluator, BoundAmplitude,
-    LaneField, ScaleAwareAmplitude,
+    LaneField, Lanes, ScaleAwareAmplitude, SupportedLanes,
 };
 use vibegraph::helas::repr::Real;
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massless;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
+
+#[path = "../tests/common/manifest.rs"]
+mod manifest;
 
 /// Register a `lanes{N}` benchmark: rebind onto an `N`-wide lane pack once, then sum
 /// `eval_m2_lanes` over the points chunked `N` at a time (points count is a multiple
@@ -40,7 +42,7 @@ fn bench_lanes<const N: usize>(
     amp: &BoundAmplitude<'_, f64>,
     points: &[Vec<LorentzVector<f64>>],
 ) where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let lane_amp = amp.broadcast_lanes::<N>();
@@ -74,7 +76,7 @@ fn bench_lanes_prepacked<const N: usize>(
     amp: &BoundAmplitude<'_, f64>,
     points: &[Vec<LorentzVector<f64>>],
 ) where
-    Const<N>: IntoArrayLength,
+    Lanes<N>: SupportedLanes<N>,
     LaneField<N>: Real,
 {
     let lane_amp = amp.broadcast_lanes::<N>();
@@ -105,38 +107,40 @@ fn bench_lanes_prepacked<const N: usize>(
     );
 }
 
-/// The processes to benchmark: every `validation/manifest.toml` row that
-/// carries an `mg_amplitude` table, in the manifest's own row order — the
-/// same registry `validation/madgraph/gen_amplitude.py` compiles MATRIX1
-/// timings from, so this bench and `mg_timings.json` cover exactly the same
-/// set. `amplitude_oracle.rs` carries no such list of its own: it reads every
-/// file under `validation/madgraph/amplitudes/`, so it needs no synchronising.
-#[derive(serde::Deserialize)]
-struct ManifestProcess {
-    key: String,
-    mg_amplitude: Option<MgAmplitude>,
-}
-
-#[derive(serde::Deserialize)]
-struct MgAmplitude {
-    process: String,
-}
+/// The benchmarked rows: a small Standard-Model set spanning the evaluator's
+/// shapes — 2→2 electroweak, massive vector bosons, NCOLOR=2 and NCOLOR=6
+/// colour flows, a massive coloured final state, and 2→3 / 2→4 / 2→6
+/// multiplicities. Each key names a `validation/manifest.toml` row carrying an
+/// `mg_amplitude` table, whose process string is the one benched, so the card
+/// is the same one MadGraph's MATRIX1 timings in `mg_timings.json` were compiled
+/// from. Every row is built against the interned SM, so a row naming a UFO model
+/// of its own is rejected rather than silently benched as the SM process.
+const BENCH_ROWS: &[&str] = &[
+    "ee_to_mumu",
+    "ee_to_wpwm",
+    "uux_to_uux",
+    "gg_to_gg",
+    "gg_to_ttx",
+    "ee_to_mumua",
+    "ee_to_mumu_tata_qcd0",
+    "uux_to_ccx_emmm_qcd0",
+];
 
 fn manifest_processes() -> Vec<(String, String)> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/manifest.toml");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    #[derive(serde::Deserialize)]
-    struct Manifest {
-        #[serde(rename = "process")]
-        processes: Vec<ManifestProcess>,
-    }
-    let manifest: Manifest =
-        toml::from_str(&text).unwrap_or_else(|e| panic!("{} does not parse: {e}", path.display()));
-    manifest
-        .processes
-        .into_iter()
-        .filter_map(|p| p.mg_amplitude.map(|mg| (p.key, mg.process)))
+    let processes = manifest::mg_amplitude_processes();
+    let models = manifest::row_models();
+    BENCH_ROWS
+        .iter()
+        .map(|&key| {
+            assert!(
+                !models.contains_key(key),
+                "bench row `{key}` names a UFO model of its own; this bench builds the SM only"
+            );
+            let process = processes
+                .get(key)
+                .unwrap_or_else(|| panic!("bench row `{key}` has no mg_amplitude table"));
+            (key.to_string(), process.clone())
+        })
         .collect()
 }
 
@@ -144,7 +148,7 @@ fn manifest_processes() -> Vec<(String, String)> {
 /// `VIBEGRAPH_BENCH_EXTRA_PROCESSES`. Lets a study measure processes the manifest
 /// does not carry an `mg_amplitude` table for, without editing the manifest — the
 /// row set `scripts/mg_perf_compare.sh` joins against stays exactly
-/// [`manifest_processes`]'s output unless the variable is set.
+/// [`BENCH_ROWS`] unless the variable is set.
 fn extra_processes() -> Vec<(String, String)> {
     let Ok(spec) = std::env::var("VIBEGRAPH_BENCH_EXTRA_PROCESSES") else {
         return Vec::new();
