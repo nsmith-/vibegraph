@@ -971,6 +971,28 @@ for a polarized massive leg); its stored default is now MadGraph's `1, 2`;
   informational, with the expected difference being the interference between
   pairings.
 
+  *Measured 2026-09-26 (MadGraph-only study, `p p > z z, z > e+ e-` at 13 TeV,
+  fixed μ = M_Z, bwcutoff 15):* MadGraph's normalisation is right, not a defect.
+  - The identical chain is exactly half the e-μ chain: A/C = 0.499990 ± 0.000010.
+  - Against the Z-only 4e process restricted to "either pairing on its window",
+    MadGraph's chain is −0.22% low. Splitting per event:
+    - +0.23% comes from the dropped pairing interference (⟨2Re M_a M_b*⟩/|M|² =
+      −0.00227 ± 0.00012);
+    - −0.45% comes from the other assignment's off-window tail.
+  - The double ratio (A/B)/(C/D) = 0.9975 ± 0.0015 matches the per-event
+    prediction 0.9978 ± 0.0001.
+  - The interference is O(1) only where both pairings sit within about Γ of the
+    pole (about 1e-3 of events), and ≈ 0.08·Γ/M overall.
+  - The permuted treatment should therefore read about +0.2% above MadGraph on
+    such cards. D3 measures +0.26% ± 0.08% on `e+ e- > z z, z > e+ e-`.
+  - Side findings:
+    - MadEvent's quoted σ errors are unreliable at 0.1%: χ²/dof across seeds is
+      3–14, even for full-process runs.
+    - A few `dummy_cuts` window violations were seen in MadEvent events
+      (27/500k, unexplained).
+  - Scripts and numbers were kept outside the repo, in
+    `/home/user/mg-4e-study/RESULTS.md`.
+
 ## 6. Risks
 
 - **The container-equality oracle is only as strong as S1.** If any sign that
