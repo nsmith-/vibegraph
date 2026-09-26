@@ -96,6 +96,17 @@ MadGraph's own banked accuracy, `p p > l+ l- j` costs about the same as its
 summed job CPU and `p p > l+ l-` costs a factor 4.2 to 4.5 less. That is a
 measurement of two whole programs, not of the two allocation rules.
 
+A channel need not cover all of phase space. A decay chain's channels each
+confine the invariants their diagram forces on shell to the
+[Breit–Wigner window](07-phase-space.md#decay-chains) the integrand cuts on,
+and report density zero outside it. The mixture stays unbiased as long as the
+union of the channels' supports covers everywhere the integrand is non-zero:
+on a card whose diagrams all force the same lines that is every channel's
+window, and on one whose diagrams force different leg sets (identical
+particles across decays) each set's diagrams cover its own windows, while a
+channel's zero density keeps it out of the weight of the points only another
+set's channels can draw.
+
 ## Adapting the channel weights
 
 The $\alpha_j$ are free, and the variance-minimising choice gives more

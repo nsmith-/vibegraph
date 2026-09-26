@@ -679,6 +679,101 @@ decay's products) is applied and each graph kept once.
   forced resonance is one BW-mapped invariant, the decay subtrees are shared
   by every channel, and what remains are smooth decay angles.
 
+**Landed** (2026-09-26; the D3 commits on `pg-d3`). `check_supported` accepts decay
+chains: `Unsupported::DecayChain`, `check_enumerable`, `EnumerableCard` and
+`generate_decay_chains` are gone, and `generate_from_proc_card` enumerates a chain.
+
+- *Window semantics, read from the pinned MadEvent.* `cut_bw` (`myamp.f:76`) loops over
+  `this_config`'s s-channel propagators (`tsgn > 0`, `prwidth > 0`, `:152`–`:160`); for a
+  forced one (`gForceBW = 1`) `onshell = |√p² − M| < bwcutoff·prwidth_tmp`, with
+  `prwidth_tmp = max(Γ, M·small_width_treatment)` (`:170`, `:179`), and outside it
+  `cut_bw = .true.` returns at once (`:216`–`:221`); `cuts.f:509` turns that into
+  `passcuts = .false.`, so the point is dropped before its matrix element. The window is
+  per configuration, but every configuration of a card without identical particles
+  across its decays forces the same lines. Phase space: `set_peaks` raises the forced
+  invariant's lower edge to `M − bwcutoff·Γ` (`:397`–`:400`) and draws it with
+  `transpole` over its range (`genps.f:1363`). `cut_decays = F` marks every descendant of
+  a forced line of configuration 1 (`check_decay`, `setcuts.f:995`) `do_cuts = .false.`
+  (`:203`), which removes its single-leg cuts and its pairwise `ΔR`/`mm` cuts; `ptll` and
+  `mmnl` do not read `do_cuts`.
+- *Here.* `cuts::ForcedResonances::of(diagrams)` holds each diagram's set of forced lines
+  (legs, mass, width), distinct sets once; `Cuts::compile_with` makes them windows (strict
+  `<`, the width floored at `1e-6·M`, zero width never cut) and passes a point when every
+  line of *some* set is inside — for the identical-particle cards (2026-09-26 decision)
+  the sets are the pairings, and the union is symmetric under the permutation and
+  independent of the sampler, which MadEvent's per-configuration reading would not be.
+  `cut_decays = F` uncuts the legs a forced line produces in every set (`Consumed` in
+  `runcard/classes.rs`, as is `bwcutoff` for the windows); the forced windows also raise
+  the `τ` floor. `DiagramChannel::with_forced_windows` (installed by
+  `MapChoices::channel`) draws each forced invariant's Breit–Wigner over window ∩
+  kinematic range, reports density exactly zero outside (edge slack 1e-9 for rounding),
+  and keeps the full range where the window is out of reach, identically in sample and
+  density. Non-chain cards: byte-identical artifacts and 500-event LHE files (apart from
+  the header line naming the artifact path) against `e60cf7d` on `e+ e- > mu+ mu-`,
+  `e+ e- > mu+ mu- ta+ ta- QCD=0`, `u u~ > g g g`, `p p > e+ e-`, `t > w+ b`,
+  `t > b e+ ve`.
+- *Overall orders* (`@1 QED=4`) are lifted: each part's upper bound becomes the lesser of
+  its own and the overall one (added where the part has none, which switches off its
+  search, `diagram_generation.py:570`, `:1972`), and a stitched diagram exceeding one is
+  removed (`helas_objects.py:3986`). `ChainOrders` now refuses only a part's `==`/`>`
+  bound on an overall order. Five cards added to the MadGraph census (existing 19
+  unchanged): `pp_ttx_qed2` (4 MEs, QCD only), `pp_ttx_qed4` (the γ/Z diagrams back),
+  `pp_ttx_qcd0`, `ee_ttx_qed4`, and `ee_zz_qed3`, refused by both.
+- *σ* (`cli_decay_chain.rs`; MadEvent 3.7.1, 10k events per seed,
+  `decay_chain_sigma_reference.json`; ours ten seeds at `--target-rel 2e-3`; each mean
+  ± max(quoted, spread/√n)):
+
+  | row | MadEvent | here | here/MG − 1 | pull | our χ²/dof |
+  |---|---|---|---|---|---|
+  | `e+ e- > z z, z > e+ e-, z > mu+ mu-` (500 GeV) | 9.4388e-4 ± 6.7e-7 | 9.4474e-4 ± 3.8e-7 | +9.1e-4 | +1.12 | 1.11 |
+  | the same, `cut_decays = T`, ptl 10 etal 2.5 drll 0.4 | 6.6379e-4 ± 1.5e-6 (20 seeds) | 6.6608e-4 ± 2.8e-7 | +3.4e-3 | +1.5 | 0.92 |
+  | `e+ e- > t t~, t > w+ b, t~ > w- b~` | 0.526305 ± 1.5e-4 | 0.526359 ± 1.2e-4 | +1.0e-4 | +0.28 | 0.77 |
+  | `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~` | 5.7137e-2 ± 3.1e-5 | 5.7111e-2 ± 2.3e-5 | −4.4e-4 | −0.66 | 1.40 |
+  | `p p > t t~, t > b e+ ve, t~ > b~ mu- vm~` (13 TeV, μ = 173) | 6.4132 ± 7.1e-3 | 6.4091 ± 4.7e-3 | −6.3e-4 | −0.48 | 1.88 |
+  | `e+ e- > z z, z > e+ e-` (informational) | 4.7194e-4 ± 3.3e-7 | 4.7318e-4 ± 2.0e-7 | **+2.6e-3 ± 0.8e-3** | +3.2 | 1.12 |
+
+  **MadEvent misses on the `cut_decays = T` row**: its first five seeds had χ²/dof 90
+  (one seed 4.4% low); twenty seeds scatter by 1.0% against a quoted 0.23% (χ²/dof 22.5), the tail
+  one-sided and low (0.6379, 0.6573, 0.6600 of a 0.665 median). Two 50k-event runs give
+  6.6583e-4 and 6.6559e-4 ± 6.5e-7, +0.06% (0.7σ) from ours: MadEvent converges up with
+  budget, as on `h > e+ e- mu+ mu-` (D1). The last row is the pairing difference the
+  2026-09-26 decision predicts: keeping both pairings and their interference, the
+  identical-lepton cross section is 0.26% ± 0.08% above MadGraph's one-pairing ÷ 2.
+- *Scales.* Nothing here changes the clustering. A dynamic-scale `p p > t t~, t > b e+ ve,
+  t~ > b~ mu- vm~` (the card above without the fixed scales) reads 5.880 ± 0.011 pb here
+  (one seed) against MadEvent's 5.888 and 5.860 (two seeds): σ-level only, the per-event
+  scales of a decay chain are E1's.
+- *Events.* `generate` refuses a decay-chain card, before reading the artifact: without
+  status-2 resonance records and their mother pointers a shower would treat the decay
+  products as hard-process legs and move the resonance line shapes. E1 lifts it.
+- *The ladder* (`tests/decay_chain_ladder.rs`, ignored; one seed, integration to 5e-3,
+  scan at the integration share, 5000 unweighted events, `MaxRule` default; 4 shared
+  cores; "pt" is one integrand point, cut rejections included, "ME" the summed `|M|²`
+  alone):
+
+  | rung | legs | channels | pt (µs) | ME (µs) | integration | ε_unw | ms/event |
+  |---|---|---|---|---|---|---|---|
+  | `e+ e- > z z` | 2 | 2 | 4.7 | 5.4 | 0.72M pts, 2.2 s | 0.511 | 0.013 |
+  | `…, z > e+ e-, z > mu+ mu-` | 4 | 2 | 3.7 | 4.0 | 0.72M, 2.2 s | 0.194 | 0.018 |
+  | `p p > t t~` | 2 | 4 | 9.1 | 11.4 | 0.72M, 5.1 s | 0.355 | 0.029 |
+  | `…, t > b e+ ve, t~ > b~ mu- vm~` | 6 | 4 | 13.2 | 8.8 | 0.72M, 7.2 s | 0.063 | 0.234 |
+  | `…, (t > w+ b, w+ > l+ vl), t~ > b~ j j` | 6 | 4 | 15.3 | 10.6 | 0.72M, 7.1 s | 0.065 | 0.235 |
+  | `p p > t t~ h h` | 4 | 46 | 67.8 | 58.8 | 0.72M, 35 s | 0.036 | 1.9 |
+  | `…, (t > w+ b, w+ > j j), (t~ > w- b~, w- > l- vl~)` | 8 | 46 | 15.7 | 70.2 | 8.3M, 467 s | 0.0022 | 40.5 |
+
+  Leg count does not overwhelm the sampler: every rung converges and the gated rows agree
+  with MadEvent. But the cost per event grows **beyond** the matrix element's: the decayed
+  `|M|²` costs 0.7–1.2× its core's, while ε_unw falls 2.6× (`z z`), 5.7× (`t t~`) and
+  16× (`t t~ h h`), and the heaviest rung needed 11× the core's integration points. The
+  forced invariants are Breit–Wigner-mapped exactly; what the channels leave flat are the
+  decay angles, whose V−A and spin-correlation shapes have max/mean ratios of a few per
+  decay (`Z → ℓℓ` 1.5, so 2.25 for two, against the measured 2.6) and which a factorised
+  VEGAS grid only partly learns. So a MadSpin-style step is not needed for correctness or
+  convergence; at eight legs it would buy roughly an order of magnitude per event (core
+  1.9 ms, plus decay unweighting at the full `|M|²` price), which is a performance-backlog
+  item — shaped decay-angle maps in the channels are the in-sampler alternative — not a
+  reason to reopen MadSpin now.
+
 ### S3: `$` as the pointwise integrand (feature-dev; after G1, needs the per-channel |M_c|²)
 
 - F(x) per §1.2, with MadGraph's Γ/M < 0.1 rule and the `bwcutoff` window.

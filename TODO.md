@@ -471,8 +471,13 @@ above); the entries here are the eventual features.
   - Decision (user, 2026-09-26): identical particles across decays keep the full
     permutation and its interference, a documented deviation from MadGraph's
     `identical_decay_chain_factor` (note 38 §5).
-  - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
-    leg-count ladder that decides whether a MadSpin-style step is ever needed.
+  - **D3** ✅ landed (note 38 §4 D3 Landed): decay chains integrate with MadEvent's
+    `bwcutoff` windows (union over identical-particle pairings) and BW-windowed channel
+    maps, `cut_decays` consumed, overall orders lifted; five σ rows within 1.5σ of
+    MadEvent over ten seeds (MadEvent itself misses low on the `cut_decays = T` row);
+    `generate` refuses decay chains until E1. Ladder: no MadSpin needed for convergence,
+    but ε_unw falls 16× on fully decayed `t t~ h h` (decay angles unmapped) — a
+    performance item.
   - **S3**: `$` as a pointwise SDE-weighted integrand.
   - **P1** ✅ landed (`3b3f71e`, `3c023b2`; note 38 §4 P1 Landed): polarized external legs, NHEL/IDEN census against MadGraph (35 cards), six gated amplitude rows, `me_frame` consumed with a boosted-frame mutation pin, σ(`e+ e- > w+{0} w-`) +5e-4 over five seeds.
   - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
