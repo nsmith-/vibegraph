@@ -99,16 +99,21 @@ current run's cells.
 
 ## Regenerating references
 
-One entry point over every generator, staged `deps → madgraph → refs → bundle`:
+One entry point over every generator, staged
+`deps → madgraph → seeds → refs → bundle`:
 
 ```bash
-pixi run -e madgraph generate-references              # all four stages
+pixi run -e madgraph generate-references              # all five stages
 pixi run -e madgraph generate-references refs bundle  # re-extract and re-archive
 ```
 
 The MadGraph work area is the cache — an existing process directory is never
 rebuilt — while the extractions are cheap pure functions of it and always rerun,
-so a reference that moved shows up as a diff. Committed references
+so a reference that moved shows up as a diff. The `seeds` stage banks the
+MadEvent references committed as one run per seed (the decay, decay-chain, `$`,
+`>`/`$$` and polarized cross sections and event summaries); its runs live in
+`validation/madgraph/work/`, and a finished seed is read back rather than re-run
+(`validation/madgraph/madevent_seeds.sh`). Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
 `validation/madgraph/configs.json`,
 `validation/alphas/reference.csv`) are regenerated only when the banked phase-space

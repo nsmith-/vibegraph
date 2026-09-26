@@ -1,0 +1,19 @@
+# MadGraph5 batch script: e+ e- > z > mu+ mu- at LO
+#
+# Why this exact process:
+#   - `> z` is a diagram filter, not an on-shell requirement: of the two
+#     s-channel diagrams of e+ e- > mu+ mu- only the Z's survives, so the cross
+#     section is the Z term alone, with the gamma-Z interference gone. MadGraph
+#     prints no gauge-invariance warning for it.
+#   - At sqrt(s) = 500 GeV the filtered and unrestricted processes differ by a
+#     factor of eight, so a filter that removed nothing, or the wrong diagram,
+#     cannot pass for this one.
+#   - iseed is the first seed of the per-seed reference
+#     (gen_grammar_sigma.sh, row ee_z_only), so this run is that seed's run.
+generate e+ e- > z > mu+ mu-
+output ee_to_mumu_zonly -nojpeg
+launch
+set ebeam1 250
+set ebeam2 250
+set iseed 20260926
+done

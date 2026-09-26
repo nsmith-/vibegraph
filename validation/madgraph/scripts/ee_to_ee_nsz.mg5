@@ -1,0 +1,15 @@
+# MadGraph5 batch script: e+ e- > e+ e- $$ z at LO
+#
+# Why this exact process:
+#   - `$$ z` removes every diagram with an s-channel Z and keeps the t-channel
+#     Z exchange: the filter reads each propagator's direction, not only its
+#     particle, which Bhabha scattering is the smallest process to test.
+#   - iseed is the first seed of the per-seed reference
+#     (gen_grammar_sigma.sh, row ee_no_sz), so this run is that seed's run.
+generate e+ e- > e+ e- $$ z
+output ee_to_ee_nsz -nojpeg
+launch
+set ebeam1 250
+set ebeam2 250
+set iseed 20260926
+done

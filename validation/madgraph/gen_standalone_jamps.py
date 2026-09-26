@@ -26,6 +26,7 @@ side binds the same parameters rather than re-deriving them.
 Usage:
   python validation/madgraph/gen_standalone_jamps.py gg_to_ggg
   python validation/madgraph/gen_standalone_jamps.py gg_to_ggg --work DIR --amps --out FILE
+  python validation/madgraph/gen_standalone_jamps.py all    # every table, in key order
 
 The generated process directory is a build product; `--work` (default
 `validation/madgraph/output/standalone`) says where it goes. The committed
@@ -293,12 +294,22 @@ def evaluate(exe: str, card: str, pts, hels):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("key", choices=sorted(ROWS))
+    ap.add_argument("key", choices=sorted(ROWS) + ["all"])
     ap.add_argument("--work", default=DEFAULT_WORK)
     ap.add_argument("--amps", action="store_true", help="also write the per-diagram AMP()")
     ap.add_argument("--out", help="write the table here instead of the committed location")
     args = ap.parse_args()
-    row = ROWS[args.key]
+    if args.key == "all":
+        if args.out:
+            ap.error("--out names one table; it cannot take `all`")
+        for key in sorted(ROWS):
+            bank(ROWS[key], args)
+    else:
+        bank(ROWS[args.key], args)
+
+
+def bank(row: Row, args) -> None:
+    """Generate (or reuse) one row's standalone directory and write its table."""
     pdir = run_madgraph(row, os.path.abspath(args.work))
     ngraphs, ncolor, hels = read_matrix(pdir)
     exe = build_driver(pdir, ngraphs, ncolor)
