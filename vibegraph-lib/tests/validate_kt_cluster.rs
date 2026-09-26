@@ -665,6 +665,8 @@ fn compare_run(_name: &str, path: &Path, model: &Model) -> Tally {
             tprid: row[5].as_i64().expect("tprid"),
             mass: row[6].as_f64().expect("mass"),
             width: row[7].as_f64().expect("width"),
+            // The dumped processes carry no decay chain.
+            forced: false,
             sprop: row[8..]
                 .iter()
                 .map(|v| v.as_i64().expect("sprop"))
@@ -1432,6 +1434,8 @@ fn dumped_forests(path: &Path) -> (usize, Vec<ConfigForest>) {
             tprid: row[5].as_i64().expect("tprid"),
             mass: row[6].as_f64().expect("mass"),
             width: row[7].as_f64().expect("width"),
+            // The dumped processes carry no decay chain.
+            forced: false,
             sprop: row[8..]
                 .iter()
                 .map(|v| v.as_i64().expect("sprop"))
