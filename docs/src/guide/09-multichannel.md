@@ -96,6 +96,55 @@ MadGraph's own banked accuracy, `p p > l+ l- j` costs about the same as its
 summed job CPU and `p p > l+ l-` costs a factor 4.2 to 4.5 less. That is a
 measurement of two whole programs, not of the two allocation rules.
 
+## Forbidden on-shell s-channels
+
+A process line may name particles after a single `$` (`p p > e+ e- $ z`,
+`u u~ > w+ b w- b~ $ t t~`). Unlike `$$`, which drops diagrams, `$` keeps every
+diagram and removes the resonance *region*. MadGraph marks each s-channel line
+of the named particle and gives it a propagator multiplied by a step function
+(ALOHA's `P1D` form), which is zero wherever the line's invariant mass is
+inside its Breit–Wigner window,
+
+$$
+\bigl|\sqrt{p^2} - M\bigr| < \texttt{bwcutoff}\cdot\Gamma ,
+$$
+
+with $\Gamma$ floored at $M\cdot$`small_width_treatment`. The matrix element
+MadEvent integrates is therefore $|M'|^2$: every diagram carrying a marked line
+on its window drops out of the coherent sum, and the rest keep their
+interference. MadEvent also rejects such a point in each integration
+configuration whose own marked line is on the window (`cut_bw`), but that
+configuration's diagram has just been zeroed, so its single-diagram-enhanced
+share was zero anyway and the rejection moves nothing.
+
+vibegraph evaluates $|M'|^2$ exactly. The marked lines on their windows at a
+point form a pattern, and for each pattern an amplitude is compiled at setup
+from the diagrams that carry none of its lines; a subprocess with $L$ distinct
+marked lines carries $2^L$ amplitudes. $|M'|^2$ is a function of the point
+like any other integrand, so the channels above sample it unchanged and event
+generation unweights the same value. The per-event draws that follow
+MadEvent's configurations — the one a clustering scale is taken in, the one a
+colour flow is drawn in — use $|M'|^2$'s own `AMP2`, which leaves out the
+configurations whose diagrams were zeroed.
+
+On the $Z$ pole every point of `e+ e- > mu+ mu- $ z` is in the window, so what
+remains is the photon diagram alone; outside the window (at 200 GeV, or at
+100 GeV with `bwcutoff = 3`) nothing is removed. At 100 GeV the difference
+from reweighting the whole $|M|^2$ by the photon configuration's `AMP2` share
+is the $\gamma$–$Z$ interference, and MadEvent agrees with $|M'|^2$ to
+$5\times10^{-5}$ where the share reads 0.9% low. `$` and a decay chain are
+complements up to that interference inside the window: `p p > z, z > e+ e-`
+covers the window with the $Z$ diagram alone, and `p p > e+ e- $ z` covers
+everything outside it plus the photon diagram inside.
+
+One MadGraph defect sits in this path: in version 3.7.1 the step function of a
+fermion propagator computed from its second spinor slot (`FFV2P1D_1`) has the
+sign of $p^2$ flipped and never vanishes, so on `u u~ > w+ b w- b~ $ t t~` its
+top line is never zeroed while its antitop line is, and MadEvent reads 37%
+above $|M'|^2$. With that routine corrected, MadGraph's standalone matrix
+element agrees with vibegraph's to $10^{-12}$. vibegraph zeroes every marked
+line alike, as ALOHA's `1D` propagator is written to.
+
 ## Adapting the channel weights
 
 The $\alpha_j$ are free, and the variance-minimising choice gives more

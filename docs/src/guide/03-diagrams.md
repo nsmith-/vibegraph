@@ -53,7 +53,6 @@ language:
 
 | Feature | Status |
 |---|---|
-| `$` forbidden on-shell s-channels | refused until the per-channel on-shell veto exists |
 | decay chains `A > B C, B > D E` | enumerated (see below); refused for integration until phase space keeps each resonance in its Breit–Wigner window |
 | overall orders on a decay chain (`@1 QED=2` after the process number) | refused |
 | propagator projections `{A}` `{G}` `{H}` `{Q}` `{W}` `{S}`, and a polarization on a particle a decay chain decays | refused |
@@ -215,7 +214,11 @@ QCD order has no diagram with an s-channel photon. They change which
 diagrams are summed, nothing else — there is no Breit–Wigner window, and
 dropping part of a gauge-invariant set is in general not gauge invariant,
 which is logged as a warning. A process line none of whose subprocesses has
-a diagram is an error, as it is in MadGraph.
+a diagram is an error, as it is in MadGraph. The single `$` (`p p > e+ e- $ z`) is not a
+diagram filter: every diagram is kept, and a marked propagator is zeroed where
+it is inside its Breit–Wigner window (see
+[multichannel integration](09-multichannel.md#forbidden-on-shell-s-channels)).
+Every process line of a card has to name the same `$` list.
 
 ## Enumeration
 

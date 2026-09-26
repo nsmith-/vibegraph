@@ -473,7 +473,7 @@ above); the entries here are the eventual features.
     `identical_decay_chain_factor` (note 38 §5).
   - **D3**: forced Breit–Wigner windows, decay-chain σ, and the sampler
     leg-count ladder that decides whether a MadSpin-style step is ever needed.
-  - **S3**: `$` as a pointwise SDE-weighted integrand.
+  - **S3** ✅ landed (`fdd0f34`, `c46d268`, `7a1eb52`; note 38 §4 S3 Landed): `$` zeroes every marked propagator on its window in the amplitude (MadGraph's `P1D`), not an SDE reweighting; six rows agree with MadEvent over five seeds (lepton pairs in and out of the Z window, `t > b e+ ve $ w+`, Drell–Yan); the `$ t t~` row is off by MadGraph 3.7.1's `FFV2P1D_1` sign defect, and a residual ~2% against the patched MadEvent is open.
   - **P1** ✅ landed (`3b3f71e`, `3c023b2`; note 38 §4 P1 Landed): polarized external legs, NHEL/IDEN census against MadGraph (35 cards), six gated amplitude rows, `me_frame` consumed with a boosted-frame mutation pin, σ(`e+ e- > w+{0} w-`) +5e-4 over five seeds.
   - **E1**: status-2 resonance records, `@N` → `LPRUP`, and `add process`
     grouping.

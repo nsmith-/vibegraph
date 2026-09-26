@@ -77,29 +77,44 @@ for a t-channel line. So `p p > w- > e+ ve` has no diagrams.
   any s-channel propagator is forbidden. For one initial particle there is a
   separate path that allows the decaying particle's own first s-channel
   (`:754`).
-- **`$` forbidden on-shell** (`:781`): keeps every diagram, marks the
-  propagator `onshell = False`, and `export_v4.py:5879` writes it out as
-  `gForceBW = 2`. MadEvent's `cut_bw` (`Template/LO/SubProcesses/myamp.f:136`)
-  then rejects the point **only in integration channels whose configuration
-  contains that propagator**, only when `sde_strat == 1`, and only when
-  Γ/M < 0.1. A `$` in the process line forces `sde_strategy = 1`
-  (`madgraph/various/banner.py:4774`). The window is
-  |m − M| < `bwcutoff`·Γ.
+- **`$` forbidden on-shell** (`:781`): keeps every diagram and marks the
+  propagator `onshell = False`. MadGraph acts on the mark twice (corrected by
+  S3; the first reading here had only the second):
+  - *in the amplitude*: `helas_call_writers.py:1184` gives a marked
+    propagator ALOHA's `P1D` form, which multiplies it by
+    `THETA_FUNCTIONR((p² − (M − c·Γ)²)(p² − (M + c·Γ)²) ≥ 0)`, `c = bwcutoff`,
+    `Γ = fk_W = max(|W|, |M·small_width_treatment|)` (`export_v4.py:4820`).
+    The line is zero inside |m − M| < `bwcutoff`·Γ whatever Γ/M;
+  - *in the phase space*: `export_v4.py:5879` writes `gForceBW = 2`, and
+    MadEvent's `cut_bw` (`Template/LO/SubProcesses/myamp.f:136`) rejects the
+    point in integration channels whose configuration carries the marked line
+    on the same window, when `sde_strat == 1` and Γ/M < 0.1. A `$` in the
+    process line forces `sde_strategy = 1` in the generated card
+    (`madgraph/various/banner.py:5055`).
 
-  In our single-sample multichannel form, this is a pointwise integrand:
+  The rejection moves nothing: the rejected configuration's diagram carries
+  the zeroed line, so its enhancement share `AMP2_c/Σ AMP2` is already zero
+  there. What MadEvent integrates is
 
-  F(x) = |M|² · (1 − Σ_{c ∋ forbidden} w_c(x) · 1_W(x)), where
-  w_c = |M_c|² / Σ_d |M_d|².
+  F(x) = |M'(x)|², M' = M with every marked line zeroed on its window,
+
+  which keeps the interference among the surviving diagrams. MadGraph 3.7.1
+  mis-generates one form: a fermion `P1D` built from its second spinor slot
+  (`FFV2P1D_1`) has the theta argument `(p² + (M − cΓ)²)(p² + (M + cΓ)²)`, the
+  P flip applied inside the square, so that line is never zeroed (see S3
+  Landed). The first reading,
+  |M|²·(1 − Σ_{c ∋ forbidden} w_c 1_W), reweights the whole |M|² by the
+  surviving configurations' `AMP2` share instead; on `e+ e- > mu+ mu- $ z` at
+  100 GeV it integrates 0.93% below MadEvent (35 σ), and |M'|² agrees.
 
 - **`$` and a decay chain are complements.** Writing W for the on-shell
   window:
   - `p p > z, z > l+ l-` gives ∫_W |M_Z|².
-  - `p p > l+ l- $ z` gives ∫_outside W |M|² + ∫_W |M|² w_γ.
+  - `p p > l+ l- $ z` gives ∫_outside W |M|² + ∫_W |M_γ|².
 
   Together they reproduce `p p > l+ l-` except for the γ–Z interference
-  inside the window, weighted by w_Z. `p p > z > l+ l-` is **not** a
-  complement of `$ z`: it has no window, so it double-counts the off-shell Z
-  tail.
+  inside the window. `p p > z > l+ l-` is **not** a complement of `$ z`: it has
+  no window, so it double-counts the off-shell Z tail.
 
 ### 1.3 Decays and decay chains
 
@@ -685,6 +700,79 @@ decay's products) is applied and each graph kept once.
 - σ gate against a MadGraph `$` run (`p p > w+ b w- b~ $ t t~`,
   `p p > l+ l- $ z`).
 - Informational: the complement identity of §1.2 against `p p > l+ l-`.
+
+**Landed** (2026-09-26; `fdd0f34` first form, `c46d268` the amplitude-level
+fix, `7a1eb52` gates, the docs commit after them). `$` is lifted from
+`Unsupported`; `SupportedProcess` carries the list as written and
+`diagrams::forbidden_onshell_ids` resolves it as `$$`'s is (oriented ids),
+refusing a card whose process lines name different lists. `onshell.rs`
+marks, per subprocess, the s-channel lines whose oriented id is listed,
+keyed by (final-side legs, M, Γ), and compiles for every nonempty subset of
+them (≤ 6 lines) an amplitude from the diagrams carrying none; a point
+evaluates the subset on its window (the `P1D` theta, §1.2). `hadronic.rs` and
+`proton.rs` evaluate `|M'|²` through these (scale-aware, moved to the
+subprocess's own coupling), in the survey, the integral, `event_in_channel`
+and `select_event`; the scale's and colour flow's `AMP2` draws drop the
+configurations whose representative carries a zeroed line (at
+`SDE_strategy = 1`; at 2 the channel-cut weights are MadEvent's own and are
+left alone); a zeroed-amplitude colour flow is mapped into the whole
+amplitude's basis by its tag row. Flavour-group members must share the
+representative's marking (checked, refused otherwise). The Prop-level marking
+D2 adds can replace the leg-key bookkeeping at merge.
+
+- *What MadEvent does* (§1.2, corrected): the first form here (|M|² times the
+  surviving configurations' `AMP2` share, with cut_bw's Γ/M < 0.1 rule and an
+  `SDE_strategy = 2` refusal) read `e+ e- > mu+ mu- $ z` at 100 GeV 0.93% low,
+  35 σ; the generated `matrix1_optim.f` showed `FFV2_4P1D_3(…, BWCUTOFF, …)`
+  for the Z. The refusal of `SDE_strategy = 2` was dropped with it: the
+  propagator acts at any SDE strategy (read from the source, not run).
+- *Pointwise*: on the pole and at 100 GeV the zeroed amplitude equals the
+  separately compiled `e+ e- > mu+ mu- / z` to 1e-12; for
+  `u u~ > w+ b w- b~ $ t t~` MadGraph's standalone `SMATRIX` (with the
+  `FFV2P1D_1` fix below) equals the zeroed amplitudes here to 1e-12 at six
+  points (both, one, the other and no top in the window).
+- *σ rows* (MadEvent 3.7.1 via `mg5_pinned.sh`, five seeds, 10k events,
+  `validation/madgraph/onshell_veto_reference.json`; here five seeds,
+  `cli_onshell_veto`; each mean ± max(quoted, spread/√n)):
+
+  | row | MadEvent | here | pull | χ²/dof here |
+  |---|---|---|---|---|
+  | `e+ e- > mu+ mu- $ z`, √s = M_Z | 10.7673 ± 0.0021 | 10.7678 ± 0.0020 | +0.16 | 1.02 |
+  | same, √s = 100 | 9.00988 ± 0.0017 | 9.01035 ± 0.0016 | +0.19 | 0.75 |
+  | same, √s = 100, bwcutoff 3 (outside) | 51.282 ± 0.012 | 51.289 ± 0.010 | +0.43 | 0.22 |
+  | same, √s = 200 (outside) | 2.78715 ± 0.00064 | 2.78740 ± 0.00050 | +0.31 | 0.60 |
+  | `t > b e+ ve $ w+` (GeV) | 1.43508e-3 ± 7.4e-7 | 1.43423e-3 ± 4.8e-7 | −0.97 | 0.59 |
+  | `p p > e+ e- $ z`, dy13 card | 303.83 ± 0.27 | 303.84 ± 0.14 | +0.05 | 1.47 |
+  | `u u~ > w+ b w- b~ $ t t~`, √s = 500 | 0.06811 ± 0.00008 | 0.04982 ± 0.00004 | (MadGraph defect) | — |
+
+  Known-wrong comparisons (MadEvent's own unrestricted rows): 2023.95 pb at
+  the pole, 51.28 pb at 100 GeV, 933.15 pb for Drell–Yan, 13.664 pb for the
+  top pair; the unrestricted 100 GeV row equals the bwcutoff-3 row seed for
+  seed in MadEvent.
+- *The top-pair row is a MadGraph defect*: ALOHA writes the `1D` theta of a
+  fermion propagator built from its second spinor slot (`FFV2P1D_1`, the `t`
+  here) with the P flip applied inside the square,
+  `(p² + (M − cΓ)²)(p² + (M + cΓ)²) ≥ 0`, which is always true, while
+  `FFV2P1D_2` (the `t~`) and the vector forms are right. So MadEvent zeroes
+  the `t~` window and not the `t` one. Patching that one line in the
+  generated `Source/DHELAS` brings MadEvent to 0.04982, 0.04942, 0.04957,
+  0.04970 (10k events, fixed μ = 173) and 0.04934 ± 0.00007 (50k) against
+  0.05059–0.05080 here (fixed μ; 0.050695 ± 0.000024 at a 5e-4 target):
+  about 2% apart, and MadEvent moves down with budget while this side does
+  not, nor under another split-angle map (`isotropic`, 0.050724 ± 0.000049);
+  the unrestricted fixed-μ rows agree, 15.060 against 15.052. Left open;
+  the row is reported, not gated.
+- *Complement identity* (informational, Drell–Yan card, MadEvent's
+  `p p > z, z > e+ e-` with `cut_decays = T`, 631.08 ± 0.35): MadEvent
+  chain + `$` = 934.91 against its full 933.15 (+1.75 ± 0.77); with this
+  side's `$` and full (933.57 ± 0.64) +1.35 ± 0.75. The difference is minus
+  the γ–Z interference inside the window, −0.15% of the total.
+- *Unchanged cards*: the merged base `f67c8d0` and this branch write
+  byte-identical artifacts and 500-event LHE files (header's artifact path
+  aside), seed 7, `--fixed-budget` 4000 × 4, for `e+ e- > mu+ mu-` (45.6 GeV
+  beams), `e+ e- > mu+ mu- ta+ ta- QCD=0` (125 GeV beams), `u u~ > g g g`
+  (125 GeV beams, ptj 20, clustering scale), `p p > e+ e-` (dy13) and
+  `t > b e+ ve`.
 
 ### P1: polarized external particles (feature-dev; after G1)
 

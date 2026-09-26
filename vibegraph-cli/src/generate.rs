@@ -34,6 +34,7 @@ use vibegraph::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, StochasticRounding, UnweightStrategy, WeightedEvent,
 };
 use vibegraph::lhef::write::generator_element;
+use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
@@ -49,8 +50,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::integrate::{
-    initial_state, is_decay, load_pdf_set, load_run_card, process_string, IntegrateError, NO_PDF,
-    PDF_MEMBER,
+    forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, process_string,
+    IntegrateError, NO_PDF, PDF_MEMBER,
 };
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
@@ -572,6 +573,14 @@ fn generate_sample(
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
+    let vetoes = subprocess_vetoes(
+        &sets,
+        &evals,
+        &forbidden_onshell(parsed, model)?,
+        evaluated,
+        rc,
+    )
+    .map_err(|e| err(e.to_string()))?;
     refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
     let bounds: Vec<_> = evals
         .iter()
@@ -594,6 +603,7 @@ fn generate_sample(
 
     let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
+    integ.use_onshell_veto(&vetoes, evaluated);
     // The grids were trained under the artifact's maps; the channels are rebuilt
     // under exactly those, whatever the rule would choose today.
     integ.set_map_options(MapOptions::fixed(artifact.maps));
@@ -1020,8 +1030,12 @@ fn generate_proton_sample(
 
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    let forbidden = forbidden_onshell(parsed, model)?;
+    let markings = subprocess_markings(&sets, &forbidden, model);
     let groups = derive_flavor_groups(sets, model, evaluated, rc)
         .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
+    let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
+        .map_err(|e| err(e.to_string()))?;
     let amps: Vec<BoundAmplitude<f64>> = groups
         .groups()
         .iter()
@@ -1040,6 +1054,7 @@ fn generate_proton_sample(
         MapOptions::fixed(artifact.maps),
     )
     .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+    integ.use_onshell_veto(&vetoes, evaluated);
     integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .map_err(|e| err(format!("run card scale prescription: {e}")))?;

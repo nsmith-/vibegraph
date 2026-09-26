@@ -16,7 +16,6 @@
 //!
 //! | Variant | MadGraph feature | Lifted by |
 //! |---|---|---|
-//! | [`ForbiddenOnShellSChannel`](Unsupported::ForbiddenOnShellSChannel) | `$ A` | a per-channel on-shell veto in the integrand |
 //! | [`DecayChain`](Unsupported::DecayChain) | `A > B C, B > D E` | Breit–Wigner windows on the forced resonances in phase space (enumeration exists: [`check_enumerable`]) |
 //! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C, B > D E @1 QED=2` | bounds on the stitched diagrams' orders, and their effect on each part's order search |
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
@@ -78,6 +77,10 @@ pub struct SupportedProcess {
     /// `$$ A B`, as written: names no s-channel propagator of a kept diagram
     /// may carry.
     pub forbidden_s_channels: Vec<String>,
+    /// `$ A B`, as written: names whose s-channel propagators every diagram
+    /// keeps, but whose Breit–Wigner window is vetoed in the integration
+    /// configurations that carry them.
+    pub forbidden_onshell_s_channels: Vec<String>,
     /// Amplitude-level coupling-order constraints, left to right. A
     /// `WEIGHTED` entry is always `<=` or `=`.
     pub orders: Vec<AmplitudeOrder>,
@@ -151,6 +154,9 @@ impl Display for SupportedProcess {
             write!(f, "{} > ", alternatives.join(" | "))?;
         }
         write!(f, "{}", side(&self.final_state))?;
+        if !self.forbidden_onshell_s_channels.is_empty() {
+            write!(f, " $ {}", self.forbidden_onshell_s_channels.join(" "))?;
+        }
         if !self.forbidden_s_channels.is_empty() {
             write!(f, " $$ {}", self.forbidden_s_channels.join(" "))?;
         }
@@ -174,14 +180,6 @@ impl Display for SupportedProcess {
 /// documentation for the table of variants and what lifts each.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Unsupported {
-    /// Forbidden on-shell s-channels, `$ A`: every diagram is kept, and the
-    /// phase-space region where the named propagator is within its
-    /// Breit–Wigner window is vetoed in the channels that contain it.
-    #[error(
-        "'{process}': forbidden on-shell s-channels ('$') are not supported yet — they veto \
-         the resonance window of the integrand channel by channel"
-    )]
-    ForbiddenOnShellSChannel { process: String },
     /// Decay chains, `p p > t t~, t > w+ b`, for integration and event generation.
     ///
     /// Their diagrams are enumerated (stitched core and decay enumerations, with each
@@ -641,9 +639,6 @@ fn check_definition(
     refused: &mut Vec<Unsupported>,
 ) {
     let process = || text.to_owned();
-    if !def.forbidden_onsh_s_channels.is_empty() {
-        refused.push(Unsupported::ForbiddenOnShellSChannel { process: process() });
-    }
     if def.loop_spec.is_some() {
         refused.push(Unsupported::LoopSpec { process: process() });
     }
@@ -712,6 +707,7 @@ fn narrow(def: &ProcessDefinition, id: u32, aliases: AliasTable) -> SupportedPro
         forbidden_particles: def.forbidden_particles.clone(),
         required_s_channels: def.required_s_channels.clone(),
         forbidden_s_channels: def.forbidden_s_channels.clone(),
+        forbidden_onshell_s_channels: def.forbidden_onsh_s_channels.clone(),
         orders: def
             .orders
             .iter()
@@ -772,7 +768,6 @@ mod tests {
             .iter()
             .map(|u| match u {
                 Unsupported::SetOption { .. } => "set",
-                Unsupported::ForbiddenOnShellSChannel { .. } => "$",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
                 Unsupported::DecayChain { .. } => ",",
@@ -782,14 +777,12 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(
-            kinds,
-            ["set", "launch", "$", "[]", "^2", "mixed", ",", "mlm"]
-        );
+        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed", ",", "mlm"]);
     }
 
-    /// `>` and `$$` reach the narrow type as written, and print in
-    /// MadGraph's spelling.
+    /// `>`, `$` and `$$` reach the narrow type as written, and print in
+    /// MadGraph's spelling and order (`Process.nice_string` writes `$` before
+    /// `$$`).
     #[test]
     fn s_channel_restrictions_are_carried() {
         let card = check("define v = z | a\ngenerate e+ e- > v h | z > mu+ mu- h $$ t t~").unwrap();
@@ -797,6 +790,11 @@ mod tests {
         assert_eq!(p.required_s_channels, [vec!["v", "h"], vec!["z"]]);
         assert_eq!(p.forbidden_s_channels, ["t", "t~"]);
         assert_eq!(p.to_string(), "e+ e- > v h | z > mu+ mu- h $$ t t~");
+
+        let card = check("generate u u~ > w+ b w- b~ $ t t~ $$ h").unwrap();
+        let p = &card.processes[0];
+        assert_eq!(p.forbidden_onshell_s_channels, ["t", "t~"]);
+        assert_eq!(p.to_string(), "u u~ > w+ b w- b~ $ t t~ $$ h");
     }
 
     #[test]
