@@ -18,8 +18,8 @@ lot":** the evaluator is 50–62% of the integrand wherever it has been profiled
 processes where the trace form wins are the ones that already integrate in
 seconds. **Where the integration time actually goes (2 → 4 and up) the trace
 form loses to the helicity program**: the interference sum grows as the square
-of the diagram count, and trace length grows factorially with the number of
-vertices on a fermion loop.
+of the diagram count, and a trace's term count grows factorially with its
+length, which grows linearly with the vertices on the fermion loop.
 
 **egglog is the wrong engine for the part that does the work.** Trace evaluation
 and index contraction are a terminating, confluent normalization, where an
