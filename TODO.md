@@ -537,7 +537,21 @@ above); the entries here are the eventual features.
   needs. The same explicit-invariant form is the natural input to a phase-space
   map derived from the integrand's own structure rather than read off
   propagator poles. Both are gated on the extraction prerequisites note 15 §4.1
-  lists.
+  lists. **Feasibility (note 38)**: a 10–50× per-point win at 2 → 2 and small
+  2 → 3, but the pair sum grows as D² and loses to the recycled helicity program
+  from about 2 → 4. The evaluator's 50–62% profile share caps the integration
+  stage at 2.0–2.7×. The trace stage is a normalizer, not an e-graph job. The
+  first step is a hand-derived llj trace |M|² with a pre-registered kill (< 1.3×
+  on `pp_to_llj_dyn` CPU-to-target); helicity sampling (next entry) targets the
+  expensive rows directly.
+- **Helicity sampling (`nhel = 1`) — offline gain measurement first** (note 38
+  §7). One helicity combination per point, drawn with `p_h` and weighted
+  `1/p_h`, saves up to `N_kept / sharing` of the evaluator per point, about 9× on
+  the 2 → 6. The extra variance `∫(Σ_h f_h²/p_h − f²)` is computable from
+  `eval_hel_m2` vectors recorded on an existing run. Report
+  `(V + ΔV)·c₁` against `V·c_sum` per row before building a sampler. Changes the
+  estimator: seed-sweep gate, no bit-for-bit against banked σ. Would also make
+  `wpwm_to_wpwmz_cw`'s `nhel = 1` card reachable.
 
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. `derive_flavor_groups` partitions subprocesses by sampled
