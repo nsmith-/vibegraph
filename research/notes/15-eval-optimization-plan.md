@@ -771,6 +771,9 @@ Track 3's scope.
   the schema; keep `schema_covers_every_op` and the round-trip suite as the guard.
 - The A1 type/constness analysis doubles as the typed-schema encoder's source of
   truth.
+- A helicity-summed |M|² with no helicity loop, from completeness relations and
+  Dirac traces, is a separate low-priority backlog topic with its own
+  feasibility record in note 38.
 
 ## References
 

@@ -527,17 +527,6 @@ above); the entries here are the eventual features.
   points (seed sweep, χ²/dof) before deciding; note that stratification
   changes the sampling order, so it cannot be bit-for-bit against banked
   artifacts.
-- **|M|² by term rewriting** (research) — the helicity-summed |M|² is
-  algebraically a sum over helicities of a current chain times its conjugate;
-  completeness relations replace the external helicity sums by `p̸ + m` /
-  `−g^{μν}` insertions and trace identities reduce the closed fermion lines to
-  scalar products of momenta. An e-graph seeded with those identities (the
-  `helas::eval::egraph` seam) could extract a specialised |M|² program with no
-  helicity loop at all, kept beside the per-helicity program event generation
-  needs. The same explicit-invariant form is the natural input to a phase-space
-  map derived from the integrand's own structure rather than read off
-  propagator poles. Both are gated on the extraction prerequisites note 15 §4.1
-  lists.
 
 - **s-expression program identity for flavour grouping** — a dedicated future
   sprint, user-scoped. `derive_flavor_groups` partitions subprocesses by sampled
