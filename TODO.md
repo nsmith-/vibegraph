@@ -61,7 +61,7 @@ runs' σ across the `refdata-4`→`refdata-5` boundary (different densities;
 | 1 | UFO model loading (particles, parameters, couplings, vertices) | ✅ Done | Python AST parser; restrict cards baked into params; model identity (label + SHA-256 over the parsed model) banked into artifacts |
 | 2 | Feynman diagram enumeration | ✅ Done | feyngraph + process grammar; validated vs MadGraph |
 | 3 | HELAS helicity amplitudes (topology-driven, arbitrary process) | ✅ Done | 19 rows agree with MadGraph at ≤5.9e-13 on the fixed grid (`uux_to_uux` 5.61e-14, `gg_to_ttx` 1.89e-15, `gg_to_gg` 8.25e-14 via the multi-flow CF-weighted eval, NCOLOR=2/2/6) and at ≤6e-14 on MadGraph's own banked events — except the two `ee_to_mumu_tata_qcd0` events near the Higgs pole, where the point's own one-ulp conditioning exceeds the deviation. Beneath \|M\|²: per-diagram `c_i·AMP(i)` on every single-flow row with ≤64 diagrams, per-flow `JAMP()` on all 19, one fitted constant `G = ±i` serving both |
-| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28) |
+| 4 | Phase-space sampling (LIPS + VEGAS) | ✅ Done | Lepage VEGAS (two-phase `adapt`/`sample_frozen` serde object, deterministic rayon chunking, one grid **per channel**) + 2-body LIPS + massive RAMBO generic over `F: Real` with splittable `ChaCha8` substreams + MadGraph-style multichannel (per-diagram propagator-pole channel trees, BW/t-channel/massless-log maps, variance-minimising weight, α-adaptation), rebuilt per event ŝ at proton beams with the t-channel draw floored by `Cuts::spacelike_floor()`. The multi-rung t-channel spine and the per-subprocess identical-particle factor are in production (`kt-spine` Track S, note 28). Map choices are `--map-*` flags with measured `auto` rules, banked in the artifact (schema 9): the 2-body angle from the parent's flight direction with a `1/(z(1−z))` shape inside the cuts' energy window (the default on gluon/photon emissions, `soft-all` opt-in), and `--map-tau inverse-square` opt-in — note 37 |
 | 5 | Cross-section integration + running couplings | ✅ Done | Leptonic `sigma_z_pole`/`sigma_qed_limit`; hadronic σ(pp→e⁺e⁻) via pure-Rust LHAPDF6 parser + log-bicubic interp and compiled MG run-card cuts, vs MG 0.14%/0.07%; MG's `αs` RGE + per-event `μR`/per-beam `μF` (`coupling/`); `vibegraph integrate` persists per-channel VEGAS grids in `IntegrateArtifact` (fv5: model identity + a per-channel subsampler summary). `lpp = 1` over an **arbitrary** process via `ProtonIntegrand` — measured flavour groups (pointwise \|M\|² + masses + `Cuts` + colour basis), both beam orderings by outgoing-leg reflection, `αs` off the PDF grid. σ gates: 17 partonic GATE rows incl. the 3 QCD 2→2s, `pp_to_bb_fixed` and all 4 llj subprocesses at the kT-clustered per-event scale, σ(pp→e⁺e⁻) on both dy13 cards through the *general* path (**933.905 ± 0.567** vs MG 933.230 ± 0.480; **644.203 ± 0.384** vs 644.330 ± 0.283), and σ(pp→ℓ⁺ℓ⁻j) fixed-scale **424.428 ± 0.432 pb** over three seeds vs MG 423.840 ± 1.518 (pull +0.37). At a *dynamical* scale each point's cluster scale is taken in the integration configuration drawn from the point's own squared amplitudes (`∝ AMP2_c/Σ AMP2`, MadEvent's enhancement-weight conditional, note 29 chain B): `gu_to_epemu` **+0.029%** (pull +0.13) / `gux_to_epemux` **−0.165%** (pull −0.70) and σ(pp→ℓ⁺ℓ⁻j) **+0.25%** (pull +0.73), all GATE at `rel_tol` 0.005 set by the references' own errors. The four `refdata-5` re-carded rows gate on the same path at their own reference-precision-sized budgets (addendum S6, note 32): `pp_to_bb` +0.05% at 75k, `pp_to_bb_qcd2` +0.01% at 75k, `pp_to_llj` +0.18% at 150k (its ladder still climbs monotonically across 75k–600k, 0.04%→0.21%, which is why it did not cut to 75k with the other three), `pp_to_ll_scalefact2` +0.02% at 75k. The `p p > j j` capstone runs the same path on the canonical QCD process and is **GATE**: **6.813339e8 ± 5.496e5 pb** over three seeds vs MG 6.788500e8 ± 1.473e6, rel **+0.37%** at pull **+1.58**, at `rel_tol` 0.005 (75k, addendum S6) — the reference's own 0.22% with headroom, pull asserted, since its channel-partition ambiguity is only `1.0e-3` (its own Monte-Carlo error, because a 2 → 2 gives the clustering no merge to choose). It sums over MadGraph's own 65 concrete assignments, pinned entry for entry against the run's `leshouche.inc` (all figures in this row measured fresh 2026-08-05 by the addendum close-out session, note 32 S8; run `pixi run --skip-deps validate-sigma` / `validate-hadronic` to reproduce) |
 | 6 | Unweighted event output (LHEF) | ✅ Done | Accept/reject over the frozen per-channel grids (channel `∝ w_maxⱼ`, overweights kept at weight `>1` and counted), per-event helicity (`∝ \|M_hel\|²`) selection, colour selection via MadEvent's `SELECT_COLOR` rule (configuration `∝ AMP2_d`, flow `∝ JAMP2` inside its `ICOLAMP` row) with **per-member colour-flow tables** — each flavour member's tags derived under the structurally-determined flow permutation, refuse-on-ambiguity — checked against MG's `leshouche.inc` (73/73 concrete subprocesses over 47 files; note 29 chain A), `SCALUP`/`AQCDUP` from `coupling::scales`, four-layer `lhef/` writer/reader that re-serialises all 37 banked MG runs byte-for-byte (744 759 events, both of MadGraph's serialisation dialects, source-text pass-through by construction). `vibegraph generate` refuses mismatched cards/models, swappable weight strategy (`Buffer` `IDWTUP=-4` / `StochasticRounding` `+3`). `lpp = 1` gated: `validate-generate-proton` takes the llj cards to a `.lhe` (flavour draw ∝ per-group luminosity × σ̂, sample σ within `SIGMA_MAX_REL = 0.015` of the banked run). `p p > e+ e-` reaches an event file too, on the same general path. Pythia 8.312 reads both emitted samples back end to end (2000/2000 each, colour-mutation negative control rejected). Event samples are compared against MadGraph's banked ones column by column (`samples` category: weighted-ECDF KS on the kinematics, chi-squared on `SPINUP`/`ICOLUP`/flavour) |
 
@@ -146,6 +146,17 @@ At most three lines each; the note is the full record. Earlier sprints
   census 176/166✅/10⚠️ → 178/171✅/7⚠️. Lesson: build the oracle before the fix
   and let it be wrong on purpose — each landed known-red and caught something
   its fix's brief had not named.
+- **`splitting-kernel-sampling`** (feature/performance, 2026-09-07 → 09-23;
+  note 37) — the user's observation that the 1→2 split is drawn isotropically
+  while a splitting kernel goes like `1/(z(1−z))`, plus a survey of every
+  MadEvent map. `--map-split-angle`/`--map-tau`/`--map-rung-order`, `auto`
+  arms measured at ≥ 20 seeds: `soft-all` halves `p p > l+ l- j`'s
+  evaluations (0.50 ± 0.02 — the lever is the lepton pair, not a gluon) and
+  `1/τ²` cuts dijets to 0.77 ± 0.03; both opt-in until one gate cell each is
+  decided (validation backlog). Lesson: three of the first session's
+  three-seed readings flipped or vanished at twenty, and a σ pull that grew from 1.6 to
+  2.2 with seeds fell to 0.4 at 160 — the growth-with-statistics test needs
+  the statistics.
 - **`ufo-lorentz`** (feature, fourteen sessions, 2026-09-07; note 35 §10) — the
   UFO surface past the Standard Model gated end to end (SMEFTsim plus two
   authored toy models; 29 rows → 51). Lesson: a toy model is a validation
@@ -157,6 +168,25 @@ At most three lines each; the note is the full record. Earlier sprints
 ## 🔎 Validation backlog
 
 ### Standing findings to diagnose (from the note-29 sprint; never a loosened tolerance)
+
+- **`pp_to_llj_dyn` scatter guard under `--map-split-angle soft-all`** (note
+  37 §6.3; the user's decision). As the default, `soft-all` halves llj's
+  evaluations but takes this cell's five-seed `χ²/dof` to 4.17 against 4.0.
+  Forty seeds at the gate's configuration read 0.91 under both maps
+  (`probe_llj_dyn_scatter_guard_calibration`), 1 of 8 quintets above 4.0
+  under `soft-all` against 0 under isotropic, the one being the gate's own; a
+  seed that reads low under every map drives it. Flipping the rule needs this
+  guard matched to its calibration first — never a higher limit.
+- **`pp_to_jj` samples flavour χ² under `--map-tau inverse-square`** (note
+  37 §6.3; the user's decision). MadEvent's `τ` rule measures 0.77 ± 0.03 of
+  the evaluations on dijets, but as the default it takes this cell's flavour
+  χ² against MadGraph's banked events to p 2.8e-5 on one seed (floor 1e-4;
+  three-seed sum 325 / 212, against 267 / 210 under the log map). Our own two
+  maps agree at χ² 40.5 / 47 on 200 000 events each, so the map does not move
+  the composition; the cell reads a fluctuation against a reference that
+  already sits high. The `τ` rule flips once the cell's statistic is matched
+  to its calibration — a larger generated sample, or a pooled-seed statistic —
+  never a lower floor.
 
 - **A nondeterministic heap-corruption abort under the proton-sample suite's
   concurrent load** (observed 2026-09-07, 1 run in 7; not caused by the sprint
@@ -654,7 +684,28 @@ coverage. What is left below is what still refuses, and why.
   the CPU block of `mg_timings.json` and `timings.json` is null. Read
   `/proc/cpuinfo` (model name, family / model / stepping, logical CPUs) and
   `/proc/meminfo` there.
-- **S5 — the phase-space map's lower edge lands on the cut edge** (note 34 §2).
+- **Absolute grid coordinates** (note 37 §5.2, user-requested option). Bin
+  each invariant's VEGAS coordinate on the absolute `s/s_tot` / `−t/s_tot`
+  scale with the draw restricted to the point's window, as MadEvent's
+  `sample_get_x` does, so a cut edge is a fixed grid location. Needs the
+  VEGAS↔channel contract inverted (the channel drives the grid a coordinate at
+  a time, eager path kept bit-identical) and every analytic map made a fixed
+  transform with the window inverted through it, so the mixture density stays
+  grid-free. Then `--map-grid-coords` and its `auto`. The payoff to look for
+  is on the cut-edge rows (`pp_to_llj`, `pp_to_jj`).
+- **Map follow-ups** (note 37 §4, §6). A one-sided `1/E_g` shape for
+  `q* → q g`, where the symmetric map shapes the quark end `P_qq` lacks
+  (`g g > g u u~` reads 1.02 ± 0.09 under `soft-all`). llj's own soft-gluon
+  structure is a `1/(ŝ − ŝ_rest)` on the spine's remainder invariant, which
+  competes with the `Z/γ*` pole on the same variable — a second channel per
+  spine if anything, preceded by the weight-tail decomposition binned in
+  `ŝ − ŝ_rest`. MadEvent's `tstrategy` ping-pong for ≥ 3-rung ladders
+  (untested: no gated row has one; two-rung reversal reads 1.01 ± 0.02).
+- **S5 — the phase-space map's lower edge lands on the cut edge** (note 34 §2;
+  partly answered by note 37 §6: confining the lepton pair's decay angle to the
+  cuts' energy window, and shaping it, halved llj's evaluations — remeasure
+  llj's time-to-accuracy against MadGraph with the new rules before sizing
+  what is left).
   With a small timelike floor the map's lower edge coincides with the fiducial
   boundary and concentrates the residual `ΔR`/`pT` weight there (`pp_to_llj`
   `m_ll [0,5)` var/σ 24.5 → 55.7). This is the named lever for what the
