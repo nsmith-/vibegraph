@@ -1443,6 +1443,20 @@ page and link resolved, so only the math rendering is unchecked.
 
 ### 8.3 Z1s
 
-_Placeholder for Z1s (per-flavour-group scale clustering in `proton.rs`, E1's
-finding, with the dynamic-scale hadronic σ rows re-measured): to be filled when it
-merges._
+Landed (note 40). There were two defects, not one:
+- A dynamic-scale hadronic point was clustered in the flavour group the sampler drew,
+  not in each group's own configurations.
+- A group's mirrored beam ordering took the direct ordering's scale.
+
+With both fixed:
+- Our own generated events replay their `SCALUP` 2000/2000 on `p p > t t~`
+  (decayed) and on `p p > l+ l- j`, up from 1379 and 1921.
+- MadEvent's own configuration draw is pinned per event: pull −1.83, against
+  −9.31 for the old reading, which the test asserts is rejected.
+- `pp_to_llj_dyn` moves from +0.18% to +0.005% over twenty seeds, and
+  `pp_to_llj` from +0.09% to +0.03%. Every other row is unchanged.
+- Fixed-scale output is byte-identical.
+- The full banked layer is unchanged at 183 ✅ / 7 ⚠️ / 4 ⏳.
+
+The build and gates on the merged tree were run by the manager, after the
+permission system denied the session's own build and the user approved running it.

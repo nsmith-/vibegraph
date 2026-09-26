@@ -241,10 +241,13 @@ listed in note 38 §8.
     (`Unsupported::DecayOnShellVeto`) where MadGraph accepts it.
   - **Sibling record order** follows the lowest outgoing leg here and MadGraph's
     configuration tag there; positions carry no physics, so no gate compares them.
-  - **A hadronic point's scale is clustered in the flavour group the sampler
-    drew**, not the one its event is labelled with (253 of 400 own events replay
-    their `SCALUP`; MadEvent's 300 all do). A per-group scale changes σ of
-    existing dynamic-scale cards; in progress separately (note 38 §8).
+  - ~~A hadronic point's scale clustered in the sampled flavour group~~: fixed,
+    together with the mirrored-ordering scale (note 40). `pp_to_llj_dyn` moves to
+    +0.005% of MadGraph; own events replay `SCALUP` 2000/2000.
+  - **`banked_outgoing_orderings` (validate_hadronic.rs) computes pT as
+    `momentum[0].hypot(momentum[1])`**, which is E and px under the `[E, px, py, pz]`
+    layout, so the η-ordering counts it reports are wrong. Found in the scale-fix
+    session and not fixed.
 - **`make_anti` negates every colour**: the model's antiparticle entries carry
   `color = -1/-8` for singlets and octets, where UFO's `anti()` leaves them. E1
   handles it locally (`member_line_pdg`); the model-level quirk is untouched and
