@@ -44,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 use tracing::{debug, info};
 
-use super::check::SupportedProcess;
+use super::check::{AmplitudeOrder, SupportedProcess};
 use super::diagram::{
     CanonicalDiagram, ChainNode, DecayOrigin, Diagram, Leg, LegIdx, OnShell, Prop, PropIdx, Ray,
     VtxIdx,
@@ -178,6 +178,14 @@ fn chain_sets(
         }
     }
 
+    if !process.chain_orders.is_empty() {
+        for s in &mut out {
+            s.set
+                .diagrams
+                .retain(|d| within_orders(d, &process.chain_orders, model));
+        }
+    }
+
     let n_out = out[0].set.particles_out.len();
     if let Some(other) = out.iter().find(|s| s.set.particles_out.len() != n_out) {
         return Err(refuse(format!(
@@ -205,6 +213,36 @@ fn chain_sets(
         }
     }
     Ok(out)
+}
+
+/// Whether a stitched diagram's coupling orders — the sum over its vertices, and
+/// `WEIGHTED` as the model's hierarchy weighs them — stay within a decay chain's
+/// overall orders. MadGraph removes a combined diagram exceeding any of them
+/// (`HelasMatrixElement.insert_decay_chains`, `helas_objects.py:3986`).
+fn within_orders(diagram: &Diagram, bounds: &[AmplitudeOrder], model: &UFOModel) -> bool {
+    let mut orders: HashMap<&str, i64> = HashMap::new();
+    for vertex in &diagram.vertices {
+        let def = model.vertex_def(vertex.interaction);
+        // A vertex carries one coupling-order tuple: the model splits a vertex
+        // whose couplings differ in their orders into one interaction per tuple.
+        if let Some(&coupling) = def.couplings.values().next() {
+            for (name, n) in &model.coupling_def(coupling).orders {
+                *orders.entry(name.as_str()).or_default() += *n as i64;
+            }
+        }
+    }
+    let weighted: i64 = orders
+        .iter()
+        .map(|(name, n)| n * model.order_hierarchy.get(*name).copied().unwrap_or(0) as i64)
+        .sum();
+    bounds.iter().all(|b| {
+        let have = if b.name == "WEIGHTED" {
+            weighted
+        } else {
+            orders.get(b.name.as_str()).copied().unwrap_or(0)
+        };
+        have <= b.value
+    })
 }
 
 /// One assignment of decays to decaying legs: `(final-state position, node, decay)` per leg.

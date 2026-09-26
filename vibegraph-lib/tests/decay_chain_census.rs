@@ -24,10 +24,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use vibegraph::diagrams::check::check_enumerable;
+use vibegraph::diagrams::check::check_supported;
 use vibegraph::diagrams::diagram::{OnShell, PropIdx};
 use vibegraph::diagrams::parse::parse_proc_card_ast;
-use vibegraph::diagrams::{generate_decay_chains, DiagramError, DiagramSet};
+use vibegraph::diagrams::{generate_from_proc_card, DiagramError, DiagramSet};
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::UFOModel;
 
@@ -132,11 +132,11 @@ fn stitch(card: &str, model: &UFOModel) -> Outcome {
         Ok(ast) => ast,
         Err(e) => return Outcome::Refused(e.to_string()),
     };
-    let card = match check_enumerable(&ast) {
+    let card = match check_supported(&ast) {
         Ok(c) => c,
         Err(e) => return Outcome::Refused(e.to_string()),
     };
-    match generate_decay_chains(&card, model) {
+    match generate_from_proc_card(&card, model) {
         Ok(sets) => Outcome::Sets(sets),
         Err(
             e @ (DiagramError::DecayChain { .. }

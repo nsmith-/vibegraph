@@ -2461,6 +2461,763 @@
    ]
   },
   {
+   "name": "ee_ttx_qed4",
+   "card": "generate e+ e- > t t~, t > w+ b, t~ > w- b~ @1 QED=4",
+   "warnings": [],
+   "matrix_elements": [
+    {
+     "diagrams": 2,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        -11,
+        11
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         -11,
+         11
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "e+ e- > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_ttx_qed2",
+   "card": "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=2",
+   "warnings": [],
+   "matrix_elements": [
+    {
+     "diagrams": 3,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        21,
+        21
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         21,
+         21
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "g g > t t~ QED<=2 @1 QED=2 \n  Decay: t > w+ b QED<=2 @0 QED=2 \n  Decay: t~ > w- b~ QED<=2 @0 QED=2"
+      }
+     ]
+    },
+    {
+     "diagrams": 1,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        2,
+        -2
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         2,
+         -2
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "u u~ > t t~ QED<=2 @1 QED=2 \n  Decay: t > w+ b QED<=2 @0 QED=2 \n  Decay: t~ > w- b~ QED<=2 @0 QED=2"
+      },
+      {
+       "initial": [
+        4,
+        -4
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         4,
+         -4
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "c c~ > t t~ QED<=2 @1 QED=2 \n  Decay: t > w+ b QED<=2 @0 QED=2 \n  Decay: t~ > w- b~ QED<=2 @0 QED=2"
+      },
+      {
+       "initial": [
+        1,
+        -1
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         1,
+         -1
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "d d~ > t t~ QED<=2 @1 QED=2 \n  Decay: t > w+ b QED<=2 @0 QED=2 \n  Decay: t~ > w- b~ QED<=2 @0 QED=2"
+      },
+      {
+       "initial": [
+        3,
+        -3
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         3,
+         -3
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "s s~ > t t~ QED<=2 @1 QED=2 \n  Decay: t > w+ b QED<=2 @0 QED=2 \n  Decay: t~ > w- b~ QED<=2 @0 QED=2"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_ttx_qed4",
+   "card": "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=4",
+   "warnings": [],
+   "matrix_elements": [
+    {
+     "diagrams": 3,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        21,
+        21
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         21,
+         21
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "g g > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      }
+     ]
+    },
+    {
+     "diagrams": 3,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        2,
+        -2
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         2,
+         -2
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "u u~ > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      },
+      {
+       "initial": [
+        4,
+        -4
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         4,
+         -4
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "c c~ > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      }
+     ]
+    },
+    {
+     "diagrams": 3,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        1,
+        -1
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         1,
+         -1
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "d d~ > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      },
+      {
+       "initial": [
+        3,
+        -3
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         3,
+         -3
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "s s~ > t t~ QED<=4 @1 QED=4 \n  Decay: t > w+ b QED<=4 @0 QED=4 \n  Decay: t~ > w- b~ QED<=4 @0 QED=4"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "pp_ttx_qcd0",
+   "card": "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QCD=0",
+   "warnings": [],
+   "matrix_elements": [
+    {
+     "diagrams": 2,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        2,
+        -2
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         2,
+         -2
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "u u~ > t t~ QCD=0 @1 QCD=0 \n  Decay: t > w+ b QCD=0 @0 QCD=0 \n  Decay: t~ > w- b~ QCD=0 @0 QCD=0"
+      },
+      {
+       "initial": [
+        4,
+        -4
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         4,
+         -4
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "c c~ > t t~ QCD=0 @1 QCD=0 \n  Decay: t > w+ b QCD=0 @0 QCD=0 \n  Decay: t~ > w- b~ QCD=0 @0 QCD=0"
+      }
+     ]
+    },
+    {
+     "diagrams": 2,
+     "identical_particle_factor": 1,
+     "processes": [
+      {
+       "initial": [
+        1,
+        -1
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         1,
+         -1
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "d d~ > t t~ QCD=0 @1 QCD=0 \n  Decay: t > w+ b QCD=0 @0 QCD=0 \n  Decay: t~ > w- b~ QCD=0 @0 QCD=0"
+      },
+      {
+       "initial": [
+        3,
+        -3
+       ],
+       "final": [
+        6,
+        -6
+       ],
+       "decays": [
+        {
+         "initial": [
+          6
+         ],
+         "final": [
+          24,
+          5
+         ],
+         "decays": []
+        },
+        {
+         "initial": [
+          -6
+         ],
+         "final": [
+          -24,
+          -5
+         ],
+         "decays": []
+        }
+       ],
+       "with_decays": {
+        "initial": [
+         3,
+         -3
+        ],
+        "final": [
+         24,
+         5,
+         -24,
+         -5
+        ]
+       },
+       "process": "s s~ > t t~ QCD=0 @1 QCD=0 \n  Decay: t > w+ b QCD=0 @0 QCD=0 \n  Decay: t~ > w- b~ QCD=0 @0 QCD=0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "ee_zz_qed3",
+   "card": "generate e+ e- > z z, z > e+ e-, z > mu+ mu- @1 QED=3",
+   "error": "InvalidCmd: No matrix elements generated, check overall coupling orders",
+   "warnings": []
+  },
+  {
    "name": "ee_ttx_unused_w",
    "card": "generate e+ e- > t t~, t > w+ b, w+ > e+ ve",
    "warnings": [

@@ -36,8 +36,8 @@ pub mod selector;
 
 pub use alias::AliasTable;
 pub use check::{
-    check_enumerable, check_supported, AmplitudeOrder, EnumerableCard, SupportedCard, SupportedLeg,
-    SupportedProcess, Unsupported, UnsupportedCard,
+    check_supported, AmplitudeOrder, SupportedCard, SupportedLeg, SupportedProcess, Unsupported,
+    UnsupportedCard,
 };
 pub use diagram::{ConvertError, Diagram};
 pub use parse::{
@@ -273,25 +273,6 @@ pub fn enumerate_decay(
         });
     }
     generate_from_process(decay, model)
-}
-
-/// Enumerate the diagrams of a card whose decay chains are accepted for enumeration
-/// only ([`check_enumerable`]), on a single thread.
-///
-/// A decay-chain line gives one [`DiagramSet`] per core subprocess and combination of
-/// decays, its final state with every decayed particle replaced by its products in place,
-/// and its diagrams stitched from the core's and the decays' separate enumerations: each
-/// decayed particle is an internal line flagged [`OnShell::Forced`], recorded with its
-/// decay-chain node in the diagram's [`Provenance`]. Every other line enumerates as
-/// [`generate_from_proc_card`] would.
-///
-/// [`OnShell::Forced`]: diagram::OnShell::Forced
-/// [`Provenance`]: diagram::Provenance
-pub fn generate_decay_chains(
-    card: &EnumerableCard,
-    model: &UFOModel,
-) -> Result<Vec<DiagramSet>, DiagramError> {
-    generate_from_proc_card(card.card(), model)
 }
 
 /// A leg as a subprocess's identity sees it: the particle and, for a

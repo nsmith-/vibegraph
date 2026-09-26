@@ -13,10 +13,7 @@ use super::compile::AmplitudeEvaluator;
 use super::root_diagram::compile_single_diagram;
 use super::run::BoundAmplitude;
 use crate::diagrams::diagram::{Diagram, VtxIdx};
-use crate::diagrams::{
-    check_enumerable, generate_decay_chains, generate_from_proc_card, parse_proc_card,
-    parse_proc_card_ast, DiagramSet, ParsingOptions,
-};
+use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
 use crate::helas::color::colorize::colorize_process;
 use crate::helas::LorentzVector;
 use crate::phasespace::rambo_massive;
@@ -180,15 +177,9 @@ fn census_processes() -> Vec<(String, Arc<UFOModel>, String)> {
     out
 }
 
-/// The diagram sets of one process line; a decay chain is stitched
-/// ([`generate_decay_chains`]).
+/// The diagram sets of one process line; a decay chain is stitched.
 pub(super) fn generate(process: &str, model: &UFOModel) -> Vec<DiagramSet> {
     let text = format!("generate {process}");
-    if process.contains(',') {
-        let ast = parse_proc_card_ast(&text).unwrap();
-        let card = check_enumerable(&ast).unwrap();
-        return generate_decay_chains(&card, model).unwrap();
-    }
     let opts = ParsingOptions::default();
     let card = parse_proc_card(&text, &opts).unwrap();
     generate_from_proc_card(&card, model).unwrap()

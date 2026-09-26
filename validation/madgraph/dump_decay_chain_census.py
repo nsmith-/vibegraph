@@ -155,6 +155,13 @@ CORPUS = [
     # Hadronic labels.
     ("pp_zj", "generate p p > z j, z > l+ l-"),
     ("pp_ttx", "generate p p > t t~, t > w+ b, t~ > w- b~"),
+    # Overall orders: each part's orders capped by them with its order search off,
+    # and the combined diagrams exceeding them removed.
+    ("ee_ttx_qed4", "generate e+ e- > t t~, t > w+ b, t~ > w- b~ @1 QED=4"),
+    ("pp_ttx_qed2", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=2"),
+    ("pp_ttx_qed4", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QED=4"),
+    ("pp_ttx_qcd0", "generate p p > t t~, t > w+ b, t~ > w- b~ @1 QCD=0"),
+    ("ee_zz_qed3", "generate e+ e- > z z, z > e+ e-, z > mu+ mu- @1 QED=3"),
     # A decay whose particle the core does not have: MadGraph drops it with a warning.
     ("ee_ttx_unused_w", "generate e+ e- > t t~, t > w+ b, w+ > e+ ve"),
     # A decay with more than one initial particle.

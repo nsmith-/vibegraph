@@ -27,7 +27,7 @@ use crate::diagrams::check::check_supported;
 use crate::diagrams::diagram::{CanonicalDiagram, Diagram, OnShell};
 use crate::diagrams::parse::parse_proc_card_ast;
 use crate::diagrams::schannel::{match_resonances, Resonance};
-use crate::diagrams::{DiagramSet, Unsupported};
+use crate::diagrams::DiagramSet;
 use crate::ufo::sm::{sm_model, SMRestrict};
 use crate::ufo::{EvaluatedModel, UFOModel};
 
@@ -370,14 +370,13 @@ fn stitched_chains_are_the_filtered_final_state() {
     assert!(failures.is_empty(), "{} stitching failures", failures.len());
 }
 
-/// Enumeration accepts a decay chain; integration still refuses it, with the one
-/// variant that says what is missing.
+/// A decay chain passes the one check: its diagrams, windows and integration are all
+/// supported.
 #[test]
-fn decay_chains_enumerate_but_do_not_integrate() {
+fn decay_chains_pass_the_check() {
     let ast = parse_proc_card_ast("generate e+ e- > t t~, t > w+ b, t~ > w- b~").unwrap();
-    let refused = check_supported(&ast).unwrap_err().0;
-    assert!(matches!(refused[..], [Unsupported::DecayChain { .. }]));
-    assert!(crate::diagrams::check_enumerable(&ast).is_ok());
+    let card = check_supported(&ast).unwrap();
+    assert_eq!(card.processes[0].decays.len(), 2);
 }
 
 /// Identical particles between a decay's products and the core's own final state, where
@@ -388,11 +387,11 @@ fn decay_chains_enumerate_but_do_not_integrate() {
 /// refuses rather than choose.
 #[test]
 fn an_ambiguous_forced_line_is_refused() {
-    use crate::diagrams::{check_enumerable, generate_decay_chains, DiagramError};
+    use crate::diagrams::{generate_from_proc_card, DiagramError};
     let model = sm_model(SMRestrict::Default);
     let ast = parse_proc_card_ast("generate e+ e- > z e+ e-, z > e+ e-").unwrap();
-    let card = check_enumerable(&ast).unwrap();
-    match generate_decay_chains(&card, &model) {
+    let card = check_supported(&ast).unwrap();
+    match generate_from_proc_card(&card, &model) {
         Err(DiagramError::DecayChain { reason, .. }) => {
             assert!(reason.contains("ambiguous"), "{reason}")
         }
