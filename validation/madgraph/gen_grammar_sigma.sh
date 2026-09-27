@@ -17,7 +17,11 @@
 #   wp_wm        e+ e- > w+ w-              the sum the two polarizations add to
 #
 # One MadEvent run is one draw: the seeds are what a gate reads the spread
-# from, beside the error each run quotes.
+# from, beside the error each run quotes. The gate is validate_sigma's
+# the_grammar_rows_match_madevents_seeds, which integrates each row on the card
+# of the bundled run of its restricted process (ee_to_mumu_zonly, ee_to_ee_nsz,
+# ee_to_wp0wm) and checks that card against the overrides recorded here, so a
+# change of overrides has to be made on those rows' scripts too.
 #
 # Only the per-seed scalars are committed (grammar_sigma_reference.json). The
 # process directories and runs stay in GRAMMAR_SIGMA_WORK (default

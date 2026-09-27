@@ -717,6 +717,24 @@ fn plan_for(dir: &str) -> Plan {
                      of both signs and not shrinking with it, while the five-seed mean holds \
                      inside 1.1% of the bank",
         },
+        // ── the process-line restrictions and polarized legs ────────────────
+        // Their banked cross section here is one MadEvent run. The seeded
+        // reference for the same card is what `the_grammar_rows_match_madevents_seeds`
+        // gates, so a second cell from one run would only restate it with a
+        // quoted error the seed policy does not read.
+        "ee_to_mumu_zonly" | "ee_to_ee_nsz" | "ee_to_wp0wm" => Plan::Skip(
+            "superseded by the five-seed MadEvent reference in grammar_sigma_reference.json, \
+             gated by the_grammar_rows_match_madevents_seeds",
+        ),
+        // The polarized rows other than `ee_to_wp0wm`: the manifest covers their
+        // cross sections by that row's seeded reference, and what each adds over
+        // it -- its NHEL table, its averaging factor, its frame -- is gated per
+        // amplitude and by `polarization_census`. `probe_polarized_single_runs`
+        // reads each against its one banked run.
+        "ee_to_wp0wmt" | "ee_to_z0h" | "uux_to_ztg" | "ee_to_mumu_eml" | "ee_to_tlt" => Plan::Skip(
+            "covered by ee_to_wp0wm's seeded reference; this row's banked sigma is a \
+                 single MadEvent run, which the seed policy does not read as a reference",
+        ),
         _ => Plan::Skip("no evaluation plan for this directory"),
     }
 }
@@ -4443,6 +4461,500 @@ fn probe_channel_dedup_census() {
             histogram.join(" "),
             built.len() * vibegraph::budget::MIN_CHANNEL_NEVAL,
             classes.len() * vibegraph::budget::MIN_CHANNEL_NEVAL,
+        );
+    }
+}
+
+// ───────────── the process-line restrictions and polarized legs ─────────────
+
+/// `validation/madgraph/grammar_sigma_reference.json`: MadEvent's cross sections
+/// for `> A`, `$$ A` and polarized-leg process lines beside the unrestricted
+/// processes they are subsets of, one run per `iseed`.
+#[derive(Deserialize)]
+struct SeededReference {
+    mg_version: String,
+    rows: BTreeMap<String, SeededRow>,
+}
+
+#[derive(Deserialize)]
+struct SeededRow {
+    process: String,
+    run_card: String,
+    overrides: String,
+    runs: Vec<SeededRun>,
+}
+
+#[derive(Deserialize)]
+struct SeededRun {
+    iseed: u64,
+    sigma_pb: f64,
+    err_pb: f64,
+}
+
+fn grammar_reference() -> SeededReference {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/grammar_sigma_reference.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    serde_json::from_str(&text).expect("grammar_sigma_reference.json parses")
+}
+
+/// Inverse-variance mean of `(value, error)` pairs and its error.
+fn inverse_variance_mean(values: &[(f64, f64)]) -> (f64, f64) {
+    let w: f64 = values.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+    let m = values.iter().map(|(v, e)| v / (e * e)).sum::<f64>() / w;
+    (m, 1.0 / w.sqrt())
+}
+
+/// The seeds' sample standard deviation.
+fn seed_spread(values: &[(f64, f64)]) -> f64 {
+    let n = values.len() as f64;
+    let m = values.iter().map(|(v, _)| v).sum::<f64>() / n;
+    (values.iter().map(|(v, _)| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+}
+
+/// A seeded estimate as the manifest's seed policy reads it: the inverse-variance
+/// mean, with an error no smaller than the seeds' own spread allows.
+fn policy_mean(values: &[(f64, f64)]) -> (f64, f64) {
+    let (m, quoted) = inverse_variance_mean(values);
+    (
+        m,
+        quoted.max(seed_spread(values) / (values.len() as f64).sqrt()),
+    )
+}
+
+/// χ²/dof of `values` about their inverse-variance mean: how well the errors the
+/// seeds quote describe their scatter.
+fn seed_chi2_per_dof(values: &[(f64, f64)]) -> f64 {
+    let (m, _) = inverse_variance_mean(values);
+    let chi2: f64 = values.iter().map(|(v, e)| ((v - m) / e).powi(2)).sum();
+    chi2 / (values.len() - 1) as f64
+}
+
+/// Integration seeds per grammar entry on this side.
+const GRAMMAR_SEEDS: [u64; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+/// Points per iteration and iterations for every grammar entry.
+///
+/// Set from a twenty-seed sweep per entry at a quarter, one, four and sixteen
+/// times 40 000 × 6 (`probe_grammar_seed_sweep`). Every entry but one scatters
+/// about a mean that does not move with budget. The exception is
+/// `e+ e- > e+ e- $$ z`, whose twenty-seed mean climbs with budget and then holds:
+/// 156.71 ± 0.17, 157.25 ± 0.09, 157.55 ± 0.05 and 157.54 ± 0.02 pb, with seed
+/// χ²/dof 2.23 and 1.80 on the two lower rungs against 1.22 and 1.53 above. That
+/// is an under-sampled region losing weight at low budget and recovering it, the
+/// same way MadEvent's own seeds of this process do (one of its five reads
+/// 156.48 where the other four read 157.26–157.53). Four times the base budget
+/// is the lowest rung on the plateau, and it costs a fraction of a second per
+/// seed on these 2 → 2 rows.
+const GRAMMAR_NEVAL: usize = 160_000;
+const GRAMMAR_NITER: usize = 6;
+
+/// One reference row of [`grammar_reference`] and the manifest row whose
+/// `integrals` cell it is written under.
+struct GrammarEntry {
+    /// Key in `grammar_sigma_reference.json`.
+    reference: &'static str,
+    /// The manifest row. Its banked run is one of MadEvent's runs of the
+    /// restricted process on the card MadGraph generates for it, so its `Cards/`
+    /// are the run and parameter cards the seeded reference ran on; the
+    /// unrestricted control of the same final state ran on the same generated
+    /// card, which is checked against the reference's overrides before use.
+    row: &'static str,
+    /// `None` for the row's own process; the unrestricted control's label
+    /// otherwise.
+    variant: Option<&'static str>,
+}
+
+const GRAMMAR_ENTRIES: [GrammarEntry; 7] = [
+    GrammarEntry {
+        reference: "ee_z_only",
+        row: "ee_to_mumu_zonly",
+        variant: None,
+    },
+    GrammarEntry {
+        reference: "ee_mumu",
+        row: "ee_to_mumu_zonly",
+        variant: Some("unrestricted"),
+    },
+    GrammarEntry {
+        reference: "ee_no_sz",
+        row: "ee_to_ee_nsz",
+        variant: None,
+    },
+    GrammarEntry {
+        reference: "ee_ee",
+        row: "ee_to_ee_nsz",
+        variant: Some("unrestricted"),
+    },
+    GrammarEntry {
+        reference: "wp0_wm",
+        row: "ee_to_wp0wm",
+        variant: None,
+    },
+    GrammarEntry {
+        reference: "wpt_wm",
+        row: "ee_to_wp0wm",
+        variant: Some("transverse"),
+    },
+    GrammarEntry {
+        reference: "wp_wm",
+        row: "ee_to_wp0wm",
+        variant: Some("unpolarized"),
+    },
+];
+
+/// The seed mean against MadEvent's, in combined standard errors.
+const GRAMMAR_MEAN_PULL_LIMIT: f64 = 3.0;
+/// Any one seed against MadEvent's mean.
+const GRAMMAR_SEED_PULL_LIMIT: f64 = 4.0;
+/// This side's seeds about their own inverse-variance mean. Nine degrees of
+/// freedom put the 0.1% and 99.9% points of χ²/dof at 0.13 and 3.10.
+const GRAMMAR_SEED_CHI2_RANGE: (f64, f64) = (0.13, 3.1);
+
+/// Assert the bundled row's run card is the one the reference names: MadGraph's
+/// generated card with the reference's own overrides.
+fn check_grammar_card(entry: &GrammarEntry, row: &SeededRow) {
+    assert_eq!(
+        row.run_card, "generated default",
+        "[{}] the reference ran on a card other than MadGraph's generated one",
+        entry.reference
+    );
+    // Five distinct seeds, the policy's floor: a generator that formatted every
+    // seed alike would bank one run five times and a spread of zero.
+    let seeds: BTreeSet<u64> = row.runs.iter().map(|r| r.iseed).collect();
+    assert!(
+        seeds.len() == row.runs.len() && seeds.len() >= 5,
+        "[{}] {} runs over {} distinct seeds",
+        entry.reference,
+        row.runs.len(),
+        seeds.len()
+    );
+    let card = RunCard::parse_file(&output_dir().join(entry.row).join("Cards/run_card.dat"))
+        .unwrap_or_else(|e| panic!("[{}] run card: {e}", entry.row));
+    for pair in row.overrides.split(';').filter(|kv| !kv.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap();
+        let value: f64 = value.parse().unwrap();
+        let banked = match key {
+            "ebeam1" => card.ebeam1,
+            "ebeam2" => card.ebeam2,
+            "nevents" => card.nevents as f64,
+            other => panic!("[{}] no check for the override {other}", entry.reference),
+        };
+        assert_eq!(
+            banked, value,
+            "[{}] {key} is {banked} on {}'s card and {value} in the reference",
+            entry.reference, entry.row
+        );
+    }
+}
+
+/// This side's seeds of one grammar entry.
+struct GrammarMeasurement {
+    per_seed: Vec<(f64, f64)>,
+    subsampler: Vec<ChannelSummary>,
+}
+
+impl GrammarMeasurement {
+    fn take(entry: &GrammarEntry, process: &str) -> Self {
+        let mut subsampler = Vec::new();
+        let per_seed = GRAMMAR_SEEDS
+            .iter()
+            .map(|&seed| {
+                let (s, e, _, summary) =
+                    integrate_reported(entry.row, process, GRAMMAR_NEVAL, GRAMMAR_NITER, seed);
+                if subsampler.is_empty() {
+                    subsampler = summary;
+                }
+                (s, e)
+            })
+            .collect();
+        GrammarMeasurement {
+            per_seed,
+            subsampler,
+        }
+    }
+
+    fn mean(&self) -> (f64, f64) {
+        policy_mean(&self.per_seed)
+    }
+}
+
+/// MadEvent's seeds of a reference row, read by the manifest's seed policy.
+fn madevent_seeds(row: &SeededRow) -> (f64, f64) {
+    let runs: Vec<(f64, f64)> = row.runs.iter().map(|r| (r.sigma_pb, r.err_pb)).collect();
+    policy_mean(&runs)
+}
+
+/// `(a - b)` over their combined error.
+fn separation((a, ea): (f64, f64), (b, eb): (f64, f64)) -> f64 {
+    (a - b) / (ea * ea + eb * eb).sqrt()
+}
+
+/// The `>`, `$$` and polarized-leg cross sections against MadEvent's own seeds,
+/// each beside the unrestricted process it is a subset of.
+///
+/// Every entry is read the way the manifest's seed policy reads a MadEvent
+/// reference — the seeds' inverse-variance mean with an error no smaller than
+/// their spread allows — on both sides: MadEvent's five seeds from
+/// `grammar_sigma_reference.json`, and [`GRAMMAR_SEEDS`] here. The gate asserts
+/// the pull of the two means, each of this side's seeds against MadEvent's mean,
+/// and that this side's seeds scatter the way their own errors say. The quoted
+/// errors are not what MadEvent's references are read by: on Bhabha scattering
+/// its seeds sit at χ²/dof 93 (`e+ e- > e+ e-`) and 20 (`$$ z`) about their
+/// mean, one or two seeds per row landing 1% low.
+///
+/// # The controls
+///
+/// The unrestricted processes are measured alongside, on the same card and
+/// written as variants of the restricted row's cell, for two reasons. They are
+/// the known-wrong comparison: a restriction that removed nothing reads its
+/// control, and the gate asserts that this side's control mean would fail the
+/// restricted reference — a factor of eight on `> z`, 21 on `w+{0}`, and on
+/// `$$ z` a 0.9% shift that this side's precision resolves at about seven
+/// standard errors of the reference. And they locate a disagreement: a residual
+/// that the restricted row and its control share belongs to the process or the
+/// card, one the restricted row carries alone belongs to the restriction.
+///
+/// The polarized decomposition `w+{0} + w+{T} = w+ w-` is asserted on both
+/// sides. On this side it is a pointwise identity of three independent
+/// integrations; on MadEvent's it checks the reference against itself.
+///
+/// # What this cannot see
+///
+/// Which diagrams a restriction keeps (the diagram census and the `diagrams`
+/// cells), and anything a cross section cannot: a restriction that reshapes the
+/// distribution while conserving its integral is the `samples` cells' business.
+#[test]
+fn the_grammar_rows_match_madevents_seeds() {
+    let reference = grammar_reference();
+    let unbundled = common::manifest::unbundled_rows();
+    let mut failures = Vec::new();
+    let mut ours: BTreeMap<&str, (f64, f64)> = BTreeMap::new();
+    let mut theirs: BTreeMap<&str, (f64, f64)> = BTreeMap::new();
+    for entry in &GRAMMAR_ENTRIES {
+        match run_presence(entry.row, &unbundled) {
+            RunPresence::Present => {}
+            RunPresence::AwaitingBundle | RunPresence::Missing => vibegraph::validation::require(
+                "the_grammar_rows_match_madevents_seeds",
+                "a banked run card",
+                entry.row,
+            ),
+        }
+        let clock = Stopwatch::start();
+        let row = &reference.rows[entry.reference];
+        check_grammar_card(entry, row);
+        let mg = madevent_seeds(row);
+        let measured = GrammarMeasurement::take(entry, &row.process);
+        let here = measured.mean();
+        let chi2 = seed_chi2_per_dof(&measured.per_seed);
+        let pull = separation(here, mg);
+        let rel = here.0 / mg.0 - 1.0;
+        let worst_seed = measured
+            .per_seed
+            .iter()
+            .map(|&s| separation(s, mg))
+            .fold(0.0f64, |a, p| if p.abs() > a.abs() { p } else { a });
+        eprintln!(
+            "[{} / {}] {} (MadGraph {}): here {:.6e} ± {:.1e} over {} seeds at {}x{}, \
+             χ²/dof {chi2:.2}, worst seed pull {worst_seed:+.2} | MadEvent {:.6e} ± {:.1e} \
+             over {} seeds | rel {rel:+.3e}, pull {pull:+.2}",
+            entry.row,
+            entry.variant.unwrap_or("default"),
+            row.process,
+            reference.mg_version,
+            here.0,
+            here.1,
+            GRAMMAR_SEEDS.len(),
+            GRAMMAR_NEVAL,
+            GRAMMAR_NITER,
+            mg.0,
+            mg.1,
+            row.runs.len(),
+        );
+        let mut problems = Vec::new();
+        if pull.abs() > GRAMMAR_MEAN_PULL_LIMIT {
+            problems.push(format!("seed-mean pull {pull:+.2}"));
+        }
+        if worst_seed.abs() > GRAMMAR_SEED_PULL_LIMIT {
+            problems.push(format!("a seed at pull {worst_seed:+.2}"));
+        }
+        if !(GRAMMAR_SEED_CHI2_RANGE.0..GRAMMAR_SEED_CHI2_RANGE.1).contains(&chi2) {
+            problems.push(format!("this side's seeds at χ²/dof {chi2:.2}"));
+        }
+        let status = if problems.is_empty() { "pass" } else { "fail" };
+        if !problems.is_empty() {
+            failures.push(format!(
+                "[{} / {}] {}: {}",
+                entry.row,
+                entry.variant.unwrap_or("default"),
+                row.process,
+                problems.join(", ")
+            ));
+        }
+
+        let mut cell = IntegralsRow::new(entry.row, &row.process, "gate");
+        if let Some(variant) = entry.variant {
+            cell = cell.with_variant(variant);
+        }
+        cell.status = status;
+        cell.sigma_vg_pb = here.0;
+        cell.sigma_vg_err_pb = here.1;
+        cell.sigma_mg_pb = mg.0;
+        cell.sigma_mg_err_pb = mg.1;
+        cell.pull = pull;
+        cell.rel = rel;
+        cell.chi2_dof = chi2;
+        cell.seeds = GRAMMAR_SEEDS.to_vec();
+        cell.per_seed = GRAMMAR_SEEDS
+            .iter()
+            .zip(&measured.per_seed)
+            .map(|(&seed, &(sigma_pb, sigma_err_pb))| SeedResult {
+                seed,
+                sigma_pb,
+                sigma_err_pb,
+            })
+            .collect();
+        cell.neval = GRAMMAR_NEVAL;
+        cell.niter = GRAMMAR_NITER;
+        cell.subsampler = measured.subsampler;
+        cell.note = Some(format!(
+            "against MadEvent's {} seeds (grammar_sigma_reference.json), read as their \
+             inverse-variance mean with an error no smaller than their spread allows",
+            row.runs.len()
+        ));
+        cell.duration_s = Some(clock.seconds());
+        cell.write();
+        ours.insert(entry.reference, here);
+        theirs.insert(entry.reference, mg);
+    }
+
+    // A restriction that removed nothing would read its control: this side's
+    // control has to fail the restricted reference.
+    for (restricted, control) in [
+        ("ee_z_only", "ee_mumu"),
+        ("ee_no_sz", "ee_ee"),
+        ("wp0_wm", "wp_wm"),
+        ("wpt_wm", "wp_wm"),
+    ] {
+        let p = separation(ours[control], theirs[restricted]);
+        eprintln!(
+            "[{restricted}] this side's unrestricted {control} against its reference: \
+             pull {p:+.1}"
+        );
+        if p.abs() <= 2.0 * GRAMMAR_MEAN_PULL_LIMIT {
+            failures.push(format!(
+                "[{restricted}] the unrestricted {control} reads {p:+.1} against the \
+                 restricted reference, so a restriction that removed nothing would pass"
+            ));
+        }
+    }
+
+    // The two W+ polarizations add up to the unpolarized process, on each side.
+    for (side, values) in [("here", &ours), ("MadEvent", &theirs)] {
+        let (l, el) = values["wp0_wm"];
+        let (t, et) = values["wpt_wm"];
+        let (u, eu) = values["wp_wm"];
+        let p = (l + t - u) / (el * el + et * et + eu * eu).sqrt();
+        eprintln!(
+            "[w+ polarizations] {side}: {l:.6e} + {t:.6e} = {:.6e} against {u:.6e}, \
+             pull {p:+.2}",
+            l + t
+        );
+        if p.abs() > GRAMMAR_MEAN_PULL_LIMIT {
+            failures.push(format!(
+                "[w+ polarizations] {side}: w+{{0}} + w+{{T}} - w+ w- at pull {p:+.2}"
+            ));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "grammar gate failures:\n{}",
+        failures.join("\n")
+    );
+}
+
+/// The sweep behind [`GRAMMAR_NEVAL`]: twenty seeds per grammar entry at a
+/// quarter, one, four and sixteen times 40 000 × 6, each rung read as a mean,
+/// a spread and a χ²/dof against MadEvent's seeds. A residual that is sampling
+/// shrinks with budget; a defect migrates between seeds at fixed size. Run with
+/// `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_grammar_seed_sweep() {
+    let reference = grammar_reference();
+    for scale in [0.25, 1.0, 4.0, 16.0] {
+        let neval = (40_000.0 * scale) as usize;
+        for entry in &GRAMMAR_ENTRIES {
+            let row = &reference.rows[entry.reference];
+            let mg = madevent_seeds(row);
+            let t = std::time::Instant::now();
+            let ours: Vec<(f64, f64)> = (1..=20)
+                .map(|seed| {
+                    let (s, e, _) = integrate(entry.row, &row.process, neval, 6, seed);
+                    (s, e)
+                })
+                .collect();
+            let (mean, err) = inverse_variance_mean(&ours);
+            let spread = seed_spread(&ours);
+            let worst = ours
+                .iter()
+                .map(|&s| separation(s, mg).abs())
+                .fold(0.0f64, f64::max);
+            eprintln!(
+                "GRAMMAR {:<9} {neval:>6}x6 x20 ({:.1} s): here {mean:.6e} ± {err:.2e} \
+                 (seed spread {:.2e} rel, mean quoted {:.2e}), χ²/dof {:.2} | MadEvent \
+                 {:.6e} ± {:.2e} | rel {:+.3e}, pull {:+.2}, worst seed |pull| {worst:.2}",
+                entry.reference,
+                t.elapsed().as_secs_f64(),
+                spread / mean,
+                ours.iter().map(|(_, e)| e).sum::<f64>() / ours.len() as f64,
+                seed_chi2_per_dof(&ours),
+                mg.0,
+                mg.1,
+                mean / mg.0 - 1.0,
+                separation((mean, err), mg),
+            );
+        }
+    }
+}
+
+/// The five polarized rows whose cross sections the manifest covers by
+/// `ee_to_wp0wm`, each against its own banked MadEvent run: ten seeds here
+/// against one run there, whose quoted error the seed policy does not read as a
+/// reference — so this is a reading, not a gate. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_polarized_single_runs() {
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+    for dir in [
+        "ee_to_wp0wmt",
+        "ee_to_z0h",
+        "uux_to_ztg",
+        "ee_to_mumu_eml",
+        "ee_to_tlt",
+    ] {
+        let e = &banked[dir];
+        let ours: Vec<(f64, f64)> = GRAMMAR_SEEDS
+            .iter()
+            .map(|&seed| {
+                let (s, err, _) = integrate(dir, &e.process, GRAMMAR_NEVAL, GRAMMAR_NITER, seed);
+                (s, err)
+            })
+            .collect();
+        let here = policy_mean(&ours);
+        let (pull, rel) = compare(here.0, here.1, e);
+        eprintln!(
+            "POLARIZED {dir:<15} {}: here {:.6e} ± {:.1e} (χ²/dof {:.2}) | one MadEvent run \
+             {:.6e} ± {:.1e} | rel {rel:+.3e}, pull {pull:+.2}",
+            e.process,
+            here.0,
+            here.1,
+            seed_chi2_per_dof(&ours),
+            e.sigma_pb,
+            e.sigma_err_pb,
         );
     }
 }

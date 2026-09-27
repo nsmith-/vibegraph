@@ -96,7 +96,7 @@ use vibegraph::validation::samples::{
 mod common;
 
 use common::report::{
-    CategoryCount, Chi2Cell, FieldCell, KsCell, SamplesRow, SeedSample, Stopwatch,
+    CategoryCount, Chi2Cell, FieldCell, KsCell, PolarizedLegCell, SamplesRow, SeedSample, Stopwatch,
 };
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
@@ -122,7 +122,7 @@ const MAX_TRIALS_PER_EVENT: usize = 400;
 /// The p-value a column must clear.
 ///
 /// Chosen from the trial count, not from taste. A run takes the smallest p over
-/// every observable of every gating row on every seed: twenty-nine fixed-beam rows
+/// every observable of every gating row on every seed: forty-two fixed-beam rows
 /// and four proton ones, three seeds and seven to twenty-one observables each, and
 /// the observables of a `2 → 2` row are heavily correlated (both legs' `pT` are one
 /// number at fixed beams), so the draws from the null distribution number a few
@@ -470,7 +470,156 @@ const ROWS: &[Row] = &[
         niter: 5,
         mode: "gate",
     },
+    // ── the process-line restrictions ──
+    // `> z` and `$$ z` select diagrams, so what a sample adds over the cross
+    // section is the shape of what they keep: the Z term alone without its
+    // gamma-Z interference, whose forward-backward asymmetry is a shape and not a
+    // normalisation, and Bhabha scattering with its s-channel Z removed and the
+    // t-channel Z kept.
+    Row {
+        key: "ee_to_mumu_zonly",
+        process: "e+ e- > z > mu+ mu-",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_ee_nsz",
+        process: "e+ e- > e+ e- $$ z",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    // ── the polarized rows ──
+    // A polarized leg's `SPINUP` is fixed by the process line rather than drawn,
+    // and the unpolarized legs beside it are drawn from the restricted helicity
+    // sum; [`POLARIZED_LEGS`] checks the first on every event of both samples,
+    // and the `SPINUP` column's χ² the second.
+    Row {
+        key: "ee_to_wp0wm",
+        process: "e+ e- > w+{0} w-",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_wp0wmt",
+        process: "e+ e- > w+{0} w-{T}",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_z0h",
+        process: "e+ e- > z{0} h",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "uux_to_ztg",
+        process: "u u~ > z{T} g",
+        neval: 30_000,
+        niter: 5,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_mumu_eml",
+        process: "e+ e-{L} > mu+ mu-",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
+    Row {
+        key: "ee_to_tlt",
+        process: "e+ e- > t{L} t~",
+        neval: 20_000,
+        niter: 4,
+        mode: "gate",
+    },
 ];
+
+/// Every polarized leg of the rows above: the row, the leg's PDG code (unique in
+/// its event) and the `SPINUP` values its restriction allows — `{0}` the
+/// longitudinal state, `{T}` both transverse ones, `{L}` helicity −1.
+///
+/// Checked on every event of both samples. The `SPINUP` χ² alone could not
+/// carry this: it compares the joint helicity assignment's frequencies and
+/// pools categories too rare to test, so a small share of events at a forbidden
+/// helicity could sit in a pooled bin on one side. A count of events outside
+/// the allowed set cannot.
+const POLARIZED_LEGS: &[(&str, i32, &[f64])] = &[
+    ("ee_to_wp0wm", 24, &[0.0]),
+    ("ee_to_wp0wmt", 24, &[0.0]),
+    ("ee_to_wp0wmt", -24, &[-1.0, 1.0]),
+    ("ee_to_z0h", 23, &[0.0]),
+    ("uux_to_ztg", 23, &[-1.0, 1.0]),
+    ("ee_to_mumu_eml", 11, &[-1.0]),
+    ("ee_to_tlt", 6, &[-1.0]),
+];
+
+/// The events of `sample` carrying leg `pdg`, and how many of those carry it at
+/// a `SPINUP` outside `allowed`.
+fn polarized_leg_count(sample: &EventSample, pdg: i32, allowed: &[f64]) -> (usize, usize) {
+    let mut carrying = 0;
+    let mut outside = 0;
+    for event in &sample.events {
+        let legs: Vec<_> = event.particles.iter().filter(|p| p.pdg == pdg).collect();
+        if legs.is_empty() {
+            continue;
+        }
+        carrying += 1;
+        if legs.iter().any(|p| !allowed.contains(&p.spin)) {
+            outside += 1;
+        }
+    }
+    (carrying, outside)
+}
+
+/// The check [`POLARIZED_LEGS`] applies, on MadGraph's own banked samples: every
+/// polarized row's reference carries its polarized leg on every event at an
+/// allowed helicity, and the same check on the unpolarized banked run of the same
+/// leg finds it outside the restriction — so the count is evidence of a
+/// restriction and not of a column that could not have been anything else.
+#[test]
+fn the_polarized_legs_carry_only_their_restricted_helicities() {
+    let controls = [
+        ("ee_to_wp0wm", "ee_to_wpwm"),
+        ("ee_to_wp0wmt", "ee_to_wpwm"),
+        ("ee_to_z0h", "ee_to_zh"),
+        ("ee_to_mumu_eml", "ee_to_mumu"),
+        ("ee_to_tlt", "ee_to_ttx"),
+    ];
+    for &(key, pdg, allowed) in POLARIZED_LEGS {
+        let mg = banked_sample(key);
+        let (carrying, outside) = polarized_leg_count(&mg, pdg, allowed);
+        eprintln!(
+            "[{key}] MadGraph: {pdg} on {carrying} of {} events, {outside} outside {allowed:?}",
+            mg.len()
+        );
+        assert_eq!(
+            carrying,
+            mg.len(),
+            "[{key}] leg {pdg} missing from some events"
+        );
+        assert_eq!(outside, 0, "[{key}] leg {pdg} outside {allowed:?}");
+        if let Some(&(_, control)) = controls.iter().find(|(k, _)| *k == key) {
+            let unpolarized = banked_sample(control);
+            let (c, o) = polarized_leg_count(&unpolarized, pdg, allowed);
+            eprintln!("[{key}] control {control}: {o} of {c} events outside {allowed:?}");
+            assert!(
+                o > 0,
+                "[{key}] the unpolarized {control} is not told apart: {o} of {c} outside"
+            );
+        }
+    }
+    // `uux_to_ztg`'s `{T}` has no banked unpolarized `Z` beside a gluon, and
+    // `ee_to_zh`'s is the control a transverse restriction has to reject.
+    let zh = banked_sample("ee_to_zh");
+    let (c, o) = polarized_leg_count(&zh, 23, &[-1.0, 1.0]);
+    eprintln!("[uux_to_ztg] control ee_to_zh: {o} of {c} events outside [-1.0, 1.0]");
+    assert!(o > 0, "ee_to_zh's Z is never longitudinal: {o} of {c}");
+}
 
 /// Why the six colour-toy rows report no `AQCDUP` and MadGraph's records do.
 ///
@@ -888,8 +1037,40 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
             report.mg_events = mg.len();
             report.sigma_mg_pb = mg.sigma_pb;
             let mut labelling = None;
+            let mut polarized_outside = 0usize;
             for &seed in &GEN_SEEDS {
                 let ours = generate(integ, records, run_card, &mut uw, seed);
+                for &(_, pdg, allowed) in POLARIZED_LEGS.iter().filter(|l| l.0 == row.key) {
+                    let (ours_events, ours_outside) = polarized_leg_count(&ours, pdg, allowed);
+                    let (theirs_events, theirs_outside) = polarized_leg_count(&mg, pdg, allowed);
+                    eprintln!(
+                        "  seed {seed:#010x} | polarized {pdg}: {ours_outside} of {ours_events} \
+                         events outside {allowed:?} here, {theirs_outside} of {theirs_events} \
+                         in MadGraph's"
+                    );
+                    let cell = PolarizedLegCell {
+                        pdg,
+                        allowed: allowed.to_vec(),
+                        ours_events,
+                        ours_outside,
+                        theirs_events,
+                        theirs_outside,
+                    };
+                    let whole = ours_events == ours.len() && theirs_events == mg.len();
+                    if !whole || ours_outside + theirs_outside > 0 {
+                        polarized_outside += 1;
+                        let line = format!(
+                            "[{}] seed {seed:#010x} polarized leg {pdg}: {cell:?}",
+                            row.key
+                        );
+                        if row.mode == "gate" {
+                            failures.push(line);
+                        } else {
+                            informational.push(line);
+                        }
+                    }
+                    report.polarized_legs.push(cell);
+                }
                 if ours.len() < EVENTS_PER_SEED {
                     failures.push(format!(
                         "[{}] seed {seed:#010x} produced {} of {EVENTS_PER_SEED} events",
@@ -952,7 +1133,7 @@ fn unweighted_samples_agree_with_madgraphs_banked_ones() {
                     let outgoing = report.min_ks_p >= P_FLOOR && report.min_chi2_p >= P_FLOOR;
                     let legs = beams != "gate" || report.beams_agree(P_FLOOR);
                     let reported = scales != "gate" || report.scales_agree(P_FLOOR);
-                    if outgoing && legs && reported {
+                    if outgoing && legs && reported && polarized_outside == 0 {
                         "pass"
                     } else {
                         "fail"

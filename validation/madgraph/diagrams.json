@@ -25,6 +25,12 @@
       },
       "total_diagrams": 4
     },
+    "ee_to_ee_nsz": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ll": 3
+      },
+      "total_diagrams": 3
+    },
     "ee_to_mumu": {
       "diagrams_by_subprocess": {
         "P1_ll_ll": 2
@@ -54,6 +60,12 @@
         "P1_ll_lltaptam": 25
       },
       "total_diagrams": 25
+    },
+    "ee_to_mumu_zonly": {
+      "diagrams_by_subprocess": {
+        "P1_ll_ll": 1
+      },
+      "total_diagrams": 1
     },
     "ee_to_mumua": {
       "diagrams_by_subprocess": {
