@@ -5,19 +5,17 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **`refdata-8` is banked and published** (note 38 §8.4).
-The **`process-grammar`** feature sprint (note 38) generated its new reference
-runs on the bank host (B1): the eight planned rows are in the pinned bundle and
-every sprint reference reproduced (MadEvent seeds bit-equal across Linux and
-macOS). What remains is Z2 (note 38 §7.4): re-verify from the published bundle on
-a machine that has never generated a run, write the gates that read
-`grammar_sigma_reference.json`, and promote each new cell that agrees; the sprint
-closes when Z2 is green. After it: MLM, then NLO, and the performance backlog.
+**Current position**: the **`process-grammar`** feature sprint (note 38) is
+closed: its reference runs are banked in the published `refdata-8` (note 38
+§8.4), and Z2 (note 38 §8.5) put all eight new rows' event samples and diagram
+counts, and the `>`, `$$` and `w+{0}` cross sections against
+`grammar_sigma_reference.json`'s seeded MadEvent references, under registered
+gates, every new cell agreeing. Next: MLM, then NLO, and the performance
+backlog.
 
-**Census**, counted from `validation/manifest.toml` (the collator at Z1,
-2026-09-26): **190 measured cells — 183 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
-42 covered-by or uncovered** over 59 rows, eight of them planned rows awaiting
-`refdata-8`. The cells that stay
+**Census**, counted from `validation/manifest.toml` (the collator at Z2,
+2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
+29 covered-by or uncovered** over 59 rows. The cells that stay
 informational, one clause each: `ee_to_wpwm_cw` (a single |M|² point at 2.08e-12);
 `ee_to_zh_smeft` (MadGraph's Python-to-Fortran writer rounds the UFO's `11/24`
 literal in `GC_303` to seven digits — a defect on its side, note 35 §3 E1);
@@ -182,8 +180,8 @@ At most three lines each; the note is the full record. Earlier sprints
   authored toy models; 29 rows → 51). Lesson: a toy model is a validation
   instrument, not a convenience — the rows nobody would generate for their
   physics are what separated conventions every SM row agreed on.
-- **`process-grammar`** (feature, ten sessions + close-out, 2026-09-26; note 38 §8) — full proc-card grammar
-  behind one check, 1→n decays, decay chains, `>`/`$`/`$$`, polarized legs, `@N`; closes when Z2 is green.
+- **`process-grammar`** (feature, ten sessions + close-out, 2026-09-27; note 38 §8) — full proc-card grammar
+  behind one check, 1→n decays, decay chains, `>`/`$`/`$$`, polarized legs, `@N`; closed at Z2 (`refdata-8`).
   Lesson: MadEvent's quoted σ error is not its spread (χ²/dof 3–14), so every reference is seeded.
 
 ---
@@ -192,15 +190,15 @@ At most three lines each; the note is the full record. Earlier sprints
 
 ### Open findings from `process-grammar` (note 38 §4 Landed paragraphs, §8)
 
-Until `refdata-8` is published and Z2 has run, every new σ and samples cell of
-the sprint is `uncovered` or awaits the bundle in the manifest; the rows are
-listed in note 38 §8.
-
-- **`e+ e- > w+ w-` error bars at the default budget look underestimated**
-  (note 38 §4 P1): seeds 1–5 read seed χ²/dof ≈ 2.4. The −0.23% offset recorded
-  beside it was a single MadEvent run's: against `grammar_sigma_reference.json`'s
-  five-seed `wp_wm` (7.19516 ± 0.0048 pb) the same seeds read +0.01% (note 38
-  §8.4). The χ²/dof is still open.
+- **`e+ e- > e+ e- $$ z` loses weight at low budget** (note 38 §8.5): the
+  twenty-seed mean climbs 156.71 → 157.25 → 157.55 → 157.54 pb from a quarter to
+  sixteen times 40 000 × 6, seed χ²/dof 2.23 and 1.80 on the two lower rungs, so
+  a region is under-sampled until the budget covers it. The gate runs on the
+  plateau (160 000 × 6) and MadEvent's own seeds show the same low tail (one of
+  five at 156.48, and two of five 0.8% and 1.3% low on the unrestricted Bhabha
+  process). Which region, and whether the CLI's default budget reaches the
+  plateau on every seed, is unmeasured; a per-channel split of the low-rung seeds
+  against the plateau is the first step.
 - **`u u~ > w+ b w- b~ $ t t~` is ~2% apart from the patched MadEvent** (note 38
   §4 S3). With MadGraph's `FFV2P1D_1` defect patched (note 07 appendix; the
   patch is `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch`),

@@ -1514,3 +1514,162 @@ see (`32276d7`):
   plus the eight rows' 328 files and six amplitude CSVs.
 - `--check` reproduces the pin, and the collator agrees with the manifest once
   the rows count as bundled.
+
+### 8.5 Z2 (2026-09-27, on `refdata8` from `098add9`)
+
+Step 1 of §7.4 was CI's: the `banked` job on `098add9` (run 36290249068) fetched
+`refdata-8` on a clean runner and every banked test passed. This session wrote
+the gates that bundle made possible and promoted the cells that agree. No
+MadGraph was run; every reference is the committed JSON or the bundle.
+
+**The seeded σ gate** (`validate_sigma`, `the_grammar_rows_match_madevents_seeds`).
+It reads `grammar_sigma_reference.json` by the seed policy on both sides: the
+inverse-variance mean with an error no smaller than spread/√n, MadEvent's five
+seeds against ten here. It asserts |pull of the means| < 3, every seed of ours
+against MadEvent's mean < 4, and this side's χ²/dof inside the 0.1–99.9% band for
+nine degrees of freedom (0.13–3.1). Each control runs on the restricted row's own
+bundled card (checked against the reference's `ebeam1`/`ebeam2`/`nevents`
+overrides; the generated cards differ only in `me_frame`, which an unpolarized
+process ignores). Each is written as a variant of that row's cell. The gate also
+asserts two more things:
+- a restriction that removed nothing fails: this side's unrestricted control reads
+  +6880σ, −7.3σ, +9034σ and +60σ against the `> z`, `$$ z`, `w+{0}` and `w+{T}`
+  references;
+- `w+{0} + w+{T} = w+ w-` holds on each side.
+
+The budget came from a twenty-seed ladder (`probe_grammar_seed_sweep`), where
+rel and pull are against MadEvent's policy mean:
+
+| entry | ×¼ (10k×6) | ×1 (40k×6) | ×4 (160k×6) | ×16 (640k×6) |
+|---|---|---|---|---|
+| `ee_z_only` | −3.9e-5, χ² 1.04 | −8.0e-5, 1.31 | −4.5e-5, 1.27 | +4.3e-5, 1.22 |
+| `ee_mumu` | +3.0e-4, 0.80 | −1.5e-4, 1.00 | −2.1e-4, 1.39 | −2.7e-4, 1.08 |
+| `ee_no_sz` | −3.3e-3, 2.23 | +1.6e-4, 1.80 | +2.1e-3, 1.22 | +2.0e-3, 1.53 |
+| `ee_ee` | +4.9e-3, 0.76 | +5.9e-3, 0.45 | +5.1e-3, 0.83 | +5.8e-3, 1.36 |
+| `wp0_wm` | +4.0e-4, 1.71 | +5.6e-4, 0.61 | +3.8e-4, 0.82 | +5.3e-4, 1.17 |
+| `wpt_wm` | +7.7e-4, 0.75 | +6.4e-4, 0.83 | +7.2e-4, 1.21 | +7.4e-4, 1.37 |
+| `wp_wm` | +2.9e-4, 0.85 | +1.5e-4, 0.79 | +2.6e-4, 1.30 | +2.7e-4, 1.50 |
+
+Every entry holds still over the ladder except `$$ z`. There this side's mean
+climbs, 156.71 ± 0.17 → 157.25 ± 0.09 → 157.55 ± 0.05 → 157.54 ± 0.02 pb, with
+seed χ²/dof above 1.8 on the two lower rungs: an under-sampled region that the
+budget eventually covers (validation backlog). The gate runs at ×4, the lowest
+rung on the plateau, at 0.1–0.4 s a seed.
+
+The gate at 160 000 × 6, ten seeds here against MadEvent's five:
+
+| cell | here (pb) | MadEvent (pb) | rel | pull | our χ²/dof |
+|---|---|---|---|---|---|
+| `ee_to_mumu_zonly` | 0.05219763 ± 5.7e-6 | 0.05220506 ± 8.7e-6 | −1.42e-4 | −0.72 | 0.97 |
+| ↳ unrestricted | 0.4197479 ± 5.3e-5 | 0.4198134 ± 9.7e-5 | −1.56e-4 | −0.59 | 1.28 |
+| `ee_to_ee_nsz` | 157.618 ± 0.083 | 157.226 ± 0.195 | +2.50e-3 | +1.85 | 1.47 |
+| ↳ unrestricted | 155.711 ± 0.066 | 154.927 ± 0.439 | +5.07e-3 | +1.77 | 0.83 |
+| `ee_to_wp0wm` | 0.2578727 ± 2.7e-5 | 0.2577911 ± 2.0e-4 | +3.17e-4 | +0.40 | 0.97 |
+| ↳ transverse | 6.938555 ± 6.9e-4 | 6.933103 ± 4.3e-3 | +7.86e-4 | +1.24 | 1.56 |
+| ↳ unpolarized | 7.196465 ± 7.4e-4 | 7.194194 ± 4.6e-3 | +3.16e-4 | +0.49 | 1.74 |
+
+The decomposition reads pull −0.04 here and −0.52 in MadEvent's own seeds.
+
+The two Bhabha pulls are the reference's spread, not a disagreement. MadEvent's
+seeds sit at χ²/dof 20 (`$$ z`) and 93 (unrestricted) about their means:
+- `$$ z`: four seeds at 157.26–157.53 and one at 156.48;
+- unrestricted: three at 155.62–155.78 and two at 154.28 and 153.65.
+
+This side agrees with the majority in both. The existing `ee_to_ee` row's single
+banked run (155.72, same card) is one of that majority. §8.4's "7.19516 ± 0.0048"
+for `wp_wm` is the seeds' plain mean. The policy mean the gate reads is
+7.19419 ± 0.00459.
+
+**The `e+ e- > w+ w-` χ²/dof ≈ 2.4 finding is closed.** `vibegraph integrate` at
+its default budget on this row's card, seeds 1–20 (release-debug binary):
+- `e+ e- > w+ w-`: χ²/dof 1.45 over 19 dof (p ≈ 0.09). Seeds 1–5 alone read 2.38,
+  which reproduces P1's number. The mean is 7.19608 ± 5.5e-4 (the spread), rel
+  +2.6e-4 and pull +0.41 against the seeded reference.
+- `e+ e- > w+{0} w-`: χ²/dof 0.92.
+
+The library path's twenty-seed χ²/dof is 0.79–1.50 on all four rungs (table
+above). P1's 2.4 was a five-seed draw, and the errors are not underestimated.
+
+**`plan_for`.** All eight rows now have explicit arms; none falls to "no
+evaluation plan":
+- `ee_to_mumu_zonly`, `ee_to_ee_nsz`, `ee_to_wp0wm`: `Skip`, because the seeded
+  reference supersedes their single run.
+- The five other polarized rows: `Skip` with "covered by ee_to_wp0wm's seeded
+  reference". The manifest keeps those `integrals` cells `covered-by`, since a
+  single MadEvent run is not a reference under the seed policy.
+
+`probe_polarized_single_runs` still reads each against its one run (ten seeds at
+160 000 × 6), recorded in the cells' notes:
+
+| row | rel | pull |
+|---|---|---|
+| `ee_to_wp0wmt` | +1.51e-3 | +0.73 |
+| `ee_to_z0h` | −1.76e-4 | −0.47 |
+| `uux_to_ztg` | +4.08e-4 | +1.31 |
+| `ee_to_mumu_eml` | −1.2e-5 | −0.02 |
+| `ee_to_tlt` | −1.26e-4 | −0.24 |
+
+**Samples.** All eight rows joined `validate_samples`' fixed-beam list at the
+existing budget and floor: three seeds of 20 000 events against the banked 10 000,
+KS per observable, χ² on SPINUP/ICOLUP/flavour, and the beams and scales as
+equalities at printed precision.
+
+A new column, `POLARIZED_LEGS`, counts the events whose polarized leg's SPINUP
+lies outside its restriction, on both samples. The SPINUP χ² cannot see a rare
+wrong helicity because it pools small categories. The count is 0 of 20 000 on
+every seed and 0 of 10 000 in MadGraph's samples for every polarized leg. The
+companion test `the_polarized_legs_carry_only_their_restricted_helicities` shows
+the count can fire: on the unpolarized banked runs of the same legs it reads
+- `ee_to_wpwm`: 9658 (W+ not longitudinal) and 361 (W− longitudinal);
+- `ee_to_zh`: 2198 (Z transverse) and 7802 (Z longitudinal);
+- `ee_to_mumu`: 3932;
+- `ee_to_ttx`: 4185.
+
+Worst readings per row:
+
+| row | worst KS p | worst χ² p |
+|---|---|---|
+| `ee_to_mumu_zonly` | 4.17e-1 | 6.37e-1 |
+| `ee_to_ee_nsz` | 7.44e-2 | 2.70e-1 |
+| `ee_to_wp0wm` | 1.64e-1 | 3.31e-1 |
+| `ee_to_wp0wmt` | 5.87e-2 | 2.21e-1 |
+| `ee_to_z0h` | 1.26e-1 | 1.95e-1 |
+| `uux_to_ztg` | 1.66e-1 | 5.34e-2 |
+| `ee_to_mumu_eml` | 2.68e-1 | 5.49e-1 |
+| `ee_to_tlt` | 1.57e-1 | 7.60e-1 |
+
+`uux_to_ztg`'s SCALUP (its clustered scale) sits at 4.9e-5 inside the 5.0e-5 its
+printing allows. Adding the eight rows raises the floor's trial count by about a
+quarter, 34 to 42 gating fixed-beam rows.
+
+**Diagrams.** `extract_diagrams.py` needs only the bundle's `matrix1_orig.f`, so
+it ran here with no MadGraph. With the two cells declared hermetic, it added
+exactly those two entries to `diagrams.json`: `ee_to_mumu_zonly` 1/1 and
+`ee_to_ee_nsz` 3/3 (s-channel γ, t-channel γ and Z). `validate_madgraph_diagrams`
+passed with 57 passed, `diagrams_json_covers_exactly_the_hermetic_rows`
+included.
+
+**Correction to the brief: `ee_to_z0h` and `uux_to_ztg` were already read.** Both
+are in `validate_alphas`' `SCALUP_IS_THE_RENORMALISATION_SCALE` and in
+`validate_scales`' inventory. Z1 put them there, and B1's host run passed them.
+Both are also now `validate_samples` rows.
+
+**Promoted cells.** Tier and mode changes, all to `gate`:
+- `integrals`: `ee_to_wp0wm`, `ee_to_mumu_zonly`, `ee_to_ee_nsz`, from `uncovered`
+  to banked;
+- `samples`: those three plus `ee_to_wp0wmt`, `ee_to_z0h`, `uux_to_ztg`,
+  `ee_to_mumu_eml`, `ee_to_tlt`, from `uncovered` or `covered-by` to banked;
+- `diagrams`: `ee_to_mumu_zonly`, `ee_to_ee_nsz`, from `uncovered` to hermetic.
+
+No cell went to `info`.
+
+**The banked layer end to end.** On the committed gates (`e9177b5`),
+`pixi run --skip-deps validate`, clippy on the extended-validation targets and
+the collator included, ran 26 minutes and exited 0. All 58 test targets passed
+(1557 tests), `cli_onshell_veto`'s heavy rows among them, and the grammar gate
+reproduced the numbers above to the last digit. The collator reported 59 rows × 4
+categories, 203 measured cells: 196 ✅ and 7 ⚠️, plus 4 ⏳ at the oracle layer and
+29 covered-by or uncovered, with "the measured cells are the declared cells".
+Against Z1's 183 ✅ / 7 ⚠️, the 13 new ✅ are the promoted cells above, and the
+⚠️ are the same seven standing ones. `cargo test --workspace` (hermetic): 1237
+passed, 0 failed.
