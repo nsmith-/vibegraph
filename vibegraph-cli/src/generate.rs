@@ -13,6 +13,10 @@
 //! The physics inputs are read from the artifact and never re-taken as flags: the
 //! only knobs here are how many events to write, where to write them, and which
 //! weight strategy to write them under.
+//!
+//! A `--reweight-card` adds, to every event, its weight under each of the card's
+//! alternative parameter hypotheses (see [`vibegraph::reweight`]); the sample
+//! itself, drawn under the model's own parameters, is unchanged by it.
 
 use std::path::PathBuf;
 
@@ -45,6 +49,9 @@ use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
+use vibegraph::reweight::card::ReweightCard;
+use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan, Reweighter, SubprocessSummary};
+use vibegraph::reweight::{resolve, Launch};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -168,6 +175,17 @@ pub struct GenerateArgs {
         value_parser = parse_excess_share
     )]
     pub max_truncation: f64,
+
+    /// MadGraph reweight card: every event also carries its weight under each
+    /// `launch` block's parameters, as an LHEF `<rwgt>` block.
+    #[arg(long)]
+    pub reweight_card: Option<PathBuf>,
+
+    /// Evaluate every reweighting hypothesis directly, never through the
+    /// polynomial in a coupling that serves many hypotheses along one parameter
+    /// at a fixed cost. Slower; for cross-checking.
+    #[arg(long, requires = "reweight_card")]
+    pub reweight_exact: bool,
 
     #[command(flatten)]
     pub parallel: ParallelArgs,
@@ -438,6 +456,9 @@ struct SampleSource<'s, 'a> {
     /// decay chains.
     resonances: &'s [SubprocessResonances],
     tally: ResonanceTally,
+    /// The reweighting hypotheses, indexed by subprocess.
+    reweighter: Option<Reweighter<'s>>,
+    evaluation: Vec<V>,
 }
 
 impl<'s, 'a> SampleSource<'s, 'a> {
@@ -451,6 +472,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
         alpha_qed: f64,
         process_of: &'s [i32],
         resonances: &'s [SubprocessResonances],
+        reweighter: Option<Reweighter<'s>>,
     ) -> Self {
         SampleSource {
             integrand,
@@ -466,6 +488,8 @@ impl<'s, 'a> SampleSource<'s, 'a> {
             process_of,
             resonances,
             tally: ResonanceTally::default(),
+            reweighter,
+            evaluation: Vec::new(),
         }
     }
 
@@ -526,10 +550,23 @@ impl EventSource for SampleSource<'_, '_> {
             (selection.config, selection.leading),
             &mut self.tally,
         )?;
+        let mut reweights = Vec::new();
+        if let Some(rw) = self.reweighter.as_mut() {
+            self.evaluation.clear();
+            self.evaluation.extend_from_slice(self.integrand.incoming());
+            self.evaluation.extend_from_slice(&self.momenta);
+            rw.ratios(
+                selection.subprocess,
+                &self.evaluation,
+                Some(alpha_qcd),
+                &mut reweights,
+            );
+        }
         Some(WeightedEvent {
             record,
             weight: point.weight,
             part: 0,
+            reweights,
         })
     }
 
@@ -745,6 +782,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     refuse_stale_artifact_on_clustering_scale(&artifact, &rc)?;
 
     let evaluated = EvaluatedModel::from_model(model.clone());
+    let launches = reweight_launches(args, &parsed, &model)?;
     let nevents = args
         .nevents
         .unwrap_or(artifact.run_card.nevents.max(0) as usize);
@@ -758,10 +796,12 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
             .member(PDF_MEMBER)
             .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
         generate_proton_sample(
-            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, &set, &pdf,
+            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, &set, &pdf, launches,
         )?;
     } else {
-        generate_sample(args, &artifact, &parsed, &model, &evaluated, &rc, nevents)?;
+        generate_sample(
+            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, launches,
+        )?;
     }
     // The command's result: the path a caller pipes this to learn, at any
     // verbosity. Everything else the run had to say went to the notice stream.
@@ -780,6 +820,7 @@ fn generate_sample(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     nevents: usize,
+    launches: Option<Vec<Launch>>,
 ) -> Result<EmitSummary, IntegrateError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
@@ -821,6 +862,9 @@ fn generate_sample(
         .iter()
         .map(|s| s.diagrams[0].provenance.process as i32)
         .collect();
+    let reweight_plan = launches
+        .map(|l| reweight_plan(args, &compiled_sets, model, evaluated, l))
+        .transpose()?;
     let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
         compiled_sets
             .iter()
@@ -920,6 +964,7 @@ fn generate_sample(
         alpha_qed,
         &process_of,
         &resonances,
+        reweight_plan.as_ref().map(ReweightPlan::bind),
     );
 
     let strategy = weight_strategy(args);
@@ -944,6 +989,7 @@ fn generate_sample(
         )],
         header_blocks: Vec::new(),
         header: Some(file_header(args, artifact, strategy.as_ref(), observable)),
+        reweights: declared_reweights(reweight_plan.as_ref()),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -957,6 +1003,120 @@ fn generate_sample(
         observable,
     );
     Ok(summary)
+}
+
+/// The reweight card's hypotheses, resolved against the model, or `None` when
+/// the run has no card. Everything the card cannot honour is refused here,
+/// before any subprocess is compiled.
+fn reweight_launches(
+    args: &GenerateArgs,
+    parsed: &SupportedCard,
+    model: &UFOModel,
+) -> Result<Option<Vec<Launch>>, IntegrateError> {
+    let Some(path) = &args.reweight_card else {
+        return Ok(None);
+    };
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| err(format!("cannot read {}: {e}", path.display())))?;
+    let card: ReweightCard = text
+        .parse()
+        .map_err(|e| err(format!("{}: {e}", path.display())))?;
+    if !forbidden_onshell(parsed, model)?.is_empty() {
+        return Err(err(format!(
+            "{}: {}",
+            path.display(),
+            vibegraph::reweight::ReweightError::ForbiddenSChannel
+        )));
+    }
+    let launches = resolve(&card, model).map_err(|e| err(format!("{}: {e}", path.display())))?;
+    Ok(Some(launches))
+}
+
+/// Compile and plan the reweighting of `sets`, the run's concrete subprocesses in
+/// the indexing its event source reports, and say what each event will cost.
+fn reweight_plan(
+    args: &GenerateArgs,
+    sets: &[&DiagramSet],
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    launches: Vec<Launch>,
+) -> Result<ReweightPlan, IntegrateError> {
+    let options = ReweightOptions {
+        polynomial: !args.reweight_exact,
+    };
+    let n = launches.len();
+    let plan = ReweightPlan::new(sets, model, evaluated, launches, options)
+        .map_err(|e| err(format!("reweighting: {e}")))?;
+    report_reweighting(n, &plan.summary());
+    Ok(plan)
+}
+
+/// One line per distinct subprocess plan: how many subprocesses share it, how
+/// many amplitude evaluations an event costs, and what serves the hypotheses.
+fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
+    let mut lines: Vec<(String, usize)> = Vec::new();
+    for sub in summary {
+        let mut parts: Vec<String> = sub
+            .polynomial
+            .iter()
+            .map(|(param, degree, cost, served)| {
+                format!(
+                    "{served} along {param} by one degree-{degree} polynomial \
+                     ({cost} extra evaluations)"
+                )
+            })
+            .collect();
+        if sub.exact > 0 {
+            parts.push(format!("{} evaluated directly", sub.exact));
+        }
+        if sub.unchanged > 0 {
+            parts.push(format!("{} not moving |M|^2", sub.unchanged));
+        }
+        let line = format!(
+            "{} evaluations per event: {}",
+            sub.evaluations(),
+            parts.join(", ")
+        );
+        match lines.iter_mut().find(|(l, _)| *l == line) {
+            Some((_, count)) => *count += 1,
+            None => lines.push((line, 1)),
+        }
+    }
+    info!("reweight: {hypotheses} hypotheses");
+    for (line, count) in lines {
+        info!("reweight: {count} subprocess(es), {line}");
+    }
+}
+
+/// The `(id, description)` of every hypothesis the file declares.
+fn declared_reweights(plan: Option<&ReweightPlan>) -> Vec<(String, String)> {
+    plan.map(|p| {
+        p.launches()
+            .iter()
+            .map(|l| (l.id.clone(), l.info.clone()))
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Per part, per flavour group, the index of its first member in the run's
+/// flattened list of concrete subprocesses: every member of every part, in order.
+fn member_offsets<'g>(parts: impl IntoIterator<Item = &'g FlavorGroups>) -> Vec<Vec<usize>> {
+    let mut next = 0;
+    parts
+        .into_iter()
+        .map(|groups| {
+            groups
+                .groups()
+                .iter()
+                .map(|g| {
+                    let first = next;
+                    next += g.members().len();
+                    first
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// What the frozen scan cost and what it found, then the channels it never
@@ -1179,15 +1339,22 @@ struct ProtonSampleSource<'s, 'a> {
     seed: u64,
     alpha_qed: f64,
     tally: ResonanceTally,
+    /// The reweighting hypotheses, indexed by concrete subprocess across every
+    /// part: `member_offset[part][group] + member`.
+    reweighter: Option<Reweighter<'s>>,
+    member_offset: Vec<Vec<usize>>,
+    mirrored: Vec<V>,
 }
 
 impl<'s, 'a> ProtonSampleSource<'s, 'a> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         integrand: &'s MultiplicitySum<'a>,
         parts: &'s [PartRecords],
         unweighter: Unweighter,
         seed: u64,
         alpha_qed: f64,
+        reweighter: Option<Reweighter<'s>>,
     ) -> Self {
         ProtonSampleSource {
             integrand,
@@ -1198,6 +1365,9 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             seed,
             alpha_qed,
             tally: ResonanceTally::default(),
+            reweighter,
+            member_offset: member_offsets(integrand.parts().iter().map(ProtonIntegrand::groups)),
+            mirrored: Vec::new(),
         }
     }
 }
@@ -1276,10 +1446,30 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 &mut self.tally,
             )?,
         };
+        let mut reweights = Vec::new();
+        if let Some(rw) = self.reweighter.as_mut() {
+            // The member's own amplitude, in the frame and leg order the group's
+            // was evaluated in for this ordering.
+            let group = &integrand.groups().groups()[selection.group];
+            let momenta = match selection.ordering {
+                BeamOrdering::Direct => &event.cm,
+                BeamOrdering::Exchanged => {
+                    group.mirror_into(&event.cm, &mut self.mirrored);
+                    &self.mirrored
+                }
+            };
+            rw.ratios(
+                self.member_offset[k][selection.group] + selection.member,
+                momenta,
+                Some(alpha_qcd),
+                &mut reweights,
+            );
+        }
         Some(WeightedEvent {
             record,
             weight: point.weight,
             part: k,
+            reweights,
         })
     }
 
@@ -1312,6 +1502,7 @@ fn generate_proton_sample(
     nevents: usize,
     set: &PdfSet,
     pdf: &PdfMember,
+    launches: Option<Vec<Launch>>,
 ) -> Result<EmitSummary, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
@@ -1388,6 +1579,17 @@ fn generate_proton_sample(
     }
     integ.set_channel_alphas(alphas);
 
+    // Every member of every part, in the order `member_offsets` indexes them.
+    let reweight_plan = launches
+        .map(|l| {
+            let members: Vec<&DiagramSet> = groups
+                .iter()
+                .flat_map(FlavorGroups::groups)
+                .flat_map(|g| (0..g.members().len()).map(|i| g.member_diagram_set(i)))
+                .collect();
+            reweight_plan(args, &members, model, evaluated, l)
+        })
+        .transpose()?;
     let beam_pdg = hadron_beam_pdg(rc)?;
 
     let rule = max_rule(args);
@@ -1419,6 +1621,7 @@ fn generate_proton_sample(
         scan,
         args.seed ^ GEN_SEED_OFFSET,
         alpha_qed,
+        reweight_plan.as_ref().map(ReweightPlan::bind),
     );
 
     let strategy = weight_strategy(args);
@@ -1451,6 +1654,7 @@ fn generate_proton_sample(
             strategy.as_ref(),
             Observable::CrossSection,
         )),
+        reweights: declared_reweights(reweight_plan.as_ref()),
     };
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
@@ -1870,12 +2074,46 @@ mod tests {
         let scan = Unweighter::scan(&integ, grids.iter().map(|g| (g, 2_000)), 3);
 
         let process_of = vec![1; records.len()];
-        let mut source =
-            SampleSource::new(&integ, &records, scan, 11, &rc, 0.0075, &process_of, &[]);
+        let launches = resolve(
+            &"launch\n set MZ 90.0\nlaunch\n set DECAY 23 3.0\nlaunch\n"
+                .parse()
+                .unwrap(),
+            &model,
+        )
+        .unwrap();
+        let compiled: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
+        let plan = ReweightPlan::new(
+            &compiled,
+            &model,
+            &evaluated,
+            launches,
+            ReweightOptions::default(),
+        )
+        .unwrap();
+        let mut source = SampleSource::new(
+            &integ,
+            &records,
+            scan,
+            11,
+            &rc,
+            0.0075,
+            &process_of,
+            &[],
+            Some(plan.bind()),
+        );
         let first: Vec<_> = (0..40)
             .map(|_| source.next_event().expect("an event"))
-            .map(|e| (e.record, e.weight))
+            .map(|e| (e.record, e.weight, e.reweights))
             .collect();
+        for (_, _, reweights) in &first {
+            assert_eq!(reweights.len(), 3);
+            assert!(reweights[0] > 0.0 && reweights[0] != 1.0, "{reweights:?}");
+            assert!(reweights[1] > 0.0 && reweights[1] != 1.0, "{reweights:?}");
+            assert_eq!(
+                reweights[2], 1.0,
+                "a launch changing nothing is the event itself"
+            );
+        }
         let trials = source.stats().trials;
         let sigma = source.sigma_pb();
         assert!(trials > 40 && sigma > 0.0, "the pass produced nothing");
@@ -1884,7 +2122,7 @@ mod tests {
         assert_eq!(source.stats().trials, 0, "the accumulators did not reset");
         let again: Vec<_> = (0..40)
             .map(|_| source.next_event().expect("an event"))
-            .map(|e| (e.record, e.weight))
+            .map(|e| (e.record, e.weight, e.reweights))
             .collect();
         assert_eq!(first, again, "a restarted source drew a different sample");
         // The accumulators went back with the stream, so a second pass reports the

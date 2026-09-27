@@ -194,6 +194,77 @@ its own part and the default strategy normalises every part to its own cross
 section, which unit weights cannot do, so `stochastic-rounding` refuses such a
 card.
 
+## Reweighting
+
+`generate --reweight-card reweight_card.dat` gives every event its weight under
+alternative model parameters too, MadGraph's reweighting workflow. The card is
+MadGraph's: each `launch` block is one hypothesis, and its `set` lines move
+external parameters by LHA address or by name.
+
+```text
+launch --rwgt_name=ymt_150
+  set yukawa 6 150.0
+launch --rwgt_name=ymt_200
+  set ymt 200.0
+```
+
+An event drawn under the model's own parameters is carried to a hypothesis by
+the ratio `|M|²_new / |M|²_old` of its own concrete subprocess at its own momenta
+and strong coupling; the phase-space density, the parton densities and the
+scales cancel. The file declares the hypotheses in an `<initrwgt>` block in its
+`<header>` and writes each event's weights in a `<rwgt>` block, in `XWGTUP`'s own
+units, so the mean of a hypothesis's weights over a buffered file is its cross
+section exactly as the mean of `XWGTUP` is the nominal one. A reweighted sample
+is only as good as the nominal sample's coverage of the phase space the
+hypothesis populates; the ratios say nothing about regions the nominal sample
+never visits.
+
+A hadronic flavour group shares one matrix element at the card's parameters,
+which is what grouped it, but not necessarily at a hypothesis's — a parameter can
+move one quark flavour's coupling and not another's — so each event is reweighted
+with its own member's amplitude.
+
+### The polynomial path
+
+Reweighting costs amplitude evaluations, and a scan in one coupling can ask for
+dozens of hypotheses. When a parameter `P` enters a subprocess only through its
+couplings, each of them a polynomial in `P`, and no mass or width moves with it,
+the amplitude is a polynomial in `P` diagram by diagram, and `|M|²` is one of
+degree `D`, twice the largest power any diagram carries. The powers are read off
+the UFO coupling expressions and the diagrams' vertices symbolically
+(`reweight::poly`), not fitted. The terms of each power are then collected per
+event by evaluating `|M|²` at `D + 1` Chebyshev–Lobatto nodes spanning the
+hypotheses, and every hypothesis along `P` is a precomputed `(D + 1)`-term dot
+product of those values — barycentric Lagrange interpolation, the stable way to
+read a polynomial off its values. An effective-field-theory coefficient or a
+Yukawa entering linearly has `D = 2`: three evaluations per event serve any
+number of hypotheses along it.
+
+A hypothesis moving several parameters at once, or a parameter that is not a
+polynomial coupling (`aEWM1`, which reaches the couplings through square roots;
+`MZ`, which is also a propagator pole), is evaluated directly: its amplitude is
+bound to its parameters before the first event and evaluated once per event.
+The same applies to a parameter with too few hypotheses to amortise the nodes.
+`--reweight-exact` forces that path for every hypothesis; the two agree to
+within rounding, and the unit tests hold them to it at each hypothesis.
+
+The generation's own amplitudes drop what vanishes at the card's parameters,
+and a hypothesis that switches on a coupling the card leaves at zero revives
+exactly that. Reweighting therefore compiles its own amplitudes, pruned at a
+generic point where every parameter any hypothesis moves is set to an
+unremarkable value.
+
+### What is refused
+
+Each of these is an error naming the card line, never a skipped line: `change`
+directives (another model, process or mode), a param-card path in place of `set`
+lines, `scan:` values, an internal or unknown parameter, a parameter the model's
+restriction fixed to zero (its vertices were removed with it), anything that
+moves the strong coupling (each event takes it from the scale choice, so that is
+a scale variation), the mass of an external particle (the momenta sit on the old
+mass shell), and a process with a forbidden s-channel (`$`), whose amplitude
+depends on each event's position relative to the veto windows.
+
 ## Seeds and reproducibility
 
 A `generate` run is a pure function of the artifact, the cards and a seed.
@@ -213,4 +284,5 @@ draws, and [`vibegraph::lhef`](../api/vibegraph/lhef/index.html) with its
 [`write`](../api/vibegraph/lhef/write/index.html),
 [`parse`](../api/vibegraph/lhef/parse/index.html),
 [`build`](../api/vibegraph/lhef/build/index.html) and
-[`emit`](../api/vibegraph/lhef/emit/index.html) layers.
+[`emit`](../api/vibegraph/lhef/emit/index.html) layers;
+[`vibegraph::reweight`](../api/vibegraph/reweight/index.html) for reweighting.

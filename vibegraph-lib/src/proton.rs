@@ -234,6 +234,10 @@ pub enum BeamOrdering {
 /// cut filter, differing only in the parton-distribution luminosity they carry.
 pub struct FlavorGroup {
     representative: DiagramSet,
+    /// Per member, parallel to `members`: its own diagrams. The members share one
+    /// `|M|²` at the card's parameters, which is what grouped them; at other
+    /// parameters each is its own process again.
+    member_sets: Vec<DiagramSet>,
     evaluator: AmplitudeEvaluator,
     legs: Vec<ExternalLeg>,
     cuts: Cuts,
@@ -329,6 +333,12 @@ impl FlavorGroup {
     /// phase-space channels are derived from.
     pub fn diagrams(&self) -> &[Diagram] {
         &self.representative.diagrams
+    }
+
+    /// Member `i`'s own diagrams, its legs in the positions of the
+    /// representative's.
+    pub fn member_diagram_set(&self, i: usize) -> &DiagramSet {
+        &self.member_sets[i]
     }
 
     /// The representative subprocess's enumerated particle names.
@@ -926,6 +936,10 @@ pub fn derive_flavor_groups(
                 })
             })
             .collect::<Result<Vec<_>, ProtonError>>()?;
+        let member_sets = indices
+            .iter()
+            .map(|&i| sets[i].clone().expect("member unclaimed"))
+            .collect();
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
         let member_slots = members
@@ -945,6 +959,7 @@ pub fn derive_flavor_groups(
             .collect();
         groups.push(FlavorGroup {
             representative: sets[head].take().expect("group head unclaimed"),
+            member_sets,
             evaluator,
             legs,
             cuts,
