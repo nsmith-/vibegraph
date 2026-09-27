@@ -311,6 +311,12 @@ Options:
       --no-tui
           Never draw the live status pane; report in plain lines
 
+      --reweight-card <REWEIGHT_CARD>
+          MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
+
+      --reweight-exact
+          Evaluate every reweighting hypothesis directly, never through the polynomial in a coupling that serves many hypotheses along one parameter at a fixed cost. Slower; for cross-checking
+
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
 

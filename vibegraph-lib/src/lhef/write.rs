@@ -262,6 +262,48 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
     String::from_utf8(writer.into_inner()).expect("the generator element is ASCII")
 }
 
+/// The `<initrwgt>` block declaring a file's reweighting weights, one line per
+/// entry, in the layout MadGraph's reweight module writes: one `<weightgroup>`
+/// holding a `<weight id='…'>` per hypothesis, its description as the text.
+///
+/// The ids go into attributes unescaped, so they must be attribute-safe; the
+/// descriptions are escaped.
+pub fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
+    let mut lines = vec![
+        "<initrwgt>".to_string(),
+        "<weightgroup name='mg_reweighting' weight_name_strategy='includeIdInWeightName'>"
+            .to_string(),
+    ];
+    for (id, info) in weights {
+        lines.push(format!(
+            "<weight id='{id}'> {} </weight>",
+            quick_xml::escape::escape(info.as_str())
+        ));
+    }
+    lines.push("</weightgroup>".to_string());
+    lines.push("</initrwgt>".to_string());
+    lines
+}
+
+/// One event's `<rwgt>` block: the event's weight under each hypothesis, in
+/// `XWGTUP`'s own units, as `<wgt id='…'>` lines. Empty when there are none.
+pub fn rwgt_block(ids: &[String], weights: &[f64]) -> Vec<String> {
+    assert_eq!(ids.len(), weights.len(), "one weight per declared id");
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = Vec::with_capacity(ids.len() + 2);
+    lines.push("<rwgt>".to_string());
+    for (id, &w) in ids.iter().zip(weights) {
+        lines.push(format!(
+            "<wgt id='{id}'> {} </wgt>",
+            c_exponential(w, 7, true, 0)
+        ));
+    }
+    lines.push("</rwgt>".to_string());
+    lines
+}
+
 /// Streaming writer for a whole file: root tag, header, `<init>`, then events one
 /// at a time.
 ///
@@ -281,7 +323,20 @@ impl<W: Write> LheWriter<W> {
     /// `header` is embedded as an XML comment inside `<header>`; the accord leaves
     /// that block free-form and consumers ignore it, so it is where a run's
     /// provenance goes.
-    pub fn begin(mut out: W, init: &LheInit, header: Option<&str>) -> io::Result<Self> {
+    pub fn begin(out: W, init: &LheInit, header: Option<&str>) -> io::Result<Self> {
+        Self::begin_with(out, init, header, &[])
+    }
+
+    /// [`begin`](Self::begin), with `blocks` written into `<header>` after the
+    /// comment as markup rather than inside it — the elements a consumer does read
+    /// there, such as the [`initrwgt_block`] naming a file's reweighting weights.
+    /// Each entry is one line of already well-formed XML.
+    pub fn begin_with(
+        mut out: W,
+        init: &LheInit,
+        header: Option<&str>,
+        blocks: &[String],
+    ) -> io::Result<Self> {
         {
             let mut writer = Writer::new(&mut out);
             let mut root = BytesStart::new("LesHouchesEvents");
@@ -299,6 +354,9 @@ impl<W: Write> LheWriter<W> {
                 let body = format!("\n{}\n", header.replace("--", "- -"));
                 events.push(XmlEvent::Comment(BytesText::from_escaped(body)));
                 events.push(XmlEvent::Text(BytesText::from_escaped("\n")));
+            }
+            for line in blocks {
+                events.push(XmlEvent::Text(BytesText::from_escaped(format!("{line}\n"))));
             }
             events.push(XmlEvent::End(BytesEnd::new("header")));
             events.push(XmlEvent::Text(BytesText::from_escaped("\n")));
@@ -341,6 +399,49 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reweight_markup_has_madgraphs_layout() {
+        let ids = vec!["a".to_string(), "b_2".to_string()];
+        assert_eq!(
+            rwgt_block(&ids, &[1.5, -2.0e-12]),
+            [
+                "<rwgt>",
+                "<wgt id='a'> +1.5000000e+00 </wgt>",
+                "<wgt id='b_2'> -2.0000000e-12 </wgt>",
+                "</rwgt>"
+            ]
+        );
+        assert!(rwgt_block(&[], &[]).is_empty());
+        let block = initrwgt_block(&[("a".to_string(), "set ymt 1 & <more>".to_string())]);
+        assert_eq!(
+            block[2],
+            "<weight id='a'> set ymt 1 &amp; &lt;more&gt; </weight>"
+        );
+    }
+
+    /// Header blocks are markup a reader walks past, and the events still parse.
+    #[test]
+    fn header_blocks_leave_the_file_readable() {
+        let block = initrwgt_block(&[("x".to_string(), "info".to_string())]);
+        let mut out = Vec::new();
+        {
+            let mut writer =
+                LheWriter::begin_with(&mut out, &init(), Some("provenance"), &block).unwrap();
+            let mut e = event();
+            e.trailer = rwgt_block(&["x".to_string()], &[0.25]);
+            writer.write_event(&e).unwrap();
+            writer.finish().unwrap();
+        }
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("<initrwgt>\n<weightgroup"), "{text}");
+        let file = LheFile::parse(&text).unwrap();
+        assert_eq!(file.events.len(), 1);
+        assert_eq!(
+            file.events[0].trailer,
+            ["<rwgt>", "<wgt id='x'> +2.5000000e-01 </wgt>", "</rwgt>"]
+        );
+    }
     use crate::lhef::parse::LheFile;
     use crate::lhef::record::{
         LheProcess, WeightStrategy, SPIN_UNKNOWN, STATUS_INCOMING, STATUS_OUTGOING,
