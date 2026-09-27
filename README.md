@@ -19,10 +19,15 @@ and `scripts/build-docs.sh` builds it locally.
 
 ## Scope
 
-**Current goal — near-MVP**: an LO event generator for **arbitrary fixed-order
-Standard Model processes**, driven end to end by the standard toolchain
-formats: a UFO model and a MadGraph-style process card go in, an unweighted
-`.lhe` event sample comes out. That includes hadronic processes at MadGraph's
+**Current goal — MadGraph leading-order process parity** (without MLM matching
+and NLO): an LO event generator for **arbitrary fixed-order Standard Model
+processes**, driven end to end by the standard toolchain formats: a UFO model
+and a MadGraph process card go in, an unweighted `.lhe` event sample comes out.
+The process card is read in MadGraph's full grammar — decay chains
+(`p p > t t~, t > b e+ ve`), 1→n decays to a partial width, the s-channel
+restrictions `>`, `$` and `$$`, polarized external legs (`w+{0}`, `e-{L}`),
+`add process` with `@N` — and whatever the grammar can say that is not
+supported yet is refused as a hard error before anything reads the card. That includes hadronic processes at MadGraph's
 own default dynamical scale — the kT-clustering prescription
 (`dynamical_scale_choice = -1`) is reproduced against MadGraph's clustering
 itself, not approximated.
@@ -42,8 +47,8 @@ spin-2, Majorana fermions, squared-order constraints) and where each claim is
 measured is in the guide's [UFO chapter](https://nsmith-.github.io/vibegraph/guide/02-ufo.html#beyond-the-standard-model)
 and in [`validation/manifest.toml`](validation/manifest.toml). Beam
 configurations other than unpolarized proton–proton or fixed-energy partonic
-collisions, and MadGraph's decay-chain process syntax, are out of scope for
-now; open validation items are tracked in [`TODO.md`](TODO.md).
+collisions are out of scope for now; open validation items are tracked in
+[`TODO.md`](TODO.md).
 
 **Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
 boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO MLM-style
@@ -232,17 +237,18 @@ vibegraph integrate validation/madgraph/dy13_proc_card.dat \
 | Pipeline step | Status |
 |---|---|
 | UFO model loading | ✅ Python-AST parser for UFO models; restrict cards baked into parameters; model identity (label + SHA-256 over the parsed model) banked into artifacts |
-| Feynman diagram enumeration | ✅ [feyngraph](https://github.com/Jens-Braun/FeynGraph) topology generation + a MadGraph-style process grammar (`p p > e+ e-`, coupling-order constraints, multiparticle labels); validated against MadGraph's diagram counts |
+| Feynman diagram enumeration | ✅ [feyngraph](https://github.com/Jens-Braun/FeynGraph) topology generation under MadGraph's process-card grammar (multiparticle labels, coupling orders, `add process`/`@N`, `/`, the `>` and `$$` s-channel filters, 1→n decays, decay chains stitched onto their core legs, polarized legs); validated against MadGraph's diagram counts and its own generation on censuses of proc cards |
 | Helicity amplitudes | ✅ HELAS-style evaluation compiled directly from UFO Lorentz structures (the ALOHA role), topology-driven for arbitrary processes; exact color-factor \|M\|² via per-flow JAMPs; per-helicity program expansion with MadGraph-matched helicity filtering |
 | Phase-space sampling | ✅ Lepage VEGAS (deterministic parallel chunking, serde-frozen grids) + n-body LIPS/RAMBO generic over the scalar type, and MadGraph-style **multichannel**: per-diagram propagator-pole channel trees, Breit–Wigner / multi-rung t-channel-spine / massless-log maps with per-subprocess identical-particle factors, variance-minimising weights with α-adaptation, one grid per channel |
-| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions, including the default kT-clustered dynamical scale reproduced against MadGraph's own clustering; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings |
-| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
+| Cross section + running couplings | ✅ Leptonic and hadronic (PDF-convolved) σ with compiled MadGraph run-card cuts; MadGraph's αs RGE and per-event μR / per-beam μF prescriptions, including the default kT-clustered dynamical scale reproduced against MadGraph's own clustering; at proton beams, an arbitrary process through measured flavour groups summed over both beam orderings; partial widths of 1→n decays; decay chains inside MadEvent's Breit–Wigner windows; `$` as MadEvent's zeroed on-shell propagator; polarized cross sections |
+| Unweighted event output | ✅ Accept/reject over the frozen grids at fixed-energy **and** proton beams; per-event helicity and colour-flow selection following MadEvent's own rules, with the flow→`ICOLUP` dictionary checked against MadGraph's `leshouche.inc`; `SCALUP`/`AQCDUP`; decay-chain resonance records and one `<init>` entry per `@N`, as MadEvent writes them; a four-layer LHEF writer/reader that round-trips MadGraph's own event files byte-for-byte |
 
 Notable current boundaries (hard errors or tracked rows, not silent
 wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
 conjugation, loop-level UFOs (out of the LO charter), beam configurations
-beyond unpolarized proton–proton or fixed-energy partonic beams, and
-decay-chain process syntax. Colour sextets and baryonic epsilon tensors are
+beyond unpolarized proton–proton or fixed-energy partonic beams, squared-order
+constraints, polarized intermediate resonances, and `add process` lines of
+different multiplicity (MLM's territory). Colour sextets and baryonic epsilon tensors are
 *supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
 `ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
 corners still refused rather than guessed: a `T6` carrying adjoint indices, and

@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cuts::Cuts;
+use crate::cuts::{forced_lines, Cuts};
 use crate::diagrams::diagram::Diagram;
 use crate::ufo::EvaluatedModel;
 
@@ -135,7 +135,8 @@ impl MapChoices {
     };
 
     /// One diagram's phase-space channel under these choices: the regulated
-    /// decomposition with the cut-implied timelike floors, the chosen angular map
+    /// decomposition with the cut-implied timelike floors, each line a decay chain
+    /// forces on shell confined to its `bwcutoff` window, the chosen angular map
     /// on the splits it selects, and the chosen rung order. The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
@@ -153,6 +154,17 @@ impl MapChoices {
             cuts.spacelike_floor(),
         )
         .with_timelike_floors(&|slots| cuts.timelike_floor(slots));
+        let forced = forced_lines(diagram, model);
+        let channel = if forced.is_empty() {
+            channel
+        } else {
+            let bwcutoff = cuts.bwcutoff();
+            channel.with_forced_windows(&|slots| {
+                let line = forced.iter().find(|l| l.slots == slots)?;
+                let (lo, hi) = line.mass_window(bwcutoff)?;
+                Some((lo.max(0.0).powi(2), hi * hi))
+            })
+        };
         let energy_floor = |slots: u64| cuts.energy_floor(slots);
         let emitters = DiagramChannel::<f64>::massless_vector_slots(diagram, model);
         let emission = DiagramChannel::<f64>::soft_emission_rule(emitters);

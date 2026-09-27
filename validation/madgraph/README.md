@@ -71,6 +71,7 @@ Committed reference files, each the output of one generator:
 | `hadronic_sigma_reference.json` | `gen_hadronic_sigma.sh` | the hadronic σ gate |
 | `dy_integrand_oracle.json` | `gen_dy_oracle.sh` | the pointwise Drell-Yan oracle |
 | `runcard_defaults.json` | `dump_runcard_defaults.py` | the run-card defaults transcription |
+| `proc_grammar.json` | `dump_proc_grammar.py` | the proc-card grammar oracle |
 | `dy13_*_card.dat` | copied verbatim into the runs | both sides of the hadronic σ gate |
 | `higgs_window_reference.json` | `gen_higgs_window.sh` | the h → ττ pole window measurement |
 | `kt_cluster_dump_manifest.json` | `gen_kt_cluster_dumps.sh` | what the kT-clustering dumps are, and their checksums |

@@ -154,6 +154,20 @@ impl VertexTerm {
         first
     }
 
+    /// Whether this vertex-term's Lorentz terms are evaluated through the rank-2 tensor
+    /// path (see [`RootedTerm::tensor`]). Uniform across the terms: a vertex whose
+    /// structures mix a cyclic tensor term with a tree-rootable one has no single
+    /// per-vertex line convention. Empty term list → `false`.
+    fn tensor(&self) -> bool {
+        let mut it = self.terms.iter().map(|t| t.tensor);
+        let Some(first) = it.next() else { return false };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's Lorentz terms mix the tensor path with tree rooting"
+        );
+        first
+    }
+
     /// The runtime `reversed`-bilinear parity shared by this vertex-term's Lorentz terms
     /// (see [`RootedTerm::reversed_sign`]). Uniform across the terms for the same reason
     /// as [`build_sign`](Self::build_sign) (they share the vertex's fermion legs). Empty
@@ -260,7 +274,8 @@ impl VertexInfo {
 
     /// The rooting-convention sign of this vertex, common to all its `(color, lorentz)`
     /// terms (see [`VertexTerm::build_sign`]). Product of these over a diagram's vertices,
-    /// evaluated at the canonical `VtxIdx(0)` rooting, is the diagram's
+    /// evaluated at the rooting that takes the diagram's anchor as the amplitude vertex,
+    /// is the diagram's
     /// [`build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign).
     pub(super) fn build_sign(&self) -> i8 {
         let mut it = self.terms.iter().map(|t| t.build_sign());
@@ -285,8 +300,20 @@ impl VertexInfo {
         first
     }
 
+    /// Whether this vertex is evaluated through the rank-2 tensor path, common to all its
+    /// terms (see [`VertexTerm::tensor`]).
+    pub(super) fn tensor(&self) -> bool {
+        let mut it = self.terms.iter().map(|t| t.tensor());
+        let Some(first) = it.next() else { return false };
+        assert!(
+            it.all(|s| s == first),
+            "a vertex's couplings mix the tensor path with tree rooting"
+        );
+        first
+    }
+
     /// The reversed-bilinear parity of this vertex, common to all its terms (see
-    /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the canonical
+    /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the anchor
     /// rooting is [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
     pub(super) fn reversed_sign(&self) -> i8 {
         let mut it = self.terms.iter().map(|t| t.reversed_sign());

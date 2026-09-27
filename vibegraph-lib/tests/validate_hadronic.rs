@@ -2629,9 +2629,10 @@ fn probe_cluster_scale_spread_over_configurations() {
                     // what the integrand itself evaluated this point at.
                     let drawn = integ.channel_ids()[0];
                     if g == drawn.group && drawn.channel + 1 == config {
+                        let own = ev.group_scales[g][0].expect("the drawn group carries weight");
                         assert_eq!(
                             (s.mu_r, s.mu_f),
-                            (ev.scales.mu_r, ev.scales.mu_f),
+                            (own.mu_r, own.mu_f),
                             "[{run}] the rebuilt clustering disagrees with the integrand's \
                              own scales in the channel the point was drawn in"
                         );
@@ -2680,6 +2681,274 @@ fn probe_cluster_scale_spread_over_configurations() {
                 .join(" | ")
         );
     }
+}
+
+/// Which integration configuration MadEvent clusters a point's scale in, read off
+/// its own banked events one at a time.
+///
+/// On `p p → ℓ⁺ℓ⁻ j` every `q g → ℓℓq` event has configurations that cluster to two
+/// different scales, so its `SCALUP` says which of the two sets MadEvent drew.
+/// Under the rule the integrand implements — a configuration drawn `∝ AMP2_c` of
+/// the event's own flavour group, at the argument that group's matrix element is
+/// evaluated at — the chance of the higher scale is the `AMP2` share of the
+/// configurations that give it, a number this crate computes from the event's
+/// momenta alone. Summed over MadEvent's events, the count at the higher scale
+/// has to match the summed shares within their binomial spread.
+///
+/// The argument is the convention under test. An event whose beams carry the
+/// group's partons exchanged (MadEvent's `IMIRROR = 2`) is read in the group's
+/// own flavour order, rotated by π about the x axis with its beams swapped: that
+/// is the orientation MadEvent clusters and evaluates it in. The same events read
+/// unrotated — the draw from `AMP2` at the unmirrored argument, which the
+/// integrand used to take for a group's mirrored term — are the control, and
+/// that reading has to be rejected.
+///
+/// What it cannot see: the `q q̄ → ℓℓg` groups, whose configurations all cluster
+/// to one scale; the absolute normalisation of the draw inside a set of
+/// configurations that share a scale; and anything about the integrand's own use
+/// of the rule, which the `samples` cell's `SCALUP` column and
+/// `cli_decay_chain_events`' replay of this crate's own events see.
+#[test]
+fn madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2() {
+    use flate2::read::MultiGzDecoder;
+    use std::io::Read;
+    use vibegraph::hadronic::SampledChannel;
+    use vibegraph::lhef::parse::LheFile;
+
+    if !dyn_run_present(
+        "madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2",
+        LLJ_DYN_RUN,
+    ) {
+        return;
+    }
+    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(LLJ_PROCESS, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+    let mut integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+        .expect("hadronic integrand");
+    integ
+        .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+        .expect("run card scale prescription compiles");
+    assert!(
+        integ.scale_source().weights_configurations_by_amp2(),
+        "this card's enhancement weight is not the squared amplitude"
+    );
+    let source = integ.scale_source();
+
+    let path = run_dir.join("Events/run_01/unweighted_events.lhe.gz");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut text = String::new();
+    MultiGzDecoder::new(&bytes[..])
+        .read_to_string(&mut text)
+        .unwrap_or_else(|e| panic!("decompress {}: {e}", path.display()));
+    let events = LheFile::parse(&text)
+        .expect("MadGraph's own file parses")
+        .events;
+
+    /// Events at the higher scale, their expected count and its variance.
+    #[derive(Default, Clone, Copy)]
+    struct Tally {
+        events: usize,
+        observed: f64,
+        expected: f64,
+        variance: f64,
+    }
+    impl Tally {
+        fn pull(&self) -> f64 {
+            (self.observed - self.expected) / self.variance.sqrt()
+        }
+    }
+    /// One reading of an event: which tally it feeds, its beams and its legs.
+    type Reading = (usize, [[f64; 4]; 2], Vec<[f64; 4]>);
+    let rotate = |p: [f64; 4]| [p[0], p[1], -p[2], -p[3]];
+    let n_groups = groups.groups().len();
+    // Per group: direct events, exchanged events read rotated, the same read unrotated.
+    let mut tallies = vec![[Tally::default(); 3]; n_groups];
+    let mut unmatched = 0usize;
+    for ev in &events {
+        let incoming: Vec<[f64; 4]> = ev
+            .particles
+            .iter()
+            .filter(|p| p.status == -1)
+            .map(|p| p.momentum)
+            .collect();
+        let pdg_in: Vec<i32> = ev
+            .particles
+            .iter()
+            .filter(|p| p.status == -1)
+            .map(|p| p.pdg)
+            .collect();
+        let outgoing: Vec<[f64; 4]> = ev
+            .particles
+            .iter()
+            .filter(|p| p.status == 1)
+            .map(|p| p.momentum)
+            .collect();
+        let pdg_out: Vec<i32> = ev
+            .particles
+            .iter()
+            .filter(|p| p.status == 1)
+            .map(|p| p.pdg)
+            .collect();
+        let (group, exchanged) = groups
+            .groups()
+            .iter()
+            .enumerate()
+            .find_map(|(gi, g)| {
+                g.members().iter().find_map(|m| {
+                    if m.outgoing != pdg_out {
+                        None
+                    } else if m.incoming[..] == pdg_in[..] {
+                        Some((gi, false))
+                    } else if m.incoming == [pdg_in[1], pdg_in[0]] {
+                        Some((gi, true))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .expect("MadGraph's subprocess is one of ours");
+        let readings: Vec<Reading> = if exchanged {
+            vec![
+                (
+                    1,
+                    [rotate(incoming[1]), rotate(incoming[0])],
+                    outgoing.iter().map(|p| rotate(*p)).collect(),
+                ),
+                (2, [incoming[0], incoming[1]], outgoing.clone()),
+            ]
+        } else {
+            vec![(0, [incoming[0], incoming[1]], outgoing.clone())]
+        };
+        for (slot, beams, legs) in readings {
+            let n = groups.groups()[group].evaluator().n_configs();
+            let scalup: Vec<Option<f64>> = (0..n)
+                .map(|c| {
+                    source
+                        .scales(beams, &legs, SampledChannel { group, channel: c })
+                        .ok()
+                        .map(|s| s.mu_f[0].max(s.mu_f[1]))
+                })
+                .collect();
+            if !scalup
+                .iter()
+                .any(|s| s.is_some_and(|s| (s / ev.scale - 1.0).abs() < 1e-6))
+            {
+                unmatched += 1;
+                continue;
+            }
+            let hi = scalup.iter().flatten().fold(0.0f64, |a, &b| a.max(b));
+            let at_hi: Vec<bool> = scalup
+                .iter()
+                .map(|s| s.is_some_and(|s| (s / hi - 1.0).abs() < 1e-9))
+                .collect();
+            if at_hi.iter().all(|&h| h) {
+                continue;
+            }
+            // `AMP2` in the partonic centre of mass of this reading, which is the
+            // argument the group's matrix element takes for it.
+            let beta = (beams[0][0] - beams[1][0]) / (beams[0][0] + beams[1][0]);
+            let gamma = 1.0 / (1.0 - beta * beta).sqrt();
+            let cm: Vec<V> = beams
+                .iter()
+                .chain(&legs)
+                .map(|p| {
+                    V::new(
+                        gamma * (p[0] - beta * p[3]),
+                        p[1],
+                        p[2],
+                        gamma * (p[3] - beta * p[0]),
+                    )
+                })
+                .collect();
+            let mut amp2 = vec![0.0; n];
+            let mut scratch = amps[group].scratch_space();
+            amps[group].eval_amp2(&cm, &mut scratch, &mut amp2);
+            let total: f64 = amp2.iter().sum();
+            let share = amp2
+                .iter()
+                .zip(&at_hi)
+                .filter(|(_, &h)| h)
+                .map(|(a, _)| a)
+                .sum::<f64>()
+                / total;
+            let t = &mut tallies[group][slot];
+            t.events += 1;
+            t.observed += f64::from(u8::from((ev.scale / hi - 1.0).abs() < 1e-6));
+            t.expected += share;
+            t.variance += share * (1.0 - share);
+        }
+    }
+    let sum = |slots: &[usize]| {
+        tallies.iter().fold(Tally::default(), |mut acc, t| {
+            for &s in slots {
+                acc.events += t[s].events;
+                acc.observed += t[s].observed;
+                acc.expected += t[s].expected;
+                acc.variance += t[s].variance;
+            }
+            acc
+        })
+    };
+    let rule = sum(&[0, 1]);
+    let control = sum(&[0, 2]);
+    for (g, t) in tallies.iter().enumerate() {
+        if t[0].events + t[1].events == 0 {
+            continue;
+        }
+        println!(
+            "group {g}: direct {} events, {} at the higher scale against {:.1} (pull {:+.2}) | \
+             exchanged, rotated {} / {:.1} (pull {:+.2}) | exchanged, unrotated {} / {:.1} \
+             (pull {:+.2})",
+            t[0].events,
+            t[0].observed,
+            t[0].expected,
+            t[0].pull(),
+            t[1].observed,
+            t[1].expected,
+            t[1].pull(),
+            t[2].observed,
+            t[2].expected,
+            t[2].pull(),
+        );
+    }
+    println!(
+        "{LLJ_DYN_RUN}: {} of {} events carry configurations at two scales; at the higher one \
+         {} against {:.1} expected (pull {:+.2}); unrotated control {:.1} expected (pull {:+.2}); \
+         {unmatched} readings no configuration reproduces",
+        rule.events,
+        events.len(),
+        rule.observed,
+        rule.expected,
+        rule.pull(),
+        control.expected,
+        control.pull(),
+    );
+    assert_eq!(unmatched, 0, "MadEvent SCALUPs no configuration reproduces");
+    assert!(
+        rule.events > 1000,
+        "too few events tell the configurations apart for the statement to mean anything"
+    );
+    assert!(
+        rule.pull().abs() < 3.0,
+        "MadEvent's draw is not AMP2 at its matrix element's argument: pull {:+.2}",
+        rule.pull()
+    );
+    // The control has to fail, or the rotation is not what this measures.
+    assert!(
+        control.pull() < -5.0,
+        "the unrotated reading of the exchanged events is not rejected: pull {:+.2}",
+        control.pull()
+    );
 }
 
 /// Components in the `[E, px, py, pz]` layout the scale prescription reads.
@@ -4001,4 +4270,158 @@ fn weight_tail_of(run: &str, seed: u64, draws_per_channel: usize) {
     table("m_ll [GeV]", &mll_edges, &mll_m2, &mll_sum);
     table("pT(j) [GeV]", &ptj_edges, &ptj_m2, &ptj_sum);
     table("√ŝ [GeV]", &shat_edges, &shat_m2, &shat_sum);
+}
+
+/// Every dynamical-scale proton row, at the budget its gate enforces, over a
+/// caller-chosen seed range — the instrument that re-measures those rows when
+/// something the per-event scale reads changes.
+///
+/// `VG_SWEEP_ROWS` names the rows (comma-separated manifest keys, default all
+/// six), `VG_SWEEP_SEEDS` the seed count (default 5) and `VG_SWEEP_SEED0` the
+/// first seed (default each row's own first gate seed, so the first five
+/// reproduce the gate's). Each seed prints one `SWEEP` line — row, seed, σ and
+/// its error in pb — for a script to pair against another build's, and each
+/// row closes with the unweighted mean, its error, the seeds' χ²/dof about it
+/// and the pull against MadGraph.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_dynamic_rows_seed_sweep() {
+    /// A row, its process, `(survey, adapt iterations, neval, niter)` and its gate
+    /// seeds.
+    type SweepRow = (
+        &'static str,
+        &'static str,
+        (usize, usize, usize, usize),
+        &'static [u64],
+    );
+    let rows: &[SweepRow] = &[
+        (
+            LLJ_DYN_RUN,
+            LLJ_PROCESS,
+            (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+            LLJ_SEEDS,
+        ),
+        (
+            JJ_RUN,
+            JJ_PROCESS,
+            (JJ_ADAPT_SURVEY, JJ_ADAPT_ITERS, JJ_NEVAL, JJ_NITER),
+            JJ_SEEDS,
+        ),
+        (
+            RECARDED_ROWS[0].0,
+            RECARDED_ROWS[0].1,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                RECARDED_ROWS[0].2,
+                RECARDED_NITER,
+            ),
+            RECARDED_SEEDS,
+        ),
+        (
+            RECARDED_ROWS[1].0,
+            RECARDED_ROWS[1].1,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                RECARDED_ROWS[1].2,
+                RECARDED_NITER,
+            ),
+            RECARDED_SEEDS,
+        ),
+        (
+            RECARDED_ROWS[2].0,
+            RECARDED_ROWS[2].1,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                RECARDED_ROWS[2].2,
+                RECARDED_NITER,
+            ),
+            RECARDED_SEEDS,
+        ),
+        (
+            RECARDED_ROWS[3].0,
+            RECARDED_ROWS[3].1,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                RECARDED_ROWS[3].2,
+                RECARDED_NITER,
+            ),
+            RECARDED_SEEDS,
+        ),
+    ];
+    let wanted: Option<Vec<String>> = std::env::var("VG_SWEEP_ROWS")
+        .ok()
+        .map(|s| s.split(',').map(str::to_string).collect());
+    let n_seeds: u64 = std::env::var("VG_SWEEP_SEEDS")
+        .ok()
+        .map_or(5, |s| s.parse().expect("VG_SWEEP_SEEDS is a count"));
+    let seed0: Option<u64> = std::env::var("VG_SWEEP_SEED0")
+        .ok()
+        .map(|s| s.parse().expect("VG_SWEEP_SEED0 is a seed"));
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    for &(run, process, budget, gate_seeds) in rows {
+        if wanted.as_ref().is_some_and(|w| !w.iter().any(|r| r == run)) {
+            continue;
+        }
+        if !dyn_run_present("probe_dynamic_rows_seed_sweep", run) {
+            continue;
+        }
+        let run_dir = validation_dir().join("output").join(run);
+        let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
+        let (mg, mg_err) = banked_llj_sigma(&run_dir);
+        let groups = groups_for(process, &model, &evaluated, &rc);
+        let amps: Vec<BoundAmplitude<f64>> = groups
+            .groups()
+            .iter()
+            .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+            .collect();
+        let expect_alpha_s = process != "p p > l+ l-";
+        let first = seed0.unwrap_or(gate_seeds[0]);
+        let clock = Stopwatch::start();
+        let mut runs = Vec::new();
+        let mut summary = Vec::new();
+        for seed in first..first + n_seeds {
+            let (sigma, err) = run_seed_shaped(
+                &groups,
+                &amps,
+                &model,
+                &evaluated,
+                &set,
+                &pdf,
+                &rc,
+                budget,
+                seed,
+                expect_alpha_s,
+                &mut summary,
+                true,
+                ScaleShape::PerEvent,
+            );
+            eprintln!("SWEEP {run} {seed} {sigma:.9e} {err:.6e}");
+            runs.push(SeedResult {
+                seed,
+                sigma_pb: sigma,
+                sigma_err_pb: err,
+            });
+        }
+        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        eprintln!(
+            "SWEEP-ROW {run}: {} seeds from {first} at {} x {}: σ = {mean:.6e} ± {mean_err:.3e} pb \
+             | χ²/dof {chi2:.2} | MG {mg:.6e} ± {mg_err:.3e} | pull {:+.2} | rel {:+.4} | {:.0} s",
+            runs.len(),
+            budget.2,
+            budget.3,
+            (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt(),
+            mean / mg - 1.0,
+            clock.seconds(),
+        );
+    }
 }

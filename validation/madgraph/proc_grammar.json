@@ -1,0 +1,7423 @@
+{
+ "metadata": {
+  "generator": "validation/madgraph/dump_proc_grammar.py",
+  "madgraph": "research/refs/mg5amcnlo",
+  "model": "sm",
+  "measurements": {
+   "duplicates": [
+    {
+     "card": "import model sm\ngenerate p p > e+ e-\nadd process u u~ > e+ e-",
+     "outcome": "u u~ > e+ e- WEIGHTED<=4 @1; c c~ > e+ e- WEIGHTED<=4 @1; d d~ > e+ e- WEIGHTED<=4 @1; s s~ > e+ e- WEIGHTED<=4 @1; u u~ > e+ e- WEIGHTED<=4 @2"
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu-\nadd process e+ e- > mu+ mu-",
+     "outcome": "e+ e- > mu+ mu- WEIGHTED<=4 @1; e+ e- > mu+ mu- WEIGHTED<=4 @2"
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @2",
+     "outcome": "e+ e- > mu+ mu- WEIGHTED<=4 @1; e+ e- > mu+ mu- WEIGHTED<=4 @2"
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @1",
+     "outcome": "InvalidCmd: Duplicate process Process: e+ e- > mu+ mu- WEIGHTED<=4 @1 found. Please check your processes."
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu- @1\nadd process e+ e- > mu+ mu- @1 --no_warning=duplicate",
+     "outcome": "e+ e- > mu+ mu- WEIGHTED<=4 @1"
+    },
+    {
+     "card": "import model sm\ngenerate p p > e+ e- @1\nadd process u u~ > e+ e- @1",
+     "outcome": "u u~ > e+ e- WEIGHTED<=4 @1; c c~ > e+ e- WEIGHTED<=4 @1; d d~ > e+ e- WEIGHTED<=4 @1; s s~ > e+ e- WEIGHTED<=4 @1; u u~ > e+ e- WEIGHTED<=4 @1"
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu-\nadd process e- e+ > mu+ mu-",
+     "outcome": "e+ e- > mu+ mu- WEIGHTED<=4 @1; e- e+ > mu+ mu- WEIGHTED<=4 @2"
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > mu+ mu- EW=0",
+     "outcome": "e+ e- > mu+ mu- EW=0 @1"
+    }
+   ],
+   "decay_assignment": [
+    {
+     "card": "import model sm\ngenerate e+ e- > z z, z > e+ e-",
+     "outcome": [
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > e+ e- WEIGHTED<=2"
+     ]
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > z z, z > e+ e-, z > mu+ mu-",
+     "outcome": [
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > mu+ mu- WEIGHTED<=2"
+     ]
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > z z, z > e+ e-, z > mu+ mu-, z > ta+ ta-",
+     "outcome": [
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > e+ e- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > mu+ mu- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > ta+ ta- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > mu+ mu- WEIGHTED<=2 | Decay: z > mu+ mu- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > mu+ mu- WEIGHTED<=2 | Decay: z > ta+ ta- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > ta+ ta- WEIGHTED<=2 | Decay: z > ta+ ta- WEIGHTED<=2"
+     ]
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > z z, z > l+ l-",
+     "outcome": [
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > e+ e- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > e+ e- WEIGHTED<=2 | Decay: z > mu+ mu- WEIGHTED<=2",
+      "e+ e- > z z WEIGHTED<=4 @1 | Decay: z > mu+ mu- WEIGHTED<=2 | Decay: z > mu+ mu- WEIGHTED<=2"
+     ]
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > w+ w-, w+ > e+ ve",
+     "outcome": [
+      "e+ e- > w+ w- WEIGHTED<=4 @1 | Decay: w+ > e+ ve WEIGHTED<=2"
+     ]
+    },
+    {
+     "card": "import model sm\ngenerate e+ e- > z z, h > b b~",
+     "outcome": [
+      "e+ e- > z z WEIGHTED<=4 @1"
+     ]
+    }
+   ]
+  }
+ },
+ "cases": [
+  {
+   "name": "plain",
+   "card": "import model sm\ngenerate e+ e- > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "hadronic",
+   "card": "generate p p > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "spacing_extra_blanks",
+   "card": "generate    e+   e-  >  mu+   mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "spacing_no_blank_before_gt",
+   "card": "generate p p> e+ e-",
+   "error": "InvalidCmd: No particle p> in model"
+  },
+  {
+   "name": "spacing_no_blank_after_gt",
+   "card": "generate p p >e+ e-",
+   "error": "InvalidCmd: No particle >e+ in model"
+  },
+  {
+   "name": "spacing_no_blanks_around_gt",
+   "card": "generate p p>e+ e-",
+   "error": "InvalidCmd: No particle p>e+ in model"
+  },
+  {
+   "name": "spacing_required_unspaced",
+   "card": "generate e+ e- > z>mu+ mu-",
+   "error": "InvalidCmd: No particle >mu+ in model"
+  },
+  {
+   "name": "pdg_codes",
+   "card": "generate 11 -11 > 13 -13",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pdg_codes_two_digit",
+   "card": "generate 21 21 > 6 -6",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pdg_code_single_digit",
+   "card": "generate 2 -2 > 11 -11",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        2
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -2
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pdg_code_unknown",
+   "card": "generate e+ e- > 99 -99",
+   "error": "InvalidCmd: No pdg_code 99 in model"
+  },
+  {
+   "name": "repeat_count_particle",
+   "card": "generate e+ e- > 2e+ 2e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "repeat_count_label",
+   "card": "generate e+ e- > 2j",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "repeat_count_three",
+   "card": "generate p p > 3j",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "case_insensitive_names",
+   "card": "generate E+ E- > MU+ MU-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "case_mixed_names",
+   "card": "generate e+ e- > Z H",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        25
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "unknown_particle",
+   "card": "generate e+ e- > mu+ foo",
+   "error": "InvalidCmd: No particle foo in model"
+  },
+  {
+   "name": "no_final_state",
+   "card": "generate e+ e- >",
+   "error": "InvalidCmd: wrong format for \"e+ e- >\" this part requires one or two symbols '>', 0 found"
+  },
+  {
+   "name": "no_separator",
+   "card": "generate e+ e-",
+   "error": "InvalidCmd: wrong format for \"e+ e-\" this part requires one or two symbols '>', 0 found"
+  },
+  {
+   "name": "three_separators",
+   "card": "generate e+ e- > z > a > mu+ mu-",
+   "error": "InvalidCmd: wrong format for \"e+ e- > z > a > mu+ mu-\" this part requires one or two symbols '>', 3 found"
+  },
+  {
+   "name": "decay_process",
+   "card": "generate t > w+ b",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        6
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        24
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        5
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag",
+   "card": "generate e+ e- > mu+ mu- @3",
+   "processes": [
+    {
+     "id": 3,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_then_orders",
+   "card": "generate p p > j j @1 QED=0",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 0
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_unspaced",
+   "card": "generate e+ e- > mu+ mu-@2",
+   "processes": [
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_spaced",
+   "card": "generate e+ e- > mu+ mu- @ 2",
+   "processes": [
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_after_order_unspaced",
+   "card": "generate e+ e- > mu+ mu- QED=2@2",
+   "processes": [
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_orders_loop",
+   "card": "generate p p > e+ e- QED=2 [real=QCD] @4",
+   "processes": [
+    {
+     "id": 4,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [
+      "QCD"
+     ],
+     "NLO_mode": "real",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_le",
+   "card": "generate e+ e- > mu+ mu- QED<=2",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_spaced",
+   "card": "generate e+ e- > mu+ mu- QED = 2 QCD =0",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 0,
+      "QED": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_exact",
+   "card": "generate e+ e- > mu+ mu- QED==2",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 2
+     },
+     "squared_orders": {
+      "QED": 4
+     },
+     "sqorders_types": {
+      "QED": "=="
+     },
+     "constrained_orders": {
+      "QED": [
+       2,
+       "=="
+      ]
+     },
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_gt",
+   "card": "generate e+ e- > mu+ mu- QED>1",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 99
+     },
+     "squared_orders": {
+      "QED": 2
+     },
+     "sqorders_types": {
+      "QED": ">"
+     },
+     "constrained_orders": {
+      "QED": [
+       1,
+       ">"
+      ]
+     },
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_gt_spaced",
+   "card": "generate e+ e- > mu+ mu- QCD > 2",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 99
+     },
+     "squared_orders": {
+      "QCD": 4
+     },
+     "sqorders_types": {
+      "QCD": ">"
+     },
+     "constrained_orders": {
+      "QCD": [
+       2,
+       ">"
+      ]
+     },
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_ge",
+   "card": "generate e+ e- > mu+ mu- QED>=2",
+   "error": "InvalidCmd: Amplitude order constraints can only be of type =, <=, ==, >, not '>='."
+  },
+  {
+   "name": "order_ne",
+   "card": "generate e+ e- > mu+ mu- QED!=2",
+   "error": "InvalidCmd: Amplitude order constraints can only be of type =, <=, ==, >, not '!='."
+  },
+  {
+   "name": "order_lt",
+   "card": "generate e+ e- > mu+ mu- QED<2",
+   "error": "InvalidCmd: Amplitude order constraints can only be of type =, <=, ==, >, not '<'."
+  },
+  {
+   "name": "order_strict",
+   "card": "generate e+ e- > mu+ mu- QED===2",
+   "error": "InvalidCmd: Amplitude order constraints can only be of type =, <=, ==, >, not '==='."
+  },
+  {
+   "name": "order_repeated_leftmost_wins",
+   "card": "generate p p > t t~ QCD=2 QCD=1",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_two_negative",
+   "card": "generate e+ e- > mu+ mu- QED=-1 QCD=-1",
+   "error": "MadGraph5Error: Negative coupling order constraints can only be given on one type of coupling and either on squared orders or amplitude orders, not both."
+  },
+  {
+   "name": "order_before_slash",
+   "card": "generate p p > e+ e- j QCD<=1 / t",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      6
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 1
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_unknown",
+   "card": "generate e+ e- > mu+ mu- FOO=2",
+   "error": "InvalidCmd: model order FOO not valid for this model (valid one are: QED, QCD, EW, EW^2, aEW, aS). Please correct"
+  },
+  {
+   "name": "order_alias_ew",
+   "card": "generate e+ e- > mu+ mu- EW=2",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "EW": 2
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_alias_aew",
+   "card": "generate e+ e- > mu+ mu- aEW=1",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 2
+     },
+     "squared_orders": {
+      "QED": 2
+     },
+     "sqorders_types": {
+      "QED": "<="
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_alias_as",
+   "card": "generate p p > t t~ aS=1",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 2
+     },
+     "squared_orders": {
+      "QCD": 2
+     },
+     "sqorders_types": {
+      "QCD": "<="
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "order_weighted",
+   "card": "generate e+ e- > mu+ mu- WEIGHTED<=4",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "WEIGHTED": 4
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "squared_le",
+   "card": "generate e+ e- > mu+ mu- QED^2<=4",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 4
+     },
+     "squared_orders": {
+      "QED": 4
+     },
+     "sqorders_types": {
+      "QED": "<="
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "squared_eq_reads_le",
+   "card": "generate e+ e- > mu+ mu- QED^2=4",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 4
+     },
+     "squared_orders": {
+      "QED": 4
+     },
+     "sqorders_types": {
+      "QED": "<="
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "squared_exact_with_amp",
+   "card": "generate e+ e- > mu+ mu- QED^2==4 QCD=0",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QCD": 0
+     },
+     "squared_orders": {
+      "QED": 4
+     },
+     "sqorders_types": {
+      "QED": "=="
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "squared_gt",
+   "card": "generate e+ e- > mu+ mu- QED^2>2",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 99
+     },
+     "squared_orders": {
+      "QED": 2
+     },
+     "sqorders_types": {
+      "QED": ">"
+     },
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_digit_is_not_an_order",
+   "card": "generate p p > z > 13 -13",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "loop_bare",
+   "card": "generate p p > e+ e- [QCD]",
+   "error": "InvalidCmd: Perturbation order QCD is not among the perturbation orders allowed for by the loop model."
+  },
+  {
+   "name": "loop_real",
+   "card": "generate p p > e+ e- [real=QCD]",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [
+      "QCD"
+     ],
+     "NLO_mode": "real",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "loop_real_unspaced",
+   "card": "generate p p > e+ e-[real=QCD]",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [
+      "QCD"
+     ],
+     "NLO_mode": "real",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "loop_tree",
+   "card": "generate p p > e+ e- [tree=QCD]",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "loop_virt",
+   "card": "generate p p > e+ e- [virt=QCD]",
+   "error": "InvalidCmd: Perturbation order QCD is not among the perturbation orders allowed for by the loop model."
+  },
+  {
+   "name": "loop_bad_mode",
+   "card": "generate p p > e+ e- [foo=QCD]",
+   "error": "InvalidCmd: NLO mode foo is not valid. Valid modes are ['all', 'real', 'virt', 'sqrvirt', 'tree', 'noborn', 'LOonly', 'only']."
+  },
+  {
+   "name": "loop_real_constrained",
+   "card": "generate p p > e+ e- [real=QCD] QED==2",
+   "error": "InvalidCmd: Amplitude order constraints (for not LO processes) can only be of type <=, not '=='."
+  },
+  {
+   "name": "forbidden",
+   "card": "generate p p > e+ e- / z h",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      23,
+      25
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_unspaced",
+   "card": "generate e+ e- > mu+ mu-/z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      23
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_label",
+   "card": "generate p p > e+ e- j / p",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      21,
+      2,
+      4,
+      1,
+      3,
+      2,
+      4,
+      1,
+      3
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_pdg",
+   "card": "generate p p > e+ e- / 23",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      23
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_s",
+   "card": "generate p p > e+ e- $$ z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [
+      23
+     ],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_s_unspaced",
+   "card": "generate e+ e- > mu+ mu-$$z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [
+      23
+     ],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_s_split",
+   "card": "generate e+ e- > mu+ mu- $ $ z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [
+      23
+     ],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_onsh",
+   "card": "generate p p > e+ e- $ z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [
+      23
+     ],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "forbidden_onsh_unspaced",
+   "card": "generate e+ e- > mu+ mu- $z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [
+      23
+     ],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "onsh_then_s",
+   "card": "generate p p > e+ e- $ z $$ w+",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [
+      24
+     ],
+     "forbidden_onsh_s_channels": [
+      23
+     ],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "s_then_slash",
+   "card": "generate p p > e+ e- $$ w+ / h",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      25
+     ],
+     "forbidden_s_channels": [
+      24
+     ],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "slash_then_onsh",
+   "card": "generate p p > e+ e- / h $ z",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      25
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [
+      23
+     ],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "onsh_then_slash",
+   "card": "generate e+ e- > mu+ mu- $ z / h",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [
+      25
+     ],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [
+      23
+     ],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "slash_s_onsh",
+   "card": "generate p p > e+ e- / h $$ w+ $ z",
+   "error": "InvalidCmd: No particle $$ in model"
+  },
+  {
+   "name": "s_then_onsh",
+   "card": "generate p p > e+ e- $$ w+ $ z",
+   "error": "InvalidCmd: No particle $ in model"
+  },
+  {
+   "name": "forbidden_s_or",
+   "card": "generate p p > e+ e- $$ z | a",
+   "error": "InvalidCmd: Multiparticle e- is or-multiparticle which can be used only for required s-channels"
+  },
+  {
+   "name": "required",
+   "card": "generate e+ e- > z > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_hadronic",
+   "card": "generate p p > z > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_and",
+   "card": "generate e+ e- > z h > mu+ mu- b b~",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        5
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -5
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23,
+       25
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_or_inline",
+   "card": "generate e+ e- > z | a > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ],
+      [
+       22
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_or_label",
+   "card": "define v = z | a\ngenerate e+ e- > v > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ],
+      [
+       22
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_or_label_and",
+   "card": "define v = z | a\ngenerate e+ e- > v h > mu+ mu- h",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        25
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23,
+       25
+      ],
+      [
+       22,
+       25
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_plain_label",
+   "card": "generate e+ e- > l+ > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       -11,
+       -13
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_repeated",
+   "card": "generate e+ e- > z z > mu+ mu- mu+ mu-",
+   "error": "InvalidCmd: Invalid \"> A A >\" syntax. In old version of MG5aMC, this was allowed but incorectly intrepreted as \"> A >\"."
+  },
+  {
+   "name": "required_pdg",
+   "card": "generate e+ e- > 23 > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       23
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "required_orientation",
+   "card": "generate p p > w- > e+ ve",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        12
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [
+      [
+       -24
+      ]
+     ],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "or_label_as_leg",
+   "card": "define v = z | a\ngenerate e+ e- > v mu+ mu-",
+   "error": "InvalidCmd: Multiparticle v is or-multiparticle which can be used only for required s-channels"
+  },
+  {
+   "name": "or_label_forbidden",
+   "card": "define v = z | a\ngenerate e+ e- > mu+ mu- / v",
+   "error": "InvalidCmd: Multiparticle mu- is or-multiparticle which can be used only for required s-channels"
+  },
+  {
+   "name": "define",
+   "card": "define q = u d u~ d~\ngenerate q q > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        2,
+        1,
+        -2,
+        -1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        2,
+        1,
+        -2,
+        -1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_without_equals",
+   "card": "define q u d\ngenerate q q > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_except",
+   "card": "define lep = e+ e- / e-\ngenerate e+ e- > lep e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_pdg_members",
+   "card": "define x = 11 13\ngenerate e+ e- > x x",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11,
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11,
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_redefine_p",
+   "card": "define p = p b b~\ngenerate p p > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3,
+        5,
+        -5
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3,
+        5,
+        -5
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_case",
+   "card": "define MyP = u d\ngenerate myp myp > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_j",
+   "card": "define j = g u d\ngenerate p p > j j",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        1
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        1
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "define_after_use",
+   "card": "generate q q > e+ e-\ndefine q = u d",
+   "error": "InvalidCmd: No particle q in model"
+  },
+  {
+   "name": "define_empty",
+   "card": "define x\ngenerate e+ e- > mu+ mu-",
+   "error": "InvalidCmd: \"define\" command requires at least two arguments"
+  },
+  {
+   "name": "define_particle_name",
+   "card": "define e+ = u d\ngenerate e+ e- > mu+ mu-",
+   "error": "InvalidCmd: label e+ is a particle name in this model"
+  },
+  {
+   "name": "pol_vector",
+   "card": "generate e+ e- > w+{0} w-{T}",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        24
+       ],
+       "state": true,
+       "polarization": [
+        0
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -24
+       ],
+       "state": true,
+       "polarization": [
+        1,
+        -1
+       ],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pol_left_right",
+   "card": "generate e+ e- > z{L} z{R}",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [
+        -1
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [
+        1
+       ],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pol_fermion",
+   "card": "generate e+ e- > mu+{L} mu-{R}",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [
+        -1
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [
+        1
+       ],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pol_fermion_zero",
+   "card": "generate e+ e- > mu+{0} mu-",
+   "error": "InvalidCmd: \"0\" (longitudinal) polarizations are not supported for scalars/fermions."
+  },
+  {
+   "name": "pol_signed",
+   "card": "generate e+ e- > w+{+1} w-{-1}",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        24
+       ],
+       "state": true,
+       "polarization": [
+        1
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -24
+       ],
+       "state": true,
+       "polarization": [
+        -1
+       ],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pol_auxiliary",
+   "card": "generate e+ e- > z{A} a",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [
+        99
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        22
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "pol_massless_zero",
+   "card": "generate e+ e- > a{0} a",
+   "error": "InvalidCmd: Not supported syntax of type p p  > Z{T} Z"
+  },
+  {
+   "name": "pol_no_blank_after",
+   "card": "generate e+ e- > z{T}z a",
+   "error": "InvalidCmd: A space is required after the \"}\" symbol to separate particles"
+  },
+  {
+   "name": "pol_invalid",
+   "card": "generate e+ e- > w+{X} w-",
+   "error": "InvalidCmd: Invalid Polarization"
+  },
+  {
+   "name": "pol_hadronic",
+   "card": "generate p p > z{0} j",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [
+        0
+       ],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "tag_initial_tree",
+   "card": "generate !a! e- > e- a",
+   "error": "InvalidCmd: tree mode does not handle tagged particles"
+  },
+  {
+   "name": "chain",
+   "card": "generate p p > t t~, t > w+ b",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_nested",
+   "card": "generate p p > t t~, (t > w+ b, w+ > e+ ve), (t~ > w- b~, w- > e- ve~)",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": [
+        {
+         "id": 0,
+         "legs": [
+          {
+           "ids": [
+            24
+           ],
+           "state": false,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            -11
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            12
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          }
+         ],
+         "required_s_channels": [],
+         "forbidden_particles": [],
+         "forbidden_s_channels": [],
+         "forbidden_onsh_s_channels": [],
+         "orders": {},
+         "squared_orders": {},
+         "sqorders_types": {},
+         "constrained_orders": {},
+         "overall_orders": {},
+         "perturbation_couplings": [],
+         "NLO_mode": "tree",
+         "has_born": true,
+         "decay_chains": []
+        }
+       ]
+      },
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          -6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": [
+        {
+         "id": 0,
+         "legs": [
+          {
+           "ids": [
+            -24
+           ],
+           "state": false,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            11
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            -12
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          }
+         ],
+         "required_s_channels": [],
+         "forbidden_particles": [],
+         "forbidden_s_channels": [],
+         "forbidden_onsh_s_channels": [],
+         "orders": {},
+         "squared_orders": {},
+         "sqorders_types": {},
+         "constrained_orders": {},
+         "overall_orders": {},
+         "perturbation_couplings": [],
+         "NLO_mode": "tree",
+         "has_born": true,
+         "decay_chains": []
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_tthh",
+   "card": "generate p p > t t~ h h, (t > w+ b, w+ > j j), (t~ > w- b~, w- > l- vl~)",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        25
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        25
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": [
+        {
+         "id": 0,
+         "legs": [
+          {
+           "ids": [
+            24
+           ],
+           "state": false,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            21,
+            2,
+            4,
+            1,
+            3,
+            -2,
+            -4,
+            -1,
+            -3
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            21,
+            2,
+            4,
+            1,
+            3,
+            -2,
+            -4,
+            -1,
+            -3
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          }
+         ],
+         "required_s_channels": [],
+         "forbidden_particles": [],
+         "forbidden_s_channels": [],
+         "forbidden_onsh_s_channels": [],
+         "orders": {},
+         "squared_orders": {},
+         "sqorders_types": {},
+         "constrained_orders": {},
+         "overall_orders": {},
+         "perturbation_couplings": [],
+         "NLO_mode": "tree",
+         "has_born": true,
+         "decay_chains": []
+        }
+       ]
+      },
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          -6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": [
+        {
+         "id": 0,
+         "legs": [
+          {
+           "ids": [
+            -24
+           ],
+           "state": false,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            11,
+            13
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          },
+          {
+           "ids": [
+            -12,
+            -14,
+            -16
+           ],
+           "state": true,
+           "polarization": [],
+           "tagged": false
+          }
+         ],
+         "required_s_channels": [],
+         "forbidden_particles": [],
+         "forbidden_s_channels": [],
+         "forbidden_onsh_s_channels": [],
+         "orders": {},
+         "squared_orders": {},
+         "sqorders_types": {},
+         "constrained_orders": {},
+         "overall_orders": {},
+         "perturbation_couplings": [],
+         "NLO_mode": "tree",
+         "has_born": true,
+         "decay_chains": []
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_zz_one_decay",
+   "card": "generate e+ e- > z z, z > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          23
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -11
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          11
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_zz_two_decays",
+   "card": "generate e+ e- > z z, z > e+ e-, z > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          23
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -11
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          11
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      },
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          23
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -13
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          13
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_overall_orders",
+   "card": "generate p p > t t~, t > w+ b @2 QED=2",
+   "processes": [
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {
+      "QED": 2
+     },
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_tag_on_core",
+   "card": "generate p p > t t~ @2, t > w+ b",
+   "processes": [
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_loop",
+   "card": "generate p p > t t~, t > w+ b [QCD]",
+   "error": "MadGraph5Error: The '[' and ']' syntax cannot be used in cunjunction with decay chains."
+  },
+  {
+   "name": "chain_unbalanced",
+   "card": "generate p p > t t~, (t > w+ b",
+   "error": "InvalidCmd: Invalid Format, no balance between open and close parenthesis"
+  },
+  {
+   "name": "chain_core_exact_order",
+   "card": "generate p p > t t~ QED==0, t > w+ b",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {
+      "QED": 0
+     },
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {
+      "QED": [
+       0,
+       "=="
+      ]
+     },
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_decay_exact_order",
+   "card": "generate p p > t t~, t > w+ b QED==1",
+   "error": "MadGraph5Error: Decay processes cannot specify squared orders constraints."
+  },
+  {
+   "name": "chain_parenthesis_without_comma",
+   "card": "generate p p > t t~, (t > w+ b), t~ > w- b~",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        21,
+        2,
+        4,
+        1,
+        3,
+        -2,
+        -4,
+        -1,
+        -3
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -6
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      },
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          -6
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -24
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "chain_decay_not_in_core",
+   "card": "generate e+ e- > z z, h > b b~",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        23
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": [
+      {
+       "id": 0,
+       "legs": [
+        {
+         "ids": [
+          25
+         ],
+         "state": false,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        },
+        {
+         "ids": [
+          -5
+         ],
+         "state": true,
+         "polarization": [],
+         "tagged": false
+        }
+       ],
+       "required_s_channels": [],
+       "forbidden_particles": [],
+       "forbidden_s_channels": [],
+       "forbidden_onsh_s_channels": [],
+       "orders": {},
+       "squared_orders": {},
+       "sqorders_types": {},
+       "constrained_orders": {},
+       "overall_orders": {},
+       "perturbation_couplings": [],
+       "NLO_mode": "tree",
+       "has_born": true,
+       "decay_chains": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "add_process",
+   "card": "generate e+ e- > mu+ mu-\nadd process e+ e- > ta+ ta-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "numbering",
+   "card": "generate e+ e- > mu+ mu-\nadd process e+ e- > ta+ ta- @5\nadd process e+ e- > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 5,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 3,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "generate_resets",
+   "card": "generate e+ e- > mu+ mu-\ngenerate e+ e- > ta+ ta-\nadd process e+ e- > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        15
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "import_resets",
+   "card": "generate e+ e- > mu+ mu-\nimport model sm\nadd process e+ e- > a a",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        22
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        22
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "add_without_generate",
+   "card": "add process e+ e- > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "add_nothing",
+   "card": "add process",
+   "error": "InvalidCmd: \"add\" requires at least two arguments"
+  },
+  {
+   "name": "add_no_separator",
+   "card": "add process e+ e-",
+   "error": "InvalidCmd: wrong format for \"e+ e-\" this part requires one or two symbols '>', 0 found"
+  },
+  {
+   "name": "add_misspelt",
+   "card": "add proces e+ e- > mu+ mu-",
+   "error": "InvalidCmd: \"add\" requires the argument \"process\" or \"model\""
+  },
+  {
+   "name": "add_no_warning_duplicate",
+   "card": "generate e+ e- > mu+ mu-\nadd process e+ e- > mu+ mu- --no_warning=duplicate",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "add_identical",
+   "card": "generate e+ e- > mu+ mu-\nadd process e+ e- > mu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    },
+    {
+     "id": 2,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "mixed_initial_states",
+   "card": "generate e+ e- > mu+ mu-\nadd process t > w+ b",
+   "error": "InvalidCmd: Can not mix processes with different number of initial states."
+  },
+  {
+   "name": "comment",
+   "card": "generate e+ e- > mu+ mu- # a comment",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "semicolon",
+   "card": "define x = u d ; generate x x > e+ e-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        2,
+        1
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  },
+  {
+   "name": "continuation",
+   "card": "generate e+ e- > \\\nmu+ mu-",
+   "processes": [
+    {
+     "id": 1,
+     "legs": [
+      {
+       "ids": [
+        -11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        11
+       ],
+       "state": false,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        -13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      },
+      {
+       "ids": [
+        13
+       ],
+       "state": true,
+       "polarization": [],
+       "tagged": false
+      }
+     ],
+     "required_s_channels": [],
+     "forbidden_particles": [],
+     "forbidden_s_channels": [],
+     "forbidden_onsh_s_channels": [],
+     "orders": {},
+     "squared_orders": {},
+     "sqorders_types": {},
+     "constrained_orders": {},
+     "overall_orders": {},
+     "perturbation_couplings": [],
+     "NLO_mode": "tree",
+     "has_born": true,
+     "decay_chains": []
+    }
+   ]
+  }
+ ]
+}

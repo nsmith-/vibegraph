@@ -65,13 +65,14 @@ pub struct RootedTerm {
     /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
     /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
-    /// per-diagram scalar computed from the *canonical* `VtxIdx(0)` rooting
-    /// ([`DiagramEvalTree::build_convention_sign`]) and carried in the diagram's `fermi_sign`.
+    /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
+    /// amplitude vertex ([`DiagramEvalTree::build_convention_sign`]) and carried in the
+    /// diagram's `fermi_sign`.
     pub build_sign: i8,
     /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
     /// contributes (see [`term_reversed_parity`]). Like `build_sign` it depends on the
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
-    /// at the canonical rooting ([`DiagramEvalTree::reversed_convention_sign`]).
+    /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`]).
     pub reversed_sign: i8,
     /// Whether this term's bilinear carries a Dirac matrix — a `Gamma` or a `Sigma` —
     /// rather than being built from `Identity`, `Gamma5` and the chiral projectors
@@ -80,6 +81,10 @@ pub struct RootedTerm {
     /// (`Cγ^{μT}C⁻¹ = −γ^μ`, `Cσ^{μνT}C⁻¹ = −σ^{μν}`, against `C·1ᵀ·C⁻¹ = 1` and
     /// `Cγ⁵ᵀC⁻¹ = γ⁵`), so a line built only from the second takes no reversal sign.
     pub carries_dirac_matrix: bool,
+    /// Whether this term's index graph is cyclic, so that it is evaluated through the
+    /// rank-2 tensor path (see [`LorentzEvalTree::build_at_leg`]) rather than as a rooted
+    /// tree.
+    pub tensor: bool,
     /// Resolved primitive with output fiber fixed.
     pub tree: LorentzEvalTree,
 }
@@ -325,8 +330,9 @@ impl Tree for LorentzEvalTree {
 /// Yang-Mills (VVV) vertex needs relative to it is *not* a property of the rooted
 /// current (which would make it depend on the output-leg choice); it is a
 /// rooting-invariant per-vertex sign carried at the diagram level by
-/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per non-root VVV
-/// vertex so `σ_V·(honest current)` matches MadGraph independent of the root.
+/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per colourless VVV
+/// vertex off the anchor so `σ_V·(honest current)` matches MadGraph independent of
+/// the root.
 fn vector_out_node(child: usize) -> LorentzEvalNode {
     LorentzEvalNode::MetricVout { v: child }
 }
@@ -638,7 +644,9 @@ impl LorentzEvalTree {
         // one interaction whose structures range over pure metrics, momentum products
         // and Levi-Civita tensors, and a term-by-term test would give the same vertex
         // different signs (and leave the Levi-Civita-only terms, which carry no Metric
-        // at all, unsigned). Applying it here also covers those terms.
+        // at all, unsigned). Applying it here also covers those terms. Where the −1
+        // survives is a diagram-level convention: `root_diagram::vector_contact_sign`
+        // cancels it for every contact that should not carry it.
         if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
             metric_vertex_applied = true;
             sign = -sign;
@@ -947,8 +955,8 @@ fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegA
 /// leg adjoint in `flows`, so it is knowable at compile time here. `idx` is the corrected
 /// output leg (post [`correct_spin_index_for_flow`]), matching the routing `build_child`
 /// performs. Like the build-convention sign, this depends on the rooting, so it is lifted
-/// to a per-diagram scalar evaluated at the canonical `VtxIdx(0)` rooting
-/// ([`DiagramEvalTree::reversed_convention_sign`]).
+/// to a per-diagram scalar evaluated at the rooting that takes the diagram's anchor as
+/// the amplitude vertex ([`DiagramEvalTree::reversed_convention_sign`]).
 fn term_reversed_parity(
     term: &LorentzTerm,
     idx: Option<usize>,
@@ -1713,6 +1721,7 @@ pub fn root_term(
             .ops
             .iter()
             .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })),
+        tensor: cyclic_index_graph(term),
         tree,
     })
 }
@@ -2310,7 +2319,7 @@ mod tests {
         // VVS1: Metric(1,2) rooted at amplitude → plain Metric contraction. The
         // pure-metric vertex's −1 is the rooting-convention `build_sign`, carried
         // separately from `coeff` (it is lifted per-vertex into the diagram's
-        // `fermi_sign` at the canonical rooting).
+        // `fermi_sign` at the anchor rooting).
         let term = LorentzTerm {
             coeff: 1.0,
             ops: vec![LorentzOp::Metric { mu: 0, nu: 1 }],

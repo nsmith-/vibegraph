@@ -36,7 +36,7 @@
 
 use thiserror::Error;
 
-use crate::diagrams::diagram::{Diagram, LegIdx, PropIdx, Ray, VtxIdx};
+use crate::diagrams::diagram::{Diagram, LegIdx, OnShell, PropIdx, Ray, VtxIdx};
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
@@ -85,6 +85,7 @@ struct Line {
     pdg: i64,
     mass: f64,
     width: f64,
+    forced: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -270,6 +271,7 @@ fn forest(
             pdg: model.particle(externals[1]).pdg_code.abs(),
             mass: 0.0,
             width: 0.0,
+            forced: false,
         });
     }
 
@@ -309,6 +311,7 @@ fn forest(
             sprop: vec![if line.spacelike { 0 } else { line.pdg }],
             mass: line.mass,
             width: line.width,
+            forced: line.forced,
         });
     }
 
@@ -404,6 +407,7 @@ impl Walk<'_> {
             },
             mass: self.evaluated.mass(particle),
             width: self.evaluated.width(particle),
+            forced: self.diagram.props[prop.0].onshell == OnShell::Forced,
         };
         if spacelike {
             self.spacelike.push(line);
