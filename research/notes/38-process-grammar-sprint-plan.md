@@ -1460,3 +1460,57 @@ With both fixed:
 
 The build and gates on the merged tree were run by the manager, after the
 permission system denied the session's own build and the user approved running it.
+
+### 8.4 B1 (2026-09-26, the bank host: M3 Max, macOS, pinned MadGraph 3.7.1)
+
+Run in a worktree at `a497b31` holding copy-on-write clones of the `refdata-7`
+work area, both PDF sets and the pinned submodule, with `pixi run -e madgraph
+generate-references deps madgraph seeds refs`, then `pixi run --skip-deps
+validate`, then `assemble_bundle.sh`.
+
+**Four macOS failures in the generators**, which the Linux dry run could not
+see (`32276d7`):
+- BSD `seq` formats with `%g`, so every row's seeds became `2.02609e+07` and
+  collapsed onto one cached run. A later `int()` caught it; a float parse would
+  have banked one-seed references silently.
+- `build.sh`'s `sed -i` with no suffix. It fires only when the submodule copy
+  has no `.git` and MadGraph falls back to its coloured "development version"
+  banner, which is how that banner reached some `refdata-7` cards.
+- `madevent_seeds.sh` did not append `-lc++` on Darwin, so the proton
+  decay-chain row failed to link LHAPDF's C++ glue.
+- `stage_models` restages SMEFTsim's Python 2 UFO on every run, and only
+  MadGraph's command-line import converts it. A rerun whose process directories
+  were all cached left `refs` with an unconverted model. Staging now runs
+  MadGraph's own `convert model`; the result is file-for-file what MadGraph's
+  in-place conversion produced in the old work area.
+
+**Reproduction** (`6f8df9d`):
+- **Structural references unchanged:** the four censuses, `diagrams`,
+  `interactions`, couplings, `sm_decay_widths` and the run-card defaults.
+  `configs.json` and `sigma_reference.json` only gain the eight planned rows.
+- **Numeric tables at rounding level:** the six polarized amplitude tables, the
+  seven standalone per-flow tables, `decay_amplitudes` and `decay_width_exact`.
+  Worst 6e-14 of each point's largest flow; the O(1) relative moves are on
+  numerically-zero Ward-identity helicities at 1e-16.
+- **Every MadEvent seed bit-equal** across the Linux container and this host:
+  176 seeds over 40 rows of the width, decay-chain σ, `$` and chain-event
+  references. Only wall times and, on the 2 → 6 chain events, replay momenta at
+  ≤ 6e-7 differ.
+
+**New `grammar_sigma_reference.json`:**
+- `e+ e- > z > mu+ mu-` gives 0.0522054 ± 8.7e-6 and `e+ e- > w+{0} w-`
+  0.257798 ± 0.0002, matching the hand measurements.
+- `e+ e- > w+ w-` gives 7.19516 ± 0.0048. The −0.23% "offset" P1 recorded was a
+  single MadEvent run's, since P1's seeds read +0.01% against this.
+- MadEvent's quoted errors fail badly on Bhabha: seed χ²/dof is 93 for
+  `e+ e- > e+ e-` and 15 with `$$ z`. The seed-spread error in the manifest's
+  policy is what the gates must read.
+
+**Gates and bundle:**
+- The host gate run passed with `EXIT=0` and 183 ✅ / 7 ⚠️ / 4 ⏳, as in the
+  container.
+- `vibegraph-refdata-8.tar.zst` has 3824 files, 127,020,489 bytes, sha256
+  `a4695704…9689`. It is exactly `refdata-7`'s 3490 files, all byte-identical,
+  plus the eight rows' 328 files and six amplitude CSVs.
+- `--check` reproduces the pin, and the collator agrees with the manifest once
+  the rows count as bundled.

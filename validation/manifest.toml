@@ -128,11 +128,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 7
-archive = "vibegraph-refdata-7.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-7/vibegraph-refdata-7.tar.zst"
-sha256 = "70db21279b196aceccdcd9e52bef0911e607f8fa45016b74fd5133a6d8f2bdba"
-size_bytes = 124540424
+version = 8
+archive = "vibegraph-refdata-8.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-8/vibegraph-refdata-8.tar.zst"
+sha256 = "a469570402876aa3dee88d18e3ebb2c2f5208a541716c75afed9644bbc779689"
+size_bytes = 127020489
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -1039,9 +1039,8 @@ samples = { tier = "banked", mode = "gate", note = "The sextet K6/K6Bar Clebsch 
 # combination in it matches per diagram; the averaging factor of a polarized
 # incoming leg and the polarization-aware identical-particle factor are pinned
 # against MadGraph's IDEN by the hermetic `polarization_census` test. Their
-# amplitude and coupling tables are committed; their MadEvent runs lived in a
-# work area that no longer exists, so each row is planned until the next bundle
-# carries its run (the scripts are unchanged, and build.sh regenerates them).
+# amplitude and coupling tables are committed, and their MadEvent runs are in the
+# pinned bundle from refdata-8 on.
 
 [[process]]
 key = "ee_to_wp0wmt"
@@ -1049,8 +1048,6 @@ process = "e+ e- > w+{0} w-{T}"
 script = "validation/madgraph/scripts/ee_to_wp0wmt.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "Both W legs polarized, one longitudinal and one transverse: vxxxxx's helicity-0 vector and the two transverse ones, each alone in its leg's helicity sum, through the triple-gauge vertex and the neutrino exchange."
 artifacts = ["output/ee_to_wp0wmt", "amplitudes/ee_to_wp0wmt.json", "couplings/ee_to_wp0wmt.json"]
 mg_amplitude = { process = "e+ e- > W+{0} W-{T}", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 241 }
@@ -1066,8 +1063,6 @@ process = "e+ e- > w+{0} w-"
 script = "validation/madgraph/scripts/ee_to_wp0wm.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "One longitudinal W beside an unpolarized one: the polarized cross section and event sample, and one term of the decomposition of e+ e- > w+ w- by the W+ helicity."
 artifacts = ["output/ee_to_wp0wm", "amplitudes/ee_to_wp0wm.json", "couplings/ee_to_wp0wm.json"]
 mg_amplitude = { process = "e+ e- > W+{0} W-", pdgs_in = [-11, 11], pdgs_out = [24, -24], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 251 }
@@ -1083,8 +1078,6 @@ process = "e+ e- > z{0} h"
 script = "validation/madgraph/scripts/ee_to_z0h.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "A longitudinal Z against an external scalar: the helicity-0 polarization vector alone in the Z's sum, on the VVS vertex."
 artifacts = ["output/ee_to_z0h", "amplitudes/ee_to_z0h.json", "couplings/ee_to_z0h.json"]
 mg_amplitude = { process = "e+ e- > Z{0} H", pdgs_in = [-11, 11], pdgs_out = [23, 25], sqrt_s_list = [250.0, 500.0], npoints = 12, seed = 257 }
@@ -1100,8 +1093,6 @@ process = "u u~ > z{T} g"
 script = "validation/madgraph/scripts/uux_to_ztg.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "A transverse Z beside a gluon in a coloured process: the polarization restricts one massive vector's sum and leaves a massless one's, under a colour average of 1/9."
 artifacts = ["output/uux_to_ztg", "amplitudes/uux_to_ztg.json", "couplings/uux_to_ztg.json"]
 mg_amplitude = { process = "u u~ > Z{T} g", pdgs_in = [2, -2], pdgs_out = [23, 21], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 263 }
@@ -1117,8 +1108,6 @@ process = "e+ e-{L} > mu+ mu-"
 script = "validation/madgraph/scripts/ee_to_mumu_eml.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "A polarized incoming fermion: one helicity of the electron beam, the leg MadGraph's IDEN then averages over one state rather than two."
 artifacts = ["output/ee_to_mumu_eml", "amplitudes/ee_to_mumu_eml.json", "couplings/ee_to_mumu_eml.json"]
 mg_amplitude = { process = "e+ e-{L} > mu+ mu-", pdgs_in = [-11, 11], pdgs_out = [-13, 13], sqrt_s_list = [200.0, 500.0], npoints = 12, seed = 269 }
@@ -1134,8 +1123,6 @@ process = "e+ e- > t{L} t~"
 script = "validation/madgraph/scripts/ee_to_tlt.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "A polarized massive fermion in the final state: its helicity is not Lorentz invariant, so this is the row where the frame the matrix element is evaluated in is part of the answer."
 artifacts = ["output/ee_to_tlt", "amplitudes/ee_to_tlt.json", "couplings/ee_to_tlt.json"]
 mg_amplitude = { process = "e+ e- > t{L} t~", pdgs_in = [-11, 11], pdgs_out = [6, -6], sqrt_s_list = [400.0, 500.0], npoints = 12, seed = 271 }
@@ -1150,9 +1137,9 @@ samples = { tier = "covered-by", rows = ["ee_to_wp0wm"], note = "the polarized e
 # `> A` and `$$ A` are diagram filters on the process line. Which diagrams each
 # keeps is pinned card by card against MadGraph's own generation by the
 # hermetic `schannel_census` standalone gate; these rows carry the cross
-# sections. Their runs do not exist yet: each script's iseed is the first seed
-# of the per-seed reference gen_grammar_sigma.sh banks, and the next bundle
-# carries the run.
+# sections. Each script's iseed is the first seed of the per-seed reference
+# gen_grammar_sigma.sh banks, and the run is in the pinned bundle from
+# refdata-8 on.
 
 [[process]]
 key = "ee_to_mumu_zonly"
@@ -1160,8 +1147,6 @@ process = "e+ e- > z > mu+ mu-"
 script = "validation/madgraph/scripts/ee_to_mumu_zonly.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "`> z` as a filter: of e+ e- > mu+ mu-'s two s-channel diagrams only the Z's is kept, so the cross section is the Z term alone without the gamma-Z interference, a factor of eight below the unrestricted process at 500 GeV."
 artifacts = ["output/ee_to_mumu_zonly", "grammar_sigma_reference.json#ee_z_only"]
 [process.categories]
@@ -1176,8 +1161,6 @@ process = "e+ e- > e+ e- $$ z"
 script = "validation/madgraph/scripts/ee_to_ee_nsz.mg5"
 class = "single-channel"
 n_final = 2
-bundled = false
-status = "planned"
 rationale = "`$$ z` as a filter on Bhabha scattering: the s-channel Z diagram goes and the t-channel Z exchange stays, so the filter has to read each propagator's direction and not only its particle."
 artifacts = ["output/ee_to_ee_nsz", "grammar_sigma_reference.json#ee_no_sz"]
 [process.categories]

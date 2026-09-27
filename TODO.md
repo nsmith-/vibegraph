@@ -5,14 +5,14 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **waiting on `refdata-8` from the bank host** (note 38
-§7.3). The **`process-grammar`** feature sprint (note 38) closed its in-container
-work at Z1 (note 38 §8): every new reference run is registered as a planned,
-unbundled row, and `pixi run -e madgraph generate-references` is the one
-command the bank host (B1) runs to build them. Z2 then re-verifies from the
-published bundle and promotes each new cell that agrees; the sprint closes when
-Z2 is green. After it: MLM, then NLO, and the performance backlog. Performance
-work keeps running in parallel on evaluator PRs.
+**Current position**: **`refdata-8` is banked and published** (note 38 §8.4).
+The **`process-grammar`** feature sprint (note 38) generated its new reference
+runs on the bank host (B1): the eight planned rows are in the pinned bundle and
+every sprint reference reproduced (MadEvent seeds bit-equal across Linux and
+macOS). What remains is Z2 (note 38 §7.4): re-verify from the published bundle on
+a machine that has never generated a run, write the gates that read
+`grammar_sigma_reference.json`, and promote each new cell that agrees; the sprint
+closes when Z2 is green. After it: MLM, then NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z1,
 2026-09-26): **190 measured cells — 183 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -196,14 +196,11 @@ Until `refdata-8` is published and Z2 has run, every new σ and samples cell of
 the sprint is `uncovered` or awaits the bundle in the manifest; the rows are
 listed in note 38 §8.
 
-- **`e+ e- > w+ w-` at 500 GeV reads −2.3e-3 below a fresh MadEvent run, with
-  error bars that look underestimated** (note 38 §4 P1). `vibegraph integrate` at
-  the default budget, seeds 1–5: pulls −1.2 to −1.9 and seed χ²/dof ≈ 2.4 against
-  one 10k-event MadEvent run on the pinned tree; `w+{T} w-` shows the same offset,
-  so polarization does not cause it. A single MadEvent run is not a reference
-  (χ²/dof 3–14 across its seeds elsewhere): read it first against
-  `gen_grammar_sigma.sh`'s five-seed `wp_wm` row once B1 has banked it, then a
-  20-seed ladder here before calling it a bias.
+- **`e+ e- > w+ w-` error bars at the default budget look underestimated**
+  (note 38 §4 P1): seeds 1–5 read seed χ²/dof ≈ 2.4. The −0.23% offset recorded
+  beside it was a single MadEvent run's: against `grammar_sigma_reference.json`'s
+  five-seed `wp_wm` (7.19516 ± 0.0048 pb) the same seeds read +0.01% (note 38
+  §8.4). The χ²/dof is still open.
 - **`u u~ > w+ b w- b~ $ t t~` is ~2% apart from the patched MadEvent** (note 38
   §4 S3). With MadGraph's `FFV2P1D_1` defect patched (note 07 appendix; the
   patch is `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch`),
