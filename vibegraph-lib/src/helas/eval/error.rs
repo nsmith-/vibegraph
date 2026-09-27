@@ -49,6 +49,14 @@ pub enum EvalError {
     /// An external leg carries a spin code with no defined helicity states.
     #[error("unsupported external spin code: {0}")]
     UnsupportedSpin(i32),
+    /// A polarized leg lists no helicity, or one that is not a state of its
+    /// particle.
+    #[error("external leg {leg} ({particle}) is polarized to {listed:?}, which are not its helicity states")]
+    Polarization {
+        leg: usize,
+        particle: String,
+        listed: Vec<i32>,
+    },
     /// The process and the compiled AST disagree on the external-leg count.
     #[error("external-leg count mismatch: {0}")]
     TopologyError(String),

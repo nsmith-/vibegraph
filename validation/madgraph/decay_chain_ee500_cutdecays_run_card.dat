@@ -1,0 +1,19 @@
+#*********************************************************************
+#  Decay-chain sigma reference run card: e+ e- at sqrt(s) = 500 GeV.
+#  Shared verbatim by MadEvent and by vibegraph's integrand. No beam
+#  polarisation, no ISR. MadGraph's lepton cuts are written out at their
+#  defaults; with cut_decays = T the decay products receive them.
+#*********************************************************************
+  tag_1   = run_tag
+  10000   = nevents
+  0       = iseed
+  0       = lpp1
+  0       = lpp2
+  250.0   = ebeam1
+  250.0   = ebeam2
+  15.0    = bwcutoff
+  True    = cut_decays
+  10.0    = ptl
+  2.5     = etal
+  0.4     = drll
+  False   = use_syst

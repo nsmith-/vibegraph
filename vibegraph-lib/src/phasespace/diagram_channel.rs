@@ -165,6 +165,10 @@ struct Branch<F: Real> {
     /// diagram has one. `None` for the root (invariant fixed at √ŝ) and for the
     /// auxiliary branches introduced when a vertex has more than two subsystems.
     resonance: Option<Resonance<F>>,
+    /// The range `(s_lo, s_hi)` (GeV²) a forced on-shell line holds this
+    /// subsystem's invariant to, or `None`. Installed by
+    /// [`DiagramChannel::with_forced_windows`]; see [`windowed`].
+    window: Option<(F, F)>,
     /// How this split draws its decay angle: isotropically, or with one of the
     /// shaped maps of [`AngleShape`] confined to the window the cut-implied lower
     /// bounds (GeV) on the two daughters' CM energies admit. Installed by
@@ -277,6 +281,18 @@ impl<F: Real> Spine<F> {
         }
     }
 
+    /// The forced window on `R_i`'s invariant, which only the last remainder —
+    /// the recoil subsystem — can carry.
+    fn rest_window(&self, i: usize) -> Option<(F, F)> {
+        if i + 1 < self.rungs.len() {
+            return None;
+        }
+        match &self.recoil {
+            Node::Branch(b) => b.window,
+            Node::Leaf { .. } => None,
+        }
+    }
+
     /// Four-momentum of `R_i` at a configuration.
     fn rest_momentum(
         &self,
@@ -342,8 +358,9 @@ impl<F: Real> DiagramChannel<F> {
     /// with an unregulated spacelike pole.
     ///
     /// Outgoing-leg masses and each internal line's mass/width are read from
-    /// `model`. Only meaningful for a `2 → n` process; the beams are externals
-    /// `0..n_in`.
+    /// `model`. The incoming legs are externals `0..n_in`: two beams, or on a
+    /// `1 → n` decay the decaying particle, every internal line of which is
+    /// timelike, so the channel is the all-timelike tree at `sqrt_s = M`.
     pub fn from_diagram(diagram: &Diagram, model: &EvaluatedModel, sqrt_s: F) -> Self {
         Self::from_diagram_regulated(diagram, model, sqrt_s, F::zero())
     }
@@ -416,9 +433,15 @@ impl<F: Real> DiagramChannel<F> {
                 cast(model.mass(particle))
             })
             .collect();
+        // A decay's one incoming leg sits alone in slot `0`: it has no spacelike
+        // line (`Prop::is_spacelike`), so nothing reads the second slot.
         let beam_masses = [
             cast(model.mass(diagram.legs[0].particle)),
-            cast(model.mass(diagram.legs[1].particle)),
+            if n_in == 2 {
+                cast(model.mass(diagram.legs[1].particle))
+            } else {
+                F::zero()
+            },
         ];
 
         // Timelike subsystems drive the decay tree; spacelike lines are peripheral.
@@ -893,6 +916,40 @@ impl<F: Real> DiagramChannel<F> {
         self
     }
 
+    /// Confine each subsystem invariant a decay chain forces on shell to its
+    /// Breit–Wigner window.
+    ///
+    /// `window` receives the outgoing-leg slots of a subsystem as a bitmask and
+    /// returns the range `(s_lo, s_hi)` (GeV²) its invariant is held to, or `None`
+    /// for a subsystem no forced line bounds. The draw is the subsystem's own map —
+    /// the Breit–Wigner of its resonance — over the window's intersection with the
+    /// kinematic range, so no point is spent where the integrand's window cut
+    /// rejects it.
+    ///
+    /// It narrows the channel's *support*, and [`Channel::density`] reports exactly
+    /// zero at a configuration whose forced invariant lies outside the window. That
+    /// matters where different diagrams force different leg sets (identical
+    /// particles across decays): the integrand is non-zero wherever *some* set is
+    /// inside its windows, and a channel must not claim density at points it
+    /// cannot draw. Where the kinematic range left by the rest of the draw does not
+    /// reach the window at all, the draw keeps the full range, and the density
+    /// reads the same range at that configuration, so sampler and density agree
+    /// there too.
+    pub fn with_forced_windows(mut self, window: &dyn Fn(u64) -> Option<(F, F)>) -> Self {
+        match &mut self.topology {
+            ChannelTopology::Timelike(root) => {
+                window_branch(root, window);
+            }
+            ChannelTopology::Spine(spine) => {
+                for rung in &mut spine.rungs {
+                    window_node(&mut rung.emitted, window);
+                }
+                window_node(&mut spine.recoil, window);
+            }
+        }
+        self
+    }
+
     /// Give the 2-body splits `rule` selects a shaped angular map, regulated at
     /// the energies `energy_floor` implies, leaving the other splits isotropic.
     ///
@@ -1215,6 +1272,7 @@ fn binarize<F: Real>(mut children: Vec<Node<F>>, resonance: Option<Resonance<F>>
         shape,
         floor: F::zero(),
         resonance,
+        window: None,
         angle: AngleMap::Isotropic,
     }))
 }
@@ -1275,6 +1333,25 @@ fn floor_node<F: Real>(node: &mut Node<F>, floor: &dyn Fn(u64) -> F) -> u64 {
     match node {
         Node::Leaf { slot, .. } => 1u64 << *slot,
         Node::Branch(b) => floor_branch(b, floor),
+    }
+}
+
+/// Install `window`'s range on every composite node beneath `branch`, returning
+/// the outgoing-leg slots the subtree spans. The branch itself is left alone: a
+/// caller reaches it as a node, except the root, whose invariant is the fixed
+/// collision energy and is never drawn.
+fn window_branch<F: Real>(branch: &mut Branch<F>, window: &dyn Fn(u64) -> Option<(F, F)>) -> u64 {
+    window_node(&mut branch.left, window) | window_node(&mut branch.right, window)
+}
+
+fn window_node<F: Real>(node: &mut Node<F>, window: &dyn Fn(u64) -> Option<(F, F)>) -> u64 {
+    match node {
+        Node::Leaf { slot, .. } => 1u64 << *slot,
+        Node::Branch(b) => {
+            let mask = window_branch(b, window);
+            b.window = window(mask);
+            mask
+        }
     }
 }
 
@@ -1350,6 +1427,13 @@ fn key_branch<F: Real>(branch: &Branch<F>, out: &mut String) {
         }
     }
     out.push(',');
+    if let Some((lo, hi)) = branch.window {
+        out.push_str("F(");
+        key_scalar(lo, out);
+        out.push(',');
+        key_scalar(hi, out);
+        out.push_str("),");
+    }
     if let AngleMap::Shaped {
         shape,
         floors: (e1, e2),
@@ -1646,6 +1730,32 @@ fn draw_lo<F: Real>(mu: F, floor: F, hi: F) -> F {
     kinematic.max(floor.min(hi))
 }
 
+/// Relative slack on a forced window's edges when a density asks whether a
+/// configuration lies inside it. The draw puts every point inside; the density
+/// recomputes the invariant from momenta, which can land a rounding error
+/// outside, and a point the channel drew must never read density zero there.
+const WINDOW_EDGE_SLACK: f64 = 1e-9;
+
+/// The range an invariant is drawn over, `[lo, hi]` narrowed to a forced
+/// `window`, and whether it was narrowed. A window the kinematic range does not
+/// reach leaves the range as it is.
+fn windowed<F: Real>(lo: F, hi: F, window: Option<(F, F)>) -> (F, F, bool) {
+    if let Some((w_lo, w_hi)) = window {
+        let (l, h) = (lo.max(w_lo), hi.min(w_hi));
+        if l < h {
+            return (l, h, true);
+        }
+    }
+    (lo, hi, false)
+}
+
+/// Whether `s` lies outside a narrowed range `[lo, hi]`, beyond the rounding
+/// slack: where a channel with a forced window has density zero.
+fn outside_window<F: Real>(lo: F, hi: F, narrowed: bool, s: F) -> bool {
+    let slack = F::one() + cast::<F>(WINDOW_EDGE_SLACK);
+    narrowed && (s * slack < lo || s > hi * slack)
+}
+
 /// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`.
 ///
 /// A finite-width pole importance-samples the relativistic Breit–Wigner via
@@ -1884,7 +1994,7 @@ fn sample_branch<F: Real>(
         Node::Leaf { mass, .. } => *mass * *mass,
         Node::Branch(b) => {
             let hi = (sqrt_s - mu_r).powi(2);
-            let lo = draw_lo(mu_l, b.floor, hi);
+            let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
             let x = u[*cursor];
             *cursor += 1;
             let s = draw_invariant(lo, hi, b.resonance, x);
@@ -1897,7 +2007,7 @@ fn sample_branch<F: Real>(
         Node::Leaf { mass, .. } => *mass * *mass,
         Node::Branch(b) => {
             let hi = (sqrt_s - sqrt_sl).powi(2);
-            let lo = draw_lo(mu_r, b.floor, hi);
+            let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
             let x = u[*cursor];
             *cursor += 1;
             let s = draw_invariant(lo, hi, b.resonance, x);
@@ -2032,12 +2142,18 @@ fn branch_jacobian<F: Real>(
     let mut f = F::one();
     if let Node::Branch(b) = &branch.left {
         let hi = (sqrt_s - mu_r).powi(2);
-        let lo = draw_lo(mu_l, b.floor, hi);
+        let (lo, hi, narrowed) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
+        if outside_window(lo, hi, narrowed, sl) {
+            return F::infinity();
+        }
         f = f * invariant_measure(lo, hi, b.resonance, sl);
     }
     if let Node::Branch(b) = &branch.right {
         let hi = (sqrt_s - sqrt_sl).powi(2);
-        let lo = draw_lo(mu_r, b.floor, hi);
+        let (lo, hi, narrowed) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
+        if outside_window(lo, hi, narrowed, sr) {
+            return F::infinity();
+        }
         f = f * invariant_measure(lo, hi, b.resonance, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
@@ -2050,11 +2166,21 @@ fn branch_jacobian<F: Real>(
             f = f * map.measure_from_energies(e1, e2, parent.e(), sqrt_s) / two;
         }
     }
+    // A daughter outside its window reports an infinite Jacobian, which must
+    // reach the caller as such rather than meet a zero factor here.
     if let Node::Branch(b) = &branch.left {
-        f = f * branch_jacobian(b, sl, momenta, memo);
+        let jac = branch_jacobian(b, sl, momenta, memo);
+        if jac.is_infinite() {
+            return jac;
+        }
+        f = f * jac;
     }
     if let Node::Branch(b) = &branch.right {
-        f = f * branch_jacobian(b, sr, momenta, memo);
+        let jac = branch_jacobian(b, sr, momenta, memo);
+        if jac.is_infinite() {
+            return jac;
+        }
+        f = f * jac;
     }
     f
 }
@@ -2283,7 +2409,7 @@ fn sample_spine<F: Real>(
             Node::Leaf { mass, .. } => *mass * *mass,
             Node::Branch(b) => {
                 let hi = (sqrt_s_sys - mu_rest).powi(2);
-                let lo = draw_lo(mu_blob, b.floor, hi);
+                let (lo, hi, _) = windowed(draw_lo(mu_blob, b.floor, hi), hi, b.window);
                 let x = u[*cursor];
                 *cursor += 1;
                 let drawn = draw_invariant(lo, hi, b.resonance, x);
@@ -2295,7 +2421,11 @@ fn sample_spine<F: Real>(
         let rest_res = spine.rest_resonance(i);
         let s_rest = if spine.rest_is_composite(i) {
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
-            let lo = draw_lo(mu_rest, rung.rest_floor, hi);
+            let (lo, hi, _) = windowed(
+                draw_lo(mu_rest, rung.rest_floor, hi),
+                hi,
+                spine.rest_window(i),
+            );
             let x = u[*cursor];
             *cursor += 1;
             let drawn = draw_invariant(lo, hi, rest_res, x);
@@ -2398,12 +2528,22 @@ fn spine_jacobian<F: Real>(
 
         if let Node::Branch(b) = &rung.emitted {
             let hi = (sqrt_s_sys - mu_rest).powi(2);
-            let lo = draw_lo(mu_blob, b.floor, hi);
+            let (lo, hi, narrowed) = windowed(draw_lo(mu_blob, b.floor, hi), hi, b.window);
+            if outside_window(lo, hi, narrowed, s_blob) {
+                return F::infinity();
+            }
             f = f * invariant_measure(lo, hi, b.resonance, s_blob);
         }
         if spine.rest_is_composite(i) {
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
-            let lo = draw_lo(mu_rest, rung.rest_floor, hi);
+            let (lo, hi, narrowed) = windowed(
+                draw_lo(mu_rest, rung.rest_floor, hi),
+                hi,
+                spine.rest_window(i),
+            );
+            if outside_window(lo, hi, narrowed, s_rest) {
+                return F::infinity();
+            }
             f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
         }
 
@@ -2434,12 +2574,20 @@ fn spine_jacobian<F: Real>(
     for rung in &spine.rungs {
         if let Node::Branch(b) = &rung.emitted {
             let s_blob = node_invariant(&rung.emitted, momenta, memo);
-            f = f * branch_jacobian(b, s_blob, momenta, memo);
+            let jac = branch_jacobian(b, s_blob, momenta, memo);
+            if jac.is_infinite() {
+                return jac;
+            }
+            f = f * jac;
         }
     }
     if let Node::Branch(b) = &spine.recoil {
         let s_recoil = node_invariant(&spine.recoil, momenta, memo);
-        f = f * branch_jacobian(b, s_recoil, momenta, memo);
+        let jac = branch_jacobian(b, s_recoil, momenta, memo);
+        if jac.is_infinite() {
+            return jac;
+        }
+        f = f * jac;
     }
     f
 }
@@ -4403,5 +4551,218 @@ mod tests {
         assert!(!any("u u~ > e+ e- g"));
         assert!(!any("g g > g g"));
         assert!(!any("u u~ > d d~ QED=0"));
+    }
+
+    // ── Forced Breit–Wigner windows ──────────────────────────────────────────
+
+    /// `bwcutoff` times the width of the pole the window tests use.
+    const HALF: f64 = 15.0 * G_Z;
+
+    fn z_window() -> (f64, f64) {
+        ((M_Z - HALF).powi(2), (M_Z + HALF).powi(2))
+    }
+
+    /// Invariant mass² of the outgoing legs `i` and `j`.
+    fn pair_s(momenta: &[LorentzVector<f64>], i: usize, j: usize) -> f64 {
+        let (a, b) = (&momenta[i], &momenta[j]);
+        let (e, x, y, z) = (
+            a.e() + b.e(),
+            a.px() + b.px(),
+            a.py() + b.py(),
+            a.pz() + b.pz(),
+        );
+        e * e - x * x - y * y - z * z
+    }
+
+    /// Four massless legs as two `Z → ff̄` pairs, `(pair₁, pair₂)`, each pair's
+    /// invariant on a Breit–Wigner map and — with `windowed` — held to the window.
+    fn zz_channel(pairs: [[usize; 2]; 2], windowed: bool) -> DiagramChannel<f64> {
+        let z = Some(z_resonance());
+        let ch = DiagramChannel::from_topology_resonant(
+            500.0,
+            vec![0.0; 4],
+            &[(pairs[0].to_vec(), z), (pairs[1].to_vec(), z)],
+        );
+        if !windowed {
+            return ch;
+        }
+        let masks = pairs.map(|p| (1u64 << p[0]) | (1u64 << p[1]));
+        ch.with_forced_windows(&|m| masks.contains(&m).then(z_window))
+    }
+
+    /// A windowed channel draws every forced invariant inside its window, and its
+    /// weight stays the reciprocal of its density there.
+    #[test]
+    fn a_forced_window_holds_every_draw_and_stays_reciprocal() {
+        let ch = zz_channel([[0, 1], [2, 3]], true);
+        let (lo, hi) = z_window();
+        let mut stream = SubStream::from_stream(0xB0C0, 1);
+        let mut worst = 0.0f64;
+        for _ in 0..20_000 {
+            let pt = ch.sample(&stream.uniforms::<f64>(ch.ndim()));
+            for (i, j) in [(0, 1), (2, 3)] {
+                let s = pair_s(&pt.momenta, i, j);
+                assert!(
+                    s >= lo * (1.0 - 1e-12) && s <= hi * (1.0 + 1e-12),
+                    "s = {s}"
+                );
+            }
+            let recip = 1.0 / ch.density(&pt.momenta);
+            assert!(pt.weight > 0.0 && pt.weight.is_finite());
+            worst = worst.max((pt.weight - recip).abs() / recip);
+        }
+        assert!(worst < 1e-9, "walk weight vs 1/density: {worst:.3e}");
+    }
+
+    /// Outside its window a channel generates nothing, so its density is exactly
+    /// zero there; the same configuration has positive density under the channel
+    /// without the window.
+    #[test]
+    fn a_forced_window_has_zero_density_outside() {
+        let windowed = zz_channel([[0, 1], [2, 3]], true);
+        let open = zz_channel([[0, 1], [2, 3]], false);
+        let (lo, hi) = z_window();
+        let mut stream = SubStream::from_stream(0xB0C0, 2);
+        let mut outside = 0;
+        for _ in 0..20_000 {
+            let pt = open.sample(&stream.uniforms::<f64>(open.ndim()));
+            let s = pair_s(&pt.momenta, 0, 1);
+            if s < lo * 0.99 || s > hi * 1.01 {
+                outside += 1;
+                assert_eq!(windowed.density(&pt.momenta), 0.0);
+                assert!(open.density(&pt.momenta) > 0.0);
+            }
+        }
+        assert!(
+            outside > 100,
+            "the open channel reached outside the window {outside} times"
+        );
+    }
+
+    /// The window is a restriction of the support, not a reweighting: over the two
+    /// pairs' Breit–Wigner product, the windowed channel integrates what the open
+    /// channel integrates inside both windows — and with a small fraction of its
+    /// variance, since it draws nothing outside.
+    #[test]
+    fn a_forced_window_integrates_the_windowed_integrand() {
+        let windowed = zz_channel([[0, 1], [2, 3]], true);
+        let open = zz_channel([[0, 1], [2, 3]], false);
+        let (lo, hi) = z_window();
+        let (m2, mg) = (M_Z * M_Z, M_Z * G_Z);
+        let integrand = |p: &[LorentzVector<f64>]| {
+            [(0, 1), (2, 3)]
+                .iter()
+                .map(|&(i, j)| {
+                    let s = pair_s(p, i, j);
+                    if s > lo && s < hi {
+                        1.0 / ((s - m2).powi(2) + mg * mg)
+                    } else {
+                        0.0
+                    }
+                })
+                .product::<f64>()
+        };
+        let estimate = |ch: &DiagramChannel<f64>, stream_id: u64| {
+            let mut stream = SubStream::from_stream(0xB0C0, stream_id);
+            let n = 200_000;
+            let (mut sum, mut sum_sq) = (0.0, 0.0);
+            for _ in 0..n {
+                let pt = ch.sample(&stream.uniforms::<f64>(ch.ndim()));
+                let w = pt.weight * integrand(&pt.momenta);
+                sum += w;
+                sum_sq += w * w;
+            }
+            let mean = sum / n as f64;
+            (mean, ((sum_sq / n as f64 - mean * mean) / n as f64).sqrt())
+        };
+        let (a, ea) = estimate(&windowed, 3);
+        let (b, eb) = estimate(&open, 4);
+        let err = (ea * ea + eb * eb).sqrt();
+        eprintln!("windowed {a:.6e} ± {ea:.1e}, open inside the window {b:.6e} ± {eb:.1e}");
+        assert!((a - b).abs() < 5.0 * err, "{a} vs {b} (err {err})");
+        assert!(
+            ea < 0.5 * eb,
+            "the window should narrow the estimate: {ea} vs {eb}"
+        );
+    }
+
+    /// Two pairings of four legs, each channel held to its own windows — the
+    /// channels of a decay chain whose two decays share their products' flavours.
+    /// The mixture integrates the union of the two windowed regions, which is only
+    /// right if each channel's density is zero where it cannot draw: a positive
+    /// density read off the other pairing's region would bias it.
+    #[test]
+    fn mixed_pairings_integrate_the_union_of_their_windows() {
+        let channels: Vec<Box<dyn Channel<f64>>> = vec![
+            Box::new(zz_channel([[0, 1], [2, 3]], true)),
+            Box::new(zz_channel([[0, 3], [2, 1]], true)),
+        ];
+        let mixture = crate::phasespace::MultiChannel::uniform(channels);
+        let reference = zz_channel([[0, 1], [2, 3]], false);
+        let (lo, hi) = z_window();
+        let in_pairing = |p: &[LorentzVector<f64>], a: [(usize, usize); 2]| {
+            a.iter().all(|&(i, j)| {
+                let s = pair_s(p, i, j);
+                s > lo && s < hi
+            })
+        };
+        let union = |p: &[LorentzVector<f64>]| {
+            in_pairing(p, [(0, 1), (2, 3)]) || in_pairing(p, [(0, 3), (2, 1)])
+        };
+        let n = 400_000;
+        let mut stream = SubStream::from_stream(0xB0C0, 5);
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..n {
+            let u = stream.uniforms::<f64>(mixture.ndim());
+            let pt = mixture.sample(&u);
+            let w = if union(&pt.momenta) { pt.weight } else { 0.0 };
+            sum += w;
+            sum_sq += w * w;
+        }
+        let a = sum / n as f64;
+        let ea = ((sum_sq / n as f64 - a * a) / n as f64).sqrt();
+        // The reference covers the second pairing's region only through its tail,
+        // so it gets more points.
+        let m = 4 * n;
+        let mut stream = SubStream::from_stream(0xB0C0, 6);
+        let (mut sum, mut sum_sq) = (0.0, 0.0);
+        for _ in 0..m {
+            let pt = reference.sample(&stream.uniforms::<f64>(reference.ndim()));
+            let w = if union(&pt.momenta) { pt.weight } else { 0.0 };
+            sum += w;
+            sum_sq += w * w;
+        }
+        let b = sum / m as f64;
+        let eb = ((sum_sq / m as f64 - b * b) / m as f64).sqrt();
+        let err = (ea * ea + eb * eb).sqrt();
+        eprintln!("mixture {a:.6e} ± {ea:.1e}, open channel {b:.6e} ± {eb:.1e}");
+        assert!((a - b).abs() < 5.0 * err, "{a} vs {b} (err {err})");
+    }
+
+    /// A window the kinematic range cannot reach leaves the draw on its full range,
+    /// and the density reads the same range: the channel stays a valid map.
+    #[test]
+    fn an_unreachable_window_leaves_the_draw_whole() {
+        let z = Some(z_resonance());
+        // At √s = 50 GeV the pair's mass cannot reach the window's lower edge.
+        let ch = DiagramChannel::from_topology_resonant(50.0, vec![0.0; 3], &[(vec![0, 1], z)])
+            .with_forced_windows(&|m| (m == 0b011).then(z_window));
+        assert!(z_window().0 > 50.0 * 50.0);
+        let (mean, err) = mc_volume(&ch, 0xB0C0, 400_000);
+        let analytic = massless_volume(50.0, 3);
+        assert!(
+            (mean - analytic).abs() < 5.0 * err,
+            "{mean} vs {analytic} ± {err}"
+        );
+    }
+
+    /// The window enters the map key, so two channels that differ only in it are
+    /// never merged into one mixture term.
+    #[test]
+    fn the_map_key_separates_a_forced_window() {
+        assert_ne!(
+            zz_channel([[0, 1], [2, 3]], true).map_key(),
+            zz_channel([[0, 1], [2, 3]], false).map_key()
+        );
     }
 }

@@ -434,6 +434,19 @@ impl FieldCell {
     }
 }
 
+/// A polarized leg's `SPINUP` over both samples: how many of each side's
+/// events carry the leg at a helicity its restriction does not allow.
+#[derive(Debug, Clone, Serialize)]
+pub struct PolarizedLegCell {
+    pub pdg: i32,
+    /// The `SPINUP` values the process line's restriction allows.
+    pub allowed: Vec<f64>,
+    pub ours_events: usize,
+    pub ours_outside: usize,
+    pub theirs_events: usize,
+    pub theirs_outside: usize,
+}
+
 /// One generation seed's comparison against the banked sample.
 #[derive(Debug, Clone, Serialize)]
 pub struct SeedSample {
@@ -562,6 +575,9 @@ pub struct SamplesRow {
     pub max_unenforced_scale_dev: f64,
     pub unenforced_scale_tol: f64,
     pub per_seed: Vec<SeedSample>,
+    /// The polarized legs' `SPINUP` against their restriction, one cell per leg
+    /// and seed; empty on an unpolarized row.
+    pub polarized_legs: Vec<PolarizedLegCell>,
     pub note: Option<String>,
     /// Wall-clock seconds this row's own measurement took; `None` where the gate
     /// wrote the row without timing it.
@@ -604,6 +620,7 @@ impl SamplesRow {
             max_unenforced_scale_dev: 0.0,
             unenforced_scale_tol: 0.0,
             per_seed: Vec::new(),
+            polarized_legs: Vec::new(),
             note: None,
             duration_s: None,
         }

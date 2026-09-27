@@ -960,6 +960,7 @@ mod tests {
             sprop: vec![sprop],
             mass: 0.0,
             width: 0.0,
+            forced: false,
         }
     }
 

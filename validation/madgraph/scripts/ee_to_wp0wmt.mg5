@@ -1,0 +1,15 @@
+# MadGraph5 batch script: e+ e- > w+{0} w-{T} at LO
+#
+# Why this exact process:
+#   - Both W legs polarized: the longitudinal state alone on one, the two
+#     transverse states on the other, so the helicity table is 2 x 1 x 1 x 2
+#     rows of MadGraph's own NHEL and every one is compared per diagram.
+generate e+ e- > w+{0} w-{T}
+output ee_to_wp0wmt -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

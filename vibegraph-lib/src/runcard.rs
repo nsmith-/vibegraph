@@ -104,6 +104,9 @@ enum Def {
     S(&'static str),
     /// Opaque list/dict-valued parameter; default is an empty payload.
     O,
+    /// Opaque list-valued parameter whose MadGraph default is not empty, stored
+    /// as the payload MadGraph writes into a card.
+    L(&'static str),
 }
 
 impl Def {
@@ -114,6 +117,7 @@ impl Def {
             Def::B(b) => ParamValue::Bool(b),
             Def::S(s) => ParamValue::Str(s.to_string()),
             Def::O => ParamValue::Opaque(String::new()),
+            Def::L(s) => ParamValue::Opaque(s.to_string()),
         }
     }
 }
@@ -138,6 +142,11 @@ pub enum RunCardError {
          and fixed-energy partonic beams (0,0) are supported"
     )]
     UnsupportedLpp { lpp1: i64, lpp2: i64 },
+    #[error(
+        "run card sets me_frame = '{value}': a frame is a list of leg numbers, such as \
+         '1, 2' (the partonic centre of mass)"
+    )]
+    BadFrame { value: String },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -225,6 +234,45 @@ impl RunCard {
             .as_i64()
     }
 
+    /// MadGraph's `frame_id` for the card's `me_frame`: the legs whose summed
+    /// momentum defines the rest frame a matrix element that is not Lorentz
+    /// invariant is evaluated in, as `Σ 2^n` over the listed leg numbers
+    /// (`update_system_parameter_for_include`, `banner.py:4705`). The default
+    /// `[1, 2]` is 6, which MadEvent treats as "no boost": the partonic
+    /// centre-of-mass momenta it generates reach the matrix element unchanged
+    /// (`auto_dsig_v4.inc:134`). The card's own `frame_id` is not read, since
+    /// MadGraph overwrites it from `me_frame`.
+    pub fn frame_id(&self) -> Result<i64, RunCardError> {
+        let raw = self
+            .values
+            .get("me_frame")
+            .expect("me_frame is a recognized parameter")
+            .as_str();
+        frame_id_of(raw)
+    }
+
+    /// The `PDFSUP` MadEvent writes for this card: `get_pdf_id(pdlabel)`
+    /// (`banner.py:3839`), the `lhaid` when `pdlabel` is `lhapdf` and otherwise
+    /// the LHAPDF id of the built-in set the label names, `0` for a label naming
+    /// none.
+    ///
+    /// It is read off `pdlabel` whatever the beams: a fixed-energy card keeps
+    /// the default `nn23lo1` and MadEvent 3.7.1 writes `247000` for it although
+    /// nothing reads a parton density (every such banked run does, `lhaid`
+    /// `230000` notwithstanding).
+    pub fn pdfsup(&self) -> i32 {
+        match self.pdlabel.as_str() {
+            "lhapdf" => i32::try_from(self.lhaid).unwrap_or(0),
+            "cteq6_m" => 10000,
+            "cteq6_l" => 10041,
+            "cteq6l1" => 10042,
+            "nn23lo" => 246800,
+            "nn23lo1" => 247000,
+            "nn23nlo" => 244800,
+            _ => 0,
+        }
+    }
+
     /// Iterate all resolved (name, value) pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
         self.values.iter().map(|(k, v)| (k.as_str(), v))
@@ -272,6 +320,55 @@ impl RunCard {
         Self::parse(&text)
     }
 
+    /// MadGraph's out-of-the-box run card for a `1 → n` decay process: the LO
+    /// defaults with every cut removed (`banner.py`'s `create_default_for_process`,
+    /// which calls `remove_all_cut` when `ninitial == 1`), `SDE_strategy = 1`
+    /// (forced there for one initial particle) and systematics off.
+    ///
+    /// `remove_all_cut` resets each of the card's cut parameters by name: a
+    /// boolean to false, a `min` to `0`, a `max` to `-1`, a rapidity bound to
+    /// `-1` and anything else to `0`. [`DECAY_CUT_RESETS`] is that rule applied to
+    /// every cut parameter whose LO default it moves.
+    pub fn decay_default() -> Self {
+        let mut values = Self::default().values;
+        for (name, value) in DECAY_CUT_RESETS {
+            values.insert((*name).to_string(), value.to_value());
+        }
+        values.insert("SDE_strategy".to_string(), ParamValue::Int(1));
+        values.insert("use_syst".to_string(), ParamValue::Bool(false));
+        Self::from_values(values).expect("the decay defaults are self-consistent")
+    }
+
+    /// This card as MadEvent runs it for the decay of a particle of pole mass
+    /// `mass` (`setcuts.f`, the `nincoming = 1` branch).
+    ///
+    /// A decay has no parton densities, so both beams become fixed-energy ones at
+    /// `M/2`. The renormalisation scale is fixed at `M` unless the card already
+    /// fixes it, and both factorisation scales are fixed at the card's own
+    /// `dsqrt_q2fact1`/`dsqrt_q2fact2` — so no dynamical prescription, clustering
+    /// or otherwise, is ever evaluated for a decay, whatever
+    /// `dynamical_scale_choice` says. Systematics are switched off.
+    pub fn for_decay(&self, mass: f64) -> Self {
+        let mut values = self.values.clone();
+        let mut set = |name: &str, value: ParamValue| {
+            values.insert(name.to_string(), value);
+        };
+        set("lpp1", ParamValue::Int(0));
+        set("lpp2", ParamValue::Int(0));
+        set("ebeam1", ParamValue::Float(mass / 2.0));
+        set("ebeam2", ParamValue::Float(mass / 2.0));
+        if !self.fixed_ren_scale {
+            set("scale", ParamValue::Float(mass));
+            set("fixed_ren_scale", ParamValue::Bool(true));
+        }
+        set("fixed_fac_scale", ParamValue::Bool(true));
+        set("fixed_fac_scale1", ParamValue::Bool(true));
+        set("fixed_fac_scale2", ParamValue::Bool(true));
+        set("use_syst", ParamValue::Bool(false));
+        Self::from_values(values)
+            .expect("a decay card relaxes the beam checks, never tightens them")
+    }
+
     fn from_values(values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
         let f = |name: &str| values.get(name).expect("known param").as_f64();
         let i = |name: &str| values.get(name).expect("known param").as_i64();
@@ -286,6 +383,7 @@ impl RunCard {
         // After the beam check, which is what makes a beam-dependent
         // classification decidable.
         classes::refuse_ignored_physics(&values, lpp1, lpp2)?;
+        frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         Ok(RunCard {
             nevents: i("nevents"),
@@ -305,6 +403,30 @@ impl RunCard {
             values,
         })
     }
+}
+
+/// `frame_id` of an `me_frame` payload: `[1, 2]`, `1, 2` and `1 2` are all the
+/// same list. An empty list is refused: MadGraph would boost into the rest
+/// frame of no momentum at all.
+fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
+    let bad = || RunCardError::BadFrame {
+        value: raw.to_string(),
+    };
+    let inner = raw.trim().trim_start_matches('[').trim_end_matches(']');
+    let legs = inner
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.parse::<u32>().map_err(|_| bad()))
+        .collect::<Result<Vec<_>, _>>()?;
+    if legs.is_empty() {
+        return Err(bad());
+    }
+    legs.iter().try_fold(0i64, |acc, &n| {
+        1i64.checked_shl(n)
+            .filter(|_| n < 62)
+            .map(|bit| acc + bit)
+            .ok_or_else(bad)
+    })
 }
 
 /// Split a raw card line into `(value, name)`, or `None` for comment / blank /
@@ -449,7 +571,7 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     // ── output / frame ───────────────────────────────────────────────────
     ("lhe_version", Def::F(3.0)),
     ("boost_event", Def::S("False")),
-    ("me_frame", Def::O),
+    ("me_frame", Def::L("1, 2")),
     ("frame_id", Def::I(6)),
     ("event_norm", Def::S("average")),
     ("keep_log", Def::S("normal")),
@@ -622,6 +744,39 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("mxx_only_part_antipart", Def::O),
 ];
 
+/// The cut parameters whose LO default `remove_all_cut` moves, with the value it
+/// moves them to — the whole difference between [`RunCard::default`] and
+/// [`RunCard::decay_default`] on the cuts. Every other cut parameter already sits
+/// at its reset value.
+const DECAY_CUT_RESETS: &[(&str, Def)] = &[
+    ("deltaeta", Def::F(-1.0)),
+    ("dparameter", Def::F(0.0)),
+    ("draa", Def::F(0.0)),
+    ("draj", Def::F(0.0)),
+    ("dral", Def::F(0.0)),
+    ("drjj", Def::F(0.0)),
+    ("drjl", Def::F(0.0)),
+    ("drll", Def::F(0.0)),
+    ("etaa", Def::F(-1.0)),
+    ("etaj", Def::F(-1.0)),
+    ("etal", Def::F(-1.0)),
+    ("ktdurham", Def::F(0.0)),
+    ("pta", Def::F(0.0)),
+    ("ptj", Def::F(0.0)),
+    ("ptl", Def::F(0.0)),
+    ("ptlund", Def::F(0.0)),
+];
+
+/// The value `remove_all_cut` resets a cut parameter to, where that differs from
+/// its LO default ([`DECAY_CUT_RESETS`]). Both are values at which MadGraph's
+/// `cuts.f` leaves the cut off.
+pub fn decay_cut_reset(name: &str) -> Option<ParamValue> {
+    DECAY_CUT_RESETS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, d)| d.to_value())
+}
+
 /// The MadGraph LO default value for a recognized parameter, or `None` for an
 /// unknown name.
 pub fn param_default(name: &str) -> Option<ParamValue> {
@@ -710,6 +865,29 @@ mod tests {
         // A non-empty dict is retained verbatim (and would trip the cut detector).
         let rc = RunCard::parse("  {6: 100} = pt_min_pdg\n").unwrap();
         assert_eq!(rc.get("pt_min_pdg").unwrap().as_str(), "{6: 100}");
+    }
+
+    /// `frame_id` is MadGraph's `Σ 2^n` over `me_frame`, whatever the list's
+    /// spelling, and 6 for the default: the partonic centre of mass.
+    #[test]
+    fn me_frame_reads_as_madgraphs_frame_id() {
+        assert_eq!(RunCard::default().frame_id().unwrap(), 6);
+        assert_eq!(RunCard::parse("").unwrap().frame_id().unwrap(), 6);
+        for spelling in ["1, 2", "[1, 2]", "[1,2]", "1 2", "2, 1"] {
+            let rc = RunCard::parse(&format!("  {spelling} = me_frame\n")).unwrap();
+            assert_eq!(rc.frame_id().unwrap(), 6, "{spelling}");
+        }
+        let rc = RunCard::parse("  3, 4 = me_frame\n").unwrap();
+        assert_eq!(rc.frame_id().unwrap(), 24);
+        for bad in ["[]", "a, b", "1, 99"] {
+            assert!(
+                matches!(
+                    RunCard::parse(&format!("  {bad} = me_frame\n")),
+                    Err(RunCardError::BadFrame { .. })
+                ),
+                "{bad}"
+            );
+        }
     }
 
     #[test]
@@ -864,7 +1042,103 @@ mod tests {
                 }
                 // Opaque list/dict params: name recognized, payload not compared.
                 Def::O => {}
+                // A list with a non-empty default: the same integers.
+                Def::L(s) => {
+                    let ours: Vec<i64> = s
+                        .split(',')
+                        .map(|t| t.trim().parse().expect("an integer list"))
+                        .collect();
+                    let theirs: Vec<i64> = actual
+                        .as_array()
+                        .unwrap_or_else(|| panic!("'{name}': dump {actual} is not a list"))
+                        .iter()
+                        .map(|v| v.as_i64().expect("an integer"))
+                        .collect();
+                    assert_eq!(ours, theirs, "'{name}': table {s:?} vs dump {actual}");
+                }
             }
         }
+    }
+
+    /// Transcription oracle for [`RunCard::decay_default`]: every cut parameter
+    /// as `banner.py`'s `remove_all_cut` leaves it, dumped from MadGraph's own
+    /// `RunCardLO` into `validation/madgraph/runcard_decay_defaults.json`
+    /// (`dump_runcard_defaults.py`). A reset missing from [`DECAY_CUT_RESETS`]
+    /// leaves that cut at its scattering default, and a decay with no run card
+    /// then gets a cut MadGraph's does not have.
+    #[test]
+    fn decay_defaults_match_banner_py_remove_all_cut() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/runcard_decay_defaults.json"
+        );
+        let text = std::fs::read_to_string(path).unwrap_or_else(|e| {
+            panic!(
+                "missing decay-defaults oracle {path}: {e}\n\
+                 run `pixi run -e madgraph dump-runcard-defaults` to (re)generate it"
+            )
+        });
+        let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let card = RunCard::decay_default();
+        let mut compared = 0;
+        for (name, expected) in dump.as_object().expect("oracle is a JSON object") {
+            let canonical = canonical_name(name)
+                .unwrap_or_else(|| panic!("cut parameter '{name}' is not in the defaults table"));
+            let actual = card.get(canonical).expect("every canonical name resolves");
+            match (actual, expected) {
+                (ParamValue::Opaque(_), _) => continue,
+                (ParamValue::Bool(b), e) => assert_eq!(e.as_bool(), Some(*b), "'{name}'"),
+                (v, e) => {
+                    let e = e.as_f64().unwrap_or_else(|| panic!("'{name}': {e}"));
+                    assert_eq!(v.as_f64(), e, "'{name}': decay default vs remove_all_cut");
+                }
+            }
+            compared += 1;
+        }
+        assert!(compared > 90, "compared only {compared} cut parameters");
+        assert_eq!(card.int("SDE_strategy"), 1);
+        assert!(!card.get("use_syst").unwrap().as_bool());
+    }
+
+    /// The `setcuts.f` decay branch: both scales fixed, `μR` at the mass unless
+    /// the card fixed it already, no parton densities.
+    #[test]
+    fn a_decay_reads_the_card_as_madevent_does() {
+        let floating = RunCard::decay_default().for_decay(173.0);
+        assert_eq!((floating.lpp1, floating.lpp2), (0, 0));
+        assert_eq!((floating.ebeam1, floating.ebeam2), (86.5, 86.5));
+        assert!(floating.fixed_ren_scale && floating.fixed_fac_scale);
+        assert!(floating.get("fixed_fac_scale1").unwrap().as_bool());
+        assert!(floating.get("fixed_fac_scale2").unwrap().as_bool());
+        assert_eq!(floating.scale, 173.0);
+        assert_eq!(floating.dsqrt_q2fact1, 91.188);
+
+        let fixed = RunCard::parse("T = fixed_ren_scale\n70 = scale\n")
+            .unwrap()
+            .for_decay(173.0);
+        assert_eq!(fixed.scale, 70.0, "a fixed renormalisation scale is kept");
+    }
+
+    /// `PDFSUP` is MadEvent's `get_pdf_id(pdlabel)`: the `lhaid` only when the
+    /// label is `lhapdf`, the built-in set's id otherwise — `247000` on a
+    /// fixed-energy card that leaves `pdlabel` at its default, whatever `lhaid`
+    /// says, as every banked MadGraph 3.7.1 lepton-collider run writes.
+    #[test]
+    fn pdfsup_is_read_off_pdlabel() {
+        let card = |text: &str| RunCard::parse(text).expect("card");
+        assert_eq!(card("  0 = lpp1\n  0 = lpp2\n").pdfsup(), 247000);
+        assert_eq!(
+            card("  0 = lpp1\n  0 = lpp2\n  none = pdlabel1\n  none = pdlabel2\n").pdfsup(),
+            247000
+        );
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  230000 = lhaid\n").pdfsup(),
+            230000
+        );
+        assert_eq!(
+            card("  lhapdf = pdlabel\n  247000 = lhaid\n").pdfsup(),
+            247000
+        );
+        assert_eq!(card("  cteq6l1 = pdlabel\n").pdfsup(), 10042);
     }
 }

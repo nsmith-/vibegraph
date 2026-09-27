@@ -73,6 +73,12 @@ const R_SCALES: &str = "coupling::scales::ScaleChoice::from_run_card ('d' arrive
                         clustering's d parameter)";
 const R_MAXJETFLAVOR: &str = "cuts::Cuts::compile, through the leg classification, and the \
                               colour table the clustering asks which flavours count as jets";
+const R_CUT_DECAYS: &str = "cuts::Cuts::compile_with, which at F switches the cuts off on every \
+                            leg a decay chain's forced lines produce (setcuts.f:192)";
+const R_BWCUTOFF: &str = "cuts::Cuts::compile_with, the half-width in widths of each decay-chain \
+                          window (myamp.f:179) and of the channel maps' forced draws; and \
+                          coupling::scales::ScaleChoice::from_run_card, whose clustering \
+                          reads it for the on-shell test";
 const R_CUT_LITERAL: &str = "cuts::Cuts::compile, by literal name";
 const R_CUT_SINGLE: &str = "cuts::Cuts::compile's single-leg block; the name is built as \
                             pt{c} / e{c}max / eta{c}min and so on over the jet, b, photon and \
@@ -95,6 +101,12 @@ const R_SDE_STRATEGY: &str = "hadronic::EventScaleSource::weights_configurations
                               quantity that follows a configuration: the channel a point's \
                               cluster scale is taken in, and — through SELECT_COLOR's ICONFIG \
                               — the colour flow its event record is written with";
+const R_FRAME: &str = "RunCard::frame_id, read by hadronic::refuse_polarized_frame: a polarized \
+                       massive leg makes the squared amplitude frame dependent, and every \
+                       evaluator here takes partonic centre-of-mass momenta, MadGraph's default \
+                       frame (frame_id 6), so a card naming another frame is refused on such a \
+                       process. An amplitude summed over its helicities, or polarized only on \
+                       massless legs, is Lorentz invariant and the frame cannot move it";
 const R_XQCUT: &str = "cuts::detect_unimplemented, and ScaleChoice::from_run_card, which \
                        refuses a card that switches matching on";
 
@@ -124,13 +136,9 @@ const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_
                      {'default': False}, which is a second reason not to compare it";
 const B_BIAS_PARAMETERS: &str = "the bias module's payload; a bias module is itself refused, \
                                  so nothing ever reads it";
-const B_CUT_DECAYS: &str = "selects whether legs produced by a decay chain receive cuts, and \
-                            decay-chain process syntax is refused, so no such leg exists";
-const B_FRAME: &str = "selects the frame for a matrix element that is not Lorentz invariant, \
-                       or for a polarised sum. Every amplitude here is Lorentz invariant and \
-                       beam polarisation is refused, so the frame cannot change a value. \
-                       me_frame's stored default is also an empty payload where MadGraph's is \
-                       [1, 2], so comparing it would misfire";
+const B_FRAME_ID: &str = "a system parameter: MadGraph recomputes it from me_frame as the sum of \
+                          2^n over the listed legs whatever a card writes \
+                          (banner.py:4705), so me_frame is what is read instead";
 
 const P_POLBEAM: &str = "beam polarisation: polarised matrix-element sums, and the SPINUP \
                          entries that follow from them, are not implemented";
@@ -246,13 +254,13 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("custom_fcts",             IgnoredPhysics { why: P_CUSTOM_FCTS, when: Applicability::Always }),
     ("lhe_version",             IgnoredPhysics { why: P_LHE_VERSION, when: Applicability::Always }),
     ("boost_event",             IgnoredPhysics { why: P_BOOST_EVENT, when: Applicability::Always }),
-    ("me_frame",                IgnoredBenign(B_FRAME)),
-    ("frame_id",                IgnoredBenign(B_FRAME)),
+    ("me_frame",                Consumed(R_FRAME)),
+    ("frame_id",                IgnoredBenign(B_FRAME_ID)),
     ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM, when: Applicability::Always }),
     ("keep_log",                IgnoredBenign(B_JOB)),
     ("auto_ptj_mjj",            IgnoredBenign(B_MLM)),
-    ("bwcutoff",                Consumed(R_SCALES)),
-    ("cut_decays",              IgnoredBenign(B_CUT_DECAYS)),
+    ("bwcutoff",                Consumed(R_BWCUTOFF)),
+    ("cut_decays",              Consumed(R_CUT_DECAYS)),
     ("dsqrt_shat",              Consumed(R_CUT_LITERAL)),
     ("dsqrt_shatmax",           Consumed(R_CUT_LITERAL)),
     ("nhel",                    IgnoredPhysics { why: P_NHEL, when: Applicability::Always }),
@@ -554,7 +562,7 @@ mod tests {
     /// The `Opaque` payload defaults this crate stores that are *not* MadGraph's.
     ///
     /// `defaults_match_banner_py_dump` compares every scalar default against the
-    /// `banner.py` dump but skips opaque payloads, so these four have never been
+    /// `banner.py` dump but skips opaque payloads, so these three have never been
     /// checked. They are pinned rather than fixed: each is classified
     /// [`FieldClass::IgnoredBenign`] for a reason independent of its default, so
     /// the mismatch changes nothing today — but a card writing MadGraph's own
@@ -596,7 +604,6 @@ mod tests {
         assert_eq!(
             mismatched,
             [
-                "me_frame",
                 "mxx_only_part_antipart",
                 "pdgs_for_merging_cut",
                 "systematics_arguments",

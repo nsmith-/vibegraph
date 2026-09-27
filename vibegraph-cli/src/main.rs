@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use vibegraph::diagrams::{
-    parse_proc_card, parse_proc_card_file, DiagramError, ParsedProcCard, ParsingOptions,
+    parse_proc_card, parse_proc_card_file, DiagramError, ParsingOptions, SupportedCard,
 };
 
 mod assets;
@@ -29,7 +29,7 @@ use network::NetworkPolicy;
 pub(crate) fn read_proc_card(
     path: &Path,
     opts: &ParsingOptions,
-) -> Result<ParsedProcCard, DiagramError> {
+) -> Result<SupportedCard, DiagramError> {
     if path == Path::new("-") {
         let mut card = String::new();
         std::io::stdin().read_to_string(&mut card)?;

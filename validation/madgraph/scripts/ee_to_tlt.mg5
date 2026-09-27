@@ -1,0 +1,14 @@
+# MadGraph5 batch script: e+ e- > t{L} t~ at LO
+#
+# Why this exact process:
+#   - A polarized massive fermion in the final state: its helicity is not
+#     Lorentz invariant, so the value depends on the frame it is evaluated in.
+generate e+ e- > t{L} t~
+output ee_to_tlt -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

@@ -148,6 +148,11 @@ rooting-invariant tensors: locus (a) VVV `σ_V`, locus (b) build-convention (VVS
 A/Path B resolver merge and the perf removal of the runtime `resolve_bra_ket` order
 check.
 
+*Superseded (2026-09-25, note 38 §4 S1):* the canonical rooting is no longer
+`VtxIdx(0)` but `Diagram::anchor`, a rule on the graph; the spine sign is no longer
+read off a rooted tree but carried by `Diagram::sign` (`Diagram::fermion_line_sign`),
+with the rooted-tree derivation kept as a debug-build cross-check.
+
 Per note 15 §3 + `rooting-study-results.md`: the amplitude is correct only
 for feyngraph's `VtxIdx(0)` edge orientation — every node-reducing rooting
 silently corrupts multi-boson/≥6-point amplitudes (max_rel up to 1.7e+3).

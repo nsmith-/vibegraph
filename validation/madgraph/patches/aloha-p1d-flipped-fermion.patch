@@ -1,0 +1,27 @@
+ALOHA's `1D` factor (the `$ A` on-shell veto) for a fermion propagator whose
+spinor index is odd, i.e. the off-shell spinor computed from a vertex's second
+spinor slot (`FFV2P1D_1` for `u u~ > w+ b w- b~ $ t t~`'s top line).
+
+`parse_expression(..., need_P_sign=True)` flips the momentum by rewriting every
+`P(` into `-P(`. In the theta argument that turns `P(-1,id)**2` into
+`-P(-1,id)**2`, which Python-style precedence reads as `-(p**2)`, so the argument
+becomes `(p² + (M − cΓ)²)(p² + (M + cΓ)²)`: never negative, and the line is never
+zeroed. Writing the square as a product keeps the flip even. Every other `1D`
+routine (vector, scalar, the even-slot spinor) generates byte-identical Fortran
+with and without this change; only the odd-slot fermion routine changes, to the
+form its even-slot sibling already has.
+
+Applied by validation/madgraph/gen_onshell_veto.sh to a copy of the pinned
+MadGraph 3.7.1 tree, never to the tree itself.
+
+--- a/aloha/create_aloha.py
++++ b/aloha/create_aloha.py
+@@ -526,7 +526,7 @@
+             denominator = "1"
+         elif propa == "1D": # For $ DOLLAR propagator
+             # only the multiplicative factor for offshell veto -> the real propagator is handle like normal
+-            numerator = "theta_functionr( (P(-1,id)**2 -(Mass(id)-BWCUTOFF*Width(id))**2 ) *( P(-1,id)**2 - (Mass(id)+BWCUTOFF*Width(id))**2),1,0)"
++            numerator = "theta_functionr( (P(-1,id)*P(-1,id) -(Mass(id)-BWCUTOFF*Width(id))**2 ) *( P(-1,id)*P(-1,id) - (Mass(id)+BWCUTOFF*Width(id))**2),1,0)"
+             denominator = None
+         else:
+             raise Exception

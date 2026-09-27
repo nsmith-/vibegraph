@@ -1132,6 +1132,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                     &DiagramSet {
                         particles_in: set.particles_in.clone(),
                         particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
                         diagrams: vec![d.clone()],
                     },
                     model.as_ref(),

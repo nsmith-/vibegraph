@@ -1,0 +1,14 @@
+# MadGraph5 batch script: e+ e- > z{0} h at LO
+#
+# Why this exact process:
+#   - A longitudinal Z against an external scalar: the polarization vector
+#     vxxxxx builds for helicity 0, alone in the helicity sum.
+generate e+ e- > z{0} h
+output ee_to_z0h -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

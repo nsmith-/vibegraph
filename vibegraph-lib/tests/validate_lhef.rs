@@ -540,7 +540,7 @@ fn generate_and_check(row: &Row) {
             panic!("an accepted point carries weight, so its labels are defined");
         };
         let externals: Vec<[f64; 4]> = integ
-            .beams()
+            .incoming()
             .iter()
             .chain(momenta.iter())
             .map(|p| [p.e(), p.px(), p.py(), p.pz()])

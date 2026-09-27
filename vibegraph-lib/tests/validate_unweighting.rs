@@ -462,7 +462,7 @@ fn unweighted_sample_reproduces_the_integration_it_came_from() {
                 100.0 * uw.largest_channel_share(),
             );
 
-            let specs = obs_specs(integ.final_masses().len(), integ.beams()[0].e() * 2.0);
+            let specs = obs_specs(integ.final_masses().len(), integ.incoming()[0].e() * 2.0);
             let blank = || specs.iter().map(|s| Hist::new(s.lo, s.hi)).collect();
 
             // The weighted reference, on its own seed and its own channel rule.

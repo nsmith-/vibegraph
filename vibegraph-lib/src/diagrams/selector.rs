@@ -2,27 +2,31 @@
 
 use feyngraph::DiagramSelector;
 
-use super::alias::ConcreteProcess;
-use super::parse::{CouplingConstraint, CouplingOp};
+use super::check::AmplitudeOrder;
+use super::parse::CouplingOp;
 
-/// Maximum coupling power considered when translating `>=` or `>` constraints.
+/// Maximum coupling power considered when translating a `>` constraint.
 ///
 /// feyngraph has no built-in upper-unbounded selector; we enumerate powers
 /// up to this limit. 20 is well beyond any physical LO tree-level process.
 const MAX_COUPLING_POWER: usize = 20;
 
+/// A fully concrete process: every leg a model particle name.
+#[derive(Debug, Clone)]
+pub struct ConcreteProcess {
+    pub initial: Vec<String>,
+    pub final_state: Vec<String>,
+    /// Particles that may not appear as a propagator.
+    pub forbidden_particles: Vec<String>,
+    pub orders: Vec<AmplitudeOrder>,
+}
+
 /// Translate a `ConcreteProcess` into a feyngraph `DiagramSelector`.
 ///
-/// # S-channel filters
-///
-/// `required_s_channels`, `forbidden_s_channels`, and `forbidden_onsh_s_channels`
-/// require checking whether a propagator's momentum is a sum of only initial-state
-/// external momenta. feyngraph's `DiagramView` does not yet expose momentum-flow
-/// information in a way that supports this check cleanly. These three fields are
-/// currently **not** forwarded to the selector.
-///
-/// TODO(s-channel): implement via `selector.add_custom_function` once feyngraph
-/// exposes propagator momentum-flow data through `DiagramView`.
+/// The s-channel restrictions (`>`, `$$`, `$`) never reach this point: they
+/// are refused before enumeration. When they are supported they filter
+/// converted [`super::Diagram`]s, whose propagators carry the signed
+/// external-momentum combination that decides whether a line is an s-channel.
 pub fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
     let mut sel = DiagramSelector::new();
 
@@ -32,54 +36,33 @@ pub fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
     }
 
     // Coupling order constraints.
-    for c in &proc.coupling_constraints {
+    for c in &proc.orders {
         apply_coupling_constraint(&mut sel, c);
     }
 
     sel
 }
 
-fn apply_coupling_constraint(sel: &mut DiagramSelector, c: &CouplingConstraint) {
-    // MadGraph treats squared-order constraints differently, but at the diagram-
-    // selection level we apply both the same way for LO tree-level generation.
+fn apply_coupling_constraint(sel: &mut DiagramSelector, c: &AmplitudeOrder) {
     let name = c.name.as_str();
     let v = c.value;
 
     match c.op {
-        // `=` on amplitude orders → treated as `<=` (MadGraph coerces this).
+        // `=` on amplitude orders is an upper bound, as MadGraph reads it.
         CouplingOp::Eq | CouplingOp::Le => {
             if v >= 0 {
                 let powers: Vec<usize> = (0..=(v as usize)).collect();
                 sel.select_coupling_power_list(name, powers);
             }
         }
-        CouplingOp::Lt => {
-            if v > 0 {
-                let powers: Vec<usize> = (0..v as usize).collect();
-                sel.select_coupling_power_list(name, powers);
-            }
-        }
-        // `==` and `===` → exact equality.
-        CouplingOp::ExactEq | CouplingOp::StrictEq => {
+        CouplingOp::ExactEq => {
             if v >= 0 {
                 sel.select_coupling_power(name, v as usize);
             }
         }
-        CouplingOp::Ge => {
-            let start = v.max(0) as usize;
-            let powers: Vec<usize> = (start..=MAX_COUPLING_POWER).collect();
-            sel.select_coupling_power_list(name, powers);
-        }
         CouplingOp::Gt => {
             let start = (v + 1).max(0) as usize;
             let powers: Vec<usize> = (start..=MAX_COUPLING_POWER).collect();
-            sel.select_coupling_power_list(name, powers);
-        }
-        CouplingOp::Ne => {
-            let excluded = if v >= 0 { Some(v as usize) } else { None };
-            let powers: Vec<usize> = (0..=MAX_COUPLING_POWER)
-                .filter(|&p| excluded != Some(p))
-                .collect();
             sel.select_coupling_power_list(name, powers);
         }
     }
@@ -90,29 +73,24 @@ fn apply_coupling_constraint(sel: &mut DiagramSelector, c: &CouplingConstraint) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagrams::alias::ConcreteProcess;
-    use crate::diagrams::parse::{CouplingConstraint, CouplingOp};
+    use crate::diagrams::parse::CouplingOp;
 
     // DiagramSelector fields are pub(crate) in feyngraph so we can't inspect them
     // directly. These tests are smoke tests verifying build_selector completes
     // without panic. Behavioral verification is covered by integration tests in mod.rs.
 
-    fn concrete(forbidden: Vec<&str>, constraints: Vec<CouplingConstraint>) -> ConcreteProcess {
+    fn concrete(forbidden: Vec<&str>, orders: Vec<AmplitudeOrder>) -> ConcreteProcess {
         ConcreteProcess {
             initial: vec!["e+".into(), "e-".into()],
             final_state: vec!["mu+".into(), "mu-".into()],
             forbidden_particles: forbidden.into_iter().map(String::from).collect(),
-            forbidden_s_channels: vec![],
-            forbidden_onsh_s_channels: vec![],
-            required_s_channels: vec![],
-            coupling_constraints: constraints,
+            orders,
         }
     }
 
-    fn constraint(name: &str, op: CouplingOp, value: i64) -> CouplingConstraint {
-        CouplingConstraint {
+    fn constraint(name: &str, op: CouplingOp, value: i64) -> AmplitudeOrder {
+        AmplitudeOrder {
             name: name.into(),
-            squared: false,
             op,
             value,
         }

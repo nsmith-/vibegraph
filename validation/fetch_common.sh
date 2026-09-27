@@ -213,14 +213,18 @@ vg_ensure_refdata() {
 
   vg_say ">>> unpacking $archive into $dir"
   mkdir -p "$dir"
-  zstd -dc "$tarball" | tar -xf - -C "$dir"
+  # Checked explicitly: callers invoke this as `vg_ensure_refdata || …`, and bash
+  # suspends `set -e` inside a function run from an `||` list, so a failed unpack
+  # would otherwise fall through to writing the stamp over a partial tree.
+  command -v zstd >/dev/null || vg_die "zstd is needed to unpack $archive and is not on PATH"
+  zstd -dc "$tarball" | tar -xf - -C "$dir" || vg_die "unpacking $archive into $dir failed"
   # The archive carries the event files as plain Les Houches text, since gzipped
   # members are what zstd cannot compress. MadGraph writes them gzipped and every
   # gate opens them gzipped, so the work-area layout is restored here: gzip is
   # lossless, so what the gates read is what MadGraph wrote whichever way the
   # bytes arrived.
   vg_say ">>> restoring the gzipped event files"
-  find "$dir" -type f -name '*.lhe' -exec gzip -n -f {} +
+  find "$dir" -type f -name '*.lhe' -exec gzip -n -f {} + || vg_die "restoring the gzipped event files in $dir failed"
   printf '%s\n' "$sha" > "$stamp"
   vg_say "✓ banked reference data ready at $dir"
 }

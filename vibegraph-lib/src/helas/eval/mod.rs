@@ -58,11 +58,15 @@ mod rescale;
 #[cfg(any(test, feature = "bench-internals"))]
 #[cfg_attr(not(test), allow(dead_code))]
 mod prop_harness;
+#[cfg(test)]
+mod renumbering;
 mod root_diagram;
 mod root_lorentz;
 #[cfg(test)]
 mod rooting_soundness;
 mod run;
+#[cfg(test)]
+mod stitching;
 // Alternative topological execution orders for the compiled instruction stream, and the
 // structural metrics that judge them. A study hook: the order production emits lives
 // with the lowering in `layout.rs`, and this module exists only under `cfg(test)` or the
@@ -107,7 +111,7 @@ pub mod op_census {
 }
 
 pub use ast::{Ast, ParseAstError};
-pub use compile::{config_groups, AmplitudeEvaluator};
+pub use compile::{config_groups, AmplitudeEvaluator, ColorSelection};
 pub use error::{CompileError, EvalError, RootDiagramError};
 pub use lane_field::{LaneField, Lanes, SupportedLanes};
 pub use op::{Const, ConstKind, Node, Op, Sym};

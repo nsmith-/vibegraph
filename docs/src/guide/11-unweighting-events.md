@@ -129,6 +129,67 @@ test, so the departure is on the record and cannot drift
 (`vibegraph-lib/src/lhef/build.rs`). The jet-count memo on the
 [scale](10-hadronic.md#scales) path is the other place the same line is drawn.
 
+### Decay runs
+
+A [decay](07-phase-space.md#decays-at-rest) writes its events in MadEvent's
+decay-run convention. `<init>` names the decaying particle as beam 1, with
+its mass as the beam energy, and leaves beam 2 empty (`IDBMUP = 6 0`,
+`EBMUP = 173 0` for a top). `XSECUP`, and `XWGTUP` under `IDWTUP = -4`, carry
+the partial width in GeV where a scattering run's carry picobarns. Each event
+starts with the mother at rest, status $-1$, and every product points back at
+it alone, mothers `1 0` rather than the range `1 1` (`unwgt.f` zeroes the
+second pointer when there is one incoming particle). `SCALUP` is the larger
+of the card's two factorisation scales and `AQCDUP` is $\alpha_s$ at the
+renormalisation scale, the particle's mass by default — both fixed for every
+event, as MadEvent fixes them. `PDFSUP` is MadEvent's `get_pdf_id(pdlabel)`:
+`247000` for the card's default `nn23lo1` although nothing reads a parton
+density, as on every fixed-energy run. One field differs from MadEvent's file:
+MadEvent writes an intermediate resonance of a plain process inside its
+Breit–Wigner window (the $W$ in `t > b e+ ve`) as a status-2 record, which
+this writer does only for [decay chains](#decay-chains).
+`vibegraph check-events` reads an empty second beam as a decay run and
+expects one incoming leg per event there.
+
+### Decay chains
+
+A decay-chain card (`p p > t t~, t > b e+ ve, t~ > b~ mu- vm~`) lists its
+resonances as status-2 records, following MadEvent's `addmothers`. The
+records are the timelike lines of the event's configuration — the one its
+colour flow is drawn in, among the configurations whose forced lines are
+inside their windows — that MadEvent's `cut_bw` flags at the event's momenta:
+every forced line, and a free line (the $W$ inside `t > b e+ ve`) whenever it
+lands within `bwcutoff` widths of its pole and $\Gamma/M < 0.1$, so a free
+line's record comes and goes from event to event. A line with a same-flavour
+daughter loses to it as `cut_bw` decides. Each record carries its
+daughters' summed momentum, its virtuality as the mass, `SPINUP = 9`, and the
+colour its daughters leave open once the lines one carries as colour and
+another as anticolour are contracted; a top-level record descends from the
+initial state (`1 2`, or `1 0` on a decay), a nested one and each leg below a
+record name their innermost record twice (`3 3`). Records sit between the
+incoming and the outgoing legs, parents before children; MadEvent orders
+siblings by its configuration tag, which changes between the configurations
+of one subprocess, and pointers name positions, so the order carries no
+physics and is not reproduced. On `e+ e- > z z, z > e+ e-`, whose pairings
+are all kept, the two `Z` records carry the pairing of the drawn
+configuration, one whose windows the event is inside.
+
+An event whose flow its configuration reaches only below leading colour lists
+no record, as MadEvent's do.
+
+### Several process numbers
+
+A card with several process numbers (`generate p p > e+ e- / z @1`, `add process
+p p > mu+ mu- / a @2`) writes one `<init>` entry per number and each event's
+`IDPRUP` is its own line's. A line without `@N` takes MadGraph's number, its
+position among the process lines. The integration sums every line in one set of
+channels, so the per-process `XSECUP` is the file's own split: the process's
+share of the written weight times the file's cross section, with `XERRUP` the
+integration's relative error on it plus the share's sampling error, and
+`XMAXUP` the process's own largest weight. A streaming
+(`stochastic-rounding`) run knows the split before its first event only by
+drawing the sample once and replaying it, which it does when there is more
+than one process.
+
 ## Seeds and reproducibility
 
 A `generate` run is a pure function of the artifact, the cards and a seed.

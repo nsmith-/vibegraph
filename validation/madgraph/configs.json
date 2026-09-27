@@ -15,11 +15,19 @@
     "configs": 3,
     "flows": 1
   },
+  "ee_to_ee_nsz": {
+    "configs": 2,
+    "flows": 1
+  },
   "ee_to_mumu": {
     "configs": 2,
     "flows": 1
   },
   "ee_to_mumu_4f": {
+    "configs": 2,
+    "flows": 1
+  },
+  "ee_to_mumu_eml": {
     "configs": 2,
     "flows": 1
   },
@@ -31,12 +39,20 @@
     "configs": 25,
     "flows": 1
   },
+  "ee_to_mumu_zonly": {
+    "configs": 1,
+    "flows": 1
+  },
   "ee_to_mumua": {
     "configs": 8,
     "flows": 1
   },
   "ee_to_tatah": {
     "configs": 5,
+    "flows": 1
+  },
+  "ee_to_tlt": {
+    "configs": 2,
     "flows": 1
   },
   "ee_to_ttx": {
@@ -55,12 +71,24 @@
     "configs": 2,
     "flows": 1
   },
+  "ee_to_wp0wm": {
+    "configs": 3,
+    "flows": 1
+  },
+  "ee_to_wp0wmt": {
+    "configs": 3,
+    "flows": 1
+  },
   "ee_to_wpwm": {
     "configs": 3,
     "flows": 1
   },
   "ee_to_wpwm_cw": {
     "configs": 3,
+    "flows": 1
+  },
+  "ee_to_z0h": {
+    "configs": 1,
     "flows": 1
   },
   "ee_to_zh": {
@@ -158,6 +186,10 @@
   "uux_to_uux": {
     "configs": 2,
     "flows": 2
+  },
+  "uux_to_ztg": {
+    "configs": 2,
+    "flows": 1
   },
   "wpwm_to_wpwmz_cw": {
     "configs": 21,
