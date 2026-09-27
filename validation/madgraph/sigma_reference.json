@@ -20,6 +20,13 @@
     "sigma_err_pb": 0.1064,
     "sigma_pb": 155.72
   },
+  "ee_to_ee_nsz": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > e+ e- $$ z",
+    "sigma_err_pb": 0.1095,
+    "sigma_pb": 157.45
+  },
   "ee_to_mumu": {
     "ebeam1": 45.6,
     "ebeam2": 45.6,
@@ -33,6 +40,13 @@
     "process": "e+ e- > mu+ mu- NP<=1",
     "sigma_err_pb": 0.0037172,
     "sigma_pb": 7.3845
+  },
+  "ee_to_mumu_eml": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e-{L} > mu+ mu-",
+    "sigma_err_pb": 0.00024846,
+    "sigma_pb": 0.46145
   },
   "ee_to_mumu_smlimit": {
     "ebeam1": 250.0,
@@ -48,6 +62,13 @@
     "sigma_err_pb": 2.6737e-06,
     "sigma_pb": 0.0013725
   },
+  "ee_to_mumu_zonly": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > z > mu+ mu-",
+    "sigma_err_pb": 1.9253e-05,
+    "sigma_pb": 0.052205
+  },
   "ee_to_mumua": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
@@ -61,6 +82,13 @@
     "process": "e+ e- > ta+ ta- h",
     "sigma_err_pb": 2.1663e-06,
     "sigma_pb": 0.0018861
+  },
+  "ee_to_tlt": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > t{L} t~",
+    "sigma_err_pb": 0.00016535,
+    "sigma_pb": 0.32397
   },
   "ee_to_ttx": {
     "ebeam1": 250.0,
@@ -90,6 +118,20 @@
     "sigma_err_pb": 0.00018137,
     "sigma_pb": 0.55021
   },
+  "ee_to_wp0wm": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > w+{0} w-",
+    "sigma_err_pb": 0.00046986,
+    "sigma_pb": 0.2578
+  },
+  "ee_to_wp0wmt": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > w+{0} w-{T}",
+    "sigma_err_pb": 0.00027726,
+    "sigma_pb": 0.13454
+  },
   "ee_to_wpwm": {
     "ebeam1": 250.0,
     "ebeam2": 250.0,
@@ -103,6 +145,13 @@
     "process": "e+ e- > w+ w- NP<=1",
     "sigma_err_pb": 0.011432,
     "sigma_pb": 7.3037
+  },
+  "ee_to_z0h": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "e+ e- > z{0} h",
+    "sigma_err_pb": 1.6164e-05,
+    "sigma_pb": 0.044614
   },
   "ee_to_zh": {
     "ebeam1": 250.0,
@@ -257,6 +306,13 @@
     "process": "u u~ > u u~",
     "sigma_err_pb": 24.379,
     "sigma_pb": 28269.0
+  },
+  "uux_to_ztg": {
+    "ebeam1": 250.0,
+    "ebeam2": 250.0,
+    "process": "u u~ > z{T} g",
+    "sigma_err_pb": 0.0046301,
+    "sigma_pb": 15.698
   },
   "wpwm_to_wpwmz_cw": {
     "ebeam1": 250.0,

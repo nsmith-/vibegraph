@@ -7,6 +7,7 @@
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=50;ebeam2=50;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -33,14 +34,14 @@
           "value": 51.28,
           "err": 0.025044
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "ee_pole": {
       "process": "e+ e- > mu+ mu-",
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=45.594;ebeam2=45.594;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -67,14 +68,14 @@
           "value": 2024.8,
           "err": 0.81529
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "ee_z_100": {
       "process": "e+ e- > mu+ mu- $ z",
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=50;ebeam2=50;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -101,14 +102,14 @@
           "value": 9.0084,
           "err": 0.0041268
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "ee_z_100_bw3": {
       "process": "e+ e- > mu+ mu- $ z",
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=50;ebeam2=50;bwcutoff=3;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -135,14 +136,14 @@
           "value": 51.28,
           "err": 0.025044
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "ee_z_200": {
       "process": "e+ e- > mu+ mu- $ z",
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=100;ebeam2=100;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -169,14 +170,14 @@
           "value": 2.7894,
           "err": 0.0014594
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "ee_z_pole": {
       "process": "e+ e- > mu+ mu- $ z",
       "run_card": "onshell_ee_run_card.dat",
       "overrides": "ebeam1=45.594;ebeam2=45.594;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -203,14 +204,14 @@
           "value": 10.766,
           "err": 0.0051686
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "pp_full": {
       "process": "p p > e+ e-",
       "run_card": "dy13_default_run_card.dat",
       "overrides": "nevents=20000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -237,14 +238,14 @@
           "value": 934.63,
           "err": 1.4561
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "pp_z": {
       "process": "p p > e+ e- $ z",
       "run_card": "dy13_default_run_card.dat",
       "overrides": "nevents=20000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -271,14 +272,14 @@
           "value": 304.27,
           "err": 0.62538
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "pp_z_chain": {
       "process": "p p > z, z > e+ e-",
       "run_card": "dy13_default_run_card.dat",
       "overrides": "nevents=20000;cut_decays=True",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -305,14 +306,14 @@
           "value": 630.62,
           "err": 0.83114
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "t_bev_w": {
       "process": "t > b e+ ve $ w+",
       "run_card": "onshell_t_bev_run_card.dat",
       "overrides": "nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -339,14 +340,14 @@
           "value": 0.0014354,
           "err": 1.6911e-06
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "uu_full": {
       "process": "u u~ > w+ b w- b~",
       "run_card": "onshell_uu_run_card.dat",
       "overrides": "lpp1=0;lpp2=0;ebeam1=250;ebeam2=250;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -373,8 +374,7 @@
           "value": 13.663,
           "err": 0.0065661
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     },
     "uu_tt": {
       "process": "u u~ > w+ b w- b~ $ t t~",
@@ -415,6 +415,7 @@
       "run_card": "onshell_uu_run_card.dat",
       "overrides": "lpp1=0;lpp2=0;ebeam1=250;ebeam2=250;nevents=10000",
       "generated_sde_strategy": 1,
+      "mg5_tree": "pinned",
       "runs": [
         {
           "iseed": 20260925,
@@ -441,8 +442,7 @@
           "value": 0.068022,
           "err": 0.0002492
         }
-      ],
-      "mg5_tree": "pinned"
+      ]
     }
   }
 }
