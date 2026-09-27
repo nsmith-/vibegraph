@@ -98,7 +98,15 @@ mes_run_seed() {
   rm -rf "$rundir"
   local started
   started="$(date +%s)"
-  "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
+  # A proton run links MadEvent against LHAPDF's C++ glue. On macOS the conda
+  # activation's own LDFLAGS suppresses MadGraph's `STDLIB=-lc++`, so libc++ is
+  # named here; on Linux the same symbols come from libstdc++ and the flag would
+  # break the link (build.sh carries the full explanation).
+  local ldflags="${LDFLAGS:-}"
+  case "$(uname -s)" in
+    Darwin) ldflags="$ldflags -lc++" ;;
+  esac
+  LDFLAGS="$ldflags" "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
     echo "!!! [$tag] generate_events failed; see $log" >&2
     tail -40 "$log" >&2
     return 1

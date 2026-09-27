@@ -51,7 +51,22 @@ stage_models() {
     if [ -d "$cards" ]; then
       cp "$cards"/restrict_*.dat "$MODELS_DIR/$name/"
     fi
-    echo "  staged model: $name"
+    # A Python 2 UFO (SMEFTsim ships one) is converted in place the way
+    # MadGraph's own `import model` would convert it. The generators that read
+    # a model through import_ufo directly never trigger that conversion, and a
+    # rerun whose process directories are all cached never imports the model
+    # through the command line at all, so it is done here, on every restage.
+    if ! python -c "import compileall, sys; sys.exit(0 if compileall.compile_dir(sys.argv[1], quiet=2, legacy=False) else 1)" "$MODELS_DIR/$name" >/dev/null 2>&1; then
+      local convert
+      convert="$(mktemp -t vg_convert_XXXXXX)"
+      printf 'convert model %s -f\n' "$MODELS_DIR/$name" > "$convert"
+      bash "$SCRIPT_DIR/mg5_pinned.sh" "$convert" > "$convert.log" 2>&1 ||
+        { cat "$convert.log" >&2; rm -f "$convert" "$convert.log"; echo "!!! converting $name to Python 3 failed" >&2; exit 1; }
+      rm -f "$convert" "$convert.log"
+      echo "  staged model: $name (converted from Python 2)"
+    else
+      echo "  staged model: $name"
+    fi
   done
 }
 
@@ -67,7 +82,10 @@ stage_models() {
 strip_ansi_escapes() {
   local dir="$1" f
   while IFS= read -r f; do
-    LC_ALL=C sed -i $'s/\x1b\[[0-9;]*[a-zA-Z]//g' "$f"
+    # No `sed -i`: GNU and BSD sed disagree on its argument, and BSD reads the
+    # expression as the backup suffix.
+    LC_ALL=C sed $'s/\x1b\[[0-9;]*[a-zA-Z]//g' "$f" > "$f.stripped"
+    mv "$f.stripped" "$f"
   done < <(grep -rlI $'\x1b\[' "$dir/Cards" "$dir/Events" 2>/dev/null || true)
   while IFS= read -r f; do
     if zgrep -qa $'\x1b\[' "$f" 2>/dev/null; then

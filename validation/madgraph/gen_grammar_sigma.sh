@@ -33,7 +33,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 . "$HERE/madevent_seeds.sh"
 OUT="${GRAMMAR_SIGMA_WORK:-$HERE/work/grammar_sigma}"
 RESULT_JSON="${RESULT_JSON:-$HERE/grammar_sigma_reference.json}"
-SEEDS="${SEEDS:-$(seq -s " " 20260926 20260930)}"
+SEEDS="${SEEDS:-$(seq -f '%.0f' -s " " 20260926 20260930)}"
 NB_CORE="${NB_CORE:-2}"
 
 mkdir -p "$OUT"

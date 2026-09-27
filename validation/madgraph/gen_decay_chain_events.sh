@@ -35,7 +35,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 . "$HERE/madevent_seeds.sh"
 OUT="${DECAY_CHAIN_EVENTS_WORK:-$HERE/work/decay_chain_events}"
 RESULT_JSON="${RESULT_JSON:-$HERE/decay_chain_events_reference.json}"
-SEEDS="${SEEDS:-$(seq -s " " 20260926 20260930)}"
+SEEDS="${SEEDS:-$(seq -f '%.0f' -s " " 20260926 20260930)}"
 
 LHAPDF_DATA_PATH="$ROOT/validation/pdf"
 if command -v lhapdf-config >/dev/null 2>&1; then

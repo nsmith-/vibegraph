@@ -61,7 +61,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 . "$HERE/madevent_seeds.sh"
 OUT="${ONSHELL_WORK:-$HERE/work/onshell_veto}"
 RESULT_JSON="${RESULT_JSON:-$HERE/onshell_veto_reference.json}"
-SEEDS="${SEEDS:-$(seq -s " " 20260925 20260929)}"
+SEEDS="${SEEDS:-$(seq -f '%.0f' -s " " 20260925 20260929)}"
 NB_CORE="${NB_CORE:-2}"
 P1D_PATCH="$HERE/patches/aloha-p1d-flipped-fermion.patch"
 

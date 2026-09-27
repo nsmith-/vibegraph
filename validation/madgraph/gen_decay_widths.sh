@@ -45,7 +45,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 . "$HERE/madevent_seeds.sh"
 OUT="${DECAY_WORK:-$HERE/work/decay_widths}"
 RESULT_JSON="${RESULT_JSON:-$HERE/decay_width_reference.json}"
-SEEDS="${SEEDS:-$(seq -s " " 20260925 20260934)}"
+SEEDS="${SEEDS:-$(seq -f '%.0f' -s " " 20260925 20260934)}"
 
 mkdir -p "$OUT"
 

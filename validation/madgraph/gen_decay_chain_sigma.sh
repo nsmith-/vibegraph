@@ -47,7 +47,7 @@ RESULT_JSON="${RESULT_JSON:-$HERE/decay_chain_sigma_reference.json}"
 # SEEDS, when set, replaces every row's list; otherwise a row runs its own list,
 # or DEFAULT_SEEDS.
 USER_SEEDS="${SEEDS:-}"
-DEFAULT_SEEDS="$(seq -s " " 20260926 20260930)"
+DEFAULT_SEEDS="$(seq -f '%.0f' -s " " 20260926 20260930)"
 
 LHAPDF_DATA_PATH="$ROOT/validation/pdf"
 if command -v lhapdf-config >/dev/null 2>&1; then
@@ -60,7 +60,7 @@ mkdir -p "$OUT"
 # name|process|run card|seeds (empty: DEFAULT_SEEDS)
 ALL_ROWS=(
   "zz_emu|e+ e- > z z, z > e+ e-, z > mu+ mu-|decay_chain_ee500_run_card.dat|"
-  "zz_emu_cut|e+ e- > z z, z > e+ e-, z > mu+ mu-|decay_chain_ee500_cutdecays_run_card.dat|$(seq -s " " 20260926 20260945)"
+  "zz_emu_cut|e+ e- > z z, z > e+ e-, z > mu+ mu-|decay_chain_ee500_cutdecays_run_card.dat|$(seq -f '%.0f' -s " " 20260926 20260945)"
   "ttx_wb|e+ e- > t t~, t > w+ b, t~ > w- b~|decay_chain_ee500_run_card.dat|"
   "ttx_nested|e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~|decay_chain_ee500_run_card.dat|"
   "pp_ttx_lep|p p > t t~, t > b e+ ve, t~ > b~ mu- vm~|decay_chain_pp13_run_card.dat|"
