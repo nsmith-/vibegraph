@@ -773,7 +773,7 @@ Track 3's scope.
   truth.
 - A helicity-summed |M|² with no helicity loop, from completeness relations and
   Dirac traces, is a separate low-priority backlog topic with its own
-  feasibility record in note 38.
+  feasibility record in note 41.
 
 ## References
 

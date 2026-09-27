@@ -1,4 +1,4 @@
-# 38 — Completeness relations for the helicity-summed |M|²: feasibility (2026-09-26)
+# 41 — Completeness relations for the helicity-summed |M|²: feasibility (2026-09-26)
 
 The question (user): replace the explicit helicity sum in the integrand with
 completeness relations — `Σ u ū = p̸ + m`, `Σ v v̄ = p̸ − m`, `Σ ε_μ ε*_ν = −g_μν
