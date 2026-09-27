@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Produce the unweighted Les Houches samples the Pythia consumption gate reads.
 #
-# Both samples come from card sets that are already validated elsewhere — the
-# banked `pp_to_llj_fixed` run card and the committed `dy13` cards — and both go
-# through the shipped `vibegraph` binary rather than a library harness, so what
+# The samples come from card sets that are already validated elsewhere — the
+# banked `pp_to_llj_fixed` run card, the committed `dy13` cards and the
+# decay-chain event card — and all go through the shipped `vibegraph` binary rather than a library harness, so what
 # Pythia is handed is exactly what a user's `generate` run writes.
 #
 # Everything is fixed: the cards, the integration budgets, the seeds and the
@@ -18,7 +18,7 @@ OUT="$ROOT/target/pythia-samples"
 PDF_DIR="$ROOT/validation/pdf"
 BIN="$ROOT/target/release-debug/vibegraph"
 
-# Shared across both samples: one seed for the integration and the generation,
+# Shared across the samples: one seed for the integration and the generation,
 # and an event count sized so the whole gate — build excluded — stays under a
 # minute while still drawing every flavour group the llj process can emit.
 SEED=20260801
@@ -76,6 +76,19 @@ emit dy13_default \
   "$ROOT/validation/madgraph/dy13_default_run_card.dat" \
   --neval 120000 --niter 12
 
+# `p p > t t~, t > b e+ ve, t~ > b~ mu- vm~`: a decay chain, so the record lists
+# the forced tops and the free W lines inside their windows as status-2
+# resonances, with their products' mother pointers and the tops' colour lines.
+# Pythia rebuilds the resonance decays from them and keeps their masses.
+CHAIN_PROC="$OUT/ttx_chain_proc_card.dat"
+cat >"$CHAIN_PROC" <<'EOF'
+import model sm
+generate p p > t t~, t > b e+ ve, t~ > b~ mu- vm~
+EOF
+emit ttx_chain "$CHAIN_PROC" \
+  "$ROOT/validation/madgraph/decay_chain_pp13_dyn_run_card.dat" \
+  --neval 120000 --niter 8
+
 python3 - "$OUT/samples.json" "$SEED" "$NEVENTS" <<'PY'
 import json, sys
 
@@ -95,6 +108,12 @@ doc = {
             "process": "p p > e+ e-",
             "lhe": "dy13_default.lhe",
             "run_card": "validation/madgraph/dy13_default_run_card.dat",
+        },
+        {
+            "key": "ttx_chain",
+            "process": "p p > t t~, t > b e+ ve, t~ > b~ mu- vm~",
+            "lhe": "ttx_chain.lhe",
+            "run_card": "validation/madgraph/decay_chain_pp13_dyn_run_card.dat",
         },
     ],
 }

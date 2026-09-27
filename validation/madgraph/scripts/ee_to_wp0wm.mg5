@@ -1,0 +1,15 @@
+# MadGraph5 batch script: e+ e- > w+{0} w- at LO
+#
+# Why this exact process:
+#   - One longitudinal W beside an unpolarized one: the polarized cross
+#     section and event sample (SPINUP of the W+ is fixed at 0), and one term
+#     of the polarized decomposition of e+ e- > w+ w-.
+generate e+ e- > w+{0} w-
+output ee_to_wp0wm -nojpeg
+launch
+set lpp1 0
+set lpp2 0
+set ebeam1 250
+set ebeam2 250
+set use_syst False
+done

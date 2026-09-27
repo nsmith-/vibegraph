@@ -193,8 +193,45 @@ validate-scales = { cmd = "cargo test -p vibegraph-lib --features extended-valid
 validate-scale-couplings = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_scale_couplings -- --nocapture", depends-on = ["build-diagrams"] }
 # Dump the RunCardLO defaults to JSON — the transcription oracle for the Rust run-card defaults table
 dump-runcard-defaults = "python validation/madgraph/dump_runcard_defaults.py"
+# Run the proc-card grammar corpus through MadGraph's own parser — the oracle the
+# hermetic proc_grammar_oracle test compares this crate's parser against
+dump-proc-grammar = "python validation/madgraph/dump_proc_grammar.py"
+# Run the s-channel / WEIGHTED / five-flavour card corpus through MadGraph's own
+# diagram generation — the census the hermetic schannel_census test compares against
+dump-schannel-census = "python validation/madgraph/dump_schannel_census.py"
+# Run the decay-chain card corpus through MadGraph's generation and matrix-element
+# combination — the census the hermetic decay_chain_census test compares against
+dump-decay-chain-census = "python validation/madgraph/dump_decay_chain_census.py"
+# Run the polarized-leg card corpus through MadGraph's own generation and bank
+# each matrix element's legs, NHEL table and IDEN — the census the hermetic
+# polarization_census test compares against
+dump-polarization-census = "python validation/madgraph/dump_polarization_census.py"
 # Generate the banked MG reference sigma(pp->e+e-) for the two H7 run cards
 generate-hadronic-sigma = "bash validation/madgraph/gen_hadronic_sigma.sh"
+# MadEvent partial widths of the 1 -> n decay rows over several seeds, and the
+# t > b e+ ve histograms the decay sample row compares against
+generate-decay-widths = "bash validation/madgraph/gen_decay_widths.sh"
+# MadEvent decay-chain cross sections, one run per seed
+generate-decay-chain-sigma = "bash validation/madgraph/gen_decay_chain_sigma.sh"
+# MadEvent decay-chain and @N event samples, summarised into the records,
+# histograms and scale-replay events the decay-chain events gate reads
+generate-decay-chain-events = "bash validation/madgraph/gen_decay_chain_events.sh"
+# MadEvent cross sections for forbidden on-shell s-channels ($ A); the top-pair
+# row runs a patched copy of the pinned tree (validation/madgraph/patches/)
+generate-onshell-veto = "bash validation/madgraph/gen_onshell_veto.sh"
+# MadEvent cross sections for `> A`, `$$ A` and polarized W rows, one run per seed
+generate-grammar-sigma = "bash validation/madgraph/gen_grammar_sigma.sh"
+# MadGraph standalone per-helicity, per-flow JAMPs for every standalone table;
+# the SMEFTsim row reads the models build.sh stages
+generate-standalone-jamps = { cmd = "python validation/madgraph/gen_standalone_jamps.py all", depends-on = ["build-diagrams"] }
+# The SM UFO's analytic two-body widths (decays.py) as MadGraph's model_reader
+# evaluates them on restrict_default — the hermetic 1 -> 2 width oracle
+dump-sm-decay-widths = "python validation/madgraph/dump_sm_decay_widths.py"
+# h > e+ e- mu+ mu- by quadrature over its two off-shell Z lines: the exact width
+# the decay gate holds both MadEvent and this crate to
+decay-semianalytic = "python validation/madgraph/decay_semianalytic.py"
+# MadGraph standalone |M|^2 for 1 -> n decays at fixed rest-frame points
+generate-decay-amplitudes = "python validation/madgraph/gen_decay_amplitudes.py"
 # Hadronic cross-section gate: sigma(pp->e+e-) on both dy13 run cards against the
 # banked MG reference, and sigma(pp->l+l-j) against the banked pp_to_llj_fixed
 # run — all of them through the general flavour-group path, each swept over three
@@ -226,12 +263,12 @@ validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-val
 
 
 # The oracle layer's reference generation: one entry point over every generator,
-# staged deps -> madgraph -> refs -> bundle. The MadGraph work area is the cache
+# staged deps -> madgraph -> seeds -> refs -> bundle. The MadGraph work area is the cache
 # — an existing process directory is never rebuilt — while the extractions, which
 # are cheap and pure functions of it, always rerun so a reference that moved
 # shows up as a diff. Pass stage names to run a subset:
 #
-#   pixi run generate-references              # all four stages
+#   pixi run generate-references              # all five stages
 #   pixi run generate-references refs bundle  # re-extract and re-archive
 #
 # The per-stage scripts survive as internals; what is consolidated here is the

@@ -296,18 +296,25 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
+    "ee_to_ee_nsz",
     "ee_to_mumu",
     "ee_to_mumu_4f",
+    "ee_to_mumu_eml",
     "ee_to_mumu_smlimit",
     "ee_to_mumu_tata_qcd0",
+    "ee_to_mumu_zonly",
     "ee_to_mumua",
     "ee_to_tatah",
+    "ee_to_tlt",
     "ee_to_ttx",
     "ee_to_ttx_dipole",
     "ee_to_ttx_smeft",
     "ee_to_ttx_smlimit",
+    "ee_to_wp0wm",
+    "ee_to_wp0wmt",
     "ee_to_wpwm",
     "ee_to_wpwm_cw",
+    "ee_to_z0h",
     "ee_to_zh",
     "ee_to_zh_smeft",
     "gg_to_gg",
@@ -337,6 +344,7 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "uux_to_mumu",
     "uux_to_ttx_4f",
     "uux_to_uux",
+    "uux_to_ztg",
 ];
 
 /// Half a unit in the last of `v`'s seven printed significant digits.

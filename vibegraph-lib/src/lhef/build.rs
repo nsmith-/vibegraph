@@ -12,7 +12,10 @@ use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::AmplitudeEvaluator;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
-use super::record::{LheEvent, LheParticle, STATUS_INCOMING, STATUS_OUTGOING};
+use super::record::{
+    LheEvent, LheParticle, NO_COLOR_LINE, SPIN_UNKNOWN, STATUS_INCOMING, STATUS_INTERMEDIATE,
+    STATUS_OUTGOING,
+};
 use super::LhefError;
 
 /// The `SCALUP` field: the larger of the two factorisation scales.
@@ -104,6 +107,19 @@ impl WeightNormalisation {
     pub fn xwgtup(&self, event_weight: f64) -> f64 {
         self.scale_pb * event_weight
     }
+}
+
+/// A resonance an event record lists between the incoming and the outgoing legs
+/// (`ISTUP = 2`), named by the outgoing legs it decays into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Intermediate {
+    /// `IDUP`.
+    pub pdg: i32,
+    /// Its SU(3) representation in the UFO's code: `1`, `3`, `-3` or `8`.
+    pub color: i32,
+    /// The outgoing legs below it, bit `k` naming the `k`-th outgoing leg in the
+    /// record's own order.
+    pub slots: u64,
 }
 
 /// Everything an event record needs about one subprocess, resolved once.
@@ -287,8 +303,15 @@ impl SubprocessRecord {
         let tags = self.flows.flow(flow);
         // Every leg leaving the hard process descends from the whole initial
         // state, so its mother range spans the incoming legs; an incoming leg has
-        // no mother in the record.
-        let outgoing_mothers = [1, self.n_in as i32];
+        // no mother in the record. A decay's products name the decaying particle
+        // alone, `(1, 0)` rather than the range `(1, 1)`: MadEvent's `unwgt.f`
+        // zeroes the second mother of every line whose first is `1` when
+        // `nincoming = 1`.
+        let outgoing_mothers = if self.n_in == 1 {
+            [1, 0]
+        } else {
+            [1, self.n_in as i32]
+        };
         let particles = (0..self.n_ext())
             .map(|leg| LheParticle {
                 pdg: self.pdg[leg],
@@ -321,6 +344,185 @@ impl SubprocessRecord {
             trailer: Vec::new(),
             source: None,
         })
+    }
+
+    /// [`event`](Self::event) with `intermediates` written as status-2 records,
+    /// in MadEvent's layout (`addmothers.f`).
+    ///
+    /// * **Order.** The incoming legs, then the intermediates, then the outgoing
+    ///   legs in their own order. The intermediates run parent before child, a
+    ///   resonance's own sub-resonances directly after it, and siblings by their
+    ///   lowest outgoing leg. MadEvent also writes every parent before its
+    ///   children, but orders siblings by its configuration tag's sort, which
+    ///   differs between configurations of one subprocess; positions carry no
+    ///   physics, since every pointer names its target by position.
+    /// * **Mothers.** A top-level intermediate descends from the whole initial
+    ///   state, `(1, n_in)`, or `(1, 0)` on a decay (`unwgt.f:741`); a nested one
+    ///   names its parent twice, `(k, k)`, as does every outgoing leg below an
+    ///   intermediate, the innermost one. An outgoing leg below none keeps the
+    ///   initial state.
+    /// * **Momentum and mass.** The sum of the outgoing legs below it, and its
+    ///   virtuality `√max(0, p²)` rather than its pole mass.
+    /// * **Colour.** What its daughters leave open once every line one daughter
+    ///   carries as colour and another as anticolour is contracted
+    ///   (`elim_indices`, `addmothers.f:793`), which has to fit its own
+    ///   representation: nothing for a singlet, one colour for a triplet, one
+    ///   anticolour for an antitriplet, one of each for an octet.
+    /// * **`SPINUP`** [`SPIN_UNKNOWN`]: an intermediate's helicity is summed over.
+    ///
+    /// An intermediate that shares its outgoing legs with another, or whose
+    /// daughters' colour does not fit it, is refused rather than written.
+    pub fn event_with_intermediates(
+        &self,
+        momenta: &[[f64; 4]],
+        helicity: &[i32],
+        flow: usize,
+        header: EventHeader,
+        intermediates: &[Intermediate],
+    ) -> Result<LheEvent, LhefError> {
+        let mut event = self.event(momenta, helicity, flow, header)?;
+        if intermediates.is_empty() {
+            return Ok(event);
+        }
+        let n_in = self.n_in;
+        let n_res = intermediates.len();
+        // The innermost intermediate strictly containing each one.
+        let contains = |outer: u64, inner: u64| inner & !outer == 0 && inner != outer;
+        let mut parent: Vec<Option<usize>> = vec![None; n_res];
+        for (i, res) in intermediates.iter().enumerate() {
+            for (j, other) in intermediates.iter().enumerate() {
+                if i != j && other.slots == res.slots {
+                    return Err(LhefError::IntermediateNesting {
+                        a: res.pdg,
+                        b: other.pdg,
+                    });
+                }
+                if contains(other.slots, res.slots)
+                    && parent[i].is_none_or(|p| {
+                        intermediates[p].slots.count_ones() > other.slots.count_ones()
+                    })
+                {
+                    parent[i] = Some(j);
+                }
+            }
+        }
+        // Parent before child, siblings by their lowest outgoing leg.
+        let mut order: Vec<usize> = Vec::with_capacity(n_res);
+        let children = |of: Option<usize>| -> Vec<usize> {
+            let mut c: Vec<usize> = (0..n_res).filter(|&i| parent[i] == of).collect();
+            c.sort_by_key(|&i| intermediates[i].slots.trailing_zeros());
+            c
+        };
+        let mut stack: Vec<usize> = children(None).into_iter().rev().collect();
+        while let Some(i) = stack.pop() {
+            order.push(i);
+            stack.extend(children(Some(i)).into_iter().rev());
+        }
+        // 1-based record position of each intermediate.
+        let mut position = vec![0i32; n_res];
+        for (at, &i) in order.iter().enumerate() {
+            position[i] = (n_in + at + 1) as i32;
+        }
+        let top_mothers = if n_in == 1 { [1, 0] } else { [1, n_in as i32] };
+        let outgoing = &event.particles[n_in..];
+        // The innermost intermediate above each outgoing leg.
+        let above = |leg: usize| -> Option<usize> {
+            (0..n_res)
+                .filter(|&i| intermediates[i].slots & (1u64 << leg) != 0)
+                .min_by_key(|&i| intermediates[i].slots.count_ones())
+        };
+        // Colours, children before parents: larger masks contain smaller ones.
+        let mut colors: Vec<[i32; 2]> = vec![[NO_COLOR_LINE; 2]; n_res];
+        let mut by_size: Vec<usize> = (0..n_res).collect();
+        by_size.sort_by_key(|&i| intermediates[i].slots.count_ones());
+        for &i in &by_size {
+            let mut open: Vec<[i32; 2]> = (0..n_res)
+                .filter(|&j| parent[j] == Some(i))
+                .map(|j| colors[j])
+                .collect();
+            open.extend(
+                (0..outgoing.len())
+                    .filter(|&leg| above(leg) == Some(i))
+                    .map(|leg| outgoing[leg].color),
+            );
+            let labels_c: Vec<i32> = open
+                .iter()
+                .map(|c| c[0])
+                .filter(|&c| c != NO_COLOR_LINE)
+                .collect();
+            let labels_a: Vec<i32> = open
+                .iter()
+                .map(|c| c[1])
+                .filter(|&c| c != NO_COLOR_LINE)
+                .collect();
+            let free_c: Vec<i32> = labels_c
+                .iter()
+                .copied()
+                .filter(|c| !labels_a.contains(c))
+                .collect();
+            let free_a: Vec<i32> = labels_a
+                .iter()
+                .copied()
+                .filter(|a| !labels_c.contains(a))
+                .collect();
+            let res = &intermediates[i];
+            let want = match res.color {
+                1 => (0, 0),
+                3 => (1, 0),
+                -3 => (0, 1),
+                8 => (1, 1),
+                _ => (usize::MAX, usize::MAX),
+            };
+            if (free_c.len(), free_a.len()) != want {
+                return Err(LhefError::IntermediateColor {
+                    pdg: res.pdg,
+                    rep: res.color,
+                    colors: free_c.len(),
+                    anticolors: free_a.len(),
+                });
+            }
+            colors[i] = [
+                free_c.first().copied().unwrap_or(NO_COLOR_LINE),
+                free_a.first().copied().unwrap_or(NO_COLOR_LINE),
+            ];
+        }
+        let mut records: Vec<LheParticle> = Vec::with_capacity(n_res);
+        for &i in &order {
+            let res = &intermediates[i];
+            let mut p = [0.0; 4];
+            for (leg, q) in outgoing.iter().enumerate() {
+                if res.slots & (1u64 << leg) != 0 {
+                    for (sum, component) in p.iter_mut().zip(q.momentum) {
+                        *sum += component;
+                    }
+                }
+            }
+            let mothers = match parent[i] {
+                Some(up) => [position[up]; 2],
+                None => top_mothers,
+            };
+            records.push(LheParticle {
+                pdg: res.pdg,
+                status: STATUS_INTERMEDIATE,
+                mothers,
+                color: colors[i],
+                momentum: p,
+                mass: (p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3])
+                    .max(0.0)
+                    .sqrt(),
+                lifetime: 0.0,
+                spin: SPIN_UNKNOWN,
+            });
+        }
+        let mut finals: Vec<LheParticle> = event.particles.split_off(n_in);
+        for (leg, particle) in finals.iter_mut().enumerate() {
+            if let Some(i) = above(leg) {
+                particle.mothers = [position[i]; 2];
+            }
+        }
+        event.particles.extend(records);
+        event.particles.extend(finals);
+        Ok(event)
     }
 }
 
@@ -481,6 +683,220 @@ mod tests {
                 n_flows: 1
             })
         );
+    }
+
+    /// `e+ e- > b e+ ve b~ mu- vm~` as a top-pair decay chain records it: one
+    /// flow joining the `b` to the `b~`.
+    fn ttx_chain() -> SubprocessRecord {
+        let out = |rep| LegColor {
+            rep,
+            incoming: false,
+        };
+        let inc = LegColor {
+            rep: ColorRep::Singlet,
+            incoming: true,
+        };
+        let legs = [
+            inc,
+            inc,
+            out(ColorRep::Triplet),
+            out(ColorRep::Singlet),
+            out(ColorRep::Singlet),
+            out(ColorRep::AntiTriplet),
+            out(ColorRep::Singlet),
+            out(ColorRep::Singlet),
+        ];
+        let basis = ColorBasis {
+            elements: vec![BasisElement {
+                structure: vec![(TensorKind::T, vec![3, 6])],
+                contributions: Vec::new(),
+            }],
+            cf_matrix: vec![Ratio::from_integer(3)],
+        };
+        SubprocessRecord {
+            pdg: vec![-11, 11, 5, -11, 12, -5, 13, -14],
+            mass: vec![0.0, 0.0, 4.7, 0.0, 0.0, 4.7, 0.0, 0.0],
+            n_in: 2,
+            legs: legs.to_vec(),
+            flows: color_flow_tags(&basis, &legs).expect("flow tags"),
+        }
+    }
+
+    fn ttx_momenta() -> Vec<[f64; 4]> {
+        vec![
+            [250.0, 0.0, 0.0, 250.0],
+            [250.0, 0.0, 0.0, -250.0],
+            [60.0, 10.0, 20.0, 57.0],
+            [70.0, -30.0, 40.0, 40.0],
+            [120.0, 50.0, 60.0, 80.0],
+            [80.0, -20.0, -30.0, -70.0],
+            [90.0, 10.0, -50.0, -70.0],
+            [80.0, -20.0, -40.0, -37.0],
+        ]
+    }
+
+    /// The layout MadEvent's `addmothers` writes a decay chain in: resonances
+    /// between the incoming and the outgoing legs, a nested one and every leg
+    /// below it naming its innermost resonance twice, a top-level one the whole
+    /// initial state, the colour its daughters leave open, and their summed
+    /// momentum with its own virtuality as the mass.
+    #[test]
+    fn intermediates_follow_madevents_layout() {
+        let record = ttx_chain();
+        let intermediates = [
+            Intermediate {
+                pdg: 24,
+                color: 1,
+                slots: 0b000110,
+            },
+            Intermediate {
+                pdg: -6,
+                color: -3,
+                slots: 0b111000,
+            },
+            Intermediate {
+                pdg: 6,
+                color: 3,
+                slots: 0b000111,
+            },
+            Intermediate {
+                pdg: -24,
+                color: 1,
+                slots: 0b110000,
+            },
+        ];
+        let helicity = [1, -1, -1, 1, -1, 1, -1, 1];
+        let event = record
+            .event_with_intermediates(&ttx_momenta(), &helicity, 0, header(), &intermediates)
+            .expect("record");
+        let rows: Vec<(i32, i32, [i32; 2], [i32; 2])> = event
+            .particles
+            .iter()
+            .map(|p| (p.pdg, p.status, p.mothers, p.color))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (-11, STATUS_INCOMING, [0, 0], [0, 0]),
+                (11, STATUS_INCOMING, [0, 0], [0, 0]),
+                (6, STATUS_INTERMEDIATE, [1, 2], [501, 0]),
+                (24, STATUS_INTERMEDIATE, [3, 3], [0, 0]),
+                (-6, STATUS_INTERMEDIATE, [1, 2], [0, 501]),
+                (-24, STATUS_INTERMEDIATE, [5, 5], [0, 0]),
+                (5, STATUS_OUTGOING, [3, 3], [501, 0]),
+                (-11, STATUS_OUTGOING, [4, 4], [0, 0]),
+                (12, STATUS_OUTGOING, [4, 4], [0, 0]),
+                (-5, STATUS_OUTGOING, [5, 5], [0, 501]),
+                (13, STATUS_OUTGOING, [6, 6], [0, 0]),
+                (-14, STATUS_OUTGOING, [6, 6], [0, 0]),
+            ]
+        );
+        let p = ttx_momenta();
+        let top = &event.particles[2];
+        for (k, &component) in top.momentum.iter().enumerate() {
+            assert_eq!(component, p[2][k] + p[3][k] + p[4][k]);
+        }
+        let m2 = top.momentum[0].powi(2)
+            - top.momentum[1].powi(2)
+            - top.momentum[2].powi(2)
+            - top.momentum[3].powi(2);
+        assert_eq!(top.mass, m2.sqrt());
+        assert!(event.particles[2..6].iter().all(|p| p.spin == SPIN_UNKNOWN));
+        // The outgoing legs keep their own helicities.
+        let spins: Vec<f64> = event.particles[6..].iter().map(|p| p.spin).collect();
+        assert_eq!(spins, [-1.0, 1.0, -1.0, 1.0, -1.0, 1.0]);
+    }
+
+    /// A decay at rest names its decaying particle alone, `(1, 0)`, on every
+    /// line whose mother is the initial state — the intermediate included, as
+    /// `unwgt.f:741` zeroes the second mother of each after `addmothers`.
+    #[test]
+    fn a_decays_intermediates_name_the_decaying_particle_alone() {
+        let legs = [
+            LegColor {
+                rep: ColorRep::Triplet,
+                incoming: true,
+            },
+            LegColor {
+                rep: ColorRep::Triplet,
+                incoming: false,
+            },
+            LegColor {
+                rep: ColorRep::Singlet,
+                incoming: false,
+            },
+            LegColor {
+                rep: ColorRep::Singlet,
+                incoming: false,
+            },
+        ];
+        let basis = ColorBasis {
+            elements: vec![BasisElement {
+                structure: vec![(TensorKind::T, vec![2, 1])],
+                contributions: Vec::new(),
+            }],
+            cf_matrix: vec![Ratio::from_integer(3)],
+        };
+        let record = SubprocessRecord {
+            pdg: vec![6, 5, -11, 12],
+            mass: vec![173.0, 4.7, 0.0, 0.0],
+            n_in: 1,
+            legs: legs.to_vec(),
+            flows: color_flow_tags(&basis, &legs).expect("flow tags"),
+        };
+        let momenta = [
+            [173.0, 0.0, 0.0, 0.0],
+            [70.0, 0.0, 0.0, 69.8],
+            [50.0, 0.0, 30.0, -40.0],
+            [53.0, 0.0, -30.0, -29.8],
+        ];
+        let event = record
+            .event_with_intermediates(
+                &momenta,
+                &[1, -1, 1, -1],
+                0,
+                header(),
+                &[Intermediate {
+                    pdg: 24,
+                    color: 1,
+                    slots: 0b110,
+                }],
+            )
+            .expect("record");
+        let mothers: Vec<[i32; 2]> = event.particles.iter().map(|p| p.mothers).collect();
+        assert_eq!(mothers, [[0, 0], [1, 0], [1, 0], [2, 2], [2, 2]]);
+    }
+
+    /// An intermediate whose daughters leave a colour line its representation
+    /// cannot carry is refused rather than written with a colour of its own
+    /// making, and so is one that shares its legs with another.
+    #[test]
+    fn an_intermediate_that_does_not_fit_is_refused() {
+        let record = ttx_chain();
+        let lone_quark_singlet = Intermediate {
+            pdg: 24,
+            color: 1,
+            slots: 0b000011,
+        };
+        assert!(matches!(
+            record.event_with_intermediates(
+                &ttx_momenta(),
+                &[1; 8],
+                0,
+                header(),
+                &[lone_quark_singlet]
+            ),
+            Err(LhefError::IntermediateColor { pdg: 24, .. })
+        ));
+        let twice = Intermediate {
+            pdg: 6,
+            color: 3,
+            slots: 0b000111,
+        };
+        assert!(matches!(
+            record.event_with_intermediates(&ttx_momenta(), &[1; 8], 0, header(), &[twice, twice]),
+            Err(LhefError::IntermediateNesting { .. })
+        ));
     }
 
     /// `SCALUP` is the larger factorisation scale. Every process whose clustering

@@ -488,6 +488,130 @@ while the event record keeps the centre-of-mass momenta.
 > which MadGraph compares against the centre-of-mass energy; no banked run card
 > sets one.
 
+## Decays at rest
+
+A proc card with one initial particle, `generate t > b e+ ve`, is a
+$1 \to n$ decay, and what it measures is the particle's **partial width**
+into that final state rather than a cross section:
+
+$$
+\Gamma = \frac{1}{2M}\,\frac{1}{(2s+1)\,N_c}\int d\Phi_n\;S\,\sum|\mathcal{M}|^2,
+$$
+
+the decaying particle of pole mass $M$ at rest, $(2s+1)N_c$ its spin and
+colour states averaged over, $d\Phi_n$ the phase space of the products at
+total momentum $(M, 0, 0, 0)$, and $S$ the final state's identical-particle
+factor. The flux $F$ of a scattering becomes $2M$, and the invariant the
+outgoing map is built on becomes $M$; nothing else in the integrand changes,
+and the same [channel maps](#channels-from-diagrams) serve it: with one
+incoming leg every internal line is an s-channel, so each channel is the
+all-timelike tree. `vibegraph integrate` reports the width in GeV
+(`Γ = … GeV`), whatever the beams on the run card say.
+
+MadEvent reads the run card of a decay run its own way, and so does this
+crate. With no run card, the default is MadGraph's decay default: the LO
+card with every cut removed. With one, its cuts are honoured, applied to the
+products in the rest frame (MadEvent's `cuts.f` has no frame to boost to
+with one incoming particle), except the $\hat s$ window, which `cuts.f` reads
+only for two. The renormalisation scale is the particle's mass unless the
+card fixes one, and the factorisation scales are the card's constants —
+`setcuts.f`'s `nincoming = 1` branch, which also switches the parton
+densities off — so no dynamical scale prescription is ever evaluated for a
+decay.
+
+> **What is validated.** Every open two-body width of the SM UFO's own
+> `decays.py` (19 channels of $t$, $W^+$, $Z$ and $H$) is reproduced to
+> $5\times10^{-13}$, and $\sum|\mathcal{M}|^2$ at fixed rest-frame points
+> matches both those widths and MadGraph's standalone matrix element for the
+> many-body decays, interfering diagrams included, to $10^{-12}$.
+> `t > w+ b`, `t > b e+ ve`, `h > e+ e- mu+ mu-` and `z > e+ e-`, two of them
+> again under lepton and $b$ cuts, are compared over ten seeds each against the
+> exact width where one is known and against MadEvent's ten-seed mean
+> otherwise (`vibegraph-cli/tests/cli_decay.rs`). `h > e+ e- mu+ mu-` has an
+> exact width because its one diagram factorises into two off-shell $Z$ lines,
+> integrated by quadrature; there this crate's seeds agree with it, and
+> MadEvent's sit 0.14% below it at 10k events and 0.05% below at 100k,
+> converging on it with budget.
+
+## Decay chains
+
+A decay chain, `e+ e- > t t~, t > w+ b, t~ > w- b~`, is a process whose
+decaying legs are internal lines [forced on shell](03-diagrams.md). MadEvent
+writes each as `gForceBW = 1`, and its cut routine (`cut_bw`, `myamp.f:76`)
+rejects a point outright unless every forced line of the configuration it was
+drawn in satisfies
+
+$$
+\bigl|\sqrt{p^2} - M\bigr| < \texttt{bwcutoff}\cdot\Gamma,
+$$
+
+with $\Gamma$ floored at $M\cdot\texttt{small\_width\_treatment}$ and a line of
+zero width never tested (`myamp.f:164`–`185`); outside the window the point
+fails `passcuts` and its matrix element is never evaluated. What is gated
+against MadEvent is therefore the decay chain's own cross section, not
+$\sigma\times\text{BR}$: the window keeps $\approx(2/\pi)\arctan(2\cdot
+\texttt{bwcutoff})$ of each Breit–Wigner, about 0.979 at the default 15.
+
+Here the window is a cut of the process, applied by the same filter as the
+run card's cuts. MadEvent reads it per configuration, but on a card without
+identical particles across its decays every configuration forces the same
+lines, so the two agree. With identical particles across decays, where this
+crate keeps every pairing ([Diagrams](03-diagrams.md)), different diagrams
+force different leg sets, and a point passes when *every* line of *some*
+diagram's set is inside its window — a predicate as symmetric under the
+exchange of identical particles as the identical-particle factor needs, and
+one that no choice of sampler can move.
+
+The [channel maps](#channels-from-diagrams) confine each forced invariant to
+its window: the line's Breit–Wigner substitution is drawn over the window's
+intersection with the kinematic range rather than over the whole range, so no
+point is spent where the cut rejects it. That narrows the channel's support,
+and its density is exactly zero at a configuration whose forced invariant lies
+outside — which matters on a card whose diagrams force different leg sets:
+the integrand is non-zero wherever some set is inside its windows, and a
+channel claiming density at points it cannot draw would bias the
+[mixture](09-multichannel.md). Where the rest of a draw leaves the window out
+of kinematic reach, the channel keeps its full range, and its density reads
+the same range there. MadEvent reaches the same place by another route: it
+raises the forced invariant's lower edge to $M - \texttt{bwcutoff}\cdot\Gamma$
+(`set_peaks`, `myamp.f:397`) and lets its grid and the cut do the rest. The
+forced windows also bound $\hat s$ from below for the $\tau$ draw of a proton
+run: $\sqrt{\hat s}$ is at least the sum of the outermost forced lines' lower
+edges and the remaining legs' masses.
+
+`cut_decays` (default `F`) switches the run card's cuts off on every leg a
+forced line produces (`setcuts.f:192`): its single-leg cuts and every
+pairwise $\Delta R$ and invariant-mass cut it is part of; `ptll` and `mmnl`
+are set without reading it and stay on. MadEvent reads the forced lines of
+configuration 1; here a leg is a decay product when a forced line produces it
+in every diagram, the same legs on a card without identical particles across
+decays.
+
+> **What is validated.** Five decay chains, each over ten seeds against five
+> MadEvent runs on the same proc and run cards
+> (`vibegraph-cli/tests/cli_decay_chain.rs`, references in
+> `validation/madgraph/decay_chain_sigma_reference.json`):
+> `e+ e- > z z, z > e+ e-, z > mu+ mu-` with `cut_decays` off and on,
+> `e+ e- > t t~, t > w+ b, t~ > w- b~`, the nested
+> `e+ e- > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~`, and
+> `p p > t t~, t > b e+ ve, t~ > b~ mu- vm~` at 13 TeV with fixed scales.
+> All five sit within 1.5 combined standard errors of MadEvent's seed mean,
+> with this crate's seeds at χ²/dof 0.8–1.9. On the `cut_decays = T` row
+> MadEvent is the one that misses: its seeds scatter four times wider than they
+> quote, low, and at 50k events it lands 0.06% from this crate's value.
+> `e+ e- > z z, z > e+ e-`, with identical particles across its decays, is
+> reported beside them, not gated: keeping both pairings and their interference
+> puts it 0.26% ± 0.08% above MadGraph's one pairing over a factor 2.
+>
+> **Leg count.** Decaying the resonances in the matrix element does not stall
+> the sampler — every rung of `tests/decay_chain_ladder.rs` converges — but it
+> costs more than the extra matrix-element work: the unweighting efficiency
+> falls from the core's by 2.6× on `e+ e- > z z` with both bosons decayed, 5.7×
+> on `p p > t t~` with both tops decayed, and 16× on the fully decayed
+> `p p > t t~ h h` (eight legs, 40 ms per unweighted event), while the decayed
+> $|\mathcal{M}|^2$ costs about what the core's does. The resonances are
+> mapped exactly; what the channels draw flat are the decay angles.
+
 ## Frames
 
 The helicity-summed $|\mathcal{M}|^2$ is a Lorentz invariant and could be
