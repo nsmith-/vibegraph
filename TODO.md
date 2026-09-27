@@ -10,7 +10,8 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 §8.4), and Z2 (note 38 §8.5) put all eight new rows' event samples and diagram
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
-gates, every new cell agreeing. Next: MLM, then NLO, and the performance
+gates, every new cell agreeing. Next: MLM (planned in note 41, sessions M0–M6
+waiting on the user's §5 decisions), then NLO, and the performance
 backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
@@ -498,11 +499,13 @@ above); the entries here are the eventual features.
 
 ### In-scope features
 
-- **MLM matching** (next feature sprint after `process-grammar` closes; user,
-  2026-09-25). The grammar already parses what it needs: `add process` lines of
-  different final-state multiplicity are refused by `check_supported` with MLM as
-  the reason, and note 38 §3.2 records the room the AST and the diagram
-  container leave for its clustering hints.
+- **MLM matching** (next feature sprint; user, 2026-09-25). **Planned in
+  note 41**: MadEvent parity for `ickkw = 1` / `xqcut` generation, with the
+  shower-side matching left to Pythia. Sessions M0 (references + the extended
+  instrumented replay) → M1 (`xqcut`, the two-call scales) → M2 (`rewgt`) → M3
+  (mixed multiplicity via a composite integrand) → M4 (`<scales>`, resonances,
+  `<MGRunCard>`) → M5 (matched Pythia end-to-end), with M6 (xqcut-aware maps)
+  after M3. Five scope decisions are open for the user (note 41 §5).
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
