@@ -2,6 +2,473 @@
   "_comment": "Per-event kT-clustering dumps from an instrumented replay of the banked MadGraph 3.7.1 runs. The dumps themselves live in the gitignored work area; this file pins what they are. Regenerate with validation/madgraph/gen_kt_cluster_dumps.sh.",
   "madgraph": "v3.7.1 (b7687064b9a013317ca164aa1395bc9c0e39ae1e)",
   "runs": {
+    "pp_to_ll_0j2j_mlm": {
+      "alphas_ordering": {
+        "max_rise": 0.0,
+        "n_distinct_scales": 9997
+      },
+      "census": {
+        "matched_record_checks": {
+          "asrwt_agree": 10000,
+          "pdfrwt_agree_beams_flipped": 4974,
+          "pdfrwt_agree_direct": 5026,
+          "pt_clust_agree": 10000,
+          "setclscales_calls=2": 10000
+        },
+        "memo_branch_examples": [
+          [
+            "raw.0000008579.gz",
+            "STORE_AND_RECLUSTER",
+            5,
+            1,
+            2,
+            2,
+            5,
+            false,
+            1,
+            0
+          ],
+          [
+            "raw.0000008579.gz",
+            "STORE_AND_RECLUSTER",
+            9,
+            1,
+            2,
+            2,
+            9,
+            false,
+            3,
+            0
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            15,
+            false,
+            241,
+            88
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            2,
+            1,
+            2,
+            15,
+            false,
+            242,
+            88
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            1,
+            1,
+            2,
+            15,
+            false,
+            243,
+            88
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            2,
+            1,
+            2,
+            15,
+            false,
+            244,
+            88
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            1,
+            1,
+            2,
+            15,
+            false,
+            245,
+            88
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            1,
+            1,
+            2,
+            13,
+            true,
+            245,
+            89
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            false,
+            611,
+            162
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            2,
+            1,
+            2,
+            7,
+            false,
+            612,
+            162
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            1,
+            1,
+            2,
+            7,
+            false,
+            613,
+            162
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            2,
+            1,
+            2,
+            7,
+            false,
+            614,
+            162
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            false,
+            615,
+            162
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            true,
+            615,
+            163
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            false,
+            641,
+            168
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            2,
+            1,
+            2,
+            7,
+            false,
+            642,
+            168
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            1,
+            1,
+            2,
+            7,
+            false,
+            643,
+            168
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            9,
+            2,
+            1,
+            2,
+            7,
+            false,
+            644,
+            168
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            false,
+            645,
+            168
+          ],
+          [
+            "raw.0000008579.gz",
+            "RESTRICTED_RECLUSTER",
+            5,
+            1,
+            1,
+            2,
+            7,
+            true,
+            645,
+            169
+          ]
+        ],
+        "memo_branches_all_points": {
+          "RESTRICTED_RECLUSTER|keepq2bck=False": 2071428,
+          "RESTRICTED_RECLUSTER|keepq2bck=True": 157100,
+          "STORE_AND_RECLUSTER|keepq2bck=False": 97
+        },
+        "njetstore_on_entry_by_channel": {
+          "G10:10": [
+            1
+          ],
+          "G11:11": [
+            1
+          ],
+          "G11:15": [
+            1
+          ],
+          "G12:12": [
+            1,
+            2
+          ],
+          "G12:16": [
+            2
+          ],
+          "G13:13": [
+            2
+          ],
+          "G14:14": [
+            1,
+            2
+          ],
+          "G14:16": [
+            1
+          ],
+          "G15:15": [
+            1
+          ],
+          "G16:16": [
+            1
+          ],
+          "G1:1": [
+            0,
+            1,
+            2
+          ],
+          "G23:23": [
+            2
+          ],
+          "G24:24": [
+            2
+          ],
+          "G2:2": [
+            0,
+            1,
+            2
+          ],
+          "G2a0:2": [
+            0
+          ],
+          "G2b0:2": [
+            0
+          ],
+          "G2c0:2": [
+            0
+          ],
+          "G2d0:2": [
+            0
+          ],
+          "G2e0:2": [
+            0
+          ],
+          "G2f0:2": [
+            0
+          ],
+          "G2g0:2": [
+            0
+          ],
+          "G2h0:2": [
+            0
+          ],
+          "G3:3": [
+            1,
+            2
+          ],
+          "G3:7": [
+            1
+          ],
+          "G4:4": [
+            1,
+            2
+          ],
+          "G4:8": [
+            2
+          ],
+          "G4a0:4": [
+            1
+          ],
+          "G4b0:4": [
+            1
+          ],
+          "G5:5": [
+            2
+          ],
+          "G6:10": [
+            2
+          ],
+          "G6:6": [
+            2
+          ],
+          "G7:7": [
+            2
+          ],
+          "G8:12": [
+            1
+          ],
+          "G8:14": [
+            2
+          ],
+          "G8:8": [
+            1,
+            2
+          ]
+        },
+        "setclscales_calls_through_last_written_event": {
+          "first": 6697362,
+          "restricted_recluster": 2226270,
+          "second": 604914,
+          "store_and_recluster": 97
+        }
+      },
+      "coverage": {
+        "beam_crossing_inflation": {
+          "applied": 8777
+        },
+        "boost": {
+          "fired": 9574,
+          "not_fired": 916
+        },
+        "candidate_measure": {
+          "FS_DJ_HAD": 3780,
+          "FS_DJ_MLESS_MASSIVE_1": 1995,
+          "FS_SUMDOT_BW": 29457,
+          "IS_DJB": 20559,
+          "NONE": 174905
+        },
+        "cluster_calls_per_event": {
+          "1": 20000,
+          "2": 1322
+        },
+        "final_leg_ipdgcl_differs_from_idup": {
+          "False": 24950
+        },
+        "igraphs1_is_iconfig": {
+          "False": 2246,
+          "True": 19076
+        },
+        "jcentral_override_beam1": {
+          "False": 19996,
+          "True": 4
+        },
+        "jcentral_override_beam2": {
+          "False": 19996,
+          "True": 4
+        },
+        "memo": {
+          "ACCEPTED": 20000,
+          "RESTRICTED_RECLUSTER": 1322
+        },
+        "mt2last_override": {
+          "False": 19996,
+          "True": 4
+        },
+        "muf_branch": {
+          "PDFWGT": 10000
+        },
+        "mur_branch": {
+          "L1153": 10000,
+          "NOT_ENTERED": 10000
+        },
+        "q2fact_overwrite_jcentral": {
+          "2,2": 6264,
+          "3,3": 2522,
+          "4,4": 1214
+        },
+        "rwgt_pdf_action": {
+          "FIRST": 20000,
+          "NOT_RISING": 125,
+          "RATIO": 4089
+        },
+        "rwgt_vertex_class": {
+          "CORE": 10000,
+          "FSR": 79,
+          "ISR": 4191,
+          "NONE": 10680
+        },
+        "setclscales_calls_per_event": {
+          "2": 10000
+        },
+        "vec_igraph_is_iconfig": {
+          "False": 434,
+          "True": 9566
+        },
+        "vec_igraph_is_igraphs1": {
+          "True": 10000
+        },
+        "vec_igraph_zero": {
+          "False": 10000
+        }
+      },
+      "n_events": 10000,
+      "n_matched": 10000,
+      "path": "validation/madgraph/output/ktdump/dumps/pp_to_ll_0j2j_mlm.jsonl.gz",
+      "sha256": "41c83cb0d52fad4ade807df0409dde7f5043a2e9f7afea7ba08c6f8a1fc00871"
+    },
     "pp_to_llj_mlm": {
       "alphas_ordering": {
         "max_rise": 0.0,

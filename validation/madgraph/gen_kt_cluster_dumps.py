@@ -19,8 +19,11 @@ All grammar knowledge lives here.
 Record grammar of the matched-generation (ickkw > 0) extension
 --------------------------------------------------------------
 
-Each written event's JSON object is {"index": i, "records": [[TAG, ...], ...]}
-with the records in the order MadEvent produced them. Under ickkw > 0 one
+Each written event's JSON object is {"index": i, "directory": "P<..>/G<..>",
+"records": [[TAG, ...], ...]} with the records in the order MadEvent produced
+them; "directory" is the subprocess and channel directory of the job that
+wrote the event (from its shard's SHARD record), which names the IPROC tables
+the event's iproc / ipsel index. Under ickkw > 0 one
 point runs setclscales twice, and both calls land in the one record set: the
 first call's records start at the SCL record whose keepq2bck field is F, the
 second call's (from rewgt) at the SCL record whose keepq2bck field is T, and
@@ -348,7 +351,10 @@ def cmd_extract(args: argparse.Namespace) -> int:
     with open(tmp_path, "w") as tmp:
         for shard, tag, fields in read_raw_records(raw_dir):
             if tag == "SHARD":
-                shard_dir.setdefault(shard, Path(fields[0]).name if fields else "?")
+                # The job's directory, as <subprocess dir>/<channel dir>: channel
+                # directories (G1, G2a0, ...) repeat across subprocess dirs.
+                cwd = Path(fields[0]) if fields else Path("?/?")
+                shard_dir.setdefault(shard, f"{cwd.parent.name}/{cwd.name}")
                 continue
             if tag == "MEMOX":
                 row = [parse_number(x) for x in fields]
@@ -421,7 +427,8 @@ def cmd_extract(args: argparse.Namespace) -> int:
             out = [r for r in records if r[0] == "OUT"][0]
             alphas_pairs.append((out[1], out[5]))
             offsets[idx] = tmp.tell()
-            tmp.write(json.dumps({"index": idx, "records": records}, sort_keys=True) + "\n")
+            tmp.write(json.dumps({"index": idx, "directory": shard_dir.get(shard, "?"),
+                                  "records": records}, sort_keys=True) + "\n")
 
     # The event header's alpha_s is the only handle the runs taken with
     # use_syst = False give on the renormalisation scale, and on its own it says
