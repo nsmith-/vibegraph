@@ -1,7 +1,7 @@
 # 41 — `mlm` feature sprint plan: MadEvent parity for MLM-matched LO generation
 
-**Status: PLANNED (2026-09-27).** No session has run. The scope decisions in §5
-are open for the user.
+**Status: IN PROGRESS (2026-09-28).** The §5 decisions are settled (user,
+2026-09-28: every recommendation accepted). M0 and M1 dispatched.
 
 This is the feature sprint that follows `process-grammar` (note 38). The goal:
 a run card with `ickkw = 1` and `xqcut > 0`, over a proc card whose
@@ -412,7 +412,10 @@ As note 38 §7:
 - from the published bundle, flip each cell that agrees to `gate`;
 - the TODO and note 41 close-out record.
 
-## 5. Decisions for the user
+## 5. Decisions (settled 2026-09-28, user: every recommendation accepted)
+
+Each item records the question and the decision; "Recommendation" below is
+what was adopted.
 
 - **(a) Mixed multiplicity without matching.** MadGraph accepts
   `ickkw = 0, xqcut = 0` over mixed multiplicities and double-counts.
