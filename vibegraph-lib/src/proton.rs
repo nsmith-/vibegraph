@@ -2011,8 +2011,9 @@ impl<'a> ProtonIntegrand<'a> {
                 // Clustered with the beams exchanged, so its per-beam
                 // factorisation scales come back in that order.
                 self.scales_at(sc, &lab_mirror, drawn).map(|s| EventScales {
-                    mu_r: s.mu_r,
                     mu_f: [s.mu_f[1], s.mu_f[0]],
+                    mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
+                    ..s
                 })
             } else {
                 None
@@ -2453,7 +2454,8 @@ impl<'a> ProtonIntegrand<'a> {
             let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
             table.mask_unadmitted(&mut amp2, &outgoing);
         }
-        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]])?;
+        let color =
+            eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]], scales.clustered_config)?;
 
         Some(ProtonSelection {
             group,

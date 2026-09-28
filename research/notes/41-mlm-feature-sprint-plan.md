@@ -342,6 +342,84 @@ Order: M0 → M1 → M2 → M3 → M4 → M5. M6 can run after M3.
     reweighting yet), so the moment M2 goes live shows up end to end.
 - Every existing artifact and LHE file must stay byte-identical at `ickkw = 0`.
 
+#### M1 Landed (implementation), 2026-09-28
+
+The implementation is in. The per-event gates against M0's dumps come later,
+when the dumps exist. What changed, checked against the pinned source:
+
+- **Run card** (`runcard/matching.rs`, applied in `RunCard::from_values`, so the
+  artifact records the resolved card):
+  - `ickkw ∉ {0, 1}` is refused (`banner.py:4284`, `allowed = [0, 1]`).
+  - `ickkw = 1` with `maxjetflavor = 6` is refused (`banner.py:4556`).
+  - `use_syst = T` forces `alpsfact = 1`. This is `setrun.f:151-159`, which
+    applies it **whether or not matching is on**; `banner.py` applies it only
+    under `ickkw > 0`.
+  - With `xqcut > 0` the `setcuts.f:156-189` rewrites of `ptj` and `mmjj` apply,
+    and `drjj = drjl = 0` whatever their sign (`banner.py:4562-4571` zeroes
+    any nonzero value first). `xqcut > 0` with `ickkw = 0` logs a warning and
+    runs as a pure cut. `do_cuts`'s exemptions were already in `Cuts::classify`.
+  - `ickkw`, `alpsfact`, `asrwgtflavor`, `auto_ptj_mjj` and `use_syst` are
+    `Consumed`. `xqcut` has left the unimplemented-cut list.
+- **Scale prescription** (`coupling/scales.rs`):
+  - `UnsupportedMatching` now covers only `ickkw ∉ {0, 1}`.
+  - Decision (c): `ickkw = 1` with exactly one fixed μF is refused, and the
+    message names the `reweight.f:1138` precedence.
+  - Matching or `xqcut` at fixed beams or decays is refused
+    (`FixedBeamMatching`). The fixed-beam integrand has no path to zero-weight
+    a point the clustering rejects, and there is no reference for it.
+  - With `xqcut > 0` or `ickkw = 1`, every event is clustered, even on a card
+    that fixes every scale (`reweight.f:643`). A `JetCut` refusal zero-weights
+    the term, as the factorisation floor already did.
+  - `cluster_history` makes both `setclscales` calls, sharing one jet memo.
+    The second call enters with the first call's `(μR, q2fact)`. In
+    `setclscales.rs` that entry state now triggers the `:1114-1119` overwrite
+    of the central vertices under `ickkw > 0`. `ClusterScales::q2central` is
+    the value `:1141-1144` stores in `q2bck`.
+- **Scale split** (`EventScales`):
+  - `mu_f` (what the density rows read) is the first call's `q2fact`.
+  - `mu_f_record` (what SCALUP reads) is `q2bck` when `pdfwgt` is set. Without
+    `pdfwgt` it is the second call's `q2fact`, because `rewgt` restores `q2bck`
+    only when `pdfwgt` is set (`:1789-1791`). §3.1 said "`q2bck`"
+    unconditionally, which is right only for `pdfwgt = T`.
+  - `clustered_config` is `igraphs(1) − 1`.
+  - `EventScales::unmatched` makes the record scale equal the density scale and
+    the configuration `None`. Every scale without matching goes through it.
+- **Colour** (§3.4): `select_config_and_flow` takes `clustered: Option<usize>`.
+  The proton selection passes the drawn term's `clustered_config`, which is
+  `None` at `ickkw = 0`. A test pins the `None` path to the `AMP2` draw over a
+  sweep of variates.
+- **τ-minimum audit** (`myamp.f:337-560`, `setxqcuts` at `setcuts.f:892-955`):
+  - The limit is `(Σ xe)²/s`. A jet's floor is `max(ptj, √(xqcut² − m²))`, and
+    an s-channel pair meeting in a given channel takes a further floor of
+    `xqcut` on its energy.
+  - With the resolved `ptj = xqcut` (the default: `auto_ptj_mjj = T` and
+    `ktscheme = 1`, the only `ktscheme` accepted), the limit is implied by the
+    cuts. A leg's energy is at least its pT, and any pair holding a cut jet
+    already has at least `xqcut` of energy. So it cuts nothing, and
+    `cuts::madevents_xqcut_tau_floor_is_implied_by_the_rewritten_cuts` pins that
+    on 200k sampled points.
+  - With a resolved `ptj < xqcut` (`auto_ptj_mjj = F`, or `ptj < 0`), the limit
+    is a cut that changes σ, and it differs between integration channels.
+    Rather than build a channel-dependent cut, that card is refused
+    (`XqcutAboveJetThreshold`). It is a scoped refusal, not an implementation.
+- **Byte identity at `ickkw = 0`**: pinned by
+  `without_matching_the_record_scale_is_the_density_scale` and
+  `scalup_reads_the_record_scale`, and measured binary against binary against
+  `85e1459`. The six runs were `p p > e+ e- j` on `pp_to_llj_fixed`'s and
+  `pp_to_llj`'s banked cards, `p p > j j`, `p p > e+ e-`, and the fixed-beam
+  `g u > e+ e- u` and `e+ e- > mu+ mu-`, each with `integrate` (20k × 4, seed
+  7) and `generate` (500 events). Every `grid.bin.zst` is byte-identical, and
+  every LHE file is identical except for the header line that names the
+  artifact path.
+- **Known-wrong comparison**: a `pp_to_llj_mlm` σ computed now lacks `rewgt`'s
+  α_s and PDF factors and is expected to be wrong. It stays informational until
+  M2.
+- **Left for the dump-gate follow-up**: event-by-event comparison of the
+  `xqcut` decision, both calls' scales, `q2bck`, SCALUP and AQCDUP on
+  `pp_to_llj_mlm` and `pp_to_llj_xqcut_only`. Also the seeded σ of
+  `pp_to_llj_xqcut_only`, and the jet-memo census (§1.2), which decides
+  whether the per-event memo reset holds under matching.
+
 ### M2: `rewgt` (feature-dev; after M1)
 
 - Implement `coupling/cluster/rewgt.rs` (§3.2) and wire it into the per-term

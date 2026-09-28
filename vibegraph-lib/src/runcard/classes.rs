@@ -107,8 +107,23 @@ const R_FRAME: &str = "RunCard::frame_id, read by hadronic::refuse_polarized_fra
                        frame (frame_id 6), so a card naming another frame is refused on such a \
                        process. An amplitude summed over its helicities, or polarized only on \
                        massless legs, is Lorentz invariant and the frame cannot move it";
-const R_XQCUT: &str = "cuts::detect_unimplemented, and ScaleChoice::from_run_card, which \
-                       refuses a card that switches matching on";
+const R_XQCUT: &str = "runcard::matching::resolve, which rewrites the jet cuts from it \
+                       (setcuts.f:156-189); and ScaleChoice::from_run_card, whose clustering \
+                       rejects a point with a jet vertex below it";
+const R_ICKKW: &str = "runcard::matching::resolve, which admits MadGraph's [0, 1]; and \
+                       ScaleChoice::from_run_card, which clusters every event and makes \
+                       reweight.f's second setclscales call under 1";
+const R_ALPSFACT: &str = "runcard::matching::resolve, which forces it to 1 under use_syst \
+                          (setrun.f:151-159); and ScaleChoice::alpsfact, the factor on the \
+                          clustering scale of the matched alpha_s reweighting";
+const R_ASRWGTFLAVOR: &str = "ScaleChoice::asrwgtflavor, the heaviest quark flavour the \
+                              matched alpha_s reweighting counts as a parton";
+const R_USE_SYST: &str = "runcard::matching::resolve, where it forces alpsfact to 1 \
+                          (setrun.f:151-159). Otherwise it selects post-hoc systematics \
+                          reweighting, which writes only the <mgrwt>/<rwgt> block of the \
+                          event file and never enters a cross section";
+const R_AUTO_PTJ_MJJ: &str = "runcard::matching::resolve, which sets ptj and mmjj to xqcut \
+                              under it (setcuts.f:156-181)";
 
 const B_JOB: &str = "MadEvent job and code-generation bookkeeping: it names output files, \
                      seeds MadGraph-side random number generators, or passes compiler flags, \
@@ -126,9 +141,13 @@ const B_EXTRA_SCALE: &str = "the Ellis-Sexton 'extra scale' family: it appears i
                              template only as a common-block declaration \
                              (Template/LO/Source/run.inc) and no LO Fortran reads it, because \
                              it is an NLO quantity";
-const B_MLM: &str = "MLM matching. A card with ickkw nonzero or xqcut positive is refused when \
-                     the scale prescription compiles, and ktdurham, ptlund and dparameter are \
-                     hard errors as unimplemented cuts, so no matching path is reachable";
+const B_MLM: &str = "an MLM input MadEvent reads only on branches this crate never reaches. \
+                     highestmult sets hmult, which rewgt reads only in 'hmult .or. ickkw == 1' \
+                     (reweight.f:1424), so it is inert at the only matched ickkw MadGraph \
+                     admits; clusinfo adds the <clustering> block to a matched event \
+                     (unwgt.f:838), CKKW-L bookkeeping no weight, momentum or other record \
+                     field depends on; pdgs_for_merging_cut qualifies only the ktdurham and \
+                     ptlund merging cuts, which are hard errors as unimplemented cuts";
 const B_ISOLATION: &str = "Frixione photon isolation, read by cuts.f only inside its ptgmin \
                            block; an active ptgmin is already a hard error";
 const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_pdg is already \
@@ -243,13 +262,13 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("bias_module",             IgnoredPhysics { why: P_BIAS_MODULE, when: Applicability::Always }),
     ("bias_parameters",         IgnoredBenign(B_BIAS_PARAMETERS)),
     ("scalefact",               Consumed(R_SCALES)),
-    ("ickkw",                   Consumed(R_SCALES)),
+    ("ickkw",                   Consumed(R_ICKKW)),
     ("highestmult",             IgnoredBenign(B_MLM)),
     ("ktscheme",                IgnoredPhysics { why: P_KTSCHEME, when: Applicability::Always }),
-    ("alpsfact",                IgnoredBenign(B_MLM)),
+    ("alpsfact",                Consumed(R_ALPSFACT)),
     ("chcluster",               IgnoredPhysics { why: P_CHCLUSTER, when: Applicability::Always }),
     ("pdfwgt",                  Consumed(R_SCALES)),
-    ("asrwgtflavor",            IgnoredBenign(B_MLM)),
+    ("asrwgtflavor",            Consumed(R_ASRWGTFLAVOR)),
     ("clusinfo",                IgnoredBenign(B_MLM)),
     ("custom_fcts",             IgnoredPhysics { why: P_CUSTOM_FCTS, when: Applicability::Always }),
     ("lhe_version",             IgnoredPhysics { why: P_LHE_VERSION, when: Applicability::Always }),
@@ -258,7 +277,7 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("frame_id",                IgnoredBenign(B_FRAME_ID)),
     ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM, when: Applicability::Always }),
     ("keep_log",                IgnoredBenign(B_JOB)),
-    ("auto_ptj_mjj",            IgnoredBenign(B_MLM)),
+    ("auto_ptj_mjj",            Consumed(R_AUTO_PTJ_MJJ)),
     ("bwcutoff",                Consumed(R_BWCUTOFF)),
     ("cut_decays",              Consumed(R_CUT_DECAYS)),
     ("dsqrt_shat",              Consumed(R_CUT_LITERAL)),
@@ -370,7 +389,7 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("pdgs_for_merging_cut",    IgnoredBenign(B_MLM)),
     ("maxjetflavor",            Consumed(R_MAXJETFLAVOR)),
     ("xqcut",                   Consumed(R_XQCUT)),
-    ("use_syst",                IgnoredBenign(B_SYST)),
+    ("use_syst",                Consumed(R_USE_SYST)),
     ("systematics_program",     IgnoredBenign(B_SYST)),
     ("systematics_arguments",   IgnoredBenign(B_SYST)),
     ("sys_scalefact",           IgnoredBenign(B_SYST)),

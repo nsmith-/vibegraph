@@ -31,8 +31,13 @@ use super::LhefError;
 ///
 /// The renormalisation scale reaches the record through `AQCDUP` instead, as
 /// `αs(μR)`.
+///
+/// It is the value `q2fact` holds when `unwgt.f` writes the event, which under
+/// MLM matching is not the scale the densities were read at: `rewgt` restores
+/// the central scale `q2bck` after the matrix element's densities were taken at
+/// the lowered one. [`EventScales::mu_f_record`] carries that value.
 pub fn scalup(scales: &EventScales) -> f64 {
-    scales.mu_f[0].max(scales.mu_f[1])
+    scales.mu_f_record[0].max(scales.mu_f_record[1])
 }
 
 /// The scalar fields of one `<event>` line.
@@ -904,10 +909,7 @@ mod tests {
     /// tell the two readings apart at all.
     #[test]
     fn scalup_is_the_factorisation_scale_not_the_renormalisation_one() {
-        let scales = EventScales {
-            mu_r: 91.188,
-            mu_f: [200.0, 50.0],
-        };
+        let scales = EventScales::unmatched(91.188, [200.0, 50.0]);
         assert_eq!(scalup(&scales), 200.0);
         assert_ne!(scalup(&scales), scales.mu_r);
         let head = EventHeader::from_scales(1, 1.0, &scales, 0.0075, 0.118);
@@ -918,16 +920,30 @@ mod tests {
     /// `AQCDUP` is `αs`, not MadGraph's `αs·π/3.1415926`. The bias is a sixth of
     /// the field's last printed digit, so the only way to state the choice is to
     /// assert the size of the difference.
+    /// Under matching `SCALUP` reports the record's scale, not the lowered one
+    /// the densities were read at; and without matching the two are one value,
+    /// so the field is what it always was.
+    #[test]
+    fn scalup_reads_the_record_scale() {
+        let matched = EventScales {
+            mu_r: 40.0,
+            mu_f: [25.0, 30.0],
+            mu_f_record: [60.0, 55.0],
+            clustered_config: Some(0),
+        };
+        assert_eq!(scalup(&matched), 60.0);
+        let unmatched = EventScales::unmatched(40.0, [25.0, 30.0]);
+        assert_eq!(unmatched.mu_f_record, unmatched.mu_f);
+        assert_eq!(scalup(&unmatched), 30.0);
+    }
+
     #[test]
     fn aqcdup_does_not_reproduce_the_truncated_pi() {
         let alpha_s = 0.1113305_f64;
         let head = EventHeader::from_scales(
             1,
             1.0,
-            &EventScales {
-                mu_r: 250.0,
-                mu_f: [250.0; 2],
-            },
+            &EventScales::unmatched(250.0, [250.0; 2]),
             0.0075,
             alpha_s,
         );

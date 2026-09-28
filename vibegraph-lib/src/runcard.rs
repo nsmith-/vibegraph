@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod classes;
+mod matching;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
@@ -147,6 +148,24 @@ pub enum RunCardError {
          '1, 2' (the partonic centre of mass)"
     )]
     BadFrame { value: String },
+    #[error(
+        "run card sets ickkw = {ickkw}: MadGraph admits only 0 and 1 (banner.py declares ickkw \
+         with allowed = [0, 1])"
+    )]
+    UnsupportedIckkw { ickkw: i64 },
+    #[error(
+        "run card sets maxjetflavor = 6 with ickkw = 1: MadGraph refuses it ('maxjetflavor at 6 \
+         is NOT supported for matching', banner.py:4556)"
+    )]
+    MatchedTopJets,
+    #[error(
+        "run card sets xqcut = {xqcut} with a jet pT threshold of {ptj} after MadGraph's \
+         rewrites (ptj follows xqcut only when auto_ptj_mjj = T and ptj >= 0): MadEvent's lower \
+         limit on tau then carries energy floors of sqrt(xqcut^2 - m^2) per jet that no cut \
+         implies, a cut that differs between integration channels (myamp.f setxqcuts) and is \
+         not implemented"
+    )]
+    XqcutAboveJetThreshold { xqcut: f64, ptj: f64 },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -369,7 +388,8 @@ impl RunCard {
             .expect("a decay card relaxes the beam checks, never tightens them")
     }
 
-    fn from_values(values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+    fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+        matching::resolve(&mut values)?;
         let f = |name: &str| values.get(name).expect("known param").as_f64();
         let i = |name: &str| values.get(name).expect("known param").as_i64();
         let b = |name: &str| values.get(name).expect("known param").as_bool();

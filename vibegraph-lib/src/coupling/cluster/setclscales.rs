@@ -19,6 +19,12 @@
 //! vertex, that vertex takes the emitted leg's transverse mass instead of the
 //! merge measure.
 //!
+//! Under matching (`ickkw > 0`) the walk never returns early, and factorisation
+//! scales already set on entry replace the central vertices' scales before the
+//! formulas read them. `rewgt` relies on that: its second call arrives with the
+//! first call's scales still set. [`ClusterScales::q2central`] is the central
+//! factorisation scale a first call leaves in `q2bck`.
+//!
 //! The jet count is memoised per integration channel: the first event of a
 //! channel is clustered restricted to that channel and its jet count stored, and
 //! any later event whose unrestricted clustering yields a different count is
@@ -198,6 +204,12 @@ pub struct Attempt {
 pub struct ClusterScales {
     pub mu_r: f64,
     pub q2fact: [f64; 2],
+    /// The central factorisation scale per beam: `q2fact` as it stood once
+    /// `scalefact` was applied and before the branches that lower it for the
+    /// matrix element's densities. `reweight.f` copies exactly this into `q2bck`
+    /// on a call that does not keep it (`:1141-1144`). `None` on a beam whose
+    /// scale is fixed, or where the walk never reached that assignment.
+    pub q2central: [Option<f64>; 2],
     /// `jfirst` before the fixup that fills an unset one from `jlast`.
     pub jfirst_raw: [usize; 2],
     pub jfirst: [usize; 2],
@@ -354,6 +366,7 @@ pub fn setclscales(
 
     let mut mur_branch = MurBranch::NotEntered;
     let mut muf_branch = MufBranch::None;
+    let mut q2central = [None; 2];
     let already_set = settings.ickkw == 0
         && (settings.fixed_fac[0] || q2fact[0] > 0.0)
         && (settings.fixed_fac[1] || q2fact[1] > 0.0)
@@ -362,6 +375,19 @@ pub fn setclscales(
         for beam in 0..2 {
             if jlast[beam] > 0 {
                 pt2[jlast[beam] - 1] = pt2[jlast[beam] - 1].max(at(&pt2, jfirst[beam]));
+            }
+        }
+
+        // Under matching, factorisation scales already set on entry — the card's
+        // fixed ones, or the first call's on the call `rewgt` makes — replace the
+        // central vertices' scales. A colour line through the whole event shares
+        // one central vertex, which then keeps beam 1's (`reweight.f:1114-1119`).
+        if settings.ickkw > 0 && q2fact[0] > 0.0 && q2fact[1] > 0.0 {
+            if jcentral[0] > 0 {
+                pt2[jcentral[0] - 1] = q2fact[0];
+            }
+            if jcentral[1] > 0 && jcentral[1] != jcentral[0] {
+                pt2[jcentral[1] - 1] = q2fact[1];
             }
         }
 
@@ -390,10 +416,14 @@ pub fn setclscales(
                 }
             }
         }
+        // The precedence is Fortran's: `.not.fixed_fac_scale1 .or.
+        // fixed_fac_scale2`, which skips the block exactly when beam 1 is fixed
+        // and beam 2 is not.
         if !settings.fixed_fac[0] || settings.fixed_fac[1] {
             for beam in 0..2 {
                 if !settings.fixed_fac[beam] {
                     q2fact[beam] *= settings.scalefact * settings.scalefact;
+                    q2central[beam] = Some(q2fact[beam]);
                 }
             }
         }
@@ -487,6 +517,7 @@ pub fn setclscales(
     Ok(ClusterScales {
         mu_r: scale,
         q2fact,
+        q2central,
         jfirst_raw: walk.jfirst_raw,
         jfirst,
         jlast,

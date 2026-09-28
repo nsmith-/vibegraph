@@ -287,10 +287,7 @@ impl EventScaleSource {
     /// a caller that supplies `μF` directly is asking for.
     pub fn constant(mu: f64) -> Self {
         EventScaleSource {
-            kind: ScaleSourceKind::Constant(EventScales {
-                mu_r: mu,
-                mu_f: [mu, mu],
-            }),
+            kind: ScaleSourceKind::Constant(EventScales::unmatched(mu, [mu, mu])),
             alpha_s: None,
             amp2_configuration_weights: false,
         }
@@ -316,9 +313,10 @@ impl EventScaleSource {
             (true, None) => return Err(HadronicError::MissingAlphaS),
             (false, _) => None,
         };
-        let kind = if choice.is_fully_fixed() {
-            // A fully fixed prescription returns the card's constants without
-            // reading the event, so any event resolves it.
+        let kind = if choice.is_constant() {
+            // A fully fixed prescription that clusters nothing returns the
+            // card's constants without reading the event, so any event resolves
+            // it.
             ScaleSourceKind::Constant(choice.scales(&ScaleEvent {
                 incoming: [[0.0; 4]; 2],
                 outgoing: &[],
@@ -437,11 +435,13 @@ impl EventScaleSource {
         }
     }
 
-    /// [`scales`](Self::scales), with the factorisation-floor refusal separated
-    /// from the errors that mean the prescription itself does not apply.
+    /// [`scales`](Self::scales), with the refusals that zero a point's weight
+    /// separated from the errors that mean the prescription itself does not
+    /// apply.
     ///
     /// This is the only place the two are told apart. `reweight.f` answers a
-    /// point below the floor by zeroing its weight and carrying on, so a caller
+    /// point below the factorisation floor, and one whose clustering puts a jet
+    /// vertex below `xqcut`, by zeroing its weight and carrying on, so a caller
     /// that evaluates points has to be able to say "no weight" without saying
     /// "this run cannot proceed" — and every other error means exactly the
     /// latter, so it stays an `Err` and stays fatal at the call site.
@@ -453,9 +453,9 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => {
-                Ok(PointScales::Vetoed)
-            }
+            Err(ScaleError::Clustering(
+                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
+            )) => Ok(PointScales::Vetoed),
             Err(other) => Err(other),
         }
     }
@@ -467,8 +467,9 @@ pub enum PointScales {
     /// The scales to evaluate this point at.
     Scales(EventScales),
     /// The point carries no weight: a beam carrying a parton density ended below
-    /// the factorisation floor, where MadGraph zero-weights the point and moves
-    /// on rather than stopping.
+    /// the factorisation floor, or a jet vertex of the clustering fell below
+    /// `xqcut`, where MadGraph zero-weights the point and moves on rather than
+    /// stopping.
     Vetoed,
 }
 
@@ -2839,7 +2840,8 @@ impl<'a> FixedBeamIntegrand<'a> {
                 Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
                 None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
             };
-        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]])?;
+        // Matching is refused at fixed beams, so the configuration is always drawn.
+        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]], None)?;
 
         Some(EventSelection {
             subprocess,
@@ -3640,6 +3642,88 @@ mod tests {
     /// `g g → g g` is the case worth pinning: four diagrams give three
     /// configurations, so the diagram→configuration map is not the identity and
     /// an off-by-one would survive a process where it is.
+    /// A point whose clustering puts a jet vertex below `xqcut` is zero-weighted,
+    /// not an error; above it the point is scaled, and only under matching does
+    /// it carry the clustered configuration.
+    #[test]
+    fn the_xqcut_cut_vetoes_a_point_and_matching_names_its_configuration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate u u~ > e+ e- g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let incoming = [[100.0, 0.0, 0.0, 100.0], [100.0, 0.0, 0.0, -100.0]];
+        let event = |pt: f64| {
+            let half = (200.0 - pt) / 2.0;
+            let py = (half * half - pt * pt / 4.0).sqrt();
+            vec![
+                [half, -pt / 2.0, py, 0.0],
+                [half, -pt / 2.0, -py, 0.0],
+                [pt, pt, 0.0, 0.0],
+            ]
+        };
+        for ickkw in [0, 1] {
+            let card = RunCard::parse(&format!("{ickkw} = ickkw\n30 = xqcut\n")).unwrap();
+            let source = compile_scale_source(
+                &[(&evals[0], &diagrams)],
+                &m,
+                &evaluated,
+                &card,
+                None,
+                false,
+                ClosedForms::Refuse,
+            )
+            .expect("the prescription compiles");
+            assert!(source.draws_configuration());
+            for channel in 0..evals[0].n_configs() {
+                let at = SampledChannel::sole(channel);
+                assert_eq!(
+                    source.point_scales(incoming, &event(20.0), at),
+                    Ok(PointScales::Vetoed)
+                );
+                let Ok(PointScales::Scales(scales)) =
+                    source.point_scales(incoming, &event(40.0), at)
+                else {
+                    panic!("a point above xqcut is scaled");
+                };
+                match ickkw {
+                    0 => {
+                        assert_eq!(scales.clustered_config, None);
+                        assert_eq!(scales.mu_f_record, scales.mu_f);
+                    }
+                    _ => assert!(scales.clustered_config.expect("matched") < evals[0].n_configs()),
+                }
+            }
+        }
+        // A card fixing every scale still has a per-event prescription once
+        // `xqcut` is set, because the clustering is a cut.
+        let fixed = RunCard::parse(
+            "30 = xqcut\nTrue = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+             91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n",
+        )
+        .unwrap();
+        let source = compile_scale_source(
+            &[(&evals[0], &diagrams)],
+            &m,
+            &evaluated,
+            &fixed,
+            None,
+            false,
+            ClosedForms::Refuse,
+        )
+        .expect("the prescription compiles");
+        assert!(source.constant_scales().is_none());
+        assert_eq!(
+            source.point_scales(incoming, &event(20.0), SampledChannel::sole(0)),
+            Ok(PointScales::Vetoed)
+        );
+    }
+
     #[test]
     fn the_amp2_configuration_order_matches_the_forest_order() {
         let m = model();
