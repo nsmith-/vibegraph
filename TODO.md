@@ -537,7 +537,23 @@ above); the entries here are the eventual features.
   artifact format 10 (single-multiplicity artifacts stay version 9, byte
   identical), `IDPRUP = @N`; `pp_to_ll_0j2j_mlm`'s σ per `@N` informational
   (M1 proved the jet memo already matches, so it is not the cause): `@0`/`@1` agree, `@2` is +1.5 % (5.2σ, five
-  seeds), the same on the pre-M3 path and not shrinking with iterations. Follow-up: Neyman reallocation starves the
+  seeds), the same on the pre-M3 path and not shrinking with iterations.
+  **D2 diagnosis** (note 41 §4 M3, "D2 diagnosis"): no vibegraph defect.
+  Per event on MadEvent's own events, the scales, `rewgt`, PDFs, α_s and
+  |M|² (standalone, four subprocess classes) all agree exactly, and so does
+  the configuration draw. The +1.94 pb splits into four parts:
+  - +0.65 pb: the reference is low against seven independent MadEvent
+    directories (131.09);
+  - +0.33 ± 0.11 pb: H1, measured by patching MadEvent's first call to `P1`;
+    all of it is in `P2_qq_llqq` (+1.8 %). This awaits the user's
+    reproduce-or-document decision;
+  - +0.38 ± 0.33 pb: composite against per-directory runs, not significant;
+  - ≈ +0.6 pb: a generic 2 → 4 offset that survives with matching off, and at
+    fixed beams (`u u~ > e+ e- g g`, +0.29 %, 3.2σ). It is to be filed as its
+    own item.
+
+  Next: regenerate the `@2` reference from independent directories, and gate
+  at MadEvent's measured spread. Follow-up: Neyman reallocation starves the
   0-jet channels behind 336 floor-bound 2-jet ones (±6.6 pb against ±0.7 pb
   by α), and a 2-jet point costs ~250 µs.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
