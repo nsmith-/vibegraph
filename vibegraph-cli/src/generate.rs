@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use tracing::{info, warn};
-use vibegraph::artifact::{ChannelKey, IntegrateArtifact, SCALE_DRAW_VERSION};
+use vibegraph::artifact::{IntegrateArtifact, MULTIPLICITY_VERSION, SCALE_DRAW_VERSION};
 use vibegraph::config::GlobalConfig;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::{Cuts, ForcedResonances};
@@ -35,11 +35,12 @@ use vibegraph::lhef::emit::{
 };
 use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use vibegraph::lhef::write::generator_element;
-use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes};
+use vibegraph::multiplicity::MultiplicitySum;
+use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{derive_flavor_groups, BeamOrdering, FlavorGroups, ProtonIntegrand};
+use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -49,8 +50,9 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::integrate::{
-    forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, process_string,
-    IntegrateError, NO_PDF, PDF_MEMBER,
+    forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, multiplicity_groups,
+    multiplicity_maps, process_string, refuse_mixed_multiplicity, IntegrateError,
+    MultiplicityGroups, NO_PDF, PDF_MEMBER,
 };
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
@@ -368,6 +370,25 @@ fn refuse_stale_artifact_on_clustering_scale(
     )))
 }
 
+/// An artifact written before sums over final-state multiplicities existed
+/// cannot hold one, so on a card of several multiplicities it was integrated for
+/// something else — refused by its version, which says why, rather than by the
+/// channel keys it would then fail to match.
+fn refuse_stale_artifact_on_mixed_multiplicity(
+    artifact: &IntegrateArtifact,
+    parts: usize,
+) -> Result<(), IntegrateError> {
+    if parts <= 1 || artifact.format_version >= MULTIPLICITY_VERSION {
+        return Ok(());
+    }
+    Err(err(format!(
+        "this card sums {parts} final-state multiplicities, which an artifact holds from format \
+         version {MULTIPLICITY_VERSION} on; this one was written at version {}, so its grids \
+         were not trained on this sum. Re-integrate with the current build",
+        artifact.format_version,
+    )))
+}
+
 /// The accept/reject pass as a replayable source of events.
 ///
 /// Each accepted point is turned straight into a record: the momenta come back
@@ -681,6 +702,7 @@ fn generate_sample(
 ) -> Result<EmitSummary, IntegrateError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    refuse_mixed_multiplicity(&sets)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(
@@ -1005,23 +1027,17 @@ fn flavor_records(
 
 /// The artifact's channels, matched to this process's **position by position**.
 ///
-/// A hadronic channel is a `(group, diagram)` pair and the grids are banked in the
-/// integrand's own channel order, so the same set of keys in another order would
-/// install every grid on the wrong channel — a run that samples a perfectly
-/// plausible wrong distribution with nothing else to show for it. Comparing counts,
-/// or comparing the keys as a set, would not see it.
+/// A hadronic channel is a `(group, diagram)` pair — of one multiplicity, on a
+/// card of several — and the grids are banked in the integrand's own channel
+/// order, so the same set of keys in another order would install every grid on
+/// the wrong channel — a run that samples a perfectly plausible wrong
+/// distribution with nothing else to show for it. Comparing counts, or comparing
+/// the keys as a set, would not see it.
 fn check_channel_keys(
     artifact: &IntegrateArtifact,
-    integ: &ProtonIntegrand<'_>,
+    integ: &MultiplicitySum<'_>,
 ) -> Result<(), IntegrateError> {
-    let derived: Vec<ChannelKey> = integ
-        .channel_ids()
-        .iter()
-        .map(|id| ChannelKey::GroupChannel {
-            group: id.group,
-            channel: id.channel,
-        })
-        .collect();
+    let derived = integ.channel_keys();
     if artifact.channels.len() != derived.len() {
         return Err(err(format!(
             "the artifact banks {} channel grids but this process has {} (group, diagram) \
@@ -1039,60 +1055,63 @@ fn check_channel_keys(
                 banked.key
             )));
         }
-        if banked.grid.ndim() != integ.channel_grid_ndim() {
+        if banked.grid.ndim() != integ.channel_grid_ndim(j) {
             return Err(err(format!(
-                "channel {j}'s banked grid is over {} coordinates, this process's channels over \
+                "channel {j}'s banked grid is over {} coordinates, this process's channel over \
                  {}: the grids were trained on a different process",
                 banked.grid.ndim(),
-                integ.channel_grid_ndim()
+                integ.channel_grid_ndim(j)
             )));
         }
     }
     Ok(())
 }
 
+/// One multiplicity's record-layer tables: its flavour records, and where the card
+/// has decay chains, each group's resonances and their per-member PDG codes.
+struct PartRecords {
+    records: FlavorRecords,
+    resonances: Vec<SubprocessResonances>,
+    /// `[group][member][config][line]`: the PDG code a resonance line of the
+    /// group's representative carries in a member.
+    member_pdgs: Vec<Vec<Vec<Vec<i32>>>>,
+}
+
 /// The accept/reject pass over a hadronic integrand as a replayable source.
 ///
 /// The difference from a fixed-beam run is entirely in what an accepted point
 /// carries: its own beam momentum fractions, its own scales, and a concrete flavour
-/// assignment drawn from the parton luminosities at those fractions.
+/// assignment drawn from the parton luminosities at those fractions. On a card of
+/// several final-state multiplicities a channel of any of them may be drawn, and
+/// the event is labelled from its own multiplicity's tables.
 struct ProtonSampleSource<'s, 'a> {
-    integrand: &'s ProtonIntegrand<'a>,
-    records: &'s FlavorRecords,
+    integrand: &'s MultiplicitySum<'a>,
+    /// Per multiplicity, in the integrand's part order.
+    parts: &'s [PartRecords],
     pristine: Unweighter,
     unweighter: Unweighter,
     rng: ChaCha8Rng,
     seed: u64,
     alpha_qed: f64,
-    /// Per group, the resonances its records list; empty on a card without
-    /// decay chains.
-    resonances: &'s [SubprocessResonances],
-    /// `[group][member][config][line]`: the PDG code a resonance line of the
-    /// group's representative carries in a member.
-    member_pdgs: &'s [Vec<Vec<Vec<i32>>>],
     tally: ResonanceTally,
 }
 
 impl<'s, 'a> ProtonSampleSource<'s, 'a> {
     fn new(
-        integrand: &'s ProtonIntegrand<'a>,
-        records: &'s FlavorRecords,
+        integrand: &'s MultiplicitySum<'a>,
+        parts: &'s [PartRecords],
         unweighter: Unweighter,
         seed: u64,
         alpha_qed: f64,
-        resonances: &'s [SubprocessResonances],
-        member_pdgs: &'s [Vec<Vec<Vec<i32>>>],
     ) -> Self {
         ProtonSampleSource {
             integrand,
-            records,
+            parts,
             pristine: unweighter.clone(),
             unweighter,
             rng: ChaCha8Rng::seed_from_u64(seed),
             seed,
             alpha_qed,
-            resonances,
-            member_pdgs,
             tally: ResonanceTally::default(),
         }
     }
@@ -1103,8 +1122,10 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         let point =
             self.unweighter
                 .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
-        let event = self.integrand.event_in_channel(point.channel, &point.u)?;
-        let selection = self.integrand.select_event(
+        let (k, event) = self.integrand.event_in_channel(point.channel, &point.u)?;
+        let integrand: &ProtonIntegrand<'_> = &self.integrand.parts()[k];
+        let part = &self.parts[k];
+        let selection = integrand.select_event(
             &event,
             [
                 self.rng.random(),
@@ -1121,13 +1142,15 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             .collect();
         // The coupling the matrix element itself ran at, off the PDF set's own
         // tabulation — the one the densities were fitted with.
-        let alpha_qcd = self
-            .integrand
+        let alpha_qcd = integrand
             .alpha_s_source()
             .map(|source| source.eval(selection.scales.mu_r))
             .unwrap_or(0.0);
-        let member = &self.integrand.groups().groups()[selection.group].members()[selection.member];
+        let member = &integrand.groups().groups()[selection.group].members()[selection.member];
         let header = EventHeader {
+            // `IDPRUP` is the member's process number, `@N`: MadEvent writes the
+            // number of the event's `P<n>` directory, which is the `@N` of the
+            // processes grouped into it.
             process_id: member.process as i32,
             // The strategy imposes the file's weight convention; this slot is
             // overwritten before the record is written.
@@ -1136,15 +1159,14 @@ impl EventSource for ProtonSampleSource<'_, '_> {
             alpha_qed: self.alpha_qed,
             alpha_qcd,
         };
-        let resonances = self.resonances.get(selection.group).map(|table| {
+        let resonances = part.resonances.get(selection.group).map(|table| {
             (
                 table,
-                Some(self.member_pdgs[selection.group][selection.member].as_slice()),
+                Some(part.member_pdgs[selection.group][selection.member].as_slice()),
             )
         });
-        let records: &FlavorRecords = self.records;
         let record = event_record(
-            records[selection.group][selection.member][ordering_slot(selection.ordering)]
+            part.records[selection.group][selection.member][ordering_slot(selection.ordering)]
                 .as_ref()?,
             &externals,
             &selection.helicity,
@@ -1192,50 +1214,71 @@ fn generate_proton_sample(
 ) -> Result<EmitSummary, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
-    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    let forbidden = forbidden_onshell(parsed, model)?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
-    let groups = derive_flavor_groups(sets, model, evaluated, rc)
-        .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
-    let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-        .map_err(|e| err(e.to_string()))?;
-    let (resonances, member_pdgs) = if has_decay_chains(parsed) {
-        group_resonances(&groups, model, evaluated, rc.float("bwcutoff"))?
-    } else {
-        (Vec::new(), Vec::new())
-    };
-    let amps: Vec<BoundAmplitude<f64>> = groups
-        .groups()
+    let MultiplicityGroups { groups, vetoes } =
+        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
+    refuse_stale_artifact_on_mixed_multiplicity(artifact, groups.len())?;
+    let mut parts_records = Vec::with_capacity(groups.len());
+    for part_groups in &groups {
+        let (resonances, member_pdgs) = if has_decay_chains(parsed) {
+            group_resonances(part_groups, model, evaluated, rc.float("bwcutoff"))?
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        parts_records.push(PartRecords {
+            records: flavor_records(part_groups, model, evaluated)?,
+            resonances,
+            member_pdgs,
+        });
+    }
+    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
-        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+        .map(|part| {
+            part.groups()
+                .iter()
+                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+                .collect()
+        })
         .collect();
 
     // The grids were trained under the artifact's maps; the channels and the `τ`
     // draw are rebuilt under exactly those, whatever the rule would choose today.
-    let mut integ = ProtonIntegrand::new_with_maps(
+    let maps = multiplicity_maps(
         &groups,
-        &amps,
         evaluated,
-        pdf,
         sqrt_s_had,
-        rc.dsqrt_q2fact1,
         MapOptions::fixed(artifact.maps),
-    )
-    .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
-    integ.use_onshell_veto(&vetoes, evaluated);
-    integ
-        .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
-        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+    );
+    let mut parts = Vec::with_capacity(groups.len());
+    for (((part_groups, part_amps), part_vetoes), records) in
+        groups.iter().zip(&amps).zip(&vetoes).zip(&parts_records)
+    {
+        let mut integ = ProtonIntegrand::new_with_maps(
+            part_groups,
+            part_amps,
+            evaluated,
+            pdf,
+            sqrt_s_had,
+            rc.dsqrt_q2fact1,
+            maps,
+        )
+        .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+        integ.use_onshell_veto(part_vetoes, evaluated);
+        integ
+            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+        integ.use_resonances(&records.resonances);
+        parts.push(integ);
+    }
+    let mut integ = MultiplicitySum::new(parts);
 
     check_channel_keys(artifact, &integ)?;
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
-    check_alphas(&alphas)?;
+    for k in 0..groups.len() {
+        check_alphas(&alphas[integ.offsets()[k]..integ.offsets()[k + 1]])?;
+    }
     integ.set_channel_alphas(alphas);
 
-    let records = flavor_records(&groups, model, evaluated)?;
     let beam_pdg = hadron_beam_pdg(rc)?;
-    integ.use_resonances(&resonances);
 
     let rule = max_rule(args);
     let scan = Unweighter::scan_with(
@@ -1262,12 +1305,10 @@ fn generate_proton_sample(
         .unwrap_or(0.0);
     let mut source = ProtonSampleSource::new(
         &integ,
-        &records,
+        &parts_records,
         scan,
         args.seed ^ GEN_SEED_OFFSET,
         alpha_qed,
-        &resonances,
-        &member_pdgs,
     );
 
     let strategy = weight_strategy(args);

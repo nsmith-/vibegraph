@@ -11,8 +11,9 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
 gates, every new cell agreeing. Next: MLM (note 41: M0's references and
-dumps, and M1's and M2's implementations, landed; M1's per-event scale gates pass, M2's rewgt gates next), then
-NLO, and the performance backlog.
+dumps and the M1/M2/M3 implementations landed; M1's per-event scale gates
+pass; M2's rewgt gates and the `@2` excess are next), then NLO, and the
+performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
 2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -530,6 +531,15 @@ above); the entries here are the eventual features.
   re-cluster fires on 11% of `pp_to_llj_mlm`'s events — every event of the two
   `g q` channels whose memo holds 0 jets — so the per-event scale needs the
   channel-restricted jet count as the memo, not an empty one.
+  **M3 implementation landed** (note 41 §4 M3 record):
+  mixed-multiplicity cards at proton beams as a `MultiplicitySum` of
+  per-multiplicity integrands, grids at each multiplicity's own dimension,
+  artifact format 10 (single-multiplicity artifacts stay version 9, byte
+  identical), `IDPRUP = @N`; `pp_to_ll_0j2j_mlm`'s σ per `@N` informational
+  (M1 proved the jet memo already matches, so it is not the cause): `@0`/`@1` agree, `@2` is +1.5 % (5.2σ, five
+  seeds), the same on the pre-M3 path and not shrinking with iterations. Follow-up: Neyman reallocation starves the
+  0-jet channels behind 336 floor-bound 2-jet ones (±6.6 pb against ±0.7 pb
+  by α), and a 2-jet point costs ~250 µs.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user

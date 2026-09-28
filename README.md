@@ -248,7 +248,8 @@ wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
 conjugation, loop-level UFOs (out of the LO charter), beam configurations
 beyond unpolarized proton–proton or fixed-energy partonic beams, squared-order
 constraints, polarized intermediate resonances, and `add process` lines of
-different multiplicity (MLM's territory). Colour sextets and baryonic epsilon tensors are
+different multiplicity at fixed-energy beams (at proton beams they are summed,
+the way MadEvent sums its `P<n>` directories). Colour sextets and baryonic epsilon tensors are
 *supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
 `ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
 corners still refused rather than guessed: a `T6` carrying adjoint indices, and
