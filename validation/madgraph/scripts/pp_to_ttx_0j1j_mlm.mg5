@@ -1,0 +1,39 @@
+# MadGraph5 batch script: MLM-matched top-pair production with up to one jet.
+# built-by: validation/madgraph/gen_mlm_references.sh
+#
+# p p > t t~ (@0) and p p > t t~ j (@1): the only MLM row with a massive,
+# coloured 2 -> 2 core, so the only coverage of the clustering's massive
+# branches under matching -- mt2last replacing the last two vertices' scales
+# when the core is an s-channel QCD vertex, the massless-massive arms of the
+# final-state measure, and the transverse-mass central scale.
+#
+# xqcut = 30 rather than the Drell-Yan rows' 20. It is MadGraph's own choice
+# for any mixed-multiplicity jet card (create_default_for_process,
+# banner.py:4958), the conventional scale for top pairs at 13 TeV, where the
+# hard scale is a few hundred GeV, and it keeps the one-jet sample, whose
+# cross section grows as xqcut falls, from dominating the run. A second xqcut
+# value also means the setcuts.f rewrite ptj = mmjj = xqcut is pinned at a value
+# other than 20.
+#
+# The run card is otherwise pp_to_llj_mlm's, less the dilepton mass cut (there
+# are no leptons): 13 TeV, lhaid 247000, the dynamical kT-clustering scale,
+# ickkw = 1, vector_size = 1, systematics_program = none with use_syst on.
+generate p p > t t~ @0
+add process p p > t t~ j @1
+output pp_to_ttx_0j1j_mlm -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale False
+  set fixed_fac_scale False
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set dynamical_scale_choice -1
+  set pdlabel lhapdf
+  set lhaid 247000
+  set ickkw 1
+  set xqcut 30
+  set vector_size 1
+  set systematics_program none
+  done
