@@ -552,6 +552,194 @@ M0's census.
 - A budget ladder on the 2-jet channels, read against the measured seed
   spread, because this is the heaviest row the suite has integrated.
 
+#### M3 Landed (implementation), 2026-09-28
+
+A card of several final-state multiplicities now runs at proton beams, as
+§3.3 designed it. What changed:
+
+- **Proc card** (`diagrams/check.rs`): `Unsupported::MixedMultiplicity` is
+  gone, and so is its row in the backlog table. Decision (a): an unmatched sum
+  (`ickkw = 0`) runs, with a warning that it double counts
+  (`multiplicity::split_by_multiplicity`). MadGraph itself logs nothing
+  specific on such a card; it only auto-enables matching in the default card
+  (`banner.py:4924-4966`). Fixed-energy beams and decays refuse a mixed card
+  (`refuse_mixed_multiplicity` in the CLI), since only the proton path has
+  the composite.
+- **`multiplicity.rs`**: `split_by_multiplicity` partitions the enumeration
+  by outgoing-leg count, in increasing order, keeping the card's order within
+  each part. `MultiplicitySum` owns one fully configured `ProtonIntegrand` per
+  part and exposes their channels as one list with offsets. Each part keeps
+  its own `αⱼ`, normalised over its own channels, so each part's terms sum to
+  its own σ. `channel_keys` gives `ChannelKey::MultiplicityChannel
+  { final_state, group, channel }`, except with a single part, which keeps
+  `GroupChannel`. `part_results` gives σ per multiplicity.
+- **Trait**: `ChannelIntegrand::channel_grid_ndim(channel)`. §3.3 asked for a
+  default that returns the old constant, but the trait holds no constant a
+  default could return. So the method is required, and every uniform
+  implementer ignores the index. The concrete types keep their inherent
+  zero-argument `channel_grid_ndim()`, so none of the concrete call sites
+  changed. `integrate_channels` builds each grid at its channel's dimension;
+  `Unweighter` scans and draws each channel at its own.
+- **Budget across multiplicities**:
+  - Each part is α-surveyed on its own mixture.
+  - The per-iteration budget is split by `nₖ ∝ sₖ`, where `sₖ` is the
+    standard deviation of part `k`'s mixture estimator. It is formed as
+    `√(Σⱼ αⱼ Wⱼ − σₖ²)`. The survey now also returns its mean `σₖ`
+    (`ProtonIntegrand::survey_mean`, pinned to the mean of `value` over the
+    survey's own points). `Wⱼ` is unchanged bit for bit.
+  - The allocation per channel is `αⱼ · share(k)`. The banked `alpha` is the
+    term's own `αⱼ`, which is what a replay installs.
+  - Under a Neyman allocation, every channel is re-split by its measured
+    spread from the second iteration on (see the finding below).
+- **Maps**: an artifact banks one set of map choices. For several parts they
+  are settled once over the union of the parts' shapes (`union_shape`). The
+  only shape-dependent choice is the split angle. A part with no
+  soft-emission split is unaffected by the soft-emission map, so the union
+  settles each part where it would settle alone.
+- **Artifact** (format 10): adds `ChannelKey::MultiplicityChannel`.
+  - The writer records the oldest version whose schema holds its keys
+    (`IntegrateArtifact::version_for`). A single-multiplicity artifact
+    therefore stays a version-9 file, byte for byte, and an older reader
+    still reads it.
+  - A version-9 file decodes directly.
+  - `generate` refuses an artifact below version 10 on a card of several
+    multiplicities, naming both versions. This follows the pattern of
+    `refuse_stale_artifact_on_clustering_scale`.
+  - An older build refuses a version-10 file by its version.
+- **Record**:
+  - Each event's `IDPRUP` is its member's `@N`. MadEvent writes the number of
+    the `P<n>` directory, and `group_subprocs.py:444,675` sets that number to
+    the group's first process's `id`, i.e. its `@N`. M0's run reads LPRUP
+    0/1/2 on this card, so the two readings coincide here.
+  - `<init>` keeps one line per `@N`, with `XSECUP` split by the sample's
+    shares (note 38 E1).
+  - The unweighter needed no change: it draws each channel `∝ w_maxⱼ`,
+    whatever multiplicity the channel belongs to.
+
+**Byte identity.** Single-multiplicity runs were compared binary against
+binary with `562ccb5`, on M1's six cases (`integrate` 20k × 4, seed 7;
+`generate` 500 events):
+- binaries: base `efc94d3e…`, new `d1979529…`; `cargo clean -p` ran before
+  each build;
+- every `grid.bin.zst` is identical, with the same sha256 prefixes M2
+  recorded (`a7946b89…` for `llj_fixed`);
+- every LHE file is identical except the header line that names the artifact
+  path.
+
+**Tests** (hermetic):
+- `multiplicity.rs`:
+  - the split order;
+  - offsets, `locate`, per-channel `ndim` (4 and 7), keys and samplers, and
+    values bit for bit against the parts;
+  - a single part is its part bit for bit (terms and grids);
+  - the sum's σ per part matches each part integrated alone (pulls +0.17,
+    +0.75), and an unweighted sample splits across multiplicities as σ does;
+- `budget.rs`: a two-dimension toy integrates to `1 + 1/3`;
+- `artifact.rs`: `version_for` and round trips at versions 9 and 10;
+- `check.rs`: the card passes with ids 0/1/2;
+- CLI:
+  - `cli_hard_errors`: the fixed-energy refusal;
+  - `cli_generate_proton::a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum`:
+    `@0 + @1` on the banked card end to end — the warning, version 10, keys,
+    grid dimensions, per-part `αⱼ` sums, `IDPRUP` with its leg count, the
+    sample split, and the stale-version refusal.
+
+**Finding (budget), to file.** On `pp_to_ll_0j2j_mlm`, the 336 two-jet
+channels are floor-bound: every one of them sits at the accepted-point floor
+(512, raised up to the 2048-point cap). So the two-jet σ is set by the floors
+and not by the multiplicity split. The same seed gives the same two-jet
+result bit for bit under by-α and under Neyman.
+
+Neyman reallocation keeps the iteration total at the pre-correction sum. The
+floors eat most of that, which starves the four `@0` channels: `@0` came out
+at ±6.6 pb under Neyman against ±0.70 pb by α, at the same seed and budget.
+Neyman is the default of a `--target-rel` run, so on this card the default
+integration is several times less efficient than `--fixed-budget` by α. This
+is a property of `neyman_allocation`'s total, which the composite exposes. It
+is not specific to the composite. It belongs with M6 or a performance pass.
+
+**Cost.** The two-jet part dominates, at ~250 µs per point on 4 cores, and
+0.3–0.9 ms under the 3× oversubscription the container had during the sweep.
+Each point sums the 336-channel mixture density and reclusters every member
+under matching. One `--fixed-budget --neval 200000 --niter 8` seed took
+2235 s of wall time on the shared container; MadEvent took 101–125 s per seed
+on the same row.
+
+**σ, informational** (§4 M1 is changing the per-channel jet memo, which M0
+found firing on 6.6 % of this row's events, so matched σ will move; the gate
+stays informational until that lands):
+
+`pp_to_ll_0j2j_mlm` on M0's card (byte-identical to the committed
+`pp_to_ll_0j2j_mlm_run_card.dat`), `integrate --fixed-budget --neval 200000
+--niter 8` by α, seeds 20260928–32, final binary. Per seed:
+
+| seed | @0 (pb) | @1 (pb) | @2 (pb) | total (pb) | wall |
+|---|---|---|---|---|---|
+| 20260928 | 665.02 ± 0.70 | 268.13 ± 1.48 | 132.76 ± 1.01 | 1065.90 ± 1.92 | 2235 s |
+| 20260929 | 665.05 ± 0.68 | 269.82 ± 2.12 | 133.22 ± 2.41 | 1068.09 ± 3.28 | 1367 s |
+| 20260930 | 665.11 ± 0.69 | 273.84 ± 2.86 | 132.33 ± 0.88 | 1071.28 ± 3.07 | 1230 s |
+| 20260931 | 666.03 ± 0.68 | 266.32 ± 1.49 | 131.35 ± 0.85 | 1063.70 ± 1.84 | 1545 s |
+| 20260932 | 665.37 ± 0.69 | 268.32 ± 2.46 | 132.24 ± 0.92 | 1065.94 ± 2.72 | 1129 s |
+
+Against M0's ten MadEvent seeds (seeds 2–10 share grids):
+
+| | vibegraph, 5 seeds (sd, χ²/dof) | MadEvent, 10 seeds (sd) | difference |
+|---|---|---|---|
+| @0 | 665.32 ± 0.19 (0.42, 0.39) | 664.80 ± 0.32 (1.00) | +0.08 %, +1.4σ |
+| @1 | 269.29 ± 1.27 (2.83, 1.83) | 269.11 ± 0.33 (1.05) | +0.07 %, +0.1σ |
+| @2 | 132.38 ± 0.31 (0.70, 0.44) | 130.44 ± 0.20 (0.63) | **+1.49 %, +5.2σ** |
+| total | 1066.98 ± 1.28 (2.86, 1.43) | 1064.37 ± 0.62 (1.97) | +0.25 %, +1.8σ |
+
+`@0` and `@1` agree. `@2` is 1.5 % high, well outside both spreads.
+
+The sum is not what moves `@2`: the part's channel terms are the part's own,
+bit for bit (the `multiplicity.rs` tests). The composite does change the
+budget, but each two-jet channel sits at its floor either way.
+
+Two causes are still open:
+- the jet memo, whose restricted re-cluster M0 counted on 6.6 % of this
+  row's events;
+- the convergence of 336 floor-bound, heavy-tailed channels.
+
+**Budget ladder** on the two-jet channels. The rung is `p p > e+ e- j j @2`
+alone, run by the `562ccb5` binary — the code path before this session — at
+`--neval 200000 --niter 16`, seeds 20260928–30:
+
+| | @2 (pb) |
+|---|---|
+| rung, per seed | 132.22 ± 0.45, 132.62 ± 1.04, 133.00 ± 0.50 |
+| rung mean | 132.61 (sd 0.39) |
+| same runs' running estimate after 8 iterations | 132.03, 131.81, 132.52 |
+| the sum at 8 iterations (table above) | 132.38 (sd 0.70) |
+
+What the ladder says:
+- **The excess predates the composite.** It is the same without the sum and
+  without this session's code.
+- **It does not shrink with iterations.** A floor-bound heavy tail
+  converging from below would show that, and it does not.
+- **`--neval` cannot extend the ladder.** Every two-jet channel is at its
+  floor, so a larger `--neval` leaves their points unchanged; iterations are
+  the only knob.
+
+Three seeds per rung cannot calibrate a rung-to-rung difference (AGENTS.md
+asks for 20 or more). They can bound a drift of the 1.5 % size, and they show
+none. The jet memo is the next suspect. It is M1's fix, and this row should be
+re-measured once that lands.
+
+**Left for later**:
+- gating σ per `@N` and the `samples` fractions against M0's reference, once
+  M1's jet-memo fix lands and `@2` is diagnosed;
+- the Neyman-allocation finding;
+- the per-point cost of wide mixtures, a performance item beside M6.
+
+The unweighted sample (seed 20260928's artifact, 10 000 events, 532 s) split
+by `IDPRUP` as 0.6346 / 0.2481 / 0.1173 for `@0` / `@1` / `@2`. MadEvent's
+samples-grade run splits 0.6264 / 0.2522 / 0.1214. The differences are +1.2σ,
+−0.7σ and −0.9σ in the two samples' combined binomial error, which sees
+nothing at the 1.5 % level. The sample's σ is within 0.12 % of the
+integration's; the efficiency is 3.5 %, and 4.5 % of σ sits above `w_max`
+(largest `w/w_max` 62).
+
 ### M4: the event record for the shower (feature-dev; after M3)
 
 - Write `<scales pt_clust_N>` with the `ptclus` rule, including the collider
