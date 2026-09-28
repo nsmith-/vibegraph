@@ -507,11 +507,18 @@ impl ScaleChoice {
     /// [`cluster_history`](Self::cluster_history) for the two calls matching
     /// makes.
     ///
-    /// The jet memo starts empty on every event. MadGraph keeps it per process
-    /// directory across a whole run, so its first event of a channel is the one
-    /// that fills it; starting empty reproduces exactly that event's behaviour
-    /// and makes the scale a function of the event rather than of the order
-    /// events were generated in.
+    /// The jet memo starts empty on every event, so the count it holds is the
+    /// jet count of this event's clustering restricted to the channel. MadGraph
+    /// keeps one count per job and channel, stored by the channel's first point
+    /// from the same restricted clustering (`reweight.f:662-679, 985-998`). A
+    /// clustering restricted to one channel follows that channel's forest, so
+    /// the count is a property of the channel whichever point computes it —
+    /// measured, not assumed: on every channel of the five matched and pure-cut
+    /// reference rows the restricted count is one value over every event of its
+    /// directory and equals what every MadEvent job stored
+    /// (`validate_mlm_dumps`). The scale is therefore MadEvent's on every event,
+    /// not only on the first of its channel, and remains a function of the
+    /// event rather than of the order events were generated in.
     pub fn cluster_scales(
         &self,
         event: &ScaleEvent<'_>,

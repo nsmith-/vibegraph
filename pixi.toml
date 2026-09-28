@@ -258,6 +258,14 @@ generate-kt-cluster-dumps = { cmd = "bash validation/madgraph/gen_kt_cluster_dum
 # intermediates. The dumps are 75 MB and outside the reference bundle, which is
 # why this is `--ignored` in the banked suite and run here instead.
 validate-kt-cluster = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_kt_cluster -- --ignored --nocapture", depends-on = ["generate-kt-cluster-dumps"] }
+# Oracle layer: the matched and pure-cut scale path against MadEvent's own
+# per-event dump of both setclscales calls (mlm_dump_manifest.json), and the
+# jet memo against the census of every job. The dumps and the MLM runs are
+# outside the reference bundle; generate-mlm-references makes them.
+validate-mlm-dumps = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_mlm_dumps -- --ignored --nocapture --test-threads 1", depends-on = ["fetch-pdf"] }
+# Long tier: sigma of the MLM pure-cut row (xqcut = 20, ickkw = 0) against
+# MadEvent's ten seeds, measured and reported.
+validate-mlm-sigma = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic sigma_llj_xqcut_only_vs_madevent -- --ignored --nocapture", depends-on = ["fetch-pdf"] }
 # Build the LHAPDF C++ oracle and dump the committed reference values for both
 # grid shapes (one rectangular subgrid; two bands joined at a seam)
 generate-pdf-oracle = { cmd = "bash validation/pdf/gen_oracle.sh", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }

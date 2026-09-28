@@ -210,4 +210,21 @@ mod tests {
             2.0
         );
     }
+
+    /// Per-beam PDF labels at proton beams set `pdlabel` when they agree, as
+    /// `banner.py`'s `PDLabelBlock` does, and are refused when they do not; a
+    /// card that never names them keeps its `pdlabel`.
+    #[test]
+    fn per_beam_pdf_labels_resolve_into_pdlabel() {
+        let rc = card("lhapdf = pdlabel1\nlhapdf = pdlabel2\n247000 = lhaid\n");
+        assert_eq!(rc.pdlabel, "lhapdf");
+        assert!(matches!(
+            RunCard::parse("lhapdf = pdlabel1\nnn23lo1 = pdlabel2\n"),
+            Err(RunCardError::AsymmetricBeamPdf { .. })
+        ));
+        assert_eq!(card("cteq6l1 = pdlabel\n").pdlabel, "cteq6l1");
+        // Fixed-energy beams read no density: the labels stay inert.
+        let fixed = card("0 = lpp1\n0 = lpp2\nnone = pdlabel1\nnone = pdlabel2\n");
+        assert_eq!(fixed.pdlabel, "nn23lo1");
+    }
 }

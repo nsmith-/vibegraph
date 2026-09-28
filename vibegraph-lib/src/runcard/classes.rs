@@ -161,10 +161,11 @@ const B_FRAME_ID: &str = "a system parameter: MadGraph recomputes it from me_fra
 
 const P_POLBEAM: &str = "beam polarisation: polarised matrix-element sums, and the SPINUP \
                          entries that follow from them, are not implemented";
-const P_PDLABEL_BEAM: &str = "the per-beam PDF set. It selects the parton densities and, \
-                              through pdfwrap.f, alpha_s(M_Z), while only the single pdlabel \
-                              is read here. MadGraph itself rejects a card whose two beams \
-                              both carry densities and name different sets";
+const R_PDLABEL_BEAM: &str = "RunCard::from_values, which resolves the per-beam PDF labels as \
+                              banner.py's PDLabelBlock does at proton beams: two equal labels \
+                              set pdlabel, and two different ones are refused, as MadGraph \
+                              refuses an asymmetric proton-proton PDF. At fixed-energy beams \
+                              no density is read and the labels are inert";
 const P_ION_COMPOSITION: &str = "ion beam composition: setrun.f builds IDBMUP from it, so it \
                                  changes the beam particle written into the event record";
 const P_ION_MASS: &str = "ion beam mass: genps.f uses it as the beam mass, so it changes the \
@@ -242,8 +243,8 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("mass_ion1",               IgnoredPhysics { why: P_ION_MASS, when: Applicability::Always }),
     ("mass_ion2",               IgnoredPhysics { why: P_ION_MASS, when: Applicability::Always }),
     ("pdlabel",                 Consumed(R_PDLABEL)),
-    ("pdlabel1",                IgnoredPhysics { why: P_PDLABEL_BEAM, when: Applicability::ProtonBeams }),
-    ("pdlabel2",                IgnoredPhysics { why: P_PDLABEL_BEAM, when: Applicability::ProtonBeams }),
+    ("pdlabel1",                Consumed(R_PDLABEL_BEAM)),
+    ("pdlabel2",                Consumed(R_PDLABEL_BEAM)),
     ("lhaid",                   Consumed(R_LHAID)),
     ("fixed_ren_scale",         Consumed(R_SCALES)),
     ("fixed_fac_scale",         Consumed(R_SCALES)),
@@ -440,9 +441,7 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
 /// fields are only capable of biting on a run whose beams carry parton
 /// densities, and fixed-energy cards do set them.
 ///
-/// Only a refusal is possible here. Nothing is derived and nothing is rewritten:
-/// MadGraph resolves `pdlabel` from `pdlabel1`/`pdlabel2`, and mirroring that
-/// would quietly change a parsed value on every fixed-energy card.
+/// Only a refusal is possible here. Nothing is derived and nothing is rewritten.
 pub(super) fn refuse_ignored_physics(
     values: &BTreeMap<String, ParamValue>,
     lpp1: i64,
@@ -561,8 +560,8 @@ mod tests {
             }
             checked += 1;
         }
-        assert_eq!(checked, 23, "the refused inventory changed size");
-        assert_eq!(proton_only, 2, "the beam-dependent inventory changed size");
+        assert_eq!(checked, 21, "the refused inventory changed size");
+        assert_eq!(proton_only, 0, "the beam-dependent inventory changed size");
     }
 
     /// A card line that moves `name` off its default, in the syntax the parser

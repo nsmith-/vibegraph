@@ -1210,7 +1210,7 @@ artifacts = ["output/pp_to_llj_mlm", "output/pp_to_llj_mlm/Events/run_01/unweigh
 [process.categories]
 diagrams = { tier = "uncovered", note = "the diagram content is p p > e+ e- j's, which the llj rows gate; this row's cells are about matching, and a diagrams cell here waits on nothing but a decision to add the e+ e- spelling to diagrams.json" }
 amplitudes = { tier = "uncovered", note = "the subprocess amplitudes are the llj parton rows' (uux_to_epemg, ddx_to_epemg, gu_to_epemu, gux_to_epemux); matching changes weights, not amplitudes" }
-integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds read by the seed policy. Informational and known-wrong while the scales land without rewgt, enforced once rewgt is in; per event first against the dump (target validate_mlm: the xqcut decision, both setclscales calls, SCALUP / AQCDUP, then every rewgt vertex and PDF ratio factor by factor)" }
+integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds read by the seed policy. Informational and known-wrong while the scales land without rewgt, enforced once rewgt is in; per event first against the dump. Measured 2026-09-28 by validate_mlm_dumps (pixi run validate-mlm-dumps, oracle layer): 10000/10000 events on the xqcut decision, the jet memo's branch and stored count, both setclscales calls' mu_R and q2fact, the Q2OVR overwrite, q2bck, the clustered configuration (CFG; differs from the integration channel on 525), SCALUP and AQCDUP, all at 1e-12 (AQCDUP worst 3e-16). The rewgt records (RWVX / RWPDF / RWEND) are still to be compared factor by factor" }
 samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_mlm/Events/run_01 once <scales pt_clust_N> and the clustered-graph colour are written; the dump carries ptclus per leg and the configuration each event's colour came from" }
 
 [[process]]
@@ -1226,7 +1226,7 @@ artifacts = ["output/pp_to_llj_xqcut_only", "output/pp_to_llj_xqcut_only/Events/
 [process.categories]
 diagrams = { tier = "uncovered", note = "as pp_to_llj_mlm" }
 amplitudes = { tier = "uncovered", note = "as pp_to_llj_mlm" }
-integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds read by the seed policy, enforced once the xqcut decision agrees event by event with the dump (target validate_mlm)" }
+integrals = { tier = "long", mode = "info", note = "pixi run validate-mlm-sigma (sigma_llj_xqcut_only_vs_madevent), measured 2026-09-28: sigma = 212.777 +- 0.149 pb over five seeds at 150000 x 10 (chi2/dof 1.03) against MadEvent's 212.549 +- 0.229 pb, ten seeds read under the seed policy: rel +0.11%, pull +0.84. Informational until the row is bundled. Per event, validate_mlm_dumps reproduces all 10000 dumped events at 1e-12: the xqcut decision (no written event rejected), the jet memo's branch and stored count, mu_R and q2fact, SCALUP, and AQCDUP (worst 3e-16)" }
 samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_xqcut_only/Events/run_01" }
 
 [[process]]
@@ -1242,7 +1242,7 @@ artifacts = ["output/pp_to_llj_mlm_alps2", "output/pp_to_llj_mlm_alps2/Events/ru
 [process.categories]
 diagrams = { tier = "uncovered", note = "as pp_to_llj_mlm" }
 amplitudes = { tier = "uncovered", note = "as pp_to_llj_mlm" }
-integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds, and per event against the dump's RWVX records (target validate_mlm): a test comparing only alpsfact = 1 events could not see where the factor enters" }
+integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds, and per event against the dump's RWVX records (target validate_mlm): a test comparing only alpsfact = 1 events could not see where the factor enters. The scales underneath are measured by validate_mlm_dumps (2026-09-28): 10000/10000 events on every field pp_to_llj_mlm's cell lists (CFG differs from the channel on 531)" }
 samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_mlm_alps2/Events/run_01" }
 
 [[process]]
@@ -1258,7 +1258,7 @@ artifacts = ["output/pp_to_ll_0j2j_mlm", "output/pp_to_ll_0j2j_mlm/Events/run_01
 [process.categories]
 diagrams = { tier = "uncovered", note = "mixed multiplicity is refused by check_supported until the composite integrand lands" }
 amplitudes = { tier = "uncovered", note = "the @0 / @1 subprocesses are covered by the Drell-Yan and llj rows; the two-jet subprocesses have no amplitude row" }
-integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate" }
+integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate. The per-event scales are measured by validate_mlm_dumps (2026-09-28): the engine replay of both setclscales calls agrees on 10000/10000 events; the production path agrees on 9859/9859 events whose matrix-element momenta are the sampled point or its mirror, and on 73 of the 141 whose P1 is a symmetry permutation of identical final-state legs, where MadEvent's first call clusters the unpermuted point (note 41, M1 dump gates)" }
 samples = { tier = "uncovered", note = "target validate_samples_proton: the per-@N event fractions and the event record (scales, resonances, colour) against output/pp_to_ll_0j2j_mlm/Events/run_01" }
 
 [[process]]
@@ -1274,7 +1274,7 @@ artifacts = ["output/pp_to_ttx_0j1j_mlm", "output/pp_to_ttx_0j1j_mlm/Events/run_
 [process.categories]
 diagrams = { tier = "uncovered", note = "mixed multiplicity is refused by check_supported until the composite integrand lands" }
 amplitudes = { tier = "uncovered", note = "g g > t t~ is gated by gg_to_ttx; the one-jet subprocesses have no amplitude row" }
-integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate; per event against the dump first (target validate_mlm)" }
+integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate. The per-event scales are measured by validate_mlm_dumps (2026-09-28): the engine replay agrees on 10000/10000 events; the production path agrees on 6265/6265 events whose matrix-element momenta are the sampled point or its mirror, and on 3733 of the 3735 whose P1 is DSIGPROC's symmetry permutation (t and t~ exchanged), where MadEvent's first call clusters the unpermuted point (note 41, M1 dump gates)" }
 samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_ttx_0j1j_mlm/Events/run_01" }
 
 # ─────────────────────────── standalone gates ────────────────────────────────

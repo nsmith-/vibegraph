@@ -609,6 +609,139 @@ when the dumps exist. What changed, checked against the pinned source:
   `pp_to_llj_xqcut_only`, and the jet-memo census (§1.2), which decides
   whether the per-event memo reset holds under matching.
 
+#### M1 Landed (dump gates), 2026-09-28
+
+**Harness.** `vibegraph-lib/tests/validate_mlm_dumps.rs` (pixi task
+`validate-mlm-dumps`, oracle layer, `#[ignore]` since the dumps are outside
+the bundle) reads `mlm_dump_manifest.json`. It builds each event's channel
+forests from its own process directory's `configs.inc`, `config_nqcd.inc` and
+`config_subproc_map.inc` (`confsub`). The dump's tables carry no directory
+name; the masses and widths come from the dump's `IFOR` rows. Each event is
+read two ways:
+- **Engine replay:** each `setclscales` call goes through the routine from the
+  state MadEvent entered it with (its own momenta, memo, scales).
+- **Production path:** `ScaleChoice::cluster_history` on one momentum set,
+  with the memo rule and the card as this crate resolves them.
+
+The fields are compared in order, and each one reports its first divergent
+event. `CallRecords` already parses the `rewgt` records, so M2's factor-by-factor
+gate can extend the same loop. The run cards resolve against the dumped
+`CONST2` (xqcut, alpsfact, asrwgtflavor, maxjetflavor, pdfwgt, the rewritten
+ptj/mmjj/drjj/drjl, scalefact). That check found one thing the port had wrong:
+`setrun.f:82` clears `pdfwgt` at `ickkw = 0`. Every reader tests `ickkw > 0`
+anyway, so nothing downstream changed.
+
+**Agreement** (n/10000 per field; scales at 1e-12, worst 0 or ≤ 8e-15; AQCDUP
+worst 3e-16):
+- `pp_to_llj_mlm`, `pp_to_llj_mlm_alps2`: 10000/10000 on every field of both
+  readings. The fields are the memo steps and branch, the stored count against
+  `njetstore` on entry, the vertex scales after the rewrites, the μR/μF
+  branches, both calls' μR and q2fact, `q2central` against `Q2BCK CENTRAL`,
+  `Q2OVR`, `q2bck`, `CFG` (`vec_igraph`), SCALUP, AQCDUP, and no written event
+  rejected by `xqcut`.
+- `pp_to_llj_xqcut_only`: 10000/10000 on every field it has (one call).
+- Controls, so that the matched fields can tell the readings apart:
+  - the record scale differs from the density scale on 8877 events (8749
+    `_alps2`);
+  - `CFG` differs from the integration channel on 525 (531).
+  - SCALUP alone never sees the split on the llj rows: 0 events. It is the
+    larger of two scales, and matching lowers only the smaller. The `t t~` row
+    (194) and the mixed row (351) are what exercise it.
+- `pp_to_ttx_0j1j_mlm`, `pp_to_ll_0j2j_mlm`: the engine replay agrees on
+  10000/10000. The production path agrees on every event whose matrix-element
+  momenta are the sampled point or its mirror (6265/6265 and 9859/9859). The
+  rest are the finding below.
+
+**Finding: the first call clusters the unpermuted point.**
+- `DSIGPROC` computes `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))`, then
+  mirrors it, and the matrix element reads `P1`.
+- `update_scale_coupling(pp, wgt)` — the first call, which sets μR, the density
+  scales and `q2bck` — is handed **`PP`** (`super_auto_dsig_group_v4.inc:842`).
+  `rewgt`'s second call is handed `P1`.
+- Where the symmetry permutation is not the identity, the first call therefore
+  clusters an event whose momenta are exchanged between legs of equal mass but
+  different flavour, against the flavour table of `P1`:
+  - `t ↔ t~` on 3735 of the `t t~` row's events;
+  - quark legs on 141 of the mixed row's.
+- On 2 and 68 of those events the scales differ from clustering `P1`:
+  - μR up to 9% on `t t~`;
+  - SCALUP up to 80% on `P2_qq_llqq`.
+- The replay from `PP` reproduces MadEvent's first call on every one of them
+  (3735/3735, 141/141).
+- A sampled term here is `P1`, so this crate's scale is the physically labelled
+  one. Under §1.5's policy this is a defect that changes a weight, so it is to
+  be reproduced (the scale taken on the sampling channel's own unpermuted
+  point) or refused, not left silently fixed.
+- By the same code path it reaches `ickkw = 0` runs too, where the only call
+  is the first. Whether any banked `ickkw = 0` row carries such a
+  configuration is not measured here: the banked scale gates compare against
+  replays of `PP` and could not see it.
+- It is recorded here, not changed: which of the two it becomes is the
+  manager's call. The harness reports those events under `info, permuted P1:`
+  and does not gate on them.
+
+**The jet memo (M0's finding), rule and proof.**
+- `reweight.f:662-679` restricts the clustering to `iconfig` whenever
+  `njetstore(iconfig) = -1`. `:985-998` then stores the count of final-state
+  `iqjets > 0` and re-clusters unrestricted; every later point compares its
+  unrestricted count with the stored one and re-clusters restricted on a
+  mismatch (`stop 4` if that fails too).
+- MadEvent consults the memo on every call that clusters. That is every call
+  under `ickkw > 0` or `xqcut > 0`, or when a scale is dynamic; it is skipped
+  only on the `:643` early return.
+- The port's rule was already "store the count of *this* event's restricted
+  clustering, then proceed", which is MadEvent's value exactly when the
+  restricted count is a property of the channel alone. That is plausible,
+  since a restricted clustering follows the channel's forest, but the jet
+  tagging reads kinematics (`ipartupdate`'s hardness comparisons), so it
+  needed measuring.
+- `the_jet_memo_is_the_channel_s_restricted_jet_count` measures it. It
+  clusters every event of a directory restricted to **every** channel of that
+  directory (not only the event's own), on all five rows. Every one of the 135
+  channels (8 + 8 + 8 + 29 + 82) gives a single count over every event, and
+  every census channel agrees (8/8, 8/8, 8/8, 29/29, 53/53). Per event, the
+  production path's stored count equals the dumped `njetstore` on entry, and
+  its restricted-re-cluster branch equals MadEvent's, on every event of every
+  row.
+- So the rule is MadEvent's value on every event, not only a channel's first,
+  and no code changed. The doc on `cluster_scales` now says so, citing the
+  measurement. `ickkw = 0` behaviour is untouched.
+- The first run of the proof found counts of both 0 and 1 on `P2_qq_llqq`
+  channels 17–24. The cause was the harness, not the rule: it had filled
+  `confsub` with every channel for every subprocess. With the directory's own
+  `config_subproc_map.inc` it is a single value on every channel.
+
+**σ of `pp_to_llj_xqcut_only`** (`sigma_llj_xqcut_only_vs_madevent`, pixi task
+`validate-mlm-sigma`, long tier, info; 150000 × 10 per seed):
+
+| seed | σ (pb) | rel |
+|---|---|---|
+| 20260941 | 212.907 ± 0.306 | +0.17% |
+| 20260942 | 212.799 ± 0.325 | +0.12% |
+| 20260943 | 212.577 ± 0.351 | +0.01% |
+| 20260944 | 212.346 ± 0.348 | −0.10% |
+| 20260945 | 213.256 ± 0.331 | +0.33% |
+| **mean** | **212.777 ± 0.149** (χ²/dof 1.03) | **+0.11%**, pull +0.84 |
+
+The reference is MadEvent at 212.549 ± 0.229 pb (ten seeds, max(quoted,
+spread/√n) = the quote). Five seeds cannot calibrate a difference below the
+reference's own 0.11%. The row is recorded `info`, to flip at close-out from
+the published bundle.
+
+**Other fixes the references needed.**
+- The llj MLM cards spell the PDF per beam (`lhapdf = pdlabel1/2`), which the
+  run card refused.
+- `pdlabel1/2` are now resolved as `banner.py`'s `PDLabelBlock` does at proton
+  beams: equal labels set `pdlabel`, and different ones are refused
+  (`AsymmetricBeamPdf`), as MadGraph refuses them. A card that never names the
+  per-beam labels resolves to exactly what it parsed to. Fixed beams leave
+  them inert.
+
+**Left.**
+- `rewgt` per event (M2's follow-up, on the same harness).
+- `pp_to_llj_mlm`'s seeded σ (M2).
+- The permuted-`P1` decision above.
+
 ### M2: `rewgt` (feature-dev; after M1)
 
 - Implement `coupling/cluster/rewgt.rs` (§3.2) and wire it into the per-term

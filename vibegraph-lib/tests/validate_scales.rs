@@ -212,6 +212,17 @@ enum Declined {
     /// candidate pair, every merge, both scales — against those intermediates,
     /// given the channel and the carried flags.
     InstrumentedDump,
+    /// An MLM row (`xqcut > 0`, and `ickkw = 1` on all but one), enforced
+    /// against MadEvent's instrumented dump of both `setclscales` calls by
+    /// `validate_mlm_dumps.rs`.
+    ///
+    /// The record alone cannot be replayed here: under matching `SCALUP` is
+    /// `q2bck` from the first call while the densities were read at a lowered
+    /// scale, the colour configuration is the clustering's rather than the
+    /// channel's, and on configurations with a symmetry permutation MadEvent's
+    /// first call clusters the unpermuted point. The dump names the channel,
+    /// both calls' inputs and outputs, and which point each call read.
+    MatchedDump,
     /// The run card is refused outright, so there is no prescription and no
     /// `αs` source either.
     RefusedRunCard,
@@ -222,6 +233,11 @@ const DECLINED_RUNS: &[(&str, Declined)] = &[
     ("bbx_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
     ("uux_to_ccx_emmm_qcd0", Declined::InstrumentedDump),
     ("wpwm_to_wpwmz_cw", Declined::RefusedRunCard),
+    ("pp_to_ll_0j2j_mlm", Declined::MatchedDump),
+    ("pp_to_llj_mlm", Declined::MatchedDump),
+    ("pp_to_llj_mlm_alps2", Declined::MatchedDump),
+    ("pp_to_llj_xqcut_only", Declined::MatchedDump),
+    ("pp_to_ttx_0j1j_mlm", Declined::MatchedDump),
 ];
 
 /// The runs whose `αs` MadGraph reads out of the PDF grid rather than solving
@@ -716,6 +732,17 @@ fn declined_runs_decline_for_the_declared_reason() {
                 assert!(
                     manifest.contains(name.as_str()),
                     "{name} declines because `validate_kt_cluster` enforces it, but it is \
+                     not in {}",
+                    dump.display()
+                );
+            }
+            Declined::MatchedDump => {
+                let dump = output_dir().join("..").join("mlm_dump_manifest.json");
+                let manifest = std::fs::read_to_string(&dump)
+                    .unwrap_or_else(|e| panic!("{name}: {}: {e}", dump.display()));
+                assert!(
+                    manifest.contains(&format!("\"{name}\"")),
+                    "{name} declines because `validate_mlm_dumps` enforces it, but it is \
                      not in {}",
                     dump.display()
                 );
@@ -1768,9 +1795,11 @@ fn banked_hadronic_runs_clear_the_factorisation_floor() {
     for (name, run) in banked_runs() {
         // A run whose card this crate refuses compiles nothing to replay, and it
         // has `lpp = 0` and so could reach no floor anyway.
+        // A matched row's floor test is two calls deep and reads each one's own
+        // point; `validate_mlm_dumps` checks that no written event is rejected.
         if matches!(
             coverage(&name),
-            Coverage::Declined(Declined::RefusedRunCard)
+            Coverage::Declined(Declined::RefusedRunCard | Declined::MatchedDump)
         ) {
             continue;
         }

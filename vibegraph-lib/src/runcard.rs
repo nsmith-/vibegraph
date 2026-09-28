@@ -166,6 +166,11 @@ pub enum RunCardError {
          not implemented"
     )]
     XqcutAboveJetThreshold { xqcut: f64, ptj: f64 },
+    #[error(
+        "run card sets pdlabel1 = '{beam1}' and pdlabel2 = '{beam2}' on proton beams: MadGraph \
+         refuses an asymmetric proton-proton PDF (banner.py's PDLabelBlock)"
+    )]
+    AsymmetricBeamPdf { beam1: String, beam2: String },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -390,6 +395,10 @@ impl RunCard {
 
     fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
         matching::resolve(&mut values)?;
+        let beam = |name: &str| values.get(name).expect("known param").as_i64();
+        if (beam("lpp1"), beam("lpp2")) == (1, 1) {
+            resolve_beam_pdf_labels(&mut values)?;
+        }
         let f = |name: &str| values.get(name).expect("known param").as_f64();
         let i = |name: &str| values.get(name).expect("known param").as_i64();
         let b = |name: &str| values.get(name).expect("known param").as_bool();
@@ -423,6 +432,32 @@ impl RunCard {
             values,
         })
     }
+}
+
+/// `banner.py`'s `PDLabelBlock` at proton beams: a card spelling the PDF per beam
+/// (`pdlabel1`, `pdlabel2`) sets `pdlabel` from them, and MadGraph refuses two
+/// different sets on two proton beams. A card that leaves both at their default
+/// spells the PDF through `pdlabel` and is left alone, so a card that never
+/// names the per-beam labels resolves to exactly the values it parsed to.
+fn resolve_beam_pdf_labels(values: &mut BTreeMap<String, ParamValue>) -> Result<(), RunCardError> {
+    let label = |values: &BTreeMap<String, ParamValue>, name: &str| {
+        values.get(name).expect("known param").as_str().to_string()
+    };
+    let (beam1, beam2) = (label(values, "pdlabel1"), label(values, "pdlabel2"));
+    let default = |name: &str| {
+        param_default(name)
+            .expect("known param")
+            .as_str()
+            .to_string()
+    };
+    if beam1 == default("pdlabel1") && beam2 == default("pdlabel2") {
+        return Ok(());
+    }
+    if beam1 != beam2 {
+        return Err(RunCardError::AsymmetricBeamPdf { beam1, beam2 });
+    }
+    values.insert("pdlabel".to_string(), ParamValue::Str(beam1));
+    Ok(())
 }
 
 /// `frame_id` of an `me_frame` payload: `[1, 2]`, `1, 2` and `1 2` are all the

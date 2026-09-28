@@ -4425,3 +4425,130 @@ fn probe_dynamic_rows_seed_sweep() {
         );
     }
 }
+
+/// Seeds the MLM pure-cut row is measured on.
+const XQCUT_ONLY_SEEDS: &[u64] = &[20260941, 20260942, 20260943, 20260944, 20260945];
+const XQCUT_ONLY_NEVAL: usize = 150_000;
+
+/// A seeded MadEvent reference read under the manifest's seed policy: the
+/// inverse-variance mean of the seeds, with `max(quoted, spread / √n)`.
+fn seeded_reference(file: &str, row: &str) -> (f64, f64, usize) {
+    let path = validation_dir().join(file);
+    let v: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("seeded reference")).expect("parses");
+    let runs = v["rows"][row]["runs"].as_array().expect("runs");
+    let pairs: Vec<(f64, f64)> = runs
+        .iter()
+        .map(|r| {
+            (
+                r["sigma_pb"].as_f64().expect("sigma_pb"),
+                r["err_pb"].as_f64().expect("err_pb"),
+            )
+        })
+        .collect();
+    let weights: f64 = pairs.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+    let mean = pairs.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / weights;
+    let quoted = weights.sqrt().recip();
+    let n = pairs.len() as f64;
+    let plain = pairs.iter().map(|(s, _)| s).sum::<f64>() / n;
+    let spread = (pairs.iter().map(|(s, _)| (s - plain).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+    (mean, quoted.max(spread / n.sqrt()), pairs.len())
+}
+
+/// σ(p p → e⁺e⁻ j) with `xqcut = 20` as a pure cut (`ickkw = 0`) against
+/// MadEvent's ten seeds.
+///
+/// No reweighting enters this row, so it isolates what `xqcut` changes on its
+/// own: `setcuts.f`'s rewrite of the jet cuts (`ptj = mmjj = xqcut`,
+/// `drjj = drjl = 0`) and the clustering's rejection of a jet vertex below
+/// `xqcut`, on top of the clustering scale with `pdfwgt = F`. Measured and
+/// reported, not enforced: the row is not in the reference bundle yet, and its
+/// per-event scales are gated against MadEvent's dump by `validate_mlm_dumps`.
+#[test]
+#[ignore = "long tier: the MLM references are outside the bundle; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_xqcut_only_vs_madevent() {
+    let row = "pp_to_llj_xqcut_only";
+    let process = "p p > e+ e- j";
+    let clock = Stopwatch::start();
+    let rc = RunCard::parse_file(&validation_dir().join(format!("{row}_run_card.dat")))
+        .expect("run card");
+    let (mg, mg_err, mg_seeds) = seeded_reference("mlm_sigma_reference.json", row);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(process, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in XQCUT_ONLY_SEEDS {
+        let (sigma, err) = run_seed_shaped(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                XQCUT_ONLY_NEVAL,
+                RECARDED_NITER,
+            ),
+            seed,
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+        );
+        eprintln!(
+            "[{row} seed {seed}] vibegraph σ = {sigma:.6e} ± {err:.3e} pb | rel = {:+.4}",
+            sigma / mg - 1.0
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
+
+    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let pull = (mean - mg) / combined;
+    let rel = mean / mg - 1.0;
+    eprintln!(
+        "[{row}] vibegraph σ = {mean:.6e} ± {mean_err:.3e} pb ({} seeds, χ²/dof = {chi2:.2}) \
+         | MadEvent σ = {mg:.6e} ± {mg_err:.3e} pb ({mg_seeds} seeds) | pull = {pull:+.2} \
+         | rel = {rel:+.4}",
+        runs.len()
+    );
+
+    let mut cell = IntegralsRow::new(row, process, "info");
+    cell.status = "info";
+    cell.sigma_vg_pb = mean;
+    cell.sigma_vg_err_pb = mean_err;
+    cell.sigma_mg_pb = mg;
+    cell.sigma_mg_err_pb = mg_err;
+    cell.pull = pull;
+    cell.rel = rel;
+    cell.chi2_dof = chi2;
+    cell.seeds = runs.iter().map(|r| r.seed).collect();
+    cell.per_seed = runs.clone();
+    cell.neval = XQCUT_ONLY_NEVAL;
+    cell.niter = RECARDED_NITER;
+    cell.subsampler = summary;
+    cell.note = Some(format!(
+        "{} seeds at {XQCUT_ONLY_NEVAL} x {RECARDED_NITER} against MadEvent's {mg_seeds} seeds \
+         read under the seed policy",
+        runs.len()
+    ));
+    cell.duration_s = Some(clock.seconds());
+    cell.write();
+}

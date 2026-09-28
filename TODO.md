@@ -11,7 +11,7 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
 gates, every new cell agreeing. Next: MLM (note 41: M0's references and
-dumps, and M1's and M2's implementations, landed; per-event gates next), then
+dumps, and M1's and M2's implementations, landed; M1's per-event scale gates pass, M2's rewgt gates next), then
 NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
@@ -509,8 +509,15 @@ above); the entries here are the eventual features.
   implementation landed** (note 41 §4 M1 record): `ickkw ∈ {0, 1}` and
   `xqcut` accepted at proton beams, MadGraph's card rewrites and refusals,
   both `setclscales` calls with `q2bck` as the record scale, colour and
-  mothers from the clustered configuration; the per-event gates against M0's
-  dumps are still to run. **M2 implementation landed** (note 41 §4 M2
+  mothers from the clustered configuration. **M1 dump gates landed**
+  (`validate_mlm_dumps`, `validate-mlm-sigma`): every scale field agrees
+  10000/10000 on the three llj rows; the jet memo is proven to be each
+  channel's restricted jet count on all 135 channels; `pp_to_llj_xqcut_only`
+  σ +0.11% (pull +0.84, info). Open finding: on events whose matrix-element
+  momenta are a symmetry permutation of the sampled point (37% of the `t t~`
+  row, 1.4% of the mixed Drell-Yan row), MadEvent's first `setclscales` call
+  clusters the unpermuted point, and 2 / 68 of those events carry different
+  scales from ours — reproduce or refuse, per note 41 §1.5's policy. **M2 implementation landed** (note 41 §4 M2
   record): `rewgt` with every factor listed, live per group, beam ordering
   and flavour combination; `ickkw = 0` byte-identical; `pp_to_llj_mlm`'s
   σ informational (268.5 ± 0.4 pb, one seed) until M0's dumps and seeded
