@@ -4467,7 +4467,37 @@ fn seeded_reference(file: &str, row: &str) -> (f64, f64, usize) {
 #[test]
 #[ignore = "long tier: the MLM references are outside the bundle; `pixi run validate-mlm-sigma` runs this"]
 fn sigma_llj_xqcut_only_vs_madevent() {
-    let row = "pp_to_llj_xqcut_only";
+    mlm_sigma_row("pp_to_llj_xqcut_only", XQCUT_ONLY_SEEDS);
+}
+
+/// σ(p p → e⁺e⁻ j) matched (`ickkw = 1`, `xqcut = 20`) against MadEvent's ten
+/// seeds: the row `rewgt`'s `αs` and density ratios reach σ on, +26% over the
+/// pure-cut row. Measured and reported, not enforced, like the pure-cut row; its
+/// factors are gated per event by `validate_mlm_dumps`.
+#[test]
+#[ignore = "long tier: the MLM references are outside the bundle; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_mlm_vs_madevent() {
+    mlm_sigma_row("pp_to_llj_mlm", MLM_SEEDS);
+}
+
+/// The same row at `alpsfact = 2` with systematics off: where `alpsfact`
+/// enters (the `αs` numerator's scale only) moves σ by 10%.
+#[test]
+#[ignore = "long tier: the MLM references are outside the bundle; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_mlm_alps2_vs_madevent() {
+    mlm_sigma_row("pp_to_llj_mlm_alps2", MLM_ALPS2_SEEDS);
+}
+
+/// Ten seeds: five read χ²/dof 2.9 about their mean, more scatter than the
+/// quoted errors, so the row takes twice the pure-cut row's.
+const MLM_SEEDS: &[u64] = &[
+    20260951, 20260952, 20260953, 20260954, 20260955, 20260956, 20260957, 20260958, 20260959,
+    20260960,
+];
+const MLM_ALPS2_SEEDS: &[u64] = &[20260961, 20260962, 20260963, 20260964, 20260965];
+
+/// One MLM row's seeded σ against MadEvent's seeds, recorded as an `info` cell.
+fn mlm_sigma_row(row: &str, seeds: &[u64]) {
     let process = "p p > e+ e- j";
     let clock = Stopwatch::start();
     let rc = RunCard::parse_file(&validation_dir().join(format!("{row}_run_card.dat")))
@@ -4487,7 +4517,7 @@ fn sigma_llj_xqcut_only_vs_madevent() {
 
     let mut summary = Vec::new();
     let mut runs: Vec<SeedResult> = Vec::new();
-    for &seed in XQCUT_ONLY_SEEDS {
+    for &seed in seeds {
         let (sigma, err) = run_seed_shaped(
             &groups,
             &amps,

@@ -38,8 +38,19 @@
 //!
 //! * **Rejected points.** Only written events are dumped, so the `xqcut`
 //!   decision is checked in one direction: no written event is rejected.
-//! * **`rewgt`.** The `RWVX` / `RWPDF` / `RWEND` records are parsed into
-//!   [`CallRecords`] but not compared here.
+//!
+//! # `rewgt`, factor by factor
+//!
+//! On the matched rows each event's `rewgt` is recomputed from the production
+//! path's clustering history for the flavour combination MadEvent drew
+//! (`RWLEG`'s `idup`, `IPSEL`), at the momentum fractions `RWBEG` records, and
+//! compared in order with `RWVX` (vertex class, codes, `ipart`, `kt²`,
+//! `αs(alpsfact·kt)`, `asref`, the ratio), `RWPDF` per beam (vertex, flavour,
+//! action, `x` after `z`, `q²_now`, `q²_prev`, both densities, the ratio),
+//! `RWKILL` and `RWEND`. On `pp_to_llj_xqcut_only` the factor must be `1`.
+//! `αs` and the densities come from this crate's reading of the PDF set's grid,
+//! MadEvent's from LHAPDF; they agree to a few ulp, so every field is compared
+//! at [`AGREEMENT`]'s scale.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{BufRead, BufReader};
@@ -51,11 +62,13 @@ use serde_json::Value;
 use vibegraph::coupling::alphas::AlphaSSource;
 use vibegraph::coupling::cluster::graph::{ChannelSet, ColorTable, ConfigForest, ForestLine};
 use vibegraph::coupling::cluster::kt::Channel;
+use vibegraph::coupling::cluster::rewgt::{rewgt, PdfOutcome, Rewgt, RewgtKill, VertexClass};
 use vibegraph::coupling::cluster::setclscales::{
     setclscales, ClusterScales, JetMemo, MemoStep, ScaleSettings,
 };
 use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
 use vibegraph::lhef::build::scalup;
+use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
 
@@ -69,6 +82,16 @@ const AGREEMENT: f64 = 1e-12;
 /// grid as this crate interpolates it, MadEvent's from LHAPDF's own, so the two
 /// agree to the interpolation's precision, not to the last ulp.
 const AQCDUP_AGREEMENT: f64 = 1e-6;
+
+/// Relative agreement for `rewgt`'s densities, `αs` values and ratios. Both
+/// sides read the same grid through the same log-bicubic interpolation (and the
+/// same `αs` tabulation), and agree to a few ulp (worst 9e-16 measured on the
+/// llj rows), so the bound is the scales' own.
+const PDF_AGREEMENT: f64 = 1e-12;
+
+/// The least σ shift dropping `rewgt`'s `αs` ratios must cause on a matched
+/// row: ten times the ~0.1% the seeded σ references resolve.
+const NEGATIVE_CONTROL_MIN_SHIFT: f64 = 0.01;
 
 const ROWS: &[&str] = &[
     "pp_to_llj_mlm",
@@ -472,6 +495,7 @@ pub struct Row {
     settings: ScaleSettings,
     colors: ColorTable,
     alpha_s: AlphaSSource,
+    pdf: PdfMember,
     directories: HashMap<String, Directory>,
     sets: HashMap<(String, Vec<i64>), ChannelSet>,
 }
@@ -555,6 +579,13 @@ impl Row {
             );
         }
 
+        let pdf_name = "NNPDF23_lo_as_0130_qed";
+        assert_eq!(card.lhaid, 247000, "{name}: the PDF set");
+        let pdf = PdfSet::load(&mg.join("../pdf").join(pdf_name), pdf_name)
+            .unwrap_or_else(|e| panic!("{name}: PDF set: {e}"))
+            .member(0)
+            .expect("PDF member 0");
+
         Row {
             name: name.to_string(),
             card,
@@ -562,6 +593,7 @@ impl Row {
             settings,
             colors,
             alpha_s,
+            pdf,
             directories: HashMap::new(),
             sets: HashMap::new(),
         }
@@ -605,6 +637,15 @@ struct Tally {
     controls: (usize, usize, usize),
     /// Matched events whose `P1` is not the mirror of `PP`.
     permuted: usize,
+    /// Over the events whose factor gates: `Σ 1/A`, with `A` the product of the
+    /// `αs` ratios, this crate's and MadEvent's, and the count. The events are
+    /// unweighted, so `⟨1/A⟩` is σ without the `αs` factor over σ with it.
+    inverse_alpha: (f64, f64, usize),
+    /// Mean `rewgt` over the gated events.
+    rewgt_sum: f64,
+    /// Permuted events whose first-call scales differ from this crate's:
+    /// (event, subprocess directory, MadEvent's weight factor over this crate's).
+    rescaled: Vec<(usize, String, f64)>,
 }
 
 impl Tally {
@@ -650,6 +691,33 @@ impl Tally {
              from the integration channel on {}, SCALUP from the density-scale reading on {}",
             self.controls.0, self.controls.1, self.controls.2
         );
+        let (mine, theirs, n) = self.inverse_alpha;
+        if n > 0 {
+            println!(
+                "  rewgt: mean {:.6} over {n} gated events; without the alpha_s factor sigma \
+                 scales by <1/A> = {:.6} (MadEvent's own ratios: {:.6})",
+                self.rewgt_sum / n as f64,
+                mine / n as f64,
+                theirs / n as f64
+            );
+        }
+        if !self.rescaled.is_empty() {
+            let mut by_n: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
+            for (event, dir, ratio) in &self.rescaled {
+                println!("  info, permuted P1 with other scales: event {event} {dir}: MadEvent/vibegraph weight factor {ratio:.6}");
+                by_n.entry(&dir[..2]).or_default().push(*ratio);
+            }
+            for (n, ratios) in by_n {
+                let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
+                let lo = ratios.iter().copied().fold(f64::INFINITY, f64::min);
+                let hi = ratios.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                println!(
+                    "  info, permuted P1 with other scales, {n}: {} events, weight factor ratio \
+                     mean {mean:.6}, range {lo:.6}..{hi:.6}",
+                    ratios.len()
+                );
+            }
+        }
     }
 
     fn all_agree(&self) -> bool {
@@ -784,6 +852,229 @@ fn compare_call(
             mine.jcentral == jcentral && deviation < AGREEMENT,
         );
     }
+}
+
+/// A vertex as both sides are compared on: `n`, class, `[mother, d1, d2]`,
+/// their codes, `ipart(1, mother)`.
+type VertexKey<'a> = (usize, &'a str, [usize; 3], [i64; 3], usize);
+
+/// MadEvent's name for a vertex class.
+fn class_name(r: &Rewgt, n: usize, class: VertexClass) -> &'static str {
+    if let Some(RewgtKill::AlphaSScale { n: at, .. }) = r.kill {
+        if at == n {
+            return "KILL_Q2";
+        }
+    }
+    match class {
+        VertexClass::Core => "CORE",
+        VertexClass::Isr => "ISR",
+        VertexClass::Fsr => "FSR",
+        _ => "NONE",
+    }
+}
+
+/// MadEvent's name for a density-chain action.
+fn action_name(outcome: PdfOutcome, killed: bool) -> &'static str {
+    match outcome {
+        PdfOutcome::First => "FIRST",
+        PdfOutcome::Ratio { .. } if killed => "KILL_PDF",
+        PdfOutcome::Ratio { .. } => "RATIO",
+        PdfOutcome::NoRise => "NOT_RISING",
+        PdfOutcome::PastLast => "NONE",
+    }
+}
+
+/// The matched factor of one event, recomputed from the production path's
+/// history and compared field by field with `RWVX`, `RWPDF`, `RWKILL` and
+/// `RWEND`. `f` names each field, prefixed as informational on a permuted event.
+#[allow(clippy::too_many_arguments)]
+fn compare_rewgt(
+    tally: &mut Tally,
+    row: &Row,
+    event: &Event,
+    history: &vibegraph::coupling::scales::ClusterHistory,
+    p1: &[[f64; 4]],
+    i: usize,
+    gated: bool,
+    f: &dyn Fn(&'static str) -> &'static str,
+) -> Option<Rewgt> {
+    let begin = event.only("RWBEG")?;
+    let settings = row.choice.rewgt_settings().expect("a matched row");
+    let mut legs: Vec<Rec<'_>> = event.recs().filter(|r| r.tag() == "RWLEG").collect();
+    legs.sort_by_key(|r| r.u(1));
+    let flavours: Vec<i64> = legs.iter().map(|r| r.i(2)).collect();
+    let x = [begin.f(6), begin.f(7)];
+    // The clustering's first beam takes the momentum fraction of the physical
+    // beam its leg 1 arrives on: `ib(1)` is that beam.
+    let from = if p1[0][3] > 0.0 { 1 } else { 2 };
+    tally.check(
+        "rewgt: beam 1's x is that of the beam its leg 1 arrives on",
+        i,
+        begin.u(8) == from,
+    );
+    let Some(input) = history.rewgt_history() else {
+        tally.check(f("rewgt: product (RWEND)"), i, false);
+        return None;
+    };
+    tally.check(
+        f("rewgt: jlast"),
+        i,
+        input.jlast == [begin.u(16), begin.u(17)],
+    );
+    let pdf = &row.pdf;
+    let mine = match rewgt(
+        &input,
+        &row.colors,
+        &settings,
+        &flavours,
+        x,
+        |q| row.alpha_s.eval(q),
+        |pdg, x, q2| pdf.xfx_q2(pdg as i32, x, q2),
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("{} event {i}: rewgt refused: {e}", row.name);
+            tally.check(f("rewgt: product (RWEND)"), i, false);
+            return None;
+        }
+    };
+    tally.close(
+        f("rewgt: asref"),
+        i,
+        row.alpha_s.eval(input.mu_r),
+        begin.f(4),
+        PDF_AGREEMENT,
+    );
+
+    // Vertices, in order.
+    let vx: Vec<Rec<'_>> = event.recs().filter(|r| r.tag() == "RWVX").collect();
+    let theirs: Vec<VertexKey<'_>> = vx
+        .iter()
+        .map(|r| {
+            (
+                r.u(1),
+                r.s(2),
+                [r.u(3), r.u(4), r.u(5)],
+                [r.i(6), r.i(7), r.i(8)],
+                r.u(9),
+            )
+        })
+        .collect();
+    let ours: Vec<VertexKey<'_>> = mine
+        .vertices
+        .iter()
+        .map(|v| {
+            (
+                v.n,
+                class_name(&mine, v.n, v.class),
+                [
+                    v.mother as usize,
+                    v.daughters[0] as usize,
+                    v.daughters[1] as usize,
+                ],
+                v.pdg,
+                v.ipart,
+            )
+        })
+        .collect();
+    tally.check(
+        f("rewgt: vertices (class, lines, codes, ipart)"),
+        i,
+        ours == theirs,
+    );
+    let (mut kt, mut num, mut ratio) = (0.0f64, 0.0f64, 0.0f64);
+    for (v, r) in mine.vertices.iter().zip(&vx) {
+        if let Some(a) = v.alpha_s {
+            kt = kt.max(rel(a.q2, r.f(16)));
+            num = num.max(rel(a.numerator, r.f(18)));
+            ratio = ratio.max(rel(a.ratio, r.f(20)));
+        }
+    }
+    tally.within(f("rewgt: reweighted vertex kt^2"), i, kt, AGREEMENT);
+    tally.within(f("rewgt: alpha_s(alpsfact kt)"), i, num, PDF_AGREEMENT);
+    tally.within(f("rewgt: alpha_s ratio"), i, ratio, PDF_AGREEMENT);
+
+    // Density chains, per beam, in order.
+    let killed_pdf = matches!(mine.kill, Some(RewgtKill::PdfDenominator { .. }));
+    let (mut steps_ok, mut x_dev, mut q_dev, mut f_dev, mut r_dev) =
+        (true, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for beam in 0..2 {
+        let theirs: Vec<Rec<'_>> = event
+            .recs()
+            .filter(|r| r.tag() == "RWPDF" && r.u(2) == beam + 1)
+            .collect();
+        let ours = &mine.pdf_chain[beam];
+        if theirs.len() != ours.len() {
+            steps_ok = false;
+            continue;
+        }
+        for (k, (s, r)) in ours.iter().zip(&theirs).enumerate() {
+            let last = k + 1 == ours.len();
+            let action = action_name(s.outcome, killed_pdf && last);
+            if (s.n, s.flavour, action) != (r.u(1), r.i(5), r.s(10)) {
+                steps_ok = false;
+            }
+            x_dev = x_dev.max(rel(s.x, r.f(7)));
+            q_dev = q_dev.max(rel(s.q2_now, r.f(8)));
+            if !s.q2_prev.is_nan() {
+                q_dev = q_dev.max(rel(s.q2_prev, r.f(9)));
+            }
+            if let PdfOutcome::Ratio {
+                numerator,
+                denominator,
+                ratio,
+            } = s.outcome
+            {
+                f_dev = f_dev
+                    .max(rel(numerator, r.f(11)))
+                    .max(rel(denominator, r.f(12)));
+                r_dev = r_dev.max(rel(ratio, r.f(13)));
+            }
+        }
+    }
+    tally.check(f("rewgt: PDF chain (vertex, flavour, action)"), i, steps_ok);
+    tally.within(f("rewgt: PDF x after z"), i, x_dev, AGREEMENT);
+    tally.within(f("rewgt: PDF q2_now, q2_prev"), i, q_dev, AGREEMENT);
+    tally.within(f("rewgt: PDF densities"), i, f_dev, PDF_AGREEMENT);
+    tally.within(f("rewgt: PDF ratio"), i, r_dev, PDF_AGREEMENT);
+
+    let their_kill = event.only("RWKILL").map(|r| (r.s(1).to_string(), r.u(2)));
+    let our_kill = mine.kill.map(|k| match k {
+        RewgtKill::AlphaSScale { n, .. } => ("ALPHAS_Q2".to_string(), n),
+        RewgtKill::PdfDenominator { n, .. } => ("PDF_DENOMINATOR".to_string(), n),
+    });
+    tally.check(f("rewgt: kill"), i, their_kill == our_kill);
+    let end = event.only("RWEND").expect("an RWEND record");
+    tally.close(
+        f("rewgt: product (RWEND)"),
+        i,
+        mine.weight,
+        end.f(1),
+        PDF_AGREEMENT,
+    );
+    tally.check(
+        f("rewgt: product = listed factors"),
+        i,
+        mine.product_of_factors().to_bits() == mine.weight.to_bits(),
+    );
+    if gated && mine.kill.is_none() {
+        let a: f64 = mine
+            .vertices
+            .iter()
+            .filter_map(|v| v.alpha_s)
+            .map(|a| a.ratio)
+            .product();
+        let theirs: f64 = vx
+            .iter()
+            .filter(|r| matches!(r.s(2), "ISR" | "FSR"))
+            .map(|r| r.f(20))
+            .product();
+        tally.inverse_alpha.0 += 1.0 / a;
+        tally.inverse_alpha.1 += 1.0 / theirs;
+        tally.inverse_alpha.2 += 1;
+        tally.rewgt_sum += mine.weight;
+    }
+    Some(mine)
 }
 
 fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>) {
@@ -1069,6 +1360,48 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
             out.f(5),
             AQCDUP_AGREEMENT,
         );
+
+        if !matched {
+            // `rewgt` returns `1` before reading anything at `ickkw = 0`.
+            let end = event.only("RWEND").map_or(1.0, |r| r.f(1));
+            tally.check(
+                "rewgt = 1 without matching",
+                i,
+                end == 1.0 && row.choice.rewgt_settings().is_none(),
+            );
+            continue;
+        }
+        let Some(mine) = compare_rewgt(
+            &mut tally, &row, &event, &history, &physical, i, !permuted, &f,
+        ) else {
+            continue;
+        };
+        // Where the first call's scales differ from this crate's, the weight
+        // factor it drives differs too: `rewgt · αs(μR)^n · f₁ f₂` at the
+        // densities' scales, each side at its own scales and momentum fractions'
+        // flavours, with this crate's `αs` and densities on both.
+        let (mu_r, q2fact) = first.out();
+        let differs = rel(history.first.mu_r, mu_r)
+            .max(rel(history.first.q2fact[0], q2fact[0]))
+            .max(rel(history.first.q2fact[1], q2fact[1]))
+            >= AGREEMENT;
+        if permuted && differs {
+            let begin = event.only("RWBEG").expect("RWBEG");
+            let end = event.only("RWEND").expect("RWEND");
+            let mut legs: Vec<Rec<'_>> = event.recs().filter(|r| r.tag() == "RWLEG").collect();
+            legs.sort_by_key(|r| r.u(1));
+            let x = [begin.f(6), begin.f(7)];
+            let nqcd = row.directories[&subdir].configs[first.iconfig() - 1].nqcd as i32;
+            let factor = |rw: f64, mu_r: f64, q2: [f64; 2]| {
+                rw * row.alpha_s.eval(mu_r).powi(nqcd)
+                    * (0..2)
+                        .map(|j| row.pdf.xfx_q2(legs[j].i(2) as i32, x[j], q2[j]) / x[j])
+                        .product::<f64>()
+            };
+            let theirs = factor(end.f(1), mu_r, [begin.f(12), begin.f(13)]);
+            let ours = factor(mine.weight, history.first.mu_r, history.first.q2fact);
+            tally.rescaled.push((i, subdir.clone(), theirs / ours));
+        }
     }
     (tally, memo_counts)
 }
@@ -1128,6 +1461,17 @@ fn matched_scales_reproduce_madevents_event_by_event() {
             !matched || (tally.controls.0 > 0 && tally.controls.1 > 0),
             "{name}: a control never fired, so the matched fields cannot tell the readings apart"
         );
+        // The negative control: without the `αs` ratios σ would move by `⟨1/A⟩ − 1`
+        // over MadEvent's own (unweighted) events. The σ gates hold these rows to
+        // about 0.1%, so the factor must be worth far more than that.
+        if matched {
+            let (inverse, _, n) = tally.inverse_alpha;
+            let shift = (inverse / n as f64 - 1.0).abs();
+            assert!(
+                shift > NEGATIVE_CONTROL_MIN_SHIFT,
+                "{name}: dropping the alpha_s factor moves sigma by only {shift:.4}"
+            );
+        }
     }
     assert!(failed.is_empty(), "rows with divergent fields: {failed:?}");
 }

@@ -861,6 +861,143 @@ seeded σ of `pp_to_llj_mlm` and `pp_to_llj_mlm_alps2` (σ and per event); the
 negative control at the σ gate; and sizing the stale-`ipdgcl` class with
 M0's census.
 
+#### M2 Landed (dump gates), 2026-09-28
+
+**Harness.** `validate_mlm_dumps.rs` (`pixi run validate-mlm-dumps`) now
+recomputes each matched event's `rewgt` from the production path's history
+(`ClusterHistory::rewgt_history`, the same one the integrand reads) for the
+flavour combination MadEvent drew (`RWLEG`'s `idup`), at `RWBEG`'s momentum
+fractions. It compares in order, first divergence reported:
+- per vertex (`RWVX`): the class (`CORE`/`ISR`/`FSR`/`NONE`/`KILL_Q2`), the
+  lines, the codes after `ipartupdate`, `ipart(1, mother)`, and on a
+  reweighted vertex `kt²`, `αs(alpsfact·kt)` and the ratio;
+- `asref` and `jlast`;
+- per beam (`RWPDF`): each step's vertex, flavour and action, `x` after `z`,
+  `q²_now`, `q²_prev`, both densities and the ratio;
+- the kill (`RWKILL`), the product against `RWEND`, and the product against the
+  listed factors;
+- a convention pin for the proton wiring: the clustering's beam 1 takes the
+  `x` of the physical beam its leg 1 arrives on (`ib(1)` against the sign of
+  `P1`'s leg-1 `p_z`), 10000/10000 on every matched row. That is the order the
+  mirrored term's `[x₂, x₁]` assumes.
+
+On `pp_to_llj_xqcut_only` it checks `rewgt ≡ 1`. Every tolerance is 1e-12:
+this crate's reading of the NNPDF grid and its `αs` tabulation agree with
+MadEvent's LHAPDF to a few ulp (worst 1e-15), not merely to the 1e-6 the
+harness allows `AQCDUP`.
+
+**Agreement** (n/N per field, every field listed above):
+
+| row | gated events | agreeing on every factor | worst |
+|---|---|---|---|
+| `pp_to_llj_mlm` | 10000 | 10000 | 3.2e-15 (`q²`), product 8.7e-16 |
+| `pp_to_llj_mlm_alps2` | 10000 | 10000 | 4.6e-15, product 8.7e-16 |
+| `pp_to_llj_xqcut_only` | 10000 | `rewgt = 1`: 10000 | — |
+| `pp_to_ttx_0j1j_mlm` | 6265 | 6265 | product 7.4e-16 |
+| `pp_to_ll_0j2j_mlm` | 9859 | 9859 | 7.9e-15, product 2.9e-15 |
+
+The mixed row carries the suite's only FSR vertices, all agreeing. No row has
+a kill or a `NONE` chain step.
+
+**Permuted `P1` (info, not gated).** On the events whose first call clustered
+the unpermuted `PP` (M1's finding), `asref` and `q2bck` follow the first
+call's scales:
+- `pp_to_ttx_0j1j_mlm`: 3733 of 3735 agree on every factor. The 2 whose
+  first-call scales differ also differ in `asref`, the density scales and the
+  product (worst 6.5e-3).
+- `pp_to_ll_0j2j_mlm`: 73 of 141 agree. On the other 68, the vertices, `x` and
+  `αs(alpsfact·kt)` still agree; `asref`, `q²` and the product do not, and on
+  2 of them the chain's actions differ too (a step that rises on one side and
+  not the other).
+
+**For the `@2` diagnosis.** All 68 are `@2` events: 53 `P2_qq_llqq`, 15
+`P2_gg_llqq`, out of the row's 1214 `@2` events. On each, the weight factor
+`rewgt · αs(μR)^n · f₁(x₁, μF₁) f₂(x₂, μF₂)` was formed both ways. Each side
+used its own scales and factor, with this crate's `αs` and densities (which
+agree with MadEvent's). Measured:
+- MadEvent's factor over this crate's is 0.978 on average, from 0.675 to 1.405;
+- this crate's over MadEvent's is 1.035 on average.
+
+MadEvent's events are unweighted, so the difference these events make to `@2`'s
+σ is about 68/1214 × 3.5% = **+0.2%**, not the +1.5% excess.
+
+The dump only holds points MadEvent kept, so it cannot see one kind of
+difference. A point that MadEvent's first call rejects on `PP` (an `xqcut`
+jet vertex, or the factorisation floor), but that clusters cleanly on `P1`,
+carries weight only here. It is the remaining candidate on the permuted
+configurations, and the harness cannot measure it.
+
+**Seeded σ** (`validate-mlm-sigma`, long tier, info; 150000 × 10 per seed;
+MadEvent's ten seeds under the seed policy):
+
+| seed | `pp_to_llj_mlm` σ (pb) | rel |
+|---|---|---|
+| 20260951 | 269.506 ± 0.457 | +0.54% |
+| 20260952 | 268.614 ± 0.497 | +0.21% |
+| 20260953 | 267.731 ± 0.419 | −0.12% |
+| 20260954 | 269.043 ± 0.427 | +0.37% |
+| 20260955 | 269.517 ± 0.478 | +0.54% |
+| 20260956 | 267.651 ± 0.448 | −0.15% |
+| 20260957 | 267.557 ± 0.413 | −0.19% |
+| 20260958 | 269.117 ± 0.412 | +0.39% |
+| 20260959 | 268.129 ± 0.405 | +0.03% |
+| 20260960 | 268.733 ± 0.591 | +0.25% |
+| **mean** | **268.560 ± 0.145** (χ²/dof 2.96) | **+0.19%**, pull +1.58 |
+
+MadEvent: 268.060 ± 0.282 pb. The first five seeds alone read 268.882 ±
+0.204 (χ²/dof 2.90, pull +2.37). The next five moved the mean down by 0.3 pb.
+That movement, and a χ²/dof near 3, say the per-seed errors are understated
+by about √3. The heavy tail `rewgt`'s range (1.0–2.1) adds to the weights is
+the likely cause. With the error inflated by √χ²/dof, the pull is about +1.3.
+Ten seeds cannot calibrate a difference below the reference's 0.1%.
+
+| seed | `pp_to_llj_mlm_alps2` σ (pb) | rel |
+|---|---|---|
+| 20260961 | 240.586 ± 0.425 | −0.05% |
+| 20260962 | 241.419 ± 0.401 | +0.29% |
+| 20260963 | 240.735 ± 0.360 | +0.01% |
+| 20260964 | 241.143 ± 0.396 | +0.18% |
+| 20260965 | 241.375 ± 0.378 | +0.28% |
+| **mean** | **241.052 ± 0.176** (χ²/dof 0.90) | **+0.14%**, pull +1.11 |
+
+MadEvent: 240.710 ± 0.252 pb. This is the `alpsfact` convention pin. The
+dump already shows the numerator read at `2·kt` on every reweighted vertex.
+
+All three llj rows sit high by 0.11–0.19% (the pure cut +0.11%, M1). The
+shift is common to them and does not follow the reweighting. A shared
+offset of that size lies inside every reference's error and is not resolved
+here.
+
+**Negative control** (asserted by `validate_mlm_dumps`, more than 1%
+required). Over MadEvent's unweighted events, σ without the `αs` ratios is
+σ·⟨1/A⟩, where `A` is an event's product of `αs` ratios. This crate's ratios
+and MadEvent's give the same ⟨1/A⟩ to six digits:
+
+| row | ⟨1/A⟩ | effect of dropping the `αs` factor |
+|---|---|---|
+| `pp_to_llj_mlm` | 0.8547 | −14.5% (−39 pb, about 140 of the reference's errors) |
+| `pp_to_llj_mlm_alps2` | 0.9522 | −4.8% |
+| `pp_to_ll_0j2j_mlm` | 0.9337 | −6.6% |
+| `pp_to_ttx_0j1j_mlm` | 0.9046 | −9.5% |
+
+**What the dumps contradict or settle in this note.**
+- The "known deviation class" of the M2 implementation record (stale
+  `ipdgcl`) is empty on these rows. M0's census found no IPROC mixing jet
+  and non-jet flavours, and every factor agrees here.
+- §1.3 and the implementation record agree with the source on every event.
+  One point is now measured: the chain's action at `n > jlast` (`NONE` /
+  `PastLast`) is never reached.
+- The M2 implementation record's byte-identity caution extends across
+  sessions. A second worktree building into the same `CARGO_TARGET_DIR` (a
+  concurrent session's) overwrote this worktree's test binary. The first
+  dump-gate run here silently executed a build without the `rewgt` fields.
+  This pass therefore built in a private target (`debug = 0`, 0.7 GB).
+
+**Left.** The permuted-`P1` decision (reproduce or refuse) is still open. It
+now has its size on `@2`: +0.2% from the kept events, plus an unmeasured
+share from points only one side keeps. The llj σ rows flip from the published
+bundle at close-out.
+
 ### M3: mixed multiplicity (feature-dev, or performance-dev for the budget; after M2)
 
 - Lift `MixedMultiplicity`, subject to §5 (a).

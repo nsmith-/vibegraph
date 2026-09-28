@@ -12,8 +12,8 @@ counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
 gates, every new cell agreeing. Next: MLM (note 41: M0's references and
 dumps and the M1/M2/M3 implementations landed; M1's per-event scale gates
-pass; M2's rewgt gates and the `@2` excess are next), then NLO, and the
-performance backlog.
+pass; M2's per-event `rewgt` gates pass and its llj σ rows are measured;
+the `@2` excess is next), then NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
 2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -520,9 +520,14 @@ above); the entries here are the eventual features.
   clusters the unpermuted point, and 2 / 68 of those events carry different
   scales from ours — reproduce or refuse, per note 41 §1.5's policy. **M2 implementation landed** (note 41 §4 M2
   record): `rewgt` with every factor listed, live per group, beam ordering
-  and flavour combination; `ickkw = 0` byte-identical; `pp_to_llj_mlm`'s
-  σ informational (268.5 ± 0.4 pb, one seed) until M0's dumps and seeded
-  references gate it.
+  and flavour combination; `ickkw = 0` byte-identical. **M2 dump gates
+  landed** (note 41 §4 M2 record): every `rewgt` factor of the drawn flavour
+  combination agrees at 1e-12 on every non-permuted event of the four matched
+  rows (worst 3e-15), `rewgt ≡ 1` on the pure-cut row; seeded σ, info:
+  `pp_to_llj_mlm` 268.56 ± 0.14 pb against 268.06 ± 0.28 (+0.19%, ten seeds,
+  χ²/dof 2.96), `pp_to_llj_mlm_alps2` 241.05 ± 0.18 against 240.71 ± 0.25
+  (+0.14%); dropping the αs factor moves σ by −14.5%. The mixed row's 68
+  permuted `@2` events move `@2` by about +0.2%, not the +1.5% excess.
   **M0 landed** (note 41 §4 M0 record): the five MLM rows
   registered (planned, unbundled), ten MadEvent seeds each in
   `mlm_sigma_reference.json`, samples-grade runs under `output/<row>`, and the
