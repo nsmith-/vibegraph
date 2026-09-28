@@ -796,3 +796,164 @@ fn dynamical_card() -> String {
     );
     out
 }
+
+/// A card of two final-state multiplicities, `p p > e+ e- @0` and
+/// `p p > e+ e- j @1`, integrated and replayed end to end on the banked card
+/// (fixed scales, `ickkw = 0`).
+///
+/// What it checks is the composition, not either multiplicity's physics, which
+/// the single-multiplicity gates cover:
+///
+/// * the run warns that an unmatched sum double counts, as decided for
+///   `ickkw = 0`;
+/// * the artifact is a version-10 file whose channels are keyed by multiplicity,
+///   two-jet-free channels over `2 + 2` coordinates and one-jet ones over `2 + 5`,
+///   each multiplicity's weights normalised over its own channels;
+/// * `<init>` declares both process numbers, every event names one of them as
+///   `IDPRUP` and has that process's leg count, and the sample splits between
+///   them as the integration's per-multiplicity cross sections do;
+/// * the same artifact labelled as a version-9 file is refused by its version.
+#[test]
+fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
+    if !banked_present() {
+        vibegraph::validation::require(
+            "a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let proc_card = dir.join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate p p > e+ e- @0\nadd process p p > e+ e- j @1\n",
+    )
+    .unwrap();
+    let run_card = run_dir().join("Cards/run_card.dat");
+    let out = dir.join("out");
+    let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--fixed-budget", "--neval", "40000", "--niter", "5"])
+        .args(["--seed", SEED])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&integrate.stderr);
+    assert!(integrate.status.success(), "integrate failed:\n{stderr}");
+    assert!(
+        stderr.contains("ickkw = 0") && stderr.contains("double counts"),
+        "an unmatched sum over multiplicities is not warned about:\n{stderr}"
+    );
+
+    let artifact_path = out.join("grid.bin.zst");
+    let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
+    assert_eq!(artifact.format_version, 10);
+    let mut sigma = [0.0f64; 2];
+    let mut alpha = [0.0f64; 2];
+    let mut previous = 0;
+    for c in &artifact.channels {
+        let ChannelKey::MultiplicityChannel { final_state, .. } = c.key else {
+            panic!(
+                "a channel of a sum is keyed by multiplicity, not {:?}",
+                c.key
+            );
+        };
+        assert!(final_state >= previous, "the multiplicities come in order");
+        previous = final_state;
+        let k = final_state - 2;
+        assert_eq!(c.grid.ndim(), [2 + 2, 2 + 5][k]);
+        sigma[k] += c.sigma_pb;
+        alpha[k] += c.alpha;
+    }
+    assert!(
+        (alpha[0] - 1.0).abs() < 1e-9 && (alpha[1] - 1.0).abs() < 1e-9,
+        "each multiplicity's weights sum to one: {alpha:?}"
+    );
+    assert!(((sigma[0] + sigma[1]) / artifact.sigma_pb - 1.0).abs() < 1e-9);
+
+    let nevents = 4_000;
+    let lhe = dir.join("events.lhe");
+    let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&artifact_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--seed", SEED, "--nevents", &nevents.to_string()])
+        .arg("-o")
+        .arg(&lhe)
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        generate.status.success(),
+        "generate failed:\n{}",
+        String::from_utf8_lossy(&generate.stderr)
+    );
+    let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our file parses");
+    let ids: Vec<i32> = file.init.processes.iter().map(|p| p.id).collect();
+    assert_eq!(ids, [0, 1]);
+    // The declared total is the sample's own cross section, which scatters about
+    // the integration's by the events above their channel's maximum.
+    let declared: f64 = file.init.processes.iter().map(|p| p.xsec_pb).sum();
+    eprintln!(
+        "<init> declares {declared} pb against the integration's {} pb",
+        artifact.sigma_pb
+    );
+    assert!((declared / artifact.sigma_pb - 1.0).abs() < SIGMA_MAX_REL * 2.0);
+    assert_eq!(file.events.len(), nevents);
+    let mut count = [0usize; 2];
+    for event in &file.events {
+        let k = usize::try_from(event.process_id).expect("a declared process");
+        assert!(k < 2, "IDPRUP {} is not declared", event.process_id);
+        assert_eq!(event.particles.len(), [4, 5][k], "IDPRUP {k}'s leg count");
+        count[k] += 1;
+    }
+    let f = count[0] as f64 / nevents as f64;
+    let expected = sigma[0] / (sigma[0] + sigma[1]);
+    let sd = (expected * (1.0 - expected) / nevents as f64).sqrt();
+    eprintln!("@0 carries {f:.4} of the sample and {expected:.4} of σ (sd {sd:.4})");
+    assert!(
+        (f - expected).abs() < 5.0 * sd,
+        "@0's share {f} against the integration's {expected} ± {sd}"
+    );
+
+    let mut stale = artifact.clone();
+    stale.format_version = 9;
+    let stale_path = dir.join("stale.bin.zst");
+    stale
+        .write_to_path(&stale_path, true)
+        .expect("write the stale copy");
+    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&stale_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--nevents", "10"])
+        .arg("-o")
+        .arg(dir.join("stale.lhe"))
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a version-9 artifact of a sum was replayed"
+    );
+    assert!(
+        stderr.contains("format version 10") && stderr.contains("written at version 9"),
+        "the refusal does not say why:\n{stderr}"
+    );
+}

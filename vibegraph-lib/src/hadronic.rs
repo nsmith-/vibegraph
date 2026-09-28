@@ -1761,8 +1761,10 @@ impl Sampler {
 /// whole budget on a single grid.
 #[derive(Debug, Clone)]
 pub struct ChannelIntegration {
-    /// The channel's selection weight `αⱼ` — both the weight in its term's
-    /// integrand and the share of the sample budget it was allocated.
+    /// The channel's selection weight `αⱼ`, the weight in its term's integrand.
+    /// On a single mixture it is also the share of the sample budget the channel
+    /// was allocated; a sum over final-state multiplicities scales that share by
+    /// its part's ([`MultiplicitySum`](crate::multiplicity::MultiplicitySum)).
     pub alpha: f64,
     /// Evaluations per iteration this channel actually received.
     pub neval: usize,
@@ -3041,7 +3043,7 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
         FixedBeamIntegrand::channel_count(self)
     }
 
-    fn channel_grid_ndim(&self) -> usize {
+    fn channel_grid_ndim(&self, _channel: usize) -> usize {
         FixedBeamIntegrand::channel_grid_ndim(self)
     }
 

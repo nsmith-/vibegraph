@@ -718,6 +718,25 @@ fn report_alpha_spread(variance_shares: &[f64], alphas: &[f64]) {
     );
 }
 
+/// What the map rule reads off the channels [`ProtonIntegrand`] builds for
+/// `groups` at collider energy `sqrt_s_had`: every group's channel diagrams, under
+/// the first group's cuts, which every group shares.
+pub fn process_shape(
+    groups: &FlavorGroups,
+    model: &EvaluatedModel,
+    sqrt_s_had: f64,
+) -> ProcessShape {
+    ProcessShape::of(
+        groups
+            .groups()
+            .iter()
+            .flat_map(|g| channel_diagrams(g.diagrams(), model)),
+        model,
+        sqrt_s_had,
+        groups.groups()[0].cuts(),
+    )
+}
+
 /// Partition a hadronic enumeration into flavour groups.
 ///
 /// `sets` are the `DiagramSet`s of one proc card (empty ones ignored), `card` the
@@ -1268,6 +1287,9 @@ pub struct ProtonIntegrand<'a> {
     /// Per-group draws whose `AMP2` carried no probability at all, where the draw
     /// kept the group's fallback channel instead.
     scale_draw_fallbacks: AtomicU64,
+    /// The mean of the mixture estimator `f/g` over the last α-survey — that
+    /// survey's estimate of the cross section — and zero before any survey.
+    survey_mean: f64,
     /// Per flavour group, the channel forests MadEvent's enhancement weight is a
     /// product over, where the run card makes that weight something other than the
     /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
@@ -1444,15 +1466,7 @@ impl<'a> ProtonIntegrand<'a> {
             }
         }
 
-        let shape = ProcessShape::of(
-            groups
-                .groups()
-                .iter()
-                .flat_map(|g| channel_diagrams(g.diagrams(), model)),
-            model,
-            sqrt_s_had,
-            cuts,
-        );
+        let shape = process_shape(groups, model, sqrt_s_had);
         let maps = map_options.resolve(&shape);
         tracing::info!(
             "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
@@ -1510,6 +1524,7 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_len: 0,
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
+            survey_mean: 0.0,
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
             alpha_s_dependent: false,
@@ -1841,6 +1856,11 @@ impl<'a> ProtonIntegrand<'a> {
             self.scale_draw_ndim()
         );
         u.split_at(grid_ndim)
+    }
+
+    /// The damping exponent every channel's grid is built with.
+    pub fn vegas_alpha(&self) -> f64 {
+        self.vegas_alpha
     }
 
     /// The flavour groups this integrand sums.
@@ -2704,7 +2724,8 @@ impl<'a> ProtonIntegrand<'a> {
         let mut trajectory = vec![self.channel_alphas()];
         let mut variance_shares = vec![0.0; self.channel_count()];
         for it in 0..n_iter {
-            let w = self.survey_variance(seed, ADAPT_STREAM + it as u64, n_survey);
+            let (w, mean) = self.survey_variance(seed, ADAPT_STREAM + it as u64, n_survey);
+            self.survey_mean = mean;
             variance_shares = w.clone();
             let Some(raw) = kleiss_pittau_step(self.combiner.alphas(), &w, damping) else {
                 tracing::debug!("survey iteration {} carried no variance; stopping", it + 1);
@@ -2739,12 +2760,16 @@ impl<'a> ProtonIntegrand<'a> {
     /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
     /// hundreds of megabytes, so the partials are summed per chunk instead. That
     /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.
-    fn survey_variance(&self, seed: u64, stream: u64, n_survey: usize) -> Vec<f64> {
+    ///
+    /// The mean of `f/g` over the same points comes back beside the shares, from
+    /// a slot of its own in each chunk's partial, so it leaves the shares' sums
+    /// untouched.
+    fn survey_variance(&self, seed: u64, stream: u64, n_survey: usize) -> (Vec<f64>, f64) {
         let n = self.channel_count();
         let ndim = self.channel_grid_ndim() + 1;
         let scale_ndim = self.scale_draw_ndim();
         let nchunks = n_survey.div_ceil(SURVEY_CHUNK);
-        let partials: Vec<Vec<f64>> = (0..nchunks)
+        let partials: Vec<(Vec<f64>, f64)> = (0..nchunks)
             .into_par_iter()
             .map(|chunk| {
                 let first = chunk * SURVEY_CHUNK;
@@ -2760,6 +2785,7 @@ impl<'a> ProtonIntegrand<'a> {
                 );
                 let sc = self.scratch();
                 let mut w = vec![0.0; n];
+                let mut est_sum = 0.0;
                 let mut scale_u = vec![0.0; scale_ndim];
                 let mut densities = Vec::with_capacity(n);
                 for _ in 0..points {
@@ -2794,25 +2820,35 @@ impl<'a> ProtonIntegrand<'a> {
                     if est == 0.0 {
                         continue;
                     }
+                    est_sum += est;
                     let est2 = est * est;
                     for (wj, gj) in w.iter_mut().zip(&densities) {
                         *wj += est2 * gj / g;
                     }
                 }
-                w
+                (w, est_sum)
             })
             .collect();
         let mut w = vec![0.0; n];
-        for partial in &partials {
+        let mut est_sum = 0.0;
+        for (partial, partial_sum) in &partials {
             for (wj, pj) in w.iter_mut().zip(partial) {
                 *wj += pj;
             }
+            est_sum += partial_sum;
         }
         let inv = 1.0 / n_survey as f64;
         for wj in &mut w {
             *wj *= inv;
         }
-        w
+        (w, est_sum * inv)
+    }
+
+    /// The mean of the mixture estimator `f/g` over the last α-survey
+    /// ([`adapt_alphas`](Self::adapt_alphas)): that survey's estimate of the
+    /// cross section in natural units, and zero before any survey.
+    pub fn survey_mean(&self) -> f64 {
+        self.survey_mean
     }
 
     /// Run one VEGAS adaptation per channel, returning each channel's trained grid and
@@ -2881,7 +2917,7 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
         ProtonIntegrand::channel_count(self)
     }
 
-    fn channel_grid_ndim(&self) -> usize {
+    fn channel_grid_ndim(&self, _channel: usize) -> usize {
         ProtonIntegrand::channel_grid_ndim(self)
     }
 
@@ -2926,6 +2962,37 @@ mod tests {
             MU_F,
             MapOptions::fixed(MapChoices::LEGACY),
         )
+    }
+
+    /// The survey's mean is the mean of the undivided mixture estimator
+    /// ([`ProtonIntegrand::value`]) over the survey's own points, drawn here in
+    /// sequence off the same stream under the weights the survey starts from.
+    /// Only the summation order differs, which the survey splits into chunks.
+    #[test]
+    fn the_survey_mean_is_the_mixture_estimator_s_mean_over_its_points() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let mut integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let (seed, n) = (0x5EED_3, 3_000);
+        let ndim = integ.vegas_ndim();
+        let mut stream = SubStream::new(seed, ADAPT_STREAM, 0);
+        let mean = (0..n)
+            .map(|_| integ.value(&stream.uniforms::<f64>(ndim)))
+            .sum::<f64>()
+            / n as f64;
+        assert_eq!(integ.survey_mean(), 0.0);
+        integ.adapt_alphas(seed, n, 1, 0.5);
+        let rel = integ.survey_mean() / mean - 1.0;
+        assert!(
+            mean > 0.0 && rel.abs() < 1e-12,
+            "{} against {mean}",
+            integ.survey_mean()
+        );
     }
 
     /// Both `τ` maps carry the Jacobian their draw implies: the flat average of

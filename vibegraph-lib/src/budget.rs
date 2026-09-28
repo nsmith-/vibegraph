@@ -615,15 +615,16 @@ where
     I: ChannelIntegrand + Sync,
 {
     let _span = info_span!("vegas").entered();
-    let ndim = integrand.channel_grid_ndim();
+    let ndims: Vec<usize> = (0..alphas.len())
+        .map(|j| integrand.channel_grid_ndim(j))
+        .collect();
     let scale_ndim = integrand.scale_draw_ndim();
-    let point_ndim = ndim + scale_ndim;
     let neval = budget.neval();
     let single = alphas.len() == 1;
 
-    let mut grids: Vec<VegasGrid> = alphas
+    let mut grids: Vec<VegasGrid> = ndims
         .iter()
-        .map(|_| VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha).with_combination(combination))
+        .map(|&ndim| VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha).with_combination(combination))
         .collect();
     let mut channels: Vec<ChannelHistory> = alphas
         .iter()
@@ -670,8 +671,16 @@ where
     };
     let alpha_total: usize = by_alpha.iter().sum();
 
+    let lowest = ndims.iter().copied().min().unwrap_or(0);
+    let widest = ndims.iter().copied().max().unwrap_or(0);
+    let coordinates = if lowest == widest {
+        format!("{widest}")
+    } else {
+        format!("{lowest} to {widest}")
+    };
     info!(
-        "{} channels over {ndim} coordinates, {alpha_total} points per iteration, allocated {}",
+        "{} channels over {coordinates} coordinates, {alpha_total} points per iteration, \
+         allocated {}",
         alphas.len(),
         match allocation {
             BlockAllocation::ByAlpha => "by α",
@@ -808,12 +817,12 @@ where
                         SCALE_DRAW_STREAM_BASE + j as u64,
                         first * scale_ndim as u64,
                     ),
-                    vec![0.0; point_ndim],
+                    vec![0.0; ndims[j] + scale_ndim],
                 )
             },
             |j, (scale_draw, point), u| {
-                point[..ndim].copy_from_slice(u);
-                scale_draw.fill_uniforms(&mut point[ndim..]);
+                point[..ndims[j]].copy_from_slice(u);
+                scale_draw.fill_uniforms(&mut point[ndims[j]..]);
                 integrand.value_in_channel(j, point)
             },
         );
@@ -1231,7 +1240,7 @@ mod tests {
         fn channel_count(&self) -> usize {
             self.alphas.len()
         }
-        fn channel_grid_ndim(&self) -> usize {
+        fn channel_grid_ndim(&self, _channel: usize) -> usize {
             2
         }
         fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
@@ -1266,7 +1275,7 @@ mod tests {
         fn channel_count(&self) -> usize {
             self.alphas.len()
         }
-        fn channel_grid_ndim(&self) -> usize {
+        fn channel_grid_ndim(&self, _channel: usize) -> usize {
             2
         }
         fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
@@ -1938,8 +1947,8 @@ mod tests {
         fn channel_count(&self) -> usize {
             self.inner.channel_count()
         }
-        fn channel_grid_ndim(&self) -> usize {
-            self.inner.channel_grid_ndim()
+        fn channel_grid_ndim(&self, channel: usize) -> usize {
+            self.inner.channel_grid_ndim(channel)
         }
         fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
             if self.seen.fetch_add(1, Ordering::Relaxed) + 1 >= self.after {
@@ -1947,6 +1956,64 @@ mod tests {
             }
             self.inner.value_in_channel(channel, u)
         }
+    }
+
+    /// Two phase spaces of different dimension in one integration, as a sum over
+    /// final-state multiplicities presents them: channel 0 is `2u₀` over one
+    /// coordinate and channel 1 `8u₀u₁u₂/3` over three, so the terms integrate to
+    /// `1` and `1/3`.
+    struct TwoDimensions;
+
+    impl ChannelIntegrand for TwoDimensions {
+        fn channel_count(&self) -> usize {
+            2
+        }
+        fn channel_grid_ndim(&self, channel: usize) -> usize {
+            [1, 3][channel]
+        }
+        fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+            assert_eq!(
+                u.len(),
+                [1, 3][channel],
+                "a point is its own channel's length"
+            );
+            match channel {
+                0 => 2.0 * u[0],
+                _ => 8.0 * u[0] * u[1] * u[2] / 3.0,
+            }
+        }
+    }
+
+    /// Each channel's grid is built over its own dimension, is handed points of
+    /// that length, and the terms sum to the whole integral.
+    #[test]
+    fn channels_of_different_dimensions_integrate_to_their_sum() {
+        let (per_channel, total, _) = integrate_channels(
+            &TwoDimensions,
+            &[0.5, 0.5],
+            1.5,
+            IterationCombination::default(),
+            Budget::Fixed {
+                neval: 20_000,
+                niter: 6,
+            },
+            BlockAllocation::ByAlpha,
+            3,
+            &StopSignal::default(),
+        );
+        assert_eq!(per_channel[0].grid.ndim(), 1);
+        assert_eq!(per_channel[1].grid.ndim(), 3);
+        for (term, exact) in per_channel.iter().zip([1.0, 1.0 / 3.0]) {
+            let pull = (term.result.integral - exact) / term.result.std_dev;
+            assert!(
+                pull.abs() < 5.0,
+                "{} ± {} against {exact}",
+                term.result.integral,
+                term.result.std_dev
+            );
+        }
+        let pull = (total.integral - 4.0 / 3.0) / total.std_dev;
+        assert!(pull.abs() < 5.0, "{} ± {}", total.integral, total.std_dev);
     }
 
     /// A stop raised mid-run ends it at the next iteration boundary, with whole
