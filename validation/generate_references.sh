@@ -20,6 +20,12 @@
 #             bundle, cached the same way: an existing directory is never
 #             regenerated and a finished seed is read back
 #             (madevent_seeds.sh); the committed JSON is rewritten from them.
+#   mlm       the MLM-matched references (gen_mlm_references.sh): per-seed
+#             MadEvent runs of the five ickkw = 1 / xqcut rows, the samples-grade
+#             run of each under output/<row> (so the bundle carries it), the
+#             instrumented replay of that run (per-event dumps under
+#             output/ktdump/dumps, pinned in mlm_dump_manifest.json), and the
+#             censuses (mlm_census.json). Cached like the seeds stage.
 #   refs      every committed reference, recomputed from the work area. These
 #             are cheap and pure functions of it, so they always rerun: that is
 #             what makes a reference that changed show up as a diff. The
@@ -91,6 +97,15 @@ stage_seeds() {
 
   vg_say ">>> grammar_sigma_reference.json — > A, \$\$ A and polarized cross sections"
   bash "$MG/gen_grammar_sigma.sh"
+}
+
+# ── mlm ──────────────────────────────────────────────────────────────────────
+
+stage_mlm() {
+  stage_banner "mlm (cached: finished seeds and replays are reused)"
+  unset RESULT_JSON
+  vg_say ">>> mlm_sigma_reference.json, mlm_dump_manifest.json, mlm_census.json"
+  bash "$MG/gen_mlm_references.sh"
 }
 
 # ── refs ─────────────────────────────────────────────────────────────────────
@@ -187,7 +202,7 @@ stage_bundle() {
 
 STAGES=("$@")
 if [ ${#STAGES[@]} -eq 0 ]; then
-  STAGES=(deps madgraph seeds refs bundle)
+  STAGES=(deps madgraph seeds mlm refs bundle)
 fi
 
 for stage in "${STAGES[@]}"; do
@@ -195,9 +210,10 @@ for stage in "${STAGES[@]}"; do
     deps) stage_deps ;;
     madgraph) stage_madgraph ;;
     seeds) stage_seeds ;;
+    mlm) stage_mlm ;;
     refs) stage_refs ;;
     bundle) stage_bundle ;;
-    *) vg_die "unknown stage '$stage' (deps, madgraph, seeds, refs, bundle)" ;;
+    *) vg_die "unknown stage '$stage' (deps, madgraph, seeds, mlm, refs, bundle)" ;;
   esac
 done
 

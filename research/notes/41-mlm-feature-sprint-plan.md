@@ -326,6 +326,195 @@ Order: M0 → M1 → M2 → M3 → M4 → M5. M6 can run after M3.
   `generate-references` stage. The runs are banked as `refdata-9` at close
   (§4 Z).
 
+#### M0 Landed (2026-09-28)
+
+**What ran.** `validation/madgraph/gen_mlm_references.sh` (pixi task
+`generate-mlm-references`, the `mlm` stage of `generate-references`) makes
+every run of the five rows on the pinned 3.7.1 tree, ten seeds per row
+(20260928–20260937), each the run card's full 10000 unweighted events, two
+cores. The first seed is the samples-grade run under
+`output/<row>/Events/run_01` (the bundle picks it up), always the first run of
+a freshly generated directory so the replay can reproduce it; seeds 2–10 run
+in `work/mlm/<row>`. Proc scripts are `scripts/<row>.mg5` (carrying
+`# built-by:`, which `build.sh` now honours by skipping them), run cards are
+`<row>_run_card.dat`, checked against each script's launch block before any
+run; every banner is checked for `vector_size = 1`.
+
+Card choices beyond the brief:
+- `systematics_program = none` with `use_syst = T` kept (except `_alps2`):
+  events still carry `<mgrwt>`, which the extractor replays entry by entry,
+  and the post-run reweighting pass (no effect on σ or on the parton-level
+  events) is skipped.
+- `pp_to_ttx_0j1j_mlm` uses **xqcut = 30** and no `mmll`: 30 is MadGraph's own
+  default for a mixed-multiplicity jet card (`banner.py:4958`) and the
+  conventional top-pair value, keeps the one-jet sample from dominating, and
+  pins the `ptj = mmjj = xqcut` rewrite at a second value.
+- The two mixed cards spell `pdlabel` / `fixed_fac_scale` as MadGraph's own
+  mixed-multiplicity template does; the llj cards spell `pdlabel1/2` and
+  `fixed_fac_scale1/2` as theirs does.
+
+**Per-seed σ** (`mlm_sigma_reference.json`; inverse-variance mean ±
+max(quoted, spread/√n), χ²/dof of the seeds about it; wall time per
+`generate_events` call):
+
+| row | σ (pb) | quoted | spread/√10 | χ²/dof | wall (s) |
+|---|---|---|---|---|---|
+| `pp_to_llj_mlm` | 268.06 | 0.281 | 0.220 | 0.68 | 28–40 |
+| `pp_to_llj_xqcut_only` | 212.55 | 0.229 | 0.150 | 0.41 | 55–153 |
+| `pp_to_llj_mlm_alps2` | 240.71 | 0.252 | 0.145 | 0.32 | 25–35 |
+| `pp_to_ll_0j2j_mlm` | 1064.33 | 0.792 | 0.622 | 0.62 | 101–125 |
+| — `@0` | 664.81 | 0.519 | 0.317 | 0.37 | |
+| — `@1` | 269.04 | 0.529 | 0.333 | 0.39 | |
+| — `@2` | 130.49 | 0.260 | 0.199 | 0.62 | |
+| `pp_to_ttx_0j1j_mlm` | 1088.54 | 0.805 | 0.701 | 0.70 | 19–33 |
+| — `@0` | 512.90 | 0.169 | 0.181 | 1.03 | |
+| — `@1` | 575.72 | 0.784 | 0.725 | 0.77 | |
+
+Readings:
+- Every row's seeds scatter *less* than they quote (χ²/dof 0.3–0.8; only
+  the top-pair `@0` reads 1.03). Seeds
+  2–10 of a row share one directory and each inherits its predecessors' grids,
+  which may correlate them; the gate rule's max(quoted, spread/√n) takes the
+  quote on every row, so the reference error is the conservative one. A gate
+  tighter than 0.1% on these would need independent directories per seed.
+- rewgt raises the llj cross section by 26.1% (268.06 against the pure-cut
+  212.55), and alpsfact = 2 takes back 27.6 pb of that 55.5 (240.71): the
+  alpha_s factor is most of the reweighting and moves by 10% of σ when its
+  argument doubles.
+- `@1` of the mixed card (269.04 ± 0.53) equals the single-multiplicity
+  `pp_to_llj_mlm` (268.06 ± 0.28) at 1.6σ on the same cuts: MadEvent reweights
+  every multiplicity alike at `ickkw = 1` (§1.3, `hmult` unread), measured.
+- The `<init>` block of the mixed card has one line per `@N` with **LPRUP =
+  N** (0, 1, 2), and each event's IDPRUP is its `@N`. The `P<n>` directory
+  prefix equals `@N` on these cards too, so they cannot tell the two readings
+  of §1.4 apart; a card with `@N` values not in order (`@5`, `@3`) would.
+- Wall times: the llj rows run in half a minute to two and a half (the spread
+  is load from the sibling session's builds), the mixed Drell-Yan row in under
+  two minutes, the top-pair row in half a minute. The instrumented replay of `pp_to_llj_mlm` took 9 min for
+  madevent plus 2 min of extraction; `pp_to_ll_0j2j_mlm` 56 min plus 6 (167641
+  record sets flushed for 10000 kept events), `pp_to_ttx_0j1j_mlm` 7 min plus 1.
+
+**The extended replay** (`gen_kt_cluster_dumps.sh` / `.py`,
+`wrappers/ktdump*`). Each written event's record set now spans both
+`setclscales` calls of its point: the first call opens the set (its `SCL`
+record has `keepq2bck = F`), rewgt's second call appends (`SCL` with
+`keepq2bck = T`), and rewgt's own records follow. New record types —
+`Q2OVR`, `Q2BCK`, `PTCL`, `RWLEG`, `RWBEG`, `RWVX`, `RWPDF`, `RWKILL`, `RWEND`,
+`CFG`, `CNT`, and outside the record sets `CONST2` and `MEMOX` — are documented
+field by field in the module docstring of `gen_kt_cluster_dumps.py`, which is
+the schema M1/M2 write against. rewgt runs after the flavour-combination draw
+(`IPSEL ∝ |PD(IPSEL)|`, `auto_dsig_v4.inc:141-151`) and reads that
+combination's codes, so its factor is per flavour combination: `RWBEG` carries
+the drawn `IPSEL` with `IPROC` and `igraphs(1)`, the first `SCL` record
+`IMIRROR` and the channel, and `RWLEG` each leg's `idup` for that combination
+beside the `ipdgcl` rewgt found (before) and used (after). The dumps are `output/ktdump/dumps/<row>.jsonl.gz`,
+pinned in `mlm_dump_manifest.json` (a separate manifest, so
+`validate_kt_cluster` does not iterate the matched runs). Precondition kept:
+every replay's event file is byte-identical to the banked run's (checked for
+all rows run; the banner differs only in the output path and, on
+`_xqcut_only`, in the run card's whitespace). The extractor's matched gate,
+per event: SCALUP = sqrt(max q2bck) of the second call's exit; rewgt leaves
+q2fact = q2bck; `<asrwt>` = the ISR/FSR vertices' sqrt(q2now) in order;
+each `<pdfrwt>` = the matrix-element entry then one entry per RATIO step with
+x *before* z; `<scales pt_clust_N>` = `PTCL OUT` legs 3..n. On
+`pp_to_llj_mlm`, 10000/10000 events pass all of them (`<pdfrwt>` 4938 in
+beam order, 5062 with the beams flipped by `write_leshouche`).
+
+Two operational changes the replay needed: shards are streamed through gzip
+(`VG_KTDUMP_GZIP=1`: the Fortran writes to a named pipe a detached gzip
+drains; a matched 2 → 3 flushes ~60000 record sets per 10000 kept events,
+gigabytes raw) and dropped after extraction (`VG_KT_DROP_RAW=1`); and
+`madevent_seeds.sh` / `gen_kt_cluster_dumps.sh` link libstdc++ on Linux
+(`mes_ldflags`) — the conda activation's LDFLAGS suppresses make_opts'
+`STDLIB`, and every `pdlabel = lhapdf` run failed to link here.
+
+For M1: `CONST` and `CONST2` come in more than one variant per directory
+(deduplicated on text across every process that wrote one, including ones
+that ran with the card's defaults unread, e.g. `ickkw = 0` and fixed scales on
+`pp_to_llj_mlm`); take the variant whose `ickkw` and fixed-scale flags match
+the run card. `asrwgtflavor` is **5** on these cards (the hidden default;
+`isparton` reads max(asrwgtflavor, maxjetflavor) = 5), and `pdfwgt` is **F** on
+`_xqcut_only` (T on the ickkw = 1 rows).
+
+**Census 1 — the jet memo's restricted re-cluster fires (finding).**
+- On `pp_to_llj_mlm` the restricted re-cluster branch
+  (`RESTRICTED_RECLUSTER`) ran in 2246 of the 20000 `setclscales` calls behind
+  the written events: 1123 events (11.2%) were scaled from a clustering
+  restricted to their integration channel, in both calls. Over every point of
+  the run: 252162 first-call and 28178 second-call restricted re-clusters and
+  20 stores. `_alps2`: 2502 calls; `_xqcut_only`: 1407 of 10000 (one call per
+  point); the banked ickkw = 0 `pp_to_llj` already had 1857 of 10000
+  (`kt_cluster_dump_manifest.json`).
+- Where it fires is a property of the channel, not of the job, on every llj
+  row. The memo is per operating-system process and channel, set by the job's
+  first point, so it *could* depend on which job made an event; measured per
+  job directory (`njetstore_on_entry_by_channel`, keyed
+  `<subprocess dir>/<channel dir>:iconfig`), every job of `P1_gq_llq`
+  channels 1 and 2 (G1, G2a0, G2b0) stored **0** jets and every other job
+  stored 1, with no directory holding two values. Every re-clustered written
+  event comes from those two channels, and every event from them is
+  re-clustered. So on these rows the branch is deterministic per event given
+  its channel: the stored count is the jet count of the channel-restricted
+  clustering, which is 0 on those two `g q > e+ e- q` channels for whichever
+  point came first. The port starting the memo empty on every event (§1.2)
+  reproduces the first event of a job, not these; M1 needs the channel-restricted
+  jet count as the memo. Each event's first `SCL` record carries
+  `njetstore(iconfig)` on entry, and each dumped event now names its job
+  directory, so a per-event gate can be handed the state and check the rule.
+- `pp_to_ll_0j2j_mlm`: 661 of 10000 written events re-clustered (1322 of
+  20000 calls; 2071428 first-call and 157100 second-call restricted
+  re-clusters at any point, 97 stores). 270 are `P1_gq_llq` events in the two
+  channels whose memo holds 0, as on the llj rows; the other 391 are two-jet
+  events (`P2_gq_llgq` 287, `P2_qq_llqq` 74, `P2_gg_llqq` 30) in channels whose
+  memo holds 1 — or 2, for 5 of them. The `@0` channels store 0 jets, which a
+  zero-jet event always matches. Again no job directory holds two values.
+- `pp_to_ttx_0j1j_mlm`: the branch never fires (50 stores, no re-cluster);
+  every `P0` job stored 0 jets and every `P1` job 1.
+- `stop 4` never fired on any row.
+
+**Census 2 — IPROC jet-ness (null).** No IPROC of any row mixes jet and
+non-jet flavours on a final-state leg (`mlm_census.json`: 0 of 6 IPROCs on the
+llj rows, 36 on `pp_to_ll_0j2j_mlm`, 6 on `pp_to_ttx_0j1j_mlm`), and per event no final-state leg's rewgt PDG differs from
+its `idup` (`final_leg_ipdgcl_differs_from_idup`: False on every leg of every
+matched event). The stale-`ipdgcl` defect of §1.5 cannot reach these rows.
+
+**What the dump settles about §1 (and where §1 was incomplete).**
+- §1.2: the overwrite `pt2ijcl(jcentral) = q2fact` has a guard the text omits,
+  `jcentral(2) ≠ jcentral(1)`. On `pp_to_llj_mlm` both beams' jcentral is the
+  core vertex (3) on every event, so only one overwrite applies; it moved the
+  core scale on 7641 of 10000 events.
+- §1.2/§1.3, not in the text: the **second call never recomputes μR** (`scale`
+  is non-zero on entry; `MUR` branch `NOT_ENTERED` on all 10000), so rewgt's
+  asref = alpha_s(μR of the first call).
+- §1.1: in the grouped (default) mode the first call also runs in every
+  IPROC's `IMODE = 4` PDF-selection pass before the final `DSIGPROC`, and the
+  `IMODE = 5` grid-initialisation pass calls rewgt (so the second call) with no
+  first call before it. Both touch the memo; neither reaches a written event's
+  record set, which the final `DSIGPROC`'s first call opens.
+- §1.3: a rising PDF scale at `n > jlast(j)` takes no ratio *and* leaves the
+  mother's `pt2pdf` unset (action `NONE`); not reached on `pp_to_llj_mlm`
+  (actions: FIRST 20000, RATIO 8877), `pp_to_ll_0j2j_mlm` (RATIO 4089,
+  NOT_RISING 125) or `pp_to_ttx_0j1j_mlm` (RATIO 5227, NOT_RISING 16).
+  Vertex classes on `pp_to_llj_mlm`: CORE 10000, ISR 8877, NONE 11123, no FSR,
+  FAKE_ID or kill, mean rewgt 1.357 (range 1.000–2.092); the only FSR
+  vertices are `pp_to_ll_0j2j_mlm`'s 79. `mt2last` replaced the last two
+  scales in 1946 of `pp_to_ttx_0j1j_mlm`'s 20000 calls (4 on the Drell-Yan
+  mixed card).
+- §1.5 `addmothers.f:115`: `vec_igraph` is never 0 on a written event, so the
+  stale-index fallback is unreachable on these rows; `vec_igraph = igraphs(1)`
+  of the second call on every event, and differs from the integration channel
+  on 525 of 10000 (the configuration colour and mothers come from, §1.1 item 4).
+- §1.4: SCALUP = sqrt(max q2bck) verified per event (above); the `<scales>`
+  fallback for non-jet legs is the collider √s (13000.00000) as stated.
+
+**What remains.** Nothing of the M0 scope: all five rows ran (ten seeds
+each), all five samples-grade runs replayed byte-identically, and their dumps
+pass the matched gate on every event. For the close-out: `output/<row>` (five
+directories) are the refdata-9 additions; the dumps (`output/ktdump/dumps`,
+about 60 MB for the five) stay outside the bundle like the kT dumps, so a gate
+reading them is oracle-layer. A tighter σ gate than the quoted ~0.1% per row
+would need seeds in independent directories (see the χ²/dof reading above).
+
 ### M1: `xqcut` and the `ickkw = 1` scales (feature-dev; after M0)
 
 - Implement §3.5, lifting `UnsupportedMatching` for `ickkw ∈ {0, 1}`.

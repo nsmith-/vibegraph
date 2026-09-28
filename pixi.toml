@@ -221,6 +221,10 @@ generate-decay-chain-events = "bash validation/madgraph/gen_decay_chain_events.s
 generate-onshell-veto = "bash validation/madgraph/gen_onshell_veto.sh"
 # MadEvent cross sections for `> A`, `$$ A` and polarized W rows, one run per seed
 generate-grammar-sigma = "bash validation/madgraph/gen_grammar_sigma.sh"
+# MLM-matched references (ickkw = 1 / xqcut): per-seed MadEvent runs of the five
+# MLM rows, the instrumented replay of each row's samples-grade run, and the
+# jet-memo / IPROC censuses. MLM_STAGE=runs|dumps|census runs one stage.
+generate-mlm-references = { cmd = "bash validation/madgraph/gen_mlm_references.sh", depends-on = ["fetch-pdf"] }
 # MadGraph standalone per-helicity, per-flow JAMPs for every standalone table;
 # the SMEFTsim row reads the models build.sh stages
 generate-standalone-jamps = { cmd = "python validation/madgraph/gen_standalone_jamps.py all", depends-on = ["build-diagrams"] }
@@ -263,12 +267,12 @@ validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-val
 
 
 # The oracle layer's reference generation: one entry point over every generator,
-# staged deps -> madgraph -> seeds -> refs -> bundle. The MadGraph work area is the cache
+# staged deps -> madgraph -> seeds -> mlm -> refs -> bundle. The MadGraph work area is the cache
 # — an existing process directory is never rebuilt — while the extractions, which
 # are cheap and pure functions of it, always rerun so a reference that moved
 # shows up as a diff. Pass stage names to run a subset:
 #
-#   pixi run generate-references              # all five stages
+#   pixi run generate-references              # all six stages
 #   pixi run generate-references refs bundle  # re-extract and re-archive
 #
 # The per-stage scripts survive as internals; what is consolidated here is the

@@ -1179,6 +1179,104 @@ amplitudes = { tier = "covered-by", rows = ["ee_to_ee"], note = "the filter sele
 integrals = { tier = "banked", mode = "gate", note = "Against MadEvent's five seeds (grammar_sigma_reference.json, ee_no_sz), read by the seed policy, ten seeds here at 160000 x 6 (validate_sigma, the_grammar_rows_match_madevents_seeds): 157.618 +- 0.083 pb against 157.226 +- 0.195, rel +2.50e-3, pull +1.85, this side's seeds at chi2/dof 1.47. The reference's error is its spread: MadEvent's seeds sit at chi2/dof 20 about their mean, four at 157.26-157.53 and one at 156.48, and the unrestricted Bhabha control is the same at chi2/dof 93 (two of five seeds 0.8% and 1.3% low; ours 155.711 +- 0.066 against 154.927 +- 0.439, rel +5.07e-3, pull +1.77), so both pulls are this side sitting with MadEvent's majority. This side has the same low tail at low budget and outgrows it: twenty-seed means 156.71 / 157.25 / 157.55 / 157.54 pb at a quarter, one, four and sixteen times 40000 x 6 (probe_grammar_seed_sweep), which is what sets the gate budget at four. The unrestricted control reads -7.3 standard errors from the restricted reference, so a filter that removed nothing fails." }
 samples = { tier = "banked", mode = "gate", note = "Three generation seeds of 20000 events against this row's banked MadEvent run of 10000 (validate_samples): worst KS p 7.436e-2 (phi(e+)/pi), worst chi2 p 2.698e-1 (SPINUP, six helicity categories). The incoming legs are an equality against the record at its printed precision and the reported scales an equality at its seven printed digits, both gated." }
 
+# ──────────────────────────────── the MLM rows ───────────────────────────────
+#
+# MadEvent's matrix-element side of MLM matching: ickkw = 1 with xqcut > 0, the
+# xqcut cut, both setclscales calls per point, and rewgt's alpha_s and PDF-ratio
+# factors. gen_mlm_references.sh makes every run (the scripts carry `# built-by:`
+# so build.sh leaves them alone): ten seeds per row, stored per seed in
+# mlm_sigma_reference.json, the first of them the samples-grade run under
+# output/<row>/Events/run_01. That run is replayed through the instrumented build
+# (gen_kt_cluster_dumps.sh), which must reproduce its event file byte for byte;
+# the per-event dumps are pinned in mlm_dump_manifest.json and their record
+# grammar is documented in gen_kt_cluster_dumps.py. mlm_census.json holds the
+# jet-memo and IPROC jet-ness censuses. Every cell is uncovered until the gate it
+# names measures it, and the rows are not in the pinned bundle until refdata-9.
+#
+# `process` is one process line, and the library's own tests generate it, so a
+# mixed-multiplicity row names its highest multiplicity there; the full `@N`
+# content is in its script and its rationale.
+
+[[process]]
+key = "pp_to_llj_mlm"
+process = "p p > e+ e- j"
+script = "validation/madgraph/scripts/pp_to_llj_mlm.mg5"
+class = "multi-channel"
+n_final = 3
+status = "planned"
+bundled = false
+rationale = "The single-multiplicity MLM reference: ickkw = 1, xqcut = 20 on pp_to_llj_dyn's card (13 TeV, lhaid 247000, mmll = 50), so the xqcut cut, the two setclscales calls per point and rewgt's alpha_s and PDF-ratio factors can each be compared against MadEvent before mixed multiplicities exist on this side. vector_size = 1 pins the scalar path, whose SCALUP is sqrt(max q2bck)."
+artifacts = ["output/pp_to_llj_mlm", "output/pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_mlm", "mlm_dump_manifest.json#pp_to_llj_mlm", "mlm_census.json#pp_to_llj_mlm"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "the diagram content is p p > e+ e- j's, which the llj rows gate; this row's cells are about matching, and a diagrams cell here waits on nothing but a decision to add the e+ e- spelling to diagrams.json" }
+amplitudes = { tier = "uncovered", note = "the subprocess amplitudes are the llj parton rows' (uux_to_epemg, ddx_to_epemg, gu_to_epemu, gux_to_epemux); matching changes weights, not amplitudes" }
+integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds read by the seed policy. Informational and known-wrong while the scales land without rewgt, enforced once rewgt is in; per event first against the dump (target validate_mlm: the xqcut decision, both setclscales calls, SCALUP / AQCDUP, then every rewgt vertex and PDF ratio factor by factor)" }
+samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_mlm/Events/run_01 once <scales pt_clust_N> and the clustered-graph colour are written; the dump carries ptclus per leg and the configuration each event's colour came from" }
+
+[[process]]
+key = "pp_to_llj_xqcut_only"
+process = "p p > e+ e- j"
+script = "validation/madgraph/scripts/pp_to_llj_xqcut_only.mg5"
+class = "multi-channel"
+n_final = 3
+status = "planned"
+bundled = false
+rationale = "pp_to_llj_mlm's card with ickkw = 0: xqcut = 20 as a pure cut (setclscales returns after the rejection test, no second call, rewgt = 1), with setcuts.f's rewrite ptj = mmjj = xqcut and drjj = drjl = 0 still applied. Beside pp_to_llj_mlm it separates the cut from the reweighting."
+artifacts = ["output/pp_to_llj_xqcut_only", "output/pp_to_llj_xqcut_only/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_xqcut_only", "mlm_dump_manifest.json#pp_to_llj_xqcut_only", "mlm_census.json#pp_to_llj_xqcut_only"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "as pp_to_llj_mlm" }
+amplitudes = { tier = "uncovered", note = "as pp_to_llj_mlm" }
+integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds read by the seed policy, enforced once the xqcut decision agrees event by event with the dump (target validate_mlm)" }
+samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_xqcut_only/Events/run_01" }
+
+[[process]]
+key = "pp_to_llj_mlm_alps2"
+process = "p p > e+ e- j"
+script = "validation/madgraph/scripts/pp_to_llj_mlm_alps2.mg5"
+class = "multi-channel"
+n_final = 3
+status = "planned"
+bundled = false
+rationale = "pp_to_llj_mlm with alpsfact = 2 and use_syst = F: the convention pin for where alpsfact enters rewgt, alpha_s(alpsfact * kt) / alpha_s(mu_R). use_syst has to be off because MadGraph resets alpsfact to 1 under it (banner.py:4551-4555), so with it on the run would silently measure alpsfact = 1; this side must apply the same override. With use_syst off the events carry no <mgrwt>, so the dump is the row's only record of the vertex scales."
+artifacts = ["output/pp_to_llj_mlm_alps2", "output/pp_to_llj_mlm_alps2/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_mlm_alps2", "mlm_dump_manifest.json#pp_to_llj_mlm_alps2", "mlm_census.json#pp_to_llj_mlm_alps2"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "as pp_to_llj_mlm" }
+amplitudes = { tier = "uncovered", note = "as pp_to_llj_mlm" }
+integrals = { tier = "uncovered", note = "target validate_sigma against the ten MadEvent seeds, and per event against the dump's RWVX records (target validate_mlm): a test comparing only alpsfact = 1 events could not see where the factor enters" }
+samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_llj_mlm_alps2/Events/run_01" }
+
+[[process]]
+key = "pp_to_ll_0j2j_mlm"
+process = "p p > e+ e- j j"
+script = "validation/madgraph/scripts/pp_to_ll_0j2j_mlm.mg5"
+class = "multi-channel"
+n_final = 4
+status = "planned"
+bundled = false
+rationale = "The canonical MLM sample: p p > e+ e- @0, p p > e+ e- j @1 and p p > e+ e- j j @2 on pp_to_llj_mlm's card. It needs the composite multiplicity integrand, and its two-jet channels are the heaviest integration the suite would run."
+artifacts = ["output/pp_to_ll_0j2j_mlm", "output/pp_to_ll_0j2j_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_ll_0j2j_mlm", "mlm_dump_manifest.json#pp_to_ll_0j2j_mlm", "mlm_census.json#pp_to_ll_0j2j_mlm"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "mixed multiplicity is refused by check_supported until the composite integrand lands" }
+amplitudes = { tier = "uncovered", note = "the @0 / @1 subprocesses are covered by the Drell-Yan and llj rows; the two-jet subprocesses have no amplitude row" }
+integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate" }
+samples = { tier = "uncovered", note = "target validate_samples_proton: the per-@N event fractions and the event record (scales, resonances, colour) against output/pp_to_ll_0j2j_mlm/Events/run_01" }
+
+[[process]]
+key = "pp_to_ttx_0j1j_mlm"
+process = "p p > t t~ j"
+script = "validation/madgraph/scripts/pp_to_ttx_0j1j_mlm.mg5"
+class = "multi-channel"
+n_final = 3
+status = "planned"
+bundled = false
+rationale = "p p > t t~ @0 and p p > t t~ j @1, the only MLM row with a massive coloured 2 -> 2 core: mt2last replacing the last two vertices' scales, the massless-massive arms of the final-state measure and the transverse-mass central scale, under matching. xqcut = 30, MadGraph's own default for a mixed-multiplicity jet card and the conventional top-pair choice (the one-jet sample is 53% of sigma there); it also pins the ptj = mmjj = xqcut rewrite at a second value."
+artifacts = ["output/pp_to_ttx_0j1j_mlm", "output/pp_to_ttx_0j1j_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_ttx_0j1j_mlm", "mlm_dump_manifest.json#pp_to_ttx_0j1j_mlm", "mlm_census.json#pp_to_ttx_0j1j_mlm"]
+[process.categories]
+diagrams = { tier = "uncovered", note = "mixed multiplicity is refused by check_supported until the composite integrand lands" }
+amplitudes = { tier = "uncovered", note = "g g > t t~ is gated by gg_to_ttx; the one-jet subprocesses have no amplitude row" }
+integrals = { tier = "uncovered", note = "target validate_sigma: sigma per @N and in total against the ten MadEvent seeds, once mixed multiplicities integrate; per event against the dump first (target validate_mlm)" }
+samples = { tier = "uncovered", note = "target validate_samples_proton against output/pp_to_ttx_0j1j_mlm/Events/run_01" }
+
 # ─────────────────────────── standalone gates ────────────────────────────────
 #
 # Process-independent checks, run once per invocation of their layer and

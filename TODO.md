@@ -10,9 +10,9 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 §8.4), and Z2 (note 38 §8.5) put all eight new rows' event samples and diagram
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
-gates, every new cell agreeing. Next: MLM (note 41: M0 in flight, M1's and M2's
-implementations landed), then NLO, and the performance
-backlog.
+gates, every new cell agreeing. Next: MLM (note 41: M0's references and
+dumps, and M1's and M2's implementations, landed; per-event gates next), then
+NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
 2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -515,6 +515,14 @@ above); the entries here are the eventual features.
   and flavour combination; `ickkw = 0` byte-identical; `pp_to_llj_mlm`'s
   σ informational (268.5 ± 0.4 pb, one seed) until M0's dumps and seeded
   references gate it.
+  **M0 landed** (note 41 §4 M0 record): the five MLM rows
+  registered (planned, unbundled), ten MadEvent seeds each in
+  `mlm_sigma_reference.json`, samples-grade runs under `output/<row>`, and the
+  instrumented replay extended to both `setclscales` calls and every `rewgt`
+  factor (`mlm_dump_manifest.json`). Finding for M1: the jet memo's restricted
+  re-cluster fires on 11% of `pp_to_llj_mlm`'s events — every event of the two
+  `g q` channels whose memo holds 0 jets — so the per-event scale needs the
+  channel-restricted jet count as the memo, not an empty one.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user

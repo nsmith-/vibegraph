@@ -15,6 +15,72 @@ Three subcommands, driven by gen_kt_cluster_dumps.sh:
 The Fortran side stays dumb: it writes pipe-separated tagged records at 18
 significant digits, keyed to an event by the momenta the event file carries.
 All grammar knowledge lives here.
+
+Record grammar of the matched-generation (ickkw > 0) extension
+--------------------------------------------------------------
+
+Each written event's JSON object is {"index": i, "directory": "P<..>/G<..>",
+"records": [[TAG, ...], ...]} with the records in the order MadEvent produced
+them; "directory" is the subprocess and channel directory of the job that
+wrote the event (from its shard's SHARD record), which names the IPROC tables
+the event's iproc / ipsel index. Under ickkw > 0 one
+point runs setclscales twice, and both calls land in the one record set: the
+first call's records start at the SCL record whose keepq2bck field is F, the
+second call's (from rewgt) at the SCL record whose keepq2bck field is T, and
+rewgt's own records follow the second call. Fields, after the tag:
+
+  SCL     iconfig, iproc, ivec, imirror, keepq2bck, init_mode, scale on entry,
+          q2fact(1) on entry, q2fact(2) on entry, njetstore(iconfig) on entry
+  Q2OVR   BEFORE|AFTER, jcentral(1), jcentral(2), pt2ijcl(jcentral(1)),
+          pt2ijcl(jcentral(2)) (0 where jcentral is 0), q2fact(1), q2fact(2):
+          the ickkw > 0 overwrite of the central vertices by the q2fact the
+          call was entered with (reweight.f:1114-1119); only a call entered
+          with both q2fact > 0 has it, which is the second one
+  PT2     ... AFTER_Q2FACT_OVERWRITE is the stage following Q2OVR
+  Q2BCK   CENTRAL|OUT, keepq2bck, q2bck(1), q2bck(2), q2fact(1), q2fact(2):
+          CENTRAL right after the scalefact block (q2fact is then the central
+          scale, before the pdfwgt lowering), OUT on the way out
+  PTCL    SETCL|OUT, nexternal, ptclus(1..nexternal): SETCL as setclscales
+          leaves it (its own leg order), OUT as write_leshouche holds it after
+          the symmetry reordering; OUT(3..nexternal) is what <scales
+          pt_clust_N> prints, in order
+  RWLEG   i, idup(i,ipsel,iproc), ipdgcl before rewgt's assignment, ipdgcl
+          after it, isjet(idup), iqjets(i), goodjet: rewgt overwrites the line's
+          PDG only for jet flavours, so a final-state leg whose "after" differs
+          from idup reads a value left by an earlier event (the stale-ipdgcl
+          defect)
+  RWBEG   ipsel, iproc, igraphs(1), asref, alpsfact, x1, x2 (xbk(ib(j))), ib(1),
+          ib(2), q2bck(1), q2bck(2), q2fact(1), q2fact(2) (the matrix-element
+          PDF scales), all_scale(ivec), scale, jlast(1), jlast(2)
+  RWVX    n, class, imocl, idacl1, idacl2, pdg(mother), pdg(d1), pdg(d2),
+          ipart(1,mother), ipart(2,mother), isr arm, fsr arm, goodjet(mother),
+          goodjet(d1), goodjet(d2), q2now, alpsfact*sqrt(q2now),
+          alpha_s(alpsfact*sqrt(q2now)) (0 unless reweighted), asref, ratio,
+          rewgt after the vertex. class: CORE (n = nexternal-2, never
+          reweighted), ISR, FSR (reweighted), NONE (condition false), FAKE_ID
+          (qualified, mother is fake_id), KILL_Q2 (qualified at q2now <= 4)
+  RWPDF   n, beam side j, daughter slot i, ib(j), pdg of the line entering the
+          vertex, zcl(n), x after z, q2now, q2prev (pt2pdf of the daughter),
+          action, f(x, q_now), f(x, q_prev), ratio, rewgt after the step.
+          action: FIRST (no ratio), RATIO, NOT_RISING, NONE (rising scale with
+          n > jlast(j): no ratio and no pt2pdf update), PS_START (ickkw = 2),
+          KILL_PDF (denominator below 1e-10)
+  RWKILL  reason (SETCLSCALES | ALPHAS_Q2 | PDF_DENOMINATOR), n
+  RWEND   rewgt, q2fact(1), q2fact(2) (reset to q2bck), vec_igraph(ivec)
+  CFG     iconfig, igraphs(1), vec_igraph(ivec), ickkw at write time
+  CNT     running per-process counts at write time: first calls, second
+          calls, STORE_AND_RECLUSTER, RESTRICTED_RECLUSTER
+  OUT     scale, q2fact(1), q2fact(2), SCALUP, AQCDUP, AQEDUP, npart (the
+          header SCALUP / AQCDUP as written)
+
+Outside the event record sets:
+
+  CONST2  (per directory) ickkw, xqcut, alpsfact, asrwgtflavor, maxjetflavor,
+          pdfwgt, hmult, ktscheme, chcluster, auto_ptj_mjj, ptj, mmjj, drjj,
+          drjl, xptj, use_syst, scalefact -- after setcuts' xqcut rewrite
+  MEMOX   kind, iconfig, iproc, njets, njetstore, igraphs(1), keepq2bck,
+          first calls so far, second calls so far: every jet-memo branch taken
+          at any point, kept or not (the census reads these)
 """
 
 from __future__ import annotations
@@ -126,7 +192,7 @@ def cmd_reproduce(args: argparse.Namespace) -> int:
 # Records that belong to a process directory rather than to an event. They are
 # re-emitted by every job that touches that directory, so they are deduplicated
 # on their full text.
-PER_DIRECTORY = {"RUN", "CONST", "NQCD", "MAP", "PDG", "RES", "IFOR"}
+PER_DIRECTORY = {"RUN", "CONST", "CONST2", "NQCD", "MAP", "PDG", "RES", "IFOR"}
 
 
 def parse_number(tok: str):
@@ -144,11 +210,12 @@ def parse_number(tok: str):
 
 def read_raw_records(raw_dir: Path):
     """Yield (tag, fields) over every raw dump shard, in file then line order."""
-    shards = sorted(raw_dir.glob("raw.*"))
+    shards = sorted(p for p in raw_dir.glob("raw.*") if p.is_file())
     if not shards:
         raise SystemExit(f"!!! no raw dump shards under {raw_dir}")
     for shard in shards:
-        with open(shard) as f:
+        # A shard written through VG_KTDUMP_GZIP arrives as raw.<pid>.gz.
+        with open_maybe_gz(shard) as f:
             for line in f:
                 line = line.rstrip("\n")
                 if not line:
@@ -198,7 +265,22 @@ def lhe_events(path: Path):
             )
         rscale = None
         pdfrwt = {}
+        mgrwt = {"asrwt": None, "pdfrwt": {}}
+        ptclust = None
         for ln in lines[1 + npart :]:
+            m = re.match(r"<scales\s+(.*?)>\s*</scales>", ln.strip())
+            if m:
+                ptclust = [float(v) for v in re.findall(r'pt_clust_\d+="([^"]+)"', m.group(1))]
+            m = re.match(r"<asrwt>\s*(\d+)(.*)</asrwt>", ln.strip())
+            if m:
+                mgrwt["asrwt"] = [float(v) for v in m.group(2).split()][: int(m.group(1))]
+            m = re.match(r'<pdfrwt beam="(\d)">\s*(\d+)(.*)</pdfrwt>', ln.strip())
+            if m:
+                n = int(m.group(2))
+                nums = m.group(3).split()
+                mgrwt["pdfrwt"][int(m.group(1))] = [
+                    (int(nums[k]), float(nums[n + k]), float(nums[2 * n + k])) for k in range(n)
+                ]
             m = re.match(r"<rscale>\s*\S+\s+(\S+)</rscale>", ln)
             if m:
                 rscale = float(m.group(1))
@@ -216,6 +298,8 @@ def lhe_events(path: Path):
             "momenta": mom,
             "rscale": rscale,
             "pdfrwt": pdfrwt,
+            "mgrwt": mgrwt,
+            "ptclust": ptclust,
             "key": particle_key(mom),
         }
 
@@ -256,11 +340,27 @@ def cmd_extract(args: argparse.Namespace) -> int:
     n_raw_events = 0
     n_truncated = 0
     mismatched: list[tuple[int, list[str]]] = []
+    mlm_checks: dict[str, int] = defaultdict(int)
 
+    memox: dict[str, int] = defaultdict(int)
+    shard_dir: dict[str, str] = {}
+    memo_state: dict[str, set] = defaultdict(set)
+    memox_rows: list[list] = []
+    counts_by_shard: dict[str, list[int]] = {}
     tmp_path = out_path.with_suffix(".tmp")
     with open(tmp_path, "w") as tmp:
-        for _shard, tag, fields in read_raw_records(raw_dir):
+        for shard, tag, fields in read_raw_records(raw_dir):
             if tag == "SHARD":
+                # The job's directory, as <subprocess dir>/<channel dir>: channel
+                # directories (G1, G2a0, ...) repeat across subprocess dirs.
+                cwd = Path(fields[0]) if fields else Path("?/?")
+                shard_dir.setdefault(shard, f"{cwd.parent.name}/{cwd.name}")
+                continue
+            if tag == "MEMOX":
+                row = [parse_number(x) for x in fields]
+                memox[f"{row[0]}|keepq2bck={row[6]}"] += 1
+                if len(memox_rows) < 200:
+                    memox_rows.append([shard] + row)
                 continue
             if tag in PER_DIRECTORY:
                 text = tag + "|" + "|".join(fields)
@@ -278,6 +378,10 @@ def cmd_extract(args: argparse.Namespace) -> int:
                 continue
             n_raw_events += 1
             records, current = current, None
+            for r in records:
+                if r[0] == "CNT":
+                    old = counts_by_shard.get(shard, [0, 0, 0, 0])
+                    counts_by_shard[shard] = [max(a, b) for a, b in zip(old, r[1:5])]
             # The END record carries the writer's running count of fields it
             # could not fit, which is per-process and only ever grows.
             if fields:
@@ -304,14 +408,27 @@ def cmd_extract(args: argparse.Namespace) -> int:
                       file=sys.stderr)
                 return 1
             digests[idx] = digest
-            problems = check_scales(records, expect[idx])
+            # The jet memo is per operating-system process and per channel,
+            # fixed by that process's first point in the channel. The value a
+            # written event's first call found tells which state it was judged
+            # against; more than one value for one directory and channel means
+            # the reclustering decision depends on which job made the event.
+            for r in records:
+                if r[0] == "SCL" and r[5] is False:
+                    memo_state[f"{shard_dir.get(shard, '?')}:{r[1]}"].add(r[10])
+                    break
+            if any(r[0] == "RWBEG" for r in records):
+                problems = check_matched(records, expect[idx], mlm_checks)
+            else:
+                problems = check_scales(records, expect[idx])
             if problems:
                 mismatched.append((idx, problems))
             tally(records, coverage)
             out = [r for r in records if r[0] == "OUT"][0]
             alphas_pairs.append((out[1], out[5]))
             offsets[idx] = tmp.tell()
-            tmp.write(json.dumps({"index": idx, "records": records}, sort_keys=True) + "\n")
+            tmp.write(json.dumps({"index": idx, "directory": shard_dir.get(shard, "?"),
+                                  "records": records}, sort_keys=True) + "\n")
 
     # The event header's alpha_s is the only handle the runs taken with
     # use_syst = False give on the renormalisation scale, and on its own it says
@@ -340,6 +457,20 @@ def cmd_extract(args: argparse.Namespace) -> int:
             "coverage": {k: dict(sorted(v.items())) for k, v in sorted(coverage.items())},
             "alphas_ordering": alphas_ordering,
             "directory": {k: v for k, v in sorted(directory_records.items())},
+            "census": {
+                "memo_branches_all_points": dict(sorted(memox.items())),
+                "memo_branch_examples": memox_rows[:20],
+                "setclscales_calls_through_last_written_event": {
+                    "first": sum(c[0] for c in counts_by_shard.values()),
+                    "second": sum(c[1] for c in counts_by_shard.values()),
+                    "store_and_recluster": sum(c[2] for c in counts_by_shard.values()),
+                    "restricted_recluster": sum(c[3] for c in counts_by_shard.values()),
+                },
+                "matched_record_checks": dict(sorted(mlm_checks.items())),
+                "njetstore_on_entry_by_channel": {
+                    k: sorted(v) for k, v in sorted(memo_state.items())
+                },
+            },
         }
         out.write(json.dumps(head, sort_keys=True) + "\n")
         for idx in range(n_events):
@@ -360,6 +491,9 @@ def cmd_extract(args: argparse.Namespace) -> int:
     for key in sorted(coverage):
         print(f"    {key}: {dict(sorted(coverage[key].items()))}")
     print(f"    alphas_ordering: {alphas_ordering}")
+    if memox or mlm_checks:
+        print(f"    memo branches at any point: {dict(sorted(memox.items()))}")
+        print(f"    matched-record checks: {dict(sorted(mlm_checks.items()))}")
     if n_truncated:
         print(f"!!! {n_truncated} fields did not fit the dump's line or buffer limit",
               file=sys.stderr)
@@ -421,6 +555,30 @@ def tally(records: list, cov: dict) -> None:
     muf = [r for r in records if r[0] == "MUF"]
     if muf:
         bump("muf_branch", muf[-1][1])
+    if not any(r[0] == "RWBEG" for r in records):
+        return
+    # The matched-generation read-outs: how many setclscales calls the point
+    # made, which vertex classes and PDF-ratio actions rewgt took, whether the
+    # central overwrite moved a scale, and the two record-level defects the
+    # spec could only name (a final-state PDG left by an earlier event, and
+    # addmothers' fallback reached with vec_igraph = 0).
+    bump("setclscales_calls_per_event", sum(1 for r in records if r[0] == "SCL"))
+    for r in records:
+        tag = r[0]
+        if tag == "RWVX":
+            bump("rwgt_vertex_class", r[2])
+        elif tag == "RWPDF":
+            bump("rwgt_pdf_action", r[10])
+        elif tag == "RWKILL":
+            bump("rwgt_kill", r[1])
+        elif tag == "Q2OVR" and r[1] == "AFTER":
+            bump("q2fact_overwrite_jcentral", f"{r[2]},{r[3]}")
+        elif tag == "RWLEG" and r[1] > 2:
+            bump("final_leg_ipdgcl_differs_from_idup", r[4] != r[2])
+        elif tag == "CFG":
+            bump("vec_igraph_zero", r[3] == 0)
+            bump("vec_igraph_is_igraphs1", r[3] == r[2])
+            bump("vec_igraph_is_iconfig", r[3] == r[1])
 
 
 # The event file prints SCALUP with 7 significant digits and <rscale> and the
@@ -467,6 +625,97 @@ def check_scales(records: list, ev: dict) -> list[str]:
     return problems
 
 
+def check_matched(records: list, ev: dict, stats: dict) -> list[str]:
+    """The ickkw > 0 gate: the dump against the event's own record.
+
+    The header's SCALUP / AQCDUP / AQEDUP and <rscale> as in check_scales. SCALUP
+    must further be sqrt(max q2bck) of the second call's exit, and rewgt must
+    leave q2fact = q2bck. Where use_syst wrote an <mgrwt> block, it is
+    MadEvent's own serialisation of the same reweighting, so it is replayed from
+    the dump entry by entry: <asrwt> is the ISR/FSR vertices' sqrt(q2now) in
+    order, and each <pdfrwt> is the matrix-element PDF entry followed by one
+    entry per RATIO step, with the momentum fraction *before* that vertex's z
+    (reweight.f:1719-1723). <scales pt_clust_N> is PTCL OUT's legs 3..n.
+    """
+    problems = [p for p in check_scales_header(records, ev)]
+    out = [r for r in records if r[0] == "OUT"][0]
+    scalup = out[4]
+    q2b = [r for r in records if r[0] == "Q2BCK" and r[1] == "OUT"]
+    if not q2b:
+        return problems + ["no Q2BCK OUT record"]
+    q2b = q2b[-1]
+    want = max(q2b[3], q2b[4]) ** 0.5
+    if not close(scalup, want, 12):
+        problems.append(f"SCALUP {scalup!r} is not sqrt(max q2bck) {want!r}")
+    rwend = [r for r in records if r[0] == "RWEND"]
+    if not rwend:
+        return problems + ["no RWEND record"]
+    rwend = rwend[-1]
+    if (rwend[2], rwend[3]) != (q2b[3], q2b[4]):
+        problems.append(f"rewgt left q2fact {rwend[2:4]} != q2bck {q2b[3:5]}")
+    scl = [r for r in records if r[0] == "SCL"]
+    stats[f"setclscales_calls={len(scl)}"] += 1
+
+    if ev["ptclust"] is not None:
+        ptcl = [r for r in records if r[0] == "PTCL" and r[1] == "OUT"]
+        got = ptcl[-1][3 + 2:] if ptcl else []
+        if len(got) != len(ev["ptclust"]) or any(
+            abs(a - b) > 6e-6 * max(1.0, abs(b)) for a, b in zip(got, ev["ptclust"])
+        ):
+            problems.append(f"pt_clust {ev['ptclust']} vs dump {got}")
+        else:
+            stats["pt_clust_agree"] += 1
+
+    mg = ev["mgrwt"]
+    if mg["asrwt"] is not None:
+        want_as = [r[16] ** 0.5 for r in records if r[0] == "RWVX" and r[2] in ("ISR", "FSR")]
+        if len(want_as) != len(mg["asrwt"]) or not all(
+            close(a, b, 8) for a, b in zip(want_as, mg["asrwt"])
+        ):
+            problems.append(f"asrwt {mg['asrwt']} vs dump {want_as}")
+        else:
+            stats["asrwt_agree"] += 1
+    if mg["pdfrwt"]:
+        rwbeg = [r for r in records if r[0] == "RWBEG"][-1]
+        legs = {r[1]: r for r in records if r[0] == "RWLEG"}
+        chains = {}
+        for j in (1, 2):
+            chain = [(legs[j][3], rwbeg[5 + j], rwbeg[11 + j] ** 0.5)]
+            for r in records:
+                if r[0] == "RWPDF" and r[2] == j and r[10] == "RATIO":
+                    z, x = r[6], r[7]
+                    xb = x / z if 0.0 < z < 1.0 else x
+                    chain.append((r[5], xb, r[8] ** 0.5))
+            chains[j] = chain
+
+        def agree(file_chain, dump_chain):
+            return len(file_chain) == len(dump_chain) and all(
+                f[0] == d[0] and close(f[1], d[1], 8) and close(f[2], d[2], 8)
+                for f, d in zip(file_chain, dump_chain)
+            )
+
+        direct = all(agree(mg["pdfrwt"].get(b, []), chains[b]) for b in (1, 2))
+        flipped = all(agree(mg["pdfrwt"].get(b, []), chains[3 - b]) for b in (1, 2))
+        if direct:
+            stats["pdfrwt_agree_direct"] += 1
+        elif flipped:
+            stats["pdfrwt_agree_beams_flipped"] += 1
+        else:
+            problems.append(f"pdfrwt {mg['pdfrwt']} vs dump {chains}")
+    return problems
+
+
+def check_scales_header(records: list, ev: dict) -> list[str]:
+    """check_scales without the <pdfrwt> comparison, which under ickkw > 0
+    carries the PDF-ratio chain rather than the factorisation scale."""
+    saved = ev["pdfrwt"]
+    ev["pdfrwt"] = {}
+    try:
+        return check_scales(records, ev)
+    finally:
+        ev["pdfrwt"] = saved
+
+
 # ───────────────────────────────── manifest ──────────────────────────────────
 
 
@@ -489,6 +738,17 @@ def cmd_manifest(args: argparse.Namespace) -> int:
             "coverage": head.get("coverage", {}),
             "alphas_ordering": head.get("alphas_ordering", {}),
         }
+        # The matched-generation census is carried for runs with xqcut or
+        # ickkw set (CONST: ickkw at field 5, xqcut at field 8).
+        const = head.get("directory", {}).get("CONST", [])
+        if any(c[5] > 0 or c[8] > 0 for c in const) and "census" in head:
+            entries[name]["census"] = head["census"]
+    # A manifest that already pins runs this invocation did not name keeps them.
+    out_path = Path(args.out)
+    if out_path.is_file():
+        for name, entry in json.loads(out_path.read_text()).get("runs", {}).items():
+            if name not in args.processes:
+                entries.setdefault(name, entry)
     doc = {
         "_comment": (
             "Per-event kT-clustering dumps from an instrumented replay of the "
