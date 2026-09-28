@@ -9,11 +9,11 @@
 #
 # xqcut = 30 rather than the Drell-Yan rows' 20. It is MadGraph's own choice
 # for any mixed-multiplicity jet card (create_default_for_process,
-# banner.py:4958), the conventional scale for top pairs at 13 TeV, where the
-# hard scale is a few hundred GeV, and it keeps the one-jet sample, whose
-# cross section grows as xqcut falls, from dominating the run. A second xqcut
-# value also means the setcuts.f rewrite ptj = mmjj = xqcut is pinned at a value
-# other than 20.
+# banner.py:4958) and the conventional scale for top pairs at 13 TeV, where the
+# hard scale is a few hundred GeV. The one-jet sample, whose cross section grows
+# as xqcut falls, is already 53% of the total at 30. A second xqcut value also
+# means the setcuts.f rewrite ptj = mmjj = xqcut is pinned at a value other
+# than 20.
 #
 # The run card is otherwise pp_to_llj_mlm's, less the dilepton mass cut (there
 # are no leptons): 13 TeV, lhaid 247000, the dynamical kT-clustering scale,

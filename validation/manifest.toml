@@ -1269,7 +1269,7 @@ class = "multi-channel"
 n_final = 3
 status = "planned"
 bundled = false
-rationale = "p p > t t~ @0 and p p > t t~ j @1, the only MLM row with a massive coloured 2 -> 2 core: mt2last replacing the last two vertices' scales, the massless-massive arms of the final-state measure and the transverse-mass central scale, under matching. xqcut = 30, MadGraph's own default for a mixed-multiplicity jet card and the conventional top-pair choice; it also pins the ptj = mmjj = xqcut rewrite at a second value."
+rationale = "p p > t t~ @0 and p p > t t~ j @1, the only MLM row with a massive coloured 2 -> 2 core: mt2last replacing the last two vertices' scales, the massless-massive arms of the final-state measure and the transverse-mass central scale, under matching. xqcut = 30, MadGraph's own default for a mixed-multiplicity jet card and the conventional top-pair choice (the one-jet sample is 53% of sigma there); it also pins the ptj = mmjj = xqcut rewrite at a second value."
 artifacts = ["output/pp_to_ttx_0j1j_mlm", "output/pp_to_ttx_0j1j_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_ttx_0j1j_mlm", "mlm_dump_manifest.json#pp_to_ttx_0j1j_mlm", "mlm_census.json#pp_to_ttx_0j1j_mlm"]
 [process.categories]
 diagrams = { tier = "uncovered", note = "mixed multiplicity is refused by check_supported until the composite integrand lands" }

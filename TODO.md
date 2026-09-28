@@ -10,9 +10,8 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 §8.4), and Z2 (note 38 §8.5) put all eight new rows' event samples and diagram
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
-gates, every new cell agreeing. Next: MLM (planned in note 41, sessions M0–M6
-waiting on the user's §5 decisions), then NLO, and the performance
-backlog.
+gates, every new cell agreeing. Next: MLM (note 41, sessions M0–M6; M0's
+references and dumps landed), then NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
 2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -505,7 +504,15 @@ above); the entries here are the eventual features.
   instrumented replay) → M1 (`xqcut`, the two-call scales) → M2 (`rewgt`) → M3
   (mixed multiplicity via a composite integrand) → M4 (`<scales>`, resonances,
   `<MGRunCard>`) → M5 (matched Pythia end-to-end), with M6 (xqcut-aware maps)
-  after M3. Five scope decisions are open for the user (note 41 §5).
+  after M3. The §5 decisions are settled (every recommendation accepted,
+  `t t~ + j` in scope). **M0 landed** (note 41 §4 M0 record): the five MLM rows
+  registered (planned, unbundled), ten MadEvent seeds each in
+  `mlm_sigma_reference.json`, samples-grade runs under `output/<row>`, and the
+  instrumented replay extended to both `setclscales` calls and every `rewgt`
+  factor (`mlm_dump_manifest.json`). Finding for M1: the jet memo's restricted
+  re-cluster fires on 11% of `pp_to_llj_mlm`'s events — every event of the two
+  `g q` channels whose memo holds 0 jets — so the per-event scale needs the
+  channel-restricted jet count as the memo, not an empty one.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user

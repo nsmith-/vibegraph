@@ -643,6 +643,187 @@
           }
         }
       ]
+    },
+    "pp_to_ttx_0j1j_mlm": {
+      "process": [
+        "generate p p > t t~ @0",
+        "add process p p > t t~ j @1"
+      ],
+      "script": "scripts/pp_to_ttx_0j1j_mlm.mg5",
+      "run_card": "pp_to_ttx_0j1j_mlm_run_card.dat",
+      "nevents": 10000,
+      "runs": [
+        {
+          "iseed": 20260928,
+          "sigma_pb": 1085.0,
+          "err_pb": 2.9452,
+          "wall_s": 33,
+          "samples": true,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.212,
+              "err_pb": 0.4845226
+            },
+            "1": {
+              "sigma_pb": 571.7469,
+              "err_pb": 2.905058
+            }
+          }
+        },
+        {
+          "iseed": 20260929,
+          "sigma_pb": 1087.6,
+          "err_pb": 2.419,
+          "wall_s": 30,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 512.218,
+              "err_pb": 0.5230947
+            },
+            "1": {
+              "sigma_pb": 575.3832,
+              "err_pb": 2.36175
+            }
+          }
+        },
+        {
+          "iseed": 20260930,
+          "sigma_pb": 1089.4,
+          "err_pb": 2.3593,
+          "wall_s": 22,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 512.268,
+              "err_pb": 0.6930686
+            },
+            "1": {
+              "sigma_pb": 577.1183,
+              "err_pb": 2.255183
+            }
+          }
+        },
+        {
+          "iseed": 20260931,
+          "sigma_pb": 1086.8,
+          "err_pb": 2.3749,
+          "wall_s": 25,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.393,
+              "err_pb": 0.6371657
+            },
+            "1": {
+              "sigma_pb": 573.3764,
+              "err_pb": 2.28778
+            }
+          }
+        },
+        {
+          "iseed": 20260932,
+          "sigma_pb": 1089.7,
+          "err_pb": 2.4972,
+          "wall_s": 21,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.236,
+              "err_pb": 0.5279136
+            },
+            "1": {
+              "sigma_pb": 576.4736,
+              "err_pb": 2.44074
+            }
+          }
+        },
+        {
+          "iseed": 20260933,
+          "sigma_pb": 1091.8,
+          "err_pb": 2.5684,
+          "wall_s": 19,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.094,
+              "err_pb": 0.5611691
+            },
+            "1": {
+              "sigma_pb": 578.7397,
+              "err_pb": 2.506296
+            }
+          }
+        },
+        {
+          "iseed": 20260934,
+          "sigma_pb": 1086.1,
+          "err_pb": 2.781,
+          "wall_s": 20,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.288,
+              "err_pb": 0.5582242
+            },
+            "1": {
+              "sigma_pb": 572.8428,
+              "err_pb": 2.724429
+            }
+          }
+        },
+        {
+          "iseed": 20260935,
+          "sigma_pb": 1087.9,
+          "err_pb": 2.337,
+          "wall_s": 20,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 511.764,
+              "err_pb": 0.5552802
+            },
+            "1": {
+              "sigma_pb": 576.1778,
+              "err_pb": 2.27009
+            }
+          }
+        },
+        {
+          "iseed": 20260936,
+          "sigma_pb": 1088.8,
+          "err_pb": 2.8092,
+          "wall_s": 20,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.01,
+              "err_pb": 0.4084442
+            },
+            "1": {
+              "sigma_pb": 575.7503,
+              "err_pb": 2.779374
+            }
+          }
+        },
+        {
+          "iseed": 20260937,
+          "sigma_pb": 1091.5,
+          "err_pb": 2.5797,
+          "wall_s": 23,
+          "samples": false,
+          "by_lprup": {
+            "0": {
+              "sigma_pb": 513.278,
+              "err_pb": 0.5521617
+            },
+            "1": {
+              "sigma_pb": 578.1716,
+              "err_pb": 2.519877
+            }
+          }
+        }
+      ]
     }
   }
 }
