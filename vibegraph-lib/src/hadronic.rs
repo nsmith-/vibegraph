@@ -33,6 +33,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder};
+use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtSettings};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{
     ClosedForms, ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent,
@@ -242,6 +243,12 @@ impl Channels {
             iproc: 1,
             tables: Some(self.tables.of(this_config)),
         }
+    }
+
+    /// The colour table the clustering and the matched reweighting read codes
+    /// through.
+    pub fn colors(&self) -> &ColorTable {
+        &self.colors
     }
 
     /// The integration channel (from `1`) a point drawn from sampling channel
@@ -459,6 +466,81 @@ impl EventScaleSource {
             Err(other) => Err(other),
         }
     }
+
+    /// The constants the matched reweighting reads, or `None` without matching.
+    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+        match &self.kind {
+            ScaleSourceKind::Constant(_) => None,
+            ScaleSourceKind::PerEvent { choice, .. } => choice.rewgt_settings(),
+        }
+    }
+
+    /// [`point_scales`](Self::point_scales), and under matching the clustering
+    /// `rewgt` reads, from the same two `setclscales` calls that set the
+    /// scales. Without matching this is `point_scales` with no history.
+    ///
+    /// # Panics
+    ///
+    /// If `channel` names a group this prescription has no channel set for.
+    pub fn point_history(
+        &self,
+        incoming: [[f64; 4]; 2],
+        outgoing: &[[f64; 4]],
+        channel: SampledChannel,
+    ) -> Result<PointHistory, ScaleError> {
+        let (
+            ScaleSourceKind::PerEvent {
+                choice,
+                channels: Some(sets),
+            },
+            Some(_),
+        ) = (&self.kind, self.rewgt_settings())
+        else {
+            return Ok(match self.point_scales(incoming, outgoing, channel)? {
+                PointScales::Scales(scales) => PointHistory::Scales {
+                    scales,
+                    rewgt: None,
+                },
+                PointScales::Vetoed => PointHistory::Vetoed,
+            });
+        };
+        let set = sets.get(channel.group).unwrap_or_else(|| {
+            panic!(
+                "a point was drawn in channel group {} of {}",
+                channel.group,
+                sets.len()
+            )
+        });
+        let event = ScaleEvent { incoming, outgoing };
+        match choice.cluster_history(&event, &set.input(set.config_of_channel(channel.channel))) {
+            Ok(history) => Ok(PointHistory::Scales {
+                scales: history.event_scales(),
+                rewgt: history.rewgt_history(),
+            }),
+            Err(ScaleError::Clustering(
+                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
+            )) => Ok(PointHistory::Vetoed),
+            Err(other) => Err(other),
+        }
+    }
+}
+
+/// What resolving one point's scales produced, with the clustering the matched
+/// reweighting reads.
+// The scaled variant is the one nearly every point returns, and each is moved
+// once into the term that reads it rather than stored in bulk, so boxing its
+// history would add an allocation per term for no saving.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PointHistory {
+    /// The scales to evaluate this point at; under matching, also what `rewgt`
+    /// reads of the event's clustering, `None` otherwise.
+    Scales {
+        scales: EventScales,
+        rewgt: Option<RewgtHistory>,
+    },
+    /// As [`PointScales::Vetoed`].
+    Vetoed,
 }
 
 /// What resolving one point's scales produced.

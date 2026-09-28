@@ -435,6 +435,110 @@ when the dumps exist. What changed, checked against the pinned source:
 - **Negative control:** removing the α_s factor must fail the σ gate by far
   more than its tolerance.
 
+#### M2 Landed (implementation), 2026-09-28
+
+The reweighting is in and live on the per-term path. The per-event gates
+against M0's dumps, and the seeded σ gates, come later, when the dumps are
+committed. What changed, checked line by line against `reweight.f:1333-1824`:
+
+- **`coupling/cluster/rewgt.rs`**: `rewgt(history, colors, settings,
+  flavours, x, αs, x·f) → Rewgt`, a pure function. `Rewgt` lists every vertex
+  (its codes after `ipartupdate`, `ipart(1, mother)`, and a class: `Core`,
+  `Isr`, `Fsr`, or why not — `IsrNotParton`, `FsrNotPartonVertex`,
+  `FsrNoPartonDaughter`) with its `αs` ratio (`q2`, numerator, `αs(μR)`), per
+  beam every chain step (`n`, the line entering, its flavour, `x` after `z`,
+  `q_prev`, `q_now`, and `First` / `Ratio` / `NoRise` / `PastLast`), the
+  product, and a kill (`AlphaSScale`, `PdfDenominator`). The product equals the
+  listed factors bit for bit (`product_of_factors`). `RewgtHistory` is what it
+  reads of a `ClusterHistory`: the second call's merges (with `zcl`), `pt2ijcl`,
+  `jlast`, `iqjets` and line codes, `q2bck`, the first call's `μR`, and the
+  momenta.
+- **Wiring** (`proton.rs`, `hadronic.rs`): `EventScaleSource::point_history`
+  returns the scales and, under matching, the `RewgtHistory` of the same two
+  calls. `per_group_sum` computes each member's factor per ordering
+  (`member_rewgts`) and weights each member's luminosity by it
+  (`term_luminosity`); the event selection draws `(member, ordering)` with the
+  same factors (`ProtonEvent::group_rewgt`). At `ickkw = 0` the old expressions
+  run unchanged.
+
+Where §1.3 was wrong or incomplete against the source:
+
+- **The factor is per flavour combination, not per group.** `DSIG` draws one
+  `IPSEL` `∝ PD(IPSEL)` (`auto_dsig_v4.inc:141-147`), `rewgt` reads that
+  combination's codes, and the product multiplies the whole `PD(0)·|M|²`. So
+  the per-term path is per flavour group, per beam ordering **and per member**:
+  each member's luminosity carries its own factor, the draw's expectation.
+- **Which codes `rewgt` reads.** The incoming legs and the final-state *jets*
+  take the drawn combination's codes (`:1531-1537`); every other line keeps
+  `ipdgcl` as the scale walk left it, and `rewgt` re-runs `ipartupdate` over
+  every merge, the core included (`:1577`), which re-transmits jet flavours
+  onto the spacelike lines. A non-jet quark transmits nothing, so a `b` line at
+  `maxjetflavor = 4` keeps the forest's `|tprid|`, and its density is read for
+  `+5` whichever way the line runs.
+- **`goodjet` on the external legs** (`:1538-1549`): a beam is a parton line if
+  `isparton`; a final-state leg if `iqjets > 0`, or if it is a parton that is
+  not a jet. A jet-flavour leg the walk did not tag is not a parton line.
+- **The density floor is on `f`, not `x·f`**: `pdg2pdf` returns `x·f / x`
+  (`pdg2pdf_lhapdf6.f`, `pdg2pdf = pdg2pdf/x`).
+- **`x ← x·z` only when `0 < z < 1`**; the core's `z` is `1`.
+- **The chain includes the core.** The `αs` restriction to
+  `n < nexternal − 2` does not apply to it; the ratio at `jlast` is usually
+  taken at the core.
+- **A step that does not rise copies the scale** (`pt2pdf(mother) =
+  pt2pdf(daughter)`). A rising step past `jlast` sets nothing; it is
+  unreachable from a consistent walk, since the chain's scale is `q2bck` from
+  `jlast` on and nothing later exceeds it (pinned as `past_jlast_...`).
+- **`fake_id`** never occurs here: the forests never split a higher vertex
+  (`configs.rs`, pinned by `no_forest_line_carries_a_code_outside_the_model`).
+- **`ipartupdate` failing** (`stop 3`) refuses the event with an error rather
+  than leaving the provenance unset.
+
+**Known deviation class (for M0's census).** `ipdgcl` is carried across
+events. A final-state leg that is not a jet keeps whatever code the table last
+held — the subprocess's first combination until an event labels it a jet —
+and `setclscales` reads the codes an earlier `rewgt` left (the previous
+event's for the first call; this event's incoming codes, set at `:1437`, for
+the second). `RewgtHistory::pdg` is this event's walk over the group
+representative's codes, which is MadEvent's first event of a run. The two
+differ only where a group's members differ in jet-ness or in which vertices
+transmit a flavour, which §1.5's census sizes.
+
+**Tests** (hermetic, `rewgt.rs`): ISR only, FSR + ISR, `goodjet` propagating
+from untagged daughters, the combination's codes replacing the walk's, a
+non-jet final-state leg keeping the walk's code, a `b` leg with
+`maxjetflavor = 4` at `asrwgtflavor = 5` and `4`, `alpsfact = 2`, `pdfwgt = F`,
+both kills (and their boundaries), the `q2bck` cap and `jlast`, the listed
+factors against the product, and a negative control: dropping the `αs` ratio
+moves a σ-like integral by more than ten times a 1 % gate. In `proton.rs`,
+`matched_terms_carry_each_member_s_own_reweighting` reclusters sampled points
+and recomputes every member's factor bit for bit, and checks the beam order of
+the momentum fractions changes it.
+
+**Byte identity at `ickkw = 0`**, binary against binary against `0759ea6`
+(throwaway worktree, since deleted), on M1's six cases (`p p > l+ l- j` on
+`pp_to_llj_fixed`'s and `pp_to_llj`'s cards, `p p > j j`, `p p > e+ e-`,
+fixed-beam `g u > e+ e- u` and `e+ e- > mu+ mu-`; `integrate` 20k × 4, seed
+7, `generate` 500 events): every `grid.bin.zst` identical, every LHE file
+identical but for the header line naming the artifact path. A shared
+`CARGO_TARGET_DIR` does not separate two worktrees of one workspace: cargo
+hashes path packages workspace-relative, so the second build silently reused
+the first's binary until `cargo clean -p` forced it. Compare binary hashes
+before trusting such a check.
+
+**Informational σ** (no reference committed yet): `p p > e+ e- j` on
+`pp_to_llj_dyn`'s card with `ickkw = 1`, `xqcut = 20` (written in the
+session's scratchpad, since M0's card was not committed), `integrate
+--fixed-budget --neval 200000 --niter 10 --seed 20260928`: **σ = 268.52 ±
+0.35 pb**, χ²/dof 1.35, 106 s wall on 4 shared cores. One seed, so not
+evidence. For orientation only: M0's uncommitted working-tree MadEvent runs of
+the same row read 267.1–268.9 pb over five seeds.
+
+**Left for the dump-gate follow-up**: per event, factor by factor against M0's
+dump (vertex classes, each `αs` ratio, each chain entry, the product); the
+seeded σ of `pp_to_llj_mlm` and `pp_to_llj_mlm_alps2` (σ and per event); the
+negative control at the σ gate; and sizing the stale-`ipdgcl` class with
+M0's census.
+
 ### M3: mixed multiplicity (feature-dev, or performance-dev for the budget; after M2)
 
 - Lift `MixedMultiplicity`, subject to §5 (a).

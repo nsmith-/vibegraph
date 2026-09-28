@@ -10,8 +10,8 @@ closed: its reference runs are banked in the published `refdata-8` (note 38
 §8.4), and Z2 (note 38 §8.5) put all eight new rows' event samples and diagram
 counts, and the `>`, `$$` and `w+{0}` cross sections against
 `grammar_sigma_reference.json`'s seeded MadEvent references, under registered
-gates, every new cell agreeing. Next: MLM (note 41: M0 and M1 in flight, M1's
-implementation landed), then NLO, and the performance
+gates, every new cell agreeing. Next: MLM (note 41: M0 in flight, M1's and M2's
+implementations landed), then NLO, and the performance
 backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
@@ -510,8 +510,11 @@ above); the entries here are the eventual features.
   `xqcut` accepted at proton beams, MadGraph's card rewrites and refusals,
   both `setclscales` calls with `q2bck` as the record scale, colour and
   mothers from the clustered configuration; the per-event gates against M0's
-  dumps are still to run, and `pp_to_llj_mlm`'s σ is known-wrong until M2's
-  `rewgt`.
+  dumps are still to run. **M2 implementation landed** (note 41 §4 M2
+  record): `rewgt` with every factor listed, live per group, beam ordering
+  and flavour combination; `ickkw = 0` byte-identical; `pp_to_llj_mlm`'s
+  σ informational (268.5 ± 0.4 pb, one seed) until M0's dumps and seeded
+  references gate it.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user

@@ -863,14 +863,18 @@ fn fortran_isign(k: i64) -> i64 {
 
 /// `ipartupdate`: which external leg each internal line stands for, and the jet
 /// flavour a splitting hands its mother.
-fn ipartupdate(
+///
+/// Returns `false` for a final-state colour structure none of the reference's
+/// arms names, where `reweight.f` stops the run (`stop 3`); the mother's
+/// provenance is then left as it was.
+pub(super) fn ipartupdate(
     colors: &ColorTable,
     momenta: &[[f64; 4]],
     imo: u32,
     daughters: [u32; 2],
     pdg: &mut [i64],
     ipart: &mut [[usize; 2]],
-) {
+) -> bool {
     let (mo, d1, d2) = (imo as usize, daughters[0] as usize, daughters[1] as usize);
     let mut idmo = pdg[mo];
     let (id1, id2) = (pdg[d1], pdg[d2]);
@@ -902,7 +906,7 @@ fn ipartupdate(
                 }
             }
         }
-        return;
+        return true;
     }
 
     if colors.is_jet(idmo) {
@@ -971,10 +975,13 @@ fn ipartupdate(
         ipart[mo] = ipart[d2];
     } else if cmo.abs() == 8 && c1.abs() == 8 && c2.abs() == 1 {
         ipart[mo] = ipart[d1];
+    } else {
+        // Where `reweight.f` stops the run. The scale walk leaves the mother's
+        // provenance unset, which shows up as a mismatch rather than as a wrong
+        // scale; the matched reweighting refuses the event instead.
+        return false;
     }
-    // A colour structure none of the above names is where `reweight.f` stops the
-    // run; the mother's provenance is simply left unset here, which shows up as
-    // a mismatch rather than as a wrong scale.
+    true
 }
 
 #[cfg(test)]

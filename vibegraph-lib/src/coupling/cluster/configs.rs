@@ -521,6 +521,44 @@ mod tests {
         );
     }
 
+    /// MadGraph's `rewgt` skips a vertex whose mother carries `fake_id`, the
+    /// code its exporter gives the propagator it invents to split a vertex of
+    /// more than three lines. The forests here never split one, so every line
+    /// code must be a model particle's (or `0`, which `fake_id` never is), and
+    /// the skip can never fire. Pinned on processes whose diagram sets include
+    /// four-gluon vertices.
+    #[test]
+    fn no_forest_line_carries_a_code_outside_the_model() {
+        let model = sm_model(SMRestrict::Default);
+        let in_model = |code: i64| {
+            code == 0
+                || model
+                    .particles
+                    .values()
+                    .any(|p| p.pdg_code == code || p.pdg_code == -code)
+        };
+        for process in ["g g > g g", "u u~ > g g g", "g g > u u~ g"] {
+            let (_, derived) = channels(process);
+            let set = &derived.set;
+            for config in &set.configs {
+                for line in &config.lines {
+                    assert!(in_model(line.tprid), "{process}: tprid {}", line.tprid);
+                    for &code in &line.sprop {
+                        assert!(in_model(code), "{process}: sprop {code}");
+                    }
+                }
+            }
+            for table in set.merge_tables(1) {
+                for (&(mask, graph), &code) in &table.ipdgcl {
+                    assert!(
+                        in_model(code),
+                        "{process}: line {mask:#b} of channel {graph} carries {code}"
+                    );
+                }
+            }
+        }
+    }
+
     /// The map from a sampler's channels to integration channels, on the one
     /// process where the two numberings provably differ.
     ///

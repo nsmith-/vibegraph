@@ -87,6 +87,7 @@ use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
+use crate::coupling::cluster::rewgt::{rewgt, RewgtHistory};
 use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
@@ -98,8 +99,9 @@ use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
     components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
-    ChannelIntegration, EventScaleSource, HadronicError, PointScales, RunningCouplingReport,
-    SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
+    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
+    VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -253,6 +255,38 @@ fn ordering_slot(ordering: BeamOrdering) -> usize {
     match ordering {
         BeamOrdering::Direct => 0,
         BeamOrdering::Exchanged => 1,
+    }
+}
+
+/// One ordering's symmetry-weighted luminosity, `Σ_i S_i · L_i^o`, with each
+/// member's term multiplied by its matched reweighting factor where there is one.
+fn term_luminosity(
+    g: &FlavorGroup,
+    rows: &[FlavorRow; 2],
+    ordering: BeamOrdering,
+    rewgt: Option<&[f64]>,
+) -> f64 {
+    let slot = ordering_slot(ordering);
+    let Some(factors) = rewgt else {
+        return g.symmetry_weighted_luminosity_rows(&rows[0], &rows[1])[slot];
+    };
+    g.members()
+        .iter()
+        .zip(factors)
+        .enumerate()
+        .map(|(i, (member, factor))| {
+            member.symmetry_factor()
+                * g.member_luminosity_rows(i, &rows[0], &rows[1])[slot]
+                * factor
+        })
+        .sum()
+}
+
+/// An event's per-member reweighting factors for group `gi`, per ordering.
+fn rewgt_of(event: &ProtonEvent, gi: usize) -> [Option<&[f64]>; 2] {
+    match event.group_rewgt.get(gi) {
+        Some([direct, mirrored]) => [direct.as_deref(), mirrored.as_deref()],
+        None => [None, None],
     }
 }
 
@@ -1079,6 +1113,11 @@ pub struct ProtonEvent {
     /// clustered in its own group's configurations, at the momenta its own
     /// matrix element is evaluated at.
     pub group_scales: Vec<[Option<EventScales>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, the matched
+    /// reweighting factor (`rewgt`) of each member of the group, in member order;
+    /// `None` without matching, where every factor is `1`, and where the term
+    /// carries no weight.
+    pub group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1274,6 +1313,9 @@ struct ProtonScratch<'a> {
     /// The last evaluated point's scales, per flavour group
     /// ([`ProtonEvent::group_scales`]).
     group_scales: RefCell<Vec<[Option<EventScales>; 2]>>,
+    /// The last evaluated point's matched reweighting factors
+    /// ([`ProtonEvent::group_rewgt`]).
+    group_rewgt: RefCell<Vec<[Option<Vec<f64>>; 2]>>,
     /// The lab-frame momenta of the mirrored ordering's physical event, in the
     /// orientation the group's matrix element reads them in.
     lab_mirror_buf: RefCell<Vec<V>>,
@@ -1509,6 +1551,7 @@ impl<'a> ProtonIntegrand<'a> {
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 lab_mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 vetoed: bind_vetoes(&self.vetoes),
             }
@@ -1618,6 +1661,11 @@ impl<'a> ProtonIntegrand<'a> {
         // Every pooled sampling channel has to name a channel of its own group's
         // forests: that pairing is the whole of how a drawn channel reaches the
         // cluster scale, and it is an index into a set built elsewhere.
+        // The matched reweighting divides by `αs(μR)` and multiplies by `αs` at
+        // each vertex's own scale, whatever the matrix element is made of.
+        if source.rewgt_settings().is_some() && source.alpha_s().is_none() {
+            return Err(HadronicError::MissingAlphaS.into());
+        }
         if let Some(sets) = source.channels() {
             assert_eq!(sets.len(), self.groups.groups().len());
             for id in &self.channel_ids {
@@ -1917,6 +1965,9 @@ impl<'a> ProtonIntegrand<'a> {
             let mut out = sc.group_scales.borrow_mut();
             out.clear();
             out.resize(n_groups, [scales, scales]);
+            let mut factors = sc.group_rewgt.borrow_mut();
+            factors.clear();
+            factors.resize(n_groups, [None, None]);
         }
         let Some(scales) = scales else {
             return 0.0;
@@ -1969,6 +2020,8 @@ impl<'a> ProtonIntegrand<'a> {
         };
         let mut out = sc.group_scales.borrow_mut();
         out.clear();
+        let mut factors = sc.group_rewgt.borrow_mut();
+        factors.clear();
         let mut rows: Option<([f64; 2], [FlavorRow; 2])> = None;
         let mut rows_at = |mu_f: [f64; 2]| match rows {
             Some((at, r)) if at == mu_f => r,
@@ -1992,7 +2045,7 @@ impl<'a> ProtonIntegrand<'a> {
             let direct = {
                 let drawn = self.scale_channel(sc, cm, fallback, v);
                 let lab = sc.lab_buf.borrow();
-                self.scales_at(sc, &lab, drawn)
+                self.term_at(sc, &lab, drawn)
             };
             let mirrored = if g.has_mirror() {
                 g.mirror_into(cm, &mut mirror);
@@ -2010,37 +2063,123 @@ impl<'a> ProtonIntegrand<'a> {
                 mirror_lab_into(&lab, &mut lab_mirror);
                 // Clustered with the beams exchanged, so its per-beam
                 // factorisation scales come back in that order.
-                self.scales_at(sc, &lab_mirror, drawn).map(|s| EventScales {
-                    mu_f: [s.mu_f[1], s.mu_f[0]],
-                    mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
-                    ..s
+                self.term_at(sc, &lab_mirror, drawn).map(|(s, history)| {
+                    (
+                        EventScales {
+                            mu_f: [s.mu_f[1], s.mu_f[0]],
+                            mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
+                            ..s
+                        },
+                        history,
+                    )
                 })
             } else {
                 None
             };
+            // The matched reweighting of each member, per ordering. The mirrored
+            // clustering puts the representative's first parton on its first
+            // beam, which is the physical second one.
+            let direct_rewgt = direct.as_ref().and_then(|(_, history)| {
+                history
+                    .as_ref()
+                    .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2], BeamOrdering::Direct))
+            });
+            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history)| {
+                history
+                    .as_ref()
+                    .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
+            });
+            let direct = direct.map(|(s, _)| s);
+            let mirrored = mirrored.map(|(s, _)| s);
             out.push([direct, mirrored]);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
             let mut term = 0.0;
             if let Some(scales) = direct {
-                let [f1, f2] = rows_at(scales.mu_f);
-                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                let f = rows_at(scales.mu_f);
+                let lumi = term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref());
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
                 }
             }
             if let Some(scales) = mirrored {
-                let [f1, f2] = rows_at(scales.mu_f);
-                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                let f = rows_at(scales.mu_f);
+                let lumi =
+                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref());
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
                 }
             }
+            factors.push([direct_rewgt, mirrored_rewgt]);
             acc += g.spin_color_average() * term;
         }
         acc
+    }
+
+    /// Each member's matched reweighting factor for one beam ordering of group
+    /// `gi`, from the clustering that ordering's term was scaled in.
+    ///
+    /// `rewgt` reads the flavours of the one combination MadEvent drew for the
+    /// point; here every member carries its own factor, weighted by its own
+    /// luminosity, which is that draw's expectation. A member with no mirrored
+    /// ordering carries no luminosity there and takes `1` unread.
+    ///
+    /// # Panics
+    ///
+    /// Where `reweight.f` stops the run: a colour structure `ipartupdate` does
+    /// not name.
+    fn member_rewgts(
+        &self,
+        gi: usize,
+        g: &FlavorGroup,
+        history: &RewgtHistory,
+        x: [f64; 2],
+        ordering: BeamOrdering,
+    ) -> Vec<f64> {
+        let settings = self
+            .scales
+            .rewgt_settings()
+            .expect("a clustering history is returned only under matching");
+        let colors = self
+            .scales
+            .channels()
+            .expect("matching clusters every event")[gi]
+            .colors();
+        let alpha_s = self
+            .scales
+            .alpha_s()
+            .expect("matching is installed only with a running coupling");
+        let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
+        g.members()
+            .iter()
+            .enumerate()
+            .map(|(i, member)| {
+                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
+                    return 1.0;
+                }
+                flavours.clear();
+                flavours.extend(
+                    member
+                        .incoming
+                        .iter()
+                        .chain(&member.outgoing)
+                        .map(|&c| i64::from(c)),
+                );
+                rewgt(
+                    history,
+                    colors,
+                    &settings,
+                    &flavours,
+                    x,
+                    |q| alpha_s.eval(q),
+                    |pdg, x, q2| self.pdf.xfx_q2(pdg as i32, x, q2),
+                )
+                .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
+                .weight
+            })
+            .collect()
     }
 
     /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
@@ -2170,6 +2309,27 @@ impl<'a> ProtonIntegrand<'a> {
         {
             PointScales::Scales(scales) => Some(scales),
             PointScales::Vetoed => None,
+        }
+    }
+
+    /// [`scales_at`](Self::scales_at), with the clustering the matched
+    /// reweighting reads where matching is on.
+    fn term_at(
+        &self,
+        sc: &ProtonScratch<'a>,
+        lab: &[V],
+        channel: SampledChannel,
+    ) -> Option<(EventScales, Option<RewgtHistory>)> {
+        let mut buf = sc.scale_buf.borrow_mut();
+        buf.clear();
+        buf.extend(lab[2..].iter().map(components));
+        match self
+            .scales
+            .point_history([components(&lab[0]), components(&lab[1])], &buf, channel)
+            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
+        {
+            PointHistory::Scales { scales, rewgt } => Some((scales, rewgt)),
+            PointHistory::Vetoed => None,
         }
     }
 
@@ -2303,6 +2463,7 @@ impl<'a> ProtonIntegrand<'a> {
             weight: shape * self.channel_weight(channel, &m, &point.momenta),
             x: [m.x1, m.x2],
             group_scales: sc.group_scales.borrow().clone(),
+            group_rewgt: sc.group_rewgt.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -2363,12 +2524,13 @@ impl<'a> ProtonIntegrand<'a> {
             // Each ordering's diagonal is read at its own coupling and densities,
             // the ones its term of the point's value was taken at.
             let [direct_scales, mirrored_scales] = event.group_scales[gi];
+            let [direct_rewgt, mirrored_rewgt] = rewgt_of(event, gi);
             let mut term_m2 = [0.0; 2];
             let mut rows = [no_rows; 2];
             let mut term = 0.0;
             if let Some(scales) = direct_scales {
                 rows[0] = rows_at(scales.mu_f);
-                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&rows[0][0], &rows[0][1]);
+                let lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term_m2[0] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm);
@@ -2377,7 +2539,7 @@ impl<'a> ProtonIntegrand<'a> {
             }
             if let Some(scales) = mirrored_scales {
                 rows[1] = rows_at(scales.mu_f);
-                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&rows[1][0], &rows[1][1]);
+                let lumi = term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     g.mirror_into(&event.cm, &mut mirror);
@@ -2395,7 +2557,9 @@ impl<'a> ProtonIntegrand<'a> {
 
         // One categorical draw over the group's `(member, ordering)` terms: the
         // matrix element is common to the members, so within an ordering this is the
-        // luminosity share times the member's own identical-particle factor.
+        // luminosity share times the member's own identical-particle factor, and
+        // under matching times its own reweighting factor.
+        let [direct_rewgt, mirrored_rewgt] = rewgt_of(event, group);
         let weights: Vec<f64> = g
             .members()
             .iter()
@@ -2405,7 +2569,14 @@ impl<'a> ProtonIntegrand<'a> {
                 let [direct, _] = g.member_luminosity_rows(i, &direct_rows[0], &direct_rows[1]);
                 let [_, mirrored] =
                     g.member_luminosity_rows(i, &mirrored_rows[0], &mirrored_rows[1]);
-                [s * direct * m2[group][0], s * mirrored * m2[group][1]]
+                let r = [direct_rewgt, mirrored_rewgt].map(|f| f.map_or(1.0, |f| f[i]));
+                match (direct_rewgt, mirrored_rewgt) {
+                    (None, None) => [s * direct * m2[group][0], s * mirrored * m2[group][1]],
+                    _ => [
+                        s * direct * r[0] * m2[group][0],
+                        s * mirrored * r[1] * m2[group][1],
+                    ],
+                }
             })
             .collect();
         let picked = select_index(&weights, u[1])?;
@@ -4164,6 +4335,154 @@ mod tests {
             assert_eq!(got[j].neval, n_j, "channel {j} budget");
             for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
                 assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
+            }
+        }
+    }
+
+    /// Under matching every term of a point carries each member's own `rewgt`,
+    /// computed from the clustering its ordering was scaled in, with the
+    /// ordering's own beam momentum fractions: `[x₁, x₂]` for the direct term and
+    /// `[x₂, x₁]` for the mirrored one, whose clustering has the
+    /// representative's first parton on its first beam. Without matching no
+    /// term carries one.
+    #[test]
+    fn matched_terms_carry_each_member_s_own_reweighting() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let base = "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n";
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        for ickkw in [0, 1] {
+            let card = RunCard::parse(&format!("{base}  {ickkw} = ickkw\n  20.0 = xqcut\n"))
+                .expect("matched run card");
+            let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+                .expect("flavour groups");
+            let amps = bind_all(&groups, &evaluated);
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+                .expect("the matched prescription compiles");
+            let settings = integ.scales.rewgt_settings();
+            assert_eq!(settings.is_some(), ickkw == 1);
+            let mut stream = SubStream::from_stream(0x5EED_4D, 11);
+            let (mut events, mut nontrivial, mut recomputed) = (0usize, 0usize, 0usize);
+            let mut order_sensitive = 0usize;
+            for trial in 0..40_000 {
+                if events == 8 {
+                    break;
+                }
+                let u = stream.uniforms::<f64>(integ.point_ndim());
+                let channel = trial % integ.channel_count();
+                let Some(event) = integ.event_in_channel(channel, &u) else {
+                    continue;
+                };
+                events += 1;
+                assert_eq!(event.group_rewgt.len(), groups.groups().len());
+                let v = u[integ.point_ndim() - 1];
+                for (gi, g) in groups.groups().iter().enumerate() {
+                    for (slot, ordering) in [BeamOrdering::Direct, BeamOrdering::Exchanged]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let factors = &event.group_rewgt[gi][slot];
+                        if ickkw == 0 || event.group_scales[gi][slot].is_none() {
+                            assert!(factors.is_none());
+                            continue;
+                        }
+                        let factors = factors.as_ref().expect("a matched term is reweighted");
+                        assert_eq!(factors.len(), g.members().len());
+                        // The clustering the term was scaled in, drawn and
+                        // clustered again from the event's own momenta.
+                        let sc = integ.scratch();
+                        let sampled = integ.sampled_channel(channel);
+                        let (argument, lab, fallback, x) = match ordering {
+                            BeamOrdering::Direct => (
+                                event.cm.clone(),
+                                event.lab.clone(),
+                                if sampled.group == gi {
+                                    sampled
+                                } else {
+                                    SampledChannel {
+                                        group: gi,
+                                        channel: 0,
+                                    }
+                                },
+                                event.x,
+                            ),
+                            BeamOrdering::Exchanged => {
+                                let (mut cm, mut lab) = (Vec::new(), Vec::new());
+                                g.mirror_into(&event.cm, &mut cm);
+                                mirror_lab_into(&event.lab, &mut lab);
+                                (
+                                    cm,
+                                    lab,
+                                    SampledChannel {
+                                        group: gi,
+                                        channel: 0,
+                                    },
+                                    [event.x[1], event.x[0]],
+                                )
+                            }
+                        };
+                        let drawn = integ.scale_channel(sc, &argument, fallback, v);
+                        let (_, history) = integ.term_at(sc, &lab, drawn).expect("scaled");
+                        let history = history.expect("matched");
+                        let colors = integ.scales.channels().expect("channels")[gi].colors();
+                        let source = integ.scales.alpha_s().expect("running coupling");
+                        for (i, (&factor, member)) in factors.iter().zip(g.members()).enumerate() {
+                            assert!(factor.is_finite() && factor >= 0.0);
+                            if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
+                                assert_eq!(factor, 1.0);
+                                continue;
+                            }
+                            let flavours: Vec<i64> = member
+                                .incoming
+                                .iter()
+                                .chain(&member.outgoing)
+                                .map(|&c| i64::from(c))
+                                .collect();
+                            let want = rewgt(
+                                &history,
+                                colors,
+                                settings.as_ref().expect("matched"),
+                                &flavours,
+                                x,
+                                |q| source.eval(q),
+                                |pdg, x, q2| pdf.xfx_q2(pdg as i32, x, q2),
+                            )
+                            .expect("reweights");
+                            assert_eq!(factor.to_bits(), want.weight.to_bits());
+                            recomputed += 1;
+                            // The momentum fractions in the other order give a
+                            // different factor, so the match above pins the order.
+                            let swapped = rewgt(
+                                &history,
+                                colors,
+                                settings.as_ref().expect("matched"),
+                                &flavours,
+                                [x[1], x[0]],
+                                |q| source.eval(q),
+                                |pdg, x, q2| pdf.xfx_q2(pdg as i32, x, q2),
+                            )
+                            .expect("reweights");
+                            order_sensitive += usize::from(swapped.weight != want.weight);
+                            nontrivial += usize::from(factor != 1.0);
+                        }
+                    }
+                }
+            }
+            assert_eq!(events, 8, "too few points inside the cuts");
+            if ickkw == 1 {
+                assert!(recomputed > 0);
+                assert!(order_sensitive > 0, "no factor depends on the beam order");
+            }
+            if ickkw == 1 {
+                assert!(nontrivial > 0, "every matched factor was exactly one");
             }
         }
     }

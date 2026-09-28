@@ -40,6 +40,7 @@ use thiserror::Error;
 
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
 use crate::coupling::cluster::kt::{Channel, ClusterSettings};
+use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtMerge, RewgtSettings};
 use crate::coupling::cluster::setclscales::{
     setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
 };
@@ -399,6 +400,17 @@ impl ScaleChoice {
         self.pdfwgt
     }
 
+    /// The constants `rewgt` reads, or `None` without matching, where it
+    /// returns `1` (`reweight.f:1421`).
+    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+        (self.ickkw > 0).then_some(RewgtSettings {
+            ickkw: self.ickkw,
+            alpsfact: self.alpsfact,
+            asrwgtflavor: self.asrwgtflavor,
+            pdfwgt: self.pdfwgt,
+        })
+    }
+
     /// Every event is clustered, whatever the scale prescription: matching is
     /// on, or `xqcut` is a cut. `setclscales` returns before clustering only
     /// when neither holds and every scale is already set (`reweight.f:643`).
@@ -596,6 +608,7 @@ impl ScaleChoice {
                 first,
                 second: None,
                 q2bck: None,
+                momenta: p,
                 fixed_fac: self.fixed_fac,
                 pdfwgt: self.pdfwgt,
             });
@@ -622,6 +635,7 @@ impl ScaleChoice {
             first,
             second: Some(second),
             q2bck: Some(q2bck),
+            momenta: p,
             fixed_fac: self.fixed_fac,
             pdfwgt: self.pdfwgt,
         })
@@ -675,11 +689,47 @@ pub struct ClusterHistory {
     /// `q2bck`, the central factorisation scale per beam, squared; `None`
     /// without matching, where MadEvent never reads it.
     pub q2bck: Option<[f64; 2]>,
+    /// The external momenta both calls clustered, beams first.
+    pub momenta: Vec<[f64; 4]>,
     fixed_fac: [Option<f64>; 2],
     pdfwgt: bool,
 }
 
 impl ClusterHistory {
+    /// What `rewgt` reads of this event: the second call's clustering and scales,
+    /// `q2bck`, and the first call's `μR`. `None` without matching, where
+    /// `rewgt` returns `1` before reading anything.
+    pub fn rewgt_history(&self) -> Option<RewgtHistory> {
+        let (Some(second), Some(q2bck)) = (&self.second, self.q2bck) else {
+            return None;
+        };
+        let n_external = self.momenta.len();
+        let mut pdg = vec![0i64; 1usize << n_external];
+        for line in &second.lines {
+            pdg[line.mask as usize] = line.pdg;
+        }
+        Some(RewgtHistory {
+            n_external,
+            merges: second
+                .clustering
+                .merges
+                .iter()
+                .map(|m| RewgtMerge {
+                    daughters: m.daughters,
+                    mother: m.mother,
+                    z: m.z,
+                })
+                .collect(),
+            pt2: second.pt2.clone(),
+            jlast: second.jlast,
+            iqjets: second.iqjets.clone(),
+            pdg,
+            q2bck,
+            mu_r: self.first.mu_r,
+            momenta: self.momenta.clone(),
+        })
+    }
+
     /// The scales the matrix element and the event record read.
     ///
     /// `μR` and the densities' factorisation scales are the first call's. The
