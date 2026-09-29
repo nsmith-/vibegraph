@@ -596,9 +596,9 @@ above); the entries here are the eventual features.
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
   2026-09-25). They need complex amplitudes grouped by coupling order. (Reweighting
-  collects `|M|²` by power of one parameter through node evaluations instead —
-  see the `reweight_card.dat` entry — which does not give per-order
-  amplitudes.) That is a sizable `helas/eval`
+  reads per-monomial amplitude classes off node evaluations — see the
+  `reweight_card.dat` entry — which costs one evaluation per class rather than
+  the one graded pass this would want.) That is a sizable `helas/eval`
   refactor, deferred until the open evaluator performance PRs land. G1 parses
   them and `check_supported` refuses them.
 - **Polarized intermediate resonances** (`p p > w+{0} w-, w+ > e+ ve`, and the
@@ -662,25 +662,27 @@ above); the entries here are the eventual features.
 - **`reweight_card.dat`** — ✅ landed at generation time (`generate
   --reweight-card`, `vibegraph::reweight`; guide chapter 11 "Reweighting"):
   per-event `|M|²_new/|M|²_old` of the event's own concrete subprocess, written
-  as LHEF `<rwgt>` in `XWGTUP` units with an `<initrwgt>` header. Hypotheses
-  along one parameter that enters only polynomial couplings share one
-  per-event polynomial (degree proven from the UFO expressions and the
-  diagrams, `D + 1` Chebyshev–Lobatto node evaluations, precomputed
-  barycentric weights per hypothesis); everything else is evaluated directly.
-  Reweighting amplitudes are pruned at a generic parameter point. Gated by
-  unit tests only (both paths against a direct unpruned bind, and mutation-
-  checked: dropping the squaring of the degree or pruning at the card each
-  fails a test). Open follow-ups: (a) **a MadGraph oracle** — bank a
-  `reweight_card.dat` run on an SM card (e.g. `e+ e- > t t~ h` scanning `ymt`)
-  and compare per-event `<rwgt>` weights event by event, the finer oracle, not
-  only the reweighted σ; (b) **multi-parameter polynomials** (EFT scans moving
-  two coefficients at once take the exact path today); (c) **reweighting a
-  stored `.lhe`** rather than at generation, which needs the event's
-  subprocess recovered from its record; (d) the `$` (forbidden s-channel)
-  pattern amplitudes and `aS` reweighting, both refused today; (e) no
-  extended-validation gate exercises `--reweight-card` end to end on the
-  hadronic path yet (the member-evaluator indexing and the mirrored
-  ordering are covered only by construction).
+  as LHEF `<rwgt>` in `XWGTUP` units with an `<initrwgt>` header. The polynomial
+  path collects the amplitude by coupling monomial (monomials proven from the UFO
+  expressions and the diagrams; class amplitudes read off `K` node evaluations
+  chosen by pivoted QR; each hypothesis a `K × K` quadratic form in the per-event
+  node Gram matrix). `--reweight-couplings a,b,…` serves a whole card jointly in
+  the named couplings (`K = 1 + n` for one insertion per diagram) and refuses
+  anything else; without it, single-parameter hypotheses are grouped where
+  cheaper. Reweighting amplitudes are pruned at a generic parameter point. Gated
+  by unit tests only (every path against a direct unpruned bind; mutation-checked:
+  a union in place of the per-diagram monomial product, a wrong Gram
+  contraction and pruning at the card each fail a test). Open follow-ups:
+  (a) **a MadGraph oracle** — bank a `reweight_card.dat` run and compare per-event
+  `<rwgt>` weights event by event, not only the reweighted σ; (b) **one
+  evaluation per event** instead of `K` — a graded evaluator carrying each
+  current as its monomial components, so subtrees without the couplings are
+  computed once (the `helas/eval` refactor squared-order constraints also need);
+  (c) **reweighting a stored `.lhe`**, which needs the event's subprocess
+  recovered from its record; (d) `$` (forbidden s-channel) pattern amplitudes
+  and `aS` reweighting, both refused; (e) no extended-validation gate exercises
+  `--reweight-card` end to end on the hadronic path (member-evaluator indexing
+  and the mirrored ordering are covered by construction only).
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the

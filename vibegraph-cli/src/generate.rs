@@ -51,7 +51,7 @@ use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan, Reweighter, SubprocessSummary};
-use vibegraph::reweight::{resolve, Launch};
+use vibegraph::reweight::{resolve, resolve_couplings, Launch};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -181,11 +181,28 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub reweight_card: Option<PathBuf>,
 
-    /// Evaluate every reweighting hypothesis directly, never through the
-    /// polynomial in a coupling that serves many hypotheses along one parameter
-    /// at a fixed cost. Slower; for cross-checking.
-    #[arg(long, requires = "reweight_card")]
+    /// Evaluate every reweighting hypothesis directly, never through a
+    /// polynomial in the couplings. Slower; for cross-checking.
+    #[arg(
+        long,
+        requires = "reweight_card",
+        conflicts_with = "reweight_couplings"
+    )]
     pub reweight_exact: bool,
+
+    /// Track the amplitude as a polynomial jointly in these external parameters
+    /// (comma-separated names), so every hypothesis costs a quadratic form rather
+    /// than an amplitude evaluation: an event costs one evaluation per monomial of
+    /// the amplitude — `1 + n` for `n` couplings entering at most once per
+    /// diagram — whatever the number of hypotheses. The card may then move only
+    /// these, and each must enter every subprocess polynomially.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "NAME,...",
+        requires = "reweight_card"
+    )]
+    pub reweight_couplings: Option<Vec<String>>,
 
     #[command(flatten)]
     pub parallel: ParallelArgs,
@@ -820,7 +837,7 @@ fn generate_sample(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     nevents: usize,
-    launches: Option<Vec<Launch>>,
+    launches: Option<(Vec<Launch>, ReweightOptions)>,
 ) -> Result<EmitSummary, IntegrateError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
@@ -863,7 +880,7 @@ fn generate_sample(
         .map(|s| s.diagrams[0].provenance.process as i32)
         .collect();
     let reweight_plan = launches
-        .map(|l| reweight_plan(args, &compiled_sets, model, evaluated, l))
+        .map(|l| reweight_plan(&compiled_sets, model, evaluated, l))
         .transpose()?;
     let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
         compiled_sets
@@ -1005,14 +1022,14 @@ fn generate_sample(
     Ok(summary)
 }
 
-/// The reweight card's hypotheses, resolved against the model, or `None` when
-/// the run has no card. Everything the card cannot honour is refused here,
-/// before any subprocess is compiled.
+/// The reweight card's hypotheses and how to evaluate them, resolved against the
+/// model, or `None` when the run has no card. Everything the card cannot honour
+/// is refused here, before any subprocess is compiled.
 fn reweight_launches(
     args: &GenerateArgs,
     parsed: &SupportedCard,
     model: &UFOModel,
-) -> Result<Option<Vec<Launch>>, IntegrateError> {
+) -> Result<Option<(Vec<Launch>, ReweightOptions)>, IntegrateError> {
     let Some(path) = &args.reweight_card else {
         return Ok(None);
     };
@@ -1029,21 +1046,27 @@ fn reweight_launches(
         )));
     }
     let launches = resolve(&card, model).map_err(|e| err(format!("{}: {e}", path.display())))?;
-    Ok(Some(launches))
+    let couplings = args
+        .reweight_couplings
+        .as_deref()
+        .map(|names| resolve_couplings(model, names))
+        .transpose()
+        .map_err(|e| err(format!("--reweight-couplings: {e}")))?;
+    let options = ReweightOptions {
+        exact: args.reweight_exact,
+        couplings,
+    };
+    Ok(Some((launches, options)))
 }
 
 /// Compile and plan the reweighting of `sets`, the run's concrete subprocesses in
 /// the indexing its event source reports, and say what each event will cost.
 fn reweight_plan(
-    args: &GenerateArgs,
     sets: &[&DiagramSet],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
-    launches: Vec<Launch>,
+    (launches, options): (Vec<Launch>, ReweightOptions),
 ) -> Result<ReweightPlan, IntegrateError> {
-    let options = ReweightOptions {
-        polynomial: !args.reweight_exact,
-    };
     let n = launches.len();
     let plan = ReweightPlan::new(sets, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
@@ -1059,10 +1082,12 @@ fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
         let mut parts: Vec<String> = sub
             .polynomial
             .iter()
-            .map(|(param, degree, cost, served)| {
+            .map(|g| {
                 format!(
-                    "{served} along {param} by one degree-{degree} polynomial \
-                     ({cost} extra evaluations)"
+                    "{} as a polynomial in {} ({} amplitude monomials)",
+                    g.hypotheses,
+                    g.params.join(","),
+                    g.terms
                 )
             })
             .collect();
@@ -1502,7 +1527,7 @@ fn generate_proton_sample(
     nevents: usize,
     set: &PdfSet,
     pdf: &PdfMember,
-    launches: Option<Vec<Launch>>,
+    launches: Option<(Vec<Launch>, ReweightOptions)>,
 ) -> Result<EmitSummary, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
@@ -1587,7 +1612,7 @@ fn generate_proton_sample(
                 .flat_map(FlavorGroups::groups)
                 .flat_map(|g| (0..g.members().len()).map(|i| g.member_diagram_set(i)))
                 .collect();
-            reweight_plan(args, &members, model, evaluated, l)
+            reweight_plan(&members, model, evaluated, l)
         })
         .transpose()?;
     let beam_pdg = hadron_beam_pdg(rc)?;

@@ -315,7 +315,10 @@ Options:
           MadGraph reweight card: every event also carries its weight under each `launch` block's parameters, as an LHEF `<rwgt>` block
 
       --reweight-exact
-          Evaluate every reweighting hypothesis directly, never through the polynomial in a coupling that serves many hypotheses along one parameter at a fixed cost. Slower; for cross-checking
+          Evaluate every reweighting hypothesis directly, never through a polynomial in the couplings. Slower; for cross-checking
+
+      --reweight-couplings <NAME,...>
+          Track the amplitude as a polynomial jointly in these external parameters (comma-separated names), so every hypothesis costs a quadratic form rather than an amplitude evaluation: an event costs one evaluation per monomial of the amplitude — `1 + n` for `n` couplings entering at most once per diagram — whatever the number of hypotheses. The card may then move only these, and each must enter every subprocess polynomially
 
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output
