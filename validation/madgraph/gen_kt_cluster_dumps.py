@@ -50,8 +50,12 @@ rewgt's own records follow the second call. Fields, after the tag:
           from idup reads a value left by an earlier event (the stale-ipdgcl
           defect)
   RWBEG   ipsel, iproc, igraphs(1), asref, alpsfact, x1, x2 (xbk(ib(j))), ib(1),
-          ib(2), q2bck(1), q2bck(2), q2fact(1), q2fact(2) (the matrix-element
-          PDF scales), all_scale(ivec), scale, jlast(1), jlast(2)
+          ib(2), q2bck(1), q2bck(2), q2fact(1), q2fact(2) (as rewgt's own,
+          second setclscales call leaves them -- not the scales the
+          matrix element's densities were read at: DSIG evaluates those before
+          it calls REWGT, at the first call's q2fact, auto_dsig_v4.inc:127-151,
+          which is that call's SCLOUT), all_scale(ivec), scale, jlast(1),
+          jlast(2)
   RWVX    n, class, imocl, idacl1, idacl2, pdg(mother), pdg(d1), pdg(d2),
           ipart(1,mother), ipart(2,mother), isr arm, fsr arm, goodjet(mother),
           goodjet(d1), goodjet(d2), q2now, alpsfact*sqrt(q2now),

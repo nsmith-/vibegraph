@@ -559,6 +559,60 @@ fn fs_leg(ipart: &[[usize; 2]], mask: u32) -> usize {
     }
 }
 
+/// `ptclus` (`reweight.f:1225-1269`): per external leg, in the clustering's own
+/// leg order, the scale the event record's `<scales pt_clust_N>` reports for it.
+///
+/// A final-state leg takes the largest clustering scale `√pt2ijcl(n)` among
+/// the jet vertices it takes part in as a `goodjet` line; a leg that takes part
+/// in none takes `etot`, the collider energy `√stot` (not `√ŝ`). "Takes part"
+/// means the leg is one of the two `ipart` entries of a daughter of vertex `n`,
+/// where the terminal vertex's daughters are its first beam line and the
+/// leftover line. A daughter whose `ipart` names a final-state leg that is not
+/// a jet (`iqjets = 0`) stops being a `goodjet` line from that point on, which
+/// is read before the vertex test for the same entry. The beams stay at `0`.
+///
+/// It reads `pt2ijcl` after every rewrite `setclscales` made, so under
+/// matching the second call's value is the one `unwgt.f` writes.
+pub fn ptclus(scales: &ClusterScales, colors: &ColorTable, etot: f64) -> Vec<f64> {
+    let merges = &scales.clustering.merges;
+    let n = merges.len() + 2;
+    let n_masks = 1usize << n;
+    let mut pdg = vec![0i64; n_masks];
+    let mut ipart = vec![[0usize; 2]; n_masks];
+    let mut goodjet = vec![false; n_masks];
+    for line in &scales.lines {
+        let mask = line.mask as usize;
+        pdg[mask] = line.pdg;
+        ipart[mask] = line.ipart;
+        goodjet[mask] = line.goodjet;
+    }
+    let mut out = vec![0.0f64; n];
+    for (step, merge) in merges.iter().enumerate() {
+        let islast = step + 1 == n - 2;
+        let [d1, d2] = [merge.daughters[0] as usize, merge.daughters[1] as usize];
+        let mother = merge.mother as usize;
+        let daughters = if islast { [d1, mother] } else { [d1, d2] };
+        let jet_vertex = is_jet_vertex(colors, mother, d1, d2, &pdg, &ipart, islast);
+        let scale = scales.pt2[step].sqrt();
+        for daughter in daughters {
+            for leg in ipart[daughter] {
+                if leg <= 2 {
+                    continue;
+                }
+                if goodjet[daughter] && scales.iqjets[leg - 1] == 0 {
+                    goodjet[daughter] = false;
+                }
+                if jet_vertex && goodjet[daughter] {
+                    out[leg - 1] = out[leg - 1].max(scale);
+                } else if out[leg - 1] == 0.0 {
+                    out[leg - 1] = etot;
+                }
+            }
+        }
+    }
+    out
+}
+
 struct Walk {
     pdg: Vec<i64>,
     ipart: Vec<[usize; 2]>,
@@ -1079,6 +1133,27 @@ mod tests {
             true,
         )
         .expect("the clustering succeeds")
+    }
+
+    /// `ptclus` on `u ū → u ū`: the beams stay at zero, the leg left over at
+    /// the terminal vertex takes the collider energy (the terminal vertex is
+    /// never a jet vertex), and the leg the first merge emits off the beam
+    /// takes that merge's scale exactly when the walk tagged it a jet.
+    #[test]
+    fn ptclus_takes_the_jet_vertex_scale_or_the_collider_energy() {
+        let colors = colors();
+        for forward in [true, false] {
+            let scales = run(&event(forward));
+            let first = scales.clustering.merges[0];
+            assert_eq!(first.daughters, [0b0001, 0b0100]);
+            let etot = 13000.0;
+            let out = ptclus(&scales, &colors, etot);
+            assert_eq!(out[0], 0.0);
+            assert_eq!(out[1], 0.0);
+            assert_eq!(out[3], etot);
+            assert!(scales.iqjets[2] > 0, "the emitted quark is a jet");
+            assert_eq!(out[2], scales.pt2[0].sqrt());
+        }
     }
 
     /// With no parton density the beam measure is `E²`, equal for both legs, so

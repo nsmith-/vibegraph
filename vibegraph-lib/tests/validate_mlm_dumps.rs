@@ -68,6 +68,8 @@ use vibegraph::coupling::cluster::setclscales::{
 };
 use vibegraph::coupling::scales::{ClusterInput, ScaleChoice, ScaleEvent};
 use vibegraph::lhef::build::scalup;
+use vibegraph::lhef::parse::LheFile;
+use vibegraph::lhef::record::{LheEvent, STATUS_INTERMEDIATE, STATUS_OUTGOING};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
@@ -637,6 +639,11 @@ struct Tally {
     controls: (usize, usize, usize),
     /// Matched events whose `P1` is not the mirror of `PP`.
     permuted: usize,
+    /// Matched events with at least one status-2 line expected.
+    resonant: usize,
+    /// Of those, the events whose on-shell leg sets carry other codes in the
+    /// integration channel's forest than in the clustered configuration's.
+    channel_codes_differ: usize,
     /// Over the events whose factor gates: `Σ 1/A`, with `A` the product of the
     /// `αs` ratios, this crate's and MadEvent's, and the count. The events are
     /// unweighted, so `⟨1/A⟩` is σ without the `αs` factor over σ with it.
@@ -685,6 +692,11 @@ impl Tally {
         println!(
             "  events whose P1 is a symmetry permutation of PP: {}",
             self.permuted
+        );
+        println!(
+            "  events with a status-2 line expected: {}; of them, read in the integration \
+             channel's forest the lines carry other codes on {}",
+            self.resonant, self.channel_codes_differ
         );
         println!(
             "  controls: a beam's record scale differs from its density scale on {}, CFG \
@@ -1088,6 +1100,8 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
     let matched = row.settings.ickkw > 0;
     let mut tally = Tally::default();
     let mut memo_counts: BTreeMap<(String, usize), BTreeSet<usize>> = BTreeMap::new();
+    // The banked event file the dump was replayed from, in the dump's order.
+    let lhe = matched.then(|| banked_events(name));
 
     for event in events {
         tally.events += 1;
@@ -1371,6 +1385,18 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
             );
             continue;
         }
+        if let Some(lhe) = &lhe {
+            compare_record(
+                &mut tally,
+                &row,
+                &event,
+                &history,
+                &physical,
+                &lhe.events[i],
+                i,
+                &f,
+            );
+        }
         let Some(mine) = compare_rewgt(
             &mut tally, &row, &event, &history, &physical, i, !permuted, &f,
         ) else {
@@ -1398,12 +1424,258 @@ fn replay_row(name: &str) -> (Tally, BTreeMap<(String, usize), BTreeSet<usize>>)
                         .map(|j| row.pdf.xfx_q2(legs[j].i(2) as i32, x[j], q2[j]) / x[j])
                         .product::<f64>()
             };
-            let theirs = factor(end.f(1), mu_r, [begin.f(12), begin.f(13)]);
+            // The densities were read at the first call's `q2fact` (its
+            // `SCLOUT`), before `REWGT` ran the second call; `RWBEG`'s `q2fact`
+            // is the second call's.
+            let theirs = factor(end.f(1), mu_r, q2fact);
             let ours = factor(mine.weight, history.first.mu_r, history.first.q2fact);
             tally.rescaled.push((i, subdir.clone(), theirs / ours));
         }
     }
     (tally, memo_counts)
+}
+
+/// The samples-grade MadEvent run a matched row's dump was replayed from.
+fn banked_events(name: &str) -> LheFile {
+    let path = madgraph_dir().join(format!(
+        "output/{name}/Events/run_01/unweighted_events.lhe.gz"
+    ));
+    assert!(
+        path.is_file(),
+        "{name}: no banked events at {}",
+        path.display()
+    );
+    let out = Command::new("gzip")
+        .arg("-dc")
+        .arg(&path)
+        .output()
+        .expect("gzip -dc");
+    assert!(out.status.success(), "gzip failed on {}", path.display());
+    LheFile::parse(std::str::from_utf8(&out.stdout).expect("utf-8")).expect("banked file parses")
+}
+
+/// `pt_clust_N="v"` of an event's `<scales>` line, as `(N, v)` in order.
+fn pt_clust(event: &LheEvent) -> Option<Vec<(usize, String)>> {
+    let line = event
+        .trailer
+        .iter()
+        .find(|l| l.trim_start().starts_with("<scales"))?;
+    let mut out = Vec::new();
+    let mut rest = line.as_str();
+    while let Some(at) = rest.find("pt_clust_") {
+        rest = &rest[at + "pt_clust_".len()..];
+        let eq = rest.find("=\"").expect("pt_clust_N=\"");
+        let key: usize = rest[..eq].parse().expect("a line number");
+        rest = &rest[eq + 2..];
+        let close = rest.find('"').expect("closing quote");
+        out.push((key, rest[..close].to_string()));
+        rest = &rest[close + 1..];
+    }
+    Some(out)
+}
+
+/// The external leg (from `2`, zero-based) a record line holds, by `p_x` and
+/// `|p_y|`: both survive the longitudinal boost to the lab and the mirror (a
+/// rotation by π about the x axis), so they name a leg of the clustered momenta
+/// whatever relabelling of identical legs the file applied. The record prints
+/// eleven significant digits.
+fn leg_of(physical: &[[f64; 4]], p: [f64; 4]) -> Option<usize> {
+    let near = |a: f64, b: f64| (a - b).abs() <= 1e-8 * (1.0 + a.abs().max(b.abs()));
+    (2..physical.len())
+        .find(|&leg| near(physical[leg][1], p[1]) && near(physical[leg][2].abs(), p[2].abs()))
+}
+
+/// The event record's matched fields against MadEvent's, event by event:
+///
+/// * `ptclus` of the second call against the dump's `PTCL SETCL` of that call
+///   and `PTCL OUT`, at [`AGREEMENT`];
+/// * the banked file's `<scales pt_clust_N>`: every final-state line `N`
+///   carries the value this crate's `ptclus` gives the leg it holds, printed
+///   as `addmothers` prints it (`f16.5`), and nothing else is listed;
+/// * the status-2 lines: the clustered configuration's timelike propagators
+///   (`sprop ≠ 0`, up to the first spacelike one, `addmothers.f:183-247`)
+///   whose leg set this crate's second call found on its Breit–Wigner are
+///   exactly the file's status-2 lines — the same codes, each mothering exactly
+///   its own legs, with the virtuality as its mass and the colour its daughters
+///   leave open.
+#[allow(clippy::too_many_arguments)]
+fn compare_record(
+    tally: &mut Tally,
+    row: &Row,
+    event: &Event,
+    history: &vibegraph::coupling::scales::ClusterHistory,
+    physical: &[[f64; 4]],
+    lhe: &LheEvent,
+    i: usize,
+    f: &dyn Fn(&'static str) -> &'static str,
+) {
+    let Some(record) = history.matched_record(&row.colors) else {
+        tally.check(f("record: matched fields present"), i, false);
+        return;
+    };
+    let n = physical.len();
+    let calls = event.calls();
+    if let Some(ptcl) = calls.get(1).and_then(|c| c.last("PTCL")) {
+        let deviation = (2..n)
+            .map(|leg| rel(record.ptclus[leg], ptcl.f(3 + leg)))
+            .fold(0.0f64, f64::max);
+        tally.within(
+            f("record: ptclus = PTCL SETCL (2nd call)"),
+            i,
+            deviation,
+            AGREEMENT,
+        );
+    }
+    if let Some(out) = event.recs().find(|r| r.tag() == "PTCL" && r.s(1) == "OUT") {
+        let deviation = (2..n)
+            .map(|leg| rel(record.ptclus[leg], out.f(3 + leg)))
+            .fold(0.0f64, f64::max);
+        tally.within(f("record: ptclus = PTCL OUT"), i, deviation, AGREEMENT);
+    }
+
+    // The status-2 lines addmothers writes, off MadEvent's own forest of the
+    // clustered configuration and this crate's on-shell leg sets.
+    let scales = history.event_scales();
+    let config = scales.clustered_config.expect("matched") + 1;
+    let subdir = event.subprocess_dir();
+    let iproc = calls[0].iproc();
+    let forest = &row.directories[subdir].configs[config - 1];
+    let mut masks: BTreeMap<i32, u32> = BTreeMap::new();
+    let mut expected: Vec<(i64, u32)> = Vec::new();
+    for k in 1..n.saturating_sub(2) {
+        let index = -(k as i32);
+        let Some(line) = forest.lines.iter().find(|l| l.index == index) else {
+            break;
+        };
+        let mask = line.daughters.iter().fold(0u32, |m, &d| {
+            m | if d > 0 {
+                1u32 << (d - 1)
+            } else {
+                masks.get(&d).copied().unwrap_or(0)
+            }
+        });
+        masks.insert(index, mask);
+        let code = line.sprop.get(iproc - 1).copied().unwrap_or(0);
+        if code == 0 {
+            break;
+        }
+        if record.on_shell.contains(&mask) {
+            expected.push((code, mask));
+        }
+    }
+    let intermediates: Vec<usize> = (0..lhe.particles.len())
+        .filter(|&k| lhe.particles[k].status == STATUS_INTERMEDIATE)
+        .collect();
+    let mut written: Vec<(i64, u32)> = Vec::new();
+    let mut shape_ok = true;
+    for &k in &intermediates {
+        let res = &lhe.particles[k];
+        let daughters: Vec<usize> = (0..lhe.particles.len())
+            .filter(|&d| lhe.particles[d].mothers[0] == (k + 1) as i32)
+            .collect();
+        let mut mask = 0u32;
+        let mut sum = [0.0f64; 4];
+        let mut colors: Vec<i32> = Vec::new();
+        let mut anticolors: Vec<i32> = Vec::new();
+        for &d in &daughters {
+            let q = &lhe.particles[d];
+            if q.status != STATUS_OUTGOING {
+                shape_ok = false;
+                continue;
+            }
+            match leg_of(physical, q.momentum) {
+                Some(leg) => mask |= 1u32 << leg,
+                None => shape_ok = false,
+            }
+            for (acc, x) in sum.iter_mut().zip(q.momentum) {
+                *acc += x;
+            }
+            if q.color[0] != 0 {
+                colors.push(q.color[0]);
+            }
+            if q.color[1] != 0 {
+                anticolors.push(q.color[1]);
+            }
+        }
+        let open_c: Vec<i32> = colors
+            .iter()
+            .copied()
+            .filter(|c| !anticolors.contains(c))
+            .collect();
+        let open_a: Vec<i32> = anticolors
+            .iter()
+            .copied()
+            .filter(|a| !colors.contains(a))
+            .collect();
+        let virtuality = (sum[0] * sum[0] - sum[1] * sum[1] - sum[2] * sum[2] - sum[3] * sum[3])
+            .max(0.0)
+            .sqrt();
+        shape_ok &= res.mothers == [1, 2]
+            && rel(res.mass, virtuality) < 1e-6
+            && [
+                open_c.first().copied().unwrap_or(0),
+                open_a.first().copied().unwrap_or(0),
+            ] == res.color
+            && open_c.len() <= 1
+            && open_a.len() <= 1;
+        written.push((i64::from(res.pdg), mask));
+    }
+    expected.sort_unstable();
+    written.sort_unstable();
+    tally.check(
+        f("record: status-2 lines (code, legs)"),
+        i,
+        expected == written,
+    );
+    tally.check(
+        f("record: status-2 lines mother their legs, mass, colour"),
+        i,
+        shape_ok,
+    );
+    if !expected.is_empty() {
+        tally.resonant += 1;
+    }
+    // The control: the same leg sets read in the integration channel's forest,
+    // the reading `ickkw = 0` takes, name a different code on some events.
+    let channel = &row.directories[subdir].configs[calls[0].iconfig() - 1];
+    let mut channel_masks: BTreeMap<i32, u32> = BTreeMap::new();
+    let mut channel_codes: Vec<(i64, u32)> = Vec::new();
+    for line in &channel.lines {
+        let mask = line.daughters.iter().fold(0u32, |m, &d| {
+            m | if d > 0 {
+                1u32 << (d - 1)
+            } else {
+                channel_masks.get(&d).copied().unwrap_or(0)
+            }
+        });
+        channel_masks.insert(line.index, mask);
+        if expected.iter().any(|&(_, m)| m == mask) {
+            channel_codes.push((line.sprop.get(iproc - 1).copied().unwrap_or(0), mask));
+        }
+    }
+    channel_codes.sort_unstable();
+    if channel_codes != expected {
+        tally.channel_codes_differ += 1;
+    }
+
+    // `<scales>`: one entry per final-state line, keyed by its line number.
+    let Some(printed) = pt_clust(lhe) else {
+        tally.check(f("record: <scales pt_clust_N> (banked file)"), i, false);
+        return;
+    };
+    let mut ok = printed.len() == n - 2;
+    for (key, value) in &printed {
+        let line = key.checked_sub(1).and_then(|k| lhe.particles.get(k));
+        let Some(line) = line.filter(|l| l.status == STATUS_OUTGOING) else {
+            ok = false;
+            continue;
+        };
+        match leg_of(physical, line.momentum) {
+            Some(leg) => ok &= format!("{:.5}", record.ptclus[leg]) == *value,
+            None => ok = false,
+        }
+    }
+    tally.check(f("record: <scales pt_clust_N> (banked file)"), i, ok);
 }
 
 fn dump_manifest() -> Value {
@@ -1517,4 +1789,128 @@ fn the_jet_memo_is_the_channel_s_restricted_jet_count() {
         println!("  {p}");
     }
     assert!(problems.is_empty(), "{} memo discrepancies", problems.len());
+}
+
+/// The `value = name` pairs of an `<MGRunCard>` body as Pythia's `MadgraphPar`
+/// reads them: a line holding `#` is skipped, the value is what precedes the
+/// first `=`, the name what follows it up to a `!`. Names are compared without
+/// case, since this crate spells a few (`SDE_strategy`) as `banner.py`'s
+/// template does and MadGraph writes them lower-case.
+fn run_card_fields(body: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for line in body.lines() {
+        if line.contains('#') {
+            continue;
+        }
+        let Some((value, rest)) = line.split_once('=') else {
+            continue;
+        };
+        let name = rest.split('!').next().unwrap_or("").trim().to_lowercase();
+        if !name.is_empty() {
+            out.insert(name, value.trim().to_string());
+        }
+    }
+    out
+}
+
+/// Whether two card values say the same: equal as numbers, as flags, or as
+/// text once whitespace is ignored.
+fn same_card_value(a: &str, b: &str) -> bool {
+    let flag = |v: &str| match v.to_lowercase().trim_matches('.') {
+        "true" | "t" => Some(true),
+        "false" | "f" => Some(false),
+        _ => None,
+    };
+    let number = |v: &str| v.replace(['d', 'D'], "e").parse::<f64>().ok();
+    if let (Some(x), Some(y)) = (number(a), number(b)) {
+        return x == y;
+    }
+    if let (Some(x), Some(y)) = (flag(a), flag(b)) {
+        return x == y;
+    }
+    let squash = |v: &str| v.split_whitespace().collect::<String>();
+    squash(a) == squash(b)
+}
+
+/// The `<MGRunCard>` this crate writes for each matched row's card, field by
+/// field against the one in the header of M0's banked MadEvent file. The four
+/// fields Pythia's `JetMatching:setMad` reads (`ickkw`, `xqcut`,
+/// `maxjetflavor`, `alpsfact`) must be present on both sides and agree, and so
+/// must every other field both carry except `iseed`: MadEvent records the seed
+/// it ran with, this crate the card's (its own generator seed is a command-line
+/// flag, and names a different random stream). The fields either side alone
+/// carries are reported: MadEvent writes only the template's visible block and
+/// the hidden parameters a card sets, this crate every parameter it resolved.
+#[test]
+#[ignore = "oracle layer: the matched MadEvent runs are outside the reference bundle; `pixi run validate-mlm-dumps` runs this against them"]
+fn mg_run_card_matches_madevents_banner() {
+    const SET_MAD: [&str; 4] = ["ickkw", "xqcut", "maxjetflavor", "alpsfact"];
+    let mut failed = Vec::new();
+    for name in selected_rows() {
+        if name.contains("xqcut_only") {
+            continue;
+        }
+        let path = madgraph_dir().join(format!(
+            "output/{name}/Events/run_01/unweighted_events.lhe.gz"
+        ));
+        let out = Command::new("gzip")
+            .arg("-dc")
+            .arg(&path)
+            .output()
+            .expect("gzip -dc");
+        let text = String::from_utf8(out.stdout).expect("utf-8");
+        let body = |doc: &str| -> String {
+            let start = doc.find("<MGRunCard>").expect("an <MGRunCard> element");
+            let end = doc[start..].find("</MGRunCard>").expect("its end") + start;
+            let inner = &doc[start + "<MGRunCard>".len()..end];
+            inner
+                .trim()
+                .trim_start_matches("<![CDATA[")
+                .trim_end_matches("]]>")
+                .to_string()
+        };
+        let theirs = run_card_fields(&body(&text));
+        let card = RunCard::parse_file(&madgraph_dir().join(format!("{name}_run_card.dat")))
+            .expect("run card");
+        let ours = run_card_fields(&body(&vibegraph::lhef::write::mg_run_card(&card)));
+        let mut agree = 0;
+        let mut differ = Vec::new();
+        for (field, value) in &theirs {
+            if let Some(mine) = ours.get(field) {
+                if same_card_value(mine, value) {
+                    agree += 1;
+                } else {
+                    differ.push(format!("{field}: MadEvent {value:?}, vibegraph {mine:?}"));
+                    if field != "iseed" {
+                        failed.push(format!("{name}: {field}"));
+                    }
+                }
+            }
+        }
+        let common = agree + differ.len();
+        let only_theirs: Vec<&String> = theirs.keys().filter(|k| !ours.contains_key(*k)).collect();
+        let only_ours: Vec<&String> = ours.keys().filter(|k| !theirs.contains_key(*k)).collect();
+        println!("\n{name}: <MGRunCard> fields both carry agree {agree}/{common}");
+        for d in &differ {
+            println!("  differs: {d}");
+        }
+        println!(
+            "  only in MadEvent's ({}): {only_theirs:?}",
+            only_theirs.len()
+        );
+        println!("  only in vibegraph's ({}): {only_ours:?}", only_ours.len());
+        for field in SET_MAD {
+            let ok = matches!((theirs.get(field), ours.get(field)), (Some(a), Some(b)) if same_card_value(a, b));
+            println!(
+                "  setMad field {field}: MadEvent {:?}, vibegraph {:?} {}",
+                theirs.get(field),
+                ours.get(field),
+                if ok { "agree" } else { "DIFFER" }
+            );
+            if !ok {
+                failed.push(format!("{name}: {field}"));
+            }
+        }
+    }
+    assert!(failed.is_empty(), "fields that differ: {failed:?}");
 }

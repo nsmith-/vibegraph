@@ -36,7 +36,7 @@ use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder
 use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtSettings};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{
-    ClosedForms, ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent,
+    ClosedForms, ClusterInput, EventScales, MatchedRecord, ScaleChoice, ScaleError, ScaleEvent,
 };
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
@@ -500,6 +500,7 @@ impl EventScaleSource {
                 PointScales::Scales(scales) => PointHistory::Scales {
                     scales,
                     rewgt: None,
+                    record: None,
                 },
                 PointScales::Vetoed => PointHistory::Vetoed,
             });
@@ -516,6 +517,7 @@ impl EventScaleSource {
             Ok(history) => Ok(PointHistory::Scales {
                 scales: history.event_scales(),
                 rewgt: history.rewgt_history(),
+                record: history.matched_record(set.colors()),
             }),
             Err(ScaleError::Clustering(
                 ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
@@ -534,10 +536,11 @@ impl EventScaleSource {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PointHistory {
     /// The scales to evaluate this point at; under matching, also what `rewgt`
-    /// reads of the event's clustering, `None` otherwise.
+    /// and the event record read of the event's clustering, `None` otherwise.
     Scales {
         scales: EventScales,
         rewgt: Option<RewgtHistory>,
+        record: Option<MatchedRecord>,
     },
     /// As [`PointScales::Vetoed`].
     Vetoed,

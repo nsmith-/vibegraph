@@ -263,6 +263,10 @@ validate-kt-cluster = { cmd = "cargo test -p vibegraph-lib --profile release-deb
 # jet memo against the census of every job. The dumps and the MLM runs are
 # outside the reference bundle; generate-mlm-references makes them.
 validate-mlm-dumps = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_mlm_dumps -- --ignored --nocapture --test-threads 1", depends-on = ["fetch-pdf"] }
+# Oracle layer: a matched vibegraph sample's event record (the share of events
+# listing the Z, the share whose jet sits at the collider energy) against the
+# banked MadEvent pp_to_llj_mlm run, which is outside the reference bundle.
+validate-mlm-samples = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --ignored --nocapture matched_sample_record_fractions_against_madevent", depends-on = ["fetch-pdf"] }
 # Long tier: sigma of the MLM llj rows -- pure cut (xqcut = 20, ickkw = 0),
 # matched, and matched at alpsfact = 2 -- against MadEvent's ten seeds each,
 # measured and reported.

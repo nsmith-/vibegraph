@@ -42,7 +42,7 @@ use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
 use crate::coupling::cluster::kt::{Channel, ClusterSettings};
 use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtMerge, RewgtSettings};
 use crate::coupling::cluster::setclscales::{
-    setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
+    ptclus, setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
 };
 use crate::runcard::RunCard;
 
@@ -271,6 +271,9 @@ pub struct ScaleChoice {
     /// `asrwgtflavor`, the heaviest quark flavour the matched α_s reweighting
     /// counts as a parton.
     asrwgtflavor: i64,
+    /// `√stot`, the collider energy: the scale `ptclus` gives a final-state leg
+    /// no jet vertex reaches.
+    sqrt_stot: f64,
 }
 
 impl ScaleChoice {
@@ -371,6 +374,7 @@ impl ScaleChoice {
             xqcut,
             alpsfact: card.float("alpsfact"),
             asrwgtflavor: card.int("asrwgtflavor"),
+            sqrt_stot: collider_energy(card),
         })
     }
 
@@ -618,6 +622,7 @@ impl ScaleChoice {
                 momenta: p,
                 fixed_fac: self.fixed_fac,
                 pdfwgt: self.pdfwgt,
+                sqrt_stot: self.sqrt_stot,
             });
         }
         let q2bck = [0, 1].map(|beam| {
@@ -645,6 +650,7 @@ impl ScaleChoice {
             momenta: p,
             fixed_fac: self.fixed_fac,
             pdfwgt: self.pdfwgt,
+            sqrt_stot: self.sqrt_stot,
         })
     }
 
@@ -700,6 +706,25 @@ pub struct ClusterHistory {
     pub momenta: Vec<[f64; 4]>,
     fixed_fac: [Option<f64>; 2],
     pdfwgt: bool,
+    sqrt_stot: f64,
+}
+
+/// What a matched event's record reads of its clustering besides the scales:
+/// the `<scales pt_clust_N>` values and the resonances `addmothers` writes.
+///
+/// Both come from the second `setclscales` call, the last clustering MadEvent
+/// runs before `unwgt.f` writes the event: its `ptclus`, and its `isbw` table,
+/// which `checkbw` fills from the integration channel's timelike propagators
+/// that `cut_bw` puts on their Breit–Wigner at the clustered momenta.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchedRecord {
+    /// `ptclus` per external leg, in the clustering's leg order (beams `0`).
+    pub ptclus: Vec<f64>,
+    /// The leg sets (bit `k` for leg `k + 1`) of the integration channel's
+    /// propagators on their Breit–Wigner. `addmothers` writes a status-2 line
+    /// for a propagator of the clustered configuration exactly when its leg set
+    /// is one of these.
+    pub on_shell: Vec<u32>,
 }
 
 impl ClusterHistory {
@@ -737,6 +762,21 @@ impl ClusterHistory {
         })
     }
 
+    /// The record fields of a matched event, `None` without matching, where
+    /// MadEvent writes neither.
+    pub fn matched_record(&self, colors: &ColorTable) -> Option<MatchedRecord> {
+        let second = self.second.as_ref()?;
+        Some(MatchedRecord {
+            ptclus: ptclus(second, colors, self.sqrt_stot),
+            on_shell: second
+                .clustering
+                .tagged
+                .iter()
+                .map(|&(mask, _)| mask)
+                .collect(),
+        })
+    }
+
     /// The scales the matrix element and the event record read.
     ///
     /// `μR` and the densities' factorisation scales are the first call's. The
@@ -758,6 +798,26 @@ impl ClusterHistory {
             clustered_config: Some(second.clustering.graphs[0] - 1),
         }
     }
+}
+
+/// `√stot` as `genps.f:653-676` sets it for proton beams: the invariant mass
+/// of two beams of mass `0.938`. The mass cancels analytically, `stot = 4 E₁ E₂`,
+/// but not in floating point, and this is the formula's own value. Only proton
+/// beams reach the clustering scale's record fields (matching refuses fixed
+/// beams), so any other beam is taken as massless.
+fn collider_energy(card: &RunCard) -> f64 {
+    let mass = |lpp: i64| {
+        if matches!(lpp.abs(), 1 | 2) {
+            0.938
+        } else {
+            0.0
+        }
+    };
+    let (m1, m2) = (mass(card.lpp1), mass(card.lpp2));
+    let (e1, e2) = (card.ebeam1.max(m1), card.ebeam2.max(m2));
+    let p1 = (e1 * e1 - m1 * m1).max(0.0).sqrt();
+    let p2 = -(e2 * e2 - m2 * m2).max(0.0).sqrt();
+    (m1 * m1 + m2 * m2 + 2.0 * (e1 * e2 - p1 * p2)).sqrt()
 }
 
 fn positive(name: &'static str, value: f64) -> Result<f64, ScaleError> {

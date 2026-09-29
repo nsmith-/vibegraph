@@ -88,7 +88,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
 use crate::coupling::cluster::rewgt::{rewgt, RewgtHistory};
-use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
+use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
@@ -1137,6 +1137,11 @@ pub struct ProtonEvent {
     /// `None` without matching, where every factor is `1`, and where the term
     /// carries no weight.
     pub group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, what the event
+    /// record reads of the term's matched clustering (`ptclus` and the on-shell
+    /// propagators); `None` without matching and where the term carries no
+    /// weight.
+    pub group_records: Vec<[Option<MatchedRecord>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1181,6 +1186,11 @@ pub struct ProtonSelection {
     /// The scales the drawn group's term was evaluated at — the event's own
     /// `SCALUP` and the argument of its `AQCDUP`.
     pub scales: EventScales,
+    /// Under matching, what the record reads of the drawn term's clustering,
+    /// in the group representative's leg order with the drawn ordering's beams
+    /// in place (the clustering of a mirrored term sees its own first parton on
+    /// the first beam); `None` without matching.
+    pub record: Option<MatchedRecord>,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -1338,6 +1348,9 @@ struct ProtonScratch<'a> {
     /// The last evaluated point's matched reweighting factors
     /// ([`ProtonEvent::group_rewgt`]).
     group_rewgt: RefCell<Vec<[Option<Vec<f64>>; 2]>>,
+    /// The last evaluated point's matched record fields
+    /// ([`ProtonEvent::group_records`]).
+    group_records: RefCell<Vec<[Option<MatchedRecord>; 2]>>,
     /// The lab-frame momenta of the mirrored ordering's physical event, in the
     /// orientation the group's matrix element reads them in.
     lab_mirror_buf: RefCell<Vec<V>>,
@@ -1567,6 +1580,7 @@ impl<'a> ProtonIntegrand<'a> {
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 lab_mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 vetoed: bind_vetoes(&self.vetoes),
             }
@@ -1988,6 +2002,9 @@ impl<'a> ProtonIntegrand<'a> {
             let mut factors = sc.group_rewgt.borrow_mut();
             factors.clear();
             factors.resize(n_groups, [None, None]);
+            let mut records = sc.group_records.borrow_mut();
+            records.clear();
+            records.resize(n_groups, [None, None]);
         }
         let Some(scales) = scales else {
             return 0.0;
@@ -2042,6 +2059,8 @@ impl<'a> ProtonIntegrand<'a> {
         out.clear();
         let mut factors = sc.group_rewgt.borrow_mut();
         factors.clear();
+        let mut records = sc.group_records.borrow_mut();
+        records.clear();
         let mut rows: Option<([f64; 2], [FlavorRow; 2])> = None;
         let mut rows_at = |mu_f: [f64; 2]| match rows {
             Some((at, r)) if at == mu_f => r,
@@ -2083,35 +2102,39 @@ impl<'a> ProtonIntegrand<'a> {
                 mirror_lab_into(&lab, &mut lab_mirror);
                 // Clustered with the beams exchanged, so its per-beam
                 // factorisation scales come back in that order.
-                self.term_at(sc, &lab_mirror, drawn).map(|(s, history)| {
-                    (
-                        EventScales {
-                            mu_f: [s.mu_f[1], s.mu_f[0]],
-                            mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
-                            ..s
-                        },
-                        history,
-                    )
-                })
+                self.term_at(sc, &lab_mirror, drawn)
+                    .map(|(s, history, record)| {
+                        (
+                            EventScales {
+                                mu_f: [s.mu_f[1], s.mu_f[0]],
+                                mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
+                                ..s
+                            },
+                            history,
+                            record,
+                        )
+                    })
             } else {
                 None
             };
             // The matched reweighting of each member, per ordering. The mirrored
             // clustering puts the representative's first parton on its first
             // beam, which is the physical second one.
-            let direct_rewgt = direct.as_ref().and_then(|(_, history)| {
+            let direct_rewgt = direct.as_ref().and_then(|(_, history, _)| {
                 history
                     .as_ref()
                     .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2], BeamOrdering::Direct))
             });
-            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history)| {
+            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history, _)| {
                 history
                     .as_ref()
                     .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
             });
-            let direct = direct.map(|(s, _)| s);
-            let mirrored = mirrored.map(|(s, _)| s);
+            let (direct, direct_record) = direct.map_or((None, None), |(s, _, r)| (Some(s), r));
+            let (mirrored, mirrored_record) =
+                mirrored.map_or((None, None), |(s, _, r)| (Some(s), r));
             out.push([direct, mirrored]);
+            records.push([direct_record, mirrored_record]);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
             let mut term = 0.0;
@@ -2339,7 +2362,7 @@ impl<'a> ProtonIntegrand<'a> {
         sc: &ProtonScratch<'a>,
         lab: &[V],
         channel: SampledChannel,
-    ) -> Option<(EventScales, Option<RewgtHistory>)> {
+    ) -> Option<(EventScales, Option<RewgtHistory>, Option<MatchedRecord>)> {
         let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
         buf.extend(lab[2..].iter().map(components));
@@ -2348,7 +2371,11 @@ impl<'a> ProtonIntegrand<'a> {
             .point_history([components(&lab[0]), components(&lab[1])], &buf, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
-            PointHistory::Scales { scales, rewgt } => Some((scales, rewgt)),
+            PointHistory::Scales {
+                scales,
+                rewgt,
+                record,
+            } => Some((scales, rewgt, record)),
             PointHistory::Vetoed => None,
         }
     }
@@ -2484,6 +2511,7 @@ impl<'a> ProtonIntegrand<'a> {
             x: [m.x1, m.x2],
             group_scales: sc.group_scales.borrow().clone(),
             group_rewgt: sc.group_rewgt.borrow().clone(),
+            group_records: sc.group_records.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -2657,6 +2685,7 @@ impl<'a> ProtonIntegrand<'a> {
             config: color.config,
             leading: color.leading,
             scales,
+            record: event.group_records[group][ordering_slot(ordering)].clone(),
         })
     }
 
@@ -4497,7 +4526,7 @@ mod tests {
                             }
                         };
                         let drawn = integ.scale_channel(sc, &argument, fallback, v);
-                        let (_, history) = integ.term_at(sc, &lab, drawn).expect("scaled");
+                        let (_, history, _) = integ.term_at(sc, &lab, drawn).expect("scaled");
                         let history = history.expect("matched");
                         let colors = integ.scales.channels().expect("channels")[gi].colors();
                         let source = integ.scales.alpha_s().expect("running coupling");

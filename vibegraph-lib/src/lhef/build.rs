@@ -40,6 +40,30 @@ pub fn scalup(scales: &EventScales) -> f64 {
     scales.mu_f_record[0].max(scales.mu_f_record[1])
 }
 
+/// The `<scales>` line a matched event carries after its particles
+/// (`addmothers.f:411-429`): `pt_clust_N="v"` for every outgoing line, in
+/// record order, where `N` is the line's 1-based position in the event — so it
+/// counts any status-2 lines written before it — and `v` its `ptclus`
+/// (`ptclus[k]` for the `k`-th outgoing line) printed as Fortran's `f16.5`
+/// and trimmed.
+///
+/// Pythia's `Beams:setProductionScalesFromLHEF` reads these as each parton's
+/// starting scale, and its MLM matching leaves out a parton whose scale is the
+/// collider energy.
+pub fn pt_clust_scales(event: &LheEvent, ptclus: &[f64]) -> String {
+    let mut line = String::from("<scales");
+    let outgoing = event
+        .particles
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.status == STATUS_OUTGOING);
+    for ((position, _), value) in outgoing.zip(ptclus) {
+        line.push_str(&format!(" pt_clust_{}=\"{value:.5}\"", position + 1));
+    }
+    line.push_str("></scales>");
+    line
+}
+
 /// The scalar fields of one `<event>` line.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EventHeader {
@@ -902,6 +926,45 @@ mod tests {
             record.event_with_intermediates(&ttx_momenta(), &[1; 8], 0, header(), &[twice, twice]),
             Err(LhefError::IntermediateNesting { .. })
         ));
+    }
+
+    /// `pt_clust_N` names the outgoing lines by their record positions, which
+    /// the status-2 lines shift, and prints `f16.5` trimmed: MadEvent's
+    /// `<scales pt_clust_4="13000.00000" …></scales>` for a Drell-Yan event with
+    /// its Z listed. The input is per outgoing leg in record order, so the
+    /// intermediates must not consume an entry.
+    #[test]
+    fn pt_clust_keys_are_the_outgoing_lines_positions() {
+        let record = ttx_chain();
+        let intermediates = [Intermediate {
+            pdg: 24,
+            color: 1,
+            slots: 0b000110,
+        }];
+        let helicity = [1; 8];
+        let plain = record
+            .event(&ttx_momenta(), &helicity, 0, header())
+            .expect("record");
+        let ptclus = [
+            12999.999999999998,
+            38.928710834,
+            13000.0,
+            21.5,
+            0.000004,
+            1e3,
+        ];
+        assert_eq!(
+            pt_clust_scales(&plain, &ptclus),
+            "<scales pt_clust_3=\"13000.00000\" pt_clust_4=\"38.92871\" \
+             pt_clust_5=\"13000.00000\" pt_clust_6=\"21.50000\" pt_clust_7=\"0.00000\" \
+             pt_clust_8=\"1000.00000\"></scales>"
+        );
+        let shifted = record
+            .event_with_intermediates(&ttx_momenta(), &helicity, 0, header(), &intermediates)
+            .expect("record");
+        let line = pt_clust_scales(&shifted, &ptclus);
+        assert!(line.starts_with("<scales pt_clust_4=\"13000.00000\" pt_clust_5=\"38.92871\""));
+        assert!(line.ends_with("pt_clust_9=\"1000.00000\"></scales>"));
     }
 
     /// `SCALUP` is the larger factorisation scale. Every process whose clustering

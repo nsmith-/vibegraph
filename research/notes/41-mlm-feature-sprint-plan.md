@@ -1372,6 +1372,195 @@ and 130.61, a mean of 130.81 ± 0.28.
   field (scales, resonances, colour), and the existing Pythia consumption gate
   on the new sample.
 
+#### M4 Landed, 2026-09-29
+
+A matched run (`ickkw = 1`) now writes the event record a shower's MLM
+matching reads: `<scales pt_clust_N>` after each event's particles, the
+status-2 resonances the clustering found on their Breit–Wigner, and an
+`<MGRunCard>` in the header. At `ickkw = 0` nothing changes, byte for byte.
+Every rule was read from the pinned source first; where this section's plan
+text was short of it, the list at the end says so.
+
+**What changed.**
+- **`ptclus`** (`coupling/cluster/setclscales.rs`, `ptclus`): `reweight.f:1225-1269`
+  as a pure function of a finished call's `ClusterScales` — per merge, its two
+  daughters (the terminal vertex's are its first beam line and the leftover
+  line), each daughter's two `ipart` legs; a final-state leg takes the largest
+  `√pt2ijcl(n)` among jet vertices (`isjetvx`) where the daughter is still
+  `goodjet`, otherwise, if still unset, `etot = √stot`. The `goodjet` demotion
+  (`iqjets = 0` on an `ipart` leg) is applied before the vertex test of the same
+  entry, as in the source. `etot` is `genps.f:653-676`'s formula with the proton
+  mass 0.938: it cancels analytically (`stot = 4E₁E₂`) and lands on
+  12999.999999999998, which is what MadEvent dumps; the record prints
+  `13000.00000`.
+- **The record fields** (`coupling/scales.rs`, `MatchedRecord`,
+  `ClusterHistory::matched_record`): the second call's `ptclus` and its
+  `isbw` leg sets (`Clustering::tagged`, the integration channel's
+  propagators `cut_bw` put on their Breit–Wigner). They travel with each
+  term (`PointHistory::Scales::record`, `ProtonEvent::group_records`,
+  `ProtonSelection::record`); `EventScales` stays `Copy` and unchanged.
+- **The resonances** (`lhef/resonance.rs`, `clustered_on_shell`; CLI
+  `matched_event_record`): a timelike line of the *clustered* configuration is
+  written when its leg set is one of the `isbw` sets (`addmothers.f:257-264`),
+  none when the drawn flow is below leading colour there (`is_LC`); the
+  layout is the existing `event_with_intermediates` (mothers `1 2`, the
+  daughters' sum and virtuality, open colour, `SPINUP 9`). Under matching the
+  tables are built for every card, not only decay-chain ones.
+- **`<scales>`** (`lhef/build.rs`, `pt_clust_scales`): one `pt_clust_N` per
+  outgoing line, `N` its 1-based position (so shifted by the status-2 lines,
+  `ito(i)` in `addmothers.f:411-429`), `f16.5` trimmed.
+- **`<MGRunCard>`** (`lhef/write.rs`, `mg_run_card`; `RunCard::banner_values`;
+  `LheWriter::begin_with_blocks`, `EmitPlan::header_blocks`): every resolved
+  parameter as `value = name`, written only for matched runs. The values are
+  MadGraph's record of the card, which is not the resolved card: `banner.py`
+  writes the card after its own edits (`alpsfact = 1` under matching with
+  `use_syst`, `drjj = drjl = 0` and, without `auto_ptj_mjj`, `mmjj` above
+  `xqcut` zeroed under `xqcut`), before `setcuts.f`'s `ptj = mmjj = xqcut` and
+  `setrun.f`'s `alpsfact` rule, which rerun on any card read back.
+  `RunCard` keeps those few values beside the resolved ones (`#[serde(skip)]`,
+  so an artifact is unchanged).
+
+**The CDATA finding.** MadGraph wraps the card in `<![CDATA[ … ]]>`. Pythia
+8.312 (the pixi `pythia` environment) drops a CDATA section's content: on
+M0's own `pp_to_ll_0j2j_mlm` file `Info::header("MGRunCard")` is 4 bytes, and
+`JetMatching:setMad = on` warns "Madgraph merging parameters not found" and
+runs at its defaults (`qCut = 10`, `nQmatch = 5`). The same file with the two
+CDATA markers deleted gives the full 14084-byte card and `qCut = 20`,
+`nQmatch = 4`, `clFact = 1`. That is presumably why MadGraph drives Pythia with
+`setMad = off`. This crate writes the card as escaped element text (only `<`,
+`>`, `&`), which Pythia reads.
+
+**Per event against MadEvent** (`validate_mlm_dumps`, `compare_record`; the
+production path's second call on each dumped event, against the dump and the
+banked `unweighted_events.lhe.gz` read in the dump's order):
+
+| row | gated | `ptclus` = `PTCL SETCL` / `OUT` | `<scales>` in the file | status-2 (code, legs) | status-2 (mothers, mass, colour) | events with a Z |
+|---|---|---|---|---|---|---|
+| `pp_to_llj_mlm` | 10000 | 10000 / 10000 (worst 0) | 10000 | 10000 | 10000 | 9507 |
+| `pp_to_llj_mlm_alps2` | 10000 | 10000 / 10000 | 10000 | 10000 | 10000 | 9495 |
+| `pp_to_ll_0j2j_mlm` | 9859 | 9859 / 9859 | 9859 | 9859 | 9859 | 9477 |
+| `pp_to_ttx_0j1j_mlm` | 6265 | 6265 / 6265 | 6265 | 6265 | 6265 | 0 |
+
+- `<scales>` is compared as the file's own string: every outgoing line `N`
+  (keys shifted past the Z), the leg it holds found by `p_x`, `|p_y|`, and
+  `format!("{:.5}")` of this crate's value for that leg equal to the printed
+  one.
+- The status-2 expectation is built from MadEvent's own forest of the
+  clustered configuration (`CFG`, already gated by M1) and this crate's `isbw`
+  sets, and compared with the file's status-2 lines: codes, the legs each
+  mothers, mothers `1 2`, mass = daughters' virtuality, colour = what they
+  leave open. The writer's own layout (`event_with_intermediates`) is the
+  decay-chain one already gated; `cli_generate_proton` checks the matched
+  file's layout end to end.
+- Permuted `P1` (D2 decision, reported `info, permuted P1`, not gated): 3735
+  `t t~` and 141 Drell–Yan events, and every record field agrees on all of
+  them too. The record reads the second call, which clusters `P1` on both
+  sides, so the H1 deviation does not reach the record.
+- The control, and its limit: on every event with a Z, the on-shell leg set
+  read in the integration channel's forest carries the same code (23) as in
+  the clustered configuration's. `cluster.f:811-817` hands `igraphs` to the
+  integration channel whenever it is compatible, and `isbw` needs the channel
+  to have a Z on its window, so the clustered configuration is the Z one.
+  These rows cannot tell the clustered-configuration reading of the
+  resonance code from the channel reading; a row where they differ would.
+- No `t t~` event lists a resonance (the tops are external and nothing else
+  is on a Breit–Wigner), and no Drell–Yan event lists a photon.
+
+**`<MGRunCard>` field by field** (`mg_run_card_matches_madevents_banner`,
+the card this crate writes for each row's committed card against the banner of
+M0's file, names compared without case): 64/65 fields both carry agree on the
+llj rows, 50/51 on `t t~`, 84/85 on the mixed row. The one difference is
+`iseed` (MadEvent records its run seed; this crate the card's, since its
+generator seed is a flag naming another random stream). `ickkw`, `xqcut`,
+`maxjetflavor`, `alpsfact` agree on every row (`alpsfact` 2.0 on `_alps2`).
+MadEvent alone writes eight empty or `{}` list parameters; this crate alone
+writes 110–144 hidden ones MadEvent leaves out. `mmjj` reads `0.0` on both
+sides of the mixed row: the resolved card's 20 is `setcuts.f`'s, which is why
+the record is not the resolved card.
+
+**The matched sample** (`cli_generate_proton`):
+- `a_matched_sample_carries_the_shower_record` (banked): `pp_to_llj_mlm`'s
+  card, 3000 events — `<MGRunCard>` with the four `setMad` fields and the
+  card's `ptj`, one `<scales>` per event keyed exactly by the outgoing
+  lines, leptons at `13000.00000`, jets there or at ≥ `xqcut`, the Z with
+  mothers `1 2`, colour `0 0`, `SPINUP 9`, its leptons alone below it, mass
+  within 15 widths.
+- `matched_sample_record_fractions_against_madevent` (oracle,
+  `pixi run validate-mlm-samples`): 3000 events off a 20000 x 4 integration (seed 20260731) against the banked 10000: the Z on 0.9543 against 0.9507 (pull +0.81), a jet at the collider energy on 0.1183 against 0.1123 (pull +0.91).
+- The mixed row's smoke sample (`--neval 50000 --niter 4`, seed 20260929,
+  3000 events): the Z on 0.9487 of events (MadEvent 0.9477 of 10000), a jet
+  at the collider energy on 0.0630 (0.0668), `pt_clust` keys equal the
+  outgoing lines on 3000/3000 (10000/10000), IDPRUP 1914 / 730 / 356.
+
+**Byte identity at `ickkw = 0`**, binary against binary against `069a951`
+(throwaway worktree with its own target, since deleted; binaries
+`3df53a9e…` base, `4702425f…` final), M1's six cases (`integrate` 20k × 4,
+seed 7; `generate` 500 events): every `grid.bin.zst` identical (`a7946b89…`
+`llj_fixed`, `b831c9d4…` `llj`, `0c12fa8c…` `jj`, `351337ce…` `dy`,
+`6bebef12…` `gu`, `d640093a…` `ee`, the prefixes M2 and M3 recorded), every LHE
+file identical but for the header line naming the artifact path. The run
+card's banner values are `#[serde(skip)]`, so no artifact changes, and every
+record field is written only when the clustering's second call exists.
+
+**Pythia** (pixi `pythia` environment, 8.312):
+- The consumption gate's own passes (`consume.run_pass`) on the mixed smoke
+  sample: process level 3000/3000 consumed, none refused, none mismatched,
+  read to end of file, no message; shower level 3000/3000, with Pythia's own
+  shower complaints (`weight above unity`, one `stuck in loop`). MadEvent's
+  file cannot be put through the same driver: its header is not well-formed
+  XML for `ElementTree`.
+- Matching (a C++ driver, `JetMatchingMadgraph` with `jetAlgorithm = 2`,
+  `coneRadius = 1.0`, `nJetMax = 2`, `scheme = 1`,
+  `setProductionScalesFromLHEF = on`, 1500 accepted events each):
+  | file | mode | `MGRunCard` read | qCut, nQmatch, clFact | LHE events for 1500 kept |
+  |---|---|---|---|---|
+  | vibegraph | MadGraph's (`setMad = off`, `qCut = 1.5 xqcut`) | 3079 B | 30, 4, 1 | 2287 |
+  | vibegraph | `setMad = on` | 3079 B, xqcut 20, ickkw 1, maxjetflavor 4, alpsfact 1 | 20, 4, 1 | 2419 |
+  | MadEvent | MadGraph's | 4 B (CDATA dropped) | 30, 4, 1 | 2348 |
+  | MadEvent | `setMad = on` | 4 B: "Madgraph merging parameters not found", No xqcut/ickkw/maxjetflavor/alpsfact | 10, 5, 1 | 3464 |
+  | MadEvent, CDATA markers removed | `setMad = on` | 14084 B, same four values | 20, 4, 1 | 2461 |
+
+  Pythia reads our `<scales>`, resonances and card with no warning about the
+  record; the parameters `setMad` reports are MadEvent's own, where Pythia can
+  read MadEvent's card at all. `setMad = on` sets `qCut = xqcut`, not
+  MadGraph's `1.5 xqcut`. The acceptances are a smoke reading, not a
+  comparison (M5).
+
+**Other fixes.**
+- `gen_kt_cluster_dumps.py`: `RWBEG`'s `q2fact` fields are the second call's,
+  not the densities' scales (D2); the docstring says so, with
+  `auto_dsig_v4.inc:127-151`. The harness's informational weight-factor ratio
+  on permuted events read them as the densities' scales; it now reads the
+  first call's `SCLOUT`, as D2 did. On the mixed row's 68 events it now reads
+  MadEvent over this crate 1.022 on average, range 0.613–1.731, the inverse
+  of D2's 0.58–1.63 (M2's printout had 0.978, 0.675–1.405).
+
+**Where this section's plan was short of the source.**
+- §1.4 "status-2 resonances appear only if the clustering found them on their
+  Breit–Wigner": the test is on the *integration channel's* propagators
+  (`checkbw` over `this_config`'s forest, `cluster.f:386-432`, re-run by each
+  `cluster` call), keyed by leg set and applied to the clustered
+  configuration's timelike lines; the clustered configuration contributes only
+  the line list and codes. `isbw` entries are cleared only for the channel's
+  own leg sets, so a clustered configuration with a timelike leg set the
+  channel lacks reads a stale flag; unreachable on these rows (the lepton pair
+  is a line of every configuration).
+- `is_LC` (`addmothers.f:129-131, 195`): no resonance is written when the
+  drawn flow is below leading colour in the configuration.
+- The `ptclus` rule reads `pt2ijcl` after every rewrite, demotes a daughter's
+  `goodjet` on a non-jet `ipart` leg, and treats the terminal vertex's first
+  beam line and leftover line as its daughters; `etot` is `genps.f`'s
+  `√stot` with proton masses.
+- §1.4's `<MGRunCard>` "holding the resolved run card": MadGraph's record is
+  the card after `banner.py` only, and it is CDATA, which the pinned Pythia
+  cannot read (above).
+
+**What remains for M5.** Showering both files through one Pythia
+configuration with seed sweeps: acceptance per `@N`, merged σ, the
+differential jet rates. The `qCut` choice matters there (`setMad` gives
+`xqcut`, MadGraph `1.5 xqcut`). The mixed row's σ reference is regenerated
+at close-out (D2).
+
 ### M5: matched end-to-end (validation-dev; after M4)
 
 - Run MadEvent's and vibegraph's `pp_to_ll_0j2j_mlm` files through **one**
