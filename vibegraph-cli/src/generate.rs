@@ -1090,8 +1090,8 @@ fn flavor_records(
 
 /// The artifact's channels, matched to this process's **position by position**.
 ///
-/// A hadronic channel is a `(group, diagram)` pair — of one multiplicity, on a
-/// card of several — and the grids are banked in the integrand's own channel
+/// A hadronic channel is a `(group, diagram)` pair, or the pairs sharing one map
+/// — of one multiplicity, on a card of several — and the grids are banked in the integrand's own channel
 /// order, so the same set of keys in another order would install every grid on
 /// the wrong channel — a run that samples a perfectly plausible wrong
 /// distribution with nothing else to show for it. Comparing counts, or comparing
@@ -1354,6 +1354,9 @@ fn generate_proton_sample(
     }
     let mut integ = MultiplicitySum::new(parts);
 
+    artifact
+        .refuse_unmerged_grids(&integ.channel_keys())
+        .map_err(err)?;
     check_channel_keys(artifact, &integ)?;
     let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
     for k in 0..groups.len() {

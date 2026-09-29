@@ -176,11 +176,11 @@ fn integrate_at(seed: &str) -> Run {
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
     assert_eq!(artifact.pdf_set, PDF_SET);
     assert!(
-        artifact
-            .channels
-            .iter()
-            .all(|c| matches!(c.key, ChannelKey::GroupChannel { .. })),
-        "the hadronic path must bank (group, diagram) channels"
+        artifact.channels.iter().all(|c| matches!(
+            c.key,
+            ChannelKey::GroupChannel { .. } | ChannelKey::MergedChannel { .. }
+        )),
+        "the hadronic path must bank (group, diagram) channels, or maps shared by several"
     );
     Run {
         _tmp: tmp,
@@ -854,12 +854,15 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    assert_eq!(artifact.format_version, 10);
+    // `@1`'s 24 (group, diagram) pairs share six maps.
+    assert_eq!(artifact.format_version, 11);
     let mut sigma = [0.0f64; 2];
     let mut alpha = [0.0f64; 2];
     let mut previous = 0;
     for c in &artifact.channels {
-        let ChannelKey::MultiplicityChannel { final_state, .. } = c.key else {
+        let (ChannelKey::MultiplicityChannel { final_state, .. }
+        | ChannelKey::MergedChannel { final_state, .. }) = c.key
+        else {
             panic!(
                 "a channel of a sum is keyed by multiplicity, not {:?}",
                 c.key
@@ -954,6 +957,35 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     );
     assert!(
         stderr.contains("format version 10") && stderr.contains("written at version 9"),
+        "the refusal does not say why:\n{stderr}"
+    );
+
+    // A sum written before its channels merged holds one grid per pair.
+    stale.format_version = 10;
+    stale
+        .write_to_path(&stale_path, true)
+        .expect("write the stale copy");
+    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&stale_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--nevents", "10"])
+        .arg("-o")
+        .arg(dir.join("stale.lhe"))
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a version-10 artifact of a merging process was replayed"
+    );
+    assert!(
+        stderr.contains("format version 11") && stderr.contains("written at version 10"),
         "the refusal does not say why:\n{stderr}"
     );
 }

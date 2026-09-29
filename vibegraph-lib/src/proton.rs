@@ -75,6 +75,8 @@
 //! change of variables are documented on the type.
 
 use std::cell::{Cell, RefCell};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -111,6 +113,7 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
+use crate::phasespace::diagram_channel::MapIdentity;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
@@ -1267,7 +1270,12 @@ pub struct ProtonIntegrand<'a> {
     /// The one cut filter every group compiles to.
     cuts: &'a Cuts,
     combiner: ScaledMultiChannel<f64>,
+    /// Per sampling channel, the first `(group, diagram)` pair its map was built
+    /// from — the channel's name.
     channel_ids: Vec<ChannelId>,
+    /// Per sampling channel, every `(group, diagram)` pair whose map is this
+    /// channel's ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)), in derivation order.
+    channel_members: Vec<Vec<ChannelId>>,
     /// What the composition rule chose for each channel, read off the channel as
     /// it was built and kept because the built channels are type-erased behind
     /// [`ScaledChannel`] afterwards.
@@ -1376,6 +1384,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// Every group's diagrams contribute a channel and all of them are pooled into
     /// one mixture, so a peak one group's own diagrams do not cover — the mirrored
     /// `g q` configuration above all — is still covered by another group's.
+    /// Diagrams whose maps are the same function
+    /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)),
+    /// within a group or across groups, share one channel at their summed
+    /// selection weight: a point's value does not depend on which of them drew it.
     ///
     /// The peripheral channels are floored at [`Cuts::spacelike_floor`], the scale
     /// the process's own transverse-momentum cuts imply. The floor is passed because
@@ -1398,6 +1410,7 @@ impl<'a> ProtonIntegrand<'a> {
             sqrt_s_had,
             mu_f,
             true,
+            true,
             MapOptions::default(),
         )
     }
@@ -1415,7 +1428,28 @@ impl<'a> ProtonIntegrand<'a> {
         mu_f: f64,
         maps: MapOptions,
     ) -> Result<Self, ProtonError> {
-        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, maps)
+        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, true, maps)
+    }
+
+    /// [`new_with_maps`](Self::new_with_maps) with one sampling channel per
+    /// `(group, diagram)` pair, identical maps left unmerged.
+    ///
+    /// Production merges. This builds the mixture the merge collapses, whose
+    /// density is the same function at the same `αⱼ` sums, so the merge can be
+    /// measured and pinned against it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_unmerged_with_maps(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        model: &EvaluatedModel,
+        pdf: &'a PdfMember,
+        sqrt_s_had: f64,
+        mu_f: f64,
+        maps: MapOptions,
+    ) -> Result<Self, ProtonError> {
+        Self::build(
+            groups, amps, model, pdf, sqrt_s_had, mu_f, true, false, maps,
+        )
     }
 
     /// The maps this integrand samples under, every choice settled — what an
@@ -1446,6 +1480,7 @@ impl<'a> ProtonIntegrand<'a> {
             sqrt_s_had,
             mu_f,
             false,
+            true,
             MapOptions::default(),
         )
     }
@@ -1459,6 +1494,7 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
         bound_transfer: bool,
+        merge_maps: bool,
         map_options: MapOptions,
     ) -> Result<Self, ProtonError> {
         if amps.len() != groups.groups().len() {
@@ -1489,7 +1525,9 @@ impl<'a> ProtonIntegrand<'a> {
         );
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
+        let mut channel_members: Vec<Vec<ChannelId>> = Vec::new();
         let mut channel_samplers = Vec::new();
+        let mut by_identity: HashMap<MapIdentity, usize> = HashMap::new();
         for (gi, g) in groups.groups().iter().enumerate() {
             for (di, d) in channel_diagrams(g.diagrams(), model)
                 .into_iter()
@@ -1504,16 +1542,52 @@ impl<'a> ProtonIntegrand<'a> {
                 } else {
                     channel.without_transfer_bound()
                 };
-                channel_samplers.push(ChannelSampler::of(&channel));
-                channels.push(Box::new(channel));
-                channel_ids.push(ChannelId {
+                let id = ChannelId {
                     group: gi,
                     channel: di,
-                });
+                };
+                // Two pairs whose maps are one function share one channel: the
+                // point's value never reads which pair drew it, so the mixture
+                // density is the same at the summed weight, and the one grid
+                // pays one coverage floor instead of one per pair.
+                if merge_maps {
+                    match by_identity.entry(channel.map_identity()) {
+                        Entry::Occupied(slot) => {
+                            channel_members[*slot.get()].push(id);
+                            continue;
+                        }
+                        Entry::Vacant(slot) => {
+                            slot.insert(channels.len());
+                        }
+                    }
+                }
+                channel_samplers.push(ChannelSampler::of(&channel));
+                channels.push(Box::new(channel));
+                channel_ids.push(id);
+                channel_members.push(vec![id]);
             }
         }
 
         report_channel_maps(&channel_samplers);
+        let pairs: usize = channel_members.iter().map(Vec::len).sum();
+        if pairs != channels.len() {
+            tracing::info!(
+                "{} (group, diagram) channels share {} distinct phase-space maps",
+                pairs,
+                channels.len()
+            );
+        }
+        // Each channel starts at its pairs' share, so the mixture density is the
+        // unmerged uniform one.
+        let mut combiner = ScaledMultiChannel::uniform(channels);
+        if pairs != combiner.channels().len() {
+            combiner.set_alphas(
+                channel_members
+                    .iter()
+                    .map(|m| m.len() as f64 / pairs as f64)
+                    .collect(),
+            );
+        }
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
@@ -1523,8 +1597,9 @@ impl<'a> ProtonIntegrand<'a> {
             groups,
             pdf,
             cuts,
-            combiner: ScaledMultiChannel::uniform(channels),
+            combiner,
             channel_ids,
+            channel_members,
             channel_samplers,
             s_had,
             sqrt_s_had,
@@ -1790,10 +1865,17 @@ impl<'a> ProtonIntegrand<'a> {
         &self.channel_samplers
     }
 
-    /// Which diagram of which group each sampling channel came from, in channel
-    /// order — the key a per-channel grid is banked under.
+    /// Which diagram of which group each sampling channel was first built from,
+    /// in channel order — the name a per-channel grid is banked under.
     pub fn channel_ids(&self) -> &[ChannelId] {
         &self.channel_ids
+    }
+
+    /// Every `(group, diagram)` pair each sampling channel's map serves, in
+    /// channel order: one pair unless several pairs' maps are the same function
+    /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)).
+    pub fn channel_members(&self) -> &[Vec<ChannelId>] {
+        &self.channel_members
     }
 
     /// The partonic system the outer coordinates `u[0], u[1]` map to — the `(τ, y)`
@@ -1806,8 +1888,8 @@ impl<'a> ProtonIntegrand<'a> {
         self.map_point(u)
     }
 
-    /// The channels the integral is split across: one per diagram of every group,
-    /// pooled into a single mixture.
+    /// The channels the integral is split across: one per distinct map among the
+    /// diagrams of every group, pooled into a single mixture.
     pub fn channel_count(&self) -> usize {
         self.combiner.channels().len()
     }
@@ -1955,7 +2037,7 @@ impl<'a> ProtonIntegrand<'a> {
         sc: &ProtonScratch<'a>,
         m: &OuterPoint,
         out: &[V],
-        channel: SampledChannel,
+        channel: usize,
         scale_u: &[f64],
     ) -> f64 {
         self.build_frames(sc, m, out);
@@ -1969,7 +2051,7 @@ impl<'a> ProtonIntegrand<'a> {
         let acc = if self.scales.draws_configuration() {
             self.per_group_sum(sc, m, &cm, channel, scale_u)
         } else {
-            self.shared_scale_sum(sc, m, &cm, channel)
+            self.shared_scale_sum(sc, m, &cm, self.sampled_channel(channel))
         };
         if acc == 0.0 {
             return 0.0;
@@ -2041,15 +2123,16 @@ impl<'a> ProtonIntegrand<'a> {
     /// draws share the uniform, which correlates them without changing any one
     /// term's distribution, and the sum is linear in each term.
     ///
-    /// The sampling channel reaches only its own group's direct term, and only as
-    /// the draw's fallback where `AMP2` carries no probability; every other term
-    /// falls back to its group's first configuration.
+    /// The sampling channel reaches only the direct terms of the groups whose
+    /// diagrams it was built from, and only as the draw's fallback where `AMP2`
+    /// carries no probability, where that group's own diagram of the channel is
+    /// kept; every other term falls back to its group's first configuration.
     fn per_group_sum(
         &self,
         sc: &ProtonScratch<'a>,
         m: &OuterPoint,
         cm: &[V],
-        channel: SampledChannel,
+        channel: usize,
         scale_u: &[f64],
     ) -> f64 {
         let &[v] = scale_u else {
@@ -2073,13 +2156,12 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            let fallback = if gi == channel.group {
-                channel
-            } else {
-                SampledChannel {
-                    group: gi,
-                    channel: 0,
-                }
+            let fallback = SampledChannel {
+                group: gi,
+                channel: self.channel_members[channel]
+                    .iter()
+                    .find(|id| id.group == gi)
+                    .map_or(0, |id| id.channel),
             };
             let direct = {
                 let drawn = self.scale_channel(sc, cm, fallback, v);
@@ -2381,7 +2463,7 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// The pooled sampling channel `j` as the scale prescription names it: the
-    /// flavour group it was built for, and its channel inside that group.
+    /// first flavour group it was built for, and its channel inside that group.
     fn sampled_channel(&self, j: usize) -> SampledChannel {
         let id = self.channel_ids[j];
         SampledChannel {
@@ -2456,13 +2538,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
-        let shape = self.shape(
-            self.scratch(),
-            &m,
-            &point.momenta,
-            self.sampled_channel(channel),
-            scale_u,
-        );
+        let shape = self.shape(self.scratch(), &m, &point.momenta, channel, scale_u);
         if shape == 0.0 {
             return 0.0;
         }
@@ -2496,13 +2572,7 @@ impl<'a> ProtonIntegrand<'a> {
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let sc = self.scratch();
-        let shape = self.shape(
-            sc,
-            &m,
-            &point.momenta,
-            self.sampled_channel(channel),
-            scale_u,
-        );
+        let shape = self.shape(sc, &m, &point.momenta, channel, scale_u);
         if shape == 0.0 {
             return None;
         }
@@ -2712,7 +2782,7 @@ impl<'a> ProtonIntegrand<'a> {
             self.scratch(),
             &m,
             &point.momenta,
-            self.sampled_channel(j),
+            j,
             &u[self.channel_grid_ndim() + 1..],
         );
         if shape == 0.0 {
@@ -2825,8 +2895,7 @@ impl<'a> ProtonIntegrand<'a> {
                         self.combiner
                             .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
                     scale_draw.fill_uniforms(&mut scale_u);
-                    let shape =
-                        self.shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u);
+                    let shape = self.shape(sc, &m, &point.momenta, j, &scale_u);
                     // A point the cuts reject adds zero to every `Wⱼ`, so the
                     // mixture density — one evaluation per channel — is formed only
                     // for points that carry something.
@@ -3898,8 +3967,9 @@ mod tests {
             .collect()
     }
 
-    /// Every diagram of every group becomes a channel, they are pooled into one
-    /// mixture, and the peripheral ones are regulated at the scale the cuts imply.
+    /// Every diagram of every group is served by a channel, the six groups' 24
+    /// pairs share six distinct maps, they are pooled into one mixture, and the
+    /// peripheral ones are regulated at the scale the cuts imply.
     ///
     /// The scale is what *builds* those channels: at scale zero the same diagrams
     /// give an all-timelike tree, which is why it is passed rather than defaulted.
@@ -3919,9 +3989,10 @@ mod tests {
         let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
             .expect("integrand");
 
-        assert_eq!(integ.channel_count(), 24);
+        assert_eq!(integ.channel_count(), 6);
         assert_eq!(integ.channel_grid_ndim(), 2 + 5);
-        let ids: Vec<ChannelId> = integ.channel_ids().to_vec();
+        let ids: Vec<ChannelId> = integ.channel_members().concat();
+        assert_eq!(ids.len(), 24);
         for (g, group) in groups.groups().iter().enumerate() {
             for d in 0..channel_diagrams(group.diagrams(), &evaluated).len() {
                 assert!(ids.contains(&ChannelId {
@@ -3971,9 +4042,10 @@ mod tests {
         assert_eq!(samplers.len(), integ.channel_count());
         let mut spines = 0;
         let mut resonant = 0;
-        let mut k = 0;
-        for g in groups.groups() {
-            for d in g.diagrams() {
+        for (k, members) in integ.channel_members().iter().enumerate() {
+            for id in members {
+                let g = &groups.groups()[id.group];
+                let d = &channel_diagrams(g.diagrams(), &evaluated)[id.channel];
                 let built = DiagramChannel::<f64>::from_diagram_regulated(
                     d,
                     &evaluated,
@@ -4004,15 +4076,230 @@ mod tests {
                 } else {
                     assert_eq!(pole.width, 0.0);
                 }
-                k += 1;
             }
         }
         assert_eq!(spines, floored);
         assert!(
-            resonant > 0 && resonant < samplers.len(),
+            resonant > 0 && resonant < ids.len(),
             "the summary reports the same pole on every channel, so it cannot be \
              distinguishing the Z exchange from the photon"
         );
+    }
+
+    /// The llj card matched at `xqcut = 20`, which rewrites `ptj`, `mmjj`, `drjj`
+    /// and `drjl` as MadEvent does.
+    fn matched_llj_card() -> RunCard {
+        RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+         \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+         \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+         \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n\
+         \x20 1 = ickkw\n  20.0 = xqcut\n",
+        )
+        .expect("matched run card")
+    }
+
+    /// Each pair's production channel, rebuilt as [`ProtonIntegrand::build`]
+    /// builds it, keyed by the pair.
+    fn built_pairs(
+        groups: &FlavorGroups,
+        evaluated: &EvaluatedModel,
+    ) -> Vec<(ChannelId, DiagramChannel<f64>)> {
+        let cuts = groups.groups()[0].cuts();
+        let maps = MapOptions::default().resolve(&process_shape(groups, evaluated, SQRT_S_HAD));
+        let mut out = Vec::new();
+        for (gi, g) in groups.groups().iter().enumerate() {
+            for (di, d) in channel_diagrams(g.diagrams(), evaluated)
+                .into_iter()
+                .enumerate()
+            {
+                out.push((
+                    ChannelId {
+                        group: gi,
+                        channel: di,
+                    },
+                    maps.channel(d, evaluated, SQRT_S_HAD, cuts),
+                ));
+            }
+        }
+        out
+    }
+
+    /// The merge key is identity of the function, measured rather than read off
+    /// the structure: across every pair of `p p > l+ l- j`'s and `p p > l+ l- j j`'s
+    /// channels, two with equal map identities draw bit-identical momenta and
+    /// weights from the same uniforms and give bit-identical densities at points
+    /// drawn from every channel, while two with different identities differ in
+    /// density at some of those points. The integrand's channels are exactly the
+    /// identity classes, in first-appearance order.
+    #[test]
+    fn pairs_with_equal_map_identities_draw_and_weigh_every_point_alike() {
+        use rand::Rng;
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let pdf = probe_pdf();
+        for (process, card, n_pairs, n_maps) in [
+            (LLJ, llj_card(), 24, 6),
+            ("p p > e+ e- j j", matched_llj_card(), 336, 36),
+        ] {
+            let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
+                .expect("flavour groups");
+            let built = built_pairs(&groups, &evaluated);
+            assert_eq!(built.len(), n_pairs, "{process}");
+            let ids: Vec<MapIdentity> = built.iter().map(|(_, c)| c.map_identity()).collect();
+
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_F8);
+            let ndim = built[0].1.ndim();
+            let draws: Vec<(f64, Vec<f64>)> = (0..24)
+                .map(|_| {
+                    let sqrt_s = 150.0 + 1850.0 * rng.random::<f64>();
+                    (sqrt_s, (0..ndim).map(|_| rng.random::<f64>()).collect())
+                })
+                .collect();
+            // Points from every channel's own draw, so each density is read where
+            // some channel puts its weight.
+            let points: Vec<(f64, Vec<V>)> = built
+                .iter()
+                .flat_map(|(_, c)| {
+                    draws
+                        .iter()
+                        .take(3)
+                        .map(|(e, u)| (*e, c.sample_at(*e, u).momenta))
+                })
+                .collect();
+            let densities: Vec<Vec<u64>> = built
+                .iter()
+                .map(|(_, c)| {
+                    points
+                        .iter()
+                        .map(|(e, p)| c.density_at(*e, p).to_bits())
+                        .collect()
+                })
+                .collect();
+            let (mut same, mut apart) = (0usize, 0usize);
+            for a in 0..built.len() {
+                for b in a + 1..built.len() {
+                    if ids[a] == ids[b] {
+                        same += 1;
+                        assert_eq!(densities[a], densities[b], "{process} {a} {b}");
+                        for (e, u) in &draws {
+                            let (pa, pb) =
+                                (built[a].1.sample_at(*e, u), built[b].1.sample_at(*e, u));
+                            assert_eq!(pa.weight.to_bits(), pb.weight.to_bits());
+                            for (x, y) in pa.momenta.iter().zip(&pb.momenta) {
+                                assert_eq!(
+                                    [x.e(), x.px(), x.py(), x.pz()].map(f64::to_bits),
+                                    [y.e(), y.px(), y.py(), y.pz()].map(f64::to_bits)
+                                );
+                            }
+                        }
+                    } else {
+                        apart += 1;
+                        assert_ne!(
+                            densities[a], densities[b],
+                            "{process}: channels {a} and {b} have different identities \
+                             and the same density everywhere probed"
+                        );
+                    }
+                }
+            }
+            eprintln!("{process}: {same} equal pairs, {apart} distinct pairs");
+
+            let amps = bind_all(&groups, &evaluated);
+            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                .expect("integrand");
+            assert_eq!(integ.channel_count(), n_maps, "{process}");
+            let mut classes: Vec<(MapIdentity, Vec<ChannelId>)> = Vec::new();
+            for ((id, _), key) in built.iter().zip(&ids) {
+                match classes.iter_mut().find(|(k, _)| k == key) {
+                    Some((_, members)) => members.push(*id),
+                    None => classes.push((key.clone(), vec![*id])),
+                }
+            }
+            let want: Vec<Vec<ChannelId>> = classes.into_iter().map(|(_, m)| m).collect();
+            assert_eq!(integ.channel_members(), want.as_slice(), "{process}");
+            let alphas = integ.channel_alphas();
+            for (a, members) in alphas.iter().zip(&want) {
+                assert_eq!(*a, members.len() as f64 / n_pairs as f64);
+            }
+        }
+    }
+
+    /// A merged channel's term is the sum of the unmerged terms it replaces, at
+    /// the same uniforms, on a matched card whose every point clusters each
+    /// group's term in a configuration drawn from its own `AMP2`: the value never
+    /// reads which pair drew the point, and the mixture density is the same
+    /// function at the summed weight. Agreement is to the rounding of the two
+    /// density sums, which group their terms differently.
+    #[test]
+    fn a_merged_channel_is_the_sum_of_the_unmerged_terms_it_replaces() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = matched_llj_card();
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let groups =
+            derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card).expect("groups");
+        let amps = bind_all(&groups, &evaluated);
+        let build = |merge: bool| {
+            let mut integ = if merge {
+                ProtonIntegrand::new_with_maps(
+                    &groups,
+                    &amps,
+                    &evaluated,
+                    &pdf,
+                    SQRT_S_HAD,
+                    MU_F,
+                    MapOptions::default(),
+                )
+            } else {
+                ProtonIntegrand::new_unmerged_with_maps(
+                    &groups,
+                    &amps,
+                    &evaluated,
+                    &pdf,
+                    SQRT_S_HAD,
+                    MU_F,
+                    MapOptions::default(),
+                )
+            }
+            .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+                .expect("the matched prescription compiles");
+            integ
+        };
+        let (merged, unmerged) = (build(true), build(false));
+        assert_eq!((merged.channel_count(), unmerged.channel_count()), (6, 24));
+        assert_eq!(merged.point_ndim(), unmerged.point_ndim());
+        let mut stream = SubStream::from_stream(0x5EED_F8, 3);
+        let (mut nonzero, mut worst) = (0usize, 0.0f64);
+        for _ in 0..600 {
+            let u = stream.uniforms::<f64>(merged.point_ndim());
+            for (k, members) in merged.channel_members().iter().enumerate() {
+                let lhs = merged.value_in_channel(k, &u);
+                let rhs: f64 = members
+                    .iter()
+                    .map(|id| {
+                        let j = unmerged
+                            .channel_ids()
+                            .iter()
+                            .position(|x| x == id)
+                            .expect("every pair is an unmerged channel");
+                        unmerged.value_in_channel(j, &u)
+                    })
+                    .sum();
+                if lhs == 0.0 {
+                    assert_eq!(rhs, 0.0);
+                    continue;
+                }
+                nonzero += 1;
+                worst = worst.max(((lhs - rhs) / rhs).abs());
+            }
+        }
+        eprintln!("{nonzero} nonzero terms, worst relative difference {worst:.1e}");
+        assert!(nonzero > 300, "{nonzero}");
+        assert!(worst < 1e-12, "{worst:e}");
     }
 
     /// The model's own particle id for the Z, so the summary's poles are compared
@@ -4092,6 +4379,15 @@ mod tests {
         for trial in 0..400 {
             let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
+            // The oracle's mixture is one uniform channel per pair; a merged
+            // channel is its first pair's map at its pairs' summed weight.
+            let members = &integ.channel_members()[channel];
+            let first = members[0];
+            let pair = groups.groups()[..first.group]
+                .iter()
+                .map(|g| g.diagrams().len())
+                .sum::<usize>()
+                + first.channel;
 
             let tau = tau_min.powf(1.0 - u[0]);
             let y_max = -0.5 * tau.ln();
@@ -4100,7 +4396,7 @@ mod tests {
             let sqrt_shat = (tau * SQRT_S_HAD * SQRT_S_HAD).sqrt();
             let jac = (1.0 / tau_min).ln() * 2.0 * y_max;
 
-            let point = combiner.sample_channel_at(channel, sqrt_shat, &u[2..]);
+            let point = combiner.sample_channel_at(pair, sqrt_shat, &u[2..]);
             let e_cm = sqrt_shat / 2.0;
             let mut cm = vec![V::new(e_cm, 0.0, 0.0, e_cm), V::new(e_cm, 0.0, 0.0, -e_cm)];
             cm.extend_from_slice(&point.momenta);
@@ -4136,7 +4432,7 @@ mod tests {
                     acc += g.spin_color_average() * term;
                 }
                 let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
-                jac * flux * lips_2pi * acc * point.weight
+                jac * flux * lips_2pi * acc * point.weight * members.len() as f64
             };
 
             let got = integ.value_in_channel(channel, &u);
@@ -4495,18 +4791,16 @@ mod tests {
                         // The clustering the term was scaled in, drawn and
                         // clustered again from the event's own momenta.
                         let sc = integ.scratch();
-                        let sampled = integ.sampled_channel(channel);
                         let (argument, lab, fallback, x) = match ordering {
                             BeamOrdering::Direct => (
                                 event.cm.clone(),
                                 event.lab.clone(),
-                                if sampled.group == gi {
-                                    sampled
-                                } else {
-                                    SampledChannel {
-                                        group: gi,
-                                        channel: 0,
-                                    }
+                                SampledChannel {
+                                    group: gi,
+                                    channel: integ.channel_members()[channel]
+                                        .iter()
+                                        .find(|id| id.group == gi)
+                                        .map_or(0, |id| id.channel),
                                 },
                                 event.x,
                             ),
@@ -5182,7 +5476,7 @@ mod tests {
         let [adapted, adapted_err] = mixture_estimate(&integ, 30_000, 0x9E77_0001);
 
         let alphas = integ.channel_alphas();
-        assert_eq!(alphas.len(), 24);
+        assert_eq!(alphas.len(), 6);
         assert_eq!(alphas.len(), report.variance_shares.len());
         let spread = alphas.iter().fold(0.0f64, |a, &x| a.max(x))
             / alphas.iter().fold(f64::INFINITY, |a, &x| a.min(x));
