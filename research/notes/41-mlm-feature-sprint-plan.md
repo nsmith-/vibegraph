@@ -1341,6 +1341,24 @@ and 130.61, a mean of 130.81 ± 0.28.
 - **File the generic 2 → 4 offset as its own validation item**, with the
   fixed-beam `u u~ > e+ e- g g` reproducer. It is outside MLM.
 
+#### D2 decisions (user, 2026-09-29)
+
+- **H1 is documented, not reproduced or refused.** vibegraph clusters the
+  first `setclscales` call on the same (permuted) momenta as the matrix
+  element and the second call. MadEvent's first call reads the unpermuted
+  `PP` (`super_auto_dsig_group_v4.inc:805,842`). The measured size is +1.8 %
+  of `P2_qq_llqq` and about +0.25 % of `pp_to_ll_0j2j_mlm`'s `@2`, mostly
+  through first-call rejections. It is a registered deviation: the manifest
+  notes of the affected rows name it, per-event gates keep reporting the
+  permuted events as `info, permuted P1`, and note 07 carries the upstream
+  report draft.
+- **The `@2` reference is regenerated at close-out** from one freshly
+  generated MadEvent directory per seed. Its error is the spread over those
+  directories, and the σ gate's tolerance includes MadEvent's measured
+  inter-directory spread (about 0.2–0.4 % per `@2` run).
+- **The generic 2 → 4 offset is its own validation item** (TODO.md), with
+  the fixed-beam `u u~ > e+ e- g g` reproducer. It does not block MLM.
+
 ### M4: the event record for the shower (feature-dev; after M3)
 
 - Write `<scales pt_clust_N>` with the `ptclus` rule, including the collider

@@ -551,16 +551,24 @@ above); the entries here are the eventual features.
     directories (131.09);
   - +0.33 ± 0.11 pb: H1, measured by patching MadEvent's first call to `P1`;
     all of it is in `P2_qq_llqq` (+1.8 %). This awaits the user's
-    reproduce-or-document decision;
+    documented as a deviation (user, 2026-09-29; note 41 "D2 decisions");
   - +0.38 ± 0.33 pb: composite against per-directory runs, not significant;
   - ≈ +0.6 pb: a generic 2 → 4 offset that survives with matching off, and at
     fixed beams (`u u~ > e+ e- g g`, +0.29 %, 3.2σ). It is to be filed as its
     own item.
 
-  Next: regenerate the `@2` reference from independent directories, and gate
-  at MadEvent's measured spread. Follow-up: Neyman reallocation starves the
+  Next: M4 and M6; at close-out, regenerate the `@2` reference from
+  independent directories and gate at MadEvent's measured spread (user,
+  2026-09-29). Follow-up: Neyman reallocation starves the
   0-jet channels behind 336 floor-bound 2-jet ones (±6.6 pb against ±0.7 pb
   by α), and a 2-jet point costs ~250 µs.
+- **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
+  vibegraph reads +0.3–0.7 % high on 2 → 4 processes with identical |M|²,
+  matching off, and even at fixed beams: `u u~ > e+ e- g g` at √s = 500 GeV,
+  `ptj = mmjj = 20`, 0.52894 ± 0.00024 against MadEvent's 0.52743 ± 0.00040
+  (+0.29 %, 3.2σ; ~30 s per MadEvent run, ~75 s per vibegraph run). The
+  surplus sits in the high-ŝ tail, where MadEvent's own dedicated slice
+  recovers most of it, so MadEvent under-coverage is favoured but unproven.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
