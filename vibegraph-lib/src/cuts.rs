@@ -1658,6 +1658,40 @@ mod tests {
         assert_eq!(heavy_cuts.spacelike_floor(), 0.0);
     }
 
+    /// The phase-space floors MadEvent derives from `xqcut` (`setcuts.f`
+    /// `setxqcuts`, read in `myamp.f` `set_peaks`) are a jet's energy floor
+    /// `√(xqcut² − m²)` and an s-channel jet pair's mass floor `xqcut`. After the
+    /// `ptj = mmjj = xqcut` rewrite the compiled cuts carry both, so the channels
+    /// the maps build from `energy_floor`, `timelike_floor` and `spacelike_floor`
+    /// already start there: a massless jet's energy floor is its `pT` threshold
+    /// `xqcut`, a jet pair's mass floor is `mmjj = xqcut`, and the spacelike
+    /// regulator is `xqcut²`. A rewrite that stopped reaching any of the three
+    /// would show here.
+    #[test]
+    fn madevents_xqcut_floors_reach_the_maps_through_the_rewritten_cuts() {
+        let rc = card("30 = xqcut\n50 = mmll\n");
+        let lljj = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+            ExternalLeg::outgoing(2, 0.0),
+        ];
+        let cuts = Cuts::compile(&rc, &lljj).unwrap();
+        let (leptons, jet, other_jet) = (0b0011, 0b0100, 0b1000);
+        assert_eq!(cuts.energy_floor(jet), 30.0);
+        assert_eq!(cuts.energy_floor(other_jet), 30.0);
+        assert_eq!(cuts.timelike_floor(jet | other_jet), 900.0);
+        assert_eq!(cuts.timelike_floor(leptons), 2500.0);
+        assert_eq!(cuts.spacelike_floor(), 900.0);
+        // Without `xqcut` the same card's jets keep `ptj = 20`, and their pair
+        // floor is only the one `drjj = 0.4` implies, `2·20²·(1 − cos 0.4) ≈ 63`.
+        let plain = Cuts::compile(&card("50 = mmll\n"), &lljj).unwrap();
+        assert_eq!(plain.energy_floor(jet), 20.0);
+        assert!(plain.timelike_floor(jet | other_jet) < 64.0);
+    }
+
     /// MadEvent's lower limit on τ under `xqcut` is `(Σ xe)²/s` with a jet's
     /// floor `max(ptj, sqrt(xqcut² − m²))` (`myamp.f`, `setxqcuts`). With `ptj`
     /// rewritten to `xqcut` that limit is implied by the cuts: no accepted point
