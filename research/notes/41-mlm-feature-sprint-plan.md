@@ -1622,6 +1622,212 @@ at close-out (D2).
   on `pp_to_ll_0j2j_mlm`.
 - σ must not move (seed-sweep gate).
 
+#### M6 Landed, 2026-09-29
+
+One production change, to the budget: a Neyman re-split is now handed what
+the α split spends in the same iteration, floors included. The xqcut floors
+needed no change. A tighter τ floor was built, measured and dropped.
+
+Every number below comes from the `069a951` binary (`afb22629…`) and the
+final one (`96b787fc…`), both release-debug builds in a private target. The
+container has 4 cores and was shared with a sibling session. The load average
+was 9–10 until about 05:00 and 4.0 after, so CPU times from different hours
+are not comparable. Point counts and errors are, and they carry the comparison.
+
+**Baseline**, `pp_to_ll_0j2j_mlm`, `--fixed-budget --neval 200000 --niter 8`,
+seed 20260928, on the `069a951` binary:
+
+| allocation | @0 (pb) | @1 (pb) | @2 (pb) | total (pb) | points | ε_unw |
+|---|---|---|---|---|---|---|
+| by α | 665.02 ± 0.70 | 268.13 ± 1.48 | 132.76 ± 1.01 | 1065.90 ± 1.92 | 4.50M | 2.01 % |
+| Neyman | 661.18 ± 6.56 | 269.83 ± 2.77 | 132.76 ± 1.01 | 1063.77 ± 7.19 | 3.33M | 1.96 % |
+
+- The by-α row reproduces M3's seed-20260928 row bit for bit. M3's five-seed
+  table is therefore this binary's by-α sweep.
+- ε_unw is the sampled efficiency of `generate --nevents 5000` on each run's
+  own artifact. The scan's predicted value agrees within 2 %.
+- Where the points go, by α: the survey splits the budget 81.0 / 12.4 / 6.7 %
+  over @0 / @1 / @2, so @2 is asked for 13.4k points an iteration. Its 336
+  channels are all floor-bound, and from the second iteration on the
+  acceptance-raised floors draw 602k of the iteration's 807k points; 144 of
+  the 336 channels sit at the 2048-point cap.
+- `pp_to_llj_mlm`, `--fixed-budget --neval 150000 --niter 10`, seeds
+  20260951–55: 268.72 ± 0.30 pb (sd 0.67, χ²/dof 2.42).
+- `pp_to_llj_mlm`, the default `--target-rel` run (Neyman) at 2e-3, same
+  seeds: 2.11M evaluations to the stop (1.58M–2.54M).
+
+**xqcut floors: already in the maps.** MadEvent's xqcut floors are all
+grid hints except one:
+- `setxqcuts` (`setcuts.f:892-944`) sets `xqcuti = √(xqcut² − m²)` on jet
+  legs and `xqcutij = xqcut` on jet pairs meeting at an s-channel vertex.
+- `set_peaks` (`myamp.f:337-551`) reads them into a leg's energy floor `xe` and
+  an s-channel mass floor `xm`. `xm` only presets a grid (`setgrid`,
+  `dsample.f:938`, which keeps 10 % of the bins below it). The one hard limit
+  is the τ minimum `etot²/s`, which M1 proved implied by the cuts.
+
+After the `ptj = mmjj = xqcut` rewrite (`setcuts.f:156-189`, ported by M1),
+the compiled cuts carry both floors, so the maps already start there:
+- a massless jet's `energy_floor` is `xqcut`;
+- a jet pair's `timelike_floor` is `xqcut²`;
+- `spacelike_floor` is `xqcut²`.
+
+These are provable lower bounds, so they remove only zero-weight regions and
+cannot move σ. `cuts::madevents_xqcut_floors_reach_the_maps_through_the_rewritten_cuts`
+pins all three. The kT veto itself (`reweight.f:1063-1089`) cannot be turned
+into a floor:
+- it is decided per flavour group in that group's clustering, and every point
+  sums every group;
+- no point loses all of its groups to it (0 of the 1.77M one- and two-jet
+  draws of a three-iteration probe);
+- a jet pair's `d_ij = m²·p_T,min/p_T,max` is at least `xqcut²` only when
+  `m ≥ xqcut`, so no invariant floor tighter than `mmjj` follows from it.
+
+**The τ floor, built and dropped.** The partition bound
+`√ŝ ≥ max over partitions Σ max(Σ p_T,min, √timelike_floor)` is `(50 + 20·n_j)`
+on these cards, against today's `max(mmll, Σ p_T,min)`. It is provably implied:
+a probe counted 0 accepted points below it. Measured:
+- **Waste it would remove:** 6–7.5 % of the draws in the survey and first
+  iteration, then 0.8–1.1 % per iteration once VEGAS adapts.
+- **Mixed row:** it moved the last iteration's points by −0.1 %.
+- **`pp_to_llj_mlm`:** rel²·CPU went from 516 ± 95 to 460 ± 99 µs, not
+  significant.
+- **`pp_to_llj_fixed`** (banked, `xqcut = 0`, `mmll = 50`): the summed `w_max`
+  rose from 7.80e3 to 1.33e4, and the predicted ε_unw fell from 5.45 % to
+  3.18 %.
+  - `cli_generate_proton`'s sample-against-integration bound failed at −1.80 %
+    (bound 1.5 %).
+  - Its five-seed headroom probe widened from {+0.36, −0.43, +0.01, −0.26,
+    −0.40} % to {−1.80, −0.56, +1.57, +1.03, +0.23} %.
+  - σ itself held: `validate_hadronic` pulls were −0.00 and −0.04 on the two
+    rows it moved.
+
+The floor worsens unweighting on the banked row it touches and buys nothing
+measurable on the matched ones. Why a higher τ floor fattens the weight tail
+was not diagnosed. It was reverted.
+
+**The Neyman starvation.**
+- **Cause:** `integrate_channels` handed `neyman_allocation` the uncorrected
+  total `Σ max(shareⱼ, 512)`, while the floors it enforced were the
+  acceptance-corrected ones, up to 2048 each. On this card the 336 raised
+  two-jet floors (~570k) exceed that total (364k), so every channel was
+  pinned at its floor and the four zero-jet channels drew ~2k points instead
+  of ~162k.
+- **Fix** (`budget.rs:748-762`): the re-split is handed `Σ max(shareⱼ, floorⱼ)`,
+  the α split's own spend in that iteration. The acceptance correction becomes
+  a coverage cost both rules pay alike, and Neyman moves only the points above
+  the floors. This is a property of the allocation, not of the composite.
+- **Test:** `budget::a_neyman_split_spends_what_the_alpha_split_spends_past_raised_floors`
+  pins it on a 41-channel toy. It fails on the old total.
+- **Unchanged:** by-α runs are unchanged bit for bit, and so are Neyman runs
+  whose floors never rise above their shares. The fixed Neyman run spends the
+  α split's points to within rounding (3,330,568 against 3,330,624 over
+  iterations 3–8).
+
+**Before and after, the mixed row**, `--fixed-budget --allocate neyman --neval
+200000 --niter 8`:
+
+| | total (pb) | sd | χ²/dof | quoted error per seed |
+|---|---|---|---|---|
+| by α (M3, 5 seeds; both binaries) | 1066.98 ± 1.28 | 2.86 | 1.43 | 1.84–3.28 |
+| Neyman, `069a951` (3 seeds) | 1068.63 ± 4.27 | 5.07 | 0.43 | 6.57–8.32 |
+| Neyman, fixed (5 seeds) | 1065.50 ± 0.89 | 1.26 | 0.42 | 1.73–2.23 |
+
+Readings:
+- **Fixed Neyman against by α,** at equal points and matched seeds: the
+  quoted variance falls by 1.00–2.44×, mean 1.69×. At the same quiet load,
+  seed 20260931 cost 3,191 s of CPU under Neyman against 3,407 s by α.
+- **The by-α run on the final binary** reproduces M3's seed-20260931 row bit
+  for bit (666.03 ± 0.68, 266.32 ± 1.49, 131.35 ± 0.85, 1063.70 ± 1.84).
+- **Against the old Neyman:** 13×, from rel²·CPU 0.143 ± 0.033 s (3 seeds) to
+  0.0110 ± 0.0025 s (5 seeds). The old Neyman drew 26 % fewer points, all of
+  them cheap zero-jet ones, and cost the same CPU (2964–3035 s against
+  2926–3242 s).
+- **ε_unw at seed 20260928:** 1.87 % after, 1.96 % before (Neyman) and 2.01 %
+  by α. One seed each, so the fix does not measurably change ε_unw.
+- **CPU-to-target, projected** from rel²·CPU: 0.2 % costs about 2,700 s of
+  CPU after, against about 36,000 s before.
+- **CPU-to-target, measured:** a real `--target-rel 2e-3` run of the fixed
+  binary (seed 20260928) never stopped. It was killed after 32 iterations,
+  16.5M points and 13,289 s of CPU.
+  - Its quoted error was 0.109 %, but the stop reads each channel's error
+    widened by `√max(1, χ²/dof)`.
+  - The row's χ²/dof rose from 1.9 at iteration 8 to 5.6 at iteration 32, and
+    the quoted error fell slower than `1/√n` (0.163 % → 0.109 % over 4× the
+    iterations).
+  - So on this card the stopping rule's consistency factor, not the
+    allocation, now bounds the time to a target.
+  - The pre-fix target run was not attempted, since its projection is 13×
+    worse.
+
+**σ did not move.** The five fixed-Neyman seeds (20260928–32) against the
+same card:
+
+| | vibegraph, fixed Neyman (sd, χ²/dof) | M3 by α | MadEvent |
+|---|---|---|---|
+| @0 | 665.23 ± 0.32 (0.65, 0.87) | 665.32 ± 0.19 | 664.81 ± 0.52 |
+| @1 | 268.22 ± 0.72 (1.36, 0.78) | 269.29 ± 1.27 | 269.04 ± 0.53 |
+| @2 | 132.06 ± 0.42 (0.51, 0.32) | 132.38 ± 0.31 | 131.09 ± 0.11 (D2, 7 dirs) |
+| total | 1065.50 ± 0.89 (1.26, 0.42) | 1066.98 ± 1.28 | 1064.37 ± 0.62 |
+
+- Every difference from the by-α sweep is under 1σ of the combined errors.
+- `@2` is +0.74 % over D2's independent-directory value. That is inside D2's
+  measured H1 + generic-offset budget, and M3's by-α sweep (+0.98 %) matches
+  it.
+- `pp_to_llj_mlm` at the default target, 2e-3, seeds 20260951–55: σ
+  268.51 ± 0.20 after against 268.58 ± 0.25 before (χ²/dof 1.00 and 1.59).
+  Evaluations to the stop were 1.84M (0.88M–3.10M) against 2.11M
+  (1.58M–2.54M): no difference the five seeds resolve. On 24 channels the
+  floors barely rise past the shares.
+- **At `xqcut = 0`:** a by-α (`--fixed-budget`) run draws the same points in
+  the same order as before. The `pp_to_llj_fixed` artifact (300k × 8, seed
+  20260731) and the `pp_to_llj_mlm` artifact (150k × 10, seed 20260951) are
+  byte-identical to the base binary's. So is `pp_to_llj_fixed`'s 20000-event
+  LHE file, except the header line naming the artifact path. A Neyman run (the
+  `--target-rel` default) changes its draws wherever an acceptance-raised floor
+  exceeds its share, at any `xqcut`. No banked gate integrates under Neyman,
+  and `validate-hadronic` agrees on every row (below).
+
+**Gates** (final tree, `a65f930` plus this record):
+- `cargo fmt --check` and both `clippy -D warnings` passes (default, and
+  `extended-validation`) are clean.
+- `cargo test --workspace`: 33 binaries, 1282 passed, 0 failed, 15 ignored.
+- The banked tasks' own cargo commands, run through `pixi run` with the
+  private build settings (`--skip-deps` equivalents):
+  - `validate_hadronic`: 14 passed. `llj_fixed` pull −0.07, `llj_dyn` −0.08,
+    `pp_to_llj` −0.13, `jj` +0.80.
+  - `validate_unweighting`: 1 passed.
+  - `cli_generate_proton`: 4 passed. Sample +0.355 %, identical to base.
+  - `validate_samples`: 6 passed.
+  - `validate_sigma`: 7 passed.
+  - `validate-mlm-sigma`: `pp_to_llj_xqcut_only` 212.777, `pp_to_llj_mlm`
+    268.560 and `pp_to_llj_mlm_alps2` 241.052 pb. These are M1's and M2's
+    values to the printed digit, since their fixed-budget draws are
+    unchanged.
+
+**Where §4 M6 was wrong.**
+- The xqcut energy floors and s-channel minima were already in the maps and
+  in `spacelike_floor`, since M1 ported the card rewrites. What was missing
+  was MadEvent's τ bound, and on these cards that bound does not pay.
+- The session's lever was the allocation, and the "note-30 baseline" does not
+  exist for this row. The baseline is measured above.
+
+**What remains.** The two-jet cost is the floors: 336 channels × up to 2048
+points. The same card decomposes into only **36 distinct channel maps** among
+the 336, and 6 among the one-jet part's 24. That was measured by comparing
+every built channel's full map, across the 28 two-jet flavour groups.
+- Merging channels with identical maps across flavour groups, as MadEvent's
+  `config_subproc_map` does, would cut the two-jet floor cost about 9×.
+- It needs a rule for which clustering configuration a merged channel hands
+  each group, for the jet memo and for colour. It also needs a new
+  channel-key schema.
+- That is its own session. No change to `MIN_CHANNEL_NEVAL` was made: the
+  floor is the coverage guarantee, and the grouping is what removes its
+  redundancy.
+
+The sample-against-integration σ of this row at 5000 events is +2.0 to +2.4 %
+before and after, with overweights carrying 5 % of σ. That is a truncation
+reading for the unweighting follow-up, not this change.
+
 ### Z: close-out
 
 As note 38 §7:

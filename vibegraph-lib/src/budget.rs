@@ -662,8 +662,7 @@ where
         })
         .collect();
     // The uncorrected split: the floor as it stands before any acceptance has
-    // been measured, which is what the first iteration spends and the budget the
-    // Neyman re-split is handed.
+    // been measured, which is what the first iteration spends.
     let by_alpha: Vec<usize> = if single {
         shares.clone()
     } else {
@@ -741,18 +740,25 @@ where
                 .count();
             floor_bound_channels = shares.iter().zip(&floors).filter(|(&s, &f)| s <= f).count();
             let previous = std::mem::take(&mut current);
+            let floored: Vec<usize> = shares
+                .iter()
+                .zip(&floors)
+                .map(|(&s, &f)| s.max(f))
+                .collect();
+            // The acceptance correction is a coverage cost both rules pay alike:
+            // a Neyman re-split is handed what the α split spends this
+            // iteration, floors included, and moves only the points above the
+            // floors. Handed the uncorrected total instead, the raised floors of
+            // a wide, low-acceptance channel set would absorb the budget and
+            // leave every other channel at its own floor.
             current = if allocation == BlockAllocation::Neyman && iteration > 0 {
                 let sd: Vec<f64> = channels
                     .iter()
                     .map(|c| c.point_sd().unwrap_or(0.0))
                     .collect();
-                neyman_allocation(&sd, alpha_total, &floors)
+                neyman_allocation(&sd, floored.iter().sum(), &floors)
             } else {
-                shares
-                    .iter()
-                    .zip(&floors)
-                    .map(|(&s, &f)| s.max(f))
-                    .collect()
+                floored
             };
             report_reallocation(&previous, &current);
             report_floor_correction(
@@ -1744,6 +1750,59 @@ mod tests {
             "at 1% acceptance the cap cannot buy the floor's coverage, and the run \
              should not pretend it did: {} accepted",
             report.min_channel_accepted
+        );
+    }
+
+    /// Many low-acceptance channels whose raised floors outweigh the uncorrected
+    /// budget, beside one channel carrying most of `α`: the profile of a
+    /// mixed-multiplicity card, whose hundreds of two-jet channels sit at the
+    /// floor beside four zero-jet ones. The acceptance correction raises every
+    /// minor floor to ~1700 points, which together exceed the whole uncorrected
+    /// iteration, so a Neyman re-split handed that total would leave the major
+    /// channel at its own floor. Handed what the α split spends, it spends the
+    /// same points and keeps the major channel's share.
+    #[test]
+    fn a_neyman_split_spends_what_the_alpha_split_spends_past_raised_floors() {
+        let minors = 40;
+        let mut alphas = vec![0.1 / minors as f64; minors + 1];
+        alphas[0] = 0.9;
+        let integ = SparseTail {
+            alphas: alphas.clone(),
+            width: 0.3,
+        };
+        let run = |a| {
+            integrate_channels(
+                &integ,
+                &alphas,
+                0.0,
+                IterationCombination::Unweighted,
+                Budget::Fixed {
+                    neval: 40_000,
+                    niter: 4,
+                },
+                a,
+                0x0E1A,
+                &StopSignal::default(),
+            )
+            .2
+        };
+        let by_alpha = run(BlockAllocation::ByAlpha);
+        let neyman = run(BlockAllocation::Neyman);
+        assert_eq!(
+            by_alpha.floor_bound_channels, minors,
+            "every minor channel is floor-bound"
+        );
+        assert!(
+            neyman.points.abs_diff(by_alpha.points) <= alphas.len() as u64,
+            "the two rules spent different budgets: {} vs {}",
+            neyman.points,
+            by_alpha.points
+        );
+        assert!(
+            neyman.channel_points[0] + alphas.len() as u64 >= by_alpha.channel_points[0],
+            "the major channel drew {} points under Neyman against {} by α",
+            neyman.channel_points[0],
+            by_alpha.channel_points[0]
         );
     }
 

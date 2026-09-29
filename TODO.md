@@ -578,11 +578,32 @@ above); the entries here are the eventual features.
   file; this crate writes the card as plain text, and Pythia reads it (the
   consumption gate 3000/3000 on the mixed row; `setMad` gives xqcut 20,
   nQmatch 4, as on MadEvent's file with the CDATA markers removed).
-  Next: M5 and M6; at close-out, regenerate the `@2` reference from
-  independent directories and gate at MadEvent's measured spread (user,
-  2026-09-29). Follow-up: Neyman reallocation starves the
-  0-jet channels behind 336 floor-bound 2-jet ones (±6.6 pb against ±0.7 pb
-  by α), and a 2-jet point costs ~250 µs.
+  **M6 landed** (note 41 §4 M6 record):
+  - **The Neyman starvation is fixed.** A Neyman re-split was handed the
+    uncorrected total while the acceptance-raised floors exceeded it; it is
+    now handed what the α split spends in the same iteration.
+    - On `pp_to_ll_0j2j_mlm` at 200k × 8, `@0` goes from ±6.56 to ±0.72 pb,
+      and the total from ±7.2 to ±1.7–2.2 pb, 1.69× less variance than by α
+      at equal points.
+    - rel²·CPU falls 13× against the old Neyman.
+    - σ does not move: over five seeds, 1065.50 ± 0.89 against by α's
+      1066.98 ± 1.28.
+    - By-α runs are byte-identical.
+  - **The xqcut floors were already in the maps**, through M1's
+    `ptj = mmjj = xqcut` rewrite, and a test now pins that.
+  - **MadEvent's τ bound was built and dropped.** It cut
+    `pp_to_llj_fixed`'s unweighting efficiency from 5.45 % to 3.18 % for a
+    ≤ 1 % gain.
+  - **Found:** a `--target-rel 2e-3` run of this row never stops. Its χ²/dof
+    climbs to 5.6 over 32 iterations, so the stop's consistency factor, not
+    the allocation, bounds the time to a target.
+  - **Found:** the 336 two-jet channels are only 36 distinct maps.
+
+  Next: M5 (matched Pythia end-to-end); at close-out, regenerate the `@2`
+  reference from independent directories and gate at MadEvent's measured
+  spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
+  (36 of 336), the non-converging `--target-rel` stop on the mixed row, and
+  a 2-jet point costs ~250 µs.
 - **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
   vibegraph reads +0.3–0.7 % high on 2 → 4 processes with identical |M|²,
   matching off, and even at fixed beams: `u u~ > e+ e- g g` at √s = 500 GeV,
@@ -857,6 +878,29 @@ coverage. What is left below is what still refuses, and why.
 ---
 
 ## ⚡ Performance backlog
+
+- **Mixed-multiplicity channel cost: identical maps across flavour groups**
+  (note 41 §4 M6 record).
+  - **The cost:** `pp_to_ll_0j2j_mlm`'s 336 two-jet channels (28 flavour
+    groups) sit at the acceptance-raised floor. They draw 602k of an
+    iteration's 807k points against the 13.4k the budget split asks for.
+  - **The lever:** they are only 36 distinct channel maps (the one-jet part:
+    24 channels, 6 maps). Merging identical maps across groups, as MadEvent's
+    `config_subproc_map` does, cuts the floor cost ~9×.
+  - **What it needs:**
+    - a rule for which clustering configuration a merged channel hands each
+      group's term (jet memo, colour);
+    - a channel-key schema bump.
+  - **Keep:** leave `MIN_CHANNEL_NEVAL` alone, since the floor is the coverage
+    guarantee.
+- **Target runs on the mixed row do not converge** (note 41 §4 M6 record).
+  - A `--target-rel 2e-3` run of `pp_to_ll_0j2j_mlm` was killed after 32
+    iterations (16.5M points, 13.3k CPU-s).
+  - Its quoted error fell from 0.163 % to 0.109 %, slower than `1/√n`, while
+    the row's χ²/dof rose from 1.9 to 5.6.
+  - Diagnose which channels carry the inconsistency, and whether it is the
+    heavy two-jet tail or iteration drift, before that row's σ cell uses a
+    target run.
 
 - **Decay-angle maps for decay chains** (note 38 §4 D3, the ladder). The forced
   invariants are Breit–Wigner-mapped exactly, but the decay angles are drawn
