@@ -708,6 +708,14 @@ On `p p > e+ e- j j` (D2, note 41), the fix raises `P2_qq_llqq` by +1.8 % (18.06
 - The same holds for unmatched grouped references that use `dynamical_scale_choice = -1`. Whether any banked
   `ickkw = 0` row carries such permutations is not measured.
 
+**Open before filing** (user, 2026-09-29: deferred to a separate session that finalises this and the other
+open MadGraph defect reports).
+- A census of the banked grouped references: which rows have subprocess groups with non-identity `PERMS`,
+  and, for those rows, R1's grouped-against-non-grouped test, to size the bias on each one.
+- Isolating the clustering path behind the identical-quark channels (the jet memo's restricted re-cluster is
+  the suspect).
+- Measuring the vectorised path (`vector_size > 1`) and writing its fix.
+
 ### `aloha/aloha_lib.py` — Observations
 
 - The `KERNEL` global object (`Computation()`) holds all symbolic variables and is shared across
