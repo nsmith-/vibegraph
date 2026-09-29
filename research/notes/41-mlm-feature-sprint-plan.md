@@ -1614,6 +1614,199 @@ at close-out (D2).
 - It starts informational. It is the only check that sees the shower's reading
   of `<scales>`, so it stays in the report even while informational.
 
+#### M5 Landed, 2026-09-29
+
+MadEvent's and vibegraph's matched `pp_to_ll_0j2j_mlm` samples go through
+one Pythia configuration, MadGraph's own. The two agree on the matching
+acceptance of every `@N`, on the merged σ and on the jet-rate shapes, within
+statistics of 50000 events a side. With `<scales>` removed, the vibegraph
+file fails every one of those comparisons by far. No production code
+changed.
+
+**The driver** (`validation/pythia/mlm_match.py` + `mlm_match.cc`, pixi
+task `validate-mlm-pythia` in the `pythia` environment; the vibegraph samples
+come from `generate_mlm_samples.sh`, task `generate-mlm-pythia-samples`):
+- The C++ driver reads a Pythia command file, as main164 does. It runs
+  main164's hook, `JetMatchingMadgraph` (what `CombineMatchingInput` picks
+  for an LHEF at `scheme = 1`), subclassed only to record each event's
+  IDPRUP, the process-level veto, the MLM veto, whether `next()` returned
+  the event, and `getDJR()`.
+- The Python side takes two sets of files and one configuration. It builds
+  the driver against the environment's Pythia, showers every file with the
+  same seeds, and writes JSON: acceptance per `@N`, merged σ, the three
+  jet-rate histograms and their comparison.
+- **Statistics.** The Les Houches event is the unit. Each event's outcome is
+  averaged over the seeds, the errors are the spread over events (delta method
+  for the normalised shapes), and 200 resamplings re-derive the bin errors. The
+  per-file values and their χ²/dof about the side's mean test whether events
+  are independent.
+- **Weights.** Every event counts with its XWGTUP, as Pythia weights it at
+  IDWTUP = −4. MadEvent's weights are all equal. vibegraph keeps the events
+  its unweighting found above `w_max` at their own weight: 3.3–6.9 % of σ on
+  these samples, largest `w/w_max` 119. Counting events instead would move
+  vibegraph's overall acceptance from 0.6431 to 0.6513: overweight events are
+  vetoed more often than the rest.
+- A run whose command file is unchanged, with the input's and the driver's
+  sha256 in it, is read back rather than re-run.
+
+**MadGraph's own Pythia settings** (pinned tree, 3.7.1). `do_pythia8` runs
+Pythia's own `main164` unless `--old_interface` is given
+(`madevent_interface.py:4600-4655`). The command file is
+`setup_Pythia8RunAndCard` applied to `Template/LO/Cards/pythia8_card_default.dat`:
+
+| setting | value | source |
+|---|---|---|
+| `Beams:frameType` | 4 | `banner.py:1925` (PY8Card, always written) |
+| `Check:epTolErr` | 1e-2 | `banner.py:1931` |
+| `JetMatching:etaJetMax` | 1000 | `banner.py:1936`, always written (Pythia's default is 2.5) |
+| `JetMatching:setMad` | off | `madevent_interface.py:4398` |
+| `JetMatching:qCut` | 1.5·xqcut = 30 | `:4408-4409`, when the card leaves −1 (the default card does) |
+| `Beams:setProductionScalesFromLHEF` | on | `:4419` |
+| `JetMatching:merge`, `scheme` | on, 1 | `:4456-4457` |
+| `JetMatching:nQmatch` | maxjetflavor = 4 | `:4460` |
+| `JetMatching:coneRadius` | 1.0 | `:4462` |
+| `JetMatching:nJetMax` | max_n_matched_jets = 2 | `:4467-4471`, `export_v4.py:5010-5024` |
+| `JetMatching:doShowerKt` | off | `pythia8_card_default.dat` |
+
+Notes on the settings:
+- Everything else is at Pythia's defaults: the Monash tune, MPI and
+  hadronisation on, the internal PDF, `doVeto = on`. `doVeto` is switched off
+  only for the old interface with `use_syst`, `:4452-4455`.
+- The jet algorithm is not a setting. `JetMatchingMadgraph::initAfterBeams`
+  forces the kT `SlowJet` whatever `jetAlgorithm` says.
+- The matching counts a light parton only if its production scale is below
+  1.999·√(E_A E_B) (`sortIncomingProcess`). That is the path by which `<scales>`
+  enters, beside each parton's shower start.
+- `nJetMax` is taken as the largest number of light partons in any event,
+  which equals MadGraph's rule on this card.
+- The hadron level runs, but it cannot change these observables: the veto and
+  the DJRs are decided in `doVetoPartonLevelEarly`.
+
+**Samples.**
+- **MadEvent:** the samples-grade `run_01` (iseed 20260928), plus four
+  directories freshly generated from M0's proc lines and the committed run card
+  (seeds 20261101–04, `nb_core = 2`, `vector_size = 1` checked). Each run is
+  10000 events, and σ_LHE runs from 1062.30 to 1065.36 pb.
+- **vibegraph:** the sprint tip `fe5d039`, release-debug binary
+  `0c8c9362…`. Seed 20260928 was integrated here (`--fixed-budget --allocate
+  neyman --neval 200000 --niter 8`), and its `grid.bin.zst` is byte-identical
+  to M6's `mix-ney-n-28` (binary `96b787fc…`).
+- On that evidence, M6's artifacts for seeds 20260929–32 were reused. Their
+  integrations read 1065.23, 1067.24, 1063.95 and 1066.21 pb, and 1064.89 pb
+  for seed 28.
+- Each sample is 10000 events from `generate`, with `--seed` equal to the
+  integration seed. Their sample σ (mean XWGTUP) is 1088.34, 1060.45, 1065.50,
+  1073.48 and 1086.51 pb. That is −0.45 % to +2.20 % against their
+  integrations, not the uniform +2.0–2.4 % M6 recorded.
+- **Pythia:** 8.312, with seeds 20261201–06 on every file.
+
+**Results** (six seeds, 5 × 10000 events a side; A = MadEvent, B = vibegraph):
+
+| | MadEvent | vibegraph | B − A | pull |
+|---|---|---|---|---|
+| acceptance `@0` | 0.8193 ± 0.0009 | 0.8188 ± 0.0009 | −0.06 % | −0.35 |
+| acceptance `@1` | 0.3636 ± 0.0025 | 0.3592 ± 0.0026 | −1.2 % | −1.23 |
+| acceptance `@2` | 0.3478 ± 0.0040 | 0.3408 ± 0.0068 | −2.0 % | −0.89 |
+| acceptance, all | 0.6468 ± 0.0014 | 0.6422 ± 0.0021 | −0.71 % | −1.80 |
+| merged σ (pb) | 688.20 ± 1.48 | 690.30 ± 2.28 | +0.30 % | +0.77 |
+| merged σ / σ_LHE | 0.6468 ± 0.0014 | 0.6422 ± 0.0021 | −0.71 % | −1.81 |
+
+- The merged σ follows main164: the sum of the accepted events' XWGTUP over
+  the file's number of events, averaged over files.
+- MadEvent's files scatter as their errors say: the merged-σ χ²/dof over files
+  is 1.36 and the `@N` acceptances 1.13 / 0.25 / 0.11.
+- vibegraph's do not: merged σ 4.67, and `@2` acceptance 3.06, the file with
+  the `w/w_max = 119` event reading 0.289. With the file spread as the error
+  (MadEvent sd 3.8 pb, vibegraph sd 9.2 pb, over √5), the merged σ is
+  +2.1 ± 4.5 pb. The normalised value is −0.0046 ± 0.0037, or −1.25σ.
+
+| jet rate | χ² / dof (delta) | χ² (bootstrap) | p | seeds 1–3 | seeds 4–6 |
+|---|---|---|---|---|---|
+| log10 d01 | 15.1 / 24 | 14.2 | 0.92 | 8.9 | 18.3 |
+| log10 d12 | 33.6 / 21 | 34.6 | 0.040 | 26.9 | 30.1 |
+| log10 d23 | 12.9 / 17 | 13.8 | 0.74 | 19.5 | 12.2 |
+
+- **Binning.** 0.1-wide bins in log10(d/GeV) on [0, 3], plus under- and
+  overflow; the underflow also holds events with fewer clustering steps. Bins
+  are merged from the left until each holds 100 accepted events on both sides.
+- The bootstrap errors are 0.87–1.17 times the delta-method ones in every bin.
+- The d01 χ² of 8.9 on seeds 1–3 (p = 0.998) was a shower fluctuation, since
+  seeds 4–6 read 18.3.
+- d12 shows a structured 2–3 % difference: vibegraph is low at d12 = 1.6–3 GeV
+  (bins −2.7 and −2.0σ) and high at 4–10 GeV (up to +1.9σ). It stands at
+  p = 0.04 among three histograms and is not resolved here.
+- Plots: scratchpad `mlm-m5-djr-*.png`.
+
+**Null test** (MadEvent against MadEvent: `run_01` and seeds 01–02 against
+03–04; Pythia seeds 1–3):
+- acceptance pulls +1.46, +0.43, +0.42;
+- all +2.06, which is the directories' `@N` composition;
+- jet-rate χ² 16.1/21, 22.4/19, 26.0/16.
+
+The error model reads at its scale.
+
+**Negative controls.**
+- **`<scales>` removed** (every `<scales …>` line deleted from the vibegraph
+  files, so each parton's scale is SCALUP):
+  - `@1` goes to 0.4914 (+25σ against MadEvent), `@2` to 0.4216 (+8.1σ) and
+    `@0` to 0.8171;
+  - the merged σ moves +6.9 %;
+  - the jet-rate χ² goes to 937/24, 494/21 and 348/17, with a step in d01 at
+    log10 qCut.
+
+  The comparison sees `<scales>` at more than ten times its resolution.
+- **qCut 45 on both sides:**
+  - MadEvent's acceptances go to 0.907 / 0.254 / 0.210;
+  - vibegraph follows them (pulls +0.90, +1.30, −0.64; χ² 24.0/24, 21.3/21,
+    16.1/18).
+
+  The observables move with the matching scale, and the agreement holds there
+  too.
+
+**Secondary: `setMad = on`** (no qCut, nQmatch or merge line; Pythia takes
+them from `<MGRunCard>`):
+- **The CDATA-stripped MadEvent files** (14084-byte card) against vibegraph's
+  (3079 bytes). Both give qCut 20 (= xqcut, not MadGraph's 1.5·xqcut),
+  nQmatch 4, clFact 1:
+  - acceptance 0.6915 / 0.6927, 0.4137 / 0.4101, 0.4802 / 0.4761 (pulls
+    +0.54, −0.88, −0.45);
+  - χ² 22.1/24, 19.2/20, 11.5/17.
+
+  Both headers drive Pythia identically.
+- **MadEvent's file as written:**
+  - Pythia reads a 4-byte card, leaves `merge` at its default (off), and
+    matches nothing: 10000/10000 events accepted, and no MLM veto is reached.
+  - M4 saw qCut 10 and nQmatch 5 there only because its driver set
+    `merge = on` explicitly.
+  - The driver now stops on such a run, naming the settings Pythia read back.
+
+**Where this section and M4 were short.**
+- §1.4's shower-side list:
+  - MadGraph 3.7.1 runs Pythia's `main164`, not the MG5aMC_PY8_interface
+    (that is `--old_interface`).
+  - It always writes `JetMatching:etaJetMax = 1000` and
+    `Check:epTolErr = 1e-2`.
+  - `jetAlgorithm` is inert.
+  - The exclusion cut is 1.999·√(E_A E_B) in 8.312's `JetMatching.h`.
+- The qCut rule is `1.5·xqcut` when the card leaves −1. The brief's
+  "max(1.5·xqcut, xqcut + 10)" is not in the 3.7.1 source.
+- M4's matching smoke ran at Pythia's default `etaJetMax = 2.5`, not
+  MadGraph's 1000. Its acceptances ("LHE events for 1500 kept") are not
+  MadGraph's configuration.
+- "Merged σ = σ_LHE × acceptance" holds for an equal-weight file only. At
+  IDWTUP = −4 main164 sums XWGTUP, which vibegraph's overweights make
+  different from counting.
+
+**What remains.**
+- The row stays `info`. A gate would want:
+  - more than five vibegraph samples, or samples whose overweights are
+    tamed, because the heavy weights make vibegraph's file scatter three to
+    five times its per-event error;
+  - a look at the d12 shape at the 2 % level.
+- The MadEvent side is regenerable from the four fresh seeds, but only
+  `run_01` is banked. The task's default side A is `run_01` alone, and a
+  multi-file comparison passes the fresh files explicitly (`--a`).
+
 ### M6: xqcut-aware phase space (performance-dev; after M3)
 
 - Put the jet energy floors and s-channel minima (§1.4) into the multichannel

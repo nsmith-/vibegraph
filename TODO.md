@@ -599,9 +599,25 @@ above); the entries here are the eventual features.
     the allocation, bounds the time to a target.
   - **Found:** the 336 two-jet channels are only 36 distinct maps.
 
-  Next: M5 (matched Pythia end-to-end); at close-out, regenerate the `@2`
-  reference from independent directories and gate at MadEvent's measured
-  spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
+  **M5 landed** (note 41 §4 M5 record; `pixi run -e pythia
+  validate-mlm-pythia`, info). MadEvent's five and vibegraph's five matched
+  10000-event samples went through MadGraph's own Pythia 8.312 kT-MLM
+  configuration (main164's settings, `qCut = 1.5·xqcut = 30`, six seeds).
+  - Acceptance per `@N`: 0.8193 / 0.8188, 0.3636 / 0.3592, 0.3478 / 0.3408
+    (pulls −0.35, −1.23, −0.89).
+  - Merged σ: 688.2 / 690.3 pb (+0.30 %). Normalised to each file's own
+    σ_LHE it is −0.71 % (−1.8σ).
+  - Jet-rate χ²: d01 15.1/24, d12 33.6/21 (p = 0.04, a 2–3 % shape at
+    2–10 GeV, unresolved), d23 12.9/17.
+  - Removing `<scales>` moves `@1` by +25σ and the d01 χ² to 937/24. The check
+    sees the shower's reading of `<scales>`.
+  - Findings:
+    - vibegraph's overweight events (3–7 % of σ, `w/w_max` up to 119) make its
+      files scatter 2–5× their per-event errors.
+    - `setMad = on` on MadEvent's own CDATA-wrapped file switches matching off
+      entirely unless `merge` is set explicitly.
+  Next, at close-out: regenerate the `@2` reference from independent
+  directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
   (36 of 336), the non-converging `--target-rel` stop on the mixed row, and
   a 2-jet point costs ~250 µs.
 - **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
