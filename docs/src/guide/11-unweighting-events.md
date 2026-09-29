@@ -222,27 +222,48 @@ with its own member's amplitude.
 
 ### The polynomial path
 
-Reweighting costs amplitude evaluations, and a scan in one coupling can ask for
-dozens of hypotheses. When a parameter `P` enters a subprocess only through its
-couplings, each of them a polynomial in `P`, and no mass or width moves with it,
-the amplitude is a polynomial in `P` diagram by diagram, and `|M|²` is one of
-degree `D`, twice the largest power any diagram carries. The powers are read off
-the UFO coupling expressions and the diagrams' vertices symbolically
-(`reweight::poly`), not fitted. The terms of each power are then collected per
-event by evaluating `|M|²` at `D + 1` Chebyshev–Lobatto nodes spanning the
-hypotheses, and every hypothesis along `P` is a precomputed `(D + 1)`-term dot
-product of those values — barycentric Lagrange interpolation, the stable way to
-read a polynomial off its values. An effective-field-theory coefficient or a
-Yukawa entering linearly has `D = 2`: three evaluations per event serve any
-number of hypotheses along it.
+Reweighting costs amplitude evaluations, and an effective-field-theory study asks
+for many hypotheses: with `n` new couplings entering at most once per diagram,
+`|M|²` is a quadratic form in them, and the usual card is a basis grid of at
+least `n(n+1)/2` points that pins it down. Evaluating each point directly costs
+one amplitude per point per event.
 
-A hypothesis moving several parameters at once, or a parameter that is not a
-polynomial coupling (`aEWM1`, which reaches the couplings through square roots;
-`MZ`, which is also a propagator pole), is evaluated directly: its amplitude is
-bound to its parameters before the first event and evaluated once per event.
-The same applies to a parameter with too few hypotheses to amortise the nodes.
-`--reweight-exact` forces that path for every hypothesis; the two agree to
-within rounding, and the unit tests hold them to it at each hypothesis.
+The polynomial path instead collects the amplitude by coupling monomial. When
+parameters `P` enter a subprocess only through its couplings, each a polynomial
+in `P`, and no mass or width moves with them, the amplitude of every helicity
+combination and colour flow is `A(P) = Σ_μ μ(P)·a_μ`, a sum over monomials `μ`
+with one coupling class `a_μ` each. The monomials are read off the UFO coupling
+expressions and the diagrams' vertices symbolically (`reweight::poly`), not
+fitted: a diagram carries the product of its vertices' monomials. Then
+
+```text
+|M(P)|² = Σ_μν μ(P) ν(P) · Re Σ_hel Σ_fg conj(a_μ,f) CF_fg a_ν,g
+```
+
+is a quadratic form in the monomial vector with a per-event matrix, and every
+hypothesis is one `K × K` quadratic form in it. With one insertion per diagram
+`K = 1 + n`, so an event costs `n` amplitude evaluations beyond its own however
+dense the grid is.
+
+The class amplitudes come from `K` evaluations at parameter nodes rather than
+from splitting diagrams, because a coupling can shift an existing vertex
+(`a + b·c`): that one diagram belongs to two classes. The nodes are chosen for
+conditioning — the card's own point first, the rest taken by a column-pivoted QR
+from a Chebyshev grid over the box the hypotheses span — and each hypothesis's
+weights over them are solved once, before the first event. The matrix is formed
+in the node basis directly, so the class amplitudes are never materialised.
+
+`--reweight-couplings cW,cHW,cHWB` asks for this explicitly: every hypothesis is
+served by one polynomial per subprocess jointly in the named parameters, a card
+that moves anything else is refused, and so is a named parameter that some
+subprocess does not carry polynomially. Without the flag, hypotheses moving one
+and the same parameter are grouped by it where that is cheaper than evaluating
+them, and everything else — a hypothesis moving several parameters, a parameter
+that is not a polynomial coupling (`aEWM1`, which reaches the couplings through
+square roots; `MZ`, which is also a propagator pole) — is evaluated directly:
+its amplitude is bound to its parameters before the first event and evaluated
+once per event. `--reweight-exact` forces that path for every hypothesis; the
+paths agree to within rounding, and the unit tests hold them to it.
 
 The generation's own amplitudes drop what vanishes at the card's parameters,
 and a hypothesis that switches on a coupling the card leaves at zero revives

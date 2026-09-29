@@ -13,8 +13,8 @@
 //! * [`card`] reads the card as data.
 //! * [`resolve`] names each change as an external parameter of the model and
 //!   refuses what reweighting cannot honour.
-//! * [`poly`] proves, symbolically, which powers of one parameter a subprocess's
-//!   `|M|²` is a polynomial in.
+//! * [`poly`] proves, symbolically, which monomials in a set of parameters a
+//!   subprocess's amplitude is a polynomial in.
 //! * [`engine`] turns that into a per-event evaluation plan.
 //!
 //! # Two ways to evaluate a hypothesis
@@ -23,21 +23,27 @@
 //! parameter values once, before the first event, and evaluates `|M|²` once per
 //! event per hypothesis.
 //!
-//! The **polynomial path** serves every hypothesis that moves the same single
-//! parameter `P`, when `P` enters the process only through its couplings and each
-//! of them is a polynomial in it: then `|M|²(P) = Σ_k q_k Pᵏ` for `k ≤ D`, with `D`
-//! read off the diagrams. The terms of each power are collected per event by
-//! evaluating `|M|²` at `D + 1` fixed nodes, after which any number of hypotheses
-//! along `P` cost one `(D + 1)`-term dot product each. The nodes are the
-//! Chebyshev–Lobatto points of the interval the hypotheses span, and the dot
-//! product is barycentric Lagrange interpolation — the numerically stable way to
-//! read a polynomial off its values — with the weights for each hypothesis
-//! precomputed. An effective-field-theory coefficient entering linearly has
-//! `D = 2`: three amplitude evaluations per event serve an arbitrarily fine scan.
+//! The **polynomial path** collects the amplitude by coupling monomial. When the
+//! parameters `P` enter a subprocess only through its couplings, each of them a
+//! polynomial in `P`, the amplitude is `A(P) = Σ_μ μ(P)·a_μ` over the monomials
+//! [`poly`] proves, per helicity combination and colour flow — the amplitude of
+//! each coupling class. Every hypothesis is then a quadratic form in the classes,
+//! `|M(P)|² = Σ_μν μ(P) ν(P) Re Σ conj(a_μ)·CF·a_ν`, so an event costs one
+//! amplitude evaluation per monomial and each hypothesis a `K × K` quadratic form,
+//! whatever their number. An effective-field-theory scan in `n` coefficients with
+//! at most one insertion per diagram has `K = 1 + n`: the `n(n+1)/2`-point basis
+//! grid that pins the quadratic form costs `n` evaluations per event beyond the
+//! card's own. The class amplitudes are read off `K` evaluations at well-chosen
+//! parameter nodes, so a coupling that shifts an existing vertex (`a + b·c`) is
+//! split correctly between classes rather than assigned to one by its diagram;
+//! see [`engine`] for the construction.
 //!
-//! Which path a hypothesis takes is a cost decision per subprocess and per
-//! parameter; both give the same `|M|²` to within rounding, and the tests hold
-//! them to it.
+//! Without an explicit coupling set, hypotheses moving one and the same parameter
+//! are grouped by it where that is cheaper than evaluating them. With one
+//! ([`engine::ReweightOptions::couplings`]), every hypothesis is served jointly, and
+//! a card moving anything else, or a coupling that is not polynomial in some
+//! subprocess, is refused. Both paths give the same `|M|²` to within rounding, and
+//! the tests hold them to it.
 
 pub mod card;
 pub mod engine;
@@ -104,16 +110,74 @@ pub enum ReweightError {
     ForbiddenSChannel,
     #[error("failed to compile a subprocess for reweighting: {0}")]
     Compile(String),
+    #[error("`{name}` cannot be a reweighting coupling: {reason}")]
+    BadCoupling { name: String, reason: String },
+    #[error(
+        "launch `{launch}` moves `{param}`, which is not among the couplings the \
+         polynomial is tracked in"
+    )]
+    OutsideCouplings { launch: String, param: String },
+    #[error(
+        "{process}: its amplitude is not provably a polynomial in {couplings} (a coupling \
+         reaches them through a non-polynomial function, or a mass or width moves with \
+         them)"
+    )]
+    NotPolynomial { couplings: String, process: String },
+    #[error("{process}: {reason}")]
+    NodeSystem { process: String, reason: String },
+}
+
+/// Name each of `names` as an external parameter of `model` that a polynomial can
+/// be tracked in: the same checks a card's `set` line passes, each name once.
+pub fn resolve_couplings(model: &UFOModel, names: &[String]) -> Result<Vec<String>, ReweightError> {
+    let mut out: Vec<String> = Vec::new();
+    for name in names {
+        let change = Change::Name {
+            name: name.clone(),
+            value: 0.0,
+            line: 0,
+        };
+        let resolved = external_name(model, &change)
+            .and_then(|n| check_movable(model, n, 0))
+            .map_err(|e| ReweightError::BadCoupling {
+                name: name.clone(),
+                reason: match e {
+                    ReweightError::UnknownParameter { .. } => "no such external parameter".into(),
+                    ReweightError::InternalParameter { .. } => "an internal parameter".into(),
+                    ReweightError::Locked { .. } => "fixed to zero by the restriction".into(),
+                    ReweightError::StrongCoupling { .. } => "it moves the strong coupling".into(),
+                    other => other.to_string(),
+                },
+            })?;
+        if !out.contains(&resolved) {
+            out.push(resolved);
+        }
+    }
+    Ok(out)
+}
+
+/// Refuse a parameter no hypothesis may move.
+fn check_movable(model: &UFOModel, name: String, line: usize) -> Result<String, ReweightError> {
+    let mut strong = model.params.dependents("aS");
+    strong.insert("aS".to_string());
+    if model.params.zeros.contains(&name) {
+        return Err(ReweightError::Locked { line, name });
+    }
+    if strong.contains(&name)
+        || model
+            .params
+            .dependents(&name)
+            .iter()
+            .any(|d| strong.contains(d))
+    {
+        return Err(ReweightError::StrongCoupling { line, name });
+    }
+    Ok(name)
 }
 
 /// Name every change of the card as an external parameter of `model`, and refuse
 /// the changes reweighting cannot honour.
 pub fn resolve(card: &ReweightCard, model: &UFOModel) -> Result<Vec<Launch>, ReweightError> {
-    let strong: HashSet<String> = {
-        let mut s = model.params.dependents("aS");
-        s.insert("aS".to_string());
-        s
-    };
     let mut launches: Vec<Launch> = Vec::with_capacity(card.launches.len());
     let mut ids: HashSet<String> = HashSet::new();
     for (k, spec) in card.launches.iter().enumerate() {
@@ -133,20 +197,7 @@ pub fn resolve(card: &ReweightCard, model: &UFOModel) -> Result<Vec<Launch>, Rew
         }
         let mut values: Vec<(String, f64)> = Vec::new();
         for change in &spec.changes {
-            let name = external_name(model, change)?;
-            let line = change.line();
-            if model.params.zeros.contains(&name) {
-                return Err(ReweightError::Locked { line, name });
-            }
-            if strong.contains(&name)
-                || model
-                    .params
-                    .dependents(&name)
-                    .iter()
-                    .any(|d| strong.contains(d))
-            {
-                return Err(ReweightError::StrongCoupling { line, name });
-            }
+            let name = check_movable(model, external_name(model, change)?, change.line())?;
             match values.iter_mut().find(|(n, _)| *n == name) {
                 Some(entry) => entry.1 = change.value(),
                 None => values.push((name, change.value())),

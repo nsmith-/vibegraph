@@ -1,87 +1,145 @@
-//! Which powers of one model parameter a matrix element is a polynomial in.
+//! Which monomials in a set of model parameters a tree amplitude is a polynomial in.
 //!
 //! A tree amplitude is, diagram by diagram, a product of vertex factors and
 //! propagators, and every vertex factor is a sum of UFO couplings times Lorentz and
-//! colour structures. When a parameter `P` moves only couplings — no mass or width
-//! anywhere in the process depends on it — and every coupling is a polynomial in
-//! `P` with `P`-independent coefficients, the amplitude is a polynomial in `P` too:
-//! a diagram's powers are the sums of one power per vertex, and the amplitude's are
-//! the union over diagrams. For real `P`, `|M|² = Σ conj(A)·C·A` is a real polynomial
-//! whose powers are the pairwise sums of the amplitude's.
+//! colour structures. When parameters `P₁…Pₙ` move only couplings — no mass or
+//! width anywhere in the process depends on them — and every coupling is a
+//! polynomial in them with parameter-independent coefficients, the amplitude is a
+//! polynomial too: a diagram's monomials are the products of one monomial per
+//! vertex, and the amplitude's are the union over diagrams. An SMEFT process
+//! restricted to one insertion per diagram has the amplitude monomials
+//! `{1, c₁, …, cₙ}`.
 //!
-//! [`Support`] is that set of powers. It is computed symbolically from the UFO
-//! expressions, never guessed from numbers, and anything the rules below do not
-//! prove polynomial makes the analysis answer `None`: a function of `P`, a division
-//! by it, a non-integer or `P`-dependent exponent.
+//! [`Support`] is that set of monomials, as exponent vectors. It is computed
+//! symbolically from the UFO expressions, never guessed from numbers, and anything
+//! the rules below do not prove polynomial makes the analysis answer `None`: a
+//! function of a parameter, a division by one, a non-integer or parameter-dependent
+//! exponent.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::diagrams::Diagram;
 use crate::ufo::expr::{BinOp, Expr, Func};
 use crate::ufo::parameters::ParamNature;
 use crate::ufo::UFOModel;
 
-/// A set of non-negative integer powers, bit `n` standing for `Pⁿ`.
-///
-/// Powers above 63 are not representable; an operation that would produce one
-/// fails instead, which the analysis reports as "not a polynomial it can use".
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Support(u64);
+/// Most monomials a support may hold before the analysis gives up on it.
+const MAX_TERMS: usize = 4096;
+
+/// A set of monomials `Π Pᵢ^eᵢ` over a fixed list of parameters, each an exponent
+/// vector `e` in parameter order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Support {
+    arity: usize,
+    terms: BTreeSet<Box<[u8]>>,
+}
 
 impl Support {
-    /// `{0}`: independent of the parameter.
-    pub const CONSTANT: Support = Support(1);
-
-    /// `{n}`.
-    pub fn power(n: u32) -> Option<Support> {
-        (n < 64).then(|| Support(1u64 << n))
-    }
-
-    /// The powers, in increasing order.
-    pub fn powers(self) -> impl Iterator<Item = u32> {
-        (0..64).filter(move |n| self.0 >> n & 1 == 1)
-    }
-
-    /// The largest power, or `None` for the empty set.
-    pub fn degree(self) -> Option<u32> {
-        (self.0 != 0).then(|| 63 - self.0.leading_zeros())
-    }
-
-    /// The powers a sum of two such polynomials can carry.
-    pub fn union(self, other: Support) -> Support {
-        Support(self.0 | other.0)
-    }
-
-    /// The powers a product of two such polynomials can carry: every pairwise sum.
-    pub fn product(self, other: Support) -> Option<Support> {
-        let mut out = 0u64;
-        for n in self.powers() {
-            if other.0 != 0 && n + other.degree()? > 63 {
-                return None;
-            }
-            out |= other.0 << n;
+    /// The empty set: the zero polynomial.
+    pub fn empty(arity: usize) -> Support {
+        Support {
+            arity,
+            terms: BTreeSet::new(),
         }
-        Some(Support(out))
     }
 
-    pub fn is_constant(self) -> bool {
-        self == Support::CONSTANT
+    /// `{1}`: independent of every parameter.
+    pub fn constant(arity: usize) -> Support {
+        let mut s = Support::empty(arity);
+        s.terms.insert(vec![0; arity].into_boxed_slice());
+        s
+    }
+
+    /// `{Pᵢ}`.
+    pub fn variable(arity: usize, i: usize) -> Support {
+        let mut e = vec![0; arity];
+        e[i] = 1;
+        let mut s = Support::empty(arity);
+        s.terms.insert(e.into_boxed_slice());
+        s
+    }
+
+    /// The number of parameters the exponent vectors run over.
+    pub fn arity(&self) -> usize {
+        self.arity
+    }
+
+    /// The monomials' exponent vectors, in lexicographic order.
+    pub fn terms(&self) -> impl Iterator<Item = &[u8]> {
+        self.terms.iter().map(|t| &t[..])
+    }
+
+    pub fn len(&self) -> usize {
+        self.terms.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.terms.is_empty()
+    }
+
+    /// Whether the set is `{1}`.
+    pub fn is_constant(&self) -> bool {
+        self.terms.len() == 1 && self.terms.iter().all(|t| t.iter().all(|&e| e == 0))
+    }
+
+    /// The largest total degree, or `None` for the empty set.
+    pub fn degree(&self) -> Option<u32> {
+        self.terms
+            .iter()
+            .map(|t| t.iter().map(|&e| u32::from(e)).sum())
+            .max()
+    }
+
+    /// The largest power of parameter `i` in any monomial.
+    pub fn max_exponent(&self, i: usize) -> u8 {
+        self.terms.iter().map(|t| t[i]).max().unwrap_or(0)
+    }
+
+    /// The monomials a sum of two such polynomials can carry.
+    pub fn union(&self, other: &Support) -> Support {
+        Support {
+            arity: self.arity,
+            terms: self.terms.union(&other.terms).cloned().collect(),
+        }
+    }
+
+    /// The monomials a product of two such polynomials can carry: every pairwise
+    /// product. `None` past [`MAX_TERMS`] monomials or an exponent above 255.
+    pub fn product(&self, other: &Support) -> Option<Support> {
+        let mut terms = BTreeSet::new();
+        for a in &self.terms {
+            for b in &other.terms {
+                let t: Option<Box<[u8]>> = a
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(x, y)| x.checked_add(*y))
+                    .collect();
+                terms.insert(t?);
+                if terms.len() > MAX_TERMS {
+                    return None;
+                }
+            }
+        }
+        Some(Support {
+            arity: self.arity,
+            terms,
+        })
     }
 }
 
-/// The symbolic analysis of UFO expressions as polynomials in one external
-/// parameter.
+/// The symbolic analysis of UFO expressions as polynomials in a list of external
+/// parameters.
 pub struct PolyAnalysis<'m> {
     model: &'m UFOModel,
-    param: String,
-    /// Every internal parameter that transitively depends on `param`.
+    params: Vec<String>,
+    /// Every internal parameter that transitively depends on one of `params`.
     driven: HashSet<String>,
     internal: HashMap<&'m str, &'m Expr>,
     memo: HashMap<String, Option<Support>>,
 }
 
 impl<'m> PolyAnalysis<'m> {
-    pub fn new(model: &'m UFOModel, param: &str) -> Self {
+    pub fn new(model: &'m UFOModel, params: &[&str]) -> Self {
         let internal = model
             .params
             .internals
@@ -93,50 +151,59 @@ impl<'m> PolyAnalysis<'m> {
             .collect();
         PolyAnalysis {
             model,
-            param: param.to_string(),
-            driven: model.params.dependents(param),
+            params: params.iter().map(|p| p.to_string()).collect(),
+            driven: params
+                .iter()
+                .flat_map(|p| model.params.dependents(p))
+                .collect(),
             internal,
             memo: HashMap::new(),
         }
     }
 
-    /// Whether `name` moves when the parameter does, the parameter itself included.
-    pub fn moves(&self, name: &str) -> bool {
-        name == self.param || self.driven.contains(name)
+    fn arity(&self) -> usize {
+        self.params.len()
     }
 
-    /// The powers of the parameter a model parameter carries.
+    /// Whether `name` moves when any of the parameters does, the parameters
+    /// themselves included.
+    pub fn moves(&self, name: &str) -> bool {
+        self.params.iter().any(|p| p == name) || self.driven.contains(name)
+    }
+
+    /// The monomials a model parameter carries.
     pub fn param_support(&mut self, name: &str) -> Option<Support> {
-        if name == self.param {
-            return Support::power(1);
+        if let Some(i) = self.params.iter().position(|p| p == name) {
+            return Some(Support::variable(self.arity(), i));
         }
         if !self.driven.contains(name) {
-            return Some(Support::CONSTANT);
+            return Some(Support::constant(self.arity()));
         }
-        if let Some(&cached) = self.memo.get(name) {
-            return cached;
+        if let Some(cached) = self.memo.get(name) {
+            return cached.clone();
         }
         let result = match self.internal.get(name) {
             Some(expr) => self.expr_support(expr),
             None => None,
         };
-        self.memo.insert(name.to_string(), result);
+        self.memo.insert(name.to_string(), result.clone());
         result
     }
 
-    /// The powers of the parameter an expression carries, or `None` if it is not
-    /// provably a polynomial in it.
+    /// The monomials an expression carries, or `None` if it is not provably a
+    /// polynomial in the parameters.
     pub fn expr_support(&mut self, expr: &Expr) -> Option<Support> {
+        let n = self.arity();
         match expr {
-            Expr::Num(_) | Expr::Pi => Some(Support::CONSTANT),
+            Expr::Num(_) | Expr::Pi => Some(Support::constant(n)),
             Expr::Param(name) => self.param_support(name),
             Expr::Neg(inner) => self.expr_support(inner),
             Expr::BinOp(op, lhs, rhs) => {
                 let l = self.expr_support(lhs)?;
                 let r = self.expr_support(rhs)?;
                 match op {
-                    BinOp::Add | BinOp::Sub => Some(l.union(r)),
-                    BinOp::Mul => l.product(r),
+                    BinOp::Add | BinOp::Sub => Some(l.union(&r)),
+                    BinOp::Mul => l.product(&r),
                     // Division by a constant keeps a polynomial one.
                     BinOp::Div => r.is_constant().then_some(l),
                     BinOp::Pow => {
@@ -144,19 +211,20 @@ impl<'m> PolyAnalysis<'m> {
                             return None;
                         }
                         if l.is_constant() {
-                            return Some(Support::CONSTANT);
+                            return Some(Support::constant(n));
                         }
                         match rhs.as_ref() {
-                            Expr::Num(k) if k.fract() == 0.0 && *k >= 0.0 && *k <= 63.0 => {
-                                (0..*k as u32).try_fold(Support::CONSTANT, |acc, _| acc.product(l))
-                            }
+                            Expr::Num(k) if k.fract() == 0.0 && *k >= 0.0 && *k <= 255.0 => (0..*k
+                                as u32)
+                                .try_fold(Support::constant(n), |acc, _| acc.product(&l)),
                             _ => None,
                         }
                     }
                 }
             }
-            // The parameter is real, so conjugation and the real/imaginary split of
-            // `complex(re, im)` act on the coefficients alone and keep the powers.
+            // The parameters are real, so conjugation and the real/imaginary split
+            // of `complex(re, im)` act on the coefficients alone and keep the
+            // monomials.
             Expr::Call(Func::Conj | Func::Re | Func::Im, args) if args.len() == 1 => {
                 self.expr_support(&args[0])
             }
@@ -166,18 +234,19 @@ impl<'m> PolyAnalysis<'m> {
                         return None;
                     }
                 }
-                Some(Support::CONSTANT)
+                Some(Support::constant(n))
             }
-            Expr::Complex(re, im) => Some(self.expr_support(re)?.union(self.expr_support(im)?)),
+            Expr::Complex(re, im) => Some(self.expr_support(re)?.union(&self.expr_support(im)?)),
         }
     }
 
-    /// The powers of the parameter a set of diagrams' amplitude carries, or `None`
-    /// when it is not a polynomial in it: a coupling that is not, or a mass or width
-    /// of any particle in the diagrams that moves with the parameter.
+    /// The monomials a set of diagrams' amplitude carries, or `None` when it is not
+    /// a polynomial in the parameters: a coupling that is not, or a mass or width
+    /// of any particle in the diagrams that moves with them.
     pub fn amplitude_support(&mut self, diagrams: &[Diagram]) -> Option<Support> {
         let model = self.model;
-        let mut total = Support(0);
+        let n = self.arity();
+        let mut total = Support::empty(n);
         for diagram in diagrams {
             let particles = diagram
                 .legs
@@ -190,24 +259,19 @@ impl<'m> PolyAnalysis<'m> {
                     return None;
                 }
             }
-            let mut support = Support::CONSTANT;
+            let mut support = Support::constant(n);
             for vertex in &diagram.vertices {
-                let mut vertex_support = Support(0);
+                let mut vertex_support = Support::empty(n);
                 for &coupling in model.vertex_def(vertex.interaction).couplings.values() {
                     let expr = &model.coupling_def(coupling).value;
-                    vertex_support = vertex_support.union(self.expr_support(expr)?);
+                    vertex_support = vertex_support.union(&self.expr_support(expr)?);
                 }
-                support = support.product(vertex_support)?;
+                support = support.product(&vertex_support)?;
             }
-            total = total.union(support);
+            total = total.union(&support);
         }
         Some(total)
     }
-}
-
-/// The powers `|A|²` carries when `A` carries `amplitude`: every pairwise sum.
-pub fn squared(amplitude: Support) -> Option<Support> {
-    amplitude.product(amplitude)
 }
 
 #[cfg(test)]
@@ -217,33 +281,52 @@ mod tests {
     use crate::ufo::expr::parse_expr;
     use crate::ufo::sm::{sm_model, SMRestrict};
 
-    fn support(model: &UFOModel, param: &str, src: &str) -> Option<Vec<u32>> {
-        PolyAnalysis::new(model, param)
+    fn terms(s: &Support) -> Vec<Vec<u8>> {
+        s.terms().map(<[u8]>::to_vec).collect()
+    }
+
+    fn support(model: &UFOModel, params: &[&str], src: &str) -> Option<Vec<Vec<u8>>> {
+        PolyAnalysis::new(model, params)
             .expr_support(&parse_expr(src).unwrap())
-            .map(|s| s.powers().collect())
+            .map(|s| terms(&s))
     }
 
     #[test]
     fn expressions_are_read_as_polynomials() {
         let model = sm_model(SMRestrict::Default);
-        assert_eq!(support(&model, "ymt", "ymt"), Some(vec![1]));
-        assert_eq!(support(&model, "ymt", "2*ymt**2 - ymt"), Some(vec![1, 2]));
+        let y = &["ymt"];
+        assert_eq!(support(&model, y, "ymt"), Some(vec![vec![1]]));
         assert_eq!(
-            support(&model, "ymt", "(1 + ymt)**3"),
-            Some(vec![0, 1, 2, 3])
+            support(&model, y, "2*ymt**2 - ymt"),
+            Some(vec![vec![1], vec![2]])
         );
-        assert_eq!(support(&model, "ymt", "ymt/4"), Some(vec![1]));
         assert_eq!(
-            support(&model, "ymt", "complex(0,1)*complexconjugate(ymt)"),
-            Some(vec![1])
+            support(&model, y, "(1 + ymt)**3"),
+            Some(vec![vec![0], vec![1], vec![2], vec![3]])
         );
-        assert_eq!(support(&model, "ymt", "cmath.sqrt(MT)"), Some(vec![0]));
+        assert_eq!(support(&model, y, "ymt/4"), Some(vec![vec![1]]));
+        assert_eq!(
+            support(&model, y, "complex(0,1)*complexconjugate(ymt)"),
+            Some(vec![vec![1]])
+        );
+        assert_eq!(support(&model, y, "cmath.sqrt(MT)"), Some(vec![vec![0]]));
         // The ones the analysis must refuse rather than guess at.
-        assert_eq!(support(&model, "ymt", "1/ymt"), None);
-        assert_eq!(support(&model, "ymt", "cmath.sqrt(ymt)"), None);
-        assert_eq!(support(&model, "ymt", "ymt**0.5"), None);
-        assert_eq!(support(&model, "ymt", "2**ymt"), None);
-        assert_eq!(support(&model, "ymt", "ymt**ymt"), None);
+        assert_eq!(support(&model, y, "1/ymt"), None);
+        assert_eq!(support(&model, y, "cmath.sqrt(ymt)"), None);
+        assert_eq!(support(&model, y, "ymt**0.5"), None);
+        assert_eq!(support(&model, y, "2**ymt"), None);
+        assert_eq!(support(&model, y, "ymt**ymt"), None);
+    }
+
+    #[test]
+    fn several_parameters_give_exponent_vectors() {
+        let model = sm_model(SMRestrict::Default);
+        let p = &["ymt", "ymtau"];
+        assert_eq!(
+            support(&model, p, "ymt*ymtau + ymtau**2 + 3"),
+            Some(vec![vec![0, 0], vec![0, 2], vec![1, 1]])
+        );
+        assert_eq!(support(&model, p, "ymt/ymtau"), None);
     }
 
     /// The Standard Model's Yukawa couplings reach `ymt` through the internal `yt`,
@@ -251,11 +334,11 @@ mod tests {
     #[test]
     fn internal_parameters_are_followed() {
         let model = sm_model(SMRestrict::Default);
-        let mut a = PolyAnalysis::new(&model, "ymt");
-        assert_eq!(a.param_support("yt"), Support::power(1));
-        assert_eq!(a.param_support("MT"), Some(Support::CONSTANT));
+        let mut a = PolyAnalysis::new(&model, &["ymt"]);
+        assert_eq!(a.param_support("yt"), Some(Support::variable(1, 0)));
+        assert_eq!(a.param_support("MT"), Some(Support::constant(1)));
         // `ee` is `2·√(π·aEW)` and `aEW` is `1/aEWM1`.
-        let mut b = PolyAnalysis::new(&model, "aEWM1");
+        let mut b = PolyAnalysis::new(&model, &["aEWM1"]);
         assert_eq!(b.param_support("ee"), None);
     }
 
@@ -270,40 +353,46 @@ mod tests {
     }
 
     #[test]
-    fn amplitude_powers_follow_the_diagrams() {
+    fn amplitude_monomials_follow_the_diagrams() {
         let model = sm_model(SMRestrict::Default);
-        // `h > t t~`-type diagrams carry one Yukawa vertex; the Higgsstrahlung
-        // diagrams of `e+ e- > t t~ h` carry none, so the amplitude is `a + b·ymt`.
+        // Higgsstrahlung carries no Yukawa vertex and radiation off the top one, so
+        // the amplitude is `a + b·ymt`.
         let tth = diagrams("e+ e- > t t~ h", &model);
-        let s = PolyAnalysis::new(&model, "ymt")
+        let s = PolyAnalysis::new(&model, &["ymt"])
             .amplitude_support(&tth)
             .unwrap();
-        assert_eq!(s.powers().collect::<Vec<_>>(), [0, 1]);
-        assert_eq!(squared(s).unwrap().powers().collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(terms(&s), [vec![0], vec![1]]);
+
+        // `ta+ ta- > t t~` through an s-channel Higgs carries both Yukawas at once;
+        // the Z and photon carry neither. `ymb` is in the list and absent from the
+        // process.
+        let tt = diagrams("ta+ ta- > t t~", &model);
+        let s = PolyAnalysis::new(&model, &["ymt", "ymtau", "ymb"])
+            .amplitude_support(&tt)
+            .unwrap();
+        assert_eq!(terms(&s), [vec![0, 0, 0], vec![1, 1, 0]]);
 
         // A process the parameter does not enter.
         let mumu = diagrams("e+ e- > mu+ mu-", &model);
-        let s = PolyAnalysis::new(&model, "ymt")
+        assert!(PolyAnalysis::new(&model, &["ymt"])
             .amplitude_support(&mumu)
-            .unwrap();
-        assert!(s.is_constant());
+            .unwrap()
+            .is_constant());
 
         // `MZ` is the Z propagator's pole: not a coupling-only parameter.
         assert_eq!(
-            PolyAnalysis::new(&model, "MZ").amplitude_support(&mumu),
+            PolyAnalysis::new(&model, &["MZ"]).amplitude_support(&mumu),
             None
         );
     }
 
     #[test]
     fn products_refuse_to_overflow() {
-        let high = Support::power(40).unwrap();
-        assert_eq!(high.product(high), None);
-        assert_eq!(
-            Support::power(3)
-                .unwrap()
-                .product(Support::power(4).unwrap()),
-            Support::power(7)
-        );
+        let x = Support::variable(1, 0);
+        let high = (0..200)
+            .try_fold(Support::constant(1), |a, _| a.product(&x))
+            .unwrap();
+        assert_eq!(high.product(&high), None);
+        assert_eq!(high.degree(), Some(200));
     }
 }
