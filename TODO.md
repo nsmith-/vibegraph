@@ -550,8 +550,14 @@ above); the entries here are the eventual features.
   - +0.65 pb: the reference is low against seven independent MadEvent
     directories (131.09);
   - +0.33 ± 0.11 pb: H1, measured by patching MadEvent's first call to `P1`;
-    all of it is in `P2_qq_llqq` (+1.8 %). This awaits the user's
-    documented as a deviation (user, 2026-09-29; note 41 "D2 decisions");
+    all of it is in `P2_qq_llqq` (+1.8 %). Documented as a deviation (user,
+    2026-09-29; note 41 "D2 decisions"). **R1** reproduced it inside MadGraph
+    alone (`validation/madgraph/repro/permuted_first_call/`; fix in
+    `patches/first-call-unpermuted-momenta.patch`). On `u q > z u q`, grouped
+    output is −3.0 % against non-grouped at `ickkw = 1` (−9.8σ, measured
+    spread). It is also −4.0 % at the default card, `ickkw = 0` with
+    `dynamical_scale_choice = -1` (−7.6σ). The fix restores agreement at both.
+    The report draft is in note 07, not filed yet;
   - +0.38 ± 0.33 pb: composite against per-directory runs, not significant;
   - ≈ +0.6 pb: a generic 2 → 4 offset that survives with matching off, and at
     fixed beams (`u u~ > e+ e- g g`, +0.29 %, 3.2σ). It is to be filed as its
