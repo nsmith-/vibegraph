@@ -1,0 +1,38 @@
+MadEvent's grouped `DSIGPROC` hands the first `setclscales` call (through
+`update_scale_coupling`) the sampled point `PP`, while the matrix element and
+`REWGT`'s second `setclscales` call read `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))`,
+mirrored when `IMIRROR = 2`. On a channel whose symmetry permutation exchanges
+equal-mass legs of different flavour, the first call clusters a relabelled
+event: it sets the renormalisation scale, the PDF scales the densities are
+evaluated at, `q2bck`, and it can reject the point (the `xqcut` test on
+vertices with jet daughters), and a point is kept only if both calls accept it.
+
+Handing the first call `P1` makes both calls cluster the event the matrix
+element evaluates. The generated form is `CALL UPDATE_SCALE_COUPLING(P1, WGT)`
+in every `SubProcesses/P*/auto_dsig.f`.
+
+Only the scalar path (`vector_size = 1`, the default) is covered. The
+vectorised path has the same defect: `DSIG_VEC` calls
+`update_scale_coupling_vec(all_p, ...)` (`super_auto_dsig_group_v4.inc:312`)
+before `DSIGPROC_VEC` builds and mirrors `ALL_P1`. It has no one-line analogue:
+`ALL_P1` is local to `DSIGPROC_VEC` and dimensioned `(0:3,NEXTERNAL,VECSIZE)`,
+while `update_scale_coupling_vec` indexes its argument as
+`(4*maxdim/3+14,VECSIZE)`, so the call has to move into `DSIGPROC_VEC` after
+the mirror loop with the momenta copied into an array of that shape. That
+change is not part of this patch and is not measured.
+
+Applied by validation/madgraph/repro/permuted_first_call/repro.sh (variant
+`patched`) as that one-line edit of the generated `auto_dsig.f`, never to the
+pinned MadGraph 3.7.1 tree itself.
+
+--- a/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc
++++ b/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc
+@@ -839,7 +839,7 @@
+ c     set the running scale 
+ c     and update the couplings accordingly (but deactivate for discrete sampler(imode=5) and 
+       IF (VECSIZE_MEMMAX.LE.1.and.imode.ne.5) THEN ! no-vector (NB not VECSIZE_USED!)
+-            call update_scale_coupling(pp, wgt)
++            call update_scale_coupling(p1, wgt)
+       endif
+ 
+ 

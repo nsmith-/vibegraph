@@ -1359,6 +1359,46 @@ and 130.61, a mean of 130.81 ± 0.28.
 - **The generic 2 → 4 offset is its own validation item** (TODO.md), with
   the fixed-beam `u u~ > e+ e- g g` reproducer. It does not block MLM.
 
+#### R1: a MadGraph-only reproducer for H1, 2026-09-29
+
+H1 is now demonstrated inside MadGraph alone, and the report draft is in note 07 ("`super_auto_dsig_group_v4.inc` —
+Direct Bug Found"). The reproducer is `validation/madgraph/repro/permuted_first_call/`. The fix is
+`validation/madgraph/patches/first-call-unpermuted-momenta.patch`.
+
+**The test.** The process is `define q = u d; generate u q > z u q`, at 13 TeV.
+- It compares the grouped output with `group_subprocesses False`, and with the grouped output carrying the
+  one-line `PP → P1` fix.
+- Each variant runs five seeds in freshly generated directories. The error is the spread over those seeds.
+- Grouping puts `u u` and `u d` in one directory. Configs 2, 5, 6 and 8 are then integrated as the final-quark
+  swap of others, and two of `u d`'s four diagrams lie on them.
+
+**Results.**
+
+| card | grouped (pb) | non-grouped (pb) | grouped + fix (pb) | grouped vs non-grouped | fix vs non-grouped |
+|---|---|---|---|---|---|
+| `ickkw = 1`, `xqcut = 40` | 54.48 | 56.14 | 56.33 | −3.0 %, −9.8σ | +1.2σ |
+| default card (`ickkw = 0`, `dynamical_scale_choice = -1`) | 104.28 | 108.60 | 108.62 | −4.0 %, −7.6σ | 0.0σ |
+
+**Findings.**
+- H1 therefore reaches unmatched runs at MadGraph's default dynamical scale.
+- It is not limited to flavour swaps:
+  - With MLM off, the channel whose only permuted config swaps `u u`'s identical quarks rises by 5.7 % (18σ)
+    once the fix is applied.
+  - The other channel of that kind is identical on every seed.
+  - The clustering path responsible is not isolated.
+- Rejected candidates:
+  - `u u~ > e+ e- u u~` alone: patched and unpatched are bit-identical; its permuted channels carry 0.17 % of
+    σ.
+  - `g g > e+ e- u u~` and `t t~ j`: their swaps leave the clustering pairs symmetric.
+  - The same subprocesses written with `add process` land in separate directories and have no permutation.
+- The vectorised path (`update_scale_coupling_vec`, `:312`) has the same shape. It has no one-line fix and is
+  not measured.
+- For this crate:
+  - The D2 decision stands: vibegraph keeps the fixed behaviour.
+  - Grouped MadEvent references that use `dynamical_scale_choice = -1` and contain non-identity permutations
+    are biased whether or not they are matched.
+  - No banked `ickkw = 0` row has been checked for such permutations.
+
 ### M4: the event record for the shower (feature-dev; after M3)
 
 - Write `<scales pt_clust_N>` with the `ptclus` rule, including the collider
