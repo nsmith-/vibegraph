@@ -1199,6 +1199,148 @@ nothing at the 1.5 % level. The sample's σ is within 0.12 % of the
 integration's; the efficiency is 3.5 %, and 4.5 % of σ sits above `w_max`
 (largest `w/w_max` 62).
 
+#### D2 diagnosis: the `@2` excess, 2026-09-28
+
+The question was M3's `@2`: 132.38 ± 0.31 pb against MadEvent's 130.44 ± 0.20,
+which is +1.49 % and 5.2σ. No production code changed. The throwaway probes
+lived in the worktree and were reverted. They were rebuilt and re-run in a
+private target: test binaries `33b47372…` (dump harness) and `021b3f74…`
+(lib), with identical outputs.
+
+**Answer.** The +1.94 pb is not one vibegraph defect. It splits into four
+parts:
+
+| part | pb | how it was measured |
+|---|---|---|
+| the reference sits low against independent MadEvent runs | +0.65 | 7 fresh directories vs M0's ten seeds |
+| H1, MadEvent's first `setclscales` call on `PP` | +0.33 ± 0.11 | MadEvent patched to hand the first call `P1`, 4 runs vs 5 |
+| M3's composite vs vibegraph run per directory | +0.38 ± 0.33 | not significant |
+| a generic 2 → 4 offset, present without matching | ≈ +0.6 | fixed scale, no `xqcut`; also at fixed beams |
+
+The first three are specific to this row. The fourth is not MLM.
+
+**Localisation by subprocess directory** (MLM card, pb). The columns are:
+- MadEvent reference: M0's ten seeds of the mixed card. Seeds 2–10 share one
+  directory, and in the mixed card `@2` gets about 12 % of the events.
+- MadEvent fresh: `p p > e+ e- j j` alone, 10000 events, one freshly
+  generated directory per seed. Five seeds, plus two at 50000 events.
+- MadEvent patched: the same fresh directories, with the first call handed
+  `P1`. Four seeds.
+- vibegraph: `gg`, `gq` and `llgg` are one run each at `--neval 2000000
+  --niter 8`. `qq_llqq` is three seeds at 200000 × 8. Every run is one
+  directory's subprocesses integrated alone, with M3's binary `d1979529…`.
+
+| directory | MG ref | MG fresh | MG patched | vibegraph | vg / fresh | vg / patched |
+|---|---|---|---|---|---|---|
+| `P2_gg_llqq` | 11.353 ± 0.042 | 11.378 ± 0.040 | 11.322 ± 0.006 | 11.369 ± 0.007 | −0.1 % | +0.4 % |
+| `P2_gq_llgq` | 91.418 ± 0.178 | 91.934 ± 0.126 | 91.817 ± 0.116 | 92.320 ± 0.069 | +0.4 % | +0.6 % |
+| `P2_qq_llgg` | 9.670 ± 0.030 | 9.710 ± 0.022 | 9.659 ± 0.014 | 9.733 ± 0.007 | +0.2 % | +0.8 % |
+| `P2_qq_llqq` | 17.999 ± 0.073 | 18.063 ± 0.062 | 18.394 ± 0.077 | 18.579 ± 0.063 | +2.9 % | +1.0 % |
+| sum | 130.44 | 131.09 | 131.19 | 132.00 | +0.7 % | +0.6 % |
+
+Errors are the spread over seeds divided by √n. Every MadEvent column scatters
+more than it quotes. For example, `gq` has a spread of 0.33 pb across fresh
+directories, against 0.22 quoted per run. The two 50000-event fresh runs read
+131.00 and 130.54, so more events do not raise MadEvent's `@2`. Fresh
+mixed-card directories read `@2` = 130.46 (M0's samples seed), 130.51, 131.64
+and 130.61, a mean of 130.81 ± 0.28.
+
+**Eliminated, and by what.**
+- **Scales, `rewgt`, PDFs, α_s, per event.** On MadEvent's own events, the
+  weight factor f₁f₂(μF) · α_s^n(μR) · `rewgt` was compared, each side at its own
+  scales. The ratio is exactly 1 (at 1e-9) on all 9859 non-permuted events, and
+  each of the three factors is 1 separately.
+  - MadEvent's side was taken from the dump: the first call's `SCLOUT` q2fact
+    and μR, `RWEND`, and the drawn combination's `RWLEG` codes.
+  - Absolute densities agree with the dumped LHAPDF values on all 4089 `RWPDF`
+    points, worst 5e-16.
+- **Matrix element and symmetry factors (H3).** |M|² was compared with a
+  MadGraph standalone build on MadEvent's own event momenta:
+  - `u u~ > e+ e- g g` (400 points), `g u > e+ e- g u` (300), `u d > e+ e- u d`
+    (104), `u u > e+ e- u u` (137), including 31 points with √ŝ > 600 GeV;
+  - all agree at 6e-8, which is the precision of the LHE records;
+  - the identical-particle 1/2 of `g g` and `u u` is where the member carries
+    it.
+- **The flavour sum.** Every one of the 1214 `@2` events maps to a vibegraph
+  member. The localisation shows no missing or doubled group.
+- **The clustering configuration draw.** Under matching, the weight depends
+  on the configuration on every `gq`, `gg` and `qq_llqq` event. Through the
+  jet memo's restricted re-cluster, it moves by up to a factor of 2.
+  - vibegraph draws the configuration ∝ `AMP2`. Its expected factor over
+    MadEvent's at MadEvent's own channel, E_vg/W_MG, is 0.994 ± 0.005 on `@2`
+    (0.988 ± 0.006 on `gq`).
+  - The statistic of `validate_hadronic`'s draw test agrees on the events it
+    can read: MadEvent's channel landing in the highest-weight class gives
+    pulls of −0.57 (`gq`), −1.02 (`qq_llqq`) and +2.20 (`gg`).
+- **vibegraph's sampler (H2, our side).** Ten times the budget moves no
+  directory:
+  - `qq_llgg`: 9.732 ± 0.022 over five seeds, against 9.733 ± 0.007;
+  - `gg`: 11.381 ± 0.008 (five seeds) against 11.369 ± 0.007;
+  - `gq`: 92.13 ± 0.24 against 92.32 ± 0.07.
+
+  The default card's split-angle map, and three others, agree at fixed beams
+  (below).
+
+**H1 is real, and lives in `P2_qq_llqq`.**
+- On kept events it is nothing. On MadEvent's 68 permuted `@2` events whose
+  first-call scales differ (53 `qq_llqq`, 15 `gg`), W_vg/W_MG averages 0.998
+  (0.58–1.63). That moves `@2` by −0.01 % ± 0.10 %.
+- Its size is in the points only one side keeps. The patched MadEvent
+  measures that inside MadEvent itself: `qq_llqq` rises by 0.33 ± 0.11 pb
+  (+1.8 %), and `gg` does not move (−0.04 ± 0.06).
+- M2's figure (+0.2 % on kept events) read MadEvent's PDF scale from `RWBEG`'s
+  q2fact. That is the *second* call's output on 10000/10000 events, and equals
+  the first call's on only 7284. `DSIG` evaluates the densities before `REWGT`,
+  at the first call's q2fact (`auto_dsig1.f`, `QSCALE = DSQRT(Q2FACT(…))`
+  before `REWGT(PP,1)`). `gen_kt_cluster_dumps.py`'s docstring calls those
+  fields "the matrix-element PDF scales", which is wrong for the same reason.
+
+**The generic offset.** It survives every piece of MLM being switched off:
+- **Fixed scales, `ickkw = 0`, `xqcut = 0`, plain `ptj = mmjj = 20`.**
+  vibegraph reads 102.36, against MadEvent's 101.65 ± 0.14 (six runs), which is
+  +0.7 %. By directory: `gg` +0.6 %, `llgg` +0.2 %, `gq` +0.7 %, `qq_llqq`
+  +0.9 %.
+- **Fixed beams, √s = 500 GeV, `u u~ > e+ e- g g`, the same cuts.**
+  vibegraph reads 0.52894 ± 0.00024 (four seeds at 2M × 8), against MadEvent's
+  0.52743 ± 0.00040 (six runs, four of them in fresh directories), which is
+  +0.29 %, 3.2σ.
+  - There are no PDFs or running scales here, and |M|² is identical point by
+    point.
+  - vibegraph's own split-angle maps agree with one another: isotropic
+    0.52945, windowed 0.52934, soft-all 0.52900.
+
+  This is the cheapest reproducer: about 30 s per MadEvent run and 75 s per
+  vibegraph run.
+- On `qq_llgg` the unweighted samples place vibegraph's surplus in the
+  high-ŝ tail: m_ll > 150 is +14 %, and ŝ > 600 GeV at the peak is +9.5 %.
+  MadEvent's own dedicated m_ll > 150 run (0.2341 ± 0.0004) sits 11 % above
+  its inclusive run's tail and 0.7 % below vibegraph's 0.2357 ± 0.0002.
+- It is not settled which side is right. Two things point at MadEvent's
+  coverage of tails:
+  - its dedicated slice recovers most of the tail;
+  - its runs scatter beyond their quoted errors.
+
+  A vibegraph acceptance difference in regions MadEvent never populates is
+  the one class the per-event oracle cannot see.
+
+**Recommendations.**
+- **H1 is a policy decision.** It is +1.8 % on `P2_qq_llqq` and +0.25 % on
+  `@2`, mostly through the first call rejecting points it clusters
+  as `PP`.
+  - Reproducing it needs MadEvent's per-channel symmetry permutation
+    (`SYMCONF`, `PERMS(MAPCONFIG)`), which the integrand does not carry: its
+    channels are its own diagrams.
+  - Refusing would refuse this canonical card.
+  - Documenting the deviation with this measured size is the cheaper choice.
+    The user decides.
+- **Regenerate `@2`'s reference from independent directories.** Use one
+  freshly generated directory per seed, and preferably `@2` in its own run.
+  Its error should be the spread over those directories, not the per-run quote.
+- **Gate at a tolerance that includes MadEvent's measured inter-directory
+  spread.** That is about 0.2–0.4 % per `@2` run.
+- **File the generic 2 → 4 offset as its own validation item**, with the
+  fixed-beam `u u~ > e+ e- g g` reproducer. It is outside MLM.
+
 ### M4: the event record for the shower (feature-dev; after M3)
 
 - Write `<scales pt_clust_N>` with the `ptclus` rule, including the collider
