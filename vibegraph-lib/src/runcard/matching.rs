@@ -89,6 +89,41 @@ pub(super) fn resolve(values: &mut BTreeMap<String, ParamValue>) -> Result<(), R
     Ok(())
 }
 
+/// The parameters whose value `banner.py` records differently from the
+/// resolved card, given the card as parsed: `banner.py:4549-4577` forces
+/// `alpsfact = 1` only under matching with `use_syst`, zeroes `drjj`/`drjl`
+/// under `xqcut` as the resolved card does, and zeroes `mmjj` above `xqcut`
+/// only when `auto_ptj_mjj` is off; `ptj` and `mmjj` keep the card's values
+/// otherwise, since their rewrite to `xqcut` is `setcuts.f`'s.
+pub(super) fn banner_overrides(
+    parsed: &BTreeMap<String, ParamValue>,
+    resolved: &BTreeMap<String, ParamValue>,
+) -> BTreeMap<String, ParamValue> {
+    let mut banner = BTreeMap::new();
+    let alpsfact = if int(parsed, "ickkw") > 0 && flag(parsed, "use_syst") {
+        1.0
+    } else {
+        float(parsed, "alpsfact")
+    };
+    banner.insert("alpsfact", ParamValue::Float(alpsfact));
+    let xqcut = float(parsed, "xqcut");
+    if xqcut > 0.0 {
+        banner.insert("ptj", parsed["ptj"].clone());
+        let mmjj = float(parsed, "mmjj");
+        let mmjj = if !flag(parsed, "auto_ptj_mjj") && mmjj > xqcut {
+            0.0
+        } else {
+            mmjj
+        };
+        banner.insert("mmjj", ParamValue::Float(mmjj));
+    }
+    banner
+        .into_iter()
+        .filter(|(name, value)| resolved.get(*name) != Some(value))
+        .map(|(name, value)| (name.to_string(), value))
+        .collect()
+}
+
 fn float(values: &BTreeMap<String, ParamValue>, name: &str) -> f64 {
     values.get(name).expect("known param").as_f64()
 }
@@ -103,7 +138,7 @@ fn flag(values: &BTreeMap<String, ParamValue>, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::runcard::{RunCard, RunCardError};
+    use crate::runcard::{ParamValue, RunCard, RunCardError};
 
     fn card(text: &str) -> RunCard {
         RunCard::parse(text).expect("run card")
@@ -226,5 +261,36 @@ mod tests {
         // Fixed-energy beams read no density: the labels stay inert.
         let fixed = card("0 = lpp1\n0 = lpp2\nnone = pdlabel1\nnone = pdlabel2\n");
         assert_eq!(fixed.pdlabel, "nn23lo1");
+    }
+
+    /// MadGraph's own record of a card (`banner_values`) keeps the values
+    /// `setcuts.f` and `setrun.f` rewrite in Fortran, and carries `banner.py`'s
+    /// own edits. Without `xqcut` and matching it is the resolved card.
+    #[test]
+    fn madgraphs_record_keeps_the_card_where_the_fortran_rewrites_it() {
+        let banner = |rc: &RunCard, name: &str| -> ParamValue {
+            rc.banner_values()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| v.clone())
+                .expect("a parameter")
+        };
+        let rc = card("1 = ickkw\n30 = xqcut\n45 = ptj\n12 = mmjj\n0.4 = drjj\n");
+        assert_eq!(rc.float("ptj"), 30.0);
+        assert_eq!(rc.float("mmjj"), 30.0);
+        assert_eq!(banner(&rc, "ptj"), ParamValue::Float(45.0));
+        assert_eq!(banner(&rc, "mmjj"), ParamValue::Float(12.0));
+        assert_eq!(banner(&rc, "drjj"), ParamValue::Float(0.0));
+        // banner.py zeroes mmjj above xqcut only with auto_ptj_mjj off.
+        let rc = card("1 = ickkw\n30 = xqcut\n40 = mmjj\nF = auto_ptj_mjj\n30 = ptj\n");
+        assert_eq!(banner(&rc, "mmjj"), ParamValue::Float(0.0));
+        // alpsfact: setrun.f forces 1 under use_syst whatever ickkw; banner.py
+        // only under matching.
+        let rc = card("0 = ickkw\n2 = alpsfact\nT = use_syst\n");
+        assert_eq!(rc.float("alpsfact"), 1.0);
+        assert_eq!(banner(&rc, "alpsfact"), ParamValue::Float(2.0));
+        let rc = card("1 = ickkw\n2 = alpsfact\nT = use_syst\n");
+        assert_eq!(banner(&rc, "alpsfact"), ParamValue::Float(1.0));
+        let plain = card("25 = ptj\n");
+        assert!(plain.banner_values().eq(plain.iter()));
     }
 }

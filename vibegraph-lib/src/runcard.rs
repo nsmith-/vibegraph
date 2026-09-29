@@ -212,6 +212,12 @@ pub struct RunCard {
     pub dsqrt_q2fact2: f64,
     pub maxjetflavor: i64,
     values: BTreeMap<String, ParamValue>,
+    /// The parameters whose value in MadGraph's own record of the card differs
+    /// from the resolved one ([`banner_values`](Self::banner_values)). Not part
+    /// of the card as an artifact records it, so a deserialised card has none
+    /// and reports its resolved values.
+    #[serde(skip)]
+    banner_overrides: BTreeMap<String, ParamValue>,
 }
 
 impl Default for RunCard {
@@ -393,7 +399,24 @@ impl RunCard {
             .expect("a decay card relaxes the beam checks, never tightens them")
     }
 
+    /// Every parameter as MadGraph records the card in an event file's
+    /// `<MGRunCard>`: after `banner.py`'s own edits and before the Fortran's
+    /// (`setrun.f`, `setcuts.f`), which rerun on any card read back. The two
+    /// differ only on a matched card: `setcuts.f`'s jet-cut rewrite under
+    /// `xqcut` and `setrun.f`'s `alpsfact` under `use_syst` are the Fortran's,
+    /// so the record keeps the card's `ptj`, `mmjj` and (without matching)
+    /// `alpsfact`.
+    pub fn banner_values(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
+        self.values.iter().map(|(k, v)| {
+            (
+                k.as_str(),
+                self.banner_overrides.get(k.as_str()).unwrap_or(v),
+            )
+        })
+    }
+
     fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+        let as_parsed = values.clone();
         matching::resolve(&mut values)?;
         let beam = |name: &str| values.get(name).expect("known param").as_i64();
         if (beam("lpp1"), beam("lpp2")) == (1, 1) {
@@ -429,6 +452,7 @@ impl RunCard {
             dsqrt_q2fact1: f("dsqrt_q2fact1"),
             dsqrt_q2fact2: f("dsqrt_q2fact2"),
             maxjetflavor: i("maxjetflavor"),
+            banner_overrides: matching::banner_overrides(&as_parsed, &values),
             values,
         })
     }

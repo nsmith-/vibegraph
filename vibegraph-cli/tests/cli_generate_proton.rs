@@ -39,7 +39,7 @@
 //! file and agrees with itself. `validate_hadronic` and `amplitude_oracle`
 //! cover those.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
@@ -956,4 +956,296 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         stderr.contains("format version 10") && stderr.contains("written at version 9"),
         "the refusal does not say why:\n{stderr}"
     );
+}
+
+/// The matched single-multiplicity card M0 banked its MLM reference with
+/// (`ickkw = 1`, `xqcut = 20`), committed beside its MadGraph script.
+fn matched_card() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/pp_to_llj_mlm_run_card.dat")
+}
+
+/// The collider energy `√stot` as the record prints it.
+const ETOT_PRINTED: &str = "13000.00000";
+
+/// One matched `p p > e+ e- j` sample off a small fixed budget, shared by the
+/// record checks below. The budget buys a sample to read the record off, not a
+/// cross section.
+fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
+    static ONCE: OnceLock<(tempfile::TempDir, LheFile, String)> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let proc_card = dir.join("proc_card.dat");
+        std::fs::write(&proc_card, "import model sm\ngenerate p p > e+ e- j\n").unwrap();
+        let out = dir.join("out");
+        let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("integrate")
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(matched_card())
+            .arg("--out")
+            .arg(&out)
+            .arg("--pdf-dir")
+            .arg(pdf_dir())
+            .args(["--fixed-budget", "--neval", "20000", "--niter", "4"])
+            .args(["--seed", SEED])
+            .output()
+            .expect("spawn vibegraph");
+        assert!(
+            integrate.status.success(),
+            "integrate failed:\n{}",
+            String::from_utf8_lossy(&integrate.stderr)
+        );
+        let lhe = dir.join("events.lhe");
+        let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("generate")
+            .arg(out.join("grid.bin.zst"))
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(matched_card())
+            .arg("--pdf-dir")
+            .arg(pdf_dir())
+            .args(["--seed", SEED, "--nevents", "3000"])
+            .arg("-o")
+            .arg(&lhe)
+            .arg("--force")
+            .output()
+            .expect("spawn vibegraph");
+        assert!(
+            generate.status.success(),
+            "generate failed:\n{}",
+            String::from_utf8_lossy(&generate.stderr)
+        );
+        let text = std::fs::read_to_string(&lhe).unwrap();
+        let file = LheFile::parse(&text).expect("our file parses");
+        (tmp, file, text)
+    })
+}
+
+/// `pt_clust_N="v"` of an event's `<scales>` line, `None` without one.
+fn pt_clust(event: &LheEvent) -> Option<Vec<(usize, String)>> {
+    let lines: Vec<&String> = event
+        .trailer
+        .iter()
+        .filter(|l| l.trim_start().starts_with("<scales"))
+        .collect();
+    let [line] = lines.as_slice() else {
+        return None;
+    };
+    let mut out = Vec::new();
+    for chunk in line.split("pt_clust_").skip(1) {
+        let (key, rest) = chunk.split_once("=\"")?;
+        let (value, _) = rest.split_once('"')?;
+        out.push((key.parse().ok()?, value.to_string()));
+    }
+    Some(out)
+}
+
+/// The `value = name` pairs of the header's `<MGRunCard>`, read as Pythia's
+/// `MadgraphPar` reads them (a line holding `#` is skipped).
+fn mg_run_card_fields(text: &str) -> Option<BTreeMap<String, String>> {
+    let start = text.find("<MGRunCard>")?;
+    let end = text[start..].find("</MGRunCard>")? + start;
+    let init = text.find("<init>")?;
+    if end > init {
+        return None;
+    }
+    let mut out = BTreeMap::new();
+    for line in text[start..end].lines() {
+        if line.contains('#') {
+            continue;
+        }
+        if let Some((value, name)) = line.split_once('=') {
+            let name = name.split('!').next().unwrap_or("").trim();
+            if !name.is_empty() {
+                out.insert(name.to_string(), value.trim().to_string());
+            }
+        }
+    }
+    Some(out)
+}
+
+/// A matched sample carries what a shower's MLM matching reads, in MadEvent's
+/// layout:
+///
+/// * an `<MGRunCard>` in the header whose `ickkw`, `xqcut`, `maxjetflavor`
+///   and `alpsfact` are the card's, which is what Pythia's
+///   `JetMatching:setMad` reads;
+/// * one `<scales>` line per event with a `pt_clust_N` for exactly the
+///   outgoing lines, keyed by their positions (which the status-2 lines
+///   shift): the leptons at the collider energy, a jet either there or at a
+///   clustering scale no lower than `xqcut`;
+/// * the Z as a status-2 line where the clustering found it on its
+///   Breit–Wigner: descending from both beams, carrying no colour and an
+///   unselected helicity, its mass the leptons' virtuality within
+///   `bwcutoff = 15` widths of the pole, and the two leptons, and nothing
+///   else, naming it as their mother.
+///
+/// The field values are MadEvent's rule; `validate_mlm_dumps` compares them
+/// against MadEvent's own events one by one. What this adds is the writer:
+/// that the fields reach the file, at the right positions.
+#[test]
+fn a_matched_sample_carries_the_shower_record() {
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "a_matched_sample_carries_the_shower_record",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let (_, file, text) = matched_sample();
+    let card = mg_run_card_fields(text).expect("an <MGRunCard> inside <header>");
+    for (name, want) in [
+        ("ickkw", 1.0),
+        ("xqcut", 20.0),
+        ("maxjetflavor", 4.0),
+        ("alpsfact", 1.0),
+        ("ptj", 20.0),
+    ] {
+        let got: f64 = card
+            .get(name)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("<MGRunCard> has no numeric {name}"));
+        assert_eq!(got, want, "<MGRunCard> {name}");
+    }
+
+    let (mut resonant, mut jets_at_etot) = (0usize, 0usize);
+    for (i, event) in file.events.iter().enumerate() {
+        let printed = pt_clust(event).unwrap_or_else(|| panic!("event {i}: one <scales> line"));
+        let outgoing: Vec<usize> = (0..event.particles.len())
+            .filter(|&k| event.particles[k].status == STATUS_OUTGOING)
+            .collect();
+        let keys: Vec<usize> = printed.iter().map(|(k, _)| *k).collect();
+        let positions: Vec<usize> = outgoing.iter().map(|k| k + 1).collect();
+        assert_eq!(
+            keys, positions,
+            "event {i}: pt_clust_N names the outgoing lines"
+        );
+        for ((_, value), &k) in printed.iter().zip(&outgoing) {
+            if event.particles[k].pdg.abs() == 11 {
+                assert_eq!(value, ETOT_PRINTED, "event {i}: a lepton's pt_clust");
+            } else if value == ETOT_PRINTED {
+                jets_at_etot += 1;
+            } else {
+                let v: f64 = value.parse().expect("a number");
+                assert!(
+                    v >= 20.0 - 1e-5,
+                    "event {i}: a jet's pt_clust {v} below xqcut"
+                );
+            }
+        }
+        let intermediates: Vec<usize> = (0..event.particles.len())
+            .filter(|&k| event.particles[k].status == 2)
+            .collect();
+        assert!(
+            intermediates.len() <= 1,
+            "event {i}: more than one resonance"
+        );
+        assert_eq!(
+            event.particles.len(),
+            N_EXT + intermediates.len(),
+            "event {i}: NUP"
+        );
+        for &k in &intermediates {
+            resonant += 1;
+            let z = &event.particles[k];
+            assert_eq!(z.pdg, 23, "event {i}: the resonance");
+            assert_eq!(z.mothers, [1, 2], "event {i}: the Z's mothers");
+            assert_eq!(z.color, [0, 0], "event {i}: the Z's colour");
+            assert_eq!(z.spin, 9.0, "event {i}: the Z's helicity");
+            let daughters: Vec<usize> = (0..event.particles.len())
+                .filter(|&d| event.particles[d].mothers == [(k + 1) as i32; 2])
+                .collect();
+            let mut codes: Vec<i32> = daughters.iter().map(|&d| event.particles[d].pdg).collect();
+            codes.sort_unstable();
+            assert_eq!(codes, [-11, 11], "event {i}: the Z's daughters");
+            let mut p = [0.0f64; 4];
+            for &d in &daughters {
+                for (acc, x) in p.iter_mut().zip(event.particles[d].momentum) {
+                    *acc += x;
+                }
+            }
+            let m = (p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3]).sqrt();
+            assert!((z.mass / m - 1.0).abs() < 1e-8, "event {i}: the Z's mass");
+            assert!(
+                (m - SCALE).abs() < 15.0 * 2.5,
+                "event {i}: a Z off its window at {m}"
+            );
+        }
+        for (k, particle) in event.particles.iter().enumerate() {
+            if particle.status == STATUS_OUTGOING && particle.pdg.abs() != 11 {
+                assert_eq!(particle.mothers, [1, 2], "event {i}: line {k}'s mothers");
+            }
+        }
+    }
+    eprintln!(
+        "{} events: {resonant} list the Z, {jets_at_etot} put the jet at the collider energy",
+        file.events.len()
+    );
+    assert!(
+        resonant > file.events.len() / 2,
+        "the Z is almost always written"
+    );
+    assert!(jets_at_etot > 0, "no jet came from a non-jet vertex");
+}
+
+/// The matched sample's record against MadEvent's banked `pp_to_llj_mlm` run,
+/// as population fractions (the events are different events, so this is the
+/// record read as a distribution): the share of events listing the Z, and the
+/// share whose jet sits at the collider energy (a jet no jet vertex reaches).
+/// Each is a two-sample binomial comparison, required within five standard
+/// deviations of the pooled estimate.
+#[test]
+#[ignore = "oracle layer: M0's matched MadEvent runs are outside the reference bundle; `pixi run validate-mlm-samples` runs this against them"]
+fn matched_sample_record_fractions_against_madevent() {
+    let (_, ours, _) = matched_sample();
+    let path = output_dir().join("pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz");
+    let out = Command::new("gzip")
+        .args(["-dc", path.to_str().unwrap()])
+        .output()
+        .expect("gzip -dc");
+    assert!(out.status.success(), "gzip failed on {}", path.display());
+    let theirs = LheFile::parse(&String::from_utf8(out.stdout).unwrap()).expect("parses");
+    let fractions = |file: &LheFile| -> (usize, usize, usize) {
+        let mut z = 0;
+        let mut etot = 0;
+        for event in &file.events {
+            if event.particles.iter().any(|p| p.status == 2) {
+                z += 1;
+            }
+            let printed = pt_clust(event).expect("a <scales> line");
+            let outgoing = event
+                .particles
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.status == STATUS_OUTGOING);
+            if printed
+                .iter()
+                .zip(outgoing)
+                .any(|((_, v), (_, p))| p.pdg.abs() != 11 && v == ETOT_PRINTED)
+            {
+                etot += 1;
+            }
+        }
+        (z, etot, file.events.len())
+    };
+    let (z1, e1, n1) = fractions(ours);
+    let (z2, e2, n2) = fractions(&theirs);
+    let pull = |a: usize, b: usize| {
+        let (p1, p2) = (a as f64 / n1 as f64, b as f64 / n2 as f64);
+        let pooled = (a + b) as f64 / (n1 + n2) as f64;
+        let sd = (pooled * (1.0 - pooled) * (1.0 / n1 as f64 + 1.0 / n2 as f64)).sqrt();
+        (p1, p2, (p1 - p2) / sd)
+    };
+    let (zo, zt, zp) = pull(z1, z2);
+    let (eo, et, ep) = pull(e1, e2);
+    eprintln!(
+        "events listing the Z: vibegraph {zo:.4} ({z1}/{n1}), MadEvent {zt:.4} ({z2}/{n2}), \
+         pull {zp:+.2}"
+    );
+    eprintln!(
+        "events with the jet at the collider energy: vibegraph {eo:.4} ({e1}/{n1}), MadEvent \
+         {et:.4} ({e2}/{n2}), pull {ep:+.2}"
+    );
+    assert!(zp.abs() < 5.0 && ep.abs() < 5.0);
 }

@@ -20,6 +20,7 @@ use clap::{Args, ValueEnum};
 use tracing::{info, warn};
 use vibegraph::artifact::{IntegrateArtifact, MULTIPLICITY_VERSION, SCALE_DRAW_VERSION};
 use vibegraph::config::GlobalConfig;
+use vibegraph::coupling::scales::MatchedRecord;
 use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::cuts::{Cuts, ForcedResonances};
 use vibegraph::diagrams::{generate_from_proc_card_in, DiagramSet, ParsingOptions, SupportedCard};
@@ -29,12 +30,14 @@ use vibegraph::hadronic::{
 };
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
-use vibegraph::lhef::build::{scalup, EventHeader, Intermediate, SubprocessRecord};
+use vibegraph::lhef::build::{
+    pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord,
+};
 use vibegraph::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, StochasticRounding, UnweightStrategy, WeightedEvent,
 };
 use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
-use vibegraph::lhef::write::generator_element;
+use vibegraph::lhef::write::{generator_element, mg_run_card};
 use vibegraph::multiplicity::MultiplicitySum;
 use vibegraph::onshell::subprocess_vetoes;
 use vibegraph::pdf::{PdfMember, PdfSet};
@@ -579,6 +582,65 @@ fn event_record(
     }
 }
 
+/// A matched (`ickkw > 0`) event's record: the resonances `addmothers` writes
+/// under matching and the `<scales>` line after the particles.
+///
+/// The status-2 lines are the clustered configuration's timelike propagators
+/// whose leg sets the clustering found on their Breit–Wigner
+/// ([`SubprocessResonances::clustered_on_shell`]), none where the drawn flow is
+/// below leading colour in that configuration (`addmothers.f:129-131`, 195).
+/// `pdgs[config][line]` carries each line's code in the record's flavours.
+/// `ptclus` is indexed like the record's legs: the record reorders only the
+/// incoming ones, which have none.
+#[allow(clippy::too_many_arguments)]
+fn matched_event_record(
+    record: &SubprocessRecord,
+    externals: &[[f64; 4]],
+    helicity: &[i32],
+    flow: usize,
+    header: EventHeader,
+    resonances: Option<(&SubprocessResonances, &[Vec<i32>])>,
+    (config, leading): (Option<usize>, bool),
+    matched: &MatchedRecord,
+    tally: &mut ResonanceTally,
+) -> Option<vibegraph::lhef::record::LheEvent> {
+    let n_in = record.n_in();
+    let intermediates: Vec<Intermediate> = match (resonances, config) {
+        (Some((table, pdgs)), Some(config)) if leading => {
+            let lines = table.lines(config);
+            table
+                .clustered_on_shell(config, &matched.on_shell, n_in)
+                .into_iter()
+                .map(|i| Intermediate {
+                    pdg: pdgs[config][i],
+                    color: lines[i].color,
+                    slots: lines[i].slots,
+                })
+                .collect()
+        }
+        (Some(_), Some(_)) => {
+            tally.subleading += 1;
+            Vec::new()
+        }
+        _ => Vec::new(),
+    };
+    let mut event =
+        match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
+            Ok(event) => event,
+            Err(
+                vibegraph::lhef::LhefError::IntermediateColor { .. }
+                | vibegraph::lhef::LhefError::IntermediateNesting { .. },
+            ) => {
+                tally.refused += 1;
+                record.event(externals, helicity, flow, header).ok()?
+            }
+            Err(_) => return None,
+        };
+    let line = pt_clust_scales(&event, matched.ptclus.get(n_in..)?);
+    event.trailer.push(line);
+    Some(event)
+}
+
 /// Whether any process line of the card carries decays, which is when an event
 /// record lists its resonances.
 fn has_decay_chains(parsed: &SupportedCard) -> bool {
@@ -858,6 +920,7 @@ fn generate_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
+        header_blocks: Vec::new(),
         header: Some(file_header(args, artifact, strategy.as_ref(), observable)),
     };
 
@@ -1162,20 +1225,35 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         let resonances = part.resonances.get(selection.group).map(|table| {
             (
                 table,
-                Some(part.member_pdgs[selection.group][selection.member].as_slice()),
+                part.member_pdgs[selection.group][selection.member].as_slice(),
             )
         });
-        let record = event_record(
-            part.records[selection.group][selection.member][ordering_slot(selection.ordering)]
-                .as_ref()?,
-            &externals,
-            &selection.helicity,
-            selection.flow,
-            header,
-            resonances,
-            (selection.config, selection.leading),
-            &mut self.tally,
-        )?;
+        let subprocess = part.records[selection.group][selection.member]
+            [ordering_slot(selection.ordering)]
+        .as_ref()?;
+        let record = match &selection.record {
+            Some(matched) => matched_event_record(
+                subprocess,
+                &externals,
+                &selection.helicity,
+                selection.flow,
+                header,
+                resonances,
+                (selection.scales.clustered_config, selection.leading),
+                matched,
+                &mut self.tally,
+            )?,
+            None => event_record(
+                subprocess,
+                &externals,
+                &selection.helicity,
+                selection.flow,
+                header,
+                resonances.map(|(table, pdgs)| (table, Some(pdgs))),
+                (selection.config, selection.leading),
+                &mut self.tally,
+            )?,
+        };
         Some(WeightedEvent {
             record,
             weight: point.weight,
@@ -1218,8 +1296,11 @@ fn generate_proton_sample(
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
     refuse_stale_artifact_on_mixed_multiplicity(artifact, groups.len())?;
     let mut parts_records = Vec::with_capacity(groups.len());
+    // Under matching every record lists the resonances the clustering found on
+    // their Breit–Wigner, whatever the card's decays.
+    let matched = rc.int("ickkw") > 0;
     for part_groups in &groups {
-        let (resonances, member_pdgs) = if has_decay_chains(parsed) {
+        let (resonances, member_pdgs) = if has_decay_chains(parsed) || matched {
             group_resonances(part_groups, model, evaluated, rc.float("bwcutoff"))?
         } else {
             (Vec::new(), Vec::new())
@@ -1266,7 +1347,9 @@ fn generate_proton_sample(
         integ
             .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
             .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-        integ.use_resonances(&records.resonances);
+        if has_decay_chains(parsed) {
+            integ.use_resonances(&records.resonances);
+        }
         parts.push(integ);
     }
     let mut integ = MultiplicitySum::new(parts);
@@ -1328,6 +1411,12 @@ fn generate_proton_sample(
             env!("CARGO_PKG_VERSION"),
             "",
         )],
+        // The card a shower's MLM matching reads its parameters from.
+        header_blocks: if matched {
+            vec![mg_run_card(rc)]
+        } else {
+            Vec::new()
+        },
         header: Some(file_header(
             args,
             artifact,

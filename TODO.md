@@ -13,7 +13,8 @@ counts, and the `>`, `$$` and `w+{0}` cross sections against
 gates, every new cell agreeing. Next: MLM (note 41: M0's references and
 dumps and the M1/M2/M3 implementations landed; M1's per-event scale gates
 pass; M2's per-event `rewgt` gates pass and its llj σ rows are measured;
-the `@2` excess is next), then NLO, and the performance backlog.
+the `@2` excess is diagnosed (D2); M4's event record for the shower is in
+and gated per event), then NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at Z2,
 2026-09-27): **203 measured cells — 196 ✅, 7 ⚠️ — plus 4 ⏳ at the long tier and
@@ -563,7 +564,21 @@ above); the entries here are the eventual features.
     fixed beams (`u u~ > e+ e- g g`, +0.29 %, 3.2σ). It is to be filed as its
     own item.
 
-  Next: M4 and M6; at close-out, regenerate the `@2` reference from
+  **M4 landed** (note 41 §4 M4 record): matched runs write `<scales
+  pt_clust_N>` (`ptclus`, the collider √stot fallback), the status-2
+  resonances `addmothers` writes under matching (the integration channel's
+  Breit–Wigner flags on the clustered configuration's lines) and an
+  `<MGRunCard>` holding MadGraph's record of the card; `ickkw = 0` output is
+  byte-identical to `069a951`. Per event against the four matched MadEvent
+  runs and their dumps (`validate_mlm_dumps`): `ptclus`, the file's
+  `<scales>` string and the status-2 lines agree on every gated event
+  (10000, 10000, 9859, 6265), and on every permuted-`P1` event (info). The
+  card agrees field by field but for `iseed`. Finding: Pythia 8.312 drops
+  `<MGRunCard>`'s CDATA, so `setMad = on` reads nothing from MadEvent's own
+  file; this crate writes the card as plain text, and Pythia reads it (the
+  consumption gate 3000/3000 on the mixed row; `setMad` gives xqcut 20,
+  nQmatch 4, as on MadEvent's file with the CDATA markers removed).
+  Next: M5 and M6; at close-out, regenerate the `@2` reference from
   independent directories and gate at MadEvent's measured spread (user,
   2026-09-29). Follow-up: Neyman reallocation starves the
   0-jet channels behind 336 floor-bound 2-jet ones (±6.6 pb against ±0.7 pb

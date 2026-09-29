@@ -111,6 +111,9 @@ pub struct EmitPlan {
     pub trailer: Vec<String>,
     /// Free-form provenance for the `<header>` block.
     pub header: Option<String>,
+    /// Complete XML elements for the `<header>` block after the provenance
+    /// comment, such as the `<MGRunCard>` a matched sample carries.
+    pub header_blocks: Vec<String>,
 }
 
 /// What an emission actually produced.
@@ -372,7 +375,12 @@ impl UnweightStrategy for Buffer {
             events.len(),
             |w| normalisation.xwgtup(w),
         );
-        let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
+        let mut writer = LheWriter::begin_with_blocks(
+            &mut *sink,
+            &init,
+            plan.header.as_deref(),
+            &plan.header_blocks,
+        )?;
         let mut weight_sum = 0.0;
         for event in &events {
             let mut record = event.record.clone();
@@ -513,7 +521,12 @@ impl UnweightStrategy for StochasticRounding {
             counted,
             |_| 1.0,
         );
-        let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
+        let mut writer = LheWriter::begin_with_blocks(
+            &mut *sink,
+            &init,
+            plan.header.as_deref(),
+            &plan.header_blocks,
+        )?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(ROUNDING_STREAM);
@@ -650,6 +663,7 @@ mod tests {
             process_ids: vec![1],
             trailer: Vec::new(),
             header: None,
+            header_blocks: Vec::new(),
         }
     }
 
