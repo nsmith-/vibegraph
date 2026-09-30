@@ -1977,7 +1977,7 @@ counts and errors do not.
 | total | 1065.50 ± 0.56 (1.26, 0.41, 1.99) | 1065.11 ± 0.61 (1.93, 1.02, 2.12) |
 | rel²·CPU, quoted error | 1.10e-2 s | 3.64e-3 s (3.0× less) |
 | rel²·CPU, seed spread | 4.37e-3 s | 2.89e-3 s (1.5× less) |
-| ε_unw (5000 events, seed 20260731) | EPS_BASE_MIX | EPS_NEW_MIX |
+| ε_unw (5000 events at `--seed 20260731`, seeds 28–32) | 2.06 % (1.69–2.46) | 3.40 % (1.86–5.44), 1.65× higher |
 
 Readings:
 - **σ per `@N` does not move** beyond the spread: `@0` +0.03, `@1` +0.37
@@ -1989,17 +1989,33 @@ Readings:
   Measured under different load, the CPU per point falls 1.4× against M6's
   quiet base and 2.6× against the loaded base run here. The per-group
   reclustering is unchanged and now dominates.
-- **`@2` is now the weak part.** Before, the floors bought `@2` ~600k points
-  an iteration against the 13k its budget share asked for. That over-sampled
-  its tail, and its χ²/dof was 0.32. Now `@2` gets what the part split and
-  Neyman give it, both computed from quoted spreads. Its heavy tail makes its
-  quoted error an underestimate (χ²/dof 1.89 over ten seeds), and its seed
-  spread is 4× base's at 7× less CPU. Measured by the seed spread, the total
-  gains 1.5× in variance × time, not the 3× the quoted errors give. The
-  merge does its job, removing redundant coverage. What `@2` now lacks is an
-  allocation that prices its tail. That belongs to the allocation (the part
-  split's `sₖ` and Neyman), and this change does not touch it.
-- **MIX600**
+- **At the same `--neval`, `@2` is the weak part.** Before, the floors
+  bought `@2` ~600k points an iteration against the 13k its budget share
+  asked for. That over-sampled its tail, and its χ²/dof was 0.32. Now `@2`
+  gets what the part split and Neyman give it, both computed from quoted
+  spreads. Its heavy tail makes its quoted error an underestimate (χ²/dof
+  1.89 over ten seeds), and its seed spread is 4× base's at 3.5× less CPU.
+  Measured by the seed spread, the total gains 1.5× in variance × time at
+  this `--neval`, not the 3× the quoted errors give.
+- **At the same number of points, every part is better.** Three seeds
+  (28–30) at `--neval 600000`:
+  - 4.99M evaluations against base's 4.52M, in 1,432 s of CPU against
+    base's 3,117 s;
+  - the floors add 32k points an iteration, not 443k;
+  - σ: `@0` 664.97 ± 0.16 (quoted 0.39), `@1` 268.38 ± 0.30 (0.58), `@2`
+    132.08 ± 0.37 (sd 0.64, χ²/dof 0.77, quoted 0.73), total 1065.42 ± 0.74
+    (quoted 1.01, χ²/dof 1.55);
+  - the total's quoted error halves (1.99 → 1.01 pb) and `@2`'s falls
+    (0.93 → 0.73). By quoted error, rel²·CPU is 1.28e-3 s, 8.6× below base.
+    Three seeds cannot calibrate a spread; they read 1.28 pb on the total
+    against base's 1.26.
+- **So the merge is a budget knob, not a loss.** With the redundant floors
+  gone, `--neval` sets how many points `@2` gets. A run at the base's point
+  count gets base's `@2` precision and better `@0`/`@1` in half the CPU. A
+  run at the base's `--neval` spends 2.4× fewer points and under-samples
+  `@2`'s tail. Pricing that tail in the allocation (the part split's `sₖ`
+  and Neyman) is the lever that would remove the need to over-ask. This
+  change does not touch the allocation.
 
 `pp_to_llj_mlm`, `--fixed-budget --neval 150000 --niter 10` by α, seeds
 20260951–60, base and new interleaved:
@@ -2011,7 +2027,7 @@ Readings:
 | σ (pb) | 268.45 ± 0.24 (sd 0.76, χ²/dof 3.06, quoted 0.455) | 268.53 ± 0.10 (sd 0.33, χ²/dof 0.80, quoted 0.380) |
 | CPU per run | 249 s | 233 s |
 | rel²·CPU, quoted / seed spread | 7.4e-4 / 2.0e-3 s | 4.7e-4 / 3.5e-4 s (1.6× / 5.7× less) |
-| ε_unw (5000 events, seed 20260731) | EPS_BASE_LLJ | EPS_NEW_LLJ |
+| ε_unw (5000 events at `--seed 20260731`, seeds 51–55) | 1.88 % (0.84–3.08) | 4.27 % (3.66–5.09), 2.3× higher |
 
 - The merged grids converge consistently. The row's χ²/dof, which M2 and M6
   recorded at 2.4–3.0, is 0.80 over ten seeds, and the banked
@@ -2023,11 +2039,12 @@ the five `probe_sample_sigma_seed_headroom` seeds): −1.34, +0.27, +0.18,
 +0.83 and −0.65 %, mean −0.14 %, sd 0.84 %. Base (M6) read +0.36, −0.43,
 +0.01, −0.26 and −0.40 %, sd 0.33 %. There is no bias, but the scatter is
 2.5× wider. The gate's own seed sits at −1.34 % against its 1.5 % bound
-(1.1× headroom). The unweighter scans and draws per channel. A merged
-channel's `w_max` spans several groups' weight distributions, and the
-overweights now carry more of the sample's σ. That is the unweighting's
-truncation, which the sibling session owns, and it should be read there
-before this gate's seed moves.
+(1.1× headroom). On the matched rows the same reading did not widen. Sample
+against integration over seeds 28–32 of the mixed row: base +2.0, −0.9, −0.5,
++0.8, +1.7 %; new +1.9, −0.5, +0.4, +1.4, −0.1 %. On `pp_to_llj_mlm`, seeds
+51–55: base −0.1, −1.0, +0.4, −2.0, −2.5 %; new −1.0, −0.0, −0.6, +0.4,
+−1.8 %. The scatter is the unweighting's truncation, which the sibling
+session owns. It should be read there before this gate's seed moves.
 
 **Gates** (final tree; the banked tasks' own cargo commands, run through
 `pixi run` with the private build settings):
@@ -2072,9 +2089,9 @@ byte-identical.
   processes. All four merge: even `p p > e+ e-` has four groups on one map.
   Only the fixed-beam cases stay byte-identical.
 - "Makes the floors about 9× cheaper" holds for the floor spend (10×). It
-  overstated the variance gain on the mixed row. There, the floors were also
-  what gave `@2` its points, and the gain measured by the seed spread is
-  1.5×.
+  did not say that the floors were also what gave `@2` its points. At the
+  same `--neval` the gain measured by the seed spread is 1.5×. At the same
+  point count it is 8.6× by quoted error (three seeds).
 
 **What remains.**
 - Price `@2`'s heavy tail in the allocation: the part split's `sₖ` and the

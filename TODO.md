@@ -627,11 +627,16 @@ above); the entries here are the eventual features.
   `ChannelKey::MergedChannel`, and older artifacts are refused on merging
   processes.
   - `pp_to_ll_0j2j_mlm` goes from 364 to 43 channels. The floor spend falls
-    ~10×, a run draws 2.4× fewer points, and σ per `@N` holds over ten seeds.
-    Variance × time gains 3.0× by quoted error but 1.5× by seed spread:
-    without the floors, `@2`'s heavy tail is under-sampled (χ²/dof 1.89).
+    ~10×, and σ per `@N` holds over ten seeds. ε_unw rises 1.65×.
+    - At the same `--neval` a run draws 2.4× fewer points. Variance × time
+      then gains 3.0× by quoted error but only 1.5× by seed spread: without
+      the floors, `@2`'s heavy tail is under-sampled (χ²/dof 1.89).
+    - At the same point count (`--neval 600000`, three seeds) every part is
+      better, in half the CPU. The total quoted error halves, and rel²·CPU
+      falls 8.6×.
   - `pp_to_llj_mlm` goes from 24 to 6 channels. Its χ²/dof falls from 3.06 to
-    0.80 over ten seeds, and variance × time by seed spread gains 5.7×.
+    0.80 over ten seeds. Variance × time by seed spread gains 5.7×, and
+    ε_unw rises 2.3×.
   - Every hadronic row merges, even `p p > e+ e-` (4 → 1). Only the
     fixed-beam runs stay byte-identical. Five-seed sweeps and every banked
     hadronic gate agree.
@@ -920,8 +925,10 @@ coverage. What is left below is what still refuses, and why.
   - `@2` now gets what the part split (`sₖ` from the survey) and Neyman
     give it. Both read quoted spreads, which its heavy tail makes
     underestimates: χ²/dof 1.89 over ten seeds, and a seed spread 4× base's.
-  - An allocation that prices the tail would turn the merge's 3× gain by
-    quoted error into a gain by seed spread. It is 1.5× today.
+  - At base's `--neval 200000` the gain by seed spread is 1.5×. At base's
+    point count (`--neval 600000`) `@2` is as good as base's, in half the
+    CPU. An allocation that prices the tail would remove the need to
+    over-ask `--neval`.
   - A 2-jet point now costs ~0.5 ms of CPU on the loaded host. The per-group
     reclustering dominates, and the mixture sum is 36 densities, not 336.
 - **Target runs on the mixed row do not converge** (note 41 §4 M6 record).
