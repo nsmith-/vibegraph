@@ -1807,6 +1807,189 @@ them from `<MGRunCard>`):
   `run_01` is banked. The task's default side A is `run_01` alone, and a
   multi-file comparison passes the fresh files explicitly (`--a`).
 
+#### F-A Landed: the weight tail, 2026-09-30
+
+The question was M5's and M6's two findings on `pp_to_ll_0j2j_mlm`: overweight
+events carrying 3–7 % of σ with files that scatter 2–5× their per-event
+errors, and a `--target-rel 2e-3` run that never stops. They share a root, and
+it is not the w_max estimate. **No production code changed.** Two policies are
+proposed below with offline measurements; neither is implemented.
+
+All probes ran on the sprint tip `ef660f3` with env-gated instrumentation that
+was never committed to the result (scratchpad `mlm-fa/probe-instrumentation.patch`).
+Without the switches the probe binary reproduces the base bit for bit: M5's
+seed-20260928 sample (1088.339837 pb, 311639 trials), M6's target run through
+its first seventeen iterations, and M6's `pp_to_llj_mlm` seed-20260951 artifact
+(269.473227 ± 0.458074 pb).
+
+**Localisation** (M5's seed-20260928 artifact and sample, every trial logged
+with its channel). The excess above w_max, `Σ(r − 1)` over the trials, is
+2.65 % of σ:
+
+| part | share of σ | excess / own σ | excess / total σ | share of Σr² | scan draws per channel |
+|---|---|---|---|---|---|
+| `@0` (4 channels) | 0.623 | 0.9 % | 0.55 % | 0.28 | 36–42k |
+| `@1` (24) | 0.253 | 4.6 % | 1.17 % | 0.52 | 0.8–3.9k |
+| `@2` (336) | 0.124 | 7.4 % | 0.92 % | 0.20 | 0.9–1.8k |
+
+- `@0` sits at the 1 % the truncation rule asks for. The floor-bound `@1` and
+  `@2` channels do not.
+- Two `@1` channels, (group 1, channel 1) and (group 5, channel 3), carry 45 %
+  of the sample's Σr² between them, with 12–15 % of their own σ above w_max.
+- The target run's stop is held by `@2`. At iteration 5 one two-jet channel,
+  (group 1, channel 11), whose largest point carried 71 % of one iteration's
+  integral, has χ²/dof 20 and holds 49 % of the scaled variance the stop reads.
+
+**Root cause: the adapted VEGAS grids make the tail; the maps do not.** On
+the same artifact, 30000 scan points per channel on nine channels, with the
+banked grid and with a flat one over the same map:
+
+| | banked grid | flat grid |
+|---|---|---|
+| `@0` channels: per-point relative variance | 0.8–1.1 | 158–178 |
+| `@0`: Hill tail index (top 20 of ~25k) | 1.3–1.7 | 5.3–6.5 |
+| `@1` channels: per-point relative variance | 3.9–14.7 | 23.0–23.6 |
+| `@1`: Hill index | 0.9–1.9 | 5.8–9.3 |
+| `@1`: peak / mean | 118–433 | 77–87 |
+
+Adaptation buys the bulk (1.6–200× in per-point variance) and pays with a tail
+of index ≤ 2, where the variance barely exists. The top points show where the
+tail sits. On every channel dumped, the heaviest weights sit in single wide
+bins of the first two coordinates:
+- `@0`'s second coordinate has its edge bins 17× wider than average: a large
+  lepton-pair rapidity, where `etal = 2.5` keeps a narrow slice of decay
+  angles. The grid adapts on `Σ(f·w)²` per bin, so a bin that mostly fails the
+  cuts is starved, and the points that pass in it carry the width.
+- `@1` shows the same on its first two coordinates: single bins 10–40× and
+  13–19× wider than average.
+
+MadEvent's grid counters exactly this: it adapts on `Σ|w|` per bin
+(`dsample.f:1890`) and rescales each bin by `non_zero / inon_zero`, the
+inverse of the bin's own acceptance, capped at 10⁴ (`dsample.f:2106-2124`).
+Adding that rescale to `adapt_blocks_iteration`'s histogram (probe only) moved
+`pp_to_llj_mlm`'s median Hill index from 1.8 to 2.2 (worst channel 1.0–1.2 to
+1.5–1.6; two seeds each, 150k × 10). It helps and does not cure; the rest
+of the tail is not located.
+
+**The w_max estimate is not the lever.** The truncation ladder cannot step
+off the top of a scan whose largest weight alone exceeds 1 % of its sum, which
+under a tail index near 2 is any scan below ~10⁴ points. The floor-bound
+channels scan 0.8–3.9k, so their rule is the extremum. Raising every channel's
+scan to at least 8000 points (seed 20260928):
+
+| | share scan (M5) | ≥ 8000 per channel |
+|---|---|---|
+| scan points | 0.53M | 3.0M |
+| Σ w_max | 3.30e4 | 7.61e4 |
+| efficiency | 3.21 % | 1.40 % |
+| excess above w_max | 2.65 % | 2.34 % |
+| `@1` / `@2` excess of own σ | 4.6 / 7.4 % | 2.3 / 8.8 % |
+| largest w/w_max | 36.5 | 65.8 |
+| CPU | 677 s | 5572 s |
+
+Eight times the CPU buys 0.3 % of σ and halves the efficiency. Over a tail of
+index ≤ 2 the maxima do not settle (`ScanBudget`'s own finding on
+`pp_to_llj`), so no scan floor is proposed.
+
+**What drives the file-to-file scatter.** The sample σ a file declares is
+`Σ w_max · Σ(event weights) / trials`, the sample's own estimate. At 10000
+events and 3 % efficiency its binomial error alone is 0.97 %, and 1.11 % with
+the overweights (seed 20260928's trials). The five samples' deviations from
+their integrations (+2.20, −0.45, −0.16, +0.90, +1.90 %) are consistent with
+that. `XERRUP` is still the integration's error (±0.16 %), so the file
+understates its own σ's error about 7×. MadEvent's `@N` σ shares scatter at
+0.03–0.10 of their binomial variance, because MadEvent pins every channel to
+its integral; ours scatter at 3.2 (`@0`) and 7.1 (`@2`) times it.
+
+**MadEvent's behaviour** (pinned tree):
+- Per channel, points above `twgt·fudge·ran` are stored weighted
+  (`unwgt.f:239-266`). `store_events` takes `target_wgt` from the `trunc_max`
+  ladder (`unwgt.f:355-372`), keeps overweights at their own weight
+  (`unwgt.f:397-446`), and rescales the channel's events so they sum to its
+  integrated |σ| (`xscale = xsecabs/xsum`, `unwgt.f:409-411`).
+- `combine_events` scales each channel's file again to its `axsec`
+  (`lhe_parser.py:1154,1159`), picks `max_wgt` for `event_target = nevents` at
+  `trunc_error = 1e-2` (`lhe_parser.py:533-545`,
+  `madevent_interface.py:3883,3922`), and writes every kept event at one
+  weight, `sum(across)` under `event_norm = average`
+  (`lhe_parser.py:1224-1239,571`). Overweights are **truncated** to that
+  weight; the loss is logged as `trunc_cross`.
+- So the file's σ is the integration's by construction, and the shape carries
+  a ≤ ~1 % truncation bias.
+- Iterations: the last three, weighted by `xmean²/xsigma²`
+  (`dsample.f:296-311`), χ² over those three (`dsample.f:316-320`), error ×√χ²
+  when χ² > 1 (`dsample.f:332`). A refine stops on enough events and χ² < 10
+  (`dsample.f:376`). Zooming is off (`dsample.f:873-875`).
+
+**Proposal 1 (policy): normalise each `@N` to its integration.** Rescale the
+weights of each multiplicity's events so they sum to that part's integrated σ,
+and declare the integration's σ and error. The expectation is unchanged; the
+bias is that of a ratio estimator, O(1/n) over ≥ 1200 events per part. This is
+MadEvent's per-channel normalisation, taken at the multiplicity level so that
+no part is normalised over a handful of events. Replayed offline on M5's five
+showered files (same Pythia outcomes, weights rescaled; errors are event spread
+⊕ integration error; pixi `pythia` env, `mlm-fa/policy_replay.py`):
+
+| policy | merged σ (pb) | χ²/dof over files | `@0` / `@1` / `@2` acceptance χ²/dof |
+|---|---|---|---|
+| as written | 689.98 | 5.82 | 1.08 / 0.57 / 2.49 |
+| file normalised to the integration | 685.00 | 3.10 | unchanged |
+| each `@N` normalised | 686.56 | 0.87 | unchanged |
+| + overweights capped at unit weight (MadEvent) | 689.38 | 0.57 | 0.72 / 1.10 / 1.86 |
+
+MadEvent: 688.20 ± 1.48, χ²/dof 1.36. Per-`@N` normalisation removes the
+merged-σ excess without bias. The `@2` acceptance excess is the overweights
+themselves (the w/w_max = 119 event), which only truncation, a biased policy,
+or a lighter tail removes. The `cli_generate_proton` sample-vs-integration
+check would then read the logged sample σ, not `XSECUP`.
+
+**Proposal 2 (policy): the stop's consistency factor for an unweighted mean.**
+A target run combines iterations unweighted, but `stop_scale` forms χ² from
+each iteration's own σᵢ. One spike iteration then puts the quiet iterations
+tens of σ from the mean, and the channel's factor decays only as 1/(n − 1).
+The unweighted mean's own check is the between-iteration scatter against its
+quoted variance: `max(1, emp/quoted)`, with `emp = Σnᵢ²(Iᵢ − Ī)²/W² · n/(n−1)`
+and `quoted = Σnᵢ²σᵢ²/W²`. Replayed on the seed-20260928 target run's
+per-channel histories (`mlm-fa/stop_replay.py`; the replay reproduces the run's
+quoted errors):
+
+| iteration | quoted | current factor | pooled factor | holding the current stop |
+|---|---|---|---|---|
+| 4 | 3.10e-3 | 1.10e-2 | 4.30e-3 | (g1, c11) of `@2`, χ²/dof 48 |
+| 6 | 2.16e-3 | 4.64e-3 | 2.66e-3 | the same, 25 |
+| 8 | 1.63e-3 | 2.71e-3 | **1.86e-3** | the same, 13 |
+| 12 | 1.62e-3 | 4.72e-3 | 1.76e-3 | (g4, c11) of `@2`, 36 |
+| 15 | 1.37e-3 | 2.41e-3 | 1.50e-3 | the same, 11 |
+| 16 | 1.37e-3 | 2.45e-2 | 1.47e-3 | (g23, c0) of `@2`, 5675 |
+| 17 | 1.35e-3 | 1.78e-2 | 1.47e-3 | the same, 4012 |
+
+- Iteration 16's jump in the run's printed χ²/dof (2.48 → 18.08, the mean
+  over 364 channels) is that one channel. It carries 0.004 % of σ; one point
+  in one iteration put its quiet iterations about 75σ from its mean.
+- Every channel that holds the current stop is a floor-bound two-jet channel
+  with a single-point spike. Under the pooled factor no channel exceeds 1.8
+  after iteration 5.
+
+Under the pooled factor the run stops at iteration 8, the earliest allowed
+past the six-iteration minimum where the pooled error is ≤ 2e-3, with
+1064.89 ± 1.73 pb: M6's fixed-budget artifact, since the Neyman draws agree.
+The five-seed fixed sweep is 1065.50 ± 0.89 (sd 1.26, χ²/dof 0.42), so the
+quoted errors are, if anything, conservative across seeds. They do not
+support the 1.5–3× the current factor adds before a spike, let alone the
+13–18× after one. The current rule never gets below 2.41e-3 in 17
+iterations; M6 saw it still running at 32.
+
+**Byte identity.** Nothing in production changed, so every integration and
+sample is byte-identical to `ef660f3`.
+
+**What remains.**
+- The decisions on proposals 1 and 2.
+- The grid tail itself: the acceptance rescale, adapting on `Σ|w|`, or a
+  bound on bin width, each measured on the banked rows (every integration
+  moves). This is the root of both findings.
+- F-B's map merge gives the floor-bound channels 4–9× the points in both the
+  integration and the scan. Re-measure the excess after it lands.
+
 ### M6: xqcut-aware phase space (performance-dev; after M3)
 
 - Put the jet energy floors and s-channel minima (§1.4) into the multichannel

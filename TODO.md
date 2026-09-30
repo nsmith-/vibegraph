@@ -620,6 +620,34 @@ above); the entries here are the eventual features.
   directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
   (36 of 336), the non-converging `--target-rel` stop on the mixed row, and
   a 2-jet point costs ~250 µs.
+
+  **F-A landed** (note 41 §4 F-A record; diagnosis, no production change).
+  - **Root:** the adapted VEGAS grids, not the maps, make a weight tail of
+    index ≤ 2 (banked grid Hill 0.9–1.9 against 5.3–9.3 on a flat grid over
+    the same maps). Its heaviest points sit in single wide bins of the first
+    two coordinates, where most points fail the cuts (`etal = 2.5`).
+  - **Overweights:** 2.65 % of σ above w_max on seed 20260928: `@0` at the
+    rule's 1 %, the floor-bound `@1` / `@2` channels at 4.6 / 7.4 % of their
+    own σ. A scan floor of 8000 points per channel costs 8× the CPU, halves
+    the efficiency and buys 0.3 % of σ, so it is not proposed.
+  - **File scatter:** the file declares the sample's own σ (±1.1 % at 10000
+    events) with the integration's `XERRUP` (±0.16 %).
+  - **Target stop:** the consistency factor is formed from each iteration's
+    own σᵢ around an unweighted mean, so one spike in a floor-bound two-jet
+    channel holds the stop (a 0.004 %-of-σ channel at χ²/dof 5675).
+  - **Proposals awaiting a decision** (measured offline, not implemented):
+    - normalise each `@N` to its integration, as MadEvent pins each channel.
+      On M5's showered files the merged-σ χ²/dof goes from 5.82 to 0.87;
+    - a pooled (between-iteration) consistency factor for the unweighted mean.
+      On the seed-20260928 target run the stop fires at iteration 8 with
+      1064.89 ± 1.73 pb, against the fixed sweep's 1065.50 ± 0.89.
+- **VEGAS grid tail** (note 41 §4 F-A record). The per-bin `Σ(f·w)²`
+  adaptation starves bins that mostly fail the cuts, and the points that pass
+  there carry the bin width. MadEvent rescales each bin by the inverse of its
+  own acceptance (`dsample.f:2106-2124`). That rescale, as a probe, moved
+  `pp_to_llj_mlm`'s median Hill index from 1.8 to 2.2 (two seeds). Measure it,
+  `Σ|w|` adaptation, or a bin-width bound on the banked rows before adopting
+  any: every integration moves.
 - **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
   vibegraph reads +0.3–0.7 % high on 2 → 4 processes with identical |M|²,
   matching off, and even at fixed beams: `u u~ > e+ e- g g` at √s = 500 GeV,
@@ -909,14 +937,15 @@ coverage. What is left below is what still refuses, and why.
     - a channel-key schema bump.
   - **Keep:** leave `MIN_CHANNEL_NEVAL` alone, since the floor is the coverage
     guarantee.
-- **Target runs on the mixed row do not converge** (note 41 §4 M6 record).
+- **Target runs on the mixed row do not converge** (note 41 §4 M6 and F-A
+  records).
   - A `--target-rel 2e-3` run of `pp_to_ll_0j2j_mlm` was killed after 32
     iterations (16.5M points, 13.3k CPU-s).
-  - Its quoted error fell from 0.163 % to 0.109 %, slower than `1/√n`, while
-    the row's χ²/dof rose from 1.9 to 5.6.
-  - Diagnose which channels carry the inconsistency, and whether it is the
-    heavy two-jet tail or iteration drift, before that row's σ cell uses a
-    target run.
+  - **Diagnosed (F-A):** single-point spikes in floor-bound two-jet channels.
+    `stop_scale` forms χ² from each iteration's own σᵢ around an unweighted
+    mean, so a spike puts the quiet iterations tens of σ away and the factor
+    decays only as 1/(n − 1).
+  - Open: the decision on the pooled consistency factor (F-A proposal 2).
 
 - **Decay-angle maps for decay chains** (note 38 §4 D3, the ladder). The forced
   invariants are Breit–Wigner-mapped exactly, but the decay angles are drawn
