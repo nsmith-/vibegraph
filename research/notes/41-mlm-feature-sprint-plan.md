@@ -1807,6 +1807,282 @@ them from `<MGRunCard>`):
   `run_01` is banked. The task's default side A is `run_01` alone, and a
   multi-file comparison passes the fresh files explicitly (`--a`).
 
+### F-B: channel merging (performance-dev; after M6)
+
+#### F-B Landed, 2026-09-30
+
+A hadronic run now builds one sampling channel per distinct phase-space map
+instead of one per `(group, diagram)` pair. Pairs whose maps are the same
+function share a channel. The channel carries their summed selection
+weight, pays one coverage floor, and costs one density term in the mixture
+sum. On `pp_to_ll_0j2j_mlm` the channels go from 364 to 43 (`@0` 4 → 1,
+`@1` 24 → 6, `@2` 336 → 36).
+
+**MadEvent's rule** (pinned tree; paths as in §1). A `P<n>` directory's
+channels are its `configs.inc` configurations, one per `IdentifyConfigTag`
+class across every subprocess of the directory
+(`madgraph/iolibs/group_subprocs.py:315-385`). The tag is the topology with
+each leg's number, spin, mass, width and colour, and each propagator's
+colour, mass and width (`:56-103`). Colour is part of it, so a gluon and a
+photon exchange are two configurations. A t-channel Z or H takes the photon's
+mass and width, so it joins the photon's configuration.
+`config_subproc_map.inc` holds `CONFSUB(IPROC, iconfig)`, the diagram of
+subprocess `IPROC` on that configuration, or 0 where it has none
+(`group_subprocs.py:387-404`, written by `export_v4.py:6670-6681`). A point
+of channel `iconfig` is handled per subprocess like this:
+- **Which subprocesses:** only those with `CONFSUB ≠ 0` enter the
+  subprocess selection and the sum. A subprocess without that diagram
+  contributes nothing in that channel (`super_auto_dsig_group_v4.inc:562,
+  584, 629, 677`).
+- **Its channel weight:** `AMP2(CONFSUB(IPROC, channel))` over the sum of
+  its own mapped `AMP2` (`matrix_madevent_group_v4.inc:214-235`).
+- **Its clustering:** the candidate graphs are the directory's, filtered to
+  those the subprocess has (`id_cl` filled only where `confsub(iproc, ignum)
+  ≠ 0`, `cluster.f:265-281`). `chcluster` restricts the clustering to
+  `iconfig` itself (`cluster.f:466-470`), and the result is `igraphs(1)`.
+- **Its jet memo:** `njetstore(iconfig)`, one entry per directory
+  configuration, shared by every subprocess of the directory
+  (`reweight.f:588-592, 663, 985-1030`).
+- **Its colour:** `select_color(…, iconfig, IPROC, …)`
+  (`matrix_madevent_group_v4.inc:241`), which takes `igraphs(1)` under
+  `ickkw > 0` (`super_auto_dsig_group_v4.inc:1120-1142`).
+
+A second sharing layer, the symmetric configurations (`SYMCONF`, `PERMS`,
+`:799-805`), integrates permutation-related configurations once and permutes
+the point. vibegraph has no counterpart; it is not part of this change.
+
+**Why vibegraph needs no configuration rule.** vibegraph's channels do not
+carry MadEvent's channel decomposition. The estimator is the one-sample
+mixture `f/g` with `g = Σⱼ αⱼ gⱼ`. At every point each group draws its
+clustering configuration `∝ AMP2` from its own matrix element
+(`per_group_sum`, note 29 chain B). That draw is the conditional expectation
+of MadEvent's channel sum, and it never reads the sampling channel. The same
+configuration feeds the jet memo, which is the configuration's restricted jet
+count (M1's proof), the colour and the record. So a merged channel hands
+every group exactly what an unmerged one did, and so does MadEvent's shared
+channel in expectation. The one place the sampling channel still reaches a
+term is the draw's fallback, where a group's `AMP2` carries no probability
+and so its term carries none. There the group keeps its own diagram of the
+merged channel, or its first configuration if the channel has none of its
+diagrams. Without a merge that is the old rule exactly (`proton.rs:2159`).
+
+**The merge key is identity of the function.**
+- `DiagramChannel::map_identity` (`phasespace/diagram_channel.rs:1053`)
+  covers every field the draw and the density read: `√s`, `n_out`, beam
+  masses, the tree or spine with every node's slot, mass, `μ`, mask, shape
+  fingerprint, floor, resonance, forced window, angular map with its energy
+  floors, each rung's pole, transfer cap and remainder floor, and the
+  t-channel lines. Each float is taken by `integer_decode`, which is exact and
+  tells −0 from +0.
+- Each struct is destructured whole, so a new field that is not added to the
+  key does not compile.
+- Topology, masses, widths and cut floors are all in the key, as the brief
+  asked. A key built from the *diagram* instead (MadGraph's tag) would be the
+  wrong one here. It separates gluon and photon exchange, which have the same
+  map, and it would put a t-channel Z with the photon, which does not have
+  the same map.
+- `pairs_with_equal_map_identities_draw_and_weigh_every_point_alike`
+  (`proton.rs:4136`) measures the key. It runs every pair of channels of
+  `p p > l+ l- j` (24 pairs of groups, 6 maps) and of the matched
+  `p p > e+ e- j j` (336, 36):
+  - two channels with equal identities draw bit-identical momenta and
+    weights from 24 shared `(√ŝ, u)` draws, and give bit-identical densities
+    at points drawn from every channel (44 and 2072 such pairs);
+  - two channels with different identities differ in density at some of
+    those points (232 and 54208 pairs);
+  - the integrand's channels are the identity classes, in order of first
+    appearance, with `αⱼ = pairsⱼ / N`.
+- `a_merged_channel_is_the_sum_of_the_unmerged_terms_it_replaces`
+  (`proton.rs:4235`) checks the value. On the matched llj card, a merged
+  channel's term equals the sum of the unmerged terms it replaces
+  (`new_unmerged_with_maps`) at the same uniforms. The worst relative
+  difference is 8.3e-16 over 1214 nonzero terms: the two density sums group
+  their terms differently, and nothing else differs.
+
+**Implementation.**
+- **Building the channels** (`proton.rs:1497-1591`):
+  - `ProtonIntegrand::build` keys each pair's channel by its identity and
+    appends a repeat to the first channel's `channel_members`.
+  - The first-built pair names the channel (`channel_ids`).
+  - When anything merged, the initial weights are `pairsⱼ / N`. That makes
+    the starting mixture density the unmerged uniform one, and a
+    Kleiss–Pittau step on it is the step on the pairs summed.
+  - When nothing merged, no line of the path changes.
+- **Keys** (`multiplicity.rs:220-252`): a channel of several pairs is
+  `ChannelKey::MergedChannel { final_state, group, channel, pairs }`
+  (`artifact.rs:172`), and every other channel keeps its old key.
+- **Format 11** (`artifact.rs:97-106`): `version_for` records the oldest
+  version that holds the keys (`:693`). An artifact with no merged channel is
+  still version 9 or 10, byte for byte.
+- **Refusing stale artifacts:** `IntegrateArtifact::refuse_unmerged_grids`
+  (`artifact.rs:709`) refuses an artifact older than version 11 on a process
+  whose channels merge, and names both versions and the pair count.
+  `generate` calls it before its key check (`vibegraph-cli/src/generate.rs:1357`,
+  a three-line edit in the sibling session's file). An older build refuses a
+  version-11 file by its version.
+- **Unchanged:** the grid dimension stays per channel, as M3 built it. The
+  fixed-beam integrand is untouched.
+
+**Byte identity: M1's six cases.** Base binary `ef660f3` against this
+change, `integrate` 20k × 4 (seed 7) and `generate` 500 events
+(`RAYON_NUM_THREADS=2`). The base grids reproduce M4's base sha256 prefixes.
+
+| case | channels (pairs → maps) | grid | LHE |
+|---|---|---|---|
+| `llj_fixed` (`p p > l+ l- j`, fixed scale) | 24 → 6 | differs (merges) | differs |
+| `llj` (`pp_to_llj` card) | 24 → 6 | differs (merges) | differs |
+| `jj` | 15 → 3 | differs (merges) | differs |
+| `dy` (`p p > e+ e-`) | 4 → 1 | differs (merges) | differs |
+| fixed-beam `g u > e+ e- u` | 4 (fixed-beam path) | identical `6bebef12…` | identical but the artifact-path line |
+| fixed-beam `e+ e- > mu+ mu-` | 2 (fixed-beam path) | identical `d640093a…` | identical but the artifact-path line |
+
+Every hadronic case of M1's list has flavour groups that share maps, so none
+can stay byte-identical. On each, σ is instead shown by a five-seed sweep at
+`--fixed-budget --neval 100000 --niter 8`, seeds 20261001–05, base and new
+interleaved. The spreads are over the seeds; the brackets give sd, χ²/dof
+and the mean quoted error.
+
+| case | base σ (pb) | new σ (pb) | new − base | rel²·CPU base → new (quoted) |
+|---|---|---|---|---|
+| `llj_fixed` | 424.29 ± 0.45 (0.99, 1.25, 0.96) | 424.59 ± 0.37 (0.83, 1.14, 0.78) | +0.5σ | 1.7× less |
+| `llj` | 505.66 ± 0.46 (1.04, 0.35, 1.77) | 506.64 ± 0.43 (0.95, 0.54, 1.30) | +1.5σ | 2.1× less |
+| `jj` (×10⁸) | 6.8014 ± 0.0011 (0.0025, 0.08, 0.0089) | 6.7938 ± 0.0047 (0.0105, 1.46, 0.0087) | −1.6σ | 1.08× less |
+| `dy` | 934.54 ± 0.43 (0.95, 0.47, 1.37) | 934.94 ± 0.37 (0.82, 0.39, 1.32) | +0.7σ | 1.05× less |
+
+Every merging row of the banked hadronic gate passes (below). The fixed-beam
+path is unchanged.
+
+**Measurements.** Base is `ef660f3` (`mlm-fb-vibegraph-base`, sha256
+`2743820e…`). Its seed-20260928 run of the mixed row reproduces M6's
+fixed-Neyman `mix-ney-n-28` bit for bit (σ, every iteration). M6's seeds
+20260929–32 are therefore this binary's too, and are reused as the base
+sweep. The container was shared with the sibling session throughout (load
+7–12 on 4 cores). CPU seconds are recorded but carry that noise; point
+counts and errors do not.
+
+`pp_to_ll_0j2j_mlm`, `--fixed-budget --allocate neyman --neval 200000
+--niter 8`:
+
+| | base (5 seeds, 28–32) | new (10 seeds, 28–37) |
+|---|---|---|
+| channels `@0`/`@1`/`@2` | 4 / 24 / 336 | 1 / 6 / 36 |
+| iteration 2, α split before → after the acceptance-raised floors | 363,660 → 806,744 | 211,717 → 254,738 |
+| last-iteration points | 528,060 | ~227,500 |
+| evaluations over 8 iterations | 4.52M | 1.85M |
+| CPU per run | 3,117 s (M6, quieter host); 5,412 s (seed 28 here, loaded) | 881 s (loaded) |
+| CPU per point | 0.69 ms (M6); 1.20 ms (seed 28 here) | 0.48 ms |
+| `@0` | 665.23 ± 0.29 (sd 0.65, χ²/dof 0.87, quoted 0.70) | 665.26 ± 0.18 (0.56, 0.66, 0.69) |
+| `@1` | 268.22 ± 0.61 (1.36, 0.75, 1.60) | 268.59 ± 0.41 (1.28, 0.90, 1.31) |
+| `@2` | 132.06 ± 0.23 (0.51, 0.32, 0.93) | 131.26 ± 0.66 (2.07, 1.89, 1.46) |
+| total | 1065.50 ± 0.56 (1.26, 0.41, 1.99) | 1065.11 ± 0.61 (1.93, 1.02, 2.12) |
+| rel²·CPU, quoted error | 1.10e-2 s | 3.64e-3 s (3.0× less) |
+| rel²·CPU, seed spread | 4.37e-3 s | 2.89e-3 s (1.5× less) |
+| ε_unw (5000 events, seed 20260731) | EPS_BASE_MIX | EPS_NEW_MIX |
+
+Readings:
+- **σ per `@N` does not move** beyond the spread: `@0` +0.03, `@1` +0.37
+  (+0.5σ), `@2` −0.80 ± 0.70 (−1.1σ), total −0.39 ± 0.83.
+- **The floor spend falls about 10×.** The acceptance-raised floors added
+  443k points to an iteration before, and add 43k now. At fixed `--neval` a
+  run draws 2.4× fewer points.
+- **A point is cheaper.** The mixture sums 43 densities instead of 364.
+  Measured under different load, the CPU per point falls 1.4× against M6's
+  quiet base and 2.6× against the loaded base run here. The per-group
+  reclustering is unchanged and now dominates.
+- **`@2` is now the weak part.** Before, the floors bought `@2` ~600k points
+  an iteration against the 13k its budget share asked for. That over-sampled
+  its tail, and its χ²/dof was 0.32. Now `@2` gets what the part split and
+  Neyman give it, both computed from quoted spreads. Its heavy tail makes its
+  quoted error an underestimate (χ²/dof 1.89 over ten seeds), and its seed
+  spread is 4× base's at 7× less CPU. Measured by the seed spread, the total
+  gains 1.5× in variance × time, not the 3× the quoted errors give. The
+  merge does its job, removing redundant coverage. What `@2` now lacks is an
+  allocation that prices its tail. That belongs to the allocation (the part
+  split's `sₖ` and Neyman), and this change does not touch it.
+- **MIX600**
+
+`pp_to_llj_mlm`, `--fixed-budget --neval 150000 --niter 10` by α, seeds
+20260951–60, base and new interleaved:
+
+| | base | new |
+|---|---|---|
+| channels | 24 | 6 |
+| iteration points after the floors | 150.5k → 157.1k | 150.0k (no floor binds) |
+| σ (pb) | 268.45 ± 0.24 (sd 0.76, χ²/dof 3.06, quoted 0.455) | 268.53 ± 0.10 (sd 0.33, χ²/dof 0.80, quoted 0.380) |
+| CPU per run | 249 s | 233 s |
+| rel²·CPU, quoted / seed spread | 7.4e-4 / 2.0e-3 s | 4.7e-4 / 3.5e-4 s (1.6× / 5.7× less) |
+| ε_unw (5000 events, seed 20260731) | EPS_BASE_LLJ | EPS_NEW_LLJ |
+
+- The merged grids converge consistently. The row's χ²/dof, which M2 and M6
+  recorded at 2.4–3.0, is 0.80 over ten seeds, and the banked
+  `validate-mlm-sigma` row reads 0.86 (below).
+- The seed spread is 2.3× smaller at 6 % less CPU.
+
+**The sample against its integration** (`cli_generate_proton`, `llj_fixed`,
+the five `probe_sample_sigma_seed_headroom` seeds): −1.34, +0.27, +0.18,
++0.83 and −0.65 %, mean −0.14 %, sd 0.84 %. Base (M6) read +0.36, −0.43,
++0.01, −0.26 and −0.40 %, sd 0.33 %. There is no bias, but the scatter is
+2.5× wider. The gate's own seed sits at −1.34 % against its 1.5 % bound
+(1.1× headroom). The unweighter scans and draws per channel. A merged
+channel's `w_max` spans several groups' weight distributions, and the
+overweights now carry more of the sample's σ. That is the unweighting's
+truncation, which the sibling session owns, and it should be read there
+before this gate's seed moves.
+
+**Gates** (final tree; the banked tasks' own cargo commands, run through
+`pixi run` with the private build settings):
+- `cargo fmt --all --check`: clean. `cargo clippy --workspace --all-targets
+  -- -D warnings`, plain and with `vibegraph/extended-validation,
+  vibegraph-lib/extended-validation`: clean.
+- `cargo test --workspace`: 33 binaries, 1291 passed, 0 failed, 15 ignored.
+- `validate-mlm-dumps`: 3 passed. Every per-event field agrees as M1 and M4
+  recorded, and every jet-memo channel has a single restricted count
+  (8/8/8/29/82).
+- `validate-scales`: 10 passed. `validate-unweighting`: 1 passed.
+  `validate_samples`: 6 passed. `validate_samples_proton`: 11 passed, min
+  KS p 6.7e-2.
+- `validate-generate-proton`: 5 passed. The sample reads −1.342 % against the
+  1.5 % bound (above).
+- `validate-hadronic`: 14 passed. Pulls: `llj_fixed` +0.05, `llj_dyn` +0.07,
+  `pp_to_llj` +0.61, `jj` +0.72, `default` +0.54, `mmll_60_120` +0.42,
+  `pp_to_ll_scalefact2` −0.47, `pp_to_bb` +0.27, `pp_to_bb_qcd2` +0.28,
+  `bb_fixed` +1.22. Against M6's run the quoted errors fell on the llj and
+  `jj` rows (`llj_fixed` 0.290 → 0.250, `llj_dyn` 0.288 → 0.247, `pp_to_llj`
+  0.642 → 0.527 pb, `jj` 4.43e5 → 4.15e5 pb). The Drell–Yan rows scatter
+  about their base values (`default` 0.567 → 0.557, `mmll_60_120` 0.384 →
+  0.444 pb).
+- `validate-mlm-sigma` (info):
+  - `pp_to_llj_xqcut_only` 212.608 ± 0.126 (χ²/dof 0.82, pull +0.23);
+  - `pp_to_llj_mlm` 268.433 ± 0.119 (ten seeds, χ²/dof 0.86, pull +1.22;
+    M6: 268.560 ± 0.145, χ²/dof 2.96);
+  - `pp_to_llj_mlm_alps2` 241.255 ± 0.150 (χ²/dof 1.04, pull +1.86; M6:
+    241.052 ± 0.176).
+
+**Classification.** Statistical. The value at a point is unchanged (to the
+rounding of the density sum), but the channels, their grids and their
+streams change wherever a map is shared. Where nothing is shared, the run is
+byte-identical.
+
+**Where the plan was wrong.**
+- "Which clustering configuration a merged channel hands each group" (M6,
+  the brief) presumes the channel chooses one. vibegraph's configuration is
+  drawn per point per group from `AMP2`, independently of the sampling
+  channel, so the merge needed no rule beyond the fallback.
+- M1's byte-identity cases were expected to include non-merging hadronic
+  processes. All four merge: even `p p > e+ e-` has four groups on one map.
+  Only the fixed-beam cases stay byte-identical.
+- "Makes the floors about 9× cheaper" holds for the floor spend (10×). It
+  overstated the variance gain on the mixed row. There, the floors were also
+  what gave `@2` its points, and the gain measured by the seed spread is
+  1.5×.
+
+**What remains.**
+- Price `@2`'s heavy tail in the allocation: the part split's `sₖ` and the
+  Neyman re-split both read quoted spreads.
+- Read the unweighting truncation of merged channels (the sample's scatter
+  above) in the unweighting work.
+- MadEvent's symmetric-configuration sharing (`SYMCONF`) has no counterpart.
+
 ### M6: xqcut-aware phase space (performance-dev; after M3)
 
 - Put the jet energy floors and s-channel minima (§1.4) into the multichannel
