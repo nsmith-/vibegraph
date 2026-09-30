@@ -617,9 +617,27 @@ above); the entries here are the eventual features.
     - `setMad = on` on MadEvent's own CDATA-wrapped file switches matching off
       entirely unless `merge` is set explicitly.
   Next, at close-out: regenerate the `@2` reference from independent
-  directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
-  (36 of 336), the non-converging `--target-rel` stop on the mixed row, and
-  a 2-jet point costs ~250 µs.
+  directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: the non-converging
+  `--target-rel` stop on the mixed row, and `@2`'s heavy tail in the
+  allocation (below).
+  **F-B landed** (note 41 §4 F-B record): one sampling channel per distinct
+  phase-space map. Pairs whose maps are the same function
+  (`DiagramChannel::map_identity`, pinned bit for bit by test) share a
+  channel at their summed weight. Artifact format 11 adds
+  `ChannelKey::MergedChannel`, and older artifacts are refused on merging
+  processes.
+  - `pp_to_ll_0j2j_mlm` goes from 364 to 43 channels. The floor spend falls
+    ~10×, a run draws 2.4× fewer points, and σ per `@N` holds over ten seeds.
+    Variance × time gains 3.0× by quoted error but 1.5× by seed spread:
+    without the floors, `@2`'s heavy tail is under-sampled (χ²/dof 1.89).
+  - `pp_to_llj_mlm` goes from 24 to 6 channels. Its χ²/dof falls from 3.06 to
+    0.80 over ten seeds, and variance × time by seed spread gains 5.7×.
+  - Every hadronic row merges, even `p p > e+ e-` (4 → 1). Only the
+    fixed-beam runs stay byte-identical. Five-seed sweeps and every banked
+    hadronic gate agree.
+  - The `cli_generate_proton` sample-vs-integration reading now scatters
+    2.5× wider over five seeds, with no bias. The gate's seed reads −1.34 %
+    against its 1.5 % bound. This is for the unweighting work.
 - **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
   vibegraph reads +0.3–0.7 % high on 2 → 4 processes with identical |M|²,
   matching off, and even at fixed beams: `u u~ > e+ e- g g` at √s = 500 GeV,
@@ -895,20 +913,17 @@ coverage. What is left below is what still refuses, and why.
 
 ## ⚡ Performance backlog
 
-- **Mixed-multiplicity channel cost: identical maps across flavour groups**
-  (note 41 §4 M6 record).
-  - **The cost:** `pp_to_ll_0j2j_mlm`'s 336 two-jet channels (28 flavour
-    groups) sit at the acceptance-raised floor. They draw 602k of an
-    iteration's 807k points against the 13.4k the budget split asks for.
-  - **The lever:** they are only 36 distinct channel maps (the one-jet part:
-    24 channels, 6 maps). Merging identical maps across groups, as MadEvent's
-    `config_subproc_map` does, cuts the floor cost ~9×.
-  - **What it needs:**
-    - a rule for which clustering configuration a merged channel hands each
-      group's term (jet memo, colour);
-    - a channel-key schema bump.
-  - **Keep:** leave `MIN_CHANNEL_NEVAL` alone, since the floor is the coverage
-    guarantee.
+- **Mixed-multiplicity allocation: price `@2`'s heavy tail** (note 41 §4
+  F-B record). The identical maps across flavour groups are merged (F-B).
+  - On `pp_to_ll_0j2j_mlm` that removed the floors that had been buying `@2`
+    ~600k points an iteration against its 13k share.
+  - `@2` now gets what the part split (`sₖ` from the survey) and Neyman
+    give it. Both read quoted spreads, which its heavy tail makes
+    underestimates: χ²/dof 1.89 over ten seeds, and a seed spread 4× base's.
+  - An allocation that prices the tail would turn the merge's 3× gain by
+    quoted error into a gain by seed spread. It is 1.5× today.
+  - A 2-jet point now costs ~0.5 ms of CPU on the loaded host. The per-group
+    reclustering dominates, and the mixture sum is 36 densities, not 336.
 - **Target runs on the mixed row do not converge** (note 41 §4 M6 record).
   - A `--target-rel 2e-3` run of `pp_to_ll_0j2j_mlm` was killed after 32
     iterations (16.5M points, 13.3k CPU-s).
