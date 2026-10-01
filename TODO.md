@@ -673,14 +673,32 @@ above); the entries here are the eventual features.
     - Through Pythia, the merged-σ χ²/dof is 0.77 (M5 4.67) and `@2`'s
       acceptance χ²/dof is 0.98 (3.06). The merged σ is 685.06 ± 1.98
       against MadEvent's 688.20 ± 1.48.
-    - The `@1` / `@2` acceptances read about 2σ low on these samples. That
-      goes to the close-out gate.
+    - The `@1` / `@2` acceptances read about 2σ low on these samples. C
+      (below) shows that was statistical.
   - **`cli_generate_proton`:** now gates the pre-normalisation estimate's
     pull against the integration (bound 3.5; the gate's seed reads −1.89).
     The 1.5 % relative bound is gone.
   - **Pooled stop factor:** `max(1, emp/quoted)` per channel. It reproduces
     F-A's replay digit for digit. The mixed row's `--target-rel 2e-3` run
     stops at iteration 8, 1066.40 ± 1.90 pb. Fixed budgets are byte-identical.
+  **C landed** (note 41 §4 C record; validation, no production change). At
+  four times the statistics the `@1` / `@2` deficit is gone:
+  - MadEvent's 21 files (`run_01` and 20 fresh directories) against 20
+    vibegraph samples (seeds 20260928–47), ten Pythia seeds:
+    - acceptances 0.8191 / 0.8187, 0.3603 / 0.3587, 0.3459 / 0.3432 (pulls
+      −0.80, −0.95, −0.98);
+    - merged σ 685.77 / 685.98 pb (+0.19);
+    - jet-rate χ² 24.5/26, 14.4/23, 20.7/20.
+  - Both sides' files scatter as their errors say, and the A-vs-A nulls read
+    at the same scale. A MadEvent-against-MadEvent split gives d12 χ² 35.6/22
+    (p 0.034), the size of M5's d12 tension.
+  - The cause of P12's −2σ: M5's five MadEvent files read `@1` 1.45σ above
+    sixteen fresh directories.
+  - No flavour group or LHE-level bin reaches 3σ. Samples integrated at
+    `--neval 600000` and pre-F-B samples agree too.
+  - Close-out decides whether to bank the fresh MadEvent directories as the
+    gate's side A, and its tolerance (per-side resolution 0.3 % on `@1` and
+    0.5 % on `@2` at this size).
 - **VEGAS grid tail** (deferred to the backlog, user, 2026-10-01; note 41 §4 F-A record). The per-bin `Σ(f·w)²`
   adaptation starves bins that mostly fail the cuts, and the points that pass
   there carry the bin width. MadEvent rescales each bin by the inverse of its
