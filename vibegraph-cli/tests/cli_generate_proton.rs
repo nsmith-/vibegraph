@@ -217,14 +217,6 @@ impl Run {
         cmd
     }
 
-    fn generate(&self, nevents: usize, name: &str) -> LheFile {
-        self.generate_at(nevents, name, SEED)
-    }
-
-    fn generate_at(&self, nevents: usize, name: &str, seed: &str) -> LheFile {
-        self.generate_text_at(nevents, name, seed).0
-    }
-
     /// The file as parsed, and its text, whose header carries what the parser
     /// does not keep.
     fn generate_text_at(&self, nevents: usize, name: &str, seed: &str) -> (LheFile, String) {
