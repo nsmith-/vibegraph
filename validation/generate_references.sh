@@ -22,10 +22,14 @@
 #             (madevent_seeds.sh); the committed JSON is rewritten from them.
 #   mlm       the MLM-matched references (gen_mlm_references.sh): per-seed
 #             MadEvent runs of the five ickkw = 1 / xqcut rows, the samples-grade
-#             run of each under output/<row> (so the bundle carries it), the
-#             instrumented replay of that run (per-event dumps under
-#             output/ktdump/dumps, pinned in mlm_dump_manifest.json), and the
-#             censuses (mlm_census.json). Cached like the seeds stage.
+#             run of each under output/<row> (so the bundle carries it), for
+#             pp_to_ll_0j2j_mlm twenty more seeds in one freshly generated
+#             directory each, banked beside it as output/<row>/Events/run_s<seed>
+#             (its sigma reference and the MadEvent side of the matched Pythia
+#             comparison), the instrumented replay of every samples-grade run
+#             (per-event dumps under output/ktdump/dumps, outside the bundle,
+#             pinned in mlm_dump_manifest.json), and the censuses
+#             (mlm_census.json). Cached like the seeds stage.
 #   refs      every committed reference, recomputed from the work area. These
 #             are cheap and pure functions of it, so they always rerun: that is
 #             what makes a reference that changed show up as a diff. The

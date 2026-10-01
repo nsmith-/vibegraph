@@ -19,8 +19,22 @@
 #     file and gen_kt_cluster_dumps.sh can replay it instrumented. A replay
 #     reproduces a run only if that run was the first its process directory
 #     made, so run_01 is only ever made in a freshly generated directory.
-#   * The other seeds are cross-section draws in work/mlm/<row>, which the
-#     bundle does not carry. Every run makes the run card's full event count.
+#   * The other seeds are cross-section draws run one after another in one
+#     shared directory, work/mlm/<row>, which the bundle does not carry. Each
+#     inherits the grids of the runs before it, so they are not independent
+#     draws: on every row they scatter less than they quote (seed chi2/dof
+#     0.3-0.8).
+#   * A row in FRESH_ROWS (default pp_to_ll_0j2j_mlm) also runs FRESH_SEEDS
+#     (default 20261101-20261120), each the only run of its own freshly
+#     generated directory (work/mlm/<row>_fresh/<seed>, dropped after the run).
+#     Its event file, banner and seed record are banked beside the samples run
+#     as output/<row>/Events/run_s<seed>, so the bundle carries them: they are
+#     the row's sigma reference (the samples run is a fresh directory's first
+#     run too) and the MadEvent side of the matched Pythia comparison
+#     (validation/pythia/mlm_match.py). A banked run whose seed record matches
+#     the card it would run with is read back, not re-run.
+#
+# Every run makes the run card's full event count.
 #
 # The run card is copied verbatim from the committed <row>_run_card.dat (with
 # iseed set per seed). Before any run, every `set` line of the .mg5 script's
@@ -30,8 +44,11 @@
 # q2bck (auto_dsig_v4.inc), so a reference taken there records a different
 # event header.
 #
-# Only the per-seed scalars are committed (mlm_sigma_reference.json), the same
-# shape as decay_chain_sigma_reference.json with each row's proc lines added.
+# Only the per-seed scalars are committed (mlm_sigma_reference.json, written by
+# write_mlm_sigma_reference.py), the same shape as
+# decay_chain_sigma_reference.json with each row's proc lines added; a row with
+# independent seeds keeps its shared-directory seeds in a separate block that no
+# gate reads.
 # Runs are cached as madevent_seeds.sh describes; VG_FORCE=1 re-runs them.
 #
 # Three stages, all by default (MLM_STAGE=runs|dumps|census picks one):
@@ -49,6 +66,8 @@
 #        ROWS="pp_to_llj_mlm" SEEDS="1 2" ... to run a subset; rows not run keep
 #        their committed entries, and a row that is run is replaced by the seeds
 #        of this invocation.
+#        FRESH_ROWS="" skips the independent seeds; FRESH_SEEDS="..." picks
+#        them.
 #        NB_CORE (default 2) is the number of cores each madevent run uses.
 set -euo pipefail
 
@@ -61,6 +80,8 @@ RESULT_JSON="${RESULT_JSON:-$HERE/mlm_sigma_reference.json}"
 NB_CORE="${NB_CORE:-2}"
 USER_SEEDS="${SEEDS:-}"
 DEFAULT_SEEDS="$(seq -f '%.0f' -s " " 20260928 20260937)"
+FRESH_ROWS="${FRESH_ROWS-pp_to_ll_0j2j_mlm}"
+FRESH="${FRESH_SEEDS:-$(seq -f '%.0f' -s " " 20261101 20261120)}"
 
 LHAPDF_DATA_PATH="$ROOT/validation/pdf"
 if command -v lhapdf-config >/dev/null 2>&1; then
@@ -201,58 +222,44 @@ for row in "${ALL_ROWS[@]}"; do
     read -r sigma err wall <<< "$result"
     printf '%s|%s|%s|%s|%s|sigma|%s\n' "$row" "$seed" "$sigma" "$err" "$wall" "$sdir/Events/run_s$seed" | tee -a "$RESULTS" >&2
   done
+
+  # The independent seeds: one freshly generated directory each, its event file
+  # and seed record banked beside the samples run, the directory dropped.
+  case " $FRESH_ROWS " in *" $row "*) ;; *) continue ;; esac
+  for seed in $FRESH; do
+    case " $seeds " in *" $seed "*) die "$row: seed $seed is both a shared-directory and an independent seed" ;; esac
+    banked="$procdir/Events/run_s$seed"
+    tmpcard="$(mktemp)"
+    mes_install_card "$card" "$tmpcard" "" "$seed"
+    want_sha="$(mes_sha256 "$tmpcard")"
+    rm -f "$tmpcard"
+    have_sha=""
+    if [ -s "$banked/vg_seed_result.txt" ] && [ "${VG_FORCE:-0}" != 1 ]; then
+      read -r _ _ _ have_sha < "$banked/vg_seed_result.txt"
+    fi
+    if [ "$have_sha" = "$want_sha" ]; then
+      read -r sigma err wall _ < "$banked/vg_seed_result.txt"
+      echo ">>> [$row s$seed] cached: $sigma +- $err" >&2
+    else
+      fdir="$WORK/${row}_fresh/$seed"
+      rm -rf "$fdir" "$banked"
+      generate_dir "$row" "$fdir"
+      mes_install_card "$card" "$fdir/Cards/run_card.dat" "" "$seed"
+      result="$(mes_run_seed "$fdir" "s$seed" "$WORK/${row}_fresh_$seed.log")"
+      check_banner "$row" "$fdir/Events/run_s$seed"
+      mkdir -p "$banked"
+      cp "$fdir/Events/run_s$seed/unweighted_events.lhe.gz" \
+        "$fdir/Events/run_s$seed/vg_seed_result.txt" "$banked/"
+      cp "$fdir"/Events/run_s"$seed"/*_banner.txt "$banked/"
+      rm -rf "$fdir"
+      read -r sigma err wall <<< "$result"
+    fi
+    printf '%s|%s|%s|%s|%s|fresh|%s\n' "$row" "$seed" "$sigma" "$err" "$wall" "$banked" | tee -a "$RESULTS" >&2
+  done
 done
 
-[ "$RUNS" = 1 ] && python3 - "$RESULTS" "$RESULT_JSON" "$ROOT/research/refs/mg5amcnlo/VERSION" "$HERE" "$NB_CORE" <<'PY'
-import gzip, json, os, re, sys
-rows_path, out_path, version_path, here, nb_core = sys.argv[1:6]
-
-def init_processes(rundir):
-    # The <init> block's per-process lines: XSECUP XERRUP XMAXUP LPRUP. On a
-    # card with `@N` process tags LPRUP is N, so this is sigma per multiplicity.
-    with gzip.open(os.path.join(rundir, "unweighted_events.lhe.gz"), "rt") as f:
-        text = f.read(200000)
-    block = text[text.index("<init>") + 6 : text.index("</init>")].strip().splitlines()
-    nprup = int(block[0].split()[-1])
-    out = {}
-    for line in block[1 : 1 + nprup]:
-        xsec, xerr, _xmax, lprup = line.split()[:4]
-        out[lprup] = {"sigma_pb": float(xsec), "err_pb": float(xerr)}
-    return out
-
-old = json.load(open(out_path))["rows"] if os.path.exists(out_path) else {}
-rows = {}
-for line in open(rows_path):
-    name, seed, sigma, err, wall, kind, rundir = line.strip().split("|")
-    if name not in rows:
-        script = open(os.path.join(here, "scripts", name + ".mg5")).read()
-        proc = [ln.strip() for ln in script.splitlines()
-                if re.match(r"\s*(generate|add process)\b", ln)]
-        card = open(os.path.join(here, name + "_run_card.dat")).read()
-        nev = re.search(r"^\s*(\d+)\s*=\s*nevents\b", card, re.M).group(1)
-        rows[name] = {"process": proc, "script": "scripts/%s.mg5" % name,
-                      "run_card": "%s_run_card.dat" % name, "nevents": int(nev),
-                      "runs": []}
-    rows[name]["runs"].append({"iseed": int(seed), "sigma_pb": float(sigma),
-                               "err_pb": float(err), "wall_s": int(wall),
-                               "samples": kind == "samples",
-                               "by_lprup": init_processes(rundir)})
-version = re.search(r"version\s*=\s*(\S+)", open(version_path).read()).group(1)
-out = {
-    "_comment": "MadEvent cross sections (pb) for MLM-matched LO generation (ickkw = 1 / "
-                "xqcut), one run per iseed, each the run card's full unweighted event count. "
-                "The run marked samples is output/<row>/Events/run_01, the one the reference "
-                "bundle carries and the instrumented replay reproduces; the others ran in "
-                "work/mlm/<row>. wall_s is the whole generate_events call on %s cores, survey, "
-                "refine and compilation included. by_lprup is the run's own <init> "
-                "block per process (LPRUP = the @N tag where the card has them). Generated by "
-                "validation/madgraph/gen_mlm_references.sh." % nb_core,
-    "mg_version": version,
-    "rows": dict(old, **rows),
-}
-json.dump(out, open(out_path, "w"), indent=2)
-print("wrote", out_path)
-PY
+[ "$RUNS" = 1 ] && python3 "$HERE/write_mlm_sigma_reference.py" "$RESULTS" "$RESULT_JSON" \
+  "$ROOT/research/refs/mg5amcnlo/VERSION" "$HERE" "$NB_CORE"
 rm -f "$RESULTS"
 
 if [ "$MLM_STAGE" = all ] || [ "$MLM_STAGE" = dumps ]; then

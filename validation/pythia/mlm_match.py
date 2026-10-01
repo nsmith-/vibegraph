@@ -93,12 +93,35 @@ SOURCE = Path(__file__).resolve().with_name("mlm_match.cc")
 BUILD = ROOT / "target" / "mlm-pythia"
 DEFAULT_OUT = ROOT / "target" / "validation-report" / "standalone" / "mlm_pythia.json"
 
-#: MadEvent's samples-grade run of the matched row and the vibegraph samples
-#: `generate_mlm_samples.sh` writes: the task's default inputs.
-DEFAULT_A = [ROOT / "validation/madgraph/output/pp_to_ll_0j2j_mlm/Events/run_01/unweighted_events.lhe.gz"]
+#: The task's default inputs: on side A, every banked MadEvent run the matched
+#: row's cross-section reference is read from (its samples-grade run and one
+#: freshly generated directory per further seed, the `events` of each of its
+#: `runs` in `mlm_sigma_reference.json`); on side B, the vibegraph samples
+#: `generate_mlm_samples.sh` writes. One directory's files cannot stand in for
+#: the set: files of one MadEvent directory scatter by its grids, and at
+#: twenty-one directories against twenty samples the comparison resolves the
+#: `@1` / `@2` acceptances to 0.3 % / 0.5 % a side.
+MLM_REFERENCE = ROOT / "validation/madgraph/mlm_sigma_reference.json"
+MLM_ROW = "pp_to_ll_0j2j_mlm"
 DEFAULT_B_DIR = ROOT / "target" / "mlm-pythia-samples"
 
-DEFAULT_SEEDS = [20261201, 20261202, 20261203]
+DEFAULT_SEEDS = list(range(20261201, 20261211))
+
+
+def default_a() -> list[Path]:
+    """The banked MadEvent files of the matched row's independent-directory reference."""
+    row = json.loads(MLM_REFERENCE.read_text())["rows"][MLM_ROW]
+    if not row.get("independent_directories"):
+        sys.exit(f"{MLM_REFERENCE}: {MLM_ROW} is not read from independent directories")
+    paths = [ROOT / "validation/madgraph" / r["events"] for r in row["runs"]]
+    missing = [p for p in paths if not p.is_file()]
+    if missing:
+        sys.exit(
+            f"{len(missing)} of the {len(paths)} banked MadEvent files of {MLM_ROW} are missing "
+            f"(first: {missing[0]}); they arrive with the reference bundle "
+            "(pixi run fetch-refdata) or from pixi run -e madgraph generate-mlm-references"
+        )
+    return paths
 
 #: The command-file lines MadGraph's `pythia8` command writes for an MLM run
 #: (ickkw = 1) at the default pythia8_card, with where each comes from. Keys
@@ -593,7 +616,7 @@ def chi2_sf(x: float, k: int) -> float | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--a", nargs="+", type=Path, default=DEFAULT_A)
+    ap.add_argument("--a", nargs="+", type=Path, default=None)
     ap.add_argument("--b", nargs="+", type=Path, default=None)
     ap.add_argument("--label-a", default="madevent")
     ap.add_argument("--label-b", default="vibegraph")
@@ -615,6 +638,8 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args()
 
+    if args.a is None:
+        args.a = default_a()
     if args.b is None:
         args.b = sorted(DEFAULT_B_DIR.glob("*.lhe"))
         if not args.b:

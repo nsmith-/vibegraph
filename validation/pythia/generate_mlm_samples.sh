@@ -5,7 +5,8 @@
 # binary, so Pythia is handed what a user's `generate` run writes.
 #
 # Each seed is an independent integration (its own grids) and an independent
-# sample, drawn with the same seed. The budget is the one the row's σ was
+# sample, drawn with the same seed. Twenty by default, the size the comparison
+# against MadEvent's twenty-one banked directories was measured at. The budget is the one the row's σ was
 # measured at (--fixed-budget --allocate neyman --neval 200000 --niter 8), and
 # the event count is MadEvent's samples-grade run's.
 #
@@ -19,7 +20,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="${OUT:-$ROOT/target/mlm-pythia-samples}"
 RUN_CARD="$ROOT/validation/madgraph/pp_to_ll_0j2j_mlm_run_card.dat"
-SEEDS="${SEEDS:-20260928 20260929 20260930 20260931 20260932}"
+SEEDS="${SEEDS:-$(seq -f '%.0f' -s " " 20260928 20260947)}"
 NEVENTS="${NEVENTS:-10000}"
 BIN="${BIN:-}"
 
