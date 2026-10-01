@@ -216,27 +216,39 @@ impl<'a> MultiplicitySum<'a> {
 
     /// The key each channel's grid is banked under, in channel order. A single
     /// part keeps its own [`ChannelKey::GroupChannel`] keys, so its artifact is
-    /// the one a single-multiplicity card has always written.
+    /// the one a single-multiplicity card has always written. A channel whose map
+    /// serves several `(group, diagram)` pairs is a [`ChannelKey::MergedChannel`]
+    /// whatever the part count.
     pub fn channel_keys(&self) -> Vec<ChannelKey> {
         let single = self.parts.len() == 1;
         self.parts
             .iter()
             .flat_map(|part| {
                 let final_state = final_state_count(part);
-                part.channel_ids().iter().map(move |id| {
-                    if single {
-                        ChannelKey::GroupChannel {
-                            group: id.group,
-                            channel: id.channel,
+                part.channel_ids()
+                    .iter()
+                    .zip(part.channel_members())
+                    .map(move |(id, members)| {
+                        if members.len() > 1 {
+                            ChannelKey::MergedChannel {
+                                final_state,
+                                group: id.group,
+                                channel: id.channel,
+                                pairs: members.len(),
+                            }
+                        } else if single {
+                            ChannelKey::GroupChannel {
+                                group: id.group,
+                                channel: id.channel,
+                            }
+                        } else {
+                            ChannelKey::MultiplicityChannel {
+                                final_state,
+                                group: id.group,
+                                channel: id.channel,
+                            }
                         }
-                    } else {
-                        ChannelKey::MultiplicityChannel {
-                            final_state,
-                            group: id.group,
-                            channel: id.channel,
-                        }
-                    }
-                })
+                    })
             })
             .collect()
     }
@@ -637,12 +649,23 @@ mod tests {
             assert_eq!(ndim, if k == 0 { 2 + 2 } else { 2 + 5 });
             assert_eq!(ChannelIntegrand::channel_grid_ndim(&sum, c), ndim);
             let id = sum.parts()[k].channel_ids()[j];
+            let pairs = sum.parts()[k].channel_members()[j].len();
+            let final_state = sum.final_state_count(k);
             assert_eq!(
                 keys[c],
-                ChannelKey::MultiplicityChannel {
-                    final_state: sum.final_state_count(k),
-                    group: id.group,
-                    channel: id.channel,
+                if pairs > 1 {
+                    ChannelKey::MergedChannel {
+                        final_state,
+                        group: id.group,
+                        channel: id.channel,
+                        pairs,
+                    }
+                } else {
+                    ChannelKey::MultiplicityChannel {
+                        final_state,
+                        group: id.group,
+                        channel: id.channel,
+                    }
                 }
             );
             assert_eq!(samplers[c], sum.parts()[k].channel_samplers()[j]);
@@ -681,11 +704,20 @@ mod tests {
         assert!(sum
             .channel_keys()
             .iter()
-            .zip(alone.channel_ids())
-            .all(|(key, id)| *key
-                == ChannelKey::GroupChannel {
-                    group: id.group,
-                    channel: id.channel
+            .zip(alone.channel_ids().iter().zip(alone.channel_members()))
+            .all(|(key, (id, members))| *key
+                == if members.len() > 1 {
+                    ChannelKey::MergedChannel {
+                        final_state: 3,
+                        group: id.group,
+                        channel: id.channel,
+                        pairs: members.len(),
+                    }
+                } else {
+                    ChannelKey::GroupChannel {
+                        group: id.group,
+                        channel: id.channel,
+                    }
                 }));
         assert_eq!(sum.allocation_alphas(), alone.channel_alphas());
 

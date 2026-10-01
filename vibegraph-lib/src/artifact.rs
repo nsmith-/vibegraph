@@ -85,11 +85,25 @@ use crate::vegas::VegasGrid;
 /// still a version-9 file, byte for byte what a version-9 writer produced and
 /// readable by one, while one of several multiplicities is a version-10 file,
 /// which an older reader refuses by its version rather than failing on the key.
-pub const FORMAT_VERSION: u32 = 10;
+///
+/// `11` adds [`ChannelKey::MergedChannel`]: a hadronic channel whose map serves
+/// several `(group, diagram)` pairs, because their maps are one function. The
+/// schema is version 10's with one more key, and the writer again records the
+/// oldest version that holds its keys, so an artifact in which no two pairs
+/// share a map is still a version-9 or version-10 file, byte for byte. A reader
+/// refuses to replay an older artifact on a process whose channels merge
+/// ([`IntegrateArtifact::refuse_unmerged_grids`]): its grids were trained one per
+/// pair.
+pub const FORMAT_VERSION: u32 = 11;
 
 /// The first version whose artifacts can hold a sum over final-state
 /// multiplicities (see the version-10 entry in [`FORMAT_VERSION`]'s doc).
 pub const MULTIPLICITY_VERSION: u32 = 10;
+
+/// The first version whose hadronic channels are one per distinct map rather
+/// than one per `(group, diagram)` pair (see the version-11 entry in
+/// [`FORMAT_VERSION`]'s doc).
+pub const MERGED_CHANNEL_VERSION: u32 = 11;
 
 /// The first version whose `sigma_pb` was formed with the per-point `AMP2`
 /// scale-configuration draw (see the version-7 entry in [`FORMAT_VERSION`]'s doc).
@@ -150,6 +164,16 @@ pub enum ChannelKey {
         final_state: usize,
         group: usize,
         channel: usize,
+    },
+    /// One hadronic integration channel whose map is shared by `pairs`
+    /// `(group, diagram)` pairs of the processes with `final_state` outgoing
+    /// legs, named by the first of them. The channel draws its points once for
+    /// all of them, at their summed selection weight.
+    MergedChannel {
+        final_state: usize,
+        group: usize,
+        channel: usize,
+        pairs: usize,
     },
 }
 
@@ -663,17 +687,44 @@ impl v3::IntegrateArtifact {
 
 impl IntegrateArtifact {
     /// The version an artifact banking `channels` records: the oldest whose
-    /// schema holds every key among them. A [`ChannelKey::MultiplicityChannel`]
-    /// needs [`MULTIPLICITY_VERSION`]; every other key is version 9's.
+    /// schema holds every key among them. A [`ChannelKey::MergedChannel`] needs
+    /// [`MERGED_CHANNEL_VERSION`], a [`ChannelKey::MultiplicityChannel`]
+    /// [`MULTIPLICITY_VERSION`]; every other key is version 9's.
     pub fn version_for(channels: &[ChannelGrid]) -> u32 {
-        if channels
+        channels
             .iter()
-            .any(|c| matches!(c.key, ChannelKey::MultiplicityChannel { .. }))
-        {
-            MULTIPLICITY_VERSION
-        } else {
-            9
+            .map(|c| match c.key {
+                ChannelKey::MergedChannel { .. } => MERGED_CHANNEL_VERSION,
+                ChannelKey::MultiplicityChannel { .. } => MULTIPLICITY_VERSION,
+                _ => 9,
+            })
+            .max()
+            .unwrap_or(9)
+    }
+
+    /// Refuse to replay this artifact on a process whose derived channel keys
+    /// `derived` merge pairs, when the artifact predates merged channels: its
+    /// grids were trained one per `(group, diagram)` pair, on channels this
+    /// build no longer has.
+    pub fn refuse_unmerged_grids(&self, derived: &[ChannelKey]) -> Result<(), String> {
+        if self.format_version >= MERGED_CHANNEL_VERSION {
+            return Ok(());
         }
+        let (merged, pairs) = derived.iter().fold((0, 0), |(m, p), key| match key {
+            ChannelKey::MergedChannel { pairs, .. } => (m + 1, p + pairs),
+            _ => (m, p),
+        });
+        if merged == 0 {
+            return Ok(());
+        }
+        Err(format!(
+            "this process's channels merge {pairs} (group, diagram) pairs into {merged} shared \
+             phase-space maps, which artifacts hold from format version \
+             {MERGED_CHANNEL_VERSION} on; this artifact was written at version {}, one grid \
+             per pair, so its grids do not belong to this build's channels: re-run \
+             `vibegraph integrate`",
+            self.format_version
+        ))
     }
 
     /// The single trained grid of a run that was not split across channels.
@@ -715,9 +766,10 @@ impl IntegrateArtifact {
         let raw = zstd::decode_all(compressed.as_slice()).map_err(ArtifactError::Zstd)?;
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
-            // 9 and 10 share one schema; a version-9 file holds no key version 10
-            // added.
-            9 | FORMAT_VERSION => bincode::deserialize(&raw).map_err(ArtifactError::Decode),
+            // 9 through 11 share one schema; each later version only adds a key.
+            9 | MULTIPLICITY_VERSION | FORMAT_VERSION => {
+                bincode::deserialize(&raw).map_err(ArtifactError::Decode)
+            }
             // 6 through 8 share one schema (see `FORMAT_VERSION`'s doc); the upgrade
             // adds the map choices and keeps the file's own recorded `format_version`.
             6..=8 => bincode::deserialize::<v7::IntegrateArtifact>(&raw)
@@ -936,6 +988,59 @@ mod tests {
             assert_eq!(dims, want, "{name}");
         }
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A merged channel makes a version-11 file that reads back key for key,
+    /// and an artifact older than version 11 is refused on a process whose
+    /// channels merge, naming both versions, while a process that merges nothing
+    /// replays it as before.
+    #[test]
+    fn a_merged_channel_is_a_version_11_file_and_older_grids_are_refused_on_one() {
+        let merged = ChannelKey::MergedChannel {
+            final_state: 3,
+            group: 0,
+            channel: 1,
+            pairs: 6,
+        };
+        let plain = ChannelKey::MultiplicityChannel {
+            final_state: 2,
+            group: 0,
+            channel: 0,
+        };
+        let mut artifact = sample_artifact();
+        artifact.channels = vec![
+            ChannelGrid {
+                key: plain,
+                ..one_channel(VegasGrid::new(4, 16, 1.5))
+            },
+            ChannelGrid {
+                key: merged,
+                ..one_channel(VegasGrid::new(7, 16, 1.5))
+            },
+        ];
+        assert_eq!(IntegrateArtifact::version_for(&artifact.channels), 11);
+        artifact.format_version = IntegrateArtifact::version_for(&artifact.channels);
+        let dir = scratch_dir("v11");
+        let path = dir.join("merged.bin.zst");
+        artifact.write_to_path(&path, true).expect("write");
+        let back = IntegrateArtifact::read_from_path(&path).expect("read");
+        assert_eq!(back.format_version, MERGED_CHANNEL_VERSION);
+        let keys: Vec<ChannelKey> = back.channels.iter().map(|c| c.key).collect();
+        assert_eq!(keys, vec![plain, merged]);
+        std::fs::remove_dir_all(&dir).ok();
+
+        let derived = [plain, merged];
+        assert!(back.refuse_unmerged_grids(&derived).is_ok());
+        let mut stale = back.clone();
+        stale.format_version = MULTIPLICITY_VERSION;
+        let msg = stale
+            .refuse_unmerged_grids(&derived)
+            .expect_err("pre-merge grids on a merging process");
+        assert!(
+            msg.contains("version 11") && msg.contains("version 10") && msg.contains("6 (group"),
+            "{msg}"
+        );
+        assert!(stale.refuse_unmerged_grids(&[plain]).is_ok());
     }
 
     #[test]

@@ -617,9 +617,7 @@ above); the entries here are the eventual features.
     - `setMad = on` on MadEvent's own CDATA-wrapped file switches matching off
       entirely unless `merge` is set explicitly.
   Next, at close-out: regenerate the `@2` reference from independent
-  directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: merge the identical two-jet maps
-  (36 of 336), the non-converging `--target-rel` stop on the mixed row, and
-  a 2-jet point costs ~250 µs.
+  directories and gate at MadEvent's measured spread (user, 2026-09-29).
 
   **F-A landed** (note 41 §4 F-A record; diagnosis, no production change).
   - **Root:** the adapted VEGAS grids, not the maps, make a weight tail of
@@ -635,13 +633,36 @@ above); the entries here are the eventual features.
   - **Target stop:** the consistency factor is formed from each iteration's
     own σᵢ around an unweighted mean, so one spike in a floor-bound two-jet
     channel holds the stop (a 0.004 %-of-σ channel at χ²/dof 5675).
-  - **Proposals awaiting a decision** (measured offline, not implemented):
+  - **Proposals, both adopted (user, 2026-10-01; implementation next):**
     - normalise each `@N` to its integration, as MadEvent pins each channel.
       On M5's showered files the merged-σ χ²/dof goes from 5.82 to 0.87;
     - a pooled (between-iteration) consistency factor for the unweighted mean.
       On the seed-20260928 target run the stop fires at iteration 8 with
       1064.89 ± 1.73 pb, against the fixed sweep's 1065.50 ± 0.89.
-- **VEGAS grid tail** (note 41 §4 F-A record). The per-bin `Σ(f·w)²`
+  **F-B landed** (note 41 §4 F-B record): one sampling channel per distinct
+  phase-space map. Pairs whose maps are the same function
+  (`DiagramChannel::map_identity`, pinned bit for bit by test) share a
+  channel at their summed weight. Artifact format 11 adds
+  `ChannelKey::MergedChannel`, and older artifacts are refused on merging
+  processes.
+  - `pp_to_ll_0j2j_mlm` goes from 364 to 43 channels. The floor spend falls
+    ~10×, and σ per `@N` holds over ten seeds. ε_unw rises 1.65×.
+    - At the same `--neval` a run draws 2.4× fewer points. Variance × time
+      then gains 3.0× by quoted error but only 1.5× by seed spread: without
+      the floors, `@2`'s heavy tail is under-sampled (χ²/dof 1.89).
+    - At the same point count (`--neval 600000`, three seeds) every part is
+      better, in half the CPU. The total quoted error halves, and rel²·CPU
+      falls 8.6×.
+  - `pp_to_llj_mlm` goes from 24 to 6 channels. Its χ²/dof falls from 3.06 to
+    0.80 over ten seeds. Variance × time by seed spread gains 5.7×, and
+    ε_unw rises 2.3×.
+  - Every hadronic row merges, even `p p > e+ e-` (4 → 1). Only the
+    fixed-beam runs stay byte-identical. Five-seed sweeps and every banked
+    hadronic gate agree.
+  - The `cli_generate_proton` sample-vs-integration reading now scatters
+    2.5× wider over five seeds, with no bias. The gate's seed reads −1.34 %
+    against its 1.5 % bound. This is for the unweighting work.
+- **VEGAS grid tail** (deferred to the backlog, user, 2026-10-01; note 41 §4 F-A record). The per-bin `Σ(f·w)²`
   adaptation starves bins that mostly fail the cuts, and the points that pass
   there carry the bin width. MadEvent rescales each bin by the inverse of its
   own acceptance (`dsample.f:2106-2124`). That rescale, as a probe, moved
@@ -923,22 +944,32 @@ coverage. What is left below is what still refuses, and why.
 
 ## ⚡ Performance backlog
 
-- **Mixed-multiplicity channel cost: identical maps across flavour groups**
-  (note 41 §4 M6 record).
-  - **The cost:** `pp_to_ll_0j2j_mlm`'s 336 two-jet channels (28 flavour
-    groups) sit at the acceptance-raised floor. They draw 602k of an
-    iteration's 807k points against the 13.4k the budget split asks for.
-  - **The lever:** they are only 36 distinct channel maps (the one-jet part:
-    24 channels, 6 maps). Merging identical maps across groups, as MadEvent's
-    `config_subproc_map` does, cuts the floor cost ~9×.
-  - **What it needs:**
-    - a rule for which clustering configuration a merged channel hands each
-      group's term (jet memo, colour);
-    - a channel-key schema bump.
-  - **Keep:** leave `MIN_CHANNEL_NEVAL` alone, since the floor is the coverage
-    guarantee.
-- **Target runs on the mixed row do not converge** (note 41 §4 M6 and F-A
-  records).
+  directories and gate at MadEvent's measured spread (user, 2026-09-29). Follow-ups: the non-converging
+  `--target-rel` stop on the mixed row, and `@2`'s heavy tail in the
+  allocation (below).
+  **F-B landed** (note 41 §4 F-B record): one sampling channel per distinct
+  phase-space map. Pairs whose maps are the same function
+  (`DiagramChannel::map_identity`, pinned bit for bit by test) share a
+  channel at their summed weight. Artifact format 11 adds
+  `ChannelKey::MergedChannel`, and older artifacts are refused on merging
+  processes.
+  - `pp_to_ll_0j2j_mlm` goes from 364 to 43 channels. The floor spend falls
+    ~10×, and σ per `@N` holds over ten seeds. ε_unw rises 1.65×.
+    - At the same `--neval` a run draws 2.4× fewer points. Variance × time
+      then gains 3.0× by quoted error but only 1.5× by seed spread: without
+      the floors, `@2`'s heavy tail is under-sampled (χ²/dof 1.89).
+    - At the same point count (`--neval 600000`, three seeds) every part is
+      better, in half the CPU. The total quoted error halves, and rel²·CPU
+      falls 8.6×.
+  - `pp_to_llj_mlm` goes from 24 to 6 channels. Its χ²/dof falls from 3.06 to
+    0.80 over ten seeds. Variance × time by seed spread gains 5.7×, and
+    ε_unw rises 2.3×.
+  - Every hadronic row merges, even `p p > e+ e-` (4 → 1). Only the
+    fixed-beam runs stay byte-identical. Five-seed sweeps and every banked
+    hadronic gate agree.
+  - The `cli_generate_proton` sample-vs-integration reading now scatters
+    2.5× wider over five seeds, with no bias. The gate's seed reads −1.34 %
+    against its 1.5 % bound. This is for the unweighting work.
   - A `--target-rel 2e-3` run of `pp_to_ll_0j2j_mlm` was killed after 32
     iterations (16.5M points, 13.3k CPU-s).
   - **Diagnosed (F-A):** single-point spikes in floor-bound two-jet channels.
