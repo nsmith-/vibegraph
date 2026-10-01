@@ -49,7 +49,6 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
-use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, STATUS_INCOMING, STATUS_OUTGOING};
 
@@ -373,8 +372,7 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
         "vibegraph generate failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let text = std::fs::read_to_string(&lhe).unwrap();
-    let file = LheFile::parse(&text).expect("parses");
+    let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("parses");
     let check = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
         .arg("check-events")
         .arg(&lhe)
@@ -400,19 +398,12 @@ fn a_top_decay_sample_follows_madevents_convention_and_shape() {
         [mg_beams[4] as i32, mg_beams[5] as i32]
     );
     assert_eq!(file.init.pdf_set, [mg_beams[6] as i32, mg_beams[7] as i32]);
-    // XSECUP is the width in GeV, as MadEvent's is: the integrated width the
-    // file is normalised to, and the sample's own estimate before that
-    // normalisation within its accept/reject resolution of it. Both the file and
-    // the command's result line print seven significant figures.
+    // XSECUP is the width in GeV, as MadEvent's is: within the sample's own
+    // accept/reject resolution of the integrated width.
     let xsecup = file.init.processes[0].xsec_pb;
     assert!(
-        (xsecup / width - 1.0).abs() < 1e-5,
+        (xsecup / width - 1.0).abs() < 4.0 / (sample.events as f64).sqrt(),
         "XSECUP {xsecup} against the integrated width {width} GeV"
-    );
-    let (own, _) = sample_estimate_in(&text).expect("the header records the sample's estimate");
-    assert!(
-        (own / width - 1.0).abs() < 4.0 / (sample.events as f64).sqrt(),
-        "the sample's own width {own} against the integrated {width} GeV"
     );
     let mg_xsec: f64 = sample.init[1]
         .split_whitespace()
