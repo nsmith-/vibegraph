@@ -34,7 +34,8 @@ use vibegraph::lhef::build::{
     pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord,
 };
 use vibegraph::lhef::emit::{
-    Buffer, EmitPlan, EmitSummary, EventSource, StochasticRounding, UnweightStrategy, WeightedEvent,
+    Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
+    WeightedEvent,
 };
 use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use vibegraph::lhef::write::{generator_element, mg_run_card};
@@ -511,6 +512,7 @@ impl EventSource for SampleSource<'_, '_> {
         Some(WeightedEvent {
             record,
             weight: point.weight,
+            part: 0,
         })
     }
 
@@ -908,6 +910,9 @@ fn generate_sample(
         nevents,
         sigma_pb: artifact.sigma_pb,
         sigma_err_pb: artifact.sigma_err_pb,
+        // One final-state multiplicity: the whole file is normalised to the
+        // integration.
+        parts: Vec::new(),
         beam_pdg,
         beam_energy,
         // No parton densities on a fixed-energy or a decay run; `PDFSUP` is
@@ -1257,6 +1262,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         Some(WeightedEvent {
             record,
             weight: point.weight,
+            part: k,
         })
     }
 
@@ -1402,6 +1408,7 @@ fn generate_proton_sample(
         nevents,
         sigma_pb: artifact.sigma_pb,
         sigma_err_pb: artifact.sigma_err_pb,
+        parts: part_sigmas(artifact, integ.offsets()),
         beam_pdg,
         beam_energy: [rc.ebeam1, rc.ebeam2],
         // MadGraph writes the LHAPDF id in `PDFSUP` and leaves `PDFGUP` at zero,
@@ -1439,6 +1446,29 @@ fn generate_proton_sample(
         Observable::CrossSection,
     );
     Ok(summary)
+}
+
+/// Each final-state multiplicity's integrated cross section, from its channels'
+/// banked terms (`offsets[k]..offsets[k + 1]` in the artifact's channel order),
+/// for a sum over several; empty for one, whose part is the whole integration.
+fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma> {
+    if offsets.len() <= 2 {
+        return Vec::new();
+    }
+    offsets
+        .windows(2)
+        .map(|range| {
+            let channels = &artifact.channels[range[0]..range[1]];
+            PartSigma {
+                sigma_pb: channels.iter().map(|c| c.sigma_pb).sum(),
+                sigma_err_pb: channels
+                    .iter()
+                    .map(|c| c.sigma_err_pb * c.sigma_err_pb)
+                    .sum::<f64>()
+                    .sqrt(),
+            }
+        })
+        .collect()
 }
 
 /// Every flavour group's resonance lines, and the PDG code each line carries in
@@ -1594,11 +1624,17 @@ fn report(
         stats.ratio_max
     );
     info!(
-        "{symbol}:        {sample_sigma:.6} {unit} from the sample vs {:.6} ± {:.6} {unit} from \
-         the integration ({:+.3}%)",
+        "{symbol}:        {sample_sigma:.6} ± {:.6} {unit} from the sample vs {:.6} ± {:.6} \
+         {unit} from the integration ({:+.3}%, pull {:+.2})",
+        summary.sample_sigma_err_pb,
         artifact.sigma_pb,
         artifact.sigma_err_pb,
-        100.0 * (sample_sigma / artifact.sigma_pb - 1.0)
+        100.0 * (sample_sigma / artifact.sigma_pb - 1.0),
+        (sample_sigma - artifact.sigma_pb)
+            / summary
+                .sample_sigma_err_pb
+                .hypot(artifact.sigma_err_pb)
+                .max(f64::MIN_POSITIVE)
     );
     info!(
         "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",

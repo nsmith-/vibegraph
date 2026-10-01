@@ -295,9 +295,10 @@ pub struct IntegrateArgs {
 
     /// Integrate until σ's relative uncertainty reaches this.
     ///
-    /// The uncertainty the stop reads is the quoted one widened by each
-    /// channel's own `√max(1, χ²/dof)`, so a run whose iterations disagree by
-    /// more than their error bars keeps going. `--neval` sets the points an
+    /// The uncertainty the stop reads is the quoted one with each channel's
+    /// variance widened to the scatter its iterations actually show, where that
+    /// is larger, so a run whose iterations disagree by more than their error
+    /// bars keeps going. `--neval` sets the points an
     /// iteration spends; how many iterations run is what the target decides,
     /// bounded by `--min-iters`, `--max-iters` and `--max-points`.
     #[arg(long, value_name = "REL", default_value_t = DEFAULT_TARGET_REL, conflicts_with = "fixed_budget")]
@@ -648,7 +649,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         }
         info!(
             "target:   {:.4}% relative, {} after {} iterations and {} evaluations \
-             (quoted {:.4}%, χ²-scaled {:.4}%)",
+             (quoted {:.4}%, consistency-scaled {:.4}%)",
             100.0 * target,
             match conv.stop {
                 StopReason::TargetMet => "met",

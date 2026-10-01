@@ -59,32 +59,41 @@
 //!   the bias comes with a *small* error bar — precisely the shape that makes a
 //!   convergence test stop early on a wrong number. A `Target` budget refuses an
 //!   [`IterationCombination::InverseVariance`] grid rather than reading its error.
-//! * **A minimum iteration count**, so the χ²/dof below has degrees of freedom
-//!   and the grid has been refined more than a couple of times.
+//! * **A minimum iteration count**, so the consistency factor below has degrees
+//!   of freedom and the grid has been refined more than a couple of times.
 //! * **An iteration-consistency scale factor.** The stopping test reads not the
-//!   quoted error but the quoted error times `√max(1, χ²/dof)` per channel — the
-//!   PDG scale-factor treatment, applied where the inconsistency lives. This is
-//!   the precondition that does the most work. The per-point weight distribution
-//!   of the σ-carrying channels of `p p > l+ l- j` has a Pareto tail index near
-//!   2.1–2.4, i.e. it sits at the boundary where the variance exists at all, so
-//!   empirical variances converge slowly and biased low; the iterations then
-//!   scatter by more than their own quoted errors, and χ²/dof measures exactly
-//!   that excess. Measured χ²/dof on that process at production budgets is 2–3.3,
-//!   so the factor buys a 1.4–1.8× tighter error before a stop is granted, which
-//!   is a 2–3× point cost — deliberately, since the alternative is stopping on an
-//!   error bar that the seed-to-seed spread does not support.
+//!   quoted error but each channel's quoted variance times
+//!   `max(1, emp/quoted)` — the PDG scale-factor treatment, applied where the
+//!   inconsistency lives. `quoted` is the variance the unweighted mean claims,
+//!   `Σnᵢ²σᵢ²/W²`, and `emp` is the variance its iterations actually scatter
+//!   with, `Σnᵢ²(Iᵢ − Ī)²/W² · k/(k − 1)` over `k` kept iterations of `nᵢ`
+//!   points (`W = Σnᵢ`, `Ī` the point-weighted mean). The widened variance is
+//!   therefore `max(quoted, emp)`: a channel whose iterations disagree by more
+//!   than they claimed is charged its measured scatter, and never more. See
+//!   [`ChannelHistory::stop_scale`].
 //!
-//! The χ² that factor comes from is formed over the iterations that *measured* a
-//! variance. On a split wide enough to put most channels on
-//! [`MIN_CHANNEL_NEVAL`], an allocation regularly loses every one of its points
-//! to the cuts and comes back a constant zero, whose measured variance is exactly
-//! zero — not a small error bar but no error bar at all. Dividing a residual by
-//! it puts the channel's χ²/dof at ~1e250, and a control decision taken on that
-//! number is a target nothing can satisfy. Such iterations stay in the integral
-//! and in the quoted error, and the χ²/dof the run *reports* is still the one
-//! they produce; what they are kept out of is the consistency test, which has
-//! nothing to say about an iteration that quoted no error. See
-//! [`ChannelHistory::stop_scale`].
+//! That is the consistency check of the estimator a target run reports, an
+//! unweighted mean. The per-point weights of the σ-carrying channels have a
+//! Pareto tail index near 2, where the variance barely exists, so an iteration
+//! that happens to draw a point far out in the tail quotes both a shifted
+//! integral and a large σᵢ of its own. A χ² formed against each iteration's own
+//! σᵢ reads that one iteration as consistent and every quiet iteration as tens
+//! of their own small σ away from the mean it shifted. On a matched
+//! `p p > e+ e- + 0, 1, 2 jets` target run a single point in a two-jet channel
+//! carrying 0.004 % of σ put that channel's χ²/dof at 5675, and the χ²-scaled
+//! error never fell below 2.4e-3 in 17 iterations while the five-seed fixed
+//! sweep of the same process scattered *less* than its quoted errors (χ²/dof
+//! 0.42). The pooled factor compares the spike with the scatter it really adds
+//! to the mean, so it stays below 2 on every channel of that run after the fifth
+//! iteration and the run stops on the error bar the seed spread supports.
+//!
+//! Zero-variance iterations — an allocation every point of which the cuts
+//! rejected, common on a split wide enough to put most channels on
+//! [`MIN_CHANNEL_NEVAL`] — need no special handling here. They enter `quoted`
+//! with nothing and `emp` with their residual, so a channel populated in a
+//! minority of its iterations is charged the scatter that leaves in its mean,
+//! which is of the size of its own term and enters the stopping sum in
+//! quadrature, weighted by how small the channel is.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -317,8 +326,9 @@ pub struct ConvergenceReport {
     pub target_rel: Option<f64>,
     /// `Δσ/σ` of the combined estimate as quoted.
     pub achieved_rel: f64,
-    /// `Δσ/σ` after the per-channel `√max(1, χ²/dof)` scale factor — the number
-    /// the stopping test compares against `target_rel`.
+    /// `Δσ/σ` after each channel's variance is widened by its consistency factor
+    /// `max(1, emp/quoted)` — the number the stopping test compares against
+    /// `target_rel`.
     pub scaled_rel: f64,
     /// Points each channel drew over the whole run, in channel order.
     pub channel_points: Vec<u64>,
@@ -457,46 +467,49 @@ impl ChannelHistory {
     }
 
     /// The iteration-consistency scale factor the stopping test widens this
-    /// channel's quoted error by: `max(1, χ²/dof)`.
-    ///
-    /// The χ² is formed over the iterations that measured a variance. An
-    /// iteration whose points all came back equal measured a variance of exactly
-    /// zero, and zero is not a small error bar — it is no error bar at all. A
-    /// residual divided by it is arbitrarily large, so on a split wide enough
-    /// that most channels get the [`MIN_CHANNEL_NEVAL`] floor and some of their
-    /// allocations lose every point to the cuts, the resulting χ²/dof reaches
-    /// ~1e250 and no target is satisfiable. Those iterations are dropped from
-    /// the consistency test and from nothing else: they still set the channel's
-    /// integral and its quoted error, and the report still prints the χ²/dof
-    /// they produce.
-    ///
-    /// Dropping them costs the test nothing it could measure. A channel
-    /// populated in a minority of its iterations already quotes a relative error
-    /// of order one — the empty iterations drag its mean down while contributing
-    /// no variance — and that error enters the stopping sum in quadrature, where
-    /// a channel too small to matter is weighted by how small it is. What the
-    /// scale factor exists to catch is a channel whose iterations disagree by
-    /// more than error bars they *did* quote, and every such iteration is still
-    /// in the sum.
-    ///
-    /// A channel with fewer than two informative iterations has no scatter to
-    /// measure and gets no scale factor. Where every iteration is informative
-    /// this is the χ²/dof of the whole channel, unchanged.
-    fn stop_scale(&self, rule: IterationCombination) -> f64 {
-        if self.kept.iter().all(|&(_, v, _)| v > 0.0) {
-            return self.combine(rule).chi2_per_dof.max(1.0);
-        }
-        let informative: Vec<(f64, f64, usize)> = self
-            .kept
-            .iter()
-            .copied()
-            .filter(|&(_, v, _)| v > 0.0)
-            .collect();
-        if informative.len() < 2 {
-            return 1.0;
-        }
-        Self::combine_kept(&informative, rule).chi2_per_dof.max(1.0)
+    /// channel's quoted variance by: `max(1, emp/quoted)` over its kept
+    /// iterations (see the module documentation for the two variances).
+    fn stop_scale(&self) -> f64 {
+        pooled_scale(&self.kept)
     }
+}
+
+/// `max(1, emp/quoted)` for the point-weighted mean of `kept`'s
+/// `(integral, variance, neval)` iterations.
+///
+/// `quoted = Σnᵢ²σᵢ²/W²` is the variance the mean claims, with every σᵢ² floored
+/// at [`f64::MIN_POSITIVE`] as [`ChannelHistory::combine_kept`] floors it, and
+/// `emp = Σnᵢ²(Iᵢ − Ī)²/W² · k/(k − 1)` the variance its `k` iterations scatter
+/// with. On iterations of equal size the two are the empirical and the quoted
+/// variance of the plain mean, and at `k = 2` the factor is
+/// `(I₁ − I₂)²/(σ₁² + σ₂²)`, the one-degree-of-freedom χ². Fewer than two
+/// iterations have no scatter to measure and get no factor.
+///
+/// The factor multiplies the quoted variance, so the widened variance is
+/// `max(quoted, emp)`: it measures the estimator the run reports, not each
+/// iteration against its own error bar. The weights are the point counts, which
+/// an allocation fixes before the iteration's points exist (see
+/// [`ChannelHistory::combine`]).
+fn pooled_scale(kept: &[(f64, f64, usize)]) -> f64 {
+    let k = kept.len();
+    if k < 2 {
+        return 1.0;
+    }
+    let w: f64 = kept.iter().map(|&(_, _, n)| n as f64).sum();
+    let mean: f64 = kept.iter().map(|&(i, _, n)| i * n as f64).sum::<f64>() / w;
+    let quoted: f64 = kept
+        .iter()
+        .map(|&(_, v, n)| v.max(f64::MIN_POSITIVE) * (n as f64) * (n as f64))
+        .sum::<f64>()
+        / (w * w);
+    let emp: f64 = kept
+        .iter()
+        .map(|&(i, _, n)| (n as f64) * (n as f64) * (i - mean).powi(2))
+        .sum::<f64>()
+        / (w * w)
+        * k as f64
+        / (k - 1) as f64;
+    (emp / quoted).max(1.0)
 }
 
 /// Points one rayon task evaluates before its results are reduced.
@@ -1181,22 +1194,25 @@ fn rel_of(r: &VegasResult) -> f64 {
     }
 }
 
-/// The relative uncertainty the stopping test reads: every channel's quoted error
-/// inflated by `√max(1, χ²/dofⱼ)` before the channels are summed in quadrature.
+/// The relative uncertainty the stopping test reads: every channel's quoted
+/// variance widened by its [`ChannelHistory::stop_scale`] before the channels are
+/// summed.
 ///
 /// The scale factor goes on per channel rather than on the total because that is
 /// where the inconsistency is: one channel whose iterations disagree should widen
-/// its own term, not the terms of channels that agree with themselves. It is
-/// [`ChannelHistory::stop_scale`] rather than the channel's reported χ²/dof, so
-/// that a channel with iterations that measured no variance at all still yields a
-/// number a control decision can be made on.
+/// its own term, not the terms of channels that agree with themselves.
+///
+/// The factor is the consistency check of an unweighted mean, which is the only
+/// combination a [`Budget::Target`] run accepts. Under
+/// [`IterationCombination::InverseVariance`] the number is still formed, for a
+/// report, and decides nothing.
 fn scaled_rel(channels: &[ChannelHistory], combination: IterationCombination) -> f64 {
     let mut integral = 0.0_f64;
     let mut variance = 0.0_f64;
     for c in channels {
         let r = c.combine(combination);
         integral += r.integral;
-        variance += r.std_dev * r.std_dev * c.stop_scale(combination);
+        variance += r.std_dev * r.std_dev * c.stop_scale();
     }
     if integral > 0.0 {
         variance.sqrt() / integral
@@ -1313,53 +1329,189 @@ mod tests {
         }
     }
 
-    /// Where every iteration measured a variance there is nothing to exclude, and
-    /// the factor the stopping test widens by is the channel's own χ²/dof.
-    #[test]
-    fn the_stop_scale_is_the_reported_chi2_when_every_iteration_measured_one() {
-        let rule = IterationCombination::Unweighted;
-        let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
-        let chi2 = h.combine(rule).chi2_per_dof;
-        assert!(
-            chi2 > 1.0,
-            "the case worth testing needs a widening χ²: {chi2}"
-        );
-        assert_eq!(h.stop_scale(rule), chi2);
+    /// The quoted variance of a channel's combined term, as the stopping sum
+    /// reads it before the consistency factor.
+    fn quoted_variance(h: &ChannelHistory) -> f64 {
+        h.combine(IterationCombination::Unweighted).std_dev.powi(2)
     }
 
-    /// An iteration whose points all came back equal measured no error bar, not a
-    /// vanishing one. Dividing a residual by it is what puts the reported χ²/dof
-    /// at ~1e250 on a wide split — a number the report is welcome to carry and a
-    /// control decision cannot be made on. The stopping test reads the iterations
-    /// that measured something.
+    /// On iterations of equal size and equal quoted error the pooled factor and
+    /// the per-iteration χ²/dof are one number, `Σ(Iᵢ − Ī)²/((k − 1)σ²)`, here
+    /// `7/3`; iterations that scatter less than they quote get no factor.
+    #[test]
+    fn the_stop_scale_is_the_scatter_of_the_mean_over_its_quoted_variance() {
+        let h = history(&[(1.0, 0.01), (1.2, 0.01), (0.9, 0.01)]);
+        let scale = h.stop_scale();
+        assert!((scale - 7.0 / 3.0).abs() < 1e-12, "{scale}");
+        let chi2 = h.combine(IterationCombination::Unweighted).chi2_per_dof;
+        assert!(
+            (scale / chi2 - 1.0).abs() < 1e-12,
+            "{scale} vs χ²/dof {chi2}"
+        );
+
+        let quiet = history(&[(1.0, 0.01), (1.01, 0.01), (0.99, 0.01)]);
+        assert_eq!(quiet.stop_scale(), 1.0);
+    }
+
+    /// One iteration has no scatter to measure; two give the one-degree χ²
+    /// `(I₁ − I₂)²/(σ₁² + σ₂²)` whatever their individual errors.
+    #[test]
+    fn one_and_two_iteration_histories() {
+        assert_eq!(history(&[(5.0, 1.0e-6)]).stop_scale(), 1.0);
+        assert_eq!(history(&[]).stop_scale(), 1.0);
+        let two = history(&[(1.0, 0.01), (1.5, 0.04)]);
+        let want = 0.25 / 0.05;
+        assert!(
+            (two.stop_scale() - want).abs() < 1e-12,
+            "{}",
+            two.stop_scale()
+        );
+    }
+
+    /// Iterations of different sizes are weighted by their point counts, in the
+    /// mean, in both variances and in nothing else.
+    #[test]
+    fn unequal_iterations_are_weighted_by_their_point_counts() {
+        let kept = vec![(1.0, 0.01, 100), (2.0, 0.02, 300)];
+        let h = ChannelHistory {
+            alpha: 1.0,
+            drawn: 0,
+            kept,
+            point_var_sum: 0.0,
+            point_var_n: 0,
+            accepted: 0,
+        };
+        let w = 400.0_f64;
+        let mean = (100.0 + 600.0) / w;
+        let emp = (100.0_f64.powi(2) * (1.0 - mean).powi(2)
+            + 300.0_f64.powi(2) * (2.0 - mean).powi(2))
+            / (w * w)
+            * 2.0;
+        let quoted = (100.0_f64.powi(2) * 0.01 + 300.0_f64.powi(2) * 0.02) / (w * w);
+        assert!((quoted_variance(&h) / quoted - 1.0).abs() < 1e-12);
+        assert!((h.stop_scale() / (emp / quoted) - 1.0).abs() < 1e-12);
+    }
+
+    /// An iteration whose points all came back equal measured no error bar, and
+    /// a residual divided by it is what puts the reported χ²/dof at ~1e250 on a
+    /// wide split — a number the report is welcome to carry and a control
+    /// decision cannot be made on. The pooled factor never divides by a single
+    /// iteration's variance: the widened variance is the scatter the empty
+    /// iterations leave in the channel's mean, which is of the size of the term.
     #[test]
     fn a_zero_variance_iteration_cannot_blow_up_the_stop_scale() {
-        let rule = IterationCombination::Unweighted;
         let empty = [(0.0, 0.0); 6];
         let fired = [(1.0e-9, 1.0e-21), (1.3e-9, 1.0e-21)];
         let mixed: Vec<(f64, f64)> = empty.iter().chain(&fired).copied().collect();
+        let h = history(&mixed);
 
-        let reported = history(&mixed).combine(rule).chi2_per_dof;
+        let reported = h.combine(IterationCombination::Unweighted).chi2_per_dof;
         assert!(
             reported > 1.0e200 && reported.is_finite(),
             "the pathology this guards against did not reproduce: χ²/dof {reported}"
         );
 
-        let scale = history(&mixed).stop_scale(rule);
-        assert_eq!(scale, history(&fired).combine(rule).chi2_per_dof);
-        assert!(scale.is_finite() && scale < 1.0e3, "stop scale {scale}");
+        let mean = 2.3e-9 / 8.0;
+        let emp = mixed.iter().map(|&(i, _)| (i - mean).powi(2)).sum::<f64>() / 64.0 * 8.0 / 7.0;
+        let widened = quoted_variance(&h) * h.stop_scale();
+        assert!((widened / emp - 1.0).abs() < 1e-9, "{widened} vs {emp}");
+        assert!(
+            widened.sqrt() < mean,
+            "the widened error {} exceeds the term {mean}",
+            widened.sqrt()
+        );
     }
 
-    /// A channel that fired in one iteration out of many has no scatter to
-    /// measure, and gets no scale factor. What it contributes to the stopping sum
-    /// is its quoted error, which for such a channel is already of the size of
-    /// its own term.
+    /// The per-iteration χ² factor this rule replaces, kept here as the
+    /// comparison the spike test below is read against: χ²/dof over the
+    /// iterations that measured a variance, each residual over that iteration's
+    /// own σᵢ².
+    fn chi2_scale(h: &ChannelHistory) -> f64 {
+        let informative: Vec<(f64, f64, usize)> = h
+            .kept
+            .iter()
+            .copied()
+            .filter(|&(_, v, _)| v > 0.0)
+            .collect();
+        if informative.len() < 2 {
+            return 1.0;
+        }
+        ChannelHistory::combine_kept(&informative, IterationCombination::Unweighted)
+            .chi2_per_dof
+            .max(1.0)
+    }
+
+    /// The relative error the stop reads, with `scale` as the per-channel factor.
+    fn widened_rel(channels: &[ChannelHistory], scale: impl Fn(&ChannelHistory) -> f64) -> f64 {
+        let (integral, variance) = channels.iter().fold((0.0, 0.0), |(i, v), c| {
+            let r = c.combine(IterationCombination::Unweighted);
+            (i + r.integral, v + r.std_dev * r.std_dev * scale(c))
+        });
+        variance.sqrt() / integral
+    }
+
+    /// A single huge point in a small channel. Channel 0 carries the cross
+    /// section and agrees with itself; channel 1 carries a thousandth of it, and
+    /// in its third iteration one point lands far out in the tail: the iteration
+    /// reads ten times the channel's integral and quotes an error of the same
+    /// size, as one point of weight `w` among `n` does (`I ≈ σ ≈ w/n`).
+    ///
+    /// Against its own σᵢ that iteration is consistent, and every quiet
+    /// iteration is ~1000/k of its own error bars from the mean the spike moved,
+    /// so the χ² factor grows the channel's variance as k⁻⁴·10⁶ while its quoted
+    /// variance falls as k⁻²: the χ²-scaled error never reaches the target in
+    /// forty iterations. The pooled factor charges the channel the scatter the
+    /// spike really adds to its mean, about its quoted error, and the run stops
+    /// within a few iterations of the earliest stop its minimum allows.
     #[test]
-    fn one_informative_iteration_is_no_scatter_measurement() {
-        let rule = IterationCombination::Unweighted;
-        let mut kept = vec![(0.0, 0.0); 7];
-        kept.push((1.0e-9, 1.0e-21));
-        assert_eq!(history(&kept).stop_scale(rule), 1.0);
+    fn a_single_spike_holds_the_chi2_stop_and_not_the_pooled_one() {
+        // A fixed list of standard-normal draws, so the quiet scatter is
+        // consistent with the quoted errors and the test has no RNG to drift.
+        const Z: [f64; 8] = [0.31, -1.12, 0.57, 1.46, -0.38, -0.84, 0.09, 0.73];
+        let target_rel = 2.0e-3;
+        let min_kept = 4;
+        let max_kept = 40;
+        let mut channels: Vec<ChannelHistory> = (0..2).map(|_| history(&[])).collect();
+        let (mut chi2_stop, mut pooled_stop) = (None, None);
+        for k in 0..max_kept {
+            let z = Z[k % Z.len()];
+            channels[0]
+                .kept
+                .push((1.0 + 3.0e-3 * z, 9.0e-6, MIN_CHANNEL_NEVAL));
+            let spike = if k == 2 {
+                (1.0e-3 + 1.0e-2, 1.0e-4)
+            } else {
+                (1.0e-3 * (1.0 + 1.0e-2 * Z[(k + 3) % Z.len()]), 1.0e-10)
+            };
+            channels[1].kept.push((spike.0, spike.1, MIN_CHANNEL_NEVAL));
+            if k + 1 < min_kept {
+                continue;
+            }
+            let chi2 = widened_rel(&channels, chi2_scale);
+            let pooled = widened_rel(&channels, ChannelHistory::stop_scale);
+            if chi2 <= target_rel && chi2_stop.is_none() {
+                chi2_stop = Some(k + 1);
+            }
+            if pooled <= target_rel && pooled_stop.is_none() {
+                pooled_stop = Some(k + 1);
+            }
+        }
+        let chi2_final = widened_rel(&channels, chi2_scale);
+        assert!(
+            chi2_stop.is_none(),
+            "the χ² rule stopped at {chi2_stop:?}: the spike did not hold it"
+        );
+        assert!(chi2_final > target_rel, "{chi2_final}");
+        let stop = pooled_stop.expect("the pooled rule never stopped");
+        assert!(stop <= 10, "the pooled rule stopped only at {stop}");
+        // The spike channel's factor stays of order one: its scatter is what it
+        // quotes, not the thousands the per-iteration χ² reads.
+        assert!(
+            channels[1].stop_scale() < 2.0 && chi2_scale(&channels[1]) > 100.0,
+            "pooled {} vs χ² {}",
+            channels[1].stop_scale(),
+            chi2_scale(&channels[1])
+        );
     }
 
     /// End to end on a split wide enough to produce the degenerate iterations by

@@ -45,6 +45,7 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
+use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
@@ -90,27 +91,29 @@ const SEED: &str = "20260731";
 const N_EXT: usize = 5;
 const N_IN: usize = 2;
 
-/// How far the sample's own cross section may sit from the integration's,
-/// relatively.
+/// How far the sample's own cross section may sit from the integration's, in
+/// units of the two errors combined.
 ///
-/// The bound is a measurement, not a `1/√N`: over five seeds at this budget the
-/// deviations are `{−0.36, −0.14, −0.62, +0.47, +0.29}%`, and the spread is set by
-/// the events above their channel's `w_max`, not by the event count. The same sweep
-/// at `neval = 100 000` gives `{−0.19, +2.29, +1.67, +1.37, +1.11}%` — four of five
-/// on the *same side*, because the sample's estimator is a single pass over the
-/// frozen grids and so does not inherit VEGAS's `1/σ²` combination of iterations,
-/// which at that budget still has the banked σ about 1% low. This comparison is
-/// therefore also a read on the integration's convergence, and the bound sits above
-/// the converged spread and below what an unconverged budget produces.
+/// The buffered writer normalises the file to the integration, so `XSECUP` and
+/// the mean `XWGTUP` equal the integration's σ by construction and comparing them
+/// with it would measure nothing. What still measures the accept/reject pass is
+/// the sample's own estimate before that normalisation, `σ̂ = W·Σw/T`, which the
+/// writer records in the header with its statistical error
+/// (`sample_estimate_error`). The pull of `σ̂` against the integration, over
+/// that error and the integration's in quadrature, is bounded here.
 ///
-/// Re-measured by `probe_sample_sigma_seed_headroom`, which walks the whole
-/// integrate-then-generate path at five seeds rather than the one the gate
-/// spends: `{+0.355, −0.428, +0.009, −0.264, −0.396}%`, worst `4.28e-3`, so the
-/// bound clears the five-seed spread by `3.5x` and the gate's own seed by
-/// `4.2x`. The spread is the same size as the sweep this bound was set from and
-/// its signs are not — a single-seed cell is a draw, and which side of the
-/// integration a given seed's sample lands is not a property of the seed.
-const SIGMA_MAX_REL: f64 = 0.015;
+/// The bound is in the estimator's own units because its scale is the sample's
+/// binomial error, not a fixed fraction: at 20 000 events and a few percent
+/// efficiency that error is ~0.75 %, and the five-seed spread of the relative
+/// distance measured on this process is 0.84 % (`{−1.34, +0.27, +0.18, +0.83,
+/// −0.65}%`), the same size. A relative bound at 1.5 % sat 1.1× above the
+/// gate's own seed. The pull bound passes any sample within about 2.6 % of its
+/// integration at this event count and fails one that is biased by more; a
+/// smaller bias is below what one 20 000-event sample can resolve.
+///
+/// Re-measured by `probe_sample_sigma_seed_headroom` on the five seeds:
+/// SAMPLE_PULL_MEASUREMENT.
+const SAMPLE_PULL_MAX: f64 = 3.5;
 
 fn output_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
@@ -219,6 +222,12 @@ impl Run {
     }
 
     fn generate_at(&self, nevents: usize, name: &str, seed: &str) -> LheFile {
+        self.generate_text_at(nevents, name, seed).0
+    }
+
+    /// The file as parsed, and its text, whose header carries what the parser
+    /// does not keep.
+    fn generate_text_at(&self, nevents: usize, name: &str, seed: &str) -> (LheFile, String) {
         let out = self
             .generate_cmd_at(name, seed)
             .arg("--nevents")
@@ -232,7 +241,8 @@ impl Run {
         );
         eprint!("{}", String::from_utf8_lossy(&out.stdout));
         let text = std::fs::read_to_string(self.dir.join(name)).expect("read the event file");
-        LheFile::parse(&text).expect("our own file parses")
+        let file = LheFile::parse(&text).expect("our own file parses");
+        (file, text)
     }
 }
 
@@ -355,14 +365,13 @@ fn banked_colour_patterns() -> &'static BTreeSet<ColourPattern> {
 /// contains the reading the gate takes.
 const HEADROOM_SEEDS: [&str; 5] = [SEED, "20260732", "20260733", "20260734", "20260735"];
 
-/// [`SIGMA_MAX_REL`]'s headroom over five seeds rather than the gate's one.
+/// [`SAMPLE_PULL_MAX`]'s headroom over five seeds rather than the gate's one.
 ///
-/// The gate integrates and generates at a single seed and asserts one relative
-/// distance, so what it bounds is one draw from a distribution it never sees.
-/// This walks the same integrate-then-generate path at five seeds and prints the
-/// worst of them against the bound, because a single-seed statistic sitting close
-/// to its threshold is the failure mode a sampling-stream change surfaces one
-/// cell at a time.
+/// The gate integrates and generates at a single seed and asserts one pull, so
+/// what it bounds is one draw from a distribution it never sees. This walks the
+/// same integrate-then-generate path at five seeds and prints each seed's pull,
+/// their χ²/dof — which says whether the sample estimate's quoted error is the
+/// size of its spread — and the worst of them against the bound.
 ///
 /// Each seed drives its own integration as well as its own generation: the
 /// quantity under test is the sample's cross section against *its own*
@@ -378,30 +387,31 @@ fn probe_sample_sigma_seed_headroom() {
             RUN,
         );
     }
-    let mut rels = Vec::new();
+    let mut pulls = Vec::new();
     for seed in HEADROOM_SEEDS {
         let run = integrate_at(seed);
-        let file = run.generate_at(NEVENTS, "events.lhe", seed);
+        let (file, text) = run.generate_text_at(NEVENTS, "events.lhe", seed);
         assert_eq!(file.events.len(), NEVENTS);
-        let mean = file.events.iter().map(|e| e.weight).sum::<f64>() / NEVENTS as f64;
-        let rel = mean / run.artifact.sigma_pb - 1.0;
+        let (sample, sample_err) = sample_estimate_in(&text).expect("the header records σ̂");
+        let pull = (sample - run.artifact.sigma_pb) / sample_err.hypot(run.artifact.sigma_err_pb);
         eprintln!(
-            "  seed {seed}: sigma(sample) = {mean:.4} pb vs integration {:.4} ± {:.4} pb \
-             -> rel {:+.3}%",
+            "  seed {seed}: sigma(sample) = {sample:.4} ± {sample_err:.4} pb vs integration \
+             {:.4} ± {:.4} pb -> rel {:+.3}%, pull {pull:+.2}",
             run.artifact.sigma_pb,
             run.artifact.sigma_err_pb,
-            100.0 * rel
+            100.0 * (sample / run.artifact.sigma_pb - 1.0)
         );
-        rels.push(rel);
+        pulls.push(pull);
     }
-    let worst = rels.iter().fold(0.0f64, |a, r| a.max(r.abs()));
+    let worst = pulls.iter().fold(0.0f64, |a, p| a.max(p.abs()));
+    let chi2 = pulls.iter().map(|p| p * p).sum::<f64>() / pulls.len() as f64;
     eprintln!(
-        "\nHEADROOM cli_generate_proton SIGMA_MAX_REL {SIGMA_MAX_REL} vs worst |rel| over \
-         {} seeds {worst:.3e} -> {:.1}x | 1-seed |rel| {:.3e} -> {:.1}x",
-        rels.len(),
-        SIGMA_MAX_REL / worst,
-        rels[0].abs(),
-        SIGMA_MAX_REL / rels[0].abs(),
+        "\nHEADROOM cli_generate_proton SAMPLE_PULL_MAX {SAMPLE_PULL_MAX} vs worst |pull| over \
+         {} seeds {worst:.2} -> {:.1}x | 1-seed |pull| {:.2} -> {:.1}x | Σpull²/n {chi2:.2}",
+        pulls.len(),
+        SAMPLE_PULL_MAX / worst,
+        pulls[0].abs(),
+        SAMPLE_PULL_MAX / pulls[0].abs(),
     );
 }
 
@@ -429,7 +439,7 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
         );
     }
     let run = integrated();
-    let file = run.generate(NEVENTS, "events.lhe");
+    let (file, text) = run.generate_text_at(NEVENTS, "events.lhe", SEED);
     assert_eq!(file.events.len(), NEVENTS);
 
     // The `<init>` block is the hadronic one: proton beams at the run card's own
@@ -556,22 +566,27 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
 
     let mean = weight_sum / NEVENTS as f64;
     let variance = weight_sq / NEVENTS as f64 - mean * mean;
-    let sample_error = (variance / NEVENTS as f64).sqrt();
+    let event_spread = (variance / NEVENTS as f64).sqrt();
     let declared = file.init.processes[0].xsec_pb;
+    let declared_err = file.init.processes[0].xerr_pb;
     let integrated = run.artifact.sigma_pb;
-    let rel = mean / integrated - 1.0;
+    let integrated_err = run.artifact.sigma_err_pb;
+    let (sample, sample_err) =
+        sample_estimate_in(&text).expect("the header records the sample's own estimate");
+    let pull = (sample - integrated) / sample_err.hypot(integrated_err);
 
     eprintln!(
         "-- {RUN} -- {NEVENTS} events, {} distinct flavour assignments over {} initial-state \
          arrangements\n  \
-         sigma(sample) = {mean:.4} ± {sample_error:.4} pb vs integration {integrated:.4} ± \
-         {:.4} pb ({:+.3}%)\n  \
+         sigma(sample, before normalisation) = {sample:.4} ± {sample_err:.4} pb vs integration \
+         {integrated:.4} ± {integrated_err:.4} pb ({:+.3}%, pull {pull:+.2})\n  \
+         file: XSECUP {declared:.4} ± {declared_err:.4} pb, mean XWGTUP {mean:.4} \
+         (spread of the written weights {event_spread:.4})\n  \
          momentum balance <= {worst_balance:.2e} of the incoming energy, |p^2 - m^2| <= \
          {worst_mass:.2e} of s-hat, AQCDUP within {worst_alpha_s:.2e} of the grid",
         seen_flavors.len(),
         seen_initial.len(),
-        run.artifact.sigma_err_pb,
-        100.0 * rel,
+        100.0 * (sample / integrated - 1.0),
     );
 
     assert!(worst_balance < 1e-9, "momenta do not balance");
@@ -580,16 +595,23 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
         worst_alpha_s < ALPHA_S_TOLERANCE,
         "AQCDUP is not the PDF grid's coupling"
     );
-    // `IDWTUP = -4` says the cross section is the mean of the event weights, and the
-    // buffered writer declares the sample's own.
+    // `IDWTUP = -4` says the cross section is the mean of the event weights, and
+    // the buffered writer pins that to the integration's, error included.
     assert!(
         (mean / declared - 1.0).abs() < 1e-6,
         "mean XWGTUP {mean:.6e} vs declared XSECUP {declared:.6e}"
     );
     assert!(
-        rel.abs() < SIGMA_MAX_REL,
-        "the sample's cross section is {:.3}% from the integration's",
-        100.0 * rel
+        (declared / integrated - 1.0).abs() < 1e-6
+            && (declared_err / integrated_err - 1.0).abs() < 1e-6,
+        "XSECUP {declared:.6e} ± {declared_err:.6e} is not the integration's \
+         {integrated:.6e} ± {integrated_err:.6e}"
+    );
+    // The accept/reject pass itself, measured before the normalisation hid it.
+    assert!(
+        pull.abs() < SAMPLE_PULL_MAX,
+        "the sample's own cross section is {:+.3}% ({pull:+.2} σ) from the integration's",
+        100.0 * (sample / integrated - 1.0)
     );
     // 24 subprocesses, and the mirrored ordering of each initial state whose two
     // partons differ, is what the decomposition sums; a sample that reached only
@@ -812,6 +834,10 @@ fn dynamical_card() -> String {
 /// * `<init>` declares both process numbers, every event names one of them as
 ///   `IDPRUP` and has that process's leg count, and the sample splits between
 ///   them as the integration's per-multiplicity cross sections do;
+/// * each process number declares its multiplicity's integrated σ and error,
+///   its written weights sum to that σ over the file's event count, and the
+///   sample's own estimate before that normalisation agrees with the
+///   integration;
 /// * the same artifact labelled as a version-9 file is refused by its version.
 #[test]
 fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
@@ -902,18 +928,63 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         "generate failed:\n{}",
         String::from_utf8_lossy(&generate.stderr)
     );
-    let file = LheFile::parse(&std::fs::read_to_string(&lhe).unwrap()).expect("our file parses");
+    let text = std::fs::read_to_string(&lhe).unwrap();
+    let file = LheFile::parse(&text).expect("our file parses");
     let ids: Vec<i32> = file.init.processes.iter().map(|p| p.id).collect();
     assert_eq!(ids, [0, 1]);
-    // The declared total is the sample's own cross section, which scatters about
-    // the integration's by the events above their channel's maximum.
-    let declared: f64 = file.init.processes.iter().map(|p| p.xsec_pb).sum();
+    assert_eq!(file.events.len(), nevents);
+    // Each `@N` is one multiplicity, normalised to its own integration: its
+    // `<init>` entry declares that part's integrated σ and error, and its events'
+    // written weights sum to it over the file's event count. The sample's own
+    // estimate before the normalisation is what still measures the pass.
+    let mut error = [0.0f64; 2];
+    for c in &artifact.channels {
+        let (ChannelKey::MultiplicityChannel { final_state, .. }
+        | ChannelKey::MergedChannel { final_state, .. }) = c.key
+        else {
+            unreachable!("checked above");
+        };
+        error[final_state - 2] += c.sigma_err_pb * c.sigma_err_pb;
+    }
+    for (k, entry) in file.init.processes.iter().enumerate() {
+        let summed: f64 = file
+            .events
+            .iter()
+            .filter(|e| e.process_id == entry.id)
+            .map(|e| e.weight)
+            .sum::<f64>()
+            / nevents as f64;
+        eprintln!(
+            "@{k}: XSECUP {:.6} ± {:.6} pb, written weights {summed:.6} pb over N, \
+             integration {:.6} ± {:.6} pb",
+            entry.xsec_pb,
+            entry.xerr_pb,
+            sigma[k],
+            error[k].sqrt()
+        );
+        assert!(
+            (entry.xsec_pb / sigma[k] - 1.0).abs() < 1e-6
+                && (entry.xerr_pb / error[k].sqrt() - 1.0).abs() < 1e-6,
+            "@{k} declares {} ± {} pb against its integration's {} ± {}",
+            entry.xsec_pb,
+            entry.xerr_pb,
+            sigma[k],
+            error[k].sqrt()
+        );
+        assert!(
+            (summed / sigma[k] - 1.0).abs() < 1e-6,
+            "@{k}'s written weights sum to {summed} pb over N, its integration is {}",
+            sigma[k]
+        );
+    }
+    let (sample, sample_err) = sample_estimate_in(&text).expect("the header records σ̂");
+    let pull = (sample - artifact.sigma_pb) / sample_err.hypot(artifact.sigma_err_pb);
     eprintln!(
-        "<init> declares {declared} pb against the integration's {} pb",
+        "sample estimate before normalisation {sample:.4} ± {sample_err:.4} pb against the \
+         integration's {:.4} pb (pull {pull:+.2})",
         artifact.sigma_pb
     );
-    assert!((declared / artifact.sigma_pb - 1.0).abs() < SIGMA_MAX_REL * 2.0);
-    assert_eq!(file.events.len(), nevents);
+    assert!(pull.abs() < SAMPLE_PULL_MAX, "pull {pull:+.2}");
     let mut count = [0usize; 2];
     for event in &file.events {
         let k = usize::try_from(event.process_id).expect("a declared process");
