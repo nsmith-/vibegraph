@@ -41,7 +41,7 @@ use crate::progress;
 
 use super::build::WeightNormalisation;
 use super::record::{LheEvent, LheInit, LheProcess, WeightStrategy};
-use super::write::LheWriter;
+use super::write::{initrwgt_block, rwgt_block, LheWriter};
 
 /// The RNG stream the stochastic-rounding draw runs on, so a strategy's coin
 /// flips never share a stream with the event generation they are applied to.
@@ -54,10 +54,15 @@ const ROUNDING_STREAM: u64 = 0x0052_4E44;
 /// The record's own `XWGTUP` is not yet meaningful. The file's weight convention
 /// is the strategy's to impose, and under `IDWTUP = -4` it is not even known until
 /// the whole sample has been seen.
+///
+/// `reweights` carries the event's weight under each of the plan's reweighting
+/// hypotheses as a ratio to its own ([`EmitPlan::reweights`]); it is empty when
+/// the plan declares none.
 #[derive(Clone, Debug)]
 pub struct WeightedEvent {
     pub record: LheEvent,
     pub weight: f64,
+    pub reweights: Vec<f64>,
 }
 
 /// A deterministic, replayable sequence of accepted events.
@@ -111,6 +116,10 @@ pub struct EmitPlan {
     pub trailer: Vec<String>,
     /// Free-form provenance for the `<header>` block.
     pub header: Option<String>,
+    /// The reweighting hypotheses every event carries a weight for, as
+    /// `(id, description)`: declared in `<initrwgt>`, and written per event as a
+    /// `<rwgt>` block in `XWGTUP`'s own units.
+    pub reweights: Vec<(String, String)>,
 }
 
 /// What an emission actually produced.
@@ -295,6 +304,40 @@ fn add_share(
     Ok(())
 }
 
+/// Open the file: the plan's header, its `<initrwgt>` block if it declares
+/// reweighting hypotheses, and `init`.
+fn begin<'w>(
+    sink: &'w mut dyn Write,
+    init: &LheInit,
+    plan: &EmitPlan,
+) -> io::Result<LheWriter<&'w mut dyn Write>> {
+    let blocks = if plan.reweights.is_empty() {
+        Vec::new()
+    } else {
+        initrwgt_block(&plan.reweights)
+    };
+    LheWriter::begin_with(sink, init, plan.header.as_deref(), &blocks)
+}
+
+/// `record` with its `XWGTUP` set to `xwgtup` and, when the plan declares
+/// reweighting hypotheses, the `<rwgt>` block carrying the event's weight under
+/// each of them.
+fn finished_record(event: &WeightedEvent, xwgtup: f64, plan: &EmitPlan) -> LheEvent {
+    let mut record = event.record.clone();
+    record.weight = xwgtup;
+    if !plan.reweights.is_empty() {
+        assert_eq!(
+            event.reweights.len(),
+            plan.reweights.len(),
+            "an event carries one ratio per declared reweighting hypothesis"
+        );
+        let ids: Vec<String> = plan.reweights.iter().map(|(id, _)| id.clone()).collect();
+        let weights: Vec<f64> = event.reweights.iter().map(|r| r * xwgtup).collect();
+        record.trailer.extend(rwgt_block(&ids, &weights));
+    }
+    record
+}
+
 /// Take `n` accepted events from the source, or report how far it got.
 fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>, EmitError> {
     let _span = tracing::info_span!("unweight").entered();
@@ -372,11 +415,10 @@ impl UnweightStrategy for Buffer {
             events.len(),
             |w| normalisation.xwgtup(w),
         );
-        let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
+        let mut writer = begin(sink, &init, plan)?;
         let mut weight_sum = 0.0;
         for event in &events {
-            let mut record = event.record.clone();
-            record.weight = normalisation.xwgtup(event.weight);
+            let record = finished_record(event, normalisation.xwgtup(event.weight), plan);
             weight_sum += record.weight;
             writer.write_event(&record)?;
         }
@@ -513,7 +555,7 @@ impl UnweightStrategy for StochasticRounding {
             counted,
             |_| 1.0,
         );
-        let mut writer = LheWriter::begin(&mut *sink, &init, plan.header.as_deref())?;
+        let mut writer = begin(sink, &init, plan)?;
 
         let mut rng = ChaCha8Rng::seed_from_u64(self.seed);
         rng.set_stream(ROUNDING_STREAM);
@@ -537,8 +579,7 @@ impl UnweightStrategy for StochasticRounding {
             // budget: truncating an event's copies mid-way would bias exactly the
             // overweight tail this strategy exists to represent.
             let copies = stochastic_multiplicity(event.weight, &mut rng);
-            let mut record = event.record.clone();
-            record.weight = 1.0;
+            let record = finished_record(&event, 1.0, plan);
             for _ in 0..copies {
                 writer.write_event(&record)?;
             }
@@ -626,6 +667,7 @@ mod tests {
             let event = WeightedEvent {
                 record: record(self.next),
                 weight,
+                reweights: Vec::new(),
             };
             self.next += 1;
             Some(event)
@@ -650,6 +692,7 @@ mod tests {
             process_ids: vec![1],
             trailer: Vec::new(),
             header: None,
+            reweights: Vec::new(),
         }
     }
 
@@ -792,6 +835,66 @@ mod tests {
         }
     }
 
+    /// Each event's `<rwgt>` block carries its ratios times the `XWGTUP` the
+    /// strategy wrote, so a reweighted cross section is read off a file exactly as
+    /// the nominal one is. Checked on the parsed bytes, under both conventions.
+    #[test]
+    fn reweights_are_written_in_the_files_weight_units() {
+        struct Reweighted(FixedWeights);
+        impl EventSource for Reweighted {
+            fn next_event(&mut self) -> Option<WeightedEvent> {
+                let k = self.0.next;
+                let mut event = self.0.next_event()?;
+                event.reweights = vec![0.5, 2.0 + k as f64];
+                Some(event)
+            }
+            fn restart(&mut self) {
+                self.0.restart();
+            }
+            fn sigma_pb(&self) -> f64 {
+                self.0.sigma_pb()
+            }
+        }
+        let weights = vec![1.0, 2.5, 1.0];
+        let mut plan = plan(weights.len(), 6.0);
+        plan.reweights = vec![
+            ("half".to_string(), "set a 1".to_string()),
+            ("rising".to_string(), "set a 2".to_string()),
+        ];
+        for strategy in [
+            Box::new(Buffer) as Box<dyn UnweightStrategy>,
+            Box::new(StochasticRounding::new(3)),
+        ] {
+            let mut source = Reweighted(FixedWeights::new(weights.clone(), 6.0));
+            let (text, _) = emit_to_string(strategy.as_ref(), &mut source, &plan);
+            assert!(
+                text.contains("<weight id='rising'> set a 2 </weight>"),
+                "{text}"
+            );
+            let file = LheFile::parse(&text).unwrap();
+            assert!(!file.events.is_empty());
+            for event in &file.events {
+                let wgt: Vec<f64> = event
+                    .trailer
+                    .iter()
+                    .filter_map(|l| l.strip_prefix("<wgt id='"))
+                    .map(|l| {
+                        let value = l.split("> ").nth(1).unwrap();
+                        value.trim_end_matches(" </wgt>").parse().unwrap()
+                    })
+                    .collect();
+                assert_eq!(wgt.len(), 2, "{:?}", event.trailer);
+                let rel = |a: f64, b: f64| ((a - b) / b).abs() < 1e-7;
+                assert!(
+                    rel(wgt[0], 0.5 * event.weight),
+                    "{wgt:?} vs {}",
+                    event.weight
+                );
+                assert!(wgt[1] >= 2.0 * event.weight * (1.0 - 1e-7));
+            }
+        }
+    }
+
     /// A source that cannot fill the file says so rather than writing a short one.
     #[test]
     fn a_short_source_is_an_error_not_a_short_file() {
@@ -805,6 +908,7 @@ mod tests {
                 Some(WeightedEvent {
                     record: record(0),
                     weight: 1.0,
+                    reweights: Vec::new(),
                 })
             }
             fn restart(&mut self) {}

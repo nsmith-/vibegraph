@@ -506,8 +506,10 @@ above); the entries here are the eventual features.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
-  2026-09-25). They need complex amplitudes grouped by coupling order, which is
-  also what reweighting in a coupling would use. That is a sizable `helas/eval`
+  2026-09-25). They need complex amplitudes grouped by coupling order. (Reweighting
+  reads per-monomial amplitude classes off node evaluations — see the
+  `reweight_card.dat` entry — which costs one evaluation per class rather than
+  the one graded pass this would want.) That is a sizable `helas/eval`
   refactor, deferred until the open evaluator performance PRs land. G1 parses
   them and `check_supported` refuses them.
 - **Polarized intermediate resonances** (`p p > w+{0} w-, w+ > e+ ve`, and the
@@ -568,14 +570,30 @@ above); the entries here are the eventual features.
   the truncated `w_max` rule is an improvement rather than a concession. Gate:
   flag on, every banked byte and σ gate unchanged; flag off, a documented
   per-site delta table, and no validation gate runs in the off mode.
-- **`reweight_card.dat`** (feature) — re-evaluate a stored event sample under
-  alternative coupling values, MadGraph's reweighting workflow. The monomial
-  exponent analysis in `helas::eval::rescale` is written for a generic model
-  parameter `G` precisely so that moving the pools to a new value is one
-  multiply per entry per event; a reweighting pass is that analysis over the
-  card's requested parameters plus the per-event |M|² ratio written back as an
-  extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
-  as monomials fall back to the exact re-evaluation path automatically.
+- **`reweight_card.dat`** — ✅ landed at generation time (`generate
+  --reweight-card`, `vibegraph::reweight`; guide chapter 11 "Reweighting"):
+  per-event `|M|²_new/|M|²_old` of the event's own concrete subprocess, written
+  as LHEF `<rwgt>` in `XWGTUP` units with an `<initrwgt>` header. The polynomial
+  path collects the amplitude by coupling monomial (monomials proven from the UFO
+  expressions and the diagrams; class amplitudes read off `K` node evaluations
+  chosen by pivoted QR; each hypothesis a `K × K` quadratic form in the per-event
+  node Gram matrix). `--reweight-couplings a,b,…` serves a whole card jointly in
+  the named couplings (`K = 1 + n` for one insertion per diagram) and refuses
+  anything else; without it, single-parameter hypotheses are grouped where
+  cheaper. Reweighting amplitudes are pruned at a generic parameter point. Gated
+  by unit tests only (every path against a direct unpruned bind; mutation-checked:
+  a union in place of the per-diagram monomial product, a wrong Gram
+  contraction and pruning at the card each fail a test). Open follow-ups:
+  (a) **a MadGraph oracle** — bank a `reweight_card.dat` run and compare per-event
+  `<rwgt>` weights event by event, not only the reweighted σ; (b) **one
+  evaluation per event** instead of `K` — a graded evaluator carrying each
+  current as its monomial components, so subtrees without the couplings are
+  computed once (the `helas/eval` refactor squared-order constraints also need);
+  (c) **reweighting a stored `.lhe`**, which needs the event's subprocess
+  recovered from its record; (d) `$` (forbidden s-channel) pattern amplitudes
+  and `aS` reweighting, both refused; (e) no extended-validation gate exercises
+  `--reweight-card` end to end on the hadronic path (member-evaluator indexing
+  and the mirrored ordering are covered by construction only).
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the
