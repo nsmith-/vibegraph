@@ -111,8 +111,10 @@ const N_IN: usize = 2;
 /// integration at this event count and fails one that is biased by more; a
 /// smaller bias is below what one 20 000-event sample can resolve.
 ///
-/// Re-measured by `probe_sample_sigma_seed_headroom` on the five seeds:
-/// SAMPLE_PULL_MEASUREMENT.
+/// Measured by `probe_sample_sigma_seed_headroom` on the five seeds: pulls
+/// `{−1.89, +0.38, +0.25, +1.13, −0.89}` on quoted errors of 0.70–0.72 %,
+/// `Σpull²/n` 1.17, so the quoted error is the size of the spread and the bound
+/// clears the worst seed, the gate's own, by `1.9x`.
 const SAMPLE_PULL_MAX: f64 = 3.5;
 
 fn output_dir() -> PathBuf {

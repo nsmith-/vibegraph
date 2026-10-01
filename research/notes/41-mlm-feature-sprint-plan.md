@@ -2283,6 +2283,265 @@ byte-identical.
   above) in the unweighting work.
 - MadEvent's symmetric-configuration sharing (`SYMCONF`) has no counterpart.
 
+#### P12 Landed: both F-A policies, 2026-10-01
+
+F-A's two proposals, adopted by the user on 2026-10-01, are implemented: the
+buffered writer normalises each `@N` to its integration, and the target stop
+reads a pooled consistency factor. Fixed-budget integrations are unchanged
+byte for byte. Event files change in their weights, `<init>` and header only.
+
+**Policy 1: each part normalised to its integration** (`lhef/emit.rs`,
+`Buffer`).
+- The events of each part are scaled by one factor so that
+  `Σ_{i∈k} XWGTUP / N = σₖ`. A part is a final-state multiplicity of a sum, or
+  the whole run when there is one. `IDWTUP = −4` and the mean-weight
+  convention are unchanged: "the part's weights sum to σₖ" is read over the
+  file's `N` events. That is what MadGraph's `event_norm = average` and
+  main164 expect at `IDWTUP = −4`, and what M5's merged σ sums.
+- **Overweights keep their weight**, rescaled with their part, and nothing is
+  truncated. The one bias is the ratio estimator's, `O(1/nₖ)`. This is stated
+  on `Buffer`.
+- **`<init>`.** Process `p` declares `XSECUP_p = Σₖ σₖ f_{pk}`, where `f_{pk}`
+  is its share of part `k`'s generator weight, and
+  `XERRUP_p = √(Σₖ (f_{pk}Δσₖ)² + σₖ² f_{pk}(1 − f_{pk})/nₖ)`. Where an `@N`
+  is one multiplicity, these are exactly the part's integrated σ and error.
+  `XMAXUP` is the largest weight written.
+- **Header.** `sample estimate before normalisation <σ̂> +- <err>` is the
+  sample's own `W·Σw/T`, with the error `σ̂·√(Σw²)/Σw`
+  (`sample_estimate_error`). The error drops the `1/T` term, so it is high by
+  `1/√(1 − ε)`, 1–2 % at these efficiencies. A sum adds one line per part with
+  its pre-normalisation estimate and the σ it was normalised to.
+  `sample_estimate_in` reads the line back.
+- **Plumbing.** `WeightedEvent::part` and `EmitPlan::parts`. `generate` fills
+  them from the artifact's per-channel σ over `MultiplicitySum::offsets`
+  (`generate.rs`, `part_sigmas`). A single-multiplicity run passes no parts,
+  and the whole file is normalised to `artifact.sigma_pb`.
+- **`StochasticRounding` is unchanged.** Unit weights cannot carry a per-part
+  scale, and its `XSECUP` was already the integration's. Its process split is
+  still the sample's.
+
+**The replacement sample check** (`cli_generate_proton`). Once the file is
+normalised, `XSECUP` equals the integration by construction. The gate now
+asserts three things:
+- `mean XWGTUP = XSECUP` and `XSECUP ± XERRUP` equals the integration's, both
+  to 1e-6. This is a structural check of the writer.
+- The header's pre-normalisation `σ̂` against the integration, as a pull over
+  the two errors in quadrature, below `SAMPLE_PULL_MAX = 3.5`. This is the
+  part with teeth. It measures the accept/reject pass, which the normalisation
+  hides from the file's σ. Its scale is the sample's binomial error (0.70 % at
+  20000 events), not a fixed fraction. The 1.5 % relative bound sat 1.1× above
+  the gate's own seed at −1.34 %. That seed now reads −1.342 %, pull −1.89.
+  The five-seed probe (`probe_sample_sigma_seed_headroom`) reads pulls −1.89, +0.38, +0.25, +1.13 and −0.89, from the same relative distances F-B recorded (−1.34, +0.27, +0.18, +0.83, −0.65 %). `Σpull²/n` is 1.17 and the bound's headroom is 1.9×.
+- The mixed-multiplicity case asserts per `@N`: `XSECUP` and `XERRUP` equal
+  that multiplicity's integrated σ and error, and its written weights sum to
+  it over `N` (@0 668.345100 against 668.345063 pb, @1 212.138900 against
+  212.138873). It also asserts the pre-normalisation pull (−0.64). It keeps
+  its count-share check of `@0` against the integration.
+
+The fixed-beam `cli_generate` gate reads `σ̂` from the header in its existing
+`4/√N` band. Its strategy-total comparison is now exact by construction, and
+the code says so: the strategies are compared on shape.
+
+**Policy 2: pooled consistency factor** (`budget.rs`, `pooled_scale`).
+- The stop widens each channel's quoted variance by `max(1, emp/quoted)`:
+  - `quoted = Σnᵢ²σᵢ²/W²`;
+  - `emp = Σnᵢ²(Iᵢ − Ī)²/W² · k/(k − 1)` over the `k` kept iterations;
+  - the widened variance is therefore `max(quoted, emp)`.
+- Zero-variance iterations need no filter: the pooled factor never divides by
+  one iteration's variance.
+- One iteration gets factor 1. Two get `(I₁ − I₂)²/(σ₁² + σ₂²)`. On equal
+  iterations with equal errors the factor equals the old χ²/dof (pinned by
+  test). A target stop needs at least two kept iterations (`min_iters ≥
+  warm-up + 2`), so a single iteration only ever reaches the final report.
+- The factor is the check of an unweighted mean, the only combination a
+  target run accepts. Under inverse-variance runs it is still formed for the
+  report and decides nothing.
+- **What changes:** only the stop decision, `ConvergenceReport::scaled_rel`,
+  the progress projection, and the log line, now labelled
+  "consistency-scaled". A fixed budget draws the same points and banks the
+  same bits (below). A target run that stops at the same iteration as before
+  gives an identical σ and artifact.
+
+**Replay.** The Rust `scaled_rel` was fed F-A's per-channel histories from
+the seed-20260928 target run (364 channels, `FA-BLK` lines of
+`mlm-fa/tgt28-17iter.log`) by a temporary test that was not committed. It
+reproduces `stop_replay.py`'s pooled column to every printed digit:
+4.298e-3, 3.020e-3, 2.655e-3, 2.142e-3, **1.863e-3** at iteration 8,
+1.879e-3, … 1.470e-3 at 17. The first iteration at or below 2e-3 is 8. The
+quoted error there is 1.626e-3: 1064.89 ± 1.73 pb.
+
+**Hermetic tests** (`cargo test --workspace`: 33 binaries, 1297 passed, 0
+failed, 15 ignored).
+- `each_part_is_normalised_to_its_integration`: two parts, a source σ̂ 17 %
+  off. Each `@N`'s written weights sum over `N` to its σₖ (1e-6), `XSECUP` and
+  `XERRUP` are exactly σₖ and Δσₖ, every weight keeps its ratio to its part's
+  unit-weight events (overweights 3.5 and 2.0), and the header's σ̂ reads back.
+- `processes_that_split_parts_declare_their_shares`,
+  `an_undeclared_part_is_refused`.
+- `the_sample_estimate_error_matches_its_own_spread`: 400 accept/reject
+  replicas with a sixth of the events at weight 4. The spread is the quoted
+  error × `√(1 − ε)` within 8 %. `σ̂/√N` would be 15 % low.
+- `a_single_spike_holds_the_chi2_stop_and_not_the_pooled_one`: a synthetic
+  two-channel history, the small channel with one point at ten times its
+  integral in iteration 3. The old χ² rule (kept in the test as the
+  comparison) never reaches 2e-3 in 40 iterations, and its factor on the
+  spike channel exceeds 100. The pooled rule stops within 10, with the spike
+  channel's factor below 2.
+- `the_stop_scale_is_the_scatter_of_the_mean_over_its_quoted_variance`
+  (7/3, equal to χ²/dof), `one_and_two_iteration_histories`,
+  `unequal_iterations_are_weighted_by_their_point_counts`, and the reworked
+  `a_zero_variance_iteration_cannot_blow_up_the_stop_scale`.
+  `a_wide_split_with_empty_iterations_still_converges` passes unchanged.
+
+**Byte identity: M1's six cases.** `integrate` 20k × 4 at seed 7 and
+`generate` 500 at seed 7, base `d2b4b7b` built in its own worktree and target
+(`mlm-p12-vibegraph-base`, sha256 `4525033b36a31b52…`), against this change
+(`mlm-p12-vibegraph-new`, `21a37592ebc72336…`). LHE columns from
+`mlm-p12-lhecmp.py`:
+
+| case | grid (both) | events differing outside XWGTUP | XWGTUP new/base | `<init>` | header |
+|---|---|---|---|---|---|
+| `llj_fixed` | identical `f74a18d2f2329e9a` | 0 / 500 | 0.908956 (uniform) | 1 process line | +σ̂ line, strategy text, path |
+| `llj` | identical `77ff26344ca02fab` | 0 / 500 | 1.009912 | 1 | same |
+| `jj` | identical `97cca7cd481c30fc` | 0 / 500 | 0.942306 | 1 | same |
+| `dy` | identical `f932cf0f3d9b015f` | 0 / 500 | 1.001079 | 1 | same |
+| fixed-beam `gu` | identical `6bebef12c2d263bf` | 0 / 500 | 1.017279–1.017280 | 1 | same |
+| fixed-beam `ee` | identical `d640093ae7642d3f` | 0 / 500 | 1.011998–1.011999 | 1 | same |
+
+- The beam line of `<init>` and the trailer are identical. Each file's base
+  `XSECUP` is exactly the new header's σ̂: `llj_fixed` 4.683304e2 → the
+  integration's 4.256919e2, which is −9 % on 500 events.
+- On the matched row, `integrate` with the new binary at seed 20260928
+  (`--fixed-budget --allocate neyman --neval 200000 --niter 8`) is byte-equal
+  to F-B's `mix-new-28` artifact (`c28f74ac…`). Base and new `generate` of
+  that seed differ only in the 10000 XWGTUPs (ratio 0.956–1.003 by part), the
+  three process lines and the header.
+- The banked `validate-hadronic` pulls equal F-B's to every digit:
+  `llj_fixed` +0.05, `llj_dyn` +0.07, `pp_to_llj` +0.61, `jj` +0.72,
+  `mmll_60_120` +0.42.
+
+**Measurements.**
+
+`pp_to_ll_0j2j_mlm`, ten 10000-event samples. They come from F-B's ten
+fixed-budget artifacts (seeds 20260928–37, `--seed` equal to the integration
+seed), and use `mlm-p12-samplestats.py`. The "before" rows are what the base
+writer declared: σ̂ with the integration's error.
+
+| | mean (pb) | sd | χ²/dof over files |
+|---|---|---|---|
+| after: declared `XSECUP` ± `XERRUP` | 1064.95 ± 0.64 | 1.93 | **1.02** |
+| before: σ̂ ± integration error (as written) | 1067.65 | 10.98 | 32.8 |
+| before: σ̂ ± its own error ⊕ integration's | 1065.48 ± 3.71 | 10.98 | 0.75 |
+| after `@0` / `@1` / `@2` | 665.26 / 268.35 / 130.94 | 0.56 / 1.28 / 2.07 | 0.66 / 0.90 / 1.89 |
+| before `@0` / `@1` / `@2` (σ̂ₖ, integration error) | 663.57 / 269.69 / 134.11 | 4.90 / 4.30 / 5.10 | 51.2 / 13.9 / 16.1 |
+
+- The declared σ now scatters as its error says. Its χ²/dof is the
+  integrations' own, with `@2`'s 1.89 as F-B recorded.
+- The sample estimate's own error is honest: the ten pulls of σ̂ against
+  their integrations have `Σp²/n` 0.71, worst −1.46.
+- The base file stated a 1 % estimate with a 0.18 % error.
+
+**Pythia** (M5's driver and configuration, Pythia 8.312, seeds
+20261201–06). Side A is M5's: `run_01` and the four fresh MadEvent
+directories, read back from M5's cache. Side B is samples 20260928–32.
+
+| | MadEvent | vibegraph (M5) | vibegraph (now) | pull now |
+|---|---|---|---|---|
+| acceptance `@0` | 0.8193 ± 0.0009 | 0.8188 ± 0.0009 | 0.8195 ± 0.0009 | +0.14 |
+| acceptance `@1` | 0.3636 ± 0.0025 | 0.3592 ± 0.0026 | 0.3566 ± 0.0025 | −2.01 |
+| acceptance `@2` | 0.3478 ± 0.0040 | 0.3408 ± 0.0068 | 0.3342 ± 0.0052 | −2.08 |
+| acceptance, all | 0.6468 ± 0.0014 | 0.6422 ± 0.0021 | 0.6429 ± 0.0019 | −1.69 |
+| merged σ (pb) | 688.20 ± 1.48 | 690.30 ± 2.28 | 685.06 ± 1.98 | −1.27 |
+| merged σ χ²/dof over files | 1.36 | 4.67 | **0.77** | |
+| `@0` / `@1` / `@2` acceptance χ²/dof | 1.13 / 0.25 / 0.11 | 1.08 / 0.57 / 3.06 | 1.01 / 1.55 / 0.98 | |
+| jet rates χ² d01 / d12 / d23 | | 15.1/24, 33.6/21, 12.9/17 | 30.1/24 (p 0.18), 24.9/21 (p 0.25), 18.8/17 (p 0.34) | |
+
+- The merged σ and every acceptance now scatter file to file as their
+  errors say: 4.67 → 0.77, and `@2` 3.06 → 0.98.
+- The merged σ, 685.06 ± 1.98, is −0.46 % from MadEvent. F-A's offline
+  replay of this policy gave 686.56 on M5's (pre-merge) files.
+- The `@1` and `@2` acceptances read −1.9 % and −3.9 % (about 2σ each). A
+  per-part scale cannot move them: an acceptance is a ratio inside one part.
+  These are new samples from F-B's merged grids, so the comparison with M5's
+  −1.2 % and −2.0 % is across sample sets. It is recorded here for M5's
+  close-out gate, not resolved.
+
+**Target runs** (`--target-rel 2e-3`, Neyman by default).
+
+`pp_to_ll_0j2j_mlm`, `--neval 200000 --max-iters 24`:
+
+| seed | pooled: stop, evaluations, σ (pb) | old χ² (base binary): stop, evaluations, σ (pb) |
+|---|---|---|
+| 20260928 | **8**, 1.85M, 1066.40 ± 1.90 (quoted 0.178 %, scaled 0.1995 %) | 11, 2.53M, 1065.83 ± 1.60 (0.150 %, 0.1896 %) |
+| 20260929 | 10, 2.31M, 1064.67 ± 1.74 | 15, 3.44M, 1066.32 ± 1.54 |
+| 20260930 | 10, 2.31M, 1065.94 ± 1.87 | 15, 3.45M, 1064.13 ± 1.54 |
+| F-A's replay (pre-merge, 364 channels), 20260928 | 8, 1064.89 ± 1.73 (0.163 %, 0.186 %) | never in 17 (M6 still running at 32) |
+
+- After F-B's merge the old rule does stop on this row, at 11–15 iterations.
+  The pooled rule stops at 8–10 and spends 1.4× fewer points.
+- On seed 20260928 the pooled stop lands where F-A's replay did. Its
+  artifact is byte-equal to the fixed-budget seed-28 artifact: the Neyman
+  draws agree, so a target run stopped at iteration 8 is the fixed run.
+- All six σ agree with the ten-seed fixed sweep, 1065.11 ± 0.61 (sd 1.93).
+  The pooled three read 1065.67 (sd 0.90), +0.5σ against their mean quoted
+  error over √3.
+
+`pp_to_llj_mlm`, seeds 20260951–55, default `--neval`:
+
+| seed | pooled: stop, σ (pb) | old χ² (base): stop, σ (pb) |
+|---|---|---|
+| 51 | 7, 268.671 ± 0.484 | 8, 268.458 ± 0.455 |
+| 52 | 6, 268.593 ± 0.520 | 6, 268.593 ± 0.520 |
+| 53 | 6, 268.742 ± 0.499 | 6, 268.742 ± 0.499 |
+| 54 | 7, 269.030 ± 0.513 | 8, 268.961 ± 0.481 |
+| 55 | 9, 268.717 ± 0.437 | 9, 268.717 ± 0.437 |
+
+- After F-B's merge this row's iterations are consistent (χ²/dof 0.80), and
+  both rules stop within one iteration of each other. Where they stop at the
+  same iteration, σ is the same to the bit.
+- The pooled mean is 268.75 (sd 0.17), against the fixed ten-seed sweep's
+  268.53 ± 0.10 (sd 0.33): +1.0σ of the target runs' mean quoted error over
+  √5.
+- M6's pre-merge runs needed 7–25 iterations.
+
+**Gates** (tree `d4b8ae3`, which differs from the final commit only in comments, this record and `TODO.md`; the banked tasks' own cargo commands with the
+private build settings, `RAYON_NUM_THREADS = 2`):
+- `cargo fmt --all --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`, plain and with
+  both `extended-validation` features: clean.
+- `cargo test --workspace`: as above.
+- `validate-unweighting`: 1 passed. `validate-generate-proton`: 5 passed.
+- `validate_samples`: 6 passed. `validate_samples_proton`: 11 passed, min KS
+  p 6.7e-2.
+- `validate-lhef`: 3 passed. `validate-hadronic`: 14 passed (pulls above).
+- `validate-mlm-sigma`: 3 passed, every row as F-B recorded:
+  `pp_to_llj_xqcut_only` 212.608 ± 0.126 (pull +0.23), `pp_to_llj_mlm`
+  268.433 ± 0.119 (ten seeds, χ²/dof 0.86, pull +1.22), `pp_to_llj_mlm_alps2`
+  241.255 ± 0.150 (pull +1.86).
+- `probe_sample_sigma_seed_headroom`: as above.
+- The Pythia consumption gate (`validate-pythia`, `consume.py`) reads event
+  structure, not weights (no weight or σ access in `consume.py`), so it was
+  not rerun. `validate-mlm-pythia`, which does read XWGTUP, is the table
+  above.
+
+**Where the brief was short.**
+- "Weights sum to the part's σ" is read under the file's mean-weight
+  convention, `Σ XWGTUP/N`. A literal sum would be `IDWTUP = −3` /
+  `event_norm = sum`, and would break main164's and M5's normalisation at
+  `−4`.
+- The brief gave "iteration 8 factor 1.86e-3" as a factor. 1.86e-3 is the
+  pooled-scaled relative error at iteration 8; the channel factors are of
+  order one.
+- `cli_decay`'s top-decay `XSECUP` check uses stochastic rounding, whose
+  `XSECUP` was already the integration's. It is unchanged.
+
+**What remains.**
+- The `@1` / `@2` Pythia acceptances, about 2σ low on these samples, go to
+  M5's close-out gate.
+- The VEGAS grid tail (backlog) is still the root of the overweights. The
+  normalisation fixes the file's σ, not the shape noise the overweights carry.
+- `StochasticRounding` has no per-part normalisation.
+
 ### M6: xqcut-aware phase space (performance-dev; after M3)
 
 - Put the jet energy floors and s-channel minima (§1.4) into the multichannel

@@ -633,7 +633,7 @@ above); the entries here are the eventual features.
   - **Target stop:** the consistency factor is formed from each iteration's
     own σᵢ around an unweighted mean, so one spike in a floor-bound two-jet
     channel holds the stop (a 0.004 %-of-σ channel at χ²/dof 5675).
-  - **Proposals, both adopted (user, 2026-10-01; implementation next):**
+  - **Proposals, both adopted (user, 2026-10-01) and implemented (P12, below):**
     - normalise each `@N` to its integration, as MadEvent pins each channel.
       On M5's showered files the merged-σ χ²/dof goes from 5.82 to 0.87;
     - a pooled (between-iteration) consistency factor for the unweighted mean.
@@ -662,6 +662,25 @@ above); the entries here are the eventual features.
   - The `cli_generate_proton` sample-vs-integration reading now scatters
     2.5× wider over five seeds, with no bias. The gate's seed reads −1.34 %
     against its 1.5 % bound. This is for the unweighting work.
+  **P12 landed** (note 41 §4 P12 record): both F-A policies.
+  - **Per-`@N` normalisation:** the buffered writer scales each
+    multiplicity's weights to its integrated σ (`Σ_{@N} XWGTUP/N = σ_N`),
+    keeps overweights at their rescaled weight, and declares each part's
+    integrated σ and error in `XSECUP`/`XERRUP`. The sample's own estimate
+    before normalisation, with its binomial error, goes in the header.
+    - On ten `pp_to_ll_0j2j_mlm` files the declared σ's χ²/dof is 1.02, down
+      from 32.8 as the base wrote them.
+    - Through Pythia, the merged-σ χ²/dof is 0.77 (M5 4.67) and `@2`'s
+      acceptance χ²/dof is 0.98 (3.06). The merged σ is 685.06 ± 1.98
+      against MadEvent's 688.20 ± 1.48.
+    - The `@1` / `@2` acceptances read about 2σ low on these samples. That
+      goes to the close-out gate.
+  - **`cli_generate_proton`:** now gates the pre-normalisation estimate's
+    pull against the integration (bound 3.5; the gate's seed reads −1.89).
+    The 1.5 % relative bound is gone.
+  - **Pooled stop factor:** `max(1, emp/quoted)` per channel. It reproduces
+    F-A's replay digit for digit. The mixed row's `--target-rel 2e-3` run
+    stops at iteration 8, 1066.40 ± 1.90 pb. Fixed budgets are byte-identical.
 - **VEGAS grid tail** (deferred to the backlog, user, 2026-10-01; note 41 §4 F-A record). The per-bin `Σ(f·w)²`
   adaptation starves bins that mostly fail the cuts, and the points that pass
   there carry the bin width. MadEvent rescales each bin by the inverse of its
@@ -976,7 +995,9 @@ coverage. What is left below is what still refuses, and why.
     `stop_scale` forms χ² from each iteration's own σᵢ around an unweighted
     mean, so a spike puts the quiet iterations tens of σ away and the factor
     decays only as 1/(n − 1).
-  - Open: the decision on the pooled consistency factor (F-A proposal 2).
+  - **Fixed (P12):** the pooled consistency factor replaces the per-iteration
+    χ². The seed-20260928 `--target-rel 2e-3` run stops at iteration 8 with
+    1066.40 ± 1.90 pb (fixed ten-seed sweep 1065.11 ± 0.61).
 
 - **Decay-angle maps for decay chains** (note 38 §4 D3, the ladder). The forced
   invariants are Breit–Wigner-mapped exactly, but the decay angles are drawn
