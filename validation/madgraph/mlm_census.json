@@ -13,21 +13,21 @@
         "coverage": {
           "cluster_calls_per_event": {
             "1": 20000,
-            "2": 1322
+            "2": 1348
           },
           "final_leg_ipdgcl_differs_from_idup": {
-            "False": 24950
+            "False": 25066
           },
           "memo": {
             "ACCEPTED": 20000,
-            "RESTRICTED_RECLUSTER": 1322
+            "RESTRICTED_RECLUSTER": 1348
           },
           "setclscales_calls_per_event": {
             "2": 10000
           },
           "vec_igraph_is_iconfig": {
-            "False": 434,
-            "True": 9566
+            "False": 459,
+            "True": 9541
           },
           "vec_igraph_is_igraphs1": {
             "True": 10000
@@ -37,8 +37,8 @@
           }
         },
         "memo_branches_all_points": {
-          "RESTRICTED_RECLUSTER|keepq2bck=False": 2071428,
-          "RESTRICTED_RECLUSTER|keepq2bck=True": 157100,
+          "RESTRICTED_RECLUSTER|keepq2bck=False": 2071455,
+          "RESTRICTED_RECLUSTER|keepq2bck=True": 157103,
           "STORE_AND_RECLUSTER|keepq2bck=False": 97
         },
         "n_events": 10000,
@@ -112,6 +112,9 @@
           "P2_gg_llqq/G6:6": [
             2
           ],
+          "P2_gg_llqq/G7:7": [
+            1
+          ],
           "P2_gg_llqq/G8:12": [
             1
           ],
@@ -129,9 +132,6 @@
           ],
           "P2_gq_llgq/G14:14": [
             2
-          ],
-          "P2_gq_llgq/G15:15": [
-            1
           ],
           "P2_gq_llgq/G16:16": [
             1
@@ -160,13 +160,16 @@
           "P2_gq_llgq/G8:8": [
             2
           ],
+          "P2_gq_llgq/G9:9": [
+            1
+          ],
+          "P2_qq_llgg/G11:15": [
+            2
+          ],
           "P2_qq_llgg/G12:12": [
             2
           ],
           "P2_qq_llgg/G12:16": [
-            2
-          ],
-          "P2_qq_llgg/G2:2": [
             2
           ],
           "P2_qq_llgg/G3:3": [
@@ -184,10 +187,19 @@
           "P2_qq_llgg/G6:6": [
             2
           ],
+          "P2_qq_llgg/G7:13": [
+            2
+          ],
           "P2_qq_llgg/G8:14": [
             2
           ],
           "P2_qq_llgg/G8:8": [
+            2
+          ],
+          "P2_qq_llqq/G10:10": [
+            2
+          ],
+          "P2_qq_llqq/G10:14": [
             2
           ],
           "P2_qq_llqq/G11:11": [
@@ -205,6 +217,12 @@
           "P2_qq_llqq/G1:1": [
             1
           ],
+          "P2_qq_llqq/G1:5": [
+            1
+          ],
+          "P2_qq_llqq/G22:22": [
+            2
+          ],
           "P2_qq_llqq/G23:23": [
             2
           ],
@@ -212,6 +230,9 @@
             2
           ],
           "P2_qq_llqq/G2:2": [
+            2
+          ],
+          "P2_qq_llqq/G2:6": [
             2
           ],
           "P2_qq_llqq/G3:3": [
@@ -228,9 +249,9 @@
           ]
         },
         "setclscales_calls_through_last_written_event": {
-          "first": 6697362,
-          "restricted_recluster": 2226270,
-          "second": 604914,
+          "first": 6754371,
+          "restricted_recluster": 2226286,
+          "second": 606631,
           "store_and_recluster": 97
         }
       }
@@ -529,7 +550,7 @@
             "1": 20000
           },
           "final_leg_ipdgcl_differs_from_idup": {
-            "False": 25292
+            "False": 25306
           },
           "memo": {
             "ACCEPTED": 20000
@@ -538,8 +559,8 @@
             "2": 10000
           },
           "vec_igraph_is_iconfig": {
-            "False": 4007,
-            "True": 5993
+            "False": 3945,
+            "True": 6055
           },
           "vec_igraph_is_igraphs1": {
             "True": 10000
@@ -549,7 +570,7 @@
           }
         },
         "memo_branches_all_points": {
-          "STORE_AND_RECLUSTER|keepq2bck=False": 50
+          "STORE_AND_RECLUSTER|keepq2bck=False": 52
         },
         "n_events": 10000,
         "njetstore_on_entry_by_channel": {
@@ -649,10 +670,16 @@
           "P1_gq_ttxq/G1:1": [
             1
           ],
-          "P1_gq_ttxq/G2:2": [
+          "P1_gq_ttxq/G2a0:2": [
             1
           ],
-          "P1_gq_ttxq/G2:3": [
+          "P1_gq_ttxq/G2a0:3": [
+            1
+          ],
+          "P1_gq_ttxq/G2b0:2": [
+            1
+          ],
+          "P1_gq_ttxq/G2b0:3": [
             1
           ],
           "P1_gq_ttxq/G4:4": [
@@ -678,10 +705,10 @@
           ]
         },
         "setclscales_calls_through_last_written_event": {
-          "first": 1283990,
+          "first": 1487195,
           "restricted_recluster": 0,
-          "second": 335161,
-          "store_and_recluster": 50
+          "second": 364702,
+          "store_and_recluster": 52
         }
       }
     }
