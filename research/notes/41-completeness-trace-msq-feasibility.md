@@ -15,7 +15,10 @@ whole record; it has no `TODO.md` entry. It carries two measurable follow-ups
 scaling question, and helicity sampling as the direct lever on the expensive
 rows. An idea the topic also covers: the explicit-invariant form of |M|² is the
 natural input to a phase-space map derived from the integrand's own structure
-rather than read off propagator poles.
+rather than read off propagator poles. §8 (2026-10-03) assesses functional
+reconstruction over finite fields (FiniteFlow) as the way to obtain the
+simplified trace form, and turns §7.1's scaling question into a measurement
+that needs no FORM pipeline.
 
 ## 0. Verdict
 
@@ -301,6 +304,129 @@ as a post-pass on an already-reconstructed expression.
      cross-helicity sharing, so on rows with high sharing the gain shrinks.
      Both are measurable.
 
+## 8. Functional reconstruction as the route to the trace form (2026-10-03)
+
+The question (user): FiniteFlow (Peraro, arXiv:1905.08019) as the way to reduce
+the evaluator to a small rational function, especially the helicity-summed
+`Σ_hel |M|²`. This section takes §3.1's pointer further. Nothing was built.
+
+### 8.1 What the method is
+
+FiniteFlow treats a numerical algorithm as a black box that maps rational inputs
+to rational outputs, and evaluates it over prime fields `Z_p` (63-bit primes, so
+arithmetic is exact and machine-word sized). From many such evaluations it
+reconstructs the multivariate rational function the box computes: Thiele and
+Newton interpolation on univariate slices fix the degrees, multivariate Newton
+or sparse interpolation gets the coefficients, and rational reconstruction plus
+the Chinese remainder theorem across a few primes lift them to `Q`. The
+"dataflow graph" lets a chain of such algorithms (linear solves, substitutions,
+Laurent expansions) be composed and sampled together. The symbolic intermediate
+expression is never formed, so the trace expansion of §3 (`(n−1)!!` terms per
+loop, `D²` pairs) costs nothing. What the method costs is the number of
+black-box evaluations, which scales with the number of terms in the *final*
+answer. A tree-level evaluator at µs per point can afford 10⁶–10⁷ samples per
+prime.
+
+### 8.2 What it does for this question
+
+It answers §7.1's scaling question without building a trace pipeline. The
+open question is how big the simplified 2 → 3 and 2 → 4 `Σ_hel |M|²` is, and
+reconstruction measures exactly that size, because its cost tracks it. It does
+not make the answer small. Reconstruction returns the function in whatever
+representation it fits (expanded numerator over a denominator). Getting from
+there to a compact, well-conditioned form is a separate step: multivariate
+partial fractions (Heller, von Manteuffel, arXiv:2101.08283), spinor-variable
+ansätze (De Laurentis, Maître, arXiv:1904.04067), and then Horner and CSE
+(§6). §3.1's caveat stands: a short form may exist only in the right variables.
+
+### 8.3 Exploitable structure: the denominator is known
+
+For each diagram pair, `Σ_hel A_i A_j*` has the denominator `D_i D_j*`, the
+product of that pair's propagators, which is read off the diagram set. Multiply
+it out and the black box becomes a *polynomial* in the invariants, with its
+degree bounded by mass dimension. Sparse polynomial interpolation is much
+cheaper than general rational reconstruction, and it needs no denominator
+guessing. Reconstructing per pair (or per colour-flow pair) and per coupling
+monomial also keeps couplings out of the variable set. The per-pair results are
+the oracle §7.1 already asks for, at no extra cost.
+
+### 8.4 Obstacles specific to this codebase
+
+1. **The evaluator cannot run over `Z_p` as written.** It is generic over
+   `helas::repr::Real`, which is `num_traits::Float`: it needs `sqrt`,
+   ordering and `min`, and none of those exist in a prime field. The
+   wavefunction routines (`helas/wavefn.rs`) build spinors from
+   `√(E ± |p⃗|)` and polarization vectors from `1/√2` and `p_T`. The summed
+   `Σ_hel |M|²` is rational in the momentum components, but the individual
+   wavefunctions are not. Two ways round it:
+   - **Rational wavefunctions.** `|M|²` summed over helicities does not depend
+     on each leg's basis or phases, only on the completeness relation. So any
+     set of external states that is rational in the kinematics and satisfies
+     `Σ u ū = p̸ + m` (and the vector analogue) gives the same sum. Massless
+     spinors from a momentum-twistor parametrization are rational. A massive
+     momentum splits as `p = k + (m²/2k·q) q` with `k` and `q` massless, which
+     keeps it rational. Polarization vectors `⟨q|γ^μ|k]/⟨qk⟩` are rational in
+     the spinors. This needs a second wavefunction set and a trait for the
+     field with no `Float` bound: `+ − × ÷` and `i`, where `i` comes from
+     `p ≡ 1 (mod 4)` or from working in `Z_p[i]`.
+   - **Completeness-matrix legs.** Feed `p̸ ± m` and `−g + pp/M²` in as open
+     external indices and contract at the end. That is rational with no change
+     to the kinematics. §2 shows it is no faster at runtime, but the black box
+     does not need to be fast. Its cost grows as `4ⁿ` open components, so it
+     suits small `n` only.
+2. **Parity-odd terms are not rational in the invariants.** From 2 → 3 on,
+   `ε(p_a,p_b,p_c,p_d)` terms survive in the unpolarized sum wherever an
+   imaginary coupling or width product multiplies them (finite-width
+   propagators make `Im(D_i D_j*) ≠ 0`). Since `ε²` is a Gram determinant,
+   `ε` is a square root of a polynomial in the `s_ij`. Either reconstruct in
+   momentum-twistor variables, where `ε` is rational, or split the result as
+   `R_even + ε·R_odd` and reconstruct the two separately. §5.2's
+   convention-pinning requirement applies to the sign of `R_odd`.
+3. **Masses and widths are parameters.** Pinning them to their f64 values,
+   which are exact dyadic rationals, gives coefficients with large numerators
+   and so needs many primes. Keeping `M²` and `MΓ` as variables adds two per
+   resonance. With the pair-wise known denominators of §8.3, they enter only
+   the numerator through on-shell masses and polarization sums, so the extra
+   cost is degree, not new poles.
+4. **Conditioning.** An expanded numerator in a monomial basis of the `s_ij`
+   cancels between large alternating terms near collinear and soft limits and
+   in the high-energy gauge cancellations of §5.3. Reconstruction cannot tell
+   which form is stable. That is one more reason the partial-fraction step of
+   §8.2 is part of the method rather than a polish pass, and the result has to
+   be checked against the f64 evaluator across the phase space, not at one
+   point.
+5. **Tooling.** FiniteFlow and FireFly (Klappert, Lange) are C++. As offline
+   generators for a measurement they are fine. In-tree reconstruction would
+   need Rust modular arithmetic (a crate) and the reconstruction algorithms.
+   The "no hand-written standard primitive" rule makes looking for a crate the
+   first step; Symbolica has the algorithms, but its licence is the §6
+   problem.
+
+### 8.5 What it does not change
+
+§4's Amdahl cap (2.0–2.7× on the stage even with `|M|²` free) and §5.4's need
+to keep the per-helicity program for `SPINUP` and colour selection hold for any
+fast `Σ_hel |M|²`, however it is obtained. Reconstruction changes how the
+trace-form expression is found, not how much a fast one is worth.
+
+### 8.6 Proposed measurement
+
+This replaces the FORM route in §7.1's scaling question:
+
+- **Box.** The completeness-matrix black box from §8.4.1, which needs no
+  kinematic reparametrization. Run it over `Z_p` on rational phase-space
+  points, for `ee_to_mumua` (2 → 3, 8 diagrams) and `ee_to_mumu_tata_qcd0`
+  (2 → 4, 25 diagrams), per diagram pair, with the pair's propagators
+  multiplied out.
+- **Oracle.** The f64 evaluator's per-pair `Σ_hel A_i A_j*` at the same
+  points, checked to the tolerance of its rounding.
+- **Output.** Term counts of each pair's numerator, then the flop count after
+  partial fractions and Horner/CSE, against the evaluator's measured per-point
+  cost (`ee_to_mumua` 1 012 ns, `ee_to_mumu_tata_qcd0` 4 366 ns).
+- **Kill.** §7.1's criteria are unchanged. If the 2 → 4 expression is not well
+  below the helicity program's flops, the trace form stays confined to 2 → 2
+  and small 2 → 3.
+
 ## References
 
 - Frederix et al., "Speeding up MadGraph5_aMC@NLO", EPJC 81:435 (2021),
@@ -314,6 +440,10 @@ as a post-pass on an already-reconstructed expression.
 - Peraro, arXiv:1608.01902, and FiniteFlow, arXiv:1905.08019: functional
   reconstruction over finite fields; De Laurentis, Maître, arXiv:1904.04067:
   analytic forms from numerical evaluations with spinor-helicity ansätze.
+- Klappert, Lange, "FireFly", arXiv:1904.00009: finite-field rational
+  function reconstruction (C++).
+- Heller, von Manteuffel, "MultivariateApart", arXiv:2101.08283: multivariate
+  partial fractioning of reconstructed rational functions.
 - Kuipers, Ruijl, Vermaseren, "Code optimization in FORM", arXiv:1310.7007:
   Horner + CSE for large polynomials.
 - Zhang et al., egglog (note 14); note 15 §4.1 for the extraction blocker.
