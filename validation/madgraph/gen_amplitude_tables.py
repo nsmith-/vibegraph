@@ -557,6 +557,11 @@ def write_table(path, table):
 
 
 def main():
+    if "--dump-keys" in sys.argv[1:]:
+        # The rows this script reads modules for, one per line, so the module
+        # build can compile exactly these.
+        print("\n".join(r.key for r in rows()))
+        return
     os.makedirs(TABLE_DIR, exist_ok=True)
     registry = {p.name: p for p in gen_amplitude.PROCESSES}
     selected = [a for a in sys.argv[1:] if not a.startswith("-")]
