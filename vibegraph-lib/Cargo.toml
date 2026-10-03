@@ -70,6 +70,13 @@ tracing = "0.1"
 criterion = "0.5"
 libm = "0.2"
 libtest-mimic = "0.7"
+# The finite-field reconstruction study (tests/finite_field_msq.rs): word-sized
+# modular arithmetic, a primality test to pick its primes, and the big integers
+# Chinese remaindering lifts the residues into. Versions are the ones the
+# dependency graph already resolves `num-modular` to.
+num-bigint = "0.4"
+num-modular = "0.5"
+num-prime = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # The validation gates read one flag out of validation/manifest.toml — which rows
 # the pinned reference bundle carries. Same version the report collator parses it
