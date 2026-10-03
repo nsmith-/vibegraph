@@ -599,12 +599,14 @@ above); the entries here are the eventual features.
   within its levels costs 2.2× on the M3 Max under either dispatcher, with
   40–47% of cycles discarded (Instruments' counters), while op-blocked runs
   and a periodic interleave cost nothing. So the production
-  order stays, and any replacement must keep both. One exception, Cascade
-  Lake only: lanes8 on the 2→6 is 15–18% faster in arena / `minlive` order, a
-  working-set effect (2.4 MB of op-blocked arenas against a 1 MiB L2; the M3's
-  16 MiB L2 shows none) that the `f64`-byte, lane-blind `SCHEDULE_BYTE_LIMIT`
-  fallback cannot see. A lane-aware fallback is open, measure-first, at the
-  width lanes would ship at. The 2→6 shuffle has not been run on x86.
+  order stays, and any replacement must keep both. One exception, on hosts
+  with a small L2: lanes8 on the 2→6 is 15–18% faster in arena / `minlive`
+  order on Cascade Lake, a working-set effect (2.4 MB of op-blocked arenas
+  against a 1 MiB L2; the M3's 16 MiB L2 shows none) that the `f64`-byte,
+  lane-blind `SCHEDULE_BYTE_LIMIT` fallback cannot see. Emerald Rapids (2 MiB
+  L2) shows it too: there the 2→6 gains 1.03× from lanes4 to lanes8, against
+  1.25–1.42× on every other row (`roofline-census-results.md`). A lane-aware
+  fallback is open, measure-first, at the width lanes would ship at. The 2→6 shuffle has not been run on x86.
   (`threaded-dispatch-study-results.md`.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α
@@ -1044,6 +1046,25 @@ coverage. What is left below is what still refuses, and why.
   - Still open: an IPC / top-down reading on a host with a PMU, to say how much
     of the evaluator's time is latency-bound at all. The Firecracker VM used
     here exposes no `cpu` event source.
+- **Roofline census: FLOP- or bandwidth-bound?** Measured without counters:
+  `roofline_census` (`helas/eval/roofline.rs`, ignored test) counts every FP
+  operation of `eval_m2` exactly, through an op-counting `F`, and the arena
+  bytes each instruction moves. Paired with `eval_strategies` timings on
+  Emerald Rapids at a measured 3.2 GHz:
+  - At scalar width it is neither. 83–90% of a VM instruction's cycles do not
+    grow when the same stream runs on 2–4 lanes: that part is dispatch,
+    overhead and dependency latency. FP issue is 1.1–1.7 per cycle, and arena
+    traffic 5–9 B/cycle, under a tenth of L1.
+  - The width-proportional part is FP issue more than bytes.
+  - The 2→6 hits a cache-capacity cliff at lanes8: 1.03× over lanes4, against
+    1.25–1.42× on the other rows. Its arenas are 3.6 MiB against a 2 MiB L2.
+    The lane-aware order fallback (tail-call-threaded dispatch item) is the
+    lever there.
+  - The arithmetic intensity is 0.15–0.29 flop/B, near the L1 machine balance
+    and below L2's.
+  Open: a machine-load count (spills, header reloads, by-value copies), and
+  splitting the fixed part into dispatch and latency, both on a host with a
+  PMU. (`roofline-census-results.md`.)
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
