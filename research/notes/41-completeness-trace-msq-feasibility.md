@@ -18,7 +18,11 @@ natural input to a phase-space map derived from the integrand's own structure
 rather than read off propagator poles. §8 (2026-10-03) assesses functional
 reconstruction over finite fields (FiniteFlow) as the way to obtain the
 simplified trace form, and turns §7.1's scaling question into a measurement
-that needs no FORM pipeline.
+that needs no FORM pipeline. §9 (2026-10-03) is that measurement, for the
+per-diagram-pair trace form: the evaluator run over a prime field, the pair
+numerators reconstructed exactly, on two 2 → 2/2 → 3 rows lifted back to `Q` and
+matched to the f64 evaluator, and timed against `eval_m2`
+(`vibegraph-lib/tests/finite_field_msq.rs`).
 
 ## 0. Verdict
 
@@ -27,13 +31,14 @@ that needs no FORM pipeline.
 lot":** the evaluator is 50–62% of the integrand wherever it has been profiled
 (note 30 §7.1), so an infinitely fast |M|² bounds the stage at 2.0–2.7×, and the
 processes where the trace form wins are the ones that already integrate in
-seconds. **Where the integration time actually goes (2 → 4 and up) the trace
-form's runtime cost is unknown, not settled**: the *intermediate* expansion
-grows as the square of the diagram count times a factorial in trace length,
-but that is a compile-time cost, and the simplified result can be far shorter
-(§3.1). No compact forms are known for the massive/electroweak 2 → 4 rows, and
-every multi-leg generator evaluates them numerically, but that is precedent,
-not a bound. The final-size scaling is a measurement (§7).
+seconds. **Where the integration time actually goes (2 → 4 and up) the
+per-pair trace form is measured too large (§9)**: on `ud_to_epemud_qcd0` and
+`ee_to_mumu_tata_qcd0` the pair numerators hold 85–118 thousand terms of degree
+4–5 in 9 dot products and 5 ε contractions, and a direct f64 evaluation of them
+runs 12–23× slower than `eval_m2`. At 2 → 2 the same form is 6× faster, and
+2 → 3 is break-even. What is still unmeasured is a form simplified *across*
+pairs (gauge cancellations, partial fractions, spinor variables), which a
+per-pair representation cannot reach (§9.4).
 
 **egglog is the wrong engine for the part that does the work.** Trace evaluation
 and index contraction are a terminating, confluent normalization, where an
@@ -426,6 +431,167 @@ This replaces the FORM route in §7.1's scaling question:
 - **Kill.** §7.1's criteria are unchanged. If the 2 → 4 expression is not well
   below the helicity program's flops, the trace form stays confined to 2 → 2
   and small 2 → 3.
+
+## 9. Measurement: the per-pair trace form by reconstruction (2026-10-03)
+
+§8.6 run, with the field-arithmetic route of §8.4.1's first option rather than
+completeness-matrix legs. Everything is in
+`vibegraph-lib/tests/finite_field_msq.rs`: two fast tests (3 s) gate the
+machinery, and `measure_trace_form` (ignored) prints the census below:
+
+```
+cargo test --release -p vibegraph-lib --test finite_field_msq measure_trace_form -- --ignored --nocapture
+```
+
+### 9.1 The box
+
+The evaluator is unchanged. It runs over a test-only scalar `Fz`, an element of
+`Z_p` carried with an `f64` shadow of the same computation. `num_complex` adjoins
+`i`, and for `p ≡ 3 (mod 4)` that is the field `F_{p²}`, whose Frobenius is complex
+conjugation. Arithmetic is exact mod `p`, and the shadow decides every comparison
+the wavefunction routines branch on (`min`, `max`, `== 0`). Three points needed
+care:
+
+- **Square roots.** §8.4.1 named them as the blocker. They are not one, because
+  the helicity sum only sees each leg's completeness relation. The root taken is
+  `x^((p+1)/4)`, the root that is itself a square, which makes it multiplicative.
+  With `p ≡ 7 (mod 8)` the separately taken roots in `weyl_ixxxxx` (`χ₀` against
+  `√(2|p|(|p|+p_z))`) then stay consistent. That is a convention claim, and
+  `fz_wavefunctions_satisfy_completeness` pins it mod `p`: `Σ u ū = p̸ + m`,
+  `Σ v v̄ = p̸ − m`, the massive vector sum, and the massless one with HELAS's
+  `n = (p⁰, −p⃗)`. Its first run failed on the massive antiparticle, and the
+  same identity in f64 showed the test was at fault (a consumed poison flag), not
+  the root convention. A leg whose roots do not exist in `Z_p` (about half the
+  draws per root) is redrawn on its own; redrawing whole points instead cost 100×
+  on the massive-τ row.
+- **External massless vectors** break per-pair Lorentz invariance. The HELAS
+  polarization sum `−g + (p n + n p)/(p·n)` has a frame vector `n`, and its gauge
+  terms cancel only in the sum over diagrams. The first 2 → 3 fit failed to
+  degree 8 for this reason. In the partonic CM frame `n` is rational in `p` and
+  `P = p₁ + p₂`, so those rows are sampled there, with one more known
+  denominator `(p·P)²` per vector leg. Their counts are therefore those of an
+  axial-type gauge, not of the Feynman-gauge `−g` a symbolic trace program would
+  use, and they overstate what such a program would get.
+- **Denominators** are read off the diagram set: `D_i = Π (q² − M² + i M Γ)`, with no
+  width on spacelike lines, as `lower.rs` does. A wrong denominator would make
+  the numerator non-polynomial and the fit would fail, so the fit checks them.
+
+The ansatz for `N_ij = D_i D_j* Σ_hel A_i A_j*` is dense: every monomial of total
+degree `≤ d` in the independent dot products, the last momentum eliminated, plus
+every `ε(p_a,p_b,p_c,p_d)` times monomials of degree `≤ d − 2`. It is solved by
+exact row reduction mod `p` on random rational points in random frames, with 12
+held-out points; `d` grows until they agree. Dependent columns (Schouten
+relations among the ε's) drop out as non-pivots. Sparse interpolation was not
+needed: the largest system is 3 114 × 3 102.
+
+**Oracles.**
+
+- `per_pair_numerators_lift_to_the_f64_evaluator` lifts the fits to `Q(i)` by
+  Chinese remaindering and Wang's rational reconstruction, confirmed by one
+  further prime. That takes 8 primes for `ee_to_mumu` and 12 for `ee_to_mumua`,
+  whose coefficients reach 324 bits. It then evaluates the result in f64 at
+  fresh physical points against the evaluator's own per-pair `Σ_hel A_i A_j*`.
+  Worst deviation, relative to the largest term: `7.5e-15` and `1.2e-15`.
+- On every measured row a second prime reproduces every pair's term count.
+
+Blind spots: the box *is* the evaluator, so this pins the field arithmetic, the
+roots and the fit, not the amplitudes; the amplitude gate holds those against
+MadGraph. A coefficient divisible by `p` reads as zero, which is why the counts
+must agree across two primes. The lift is not run on the 2 → 4 rows.
+
+### 9.2 Results
+
+The default SM card, this container (4 cores, release profile). `eval_m2` is the
+production, helicity-pruned evaluator; here it measures about 1.9× note 32's
+figures (`ud_to_epemud_qcd0` 8.0 against 4.1 µs). The per-pair column times a
+plain scalar f64 evaluation of the fitted form: monomials built one
+multiplication each, every pair's numerator a sparse complex dot product with
+them, times `1/D_i · 1/D_j*`.
+
+| row | diagrams / pairs | variables | degree | terms (mean / max per pair) | best basis | rank | `eval_m2` | per-pair | ratio |
+|---|--:|---|--:|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 2 / 3 | 2 | 2 | 9 (3 / 3) | 6 | 2 | 388 ns | 61 ns | 0.16 |
+| `ee_to_mumua` | 8 / 36 | 5 + 1 ε | 5ᵃ | 3 608 (100 / 128) | 2 538 | 15 | 2 057 ns | 3 216 ns | 1.6 |
+| `uux_to_epemg` | 4 / 10 | 5 + 1 ε | 5ᵃ | 968 (97 / 105) | 403 | 8 | 1 082 ns | 1 066 ns | 1.0 |
+| `gu_to_epemu` | 4 / 10 | 5 + 1 ε | 5ᵃ | 261 (26 / 40) | 187 | 8 | 1 180 ns | 592 ns | 0.50 |
+| `ud_to_epemud_qcd0` | 35 / 630 | 9 + 5 ε | 4 | 117 568 (187 / 404) | 88 619 | 58 | 8.0 µs | 182 µs | 22.6 |
+| `ee_to_mumu_tata_qcd0` | 25 / 325 | 9 + 5 ε | 5ᵇ | 85 435 (263 / 429) | — | 221 | 9.8 µs | 119 µs | 12.1 |
+
+- ᵃ Includes the `(p·P)²` gauge factor of the external photon or gluon.
+- ᵇ The 36 pairs among the 8 diagrams with a Z on the `τ⁺τ⁻` pair need degree 5:
+  the unitary-gauge `q q/M_Z²` term survives on a massive line through the axial
+  current (`∝ m_τ`). Every other pair fits at degree 4.
+
+Columns:
+
+- **Best basis:** each pair counted in whichever choice of eliminated momentum
+  suits it best, which is optimistic, since evaluating needs every basis's
+  monomials.
+- **Rank:** the rank of the pairs × monomials coefficient matrix, the number of
+  linear forms in the monomials every numerator is a combination of.
+
+The 2 → 4 ansätze have 990 columns (940 independent) and 3 102 (2 826).
+Reconstruction took 7 s and 78 s per prime.
+
+### 9.3 What the numbers say
+
+- **The reconstruction is cheap and the answer is exact.** Seconds to a minute
+  per prime at 2 → 4, against the evaluator as it stands. §8.1's sample budget is
+  not the constraint; the dense row reduction is (`O(n³)` in the ansatz size), and
+  a 2 → 5 row at degree 5 in 14 + 15 variables would want sparse interpolation.
+- **2 → 2 is small and fast**, as §3 said: 3 terms per pair, 6× faster than
+  `eval_m2` even in this naive form. The form also lifts to exact rationals, so
+  it could be generated rather than hand-derived.
+- **2 → 3 is break-even per point** (0.5–1.6×), with the external-vector rows
+  inflated by the gauge factor. Per-pair best bases cut 30–60%, but these rows sit
+  under §4's Amdahl cap anyway.
+- **2 → 4 is large.** About 10⁵ terms per row, a mean of 190–260 per pair, at
+  degree 4–5. As written the form is 12–23× slower than `eval_m2`. The scalar loop
+  runs at 1.5 ns per term. A layout that streams the coefficients through 4-wide
+  FMAs might reach ~0.3 ns, and on `ud_to_epemud_qcd0` the rank-58 factorisation
+  `N = U (V x)` cuts the arithmetic by about 2.4×. Together those reach roughly
+  break-even on the best row, after real engineering, against an evaluator that
+  has its own SIMD lane path. No representation measured here gives the
+  order-of-magnitude win that would matter, and §4 caps the stage at 2.0–2.7×
+  regardless. The precedent in §3 ("2 → 4 is roughly break-even") now stands as a
+  measurement for these two rows.
+- **Merging pairs that share a denominator does nothing here.** Every pair on
+  every row has a distinct `D_i D_j*` (γ and Z lines differ in mass), so the 2 → 4
+  counts are already the merged ones.
+- **The low rank is the helicity method reappearing.** 58 linear forms span 434
+  monomials across 630 pairs because `Σ_hel A_i A_j*` is a short sum of products.
+  Factorising the trace form back into that structure is what helicity
+  amplitudes already do.
+
+### 9.4 What is not measured
+
+- **Cross-pair simplification.** The compact classical forms (§3.1) come from
+  gauge cancellations between pairs and from partial fractions, which a per-pair
+  ansatz cannot express. The gauge-invariant object is the full `|M|²`, and its
+  natural denominator is the product of every distinct propagator: 8 on
+  `ee_to_mumua`, 13 on `ee_to_mumu_tata_qcd0`. Reconstructing it needs the
+  rational-function route (Thiele along lines to fix the degrees, then sparse
+  interpolation) rather than a dense ansatz. That is the remaining open question
+  of §3.1. It is measurable with this box, but the cost is now known to be the
+  right order to spend only if the 2 → 4 rows matter.
+- **Feynman-gauge external vectors.** These are not reachable through the HELAS
+  polarization sum. The completeness-matrix legs of §8.4.1 would give them.
+- **Spinor-helicity variables** (De Laurentis–Maître) are a different basis the
+  fit could be run in. Momentum twistors would also remove the root rejection.
+
+### 9.5 Recommendation (updates §7.1)
+
+- **Drop the trace form for the 2 → 4 rows.** The per-pair form measured 12–23×
+  slower, and the levers above at best reach parity. Only the cross-pair
+  measurement of §9.4 could reopen it, and §4's cap makes that a low-value
+  question.
+- **For 2 → 2, a generated closed form is now cheap to obtain:** reconstruct,
+  lift, emit. It is worth building only if a 2 → 2 row's integration cost ever
+  matters, and today they integrate in seconds (§4).
+- **Helicity sampling (§7.2) remains the direct lever** on the expensive rows.
+- **The box itself is reusable.** An exact, field-valued evaluator is an oracle
+  that floating point cannot provide: exact zeros (helicity pruning without a
+  threshold), exact per-pair identities, and exact gauge-cancellation checks.
 
 ## References
 
