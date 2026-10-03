@@ -22,7 +22,8 @@ that needs no FORM pipeline. §9 (2026-10-03) is that measurement, for the
 per-diagram-pair trace form: the evaluator run over a prime field, the pair
 numerators reconstructed exactly, on two 2 → 2/2 → 3 rows lifted back to `Q` and
 matched to the f64 evaluator, and timed against `eval_m2`
-(`vibegraph-lib/tests/finite_field_msq.rs`).
+(`vibegraph-lib/tests/finite_field_msq.rs`). §10 (2026-10-03) reconstructs the
+full `|M|²` instead, where cancellations between diagram pairs are visible.
 
 ## 0. Verdict
 
@@ -35,10 +36,15 @@ seconds. **Where the integration time actually goes (2 → 4 and up) the
 per-pair trace form is measured too large (§9)**: on `ud_to_epemud_qcd0` and
 `ee_to_mumu_tata_qcd0` the pair numerators hold 85–118 thousand terms of degree
 4–5 in 9 dot products and 5 ε contractions, and a direct f64 evaluation of them
-runs 12–23× slower than `eval_m2`. At 2 → 2 the same form is 6× faster, and
-2 → 3 is break-even. What is still unmeasured is a form simplified *across*
-pairs (gauge cancellations, partial fractions, spinor variables), which a
-per-pair representation cannot reach (§9.4).
+runs 12–23× slower than `eval_m2`. The full `|M|²` does not rescue them (§10):
+on `ud_to_epemud_qcd0` not one of the 15 propagators loses a power between
+pairs, and over its minimal common denominator the numerator has degree 28.
+**Where the process has an external gauge boson the cancellations are large and
+the full form wins**: on the llj subprocesses every massless propagator drops
+from the pairwise double pole to a single one, the numerator over the minimal
+denominator has 78–116 terms (the per-pair form has 261–968), and it evaluates
+4–5× faster than `eval_m2`. 2 → 2 is 10× faster. The per-pair 2 → 3 verdict of §9
+("break-even") was an artifact of the per-pair form.
 
 **egglog is the wrong engine for the part that does the work.** Trace evaluation
 and index contraction are a terminating, confluent normalization, where an
@@ -542,9 +548,9 @@ Reconstruction took 7 s and 78 s per prime.
 - **2 → 2 is small and fast**, as §3 said: 3 terms per pair, 6× faster than
   `eval_m2` even in this naive form. The form also lifts to exact rationals, so
   it could be generated rather than hand-derived.
-- **2 → 3 is break-even per point** (0.5–1.6×), with the external-vector rows
-  inflated by the gauge factor. Per-pair best bases cut 30–60%, but these rows sit
-  under §4's Amdahl cap anyway.
+- **2 → 3 is break-even per point in this form** (0.5–1.6×), with the
+  external-vector rows inflated by the gauge factor. Per-pair best bases cut
+  30–60%. §10 supersedes this: the full `|M|²` on the same rows is 4–5× faster.
 - **2 → 4 is large.** About 10⁵ terms per row, a mean of 190–260 per pair, at
   degree 4–5. As written the form is 12–23× slower than `eval_m2`. The scalar loop
   runs at 1.5 ns per term. A layout that streams the coefficients through 4-wide
@@ -565,7 +571,7 @@ Reconstruction took 7 s and 78 s per prime.
 
 ### 9.4 What is not measured
 
-- **Cross-pair simplification.** The compact classical forms (§3.1) come from
+- **Cross-pair simplification** (measured in §10). The compact classical forms (§3.1) come from
   gauge cancellations between pairs and from partial fractions, which a per-pair
   ansatz cannot express. The gauge-invariant object is the full `|M|²`, and its
   natural denominator is the product of every distinct propagator: 8 on
@@ -593,6 +599,110 @@ Reconstruction took 7 s and 78 s per prime.
   that floating point cannot provide: exact zeros (helicity pruning without a
   threshold), exact per-pair identities, and exact gauge-cancellation checks.
 
+## 10. The full |M|² (2026-10-03)
+
+§9.4 left cancellations *between* diagram pairs unmeasured. A per-pair numerator
+cannot show them: the gauge cancellation that turns a collinear `1/s²` into
+`1/s` happens only in the sum. Here the box is `eval_m2` itself, over the same
+field. The full `|M|²` is gauge invariant, so it is Lorentz invariant even with
+external gluons and photons: no frame restriction and no `(p·P)²` factor. It is
+reconstructed over its *minimal* common denominator, in three exact steps.
+
+### 10.1 Method
+
+1. **Pole exponents.** For each distinct propagator (`q² − m²`, or
+   `|q² − M² + iMΓ|²` for a line with a width), the exponent it keeps in `|M|²`.
+   `|M|²` is reconstructed as a univariate rational function along a random
+   rational curve through phase space. That uses Thiele interpolation over `Z_p`,
+   2 → 4 needs about 1 400 nodes, and no degree has to be known in advance. The
+   exponent is then the multiplicity of the propagator's polynomial in `|M|²(t)`'s
+   denominator.
+
+   Two curve artifacts had to be handled. A massless momentum is an energy times
+   a direction, so invariants share energy factors. And closing momentum
+   conservation by a lightlike split puts the closing pair's invariant into every
+   invariant of those two legs. A propagator is therefore tested only on the part
+   of its polynomial it shares with no other pairwise invariant, and on a curve
+   that does not close on it; two curves, an s-type and a t-type closing, cover
+   every line. A first version without this read the photon's `1/s²` in
+   `ee_to_mumu` as exponent 0.
+2. **Numerator degree.** Under `p → μ² p` (massless legs only, which stay on shell)
+   `Q·|M|²` must be a polynomial in `s = μ⁴`. Its degree is the numerator's total
+   degree, and the run asserts the polynomial property, which checks `Q`.
+3. **Numerator.** A dense fit at that degree, the parity-even and -odd parts
+   separated by evaluating each point and its mirror image (`p⃗ → −p⃗`).
+
+**Oracles.**
+
+- `full_msq_matches_the_textbook_closed_form` checks the box against physics
+  rather than against the evaluator. `u ū → e⁺e⁻ g / z` must satisfy
+  `|M|² · s₃₄ s₁₅ s₂₅ / (s₁₃² + s₁₄² + s₂₃² + s₂₄²) = const`, the crossing of
+  `e⁺e⁻ → q q̄ g`, and it does, exactly mod `p`, at 20 points. This pins the
+  single poles the census reports, through `eval_m2`'s colour and helicity sums.
+- A second prime reproduces every count.
+- The scaling step's polynomial check confirms each `Q`.
+
+### 10.2 Results
+
+`measure_full_msq` (ignored), release profile, this container:
+
+| row | propagators that lose a power | `deg Q` full (pairwise lcm) | numerator degree | terms | per-pair terms (§9) | `eval_m2` | full form | ratio |
+|---|---|--:|--:|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 0 of 2 | 4 (4) | 4 | 9 | 9 | 441 ns | 45 ns | 0.10 |
+| `uux_to_epemg` | 3 of 4 | 5 (8) | 4 | 78 | 968 | 1 141 ns | 215 ns | 0.19 |
+| `gu_to_epemu` | 3 of 4 | 5 (8) | 4 | 116 | 261 | 928 ns | 240 ns | 0.26 |
+| `ee_to_mumua` | 6 of 8 | 10 (16) | 9 | 1 195 (90 of them ε) | 3 608 | 2 115 ns | 2 778 ns | 1.31 |
+| `ud_to_epemud_qcd0` | 0 of 15 | 30 (30) | 28 | not fitted | 117 568 | — | — | — |
+| `ee_to_mumu_tata_qcd0` | not measured | | | | 85 435 | | | |
+
+- **Losing a power** means the propagator goes from the pairwise double pole to
+  a single pole. The Z Breit–Wigners keep theirs everywhere.
+- **The full-form timing** is a scalar f64 evaluation: the monomials a term
+  uses, built one multiplication each, a sparse dot product, then division by
+  `Q`. `eval_m2` varies ±20% between runs here (388–533 ns on `ee_to_mumu`).
+- **`ud_to_epemud_qcd0`:** the dense ansatz at degree 28 has 1.2 × 10⁸ even and
+  3.5 × 10⁸ odd columns.
+- **`ee_to_mumu_tata_qcd0`:** stopped after 45 minutes on the pole curves. Each
+  massive τ needs about three roots per curve node, so ~99.9% of nodes are
+  rejected, and the scaling family does not apply to massive legs.
+
+### 10.3 What the numbers say
+
+- **The cancellations are real where gauge bosons are external.** On the 2 → 3
+  rows every massless propagator drops from the pairwise double pole to a single
+  pole: the eikonal/collinear structure, the `1/s` of `γ* → ℓℓ` included. On the
+  llj subprocesses the full numerator has 8–12× fewer terms than the per-pair
+  form and is two degrees lower. It evaluates 4–5× faster than `eval_m2`, where
+  §9 had per-pair break-even.
+- **One common denominator is the wrong container when the pole sets differ.**
+  `ee_to_mumua` has initial- and final-state radiation, whose collinear poles
+  are disjoint. Over their product the numerator reaches degree 9 and 1 195 terms,
+  and the form is 1.3× slower than `eval_m2`. Partial fractions in the
+  propagators (Leinartas; MultivariateApart, arXiv:2101.08283) would keep the ISR,
+  FSR and interference pieces each over their own poles. Not measured.
+- **The four-fermion 2 → 4 row has nothing to cancel.** With no external gauge
+  boson, no Ward identity ties the pairs together, and no propagator loses a
+  power. The minimal common denominator is the full pairwise lcm (degree 30),
+  so the numerator has degree 28. That form is far larger than the per-pair one
+  (§9), and a partial-fraction form can do no better than the per-pair poles
+  already do. What remains unmeasured on that row is numerator-level
+  cancellation inside a partial-fraction basis. With every pole intact, no
+  mechanism for it is known here.
+
+### 10.4 Recommendation (updates §9.5)
+
+- **2 → 2 and 2 → 3 with an external gauge boson:** a reconstructed closed form
+  of the full `|M|²` is 4–10× faster per point than `eval_m2`, and this pipeline
+  produces it. Reconstruct, lift to `Q` (§9.1), emit. Before emitting, check its
+  conditioning near the collinear poles against the f64 evaluator, since a
+  common-denominator numerator cancels there. `pp_to_llj`'s subprocesses are the
+  candidates. §4's cap still bounds the stage at about 2×, and that row's
+  measured deficit is the sampler.
+- **Multi-radiator 2 → 3 (`ee_to_mumua`):** worth it only with partial fractions.
+- **2 → 4 four-fermion:** dropped, now on the full `|M|²` as well as per pair.
+- **Helicity sampling (§7.2) remains the lever** on the expensive rows. The
+  per-helicity program stays in every case for `SPINUP` and colour (§5.4).
+
 ## References
 
 - Frederix et al., "Speeding up MadGraph5_aMC@NLO", EPJC 81:435 (2021),
@@ -609,7 +719,9 @@ Reconstruction took 7 s and 78 s per prime.
 - Klappert, Lange, "FireFly", arXiv:1904.00009: finite-field rational
   function reconstruction (C++).
 - Heller, von Manteuffel, "MultivariateApart", arXiv:2101.08283: multivariate
-  partial fractioning of reconstructed rational functions.
+  partial fractioning of reconstructed rational functions; Leinartas, "Factorization
+  of rational functions of several variables into partial fractions" (1978), the
+  decomposition it implements.
 - Kuipers, Ruijl, Vermaseren, "Code optimization in FORM", arXiv:1310.7007:
   Horner + CSE for large polynomials.
 - Zhang et al., egglog (note 14); note 15 §4.1 for the extraction blocker.
