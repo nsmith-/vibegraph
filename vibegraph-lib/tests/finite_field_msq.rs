@@ -47,8 +47,19 @@
 //! a coefficient divisible by `p` would read as zero (probability ~`1/p`;
 //! two primes must agree).
 //!
-//! `measure_trace_form` (ignored; run it with `--release -- --ignored --nocapture`)
-//! prints the census and times the per-pair form against `eval_m2`.
+//! # The full `|M|²`
+//!
+//! The per-pair form cannot see cancellations between diagrams, so `eval_m2`
+//! itself is the second box. It is gauge invariant (no frame, no gauge factor)
+//! and is reconstructed over its minimal common denominator: the exponent each
+//! propagator keeps, from Thiele interpolation along random rational curves; the
+//! numerator's degree, from the scaling family; and the numerator, by a dense fit
+//! where that is affordable. [`full_msq_matches_the_textbook_closed_form`] checks
+//! the box against `q q̄ → γ* g → ℓℓ g`'s closed form.
+//!
+//! `measure_trace_form` and `measure_full_msq` (ignored; run them with
+//! `--release -- --ignored --nocapture`) print the two censuses and time each
+//! form against `eval_m2`.
 
 mod common;
 
@@ -1719,6 +1730,9 @@ struct TraceForm {
     plan: Vec<(usize, usize)>,
     n_dots: usize,
     n_eps: usize,
+    /// The columns any pair uses, with every column their plan builds them from,
+    /// ascending (a column's factors always come before it).
+    needed: Vec<usize>,
     /// Per pair: `(value index, re, im)`.
     pairs: Vec<Vec<(usize, f64, f64)>>,
 }
@@ -1740,7 +1754,7 @@ impl TraceForm {
             .enumerate()
             .map(|(c, col)| ((col.exps.clone(), col.eps), base + c))
             .collect();
-        let plan = fit
+        let plan: Vec<(usize, usize)> = fit
             .columns
             .iter()
             .map(|col| {
@@ -1757,7 +1771,7 @@ impl TraceForm {
                 }
             })
             .collect();
-        let pairs = fit
+        let pairs: Vec<Vec<(usize, f64, f64)>> = fit
             .coeffs
             .iter()
             .map(|c| {
@@ -1774,10 +1788,25 @@ impl TraceForm {
                     .collect()
             })
             .collect();
+        let mut need = vec![false; fit.columns.len()];
+        let mut stack: Vec<usize> = pairs.iter().flatten().map(|&(v, _, _)| v - base).collect();
+        while let Some(c) = stack.pop() {
+            if std::mem::replace(&mut need[c], true) {
+                continue;
+            }
+            let (a, b): (usize, usize) = plan[c];
+            for x in [a, b] {
+                if x >= base {
+                    stack.push(x - base);
+                }
+            }
+        }
+        let needed = (0..need.len()).filter(|&c| need[c]).collect();
         TraceForm {
             plan,
             n_dots,
             n_eps,
+            needed,
             pairs,
         }
     }
@@ -1787,6 +1816,33 @@ impl TraceForm {
     }
 
     fn eval(&self, proc_: &Process, moms: &[LorentzVector<f64>], values: &mut Vec<f64>) -> f64 {
+        self.fill(moms, values);
+        let inv_d: Vec<C<f64>> = proc_
+            .props
+            .iter()
+            .map(|props| denominator(props, moms).inv())
+            .collect();
+        let nd = proc_.n_diagrams();
+        let mut total = 0.0;
+        let mut k = 0;
+        for i in 0..nd {
+            for j in i..nd {
+                let (mut re, mut im) = (0.0, 0.0);
+                for &(v, cr, ci) in &self.pairs[k] {
+                    re += cr * values[v];
+                    im += ci * values[v];
+                }
+                let w = inv_d[i] * inv_d[j].conj();
+                let t = re * w.re - im * w.im;
+                total += if i == j { t } else { 2.0 * t };
+                k += 1;
+            }
+        }
+        total
+    }
+
+    /// The value table: `1`, the invariants, then every ansatz column.
+    fn fill(&self, moms: &[LorentzVector<f64>], values: &mut Vec<f64>) {
         let n = moms.len();
         let basis = &moms[..n - 1];
         let dot = |a: &LorentzVector<f64>, b: &LorentzVector<f64>| {
@@ -1819,32 +1875,12 @@ impl TraceForm {
             }
         }
         debug_assert_eq!(values.len(), 1 + self.n_dots + self.n_eps);
-        for &(a, b) in &self.plan {
-            let v = values[a] * values[b];
-            values.push(v);
+        let base = values.len();
+        values.resize(base + self.plan.len(), 0.0);
+        for &c in &self.needed {
+            let (a, b) = self.plan[c];
+            values[base + c] = values[a] * values[b];
         }
-        let inv_d: Vec<C<f64>> = proc_
-            .props
-            .iter()
-            .map(|props| denominator(props, moms).inv())
-            .collect();
-        let nd = proc_.n_diagrams();
-        let mut total = 0.0;
-        let mut k = 0;
-        for i in 0..nd {
-            for j in i..nd {
-                let (mut re, mut im) = (0.0, 0.0);
-                for &(v, cr, ci) in &self.pairs[k] {
-                    re += cr * values[v];
-                    im += ci * values[v];
-                }
-                let w = inv_d[i] * inv_d[j].conj();
-                let t = re * w.re - im * w.im;
-                total += if i == j { t } else { 2.0 * t };
-                k += 1;
-            }
-        }
-        total
     }
 }
 
@@ -2006,5 +2042,989 @@ fn measure_trace_form() {
         ("e+ e- > mu+ mu- ta+ ta- QCD=0", 5, false),
     ] {
         measure(process, max_degree, probe_bases);
+    }
+}
+
+// ── the full |M|² ────────────────────────────────────────────────────────────
+//
+// The per-pair form cannot express cancellations between diagrams. The full
+// `|M|² = eval_m2` can: it is gauge invariant (so Lorentz invariant even with
+// external vectors, and needs no frame), and its poles are those that survive the
+// sum over pairs. It is reconstructed here over its *minimal* common denominator:
+// first the exponent each propagator keeps in `|M|²`, from an exact univariate
+// reconstruction along a random rational curve through phase space; then the
+// numerator's total degree, from the scaling family `p → λ p`; then, where a
+// dense ansatz is affordable, the numerator itself.
+
+/// Dense polynomials over `Z_p` in one variable, lowest coefficient first.
+mod upoly {
+    use num_modular::{ModularCoreOps, ModularUnaryOps};
+
+    pub fn trim(mut a: Vec<u64>) -> Vec<u64> {
+        while a.last() == Some(&0) {
+            a.pop();
+        }
+        a
+    }
+
+    pub fn degree(a: &[u64]) -> usize {
+        a.len().saturating_sub(1)
+    }
+
+    /// `(t − c)·a + s·b`, the step of the continued-fraction recurrence.
+    pub fn shift_mul_add(a: &[u64], c: u64, s: u64, b: &[u64], p: u64) -> Vec<u64> {
+        let mut out = vec![0u64; a.len().max(b.len()) + 1];
+        for (k, &x) in a.iter().enumerate() {
+            out[k + 1] = out[k + 1].addm(x, &p);
+            out[k] = out[k].subm(x.mulm(c, &p), &p);
+        }
+        for (k, &y) in b.iter().enumerate() {
+            out[k] = out[k].addm(y.mulm(s, &p), &p);
+        }
+        trim(out)
+    }
+
+    pub fn divmod(a: &[u64], b: &[u64], p: u64) -> (Vec<u64>, Vec<u64>) {
+        let b = trim(b.to_vec());
+        assert!(!b.is_empty(), "division by the zero polynomial");
+        let mut r = trim(a.to_vec());
+        if r.len() < b.len() {
+            return (Vec::new(), r);
+        }
+        let inv = b[b.len() - 1]
+            .invm(&p)
+            .expect("non-zero leading coefficient");
+        let mut q = vec![0u64; r.len() - b.len() + 1];
+        while r.len() >= b.len() {
+            let shift = r.len() - b.len();
+            let c = r[r.len() - 1].mulm(inv, &p);
+            q[shift] = c;
+            for (k, &y) in b.iter().enumerate() {
+                r[shift + k] = r[shift + k].subm(c.mulm(y, &p), &p);
+            }
+            r = trim(r);
+        }
+        (trim(q), r)
+    }
+
+    pub fn monic(a: &[u64], p: u64) -> Vec<u64> {
+        let a = trim(a.to_vec());
+        let inv = a[a.len() - 1]
+            .invm(&p)
+            .expect("non-zero leading coefficient");
+        a.iter().map(|&x| x.mulm(inv, &p)).collect()
+    }
+
+    pub fn gcd(a: &[u64], b: &[u64], p: u64) -> Vec<u64> {
+        let (mut a, mut b) = (trim(a.to_vec()), trim(b.to_vec()));
+        while !b.is_empty() {
+            let r = divmod(&a, &b, p).1;
+            a = b;
+            b = r;
+        }
+        monic(&a, p)
+    }
+
+    /// How many times `f` divides `a`.
+    pub fn multiplicity(a: &[u64], f: &[u64], p: u64) -> usize {
+        let mut a = trim(a.to_vec());
+        let mut e = 0;
+        loop {
+            let (q, r) = divmod(&a, f, p);
+            if !r.is_empty() || q.is_empty() {
+                return e;
+            }
+            a = q;
+            e += 1;
+        }
+    }
+}
+
+/// Thiele's continued-fraction interpolation over `Z_p`, fed one node at a time:
+/// the univariate rational function through the nodes, with no degree given in
+/// advance. It is complete once its current convergent predicts `CONFIRM` further
+/// nodes it was not built from.
+struct Thiele {
+    p: u64,
+    nodes: Vec<u64>,
+    /// The inverse differences on the diagonal, `φ_k(t_k)`.
+    coeffs: Vec<u64>,
+    confirmed: usize,
+}
+
+impl Thiele {
+    const CONFIRM: usize = 4;
+
+    fn new(p: u64) -> Self {
+        Thiele {
+            p,
+            nodes: Vec::new(),
+            coeffs: Vec::new(),
+            confirmed: 0,
+        }
+    }
+
+    fn eval(&self, t: u64) -> Option<u64> {
+        let p = self.p;
+        let mut r = *self.coeffs.last()?;
+        for k in (0..self.coeffs.len() - 1).rev() {
+            let inv = r.invm(&p)?;
+            r = self.coeffs[k].addm(t.subm(self.nodes[k], &p).mulm(inv, &p), &p);
+        }
+        Some(r)
+    }
+
+    fn done(&self) -> bool {
+        self.confirmed >= Self::CONFIRM
+    }
+
+    /// Feed one node. Returns whether the function is now pinned down.
+    fn push(&mut self, t: u64, f: u64) -> bool {
+        let p = self.p;
+        if self.done() {
+            return true;
+        }
+        if self.eval(t) == Some(f) {
+            self.confirmed += 1;
+            return self.done();
+        }
+        self.confirmed = 0;
+        let mut v = f;
+        for (&tk, &ak) in self.nodes.iter().zip(&self.coeffs) {
+            let Some(inv) = v.subm(ak, &p).invm(&p) else {
+                // A coincidence mod p at this node: skip it.
+                return false;
+            };
+            v = t.subm(tk, &p).mulm(inv, &p);
+        }
+        self.nodes.push(t);
+        self.coeffs.push(v);
+        false
+    }
+
+    /// The reconstructed function as a reduced `(numerator, monic denominator)`.
+    fn rational(&self) -> (Vec<u64>, Vec<u64>) {
+        let p = self.p;
+        // A_k = a_k A_{k−1} + (t − t_{k−1}) A_{k−2}, likewise B.
+        let (mut a_prev, mut b_prev) = (vec![1u64], Vec::new());
+        let (mut a, mut b) = (upoly::trim(vec![self.coeffs[0]]), vec![1u64]);
+        for k in 1..self.coeffs.len() {
+            let a_next = upoly::shift_mul_add(&a_prev, self.nodes[k - 1], self.coeffs[k], &a, p);
+            let b_next = upoly::shift_mul_add(&b_prev, self.nodes[k - 1], self.coeffs[k], &b, p);
+            (a_prev, b_prev) = (a, b);
+            (a, b) = (a_next, b_next);
+        }
+        let g = upoly::gcd(&a, &b, p);
+        let (num, _) = upoly::divmod(&a, &g, p);
+        let (den, _) = upoly::divmod(&b, &g, p);
+        let lead = den[den.len() - 1].invm(&p).expect("non-zero denominator");
+        (
+            num.iter().map(|&x| x.mulm(lead, &p)).collect(),
+            den.iter().map(|&x| x.mulm(lead, &p)).collect(),
+        )
+    }
+}
+
+/// A distinct propagator factor of the process: `q² − m²` for a line without
+/// width (real), `|q² − M² + i M Γ|²` for one with (real, quadratic).
+#[derive(Clone, Debug)]
+struct Factor {
+    momentum: Vec<i8>,
+    mass: f64,
+    width: f64,
+}
+
+impl Factor {
+    /// Degree in the invariants.
+    fn degree(&self) -> usize {
+        if self.width == 0.0 {
+            1
+        } else {
+            2
+        }
+    }
+
+    /// The largest exponent any diagram pair gives it: `D_i D_j*` holds a widthless
+    /// line twice when both diagrams carry it, a resonant one once as `D D*`.
+    fn pair_exponent(&self) -> usize {
+        if self.width == 0.0 {
+            2
+        } else {
+            1
+        }
+    }
+
+    fn label(&self, proc_: &Process) -> String {
+        let n_in = proc_.evaluator.n_in();
+        let legs: Vec<String> = self
+            .momentum
+            .iter()
+            .enumerate()
+            .filter(|(_, &c)| c != 0)
+            .map(|(k, &c)| format!("{}{}", if c > 0 { "+" } else { "-" }, k + 1))
+            .collect();
+        let kind = if self.mass == 0.0 {
+            "massless".to_string()
+        } else if self.width == 0.0 {
+            format!("m={}", self.mass)
+        } else {
+            format!("M={} Γ={:.3}", self.mass, self.width)
+        };
+        let _ = n_in;
+        format!("({}) {kind}", legs.join(""))
+    }
+
+    fn value(&self, moms: &[Mom]) -> Q {
+        let mut qv: Mom = std::array::from_fn(|_| Q::zero());
+        for (k, &c) in self.momentum.iter().enumerate() {
+            if c != 0 {
+                qv = madd(&qv, &mscale(&moms[k], &q(c as i64, 1)));
+            }
+        }
+        let m = Q::from_float(self.mass).unwrap();
+        let re = mdot(&qv, &qv) - &m * &m;
+        if self.width == 0.0 {
+            re
+        } else {
+            let mg = &m * Q::from_float(self.width).unwrap();
+            &re * &re + &mg * &mg
+        }
+    }
+}
+
+fn factors(proc_: &Process) -> Vec<Factor> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for props in &proc_.props {
+        for prop in props {
+            let flip = prop
+                .momentum
+                .iter()
+                .find(|&&c| c != 0)
+                .is_some_and(|&c| c < 0);
+            let m: Vec<i8> = prop
+                .momentum
+                .iter()
+                .map(|&c| if flip { -c } else { c })
+                .collect();
+            if seen.insert((m.clone(), prop.mass.to_bits(), prop.width.to_bits())) {
+                out.push(Factor {
+                    momentum: m,
+                    mass: prop.mass,
+                    width: prop.width,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The denominator `Q = Π_k f_k^{e_k}` at a point.
+fn denominator_value(factors: &[Factor], exponents: &[usize], moms: &[Mom]) -> Q {
+    factors
+        .iter()
+        .zip(exponents)
+        .fold(Q::one(), |acc, (f, &e)| {
+            let v = f.value(moms);
+            (0..e).fold(acc, |acc, _| acc * &v)
+        })
+}
+
+/// A phase-space point whose random choices are affine in one parameter `t`, each
+/// `a + b t`, closing momentum conservation on the two massless legs `closing`
+/// (beams included). Rational in `t`, and physical near `t ∈ [0, 1]`; an
+/// unphysical `t` gives `None`.
+///
+/// The closing split puts the closing pair's invariant `(σ_a p_a + σ_b p_b)²` into
+/// every invariant of those two legs, so along this curve that one invariant is
+/// not independent of the others: a pole in it cannot be read here.
+struct Curve {
+    params: Vec<(Q, Q)>,
+    masses: Vec<Option<Q>>,
+    closing: [usize; 2],
+}
+
+#[derive(Clone, Copy)]
+enum Draw {
+    Energy,
+    Share,
+    Stereo,
+}
+
+impl Curve {
+    fn new(rng: &mut ChaCha8Rng, masses: &[Option<Q>], closing: [usize; 2]) -> Self {
+        loop {
+            let mut params = Vec::new();
+            let point = build_point(
+                &mut |kind| {
+                    let a = match kind {
+                        Draw::Energy => q(rng.random_range(20..=60), rng.random_range(1..=3)),
+                        Draw::Share => q(rng.random_range(1..=8), (4 * masses.len()) as i64),
+                        Draw::Stereo => small_rational(rng, 9),
+                    };
+                    let b = &a * q(rng.random_range(-6..=6), 40) + q(rng.random_range(-3..=3), 20);
+                    params.push((a.clone(), b));
+                    a
+                },
+                masses,
+                closing,
+            );
+            if point.is_some() {
+                return Curve {
+                    params,
+                    masses: masses.to_vec(),
+                    closing,
+                };
+            }
+        }
+    }
+
+    fn at(&self, t: &Q) -> Option<Vec<Mom>> {
+        let mut k = 0;
+        build_point(
+            &mut |_| {
+                let (a, b) = &self.params[k];
+                k += 1;
+                a + b * t
+            },
+            &self.masses,
+            self.closing,
+        )
+    }
+
+    /// The signed leg combination whose invariant this curve fixes.
+    fn closing_vector(&self) -> Vec<i8> {
+        let mut v = vec![0i8; self.masses.len()];
+        for &k in &self.closing {
+            v[k] = if k < 2 { 1 } else { -1 };
+        }
+        v
+    }
+}
+
+/// Whether two signed leg combinations have the same invariant: equal up to sign,
+/// or complementary (momentum conservation makes `q` and `Σσ − q` equal and
+/// opposite).
+fn same_invariant(a: &[i8], b: &[i8]) -> bool {
+    let sigma = |k: usize| if k < 2 { 1i8 } else { -1 };
+    let neg = |v: &[i8]| v.iter().map(|&c| -c).collect::<Vec<_>>();
+    let comp: Vec<i8> = b.iter().enumerate().map(|(k, &c)| sigma(k) - c).collect();
+    a == b || a == neg(b).as_slice() || a == comp.as_slice() || a == neg(&comp).as_slice()
+}
+
+/// A 2 → n point with every random choice drawn from `draw` in a fixed order:
+/// every leg but the two `closing` ones (massless; either may be a beam) gets an
+/// energy and a direction, and the closing pair takes what momentum conservation
+/// leaves. `masses` covers every leg, beams first (beams are massless).
+fn build_point(
+    draw: &mut dyn FnMut(Draw) -> Q,
+    masses: &[Option<Q>],
+    closing: [usize; 2],
+) -> Option<Vec<Mom>> {
+    let stereo = |draw: &mut dyn FnMut(Draw) -> Q| -> [Q; 3] {
+        let u = draw(Draw::Stereo);
+        let v = draw(Draw::Stereo);
+        let r2 = &u * &u + &v * &v;
+        let den = &r2 + Q::one();
+        [
+            &u * q(2, 1) / &den,
+            &v * q(2, 1) / &den,
+            (&r2 - Q::one()) / &den,
+        ]
+    };
+    assert!(
+        closing.iter().all(|&k| masses[k].is_none()),
+        "closing legs are massless"
+    );
+    let n = masses.len();
+    let sigma = |k: usize| if k < 2 { q(1, 1) } else { q(-1, 1) };
+    let scale = draw(Draw::Energy);
+    let mut moms: Vec<Option<Mom>> = vec![None; n];
+    // R = −Σ_free σ_k p_k, so that σ_a p_a + σ_b p_b = R.
+    let mut r: Mom = std::array::from_fn(|_| Q::zero());
+    for k in 0..n {
+        if closing.contains(&k) {
+            continue;
+        }
+        let energy = if k < 2 {
+            draw(Draw::Energy)
+        } else {
+            &scale * draw(Draw::Share)
+        };
+        let along = massless(&energy, &stereo(draw));
+        let p = match &masses[k] {
+            None => along,
+            Some(m2) => {
+                let nn = massless(&(&energy * q(1, 4)), &stereo(draw));
+                if mdot(&along, &nn).is_zero() {
+                    return None;
+                }
+                massive_from(&along, &nn, m2)
+            }
+        };
+        r = msub(&r, &mscale(&p, &sigma(k)));
+        moms[k] = Some(p);
+    }
+    let unit = stereo(draw);
+    let dir = massless(&Q::one(), &unit);
+    let [a, b] = closing;
+    let (pa, pb) = match (a < 2, b < 2) {
+        // Same side: p_a + p_b = ±R, a timelike future momentum split in two.
+        (sa, sb) if sa == sb => {
+            let total = if sa { r } else { mscale(&r, &q(-1, 1)) };
+            if total[0] <= Q::zero() || mdot(&total, &total) <= Q::zero() {
+                return None;
+            }
+            split_massless(&total, &unit)
+        }
+        // Opposite sides: p_in − p_out = R; p_in = λ n with (λ n − R)² = 0.
+        (sa, _) => {
+            let rr = if sa { r } else { mscale(&r, &q(-1, 1)) };
+            let nr = mdot(&dir, &rr);
+            if nr.is_zero() {
+                return None;
+            }
+            let lambda = mdot(&rr, &rr) / (q(2, 1) * nr);
+            let p_in = mscale(&dir, &lambda);
+            let p_out = msub(&p_in, &rr);
+            if sa {
+                (p_in, p_out)
+            } else {
+                (p_out, p_in)
+            }
+        }
+    };
+    moms[a] = Some(pa);
+    moms[b] = Some(pb);
+    let all: Vec<Mom> = moms
+        .into_iter()
+        .map(|p| p.expect("every leg drawn"))
+        .collect();
+    all.iter().all(|p| p[0] > Q::zero()).then_some(all)
+}
+
+/// Whether every leg of `point` has its wavefunction roots in `Z_p`.
+fn all_roots_exist(proc_: &Process, point: &[Mom]) -> bool {
+    point
+        .iter()
+        .enumerate()
+        .all(|(k, p)| leg_roots_exist(proc_, k, p))
+}
+
+/// The full `|M|²` at a point, mod `p`, or `None` when a root is missing.
+fn full_msq(proc_: &Process, bound: &BoundAmplitude<Fz>, point: &[Mom]) -> Option<u64> {
+    if !all_roots_exist(proc_, point) {
+        return None;
+    }
+    take_poison();
+    let moms: Vec<LorentzVector<Fz>> = point.iter().map(to_fz_momentum).collect();
+    let mut scratch = bound.scratch_space();
+    let v = bound.eval_m2(&moms, &mut scratch);
+    (!take_poison()).then_some(v.m)
+}
+
+/// The exponent each factor keeps in the full `|M|²`, read off the denominator of
+/// `|M|²(t)` along a random curve, where each factor is a polynomial in `t`.
+///
+/// Along the curve the invariants share factors that have nothing to do with
+/// their poles — a massless momentum is an energy times a direction, so every
+/// `p_a·p_b` carries `E_a(t) E_b(t)`, and the closing split's normalisation enters
+/// every invariant of the last two legs. Those cancel between numerator and
+/// denominator and would hide a pole. So each factor is tested on its *private*
+/// part: its numerator in `t` with every irreducible factor removed that it shares
+/// with any other pairwise invariant `p_a·p_b` (or with any denominator). `None`
+/// when nothing private is left on this curve.
+fn pole_exponents(
+    proc_: &Process,
+    factors: &[Factor],
+    p: u64,
+    seed: u64,
+) -> (Vec<Option<usize>>, usize) {
+    let n = proc_.evaluator.n_ext();
+    let masses: Vec<Option<Q>> = [None, None]
+        .into_iter()
+        .chain(proc_.out_masses.iter().cloned())
+        .collect();
+    let massless_out: Vec<usize> = (2..n).filter(|&k| masses[k].is_none()).collect();
+    // Two curves whose closing invariants differ: an s-type pair of final-state
+    // legs, and a t-type pair (a beam with a final-state leg).
+    let closings = [
+        [
+            massless_out[massless_out.len() - 2],
+            massless_out[massless_out.len() - 1],
+        ],
+        [0, massless_out[0]],
+    ];
+    let mut exps: Vec<Option<usize>> = vec![None; factors.len()];
+    let mut nodes = 0;
+    for (c, closing) in closings.into_iter().enumerate() {
+        let (found, used) = exponents_on_curve(proc_, factors, closing, p, seed + c as u64);
+        nodes += used;
+        for (e, f) in exps.iter_mut().zip(found) {
+            match (*e, f) {
+                (None, f) => *e = f,
+                (Some(x), Some(y)) => assert_eq!(x, y, "the two curves disagree on an exponent"),
+                (Some(_), None) => {}
+            }
+        }
+    }
+    (exps, nodes)
+}
+
+/// [`pole_exponents`] on one curve.
+fn exponents_on_curve(
+    proc_: &Process,
+    factors: &[Factor],
+    closing: [usize; 2],
+    p: u64,
+    seed: u64,
+) -> (Vec<Option<usize>>, usize) {
+    set_modulus(p);
+    let bound = BoundAmplitude::<Fz>::bind(&proc_.evaluator, &proc_.evaluated);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let masses: Vec<Option<Q>> = [None, None]
+        .into_iter()
+        .chain(proc_.out_masses.iter().cloned())
+        .collect();
+    let curve = Curve::new(&mut rng, &masses, closing);
+    let fixed = curve.closing_vector();
+    let n = masses.len();
+    let pairs: Vec<(usize, usize)> = (0..n)
+        .flat_map(|a| (a + 1..n).map(move |b| (a, b)))
+        .collect();
+    let mut msq = Thiele::new(p);
+    let mut facs: Vec<Thiele> = factors.iter().map(|_| Thiele::new(p)).collect();
+    let mut dots: Vec<Thiele> = pairs.iter().map(|_| Thiele::new(p)).collect();
+    // Nodes t = k / K over [0, 1], in batches evaluated in parallel.
+    const K: i64 = 1 << 20;
+    let mut next = 1i64;
+    let pending = |msq: &Thiele, facs: &[Thiele], dots: &[Thiele]| {
+        !msq.done() || facs.iter().chain(dots).any(|f| !f.done())
+    };
+    while pending(&msq, &facs, &dots) {
+        assert!(
+            next < K,
+            "{}: no reconstruction along the curve",
+            proc_.label
+        );
+        let ks: Vec<i64> = (next..next + 256).collect();
+        next += 256;
+        type Node = (u64, Option<u64>, Vec<u64>, Vec<u64>);
+        let vals: Vec<Option<Node>> = ks
+            .par_iter()
+            .map(|&k| {
+                set_modulus(p);
+                let t = q(k, K);
+                let point = curve.at(&t)?;
+                let fvals = factors
+                    .iter()
+                    .map(|f| reduce_rational(&f.value(&point)))
+                    .collect();
+                let dvals = pairs
+                    .iter()
+                    .map(|&(a, b)| reduce_rational(&mdot(&point[a], &point[b])))
+                    .collect();
+                let m = full_msq(proc_, &bound, &point);
+                Some((reduce_rational(&t), m, fvals, dvals))
+            })
+            .collect();
+        set_modulus(p);
+        for (t, m, fvals, dvals) in vals.into_iter().flatten() {
+            if let Some(m) = m {
+                msq.push(t, m);
+            }
+            for (th, v) in facs.iter_mut().zip(fvals) {
+                th.push(t, v);
+            }
+            for (th, v) in dots.iter_mut().zip(dvals) {
+                th.push(t, v);
+            }
+        }
+    }
+    let (_, den) = msq.rational();
+    let dot_polys: Vec<(Vec<u64>, Vec<u64>)> = dots.iter().map(Thiele::rational).collect();
+    let sigma = |k: usize| if k < 2 { 1i8 } else { -1 };
+    let exps = facs
+        .iter()
+        .zip(factors)
+        .map(|(th, factor)| {
+            if same_invariant(&factor.momentum, &fixed) {
+                return None;
+            }
+            let (num, fden) = th.rational();
+            let mut private = upoly::monic(&num, p);
+            let mut strip = |x: &[u64]| {
+                if x.len() < 2 {
+                    return;
+                }
+                loop {
+                    let g = upoly::gcd(&private, x, p);
+                    if g.len() < 2 {
+                        break;
+                    }
+                    private = upoly::divmod(&private, &g, p).0;
+                }
+            };
+            strip(&fden);
+            for (&(a, b), (dn, dd)) in pairs.iter().zip(&dot_polys) {
+                strip(dd);
+                // A massless line between two legs *is* that pairwise invariant.
+                let mut w = vec![0i8; n];
+                w[a] = sigma(a);
+                w[b] = sigma(b);
+                let own = factor.mass == 0.0
+                    && masses[a].is_none()
+                    && masses[b].is_none()
+                    && same_invariant(&factor.momentum, &w);
+                if !own {
+                    strip(dn);
+                }
+            }
+            (private.len() >= 2).then(|| upoly::multiplicity(&den, &upoly::monic(&private, p), p))
+        })
+        .collect();
+    (exps, msq.nodes.len())
+}
+
+/// Total degree of the numerator `Q·|M|²` in the invariants, from the scaling
+/// family `p → μ² p` (invariants scale by `s = μ⁴`, the ε contractions by `s²`).
+/// Valid only with massless external legs, which stay on shell under scaling.
+/// The numerator must come out a polynomial in `s`, which checks `Q`.
+fn numerator_degree(
+    proc_: &Process,
+    factors: &[Factor],
+    exps: &[usize],
+    p: u64,
+    seed: u64,
+) -> usize {
+    assert!(
+        proc_.out_masses.iter().all(Option::is_none),
+        "scaling needs massless legs"
+    );
+    set_modulus(p);
+    let bound = BoundAmplitude::<Fz>::bind(&proc_.evaluator, &proc_.evaluated);
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let accept = |k: usize, m: &Mom| leg_roots_exist(proc_, k, m);
+    let base = rational_point(&mut rng, &proc_.out_masses, false, &accept);
+    let mut th = Thiele::new(p);
+    let mut mu = 1i64;
+    while !th.done() {
+        let scale = q(mu * mu, 1);
+        let point: Vec<Mom> = base.iter().map(|m| mscale(m, &scale)).collect();
+        let msq = full_msq(proc_, &bound, &point).expect("roots scale with the point");
+        let qv = reduce_rational(&denominator_value(factors, exps, &point));
+        let s = reduce_rational(&q(mu.pow(4), 1));
+        th.push(s, msq.mulm(qv, &p));
+        mu += 1;
+    }
+    let (num, den) = th.rational();
+    assert_eq!(
+        den,
+        vec![1],
+        "Q·|M|² is not a polynomial along the scaling family"
+    );
+    upoly::degree(&num)
+}
+
+/// One sample of the full numerator, split into its parity-even and -odd parts
+/// by evaluating at the point and at its mirror image `p⃗ → −p⃗` (dot products
+/// unchanged, ε contractions negated).
+fn full_sample(
+    proc_: &Process,
+    bound: &BoundAmplitude<Fz>,
+    factors: &[Factor],
+    exps: &[usize],
+    p: u64,
+    seed: u64,
+) -> Sample {
+    set_modulus(p);
+    let mirror = |m: &Mom| -> Mom { [m[0].clone(), -&m[1], -&m[2], -&m[3]] };
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let accept =
+        |k: usize, m: &Mom| leg_roots_exist(proc_, k, m) && leg_roots_exist(proc_, k, &mirror(m));
+    loop {
+        let point = rational_point(&mut rng, &proc_.out_masses, false, &accept);
+        let image: Vec<Mom> = point.iter().map(mirror).collect();
+        let (Some(a), Some(b)) = (
+            full_msq(proc_, bound, &point),
+            full_msq(proc_, bound, &image),
+        ) else {
+            continue;
+        };
+        let qv = reduce_rational(&denominator_value(factors, exps, &point));
+        let half = 2u64.invm(&p).unwrap();
+        let even = a.addm(b, &p).mulm(half, &p).mulm(qv, &p);
+        let odd = a.subm(b, &p).mulm(half, &p).mulm(qv, &p);
+        let (dots, eps) = invariants(&point, point.len() - 1);
+        return Sample {
+            point,
+            dots,
+            eps,
+            numerators: vec![[even, 0], [odd, 0]],
+        };
+    }
+}
+
+/// The full numerator's coefficients in the dense ansatz of degree `d`: the
+/// parity-even part on the even columns, the odd part on the ε columns, each its
+/// own row reduction.
+fn fit_full(samples: &[Sample], d: usize, p: u64) -> (Fit, Fit) {
+    let (n_dots, n_eps) = (samples[0].dots.len(), samples[0].eps.len());
+    let all = ansatz(n_dots, n_eps, d);
+    let (even_cols, odd_cols): (Vec<Column>, Vec<Column>) =
+        all.into_iter().partition(|c| c.eps.is_none());
+    let part = |cols: Vec<Column>, which: usize| -> Fit {
+        let need = cols.len() + 12;
+        assert!(samples.len() >= need);
+        let rows: Vec<Sample> = samples[..need]
+            .iter()
+            .map(|s| Sample {
+                point: Vec::new(),
+                dots: s.dots.clone(),
+                eps: s.eps.clone(),
+                numerators: vec![s.numerators[which]],
+            })
+            .collect();
+        fit(&rows, cols, p).expect("the full numerator is a polynomial of this degree")
+    };
+    let even = part(even_cols, 0);
+    let odd = if odd_cols.is_empty() {
+        Fit {
+            columns: Vec::new(),
+            pivots: Vec::new(),
+            coeffs: vec![Vec::new()],
+        }
+    } else {
+        part(odd_cols, 1)
+    };
+    (even, odd)
+}
+
+fn binomial(n: usize, k: usize) -> u128 {
+    (0..k as u128).fold(1u128, |acc, i| acc * (n as u128 - i) / (i + 1))
+}
+
+impl Factor {
+    fn value_f64(&self, moms: &[LorentzVector<f64>]) -> f64 {
+        let mut qv = [0.0f64; 4];
+        for (k, &c) in self.momentum.iter().enumerate() {
+            let c = c as f64;
+            qv[0] += c * moms[k].e();
+            qv[1] += c * moms[k].px();
+            qv[2] += c * moms[k].py();
+            qv[3] += c * moms[k].pz();
+        }
+        let re =
+            qv[0] * qv[0] - qv[1] * qv[1] - qv[2] * qv[2] - qv[3] * qv[3] - self.mass * self.mass;
+        if self.width == 0.0 {
+            re
+        } else {
+            let mg = self.mass * self.width;
+            re * re + mg * mg
+        }
+    }
+}
+
+/// The even and odd fits as one single-"pair" fit, for [`TraceForm`].
+fn combined(even: &Fit, odd: &Fit) -> Fit {
+    let off = even.columns.len();
+    let mut columns = even.columns.clone();
+    columns.extend(odd.columns.iter().cloned());
+    let mut pivots = even.pivots.clone();
+    pivots.extend(odd.pivots.iter().map(|&t| t + off));
+    let mut coeffs = even.coeffs[0].clone();
+    coeffs.extend(odd.coeffs[0].iter().copied());
+    Fit {
+        columns,
+        pivots,
+        coeffs: vec![coeffs],
+    }
+}
+
+/// Nanoseconds per point: `eval_m2` against the full form `N(x)/Q(x)`.
+fn time_full(proc_: &Process, form: &TraceForm, factors: &[Factor], exps: &[usize]) -> (f64, f64) {
+    let points = cm_z_points(proc_, 256);
+    let mut pruned = AmplitudeEvaluator::compile(&proc_.set, proc_.model.as_ref()).unwrap();
+    pruned.prune_zero_helicities(&proc_.evaluated);
+    let bound = BoundAmplitude::<f64>::bind(&pruned, &proc_.evaluated);
+    let mut scratch = bound.scratch_space();
+    let mut values = Vec::new();
+    let time = |f: &mut dyn FnMut(&[LorentzVector<f64>]) -> f64| {
+        let mut sink = 0.0;
+        let mut reps = 1;
+        loop {
+            let t = Instant::now();
+            for _ in 0..reps {
+                for p in &points {
+                    sink += f(p);
+                }
+            }
+            let el = t.elapsed().as_secs_f64();
+            if el > 0.5 {
+                std::hint::black_box(sink);
+                return el * 1e9 / (reps * points.len()) as f64;
+            }
+            reps *= 2;
+        }
+    };
+    let helicity = time(&mut |p| bound.eval_m2(p, &mut scratch));
+    let full = time(&mut |p| {
+        form.fill(p, &mut values);
+        let num: f64 = form.pairs[0].iter().map(|&(v, c, _)| c * values[v]).sum();
+        let den: f64 = factors
+            .iter()
+            .zip(exps)
+            .map(|(f, &e)| f.value_f64(p).powi(e as i32))
+            .product();
+        num / den
+    });
+    (helicity, full)
+}
+
+/// One row of the full-|M|² measurement.
+fn measure_full(process: &str, max_columns: u128) {
+    let proc_ = Process::new(process);
+    let ps = primes(2);
+    let fs = factors(&proc_);
+    let t = Instant::now();
+    let (exps, nodes) = pole_exponents(&proc_, &fs, ps[0], 3);
+    let exps: Vec<usize> = exps
+        .iter()
+        .zip(&fs)
+        .map(|(e, f)| e.unwrap_or_else(|| panic!("{process}: no curve reads {}", f.label(&proc_))))
+        .collect();
+    let pair_q: usize = fs.iter().map(|f| f.degree() * f.pair_exponent()).sum();
+    let q_deg: usize = fs.iter().zip(&exps).map(|(f, e)| f.degree() * e).sum();
+    println!(
+        "{process}: {} diagrams, {} distinct propagators; poles from {nodes} curve nodes in {:.1} s",
+        proc_.n_diagrams(),
+        fs.len(),
+        t.elapsed().as_secs_f64()
+    );
+    for (f, e) in fs.iter().zip(&exps) {
+        if *e != f.pair_exponent() {
+            println!(
+                "  {}: pairs {} -> full {e}",
+                f.label(&proc_),
+                f.pair_exponent()
+            );
+        }
+    }
+    println!(
+        "  {} of {} propagators keep their pairwise exponent; denominator degree {q_deg} (lcm of pairs {pair_q})",
+        fs.iter().zip(&exps).filter(|(f, e)| **e == f.pair_exponent()).count(),
+        fs.len()
+    );
+    if proc_.out_masses.iter().any(Option::is_some) {
+        println!("  massive legs: numerator degree not measured (the scaling family needs massless legs)");
+        return;
+    }
+    let d = numerator_degree(&proc_, &fs, &exps, ps[0], 4);
+    let n = proc_.evaluator.n_ext();
+    let n_dots = (n - 1) * (n - 2) / 2 - 1;
+    let n_eps = binomial(n - 1, 4) as usize;
+    let even_cols = binomial(n_dots + d, d);
+    let odd_cols = if d >= 2 {
+        n_eps as u128 * binomial(n_dots + d - 2, d - 2)
+    } else {
+        0
+    };
+    println!(
+        "  numerator degree {d} in {n_dots} dot products + {n_eps} ε: dense ansatz {even_cols} even + {odd_cols} odd columns"
+    );
+    if even_cols.max(odd_cols) > max_columns {
+        println!("  too large to fit densely here");
+        return;
+    }
+    let mut counts = Vec::new();
+    let mut last = None;
+    for (k, &p) in ps.iter().enumerate() {
+        let t = Instant::now();
+        set_modulus(p);
+        let bound = BoundAmplitude::<Fz>::bind(&proc_.evaluator, &proc_.evaluated);
+        let need = even_cols.max(odd_cols) as usize + 12;
+        let samples: Vec<Sample> = (0..need as u64)
+            .into_par_iter()
+            .map(|j| full_sample(&proc_, &bound, &fs, &exps, p, ((k as u64) << 40) + j))
+            .collect();
+        set_modulus(p);
+        let (even, odd) = fit_full(&samples, d, p);
+        let nnz = |f: &Fit| f.coeffs[0].iter().filter(|z| z[0] != 0).count();
+        counts.push((nnz(&even), nnz(&odd)));
+        println!(
+            "  prime {k}: {} even + {} odd terms ({} + {} independent columns), {} samples, {:.1} s",
+            nnz(&even),
+            nnz(&odd),
+            even.pivots.len(),
+            odd.pivots.len(),
+            samples.len(),
+            t.elapsed().as_secs_f64()
+        );
+        last = Some(combined(&even, &odd));
+    }
+    assert_eq!(
+        counts[0], counts[1],
+        "{process}: term counts differ between primes"
+    );
+    let form = TraceForm::new(&last.unwrap());
+    let (helicity, full) = time_full(&proc_, &form, &fs, &exps);
+    println!(
+        "  per point: eval_m2 {helicity:.0} ns, full form ({} terms) {full:.0} ns, ratio {:.2}",
+        form.terms(),
+        full / helicity
+    );
+}
+
+/// The full `|M|²` of `q q̄ → γ* g → ℓ⁺ℓ⁻ g` against its textbook closed form,
+/// the crossing of `e⁺e⁻ → q q̄ g`:
+/// `|M|² ∝ (s₁₃² + s₁₄² + s₂₃² + s₂₄²) / (s₃₄ s₁₅ s₂₅)`.
+/// The ratio must be one constant mod `p` at every point. This is the cancellation
+/// the full form is about — each diagram pair carries `1/s₃₄²` and squared quark
+/// propagators, the sum keeps single powers — checked against physics rather
+/// than against the evaluator, which also pins the full box (the field
+/// arithmetic through `eval_m2`, the colour and helicity sums).
+#[test]
+fn full_msq_matches_the_textbook_closed_form() {
+    let proc_ = Process::new("u u~ > e+ e- g / z");
+    let p = primes(1)[0];
+    set_modulus(p);
+    let bound = BoundAmplitude::<Fz>::bind(&proc_.evaluator, &proc_.evaluated);
+    let mut rng = ChaCha8Rng::seed_from_u64(9);
+    let accept = |k: usize, m: &Mom| leg_roots_exist(&proc_, k, m);
+    let mut ratios = Vec::new();
+    while ratios.len() < 20 {
+        let point = rational_point(&mut rng, &proc_.out_masses, false, &accept);
+        let Some(m) = full_msq(&proc_, &bound, &point) else {
+            continue;
+        };
+        let s = |a: usize, b: usize| reduce_rational(&(q(2, 1) * mdot(&point[a], &point[b])));
+        let num = [(0, 2), (0, 3), (1, 2), (1, 3)]
+            .iter()
+            .fold(0u64, |acc, &(a, b)| acc.addm(s(a, b).mulm(s(a, b), &p), &p));
+        let den = s(2, 3).mulm(s(0, 4), &p).mulm(s(1, 4), &p);
+        ratios.push(m.mulm(den, &p).mulm(num.invm(&p).unwrap(), &p));
+    }
+    assert!(
+        ratios.iter().all(|&r| r == ratios[0]),
+        "|M|² is not the closed form: ratios {ratios:?}"
+    );
+}
+
+#[test]
+#[ignore = "measurement: the full-|M|² census, ~minutes"]
+fn measure_full_msq() {
+    for process in [
+        "e+ e- > mu+ mu-",
+        "u u~ > e+ e- g",
+        "g u > e+ e- u",
+        "e+ e- > mu+ mu- a",
+        "u d > e+ e- u d QCD=0",
+        "e+ e- > mu+ mu- ta+ ta- QCD=0",
+    ] {
+        // `FF_ROW=<process>` restricts the run to that one process.
+        if std::env::var("FF_ROW").is_ok_and(|r| r != process) {
+            continue;
+        }
+        measure_full(process, 6000);
     }
 }
