@@ -402,15 +402,69 @@ host has 15 GiB), twice, in about two minutes. `-Z time-passes` (via
 
 `optimized_mir` runs for a generic function whenever its crate's metadata is encoded, so
 this is the library build, before any LLVM work, and fat versus thin LTO does not enter.
-`ReferencePropagation`'s storage-liveness dataflow keeps a dense bitset of locals per
-basic block; every call ends a basic block and every `&a.v[3]` operand is a MIR
-temporary, so both counts grow with the program and the memory with their product.
+Why this pass, inferred rather than measured: `ReferencePropagation`'s storage-liveness
+dataflow keeps a bitset of locals per basic block; every call ends a basic block and
+every `&a.v[3]` operand is a MIR temporary, so both counts grow with the program and the
+memory with their product.
 `cargo check` of the same crate (no optimised MIR) completes in 53 s at 3.4 GiB peak,
-nearly all of it type checking and borrow checking. The by-value rendering of the first
-study compiled because its operands are locals that MIR passes by move and its 16 k
-kernel calls are fewer basic blocks.
+nearly all of it type checking and borrow checking. Why the by-value rendering of the first
+study got through the same pipeline is not established; it makes 16 k kernel calls
+against 36 k here, and its operands are named locals rather than fresh references.
 
 This is a property of rustc's MIR pipeline on huge functions, not of LLVM: the first
 study's 52-minute build was LLVM's machine scheduler; this one never gets that far.
 Splitting the program into functions is therefore the fix to try, and in this form it is
 free at run time: no value crosses a function boundary except through the slot arrays.
+
+## M5. The 2 → 6 in functions of 2 000 instructions (thin LTO)
+
+Rendered with `VIBEGRAPH_AOT_CHUNK=2000`: `mg_uux_to_ccx_emmm_qcd0` calls 19 functions of
+up to 2 000 instructions in order, each taking the slot arrays and pools; nothing else
+crosses. Built under the `aot-study` profile (release with `lto = "thin"`,
+`codegen-units = 16`), `CARGO_BUILD_JOBS=2`, because fat-LTO builds containing the 2 → 6
+coincided with two restarts of this host's container. Every arm of that binary,
+interpreter included, uses that profile; the small rows were re-timed in it too.
+
+**Build** (cold, deps included, 2 jobs): 408 s wall. The library crate 53.6 s at
+1.99 GiB peak RSS (against > 13.9 GiB and an OOM kill in one function); the bench crate,
+which monomorphises and generates code for every row at `f64` and `LaneField<4>` and
+runs thin LTO, 190 s at 1.18 GiB. No `rustc` passed 2 GiB.
+
+**Timings** (11 rounds, run 1, `aot-study` profile). All four rows bit-identical to the
+interpreter at `f64` and `LaneField<4>` on the 16 points (bench pre-check).
+
+| row | `vm_f64` | `mg_f64` | `byv_f64` | `vm_lanes4` | `mg_lanes4` |
+|---|--:|--:|--:|--:|--:|
+| `ee_to_mumu` | 334 (0.41) | 283 (0.55) | 197 (0.43) | 104 (1.18) | 81 (0.43) |
+| `gg_to_gg` | 1 894 (0.67) | 1 812 (0.64) | 855 (0.47) | 656 (0.48) | 488 (0.46) |
+| `ee_to_mumu_tata_qcd0` | 6 930 (0.37) | 6 208 (0.28) | 4 154 (0.35) | 2 550 (0.30) | 1 914 (0.37) |
+| `uux_to_ccx_emmm_qcd0` | 124 838 (0.45) | 188 194 (0.69) | — | 47 291 (0.76) | 59 944 (0.41) |
+
+| row | `mg_f64` ratio | `byv_f64` ratio | `mg_lanes4` ratio |
+|---|--:|--:|--:|
+| `ee_to_mumu` | 1.18 | 1.69 | 1.29 |
+| `gg_to_gg` | 1.05 | 2.22 | 1.34 |
+| `ee_to_mumu_tata_qcd0` | 1.12 | 1.67 | 1.33 |
+| `uux_to_ccx_emmm_qcd0` | **0.66** | (0.74, first study, fat LTO, one function) | **0.79** |
+
+The by-value 2 → 6 is not rebuilt here: its one-function form is the 52-minute build of
+§6, and its ratio is quoted from §3.
+
+**Code size** (`aot-study` binary, summed over the 20 functions of the 2 → 6).
+
+| function | bytes | machine instrs | per VM instr | calls | stack refs | bounds checks |
+|---|--:|--:|--:|--:|--:|--:|
+| `mg_ee_to_mumu::<f64>` | 1 801 | 397 | 27 B | 56 | 70 | 0 |
+| `mg_gg_to_gg::<f64>` | 20 981 | 4 027 | 30 B | 677 | 1 331 | 0 |
+| `mg_ee_to_mumu_tata_qcd0::<f64>` | 54 671 | 10 093 | 31 B | 1 720 | 2 969 | 0 |
+| `mg_uux_to_ccx_emmm_qcd0*::<f64>` (20 functions) | 950 542 | 187 058 | 26 B | 36 480 | 16 000 | 0 |
+| — the same at `LaneField<4>` | 951 115 | 187 058 | 26 B | 36 480 | 16 000 | 0 |
+| `fill_arenas::<f64>` (interpreter) | 17–21 KiB | 3 513–4 200 | — | 193 | 412–491 | 0 ³ |
+
+³ Thin LTO with 16 codegen units turns the interpreter's 157 bounds checks into
+something `objdump` does not show as a `panic_bounds_check` call; not investigated.
+
+The MG 2 → 6 is 0.93 MiB of code, 5.1 machine instructions and 26 B per VM instruction:
+an address computation per operand and the call. That is 57% of the by-value form's
+1.6 MiB and an eighth of the inlined form's 7.4 MiB, and it fits the 2 MiB L2. It still
+runs at two thirds of the interpreter.
