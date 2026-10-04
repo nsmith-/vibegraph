@@ -1,0 +1,34 @@
+# MadGraph5 batch script: p p > e+ e- j, MLM-matched, with alpsfact = 2.
+# built-by: validation/madgraph/gen_mlm_references.sh
+#
+# pp_to_llj_mlm's run card with alpsfact = 2 and use_syst = F. alpsfact
+# scales the argument of every alpha_s rewgt multiplies in,
+# alpha_s(alpsfact * kt_n) / alpha_s(mu_R) (reweight.f:1601), so this row pins
+# where the factor enters. use_syst has to be off: with use_syst = T MadGraph
+# resets alpsfact to 1 (banner.py:4551-4555, setrun.f), and the run would
+# silently measure alpsfact = 1. With use_syst off the events carry no <mgrwt>
+# block, so the instrumented replay is this row's only record of the vertex
+# scales.
+generate p p > e+ e- j
+output pp_to_llj_mlm_alps2 -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale False
+  set fixed_fac_scale1 False
+  set fixed_fac_scale2 False
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set dynamical_scale_choice -1
+  set pdlabel1 lhapdf
+  set pdlabel2 lhapdf
+  set lhaid 247000
+  set mmll 50
+  set ickkw 1
+  set xqcut 20
+  set vector_size 1
+  set systematics_program none
+  set use_syst False
+  set alpsfact 2
+  done

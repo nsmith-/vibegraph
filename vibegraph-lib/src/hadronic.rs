@@ -33,9 +33,10 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::coupling::alphas::{AlphaSError, AlphaSSource};
 use crate::coupling::cluster::configs::{derive_channels, DerivedChannels};
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTablesByOrder};
+use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtSettings};
 use crate::coupling::cluster::setclscales::ScaleRefusal;
 use crate::coupling::scales::{
-    ClosedForms, ClusterInput, EventScales, ScaleChoice, ScaleError, ScaleEvent,
+    ClosedForms, ClusterInput, EventScales, MatchedRecord, ScaleChoice, ScaleError, ScaleEvent,
 };
 use crate::cuts::{CutError, Cuts, ExternalLeg};
 use crate::diagrams::diagram::Diagram;
@@ -244,6 +245,12 @@ impl Channels {
         }
     }
 
+    /// The colour table the clustering and the matched reweighting read codes
+    /// through.
+    pub fn colors(&self) -> &ColorTable {
+        &self.colors
+    }
+
     /// The integration channel (from `1`) a point drawn from sampling channel
     /// `channel` was generated in.
     ///
@@ -287,10 +294,7 @@ impl EventScaleSource {
     /// a caller that supplies `μF` directly is asking for.
     pub fn constant(mu: f64) -> Self {
         EventScaleSource {
-            kind: ScaleSourceKind::Constant(EventScales {
-                mu_r: mu,
-                mu_f: [mu, mu],
-            }),
+            kind: ScaleSourceKind::Constant(EventScales::unmatched(mu, [mu, mu])),
             alpha_s: None,
             amp2_configuration_weights: false,
         }
@@ -316,9 +320,10 @@ impl EventScaleSource {
             (true, None) => return Err(HadronicError::MissingAlphaS),
             (false, _) => None,
         };
-        let kind = if choice.is_fully_fixed() {
-            // A fully fixed prescription returns the card's constants without
-            // reading the event, so any event resolves it.
+        let kind = if choice.is_constant() {
+            // A fully fixed prescription that clusters nothing returns the
+            // card's constants without reading the event, so any event resolves
+            // it.
             ScaleSourceKind::Constant(choice.scales(&ScaleEvent {
                 incoming: [[0.0; 4]; 2],
                 outgoing: &[],
@@ -437,11 +442,13 @@ impl EventScaleSource {
         }
     }
 
-    /// [`scales`](Self::scales), with the factorisation-floor refusal separated
-    /// from the errors that mean the prescription itself does not apply.
+    /// [`scales`](Self::scales), with the refusals that zero a point's weight
+    /// separated from the errors that mean the prescription itself does not
+    /// apply.
     ///
     /// This is the only place the two are told apart. `reweight.f` answers a
-    /// point below the floor by zeroing its weight and carrying on, so a caller
+    /// point below the factorisation floor, and one whose clustering puts a jet
+    /// vertex below `xqcut`, by zeroing its weight and carrying on, so a caller
     /// that evaluates points has to be able to say "no weight" without saying
     /// "this run cannot proceed" — and every other error means exactly the
     /// latter, so it stays an `Err` and stays fatal at the call site.
@@ -453,12 +460,90 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(ScaleError::Clustering(ScaleRefusal::FactorisationFloor)) => {
-                Ok(PointScales::Vetoed)
-            }
+            Err(ScaleError::Clustering(
+                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
+            )) => Ok(PointScales::Vetoed),
             Err(other) => Err(other),
         }
     }
+
+    /// The constants the matched reweighting reads, or `None` without matching.
+    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+        match &self.kind {
+            ScaleSourceKind::Constant(_) => None,
+            ScaleSourceKind::PerEvent { choice, .. } => choice.rewgt_settings(),
+        }
+    }
+
+    /// [`point_scales`](Self::point_scales), and under matching the clustering
+    /// `rewgt` reads, from the same two `setclscales` calls that set the
+    /// scales. Without matching this is `point_scales` with no history.
+    ///
+    /// # Panics
+    ///
+    /// If `channel` names a group this prescription has no channel set for.
+    pub fn point_history(
+        &self,
+        incoming: [[f64; 4]; 2],
+        outgoing: &[[f64; 4]],
+        channel: SampledChannel,
+    ) -> Result<PointHistory, ScaleError> {
+        let (
+            ScaleSourceKind::PerEvent {
+                choice,
+                channels: Some(sets),
+            },
+            Some(_),
+        ) = (&self.kind, self.rewgt_settings())
+        else {
+            return Ok(match self.point_scales(incoming, outgoing, channel)? {
+                PointScales::Scales(scales) => PointHistory::Scales {
+                    scales,
+                    rewgt: None,
+                    record: None,
+                },
+                PointScales::Vetoed => PointHistory::Vetoed,
+            });
+        };
+        let set = sets.get(channel.group).unwrap_or_else(|| {
+            panic!(
+                "a point was drawn in channel group {} of {}",
+                channel.group,
+                sets.len()
+            )
+        });
+        let event = ScaleEvent { incoming, outgoing };
+        match choice.cluster_history(&event, &set.input(set.config_of_channel(channel.channel))) {
+            Ok(history) => Ok(PointHistory::Scales {
+                scales: history.event_scales(),
+                rewgt: history.rewgt_history(),
+                record: history.matched_record(set.colors()),
+            }),
+            Err(ScaleError::Clustering(
+                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
+            )) => Ok(PointHistory::Vetoed),
+            Err(other) => Err(other),
+        }
+    }
+}
+
+/// What resolving one point's scales produced, with the clustering the matched
+/// reweighting reads.
+// The scaled variant is the one nearly every point returns, and each is moved
+// once into the term that reads it rather than stored in bulk, so boxing its
+// history would add an allocation per term for no saving.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PointHistory {
+    /// The scales to evaluate this point at; under matching, also what `rewgt`
+    /// and the event record read of the event's clustering, `None` otherwise.
+    Scales {
+        scales: EventScales,
+        rewgt: Option<RewgtHistory>,
+        record: Option<MatchedRecord>,
+    },
+    /// As [`PointScales::Vetoed`].
+    Vetoed,
 }
 
 /// What resolving one point's scales produced.
@@ -467,8 +552,9 @@ pub enum PointScales {
     /// The scales to evaluate this point at.
     Scales(EventScales),
     /// The point carries no weight: a beam carrying a parton density ended below
-    /// the factorisation floor, where MadGraph zero-weights the point and moves
-    /// on rather than stopping.
+    /// the factorisation floor, or a jet vertex of the clustering fell below
+    /// `xqcut`, where MadGraph zero-weights the point and moves on rather than
+    /// stopping.
     Vetoed,
 }
 
@@ -1678,8 +1764,10 @@ impl Sampler {
 /// whole budget on a single grid.
 #[derive(Debug, Clone)]
 pub struct ChannelIntegration {
-    /// The channel's selection weight `αⱼ` — both the weight in its term's
-    /// integrand and the share of the sample budget it was allocated.
+    /// The channel's selection weight `αⱼ`, the weight in its term's integrand.
+    /// On a single mixture it is also the share of the sample budget the channel
+    /// was allocated; a sum over final-state multiplicities scales that share by
+    /// its part's ([`MultiplicitySum`](crate::multiplicity::MultiplicitySum)).
     pub alpha: f64,
     /// Evaluations per iteration this channel actually received.
     pub neval: usize,
@@ -2839,7 +2927,8 @@ impl<'a> FixedBeamIntegrand<'a> {
                 Some((part, part_hel_m2)) => part.select_helicity(&part_hel_m2, u[1])?.to_vec(),
                 None => eval.select_helicity(&hel_m2, u[1])?.to_vec(),
             };
-        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]])?;
+        // Matching is refused at fixed beams, so the configuration is always drawn.
+        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[2], u[3]], None)?;
 
         Some(EventSelection {
             subprocess,
@@ -2957,7 +3046,7 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
         FixedBeamIntegrand::channel_count(self)
     }
 
-    fn channel_grid_ndim(&self) -> usize {
+    fn channel_grid_ndim(&self, _channel: usize) -> usize {
         FixedBeamIntegrand::channel_grid_ndim(self)
     }
 
@@ -3640,6 +3729,88 @@ mod tests {
     /// `g g → g g` is the case worth pinning: four diagrams give three
     /// configurations, so the diagram→configuration map is not the identity and
     /// an off-by-one would survive a process where it is.
+    /// A point whose clustering puts a jet vertex below `xqcut` is zero-weighted,
+    /// not an error; above it the point is scaled, and only under matching does
+    /// it carry the clustered configuration.
+    #[test]
+    fn the_xqcut_cut_vetoes_a_point_and_matching_names_its_configuration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let opts = ParsingOptions::default();
+        let proc = parse_proc_card("generate u u~ > e+ e- g", &opts).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let incoming = [[100.0, 0.0, 0.0, 100.0], [100.0, 0.0, 0.0, -100.0]];
+        let event = |pt: f64| {
+            let half = (200.0 - pt) / 2.0;
+            let py = (half * half - pt * pt / 4.0).sqrt();
+            vec![
+                [half, -pt / 2.0, py, 0.0],
+                [half, -pt / 2.0, -py, 0.0],
+                [pt, pt, 0.0, 0.0],
+            ]
+        };
+        for ickkw in [0, 1] {
+            let card = RunCard::parse(&format!("{ickkw} = ickkw\n30 = xqcut\n")).unwrap();
+            let source = compile_scale_source(
+                &[(&evals[0], &diagrams)],
+                &m,
+                &evaluated,
+                &card,
+                None,
+                false,
+                ClosedForms::Refuse,
+            )
+            .expect("the prescription compiles");
+            assert!(source.draws_configuration());
+            for channel in 0..evals[0].n_configs() {
+                let at = SampledChannel::sole(channel);
+                assert_eq!(
+                    source.point_scales(incoming, &event(20.0), at),
+                    Ok(PointScales::Vetoed)
+                );
+                let Ok(PointScales::Scales(scales)) =
+                    source.point_scales(incoming, &event(40.0), at)
+                else {
+                    panic!("a point above xqcut is scaled");
+                };
+                match ickkw {
+                    0 => {
+                        assert_eq!(scales.clustered_config, None);
+                        assert_eq!(scales.mu_f_record, scales.mu_f);
+                    }
+                    _ => assert!(scales.clustered_config.expect("matched") < evals[0].n_configs()),
+                }
+            }
+        }
+        // A card fixing every scale still has a per-event prescription once
+        // `xqcut` is set, because the clustering is a cut.
+        let fixed = RunCard::parse(
+            "30 = xqcut\nTrue = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+             91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n",
+        )
+        .unwrap();
+        let source = compile_scale_source(
+            &[(&evals[0], &diagrams)],
+            &m,
+            &evaluated,
+            &fixed,
+            None,
+            false,
+            ClosedForms::Refuse,
+        )
+        .expect("the prescription compiles");
+        assert!(source.constant_scales().is_none());
+        assert_eq!(
+            source.point_scales(incoming, &event(20.0), SampledChannel::sole(0)),
+            Ok(PointScales::Vetoed)
+        );
+    }
+
     #[test]
     fn the_amp2_configuration_order_matches_the_forest_order() {
         let m = model();

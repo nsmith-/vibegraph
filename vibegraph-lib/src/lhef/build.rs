@@ -31,8 +31,37 @@ use super::LhefError;
 ///
 /// The renormalisation scale reaches the record through `AQCDUP` instead, as
 /// `αs(μR)`.
+///
+/// It is the value `q2fact` holds when `unwgt.f` writes the event, which under
+/// MLM matching is not the scale the densities were read at: `rewgt` restores
+/// the central scale `q2bck` after the matrix element's densities were taken at
+/// the lowered one. [`EventScales::mu_f_record`] carries that value.
 pub fn scalup(scales: &EventScales) -> f64 {
-    scales.mu_f[0].max(scales.mu_f[1])
+    scales.mu_f_record[0].max(scales.mu_f_record[1])
+}
+
+/// The `<scales>` line a matched event carries after its particles
+/// (`addmothers.f:411-429`): `pt_clust_N="v"` for every outgoing line, in
+/// record order, where `N` is the line's 1-based position in the event — so it
+/// counts any status-2 lines written before it — and `v` its `ptclus`
+/// (`ptclus[k]` for the `k`-th outgoing line) printed as Fortran's `f16.5`
+/// and trimmed.
+///
+/// Pythia's `Beams:setProductionScalesFromLHEF` reads these as each parton's
+/// starting scale, and its MLM matching leaves out a parton whose scale is the
+/// collider energy.
+pub fn pt_clust_scales(event: &LheEvent, ptclus: &[f64]) -> String {
+    let mut line = String::from("<scales");
+    let outgoing = event
+        .particles
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.status == STATUS_OUTGOING);
+    for ((position, _), value) in outgoing.zip(ptclus) {
+        line.push_str(&format!(" pt_clust_{}=\"{value:.5}\"", position + 1));
+    }
+    line.push_str("></scales>");
+    line
 }
 
 /// The scalar fields of one `<event>` line.
@@ -899,15 +928,51 @@ mod tests {
         ));
     }
 
+    /// `pt_clust_N` names the outgoing lines by their record positions, which
+    /// the status-2 lines shift, and prints `f16.5` trimmed: MadEvent's
+    /// `<scales pt_clust_4="13000.00000" …></scales>` for a Drell-Yan event with
+    /// its Z listed. The input is per outgoing leg in record order, so the
+    /// intermediates must not consume an entry.
+    #[test]
+    fn pt_clust_keys_are_the_outgoing_lines_positions() {
+        let record = ttx_chain();
+        let intermediates = [Intermediate {
+            pdg: 24,
+            color: 1,
+            slots: 0b000110,
+        }];
+        let helicity = [1; 8];
+        let plain = record
+            .event(&ttx_momenta(), &helicity, 0, header())
+            .expect("record");
+        let ptclus = [
+            12999.999999999998,
+            38.928710834,
+            13000.0,
+            21.5,
+            0.000004,
+            1e3,
+        ];
+        assert_eq!(
+            pt_clust_scales(&plain, &ptclus),
+            "<scales pt_clust_3=\"13000.00000\" pt_clust_4=\"38.92871\" \
+             pt_clust_5=\"13000.00000\" pt_clust_6=\"21.50000\" pt_clust_7=\"0.00000\" \
+             pt_clust_8=\"1000.00000\"></scales>"
+        );
+        let shifted = record
+            .event_with_intermediates(&ttx_momenta(), &helicity, 0, header(), &intermediates)
+            .expect("record");
+        let line = pt_clust_scales(&shifted, &ptclus);
+        assert!(line.starts_with("<scales pt_clust_4=\"13000.00000\" pt_clust_5=\"38.92871\""));
+        assert!(line.ends_with("pt_clust_9=\"1000.00000\"></scales>"));
+    }
+
     /// `SCALUP` is the larger factorisation scale. Every process whose clustering
     /// this crate computes has `μR = μF`, so only a case built with them apart can
     /// tell the two readings apart at all.
     #[test]
     fn scalup_is_the_factorisation_scale_not_the_renormalisation_one() {
-        let scales = EventScales {
-            mu_r: 91.188,
-            mu_f: [200.0, 50.0],
-        };
+        let scales = EventScales::unmatched(91.188, [200.0, 50.0]);
         assert_eq!(scalup(&scales), 200.0);
         assert_ne!(scalup(&scales), scales.mu_r);
         let head = EventHeader::from_scales(1, 1.0, &scales, 0.0075, 0.118);
@@ -918,16 +983,30 @@ mod tests {
     /// `AQCDUP` is `αs`, not MadGraph's `αs·π/3.1415926`. The bias is a sixth of
     /// the field's last printed digit, so the only way to state the choice is to
     /// assert the size of the difference.
+    /// Under matching `SCALUP` reports the record's scale, not the lowered one
+    /// the densities were read at; and without matching the two are one value,
+    /// so the field is what it always was.
+    #[test]
+    fn scalup_reads_the_record_scale() {
+        let matched = EventScales {
+            mu_r: 40.0,
+            mu_f: [25.0, 30.0],
+            mu_f_record: [60.0, 55.0],
+            clustered_config: Some(0),
+        };
+        assert_eq!(scalup(&matched), 60.0);
+        let unmatched = EventScales::unmatched(40.0, [25.0, 30.0]);
+        assert_eq!(unmatched.mu_f_record, unmatched.mu_f);
+        assert_eq!(scalup(&unmatched), 30.0);
+    }
+
     #[test]
     fn aqcdup_does_not_reproduce_the_truncated_pi() {
         let alpha_s = 0.1113305_f64;
         let head = EventHeader::from_scales(
             1,
             1.0,
-            &EventScales {
-                mu_r: 250.0,
-                mu_f: [250.0; 2],
-            },
+            &EventScales::unmatched(250.0, [250.0; 2]),
             0.0075,
             alpha_s,
         );

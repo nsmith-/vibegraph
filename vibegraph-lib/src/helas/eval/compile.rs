@@ -465,7 +465,7 @@ impl AmplitudeEvaluator {
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
     pub fn select_color_flow(&self, amp2: &[f64], jamp2: &[f64], u: [f64; 2]) -> Option<usize> {
-        self.select_config_and_flow(amp2, jamp2, u)
+        self.select_config_and_flow(amp2, jamp2, u, None)
             .map(|selection| selection.flow)
     }
 
@@ -478,11 +478,19 @@ impl AmplitudeEvaluator {
     /// resonance structure come from the same configuration. The draw consumes
     /// exactly the variates `select_color_flow` does, so the flow is the same
     /// either way.
+    ///
+    /// `clustered` is the configuration a matched run's clustering chose
+    /// (`igraphs(1)`): under `ickkw > 0` `SELECT_COLOR` masks the flows with that
+    /// configuration's column instead of the integration channel's, and
+    /// `addmothers` writes from it (`super_auto_dsig_group_v4.inc`'s
+    /// `select_color`, `addmothers.f`'s `lconfig`). Given, it replaces the `AMP2`
+    /// draw and `u[0]` goes unread; `None` is the draw above.
     pub fn select_config_and_flow(
         &self,
         amp2: &[f64],
         jamp2: &[f64],
         u: [f64; 2],
+        clustered: Option<usize>,
     ) -> Option<ColorSelection> {
         // Asserted rather than debug-asserted for the reason `select_helicity`
         // gives: a short weight vector draws from a prefix and returns a label that
@@ -497,7 +505,18 @@ impl AmplitudeEvaluator {
             self.n_flows,
             "jamp2 weights must cover the color flows"
         );
-        match select_index(amp2, u[0]) {
+        let config = match clustered {
+            Some(c) => {
+                assert!(
+                    c < self.n_configs(),
+                    "the clustering chose configuration {c} of {}",
+                    self.n_configs()
+                );
+                Some(c)
+            }
+            None => select_index(amp2, u[0]),
+        };
+        match config {
             Some(c) => {
                 let reached = self.config_flows(c);
                 let flow = select_flow_reached_by(jamp2, reached, u[1])?;
@@ -1300,11 +1319,53 @@ mod tests {
                 // The configuration the flow was drawn in comes back with it, the
                 // other one of the two, and reaches the flow at leading colour.
                 let drawn = eval
-                    .select_config_and_flow(&amp2, &jamp2, [u0, u1])
+                    .select_config_and_flow(&amp2, &jamp2, [u0, u1], None)
                     .expect("a draw");
                 assert_eq!(drawn.flow, want);
                 assert_eq!(drawn.config, Some(1 - want));
                 assert!(drawn.leading);
+
+                // A matched run's clustered configuration overrides the draw:
+                // the flow follows the named configuration whatever `AMP2` and
+                // `u[0]` say, and reads `u[1]` exactly as the draw does.
+                for forced in 0..2 {
+                    let matched = eval
+                        .select_config_and_flow(&amp2, &jamp2, [u0, u1], Some(forced))
+                        .expect("a draw");
+                    assert_eq!(matched.config, Some(forced));
+                    assert_eq!(matched.flow, 1 - forced);
+                    assert!(matched.leading);
+                    let reference = eval
+                        .select_config_and_flow(
+                            &[
+                                if forced == 0 { 1.0 } else { 0.0 },
+                                if forced == 1 { 1.0 } else { 0.0 },
+                            ],
+                            &jamp2,
+                            [u0, u1],
+                            None,
+                        )
+                        .expect("a draw");
+                    assert_eq!(matched, reference);
+                }
+            }
+        }
+        // Without a clustered configuration the selection is the `AMP2` draw
+        // itself, flow and configuration both, over a sweep of variates.
+        use crate::helas::color::flow_tags::select_flow_reached_by;
+        use crate::select::select_index;
+        for amp2 in [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.3, 2.0]] {
+            for k in 0..50 {
+                let u = [(k as f64 + 0.5) / 50.0, ((k * 7) % 50) as f64 / 50.0];
+                let drawn = eval
+                    .select_config_and_flow(&amp2, &jamp2, u, None)
+                    .expect("a draw");
+                let c = select_index(&amp2, u[0]).expect("a configuration");
+                assert_eq!(drawn.config, Some(c));
+                assert_eq!(
+                    Some(drawn.flow),
+                    select_flow_reached_by(&jamp2, eval.config_flows(c), u[1])
+                );
             }
         }
         // Each configuration is written from its first diagram.
