@@ -3390,6 +3390,93 @@ is the pinned commit, every source file and `VERSION` (3.7.1); the manifest's
 cut-9 comment says so. A future bank host should check out the submodule rather
 than copy it.
 
+#### Z2 Landed: re-verified from `refdata-9`, 2026-10-03
+
+On the bank host. The sprint is closed.
+
+**From the published bundle.** A fresh worktree (`vibegraph-wt/z2`) whose
+`validation/madgraph/output` came only from `VIBEGRAPH_FETCH_CONSENT=1 pixi run
+fetch-refdata` (the release download, hash-verified, 4245 files). `pixi run
+--skip-deps validate` at `590f87a`: exit 0, 13 min on a quiet host; 59 targets,
+1698 passed, 0 failed, 83 ignored; "203 measured (196 ✅, 7 ⚠️, 13 ⏳, 40
+uncovered)", "the measured cells are the declared cells". B1's 1776 is the
+same suite: its work area also held the instrumented replays' copies of the
+five MLM process directories under `output/ktdump/`, so `color_cf_oracle` and
+`color_flow_tags_oracle` ran each of the 78 MLM subprocess trials twice; on the
+bundle every one runs once. A first run of the same worktree at `26e8048`
+aborted in `validate_hadronic` (SIGABRT, no panic message, 44 targets and 1574
+tests passed before it) while a σ session loaded the host to a load average of
+~115 on 16 cores; the target alone then passed 14/14 on the same data, and the
+full run above is clean. That is note 36's unattributed malloc abort under
+load, seen once more.
+
+**The mixed rows' σ gate** (`590f87a`, validation-dev session):
+`sigma_ll_0j2j_mlm_vs_madevent` (gate) and `sigma_ttx_0j1j_mlm_vs_madevent`
+(info) in `validate_hadronic`, run by `validate-mlm-sigma`. Each builds the
+composite as `vibegraph integrate` does (process lines from the row's script,
+`split_by_multiplicity`, the on-shell vetoes, union-shape maps,
+`MultiplicitySum`, the α survey, then `--fixed-budget --allocate neyman
+--neval 200000 --niter 8`), ten seeds (20260928–37), and writes one collator
+cell per `@N` plus the total. The first seed reproduces the CLI to every printed
+digit on both rows. Both sides read mean ± max(quoted, spread/√n) (MadEvent's
+the inverse-variance mean, this side's the unweighted one); a gating cell needs
+|pull| < 3 and this side's seed χ²/dof inside its 0.1–99.9 % band.
+`mlm_sigma_row` (the llj rows) now applies the same rule and asserts when it
+gates. `pixi run -e madgraph --skip-deps validate-mlm-sigma`, exit 0, 9.5 min
+(bit-identical on a second run):
+
+| row | vibegraph (pb) | MadEvent (pb) | pull | rel | χ²/dof |
+|---|---|---|---|---|---|
+| `pp_to_llj_xqcut_only` | 212.608 ± 0.126 (5) | 212.549 ± 0.229 | +0.23 | +0.03 % | 0.82 |
+| `pp_to_llj_mlm` | 268.433 ± 0.119 (10) | 268.169 ± 0.284 | +0.86 | +0.10 % | 0.86 |
+| `pp_to_llj_mlm_alps2` | 241.255 ± 0.154 (5) | 240.710 ± 0.252 | +1.85 | +0.23 % | 1.04 |
+| `pp_to_ll_0j2j_mlm` `@0` | 665.258 ± 0.217 | 665.001 ± 0.348 (21) | +0.63 | +0.04 % | 0.66 |
+| `pp_to_ll_0j2j_mlm` `@1` | 268.594 ± 0.451 | 267.874 ± 0.370 | +1.23 | +0.27 % | 0.95 |
+| `pp_to_ll_0j2j_mlm` `@2` | 131.275 ± 0.663 | 130.908 ± 0.195 | +0.53 | +0.28 % | 1.98 |
+| `pp_to_ll_0j2j_mlm` total | 1065.126 ± 0.684 | 1063.646 ± 0.546 | +1.69 | +0.14 % | 1.06 |
+| `pp_to_ttx_0j1j_mlm` `@0` (info) | 513.222 ± 0.177 | 512.898 ± 0.181 | +1.28 | +0.06 % | 2.01 |
+| `pp_to_ttx_0j1j_mlm` `@1` (info) | 583.192 ± 0.297 | 575.836 ± 0.777 | **+8.85** | **+1.28 %** | 0.99 |
+| `pp_to_ttx_0j1j_mlm` total (info) | 1096.413 ± 0.381 | 1088.640 ± 0.797 | +8.80 | +0.71 % | 1.42 |
+
+`@2`'s error is its seed spread, 0.66 pb, as Z.4 expected, so the registered
+deviations (H1, the generic 2 → 4 offset) need no allowance at this budget.
+A mixed-row seed takes ~35 s on this host; the multi-thousand-second figures
+earlier in this note were a loaded four-core container.
+
+**t t̄ `@1` is +1.28 % high, undiagnosed.** All ten seeds (581.9–584.5 pb) sit
+above MadEvent's whole range (572.5–579.7) while `@0` agrees. Not yet
+separated: the reference's shared directory (nine of ten seeds; on `0j2j` the
+shared directory moved `@1` by −0.43 %, the other direction) and H1's
+first-call rejections, unmeasured on this row. The cell stays `info`, and the
+five-seed agreement Z.4 asks before a gate cannot be had until it is
+diagnosed. Filed in the validation backlog.
+
+**Dumps** (`validate-mlm-dumps`, against B1's regenerated dumps): 3/3. The new
+dumps move Z1's counts: `pp_to_ttx_0j1j_mlm` 6256 non-permuted events agree and
+3744 permuted (3735 before), every one agreeing on every field, 0 with other
+first-call scales (2 before); `pp_to_ll_0j2j_mlm` 9840 non-permuted agree, 160
+permuted (141 before), 83 agreeing and 77 with other first-call scales, all
+`@2` (58 `P2_qq_llqq`, 19 `P2_gg_llqq`), weight-factor ratio 0.67–1.60, mean
+0.996.
+
+**Flips** (each note carries the 2026-10-03 measurement): the three llj rows'
+integrals long/info → long/gate; `pp_to_ll_0j2j_mlm` integrals uncovered →
+long/gate; `pp_to_ttx_0j1j_mlm` integrals uncovered → long/info; the samples
+cells of `pp_to_llj_mlm`, `_alps2`, `pp_to_ll_0j2j_mlm` and
+`pp_to_ttx_0j1j_mlm` long/info → long/gate (permuted-`P1` events stay info,
+which `validate_mlm_dumps` already enforced). Those four samples cells render
+⏳: the dump test writes no collator row, and the schema has no per-event
+samples kind to write. Nothing else flipped. After `validate-mlm-sigma`, the
+collator reads 208 measured (200 ✅, 8 ⚠️, 8 ⏳, 40 uncovered), the declared
+cells.
+
+**Corrections to Z.4.** `pp_to_ll_0j2j_mlm`'s reference after B1 is `@2`
+130.908 ± 0.195 and total 1063.646 ± 0.546 (Z.4 and the Z1 record quote
+Z1's 130.931 ± 0.203 and 1063.662); the gate reads the JSON. The permuted-event
+counts above supersede "141". Under "both policy errors" the llj rows now take
+this side's error as max(quoted, spread/√n), which moves `alps2` from +1.86 to
++1.85.
+
 ## 5. Decisions (settled 2026-09-28, user: every recommendation accepted)
 
 Each item records the question and the decision; "Recommendation" below is

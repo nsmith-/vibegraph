@@ -5,18 +5,17 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **Z2 of `mlm`, from the published `refdata-9`.** The **`mlm`** feature sprint
-(note 41) closed Z1 in the container and B1 on the bank host (note 41 §4 "B1 Landed"):
-every MLM run regenerated and reproduced within seed error, the banked layer and the
-three MLM oracle gates green on the host, and `refdata-9` (cut 8 plus the five MLM
-rows and `pp_to_ll_0j2j_mlm`'s twenty seed directories) published and pinned. Next
-is Z2 (note 41 §4 "Z: close-out"): re-verify from the fetched bundle, write the mixed
-rows' σ gate and flip the MLM cells that agree. After that: NLO, and the performance backlog.
+**Current position**: **`mlm` closed** (note 41 §4, "Z2 Landed", 2026-10-03): re-verified
+from the published `refdata-9` (validate green on a fetched-only work area), the mixed
+rows' seeded σ gate written, and eight MLM cells flipped to `gate`; `pp_to_ttx_0j1j_mlm`'s
+`@1` reads +1.28 % high and stays `info`, an open finding below. Next: NLO, and the
+performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at `mlm`'s
-Z1, 2026-10-01): **203 measured cells — 196 ✅, 7 ⚠️ — plus 11 ⏳ at the long tier
-and 42 covered-by or uncovered** over 64 rows; the five MLM rows add 7 ⏳ and 13
-uncovered; `refdata-9` now carries their runs, and Z2 measures them from it. The cells that stay
+Z2, 2026-10-03, banked layer plus `validate-mlm-sigma`): **208 measured cells — 200 ✅,
+8 ⚠️ — plus 8 ⏳ at the long tier and 40 covered-by or uncovered** over 64 rows; four of
+the ⏳ are the MLM dump-gated samples cells, whose test enforces them but writes no
+collator row. The cells that stay
 informational, one clause each: `ee_to_wpwm_cw` (a single |M|² point at 2.08e-12);
 `ee_to_zh_smeft` (MadGraph's Python-to-Fortran writer rounds the UFO's `11/24`
 literal in `GC_303` to seven digits — a defect on its side, note 35 §3 E1);
@@ -185,20 +184,25 @@ At most three lines each; the note is the full record. Earlier sprints
   behind one check, 1→n decays, decay chains, `>`/`$`/`$$`, polarized legs, `@N`; closed at Z2 (`refdata-8`).
   Lesson: MadEvent's quoted σ error is not its spread (χ²/dof 3–14), so every reference is seeded.
 - **`mlm`** (feature, fifteen sessions + close-out, 2026-10-01; note 41 §4) — `ickkw = 1` / `xqcut` at MadEvent parity per event (scales, `rewgt`, record), mixed multiplicities as a composite,
-  merged channels, per-`@N` normalisation; matched Pythia agrees at 20 files a side. Closes at Z2 (`refdata-9`).
+  merged channels, per-`@N` normalisation; matched Pythia agrees at 20 files a side. Closed at Z2 (`refdata-9`, 2026-10-03).
   Lesson: seeds of one MadEvent directory are not independent draws — the `@2` "excess" was half reference.
 
 ---
 
 ## 🔎 Validation backlog
 
-### Open findings from `mlm` (note 41 §4 records, Z1)
+### Open findings from `mlm` (note 41 §4 records, Z1 and Z2)
 
-- **Z2's work, from the published `refdata-9`** (note 41 §4 "Z: close-out"):
-  write the mixed rows' seeded σ gate per `@N` (`pp_to_ll_0j2j_mlm` against
-  its 21 independent directories, `pp_to_ttx_0j1j_mlm` against M0's seeds),
-  and flip the MLM cells that agree to `gate` at the tolerances the step list
-  names. Until then every MLM cell is `info` or `uncovered`.
+- **`pp_to_ttx_0j1j_mlm` `@1` is +1.28 % high (+8.85σ)** (note 41 Z2):
+  583.19 ± 0.30 pb over ten seeds against MadEvent's 575.84 ± 0.78; every seed
+  above MadEvent's range, `@0` agreeing (+0.06 %). The cell is `info`.
+  Diagnose in order: regenerate the reference from independent MadEvent
+  directories (nine of its ten seeds share one; on `0j2j` that moved `@1` by
+  −0.43 %), then compare `@1` per event, including the H1 first-call
+  rejections, unmeasured on this row.
+- **A collator row for the MLM dump gates**: `validate_mlm_dumps` enforces the
+  four samples cells flipped to `gate` but writes no row, so they render ⏳; the
+  schema needs a per-event samples kind beside `SamplesRow`'s KS/χ².
 - **Generic 2 → 4 σ offset against MadEvent** (from note 41's D2 diagnosis).
   vibegraph reads +0.3–0.7 % high on 2 → 4 processes with identical |M|²,
   matching off, and even at fixed beams: `u u~ > e+ e- g g` at √s = 500 GeV,
@@ -580,7 +584,7 @@ above); the entries here are the eventual features.
 
 ### In-scope features
 
-- **MLM matching** — landed (note 41; closed-sprint history). It closes at Z2
+- **MLM matching** — landed (note 41; closed-sprint history), closed at Z2
   from `refdata-9`. Its open findings are in the validation backlog ("Open
   findings from `mlm`") and its performance items in the performance backlog.
   Still refused, each with its reason in note 41 §5: CKKW-L (`ktdurham`,
