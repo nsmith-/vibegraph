@@ -31,8 +31,6 @@ aot-mg-study = []
 # Adds the 2 -> 6 row in MadGraph's form. Its rendered source is too large to commit
 # and is written by the `aot_render` ignored test before building with this feature.
 aot-mg-study-large = ["aot-mg-study"]
-# Adds the 2 -> 6 row's by-value rendering as well, written the same way.
-aot-mg-study-large-byvalue = ["aot-mg-study-large"]
 
 [lints]
 workspace = true

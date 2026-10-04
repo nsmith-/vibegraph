@@ -49,8 +49,6 @@ mod rendered {
     include!("generated/byvalue/ee_to_mumu.rs");
     include!("generated/byvalue/gg_to_gg.rs");
     include!("generated/byvalue/ee_to_mumu_tata_qcd0.rs");
-    #[cfg(feature = "aot-mg-study-large-byvalue")]
-    include!("generated/byvalue/uux_to_ccx_emmm_qcd0.rs");
 }
 
 /// Row `name`'s rendered entry point at scalar type `F`.
@@ -59,8 +57,6 @@ pub(super) fn kernel_for<F: Real>(name: &str) -> Option<AotKernel<F>> {
         "ee_to_mumu" => rendered::aot_ee_to_mumu::<F>,
         "gg_to_gg" => rendered::aot_gg_to_gg::<F>,
         "ee_to_mumu_tata_qcd0" => rendered::aot_ee_to_mumu_tata_qcd0::<F>,
-        #[cfg(feature = "aot-mg-study-large-byvalue")]
-        "uux_to_ccx_emmm_qcd0" => rendered::aot_uux_to_ccx_emmm_qcd0::<F>,
         _ => return None,
     })
 }

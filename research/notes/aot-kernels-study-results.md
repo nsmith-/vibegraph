@@ -277,8 +277,10 @@ and `v{add,sub,mul,fmadd,…}` mnemonics.
 
 # MadGraph's form: values in slot arrays, one in-place call per instruction
 
-**Status: measurement record, 2026-10-04, in progress (sections are appended as each
-measurement lands).** Code: `aot-mg-study` feature, branch `study/aot-mg-style`. The
+**Status: measurement record, 2026-10-04. Answer: no — MadGraph's form is the
+smallest rendering and, split into functions, builds in four minutes, but the 2 → 6
+runs at 0.66× the interpreter (0.67–0.79× at four lanes), and in one function it does
+not compile on a 16 GB host (rustc's MIR optimisation passes 13.9 GiB).** Code: `aot-mg-study` feature, branch `study/aot-mg-style`. The
 question: does the form MadGraph's Fortran matrix elements take — every wavefunction in
 one memory-resident array, every HELAS call an out-of-line routine taking operands by
 reference and writing its result in place, the matrix routine nothing but a sequence of
@@ -383,7 +385,7 @@ The entry points themselves are 18–640 B each (`f64`); `fill_arenas::<f64>` is
 
 **Build cost, small rows** (`cargo bench --no-run`, fat LTO, incremental after touching
 `lib.rs`, per-`rustc` wall and peak RSS from a `RUSTC_WRAPPER`): 78 s wall; the lib crate
-22.5 s / 1.25 GiB, the bench crate (all monomorphisation and codegen) 54.5 s / 0.98 GiB.
+22.5 s / 1.24 GiB, the bench crate (all monomorphisation and codegen) 54.5 s / 0.95 GiB.
 That wrapper ran `rustc` detached from cargo's jobserver; later builds attach it.
 
 ## M4. The 2 → 6 in one function does not compile on this host
@@ -426,9 +428,9 @@ coincided with two restarts of this host's container. Every arm of that binary,
 interpreter included, uses that profile; the small rows were re-timed in it too.
 
 **Build** (cold, deps included, 2 jobs): 408 s wall. The library crate 53.6 s at
-1.99 GiB peak RSS (against > 13.9 GiB and an OOM kill in one function); the bench crate,
+1.94 GiB peak RSS (against > 13.9 GiB and an OOM kill in one function); the bench crate,
 which monomorphises and generates code for every row at `f64` and `LaneField<4>` and
-runs thin LTO, 190 s at 1.18 GiB. No `rustc` passed 2 GiB.
+runs thin LTO, 190 s at 1.15 GiB. No `rustc` passed 2 GiB.
 
 **Timings** (11 rounds, run 1, `aot-study` profile). All four rows bit-identical to the
 interpreter at `f64` and `LaneField<4>` on the 16 points (bench pre-check).
@@ -476,3 +478,97 @@ The MG 2 → 6 is 0.93 MiB of code, 5.1 machine instructions and 26 B per VM ins
 an address computation per operand and the call. That is 57% of the by-value form's
 1.6 MiB and an eighth of the inlined form's 7.4 MiB, and it fits the 2 MiB L2. It still
 runs at two thirds of the interpreter.
+
+## M6. Compile cost, side by side
+
+`cargo bench --no-run` of `aot_kernels`, per-`rustc` wall and peak RSS from a
+`RUSTC_WRAPPER`. The library crate type-checks, borrow-checks and MIR-optimises the
+generic rendered functions; the bench crate monomorphises them (each row at `f64` and
+`LaneField<4>`, the by-value small rows at both too) and generates all code.
+
+| build | profile | lib crate | bench crate | wall |
+|---|---|--:|--:|--:|
+| small rows | `bench` (fat LTO), incremental | 22.5 s / 1.24 GiB | 54.5 s / 0.95 GiB | 78 s |
+| small rows | `aot-study` (thin LTO, 16 CGUs), incremental, 2 jobs | 25.5 s / 1.08 GiB | 50.5 s / 0.36 GiB | 77 s |
+| + 2 → 6, one function | `bench` (fat LTO) | OOM-killed at 13.9 GiB after ~2 min (§M4) | — | — |
+| + 2 → 6, 19 functions of 2 000 | `aot-study`, cold (deps included), 2 jobs | 53.6 s / 1.94 GiB | 190.0 s / 1.15 GiB | 408 s |
+| first study: + 2 → 6 by value, one function (§6) | `bench` (fat LTO) | ~1 min | — | 3 135 s / 3.7 GiB |
+
+The chunked MG 2 → 6 adds about 28 s and 0.9 GiB to the library crate and 140 s to the
+bench crate over the small rows alone. The fat-LTO cost of the chunked 2 → 6 was not
+measured: both container restarts on this host happened during fat-LTO builds that
+contained it (one in this form's chunked bench crate, after its library crate had built
+in 51 s at 2.0 GiB), and those builds were then dropped for the thin profile.
+
+## M7. Reading
+
+- **MadGraph's form fixes the code size and, chunked, the build — not the run time.**
+  It is the most compact rendering measured: 26–31 B and about five machine
+  instructions per VM instruction (an address per operand and the call), 0.93 MiB for
+  the 2 → 6 against 1.6 MiB by value and 7.4 MiB inlined. Split into 19 functions it
+  builds in about four minutes at 2 GiB. Yet it is 0.66× the interpreter on the 2 → 6
+  in both runs (0.67–0.79× at four lanes), below the by-value form's 0.74×.
+- **The arena round trip is the interpreter's real cost, and this form keeps it.** On
+  the small rows the MG form gains 1.05–1.27× over the interpreter where the by-value
+  form gains 1.4–2.2×, with code 15–30% smaller. Both remove dispatch and operand
+  decoding; only the by-value form also removes the memory round trip of every
+  operand and result, because its values pass between out-of-line kernels in
+  registers and in the caller's stack frame. So of the interpreter's overhead bounded
+  in §5, the decode and dispatch share is the small part (the MG gain), and the store
+  and reload of every value through its arena is the larger (the by-value form's
+  extra gain). Inferred from the three arms' differences, not from counters.
+- **Why the 2 → 6 still loses, by elimination.** Its 0.93 MiB of straight-line code
+  fits the 2 MiB L2 but not the L1i or the µop cache, and each instruction of it is
+  fetched once per event. The interpreter executes 21 KiB of code from L1i and streams
+  its program as data, which the data-side prefetchers handle. Same arithmetic, same
+  arena traffic, same slot layout: what differs is instruction fetch versus data
+  fetch, so a front-end-bound reading is the one that fits; no PMU here to confirm it.
+- **What MadGraph's own speed suggests.** Its Fortran 2 → 6 runs at about the
+  interpreter's speed in this same form: routines reading `W(:, k)` from memory and
+  writing back. A hypothesis not tested here is that its advantage over this rendering
+  is code volume per event — how much of its straight-line code is re-executed across
+  helicities rather than unrolled per helicity as our helicity-expanded program is.
+  Rendering with loops over the repeated helicity structure, which §5 named, is the
+  lever this study leaves untried.
+- **A compiler finding worth keeping.** One generic Rust function of 36 k calls with
+  reference operands cannot get through rustc's MIR optimisation on a 16 GB host,
+  while the same calls split 19 ways cost 2 GiB. Any code generator emitting Rust for
+  the large processes must chunk, whatever LLVM would then do.
+
+## M8. Caveats
+
+- Same host caveats as §7: shared 4-vCPU VM, 10–20% layout noise per cell, no PMU.
+  The conclusions rest on the 2 → 6's 0.66× (reproduced to the percent in two runs)
+  and on the ordering of the three arms on the small rows, which both runs share.
+- The 2 → 6 rows use the thin-LTO `aot-study` profile, not the fat-LTO `bench`
+  profile of §3. Within that binary all arms share the profile. The small rows were
+  timed under both; the interpreter's small-row times agree within the noise.
+- The MG form's "by reference" is the source-level form; under LTO, LLVM promotes
+  scalar and real operands to registers (§M3), as a Fortran compiler with
+  interprocedural optimisation could not for MadGraph's separately compiled HELAS.
+- Only chunks of 2 000 were tried for the MG 2 → 6. The by-value 2 → 6 was not
+  rebuilt; its figures are the first study's (§3, one function, fat LTO).
+
+## M9. Reproduce
+
+On branch `study/aot-mg-style`:
+
+```
+# render (small rows committed; the 2 -> 6 is git-ignored), both forms
+cargo test -p vibegraph-lib --features aot-mg-study --lib aot_render -- --ignored --nocapture
+VIBEGRAPH_AOT_ROWS=uux_to_ccx_emmm_qcd0 VIBEGRAPH_AOT_FORMS=mg VIBEGRAPH_AOT_CHUNK=2000 \
+    cargo test -p vibegraph-lib --features aot-mg-study --lib aot_render -- --ignored --nocapture
+
+# the bit-for-bit oracle (small rows) and the calls-only check
+cargo test -p vibegraph-lib --features aot-mg-study --lib aot
+
+# timings: small rows under fat LTO; all four rows under the thin study profile
+RUSTFLAGS="-C target-cpu=native" cargo bench -p vibegraph-lib --features aot-mg-study \
+    --bench aot_kernels
+RUSTFLAGS="-C target-cpu=native" CARGO_BUILD_JOBS=2 cargo bench -p vibegraph-lib \
+    --profile aot-study --features aot-mg-study-large --bench aot_kernels
+#   VIBEGRAPH_AOT_ROUNDS (7), VIBEGRAPH_AOT_CELL_MS (200), VIBEGRAPH_AOT_BENCH_ROWS
+```
+
+Do not build the 2 → 6 rendered as one function (`VIBEGRAPH_AOT_CHUNK=0`) on a host
+with less than ~16 GB free: the library crate alone passes 13.9 GiB.

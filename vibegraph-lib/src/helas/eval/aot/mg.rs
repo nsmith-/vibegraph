@@ -130,7 +130,9 @@ fn bound<
 #[allow(
     clippy::all,
     unused_imports,
-    reason = "rendered code: one call per instruction with literal operands"
+    unused_variables,
+    reason = "rendered code: one call per instruction with literal operands, and a \
+              chunk of the program need not read every pool"
 )]
 mod rendered {
     use super::super::kernels::out_param as k;

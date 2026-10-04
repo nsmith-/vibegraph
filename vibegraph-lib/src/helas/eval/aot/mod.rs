@@ -94,9 +94,6 @@ pub const ROWS: &[AotRow] = &[
         name: "uux_to_ccx_emmm_qcd0",
         process: "u u~ > c c~ e+ e- mu+ mu- QCD=0",
         mg: include_str!("generated/mg/uux_to_ccx_emmm_qcd0.rs"),
-        #[cfg(feature = "aot-mg-study-large-byvalue")]
-        by_value: Some(include_str!("generated/byvalue/uux_to_ccx_emmm_qcd0.rs")),
-        #[cfg(not(feature = "aot-mg-study-large-byvalue"))]
         by_value: None,
     },
 ];
