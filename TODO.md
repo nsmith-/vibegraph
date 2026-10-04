@@ -5,19 +5,18 @@ lands behind the MG validation net, a validation pass then hardens the net aroun
 what the feature exposed, and a performance pass optimizes against the hardened
 gate.
 
-**Current position**: **waiting on `refdata-9`.** The **`mlm`** feature sprint
-(note 41) is closed in this container (Z1, note 41 §4 "Z1 close-out record"): the
-whole banked layer ran green end to end, `pp_to_ll_0j2j_mlm`'s σ reference is
-rebuilt from twenty-one independent MadEvent directories, and every MLM run is
-wired into `pixi run -e madgraph generate-references`. Next is B1 on the bank
-host (note 41 §4 "Z: close-out", the step list), which banks `refdata-9`; then
-Z2, from the published bundle, writes the mixed rows' σ gate and flips the MLM
-cells that agree. After that: NLO, and the performance backlog.
+**Current position**: **Z2 of `mlm`, from the published `refdata-9`.** The **`mlm`** feature sprint
+(note 41) closed Z1 in the container and B1 on the bank host (note 41 §4 "B1 Landed"):
+every MLM run regenerated and reproduced within seed error, the banked layer and the
+three MLM oracle gates green on the host, and `refdata-9` (cut 8 plus the five MLM
+rows and `pp_to_ll_0j2j_mlm`'s twenty seed directories) published and pinned. Next
+is Z2 (note 41 §4 "Z: close-out"): re-verify from the fetched bundle, write the mixed
+rows' σ gate and flip the MLM cells that agree. After that: NLO, and the performance backlog.
 
 **Census**, counted from `validation/manifest.toml` (the collator at `mlm`'s
 Z1, 2026-10-01): **203 measured cells — 196 ✅, 7 ⚠️ — plus 11 ⏳ at the long tier
 and 42 covered-by or uncovered** over 64 rows; the five MLM rows add 7 ⏳ and 13
-uncovered, none of them measured in the banked layer until `refdata-9`. The cells that stay
+uncovered; `refdata-9` now carries their runs, and Z2 measures them from it. The cells that stay
 informational, one clause each: `ee_to_wpwm_cw` (a single |M|² point at 2.08e-12);
 `ee_to_zh_smeft` (MadGraph's Python-to-Fortran writer rounds the UFO's `11/24`
 literal in `GC_303` to seven digits — a defect on its side, note 35 §3 E1);

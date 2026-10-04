@@ -128,11 +128,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 8
-archive = "vibegraph-refdata-8.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-8/vibegraph-refdata-8.tar.zst"
-sha256 = "a469570402876aa3dee88d18e3ebb2c2f5208a541716c75afed9644bbc779689"
-size_bytes = 127020489
+version = 9
+archive = "vibegraph-refdata-9.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-9/vibegraph-refdata-9.tar.zst"
+sha256 = "4183504c80da35eccd70a7f2c2c0d5f151a1b7e28ab05df1bf42acc0abfc341f"
+size_bytes = 166043012
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -171,6 +171,16 @@ unpacks_to = "validation/madgraph/output"
 # submodule on macOS. The seeded MadEvent references beside them are committed
 # JSON (`grammar_sigma_reference.json` and the decay, decay-chain and on-shell
 # veto tables), so their work areas are not in the archive.
+#
+# Cut 9 is cut 8's 3824 files, every one byte-identical, plus the 421 files of
+# the five MLM rows (`pp_to_llj_mlm`, `pp_to_llj_xqcut_only`,
+# `pp_to_llj_mlm_alps2`, `pp_to_ll_0j2j_mlm`, `pp_to_ttx_0j1j_mlm`): each row's
+# `run_01`, and for `pp_to_ll_0j2j_mlm` also the twenty freshly generated
+# directories `run_s20261101` .. `run_s20261120` its seeded reference reads.
+# They were generated on macOS 15 by the pinned 3.7.1 submodule (b7687064),
+# copied into the generating checkout without its `.git`, so their proc cards
+# print MadGraph's "UNKNOWN DEVELOPMENT VERSION" banner where earlier cuts print
+# `GIT v3.7.1`; the copy's `VERSION` file and every source file match the pin.
 #
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
@@ -1210,8 +1220,6 @@ process = "p p > e+ e- j"
 script = "validation/madgraph/scripts/pp_to_llj_mlm.mg5"
 class = "multi-channel"
 n_final = 3
-status = "planned"
-bundled = false
 rationale = "The single-multiplicity MLM reference: ickkw = 1, xqcut = 20 on pp_to_llj_dyn's card (13 TeV, lhaid 247000, mmll = 50), so the xqcut cut, the two setclscales calls per point and rewgt's alpha_s and PDF-ratio factors can each be compared against MadEvent before mixed multiplicities exist on this side. vector_size = 1 pins the scalar path, whose SCALUP is sqrt(max q2bck)."
 artifacts = ["output/pp_to_llj_mlm", "output/pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_mlm", "mlm_dump_manifest.json#pp_to_llj_mlm", "mlm_census.json#pp_to_llj_mlm"]
 [process.categories]
@@ -1226,8 +1234,6 @@ process = "p p > e+ e- j"
 script = "validation/madgraph/scripts/pp_to_llj_xqcut_only.mg5"
 class = "multi-channel"
 n_final = 3
-status = "planned"
-bundled = false
 rationale = "pp_to_llj_mlm's card with ickkw = 0: xqcut = 20 as a pure cut (setclscales returns after the rejection test, no second call, rewgt = 1), with setcuts.f's rewrite ptj = mmjj = xqcut and drjj = drjl = 0 still applied. Beside pp_to_llj_mlm it separates the cut from the reweighting."
 artifacts = ["output/pp_to_llj_xqcut_only", "output/pp_to_llj_xqcut_only/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_xqcut_only", "mlm_dump_manifest.json#pp_to_llj_xqcut_only", "mlm_census.json#pp_to_llj_xqcut_only"]
 [process.categories]
@@ -1242,8 +1248,6 @@ process = "p p > e+ e- j"
 script = "validation/madgraph/scripts/pp_to_llj_mlm_alps2.mg5"
 class = "multi-channel"
 n_final = 3
-status = "planned"
-bundled = false
 rationale = "pp_to_llj_mlm with alpsfact = 2 and use_syst = F: the convention pin for where alpsfact enters rewgt, alpha_s(alpsfact * kt) / alpha_s(mu_R). use_syst has to be off because MadGraph resets alpsfact to 1 under it (banner.py:4551-4555), so with it on the run would silently measure alpsfact = 1; this side must apply the same override. With use_syst off the events carry no <mgrwt>, so the dump is the row's only record of the vertex scales."
 artifacts = ["output/pp_to_llj_mlm_alps2", "output/pp_to_llj_mlm_alps2/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_llj_mlm_alps2", "mlm_dump_manifest.json#pp_to_llj_mlm_alps2", "mlm_census.json#pp_to_llj_mlm_alps2"]
 [process.categories]
@@ -1258,8 +1262,6 @@ process = "p p > e+ e- j j"
 script = "validation/madgraph/scripts/pp_to_ll_0j2j_mlm.mg5"
 class = "multi-channel"
 n_final = 4
-status = "planned"
-bundled = false
 rationale = "The canonical MLM sample: p p > e+ e- @0, p p > e+ e- j @1 and p p > e+ e- j j @2 on pp_to_llj_mlm's card. It needs the composite multiplicity integrand, and its two-jet channels are the heaviest integration the suite would run."
 artifacts = ["output/pp_to_ll_0j2j_mlm", "output/pp_to_ll_0j2j_mlm/Events/run_01/unweighted_events.lhe.gz", "output/pp_to_ll_0j2j_mlm/Events/run_s20261101 .. run_s20261120 (one freshly generated directory each; event file, banner, seed record)", "mlm_sigma_reference.json#pp_to_ll_0j2j_mlm", "mlm_dump_manifest.json#pp_to_ll_0j2j_mlm", "mlm_census.json#pp_to_ll_0j2j_mlm"]
 [process.categories]
@@ -1274,8 +1276,6 @@ process = "p p > t t~ j"
 script = "validation/madgraph/scripts/pp_to_ttx_0j1j_mlm.mg5"
 class = "multi-channel"
 n_final = 3
-status = "planned"
-bundled = false
 rationale = "p p > t t~ @0 and p p > t t~ j @1, the only MLM row with a massive coloured 2 -> 2 core: mt2last replacing the last two vertices' scales, the massless-massive arms of the final-state measure and the transverse-mass central scale, under matching. xqcut = 30, MadGraph's own default for a mixed-multiplicity jet card and the conventional top-pair choice (the one-jet sample is 53% of sigma there); it also pins the ptj = mmjj = xqcut rewrite at a second value."
 artifacts = ["output/pp_to_ttx_0j1j_mlm", "output/pp_to_ttx_0j1j_mlm/Events/run_01/unweighted_events.lhe.gz", "mlm_sigma_reference.json#pp_to_ttx_0j1j_mlm", "mlm_dump_manifest.json#pp_to_ttx_0j1j_mlm", "mlm_census.json#pp_to_ttx_0j1j_mlm"]
 [process.categories]
