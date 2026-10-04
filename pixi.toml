@@ -265,12 +265,14 @@ validate-kt-cluster = { cmd = "cargo test -p vibegraph-lib --profile release-deb
 validate-mlm-dumps = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_mlm_dumps -- --ignored --nocapture --test-threads 1", depends-on = ["fetch-pdf"] }
 # Oracle layer: a matched vibegraph sample's event record (the share of events
 # listing the Z, the share whose jet sits at the collider energy) against the
-# banked MadEvent pp_to_llj_mlm run, which is outside the reference bundle.
+# banked MadEvent pp_to_llj_mlm run (in the reference bundle from refdata-9).
 validate-mlm-samples = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --ignored --nocapture matched_sample_record_fractions_against_madevent", depends-on = ["fetch-pdf"] }
-# Long tier: sigma of the MLM llj rows -- pure cut (xqcut = 20, ickkw = 0),
-# matched, and matched at alpsfact = 2 -- against MadEvent's ten seeds each,
-# measured and reported.
-validate-mlm-sigma = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture sigma_llj_xqcut_only_vs_madevent sigma_llj_mlm", depends-on = ["fetch-pdf"] }
+# Long tier: sigma of the five MLM rows against MadEvent's seeds, read under the
+# seed policy on both sides -- the llj rows (pure cut at xqcut = 20, matched,
+# matched at alpsfact = 2), and the two mixed-multiplicity rows per @N and in
+# total through the composite integrand (pp_to_ll_0j2j_mlm against its 21
+# independent directories, pp_to_ttx_0j1j_mlm measured and reported).
+validate-mlm-sigma = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture sigma_llj_xqcut_only_vs_madevent sigma_llj_mlm sigma_ll_0j2j_mlm_vs_madevent sigma_ttx_0j1j_mlm_vs_madevent", depends-on = ["fetch-pdf"] }
 # Build the LHAPDF C++ oracle and dump the committed reference values for both
 # grid shapes (one rectangular subgrid; two bands joined at a seam)
 generate-pdf-oracle = { cmd = "bash validation/pdf/gen_oracle.sh", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }
