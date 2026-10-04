@@ -542,16 +542,6 @@ impl Folded {
         (consts_c.into_boxed_slice(), consts_f.into_boxed_slice())
     }
 
-    /// Lengths of the two resolved pools, `(complex, real)`, as [`pools`](Self::pools)
-    /// returns them.
-    #[cfg(feature = "aot-mg-study")]
-    pub(super) fn pools_len(&self) -> (usize, usize) {
-        (
-            self.pool_c.len() + self.fold_complex.len(),
-            self.pool_f.len() + self.fold_real.len(),
-        )
-    }
-
     /// The external-leg table resolving `Const::Ext` indices.
     pub fn ext_legs(&self) -> &[ExtLeg] {
         &self.pool_ext

@@ -1087,7 +1087,7 @@ coverage. What is left below is what still refuses, and why.
   far more than mispredicts and bounds checks account for — the per-step decode,
   operand loads and call glue. A lever that keeps code size independent of program
   length (per-kind batched dispatch) is where that would be recovered.
-  A second study (`aot-mg-study` feature, branch `study/aot-mg-style`) rendered the
+  A second study (code at commit `b504391`, not in the tree) rendered the
   program in MadGraph's form — every value in the interpreter's slot arrays, every
   instruction one out-of-line call writing its slot in place, no locals —
   bit-identical again. It is the smallest rendering (26–31 B per VM instruction;

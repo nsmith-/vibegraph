@@ -280,8 +280,8 @@ and `v{add,sub,mul,fmadd,…}` mnemonics.
 **Status: measurement record, 2026-10-04. Answer: no — MadGraph's form is the
 smallest rendering and, split into functions, builds in four minutes, but the 2 → 6
 runs at 0.66× the interpreter (0.67–0.79× at four lanes), and in one function it does
-not compile on a 16 GB host (rustc's MIR optimisation passes 13.9 GiB).** Code: `aot-mg-study` feature, branch `study/aot-mg-style`. The
-question: does the form MadGraph's Fortran matrix elements take — every wavefunction in
+not compile on a 16 GB host (rustc's MIR optimisation passes 13.9 GiB).** The code is
+not in the tree: it lives at commit `b504391` (`aot-mg-study` feature). The question: does the form MadGraph's Fortran matrix elements take — every wavefunction in
 one memory-resident array, every HELAS call an out-of-line routine taking operands by
 reference and writing its result in place, the matrix routine nothing but a sequence of
 such calls — keep the rendered program's code small and its build cheap on the 2 → 6,
@@ -551,7 +551,7 @@ in 51 s at 2.0 GiB), and those builds were then dropped for the thin profile.
 
 ## M9. Reproduce
 
-On branch `study/aot-mg-style`:
+At commit `b504391`:
 
 ```
 # render (small rows committed; the 2 -> 6 is git-ignored), both forms

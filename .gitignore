@@ -33,5 +33,3 @@ profile.json.gz
 # mg5_aMC drops a scratch py.py into whatever directory it is invoked from
 /py.py
 .DS_Store
-# The aot-mg-study 2 -> 6 renderings (megabytes), written by the `aot_render` test
-/vibegraph-lib/src/helas/eval/aot/generated/*/uux_to_ccx_emmm_qcd0*.rs
