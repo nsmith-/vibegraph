@@ -459,10 +459,12 @@ The by-value 2 → 6 is not rebuilt here: its one-function form is the 52-minute
 | `mg_ee_to_mumu_tata_qcd0::<f64>` | 54 671 | 10 093 | 31 B | 1 720 | 2 969 | 0 |
 | `mg_uux_to_ccx_emmm_qcd0*::<f64>` (20 functions) | 950 542 | 187 058 | 26 B | 36 480 | 16 000 | 0 |
 | — the same at `LaneField<4>` | 951 115 | 187 058 | 26 B | 36 480 | 16 000 | 0 |
-| `fill_arenas::<f64>` (interpreter) | 17–21 KiB | 3 513–4 200 | — | 193 | 412–491 | 0 ³ |
+| `fill_arenas::<f64>` (interpreter) | 17–21 KiB | 3 513–4 200 | — | 193 | 412–491 | — ³ |
 
-³ Thin LTO with 16 codegen units turns the interpreter's 157 bounds checks into
-something `objdump` does not show as a `panic_bounds_check` call; not investigated.
+³ Not counted in this binary: no instruction in it calls `panic_bounds_check` by
+that name (the interpreter's checks branch to shared blocks whose callee `objdump`
+does not resolve), so the grep that counts 157 in the fat-LTO binary reads zero here.
+The rendered functions' zero is from the fat-LTO binary, where the grep works.
 
 The MG 2 → 6 is 0.93 MiB of code, 5.1 machine instructions and 26 B per VM instruction:
 an address computation per operand and the call. That is 57% of the by-value form's
