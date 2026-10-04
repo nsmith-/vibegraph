@@ -1087,7 +1087,17 @@ coverage. What is left below is what still refuses, and why.
   far more than mispredicts and bounds checks account for — the per-step decode,
   operand loads and call glue. A lever that keeps code size independent of program
   length (per-kind batched dispatch) is where that would be recovered.
-  (`aot-kernels-study-results.md`.)
+  A second study (`aot-mg-study` feature, branch `study/aot-mg-style`) rendered the
+  program in MadGraph's form — every value in the interpreter's slot arrays, every
+  instruction one out-of-line call writing its slot in place, no locals —
+  bit-identical again. It is the smallest rendering (26–31 B per VM instruction;
+  0.93 MiB for the 2→6) but not a faster one: 1.05–1.26× the interpreter on the
+  small rows (the by-value form is 1.4–2.2×) and 0.66× on the 2→6 (0.79× at four
+  lanes). Its one-function 2→6 cannot be compiled on a 16 GB host — rustc's MIR
+  `ReferencePropagation` passes 13.9 GiB in the library crate — while 19 functions of
+  2 000 instructions build in 4 min at 2 GiB. So the form fixes the build, not the
+  run time: straight-line rendering loses on the 2→6 in every form tried.
+  (`aot-kernels-study-results.md`, second part.)
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)

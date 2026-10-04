@@ -447,6 +447,12 @@ interpreter at `f64` and `LaneField<4>` on the 16 points (bench pre-check).
 | `ee_to_mumu_tata_qcd0` | 1.12 | 1.67 | 1.33 |
 | `uux_to_ccx_emmm_qcd0` | **0.66** | (0.74, first study, fat LTO, one function) | **0.79** |
 
+Run 2 (9 rounds, same binary) reads `vm_f64` 326 / 1 842 / 6 049 / 124 354 and ratios
+`mg_f64` 1.15 / 1.27 / 1.19 / **0.66**, `byv_f64` 1.57 / 2.15 / 1.53, `mg_lanes4`
+1.38 / 1.25 / 1.17 / **0.67**; round spreads 0.23–0.86. The 2 → 6 ratio reproduces to
+the percent; the small-row MG gains (1.05–1.27 across the two runs) are inside the
+host's layout noise taken one cell at a time, but point the same way on every row.
+
 The by-value 2 → 6 is not rebuilt here: its one-function form is the 52-minute build of
 §6, and its ratio is quoted from §3.
 
