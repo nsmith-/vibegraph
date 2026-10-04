@@ -6,13 +6,16 @@ evaluator limited by floating-point throughput or by moving values from the
 caches into registers? No host used so far exposes a PMU, so this reading
 avoids counters. It counts the work exactly and divides by measured time.
 
-**Answer.** At scalar width it is neither. About 85% of each VM instruction's
-cycles stay the same when the instruction carries 2–4× the FLOPs and bytes
-(§4). That fixed cost is instruction overhead and dependency latency. FP issue
-runs at 1.1–1.7 instructions per cycle, under the core's 2–3 FP-capable ports,
-and arena traffic at 5–9 B/cycle, under a tenth of L1 bandwidth. The part
-of the cost that does grow with width is FP issue more than bytes. Lanes shift
-the balance. At lanes8 FP ports sit at 25–40% and L1 bandwidth well under its
+**Answer.** Not bytes; at scalar width, closer to FP issue than peak FLOPs
+suggest. Arena traffic runs at 5–9 B/cycle, under a tenth of L1 bandwidth.
+Only 14–26% of FP operations are FMAs, so peak FLOPs is the wrong ceiling.
+Against the FP-issue floor of the actual operation mix (§4a), the large
+scalar rows run at 51–68% and the small ones at 37–53%. A perfect schedule of
+the same operations would be at most about 1.5–2× faster. Dispatch is a small
+part of the rest: mispredicts cost about 2% of cycles on the 2→6
+(`threaded-dispatch-study-results.md` §4) and bounds checks 3.5–5.5% (note 17
+§10). Dependency latency is the measured suspect for the remainder. The lane
+paths have the headroom: 25–52% of their floor. Lanes shift the balance. At lanes8 FP ports sit at 25–40% and L1 bandwidth well under its
 limit, but the 2→6 stops scaling: lanes8 costs the same per event as lanes4.
 Its 3.6 MiB lanes8 working set overflows the 2 MiB L2. That cell is
 memory-bound, by cache capacity. The arithmetic intensity is 0.15–0.29
@@ -168,13 +171,12 @@ The 4→8 step is steeper on every row (zmm on two ports, possible licence
 downclock) and very steep on the 2→6, the capacity cliff.
 
 - **At scalar width 83–90% of a VM instruction's time is width-independent.**
-  It is the 10–18 cycles a pass-instruction costs before any lane is added:
-  dispatch, operand indexing and bounds checks, call and copy glue, and the
-  latency of each kernel's dependent FP chain, which a wider register does not
-  lengthen. FLOPs and bytes are the remaining 10–17%. This matches the
-  instruction-level profile of `fill-arenas-asm-study-results.md` (about one
-  instruction in five arithmetic) and Apple's counters in
-  `threaded-dispatch-study-results.md` §4 (74–79% of cycles retiring).
+  It is the 10–18 cycles a pass-instruction costs before any lane is added.
+  That bucket holds dispatch, operand indexing and bounds checks, call and
+  copy glue, each kernel's dependent FP chain, and FP issue itself. One ymm
+  FMA takes the same port slot as one scalar FMA, so issue cost does not grow
+  with width up to 256 bits. Width-independence therefore cannot separate
+  dispatch from arithmetic; §4a weighs the arithmetic directly.
 - **The per-lane cost is FP throughput more than bytes.** Each lane adds
   1.3–3.0 cycles for the 13–26 FP operations and 85–125 bytes of a VM
   instruction. That is 8–16 element FP operations per marginal cycle, at or
@@ -182,10 +184,45 @@ downclock) and very steep on the 2→6, the capacity cliff.
   to two thirds of L1 load bandwidth. Once the fixed part is amortised, the FP
   units are the first width-proportional limit. At lanes8 the per-lane part is
   about half of the per-instruction time.
-- **The fixed part is what to attack.** A level that removes it (kernel fusion,
-  so values stay in registers across VM instructions, or fewer, larger
-  instructions) gains the most at scalar and lanes4. Halving the FLOPs at
-  scalar width would recover at most 10–17%.
+
+## 4a. The FP-issue floor of the operation mix
+
+Peak FLOPs assumes every operation is an FMA. A floor for this code uses the
+census's actual mix and the core's ports:
+- **Scalar and ymm:** multiplies and FMAs go to two ports and adds to three, so
+  the floor is `max((mul + fma) / 2, (all FP ops) / 3)` cycles per event, ÷ N
+  at width N.
+- **zmm:** every FP operation goes to two ports, `(all FP ops) / 2 / 8`.
+
+The second column of the table also counts negations, which may be folded
+into FMA variants, as port work.
+
+| process | scalar | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `ee_to_mumu` | 38–44% | 26–30% | 27–32% |
+| `ee_to_wpwm` | 47–53% | 32–36% | 33–37% |
+| `uux_to_uux` | 37–44% | 27–32% | 25–30% |
+| `gg_to_gg` | 37–42% | 26–29% | 28–31% |
+| `gg_to_ttx` | 39–46% | 30–35% | 32–38% |
+| `ee_to_mumua` | 55–66% | 40–48% | 38–45% |
+| `ee_to_mumu_tata_qcd0` | 57–68% | 43–52% | 40–49% |
+| `uux_to_ccx_emmm_qcd0` | 51–61% | 34–41% | 26–32% |
+
+The floor assumes a perfect schedule and treats each counted element operation
+as an FP instruction. The scalar build SLP-packs some complex pairs, which
+lowers its true floor, and shuffles raise it, so read these to about ±10%.
+
+- **Scalar is not far from its ceiling.** The large rows sit at half to two
+  thirds of the floor, so removing every other cost would buy at most about
+  1.5–2×. Of the gap, dispatch accounts for under a tenth of cycles
+  (mispredicts and bounds checks above). Dependency latency is the measured
+  suspect for the rest: interning order, which puts dependent instructions
+  back to back, costs 19% over op-blocked. Further scalar gains need fewer FP
+  operations or shorter chains.
+- **The lane paths are where the headroom is**, at 25–52% of their floor. The
+  costs that grow with width are what hold them there: zmm's two FP ports,
+  N× the bytes per instruction including by-value copies of 512-byte
+  temporaries, and on the 2→6 the L2 overflow.
 
 ## 5. What this does not settle
 
@@ -197,10 +234,9 @@ downclock) and very steep on the 2→6, the capacity cliff.
 - **L1 hits versus L2 traffic.** The arena column gives a working set, not a
   miss rate. Most reads are of recently written values. Only the 2→6's
   stalled scaling shows a capacity effect directly.
-- **The width-independent cost is not split** into dispatch overhead and FP
-  latency. Arena order, which serialises dependent instructions, costs 19%
-  over op-blocked, so latency is a real part of it. A top-down reading on a
-  host with a PMU would give the split.
+- **The gap between scalar time and the FP-issue floor is not split** into
+  latency, non-FP issue (loads, address arithmetic) and front-end stalls. A
+  top-down reading on a host with a PMU would give the split.
 - **One host, one run.** The census counts do not depend on the host. The
   rates do, and the M3 Max and Cascade Lake have different port counts and L2
   sizes.

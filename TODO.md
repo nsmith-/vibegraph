@@ -1051,11 +1051,12 @@ coverage. What is left below is what still refuses, and why.
   operation of `eval_m2` exactly, through an op-counting `F`, and the arena
   bytes each instruction moves. Paired with `eval_strategies` timings on
   Emerald Rapids at a measured 3.2 GHz:
-  - At scalar width it is neither. 83–90% of a VM instruction's cycles do not
-    grow when the same stream runs on 2–4 lanes: that part is dispatch,
-    overhead and dependency latency. FP issue is 1.1–1.7 per cycle, and arena
-    traffic 5–9 B/cycle, under a tenth of L1.
-  - The width-proportional part is FP issue more than bytes.
+  - Not bytes: arena traffic is 5–9 B/cycle at scalar width, under a tenth of
+    L1. Against the FP-issue floor of the actual operation mix (only 14–26%
+    FMAs), the large scalar rows run at 51–68% and the small ones at 37–53%,
+    so a perfect schedule would buy at most about 1.5–2×. Dispatch is a small
+    part of the gap (mispredicts about 2%, bounds checks 3.5–5.5%); dependency
+    latency is the suspect. The lane paths sit at 25–52% of their floor.
   - The 2→6 hits a cache-capacity cliff at lanes8: 1.03× over lanes4, against
     1.25–1.42× on the other rows. Its arenas are 3.6 MiB against a 2 MiB L2.
     The lane-aware order fallback (tail-call-threaded dispatch item) is the
