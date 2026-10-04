@@ -28,6 +28,11 @@
 // passes and the egraph schema encoder.
 #[allow(dead_code)]
 mod analysis;
+// Compiled helicity programs rendered to Rust and compiled ahead of time against the
+// same kernels: a study of what the interpreter's dispatch costs, and of which rendered
+// form scales to large programs. Never enable in normal builds.
+#[cfg(feature = "aot-mg-study")]
+mod aot;
 mod ast;
 mod compile;
 mod diagram_eval;
@@ -100,6 +105,14 @@ pub mod bench_internals {
     };
     pub use super::run::mul_apply;
     pub use super::waveform_slot::WaveformSlot;
+}
+
+/// The ahead-of-time-rendered programs, for the `aot_kernels` bench. Feature-gated
+/// and hidden: not a public API surface.
+#[cfg(feature = "aot-mg-study")]
+#[doc(hidden)]
+pub mod aot_study {
+    pub use super::aot::{AotAmplitude, AotRow, Form, ROWS};
 }
 
 /// Per-model op-coverage census: which evaluator primitives a model's gated

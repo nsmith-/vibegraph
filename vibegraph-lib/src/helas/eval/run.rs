@@ -271,6 +271,12 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         self.eval
     }
 
+    /// The colour-factor matrix resolved to `F`, row-major.
+    #[cfg(feature = "aot-mg-study")]
+    pub(super) fn cf(&self) -> &[F] {
+        &self.cf
+    }
+
     /// The token naming this amplitude and its current pools, for the reuse tests.
     #[cfg(test)]
     pub(super) fn fill_token(&self) -> u64 {
@@ -896,7 +902,7 @@ pub(super) fn run_forward_slot<F: Real>(
 /// pruning survey used. Compiled into debug builds and `extended-validation` only;
 /// released binaries pay nothing for it.
 #[inline]
-fn assert_partonic_cm_beams_along_z<F: Real>(momenta: &[LorentzVector<F>], n_in: usize) {
+pub(super) fn assert_partonic_cm_beams_along_z<F: Real>(momenta: &[LorentzVector<F>], n_in: usize) {
     #[cfg(any(debug_assertions, feature = "extended-validation"))]
     {
         assert_eq!(
@@ -1816,7 +1822,7 @@ fn eval_single_diagram<F: Real + FromPrimitive>(
 }
 
 /// Build an external wavefunction from its kinematics + interned mass.
-fn build_external_core<F: Real>(
+pub(super) fn build_external_core<F: Real>(
     momentum: LorentzVector<F>,
     helicity: i32,
     spin: i32,
