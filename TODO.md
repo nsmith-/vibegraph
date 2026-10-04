@@ -1065,6 +1065,14 @@ coverage. What is left below is what still refuses, and why.
   Open: a machine-load count (spills, header reloads, by-value copies), and
   splitting the fixed part into dispatch and latency, both on a host with a
   PMU. (`roofline-census-results.md`.)
+- **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
+  arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
+  checked indexing on Emerald Rapids. That is the ceiling for every safe
+  alternative: clamp (`i.min(len - 1)`) and mask (`i & (len - 1)`) remove the
+  branch but execute as much per access. Routing checked indexing through the
+  `rd`/`wr` accessors moved scalar `forward` by 5.8% on its own. Open, if anyone
+  wants it: `u16` operand indices, which shrink the instruction records, measured
+  as a stream-size lever and not as bounds checks. (Note 17 §10.)
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)

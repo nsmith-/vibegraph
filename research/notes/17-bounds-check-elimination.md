@@ -213,3 +213,88 @@ posterity; effort went to the slot-traffic levers (A4 momentum pool and A5 helic
 recycling) instead. The `a3b-probe` twin + equality oracle remain on branch
 `eval-layout/a3b` as a compile-once, bit-for-bit regression harness for future
 eval-layout changes.
+
+## 10. Re-test, 2026-10-04: the ceiling today, and safe mechanisms §6 missed
+
+The +7–11% of §4 predates three changes: pre-sized direct-index writes (no `push`
+capacity checks), arena slices hoisted into registers, and the op-blocked order. This
+re-measures what the checks cost now, as an upper bound for any safe removal.
+
+**Safe mechanisms §6 did not consider.** §6 found no safe way to bound a data index
+other than `idx % len`. A rustc 1.97 probe of a three-variant dispatch loop
+(x86-64-v3, `-O`) finds three that LLVM accepts:
+- **Clamp, `arena[i.min(len - 1)]`**, after a one-time non-empty guard. Each check
+  becomes `cmp` + `cmov`.
+- **Mask, `arena[i & (len - 1)]`**, with power-of-two arena lengths. Each check
+  becomes one `and`.
+- **Type-bounded, a `u16` index into a fixed `[T; 65536]`.** No extra instruction at
+  all.
+
+The first two remove branches, not work. Per executed instruction their hot paths are
+the same length as the checked one (`Mul` arm: 19 against 20). `cmp` + `cmov` is two
+micro-ops where a fused `cmp` + `jbe` is one. Their smaller static size is the cold
+panic stubs they no longer need. Neither can beat `get_unchecked`, which keeps only
+the load, except through code layout.
+
+**The probe.** `fill_arenas` reads and writes every arena through two
+`#[inline(always)]` accessors, `rd` and `wr`. They are checked indexing by default
+and `get_unchecked` under the `unchecked-study` feature, a study hook never enabled
+in normal builds. Under the feature:
+- The 171 `helas::eval` unit tests pass, with a debug assertion on every access.
+- Each release `fill_arenas` instance has about 20% fewer instructions (e.g.
+  5658 → 4486) and about 73% fewer conditional jumps (240 → 65), with no
+  panic references left.
+
+**Sweep.** Emerald Rapids VM (`roofline-census-results.md` §1), `target-cpu=native`.
+`scripts/bench_schedule.sh 6 opblocked` ran three arms round-robin, each round in a
+different environment-padding layout:
+- `orig`: the tree before the accessors (`c4bc739`).
+- `head`: the accessors, checked.
+- `unchecked`: the accessors under the feature.
+
+Each table entry is the geomean over the 8 bench rows of min-over-rounds time
+relative to `head`, with the per-row range:
+
+| arm | `forward` | lanes4 | lanes8 |
+|---|--:|--:|--:|
+| `orig` | 1.058 [1.02..1.12] | 1.021 [0.98..1.06] | 0.989 [0.92..1.03] |
+| `unchecked` | 0.964 [0.91..1.01] | 0.960 [0.90..0.98] | 0.946 [0.89..0.98] |
+
+Per-round paired geomeans, unchecked over head:
+
+| width | rounds 1–6 |
+|---|---|
+| `forward` | 0.997 / 0.967 / 0.983 / 0.933 / 0.915 / 1.076 |
+| lanes4 | 0.976 / 0.952 / 0.970 / 0.953 / 0.928 / 1.076 |
+| lanes8 | 0.929 / 0.931 / 0.927 / 0.938 / 0.884 / 1.152 |
+
+Single cells move 7–30% between rounds on this VM, so only the geomeans carry
+weight.
+
+**Reading.**
+- **Removing every check is worth 3.5–5.5%.** Unchecked beats head in 5 of 6 rounds at
+  every width, with round 6 the exception. The x86 measurement in
+  `x86-avx2-perf-study-results.md` gave 2–3% on an older tree. The coupled +7–11% of
+  §4 is gone with the `push` checks that caused it.
+- **The bound is the size of a codegen accident.** `orig` and `head` differ only in
+  routing checked indexing through the accessors. Yet `head` is 5.8% faster on
+  `forward`, ahead in 5 of 6 rounds. Its `f64` instance has 31 fewer conditional
+  jumps (282 → 251), so part of that is real codegen, not only layout. A safe
+  refactor that does not touch the checks moved the scalar path as much as removing
+  them all does.
+- **Clamp and mask are not worth building.** Their ceiling is under 5%. Per access
+  they execute as much as the check or more, so they would likely land at or inside
+  the noise.
+- **Not measured here:** the type-bounded variant's other effect. `u16` indices halve
+  the instruction records, which is a separate lever (a smaller instruction stream)
+  and should be measured as one.
+
+Reproduce:
+```
+RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR=target/unchecked-study cargo bench \
+    -p vibegraph-lib --bench eval_strategies --no-run \
+    --features eval-schedule-study,unchecked-study
+BENCH_ARMS="unchecked=<that binary> orig=<a build of c4bc739>" \
+    scripts/bench_schedule.sh 6 opblocked
+cargo test -p vibegraph-lib --lib --features unchecked-study helas::eval
+```
