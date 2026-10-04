@@ -22,13 +22,6 @@ eval-schedule-study = []
 # the bounds checks cost. A study hook: the only `unsafe` in the evaluator, compiled out
 # of every build without it. Never enable in normal builds.
 unchecked-study = []
-# Compiles helas::eval::aot: compiled helicity programs rendered to straight-line Rust
-# over the same kernels, built ahead of time, to measure what interpreting them costs.
-# A study hook; never enable in normal builds.
-aot-study = []
-# Adds the 2 -> 6 row to aot-study. Its rendered source is too large to commit and is
-# written by the `aot_render` ignored test before building with this feature.
-aot-study-large = ["aot-study"]
 
 [lints]
 workspace = true
@@ -95,11 +88,6 @@ harness = false
 name = "kernel_fusion"
 harness = false
 required-features = ["bench-internals"]
-
-[[bench]]
-name = "aot_kernels"
-harness = false
-required-features = ["aot-study"]
 
 [[bench]]
 name = "pdf_xfx"

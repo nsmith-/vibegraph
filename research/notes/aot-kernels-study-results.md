@@ -1,7 +1,8 @@
 # The helicity program compiled ahead of time — results
 
-**Status: measurement record, 2026-10-04. Study code only (`aot-study` feature),
-not a production proposal.** The question: how fast does the *same* computation run
+**Status: measurement record, 2026-10-04. The study code is not in the tree: it
+lives at commit `03c31e6` (`git checkout 03c31e6` to reproduce), and was removed
+because its large builds take 11–52 min.** The question: how fast does the *same* computation run
 when the bytecode program `fill_arenas` interprets is instead rendered to Rust as
 straight-line kernel calls and compiled by rustc/LLVM?
 
@@ -250,6 +251,8 @@ cuts the block size, and the time follows, but the chunked code runs no faster
   inline in both arms; only the `kernel::*_bare` calls differ.
 
 ## Reproduce
+
+At commit `03c31e6`:
 
 ```
 # render the three committed rows (default) or the 2 → 6, optionally chunked
