@@ -42,3 +42,12 @@ lto = true
 inherits = "release"
 debug = 1
 lto = "thin"
+
+# The `aot_kernels` study bench with the 2 -> 6 rendered program compiled in. Fat LTO
+# puts that program and everything else into one LLVM module, which exhausts a
+# 16 GB host; thin LTO over 16 codegen units bounds each module. Every arm in that
+# binary, the interpreter included, is built with this profile.
+[profile.aot-study]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
