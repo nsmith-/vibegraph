@@ -1074,6 +1074,20 @@ coverage. What is left below is what still refuses, and why.
   `rd`/`wr` accessors moved scalar `forward` by 5.8% on its own. Open, if anyone
   wants it: `u16` operand indices, which shrink the instruction records, measured
   as a stream-size lever and not as bounds checks. (Note 17 §10.)
+- **Ahead-of-time rendering of the helicity program: measured, does not scale.**
+  The `aot-study` feature renders a compiled program to straight-line Rust over
+  the same kernels (bit-identical |M|² on every row). Small programs gain: 1.3–2.0×
+  scalar on `ee_to_mumu` / `gg_to_gg`, best with the kernels called out of line.
+  The code is ~190 B per VM instruction inlined (~45 B out of line), executed once
+  per event, so large programs turn front-end bound: `ee_to_mumu_tata_qcd0` is
+  0.8× inlined (1.3× out of line), the 2→6 0.2× / 0.74×, and its one-function
+  build takes 52 min under fat LTO (11–14 min chunked, no faster at run time). The
+  useful number is the bound: the interpreter spends at least 23–51% of scalar
+  `forward` outside the arithmetic on rows whose rendering stays cache-resident,
+  far more than mispredicts and bounds checks account for — the per-step decode,
+  operand loads and call glue. A lever that keeps code size independent of program
+  length (per-kind batched dispatch) is where that would be recovered.
+  (`aot-kernels-study-results.md`.)
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
