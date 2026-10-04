@@ -9,13 +9,14 @@ avoids counters. It counts the work exactly and divides by measured time.
 **Answer.** Not bytes; at scalar width, closer to FP issue than peak FLOPs
 suggest. Arena traffic runs at 5–9 B/cycle, under a tenth of L1 bandwidth.
 Only 14–26% of FP operations are FMAs, so peak FLOPs is the wrong ceiling.
-Against the FP-issue floor of the actual operation mix (§4a), the large
+Against the FP-issue ceiling of the actual operation mix (§4a), the large
 scalar rows run at 51–68% and the small ones at 37–53%. A perfect schedule of
 the same operations would be at most about 1.5–2× faster. Dispatch is a small
 part of the rest: mispredicts cost about 2% of cycles on the 2→6
 (`threaded-dispatch-study-results.md` §4) and bounds checks 3.5–5.5% (note 17
 §10). Dependency latency is the measured suspect for the remainder. The lane
-paths have the headroom: 25–52% of their floor. Lanes shift the balance. At lanes8 FP ports sit at 25–40% and L1 bandwidth well under its
+paths have the headroom: 25–52% of their ceiling. Lanes shift the balance. At
+lanes8 FP ports sit at 25–40% and L1 bandwidth well under its
 limit, but the 2→6 stops scaling: lanes8 costs the same per event as lanes4.
 Its 3.6 MiB lanes8 working set overflows the 2 MiB L2. That cell is
 memory-bound, by cache capacity. The arithmetic intensity is 0.15–0.29
@@ -185,17 +186,17 @@ downclock) and very steep on the 2→6, the capacity cliff.
   units are the first width-proportional limit. At lanes8 the per-lane part is
   about half of the per-instruction time.
 
-## 4a. The FP-issue floor of the operation mix
+## 4a. The FP-issue ceiling of the operation mix
 
-Peak FLOPs assumes every operation is an FMA. A floor for this code uses the
+Peak FLOPs assumes every operation is an FMA. A ceiling for this code uses the
 census's actual mix and the core's ports:
 - **Scalar and ymm:** multiplies and FMAs go to two ports and adds to three, so
-  the floor is `max((mul + fma) / 2, (all FP ops) / 3)` cycles per event, ÷ N
-  at width N.
+  the ceiling allows no fewer than `max((mul + fma) / 2, (all FP ops) / 3)`
+  cycles per event, ÷ N at width N.
 - **zmm:** every FP operation goes to two ports, `(all FP ops) / 2 / 8`.
 
-The second column of the table also counts negations, which may be folded
-into FMA variants, as port work.
+Each range runs from the ceiling without negations to the one that counts
+them as port work; a negation may instead fold into an FMA variant.
 
 | process | scalar | lanes4 | lanes8 |
 |---|--:|--:|--:|
@@ -208,18 +209,21 @@ into FMA variants, as port work.
 | `ee_to_mumu_tata_qcd0` | 57–68% | 43–52% | 40–49% |
 | `uux_to_ccx_emmm_qcd0` | 51–61% | 34–41% | 26–32% |
 
-The floor assumes a perfect schedule and treats each counted element operation
+Each entry is the fraction of the ceiling's throughput the measured time
+reaches. The ceiling assumes a perfect schedule (every FP-capable port busy
+every cycle, no latency stalls, no competition from other instructions) and
+treats each counted element operation
 as an FP instruction. The scalar build SLP-packs some complex pairs, which
-lowers its true floor, and shuffles raise it, so read these to about ±10%.
+raises its true ceiling, and shuffles lower it, so read these to about ±10%.
 
 - **Scalar is not far from its ceiling.** The large rows sit at half to two
-  thirds of the floor, so removing every other cost would buy at most about
+  thirds of the ceiling, so removing every other cost would buy at most about
   1.5–2×. Of the gap, dispatch accounts for under a tenth of cycles
   (mispredicts and bounds checks above). Dependency latency is the measured
   suspect for the rest: interning order, which puts dependent instructions
   back to back, costs 19% over op-blocked. Further scalar gains need fewer FP
   operations or shorter chains.
-- **The lane paths are where the headroom is**, at 25–52% of their floor. The
+- **The lane paths are where the headroom is**, at 25–52% of their ceiling. The
   costs that grow with width are what hold them there: zmm's two FP ports,
   N× the bytes per instruction including by-value copies of 512-byte
   temporaries, and on the 2→6 the L2 overflow.
@@ -234,7 +238,7 @@ lowers its true floor, and shuffles raise it, so read these to about ±10%.
 - **L1 hits versus L2 traffic.** The arena column gives a working set, not a
   miss rate. Most reads are of recently written values. Only the 2→6's
   stalled scaling shows a capacity effect directly.
-- **The gap between scalar time and the FP-issue floor is not split** into
+- **The gap between scalar time and the FP-issue ceiling is not split** into
   latency, non-FP issue (loads, address arithmetic) and front-end stalls. A
   top-down reading on a host with a PMU would give the split.
 - **One host, one run.** The census counts do not depend on the host. The
