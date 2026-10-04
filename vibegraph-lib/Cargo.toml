@@ -22,6 +22,15 @@ eval-schedule-study = []
 # the bounds checks cost. A study hook: the only `unsafe` in the evaluator, compiled out
 # of every build without it. Never enable in normal builds.
 unchecked-study = []
+# Compiles helas::eval::aot: compiled helicity programs rendered to Rust ahead of time
+# over the same kernels, in MadGraph's form (every value in a per-class slot array,
+# every instruction one out-of-line call writing its slot in place) and, for
+# comparison, as straight-line locals over by-value out-of-line kernel calls. A study
+# hook; never enable in normal builds.
+aot-mg-study = []
+# Adds the 2 -> 6 row in MadGraph's form. Its rendered source is too large to commit
+# and is written by the `aot_render` ignored test before building with this feature.
+aot-mg-study-large = ["aot-mg-study"]
 
 [lints]
 workspace = true
@@ -88,6 +97,11 @@ harness = false
 name = "kernel_fusion"
 harness = false
 required-features = ["bench-internals"]
+
+[[bench]]
+name = "aot_kernels"
+harness = false
+required-features = ["aot-mg-study"]
 
 [[bench]]
 name = "pdf_xfx"
