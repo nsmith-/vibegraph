@@ -982,6 +982,42 @@ fn run_forward_flows_typed<F: Real>(
     }
 }
 
+/// Arena read in [`fill_arenas`]: plain checked indexing. Under the `unchecked-study`
+/// feature it is `get_unchecked`, the floor any bounds-check removal can reach; that
+/// build exists only to measure the checks' cost and never ships.
+#[inline(always)]
+#[track_caller]
+fn rd<T, I: std::slice::SliceIndex<[T]> + Clone>(s: &[T], i: I) -> &I::Output {
+    #[cfg(feature = "unchecked-study")]
+    {
+        debug_assert!(s.get(i.clone()).is_some(), "arena read out of range");
+        // SAFETY: study build only. `Program::build` draws every operand and result
+        // index from `0..arena_sizes[class]`, `ensure_sizes` grows each arena to at
+        // least that, and `validate_arenas` re-checks the stream in debug builds.
+        unsafe { s.get_unchecked(i) }
+    }
+    #[cfg(not(feature = "unchecked-study"))]
+    {
+        &s[i]
+    }
+}
+
+/// Arena write in [`fill_arenas`]; the counterpart of [`rd`].
+#[inline(always)]
+#[track_caller]
+fn wr<T, I: std::slice::SliceIndex<[T]> + Clone>(s: &mut [T], i: I) -> &mut I::Output {
+    #[cfg(feature = "unchecked-study")]
+    {
+        debug_assert!(s.get(i.clone()).is_some(), "arena write out of range");
+        // SAFETY: as for `rd`.
+        unsafe { s.get_unchecked_mut(i) }
+    }
+    #[cfg(not(feature = "unchecked-study"))]
+    {
+        &mut s[i]
+    }
+}
+
 /// Run the typed instruction stream, filling the per-class result arenas. Every node
 /// writes its result — by direct index (`arena[loc]`) — to the arena its statically-known
 /// output class selects; operands are read directly from the arena their class fixes, so no
@@ -1026,31 +1062,31 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
     for (instr, &loc) in prog.instrs.iter().zip(prog.dest.iter()) {
         let loc = loc as usize;
         match *instr {
-            Instr::ComplexConst { pool } => scalars[loc] = consts_c[pool as usize],
-            Instr::RealConst { pool } => reals[loc] = consts_f[pool as usize],
+            Instr::ComplexConst { pool } => *wr(scalars, loc) = *rd(consts_c, pool as usize),
+            Instr::RealConst { pool } => *wr(reals, loc) = *rd(consts_f, pool as usize),
             Instr::ExternalScalar { leg } => {
                 let WaveformSlot::Scalar(s) = build_external_slot(env, leg as usize) else {
                     panic!("external scalar leg produced a non-scalar slot");
                 };
-                scalars[loc] = s.value;
+                *wr(scalars, loc) = s.value;
             }
             Instr::ExternalVector { leg } => {
                 let WaveformSlot::Vector(v) = build_external_slot(env, leg as usize) else {
                     panic!("external vector leg produced a non-vector slot");
                 };
-                vectors[loc] = v.eps;
+                *wr(vectors, loc) = v.eps;
             }
             Instr::ExternalFin { leg } => {
                 let WaveformSlot::FermionIn(f) = build_external_slot(env, leg as usize) else {
                     panic!("external ket leg produced a non-fermion-in slot");
                 };
-                fin[loc] = f.spinor;
+                *wr(fin, loc) = f.spinor;
             }
             Instr::ExternalFout { leg } => {
                 let WaveformSlot::FermionOut(f) = build_external_slot(env, leg as usize) else {
                     panic!("external bra leg produced a non-fermion-out slot");
                 };
-                fout[loc] = f.spinor;
+                *wr(fout, loc) = f.spinor;
             }
             Instr::PropagateScalar {
                 input,
@@ -1059,12 +1095,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_scalar_bare(
-                    scalars[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
+                    *rd(scalars, input as usize),
+                    rd(moms, mom as usize),
+                    *rd(reals, mass as usize),
+                    *rd(reals, width as usize),
                 );
-                scalars[loc] = out;
+                *wr(scalars, loc) = out;
             }
             Instr::PropagateVector {
                 input,
@@ -1073,12 +1109,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_vector_bare(
-                    &vectors[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
+                    rd(vectors, input as usize),
+                    rd(moms, mom as usize),
+                    *rd(reals, mass as usize),
+                    *rd(reals, width as usize),
                 );
-                vectors[loc] = out;
+                *wr(vectors, loc) = out;
             }
             Instr::PropagateFin {
                 input,
@@ -1087,12 +1123,12 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_fin_bare(
-                    &fin[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
+                    rd(fin, input as usize),
+                    rd(moms, mom as usize),
+                    *rd(reals, mass as usize),
+                    *rd(reals, width as usize),
                 );
-                fin[loc] = out;
+                *wr(fin, loc) = out;
             }
             Instr::PropagateFout {
                 input,
@@ -1101,73 +1137,76 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 mom,
             } => {
                 let out = kernel::propagate_fout_bare(
-                    &fout[input as usize],
-                    &moms[mom as usize],
-                    reals[mass as usize],
-                    reals[width as usize],
+                    rd(fout, input as usize),
+                    rd(moms, mom as usize),
+                    *rd(reals, mass as usize),
+                    *rd(reals, width as usize),
                 );
-                fout[loc] = out;
+                *wr(fout, loc) = out;
             }
             Instr::AddScalar { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut value = scalars[slice[0].index()];
-                for op in &slice[1..] {
-                    value = value + scalars[op.index()];
+                let slice = rd(ops, start as usize..(start + len) as usize);
+                let mut value = *rd(scalars, rd(slice, 0).index());
+                for op in rd(slice, 1..) {
+                    value = value + *rd(scalars, op.index());
                 }
-                scalars[loc] = value;
+                *wr(scalars, loc) = value;
             }
             Instr::AddVector { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut eps = vectors[slice[0].index()];
-                for op in &slice[1..] {
-                    eps = eps + vectors[op.index()];
+                let slice = rd(ops, start as usize..(start + len) as usize);
+                let mut eps = *rd(vectors, rd(slice, 0).index());
+                for op in rd(slice, 1..) {
+                    eps = eps + *rd(vectors, op.index());
                 }
-                vectors[loc] = eps;
+                *wr(vectors, loc) = eps;
             }
             Instr::AddFin { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = fin[slice[0].index()];
-                for op in &slice[1..] {
-                    spinor = spinor + fin[op.index()];
+                let slice = rd(ops, start as usize..(start + len) as usize);
+                let mut spinor = *rd(fin, rd(slice, 0).index());
+                for op in rd(slice, 1..) {
+                    spinor = spinor + *rd(fin, op.index());
                 }
-                fin[loc] = spinor;
+                *wr(fin, loc) = spinor;
             }
             Instr::AddFout { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut spinor = fout[slice[0].index()];
-                for op in &slice[1..] {
-                    spinor = spinor + fout[op.index()];
+                let slice = rd(ops, start as usize..(start + len) as usize);
+                let mut spinor = *rd(fout, rd(slice, 0).index());
+                for op in rd(slice, 1..) {
+                    spinor = spinor + *rd(fout, op.index());
                 }
-                fout[loc] = spinor;
+                *wr(fout, loc) = spinor;
             }
             Instr::MulScalarC { a, b } => {
-                scalars[loc] = scalars[a as usize] * scalars[b as usize];
+                *wr(scalars, loc) = *rd(scalars, a as usize) * *rd(scalars, b as usize);
             }
             Instr::MulScalarR { s, r } => {
-                scalars[loc] = scalars[s as usize] * reals[r as usize];
+                *wr(scalars, loc) = *rd(scalars, s as usize) * *rd(reals, r as usize);
             }
             Instr::ScaleVecC { v, scale } => {
-                vectors[loc] = vectors[v as usize] * scalars[scale as usize];
+                *wr(vectors, loc) = *rd(vectors, v as usize) * *rd(scalars, scale as usize);
             }
             Instr::ScaleVecR { v, scale } => {
-                vectors[loc] = vectors[v as usize] * reals[scale as usize];
+                *wr(vectors, loc) = *rd(vectors, v as usize) * *rd(reals, scale as usize);
             }
             Instr::ScaleFinC { f, scale } => {
-                fin[loc] = fin[f as usize] * scalars[scale as usize];
+                *wr(fin, loc) = *rd(fin, f as usize) * *rd(scalars, scale as usize);
             }
             Instr::ScaleFinR { f, scale } => {
-                fin[loc] = fin[f as usize] * reals[scale as usize];
+                *wr(fin, loc) = *rd(fin, f as usize) * *rd(reals, scale as usize);
             }
             Instr::ScaleFoutC { f, scale } => {
-                fout[loc] = fout[f as usize] * scalars[scale as usize];
+                *wr(fout, loc) = *rd(fout, f as usize) * *rd(scalars, scale as usize);
             }
             Instr::ScaleFoutR { f, scale } => {
-                fout[loc] = fout[f as usize] * reals[scale as usize];
+                *wr(fout, loc) = *rd(fout, f as usize) * *rd(reals, scale as usize);
             }
             Instr::GammaVout { bra, ket, reversed } => {
-                let out =
-                    kernel::gamma_vout_bare(&fout[bra as usize], &fin[ket as usize], reversed);
-                vectors[loc] = out;
+                let out = kernel::gamma_vout_bare(
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                    reversed,
+                );
+                *wr(vectors, loc) = out;
             }
             Instr::FfvVout {
                 bra,
@@ -1177,59 +1216,59 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 reversed,
             } => {
                 let out = kernel::ffv_vout_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                    *rd(scalars, gl as usize),
+                    *rd(scalars, gr as usize),
                     reversed,
                 );
-                vectors[loc] = out;
+                *wr(vectors, loc) = out;
             }
             Instr::GammaFin { v, f } => {
-                let eps = vectors[v as usize];
-                let out = kernel::off_shell_fin_bare(&eps, &fin[f as usize]);
-                fin[loc] = out;
+                let eps = *rd(vectors, v as usize);
+                let out = kernel::off_shell_fin_bare(&eps, rd(fin, f as usize));
+                *wr(fin, loc) = out;
             }
             Instr::GammaFout { v, f } => {
-                let eps = vectors[v as usize];
-                let out = kernel::off_shell_fout_bare(&eps, &fout[f as usize]);
-                fout[loc] = out;
+                let eps = *rd(vectors, v as usize);
+                let out = kernel::off_shell_fout_bare(&eps, rd(fout, f as usize));
+                *wr(fout, loc) = out;
             }
             Instr::FfvFin { v, f, gl, gr } => {
-                let eps = vectors[v as usize];
+                let eps = *rd(vectors, v as usize);
                 let out = kernel::ffv_fin_bare(
                     &eps,
-                    &fin[f as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
+                    rd(fin, f as usize),
+                    *rd(scalars, gl as usize),
+                    *rd(scalars, gr as usize),
                 );
-                fin[loc] = out;
+                *wr(fin, loc) = out;
             }
             Instr::FfvFout { v, f, gl, gr } => {
-                let eps = vectors[v as usize];
+                let eps = *rd(vectors, v as usize);
                 let out = kernel::ffv_fout_bare(
                     &eps,
-                    &fout[f as usize],
-                    scalars[gl as usize],
-                    scalars[gr as usize],
+                    rd(fout, f as usize),
+                    *rd(scalars, gl as usize),
+                    *rd(scalars, gr as usize),
                 );
-                fout[loc] = out;
+                *wr(fout, loc) = out;
             }
             Instr::ProjFin { f, chirality } => {
-                let out = kernel::proj_fin_bare(&fin[f as usize], chirality);
-                fin[loc] = out;
+                let out = kernel::proj_fin_bare(rd(fin, f as usize), chirality);
+                *wr(fin, loc) = out;
             }
             Instr::ProjFout { f, chirality } => {
-                let out = kernel::proj_fout_bare(&fout[f as usize], chirality);
-                fout[loc] = out;
+                let out = kernel::proj_fout_bare(rd(fout, f as usize), chirality);
+                *wr(fout, loc) = out;
             }
             Instr::Gamma5Fin { f } => {
-                let out = kernel::gamma5_fin_bare(&fin[f as usize]);
-                fin[loc] = out;
+                let out = kernel::gamma5_fin_bare(rd(fin, f as usize));
+                *wr(fin, loc) = out;
             }
             Instr::Gamma5Fout { f } => {
-                let out = kernel::gamma5_fout_bare(&fout[f as usize]);
-                fout[loc] = out;
+                let out = kernel::gamma5_fout_bare(rd(fout, f as usize));
+                *wr(fout, loc) = out;
             }
             Instr::Bilinear {
                 bra,
@@ -1237,81 +1276,89 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 chirality,
             } => {
                 let out = kernel::scalar_bilinear_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
                     chirality,
                 );
-                scalars[loc] = out;
+                *wr(scalars, loc) = out;
             }
             Instr::Pseudoscalar { bra, ket } => {
-                let out =
-                    kernel::pseudoscalar_bilinear_bare(&fout[bra as usize], &fin[ket as usize]);
-                scalars[loc] = out;
+                let out = kernel::pseudoscalar_bilinear_bare(
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                );
+                *wr(scalars, loc) = out;
             }
             Instr::Metric { a, b } => {
-                let out = kernel::metric_bare(&vectors[a as usize], &vectors[b as usize]);
-                scalars[loc] = out;
+                let out = kernel::metric_bare(rd(vectors, a as usize), rd(vectors, b as usize));
+                *wr(scalars, loc) = out;
             }
             Instr::MetricVout { v } => {
-                let out = kernel::metric_vout_bare(&vectors[v as usize]);
-                vectors[loc] = out;
+                let out = kernel::metric_vout_bare(rd(vectors, v as usize));
+                *wr(vectors, loc) = out;
             }
             Instr::EpsilonVout { a, b, c } => {
                 let out = kernel::epsilon_vout_bare(
-                    &vectors[a as usize],
-                    &vectors[b as usize],
-                    &vectors[c as usize],
+                    rd(vectors, a as usize),
+                    rd(vectors, b as usize),
+                    rd(vectors, c as usize),
                 );
-                vectors[loc] = out;
+                *wr(vectors, loc) = out;
             }
             Instr::EpsilonAmp { a, b, c, d } => {
                 let out = kernel::epsilon_amp_bare(
-                    &vectors[a as usize],
-                    &vectors[b as usize],
-                    &vectors[c as usize],
-                    &vectors[d as usize],
+                    rd(vectors, a as usize),
+                    rd(vectors, b as usize),
+                    rd(vectors, c as usize),
+                    rd(vectors, d as usize),
                 );
-                scalars[loc] = out;
+                *wr(scalars, loc) = out;
             }
             Instr::PMom { mom } => {
-                let out = kernel::pmom_bare(&moms[mom as usize]);
-                vectors[loc] = out;
+                let out = kernel::pmom_bare(rd(moms, mom as usize));
+                *wr(vectors, loc) = out;
             }
             Instr::PMomOut { start, len } => {
-                let slice = &mom_ops[start as usize..(start + len) as usize];
+                let slice = rd(mom_ops, start as usize..(start + len) as usize);
                 let mut acc = LorentzVector::zero();
                 for &(mid, sign) in slice {
-                    let p = moms[mid as usize];
+                    let p = *rd(moms, mid as usize);
                     acc = if sign < 0 { acc - p } else { acc + p };
                 }
                 let neg = -acc;
-                vectors[loc] = kernel::pmom_bare(&neg);
+                *wr(vectors, loc) = kernel::pmom_bare(&neg);
             }
             Instr::FierzOut {
                 bra,
                 ket,
                 reversed_order,
             } => {
-                let out =
-                    kernel::fierz_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
-                multivectors[loc] = out;
+                let out = kernel::fierz_out_bare(
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                    reversed_order,
+                );
+                *wr(multivectors, loc) = out;
             }
             Instr::MultivectorFin { m, f } => {
-                let out = kernel::multivector_fin_bare(&multivectors[m as usize], &fin[f as usize]);
-                fin[loc] = out;
+                let out =
+                    kernel::multivector_fin_bare(rd(multivectors, m as usize), rd(fin, f as usize));
+                *wr(fin, loc) = out;
             }
             Instr::MultivectorFout { m, f } => {
-                let out =
-                    kernel::multivector_fout_bare(&multivectors[m as usize], &fout[f as usize]);
-                fout[loc] = out;
+                let out = kernel::multivector_fout_bare(
+                    rd(multivectors, m as usize),
+                    rd(fout, f as usize),
+                );
+                *wr(fout, loc) = out;
             }
             Instr::FierzPair { m, bra, ket } => {
                 let out = kernel::fierz_pair_bare(
-                    &multivectors[m as usize],
-                    &fout[bra as usize],
-                    &fin[ket as usize],
+                    rd(multivectors, m as usize),
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
                 );
-                scalars[loc] = out;
+                *wr(scalars, loc) = out;
             }
             Instr::SigmaVout {
                 bra,
@@ -1320,39 +1367,43 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 negate,
             } => {
                 let out = kernel::sigma_vout_bare(
-                    &fout[bra as usize],
-                    &fin[ket as usize],
-                    &vectors[v as usize],
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                    rd(vectors, v as usize),
                     negate,
                 );
-                vectors[loc] = out;
+                *wr(vectors, loc) = out;
             }
             Instr::SigmaMv { a, b } => {
-                let out = kernel::sigma_mv_bare(&vectors[a as usize], &vectors[b as usize]);
-                multivectors[loc] = out;
+                let out = kernel::sigma_mv_bare(rd(vectors, a as usize), rd(vectors, b as usize));
+                *wr(multivectors, loc) = out;
             }
             Instr::SigmaOut {
                 bra,
                 ket,
                 reversed_order,
             } => {
-                let out =
-                    kernel::sigma_out_bare(&fout[bra as usize], &fin[ket as usize], reversed_order);
-                multivectors[loc] = out;
+                let out = kernel::sigma_out_bare(
+                    rd(fout, bra as usize),
+                    rd(fin, ket as usize),
+                    reversed_order,
+                );
+                *wr(multivectors, loc) = out;
             }
             Instr::ScaleMvC { m, scale } => {
-                multivectors[loc] = multivectors[m as usize] * scalars[scale as usize];
+                *wr(multivectors, loc) =
+                    *rd(multivectors, m as usize) * *rd(scalars, scale as usize);
             }
             Instr::ScaleMvR { m, scale } => {
-                multivectors[loc] = multivectors[m as usize] * reals[scale as usize];
+                *wr(multivectors, loc) = *rd(multivectors, m as usize) * *rd(reals, scale as usize);
             }
             Instr::AddMultivector { start, len } => {
-                let slice = &ops[start as usize..(start + len) as usize];
-                let mut acc = multivectors[slice[0].index()];
-                for op in &slice[1..] {
-                    acc = acc + multivectors[op.index()];
+                let slice = rd(ops, start as usize..(start + len) as usize);
+                let mut acc = *rd(multivectors, rd(slice, 0).index());
+                for op in rd(slice, 1..) {
+                    acc = acc + *rd(multivectors, op.index());
                 }
-                multivectors[loc] = acc;
+                *wr(multivectors, loc) = acc;
             }
             Instr::Flows | Instr::Hels | Instr::Configs => {}
         }
