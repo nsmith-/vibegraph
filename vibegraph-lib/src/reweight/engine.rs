@@ -96,6 +96,8 @@ struct PolynomialGroup {
 /// One subprocess's evaluation plan.
 struct SubPlan {
     evaluator: AmplitudeEvaluator,
+    /// The subprocess's external PDG codes, in its own leg order.
+    pdgs: Vec<i32>,
     /// Parameter points to bind the amplitude at; slot 0 is the card's own.
     slots: Vec<EvaluatedModel>,
     groups: Vec<PolynomialGroup>,
@@ -173,9 +175,14 @@ impl ReweightPlan {
                 .map_err(|e| ReweightError::Compile(e.to_string()))?;
             check_external_masses(&evaluator, model, &launches)?;
             evaluator.prune_zero_helicities(&generic);
-            subs.push(plan_subprocess(
-                evaluator, set, model, base, &launches, &options,
-            )?);
+            let pdgs = evaluator
+                .external_particles()
+                .iter()
+                .map(|&pid| model.particle(pid).pdg_code as i32)
+                .collect();
+            let mut sub = plan_subprocess(evaluator, set, model, base, &launches, &options)?;
+            sub.pdgs = pdgs;
+            subs.push(sub);
         }
         Ok(ReweightPlan { launches, subs })
     }
@@ -262,8 +269,15 @@ impl Reweighter<'_> {
         &self.plan.launches
     }
 
+    /// The external PDG codes of subprocess `sub`, in the leg order
+    /// [`ratios`](Self::ratios) takes its momenta in.
+    pub fn pdgs(&self, sub: usize) -> &[i32] {
+        &self.plan.subs[sub].pdgs
+    }
+
     /// `|M|²_new / |M|²_old` of subprocess `sub` at `momenta` for every hypothesis,
-    /// written to `out` in launch order.
+    /// written to `out` in launch order; returns `|M|²_old`, the card-point
+    /// `|M|²` the ratios are taken against.
     ///
     /// `momenta` are the subprocess's own external momenta in its leg order, in the
     /// partonic centre of mass with the beams along ±z (the frame the generation
@@ -276,7 +290,7 @@ impl Reweighter<'_> {
         momenta: &[LorentzVector<f64>],
         alpha_s: Option<f64>,
         out: &mut Vec<f64>,
-    ) {
+    ) -> f64 {
         let plan = &self.plan.subs[sub];
         let bound = &mut self.subs[sub];
         out.clear();
@@ -310,6 +324,7 @@ impl Reweighter<'_> {
         for &(launch, slot) in &plan.exact {
             out[launch] = ratio(bound.amps[slot].eval_m2(momenta, &mut bound.scratch), m0);
         }
+        m0
     }
 }
 
@@ -521,6 +536,7 @@ fn plan_subprocess(
 
     Ok(SubPlan {
         evaluator,
+        pdgs: Vec::new(),
         slots,
         groups,
         exact,

@@ -41,6 +41,7 @@ use vibegraph::lhef::emit::{
     Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
     WeightedEvent,
 };
+use vibegraph::lhef::record::{STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
 use vibegraph::lhef::write::{generator_element, mg_run_card};
 use vibegraph::multiplicity::MultiplicitySum;
@@ -476,6 +477,7 @@ struct SampleSource<'s, 'a> {
     /// The reweighting hypotheses, indexed by subprocess.
     reweighter: Option<Reweighter<'s>>,
     evaluation: Vec<V>,
+    audit: ReweightAudit,
 }
 
 impl<'s, 'a> SampleSource<'s, 'a> {
@@ -507,6 +509,7 @@ impl<'s, 'a> SampleSource<'s, 'a> {
             tally: ResonanceTally::default(),
             reweighter,
             evaluation: Vec::new(),
+            audit: ReweightAudit::default(),
         }
     }
 
@@ -572,11 +575,18 @@ impl EventSource for SampleSource<'_, '_> {
             self.evaluation.clear();
             self.evaluation.extend_from_slice(self.integrand.incoming());
             self.evaluation.extend_from_slice(&self.momenta);
-            rw.ratios(
+            let m0 = rw.ratios(
                 selection.subprocess,
                 &self.evaluation,
                 Some(alpha_qcd),
                 &mut reweights,
+            );
+            self.audit.check(
+                (0, BeamOrdering::Direct),
+                m0,
+                selection.m2,
+                rw.pdgs(selection.subprocess),
+                &record,
             );
         }
         Some(WeightedEvent {
@@ -591,6 +601,7 @@ impl EventSource for SampleSource<'_, '_> {
         self.unweighter = self.pristine.clone();
         self.rng = ChaCha8Rng::seed_from_u64(self.seed);
         self.tally = ResonanceTally::default();
+        self.audit = ReweightAudit::default();
     }
 
     fn sigma_pb(&self) -> f64 {
@@ -1011,6 +1022,9 @@ fn generate_sample(
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
     report_resonances(source.tally, summary.drawn);
+    if reweight_plan.is_some() {
+        source.audit.finish(&args.out)?;
+    }
     report(
         artifact,
         source.stats(),
@@ -1122,6 +1136,128 @@ fn declared_reweights(plan: Option<&ReweightPlan>) -> Vec<(String, String)> {
             .collect()
     })
     .unwrap_or_default()
+}
+
+/// How far the reweighter's card-point `|M|²` may sit from the integrand's, relative.
+///
+/// The two are independent compilations of the same subprocess — the
+/// reweighter's from the member's own diagrams, pruned at a generic parameter
+/// point; the integrand's from the flavour group's representative, pruned at the
+/// card — so they agree to rounding, not bit for bit. An indexing error (another
+/// member, part or ordering) or a coupling taken at another scale moves `|M|²` at
+/// order one.
+const CARD_POINT_TOLERANCE: f64 = 1e-9;
+
+/// Every reweighted event's denominator checked against the integrand that drew
+/// it: the `|M|²` the reweighter evaluates at the card's own parameters against
+/// the one the integrand evaluated for the drawn subprocess, ordering and coupling,
+/// and the reweighter's subprocess flavours against the event record's.
+///
+/// The ratios themselves are not checked here: a wrong subprocess that still
+/// reproduces the card-point `|M|²` (a member of the same flavour group, which
+/// shares it) is what the flavour comparison is for. Both checks share with the
+/// reweighter the event's momenta, its beam mirror and the model's parameters, and
+/// are blind to an error in any of them.
+#[derive(Default)]
+struct ReweightAudit {
+    /// Events checked per part and beam ordering.
+    terms: Vec<((usize, BeamOrdering), usize)>,
+    largest: f64,
+    m2_mismatches: usize,
+    flavour_mismatches: usize,
+    first: Option<String>,
+}
+
+impl ReweightAudit {
+    fn check(
+        &mut self,
+        term: (usize, BeamOrdering),
+        m0: f64,
+        m2: f64,
+        pdgs: &[i32],
+        record: &vibegraph::lhef::record::LheEvent,
+    ) {
+        match self.terms.iter_mut().find(|(t, _)| *t == term) {
+            Some((_, n)) => *n += 1,
+            None => self.terms.push((term, 1)),
+        }
+        let deviation = (m0 - m2).abs() / m2.abs().max(f64::MIN_POSITIVE);
+        self.largest = self.largest.max(deviation);
+        if !(deviation <= CARD_POINT_TOLERANCE) {
+            self.m2_mismatches += 1;
+            self.first.get_or_insert_with(|| {
+                format!(
+                    "part {} {:?}: |M|^2 {m0:e} against the integrand's {m2:e}",
+                    term.0, term.1
+                )
+            });
+        }
+        let incoming: Vec<i32> = record
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_INCOMING)
+            .map(|p| p.pdg)
+            .collect();
+        let mut outgoing: Vec<i32> = record
+            .particles
+            .iter()
+            .filter(|p| p.status == STATUS_OUTGOING)
+            .map(|p| p.pdg)
+            .collect();
+        outgoing.sort_unstable();
+        let n_in = incoming.len();
+        let mut own_in = pdgs[..n_in.min(pdgs.len())].to_vec();
+        if term.1 == BeamOrdering::Exchanged {
+            own_in.reverse();
+        }
+        let mut own_out = pdgs[n_in.min(pdgs.len())..].to_vec();
+        own_out.sort_unstable();
+        if own_in != incoming || own_out != outgoing {
+            self.flavour_mismatches += 1;
+            self.first.get_or_insert_with(|| {
+                format!(
+                    "part {} {:?}: reweighted {pdgs:?} for an event recorded as \
+                     {incoming:?} > {outgoing:?}",
+                    term.0, term.1
+                )
+            });
+        }
+    }
+
+    /// Report what was checked, and refuse a file whose weights were taken against
+    /// another subprocess than the one each event was drawn in.
+    fn finish(&self, out: &std::path::Path) -> Result<(), IntegrateError> {
+        let events: usize = self.terms.iter().map(|(_, n)| n).sum();
+        let mut terms = self.terms.clone();
+        terms.sort_by_key(|((part, ordering), _)| (*part, *ordering == BeamOrdering::Exchanged));
+        let breakdown = terms
+            .iter()
+            .map(|((part, ordering), n)| {
+                let ordering = match ordering {
+                    BeamOrdering::Direct => "direct",
+                    BeamOrdering::Exchanged => "exchanged",
+                };
+                format!("part {part} {ordering} {n}")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        info!(
+            "reweight: card-point |M|^2 checked against the integrand on {events} events \
+             ({breakdown}); largest relative deviation {:.1e}; beyond \
+             {CARD_POINT_TOLERANCE:.0e}: {}; flavour mismatches: {}",
+            self.largest, self.m2_mismatches, self.flavour_mismatches
+        );
+        if self.m2_mismatches + self.flavour_mismatches > 0 {
+            return Err(err(format!(
+                "reweighting evaluated {} of {events} events in another subprocess than the \
+                 integrand drew them in, so the weights in {} are wrong; first: {}",
+                self.m2_mismatches.max(self.flavour_mismatches),
+                out.display(),
+                self.first.as_deref().unwrap_or("")
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Per part, per flavour group, the index of its first member in the run's
@@ -1369,6 +1505,7 @@ struct ProtonSampleSource<'s, 'a> {
     reweighter: Option<Reweighter<'s>>,
     member_offset: Vec<Vec<usize>>,
     mirrored: Vec<V>,
+    audit: ReweightAudit,
 }
 
 impl<'s, 'a> ProtonSampleSource<'s, 'a> {
@@ -1393,6 +1530,7 @@ impl<'s, 'a> ProtonSampleSource<'s, 'a> {
             reweighter,
             member_offset: member_offsets(integrand.parts().iter().map(ProtonIntegrand::groups)),
             mirrored: Vec::new(),
+            audit: ReweightAudit::default(),
         }
     }
 }
@@ -1483,11 +1621,14 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                     &self.mirrored
                 }
             };
-            rw.ratios(
-                self.member_offset[k][selection.group] + selection.member,
-                momenta,
-                Some(alpha_qcd),
-                &mut reweights,
+            let sub = self.member_offset[k][selection.group] + selection.member;
+            let m0 = rw.ratios(sub, momenta, Some(alpha_qcd), &mut reweights);
+            self.audit.check(
+                (k, selection.ordering),
+                m0,
+                selection.m2,
+                rw.pdgs(sub),
+                &record,
             );
         }
         Some(WeightedEvent {
@@ -1502,6 +1643,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
         self.unweighter = self.pristine.clone();
         self.rng = ChaCha8Rng::seed_from_u64(self.seed);
         self.tally = ResonanceTally::default();
+        self.audit = ReweightAudit::default();
     }
 
     fn sigma_pb(&self) -> f64 {
@@ -1684,6 +1826,9 @@ fn generate_proton_sample(
 
     let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
     report_resonances(source.tally, summary.drawn);
+    if reweight_plan.is_some() {
+        source.audit.finish(&args.out)?;
+    }
     report(
         artifact,
         source.unweighter.stats(),

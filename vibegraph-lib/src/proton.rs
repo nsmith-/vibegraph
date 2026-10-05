@@ -1209,6 +1209,11 @@ pub struct ProtonSelection {
     /// in place (the clustering of a mirrored term sees its own first parton on
     /// the first beam); `None` without matching.
     pub record: Option<MatchedRecord>,
+    /// The drawn group's `|M|²` under the drawn ordering, as this integrand
+    /// evaluated it for the point's value, at the term's own coupling: what any
+    /// other evaluation of the event's member at the model's own parameters, at
+    /// the same momenta and ordering, must reproduce.
+    pub m2: f64,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -2771,6 +2776,7 @@ impl<'a> ProtonIntegrand<'a> {
             leading: color.leading,
             scales,
             record: event.group_records[group][ordering_slot(ordering)].clone(),
+            m2: m2[group][ordering_slot(ordering)],
         })
     }
 
