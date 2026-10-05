@@ -110,10 +110,13 @@ Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
 - A conformance lint runs in CI as a pixi task. It checks that every
   non-reserved `.md` under `kb/` parses and has a non-empty `type`, and that the
   generated indexes are current.
-- The tooling — index generator, lint, backlog view — is Rust: one workspace
-  binary crate (e.g. `kb-tool`) with subcommands, wrapped by pixi tasks. It
-  parses frontmatter with a maintained YAML crate (`serde_yaml` itself is
-  archived), never a hand-written parser.
+- The tooling — index generator, lint, backlog view — is Python, run as pixi
+  tasks (`backlog`, `kb-lint`, `kb-index`) in a small `kb` pixi environment
+  (`python`, `pyyaml`). The default environment carries no Python, so the
+  tools get their own feature rather than widening it. Frontmatter is parsed
+  with PyYAML, never a hand-written parser. `ci.yml` already sets up pixi for
+  the lint; `docs.yml` gains a `setup-pixi` step so `build-docs.sh` can render
+  the backlog page.
 
 ## 4. Sprint lifecycle under the bundle
 
@@ -362,7 +365,8 @@ migrating the notes, so it goes first. Until Phase 4 the items live in
 3. Closed-sprint history becomes `Sprint Record` stubs; the scope decisions
    become `Design Decision` concepts, which the user reviews and stamps
    `verified` in this phase.
-4. Add the Rust generator with its filters, the lint and the docs page.
+4. Add the generator with its filters, the lint and the docs page (the `kb`
+   pixi environment, §3).
 5. Replace `TODO.md` with the stub, and update the `TODO.md` instructions in
    `AGENTS.md`, `.agents/agents/*.md` and the skills: the manager reads the
    view; dispatch briefs name a session or an item.
@@ -463,7 +467,8 @@ item chosen at that point (MLM, the one planned earlier, has since merged).
    concepts or new items by severity and scope (Phase B step 2).
 7. **The user verifies the scope decisions** during Phase B.
 8. **`priority` is `low | medium | high`.**
-9. **Tooling is Rust** (§3).
+9. **Tooling is Python under pixi** (§3): it runs as pixi tasks anyway, so a
+   Rust crate would buy nothing.
 10. **The trial sprint** takes a backlog item chosen when the migration ends.
 11. **Draft PRs are the claim mechanism** (§4.1, §7.1), with pushes at
     infrequent checkpoints.
