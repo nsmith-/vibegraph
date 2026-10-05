@@ -718,6 +718,10 @@ above); the entries here are the eventual features.
   recorded helicity has `|M_card(λ)|² = 0`, and, on the polynomial path, the
   Gram contraction restricted to one helicity combination. Oracle: the same
   `gen_reweight_oracle.py` rows with `change helicity True`, event by event.
+  Cost against MadGraph's reweight module on the same rows:
+  `research/notes/reweight-vs-madgraph-results.md` (`pixi run -e madgraph
+  bench-reweight`) — 50–150× less per event and hypothesis on the exact path,
+  100–320× on the polynomial one.
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the
