@@ -324,6 +324,9 @@ def main():
     ap.add_argument("--seed", default="20261005")
     ap.add_argument("--check", action="store_true", help="compare, bank nothing")
     args = ap.parse_args()
+    # MadGraph runs from inside each hypothesis's work area, so its paths must
+    # not depend on the directory this was started from.
+    args.work = os.path.abspath(args.work)
     binary = os.environ.get("VIBEGRAPH_BIN", os.path.join(ROOT, "target", "release-debug", "vibegraph"))
     mg_version = open(os.path.join(MG_ROOT, "VERSION")).read().split("\n")[0].split("=")[1].strip()
 

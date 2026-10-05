@@ -76,6 +76,23 @@ fn model_of(row: &Value) -> Arc<UFOModel> {
     }
 }
 
+/// `|ours / mg - 1|`, as `gen_reweight_oracle.py` reads it: two zero weights
+/// agree, and a zero on one side only or a non-finite weight is an infinite
+/// difference.
+fn relative_difference(ours: f64, mg: f64) -> f64 {
+    if !(ours.is_finite() && mg.is_finite()) {
+        f64::INFINITY
+    } else if mg == 0.0 {
+        if ours == 0.0 {
+            0.0
+        } else {
+            f64::INFINITY
+        }
+    } else {
+        (ours / mg - 1.0).abs()
+    }
+}
+
 /// MadGraph's param card, as banked, for [`EvaluatedModel::from_model_card`].
 fn madgraph_card(card: &Value) -> ParamCard {
     let mut text = String::new();
@@ -348,7 +365,7 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
                 for (h, id) in ids.iter().enumerate() {
                     let mg = event["madgraph"][id].as_f64().unwrap();
                     let ours = xwgtup * out[h];
-                    let rel = (ours / mg - 1.0).abs();
+                    let rel = relative_difference(ours, mg);
                     let s = &mut stats[h];
                     s.events += 1;
                     s.largest = s.largest.max(rel);

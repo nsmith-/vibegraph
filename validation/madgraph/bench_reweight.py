@@ -162,6 +162,9 @@ def main():
     ap.add_argument("--nevents", type=int, default=20000, help="the larger sample vibegraph is timed at")
     ap.add_argument("--no-madgraph", action="store_true")
     args = ap.parse_args()
+    # MadGraph runs from inside its own directory, so every path it is handed is
+    # absolute.
+    args.work, args.out = os.path.abspath(args.work), os.path.abspath(args.out)
     binary = os.environ.get("VIBEGRAPH_BIN", os.path.join(ROOT, "target", "release-debug", "vibegraph"))
 
     results = {}
