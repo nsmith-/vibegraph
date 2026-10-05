@@ -40,16 +40,50 @@ use thiserror::Error;
 
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
 use crate::coupling::cluster::kt::{Channel, ClusterSettings};
-use crate::coupling::cluster::setclscales::{setclscales, JetMemo, ScaleRefusal, ScaleSettings};
+use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtMerge, RewgtSettings};
+use crate::coupling::cluster::setclscales::{
+    ptclus, setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
+};
 use crate::runcard::RunCard;
 
 /// The scales for one event: MadGraph's `scale` and `sqrt(q2fact(1:2))`.
+///
+/// Under MLM matching (`ickkw = 1`) MadEvent's `q2fact` holds two different
+/// values in one event: the densities in `DSIG` are read at the lowered scale
+/// `setclscales` leaves on its first call, and `rewgt` then restores the central
+/// scale `q2bck` before `unwgt.f` writes `SCALUP` from it. [`mu_f`](Self::mu_f)
+/// is the first, [`mu_f_record`](Self::mu_f_record) the second. Without matching
+/// the two are the same number.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EventScales {
     /// Renormalisation scale `μR`, the argument of the running coupling.
     pub mu_r: f64,
-    /// Factorisation scale per beam, `mu_f[0]` for beam 1.
+    /// Factorisation scale per beam at which the matrix element's parton
+    /// densities are read, `mu_f[0]` for beam 1.
     pub mu_f: [f64; 2],
+    /// Factorisation scale per beam as `q2fact` holds it when the event is
+    /// written, which is what `SCALUP` reports.
+    pub mu_f_record: [f64; 2],
+    /// Under matching, the integration configuration the clustering chose
+    /// (`igraphs(1)`), indexed from zero like the evaluator's configurations:
+    /// MadEvent draws the event's colour flow and writes its mothers in it
+    /// instead of in the channel the point was integrated in. `None` without
+    /// matching.
+    pub clustered_config: Option<usize>,
+}
+
+impl EventScales {
+    /// Scales with one factorisation scale per beam serving both the densities
+    /// and the record, and no clustered configuration: every prescription
+    /// without matching.
+    pub fn unmatched(mu_r: f64, mu_f: [f64; 2]) -> Self {
+        EventScales {
+            mu_r,
+            mu_f,
+            mu_f_record: mu_f,
+            clustered_config: None,
+        }
+    }
 }
 
 /// MadGraph's `dynamical_scale_choice`, for the values that name a scale.
@@ -138,11 +172,24 @@ pub enum ScaleError {
     )]
     UnsupportedChoice { choice: i64 },
     #[error(
-        "run card selects ickkw = {ickkw}, xqcut = {xqcut}: MadGraph then runs its clustering \
-         even behind a closed-form scale choice, and multiplies q2fact by scalefact a second \
-         time on the way through"
+        "run card selects ickkw = {ickkw}: MadGraph admits only 0 and 1 (banner.py declares \
+         ickkw with allowed = [0, 1])"
     )]
-    UnsupportedMatching { ickkw: i64, xqcut: f64 },
+    UnsupportedMatching { ickkw: i64 },
+    #[error(
+        "run card selects ickkw = {ickkw}, xqcut = {xqcut} on fixed-energy beams (or a decay): \
+         matching and the xqcut clustering cut are implemented for proton beams only, where a \
+         point the clustering rejects is zero-weighted per term; no fixed-beam reference \
+         exercises them"
+    )]
+    FixedBeamMatching { ickkw: i64, xqcut: f64 },
+    #[error(
+        "run card selects ickkw = 1 with exactly one factorisation scale fixed: reweight.f:1138 \
+         then reads '.not.fixed_fac_scale1.or.fixed_fac_scale2' without the parentheses the \
+         surrounding branches imply, so scalefact and q2bck are applied to one beam and not the \
+         other; the combination is refused rather than reproduced"
+    )]
+    MatchingWithOneFixedFactorisationScale,
     #[error("scalefact must be positive, got {scalefact}")]
     NonPositiveScaleFact { scalefact: f64 },
     #[error("fixed {name} must be positive, got {value}")]
@@ -211,6 +258,22 @@ pub struct ScaleChoice {
     /// `xmtcentral`, the floor `setclscales` puts under the central vertex.
     xmtc: f64,
     pdfwgt: bool,
+    /// `ickkw`: `1` switches MLM matching on, `0` leaves it off.
+    ickkw: i64,
+    /// `xqcut`, the minimum clustering scale of a vertex with a jet daughter.
+    /// Positive, it is a cut applied through the clustering whether or not
+    /// matching is on.
+    xqcut: f64,
+    /// `alpsfact`, the factor on the clustering scale at which the matched
+    /// α_s reweighting evaluates each vertex's coupling; already forced to `1`
+    /// under `use_syst` when the card was resolved.
+    alpsfact: f64,
+    /// `asrwgtflavor`, the heaviest quark flavour the matched α_s reweighting
+    /// counts as a parton.
+    asrwgtflavor: i64,
+    /// `√stot`, the collider energy: the scale `ptclus` gives a final-state leg
+    /// no jet vertex reaches.
+    sqrt_stot: f64,
 }
 
 impl ScaleChoice {
@@ -257,8 +320,11 @@ impl ScaleChoice {
 
         let ickkw = card.int("ickkw");
         let xqcut = card.float("xqcut");
-        if ickkw != 0 || xqcut > 0.0 {
-            return Err(ScaleError::UnsupportedMatching { ickkw, xqcut });
+        if !matches!(ickkw, 0 | 1) {
+            return Err(ScaleError::UnsupportedMatching { ickkw });
+        }
+        if (ickkw != 0 || xqcut > 0.0) && (card.lpp1 == 0 || card.lpp2 == 0) {
+            return Err(ScaleError::FixedBeamMatching { ickkw, xqcut });
         }
 
         let scalefact = card.float("scalefact");
@@ -285,6 +351,10 @@ impl ScaleChoice {
             }
         }
 
+        if ickkw == 1 && fixed_fac[0].is_some() != fixed_fac[1].is_some() {
+            return Err(ScaleError::MatchingWithOneFixedFactorisationScale);
+        }
+
         let beam_has_pdf = [card.lpp1 != 0, card.lpp2 != 0];
         Ok(ScaleChoice {
             choice,
@@ -300,7 +370,62 @@ impl ScaleChoice {
             },
             xmtc: card.float("xmtcentral"),
             pdfwgt: card.get("pdfwgt").expect("known").as_bool(),
+            ickkw,
+            xqcut,
+            alpsfact: card.float("alpsfact"),
+            asrwgtflavor: card.int("asrwgtflavor"),
+            sqrt_stot: collider_energy(card),
         })
+    }
+
+    /// `ickkw`: whether MLM matching is on.
+    pub fn ickkw(&self) -> i64 {
+        self.ickkw
+    }
+
+    /// `xqcut`, zero when the clustering cut is off.
+    pub fn xqcut(&self) -> f64 {
+        self.xqcut
+    }
+
+    /// `alpsfact`, as the card resolved it.
+    pub fn alpsfact(&self) -> f64 {
+        self.alpsfact
+    }
+
+    /// `asrwgtflavor`.
+    pub fn asrwgtflavor(&self) -> i64 {
+        self.asrwgtflavor
+    }
+
+    /// `pdfwgt`: whether matching lowers the matrix element's factorisation
+    /// scale and reweights by the ratio of densities.
+    pub fn pdfwgt(&self) -> bool {
+        self.pdfwgt
+    }
+
+    /// The constants `rewgt` reads, or `None` without matching, where it
+    /// returns `1` (`reweight.f:1421`).
+    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+        (self.ickkw > 0).then_some(RewgtSettings {
+            ickkw: self.ickkw,
+            alpsfact: self.alpsfact,
+            asrwgtflavor: self.asrwgtflavor,
+            pdfwgt: self.pdfwgt,
+        })
+    }
+
+    /// Every event is clustered, whatever the scale prescription: matching is
+    /// on, or `xqcut` is a cut. `setclscales` returns before clustering only
+    /// when neither holds and every scale is already set (`reweight.f:643`).
+    pub fn clusters_every_event(&self) -> bool {
+        self.ickkw > 0 || self.xqcut > 0.0
+    }
+
+    /// The scales are the same on every event and no event is ever rejected
+    /// by the prescription, so a caller may resolve them once.
+    pub fn is_constant(&self) -> bool {
+        self.is_fully_fixed() && !self.clusters_every_event()
     }
 
     /// The clustering's own run-card constants, for a caller that drives
@@ -328,7 +453,8 @@ impl ScaleChoice {
     /// A [`ClusterInput`] must be supplied with each event, through
     /// [`ScaleChoice::cluster_scales`].
     pub fn needs_channels(&self) -> bool {
-        self.choice == DynamicalChoice::Clustered && !self.is_fully_fixed()
+        (self.choice == DynamicalChoice::Clustered && !self.is_fully_fixed())
+            || self.clusters_every_event()
     }
 
     /// The scales for one event.
@@ -339,13 +465,13 @@ impl ScaleChoice {
     /// simply does not come from it.
     pub fn scales(&self, event: &ScaleEvent<'_>) -> Result<EventScales, ScaleError> {
         if self.is_fully_fixed() {
-            return Ok(EventScales {
-                mu_r: self.fixed_ren.expect("fully fixed"),
-                mu_f: [
+            return Ok(EventScales::unmatched(
+                self.fixed_ren.expect("fully fixed"),
+                [
                     self.fixed_fac[0].expect("fully fixed"),
                     self.fixed_fac[1].expect("fully fixed"),
                 ],
-            });
+            ));
         }
 
         let dynamic = match self.choice {
@@ -359,13 +485,13 @@ impl ScaleChoice {
             }
         };
 
-        Ok(EventScales {
-            mu_r: self.fixed_ren.unwrap_or(dynamic.mu_r),
-            mu_f: [
+        Ok(EventScales::unmatched(
+            self.fixed_ren.unwrap_or(dynamic.mu_r),
+            [
                 self.fixed_fac[0].unwrap_or(dynamic.mu_f[0]),
                 self.fixed_fac[1].unwrap_or(dynamic.mu_f[1]),
             ],
-        })
+        ))
     }
 
     /// The scales `reweight.f`'s `setclscales` reads off the clustered event.
@@ -380,11 +506,23 @@ impl ScaleChoice {
     /// is here is the run card's side of the call and the squared-to-linear
     /// conversion of the factorisation scales.
     ///
-    /// The jet memo starts empty on every event. MadGraph keeps it per process
-    /// directory across a whole run, so its first event of a channel is the one
-    /// that fills it; starting empty reproduces exactly that event's behaviour
-    /// and makes the scale a function of the event rather than of the order
-    /// events were generated in.
+    /// With `xqcut > 0` or matching on, every event is clustered even where the
+    /// card fixes every scale, because the clustering is also a cut; see
+    /// [`cluster_history`](Self::cluster_history) for the two calls matching
+    /// makes.
+    ///
+    /// The jet memo starts empty on every event, so the count it holds is the
+    /// jet count of this event's clustering restricted to the channel. MadGraph
+    /// keeps one count per job and channel, stored by the channel's first point
+    /// from the same restricted clustering (`reweight.f:662-679, 985-998`). A
+    /// clustering restricted to one channel follows that channel's forest, so
+    /// the count is a property of the channel whichever point computes it —
+    /// measured, not assumed: on every channel of the five matched and pure-cut
+    /// reference rows the restricted count is one value over every event of its
+    /// directory and equals what every MadEvent job stored
+    /// (`validate_mlm_dumps`). The scale is therefore MadEvent's on every event,
+    /// not only on the first of its channel, and remains a function of the
+    /// event rather than of the order events were generated in.
     pub fn cluster_scales(
         &self,
         event: &ScaleEvent<'_>,
@@ -393,9 +531,33 @@ impl ScaleChoice {
         if self.fixed_fac[0].is_some() != self.fixed_fac[1].is_some() {
             return Err(ScaleError::MixedFixedFactorisationScales);
         }
-        if self.is_fully_fixed() {
+        if self.is_constant() {
             return self.scales(event);
         }
+        Ok(self.cluster_history(event, input)?.event_scales())
+    }
+
+    /// Both of MadEvent's `setclscales` calls on one event, as far as the
+    /// prescription makes them.
+    ///
+    /// The first call (`keepq2bck = .false.`, from `update_scale_coupling`) sets
+    /// `μR` and the factorisation scales the densities are read at, and — under
+    /// matching — stores the central factorisation scale in `q2bck`. Under
+    /// matching `rewgt` calls it a second time (`keepq2bck = .true.`,
+    /// `reweight.f:1465`) with the first call's scales still set: the central
+    /// vertices take those scales (`:1114-1119`), `scalefact` multiplies the
+    /// factorisation scales once more (`:1138-1140`), and `q2bck` keeps the first
+    /// call's value. The second call can reject the event (the factorisation
+    /// floor), which zeroes its weight as the first call's rejection does. Its
+    /// merge scales are what the matched reweighting reads; its clustering is the
+    /// one `select_color` and `addmothers` take the configuration from.
+    ///
+    /// Both calls share one jet memo, as MadEvent's calls within an event do.
+    pub fn cluster_history(
+        &self,
+        event: &ScaleEvent<'_>,
+        input: &ClusterInput<'_>,
+    ) -> Result<ClusterHistory, ScaleError> {
         let mut p: Vec<[f64; 4]> = Vec::with_capacity(input.set.n_external);
         p.extend_from_slice(&event.incoming);
         p.extend_from_slice(event.outgoing);
@@ -411,10 +573,8 @@ impl ScaleChoice {
             fixed_ren: self.fixed_ren.is_some(),
             fixed_fac: [self.fixed_fac[0].is_some(), self.fixed_fac[1].is_some()],
             beam_has_pdf: self.beam_has_pdf,
-            // A card with matching switched on is refused when the prescription
-            // is compiled, so the clustering never sees one here.
-            ickkw: 0,
-            xqcut: 0.0,
+            ickkw: self.ickkw,
+            xqcut: self.xqcut,
             xmtc: self.xmtc,
             pdfwgt: self.pdfwgt,
         };
@@ -433,28 +593,64 @@ impl ScaleChoice {
             this_config: input.this_config,
             iproc: input.iproc,
         };
+        let fixed_q2 = [
+            self.fixed_fac[0].map(|mu| mu * mu),
+            self.fixed_fac[1].map(|mu| mu * mu),
+        ];
         let incoming = (
             self.fixed_ren.unwrap_or(0.0),
-            [
-                self.fixed_fac[0].map_or(0.0, |mu| mu * mu),
-                self.fixed_fac[1].map_or(0.0, |mu| mu * mu),
-            ],
+            [fixed_q2[0].unwrap_or(0.0), fixed_q2[1].unwrap_or(0.0)],
         );
-        let scales = setclscales(
+        let mut memo = JetMemo::default();
+        let first = setclscales(
             &channel,
             &self.cluster,
             &settings,
             &p,
-            &mut JetMemo::default(),
+            &mut memo,
             false,
             &[],
             incoming,
             false,
         )
         .map_err(ScaleError::Clustering)?;
-        Ok(EventScales {
-            mu_r: scales.mu_r,
-            mu_f: [scales.q2fact[0].sqrt(), scales.q2fact[1].sqrt()],
+        if self.ickkw == 0 {
+            return Ok(ClusterHistory {
+                first,
+                second: None,
+                q2bck: None,
+                momenta: p,
+                fixed_fac: self.fixed_fac,
+                pdfwgt: self.pdfwgt,
+                sqrt_stot: self.sqrt_stot,
+            });
+        }
+        let q2bck = [0, 1].map(|beam| {
+            fixed_q2[beam].unwrap_or_else(|| {
+                first.q2central[beam]
+                    .expect("under matching a dynamic beam always reaches the central assignment")
+            })
+        });
+        let second = setclscales(
+            &channel,
+            &self.cluster,
+            &settings,
+            &p,
+            &mut memo,
+            false,
+            &[],
+            (first.mu_r, first.q2fact),
+            false,
+        )
+        .map_err(ScaleError::Clustering)?;
+        Ok(ClusterHistory {
+            first,
+            second: Some(second),
+            q2bck: Some(q2bck),
+            momenta: p,
+            fixed_fac: self.fixed_fac,
+            pdfwgt: self.pdfwgt,
+            sqrt_stot: self.sqrt_stot,
         })
     }
 
@@ -494,6 +690,134 @@ impl ScaleChoice {
 struct Dynamic {
     mu_r: f64,
     mu_f: [f64; 2],
+}
+
+/// What [`ScaleChoice::cluster_history`] recorded of one event's clustering.
+#[derive(Clone, Debug)]
+pub struct ClusterHistory {
+    /// The call `update_scale_coupling` makes.
+    pub first: ClusterScales,
+    /// The call `rewgt` makes under matching; `None` without it.
+    pub second: Option<ClusterScales>,
+    /// `q2bck`, the central factorisation scale per beam, squared; `None`
+    /// without matching, where MadEvent never reads it.
+    pub q2bck: Option<[f64; 2]>,
+    /// The external momenta both calls clustered, beams first.
+    pub momenta: Vec<[f64; 4]>,
+    fixed_fac: [Option<f64>; 2],
+    pdfwgt: bool,
+    sqrt_stot: f64,
+}
+
+/// What a matched event's record reads of its clustering besides the scales:
+/// the `<scales pt_clust_N>` values and the resonances `addmothers` writes.
+///
+/// Both come from the second `setclscales` call, the last clustering MadEvent
+/// runs before `unwgt.f` writes the event: its `ptclus`, and its `isbw` table,
+/// which `checkbw` fills from the integration channel's timelike propagators
+/// that `cut_bw` puts on their Breit–Wigner at the clustered momenta.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchedRecord {
+    /// `ptclus` per external leg, in the clustering's leg order (beams `0`).
+    pub ptclus: Vec<f64>,
+    /// The leg sets (bit `k` for leg `k + 1`) of the integration channel's
+    /// propagators on their Breit–Wigner. `addmothers` writes a status-2 line
+    /// for a propagator of the clustered configuration exactly when its leg set
+    /// is one of these.
+    pub on_shell: Vec<u32>,
+}
+
+impl ClusterHistory {
+    /// What `rewgt` reads of this event: the second call's clustering and scales,
+    /// `q2bck`, and the first call's `μR`. `None` without matching, where
+    /// `rewgt` returns `1` before reading anything.
+    pub fn rewgt_history(&self) -> Option<RewgtHistory> {
+        let (Some(second), Some(q2bck)) = (&self.second, self.q2bck) else {
+            return None;
+        };
+        let n_external = self.momenta.len();
+        let mut pdg = vec![0i64; 1usize << n_external];
+        for line in &second.lines {
+            pdg[line.mask as usize] = line.pdg;
+        }
+        Some(RewgtHistory {
+            n_external,
+            merges: second
+                .clustering
+                .merges
+                .iter()
+                .map(|m| RewgtMerge {
+                    daughters: m.daughters,
+                    mother: m.mother,
+                    z: m.z,
+                })
+                .collect(),
+            pt2: second.pt2.clone(),
+            jlast: second.jlast,
+            iqjets: second.iqjets.clone(),
+            pdg,
+            q2bck,
+            mu_r: self.first.mu_r,
+            momenta: self.momenta.clone(),
+        })
+    }
+
+    /// The record fields of a matched event, `None` without matching, where
+    /// MadEvent writes neither.
+    pub fn matched_record(&self, colors: &ColorTable) -> Option<MatchedRecord> {
+        let second = self.second.as_ref()?;
+        Some(MatchedRecord {
+            ptclus: ptclus(second, colors, self.sqrt_stot),
+            on_shell: second
+                .clustering
+                .tagged
+                .iter()
+                .map(|&(mask, _)| mask)
+                .collect(),
+        })
+    }
+
+    /// The scales the matrix element and the event record read.
+    ///
+    /// `μR` and the densities' factorisation scales are the first call's. The
+    /// record's are `q2fact` as `unwgt.f` finds it: `rewgt` restores `q2bck`
+    /// when `pdfwgt` is set (`reweight.f:1789-1791`) and otherwise leaves the
+    /// second call's value. A fixed beam reports the card's value throughout.
+    pub fn event_scales(&self) -> EventScales {
+        let first = &self.first;
+        let mu_f = [0, 1].map(|beam| first.q2fact[beam].sqrt());
+        let (Some(second), Some(q2bck)) = (&self.second, self.q2bck) else {
+            return EventScales::unmatched(first.mu_r, mu_f);
+        };
+        let recorded = if self.pdfwgt { q2bck } else { second.q2fact };
+        EventScales {
+            mu_r: first.mu_r,
+            mu_f: [0, 1].map(|beam| self.fixed_fac[beam].unwrap_or(mu_f[beam])),
+            mu_f_record: [0, 1]
+                .map(|beam| self.fixed_fac[beam].unwrap_or_else(|| recorded[beam].sqrt())),
+            clustered_config: Some(second.clustering.graphs[0] - 1),
+        }
+    }
+}
+
+/// `√stot` as `genps.f:653-676` sets it for proton beams: the invariant mass
+/// of two beams of mass `0.938`. The mass cancels analytically, `stot = 4 E₁ E₂`,
+/// but not in floating point, and this is the formula's own value. Only proton
+/// beams reach the clustering scale's record fields (matching refuses fixed
+/// beams), so any other beam is taken as massless.
+fn collider_energy(card: &RunCard) -> f64 {
+    let mass = |lpp: i64| {
+        if matches!(lpp.abs(), 1 | 2) {
+            0.938
+        } else {
+            0.0
+        }
+    };
+    let (m1, m2) = (mass(card.lpp1), mass(card.lpp2));
+    let (e1, e2) = (card.ebeam1.max(m1), card.ebeam2.max(m2));
+    let p1 = (e1 * e1 - m1 * m1).max(0.0).sqrt();
+    let p2 = -(e2 * e2 - m2 * m2).max(0.0).sqrt();
+    (m1 * m1 + m2 * m2 + 2.0 * (e1 * e2 - p1 * p2)).sqrt()
 }
 
 fn positive(name: &'static str, value: f64) -> Result<f64, ScaleError> {
@@ -546,6 +870,7 @@ mod tests {
     use super::*;
     use crate::coupling::cluster::configs::derive_channels;
     use crate::coupling::cluster::graph::MergeTablesByOrder;
+    use crate::coupling::cluster::setclscales::MufBranch;
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::ufo::particles::ParticleId;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -788,13 +1113,265 @@ mod tests {
                 Err(ScaleError::UnsupportedChoice { choice })
             );
         }
+    }
+
+    /// `u ū → e⁺ e⁻ g` in the lab at `√ŝ = 200` GeV, the gluon at transverse
+    /// momentum `pt_g` along x and central, the pair recoiling against it.
+    fn llj_event(pt_g: f64) -> ([[f64; 4]; 2], Vec<[f64; 4]>) {
+        let e_pair = 200.0 - pt_g;
+        let half = e_pair / 2.0;
+        let py = (half * half - (pt_g / 2.0) * (pt_g / 2.0)).sqrt();
+        (
+            [[100.0, 0.0, 0.0, 100.0], [100.0, 0.0, 0.0, -100.0]],
+            vec![
+                [half, -pt_g / 2.0, py, 0.0],
+                [half, -pt_g / 2.0, -py, 0.0],
+                [pt_g, pt_g, 0.0, 0.0],
+            ],
+        )
+    }
+
+    /// The run-card side of matching: `ickkw ∈ {0, 1}` at proton beams, and the
+    /// three refusals around it.
+    #[test]
+    fn matching_cards_compile_or_are_refused_by_name() {
+        let matched = ScaleChoice::from_run_card(&card(
+            "1 = ickkw
+20 = xqcut",
+        ))
+        .expect("ickkw = 1 compiles at proton beams");
+        assert_eq!(matched.ickkw(), 1);
+        assert_eq!(matched.xqcut(), 20.0);
+        assert!(matched.clusters_every_event() && matched.needs_channels());
+
+        // `ickkw = 2` never reaches the prescription: the card itself is refused.
+        assert!(matches!(
+            RunCard::parse("2 = ickkw"),
+            Err(crate::runcard::RunCardError::UnsupportedIckkw { ickkw: 2 })
+        ));
+
+        for text in ["1 = ickkw", "20 = xqcut"] {
+            let refused = ScaleChoice::from_run_card_for(&partonic_card(text), ClosedForms::Honour);
+            assert!(
+                matches!(refused, Err(ScaleError::FixedBeamMatching { .. })),
+                "{text} at fixed beams: {refused:?}"
+            );
+        }
+
+        let one_fixed = "True = fixed_fac_scale1\n30.0 = dsqrt_q2fact1\n";
         assert_eq!(
-            ScaleChoice::from_run_card(&card("1 = ickkw")),
-            Err(ScaleError::UnsupportedMatching {
-                ickkw: 1,
-                xqcut: 0.0
-            })
+            ScaleChoice::from_run_card(&card(&format!("{one_fixed}1 = ickkw\n"))),
+            Err(ScaleError::MatchingWithOneFixedFactorisationScale)
         );
+        // Without matching the same card compiles, and is refused per event by
+        // the clustering instead.
+        assert!(ScaleChoice::from_run_card(&card(one_fixed)).is_ok());
+    }
+
+    /// `xqcut` is a cut applied through the clustering, so a card fixing every
+    /// scale still clusters every event once it is set.
+    #[test]
+    fn xqcut_clusters_a_fully_fixed_card() {
+        let fixed = "True = fixed_ren_scale\nTrue = fixed_fac_scale\n91.188 = scale\n\
+                     91.188 = dsqrt_q2fact1\n91.188 = dsqrt_q2fact2\n";
+        let plain = ScaleChoice::from_run_card(&card(fixed)).expect("compiled");
+        assert!(plain.is_constant() && !plain.needs_channels());
+        let cut =
+            ScaleChoice::from_run_card(&card(&format!("{fixed}30 = xqcut\n"))).expect("compiled");
+        assert!(cut.is_fully_fixed());
+        assert!(!cut.is_constant());
+        assert!(cut.needs_channels());
+
+        let proc = process("u u~ > e+ e- g");
+        let (incoming, outgoing) = llj_event(40.0);
+        let ev = ScaleEvent {
+            incoming,
+            outgoing: &outgoing,
+        };
+        let passed = cut
+            .cluster_scales(&ev, &proc.input(1))
+            .expect("above xqcut");
+        assert_eq!(passed, EventScales::unmatched(91.188, [91.188, 91.188]));
+        let (incoming, outgoing) = llj_event(20.0);
+        let soft = ScaleEvent {
+            incoming,
+            outgoing: &outgoing,
+        };
+        assert_eq!(
+            cut.cluster_scales(&soft, &proc.input(1)),
+            Err(ScaleError::Clustering(ScaleRefusal::JetCut))
+        );
+        // The same event without the cut is ordinary.
+        assert!(plain.scales(&soft).is_ok());
+    }
+
+    /// Without matching, the record's factorisation scale is the densities' and
+    /// no configuration is carried, on every channel and every branch the
+    /// processes below reach: this is what keeps `SCALUP`, the colour draw and so
+    /// every existing event file where they were.
+    #[test]
+    fn without_matching_the_record_scale_is_the_density_scale() {
+        let cards = [
+            card(""),
+            card("2.0 = scalefact"),
+            card("False = pdfwgt"),
+            card("30 = xqcut"),
+            card("True = fixed_ren_scale\n80.0 = scale\n"),
+            partonic_card(""),
+        ];
+        for spec in ["u u~ > e+ e- g", "u u~ > u u~", "g g > g g"] {
+            let proc = process(spec);
+            for c in &cards {
+                let choice = ScaleChoice::compile(c).expect("compiled");
+                for pt in [35.0, 60.0, 90.0] {
+                    let (incoming, outgoing) = if spec == "u u~ > e+ e- g" {
+                        llj_event(pt)
+                    } else {
+                        (
+                            [[100.0, 0.0, 0.0, 100.0], [100.0, 0.0, 0.0, -100.0]],
+                            vec![
+                                [100.0, pt, 0.0, (1e4 - pt * pt).sqrt()],
+                                [100.0, -pt, 0.0, -(1e4 - pt * pt).sqrt()],
+                            ],
+                        )
+                    };
+                    let ev = ScaleEvent {
+                        incoming,
+                        outgoing: &outgoing,
+                    };
+                    for config in 1..=proc.derived.set.configs.len() {
+                        let Ok(scales) = choice.cluster_scales(&ev, &proc.input(config)) else {
+                            continue;
+                        };
+                        assert_eq!(scales.mu_f_record, scales.mu_f, "{spec} {c:?}");
+                        assert_eq!(scales.clustered_config, None);
+                        let history = choice.cluster_history(&ev, &proc.input(config));
+                        if let Ok(history) = history {
+                            assert!(history.second.is_none() && history.q2bck.is_none());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Matching's two `setclscales` calls on one clustered event, checked
+    /// arithmetically against the first call's own merge scales.
+    ///
+    /// The first call lowers each beam's density scale to the first vertex's
+    /// scale where that is below the central one (`reweight.f:1195-1203`) and
+    /// keeps the central one as `q2bck`; the second call overwrites the central
+    /// vertices with the first call's scales, applies `scalefact` again, and
+    /// leaves `q2bck` alone. `scalefact = 2` makes each power of it visible.
+    #[test]
+    // `beam` indexes the unmatched run's, the first call's and `q2bck`'s
+    // per-beam arrays together, so an iterator over one would keep the index.
+    #[allow(clippy::needless_range_loop)]
+    fn matching_makes_two_calls_and_keeps_q2bck_from_the_first() {
+        let proc = process("u u~ > e+ e- g");
+        for (sf, pdfwgt) in [(1.0, true), (2.0, true), (1.0, false), (2.0, false)] {
+            let text = format!(
+                "{sf} = scalefact\n{} = pdfwgt\n",
+                if pdfwgt { "T" } else { "F" }
+            );
+            let plain = ScaleChoice::from_run_card(&card(&text)).expect("compiled");
+            let matched =
+                ScaleChoice::from_run_card(&card(&format!("{text}1 = ickkw\n10 = xqcut\n")))
+                    .expect("compiled");
+            let (incoming, outgoing) = llj_event(40.0);
+            let ev = ScaleEvent {
+                incoming,
+                outgoing: &outgoing,
+            };
+            for config in 1..=proc.derived.set.configs.len() {
+                let input = proc.input(config);
+                let unmatched = plain.cluster_history(&ev, &input).expect("clustered");
+                let history = matched.cluster_history(&ev, &input).expect("clustered");
+                let first = &history.first;
+                let second = history
+                    .second
+                    .as_ref()
+                    .expect("a second call under matching");
+                let q2bck = history.q2bck.expect("q2bck under matching");
+
+                // The central scale is the unmatched run's factorisation scale,
+                // and μR is untouched by matching.
+                assert_eq!(first.mu_r, unmatched.first.mu_r);
+                for beam in 0..2 {
+                    assert_eq!(q2bck[beam], unmatched.first.q2fact[beam], "config {config}");
+                    assert_eq!(first.q2central[beam], Some(q2bck[beam]));
+                }
+                assert!(
+                    first.jcentral[0] > 0 && first.jcentral[1] > 0,
+                    "a colour line to both beams"
+                );
+                assert_eq!(first.muf_branch == MufBranch::MatchingWeight, pdfwgt);
+                for beam in 0..2 {
+                    let lowered = if pdfwgt
+                        && first.jlast[beam] > 0
+                        && first.jfirst[beam] <= first.jlast[beam]
+                    {
+                        sf * sf * first.pt2[first.jfirst[beam] - 1].min(q2bck[beam])
+                    } else {
+                        q2bck[beam]
+                    };
+                    assert_eq!(first.q2fact[beam], lowered, "config {config} beam {beam}");
+                }
+
+                // The second call: central vertices overwritten, one more power of
+                // scalefact on the central assignment, μR carried over.
+                assert_eq!(second.mu_r, first.mu_r);
+                assert_eq!(second.pt2[first.jcentral[0] - 1], first.q2fact[0]);
+                if first.jcentral[1] != first.jcentral[0] {
+                    assert_eq!(second.pt2[first.jcentral[1] - 1], first.q2fact[1]);
+                }
+                for beam in 0..2 {
+                    assert_eq!(second.q2central[beam], Some(sf * sf * first.q2fact[beam]));
+                }
+                assert_eq!(second.clustering.graphs, first.clustering.graphs);
+
+                let scales = history.event_scales();
+                assert_eq!(scales.mu_r, first.mu_r);
+                assert_eq!(
+                    scales.mu_f,
+                    [first.q2fact[0].sqrt(), first.q2fact[1].sqrt()]
+                );
+                let recorded = if pdfwgt { q2bck } else { second.q2fact };
+                assert_eq!(scales.mu_f_record, [recorded[0].sqrt(), recorded[1].sqrt()]);
+                assert_eq!(
+                    scales.clustered_config,
+                    Some(second.clustering.graphs[0] - 1)
+                );
+                assert_eq!(matched.cluster_scales(&ev, &input), Ok(scales));
+            }
+        }
+    }
+
+    /// With fixed factorisation scales on both beams, matching's first call
+    /// already carries them on entry: the central vertices take them, and the
+    /// scales stay the card's in both calls and in the record.
+    #[test]
+    fn matching_with_fixed_factorisation_scales_keeps_them() {
+        let proc = process("u u~ > e+ e- g");
+        let choice = ScaleChoice::from_run_card(&card(
+            "1 = ickkw\n10 = xqcut\nTrue = fixed_fac_scale\n50.0 = dsqrt_q2fact1\n\
+             60.0 = dsqrt_q2fact2\n",
+        ))
+        .expect("compiled");
+        let (incoming, outgoing) = llj_event(40.0);
+        let ev = ScaleEvent {
+            incoming,
+            outgoing: &outgoing,
+        };
+        let history = choice
+            .cluster_history(&ev, &proc.input(1))
+            .expect("clustered");
+        assert_eq!(history.q2bck, Some([2500.0, 3600.0]));
+        assert_eq!(history.first.pt2[history.first.jcentral[0] - 1], 2500.0);
+        let scales = history.event_scales();
+        assert_eq!(scales.mu_f, [50.0, 60.0]);
+        assert_eq!(scales.mu_f_record, [50.0, 60.0]);
+        assert!(scales.clustered_config.is_some());
     }
 
     /// `-1` reached through the generic entry point is an error, not a guess:

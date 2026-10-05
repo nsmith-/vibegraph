@@ -214,9 +214,10 @@ pub trait ChannelIntegrand {
     /// The number of channels the integral is split across.
     fn channel_count(&self) -> usize;
 
-    /// The dimension of one channel's grid — the channel being frozen, this
-    /// excludes any channel-selection coordinate.
-    fn channel_grid_ndim(&self) -> usize;
+    /// The dimension of `channel`'s grid — the channel being frozen, this
+    /// excludes any channel-selection coordinate. Channels of one phase space
+    /// share it; a sum over final-state multiplicities has one per multiplicity.
+    fn channel_grid_ndim(&self, channel: usize) -> usize;
 
     /// Uniforms the integrand consumes *after* its channel's grid coordinates,
     /// which the grid therefore does not adapt over. Zero for an integrand whose
@@ -231,7 +232,7 @@ pub trait ChannelIntegrand {
     }
 
     /// The `channel`-th term's integrand at
-    /// `u ∈ [0,1]^(channel_grid_ndim + scale_draw_ndim)`, weighted by that
+    /// `u ∈ [0,1]^(channel_grid_ndim(channel) + scale_draw_ndim)`, weighted by that
     /// channel's `αⱼ`, so the terms sum to the full integral. Points the cuts
     /// reject return exactly `0.0`.
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64;
@@ -363,7 +364,7 @@ fn scan_channel<I: ChannelIntegrand>(
     seed: u64,
     rule: MaxRule,
 ) -> (UnweightChannel, SubStream) {
-    let ndim = integrand.channel_grid_ndim();
+    let ndim = integrand.channel_grid_ndim(j);
     let scale_ndim = integrand.scale_draw_ndim();
     let mut u = vec![0.0; ndim + scale_ndim];
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -424,8 +425,9 @@ pub struct Unweighter {
     select_weights: Vec<f64>,
     total_w_max: f64,
     stats: UnweightStats,
-    /// Reused coordinate buffer for a trial draw: the drawn channel's grid
-    /// coordinates followed by the integrand's trailing uniforms.
+    /// Reused coordinate buffer for a trial draw, as long as the widest channel's
+    /// point: the drawn channel's grid coordinates followed by the integrand's
+    /// trailing uniforms fill its leading part.
     u: Vec<f64>,
     /// How many of `u`'s trailing coordinates the grid does not supply.
     scale_ndim: usize,
@@ -471,17 +473,18 @@ impl Unweighter {
         seed: u64,
         rule: MaxRule,
     ) -> Self {
-        let ndim = integrand.channel_grid_ndim();
         let scale_ndim = integrand.scale_draw_ndim();
         let specs: Vec<(&VegasGrid, usize)> = channels.into_iter().collect();
         for (j, (grid, _)) in specs.iter().enumerate() {
+            let ndim = integrand.channel_grid_ndim(j);
             assert_eq!(
                 grid.ndim(),
                 ndim,
-                "channel {j}'s grid is over {} coordinates, the integrand's channels over {ndim}",
+                "channel {j}'s grid is over {} coordinates, the integrand's channel over {ndim}",
                 grid.ndim()
             );
         }
+        let widest = specs.iter().map(|(g, _)| g.ndim()).max().unwrap_or(0);
         let _span = tracing::info_span!("weight_scan").entered();
         let total = specs.len() as u64;
         let finished = AtomicU64::new(0);
@@ -505,7 +508,7 @@ impl Unweighter {
             .collect();
         let (built, scale_draw): (Vec<UnweightChannel>, Vec<SubStream>) =
             scanned.into_iter().unzip();
-        let u = vec![0.0; ndim + scale_ndim];
+        let u = vec![0.0; widest + scale_ndim];
         assert_eq!(
             built.len(),
             integrand.channel_count(),
@@ -611,10 +614,11 @@ impl Unweighter {
         let j = select_index(&self.select_weights, rng.random::<f64>())
             .expect("the summed maximum is positive, so some channel carries weight");
         let channel = &self.channels[j];
-        let grid_ndim = self.u.len() - self.scale_ndim;
-        let jac = channel.grid.draw(rng, &mut self.u[..grid_ndim]);
-        self.scale_draw[j].fill_uniforms(&mut self.u[grid_ndim..]);
-        let w = jac * integrand.value_in_channel(j, &self.u);
+        let grid_ndim = channel.grid.ndim();
+        let point = &mut self.u[..grid_ndim + self.scale_ndim];
+        let jac = channel.grid.draw(rng, &mut point[..grid_ndim]);
+        self.scale_draw[j].fill_uniforms(&mut point[grid_ndim..]);
+        let w = jac * integrand.value_in_channel(j, point);
         let r = w / channel.w_max;
         let accept: f64 = rng.random();
 
@@ -638,7 +642,7 @@ impl Unweighter {
         self.stats.event_weight_sum += weight;
         Some(AcceptedPoint {
             channel: j,
-            u: self.u.clone(),
+            u: self.u[..grid_ndim + self.scale_ndim].to_vec(),
             weight,
         })
     }
@@ -675,7 +679,7 @@ mod tests {
         fn channel_count(&self) -> usize {
             self.sigma.len()
         }
-        fn channel_grid_ndim(&self) -> usize {
+        fn channel_grid_ndim(&self, _channel: usize) -> usize {
             1
         }
         fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
@@ -1083,7 +1087,7 @@ mod tests {
             fn channel_count(&self) -> usize {
                 2
             }
-            fn channel_grid_ndim(&self) -> usize {
+            fn channel_grid_ndim(&self, _channel: usize) -> usize {
                 1
             }
             fn value_in_channel(&self, channel: usize, _u: &[f64]) -> f64 {

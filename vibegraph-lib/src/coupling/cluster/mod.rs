@@ -15,6 +15,9 @@
 //!   changes an initial-state merge makes. It sees no colour.
 //! * [`setclscales`] is the walk: which vertices carry the scales, and the two
 //!   rewrites applied before the geometric means are taken.
+//! * [`rewgt`] is MLM matching's reweighting of the matrix element along the
+//!   clustering: an `αs` ratio per parton vertex and a density ratio per
+//!   initial-state vertex after a beam's first.
 //!
 //! The scale is not a function of an event's momenta alone. It depends on the
 //! integration channel through three separate routes — the coupling-order filter
@@ -25,4 +28,5 @@
 pub mod configs;
 pub mod graph;
 pub mod kt;
+pub mod rewgt;
 pub mod setclscales;

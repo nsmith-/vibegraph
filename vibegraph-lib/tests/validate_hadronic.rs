@@ -4425,3 +4425,532 @@ fn probe_dynamic_rows_seed_sweep() {
         );
     }
 }
+
+/// Seeds the MLM pure-cut row is measured on.
+const XQCUT_ONLY_SEEDS: &[u64] = &[20260941, 20260942, 20260943, 20260944, 20260945];
+const XQCUT_ONLY_NEVAL: usize = 150_000;
+
+/// A seeded MadEvent reference read under the manifest's seed policy: the
+/// inverse-variance mean of the seeds, with `max(quoted, spread / √n)`.
+///
+/// `part` selects one process's share of each run (its `by_lprup` entry, the
+/// `@N` of the proc card); `None` reads the run's total.
+fn seeded_reference(file: &str, row: &str, part: Option<&str>) -> (f64, f64, usize) {
+    let path = validation_dir().join(file);
+    let v: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("seeded reference")).expect("parses");
+    let runs = v["rows"][row]["runs"].as_array().expect("runs");
+    let pairs: Vec<(f64, f64)> = runs
+        .iter()
+        .map(|r| {
+            let entry = match part {
+                Some(id) => &r["by_lprup"][id],
+                None => r,
+            };
+            (
+                entry["sigma_pb"]
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("{row} {part:?}: sigma_pb")),
+                entry["err_pb"]
+                    .as_f64()
+                    .unwrap_or_else(|| panic!("{row} {part:?}: err_pb")),
+            )
+        })
+        .collect();
+    let weights: f64 = pairs.iter().map(|(_, e)| 1.0 / (e * e)).sum();
+    let mean = pairs.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / weights;
+    let quoted = weights.sqrt().recip();
+    let n = pairs.len() as f64;
+    let plain = pairs.iter().map(|(s, _)| s).sum::<f64>() / n;
+    let spread = (pairs.iter().map(|(s, _)| (s - plain).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+    (mean, quoted.max(spread / n.sqrt()), pairs.len())
+}
+
+/// This side's seeds read under the seed policy: [`combine_seeds`]'s
+/// unweighted mean, with an error no smaller than the seeds' spread over `√n`,
+/// and the seeds' χ²/dof about that mean.
+///
+/// The spread enters because a heavy-tailed estimator's quoted error
+/// underestimates its seed-to-seed scatter; the mean stays unweighted because
+/// such a seed's low quoted error tends to come with a low estimate.
+fn policy_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
+    let (mean, quoted, chi2) = combine_seeds(runs);
+    let n = runs.len() as f64;
+    let spread = (runs
+        .iter()
+        .map(|r| (r.sigma_pb - mean).powi(2))
+        .sum::<f64>()
+        / (n - 1.0))
+        .sqrt();
+    (mean, quoted.max(spread / n.sqrt()), chi2)
+}
+
+/// The largest |pull| of the seed means, both sides read under the seed policy,
+/// an MLM σ cell may show when it gates.
+const MLM_MAX_PULL: f64 = 3.0;
+
+/// The 0.1% and 99.9% points of χ²/dof over a sweep's seeds, by seed count:
+/// the band this side's scatter must sit in for a gating MLM σ cell. A χ²/dof
+/// far below one is as much a sign of correlated seeds as one far above is of
+/// a missed region.
+fn mlm_chi2_band(seeds: usize) -> (f64, f64) {
+    match seeds {
+        5 => (0.0227, 4.617),
+        10 => (0.128, 3.097),
+        n => panic!("no χ²/dof band is tabulated for {n} seeds"),
+    }
+}
+
+/// Write one MLM σ cell and return whether it passed: `info` cells always pass,
+/// `gate` cells need |pull| < [`MLM_MAX_PULL`] and χ²/dof inside
+/// [`mlm_chi2_band`].
+#[allow(clippy::too_many_arguments)]
+fn write_mlm_sigma_cell(
+    row: &str,
+    variant: Option<&str>,
+    process: &str,
+    mode: &'static str,
+    runs: &[SeedResult],
+    mg: (f64, f64, usize),
+    budget: (usize, usize),
+    summary: &[ChannelSummary],
+    duration_s: f64,
+) -> bool {
+    let (mg, mg_err, mg_seeds) = mg;
+    let (mean, mean_err, chi2) = policy_seeds(runs);
+    let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
+    let rel = mean / mg - 1.0;
+    let band = mlm_chi2_band(runs.len());
+    let pass = pull.abs() < MLM_MAX_PULL && chi2 > band.0 && chi2 < band.1;
+    let label = variant.map_or(String::new(), |v| format!(" {v}"));
+    eprintln!(
+        "[{row}{label}] vibegraph σ = {mean:.6e} ± {mean_err:.3e} pb ({} seeds, χ²/dof = {chi2:.2}, \
+         band {:.3}-{:.3}) | MadEvent σ = {mg:.6e} ± {mg_err:.3e} pb ({mg_seeds} seeds) \
+         | pull = {pull:+.2} | rel = {rel:+.4} | {mode}: {}",
+        runs.len(),
+        band.0,
+        band.1,
+        match (mode, pass) {
+            ("gate", true) => "pass",
+            ("gate", false) => "FAIL",
+            (_, true) => "within the gate's tolerance",
+            (_, false) => "outside the gate's tolerance",
+        }
+    );
+
+    let mut cell = IntegralsRow::new(row, process, mode);
+    if let Some(v) = variant {
+        cell = cell.with_variant(v);
+    }
+    cell.status = match (mode, pass) {
+        ("gate", true) => "pass",
+        ("gate", false) => "fail",
+        _ => "info",
+    };
+    cell.sigma_vg_pb = mean;
+    cell.sigma_vg_err_pb = mean_err;
+    cell.sigma_mg_pb = mg;
+    cell.sigma_mg_err_pb = mg_err;
+    cell.pull = pull;
+    cell.rel = rel;
+    cell.chi2_dof = chi2;
+    cell.seeds = runs.iter().map(|r| r.seed).collect();
+    cell.per_seed = runs.to_vec();
+    cell.neval = budget.0;
+    cell.niter = budget.1;
+    cell.subsampler = summary.to_vec();
+    cell.note = Some(format!(
+        "{} seeds at {} x {} against MadEvent's {mg_seeds} runs, both read under the seed policy \
+         (mean +- max(quoted, spread/sqrt(n)))",
+        runs.len(),
+        budget.0,
+        budget.1
+    ));
+    cell.duration_s = Some(duration_s);
+    cell.write();
+    mode != "gate" || pass
+}
+
+/// σ(p p → e⁺e⁻ j) with `xqcut = 20` as a pure cut (`ickkw = 0`) against
+/// MadEvent's ten seeds.
+///
+/// No reweighting enters this row, so it isolates what `xqcut` changes on its
+/// own: `setcuts.f`'s rewrite of the jet cuts (`ptj = mmjj = xqcut`,
+/// `drjj = drjl = 0`) and the clustering's rejection of a jet vertex below
+/// `xqcut`, on top of the clustering scale with `pdfwgt = F`. Its per-event
+/// scales are gated against MadEvent's dump by `validate_mlm_dumps`.
+#[test]
+#[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_xqcut_only_vs_madevent() {
+    mlm_sigma_row("pp_to_llj_xqcut_only", XQCUT_ONLY_SEEDS, "gate");
+}
+
+/// σ(p p → e⁺e⁻ j) matched (`ickkw = 1`, `xqcut = 20`) against MadEvent's ten
+/// seeds: the row `rewgt`'s `αs` and density ratios reach σ on, +26% over the
+/// pure-cut row. Its factors are gated per event by `validate_mlm_dumps`.
+#[test]
+#[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_mlm_vs_madevent() {
+    mlm_sigma_row("pp_to_llj_mlm", MLM_SEEDS, "gate");
+}
+
+/// The same row at `alpsfact = 2` with systematics off: where `alpsfact`
+/// enters (the `αs` numerator's scale only) moves σ by 10%.
+#[test]
+#[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_llj_mlm_alps2_vs_madevent() {
+    mlm_sigma_row("pp_to_llj_mlm_alps2", MLM_ALPS2_SEEDS, "gate");
+}
+
+/// Ten seeds: five read χ²/dof 2.9 about their mean, more scatter than the
+/// quoted errors, so the row takes twice the pure-cut row's.
+const MLM_SEEDS: &[u64] = &[
+    20260951, 20260952, 20260953, 20260954, 20260955, 20260956, 20260957, 20260958, 20260959,
+    20260960,
+];
+const MLM_ALPS2_SEEDS: &[u64] = &[20260961, 20260962, 20260963, 20260964, 20260965];
+
+/// One MLM row's seeded σ against MadEvent's seeds, recorded under `mode` and
+/// asserted when it gates.
+fn mlm_sigma_row(row: &str, seeds: &[u64], mode: &'static str) {
+    let process = "p p > e+ e- j";
+    let clock = Stopwatch::start();
+    let rc = RunCard::parse_file(&validation_dir().join(format!("{row}_run_card.dat")))
+        .expect("run card");
+    let mg = seeded_reference("mlm_sigma_reference.json", row, None);
+
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let groups = groups_for(process, &model, &evaluated, &rc);
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let amps: Vec<BoundAmplitude<f64>> = groups
+        .groups()
+        .iter()
+        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+        .collect();
+
+    let mut summary = Vec::new();
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for &seed in seeds {
+        let (sigma, err) = run_seed_shaped(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (
+                RECARDED_ADAPT_SURVEY,
+                RECARDED_ADAPT_ITERS,
+                XQCUT_ONLY_NEVAL,
+                RECARDED_NITER,
+            ),
+            seed,
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+        );
+        eprintln!(
+            "[{row} seed {seed}] vibegraph σ = {sigma:.6e} ± {err:.3e} pb | rel = {:+.4}",
+            sigma / mg.0 - 1.0
+        );
+        runs.push(SeedResult {
+            seed,
+            sigma_pb: sigma,
+            sigma_err_pb: err,
+        });
+    }
+
+    let pass = write_mlm_sigma_cell(
+        row,
+        None,
+        process,
+        mode,
+        &runs,
+        mg,
+        (XQCUT_ONLY_NEVAL, RECARDED_NITER),
+        &summary,
+        clock.seconds(),
+    );
+    assert!(
+        pass,
+        "{row}: σ outside the gate's tolerance (see the line above)"
+    );
+}
+
+/// The mixed-multiplicity rows' budget per seed: the composite's own
+/// `--fixed-budget --allocate neyman --neval 200000 --niter 8`, with the
+/// α-survey the CLI derives from it (`neval` clamped to 10 000–40 000 points,
+/// six iterations, damping ½).
+const MIXED_NEVAL: usize = 200_000;
+const MIXED_NITER: usize = 8;
+const MIXED_ADAPT_SURVEY: usize = 40_000;
+const MIXED_ADAPT_ITERS: usize = 6;
+const MIXED_ADAPT_DAMPING: f64 = 0.5;
+
+/// Ten seeds a mixed row: the seeds the matched Pythia comparison's vibegraph
+/// samples are integrated on.
+const MIXED_SEEDS: &[u64] = &[
+    20260928, 20260929, 20260930, 20260931, 20260932, 20260933, 20260934, 20260935, 20260936,
+    20260937,
+];
+
+/// σ(p p → e⁺e⁻ + 0, 1, 2 jets), MLM-matched at `xqcut = 20`, per `@N` and in
+/// total, against MadEvent's 21 independently generated directories.
+///
+/// The composite multiplicity integrand: one [`ProtonIntegrand`] per
+/// multiplicity, each with its own channels and grids, integrated as one channel
+/// list. It sees whether each multiplicity's matched cross section — the
+/// `xqcut` cut, both clustering calls and `rewgt` on every point — and the
+/// budget the composite shares out among them reproduce MadEvent's. The
+/// per-event fields beneath it are gated by `validate_mlm_dumps`.
+///
+/// Two registered deviations push `@2` up by about 0.7% together: the permuted
+/// `P1` of MadEvent's first clustering call (about +0.33 pb) and the generic
+/// 2 → 4 offset (about +0.6 pb). The gate carries no allowance for them, so it
+/// stays inside 3σ only while this side's `@2` error is near its measured size.
+#[test]
+#[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_ll_0j2j_mlm_vs_madevent() {
+    mlm_mixed_sigma_row(
+        "pp_to_ll_0j2j_mlm",
+        &[false, true, true],
+        MIXED_SEEDS,
+        "gate",
+    );
+}
+
+/// σ(p p → t t̄ + 0, 1 jets), MLM-matched at `xqcut = 30`, per `@N` and in
+/// total, against MadEvent's ten seeds (nine of them in one shared directory):
+/// the massive-core branches of the clustering under matching. Measured and
+/// reported, not enforced.
+#[test]
+#[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
+fn sigma_ttx_0j1j_mlm_vs_madevent() {
+    mlm_mixed_sigma_row("pp_to_ttx_0j1j_mlm", &[true, true], MIXED_SEEDS, "info");
+}
+
+/// One mixed-multiplicity MLM row's seeded σ, built and integrated the way
+/// `vibegraph integrate` builds a proton-beam card of several multiplicities,
+/// written as one cell per `@N` and one for the total.
+///
+/// `alpha_s` says, per multiplicity, whether its matrix element must carry the
+/// strong coupling, asserted as [`run_seed`] asserts it.
+fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'static str) {
+    use vibegraph::budget::{BlockAllocation, Budget, StopSignal};
+    use vibegraph::diagrams::forbidden_onshell_ids;
+    use vibegraph::hadronic::Observable;
+    use vibegraph::multiplicity::{split_by_multiplicity, union_shape, MultiplicitySum};
+    use vibegraph::onshell::{group_vetoes, subprocess_markings};
+    use vibegraph::phasespace::maps::MapOptions;
+    use vibegraph::proton::process_shape;
+
+    let clock = Stopwatch::start();
+    let rc = RunCard::parse_file(&validation_dir().join(format!("{row}_run_card.dat")))
+        .expect("run card");
+    // The process lines of the row's MadGraph script; its `output` and `launch`
+    // dialogue are MadGraph's, and the run card carries what the dialogue set.
+    let script = validation_dir().join(format!("scripts/{row}.mg5"));
+    let lines: Vec<String> = std::fs::read_to_string(&script)
+        .expect("the row's MadGraph script")
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("generate ") || l.starts_with("add process "))
+        .map(String::from)
+        .collect();
+    let proc_card = parse_proc_card(&lines.join("\n"), &ParsingOptions::default())
+        .expect("the row's process lines");
+    let model = common::sm_model();
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let set = load_pdf_set();
+    let pdf = set.member(0).expect("PDF member 0");
+    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
+
+    let sets = generate_from_proc_card(&proc_card, &model).expect("enumeration");
+    let forbidden = forbidden_onshell_ids(&proc_card, &model).expect("on-shell vetoes");
+    let markings = subprocess_markings(&sets, &forbidden, &model);
+    let mut groups = Vec::new();
+    let mut vetoes = Vec::new();
+    for part in split_by_multiplicity(sets, &rc) {
+        let g = derive_flavor_groups(part, &model, &evaluated, &rc).expect("flavour groups");
+        vetoes.push(group_vetoes(&g, &markings, &forbidden, &evaluated, &rc).expect("vetoes"));
+        groups.push(g);
+    }
+    assert_eq!(groups.len(), alpha_s.len(), "{row}: multiplicities");
+    // Each multiplicity is one `@N` here, and that `N` keys MadEvent's
+    // per-process cross sections (`by_lprup`).
+    let ids: Vec<String> = groups
+        .iter()
+        .map(|g| {
+            let ids: BTreeSet<u32> = g
+                .groups()
+                .iter()
+                .flat_map(|grp| grp.members().iter().map(|m| m.process))
+                .collect();
+            assert_eq!(
+                ids.len(),
+                1,
+                "{row}: a multiplicity spans processes {ids:?}"
+            );
+            ids.into_iter().next().unwrap().to_string()
+        })
+        .collect();
+    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
+        .iter()
+        .map(|part| {
+            part.groups()
+                .iter()
+                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
+                .collect()
+        })
+        .collect();
+    let maps = MapOptions::fixed(
+        MapOptions::default().resolve(&union_shape(
+            groups
+                .iter()
+                .map(|g| process_shape(g, &evaluated, sqrt_s_had)),
+        )),
+    );
+
+    let unit = Observable::CrossSection.per_natural_unit();
+    let mut per_part: Vec<Vec<SeedResult>> = vec![Vec::new(); groups.len()];
+    let mut total: Vec<SeedResult> = Vec::new();
+    let mut summary: Vec<ChannelSummary> = Vec::new();
+    for &seed in seeds {
+        let seed_clock = Stopwatch::start();
+        let mut parts = Vec::with_capacity(groups.len());
+        for (k, ((part_groups, part_amps), part_vetoes)) in
+            groups.iter().zip(&amps).zip(&vetoes).enumerate()
+        {
+            let mut integ = ProtonIntegrand::new_with_maps(
+                part_groups,
+                part_amps,
+                &evaluated,
+                &pdf,
+                sqrt_s_had,
+                rc.dsqrt_q2fact1,
+                maps,
+            )
+            .expect("hadronic integrand");
+            integ.use_onshell_veto(part_vetoes, &evaluated);
+            let report = integ
+                .use_run_card_scales(&model, &evaluated, &rc, Some(&set.info.alpha_s))
+                .expect("run card scale prescription compiles");
+            assert!(
+                report.constant_scales.is_none() && report.depends_on_alpha_s == alpha_s[k],
+                "{row} @{}: the matched card resolved to {report:?}",
+                ids[k]
+            );
+            parts.push(integ);
+        }
+        let mut integ = MultiplicitySum::new(parts);
+        if summary.is_empty() {
+            summary = integ
+                .parts()
+                .iter()
+                .zip(&ids)
+                .flat_map(|(part, id)| {
+                    subsampler_summary(part).into_iter().map(move |mut s| {
+                        s.channel = format!("@{id} {}", s.channel);
+                        s
+                    })
+                })
+                .collect();
+        }
+        integ.adapt_alphas(
+            seed,
+            MIXED_ADAPT_SURVEY,
+            MIXED_ADAPT_ITERS,
+            MIXED_ADAPT_DAMPING,
+        );
+        let (per_channel, result, convergence) = integ.adapt_grids_budget(
+            Budget::Fixed {
+                neval: MIXED_NEVAL,
+                niter: MIXED_NITER,
+            },
+            BlockAllocation::Neyman,
+            seed,
+            &StopSignal::new(),
+        );
+        for (k, part) in integ.parts().iter().enumerate() {
+            assert_eq!(
+                part.scale_draw_fallbacks(),
+                0,
+                "{row} @{}: the scale-configuration draw fell back to the sampling channel",
+                ids[k]
+            );
+        }
+        let results = integ.part_results(&per_channel, convergence.iterations);
+        let line: Vec<String> = results
+            .iter()
+            .zip(&ids)
+            .map(|(r, id)| format!("@{id} {:.6} ± {:.6}", r.integral * unit, r.std_dev * unit))
+            .collect();
+        eprintln!(
+            "[{row} seed {seed}] vibegraph {} | total {:.6} ± {:.6} pb | {:.0} s",
+            line.join(" | "),
+            result.integral * unit,
+            result.std_dev * unit,
+            seed_clock.seconds()
+        );
+        for (k, r) in results.iter().enumerate() {
+            per_part[k].push(SeedResult {
+                seed,
+                sigma_pb: r.integral * unit,
+                sigma_err_pb: r.std_dev * unit,
+            });
+        }
+        total.push(SeedResult {
+            seed,
+            sigma_pb: result.integral * unit,
+            sigma_err_pb: result.std_dev * unit,
+        });
+    }
+
+    let duration = clock.seconds();
+    let process = proc_card
+        .processes
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut failed = Vec::new();
+    for (k, runs) in per_part.iter().enumerate() {
+        let variant = format!("at{}", ids[k]);
+        let mg = seeded_reference("mlm_sigma_reference.json", row, Some(&ids[k]));
+        if !write_mlm_sigma_cell(
+            row,
+            Some(&variant),
+            &process,
+            mode,
+            runs,
+            mg,
+            (MIXED_NEVAL, MIXED_NITER),
+            &summary,
+            duration,
+        ) {
+            failed.push(format!("@{}", ids[k]));
+        }
+    }
+    let mg = seeded_reference("mlm_sigma_reference.json", row, None);
+    if !write_mlm_sigma_cell(
+        row,
+        Some("total"),
+        &process,
+        mode,
+        &total,
+        mg,
+        (MIXED_NEVAL, MIXED_NITER),
+        &summary,
+        duration,
+    ) {
+        failed.push("total".to_string());
+    }
+    assert!(
+        failed.is_empty(),
+        "{row}: σ outside the gate's tolerance on {failed:?} (see the lines above)"
+    );
+}

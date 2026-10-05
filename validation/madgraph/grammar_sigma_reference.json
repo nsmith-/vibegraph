@@ -36,7 +36,7 @@
           "iseed": 20260930,
           "sigma_pb": 154.28,
           "err_pb": 0.08369,
-          "wall_s": 7
+          "wall_s": 6
         }
       ]
     },
@@ -50,25 +50,25 @@
           "iseed": 20260926,
           "sigma_pb": 0.41993,
           "err_pb": 0.00021694,
-          "wall_s": 10
+          "wall_s": 17
         },
         {
           "iseed": 20260927,
           "sigma_pb": 0.41972,
           "err_pb": 0.00021655,
-          "wall_s": 6
+          "wall_s": 11
         },
         {
           "iseed": 20260928,
           "sigma_pb": 0.41972,
           "err_pb": 0.00019928,
-          "wall_s": 6
+          "wall_s": 968
         },
         {
           "iseed": 20260929,
           "sigma_pb": 0.41991,
           "err_pb": 0.00023627,
-          "wall_s": 5
+          "wall_s": 7
         },
         {
           "iseed": 20260930,
@@ -88,19 +88,19 @@
           "iseed": 20260926,
           "sigma_pb": 157.45,
           "err_pb": 0.1095,
-          "wall_s": 9
+          "wall_s": 10
         },
         {
           "iseed": 20260927,
           "sigma_pb": 157.53,
           "err_pb": 0.11827,
-          "wall_s": 7
+          "wall_s": 6
         },
         {
           "iseed": 20260928,
           "sigma_pb": 157.48,
           "err_pb": 0.12191,
-          "wall_s": 5
+          "wall_s": 6
         },
         {
           "iseed": 20260929,
@@ -138,19 +138,19 @@
           "iseed": 20260928,
           "sigma_pb": 0.052201,
           "err_pb": 1.8904e-05,
-          "wall_s": 6
+          "wall_s": 9
         },
         {
           "iseed": 20260929,
           "sigma_pb": 0.052222,
           "err_pb": 1.977e-05,
-          "wall_s": 5
+          "wall_s": 9
         },
         {
           "iseed": 20260930,
           "sigma_pb": 0.052208,
           "err_pb": 1.9965e-05,
-          "wall_s": 6
+          "wall_s": 9
         }
       ]
     },
@@ -164,7 +164,7 @@
           "iseed": 20260926,
           "sigma_pb": 0.25783,
           "err_pb": 0.00042962,
-          "wall_s": 14
+          "wall_s": 9
         },
         {
           "iseed": 20260927,
@@ -214,13 +214,13 @@
           "iseed": 20260928,
           "sigma_pb": 7.1932,
           "err_pb": 0.0091419,
-          "wall_s": 7
+          "wall_s": 6
         },
         {
           "iseed": 20260929,
           "sigma_pb": 7.2091,
           "err_pb": 0.012836,
-          "wall_s": 6
+          "wall_s": 5
         },
         {
           "iseed": 20260930,
@@ -252,7 +252,7 @@
           "iseed": 20260928,
           "sigma_pb": 6.9291,
           "err_pb": 0.0085872,
-          "wall_s": 7
+          "wall_s": 6
         },
         {
           "iseed": 20260929,
@@ -264,7 +264,7 @@
           "iseed": 20260930,
           "sigma_pb": 6.9282,
           "err_pb": 0.0092301,
-          "wall_s": 7
+          "wall_s": 6
         }
       ]
     }
