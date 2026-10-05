@@ -157,19 +157,17 @@ pub fn resolve_couplings(model: &UFOModel, names: &[String]) -> Result<Vec<Strin
 }
 
 /// Refuse a parameter no hypothesis may move.
+///
+/// The strong coupling is refused only where the parameter moves `aS` itself. A
+/// parameter that merely shares a dependent with it — SMEFTsim's `dWH`, the Higgs
+/// width's linear shift, is a function of `aS` and of most Wilson coefficients —
+/// is movable: the per-event coupling update recomputes `aS`'s dependents from
+/// each bound point's own parameters, the hypothesis's included.
 fn check_movable(model: &UFOModel, name: String, line: usize) -> Result<String, ReweightError> {
-    let mut strong = model.params.dependents("aS");
-    strong.insert("aS".to_string());
     if model.params.zeros.contains(&name) {
         return Err(ReweightError::Locked { line, name });
     }
-    if strong.contains(&name)
-        || model
-            .params
-            .dependents(&name)
-            .iter()
-            .any(|d| strong.contains(d))
-    {
+    if name == "aS" || model.params.dependents(&name).contains("aS") {
         return Err(ReweightError::StrongCoupling { line, name });
     }
     Ok(name)
@@ -331,6 +329,28 @@ mod tests {
                 &model
             ),
             Err(ReweightError::Locked { .. })
+        ));
+    }
+
+    /// A Wilson coefficient that shares a dependent with `aS` (SMEFTsim's `dWH`)
+    /// does not move the strong coupling and is movable.
+    #[test]
+    fn a_parameter_sharing_a_dependent_with_the_strong_coupling_is_movable() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+        let model = UFOModel::load(&dir, Some(&dir.join("restrict_massless.dat"))).unwrap();
+        let shared: Vec<String> = model
+            .params
+            .dependents("cHWB")
+            .intersection(&model.params.dependents("aS"))
+            .cloned()
+            .collect();
+        assert!(!shared.is_empty(), "the check needs a shared dependent");
+        let got = resolve(&"launch\n set cHWB 0.5\n".parse().unwrap(), &model).unwrap();
+        assert_eq!(got[0].values, vec![("cHWB".to_string(), 0.5)]);
+        assert!(matches!(
+            resolve(&"launch\n set aS 0.1\n".parse().unwrap(), &model),
+            Err(ReweightError::StrongCoupling { .. })
         ));
     }
 
