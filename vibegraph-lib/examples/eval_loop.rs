@@ -122,7 +122,10 @@ impl PerfControl {
         self.ctl.flush().expect("flush perf control FIFO");
         let mut reply = String::new();
         self.ack.read_line(&mut reply).expect("read perf ack FIFO");
-        assert_eq!(reply.trim(), "ack", "perf answered {reply:?} to {cmd}");
+        // perf writes its reply with the C string's terminator, `ack\n\0`, so a
+        // line-based read leaves that NUL at the front of the next reply.
+        let reply_text = reply.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+        assert_eq!(reply_text, "ack", "perf answered {reply:?} to {cmd}");
     }
 }
 
