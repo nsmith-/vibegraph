@@ -1186,11 +1186,102 @@ fn reconstruct(proc_: &Process, p: u64, seed: u64, max_degree: usize) -> (Fit, u
 
 // ── tests ────────────────────────────────────────────────────────────────────
 
+/// `Σ_h u ū = p̸ + m` and `Σ_h v v̄ = p̸ − m` mod `p` for the spinors at `p`, or
+/// `None` when one of their roots does not exist in `Z_p`. Panics on a mismatch.
+fn spinor_completeness(p: LorentzVector<Fz>, mass: Fz) -> Option<()> {
+    for (charge, sign) in [(Charge::Particle, 1), (Charge::Antiparticle, -1)] {
+        take_poison();
+        let us: Vec<Bispinor<Fz, Ket>> = [SpinorHelicity::Up, SpinorHelicity::Down]
+            .into_iter()
+            .map(|h| Bispinor::from_momentum(p, mass, h, charge))
+            .collect();
+        if take_poison() {
+            return None;
+        }
+        let slashed = ComplexVector::from(p);
+        for b in 0..4 {
+            let e: Bispinor<Fz, Ket> = Bispinor::from_components(std::array::from_fn(|k| {
+                if k == b {
+                    C::new(Fz::one(), Fz::zero())
+                } else {
+                    C::new(Fz::zero(), Fz::zero())
+                }
+            }));
+            let mut lhs = [C::new(Fz::zero(), Fz::zero()); 4];
+            for u in &us {
+                let ub = u.bar();
+                let ub_e = (0..4).fold(C::new(Fz::zero(), Fz::zero()), |acc, k| {
+                    acc + ub.component(k) * e.component(k)
+                });
+                for (l, x) in lhs.iter_mut().enumerate() {
+                    *x = *x + u.component(l) * ub_e;
+                }
+            }
+            let rhs = e.slash(&slashed);
+            let m_signed = if sign > 0 { mass } else { -mass };
+            for (l, x) in lhs.iter().enumerate() {
+                let want = rhs.component(l) + e.component(l) * m_signed;
+                assert_eq!(
+                    parts(*x),
+                    parts(want),
+                    "Σ u ū ≠ p̸ ± m (mass {}, {charge:?}) at component ({l},{b})",
+                    mass.f
+                );
+            }
+        }
+    }
+    Some(())
+}
+
+/// `Σ_λ ε ε* = −g + p p / M²` (massive) or `−g + (p n + n p)/(p·n)` with HELAS's
+/// `n = (p⁰, −p⃗)` (massless) mod `p`, or `None` when a root is missing.
+fn vector_completeness(p: LorentzVector<Fz>, mass: Fz) -> Option<()> {
+    let massive = mass.f != 0.0;
+    take_poison();
+    let hels: &[i32] = if massive { &[-1, 0, 1] } else { &[-1, 1] };
+    let eps: Vec<VectorWf<Fz>> = hels
+        .iter()
+        .map(|&h| VectorWf::vxxxxx(p, mass, h, 1))
+        .collect();
+    if take_poison() {
+        return None;
+    }
+    let pv = [p.e(), p.px(), p.py(), p.pz()];
+    let metric = [1.0, -1.0, -1.0, -1.0];
+    let nv = [p.e(), -p.px(), -p.py(), -p.pz()];
+    let p_dot_n = pv[0] * nv[0] - pv[1] * nv[1] - pv[2] * nv[2] - pv[3] * nv[3];
+    for mu in 0..4 {
+        for nu in 0..4 {
+            let mut lhs = C::new(Fz::zero(), Fz::zero());
+            for e in &eps {
+                lhs = lhs + e.eps.component(mu) * e.eps.component(nu).conj();
+            }
+            let g = if mu == nu {
+                Fz::exact(metric[mu])
+            } else {
+                Fz::zero()
+            };
+            let want = if massive {
+                -g + pv[mu] * pv[nu] / (mass * mass)
+            } else {
+                -g + (pv[mu] * nv[nu] + nv[mu] * pv[nu]) / p_dot_n
+            };
+            assert_eq!(
+                parts(lhs),
+                parts(C::new(want, Fz::zero())),
+                "Σ ε ε* wrong (mass {}) at ({mu},{nu})",
+                mass.f
+            );
+        }
+    }
+    Some(())
+}
+
 /// The root convention keeps each external leg's completeness relation, which is
 /// all the helicity sum depends on: `Σ_h u ū = p̸ + m`, `Σ_h v v̄ = p̸ − m`,
 /// `Σ_λ ε ε* = −g + p p / M²` for a massive vector, and for a massless one
 /// `−g + (p n + n p)/(p·n)` with HELAS's `n = (p⁰, −p⃗)`. Checked mod `p` at
-/// rational momenta, massless and massive, on points whose roots exist.
+/// generic rational momenta, massless and massive, on points whose roots exist.
 #[test]
 fn fz_wavefunctions_satisfy_completeness() {
     set_modulus(primes(1)[0]);
@@ -1199,7 +1290,7 @@ fn fz_wavefunctions_satisfy_completeness() {
     let mut attempts = 0;
     while checked.iter().any(|&c| c < 8) {
         attempts += 1;
-        assert!(attempts < 20_000, "too few points survive: {checked:?}");
+        assert!(attempts < 40_000, "too few points survive: {checked:?}");
         let energy = q(rng.random_range(5..=40), rng.random_range(1..=4));
         let k = massless(&energy, &unit_vector(&mut rng));
         let n = massless(&q(3, 1), &unit_vector(&mut rng));
@@ -1210,10 +1301,10 @@ fn fz_wavefunctions_satisfy_completeness() {
             } else {
                 k.clone()
             };
-            take_poison();
             let pz = to_fz_momentum(&p);
-            // The evaluator's masses are f64 parameters; the generator's are exact
-            // rationals, so the field sees the mass through its own square root.
+            // The generator's masses are exact rationals squared, so the field sees
+            // the mass through its own square root.
+            take_poison();
             let mass = if massive {
                 Fz::from_rational(&mdot(&p, &p)).sqrt()
             } else {
@@ -1222,111 +1313,57 @@ fn fz_wavefunctions_satisfy_completeness() {
             if take_poison() {
                 continue;
             }
-            for (slot, charge, sign) in [(0, Charge::Particle, 1), (1, Charge::Antiparticle, -1)] {
-                let slot = slot + 2 * (massive as usize);
-                let us: Vec<Bispinor<Fz, Ket>> = [SpinorHelicity::Up, SpinorHelicity::Down]
-                    .into_iter()
-                    .map(|h| Bispinor::from_momentum(pz, mass, h, charge))
-                    .collect();
-                if take_poison() {
-                    continue;
-                }
-                let slashed = ComplexVector::from(pz);
-                for b in 0..4 {
-                    let e: Bispinor<Fz, Ket> =
-                        Bispinor::from_components(std::array::from_fn(|k| {
-                            if k == b {
-                                C::new(Fz::one(), Fz::zero())
-                            } else {
-                                C::new(Fz::zero(), Fz::zero())
-                            }
-                        }));
-                    let mut lhs = [C::new(Fz::zero(), Fz::zero()); 4];
-                    for u in &us {
-                        let ub = u.bar();
-                        let ub_e = (0..4).fold(C::new(Fz::zero(), Fz::zero()), |acc, k| {
-                            acc + ub.component(k) * e.component(k)
-                        });
-                        for (l, x) in lhs.iter_mut().enumerate() {
-                            *x = *x + u.component(l) * ub_e;
-                        }
-                    }
-                    let rhs = e.slash(&slashed);
-                    let m_signed = if sign > 0 { mass } else { -mass };
-                    for (l, x) in lhs.iter().enumerate() {
-                        let want = rhs.component(l) + e.component(l) * m_signed;
-                        assert_eq!(
-                            parts(*x),
-                            parts(want),
-                            "Σ u ū ≠ p̸ ± m (massive={massive}, charge={charge:?}) at component ({l},{b})"
-                        );
-                    }
-                }
+            let slot = 2 * (massive as usize);
+            if spinor_completeness(pz, mass).is_some() {
                 checked[slot] += 1;
+            }
+            if vector_completeness(pz, mass).is_some() {
+                checked[slot + 1] += 1;
             }
         }
     }
-    // Vectors: massive (λ = −1, 0, 1) and massless (λ = ±1).
-    let mut vchecked = [0usize; 2];
-    while vchecked.iter().any(|&c| c < 8) {
-        attempts += 1;
-        assert!(
-            attempts < 40_000,
-            "too few vector points survive: {vchecked:?}"
-        );
-        let energy = q(rng.random_range(5..=40), rng.random_range(1..=4));
-        let k = massless(&energy, &unit_vector(&mut rng));
-        let n = massless(&q(3, 1), &unit_vector(&mut rng));
-        let m2 = q(rng.random_range(1..=30), rng.random_range(1..=5));
-        for massive in [false, true] {
-            let p = if massive {
-                massive_from(&k, &n, &m2)
-            } else {
-                k.clone()
-            };
-            take_poison();
-            let pz = to_fz_momentum(&p);
-            let mass = if massive {
-                Fz::from_rational(&mdot(&p, &p)).sqrt()
-            } else {
-                Fz::zero()
-            };
-            let hels: &[i32] = if massive { &[-1, 0, 1] } else { &[-1, 1] };
-            let eps: Vec<VectorWf<Fz>> = hels
-                .iter()
-                .map(|&h| VectorWf::vxxxxx(pz, mass, h, 1))
-                .collect();
-            if take_poison() {
-                continue;
+}
+
+/// [`square_root_leg`]'s claim: every root its wavefunctions take is a rational
+/// square, so no such leg is ever rejected — and the completeness relations hold
+/// on it although the multiplicative root may pick either sign of `|p⃗|`, `√(E±|p⃗|)`
+/// and the rest (a perfect square's root is whichever of `±y` is itself a square).
+#[test]
+fn square_root_legs_never_miss_a_root() {
+    for p in primes(2) {
+        set_modulus(p);
+        let mut rng = ChaCha8Rng::seed_from_u64(p);
+        for _ in 0..64 {
+            let (w, u, v) = (
+                q(rng.random_range(12..=60), 10),
+                small_rational(&mut rng, 9),
+                small_rational(&mut rng, 9),
+            );
+            // A τ-like spinor mass and a Z-like vector mass, both exact as rationals.
+            for (mass, is_vector) in [
+                (q(0, 1), false),
+                (q(1777, 1000), false),
+                (q(0, 1), true),
+                (q(9119, 100), true),
+            ] {
+                let m2 = (!mass.is_zero()).then(|| &mass * &mass);
+                let w = if is_vector && m2.is_some() {
+                    &w * q(10, 1)
+                } else {
+                    w.clone()
+                };
+                let Some(leg) = square_root_leg(&w, &u, &v, m2.as_ref()) else {
+                    continue;
+                };
+                let pz = to_fz_momentum(&leg);
+                let mz = Fz::from_rational(&mass);
+                let ok = if is_vector {
+                    vector_completeness(pz, mz)
+                } else {
+                    spinor_completeness(pz, mz)
+                };
+                assert!(ok.is_some(), "a root was missing on {leg:?} (mass {mass})");
             }
-            let pv = [pz.e(), pz.px(), pz.py(), pz.pz()];
-            let metric = [1.0, -1.0, -1.0, -1.0];
-            let nv = [pz.e(), -pz.px(), -pz.py(), -pz.pz()];
-            let p_dot_n = pv[0] * nv[0] - pv[1] * nv[1] - pv[2] * nv[2] - pv[3] * nv[3];
-            for mu in 0..4 {
-                for nu in 0..4 {
-                    let mut lhs = C::new(Fz::zero(), Fz::zero());
-                    for e in &eps {
-                        lhs = lhs + e.eps.component(mu) * e.eps.component(nu).conj();
-                    }
-                    let g = if mu == nu {
-                        Fz::exact(metric[mu])
-                    } else {
-                        Fz::zero()
-                    };
-                    let want = if massive {
-                        -g + pv[mu] * pv[nu] / (mass * mass)
-                    } else {
-                        -g + (pv[mu] * nv[nu] + nv[mu] * pv[nu]) / p_dot_n
-                    };
-                    assert_eq!(
-                        parts(lhs),
-                        parts(C::new(want, Fz::zero())),
-                        "Σ ε ε* wrong (massive={massive}) at ({mu},{nu})"
-                    );
-                }
-            }
-            vchecked[massive as usize] += 1;
         }
     }
 }
@@ -2346,8 +2383,11 @@ struct Curve {
 
 #[derive(Clone, Copy)]
 enum Draw {
-    Energy,
-    Share,
+    /// `w` of a beam's energy `2w²`.
+    BeamRoot,
+    /// `w` of a final-state leg's energy `2w²`, or `a` of a massive leg's `E + |p⃗| = a²`.
+    LegRoot,
+    /// A stereographic or half-angle coordinate.
     Stereo,
 }
 
@@ -2358,8 +2398,8 @@ impl Curve {
             let point = build_point(
                 &mut |kind| {
                     let a = match kind {
-                        Draw::Energy => q(rng.random_range(20..=60), rng.random_range(1..=3)),
-                        Draw::Share => q(rng.random_range(1..=8), (4 * masses.len()) as i64),
+                        Draw::BeamRoot => q(rng.random_range(30..=60), 10),
+                        Draw::LegRoot => q(rng.random_range(12..=30), 10),
                         Draw::Stereo => small_rational(rng, 9),
                     };
                     let b = &a * q(rng.random_range(-6..=6), 40) + q(rng.random_range(-3..=3), 20);
@@ -2402,6 +2442,40 @@ impl Curve {
     }
 }
 
+/// A leg every root of whose HELAS wavefunction is a rational square, for either
+/// sign of the roots it takes before: the direction has rational half-angles
+/// (`cos θ/2 = (1−u²)/(1+u²)`, `sin θ/2 = 2u/(1+u²)`, and the azimuth likewise from
+/// `v`), so `(1 ± n_z)/2` are squares and `p_T = 2|p⃗| cos(θ/2) sin(θ/2)` is
+/// rational; a massless leg has `E = 2w²`, so `E + p_z = (2w cos θ/2)²`; a massive
+/// one has `E ± |p⃗| = a², m²/a²` with `a = w`. Such a leg always has its roots in
+/// `Z_p`. `None` when `a² ≤ m` (no momentum) and along the z axis: there the root
+/// of `|p⃗|²` may come out `−|p⃗|`, making `|p⃗| + p_z` vanish on the branch the
+/// shadow takes for a regular spinor.
+fn square_root_leg(w: &Q, u: &Q, v: &Q, m2: Option<&Q>) -> Option<Mom> {
+    let one = Q::one();
+    let two = q(2, 1);
+    let (u2, v2) = (u * u, v * v);
+    let (c, sn) = ((&one - &u2) / (&one + &u2), &two * u / (&one + &u2));
+    if c.is_zero() || sn.is_zero() {
+        return None;
+    }
+    let (cp, sp) = ((&one - &v2) / (&one + &v2), &two * v / (&one + &v2));
+    let transverse = &two * &c * &sn;
+    let dir = [&transverse * &cp, &transverse * &sp, &c * &c - &sn * &sn];
+    let a2 = w * w;
+    let (e, pabs) = match m2 {
+        None => (&two * &a2, &two * &a2),
+        Some(m2) => {
+            let low = m2 / &a2;
+            if a2 <= low {
+                return None;
+            }
+            ((&a2 + &low) / &two, (&a2 - &low) / &two)
+        }
+    };
+    Some([e, &pabs * &dir[0], &pabs * &dir[1], &pabs * &dir[2]])
+}
+
 /// Whether two signed leg combinations have the same invariant: equal up to sign,
 /// or complementary (momentum conservation makes `q` and `Σσ − q` equal and
 /// opposite).
@@ -2438,7 +2512,6 @@ fn build_point(
     );
     let n = masses.len();
     let sigma = |k: usize| if k < 2 { q(1, 1) } else { q(-1, 1) };
-    let scale = draw(Draw::Energy);
     let mut moms: Vec<Option<Mom>> = vec![None; n];
     // R = −Σ_free σ_k p_k, so that σ_a p_a + σ_b p_b = R.
     let mut r: Mom = std::array::from_fn(|_| Q::zero());
@@ -2446,22 +2519,10 @@ fn build_point(
         if closing.contains(&k) {
             continue;
         }
-        let energy = if k < 2 {
-            draw(Draw::Energy)
-        } else {
-            &scale * draw(Draw::Share)
-        };
-        let along = massless(&energy, &stereo(draw));
-        let p = match &masses[k] {
-            None => along,
-            Some(m2) => {
-                let nn = massless(&(&energy * q(1, 4)), &stereo(draw));
-                if mdot(&along, &nn).is_zero() {
-                    return None;
-                }
-                massive_from(&along, &nn, m2)
-            }
-        };
+        let w = draw(if k < 2 { Draw::BeamRoot } else { Draw::LegRoot });
+        let u = draw(Draw::Stereo);
+        let v = draw(Draw::Stereo);
+        let p = square_root_leg(&w, &u, &v, masses[k].as_ref())?;
         r = msub(&r, &mscale(&p, &sigma(k)));
         moms[k] = Some(p);
     }

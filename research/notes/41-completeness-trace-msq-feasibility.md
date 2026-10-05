@@ -37,8 +37,9 @@ per-pair trace form is measured too large (§9)**: on `ud_to_epemud_qcd0` and
 `ee_to_mumu_tata_qcd0` the pair numerators hold 85–118 thousand terms of degree
 4–5 in 9 dot products and 5 ε contractions, and a direct f64 evaluation of them
 runs 12–23× slower than `eval_m2`. The full `|M|²` does not rescue them (§10):
-on `ud_to_epemud_qcd0` not one of the 15 propagators loses a power between
-pairs, and over its minimal common denominator the numerator has degree 28.
+on `ud_to_epemud_qcd0` and `ee_to_mumu_tata_qcd0` not one propagator (of 15
+and 13) loses a power between pairs, and over the minimal common denominator
+the numerator has degree 28 (and at most 25).
 **Where the process has an external gauge boson the cancellations are large and
 the full form wins**: on the llj subprocesses every massless propagator drops
 from the pairwise double pole to a single one, the numerator over the minimal
@@ -626,6 +627,25 @@ reconstructed over its *minimal* common denominator, in three exact steps.
    that does not close on it; two curves, an s-type and a t-type closing, cover
    every line. A first version without this read the photon's `1/s²` in
    `ee_to_mumu` as exponent 0.
+
+   A node is usable only if every wavefunction root exists in `Z_p`: about half
+   the time per root, and a massive leg takes three. On `ee_to_mumu_tata_qcd0`
+   that left one node in ~1 000 (measured: 0.50 per massless leg, 0.12 per τ),
+   and the run was stopped after 45 minutes. The curves therefore build every
+   free leg so that each root it takes is a rational square
+   (`square_root_leg`). The direction has rational half-angles, so
+   `(1 ± n_z)/2 = cos²(θ/2), sin²(θ/2)`. A massless leg has `E = 2w²`, so
+   `E + p_z = (2w cos θ/2)²`. A massive one has `E ± |p⃗| = a², m²/a²`. Both
+   signs a perfect square's root can take land on squares, so nothing is
+   rejected except the closing pair (1/2 each). This is a kinematics choice in
+   the test; the wavefunction conventions are untouched.
+   `square_root_legs_never_miss_a_root` pins the claim: no root missing and
+   completeness intact, for massless and massive spinors and vectors, over two
+   primes. It also found the one exception, a leg along the z axis: there the
+   root of `|p⃗|²` can come out `−|p⃗|`, making `|p⃗| + p_z = 0` on the regular
+   branch the f64 shadow takes, so such legs are excluded. With these legs the
+   exponents on the other rows come out identical on fresh curves, and the τ
+   row takes 69 s.
 2. **Numerator degree.** Under `p → μ² p` (massless legs only, which stay on shell)
    `Q·|M|²` must be a polynomial in `s = μ⁴`. Its degree is the numerator's total
    degree, and the run asserts the polynomial property, which checks `Q`.
@@ -653,7 +673,7 @@ reconstructed over its *minimal* common denominator, in three exact steps.
 | `gu_to_epemu` | 3 of 4 | 5 (8) | 4 | 116 | 261 | 928 ns | 240 ns | 0.26 |
 | `ee_to_mumua` | 6 of 8 | 10 (16) | 9 | 1 195 (90 of them ε) | 3 608 | 2 115 ns | 2 778 ns | 1.31 |
 | `ud_to_epemud_qcd0` | 0 of 15 | 30 (30) | 28 | not fitted | 117 568 | — | — | — |
-| `ee_to_mumu_tata_qcd0` | not measured | | | | 85 435 | | | |
+| `ee_to_mumu_tata_qcd0` | 0 of 13 | 26 (26) | ≤ 25 | not fitted | 85 435 | — | — | — |
 
 - **Losing a power** means the propagator goes from the pairwise double pole to
   a single pole. The Z Breit–Wigners keep theirs everywhere.
@@ -662,9 +682,11 @@ reconstructed over its *minimal* common denominator, in three exact steps.
   `Q`. `eval_m2` varies ±20% between runs here (388–533 ns on `ee_to_mumu`).
 - **`ud_to_epemud_qcd0`:** the dense ansatz at degree 28 has 1.2 × 10⁸ even and
   3.5 × 10⁸ odd columns.
-- **`ee_to_mumu_tata_qcd0`:** stopped after 45 minutes on the pole curves. Each
-  massive τ needs about three roots per curve node, so ~99.9% of nodes are
-  rejected, and the scaling family does not apply to massive legs.
+- **`ee_to_mumu_tata_qcd0`:** poles from 3 194 curve nodes in 69 s. The scaling
+  family does not keep massive legs on shell, so the numerator degree is a
+  bound: §9's per-pair fits have degree ≤ 5 over pair denominators of degree 6,
+  so `|M|²` has degree ≤ −1 and the numerator ≤ 25. A dense ansatz at 25 has
+  5.2 × 10⁷ even and 1.4 × 10⁸ odd columns.
 
 ### 10.3 What the numbers say
 
@@ -680,10 +702,11 @@ reconstructed over its *minimal* common denominator, in three exact steps.
   and the form is 1.3× slower than `eval_m2`. Partial fractions in the
   propagators (Leinartas; MultivariateApart, arXiv:2101.08283) would keep the ISR,
   FSR and interference pieces each over their own poles. Not measured.
-- **The four-fermion 2 → 4 row has nothing to cancel.** With no external gauge
-  boson, no Ward identity ties the pairs together, and no propagator loses a
-  power. The minimal common denominator is the full pairwise lcm (degree 30),
-  so the numerator has degree 28. That form is far larger than the per-pair one
+- **The four-fermion 2 → 4 rows have nothing to cancel.** With no external
+  gauge boson, no Ward identity ties the pairs together, and no propagator loses
+  a power, on `ud_to_epemud_qcd0` (15 propagators) or `ee_to_mumu_tata_qcd0`
+  (13). The minimal common denominator is the full pairwise lcm (degree 30 and
+  26), so the numerator has degree 28 and at most 25. That form is far larger than the per-pair one
   (§9), and a partial-fraction form can do no better than the per-pair poles
   already do. What remains unmeasured on that row is numerator-level
   cancellation inside a partial-fraction basis. With every pole intact, no
