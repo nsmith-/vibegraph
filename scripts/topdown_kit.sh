@@ -117,7 +117,12 @@ add_events_pass() {
     for ev in "$@"; do
         if usable -e "$ev"; then kept+=("$ev"); else echo "$pass: $ev" >>"$out/skipped.txt"; fi
     done
-    if [ ${#kept[@]} -gt 0 ]; then
+    # cycles and instructions only give context; a pass with nothing else is skipped.
+    local specific=0
+    for ev in ${kept[@]+"${kept[@]}"}; do
+        case "$ev" in cycles | instructions) ;; *) specific=1 ;; esac
+    done
+    if [ "$specific" = 1 ]; then
         pass_names+=("$pass")
         pass_args[$pass]="-e $(IFS=,; echo "${kept[*]}")"
         echo "$pass: ${kept[*]}" >>"$out/passes.txt"
@@ -138,35 +143,68 @@ add_first_usable() {
 
 : >"$out/passes.txt"; : >"$out/skipped.txt"
 log "probing counters"
-add_events_pass basic cycles instructions branches branch-misses ref-cycles
-add_first_usable td_raw -e \
-    '{slots,topdown-retiring,topdown-bad-spec,topdown-fe-bound,topdown-be-bound,topdown-heavy-ops,topdown-br-mispredict,topdown-fetch-lat,topdown-mem-bound}' \
-    '{slots,topdown-retiring,topdown-bad-spec,topdown-fe-bound,topdown-be-bound}'
+vendor="${TOPDOWN_VENDOR:-$(awk -F': ' '/^vendor_id/ { print $2; exit }' /proc/cpuinfo)}"
+log "CPU vendor: ${vendor:-unknown}"
+add_events_pass basic cycles instructions branches branch-misses ref-cycles \
+    stalled-cycles-frontend stalled-cycles-backend
+add_events_pass cache cycles instructions \
+    L1-dcache-loads L1-dcache-load-misses L1-icache-loads L1-icache-load-misses
 add_first_usable td_metric -M TopdownL1,TopdownL2 TopdownL1 PipelineL1,PipelineL2 PipelineL1
-add_events_pass fp cycles instructions \
-    fp_arith_inst_retired.scalar_double fp_arith_inst_retired.128b_packed_double \
-    fp_arith_inst_retired.256b_packed_double fp_arith_inst_retired.512b_packed_double \
-    fp_ret_sse_avx_ops.all
-add_events_pass mem cycles instructions \
-    mem_inst_retired.all_loads mem_inst_retired.all_stores \
-    mem_load_retired.l1_hit mem_load_retired.l1_miss mem_load_retired.l2_hit \
-    mem_load_retired.l2_miss mem_load_retired.l3_hit mem_load_retired.fb_hit
-add_events_pass stalls cycles instructions \
-    cycle_activity.stalls_total cycle_activity.stalls_l1d_miss cycle_activity.stalls_l2_miss \
-    exe_activity.bound_on_loads exe_activity.bound_on_stores exe_activity.1_ports_util \
-    exe_activity.2_ports_util exe_activity.2_3_ports_util resource_stalls.sb \
-    resource_stalls.scoreboard
-add_events_pass ports cycles instructions \
-    uops_dispatched.port_0 uops_dispatched.port_1 uops_dispatched.port_5_11 \
-    uops_dispatched.port_5 uops_dispatched.port_6 uops_dispatched.port_2_3_10 \
-    uops_dispatched.port_2_3 uops_dispatched.port_4_9 uops_dispatched.port_7_8 \
-    uops_issued.any uops_retired.slots
-add_events_pass frontend cycles instructions \
-    idq.dsb_uops idq.mite_uops idq.ms_uops icache_data.stalls icache_64b.iftag_stall \
-    dsb2mite_switches.penalty_cycles int_misc.clear_resteer_cycles baclears.any
-add_events_pass branch cycles instructions \
-    br_inst_retired.all_branches br_misp_retired.all_branches br_misp_retired.indirect \
-    br_inst_retired.indirect int_misc.recovery_cycles machine_clears.count
+if [ "$vendor" = AuthenticAMD ]; then
+    # Zen 3/4/5 spellings side by side; the probe keeps the ones this host knows. Zen
+    # cores have six general counters, so each pass asks for at most four besides
+    # cycles and instructions.
+    add_events_pass amd_fp cycles instructions \
+        fp_ret_sse_avx_ops.all fp_ret_sse_avx_ops.mac_flops \
+        fp_ret_sse_avx_ops.add_sub_flops fp_ret_sse_avx_ops.mult_flops
+    add_events_pass amd_fpwidth cycles instructions \
+        fp_ops_retired_by_width.scalar_uops_retired fp_ops_retired_by_width.pack_128_uops_retired \
+        fp_ops_retired_by_width.pack_256_uops_retired fp_ops_retired_by_width.pack_512_uops_retired
+    add_events_pass amd_branch cycles instructions \
+        ex_ret_brn ex_ret_brn_misp ex_ret_brn_ind_misp ex_ret_ind_brch_instr
+    add_events_pass amd_frontend cycles instructions \
+        op_cache_hit_miss.op_cache_hit op_cache_hit_miss.op_cache_miss \
+        ic_tag_hit_miss.instruction_cache_miss ic_tag_hit_miss.all_instruction_cache_accesses
+    add_events_pass amd_dispatch cycles instructions \
+        de_no_dispatch_per_slot.no_ops_from_frontend de_no_dispatch_per_slot.backend_stalls \
+        de_src_op_disp.decoder de_src_op_disp.op_cache
+    add_events_pass amd_retire cycles instructions \
+        ex_ret_ops ex_no_retire.all ex_no_retire.not_complete ex_no_retire.load_not_complete
+    add_events_pass amd_mem cycles instructions \
+        ls_dispatch.ld_dispatch ls_dispatch.store_dispatch \
+        ls_dmnd_fills_from_sys.all ls_dmnd_fills_from_sys.local_l2 ls_dmnd_fills_from_sys.lcl_l2
+    add_events_pass amd_fills cycles instructions \
+        ls_dmnd_fills_from_sys.local_ccx ls_dmnd_fills_from_sys.int_cache \
+        ls_dmnd_fills_from_sys.near_cache ls_dmnd_fills_from_sys.ext_cache_local \
+        ls_dmnd_fills_from_sys.dram_io_near ls_dmnd_fills_from_sys.mem_io_local
+else
+    add_first_usable td_raw -e \
+        '{slots,topdown-retiring,topdown-bad-spec,topdown-fe-bound,topdown-be-bound,topdown-heavy-ops,topdown-br-mispredict,topdown-fetch-lat,topdown-mem-bound}' \
+        '{slots,topdown-retiring,topdown-bad-spec,topdown-fe-bound,topdown-be-bound}'
+    add_events_pass fp cycles instructions \
+        fp_arith_inst_retired.scalar_double fp_arith_inst_retired.128b_packed_double \
+        fp_arith_inst_retired.256b_packed_double fp_arith_inst_retired.512b_packed_double
+    add_events_pass mem cycles instructions \
+        mem_inst_retired.all_loads mem_inst_retired.all_stores \
+        mem_load_retired.l1_hit mem_load_retired.l1_miss mem_load_retired.l2_hit \
+        mem_load_retired.l2_miss mem_load_retired.l3_hit mem_load_retired.fb_hit
+    add_events_pass stalls cycles instructions \
+        cycle_activity.stalls_total cycle_activity.stalls_l1d_miss cycle_activity.stalls_l2_miss \
+        exe_activity.bound_on_loads exe_activity.bound_on_stores exe_activity.1_ports_util \
+        exe_activity.2_ports_util exe_activity.2_3_ports_util resource_stalls.sb \
+        resource_stalls.scoreboard
+    add_events_pass ports cycles instructions \
+        uops_dispatched.port_0 uops_dispatched.port_1 uops_dispatched.port_5_11 \
+        uops_dispatched.port_5 uops_dispatched.port_6 uops_dispatched.port_2_3_10 \
+        uops_dispatched.port_2_3 uops_dispatched.port_4_9 uops_dispatched.port_7_8 \
+        uops_issued.any uops_retired.slots
+    add_events_pass frontend cycles instructions \
+        idq.dsb_uops idq.mite_uops idq.ms_uops icache_data.stalls icache_64b.iftag_stall \
+        dsb2mite_switches.penalty_cycles int_misc.clear_resteer_cycles baclears.any
+    add_events_pass branch cycles instructions \
+        br_inst_retired.all_branches br_misp_retired.all_branches br_misp_retired.indirect \
+        br_inst_retired.indirect int_misc.recovery_cycles machine_clears.count
+fi
 log "passes: ${pass_names[*]} (events per pass in passes.txt, dropped ones in skipped.txt)"
 [ ${#pass_names[@]} -gt 0 ] || die "no usable counters; is this a VM without a PMU?"
 

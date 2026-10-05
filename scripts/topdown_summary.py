@@ -142,11 +142,18 @@ def main():
         cyc, ins = get(c, "cycles"), get(c, "instructions")
         ns = c["ns_per_event"].get("basic") or next(iter(c["ns_per_event"].values()), None)
         vm = vm_per_event(k)
+        pcyc = lambda e: fmt(None if ratio(get(c, e), cyc) is None else 100 * get(c, e) / cyc, 1)
+        l1, l1m = get(c, "l1-dcache-loads"), get(c, "l1-dcache-load-misses")
         rows.append([label(k), fmt(ns, 1), fmt(ratio(cyc, ns), 2), fmt(ratio(ins, cyc)),
                      fmt(ratio(cyc, vm), 1), fmt(ratio(ins, vm), 1),
-                     fmt(ratio(get(c, "branch-misses"), vm), 3)])
+                     fmt(ratio(get(c, "branch-misses"), vm), 3),
+                     pcyc("stalled-cycles-frontend"), pcyc("stalled-cycles-backend"),
+                     fmt(None if ratio(l1m, l1) is None else 100 * l1m / l1, 2),
+                     fmt(ratio(get(c, "l1-icache-load-misses"), vm), 3)])
     out.append(table("Rates", ["cell", "ns/event", "GHz", "IPC", "cycles/VM instr",
-                               "instrs/VM instr", "branch misses/VM instr"], rows))
+                               "instrs/VM instr", "branch misses/VM instr",
+                               "stalled FE % cycles", "stalled BE % cycles",
+                               "L1D miss %", "L1I misses/VM instr"], rows))
 
     rows = []
     for k in keys:
@@ -228,6 +235,50 @@ def main():
                      ["cell", "uops from DSB %", "icache data stalls", "icache tag stalls",
                       "DSB→MITE switch", "resteer", "recovery", "indirect misp/VM instr",
                       "all misp/VM instr"], rows))
+
+    if any(e.startswith(("ex_ret_", "ls_", "op_cache", "de_", "fp_ops_retired", "fp_ret_sse"))
+           for c in cells.values() for e in c["per_event"]):
+        rows = []
+        for k in keys:
+            c = cells[k]
+            cyc, vm = get(c, "cycles"), vm_per_event(k)
+            pc = lambda e: fmt(None if ratio(get(c, e), cyc) is None else 100 * get(c, e) / cyc, 1)
+            hit, miss = get(c, "op_cache_hit_miss.op_cache_hit"), get(c, "op_cache_hit_miss.op_cache_miss")
+            loads = get(c, "ls_dispatch.ld_dispatch")
+            fills = get(c, "ls_dmnd_fills_from_sys.all")
+            from_l2 = get(c, "ls_dmnd_fills_from_sys.local_l2", "ls_dmnd_fills_from_sys.lcl_l2")
+            widths = [get(c, f"fp_ops_retired_by_width.{w}") for w in
+                      ("scalar_uops_retired", "pack_128_uops_retired",
+                       "pack_256_uops_retired", "pack_512_uops_retired")]
+            wsum = sum(w for w in widths if w is not None) if any(w is not None for w in widths) else None
+            share = lambda w: fmt(None if w is None or not wsum else 100 * w / wsum, 0)
+            census = CENSUS.get(k[0], (None, None, None))[1]
+            rows.append([
+                label(k),
+                fmt(ratio(get(c, "ex_ret_ind_brch_instr"), vm), 2),
+                fmt(ratio(get(c, "ex_ret_brn_ind_misp"), vm), 3),
+                fmt(ratio(get(c, "ex_ret_brn_misp"), vm), 3),
+                fmt(None if None in (hit, miss) or not hit + miss else 100 * hit / (hit + miss), 1),
+                fmt(ratio(get(c, "de_no_dispatch_per_slot.no_ops_from_frontend"), cyc), 2),
+                fmt(ratio(get(c, "de_no_dispatch_per_slot.backend_stalls"), cyc), 2),
+                pc("ex_no_retire.all"), pc("ex_no_retire.load_not_complete"),
+                fmt(ratio(loads, vm), 1),
+                fmt(None if ratio(fills, loads) is None else 100 * fills / loads, 2),
+                fmt(None if ratio(from_l2, fills) is None else 100 * from_l2 / fills, 0),
+                fmt(ratio(get(c, "fp_ret_sse_avx_ops.all"), census), 3),
+                share(widths[0]), share(widths[1]), share(widths[2]), share(widths[3]),
+            ])
+        out.append(table(
+            "AMD (Zen): dispatch, front end, retire, memory, FP",
+            ["cell", "indirect branches/VM instr", "indirect misp/VM instr",
+             "all misp/VM instr", "op cache hit %", "dispatch slots lost to FE/cycle",
+             "dispatch slots lost to BE/cycle", "no-retire % cycles",
+             "no-retire on load % cycles", "loads/VM instr", "L1D demand miss % of loads",
+             "of misses from L2 %", "measured/census flops", "% scalar uops",
+             "% 128b uops", "% 256b uops", "% 512b uops"], rows))
+        out.append("\nOne retired indirect branch per VM instruction is the interpreter's own "
+                   "dispatch jump, so the first column near 1.0 checks both the counters and "
+                   "the per-instruction normalisation.")
 
     notes = [f"- {label(k)}: {n}" for k in keys for n in cells[k]["notes"]]
     if notes:
