@@ -1032,6 +1032,98 @@ launch --rwgt_name=y4
         }
     }
 
+    /// Finer than `|M|²`: the class amplitudes the node solve implies rebuild the
+    /// complex JAMP of every helicity combination and colour flow at every
+    /// hypothesis, against a direct evaluation there. `u u~ > t t~ h` with both
+    /// coupling orders has two flows and two classes: the Yukawa class (QCD and
+    /// electroweak diagrams) reaches both flows, and the constant one —
+    /// Higgsstrahlung off an s-channel Z, colour-singlet — one of them, which the
+    /// Yukawa class shares. A node or flow mix-up in the decomposition is then an
+    /// O(1) miss on some entry here while `|M|²` could still agree.
+    ///
+    /// Blind to anything the two sides share: the evaluator and its helicity
+    /// list (the amplitude itself is held to MadGraph by the amplitude oracles),
+    /// and the colour matrix, which this never contracts.
+    #[test]
+    fn class_amplitudes_rebuild_every_helicity_and_flow() {
+        let card = "launch\n set ymt 0\nlaunch\n set ymt 100\nlaunch\n set ymt 250\nlaunch\n set ymt 400\n";
+        let process = "u u~ > t t~ h QCD=2 QED=3";
+        let (model, base, sets, plan) = plan(process, card, joint(&["ymt"]));
+        let sub = &plan.subs[0];
+        let n = sub.evaluator.n_flows();
+        assert_eq!(n, 2);
+        let group = &sub.groups[0];
+        assert_eq!(group.nodes.len(), 2, "classes 1 and ymt");
+        let ymt = |m: &EvaluatedModel| m.param_values["ymt"].re;
+        let node_ymt: Vec<f64> = group
+            .nodes
+            .iter()
+            .map(|node| match *node {
+                NodeSource::Base => ymt(&sub.slots[0]),
+                NodeSource::Slot(s) => ymt(&sub.slots[s]),
+            })
+            .collect();
+        assert!(node_ymt[0] != node_ymt[1]);
+
+        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let mut rw = plan.bind();
+        let mut direct = Vec::new();
+        let mut populated = [vec![false; n], vec![false; n]];
+        for p in points(&eval, &base, 1000.0).iter().take(3) {
+            let bound = &mut rw.subs[0];
+            bound.node_gram(&group.nodes, p);
+            let (j0, j1) = (bound.jamps[0].clone(), bound.jamps[1].clone());
+            // `J(y) = a + y·b`, read off the two nodes.
+            let b: Vec<Complex64> = j0
+                .iter()
+                .zip(&j1)
+                .map(|(x0, x1)| (x1 - x0) / (node_ymt[1] - node_ymt[0]))
+                .collect();
+            let a: Vec<Complex64> = j0
+                .iter()
+                .zip(&b)
+                .map(|(x0, bb)| x0 - bb * node_ymt[0])
+                .collect();
+            let scale = j0.iter().chain(&j1).map(|z| z.norm()).fold(0.0, f64::max);
+            for (k, (aa, bb)) in a.iter().zip(&b).enumerate() {
+                populated[0][k % n] |= aa.norm() > 1e-6 * scale;
+                populated[1][k % n] |= bb.norm() > 1e-6 * scale;
+            }
+            for (launch, u) in &group.launches {
+                let values = &plan.launches[*launch].values;
+                let y = values[0].1;
+                let point = fresh(&base, values);
+                let bound_direct = BoundAmplitude::<f64>::bind(&sub.evaluator, &point);
+                let mut scratch = bound_direct.scratch_space();
+                bound_direct.eval_hel_jamps(p, &mut scratch, &mut direct);
+                assert_eq!(direct.len(), a.len());
+                for (k, want) in direct.iter().enumerate() {
+                    let classes = a[k] + b[k] * y;
+                    let nodes = j0[k] * u[0] + j1[k] * u[1];
+                    for (what, got) in [("classes", classes), ("node weights", nodes)] {
+                        assert!(
+                            (got - want).norm() <= 1e-11 * scale,
+                            "ymt {y}, helicity combination {}, flow {}: {what} give {got} \
+                             against {want}",
+                            k / n,
+                            k % n
+                        );
+                    }
+                }
+            }
+        }
+        let reached = |c: usize| populated[c].iter().filter(|&&f| f).count();
+        assert_eq!(
+            (reached(0), reached(1)),
+            (1, 2),
+            "flows reached: {populated:?}"
+        );
+        assert!(
+            (0..n).any(|f| populated[0][f] && populated[1][f]),
+            "the classes share no flow: {populated:?}"
+        );
+    }
+
     /// The node count is load-bearing: the ymt scan's `|M|²` has a quadratic
     /// term a straight line through the ends misses by far more than rounding.
     #[test]
