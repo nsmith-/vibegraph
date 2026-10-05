@@ -1043,9 +1043,10 @@ coverage. What is left below is what still refuses, and why.
     default-target `f64` chain, +14% to +23%, against a −14% to −19%
     throughput gain there. The currents, `tensor_bilinear` and the ε cofactors
     were already flat. The table is in `x86-avx2-perf-study-results.md`.
-  - Still open: an IPC / top-down reading on a host with a PMU, to say how much
-    of the evaluator's time is latency-bound at all. The Firecracker VM used
-    here exposes no `cpu` event source.
+  - Top-down reading: done on Zen 4 bare metal (`topdown-zen4-results.md`).
+    In about 40% of cycles nothing retires because the oldest op waits on an
+    operand, and loads are seldom the cause, so latency is the second limit
+    after instruction count.
 - **Roofline census: FLOP- or bandwidth-bound?** Measured without counters:
   `roofline_census` (`helas/eval/roofline.rs`, ignored test) counts every FP
   operation of `eval_m2` exactly, through an op-counting `F`, and the arena
@@ -1063,9 +1064,29 @@ coverage. What is left below is what still refuses, and why.
     lever there.
   - The arithmetic intensity is 0.15–0.29 flop/B, near the L1 machine balance
     and below L2's.
-  Open: a machine-load count (spills, header reloads, by-value copies), and
-  splitting the fixed part into dispatch and latency, both on a host with a
-  PMU. (`roofline-census-results.md`.)
+  The fixed part is split on Zen 4 (next item). Open: a machine-load count
+  (spills, header reloads, by-value copies). (`roofline-census-results.md`.)
+- **Top-down counters on Zen 4: instruction count first, latency second.**
+  `scripts/topdown_kit.sh` on an EPYC 9534 (bare metal), every bench row at
+  widths 1/4/8 plus order controls. Results:
+  - At widths 1 and 4 the core retires 49–61% of dispatch slots, 3.1–3.6 ops
+    per cycle of 6.
+  - FP pipes, L1D (≤1.7% demand misses at width 1) and the op cache (≥97%
+    hits) all have headroom. Mispredicts cost 1–2% on the 2→6.
+  - Width 8 beats width 4 on every row there, the 2→6 included (1.28× in
+    cycles), unlike Emerald Rapids.
+  - Arena order loses through retire stalls, not misses; a level shuffle loses
+    through mispredicts.
+  The profile of the 2→6 found the largest lever so far. Half its VM
+  instructions (18 648 of 36 506) are single-use `MulScalarR`/`MulScalarC`
+  multiplies by pool constants, chained after each `Metric` amplitude before
+  the JAMP sum, and they cost 24–27% of cycles. Constant folding misses them
+  because the product is associated around the amplitude. Open:
+  - collect each chain's constants into one folded constant (bound ~13%);
+  - fuse what remains into the producer or a weighted JAMP sum, as MadGraph
+    does (bound ~25%);
+  - first, check the chain structure on the small rows.
+  (`topdown-zen4-results.md`.)
 - **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
   arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
   checked indexing on Emerald Rapids. That is the ceiling for every safe

@@ -50,6 +50,9 @@ def parse_csv(path):
         if not line.strip() or line.startswith("#"):
             continue
         f = next(csv.reader([line]))
+        # perf does not quote event names, so `cpu/event,cmask=0x6/` arrives split.
+        while len(f) > 3 and f[2].count("/") % 2:
+            f[2:4] = [f[2] + "," + f[3]]
         if len(f) >= 3 and f[2]:
             name = norm(f[2])
             try:
@@ -63,7 +66,7 @@ def parse_csv(path):
                 pass
         if len(f) >= 7 and f[5] and f[6]:
             try:
-                metrics[f[6].split()[-1]] = float(f[5])
+                metrics[f[6].strip().lstrip("%").strip()] = float(f[5])
             except ValueError:
                 pass
     return events, metrics, notes
@@ -116,6 +119,11 @@ def ratio(a, b):
     return None if a is None or b in (None, 0) else a / b
 
 
+def filled(rows):
+    """Whether any row has a value past its label."""
+    return any(any(x != "—" for x in r[1:]) for r in rows)
+
+
 def table(title, header, rows):
     out = [f"\n## {title}\n", "| " + " | ".join(header) + " |",
            "|" + "|".join("---" if i == 0 else "--:" for i in range(len(header))) + "|"]
@@ -166,12 +174,12 @@ def main():
         sub = lambda a, b: None if a is None or b is None else a - b
         rows.append([label(k), pct(ret), pct(bad), pct(fe), pct(be), pct(heavy), pct(misp),
                      pct(flat), pct(sub(fe, flat)), pct(mem), pct(sub(be, mem))])
-    if any(any(x != "—" for x in r[1:]) for r in rows):
+    if filled(rows):
         out.append(table("Top-down from slots (% of slots)",
                          ["cell", "retiring", "bad spec", "frontend", "backend", "heavy ops",
                           "br mispredict", "fetch latency", "fetch bandwidth", "memory bound",
                           "core bound"], rows))
-    metric_names = sorted({m for c in cells.values() for m in c["metrics"]})
+    metric_names = sorted({m for c in cells.values() for m in c["metrics"] if m.startswith("td_metric:")})
     if metric_names:
         rows = [[label(k)] + [fmt(cells[k]["metrics"].get(m), 1) for m in metric_names] for k in keys]
         out.append(table("perf's top-down metrics (as perf reports them, usually %)",
@@ -187,11 +195,11 @@ def main():
         census = CENSUS.get(k[0], (None, None, None))[1]
         share = lambda v, w: fmt(None if v is None or not flops else 100 * w * v / flops, 0)
         rows.append([label(k), fmt(flops, 0), fmt(census, 0), fmt(ratio(flops, census), 3),
-                     share(s, 1), share(x, 2), share(y, 4), share(z, 8),
-                     fmt(ratio(get(c, "fp_ret_sse_avx_ops.all"), 1), 0)])
-    out.append(table("FP work (fp_arith_inst_retired counts an FMA twice, as the census does)",
-                     ["cell", "measured flops/event", "census flops/event", "measured/census",
-                      "% scalar", "% 128b", "% 256b", "% 512b", "AMD fp ops/event"], rows))
+                     share(s, 1), share(x, 2), share(y, 4), share(z, 8)])
+    if any(r[1] != "—" for r in rows):
+        out.append(table("FP work (fp_arith_inst_retired counts an FMA twice, as the census does)",
+                         ["cell", "measured flops/event", "census flops/event", "measured/census",
+                          "% scalar", "% 128b", "% 256b", "% 512b"], rows))
 
     rows = []
     for k in keys:
@@ -206,10 +214,11 @@ def main():
                          "cycle_activity.stalls_total", "cycle_activity.stalls_l1d_miss",
                          "cycle_activity.stalls_l2_miss", "exe_activity.bound_on_loads",
                          "exe_activity.bound_on_stores", "resource_stalls.sb"))])
-    out.append(table("Memory and stalls (stall columns are % of cycles)",
-                     ["cell", "loads/event", "stores/event", "loads/VM instr", "L1 miss %",
-                      "L2 misses/event", "stalls total", "stalls L1d miss", "stalls L2 miss",
-                      "bound on loads", "bound on stores", "store buffer full"], rows))
+    if filled(rows):
+        out.append(table("Memory and stalls (stall columns are % of cycles)",
+                         ["cell", "loads/event", "stores/event", "loads/VM instr", "L1 miss %",
+                          "L2 misses/event", "stalls total", "stalls L1d miss", "stalls L2 miss",
+                          "bound on loads", "bound on stores", "store buffer full"], rows))
 
     ports = sorted({e for c in cells.values() for e in c["per_event"] if e.startswith("uops_dispatched.port")})
     if ports:
@@ -231,10 +240,11 @@ def main():
                      pc("int_misc.recovery_cycles"),
                      fmt(ratio(get(c, "br_misp_retired.indirect"), vm_per_event(k)), 3),
                      fmt(ratio(get(c, "br_misp_retired.all_branches"), vm_per_event(k)), 3)])
-    out.append(table("Front end and speculation (% of cycles unless per VM instr)",
-                     ["cell", "uops from DSB %", "icache data stalls", "icache tag stalls",
-                      "DSB→MITE switch", "resteer", "recovery", "indirect misp/VM instr",
-                      "all misp/VM instr"], rows))
+    if filled(rows):
+        out.append(table("Front end and speculation (% of cycles unless per VM instr)",
+                         ["cell", "uops from DSB %", "icache data stalls", "icache tag stalls",
+                          "DSB→MITE switch", "resteer", "recovery", "indirect misp/VM instr",
+                          "all misp/VM instr"], rows))
 
     if any(e.startswith(("ex_ret_", "ls_", "op_cache", "de_", "fp_ops_retired", "fp_ret_sse"))
            for c in cells.values() for e in c["per_event"]):
@@ -252,6 +262,8 @@ def main():
                        "pack_256_uops_retired", "pack_512_uops_retired")]
             wsum = sum(w for w in widths if w is not None) if any(w is not None for w in widths) else None
             share = lambda w: fmt(None if w is None or not wsum else 100 * w / wsum, 0)
+            # Zen 4 runs a 512-bit op as two passes through a 256-bit pipe.
+            pipe_cycles = None if wsum is None else wsum + (widths[3] or 0)
             census = CENSUS.get(k[0], (None, None, None))[1]
             rows.append([
                 label(k),
@@ -259,9 +271,12 @@ def main():
                 fmt(ratio(get(c, "ex_ret_brn_ind_misp"), vm), 3),
                 fmt(ratio(get(c, "ex_ret_brn_misp"), vm), 3),
                 fmt(None if None in (hit, miss) or not hit + miss else 100 * hit / (hit + miss), 1),
+                fmt(ratio(get(c, "ex_ret_ops"), cyc), 2),
+                fmt(ratio(pipe_cycles, cyc), 2),
                 fmt(ratio(get(c, "de_no_dispatch_per_slot.no_ops_from_frontend"), cyc), 2),
                 fmt(ratio(get(c, "de_no_dispatch_per_slot.backend_stalls"), cyc), 2),
-                pc("ex_no_retire.all"), pc("ex_no_retire.load_not_complete"),
+                pc("ex_no_retire.all"), pc("ex_no_retire.not_complete"),
+                pc("ex_no_retire.load_not_complete"),
                 fmt(ratio(loads, vm), 1),
                 fmt(None if ratio(fills, loads) is None else 100 * fills / loads, 2),
                 fmt(None if ratio(from_l2, fills) is None else 100 * from_l2 / fills, 0),
@@ -271,14 +286,17 @@ def main():
         out.append(table(
             "AMD (Zen): dispatch, front end, retire, memory, FP",
             ["cell", "indirect branches/VM instr", "indirect misp/VM instr",
-             "all misp/VM instr", "op cache hit %", "dispatch slots lost to FE/cycle",
+             "all misp/VM instr", "op cache hit %", "retired ops/cycle",
+             "FP pipe passes/cycle", "dispatch slots lost to FE/cycle",
              "dispatch slots lost to BE/cycle", "no-retire % cycles",
-             "no-retire on load % cycles", "loads/VM instr", "L1D demand miss % of loads",
+             "no-retire, oldest op incomplete % cycles", "no-retire on load % cycles", "loads/VM instr", "L1D demand miss % of loads",
              "of misses from L2 %", "measured/census flops", "% scalar uops",
              "% 128b uops", "% 256b uops", "% 512b uops"], rows))
         out.append("\nOne retired indirect branch per VM instruction is the interpreter's own "
                    "dispatch jump, so the first column near 1.0 checks both the counters and "
-                   "the per-instruction normalisation.")
+                   "the per-instruction normalisation. Zen 4 dispatches 6 ops per cycle and has "
+                   "4 FP pipes; FP pipe passes count a 512-bit uop twice, which is right for "
+                   "Zen 4 and overstates Zen 5's native 512-bit pipes.")
 
     notes = [f"- {label(k)}: {n}" for k in keys for n in cells[k]["notes"]]
     if notes:
