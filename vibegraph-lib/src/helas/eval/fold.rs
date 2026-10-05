@@ -6,6 +6,12 @@
 //! numeric pools are rebuilt cheaply per `(EvaluatedModel, F)` ([`Folded::pools`]):
 //! `consts_c` (complex couplings) and `consts_f` (real masses/widths/coeffs) are kept
 //! separate so real chains multiply in `F`.
+//!
+//! Two rewrites bracket the folding. Before it, each product's constant factors are
+//! gathered into one sub-product (`collect_constant_factors`), so a chain of constant
+//! scalings folds to a single pool entry. After it, a scalar sum's constant-weighted
+//! terms become one [`Op::AddScaled`] (`fuse_scaled_sums`), so each weight is a
+//! multiply-add inside the sum.
 
 use std::collections::{HashMap, HashSet};
 
@@ -212,6 +218,8 @@ impl Folded {
 
         let ast0 = builder.finish(remap[sym.root() as usize]);
         let an0 = analysis::analyze(&ast0, &pool_ext);
+        let ast0 = collect_constant_factors(&ast0, &an0);
+        let an0 = analysis::analyze(&ast0, &pool_ext);
 
         // Collapse every maximal constant composite (a `Mul`/`Add` subgraph of
         // card-time constants) into a single pool-read leaf, so it is resolved once
@@ -223,6 +231,7 @@ impl Folded {
             fold_complex,
             fold_real,
         } = folded;
+        let ast = fuse_scaled_sums(&ast, &analysis::analyze(&ast, &pool_ext));
 
         let analysis = analysis::analyze(&ast, &pool_ext);
         let program = Program::build(&ast, &analysis);
@@ -346,6 +355,7 @@ impl Folded {
     /// evaluates to exactly `0.0` at every probe point is a structural zero: a rational
     /// function of the momenta that vanishes at generic points vanishes identically
     /// (Schwartz–Zippel), so it contributes `+0` to its sum at every kinematic point.
+    /// The same holds for a term of an [`Op::AddScaled`], which drops with its weight.
     /// Dropping it and dead-code-eliminating the arena nodes reachable only through it
     /// reproduces MadGraph's per-`(helicity, diagram)` `ZEROAMP` skipping. Because the
     /// hash-consed expansion shares subtrees across combinations, only nodes private to
@@ -402,15 +412,22 @@ impl Folded {
         let mut new_kids: Vec<Option<Vec<NodeId>>> = vec![None; n];
         for id in 0..n as NodeId {
             let idx = id as usize;
-            if ast.value(id).op != Op::Add || !is_scalar[idx] {
-                continue;
-            }
             let kids = ast.children_ids(id);
-            let survivors: Vec<NodeId> = kids
-                .iter()
-                .copied()
-                .filter(|&k| !scalar_zero[k as usize])
-                .collect();
+            let survivors: Vec<NodeId> = match ast.value(id).op {
+                Op::Add if is_scalar[idx] => kids
+                    .iter()
+                    .copied()
+                    .filter(|&k| !scalar_zero[k as usize])
+                    .collect(),
+                // A weighted term is dropped with its weight.
+                Op::AddScaled => kids
+                    .chunks_exact(2)
+                    .filter(|pair| !scalar_zero[pair[1] as usize])
+                    .flatten()
+                    .copied()
+                    .collect(),
+                _ => continue,
+            };
             if !survivors.is_empty() && survivors.len() < kids.len() {
                 new_kids[idx] = Some(survivors);
             }
@@ -421,15 +438,29 @@ impl Folded {
         if new_kids.iter().any(Option::is_some) {
             for p in points {
                 eval_probe(ast, self.ext_legs(), consts_c, consts_f, p, &mut slots);
+                let env = EvalEnv {
+                    consts_c,
+                    consts_f,
+                    ext_legs: self.ext_legs(),
+                    momenta: p,
+                    helicities: &[],
+                    ward_leg: None,
+                };
                 for id in 0..n {
                     let revert = match &new_kids[id] {
                         Some(surv) => {
                             let WaveformSlot::Scalar(full) = &slots[id] else {
                                 unreachable!("modified Add is scalar");
                             };
-                            let acc = surv
-                                .iter()
-                                .fold(WaveformSlot::Empty, |acc, &k| acc + slots[k as usize]);
+                            let node = ast.value(id as NodeId);
+                            let acc = match node.op {
+                                Op::AddScaled => {
+                                    apply(node, surv.len(), |i| &slots[surv[i] as usize], &env)
+                                }
+                                _ => surv
+                                    .iter()
+                                    .fold(WaveformSlot::Empty, |acc, &k| acc + slots[k as usize]),
+                            };
                             let got = match acc {
                                 WaveformSlot::Scalar(s) => s.value,
                                 WaveformSlot::Empty => C::new(0.0, 0.0),
@@ -855,6 +886,221 @@ fn fold_constant_subgraphs(
     }
 }
 
+/// How many times each node is read as a child anywhere in the arena (the variadic
+/// roots included, so a value read out after the pass counts as a use).
+fn use_counts(ast: &Ast<Const>) -> Vec<u32> {
+    let mut uses = vec![0u32; ast.len()];
+    for id in ast.iter() {
+        for &c in ast.children_ids(id) {
+            uses[c as usize] += 1;
+        }
+    }
+    uses
+}
+
+/// The nodes reachable from the root, rebuilt in arena order.
+fn retain_reachable(ast: &Ast<Const>) -> Ast<Const> {
+    let n = ast.len();
+    let mut reachable = vec![false; n];
+    reachable[ast.root() as usize] = true;
+    for id in (0..n as NodeId).rev() {
+        if reachable[id as usize] {
+            for &c in ast.children_ids(id) {
+                reachable[c as usize] = true;
+            }
+        }
+    }
+    let mut b = AstBuilder::new();
+    let mut remap = vec![u32::MAX; n];
+    for id in ast.iter() {
+        if !reachable[id as usize] {
+            continue;
+        }
+        let node = ast.value(id);
+        let kids = ast
+            .children_ids(id)
+            .iter()
+            .map(|&c| remap[c as usize])
+            .collect();
+        remap[id as usize] = b.add(node.op, node.leaf, kids);
+    }
+    b.finish(remap[ast.root() as usize])
+}
+
+/// Gather each product's card-time-constant factors into one constant sub-product.
+///
+/// Lowering nests a term's constants around the value they scale, as in
+/// `colour·sym · (coupling · (coeff · amp))`, so no constant sub-tree forms and each
+/// factor costs a multiply at every phase-space point. A non-constant product read
+/// nowhere else is merged into the product that reads it, so the chain becomes
+/// `(colour·sym·coupling·coeff) · amp`, whose constant half [`fold_constant_subgraphs`]
+/// collapses into one pool entry. A product with another reader keeps its value (merging
+/// would recompute it), and a product of two non-constant factors is left as it is. The
+/// constant factors are ordered canonically and hash-consed, so every chain over the same
+/// constants shares one pool entry.
+fn collect_constant_factors(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
+    let n = ast.len();
+    let uses = use_counts(ast);
+    let mut b = AstBuilder::new();
+    let mut remap = vec![u32::MAX; n];
+    // One node per constant-pool leaf, so equal constants compare equal by node id.
+    let mut leaf_node: HashMap<(Op, Const), NodeId> = HashMap::new();
+    let mut products: HashMap<Vec<NodeId>, NodeId> = HashMap::new();
+    // A rewritten product's constant factors and its one non-constant factor.
+    let mut split: Vec<Option<(Vec<NodeId>, NodeId)>> = vec![None; n];
+
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let kids = ast.children_ids(id);
+        if node.op == Op::Mul && !an.is_const(id) {
+            let mut consts = Vec::new();
+            let mut others = Vec::new();
+            let mut merged = false;
+            for &k in kids {
+                if an.is_const(k) {
+                    constant_factors(ast, k, &remap, &leaf_node, &mut consts);
+                } else if let (1, Some((c, x))) = (uses[k as usize], &split[k as usize]) {
+                    consts.extend_from_slice(c);
+                    others.push(*x);
+                    merged = true;
+                } else {
+                    others.push(remap[k as usize]);
+                }
+            }
+            if let ([x], false) = (others.as_slice(), consts.is_empty()) {
+                consts.sort_unstable();
+                // A product that absorbs nothing keeps its own shape.
+                remap[id as usize] = if merged {
+                    let k = constant_product(&mut b, &mut products, &consts);
+                    b.add(Op::Mul, Const::NONE, vec![k, *x])
+                } else {
+                    let new_kids = kids.iter().map(|&k| remap[k as usize]).collect();
+                    b.add(node.op, node.leaf, new_kids)
+                };
+                split[id as usize] = Some((consts, *x));
+                continue;
+            }
+        }
+        let new_kids = kids.iter().map(|&k| remap[k as usize]).collect();
+        let new = b.add(node.op, node.leaf, new_kids);
+        if is_const_leaf_op(node.op) {
+            leaf_node.entry((node.op, node.leaf)).or_insert(new);
+        }
+        remap[id as usize] = new;
+    }
+    retain_reachable(&b.finish(remap[ast.root() as usize]))
+}
+
+/// Push the (rebuilt) factors of constant node `k`: a constant product contributes its
+/// own factors, a pool leaf its canonical node, anything else itself.
+fn constant_factors(
+    ast: &Ast<Const>,
+    k: NodeId,
+    remap: &[NodeId],
+    leaf_node: &HashMap<(Op, Const), NodeId>,
+    out: &mut Vec<NodeId>,
+) {
+    let node = ast.value(k);
+    if node.op == Op::Mul {
+        for &c in ast.children_ids(k) {
+            constant_factors(ast, c, remap, leaf_node, out);
+        }
+    } else if is_const_leaf_op(node.op) {
+        out.push(leaf_node[&(node.op, node.leaf)]);
+    } else {
+        out.push(remap[k as usize]);
+    }
+}
+
+/// The balanced product of sorted constant `factors`, reusing any sub-product built
+/// before.
+fn constant_product(
+    b: &mut AstBuilder<Const>,
+    products: &mut HashMap<Vec<NodeId>, NodeId>,
+    factors: &[NodeId],
+) -> NodeId {
+    if let [single] = factors {
+        return *single;
+    }
+    if let Some(&p) = products.get(factors) {
+        return p;
+    }
+    let (l, r) = factors.split_at(factors.len() / 2);
+    let kids = vec![
+        constant_product(b, products, l),
+        constant_product(b, products, r),
+    ];
+    let p = b.add(Op::Mul, Const::NONE, kids);
+    products.insert(factors.to_vec(), p);
+    p
+}
+
+/// Fuse the constant-weighted terms of every scalar sum into one [`Op::AddScaled`].
+///
+/// A term `k · x` of a scalar `Add` whose product has no other reader, `k` a
+/// constant-pool leaf and `x` a non-constant scalar, becomes the pair `(k, x)` of the
+/// weighted sum, so the product is a multiply-add inside the sum rather than an
+/// instruction of its own. Real-weight pairs come first. Unweighted terms stay in an
+/// `Add` around the weighted sum, which is only built when it replaces at least two
+/// products.
+fn fuse_scaled_sums(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
+    let n = ast.len();
+    let uses = use_counts(ast);
+    let weighted = |k: NodeId| -> Option<(NodeId, NodeId)> {
+        if ast.value(k).op != Op::Mul || uses[k as usize] != 1 {
+            return None;
+        }
+        let &[a, b] = ast.children_ids(k) else {
+            return None;
+        };
+        let is_weight = |c: NodeId| is_const_leaf_op(ast.value(c).op) && an.is_const(c);
+        let (w, x) = if is_weight(a) {
+            (a, b)
+        } else if is_weight(b) {
+            (b, a)
+        } else {
+            return None;
+        };
+        (an.out_type(x) == NodeType::ScalarWf).then_some((w, x))
+    };
+
+    let mut b = AstBuilder::new();
+    let mut remap = vec![u32::MAX; n];
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let kids = ast.children_ids(id);
+        if node.op == Op::Add && an.out_type(id) == NodeType::ScalarWf {
+            let (mut real, mut complex, mut plain) = (Vec::new(), Vec::new(), Vec::new());
+            for &k in kids {
+                match weighted(k) {
+                    Some((w, x)) if an.out_type(w) == NodeType::RealConst => real.push((w, x)),
+                    Some(term) => complex.push(term),
+                    None => plain.push(remap[k as usize]),
+                }
+            }
+            let n_weighted = real.len() + complex.len();
+            if n_weighted >= 2 || (n_weighted == 1 && plain.is_empty()) {
+                let pairs = real
+                    .iter()
+                    .chain(&complex)
+                    .flat_map(|&(w, x)| [remap[w as usize], remap[x as usize]])
+                    .collect();
+                let scaled = b.add(Op::AddScaled, Const::NONE, pairs);
+                remap[id as usize] = if plain.is_empty() {
+                    scaled
+                } else {
+                    plain.push(scaled);
+                    b.add(Op::Add, Const::NONE, plain)
+                };
+                continue;
+            }
+        }
+        let new_kids = kids.iter().map(|&k| remap[k as usize]).collect();
+        remap[id as usize] = b.add(node.op, node.leaf, new_kids);
+    }
+    retain_reachable(&b.finish(remap[ast.root() as usize]))
+}
+
 /// Evaluate every node of a helicity-expanded arena at one probe point through the
 /// generic [`apply`] reduction, writing each node's slot into `out` (indexed by node id,
 /// no recycling). The variadic roots ([`Op::Hels`]/[`Op::Flows`]) hold no value of their
@@ -1112,5 +1358,63 @@ mod tests {
         let expected = consts_c[0] * 2.0;
         assert_eq!(consts_c[g_idx as usize], expected);
         assert_eq!(consts_c.len(), 2, "base coupling + one folded composite");
+    }
+
+    /// A term's constant scalings, nested around its value by lowering, collect into
+    /// one pool entry, and a scalar sum of constant-weighted terms fuses into one
+    /// `AddScaled` with the real-weight pair first. A product with a second reader
+    /// (the contraction here) keeps its value; no `Mul` survives.
+    #[test]
+    fn constant_scalings_fold_into_one_weight_of_a_fused_sum() {
+        let mut b = AstBuilder::new();
+        let vector = |b: &mut AstBuilder<Sym>, leg_idx: usize| {
+            let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(23usize)), vec![]);
+            b.add(
+                Op::External,
+                Sym::Ext {
+                    leg_idx,
+                    spin: 3,
+                    charge: Charge::Particle,
+                    incoming: false,
+                },
+                vec![mass],
+            )
+        };
+        let (v0, v1) = (vector(&mut b, 0), vector(&mut b, 1));
+        let amp = b.add(Op::Metric, Sym::None, vec![v0, v1]);
+        let coup = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let coeff = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        let sign = b.add(Op::Coeff, Sym::Coeff(-1.0), vec![]);
+        // `sign · (coup · (coeff · amp))`, and a second term `sign · amp`.
+        let scaled = b.add(Op::Mul, Sym::None, vec![coeff, amp]);
+        let coupled = b.add(Op::Mul, Sym::None, vec![coup, scaled]);
+        let term_a = b.add(Op::Mul, Sym::None, vec![sign, coupled]);
+        let term_b = b.add(Op::Mul, Sym::None, vec![sign, amp]);
+        let root = b.add(Op::Add, Sym::None, vec![term_a, term_b]);
+        let folded = Folded::build(&b.finish(root));
+        let ast = &folded.ast;
+
+        assert_eq!(ast.value(ast.root()).op, Op::AddScaled);
+        let kids = ast.children_ids(ast.root());
+        assert_eq!(kids.len(), 4, "two (weight, term) pairs");
+        assert_eq!(kids[1], kids[3], "both terms weight the one contraction");
+        assert_eq!(ast.value(kids[1]).op, Op::Metric);
+        let (w_real, w_cplx) = (ast.value(kids[0]), ast.value(kids[2]));
+        assert_eq!(w_real.leaf.kind(), ConstKind::Real);
+        assert_eq!(w_cplx.op, Op::CoeffRat);
+        assert_eq!(w_cplx.leaf.kind(), ConstKind::Complex);
+        assert!(
+            ast.iter().all(|id| ast.value(id).op != Op::Mul),
+            "every scaling is a weight of the sum"
+        );
+
+        let evaluated = EvaluatedModel::from_model(sm_model(SMRestrict::Default));
+        let (consts_c, consts_f): (Box<[C<f64>]>, Box<[f64]>) = folded.pools(&evaluated);
+        assert_eq!(consts_f[w_real.leaf.index() as usize], -1.0);
+        assert_eq!(consts_c[w_cplx.leaf.index() as usize], consts_c[0] * -2.0);
     }
 }

@@ -1152,6 +1152,26 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 }
                 *wr(scalars, loc) = value;
             }
+            Instr::AddScaled {
+                start,
+                n_real,
+                n_complex,
+            } => {
+                let start = start as usize;
+                let mid = start + 2 * n_real as usize;
+                let end = mid + 2 * n_complex as usize;
+                let mut value = C::new(F::zero(), F::zero());
+                for pair in rd(ops, start..mid).chunks_exact(2) {
+                    let r = *rd(consts_f, pair[0].index());
+                    value = kernel::scaled_add_real_bare(value, r, *rd(scalars, pair[1].index()));
+                }
+                for pair in rd(ops, mid..end).chunks_exact(2) {
+                    let k = *rd(consts_c, pair[0].index());
+                    value =
+                        kernel::scaled_add_complex_bare(value, k, *rd(scalars, pair[1].index()));
+                }
+                *wr(scalars, loc) = value;
+            }
             Instr::AddVector { start, len } => {
                 let slice = rd(ops, start as usize..(start + len) as usize);
                 let mut eps = *rd(vectors, rd(slice, 0).index());
@@ -1675,6 +1695,28 @@ pub(super) fn apply<'a, F: Real + 'a>(
                 let rhs = kid(i);
                 assert_summable(&acc, rhs, tol);
                 acc + *rhs
+            })
+        }
+        Op::AddScaled => {
+            let mut value = C::new(F::zero(), F::zero());
+            for i in (0..n_kids).step_by(2) {
+                let WaveformSlot::Scalar(x) = kid(i + 1) else {
+                    panic!("AddScaled term {} is not a scalar: {:?}", i / 2, kid(i + 1));
+                };
+                value = match kid(i) {
+                    WaveformSlot::Real(r) => kernel::scaled_add_real_bare(value, *r, x.value),
+                    WaveformSlot::Scalar(k) => {
+                        kernel::scaled_add_complex_bare(value, k.value, x.value)
+                    }
+                    other => panic!("AddScaled weight {} is not a constant: {other:?}", i / 2),
+                };
+            }
+            let WaveformSlot::Scalar(first) = kid(1) else {
+                unreachable!("checked above")
+            };
+            WaveformSlot::Scalar(ScalarWf {
+                value,
+                momentum: first.momentum,
             })
         }
         Op::Mul => mul_apply((0..n_kids).map(|i| *kid(i))),

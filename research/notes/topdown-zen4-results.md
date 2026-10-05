@@ -202,7 +202,7 @@ note, not an action. If a width-1 path ever matters on AVX-512 hosts, compare
 - Ranked levers on this host:
   1. Collect and fuse the constant-coefficient chains (§3): about half the VM
      instructions on the 2→6 and the 4-lepton row, ~13% of cycles for collection alone,
-     ~25% with fusion.
+     ~25% with fusion. Done; see §6.
   2. Choose the width per host: width 8 wins on every row on Zen 4 but
      barely on Emerald Rapids for the 2→6 (1.03×).
   3. More independent work per dispatch (per-kind batched execution of
@@ -210,3 +210,77 @@ note, not an action. If a width-1 path ever matters on AVX-512 hosts, compare
      pointed at, and it keeps code size flat.
 - Bounds checks (3.5–5.5%) and mispredicts on large rows (1–2%) stay small, as
   measured before.
+
+## 6. Implemented: constant collection and weighted JAMP sums
+
+Both levels of §3 are now in `fold.rs`:
+- **Collection.** `collect_constant_factors` runs before constant folding. It
+  merges each single-reader product into the product that reads it and gathers
+  the constant factors into one canonically ordered, hash-consed sub-product.
+  The existing folding then turns that sub-product into one pool entry.
+- **Fusion.** `fuse_scaled_sums` runs after folding. It turns a scalar `Add`
+  whose terms are single-reader `k · x` products, with `k` a pool leaf, into
+  the new `Op::AddScaled`. That op lowers to `Instr::AddScaled`, which reads
+  each weight straight from `consts_f`/`consts_c` and accumulates with
+  `mul_add_fast`: two multiply-adds per real-weighted term, four per complex
+  one.
+- **Pruning.** The zero-amplitude prune drops an `AddScaled` term together with
+  its weight, under the same bit-exact guard as before.
+
+Effect on the programs (helicity-pruned, production order):
+
+| row | VM instructions before → after | arena KiB (f64) before → after |
+|---|--:|--:|
+| `ee_to_mumu` | 61 → 51 | 1.4 → 1.3 |
+| `ee_to_wpwm` | 425 → 363 | 6.0 → 5.6 |
+| `uux_to_uux` | 123 → 99 | 2.3 → 2.2 |
+| `gg_to_gg` | 682 → 551 | 7.4 → 7.2 |
+| `gg_to_ttx` | 328 → 253 | 3.6 → 3.5 |
+| `ee_to_mumua` | 346 → 239 | 6.2 → 5.4 |
+| `ee_to_mumu_tata_qcd0` | 1 739 → 1 096 | 22.3 → 18.4 |
+| `uux_to_ccx_emmm_qcd0` | 36 506 → 21 815 | 450.9 → 288.2 |
+
+On the 2→6 every `MulScalarR` is gone, along with the `ScaleFinR`,
+`ScaleFoutR` and `ScaleVecR` halves of the current scalings. The 4 716
+`MulScalarC` that remain compute the per-diagram amplitudes `A_d`. `Configs`
+also reads `A_d` for `AMP2`, so it cannot be absorbed. Its JAMP term
+`sym·fermi · A_d` is a real weight of the fused sum instead.
+
+**Timing.** Measured in-process, on an Emerald Rapids cloud VM (4 vCPUs):
+- A scratch driver links the previous commit's library (renamed) and this one.
+- It builds both evaluators for a row and width, then alternates 100 ms slices
+  (400 ms on the 2→6) of each on one pinned core, 40 slices apiece.
+- The speedup is total base time over total new time. The bracket is the
+  10th–90th percentile of the per-slice ratios.
+- Separate-process runs on this VM spread by up to ±35%, which is what the
+  in-process design removes.
+
+| row | width | default target: speedup | `target-cpu=native`: base → new ns/event | native speedup [q10–q90] |
+|---|--:|--:|--:|--:|
+| `ee_to_mumu` | 1 / 4 / 8 | 1.03 / 0.94 / 1.01 | 384 → 369 / 164 → 146 / 111 → 107 | 1.04 / 1.12 / 1.04 [0.81–1.24] |
+| `ee_to_wpwm` | 1 / 4 / 8 | 1.09 / 1.05 / 1.06 | 1 551 → 1 414 / 717 → 612 / 521 → 452 | 1.10 / 1.17 / 1.15 [0.98–1.38] |
+| `uux_to_uux` | 1 / 4 / 8 | 1.00 / 1.03 / 1.03 | 633 → 568 / 268 → 233 / 177 → 159 | 1.11 / 1.15 / 1.12 [1.01–1.34] |
+| `gg_to_gg` | 1 / 4 / 8 | 1.02 / 1.04 / 1.01 | 2 141 → 1 939 / 817 → 756 / 549 → 528 | 1.10 / 1.08 / 1.04 [0.89–1.21] |
+| `gg_to_ttx` | 1 / 4 / 8 | 1.09 / 1.14 / 1.01 | 1 338 → 1 163 / 456 → 403 / 338 → 315 | 1.15 / 1.13 / 1.07 [0.87–1.38] |
+| `ee_to_mumua` | 1 / 4 / 8 | 1.11 / 1.04 / 1.06 | 1 723 → 1 574 / 592 → 513 / 465 → 420 | 1.09 / 1.15 / 1.11 [1.00–1.23] |
+| `ee_to_mumu_tata_qcd0` | 1 / 4 / 8 | 1.11 / 1.07 / 1.03 | 7 223 → 6 214 / 2 427 → 2 155 / 2 147 → 1 841 | 1.16 / 1.13 / 1.17 [1.05–1.48] |
+| `uux_to_ccx_emmm_qcd0` | 1 / 4 / 8 | 1.21 / 1.20 / 1.22 | 143 584 → 127 373 / 61 857 → 46 622 / 62 013 → 44 405 | 1.13 / 1.33 / 1.40 [0.97–1.60] |
+
+A second default-target sweep reproduced the 2→6 at 1.19 / 1.11 / 1.14 and the
+other rows within about ±0.05.
+
+Readings:
+- **FMA hardware matters.** The default x86-64 target has no FMA, so there the
+  weighted sum is a multiply and an add. With `target-cpu=native` it is one
+  FMA per component, and the gain is larger on every row.
+- **Width 8 no longer hits the L2 cliff on the 2→6.** The fused terms hold no
+  arena slots, so its arenas shrink by 36% (2.3 MiB at 8 lanes, from 3.6 MiB).
+  Width 8 now beats width 4 here (44.4 against 46.6 µs/event), where §2 and
+  the roofline note found a 1.03× ceiling on Emerald Rapids.
+- **Results are unchanged to within rounding.** The weights are products of
+  the same constants, and a sum's terms are re-associated (real weights
+  first). The 2→6 is bit-identical at width 1: its weights are all real
+  `±1` symmetry factors. Elsewhere passes agree to 1e-12 relative or better.
+  All 48 `amplitude_oracle` processes pass against MadGraph, including the
+  bit-exact pruned-against-unpruned `|M|²` check.
+

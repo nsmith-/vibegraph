@@ -1078,15 +1078,24 @@ coverage. What is left below is what still refuses, and why.
   - Arena order loses through retire stalls, not misses; a level shuffle loses
     through mispredicts.
   The profile of the 2→6 found the largest lever so far. Half its VM
-  instructions (18 648 of 36 506) are single-use `MulScalarR`/`MulScalarC`
+  instructions (18 648 of 36 506) were single-use `MulScalarR`/`MulScalarC`
   multiplies by pool constants, chained after each `Metric` amplitude before
-  the JAMP sum, and they cost 24–27% of cycles. Constant folding misses them
-  because the product is associated around the amplitude. Open:
-  - collect each chain's constants into one folded constant (bound ~13%);
-  - fuse what remains into the producer or a weighted JAMP sum, as MadGraph
-    does (bound ~25%);
-  - first, check the chain structure on the small rows.
-  (`topdown-zen4-results.md`.)
+  the JAMP sum, costing 24–27% of cycles. **Done:**
+  - `fold.rs` now collects each chain's constants into one pool entry.
+  - Each JAMP sum becomes an `AddScaled` of `(weight, amplitude)`
+    multiply-adds, with the weights read straight from the pool.
+  - The 2→6 drops to 21 815 instructions and 36% less arena.
+  - Measured in-process on Emerald Rapids with `target-cpu=native`: 1.13 /
+    1.33 / 1.40× on the 2→6 at widths 1 / 4 / 8, and 1.04–1.17× on the other
+    rows. The default target gains less, since it has no FMA.
+  - Width 8 no longer hits the 2→6's L2 cliff.
+
+  Still open: the 4 716 `MulScalarC` that compute the per-diagram amplitudes
+  `AMP2` reads. Fusing them would need `AMP2` to read the bare `Metric` and
+  apply its coupling itself. Also open: real-only constant products still
+  fold to complex pool entries (`mul_out` types any constant product as
+  complex), which costs two extra multiply-adds per such term.
+  (`topdown-zen4-results.md` §6.)
 - **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
   arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
   checked indexing on Emerald Rapids. That is the ceiling for every safe

@@ -161,6 +161,16 @@ pub(super) enum Instr {
         start: u32,
         len: u32,
     },
+    /// Constant-weighted scalar sum `Σ kᵢ·xᵢ` ([`Op::AddScaled`]): `n_real` pairs with a
+    /// real weight, then `n_complex` with a complex one, at `[start, start + 2·(n_real +
+    /// n_complex))` of [`Program::operands`]. Each pair is the weight's constant-pool
+    /// index (`consts_f` for the real pairs, `consts_c` for the complex) followed by the
+    /// term's scalar-arena reference; the weights are read from the pools directly.
+    AddScaled {
+        start: u32,
+        n_real: u32,
+        n_complex: u32,
+    },
     /// scalar × scalar → scalar: one complex multiply.
     MulScalarC {
         a: u32,
@@ -360,7 +370,7 @@ pub(super) enum Instr {
 
 /// The number of [`Instr`] variants, and so of distinct [`Instr::kind`]s.
 #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
-pub(super) const N_KINDS: usize = 53;
+pub(super) const N_KINDS: usize = 54;
 
 impl Instr {
     /// A dense index per variant, `0..N_KINDS`: the grouping key of
@@ -421,6 +431,7 @@ impl Instr {
             Instr::SigmaVout { .. } => 50,
             Instr::SigmaMv { .. } => 51,
             Instr::SigmaOut { .. } => 52,
+            Instr::AddScaled { .. } => 53,
         }
     }
 
@@ -481,6 +492,7 @@ impl Instr {
             "SigmaVout",
             "SigmaMv",
             "SigmaOut",
+            "AddScaled",
         ];
         NAMES[kind as usize]
     }
@@ -850,6 +862,43 @@ fn lower_node(
                 Storage::FermionOut => Instr::AddFout { start, len },
                 Storage::Multivector => Instr::AddMultivector { start, len },
                 Storage::Real => panic!("Add produced a real-constant"),
+            }
+        }
+        Op::AddScaled => {
+            // Weights resolve to their pool index: a weight node is a constant-pool leaf,
+            // so the runtime reads the pool rather than the leaf's arena copy.
+            let start = operands.len() as u32;
+            let (mut n_real, mut n_complex) = (0u32, 0u32);
+            for pair in kids.chunks_exact(2) {
+                let (weight, term) = (pair[0], pair[1]);
+                let w = ast.value(weight);
+                assert!(
+                    matches!(
+                        w.op,
+                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
+                    ),
+                    "AddScaled weight must be a constant-pool leaf, got {w:?}"
+                );
+                let class = match w.leaf.kind() {
+                    ConstKind::Real => {
+                        assert_eq!(n_complex, 0, "AddScaled real weights must come first");
+                        n_real += 1;
+                        Storage::Real
+                    }
+                    ConstKind::Complex => {
+                        n_complex += 1;
+                        Storage::Scalar
+                    }
+                    other => panic!("AddScaled weight has unresolved kind {other:?}"),
+                };
+                operands.push(OperandRef::new(class, w.leaf.index()));
+                operands.push(opref(term));
+            }
+            assert_eq!(kids.len() % 2, 0, "AddScaled children must pair up");
+            Instr::AddScaled {
+                start,
+                n_real,
+                n_complex,
             }
         }
         Op::Mul => {

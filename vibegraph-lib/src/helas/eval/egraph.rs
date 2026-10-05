@@ -46,8 +46,8 @@ use crate::ufo::particles::ParticleId;
 
 /// The egglog schema for [`Ast<Sym>`]: the `Node` datatype (one constructor per
 /// fixed-arity [`Op`], names matching [`Op::name`]), the `(Vec Node)` sort backing
-/// [`Op::PMomOut`]/[`Op::Flows`]/[`Op::Hels`]/[`Op::Configs`], and those ops as
-/// variable-arity constructors over it.
+/// [`Op::PMomOut`]/[`Op::Flows`]/[`Op::Hels`]/[`Op::Configs`]/[`Op::AddScaled`], and
+/// those ops as variable-arity constructors over it.
 const NODE_SCHEMA: &str = "\
 (datatype Node
   (External i64 i64 i64 i64 Node)
@@ -92,6 +92,7 @@ const NODE_SCHEMA: &str = "\
 (constructor Flows (NodeVec) Node)
 (constructor Hels (NodeVec) Node)
 (constructor Configs (NodeVec) Node)
+(constructor AddScaled (NodeVec) Node)
 ";
 
 /// A failure encoding, running, or decoding the egglog round-trip.
@@ -371,7 +372,10 @@ fn encode_expr(ast: &Ast<Sym>, id: NodeId) -> Expr {
         }
         _ => {}
     }
-    if matches!(node.op, Op::PMomOut | Op::Flows | Op::Hels | Op::Configs) {
+    if matches!(
+        node.op,
+        Op::PMomOut | Op::Flows | Op::Hels | Op::Configs | Op::AddScaled
+    ) {
         // The variable-arity ops: children go inside a Vec argument.
         let elems: Vec<Expr> = kids.iter().map(|&k| encode_expr(ast, k)).collect();
         args.push(if elems.is_empty() {
@@ -462,7 +466,7 @@ fn decode(
             };
             (leaf, kids.get(4..).unwrap_or_default().to_vec())
         }
-        Op::PMomOut | Op::Flows | Op::Hels | Op::Configs => {
+        Op::PMomOut | Op::Flows | Op::Hels | Op::Configs | Op::AddScaled => {
             let vec_id = *kids.first().ok_or_else(|| {
                 decode_err(format_args!("{} without its Vec argument", op.name()))
             })?;
@@ -579,7 +583,7 @@ fn op_slot_bytes(op: &str) -> f64 {
             | Op::Gamma5Amp
             | Op::EpsilonAmp
             | Op::FierzPair => 16.0,
-            Op::Mul | Op::Add | Op::Flows | Op::Hels | Op::Configs => 96.0,
+            Op::Mul | Op::Add | Op::AddScaled | Op::Flows | Op::Hels | Op::Configs => 96.0,
             Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => 0.0,
         },
         None => 0.0,
@@ -921,7 +925,7 @@ fn decode_class(
             };
             (leaf, kids.get(4..).unwrap_or_default().to_vec())
         }
-        Op::PMomOut | Op::Flows | Op::Hels | Op::Configs => (
+        Op::PMomOut | Op::Flows | Op::Hels | Op::Configs | Op::AddScaled => (
             Sym::None,
             vec_element_classes(dag, ex, child_at(kids, 0, name)?)?,
         ),
