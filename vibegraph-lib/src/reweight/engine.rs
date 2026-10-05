@@ -1124,6 +1124,72 @@ launch --rwgt_name=y4
         );
     }
 
+    /// The case the polynomial path exists for: SMEFTsim with one insertion per
+    /// diagram and a basis grid in three coefficients — a top dipole (`ctWRe`, a new
+    /// Lorentz structure), `cHt` (on the Standard Model's own `Z t t~` vertex) and
+    /// `cHWB` (the input-scheme shift, on both fermion lines). `K = 1 + 3` monomials
+    /// serve all eleven hypotheses, against direct evaluation.
+    #[test]
+    fn a_smeft_basis_grid_takes_one_evaluation_per_coefficient() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+        let model = UFOModel::load(&dir, Some(&dir.join("restrict_massless.dat"))).unwrap();
+        let base = EvaluatedModel::from_model(model.clone());
+        let process = "e+ e- > t t~ NP<=1";
+        let sets = sets(process, &model);
+        let mut card = String::new();
+        for (a, b, c) in [
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1),
+            (1, 1, 0),
+            (1, 0, 1),
+            (0, 1, 1),
+            (2, 0, 0),
+            (0, 2, 0),
+            (0, 0, 2),
+            (-1, 1, 1),
+        ] {
+            card += &format!(
+                "launch\n set ctWRe {a}\n set cHt {b}\n set cHWB {}\n",
+                0.5 * f64::from(c)
+            );
+        }
+        let launches = resolve(&card.parse().unwrap(), &model).unwrap();
+        let names: Vec<String> = ["ctWRe", "cHt", "cHWB"].map(String::from).to_vec();
+        let options = ReweightOptions {
+            exact: false,
+            couplings: Some(resolve_couplings(&model, &names).unwrap()),
+        };
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let plan = ReweightPlan::new(&refs, &model, &base, launches, options).unwrap();
+        let g = &plan.summary()[0].polynomial[0];
+        assert_eq!((g.terms, g.evaluations, g.hypotheses), (4, 3, 11), "{g:?}");
+
+        // No diagram spans several classes here. SMEFTsim puts `cHt` beside the
+        // Standard Model's own couplings on one `Z t t~` vertex, but gives every
+        // coefficient its own coupling order (`NPcHt`, `NPctW`, ...), so the vertex
+        // splits into one interaction per order, as MadGraph splits it. A coupling
+        // that is itself `a + b·c` would make a diagram span two classes; this
+        // model has none.
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut analysis = PolyAnalysis::new(&model, &names);
+        let spanning = sets[0]
+            .diagrams
+            .iter()
+            .filter(|d| {
+                analysis
+                    .amplitude_support(std::slice::from_ref(*d))
+                    .is_some_and(|s| s.terms().count() > 1)
+            })
+            .count();
+        assert_eq!((sets[0].diagrams.len(), spanning), (36, 0));
+
+        let spread = check_against_direct(process, 500.0, &base, &plan, None, 1e-9);
+        assert!(spread.1 / spread.0 > 1.2, "{spread:?}");
+    }
+
     /// The node count is load-bearing: the ymt scan's `|M|²` has a quadratic
     /// term a straight line through the ends misses by far more than rounding.
     #[test]
