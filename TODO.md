@@ -704,7 +704,20 @@ above); the entries here are the eventual features.
   algebra's unit tests — SMEFTsim splits every coefficient into its own coupling
   order; (g) a derivative all-scalar vertex (`P` operators on scalar legs) has no
   sign oracle; (h) the hypothesis side on a hadronic polynomial group (both
-  hadronic MadGraph rows are on the exact path).
+  hadronic MadGraph rows are on the exact path); (i) **helicity-aware
+  reweighting** beside the helicity-summed ratio `generate` writes today: a
+  per-event ratio `|M_hyp(λ)|² / |M_card(λ)|²` in the helicity configuration
+  the event records in `SPINUP` (MadGraph's default, `change helicity True`),
+  selectable per run (e.g. `--reweight-helicity summed|event`). Both are
+  unbiased for the reweighted σ; the per-helicity one keeps the written
+  helicities consistent with the hypothesis, which matters when the sample is
+  showered or decayed with spin correlations, at the cost of larger weight
+  variance where a hypothesis moves a helicity amplitude the card nearly
+  zeroes. Needs the selected helicity carried to the reweighter (it is
+  written, not kept per event), a refusal or fallback for events whose
+  recorded helicity has `|M_card(λ)|² = 0`, and, on the polynomial path, the
+  Gram contraction restricted to one helicity combination. Oracle: the same
+  `gen_reweight_oracle.py` rows with `change helicity True`, event by event.
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the
