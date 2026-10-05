@@ -131,9 +131,11 @@ the whole event. This is the scale assignment CKKW matching is built on, where
 the same reconstructed history also supplies the Sudakov form factors the matrix
 element is reweighted by. MadGraph's default keeps the reconstruction and,
 with matching switched off, applies none of that reweighting, so the clustering
-here does nothing but set the scales; vibegraph refuses a card that asks for
-matching rather than running the scale half of a machine whose other half is
-missing.
+there does nothing but set the scales. With MLM matching on (`ickkw = 1`) the
+same history also reweights the event, as MadEvent's `rewgt` does: an
+$\alpha_s$ ratio at each clustering vertex's scale and a PDF ratio at each
+step of a beam line. The Sudakov suppression itself is left to the shower's
+matching veto.
 
 **Why the process's own diagrams decide which merges exist.** A history is only
 meaningful if the process could have produced it. A merge stands for a

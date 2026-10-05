@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod classes;
+mod matching;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
 /// which drives how a card line's text is interpreted.
@@ -147,6 +148,29 @@ pub enum RunCardError {
          '1, 2' (the partonic centre of mass)"
     )]
     BadFrame { value: String },
+    #[error(
+        "run card sets ickkw = {ickkw}: MadGraph admits only 0 and 1 (banner.py declares ickkw \
+         with allowed = [0, 1])"
+    )]
+    UnsupportedIckkw { ickkw: i64 },
+    #[error(
+        "run card sets maxjetflavor = 6 with ickkw = 1: MadGraph refuses it ('maxjetflavor at 6 \
+         is NOT supported for matching', banner.py:4556)"
+    )]
+    MatchedTopJets,
+    #[error(
+        "run card sets xqcut = {xqcut} with a jet pT threshold of {ptj} after MadGraph's \
+         rewrites (ptj follows xqcut only when auto_ptj_mjj = T and ptj >= 0): MadEvent's lower \
+         limit on tau then carries energy floors of sqrt(xqcut^2 - m^2) per jet that no cut \
+         implies, a cut that differs between integration channels (myamp.f setxqcuts) and is \
+         not implemented"
+    )]
+    XqcutAboveJetThreshold { xqcut: f64, ptj: f64 },
+    #[error(
+        "run card sets pdlabel1 = '{beam1}' and pdlabel2 = '{beam2}' on proton beams: MadGraph \
+         refuses an asymmetric proton-proton PDF (banner.py's PDLabelBlock)"
+    )]
+    AsymmetricBeamPdf { beam1: String, beam2: String },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -188,6 +212,12 @@ pub struct RunCard {
     pub dsqrt_q2fact2: f64,
     pub maxjetflavor: i64,
     values: BTreeMap<String, ParamValue>,
+    /// The parameters whose value in MadGraph's own record of the card differs
+    /// from the resolved one ([`banner_values`](Self::banner_values)). Not part
+    /// of the card as an artifact records it, so a deserialised card has none
+    /// and reports its resolved values.
+    #[serde(skip)]
+    banner_overrides: BTreeMap<String, ParamValue>,
 }
 
 impl Default for RunCard {
@@ -369,7 +399,29 @@ impl RunCard {
             .expect("a decay card relaxes the beam checks, never tightens them")
     }
 
-    fn from_values(values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+    /// Every parameter as MadGraph records the card in an event file's
+    /// `<MGRunCard>`: after `banner.py`'s own edits and before the Fortran's
+    /// (`setrun.f`, `setcuts.f`), which rerun on any card read back. The two
+    /// differ only on a matched card: `setcuts.f`'s jet-cut rewrite under
+    /// `xqcut` and `setrun.f`'s `alpsfact` under `use_syst` are the Fortran's,
+    /// so the record keeps the card's `ptj`, `mmjj` and (without matching)
+    /// `alpsfact`.
+    pub fn banner_values(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
+        self.values.iter().map(|(k, v)| {
+            (
+                k.as_str(),
+                self.banner_overrides.get(k.as_str()).unwrap_or(v),
+            )
+        })
+    }
+
+    fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+        let as_parsed = values.clone();
+        matching::resolve(&mut values)?;
+        let beam = |name: &str| values.get(name).expect("known param").as_i64();
+        if (beam("lpp1"), beam("lpp2")) == (1, 1) {
+            resolve_beam_pdf_labels(&mut values)?;
+        }
         let f = |name: &str| values.get(name).expect("known param").as_f64();
         let i = |name: &str| values.get(name).expect("known param").as_i64();
         let b = |name: &str| values.get(name).expect("known param").as_bool();
@@ -400,9 +452,36 @@ impl RunCard {
             dsqrt_q2fact1: f("dsqrt_q2fact1"),
             dsqrt_q2fact2: f("dsqrt_q2fact2"),
             maxjetflavor: i("maxjetflavor"),
+            banner_overrides: matching::banner_overrides(&as_parsed, &values),
             values,
         })
     }
+}
+
+/// `banner.py`'s `PDLabelBlock` at proton beams: a card spelling the PDF per beam
+/// (`pdlabel1`, `pdlabel2`) sets `pdlabel` from them, and MadGraph refuses two
+/// different sets on two proton beams. A card that leaves both at their default
+/// spells the PDF through `pdlabel` and is left alone, so a card that never
+/// names the per-beam labels resolves to exactly the values it parsed to.
+fn resolve_beam_pdf_labels(values: &mut BTreeMap<String, ParamValue>) -> Result<(), RunCardError> {
+    let label = |values: &BTreeMap<String, ParamValue>, name: &str| {
+        values.get(name).expect("known param").as_str().to_string()
+    };
+    let (beam1, beam2) = (label(values, "pdlabel1"), label(values, "pdlabel2"));
+    let default = |name: &str| {
+        param_default(name)
+            .expect("known param")
+            .as_str()
+            .to_string()
+    };
+    if beam1 == default("pdlabel1") && beam2 == default("pdlabel2") {
+        return Ok(());
+    }
+    if beam1 != beam2 {
+        return Err(RunCardError::AsymmetricBeamPdf { beam1, beam2 });
+    }
+    values.insert("pdlabel".to_string(), ParamValue::Str(beam1));
+    Ok(())
 }
 
 /// `frame_id` of an `me_frame` payload: `[1, 2]`, `1, 2` and `1 2` are all the

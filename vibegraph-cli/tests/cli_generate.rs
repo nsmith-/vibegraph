@@ -42,6 +42,7 @@ use std::sync::OnceLock;
 
 use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::coupling::scales::ScaleChoice;
+use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 
@@ -289,7 +290,7 @@ fn generate_writes_a_sample_that_reproduces_the_integrated_cross_section() {
     let band =
         SIGMA_LIMIT_IN_MC_ERRORS / (NEVENTS as f64).sqrt() + run.artifact.sigma_err_pb / sigma;
 
-    let (buffered, _) = run.generate("buffer", SEED_A, NEVENTS, "buffered.lhe");
+    let (buffered, buffered_text) = run.generate("buffer", SEED_A, NEVENTS, "buffered.lhe");
     let (rounded, _) = run.generate("stochastic-rounding", SEED_B, NEVENTS, "rounded.lhe");
     check_record_shape(&buffered, 4, 2);
     check_record_shape(&rounded, 4, 2);
@@ -313,17 +314,26 @@ fn generate_writes_a_sample_that_reproduces_the_integrated_cross_section() {
         "XMAXUP {:.6e} does not bound the largest weight written {largest:.6e}",
         buffered.init.processes[0].xmax
     );
-    let deviation = mean / sigma - 1.0;
+    // The writer normalises the file to the integration, so the mean weight is
+    // the integration's σ by construction; what measures the accept/reject pass
+    // is the sample's own estimate before that, which the header records.
+    assert!(
+        (declared / sigma - 1.0).abs() < 1e-6,
+        "XSECUP {declared:.6e} is not the integration's {sigma:.6e}"
+    );
+    let (sample, sample_err) =
+        sample_estimate_in(&buffered_text).expect("the header records the sample's estimate");
+    let deviation = sample / sigma - 1.0;
     eprintln!(
-        "buffered:  sigma(events) = {mean:.6e} pb vs integration {sigma:.6e} +- {:.2e} pb \
-         ({:+.3}%, band +-{:.3}%)",
+        "buffered:  sigma(sample, before normalisation) = {sample:.6e} ± {sample_err:.2e} pb vs \
+         integration {sigma:.6e} +- {:.2e} pb ({:+.3}%, band +-{:.3}%)",
         run.artifact.sigma_err_pb,
         100.0 * deviation,
         100.0 * band
     );
     assert!(
         deviation.abs() < band,
-        "buffered sigma is {:+.3}% off the integration",
+        "the buffered sample's own sigma is {:+.3}% off the integration",
         100.0 * deviation
     );
 
@@ -377,11 +387,10 @@ fn generate_writes_a_sample_that_reproduces_the_integrated_cross_section() {
         chi2_dof < SHAPE_CHI2_LIMIT && worst < SHAPE_PULL_LIMIT,
         "the two strategies disagree on the cos(theta) shape"
     );
-    // Both files describe the same total, whatever convention carries it.
-    assert!(
-        (total_b / total_r - 1.0).abs() < 2.0 * band,
-        "the two strategies disagree on sigma: {total_b:.6e} vs {total_r:.6e} pb"
-    );
+    // Both totals are the integration's by construction — the buffered file is
+    // normalised to it and the rounded one carries it in `XSECUP` — so the
+    // strategies are compared on the shape above, not on the total.
+    assert!((total_b / sigma - 1.0).abs() < 1e-6 && (total_r / sigma - 1.0).abs() < 1e-6);
 }
 
 /// Same seed, same file; a different seed, a different one. Both strategies.

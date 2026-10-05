@@ -24,7 +24,6 @@
 //! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order (not planned) |
 //! | [`LoopSpec`](Unsupported::LoopSpec) | `[QCD]`, `[real=QCD]` | NLO |
 //! | [`PhotonTag`](Unsupported::PhotonTag) | `!a!` | NLO |
-//! | [`MixedMultiplicity`](Unsupported::MixedMultiplicity) | `add process` with another final-state count | MLM merging |
 //! | [`ProcessOption`](Unsupported::ProcessOption) | `--diagram_filter`, `--optimize`, `--standalone` | not planned |
 //! | [`SetOption`](Unsupported::SetOption) | a physics-bearing `set` off its default | per option |
 //! | [`LaunchDialogue`](Unsupported::LaunchDialogue) | run-card edits after `launch` | not planned: the run card is its own file |
@@ -278,13 +277,6 @@ pub enum Unsupported {
     /// A `--` option on a process line other than `--no_warning=duplicate`.
     #[error("'{process}': process option '{flag}' is not supported")]
     ProcessOption { process: String, flag: String },
-    /// Processes with different final-state multiplicities in one card, which
-    /// only make sense merged (MLM).
-    #[error(
-        "'{first}' and '{other}' have different final-state multiplicities; combining them \
-         needs jet merging, which is not supported"
-    )]
-    MixedMultiplicity { first: String, other: String },
     /// Processes with different numbers of initial particles in one card. A
     /// MadGraph error too.
     #[error("'{first}' and '{other}' have different numbers of initial-state particles")]
@@ -540,27 +532,23 @@ pub fn check_supported(ast: &ProcCardAst) -> Result<SupportedCard, UnsupportedCa
         }
     }
 
+    // Lines of different final-state multiplicities are one sample summed over
+    // its multiplicities, as MadGraph sums its `P<n>` directories; matching them
+    // is the run card's business (`ickkw`, `xqcut`), not the process card's.
     let mut processes = Vec::new();
-    let mut first: Option<(usize, usize, String)> = None;
+    let mut first: Option<(usize, String)> = None;
     for card_process in ast.processes() {
         let line = card_process.line;
         let before = refused.len();
         check_line(line, &mut refused);
         let def = &line.definition;
         let n_in = def.initial().count();
-        let n_out = def.final_state().count();
         match &first {
-            None => first = Some((n_in, n_out, line.text.clone())),
-            Some((i, _, first)) if *i != n_in => refused.push(Unsupported::MixedInitialStates {
+            None => first = Some((n_in, line.text.clone())),
+            Some((i, first)) if *i != n_in => refused.push(Unsupported::MixedInitialStates {
                 first: first.clone(),
                 other: line.text.clone(),
             }),
-            Some((_, o, first)) if *o != n_out && def.decay_chains.is_empty() => {
-                refused.push(Unsupported::MixedMultiplicity {
-                    first: first.clone(),
-                    other: line.text.clone(),
-                })
-            }
             Some(_) => {}
         }
         if refused.len() == before {
@@ -854,13 +842,12 @@ mod tests {
                 Unsupported::SetOption { .. } => "set",
                 Unsupported::LoopSpec { .. } => "[]",
                 Unsupported::SquaredOrder { .. } => "^2",
-                Unsupported::MixedMultiplicity { .. } => "mlm",
                 Unsupported::MixedInitialStates { .. } => "mixed",
                 Unsupported::LaunchDialogue { .. } => "launch",
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed", "mlm"]);
+        assert_eq!(kinds, ["set", "launch", "[]", "^2", "mixed"]);
     }
 
     /// A decay chain's overall orders fold into every part as the lesser upper
@@ -937,6 +924,25 @@ mod tests {
         assert!(all
             .iter()
             .any(|u| matches!(u, Unsupported::MixedInitialStates { .. })));
+    }
+
+    /// Lines of different final-state multiplicities pass the check, each with
+    /// its own process number: the run card, not the process card, decides
+    /// whether the sum is matched.
+    #[test]
+    fn mixed_multiplicities_are_accepted_with_their_process_numbers() {
+        let card = check(
+            "generate p p > e+ e- @0\n\
+             add process p p > e+ e- j @1\n\
+             add process p p > e+ e- j j @2\n",
+        )
+        .expect("a mixed-multiplicity card is supported");
+        let shape: Vec<(u32, usize)> = card
+            .processes
+            .iter()
+            .map(|p| (p.id, p.final_state.len()))
+            .collect();
+        assert_eq!(shape, [(0, 2), (1, 3), (2, 4)]);
     }
 
     #[test]
