@@ -11,7 +11,9 @@ taken in the planning discussion.
 
 **Status: planned, not started** (user, 2026-10-05). Work waits until the PRs
 and developments in flight have merged, so the migration starts from a quiet
-`research/notes/` and a settled `TODO.md`.
+`research/notes/` and a settled `TODO.md`. All other work pauses while the
+migration runs, so no parallel stream writes notes or backlog entries in the
+meantime. The decisions taken are in §9.
 
 ## 1. OKF in brief
 
@@ -107,7 +109,11 @@ Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
 - `index.md` files are generated from frontmatter by a script, never by hand.
 - A conformance lint runs in CI as a pixi task. It checks that every
   non-reserved `.md` under `kb/` parses and has a non-empty `type`, and that the
-  generated indexes are current. It uses a real YAML parser.
+  generated indexes are current.
+- The tooling — index generator, lint, backlog view — is Rust: one workspace
+  binary crate (e.g. `kb-tool`) with subcommands, wrapped by pixi tasks. It
+  parses frontmatter with a maintained YAML crate (`serde_yaml` itself is
+  archived), never a hand-written parser.
 
 ## 4. Sprint lifecycle under the bundle
 
@@ -127,13 +133,17 @@ kb/sprints/process-grammar/
   closeout.md             type: Sprint Record — what was banked, census delta
 ```
 
-1. **Open (manager).** Create the folder with `sprint.md` at `status: draft`
-   and `active: true`; the generated backlog view (§7) picks it up as the
-   current position. The sprint names the backlog items it takes on and sets
-   their `claimed_by` to the sprint branch. Before writing anything new,
-   look up the topic's existing concepts. Those still at `draft` are open
+1. **Open (sprint agent).** The manager dispatches a sprint agent session with
+   the backlog items in scope. Its first task is a plan of work: the sprint
+   folder with `sprint.md` at `status: draft` and `active: true`, and the
+   session briefs. It opens a **draft PR** carrying that plan, whose body lists
+   the claimed items one per line (`Backlog: <slug>`). The open draft PR *is*
+   the claim (§7.1). Before writing anything new, it looks up the topic's
+   existing concepts. Those still at `draft` are open
    questions; measurements whose recorded commit predates heavy churn in the
-   area are re-measurement candidates (§5).
+   area are re-measurement candidates (§5). The sprint agent pushes to the
+   draft PR only at infrequent checkpoints, typically once the manager has
+   checked a dev session's report, so intermediate CI runs stay few.
 2. **Survey.** Reading upstream code (note 38 §1, "MadGraph semantics read from
    the pinned source") produces or updates a reusable `Codebase Survey` under
    `references/codebases/`, so the next sprint starts from it instead of
@@ -175,11 +185,12 @@ kb/sprints/process-grammar/
      (§5). Take them after the sprint's last code change where possible.
    - **Record:** `closeout.md` holds what was banked and the census change;
      `landed_in` is filled for the sprint's measurements once the PR merges.
-   - **Backlog:** delete the files of items the sprint closed, release
-     `claimed_by` on the rest, and file the reports' "Found" entries as new
-     items.
+   - **Backlog:** delete the files of items the sprint closed, drop the
+     `Backlog:` lines of items it leaves open (releasing the claim), and file
+     the reports' "Found" entries as new items.
    - **Bookkeeping:** set `active: false` on `sprint.md`, add to the root
-     `log.md`, regenerate indexes, run the lint.
+     `log.md`, regenerate indexes, run the lint, and mark the PR ready for
+     review.
 
 `sprint.md` stays a readable overview, with the session list and decision
 summaries inline, so the plan can still be reviewed in one file. The lint can
@@ -262,11 +273,10 @@ type: Backlog Item
 title: acceptance.yml has never passed
 description: The release acceptance workflow 404s on release assets; the first run since going public should pass.
 area: hygiene            # validation | feature | performance | hygiene
-state: needs-user        # open | claimed | blocked | needs-user
-priority: 2
+state: needs-user        # open | blocked | needs-user
+priority: medium         # low | medium | high
 closes_when: An acceptance.yml run against a published release is green.
 blocked_by: []           # links to other items
-claimed_by: null         # branch name while a stream works on it
 opened: 2026-08-10
 ---
 Problem, what would resolve it, links to the concepts that hold the detail.
@@ -286,17 +296,27 @@ What this fixes in the structure rather than by discipline:
 
 Dev agents do not create, edit or close items: they list new work under
 "Found" in their session report, and the manager or the close-out session files
-it. `claimed_by` set on an unmerged branch is invisible to other branches; the
-manager sees across worktrees, which is enough until claims actually collide.
+it.
+
+**Claims are draft PRs, not frontmatter.** A sprint claims items by opening a
+draft PR whose body lists them (`Backlog: <slug>`, §4.1). A claim written into
+an item file would only be visible once merged; a draft PR is visible to every
+stream the moment it opens, and claiming edits no item file. The claim ends
+when the PR merges (the closed items' files are gone) or closes.
 
 ### 7.2 The generated view
 
 `pixi run backlog` renders the backlog from the item files and the sources
 below. The view is **not committed**: a committed generated file changes with
 every item edit, so two squash-merged PRs would conflict on it again, and
-GitHub cannot resolve that server-side. The docs site publishes the same
-rendering for humans. `TODO.md` becomes a stub that says where the backlog
-lives and is not edited again.
+GitHub cannot resolve that server-side. `TODO.md` becomes a stub that says
+where the backlog lives and is not edited again.
+
+The docs workflow renders the same view as a book page: `scripts/build-docs.sh`
+writes `docs/src/backlog.md` (gitignored) before `mdbook build`, the way it
+refreshes the CLI reference, and `SUMMARY.md` lists it. With a token available,
+the workflow annotates claimed items from the open draft PRs' `Backlog:` lines;
+offline, `pixi run backlog` shows items without claims.
 
 | Today's `TODO.md` section | Generated from |
 |---|---|
@@ -320,7 +340,7 @@ sprint. Agents doing the work are pointed at one thing — a session brief or a
 single item — and read outward from its links. `pixi run backlog` takes
 filters for that: `--item <slug>` prints the item, its `blocked_by` chain and
 the titles and descriptions of the concepts it links; `--area`, `--state` and
-`--claimed-by` narrow the planning view. No agent brief tells a dev agent to
+`--priority` narrow the planning view. No agent brief tells a dev agent to
 read the whole backlog first.
 
 ## 8. Migration phases
@@ -332,12 +352,17 @@ migrating the notes, so it goes first. Until Phase 4 the items live in
 `research/notes/backlog/` beside the notes and link to notes by path.
 
 1. Mechanically split each `- **title**` bullet into an item file.
-2. One agent pass per area trims narrative, writes `closes_when` and links the
-   notes that hold the detail. Entries describing finished work are dropped
-   (their record is the note or git history).
+2. One agent pass per area trims narrative, writes `closes_when`, assigns
+   `priority` (low / medium / high) and links the notes that hold the detail.
+   Entries describing finished work are not carried over as items, but any
+   caveat they hold is captured, best effort, by severity and scope: a standing
+   fact that bounds how results may be read (e.g. the `refdata-2` vs
+   `refdata-3` σ comparability warning) becomes or joins a concept; something
+   that still wants doing becomes a new item.
 3. Closed-sprint history becomes `Sprint Record` stubs; the scope decisions
-   become `Design Decision` concepts for the user to stamp `verified`.
-4. Add the generator with its filters, the lint and the docs-site page.
+   become `Design Decision` concepts, which the user reviews and stamps
+   `verified` in this phase.
+4. Add the Rust generator with its filters, the lint and the docs page.
 5. Replace `TODO.md` with the stub, and update the `TODO.md` instructions in
    `AGENTS.md`, `.agents/agents/*.md` and the skills: the manager reads the
    view; dispatch briefs name a session or an item.
@@ -421,16 +446,30 @@ attested receipts instead of the manifest's recorded cells.
 
 ### Trial
 
-Running the next sprint (MLM) in the §4 shape after Phases B and 0, before migrating
-the archive, tests the lifecycle on live work at low cost.
+The first sprint after the migration runs in the §4 shape, including the
+draft-PR claim, and is the lifecycle's test on live work. It takes a backlog
+item chosen at that point (MLM, the one planned earlier, has since merged).
 
-## 9. Open decisions
+## 9. Decisions (user, 2026-10-05)
 
-1. **Fan-out mechanism.** Phases 2–3 need ~15–20 agents, above the default
-   workflow size; running them as a Workflow needs explicit opt-in. Otherwise
-   they are dispatched one cluster at a time.
-2. **Bundle root name.** `research/kb/` is assumed; a top-level `knowledge/` is
-   the alternative.
+1. **Fan-out.** Phases 2–3 run ~15–20 agents in parallel; approved.
+2. **Bundle root** is `research/kb/`.
+3. **The backlog renders on the docs site** as part of the docs workflow
+   (§7.2).
+4. **No parallel work during the migration**, so new notes need no interim
+   naming scheme and sequential-number collisions cannot arise mid-migration.
+5. **The measurement convention (§5) starts after the migration.**
+6. **Caveats in finished-work `TODO.md` entries** are captured best effort as
+   concepts or new items by severity and scope (Phase B step 2).
+7. **The user verifies the scope decisions** during Phase B.
+8. **`priority` is `low | medium | high`.**
+9. **Tooling is Rust** (§3).
+10. **The trial sprint** takes a backlog item chosen when the migration ends.
+11. **Draft PRs are the claim mechanism** (§4.1, §7.1), with pushes at
+    infrequent checkpoints.
+
+Still deferred, for evidence that the simple version falls short: deriving
+each measurement's code dependencies to compute staleness (§5).
 
 ## 10. Risks
 
@@ -443,9 +482,11 @@ the archive, tests the lifecycle on live work at low cost.
 - **Lossy distillation.** A drafted concept drops a caveat the original note
   carried. Phase 3's coverage map and claim tracing guard this, and the
   archived notes stay available as `sources`.
-- **No browsable backlog on GitHub.** The view is generated, not committed;
-  the docs-site page is the browsable copy. The fallback, if that proves too
-  inconvenient, is committing the view with a CI freshness check and the rule
-  "on conflict, regenerate".
+- **No browsable backlog in the repository tree.** The view is generated, not
+  committed; the docs page is the browsable copy and is as fresh as the last
+  docs deploy. The fallback, if that proves too inconvenient, is committing the
+  view with a CI freshness check and the rule "on conflict, regenerate".
+- **Unreadable claims.** A draft PR whose body drops or mistypes a `Backlog:`
+  line claims nothing. The docs build warns on a slug that names no item.
 - **Frontmatter overhead per sprint.** Kept small by the scaffold script and
   generated indexes.
