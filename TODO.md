@@ -246,11 +246,12 @@ At most three lines each; the note is the full record. Earlier sprints
   MadGraph drives Pythia with `setMad = off`, which is unaffected; this crate
   writes the card as escaped text, which Pythia reads. Worth a report upstream
   (MadGraph's writer or Pythia's reader); nothing here depends on it.
-- **`StochasticRounding` has no per-part normalisation** (note 41 P12): the
-  `+3` strategy keeps unit weights, so a mixed-multiplicity sample's process
-  split is still the sample's own while `Buffer` normalises each `@N` to its
-  integration. Its `XSECUP` total is the integration's. Either give it a
-  per-part event count or refuse it on mixed cards.
+- **`StochasticRounding` refuses mixed-multiplicity cards** (note 41 P12; the
+  refusal landed in PR #14's review): unit weights leave each `@N` part's share
+  of the file to the realised sample, while `Buffer` normalises each part to its
+  integration, so `--strategy stochastic-rounding` on an `@0 + @1 + …` card is
+  refused in the CLI and in the emitter. Lifting it needs a per-part event count
+  drawn from the parts' integrated σ.
 - **The matched Pythia comparison's tolerance** (note 41 M5, C): at 21
   MadEvent and 20 vibegraph files with ten Pythia seeds every `@N` acceptance
   agrees within 1σ (−0.80, −0.95, −0.98) at a per-side resolution of 0.3 %

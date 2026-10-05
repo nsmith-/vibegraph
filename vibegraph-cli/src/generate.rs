@@ -393,6 +393,23 @@ fn refuse_stale_artifact_on_mixed_multiplicity(
     )))
 }
 
+/// Stochastic rounding writes unit weights, so on a sum over several
+/// multiplicities each part's share of the file would be the sample's own rather
+/// than its integration's. The emitter refuses it too; refusing here does so
+/// before the scan and the draw.
+fn refuse_rounding_on_mixed_multiplicity(
+    strategy: Strategy,
+    parts: usize,
+) -> Result<(), IntegrateError> {
+    if parts <= 1 || !matches!(strategy, Strategy::StochasticRounding) {
+        return Ok(());
+    }
+    Err(err(format!(
+        "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
+         multiplicities to each one's integrated cross section; use --strategy buffer"
+    )))
+}
+
 /// The accept/reject pass as a replayable source of events.
 ///
 /// Each accepted point is turned straight into a record: the momenta come back
@@ -1301,6 +1318,7 @@ fn generate_proton_sample(
     let MultiplicityGroups { groups, vetoes } =
         multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
     refuse_stale_artifact_on_mixed_multiplicity(artifact, groups.len())?;
+    refuse_rounding_on_mixed_multiplicity(args.strategy, groups.len())?;
     let mut parts_records = Vec::with_capacity(groups.len());
     // Under matching every record lists the resonances the clustering found on
     // their Breit–Wigner, whatever the card's decays.
@@ -1692,6 +1710,14 @@ mod tests {
     }
 
     const BASE_CARD: &str = "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n";
+
+    /// Stochastic rounding is refused on a sum over multiplicities and only there.
+    #[test]
+    fn stochastic_rounding_is_refused_on_a_sum_over_multiplicities() {
+        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 1).is_ok());
+        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::Buffer, 3).is_ok());
+        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 3).is_err());
+    }
 
     /// The refusal is the point, so it is the refusal that is tested: a matching
     /// pair passing proves nothing on its own, since a check that always passes

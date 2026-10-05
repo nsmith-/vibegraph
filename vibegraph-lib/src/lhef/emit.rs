@@ -12,7 +12,8 @@
 //!   the sample is normalised to its integrated cross section.
 //! * [`StochasticRounding`] keeps unit weights, declaring `IDWTUP = +3`, and
 //!   writes an event `floor(w) + Bernoulli(frac(w))` times. The tail is
-//!   represented as multiplicity instead of weight.
+//!   represented as multiplicity instead of weight. Each part's share of the file
+//!   is then the realised sample's, so it refuses a plan of several parts.
 //!
 //! # Why the `<init>` block decides the shape of this interface
 //!
@@ -187,6 +188,13 @@ pub enum EmitError {
     UndeclaredProcess(i32),
     /// An event names a part the plan does not declare.
     UndeclaredPart(usize),
+    /// The plan normalises several integrated parts separately, which this
+    /// strategy cannot do: it writes unit weights, so each part's share of the
+    /// file would be the sample's own rather than its integration's.
+    PartsUnsupported {
+        strategy: &'static str,
+        parts: usize,
+    },
 }
 
 impl std::fmt::Display for EmitError {
@@ -204,6 +212,12 @@ impl std::fmt::Display for EmitError {
             EmitError::UndeclaredPart(k) => write!(
                 f,
                 "an event names integrated part {k}, which the emission plan does not declare"
+            ),
+            EmitError::PartsUnsupported { strategy, parts } => write!(
+                f,
+                "{strategy} cannot normalise a sample of {parts} integrated parts (a sum over \
+                 final-state multiplicities) to each part's own cross section; use the buffered \
+                 strategy"
             ),
         }
     }
@@ -710,6 +724,14 @@ impl UnweightStrategy for StochasticRounding {
         plan: &EmitPlan,
         sink: &mut dyn Write,
     ) -> Result<EmitSummary, EmitError> {
+        // Unit weights leave each part's share of the file to the realised sample,
+        // so a sum over multiplicities would not carry each part's integration.
+        if plan.parts.len() > 1 {
+            return Err(EmitError::PartsUnsupported {
+                strategy: "stochastic rounding",
+                parts: plan.parts.len(),
+            });
+        }
         // Several processes need their shares in `<init>` before the first event
         // is written, so the sample is drawn once to count them and then again, the
         // source restarted and the rounding stream reseeded, to write it: the two
@@ -1184,6 +1206,43 @@ mod tests {
         fn sigma_pb(&self) -> f64 {
             self.inner.sigma_pb()
         }
+    }
+
+    /// Stochastic rounding writes unit weights, so it cannot pin each part to its
+    /// integration; a plan of several parts is refused before anything is
+    /// written, and the same source with one part still emits.
+    #[test]
+    fn stochastic_rounding_refuses_several_parts() {
+        let mut source = PartedSource {
+            inner: FixedWeights::new(vec![1.0, 1.5, 1.0], 40.0),
+            parts: vec![0, 1],
+            ids: vec![10, 11],
+        };
+        let mut two = plan(20, 40.0);
+        two.parts = vec![
+            PartSigma {
+                sigma_pb: 31.0,
+                sigma_err_pb: 0.2,
+            },
+            PartSigma {
+                sigma_pb: 9.0,
+                sigma_err_pb: 0.15,
+            },
+        ];
+        two.process_ids = vec![10, 11];
+        let rounding = StochasticRounding::new(7);
+        let mut sink = Vec::new();
+        let err = rounding
+            .emit(&mut source, &two, &mut sink)
+            .expect_err("two parts are refused");
+        assert!(matches!(err, EmitError::PartsUnsupported { parts: 2, .. }));
+        assert!(sink.is_empty(), "nothing is written before the refusal");
+
+        two.parts.clear();
+        source.restart();
+        rounding
+            .emit(&mut source, &two, &mut Vec::new())
+            .expect("one part emits");
     }
 
     fn written_weights(file: &LheFile, filter: impl Fn(&LheEvent) -> bool) -> f64 {
