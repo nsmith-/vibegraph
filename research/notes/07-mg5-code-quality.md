@@ -527,6 +527,195 @@ row whose marked line is a vector boson (`e+ e- > mu+ mu- $ z`, `t > b e+ ve $ w
 > with `lpp1 = lpp2 = 0` and `ebeam1 = ebeam2 = 250`: about 0.068 pb, against about
 > 0.049 pb once the fix is applied and the process regenerated.
 
+### `super_auto_dsig_group_v4.inc` — Direct Bug Found (grouped MadEvent scales and rejects the unpermuted point)
+
+This came out of the `mlm` sprint's per-event scale gates (note 41 §4 M1, "Landed (dump gates)") and its D2
+diagnosis. R1 turned it into a MadGraph-only self-consistency test. Status: **not filed**; the draft below is
+for the user to file.
+
+**Mechanism** (at `b7687064`, 3.7.1). In grouped output, `DSIGPROC`
+(`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`) does three things:
+- It builds `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))` (`:805`), which is the channel's symmetry
+  permutation of the sampled point.
+- It mirrors `P1` when `IMIRROR = 2` (`:814-826`).
+- It calls `update_scale_coupling(pp, wgt)` (`:842`), which hands the **unpermuted** `PP` to the first
+  `setclscales` call.
+
+The matrix element and `REWGT`'s second `setclscales` call (`reweight.f:1465`) read `P1`.
+
+The first call does all of the following:
+- It sets μR.
+- It sets `q2fact`. `DSIG` evaluates the densities at these scales before `REWGT` runs (`auto_dsig_v4.inc`,
+  `QSCALE = DSQRT(Q2FACT(…))`).
+- It sets `q2bck`.
+- It can reject the point. The `xqcut` test checks every clustering vertex with a jet daughter
+  (`reweight.f:1066-1085`).
+
+`REWGT` returns 0 when the second call rejects, so a point is kept only if both calls accept it.
+
+When a channel's permutation is not the identity, the first call clusters an event whose momenta do not match
+the flavour table and diagram of `P1`. σ comes out low with MLM on, and also with MLM off at the default
+dynamical scale (below). Non-grouped output is unaffected: there `P1` is `PP` boosted, and no permutation is
+applied (`auto_dsig_v4.inc:125-127`).
+
+Where such permutations occur, from a census of generated `symperms.inc` and `config_subproc_map.inc`:
+- Flavour-swapping permutations appear when an identical-flavour subprocess and a mixed-flavour one share a
+  group. For example, `u u > z u u` and `u d > z u d` both land in `P1_qq_zqq`.
+  - The group's configs 2, 5, 6 and 8 are integrated as permutations `(1,2,3,5,4)` of configs 1, 3, 4 and 7.
+  - Two of the four `u d` diagrams sit on configs 2 and 8. There the swap exchanges the physical `u` and `d`.
+- In `p p > e+ e- j j`, `P1_qq_llqq` maps 10 of its 24 configs. The mixed-flavour `q q'` subprocesses have
+  half their diagrams on them.
+- Measured cases where it changed little or nothing:
+  - `P2_gg_llqq` (`u ↔ u~`): D2 found no σ shift.
+  - `t ↔ t~`: M1 found different scales on 2 of 3735 permuted events.
+  - `u u~ > e+ e- u u~` alone: patched and unpatched σ are bit-identical at one seed; its two permuted configs
+    carry 0.17 % of σ.
+
+**Self-consistency test** (`validation/madgraph/repro/permuted_first_call/`).
+- The process is `define q = u d; generate u q > z u q`, output with `group_subprocesses True` and with
+  `False`.
+- The run card is 3.7.1's default LO card plus `ickkw = 1`, `xqcut = 40`, `nevents = 5000` and
+  `use_syst = F`. That means 13 TeV `pp`, built-in `nn23lo1`, and `dynamical_scale_choice = -1`.
+- Every seed and variant runs in a fresh copy of a freshly generated directory.
+- The spread is the sample standard deviation over seeds.
+- The control is the grouped output with the one-line fix below applied to its generated `auto_dsig.f`.
+
+| variant | seeds | σ per seed (pb) | mean (pb) | spread (pb) | err(mean) | vs non-grouped |
+|---|---|---|---|---|---|---|
+| grouped | 11–15 | 54.102, 54.612, 54.308, 54.928, 54.468 | 54.484 | 0.313 | 0.140 | −2.96 %, **−9.8σ** |
+| non-grouped | 11–15 | 56.019, 56.362, 55.830, 56.278, 56.228 | 56.143 | 0.216 | 0.097 | — |
+| grouped + fix | 11–15 | 56.146, 56.346, 56.069, 56.832, 56.279 | 56.334 | 0.299 | 0.134 | +0.34 %, +1.2σ |
+
+MadEvent's quoted per-run error averages 0.19–0.22 pb, close to the measured spreads here.
+
+Per channel (grouped against fixed, seeds 13–15):
+- The channels holding the flavour-swapping configs rise: `G1` by +7.7 % (14.5σ) and `G7` by +4.7 % (5.7σ).
+- `G3`, whose permuted config 5 swaps only the identical quarks of `u u`, does not move (−0.06 %).
+- `G4`, whose permuted config 6 is likewise identical-quark only, reads +1.9 % (+2.1σ), which is not
+  significant on its own. With MLM off (below) the same channel moves by 18σ.
+
+Single-seed exploration before the choice (grouped against fixed, quoted errors):
+
+| `xqcut` | grouped (pb) | fixed (pb) | shift |
+|---|---|---|---|
+| 20 | 158.74 | 162.09 | +2.1 % |
+| 40 | 53.891 | 55.981 | +3.9 % |
+| 80 | 15.630 | 16.020 | +2.5 % |
+
+With `e+ e-` instead of `z`, `define q = u d; generate q q > e+ e- q q` at `xqcut = 20` read +1.7 %.
+
+On `p p > e+ e- j j` (D2, note 41), the fix raises `P2_qq_llqq` by +1.8 % (18.063 → 18.394 pb).
+
+**It reaches `ickkw = 0` at default cards.**
+- Setup:
+  - The run card is 3.7.1's default LO card with only `nevents = 5000` and `use_syst = F`, so
+    `dynamical_scale_choice = -1`, `ickkw = 0` and no `xqcut`.
+  - The same five seeds were run per variant.
+  - The first call is then the only `setclscales` call. It sets μR and μF from the clustering, and its only
+    possible rejection is the 2 GeV factorisation-scale floor.
+- σ:
+
+  | variant | σ per seed (pb) | mean (pb) | spread (pb) | vs non-grouped |
+  |---|---|---|---|---|
+  | grouped | 104.95, 105.05, 103.32, 103.67, 104.43 | 104.28 | 0.77 | −3.97 %, **−7.6σ** |
+  | non-grouped | 109.66, 106.92, 108.79, 108.85, 108.77 | 108.60 | 1.01 | — |
+  | grouped + fix | 109.63, 108.82, 107.79, 107.89, 108.96 | 108.62 | 0.77 | +0.02 %, 0.0σ |
+
+- Per channel (grouped against fixed, five seeds):
+  - `G7` (config 8, which swaps `u d > z u d`'s final `u` and `d`) rises by +14.6 % (36σ).
+  - `G4` rises by +5.7 % (18σ). Its only permuted config swaps the identical quarks of `u u > z u u`; `u d`
+    has no diagram on it and is skipped there.
+  - `G1` (config 2, also a `u`↔`d` swap) does not move (−0.3 %).
+  - `G3` is identical on every seed.
+- So the defect is **not limited to flavour swaps**. An identical-particle permutation changes σ in one channel
+  (config 6) and not in another (config 5).
+- Which clustering path makes the difference is not isolated. The channel-restricted re-cluster of the jet
+  memo (`reweight.f:662-679`), which clusters against `iconfig`'s diagram, is the natural suspect but is not
+  confirmed.
+- Every grouped MadEvent run whose output contains non-identity symmetry permutations, and which uses
+  `dynamical_scale_choice = -1` (the default), is exposed, whether or not it is matched.
+
+**The vectorised path** (`vector_size > 1`) has the same shape and is not covered by the fix:
+- `DSIG_VEC` calls `update_scale_coupling_vec(all_p, …)` (`:312`) before `DSIGPROC_VEC` builds and mirrors
+  `ALL_P1`.
+- `ALL_P1` is local to `DSIGPROC_VEC` and dimensioned `(0:3,NEXTERNAL,VECSIZE)`. The scale routine indexes its
+  argument as `(4*maxdim/3+14,VECSIZE)`.
+- A fix therefore moves the call into `DSIGPROC_VEC`, after the mirror loop, with a copy into an array of that
+  shape. By reading only; not measured.
+
+**Upstream report draft.**
+
+> **Title:** Grouped MadEvent sets the dynamical scales (and applies the MLM `xqcut` rejection) on the
+> unpermuted phase-space point: σ depends on `group_subprocesses`, −4 % at default cards
+>
+> **Version:** MadGraph5_aMC@NLO 3.7.1 (`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`; older
+> lines not checked).
+>
+> **Summary.** In grouped output, `DSIGPROC` evaluates the matrix element and `REWGT` on
+> `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))`, but `update_scale_coupling` is called with the unpermuted
+> `PP` (line 842). The first `setclscales` call sets μR, the PDF scales used for the densities, and `q2bck`,
+> and it can reject the point through the `xqcut` check.
+>
+> On channels whose symmetry permutation is not the identity, that call clusters an event whose momenta do
+> not match the flavours and diagram of the point actually evaluated. With the default
+> `dynamical_scale_choice = -1` this changes μR and μF. With `ickkw = 1` it also rejects points that `P1`
+> would keep.
+>
+> Take `define q = u d; generate u q > z u q` at 13 TeV with default cards and `nevents = 5000`:
+> - The grouped output gives 104.28 ± 0.34 pb.
+> - `set group_subprocesses False` gives 108.60 ± 0.45 pb.
+> - That is −4.0 %, or 7.6σ, with errors from the spread of five independently generated directories per
+>   mode.
+>
+> With `ickkw = 1` and `xqcut = 40` the same test gives 54.48 ± 0.14 against 56.14 ± 0.10 pb (−3.0 %, 9.8σ).
+>
+> **Fix** (`super_auto_dsig_group_v4.inc`, `DSIGPROC`):
+>
+> ```diff
+>        IF (VECSIZE_MEMMAX.LE.1.and.imode.ne.5) THEN ! no-vector (NB not VECSIZE_USED!)
+> -            call update_scale_coupling(pp, wgt)
+> +            call update_scale_coupling(p1, wgt)
+>        endif
+> ```
+>
+> With it, the grouped output agrees with the non-grouped output: 108.62 ± 0.35 pb, and 56.33 ± 0.13 pb with
+> matching. The vectorised
+> path (`update_scale_coupling_vec(all_p, …)` in `DSIG_VEC`, called before `DSIGPROC_VEC` builds `ALL_P1`)
+> has the same problem and needs the call moved after `ALL_P1` is built.
+>
+> **Reproduce** (about 10–30 min on 2 cores):
+>
+> ```
+> import model sm
+> define q = u d
+> generate u q > z u q
+> output grouped
+> ```
+>
+> Make the same output with `set group_subprocesses False` first. Launch both with default cards
+> (`nevents = 5000` is enough), five different `iseed` values each, each run in a fresh copy of the generated
+> directory. Compare the mean σ, using the spread over seeds as the error.
+>
+> `P1_qq_zqq/symperms.inc` shows the `(1,2,3,5,4)` permutations on configs 2, 5, 6 and 8. The deficit sits in
+> channels `G4` and `G7` (and in `G1` as well once `ickkw = 1`).
+
+**Implications for vibegraph.**
+- vibegraph clusters both calls on the momenta the matrix element reads, which is the fixed behaviour.
+- Note 41's D2 decisions register this as a documented deviation (H1): the affected manifest rows name it, and
+  the per-event gates report permuted events as `info, permuted P1`.
+- A σ comparison on a grouped MadEvent reference that contains such permutations is biased by this defect, and
+  its size depends on the process: +1.8 % on `P2_qq_llqq`, and 3–4 % here.
+- The same holds for unmatched grouped references that use `dynamical_scale_choice = -1`. Whether any banked
+  `ickkw = 0` row carries such permutations is not measured.
+
+**Open before filing** (user, 2026-09-29: deferred to a separate session that finalises this and the other
+open MadGraph defect reports).
+- A census of the banked grouped references: which rows have subprocess groups with non-identity `PERMS`,
+  and, for those rows, R1's grouped-against-non-grouped test, to size the bias on each one.
+- Isolating the clustering path behind the identical-quark channels (the jet memo's restricted re-cluster is
+  the suspect).
+- Measuring the vectorised path (`vector_size > 1`) and writing its fix.
+
 ### `aloha/aloha_lib.py` — Observations
 
 - The `KERNEL` global object (`Computation()`) holds all symbolic variables and is shared across

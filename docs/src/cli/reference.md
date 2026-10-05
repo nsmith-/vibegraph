@@ -125,7 +125,7 @@ Options:
       --target-rel <REL>
           Integrate until σ's relative uncertainty reaches this.
           
-          The uncertainty the stop reads is the quoted one widened by each channel's own `√max(1, χ²/dof)`, so a run whose iterations disagree by more than their error bars keeps going. `--neval` sets the points an iteration spends; how many iterations run is what the target decides, bounded by `--min-iters`, `--max-iters` and `--max-points`.
+          The uncertainty the stop reads is the quoted one with each channel's variance widened to the scatter its iterations actually show, where that is larger, so a run whose iterations disagree by more than their error bars keeps going. `--neval` sets the points an iteration spends; how many iterations run is what the target decides, bounded by `--min-iters`, `--max-iters` and `--max-points`.
           
           [default: 0.001]
 

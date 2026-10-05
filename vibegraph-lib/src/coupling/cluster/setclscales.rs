@@ -19,6 +19,12 @@
 //! vertex, that vertex takes the emitted leg's transverse mass instead of the
 //! merge measure.
 //!
+//! Under matching (`ickkw > 0`) the walk never returns early, and factorisation
+//! scales already set on entry replace the central vertices' scales before the
+//! formulas read them. `rewgt` relies on that: its second call arrives with the
+//! first call's scales still set. [`ClusterScales::q2central`] is the central
+//! factorisation scale a first call leaves in `q2bck`.
+//!
 //! The jet count is memoised per integration channel: the first event of a
 //! channel is clustered restricted to that channel and its jet count stored, and
 //! any later event whose unrestricted clustering yields a different count is
@@ -198,6 +204,12 @@ pub struct Attempt {
 pub struct ClusterScales {
     pub mu_r: f64,
     pub q2fact: [f64; 2],
+    /// The central factorisation scale per beam: `q2fact` as it stood once
+    /// `scalefact` was applied and before the branches that lower it for the
+    /// matrix element's densities. `reweight.f` copies exactly this into `q2bck`
+    /// on a call that does not keep it (`:1141-1144`). `None` on a beam whose
+    /// scale is fixed, or where the walk never reached that assignment.
+    pub q2central: [Option<f64>; 2],
     /// `jfirst` before the fixup that fills an unset one from `jlast`.
     pub jfirst_raw: [usize; 2],
     pub jfirst: [usize; 2],
@@ -354,6 +366,7 @@ pub fn setclscales(
 
     let mut mur_branch = MurBranch::NotEntered;
     let mut muf_branch = MufBranch::None;
+    let mut q2central = [None; 2];
     let already_set = settings.ickkw == 0
         && (settings.fixed_fac[0] || q2fact[0] > 0.0)
         && (settings.fixed_fac[1] || q2fact[1] > 0.0)
@@ -362,6 +375,19 @@ pub fn setclscales(
         for beam in 0..2 {
             if jlast[beam] > 0 {
                 pt2[jlast[beam] - 1] = pt2[jlast[beam] - 1].max(at(&pt2, jfirst[beam]));
+            }
+        }
+
+        // Under matching, factorisation scales already set on entry — the card's
+        // fixed ones, or the first call's on the call `rewgt` makes — replace the
+        // central vertices' scales. A colour line through the whole event shares
+        // one central vertex, which then keeps beam 1's (`reweight.f:1114-1119`).
+        if settings.ickkw > 0 && q2fact[0] > 0.0 && q2fact[1] > 0.0 {
+            if jcentral[0] > 0 {
+                pt2[jcentral[0] - 1] = q2fact[0];
+            }
+            if jcentral[1] > 0 && jcentral[1] != jcentral[0] {
+                pt2[jcentral[1] - 1] = q2fact[1];
             }
         }
 
@@ -390,10 +416,14 @@ pub fn setclscales(
                 }
             }
         }
+        // The precedence is Fortran's: `.not.fixed_fac_scale1 .or.
+        // fixed_fac_scale2`, which skips the block exactly when beam 1 is fixed
+        // and beam 2 is not.
         if !settings.fixed_fac[0] || settings.fixed_fac[1] {
             for beam in 0..2 {
                 if !settings.fixed_fac[beam] {
                     q2fact[beam] *= settings.scalefact * settings.scalefact;
+                    q2central[beam] = Some(q2fact[beam]);
                 }
             }
         }
@@ -487,6 +517,7 @@ pub fn setclscales(
     Ok(ClusterScales {
         mu_r: scale,
         q2fact,
+        q2central,
         jfirst_raw: walk.jfirst_raw,
         jfirst,
         jlast,
@@ -526,6 +557,60 @@ fn fs_leg(ipart: &[[usize; 2]], mask: u32) -> usize {
     } else {
         0
     }
+}
+
+/// `ptclus` (`reweight.f:1225-1269`): per external leg, in the clustering's own
+/// leg order, the scale the event record's `<scales pt_clust_N>` reports for it.
+///
+/// A final-state leg takes the largest clustering scale `√pt2ijcl(n)` among
+/// the jet vertices it takes part in as a `goodjet` line; a leg that takes part
+/// in none takes `etot`, the collider energy `√stot` (not `√ŝ`). "Takes part"
+/// means the leg is one of the two `ipart` entries of a daughter of vertex `n`,
+/// where the terminal vertex's daughters are its first beam line and the
+/// leftover line. A daughter whose `ipart` names a final-state leg that is not
+/// a jet (`iqjets = 0`) stops being a `goodjet` line from that point on, which
+/// is read before the vertex test for the same entry. The beams stay at `0`.
+///
+/// It reads `pt2ijcl` after every rewrite `setclscales` made, so under
+/// matching the second call's value is the one `unwgt.f` writes.
+pub fn ptclus(scales: &ClusterScales, colors: &ColorTable, etot: f64) -> Vec<f64> {
+    let merges = &scales.clustering.merges;
+    let n = merges.len() + 2;
+    let n_masks = 1usize << n;
+    let mut pdg = vec![0i64; n_masks];
+    let mut ipart = vec![[0usize; 2]; n_masks];
+    let mut goodjet = vec![false; n_masks];
+    for line in &scales.lines {
+        let mask = line.mask as usize;
+        pdg[mask] = line.pdg;
+        ipart[mask] = line.ipart;
+        goodjet[mask] = line.goodjet;
+    }
+    let mut out = vec![0.0f64; n];
+    for (step, merge) in merges.iter().enumerate() {
+        let islast = step + 1 == n - 2;
+        let [d1, d2] = [merge.daughters[0] as usize, merge.daughters[1] as usize];
+        let mother = merge.mother as usize;
+        let daughters = if islast { [d1, mother] } else { [d1, d2] };
+        let jet_vertex = is_jet_vertex(colors, mother, d1, d2, &pdg, &ipart, islast);
+        let scale = scales.pt2[step].sqrt();
+        for daughter in daughters {
+            for leg in ipart[daughter] {
+                if leg <= 2 {
+                    continue;
+                }
+                if goodjet[daughter] && scales.iqjets[leg - 1] == 0 {
+                    goodjet[daughter] = false;
+                }
+                if jet_vertex && goodjet[daughter] {
+                    out[leg - 1] = out[leg - 1].max(scale);
+                } else if out[leg - 1] == 0.0 {
+                    out[leg - 1] = etot;
+                }
+            }
+        }
+    }
+    out
 }
 
 struct Walk {
@@ -832,14 +917,18 @@ fn fortran_isign(k: i64) -> i64 {
 
 /// `ipartupdate`: which external leg each internal line stands for, and the jet
 /// flavour a splitting hands its mother.
-fn ipartupdate(
+///
+/// Returns `false` for a final-state colour structure none of the reference's
+/// arms names, where `reweight.f` stops the run (`stop 3`); the mother's
+/// provenance is then left as it was.
+pub(super) fn ipartupdate(
     colors: &ColorTable,
     momenta: &[[f64; 4]],
     imo: u32,
     daughters: [u32; 2],
     pdg: &mut [i64],
     ipart: &mut [[usize; 2]],
-) {
+) -> bool {
     let (mo, d1, d2) = (imo as usize, daughters[0] as usize, daughters[1] as usize);
     let mut idmo = pdg[mo];
     let (id1, id2) = (pdg[d1], pdg[d2]);
@@ -871,7 +960,7 @@ fn ipartupdate(
                 }
             }
         }
-        return;
+        return true;
     }
 
     if colors.is_jet(idmo) {
@@ -940,10 +1029,13 @@ fn ipartupdate(
         ipart[mo] = ipart[d2];
     } else if cmo.abs() == 8 && c1.abs() == 8 && c2.abs() == 1 {
         ipart[mo] = ipart[d1];
+    } else {
+        // Where `reweight.f` stops the run. The scale walk leaves the mother's
+        // provenance unset, which shows up as a mismatch rather than as a wrong
+        // scale; the matched reweighting refuses the event instead.
+        return false;
     }
-    // A colour structure none of the above names is where `reweight.f` stops the
-    // run; the mother's provenance is simply left unset here, which shows up as
-    // a mismatch rather than as a wrong scale.
+    true
 }
 
 #[cfg(test)]
@@ -1041,6 +1133,27 @@ mod tests {
             true,
         )
         .expect("the clustering succeeds")
+    }
+
+    /// `ptclus` on `u ū → u ū`: the beams stay at zero, the leg left over at
+    /// the terminal vertex takes the collider energy (the terminal vertex is
+    /// never a jet vertex), and the leg the first merge emits off the beam
+    /// takes that merge's scale exactly when the walk tagged it a jet.
+    #[test]
+    fn ptclus_takes_the_jet_vertex_scale_or_the_collider_energy() {
+        let colors = colors();
+        for forward in [true, false] {
+            let scales = run(&event(forward));
+            let first = scales.clustering.merges[0];
+            assert_eq!(first.daughters, [0b0001, 0b0100]);
+            let etot = 13000.0;
+            let out = ptclus(&scales, &colors, etot);
+            assert_eq!(out[0], 0.0);
+            assert_eq!(out[1], 0.0);
+            assert_eq!(out[3], etot);
+            assert!(scales.iqjets[2] > 0, "the emitted quark is a jet");
+            assert_eq!(out[2], scales.pt2[0].sqrt());
+        }
     }
 
     /// With no parton density the beam measure is `E²`, equal for both legs, so

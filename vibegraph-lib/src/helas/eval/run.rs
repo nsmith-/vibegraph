@@ -11,6 +11,7 @@ use crate::helas::repr::{Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 use num_traits::{FromPrimitive, Zero};
 
+#[cfg(any(test, debug_assertions, feature = "extended-validation"))]
 use super::analysis::NodeAnalysis;
 use super::compile::AmplitudeEvaluator;
 use super::fold::{ExtLeg, Folded};
@@ -18,10 +19,14 @@ use super::kernel;
 use super::lane_field::{LaneField, Lanes, SupportedLanes};
 use super::lanes::{transpose_points, unpack};
 use super::layout::{Instr, RootKind, N_ARENAS};
-use super::op::{Const, ConstKind, Node, NodeId, Op};
+#[cfg(any(test, debug_assertions, feature = "extended-validation"))]
+use super::op::NodeId;
+use super::op::{Const, ConstKind, Node, Op};
 #[cfg(test)]
 use super::tree::Tree;
-use super::waveform_slot::{MultivectorWf, WaveformSlot};
+#[cfg(any(debug_assertions, feature = "extended-validation"))]
+use super::waveform_slot::MultivectorWf;
+use super::waveform_slot::WaveformSlot;
 use crate::ufo::EvaluatedModel;
 
 #[cfg(test)]
@@ -1459,6 +1464,7 @@ fn build_external_slot<F: Real>(env: &EvalEnv<'_, F>, leg_table_idx: usize) -> W
 /// no momentum, and the predicted momentum combination must resolve to the slot's routed
 /// momentum. Enabled in debug builds and under `extended-validation` (so it runs over the
 /// full unit suite and both MG gate suites); compiled out of release builds.
+#[cfg(any(test, debug_assertions, feature = "extended-validation"))]
 #[inline(always)]
 fn cross_check_node<F: Real>(
     analysis: &NodeAnalysis,

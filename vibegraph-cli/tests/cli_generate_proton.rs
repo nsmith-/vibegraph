@@ -39,12 +39,13 @@
 //! file and agrees with itself. `validate_hadronic` and `amplitude_oracle`
 //! cover those.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use vibegraph::artifact::{ChannelKey, IntegrateArtifact};
+use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
@@ -90,27 +91,31 @@ const SEED: &str = "20260731";
 const N_EXT: usize = 5;
 const N_IN: usize = 2;
 
-/// How far the sample's own cross section may sit from the integration's,
-/// relatively.
+/// How far the sample's own cross section may sit from the integration's, in
+/// units of the two errors combined.
 ///
-/// The bound is a measurement, not a `1/√N`: over five seeds at this budget the
-/// deviations are `{−0.36, −0.14, −0.62, +0.47, +0.29}%`, and the spread is set by
-/// the events above their channel's `w_max`, not by the event count. The same sweep
-/// at `neval = 100 000` gives `{−0.19, +2.29, +1.67, +1.37, +1.11}%` — four of five
-/// on the *same side*, because the sample's estimator is a single pass over the
-/// frozen grids and so does not inherit VEGAS's `1/σ²` combination of iterations,
-/// which at that budget still has the banked σ about 1% low. This comparison is
-/// therefore also a read on the integration's convergence, and the bound sits above
-/// the converged spread and below what an unconverged budget produces.
+/// The buffered writer normalises the file to the integration, so `XSECUP` and
+/// the mean `XWGTUP` equal the integration's σ by construction and comparing them
+/// with it would measure nothing. What still measures the accept/reject pass is
+/// the sample's own estimate before that normalisation, `σ̂ = W·Σw/T`, which the
+/// writer records in the header with its statistical error
+/// (`sample_estimate_error`). The pull of `σ̂` against the integration, over
+/// that error and the integration's in quadrature, is bounded here.
 ///
-/// Re-measured by `probe_sample_sigma_seed_headroom`, which walks the whole
-/// integrate-then-generate path at five seeds rather than the one the gate
-/// spends: `{+0.355, −0.428, +0.009, −0.264, −0.396}%`, worst `4.28e-3`, so the
-/// bound clears the five-seed spread by `3.5x` and the gate's own seed by
-/// `4.2x`. The spread is the same size as the sweep this bound was set from and
-/// its signs are not — a single-seed cell is a draw, and which side of the
-/// integration a given seed's sample lands is not a property of the seed.
-const SIGMA_MAX_REL: f64 = 0.015;
+/// The bound is in the estimator's own units because its scale is the sample's
+/// binomial error, not a fixed fraction: at 20 000 events and a few percent
+/// efficiency that error is ~0.75 %, and the five-seed spread of the relative
+/// distance measured on this process is 0.84 % (`{−1.34, +0.27, +0.18, +0.83,
+/// −0.65}%`), the same size. A relative bound at 1.5 % sat 1.1× above the
+/// gate's own seed. The pull bound passes any sample within about 2.6 % of its
+/// integration at this event count and fails one that is biased by more; a
+/// smaller bias is below what one 20 000-event sample can resolve.
+///
+/// Measured by `probe_sample_sigma_seed_headroom` on the five seeds: pulls
+/// `{−1.89, +0.38, +0.25, +1.13, −0.89}` on quoted errors of 0.70–0.72 %,
+/// `Σpull²/n` 1.17, so the quoted error is the size of the spread and the bound
+/// clears the worst seed, the gate's own, by `1.9x`.
+const SAMPLE_PULL_MAX: f64 = 3.5;
 
 fn output_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
@@ -176,11 +181,11 @@ fn integrate_at(seed: &str) -> Run {
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
     assert_eq!(artifact.pdf_set, PDF_SET);
     assert!(
-        artifact
-            .channels
-            .iter()
-            .all(|c| matches!(c.key, ChannelKey::GroupChannel { .. })),
-        "the hadronic path must bank (group, diagram) channels"
+        artifact.channels.iter().all(|c| matches!(
+            c.key,
+            ChannelKey::GroupChannel { .. } | ChannelKey::MergedChannel { .. }
+        )),
+        "the hadronic path must bank (group, diagram) channels, or maps shared by several"
     );
     Run {
         _tmp: tmp,
@@ -214,11 +219,9 @@ impl Run {
         cmd
     }
 
-    fn generate(&self, nevents: usize, name: &str) -> LheFile {
-        self.generate_at(nevents, name, SEED)
-    }
-
-    fn generate_at(&self, nevents: usize, name: &str, seed: &str) -> LheFile {
+    /// The file as parsed, and its text, whose header carries what the parser
+    /// does not keep.
+    fn generate_text_at(&self, nevents: usize, name: &str, seed: &str) -> (LheFile, String) {
         let out = self
             .generate_cmd_at(name, seed)
             .arg("--nevents")
@@ -232,7 +235,8 @@ impl Run {
         );
         eprint!("{}", String::from_utf8_lossy(&out.stdout));
         let text = std::fs::read_to_string(self.dir.join(name)).expect("read the event file");
-        LheFile::parse(&text).expect("our own file parses")
+        let file = LheFile::parse(&text).expect("our own file parses");
+        (file, text)
     }
 }
 
@@ -355,14 +359,13 @@ fn banked_colour_patterns() -> &'static BTreeSet<ColourPattern> {
 /// contains the reading the gate takes.
 const HEADROOM_SEEDS: [&str; 5] = [SEED, "20260732", "20260733", "20260734", "20260735"];
 
-/// [`SIGMA_MAX_REL`]'s headroom over five seeds rather than the gate's one.
+/// [`SAMPLE_PULL_MAX`]'s headroom over five seeds rather than the gate's one.
 ///
-/// The gate integrates and generates at a single seed and asserts one relative
-/// distance, so what it bounds is one draw from a distribution it never sees.
-/// This walks the same integrate-then-generate path at five seeds and prints the
-/// worst of them against the bound, because a single-seed statistic sitting close
-/// to its threshold is the failure mode a sampling-stream change surfaces one
-/// cell at a time.
+/// The gate integrates and generates at a single seed and asserts one pull, so
+/// what it bounds is one draw from a distribution it never sees. This walks the
+/// same integrate-then-generate path at five seeds and prints each seed's pull,
+/// their χ²/dof — which says whether the sample estimate's quoted error is the
+/// size of its spread — and the worst of them against the bound.
 ///
 /// Each seed drives its own integration as well as its own generation: the
 /// quantity under test is the sample's cross section against *its own*
@@ -378,30 +381,31 @@ fn probe_sample_sigma_seed_headroom() {
             RUN,
         );
     }
-    let mut rels = Vec::new();
+    let mut pulls = Vec::new();
     for seed in HEADROOM_SEEDS {
         let run = integrate_at(seed);
-        let file = run.generate_at(NEVENTS, "events.lhe", seed);
+        let (file, text) = run.generate_text_at(NEVENTS, "events.lhe", seed);
         assert_eq!(file.events.len(), NEVENTS);
-        let mean = file.events.iter().map(|e| e.weight).sum::<f64>() / NEVENTS as f64;
-        let rel = mean / run.artifact.sigma_pb - 1.0;
+        let (sample, sample_err) = sample_estimate_in(&text).expect("the header records σ̂");
+        let pull = (sample - run.artifact.sigma_pb) / sample_err.hypot(run.artifact.sigma_err_pb);
         eprintln!(
-            "  seed {seed}: sigma(sample) = {mean:.4} pb vs integration {:.4} ± {:.4} pb \
-             -> rel {:+.3}%",
+            "  seed {seed}: sigma(sample) = {sample:.4} ± {sample_err:.4} pb vs integration \
+             {:.4} ± {:.4} pb -> rel {:+.3}%, pull {pull:+.2}",
             run.artifact.sigma_pb,
             run.artifact.sigma_err_pb,
-            100.0 * rel
+            100.0 * (sample / run.artifact.sigma_pb - 1.0)
         );
-        rels.push(rel);
+        pulls.push(pull);
     }
-    let worst = rels.iter().fold(0.0f64, |a, r| a.max(r.abs()));
+    let worst = pulls.iter().fold(0.0f64, |a, p| a.max(p.abs()));
+    let chi2 = pulls.iter().map(|p| p * p).sum::<f64>() / pulls.len() as f64;
     eprintln!(
-        "\nHEADROOM cli_generate_proton SIGMA_MAX_REL {SIGMA_MAX_REL} vs worst |rel| over \
-         {} seeds {worst:.3e} -> {:.1}x | 1-seed |rel| {:.3e} -> {:.1}x",
-        rels.len(),
-        SIGMA_MAX_REL / worst,
-        rels[0].abs(),
-        SIGMA_MAX_REL / rels[0].abs(),
+        "\nHEADROOM cli_generate_proton SAMPLE_PULL_MAX {SAMPLE_PULL_MAX} vs worst |pull| over \
+         {} seeds {worst:.2} -> {:.1}x | 1-seed |pull| {:.2} -> {:.1}x | Σpull²/n {chi2:.2}",
+        pulls.len(),
+        SAMPLE_PULL_MAX / worst,
+        pulls[0].abs(),
+        SAMPLE_PULL_MAX / pulls[0].abs(),
     );
 }
 
@@ -429,7 +433,7 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
         );
     }
     let run = integrated();
-    let file = run.generate(NEVENTS, "events.lhe");
+    let (file, text) = run.generate_text_at(NEVENTS, "events.lhe", SEED);
     assert_eq!(file.events.len(), NEVENTS);
 
     // The `<init>` block is the hadronic one: proton beams at the run card's own
@@ -556,22 +560,27 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
 
     let mean = weight_sum / NEVENTS as f64;
     let variance = weight_sq / NEVENTS as f64 - mean * mean;
-    let sample_error = (variance / NEVENTS as f64).sqrt();
+    let event_spread = (variance / NEVENTS as f64).sqrt();
     let declared = file.init.processes[0].xsec_pb;
+    let declared_err = file.init.processes[0].xerr_pb;
     let integrated = run.artifact.sigma_pb;
-    let rel = mean / integrated - 1.0;
+    let integrated_err = run.artifact.sigma_err_pb;
+    let (sample, sample_err) =
+        sample_estimate_in(&text).expect("the header records the sample's own estimate");
+    let pull = (sample - integrated) / sample_err.hypot(integrated_err);
 
     eprintln!(
         "-- {RUN} -- {NEVENTS} events, {} distinct flavour assignments over {} initial-state \
          arrangements\n  \
-         sigma(sample) = {mean:.4} ± {sample_error:.4} pb vs integration {integrated:.4} ± \
-         {:.4} pb ({:+.3}%)\n  \
+         sigma(sample, before normalisation) = {sample:.4} ± {sample_err:.4} pb vs integration \
+         {integrated:.4} ± {integrated_err:.4} pb ({:+.3}%, pull {pull:+.2})\n  \
+         file: XSECUP {declared:.4} ± {declared_err:.4} pb, mean XWGTUP {mean:.4} \
+         (spread of the written weights {event_spread:.4})\n  \
          momentum balance <= {worst_balance:.2e} of the incoming energy, |p^2 - m^2| <= \
          {worst_mass:.2e} of s-hat, AQCDUP within {worst_alpha_s:.2e} of the grid",
         seen_flavors.len(),
         seen_initial.len(),
-        run.artifact.sigma_err_pb,
-        100.0 * rel,
+        100.0 * (sample / integrated - 1.0),
     );
 
     assert!(worst_balance < 1e-9, "momenta do not balance");
@@ -580,16 +589,23 @@ fn generated_proton_events_are_coherent_and_madgraph_labelled() {
         worst_alpha_s < ALPHA_S_TOLERANCE,
         "AQCDUP is not the PDF grid's coupling"
     );
-    // `IDWTUP = -4` says the cross section is the mean of the event weights, and the
-    // buffered writer declares the sample's own.
+    // `IDWTUP = -4` says the cross section is the mean of the event weights, and
+    // the buffered writer pins that to the integration's, error included.
     assert!(
         (mean / declared - 1.0).abs() < 1e-6,
         "mean XWGTUP {mean:.6e} vs declared XSECUP {declared:.6e}"
     );
     assert!(
-        rel.abs() < SIGMA_MAX_REL,
-        "the sample's cross section is {:.3}% from the integration's",
-        100.0 * rel
+        (declared / integrated - 1.0).abs() < 1e-6
+            && (declared_err / integrated_err - 1.0).abs() < 1e-6,
+        "XSECUP {declared:.6e} ± {declared_err:.6e} is not the integration's \
+         {integrated:.6e} ± {integrated_err:.6e}"
+    );
+    // The accept/reject pass itself, measured before the normalisation hid it.
+    assert!(
+        pull.abs() < SAMPLE_PULL_MAX,
+        "the sample's own cross section is {:+.3}% ({pull:+.2} σ) from the integration's",
+        100.0 * (sample / integrated - 1.0)
     );
     // 24 subprocesses, and the mirrored ordering of each initial state whose two
     // partons differ, is what the decomposition sums; a sample that reached only
@@ -795,4 +811,538 @@ fn dynamical_card() -> String {
         "the banked run card no longer spells its fixed-scale switches as expected"
     );
     out
+}
+
+/// A card of two final-state multiplicities, `p p > e+ e- @0` and
+/// `p p > e+ e- j @1`, integrated and replayed end to end on the banked card
+/// (fixed scales, `ickkw = 0`).
+///
+/// What it checks is the composition, not either multiplicity's physics, which
+/// the single-multiplicity gates cover:
+///
+/// * the run warns that an unmatched sum double counts, as decided for
+///   `ickkw = 0`;
+/// * the artifact is a version-10 file whose channels are keyed by multiplicity,
+///   two-jet-free channels over `2 + 2` coordinates and one-jet ones over `2 + 5`,
+///   each multiplicity's weights normalised over its own channels;
+/// * `<init>` declares both process numbers, every event names one of them as
+///   `IDPRUP` and has that process's leg count, and the sample splits between
+///   them as the integration's per-multiplicity cross sections do;
+/// * each process number declares its multiplicity's integrated σ and error,
+///   its written weights sum to that σ over the file's event count, and the
+///   sample's own estimate before that normalisation agrees with the
+///   integration;
+/// * the same artifact labelled as a version-9 file is refused by its version.
+#[test]
+fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
+    if !banked_present() {
+        vibegraph::validation::require(
+            "a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum",
+            "the banked MadGraph run and the fetched PDF set",
+            RUN,
+        );
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let proc_card = dir.join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate p p > e+ e- @0\nadd process p p > e+ e- j @1\n",
+    )
+    .unwrap();
+    let run_card = run_dir().join("Cards/run_card.dat");
+    let out = dir.join("out");
+    let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--fixed-budget", "--neval", "40000", "--niter", "5"])
+        .args(["--seed", SEED])
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&integrate.stderr);
+    assert!(integrate.status.success(), "integrate failed:\n{stderr}");
+    assert!(
+        stderr.contains("ickkw = 0") && stderr.contains("double counts"),
+        "an unmatched sum over multiplicities is not warned about:\n{stderr}"
+    );
+
+    let artifact_path = out.join("grid.bin.zst");
+    let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
+    // `@1`'s 24 (group, diagram) pairs share six maps.
+    assert_eq!(artifact.format_version, 11);
+    let mut sigma = [0.0f64; 2];
+    let mut alpha = [0.0f64; 2];
+    let mut previous = 0;
+    for c in &artifact.channels {
+        let (ChannelKey::MultiplicityChannel { final_state, .. }
+        | ChannelKey::MergedChannel { final_state, .. }) = c.key
+        else {
+            panic!(
+                "a channel of a sum is keyed by multiplicity, not {:?}",
+                c.key
+            );
+        };
+        assert!(final_state >= previous, "the multiplicities come in order");
+        previous = final_state;
+        let k = final_state - 2;
+        assert_eq!(c.grid.ndim(), [2 + 2, 2 + 5][k]);
+        sigma[k] += c.sigma_pb;
+        alpha[k] += c.alpha;
+    }
+    assert!(
+        (alpha[0] - 1.0).abs() < 1e-9 && (alpha[1] - 1.0).abs() < 1e-9,
+        "each multiplicity's weights sum to one: {alpha:?}"
+    );
+    assert!(((sigma[0] + sigma[1]) / artifact.sigma_pb - 1.0).abs() < 1e-9);
+
+    let nevents = 4_000;
+    let lhe = dir.join("events.lhe");
+    let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&artifact_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--seed", SEED, "--nevents", &nevents.to_string()])
+        .arg("-o")
+        .arg(&lhe)
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        generate.status.success(),
+        "generate failed:\n{}",
+        String::from_utf8_lossy(&generate.stderr)
+    );
+    let text = std::fs::read_to_string(&lhe).unwrap();
+    let file = LheFile::parse(&text).expect("our file parses");
+    let ids: Vec<i32> = file.init.processes.iter().map(|p| p.id).collect();
+    assert_eq!(ids, [0, 1]);
+    assert_eq!(file.events.len(), nevents);
+    // Each `@N` is one multiplicity, normalised to its own integration: its
+    // `<init>` entry declares that part's integrated σ and error, and its events'
+    // written weights sum to it over the file's event count. The sample's own
+    // estimate before the normalisation is what still measures the pass.
+    let mut error = [0.0f64; 2];
+    for c in &artifact.channels {
+        let (ChannelKey::MultiplicityChannel { final_state, .. }
+        | ChannelKey::MergedChannel { final_state, .. }) = c.key
+        else {
+            unreachable!("checked above");
+        };
+        error[final_state - 2] += c.sigma_err_pb * c.sigma_err_pb;
+    }
+    for (k, entry) in file.init.processes.iter().enumerate() {
+        let summed: f64 = file
+            .events
+            .iter()
+            .filter(|e| e.process_id == entry.id)
+            .map(|e| e.weight)
+            .sum::<f64>()
+            / nevents as f64;
+        eprintln!(
+            "@{k}: XSECUP {:.6} ± {:.6} pb, written weights {summed:.6} pb over N, \
+             integration {:.6} ± {:.6} pb",
+            entry.xsec_pb,
+            entry.xerr_pb,
+            sigma[k],
+            error[k].sqrt()
+        );
+        assert!(
+            (entry.xsec_pb / sigma[k] - 1.0).abs() < 1e-6
+                && (entry.xerr_pb / error[k].sqrt() - 1.0).abs() < 1e-6,
+            "@{k} declares {} ± {} pb against its integration's {} ± {}",
+            entry.xsec_pb,
+            entry.xerr_pb,
+            sigma[k],
+            error[k].sqrt()
+        );
+        assert!(
+            (summed / sigma[k] - 1.0).abs() < 1e-6,
+            "@{k}'s written weights sum to {summed} pb over N, its integration is {}",
+            sigma[k]
+        );
+    }
+    let (sample, sample_err) = sample_estimate_in(&text).expect("the header records σ̂");
+    let pull = (sample - artifact.sigma_pb) / sample_err.hypot(artifact.sigma_err_pb);
+    eprintln!(
+        "sample estimate before normalisation {sample:.4} ± {sample_err:.4} pb against the \
+         integration's {:.4} pb (pull {pull:+.2})",
+        artifact.sigma_pb
+    );
+    assert!(pull.abs() < SAMPLE_PULL_MAX, "pull {pull:+.2}");
+    let mut count = [0usize; 2];
+    for event in &file.events {
+        let k = usize::try_from(event.process_id).expect("a declared process");
+        assert!(k < 2, "IDPRUP {} is not declared", event.process_id);
+        assert_eq!(event.particles.len(), [4, 5][k], "IDPRUP {k}'s leg count");
+        count[k] += 1;
+    }
+    let f = count[0] as f64 / nevents as f64;
+    let expected = sigma[0] / (sigma[0] + sigma[1]);
+    let sd = (expected * (1.0 - expected) / nevents as f64).sqrt();
+    eprintln!("@0 carries {f:.4} of the sample and {expected:.4} of σ (sd {sd:.4})");
+    assert!(
+        (f - expected).abs() < 5.0 * sd,
+        "@0's share {f} against the integration's {expected} ± {sd}"
+    );
+
+    let mut stale = artifact.clone();
+    stale.format_version = 9;
+    let stale_path = dir.join("stale.bin.zst");
+    stale
+        .write_to_path(&stale_path, true)
+        .expect("write the stale copy");
+    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&stale_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--nevents", "10"])
+        .arg("-o")
+        .arg(dir.join("stale.lhe"))
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a version-9 artifact of a sum was replayed"
+    );
+    assert!(
+        stderr.contains("format version 10") && stderr.contains("written at version 9"),
+        "the refusal does not say why:\n{stderr}"
+    );
+
+    // A sum written before its channels merged holds one grid per pair.
+    stale.format_version = 10;
+    stale
+        .write_to_path(&stale_path, true)
+        .expect("write the stale copy");
+    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        .arg("generate")
+        .arg(&stale_path)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--pdf-dir")
+        .arg(pdf_dir())
+        .args(["--nevents", "10"])
+        .arg("-o")
+        .arg(dir.join("stale.lhe"))
+        .arg("--force")
+        .output()
+        .expect("spawn vibegraph");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "a version-10 artifact of a merging process was replayed"
+    );
+    assert!(
+        stderr.contains("format version 11") && stderr.contains("written at version 10"),
+        "the refusal does not say why:\n{stderr}"
+    );
+}
+
+/// The matched single-multiplicity card M0 banked its MLM reference with
+/// (`ickkw = 1`, `xqcut = 20`), committed beside its MadGraph script.
+fn matched_card() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/pp_to_llj_mlm_run_card.dat")
+}
+
+/// The collider energy `√stot` as the record prints it.
+const ETOT_PRINTED: &str = "13000.00000";
+
+/// One matched `p p > e+ e- j` sample off a small fixed budget, shared by the
+/// record checks below. The budget buys a sample to read the record off, not a
+/// cross section.
+fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
+    static ONCE: OnceLock<(tempfile::TempDir, LheFile, String)> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let proc_card = dir.join("proc_card.dat");
+        std::fs::write(&proc_card, "import model sm\ngenerate p p > e+ e- j\n").unwrap();
+        let out = dir.join("out");
+        let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("integrate")
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(matched_card())
+            .arg("--out")
+            .arg(&out)
+            .arg("--pdf-dir")
+            .arg(pdf_dir())
+            .args(["--fixed-budget", "--neval", "20000", "--niter", "4"])
+            .args(["--seed", SEED])
+            .output()
+            .expect("spawn vibegraph");
+        assert!(
+            integrate.status.success(),
+            "integrate failed:\n{}",
+            String::from_utf8_lossy(&integrate.stderr)
+        );
+        let lhe = dir.join("events.lhe");
+        let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("generate")
+            .arg(out.join("grid.bin.zst"))
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(matched_card())
+            .arg("--pdf-dir")
+            .arg(pdf_dir())
+            .args(["--seed", SEED, "--nevents", "3000"])
+            .arg("-o")
+            .arg(&lhe)
+            .arg("--force")
+            .output()
+            .expect("spawn vibegraph");
+        assert!(
+            generate.status.success(),
+            "generate failed:\n{}",
+            String::from_utf8_lossy(&generate.stderr)
+        );
+        let text = std::fs::read_to_string(&lhe).unwrap();
+        let file = LheFile::parse(&text).expect("our file parses");
+        (tmp, file, text)
+    })
+}
+
+/// `pt_clust_N="v"` of an event's `<scales>` line, `None` without one.
+fn pt_clust(event: &LheEvent) -> Option<Vec<(usize, String)>> {
+    let lines: Vec<&String> = event
+        .trailer
+        .iter()
+        .filter(|l| l.trim_start().starts_with("<scales"))
+        .collect();
+    let [line] = lines.as_slice() else {
+        return None;
+    };
+    let mut out = Vec::new();
+    for chunk in line.split("pt_clust_").skip(1) {
+        let (key, rest) = chunk.split_once("=\"")?;
+        let (value, _) = rest.split_once('"')?;
+        out.push((key.parse().ok()?, value.to_string()));
+    }
+    Some(out)
+}
+
+/// The `value = name` pairs of the header's `<MGRunCard>`, read as Pythia's
+/// `MadgraphPar` reads them (a line holding `#` is skipped).
+fn mg_run_card_fields(text: &str) -> Option<BTreeMap<String, String>> {
+    let start = text.find("<MGRunCard>")?;
+    let end = text[start..].find("</MGRunCard>")? + start;
+    let init = text.find("<init>")?;
+    if end > init {
+        return None;
+    }
+    let mut out = BTreeMap::new();
+    for line in text[start..end].lines() {
+        if line.contains('#') {
+            continue;
+        }
+        if let Some((value, name)) = line.split_once('=') {
+            let name = name.split('!').next().unwrap_or("").trim();
+            if !name.is_empty() {
+                out.insert(name.to_string(), value.trim().to_string());
+            }
+        }
+    }
+    Some(out)
+}
+
+/// A matched sample carries what a shower's MLM matching reads, in MadEvent's
+/// layout:
+///
+/// * an `<MGRunCard>` in the header whose `ickkw`, `xqcut`, `maxjetflavor`
+///   and `alpsfact` are the card's, which is what Pythia's
+///   `JetMatching:setMad` reads;
+/// * one `<scales>` line per event with a `pt_clust_N` for exactly the
+///   outgoing lines, keyed by their positions (which the status-2 lines
+///   shift): the leptons at the collider energy, a jet either there or at a
+///   clustering scale no lower than `xqcut`;
+/// * the Z as a status-2 line where the clustering found it on its
+///   Breit–Wigner: descending from both beams, carrying no colour and an
+///   unselected helicity, its mass the leptons' virtuality within
+///   `bwcutoff = 15` widths of the pole, and the two leptons, and nothing
+///   else, naming it as their mother.
+///
+/// The field values are MadEvent's rule; `validate_mlm_dumps` compares them
+/// against MadEvent's own events one by one. What this adds is the writer:
+/// that the fields reach the file, at the right positions.
+#[test]
+fn a_matched_sample_carries_the_shower_record() {
+    if !pdf_dir().join(PDF_SET).is_dir() {
+        vibegraph::validation::require(
+            "a_matched_sample_carries_the_shower_record",
+            "the fetched PDF set",
+            PDF_SET,
+        );
+    }
+    let (_, file, text) = matched_sample();
+    let card = mg_run_card_fields(text).expect("an <MGRunCard> inside <header>");
+    for (name, want) in [
+        ("ickkw", 1.0),
+        ("xqcut", 20.0),
+        ("maxjetflavor", 4.0),
+        ("alpsfact", 1.0),
+        ("ptj", 20.0),
+    ] {
+        let got: f64 = card
+            .get(name)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("<MGRunCard> has no numeric {name}"));
+        assert_eq!(got, want, "<MGRunCard> {name}");
+    }
+
+    let (mut resonant, mut jets_at_etot) = (0usize, 0usize);
+    for (i, event) in file.events.iter().enumerate() {
+        let printed = pt_clust(event).unwrap_or_else(|| panic!("event {i}: one <scales> line"));
+        let outgoing: Vec<usize> = (0..event.particles.len())
+            .filter(|&k| event.particles[k].status == STATUS_OUTGOING)
+            .collect();
+        let keys: Vec<usize> = printed.iter().map(|(k, _)| *k).collect();
+        let positions: Vec<usize> = outgoing.iter().map(|k| k + 1).collect();
+        assert_eq!(
+            keys, positions,
+            "event {i}: pt_clust_N names the outgoing lines"
+        );
+        for ((_, value), &k) in printed.iter().zip(&outgoing) {
+            if event.particles[k].pdg.abs() == 11 {
+                assert_eq!(value, ETOT_PRINTED, "event {i}: a lepton's pt_clust");
+            } else if value == ETOT_PRINTED {
+                jets_at_etot += 1;
+            } else {
+                let v: f64 = value.parse().expect("a number");
+                assert!(
+                    v >= 20.0 - 1e-5,
+                    "event {i}: a jet's pt_clust {v} below xqcut"
+                );
+            }
+        }
+        let intermediates: Vec<usize> = (0..event.particles.len())
+            .filter(|&k| event.particles[k].status == 2)
+            .collect();
+        assert!(
+            intermediates.len() <= 1,
+            "event {i}: more than one resonance"
+        );
+        assert_eq!(
+            event.particles.len(),
+            N_EXT + intermediates.len(),
+            "event {i}: NUP"
+        );
+        for &k in &intermediates {
+            resonant += 1;
+            let z = &event.particles[k];
+            assert_eq!(z.pdg, 23, "event {i}: the resonance");
+            assert_eq!(z.mothers, [1, 2], "event {i}: the Z's mothers");
+            assert_eq!(z.color, [0, 0], "event {i}: the Z's colour");
+            assert_eq!(z.spin, 9.0, "event {i}: the Z's helicity");
+            let daughters: Vec<usize> = (0..event.particles.len())
+                .filter(|&d| event.particles[d].mothers == [(k + 1) as i32; 2])
+                .collect();
+            let mut codes: Vec<i32> = daughters.iter().map(|&d| event.particles[d].pdg).collect();
+            codes.sort_unstable();
+            assert_eq!(codes, [-11, 11], "event {i}: the Z's daughters");
+            let mut p = [0.0f64; 4];
+            for &d in &daughters {
+                for (acc, x) in p.iter_mut().zip(event.particles[d].momentum) {
+                    *acc += x;
+                }
+            }
+            let m = (p[0] * p[0] - p[1] * p[1] - p[2] * p[2] - p[3] * p[3]).sqrt();
+            assert!((z.mass / m - 1.0).abs() < 1e-8, "event {i}: the Z's mass");
+            assert!(
+                (m - SCALE).abs() < 15.0 * 2.5,
+                "event {i}: a Z off its window at {m}"
+            );
+        }
+        for (k, particle) in event.particles.iter().enumerate() {
+            if particle.status == STATUS_OUTGOING && particle.pdg.abs() != 11 {
+                assert_eq!(particle.mothers, [1, 2], "event {i}: line {k}'s mothers");
+            }
+        }
+    }
+    eprintln!(
+        "{} events: {resonant} list the Z, {jets_at_etot} put the jet at the collider energy",
+        file.events.len()
+    );
+    assert!(
+        resonant > file.events.len() / 2,
+        "the Z is almost always written"
+    );
+    assert!(jets_at_etot > 0, "no jet came from a non-jet vertex");
+}
+
+/// The matched sample's record against MadEvent's banked `pp_to_llj_mlm` run,
+/// as population fractions (the events are different events, so this is the
+/// record read as a distribution): the share of events listing the Z, and the
+/// share whose jet sits at the collider energy (a jet no jet vertex reaches).
+/// Each is a two-sample binomial comparison, required within five standard
+/// deviations of the pooled estimate.
+#[test]
+#[ignore = "oracle layer: M0's matched MadEvent runs are outside the reference bundle; `pixi run validate-mlm-samples` runs this against them"]
+fn matched_sample_record_fractions_against_madevent() {
+    let (_, ours, _) = matched_sample();
+    let path = output_dir().join("pp_to_llj_mlm/Events/run_01/unweighted_events.lhe.gz");
+    let out = Command::new("gzip")
+        .args(["-dc", path.to_str().unwrap()])
+        .output()
+        .expect("gzip -dc");
+    assert!(out.status.success(), "gzip failed on {}", path.display());
+    let theirs = LheFile::parse(&String::from_utf8(out.stdout).unwrap()).expect("parses");
+    let fractions = |file: &LheFile| -> (usize, usize, usize) {
+        let mut z = 0;
+        let mut etot = 0;
+        for event in &file.events {
+            if event.particles.iter().any(|p| p.status == 2) {
+                z += 1;
+            }
+            let printed = pt_clust(event).expect("a <scales> line");
+            let outgoing = event
+                .particles
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.status == STATUS_OUTGOING);
+            if printed
+                .iter()
+                .zip(outgoing)
+                .any(|((_, v), (_, p))| p.pdg.abs() != 11 && v == ETOT_PRINTED)
+            {
+                etot += 1;
+            }
+        }
+        (z, etot, file.events.len())
+    };
+    let (z1, e1, n1) = fractions(ours);
+    let (z2, e2, n2) = fractions(&theirs);
+    let pull = |a: usize, b: usize| {
+        let (p1, p2) = (a as f64 / n1 as f64, b as f64 / n2 as f64);
+        let pooled = (a + b) as f64 / (n1 + n2) as f64;
+        let sd = (pooled * (1.0 - pooled) * (1.0 / n1 as f64 + 1.0 / n2 as f64)).sqrt();
+        (p1, p2, (p1 - p2) / sd)
+    };
+    let (zo, zt, zp) = pull(z1, z2);
+    let (eo, et, ep) = pull(e1, e2);
+    eprintln!(
+        "events listing the Z: vibegraph {zo:.4} ({z1}/{n1}), MadEvent {zt:.4} ({z2}/{n2}), \
+         pull {zp:+.2}"
+    );
+    eprintln!(
+        "events with the jet at the collider energy: vibegraph {eo:.4} ({e1}/{n1}), MadEvent \
+         {et:.4} ({e2}/{n2}), pull {ep:+.2}"
+    );
+    assert!(zp.abs() < 5.0 && ep.abs() < 5.0);
 }

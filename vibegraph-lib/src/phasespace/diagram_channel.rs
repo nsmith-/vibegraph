@@ -1043,6 +1043,152 @@ impl<F: Real> DiagramChannel<F> {
     fn beams_at(&self, sqrt_s: F) -> [LorentzVector<F>; 2] {
         beam_momenta(sqrt_s, self.beam_masses[0], self.beam_masses[1])
     }
+
+    /// Everything the channel's draw and density read, every float by its exact
+    /// bit pattern: two channels with equal identities are the same function of
+    /// `(√ŝ, u)` and of `(√ŝ, momenta)`, whatever diagrams they were built from.
+    ///
+    /// Each struct is destructured whole, so a field added to the map without
+    /// being added here does not compile.
+    pub fn map_identity(&self) -> MapIdentity {
+        let DiagramChannel {
+            sqrt_s,
+            n_out,
+            beam_masses,
+            topology,
+            t_channels,
+        } = self;
+        let mut w = IdentityWords::default();
+        w.real(*sqrt_s);
+        w.word(*n_out as u64);
+        w.real(beam_masses[0]);
+        w.real(beam_masses[1]);
+        match topology {
+            ChannelTopology::Timelike(root) => {
+                w.word(0);
+                w.branch(root);
+            }
+            ChannelTopology::Spine(Spine { rungs, recoil }) => {
+                w.word(1);
+                w.word(rungs.len() as u64);
+                for SpineRung {
+                    emitted,
+                    t_mass2,
+                    t_max_cap,
+                    rest_floor,
+                } in rungs
+                {
+                    w.node(emitted);
+                    w.real(*t_mass2);
+                    w.option_real(*t_max_cap);
+                    w.real(*rest_floor);
+                }
+                w.node(recoil);
+            }
+        }
+        w.word(t_channels.len() as u64);
+        for TChannel { mass, width } in t_channels {
+            w.real(*mass);
+            w.real(*width);
+        }
+        MapIdentity(w.0)
+    }
+}
+
+/// A channel's [`DiagramChannel::map_identity`]: equal exactly when two channels
+/// sample and weigh every point alike.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MapIdentity(Vec<u64>);
+
+/// The word stream a [`MapIdentity`] is built from. Every variant writes a tag
+/// and every sequence its length, so no two structures share a stream.
+#[derive(Default)]
+struct IdentityWords(Vec<u64>);
+
+impl IdentityWords {
+    fn word(&mut self, w: u64) {
+        self.0.push(w);
+    }
+
+    /// A float by its decomposition, which tells `−0` from `+0` and is exact.
+    fn real<F: Real>(&mut self, x: F) {
+        let (mantissa, exponent, sign) = x.integer_decode();
+        self.0.push(mantissa);
+        self.0.push(exponent as u64);
+        self.0.push(sign as u64);
+    }
+
+    fn option_real<F: Real>(&mut self, x: Option<F>) {
+        match x {
+            None => self.word(0),
+            Some(x) => {
+                self.word(1);
+                self.real(x);
+            }
+        }
+    }
+
+    fn node<F: Real>(&mut self, node: &Node<F>) {
+        match node {
+            Node::Leaf { slot, mass } => {
+                self.word(0);
+                self.word(*slot as u64);
+                self.real(*mass);
+            }
+            Node::Branch(b) => {
+                self.word(1);
+                self.branch(b);
+            }
+        }
+    }
+
+    fn branch<F: Real>(&mut self, branch: &Branch<F>) {
+        let Branch {
+            left,
+            right,
+            mu,
+            mask,
+            shape,
+            floor,
+            resonance,
+            window,
+            angle,
+        } = branch;
+        self.node(left);
+        self.node(right);
+        self.real(*mu);
+        self.word(*mask);
+        self.word(*shape as u64);
+        self.word((*shape >> 64) as u64);
+        self.real(*floor);
+        match resonance {
+            None => self.word(0),
+            Some(Resonance { mass, width }) => {
+                self.word(1);
+                self.real(*mass);
+                self.real(*width);
+            }
+        }
+        match window {
+            None => self.word(0),
+            Some((lo, hi)) => {
+                self.word(1);
+                self.real(*lo);
+                self.real(*hi);
+            }
+        }
+        match angle {
+            AngleMap::Isotropic => self.word(0),
+            AngleMap::Shaped { shape, floors } => {
+                self.word(match shape {
+                    AngleShape::Windowed => 1,
+                    AngleShape::Soft => 2,
+                });
+                self.real(floors.0);
+                self.real(floors.1);
+            }
+        }
+    }
 }
 
 impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {

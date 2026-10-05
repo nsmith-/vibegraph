@@ -1,0 +1,5 @@
+import model sm
+set group_subprocesses False
+define q = u d
+generate u q > z u q
+output @OUTPUT@ -nojpeg

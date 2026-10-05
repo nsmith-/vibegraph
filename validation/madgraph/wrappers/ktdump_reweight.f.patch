@@ -9,7 +9,7 @@
 +      character*24 vg_mufb, vg_murb
        setclscales=.true.
  
-+      call vg_reset()
++      call vg_newcall(keepq2bck)
 +      call vg_beg('SCL')
 +      call vg_i(iconfig)
 +      call vg_i(iproc)
@@ -77,7 +77,7 @@
  
        if (btest(mlevel,3))
       $     write(*,*) 'jfirst is ',jfirst(1),jfirst(2),
-@@ -994,6 +1036,10 @@
+@@ -994,6 +1036,12 @@
           njetstore(iconfig)=njets
          if (btest(mlevel,4))
       $       write(*,*) 'Storing jets: ',(iqjetstore(i,iconfig),i=1,njets)
@@ -85,10 +85,12 @@
 +         call vg_s('STORE_AND_RECLUSTER')
 +         call vg_i(njets)
 +         call vg_rec()
++         call vg_memox('STORE_AND_RECLUSTER',iconfig,iproc,njets,
++     &        njetstore(iconfig),igraphs(1),keepq2bck)
  c     Recluster without requiring chcluster
           goto 100
        else
-@@ -1024,11 +1070,20 @@
+@@ -1024,11 +1072,22 @@
              if (btest(mlevel,3))
       $           write(*,*) 'Bad clustering, jets fail. Reclustering ',
       $           iconfig
@@ -96,6 +98,8 @@
 +            call vg_s('RESTRICTED_RECLUSTER')
 +            call vg_i(njets)
 +            call vg_rec()
++            call vg_memox('RESTRICTED_RECLUSTER',iconfig,iproc,njets,
++     &           njetstore(iconfig),igraphs(1),keepq2bck)
              chcluster=.true.
              goto 100
           endif
@@ -109,7 +113,7 @@
  c     If last clustering is s-channel QCD (e.g. ttbar) use mt2last instead
  c     (i.e. geom. average of transverse mass of t and t~)
          if(mt2last.gt.4d0 .and. nexternal.gt.3) then
-@@ -1038,6 +1093,7 @@
+@@ -1038,6 +1097,7 @@
       $        isqcd(ipdgcl(imocl(nexternal-3),igraphs(1),iproc)))then
                mt2ij(nexternal-2)=mt2last
                mt2ij(nexternal-3)=mt2last
@@ -117,7 +121,7 @@
                if (btest(mlevel,3)) then
                   write(*,*)' setclscales: set last vertices to mtlast: ',sqrt(mt2last)
                endif
-@@ -1046,13 +1102,24 @@
+@@ -1046,13 +1106,24 @@
  
  c     Set central scale to mT2
        if(jcentral(1).gt.0) then
@@ -146,7 +150,7 @@
        if(btest(mlevel,4))then
           write(*,*) 'jlast, jcentral: ',(jlast(i),i=1,2),(jcentral(i),i=1,2)
           if(jlast(1).gt.0) write(*,*)'pt(jlast 1): ', sqrt(pt2ijcl(jlast(1)))
-@@ -1078,6 +1145,7 @@
+@@ -1078,6 +1149,7 @@
       $                       ipdgcl(idacl(n,1),igraphs(1),iproc),
       $                       ipdgcl(idacl(n,2),igraphs(1),iproc),
       $                       sqrt(pt2ijcl(n))
@@ -154,7 +158,7 @@
                          setclscales=.false.
                          clustered = .false.
                          return
-@@ -1091,6 +1159,7 @@
+@@ -1091,6 +1163,7 @@
        if(xmtc**2.gt.0) then
           if(jcentral(1).gt.0.and.pt2ijcl(jcentral(1)).lt.xmtc**2
       $      .or.jcentral(2).gt.0.and.pt2ijcl(jcentral(2)).lt.xmtc**2)then
@@ -162,7 +166,7 @@
              setclscales=.false.
              clustered = .false.
              if(btest(mlevel,3)) write(*,*)'Failed xmtc cut ',
-@@ -1103,13 +1172,19 @@
+@@ -1103,28 +1176,39 @@
        if(ickkw.eq.0
       $    .and. (fixed_fac_scale1.or.q2fact(1).gt.0)
       $    .and. (fixed_fac_scale2.or.q2fact(2).gt.0)
@@ -182,8 +186,15 @@
 +      call vg_pt2('AFTER_JFIRST_MAX')
  
        if(ickkw.gt.0.and.q2fact(1).gt.0.and.q2fact(2).gt.0) then
++         call vg_q2ovr('BEFORE',jcentral)
  c     Use the fixed or previously set scale for central scale
-@@ -1121,10 +1196,12 @@
+          if(jcentral(1).gt.0) pt2ijcl(jcentral(1))=q2fact(1)
+          if(jcentral(2).gt.0.and.jcentral(2).ne.jcentral(1))
+      $        pt2ijcl(jcentral(2))=q2fact(2)
++         call vg_q2ovr('AFTER',jcentral)
++         call vg_pt2('AFTER_Q2FACT_OVERWRITE')
+       endif
+ 
        if(nexternal.eq.3.and.nincoming.eq.2.and.(q2fact(1).eq.0.or.q2fact(2).eq.0)) then
           if(.not.fixed_fac_scale1) q2fact(1)=pt2ijcl(nexternal-2)
           if(.not.fixed_fac_scale2) q2fact(2)=pt2ijcl(nexternal-2)
@@ -196,7 +207,7 @@
           if(jlast(1).gt.0.and..not.fixed_fac_scale1) q2fact(1)=sqrt(pt2ijcl(jlast(1))*pt2ijcl(jcentral(1)))
           if(jlast(2).gt.0.and..not.fixed_fac_scale2) q2fact(2)=sqrt(pt2ijcl(jlast(2))*pt2ijcl(jcentral(2)))
           if(jcentral(1).gt.0.and.jcentral(1).eq.jcentral(2))then
-@@ -1132,9 +1209,11 @@
+@@ -1132,9 +1216,11 @@
              if(.not.fixed_fac_scale1.and..not.fixed_fac_scale2) then
                 q2fact(1)=max(q2fact(1),q2fact(2))
                 q2fact(2)=q2fact(1)
@@ -208,7 +219,22 @@
        if(.not. fixed_fac_scale1.or. fixed_fac_scale2) then
           if(.not.fixed_fac_scale1) q2fact(1)=scalefact**2*q2fact(1)
           if(.not.fixed_fac_scale2) q2fact(2)=scalefact**2*q2fact(2)
-@@ -1152,25 +1231,35 @@
+@@ -1145,6 +1231,14 @@
+          if (btest(mlevel,3))
+      $      write(*,*) 'Set central fact scales to ',sqrt(q2bck(1)),sqrt(q2bck(2))
+       endif
++      call vg_beg('Q2BCK')
++      call vg_s('CENTRAL')
++      call vg_l(keepq2bck)
++      call vg_d(q2bck(1))
++      call vg_d(q2bck(2))
++      call vg_d(q2fact(1))
++      call vg_d(q2fact(2))
++      call vg_rec()
+          
+ c     Set renormalization scale to geom. aver. of relevant scales
+       if(scale.eq.0d0) then
+@@ -1152,25 +1246,35 @@
  c           Use geom. average of last and central scales
              scale=(pt2ijcl(jlast(1))*pt2ijcl(jcentral(1))*
       $             pt2ijcl(jlast(2))*pt2ijcl(jcentral(2)))**0.125
@@ -244,7 +270,7 @@
        endif
        if (btest(mlevel,3))
       $     write(*,*) 'Set ren scale to ',scale
-@@ -1181,18 +1270,24 @@
+@@ -1181,18 +1285,24 @@
           if(q2fact(1).gt.0.and..not.fixed_fac_scale1)then
              pt2ijcl(nexternal-2)=q2fact(1)
              if(nexternal.gt.3) pt2ijcl(nexternal-3)=q2fact(1)
@@ -269,7 +295,7 @@
  c     Total pdf weight is f1(x1,pt2E)*fj(x1*z,Q)/fj(x1*z,pt2E)
  c     f1(x1,pt2E) is given by DSIG, just need to set scale.
  c     Use the minimum scale found for fact scale in ME
-@@ -1214,6 +1309,7 @@
+@@ -1214,6 +1324,7 @@
               nwarning=nwarning+1
               write(*,*) 'No more warnings written out this run.'
            endif
@@ -277,12 +303,21 @@
           setclscales=.false.
           clustered = .false.
           return
-@@ -1280,6 +1376,15 @@
+@@ -1280,6 +1391,24 @@
           enddo
           s_rwfact(ivec)=1d0
        endif
 +      call vg_muf(vg_mufb,q2fact(1),q2fact(2))
 +      call vg_pt2('FINAL')
++      call vg_ptcl('SETCL')
++      call vg_beg('Q2BCK')
++      call vg_s('OUT')
++      call vg_l(keepq2bck)
++      call vg_d(q2bck(1))
++      call vg_d(q2bck(2))
++      call vg_d(q2fact(1))
++      call vg_d(q2fact(2))
++      call vg_rec()
 +      call vg_beg('SCLOUT')
 +      call vg_d(scale)
 +      call vg_d(q2fact(1))
@@ -292,4 +327,194 @@
 +      call vg_rec()
        return
        end
+ 
+@@ -1413,6 +1542,11 @@
+ 
+       double precision all_scale(VECSIZE_MEMMAX)
+       common/to_scale_vec/all_scale
++      include 'ktdump.inc'
++      logical vg_isr, vg_fsr, vg_gmo
++      integer vg_before
++      double precision vg_prev, vg_pj1, vg_pj2, vg_asn
++      character*24 vg_cls, vg_act
+       
+       rewgt=1.0d0
+       clustered=.false.
+@@ -1465,6 +1599,7 @@
+       if(.not.setclscales(p,.true., ivec)) then ! assign the correct id information.(preserve q2bck)
+ c         write(*,*) "Fail to cluster the events from the rewgt function"
+ c         stop 1
++        call vg_rwkill('SETCLSCALES',0)
+         rewgt = 0d0
+         return
+       endif
+@@ -1533,6 +1668,7 @@
+ c     Prepare checking for parton vertices
+       do i=1,nexternal
+          j=ishft(1,i-1)
++         vg_before=ipdgcl(j,igraphs(1),iproc)
+ c        Set jet identities according to chosen subprocess
+          if(isjet(idup(i,ipsel,iproc)))
+      $        ipdgcl(j,igraphs(1),iproc)=idup(i,ipsel,iproc)
+@@ -1550,11 +1686,39 @@
+             goodjet(j)=.false.
+          endif
+       if(btest(mlevel,4)) print *,'Set goodjet ',j,goodjet(j)
++      call vg_beg('RWLEG')
++      call vg_i(i)
++      call vg_i(idup(i,ipsel,iproc))
++      call vg_i(vg_before)
++      call vg_i(ipdgcl(j,igraphs(1),iproc))
++      call vg_l(isjet(idup(i,ipsel,iproc)))
++      call vg_i(iqjets(i))
++      call vg_l(goodjet(j))
++      call vg_rec()
+       enddo
+ c   
+ c   Set strong coupling used
+ c   
+       asref=all_G(ivec)**2/(4d0*PI)
++      call vg_beg('RWBEG')
++      call vg_i(ipsel)
++      call vg_i(iproc)
++      call vg_i(igraphs(1))
++      call vg_d(asref)
++      call vg_d(alpsfact)
++      call vg_d(xnow(1))
++      call vg_d(xnow(2))
++      call vg_i(ib(1))
++      call vg_i(ib(2))
++      call vg_d(q2bck(1))
++      call vg_d(q2bck(2))
++      call vg_d(q2fact(1))
++      call vg_d(q2fact(2))
++      call vg_d(all_scale(ivec))
++      call vg_d(scale)
++      call vg_i(jlast(1))
++      call vg_i(jlast(2))
++      call vg_rec()
+ 
+ c   Perform alpha_s reweighting based on type of vertex
+       do n=1,nexternal-2
+@@ -1586,6 +1750,14 @@
+      $          .and.goodjet(idacl(n,1)).and.goodjet(idacl(n,2))
+            if(btest(mlevel,4))
+      $          write(*,*)'Set goodjet ',imocl(n),' to ',goodjet(imocl(n))
++           vg_gmo=goodjet(imocl(n))
++           vg_isr=ipart(1,imocl(n)).le.2.and.goodjet(imocl(n))
++           vg_fsr=ipart(1,imocl(n)).gt.2
++           if(vg_fsr) vg_fsr=ispartonvx(imocl(n),idacl(n,1),idacl(n,2),
++     $          ipdgcl(1,igraphs(1),iproc),ipart,.false.)
++           if(vg_fsr) vg_fsr=goodjet(idacl(n,1)).or.goodjet(idacl(n,2))
++           vg_cls='NONE'
++           vg_asn=0d0
+            if(ipart(1,imocl(n)).le.2.and.goodjet(imocl(n)).or.  ! ISR
+      $        ipart(1,imocl(n)).gt.2.and.                       ! FSR
+      $          ispartonvx(imocl(n),idacl(n,1),idacl(n,2),
+@@ -1593,11 +1765,21 @@
+      $        (goodjet(idacl(n,1)).or.goodjet(idacl(n,2)))) then
+ c       alpha_s weight
+ 
++           vg_cls='FAKE_ID'
+            if(ipdgcl(imocl(n),igraphs(1),iproc).ne.fake_id)then
+               if (q2now.le.4)then
++                  call vg_rwvx(n,'KILL_Q2',vg_isr,vg_fsr,vg_gmo,ipart,
++     &                 goodjet,igraphs(1),iproc,q2now,0d0,asref,rewgt)
++                  call vg_rwkill('ALPHAS_Q2',n)
+                   rewgt=0d0
+                   return
+               endif
++              vg_asn=alphas(alpsfact*sqrt(q2now))
++              if(vg_isr) then
++                 vg_cls='ISR'
++              else
++                 vg_cls='FSR'
++              endif
+               rewgt=rewgt*alphas(alpsfact*sqrt(q2now))/asref
+ c             Store information for systematics studies
+               if(use_syst)then
+@@ -1613,6 +1795,11 @@
+              endif
+               endif
+            endif
++           call vg_rwvx(n,vg_cls,vg_isr,vg_fsr,vg_gmo,ipart,goodjet,
++     &          igraphs(1),iproc,q2now,vg_asn,asref,rewgt)
++        else
++           call vg_rwvx(n,'CORE',.false.,.false.,.false.,ipart,goodjet,
++     &          igraphs(1),iproc,q2now,0d0,asref,rewgt)
+         endif
+         if(ickkw.eq.2.or.(pdfwgt.and.ickkw.gt.0)) then
+ c       Perform PDF and, if ickkw=2, Sudakov reweighting
+@@ -1682,16 +1869,22 @@
+                      if(n.eq.jlast(j)) then
+                         q2now=q2bck(j)
+                      endif
++                     vg_prev=pt2pdf(idacl(n,i))
++                     vg_act='NONE'
++                     vg_pj1=0d0
++                     vg_pj2=0d0
+                      if (btest(mlevel,3))
+      $                    write(*,*)' set q2now for pdf to ',sqrt(q2now)
+                      if(q2fact(j).eq.0d0.and.ickkw.eq.2)then
+                         q2fact(j)=pt2min ! Starting scale for PS
+                         pt2pdf(imocl(n))=q2now
++                        vg_act='PS_START'
+                         if (btest(mlevel,3))
+      $                       write(*,*)' set fact scale ',j,
+      $                          ' for PS scale to: ',sqrt(q2fact(j))
+                      else if(pt2pdf(idacl(n,i)).eq.0d0)then
+                         pt2pdf(imocl(n))=q2now
++                        vg_act='FIRST'
+                         if (btest(mlevel,3))
+      $                       write(*,*)' set pt2pdf for ',imocl(n),
+      $                          ' to: ',sqrt(pt2pdf(imocl(n)))
+@@ -1703,8 +1896,15 @@
+                         pdfj2=pdg2pdf(abs(lpp(IB(j))),ipdgcl(idacl(n,i), 
+      $                       igraphs(1),iproc)*sign(1,lpp(IB(j))), IB(j),
+      $                       xnow(j),sqrt(pt2pdf(idacl(n,i))))
++                        vg_pj1=pdfj1
++                        vg_pj2=pdfj2
+                         if(pdfj2.lt.1d-10)then
+ c                          Scale too low for heavy quark
++                           call vg_rwpdf(n,j,i,ib(j),
++     &                          ipdgcl(idacl(n,i),igraphs(1),iproc),
++     &                          zcl(n),xnow(j),q2now,vg_prev,'KILL_PDF',
++     &                          pdfj1,pdfj2,rewgt)
++                           call vg_rwkill('PDF_DENOMINATOR',n)
+                            rewgt=0d0
+                            if (btest(mlevel,3))
+      $                        write(*,*) 'Too low scale for quark pdf: ',
+@@ -1712,6 +1912,7 @@
+                            return
+                         endif
+                         rewgt=rewgt*pdfj1/pdfj2
++                        vg_act='RATIO'
+ c     Store information for systematics studies
+                         if(use_syst)then
+                            n_pdfrw(j,ivec)=n_pdfrw(j,ivec)+1
+@@ -1742,7 +1943,12 @@
+                      else if(pt2pdf(idacl(n,i)).ge.q2now) then
+ c                    If no reweighting, just copy daughter scale for mother
+                         pt2pdf(imocl(n))=pt2pdf(idacl(n,i))
++                        vg_act='NOT_RISING'
+                      endif
++                     call vg_rwpdf(n,j,i,ib(j),
++     &                    ipdgcl(idacl(n,i),igraphs(1),iproc),
++     &                    zcl(n),xnow(j),q2now,vg_prev,vg_act,
++     &                    vg_pj1,vg_pj2,rewgt)
+                      goto 10
+                   endif
+                enddo
+@@ -1797,6 +2003,12 @@
+       if (btest(mlevel,3)) then
+         write(*,*)'} ->  w = ',rewgt
+       endif
++      call vg_beg('RWEND')
++      call vg_d(rewgt)
++      call vg_d(q2fact(1))
++      call vg_d(q2fact(2))
++      call vg_i(vec_igraph(ivec))
++      call vg_rec()
+ 
+  100  continue
  

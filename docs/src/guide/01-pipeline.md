@@ -91,7 +91,9 @@ workflow.
 ## What is not here
 
 This is a leading-order, tree-level generator. There are no loop
-amplitudes, no parton shower, no hadronisation, no matching or merging.
+amplitudes, no parton shower, no hadronisation, and no shower-side matching:
+for MLM it does the matrix-element half (the `xqcut` cut, the clustering scales
+and reweighting, the `<scales>` record) and leaves the veto to the shower.
 The events it writes are the input a shower program such as Pythia 8 takes;
 the [review by Buckley et al.](../bibliography.md#the-pipeline-as-a-whole)
 places this stage in the full simulation chain, and the MadGraph5\_aMC@NLO

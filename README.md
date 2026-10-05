@@ -19,15 +19,18 @@ and `scripts/build-docs.sh` builds it locally.
 
 ## Scope
 
-**Current goal — MadGraph leading-order process parity** (without MLM matching
-and NLO): an LO event generator for **arbitrary fixed-order Standard Model
+**Current goal — MadGraph leading-order process parity** (without NLO): an LO
+event generator for **arbitrary fixed-order Standard Model
 processes**, driven end to end by the standard toolchain formats: a UFO model
 and a MadGraph process card go in, an unweighted `.lhe` event sample comes out.
 The process card is read in MadGraph's full grammar — decay chains
 (`p p > t t~, t > b e+ ve`), 1→n decays to a partial width, the s-channel
 restrictions `>`, `$` and `$$`, polarized external legs (`w+{0}`, `e-{L}`),
-`add process` with `@N` — and whatever the grammar can say that is not
-supported yet is refused as a hard error before anything reads the card. That includes hadronic processes at MadGraph's
+`add process` with `@N`, including mixed jet multiplicities under MLM matching
+(`ickkw = 1`, `xqcut`: MadEvent's cut, clustering scales and α_s/PDF
+reweighting, and the `<scales>` record Pythia's kT-MLM matching reads) — and
+whatever the grammar can say that is not supported yet is refused as a hard
+error before anything reads the card. That includes hadronic processes at MadGraph's
 own default dynamical scale — the kT-clustering prescription
 (`dynamical_scale_choice = -1`) is reproduced against MadGraph's clustering
 itself, not approximated.
@@ -51,8 +54,8 @@ collisions are out of scope for now; open validation items are tracked in
 [`TODO.md`](TODO.md).
 
 **Future scope may include**: the rest of the arbitrary-BSM-UFO surface — the
-boundary checklist already lives in [`TODO.md`](TODO.md) — plus LO MLM-style
-matching + merging, and NLO event generation.
+boundary checklist already lives in [`TODO.md`](TODO.md) — CKKW-L merging, and
+NLO event generation.
 
 ## Quickstart
 
@@ -248,7 +251,8 @@ wrongness): spin-3/2 and spin-2 wavefunctions, Majorana fermions and charge
 conjugation, loop-level UFOs (out of the LO charter), beam configurations
 beyond unpolarized proton–proton or fixed-energy partonic beams, squared-order
 constraints, polarized intermediate resonances, and `add process` lines of
-different multiplicity (MLM's territory). Colour sextets and baryonic epsilon tensors are
+different multiplicity at fixed-energy beams (at proton beams they are summed,
+the way MadEvent sums its `P<n>` directories). Colour sextets and baryonic epsilon tensors are
 *supported* — `Epsilon`/`EpsilonBar`, `K6`/`K6Bar`/`T6` and
 `ColorRep::Sextet`, each gated against MadGraph on a row of its own — with two
 corners still refused rather than guessed: a `T6` carrying adjoint indices, and

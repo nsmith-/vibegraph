@@ -242,3 +242,49 @@ fn cli_custom_propagator_in_a_diagram_is_refused() {
         "got:\n{stderr}"
     );
 }
+
+/// A sum over final-state multiplicities is a proton-beam feature: at
+/// fixed-energy beams the card is refused, naming the multiplicities, rather
+/// than integrated as one phase space it is not.
+#[test]
+fn cli_mixed_multiplicity_at_fixed_energy_beams_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        "import model sm\ngenerate e+ e- > mu+ mu-\nadd process e+ e- > mu+ mu- a\n",
+    )
+    .unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n",
+    )
+    .unwrap();
+
+    let output = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(out.path())
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+
+    assert!(
+        !output.status.success(),
+        "a mixed-multiplicity card at fixed-energy beams must be refused"
+    );
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("different final-state multiplicities (2, 3 outgoing legs)")
+            && stderr.contains("proton beams"),
+        "got:\n{stderr}"
+    );
+}

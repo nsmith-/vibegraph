@@ -10,6 +10,9 @@
 //! * `lpp = 1` (proton beams) — an arbitrary process, PDF-convolved over a
 //!   `(τ, y)` outer map with a per-diagram multichannel inner map pooled across
 //!   the process's flavour groups, one VEGAS grid per `(group, diagram)` channel.
+//!   A card whose lines differ in final-state multiplicity is one such integrand
+//!   per multiplicity, their channels integrated together
+//!   ([`MultiplicitySum`]).
 //! * `lpp = 0` (fixed-energy partonic beams) — an arbitrary process with no PDF
 //!   convolution over any final multiplicity, sampled by a resonance-aware
 //!   per-diagram multichannel map whose integral is split channel by channel, one
@@ -27,13 +30,12 @@ use std::path::PathBuf;
 
 use clap::Args;
 use tracing::{info, warn};
-use vibegraph::artifact::{
-    ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact, FORMAT_VERSION,
-};
+use vibegraph::artifact::{ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact};
 use vibegraph::config::GlobalConfig;
 use vibegraph::cuts::{Cuts, ForcedResonances};
 use vibegraph::diagrams::{
-    forbidden_onshell_ids, generate_from_proc_card_in, ParsingOptions, SupportedCard,
+    forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, ParsingOptions,
+    SupportedCard,
 };
 use vibegraph::hadronic::{
     compile_subprocesses, initial_spin_color_average, process_external_legs,
@@ -41,10 +43,11 @@ use vibegraph::hadronic::{
     InitialState, Observable, RunningCouplingReport,
 };
 use vibegraph::helas::eval::BoundAmplitude;
-use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes};
+use vibegraph::multiplicity::{split_by_multiplicity, union_shape, MultiplicitySum};
+use vibegraph::onshell::{group_vetoes, subprocess_markings, subprocess_vetoes, OnShellVeto};
 use vibegraph::pdf::{PdfMember, PdfSet};
 use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle, TauMap};
-use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
+use vibegraph::proton::{derive_flavor_groups, process_shape, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 use vibegraph::vegas::VegasResult;
@@ -292,9 +295,10 @@ pub struct IntegrateArgs {
 
     /// Integrate until σ's relative uncertainty reaches this.
     ///
-    /// The uncertainty the stop reads is the quoted one widened by each
-    /// channel's own `√max(1, χ²/dof)`, so a run whose iterations disagree by
-    /// more than their error bars keeps going. `--neval` sets the points an
+    /// The uncertainty the stop reads is the quoted one with each channel's
+    /// variance widened to the scatter its iterations actually show, where that
+    /// is larger, so a run whose iterations disagree by more than their error
+    /// bars keeps going. `--neval` sets the points an
     /// iteration spends; how many iterations run is what the target decides,
     /// bounded by `--min-iters`, `--max-iters` and `--max-points`.
     #[arg(long, value_name = "REL", default_value_t = DEFAULT_TARGET_REL, conflicts_with = "fixed_budget")]
@@ -645,7 +649,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
         }
         info!(
             "target:   {:.4}% relative, {} after {} iterations and {} evaluations \
-             (quoted {:.4}%, χ²-scaled {:.4}%)",
+             (quoted {:.4}%, consistency-scaled {:.4}%)",
             100.0 * target,
             match conv.stop {
                 StopReason::TargetMet => "met",
@@ -674,7 +678,7 @@ pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Integrate
     }
 
     let artifact = IntegrateArtifact {
-        format_version: FORMAT_VERSION,
+        format_version: IntegrateArtifact::version_for(&output.channels),
         process: output.process,
         model: model_id,
         pdf_set: output.pdf_set,
@@ -725,10 +729,106 @@ fn integrate_proton(
     integrate_hadronic(args, parsed, model, evaluated, rc, &set, &pdf, process)
 }
 
+/// A proton-beam card's flavour decomposition, one per final-state multiplicity
+/// in increasing order ([`split_by_multiplicity`]), each with its groups'
+/// on-shell vetoes.
+pub(crate) struct MultiplicityGroups {
+    pub groups: Vec<FlavorGroups>,
+    pub vetoes: Vec<Vec<Option<OnShellVeto>>>,
+}
+
+/// Enumerate the card and decompose each final-state multiplicity into flavour
+/// groups.
+pub(crate) fn multiplicity_groups(
+    parsed: &SupportedCard,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    rc: &RunCard,
+    enumeration: EnumerationPool,
+) -> Result<MultiplicityGroups, IntegrateError> {
+    let sets = generate_from_proc_card_in(parsed, model, enumeration)
+        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    let forbidden = forbidden_onshell(parsed, model)?;
+    let markings = subprocess_markings(&sets, &forbidden, model);
+    let mut out = MultiplicityGroups {
+        groups: Vec::new(),
+        vetoes: Vec::new(),
+    };
+    for part in split_by_multiplicity(sets, rc) {
+        let groups = derive_flavor_groups(part, model, evaluated, rc)
+            .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
+        let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
+            .map_err(|e| err(e.to_string()))?;
+        out.groups.push(groups);
+        out.vetoes.push(vetoes);
+    }
+    Ok(out)
+}
+
+/// The maps every multiplicity is built under: `options` as given for a card of
+/// one multiplicity, and for several, `options` settled once over the union of
+/// their shapes ([`union_shape`]), since an artifact banks one set of choices.
+pub(crate) fn multiplicity_maps(
+    groups: &[FlavorGroups],
+    evaluated: &EvaluatedModel,
+    sqrt_s_had: f64,
+    options: MapOptions,
+) -> MapOptions {
+    if groups.len() == 1 {
+        return options;
+    }
+    let shape = union_shape(
+        groups
+            .iter()
+            .map(|g| process_shape(g, evaluated, sqrt_s_had)),
+    );
+    MapOptions::fixed(options.resolve(&shape))
+}
+
+/// The process numbers (`@N`) of every subprocess of one multiplicity's groups,
+/// each once, in increasing order.
+pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
+    let mut ids: Vec<u32> = groups
+        .groups()
+        .iter()
+        .flat_map(|g| g.members().iter().map(|m| m.process))
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+/// Refuse a card of several final-state multiplicities on a path that has one
+/// phase space: fixed-energy beams and decays. Only proton beams sum
+/// multiplicities ([`MultiplicitySum`]).
+pub(crate) fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), IntegrateError> {
+    let mut counts: Vec<usize> = sets
+        .iter()
+        .filter(|s| !s.diagrams.is_empty())
+        .map(|s| s.particles_out.len())
+        .collect();
+    counts.sort_unstable();
+    counts.dedup();
+    if counts.len() > 1 {
+        return Err(err(format!(
+            "the processes have different final-state multiplicities ({} outgoing legs); a sum \
+             over multiplicities is integrated at proton beams (lpp = 1) only, and this run has \
+             fixed-energy beams or is a decay",
+            counts
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+    Ok(())
+}
+
 /// Proton beams over an arbitrary process (`lpp = 1`): the proc card's enumeration
-/// is partitioned into flavour groups, each group's summed parton-distribution
-/// luminosity multiplying one compiled matrix element, and the pooled per-diagram
-/// channels of every group are integrated one grid at a time.
+/// is split by final-state multiplicity, each multiplicity partitioned into
+/// flavour groups, each group's summed parton-distribution luminosity multiplying
+/// one compiled matrix element, and the pooled per-diagram channels of every
+/// group of every multiplicity are integrated one grid at a time.
 ///
 /// The channel selection weights are adapted on the *hadronic* mixture before the
 /// grids are trained, so the survey sees the integrand the integration will and
@@ -750,38 +850,46 @@ fn integrate_hadronic(
 ) -> Result<RunOutput, IntegrateError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
-    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    let forbidden = forbidden_onshell(parsed, model)?;
-    let markings = subprocess_markings(&sets, &forbidden, model);
-    let groups = derive_flavor_groups(sets, model, evaluated, rc)
-        .map_err(|e| err(format!("failed to decompose into flavour groups: {e}")))?;
-    let vetoes = group_vetoes(&groups, &markings, &forbidden, evaluated, rc)
-        .map_err(|e| err(e.to_string()))?;
-    let amps: Vec<BoundAmplitude<f64>> = groups
-        .groups()
+    let MultiplicityGroups { groups, vetoes } =
+        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
+    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
         .iter()
-        .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+        .map(|part| {
+            part.groups()
+                .iter()
+                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
+                .collect()
+        })
         .collect();
+    let maps = multiplicity_maps(&groups, evaluated, sqrt_s_had, args.maps.options());
 
-    let mut integ = ProtonIntegrand::new_with_maps(
-        &groups,
-        &amps,
-        evaluated,
-        pdf,
-        sqrt_s_had,
-        rc.dsqrt_q2fact1,
-        args.maps.options(),
-    )
-    .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
-    integ.use_onshell_veto(&vetoes, evaluated);
-    // Both scales and the strong coupling come from the run card; the coupling is
-    // the PDF set's own tabulation, which is what the densities were fitted with.
-    let scale_report = integ
-        .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
-        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+    let mut parts = Vec::with_capacity(groups.len());
+    let mut scale_report = None;
+    for ((part_groups, part_amps), part_vetoes) in groups.iter().zip(&amps).zip(&vetoes) {
+        let mut integ = ProtonIntegrand::new_with_maps(
+            part_groups,
+            part_amps,
+            evaluated,
+            pdf,
+            sqrt_s_had,
+            rc.dsqrt_q2fact1,
+            maps,
+        )
+        .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
+        integ.use_onshell_veto(part_vetoes, evaluated);
+        // Both scales and the strong coupling come from the run card; the coupling
+        // is the PDF set's own tabulation, which is what the densities were fitted
+        // with.
+        let report = integ
+            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
+            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
+        scale_report.get_or_insert(report);
+        parts.push(integ);
+    }
+    let scale_report = scale_report.expect("an enumeration has a multiplicity");
+    let mut integ = MultiplicitySum::new(parts);
 
-    tui::state::note_channels(integ.channel_ids().len());
+    tui::state::note_channels(integ.channel_count());
 
     let n_survey = survey_points(args.neval);
     integ.adapt_alphas(args.seed, n_survey, ADAPT_ITERS, ADAPT_DAMPING);
@@ -792,22 +900,15 @@ fn integrate_hadronic(
         args.seed,
         &tui::stop_signal(),
     );
+    if groups.len() > 1 {
+        report_multiplicities(&integ, &groups, &per_channel, convergence.iterations);
+    }
     let channels = integ
-        .channel_ids()
-        .iter()
+        .channel_keys()
+        .into_iter()
         .zip(integ.channel_samplers())
         .zip(&per_channel)
-        .map(|((id, sampler), c)| {
-            bank_channel(
-                ChannelKey::GroupChannel {
-                    group: id.group,
-                    channel: id.channel,
-                },
-                c,
-                Some(sampler.clone()),
-                Observable::CrossSection,
-            )
-        })
+        .map(|((key, sampler), c)| bank_channel(key, c, Some(sampler), Observable::CrossSection))
         .collect();
     Ok(RunOutput {
         process,
@@ -820,6 +921,30 @@ fn integrate_hadronic(
         result,
         convergence,
     })
+}
+
+/// Each multiplicity's own cross section, from its channels' terms.
+fn report_multiplicities(
+    integ: &MultiplicitySum<'_>,
+    groups: &[FlavorGroups],
+    per_channel: &[ChannelIntegration],
+    niter: usize,
+) {
+    let unit = Observable::CrossSection.per_natural_unit();
+    for (k, part) in integ.part_results(per_channel, niter).iter().enumerate() {
+        let ids: Vec<String> = part_process_ids(&groups[k])
+            .iter()
+            .map(|id| format!("@{id}"))
+            .collect();
+        info!(
+            "{} outgoing legs ({}): σ = {:.6} ± {:.6} pb over {} channels",
+            integ.final_state_count(k),
+            ids.join(" "),
+            part.integral * unit,
+            part.std_dev * unit,
+            integ.offsets()[k + 1] - integ.offsets()[k],
+        );
+    }
 }
 
 /// Fixed-energy partonic beams (`lpp = 0`), or a `1 → n` decay at rest:
@@ -840,6 +965,7 @@ fn integrate_fixed_energy(
 ) -> Result<RunOutput, IntegrateError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
+    refuse_mixed_multiplicity(&sets)?;
     let evals = compile_subprocesses(&sets, model, evaluated)
         .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
     let vetoes = subprocess_vetoes(

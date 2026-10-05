@@ -1,0 +1,31 @@
+# MadGraph5 batch script: MLM-matched Drell-Yan with up to two jets.
+# built-by: validation/madgraph/gen_mlm_references.sh
+#
+# The canonical MLM sample: p p > e+ e- with zero, one and two extra partons,
+# each multiplicity its own process (@0, @1, @2). MadEvent treats the three
+# identically at parton level under ickkw = 1 (hmult and highestmult are not
+# read); only the shower's nJetMax knows the two-jet sample is the highest
+# multiplicity. The run card is
+# pp_to_llj_mlm's: 13 TeV, lhaid 247000, mmll = 50, ickkw = 1, xqcut = 20,
+# vector_size = 1, systematics_program = none with use_syst kept on.
+generate p p > e+ e- @0
+add process p p > e+ e- j @1
+add process p p > e+ e- j j @2
+output pp_to_ll_0j2j_mlm -nojpeg
+launch
+  set ebeam1 6500
+  set ebeam2 6500
+  set fixed_ren_scale False
+  set fixed_fac_scale False
+  set scale 91.188
+  set dsqrt_q2fact1 91.188
+  set dsqrt_q2fact2 91.188
+  set dynamical_scale_choice -1
+  set pdlabel lhapdf
+  set lhaid 247000
+  set mmll 50
+  set ickkw 1
+  set xqcut 20
+  set vector_size 1
+  set systematics_program none
+  done

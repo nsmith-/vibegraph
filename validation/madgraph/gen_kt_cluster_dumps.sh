@@ -24,6 +24,21 @@
 # Environment:
 #   VG_FORCE=1        re-run a replay whose events and dump are already there
 #   VG_KT_STAGE=prep|run|extract   stop after that stage (default: all)
+#   VG_KT_MANIFEST    the manifest the dumps of this invocation are pinned in
+#                     (default kt_cluster_dump_manifest.json; the MLM rows keep
+#                     their own, mlm_dump_manifest.json, written by
+#                     gen_mlm_references.sh)
+#   VG_NB_CORE        run each replay's madevent on this many cores (default:
+#                     the generated directory's own setting)
+#   VG_KTDUMP_GZIP=1  the Fortran writes each shard through a gzip (raw.<pid>.gz)
+#   VG_KT_DROP_RAW=1  delete a replay's raw Fortran shards once its dump is
+#                     extracted and gated (they run to gigabytes on a matched
+#                     2 -> 4; the cache reads the event file and the dump only)
+#
+# The MLM rows (ickkw = 1) replay the same way. Their banked run is the one
+# gen_mlm_references.sh puts under output/<row>/Events/run_01, and their record
+# sets additionally carry rewgt's second setclscales call and its alpha_s and
+# PDF-ratio decisions; gen_kt_cluster_dumps.py documents the record grammar.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,6 +47,8 @@ OUT="$HERE/output"
 WORK="$OUT/ktdump"
 WRAPPERS="$HERE/wrappers"
 STAGE="${VG_KT_STAGE:-all}"
+MANIFEST="$HERE/${VG_KT_MANIFEST:-kt_cluster_dump_manifest.json}"
+. "$HERE/madevent_seeds.sh"
 
 # The banked runs whose clustering has no closed form, plus the degenerate rows
 # that do: each control covers one collapse of the general path (uux_to_uux the
@@ -112,7 +129,7 @@ prepare() {
     die "$name: .mg5 script has no 'output' line to redirect"
 
   local log="$WORK/$name.generate.log"
-  if ! LDFLAGS="${LDFLAGS:-} -lc++" bash "$HERE/mg5_pinned.sh" "$driver" > "$log" 2>&1; then
+  if ! bash "$HERE/mg5_pinned.sh" "$driver" > "$log" 2>&1; then
     tail -40 "$log" >&2
     die "$name: process generation failed (log: $log)"
   fi
@@ -131,6 +148,9 @@ prepare() {
   grep -qE "^\s*$seed\s*= iseed" "$pdir/Cards/run_card.dat" ||
     die "$name: failed to pin iseed = $seed in the replay run card"
   silence_madgraph_ui "$pdir/Cards/me5_configuration.txt"
+  if [ -n "${VG_NB_CORE:-}" ]; then
+    mes_configure_dir "$pdir" "$VG_NB_CORE"
+  fi
 
   say "[$name] applying the clustering instrumentation"
   bash "$WRAPPERS/ktdump_apply.sh" "$pdir"
@@ -146,7 +166,7 @@ replay() {
   say "[$name] running madevent (this is the slow part)"
   local log="$WORK/$name.madevent.log"
   VG_KTDUMP="$pdir/ktdump/raw" \
-  LDFLAGS="${LDFLAGS:-} -lc++" \
+  LDFLAGS="$(mes_ldflags)" \
     "$pdir/bin/generate_events" -f run_01 > "$log" 2>&1 ||
     { tail -40 "$log" >&2; die "$name: madevent failed (log: $log)"; }
 
@@ -170,6 +190,9 @@ extract() {
     --raw-dir "$pdir/ktdump" \
     --lhe "$pdir/Events/run_01/unweighted_events.lhe.gz" \
     --out "$WORK/dumps/$name.jsonl.gz"
+  if [ "${VG_KT_DROP_RAW:-0}" = 1 ]; then
+    rm -f "$pdir"/ktdump/raw.*
+  fi
 }
 
 # One run's failure costs its own hours, not the batch's: each is carried
@@ -194,7 +217,7 @@ done
 if [ "$STAGE" = all ]; then
   say "writing the dump manifest"
   python3 "$HERE/gen_kt_cluster_dumps.py" manifest \
-    --dumps "$WORK/dumps" --out "$HERE/kt_cluster_dump_manifest.json" \
+    --dumps "$WORK/dumps" --out "$MANIFEST" \
     "${PROCESSES[@]}"
 fi
 

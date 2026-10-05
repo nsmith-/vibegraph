@@ -23,8 +23,8 @@
 //! vertex's several colour structures distribute over the flows — so a wrong
 //! coefficient on one structure of a multi-structure vertex (the four-gluon
 //! contact, with three) survives a perfect `CF` match. [`check_jamp`] closes
-//! that: it compares the per-amplitude coefficient columns graph by graph, with
-//! each graph's structures kept in order.
+//! that: it compares the per-amplitude coefficient columns graph by graph, each
+//! graph's structures as one set under a single unit for the graph.
 //!
 //! Each run is colorized under the model `validation/manifest.toml` records for
 //! its row, not under the interned Standard Model: two rows can carry the same
@@ -635,6 +635,10 @@ fn main() {
         "packed-cf-form/gg_ttx",
         packed_cf_form_matches_the_square_form,
     ));
+    trials.push(Trial::test(
+        "jamp-normalisation/structure-controls",
+        graph_normalisation_ignores_structure_order_and_nothing_else,
+    ));
 
     libtest_mimic::run(&args, trials).exit();
 }
@@ -840,8 +844,12 @@ fn our_jamp(cb: &ColorBasis) -> Vec<(AmpKey, Vec<Cx>)> {
 /// The unit factor a *graph's* colour-coefficient columns are collectively defined
 /// up to: MadGraph folds the diagram's fermion factor into the coefficient where
 /// vibegraph carries it in the diagram root, so a graph is fixed only up to one
-/// overall unit. Return every column of the graph divided by the phase of the first
-/// non-zero entry of its first non-zero column, together with that phase.
+/// overall unit. Return the graph's columns divided by one unit and sorted, together
+/// with that unit, in a form that does not depend on the order the structures came
+/// in: each non-zero column's leading phase is tried as the unit, and the candidate
+/// whose sorted columns compare smallest is kept. Two graphs with the same columns
+/// up to one overall unit and an order of their structures therefore return equal
+/// columns, and the ratio of their units is the factor between them.
 ///
 /// The unit is **per graph, not per column**: a vertex's several colour structures
 /// (the four-gluon contact has three) write several `AMP()` of the same graph, and
@@ -862,18 +870,65 @@ fn normalise_group(cols: &[Vec<Cx>]) -> Option<(Cx, Vec<Vec<Cx>>)> {
     if scale == 0.0 {
         return None;
     }
-    let lead = *cols
-        .iter()
-        .flatten()
-        .find(|c| cx_abs(**c) > 1e-12 * scale)?;
-    let unit = (lead.0 / cx_abs(lead), lead.1 / cx_abs(lead));
-    let conj = (unit.0, -unit.1);
-    Some((
-        unit,
+    let mut best: Option<NormalisedGraph> = None;
+    for col in cols {
+        let Some(lead) = col.iter().find(|c| cx_abs(**c) > 1e-12 * scale) else {
+            continue;
+        };
+        let unit = (lead.0 / cx_abs(*lead), lead.1 / cx_abs(*lead));
+        let conj = (unit.0, -unit.1);
+        let mut norm: Vec<Vec<Cx>> = cols
+            .iter()
+            .map(|c| c.iter().map(|x| cx_mul(*x, conj)).collect())
+            .collect();
+        norm.sort_by_key(|c| column_key(c));
+        let key: Vec<Vec<(i64, i64)>> = norm.iter().map(|c| column_key(c)).collect();
+        if best.as_ref().is_none_or(|(k, _, _)| key < *k) {
+            best = Some((key, unit, norm));
+        }
+    }
+    best.map(|(_, unit, norm)| (unit, norm))
+}
+
+/// The per-graph normalisation on the four-gluon contact's three columns as
+/// `g g > t t~ g` writes them: the structures in reverse order and under another
+/// unit normalise to the same columns with the unit ratio as the factor between
+/// them, while a sign on one structure, or a coefficient moved to another flow,
+/// does not.
+fn graph_normalisation_ignores_structure_order_and_nothing_else() -> Result<(), Failed> {
+    let r = |v: [f64; 6]| -> Vec<Cx> { v.iter().map(|x| (*x, 0.0)).collect() };
+    let mg = vec![
+        r([1.0, -1.0, 0.0, -1.0, 0.0, 1.0]),
+        r([0.0, -1.0, 1.0, -1.0, 1.0, 0.0]),
+        r([-1.0, 0.0, 1.0, 0.0, 1.0, -1.0]),
+    ];
+    let times = |cols: &[Vec<Cx>], u: Cx| -> Vec<Vec<Cx>> {
         cols.iter()
-            .map(|col| col.iter().map(|c| cx_mul(*c, conj)).collect())
-            .collect(),
-    ))
+            .map(|c| c.iter().map(|x| cx_mul(*x, u)).collect())
+            .collect()
+    };
+    let reversed: Vec<Vec<Cx>> = mg.iter().rev().cloned().collect();
+    let (u_mg, n_mg) = normalise_group(&mg).ok_or("MadGraph's columns are non-zero")?;
+    let (u_ours, n_ours) =
+        normalise_group(&times(&reversed, (0.0, -1.0))).ok_or("our columns are non-zero")?;
+    if n_ours != n_mg {
+        return Err("reversed structures under another unit normalise differently".into());
+    }
+    let ratio = cx_mul(u_ours, (u_mg.0, -u_mg.1));
+    if cx_abs((ratio.0, ratio.1 + 1.0)) > 1e-12 {
+        return Err(format!("unit ratio {ratio:?}, expected (0, -1)").into());
+    }
+    let mut signed = mg.clone();
+    signed[1] = times(&signed[1..2], (-1.0, 0.0)).remove(0);
+    if normalise_group(&signed).map(|(_, n)| n) == Some(n_mg.clone()) {
+        return Err("a sign on one structure survived the normalisation".into());
+    }
+    let mut moved = mg.clone();
+    moved[2].swap(0, 1);
+    if normalise_group(&moved).map(|(_, n)| n) == Some(n_mg) {
+        return Err("a coefficient moved between flows survived the normalisation".into());
+    }
+    Ok(())
 }
 
 /// Sort key that orders normalised columns deterministically for the multiset
@@ -890,7 +945,7 @@ fn column_key(col: &[Cx]) -> Vec<(i64, i64)> {
 /// A vertex with several colour structures makes one graph write several
 /// amplitudes — the four-gluon contact writes three — so this is what turns the
 /// per-amplitude comparison into a per-*structure* one: the amplitudes of one
-/// graph are compared as an ordered tuple, in the order MadGraph emits them.
+/// graph are compared together, under one unit.
 fn mg_amp_groups(lines: &[String]) -> Vec<Vec<usize>> {
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for line in lines {
@@ -935,10 +990,20 @@ fn mg_amp_groups(lines: &[String]) -> Vec<Vec<usize>> {
 /// The comparison is mapping-free: nothing derives MadGraph's graph order from
 /// ours, so graphs are matched as a multiset rather than paired by index
 /// (`amplitude_oracle`'s banked `MG_DIAGRAM_ORDER` is what pins the pairing).
-/// What is compared per graph is the **ordered tuple** of its amplitudes'
-/// columns under a *single* unit for the whole graph ([`normalise_group`]), so
-/// neither a permutation of a vertex's colour structures nor a sign on one of them
-/// survives.
+/// What is compared per graph is the **set** of its amplitudes' columns under a
+/// *single* unit for the whole graph ([`normalise_group`]), so a sign on one
+/// structure, a structure missing or doubled, or a coefficient moved between flows
+/// does not survive. The order of a vertex's structures does not enter: it is the
+/// order of the vertex's slots, which each side assigns its own way. MadGraph puts
+/// a contact vertex's off-shell leg in its first slot (`VVVV1P0_1(W(1,1), W(1,2),
+/// W(1,5), …)` on `g g > t t~ g`), and a different slot order permutes the three
+/// colour structures and the three Lorentz structures together, leaving the vertex
+/// unchanged; on that process the two orders put the structures in reverse. Which
+/// colour structure multiplies which Lorentz structure is what that permutation
+/// must preserve, and this comparison sees no Lorentz structure: the per-flow
+/// amplitude gates pin it (`amplitude_oracle`'s `gg_to_gg`, and
+/// `standalone_jamps`' `uux_to_ggg` and `gg_to_ggg`, whose contact vertex has an
+/// internal leg as here).
 ///
 /// The per-graph units are then held to each other. MadGraph's own freedom here is
 /// its fermion factor, which is real, and every other difference between the two

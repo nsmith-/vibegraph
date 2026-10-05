@@ -104,10 +104,15 @@ const GRID_ALPHA_S_RUNS: &[&str] = &[
     "pp_to_bb_fixed",
     "pp_to_bb_qcd2",
     "pp_to_jj",
+    "pp_to_ll_0j2j_mlm",
     "pp_to_ll_scalefact2",
     "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
+    "pp_to_llj_mlm",
+    "pp_to_llj_mlm_alps2",
+    "pp_to_llj_xqcut_only",
+    "pp_to_ttx_0j1j_mlm",
 ];
 
 /// The declared runs of `list` whose directory is on this machine, sorted.
@@ -293,6 +298,15 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// digits. A straight line through the same knots reproduces the first pair and
 /// misses the second by up to `1.7e-4` relative — a thousand times the printing
 /// budget — so those two are what pin the interpolant to LHAPDF's cubic.
+///
+/// The MLM runs are grid-sourced too. Under `ickkw = 1` MadEvent writes `SCALUP`
+/// as `√max(q2bck)`, the factorisation scale of the record, while `AQCDUP` stays
+/// at the first `setclscales` call's `μR`. On the three single-multiplicity
+/// `p p > e+ e- j` runs the two coincide on every event, so they are here; on the
+/// two mixed-multiplicity runs they part on 16 (`pp_to_ll_0j2j_mlm`) and 254
+/// (`pp_to_ttx_0j1j_mlm`) of 10 000 events, by up to 10⁵ printing budgets, so
+/// those stay outside. Their `AQCDUP` is reproduced at `μR` event by event, worst
+/// `3e-16`, by `validate_mlm_dumps`, which reads `μR` from MadEvent's own dump.
 const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "ddx_to_epemg",
     "ee_to_ee",
@@ -336,6 +350,9 @@ const SCALUP_IS_THE_RENORMALISATION_SCALE: &[&str] = &[
     "pp_to_llj",
     "pp_to_llj_dyn",
     "pp_to_llj_fixed",
+    "pp_to_llj_mlm",
+    "pp_to_llj_mlm_alps2",
+    "pp_to_llj_xqcut_only",
     "pp_to_ll_scalefact2",
     "qqx_to_o8o8_toy_dcolor",
     "tata_to_ttx_tensor4f",

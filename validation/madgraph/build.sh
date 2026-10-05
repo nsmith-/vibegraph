@@ -132,6 +132,16 @@ for script_path in "$SCRIPTS_DIR"/*.mg5; do
     continue
   fi
 
+  # A script whose banked run another generator makes names that generator on a
+  # `# built-by:` line (the MLM rows: gen_mlm_references.sh runs them per seed,
+  # and needs the samples-grade run to be the first its directory makes).
+  built_by="$(sed -n 's/^# built-by:[[:space:]]*//p' "$script_path" | head -1)"
+  if [ -n "$built_by" ]; then
+    echo "⊘ Skipping: $script (built by $built_by)"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+
   echo "Processing: $script -> $output_dir/"
 
   t0=$(date +%s)

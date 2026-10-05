@@ -60,7 +60,7 @@ language:
 | squared-order constraints `QCD^2<=4`, `aEW`, `aS` | refused (see below) |
 | `WEIGHTED==n`, `WEIGHTED>n` | refused: MadGraph reads them as squared-order constraints |
 | `[QCD]`, `[real=QCD]`, `!a!` | refused: NLO |
-| `add process` with another final-state multiplicity | refused: needs jet merging |
+| `add process` with another final-state multiplicity | supported at proton beams: each multiplicity integrated on its own phase space and the events unweighted together (see below); refused at fixed-energy beams and for a decay |
 | `set` of a physics-bearing option off its default | refused |
 | run-card edits after `launch` | refused: the run card is its own file |
 
@@ -125,8 +125,14 @@ chain holds it in.
 `add process` lines are summed where their final states agree by content: each
 subprocess's outgoing legs are put in the first one's order of mass and cut
 class, so `p p > w+ j` and `add process p p > j w-` share one phase-space map.
-Lines of different final-state multiplicity stay refused (they need jet
-merging), and so does a subprocess two lines both produce.
+Lines of different final-state multiplicity are summed the way MadEvent sums
+its `P<n>` directories: at proton beams each multiplicity is its own
+integrand, with channels and VEGAS grids over its own phase space, and one
+unweighting pass draws across all of them, every event carrying its line's
+`@N` as `IDPRUP`. Whether that sum is MLM-matched is the run card's business
+(`ickkw = 1`, `xqcut`); with `ickkw = 0` it runs unmatched, as MadGraph does,
+with a warning that it double counts. A subprocess two lines both produce stays
+refused.
 
 A squared-order constraint bounds the order of an *interference* term in
 $|M|^2$, a statement about pairs of diagrams. This generator selects diagrams

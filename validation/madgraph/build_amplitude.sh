@@ -46,7 +46,9 @@ done < <(
         python -c 'import json,sys; [print(r["name"]) for r in json.load(sys.stdin)]' |
         { if [ $# -gt 0 ]; then grep -Fx -f <(printf '%s\n' "$@"); else cat; fi; }
 )
-[ ${#GENERIC_PROCESSES[@]} -gt 0 ] || {
+# Narrowed to named rows, the set may be empty here and filled by the table
+# rows below; unnarrowed, an empty set means the manifest failed to resolve.
+[ ${#GENERIC_PROCESSES[@]} -gt 0 ] || [ $# -gt 0 ] || {
     echo "ERROR: the manifest resolved to no mg_amplitude rows" >&2
     exit 1
 }
@@ -128,7 +130,7 @@ its |M|^2 comes from mg_amp_probe_${name} instead"
     echo "  -> $OUTDIR/mg_${name}*.so"
 }
 
-for name in "${GENERIC_PROCESSES[@]}"; do
+for name in ${GENERIC_PROCESSES[@]+"${GENERIC_PROCESSES[@]}"}; do
     compile_process_generic "$name"
 done
 
@@ -248,11 +250,24 @@ build_amp_dump_probe() {
     echo "  -> $OUTDIR/mg_amp_probe_${name}*.so"
 }
 
-# Per-diagram / per-flow oracle for every validated process: the committed
-# amplitude tables carry AMP() and JAMP() per helicity, which is the finest
-# linear level MadGraph exposes and the level the gate compares at.
-AMP_PROBE_PROCESSES=("${GENERIC_PROCESSES[@]}")
+# Per-diagram / per-flow oracle for every row gen_amplitude_tables.py banks: the
+# committed amplitude tables carry AMP() and JAMP() per helicity, which is the
+# finest linear level MadGraph exposes and the level the gate compares at. Its
+# rows include ones that borrow another row's grid (`uux_to_mumu` reads
+# `pp_to_ll_qcd0`'s) but still evaluate their own process directory, so the
+# list is the table generator's, and those rows get their summed |M|^2 module too.
+AMP_PROBE_PROCESSES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && AMP_PROBE_PROCESSES+=("$name")
+done < <(
+    python "$REPO_ROOT/validation/madgraph/gen_amplitude_tables.py" --dump-keys |
+        { if [ $# -gt 0 ]; then grep -Fx -f <(printf '%s\n' "$@"); else cat; fi; }
+)
 for name in "${AMP_PROBE_PROCESSES[@]}"; do
+    case " ${GENERIC_PROCESSES[*]+${GENERIC_PROCESSES[*]}} " in
+        *" $name "*) ;;
+        *) compile_process_generic "$name" ;;
+    esac
     build_amp_dump_probe "$name"
 done
 

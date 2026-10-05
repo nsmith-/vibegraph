@@ -21,6 +21,19 @@ mes_sha256() {
   fi
 }
 
+# The LDFLAGS a madevent build needs. A proton run links MadEvent against
+# LHAPDF's C++ glue, and the conda activation's own LDFLAGS suppresses the
+# `STDLIB` line of MadGraph's make_opts (its `ifeq ($(origin LDFLAGS),undefined)`
+# guard sees LDFLAGS as already set), so the C++ runtime is named here: libc++ on
+# macOS, libstdc++ on Linux. Naming the other one fails the link (build.sh
+# carries the full explanation).
+mes_ldflags() {
+  case "$(uname -s)" in
+    Darwin) printf '%s -lc++\n' "${LDFLAGS:-}" ;;
+    *) printf '%s -lstdc++\n' "${LDFLAGS:-}" ;;
+  esac
+}
+
 # A generated process directory carries its own copy of MadGraph's settings, and
 # `bin/generate_events` reads that copy: no browser, no desktop notification,
 # multicore on NB_CORE cores.
@@ -98,15 +111,7 @@ mes_run_seed() {
   rm -rf "$rundir"
   local started
   started="$(date +%s)"
-  # A proton run links MadEvent against LHAPDF's C++ glue. On macOS the conda
-  # activation's own LDFLAGS suppresses MadGraph's `STDLIB=-lc++`, so libc++ is
-  # named here; on Linux the same symbols come from libstdc++ and the flag would
-  # break the link (build.sh carries the full explanation).
-  local ldflags="${LDFLAGS:-}"
-  case "$(uname -s)" in
-    Darwin) ldflags="$ldflags -lc++" ;;
-  esac
-  LDFLAGS="$ldflags" "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
+  LDFLAGS="$(mes_ldflags)" "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
     echo "!!! [$tag] generate_events failed; see $log" >&2
     tail -40 "$log" >&2
     return 1

@@ -8,7 +8,7 @@
  
        integer ievent
        logical flip
-@@ -854,6 +855,46 @@
+@@ -854,6 +855,49 @@
          return
        endif
  
@@ -50,6 +50,9 @@
 +         call vg_i(jpart(1,i))
 +         call vg_rec()
 +      enddo
++      call vg_ptcl('OUT')
++      call vg_cfg(ivec)
++      call vg_counts()
 +      call vg_flush()
 +
  c     Store weight for event

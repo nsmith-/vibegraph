@@ -2054,7 +2054,7 @@ fn probe_2to6_budget_ladder() {
 /// difference between rungs is only a finding if it exceeds it.
 ///
 /// `scaled_rel` is reported per seed beside the quoted error: the stopping test's
-/// per-channel `√max(1, χ²/dofⱼ)` inflation of `Δσ/σ`, whose ratio to the realized
+/// per-channel consistency inflation of `Δσ/σ`, whose ratio to the realized
 /// seed spread is what says whether that inflation is calibrated. Run with
 /// `--ignored --nocapture`.
 #[test]
