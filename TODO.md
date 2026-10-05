@@ -476,6 +476,11 @@ At most three lines each; the note is the full record. Earlier sprints
   script whose output directory is missing (`depends-on = ["build-diagrams"]`
   → `build.sh` regenerates). Anyone holding a run directory aside must invoke
   only `--skip-deps` tasks, or the held-out run comes back as a fresh MG job.
+- **Reference material as an OKF knowledge bundle** (note 42) — planned, not
+  started: waits until the PRs and developments in flight have merged. Phase 0
+  (frontmatter on the existing notes in place, generated indexes, a conformance
+  lint) breaks no citation and is the first step; the next sprint can then
+  trial the per-sprint folder shape (note 42 §4).
 ---
 
 ## 🧩 Feature backlog

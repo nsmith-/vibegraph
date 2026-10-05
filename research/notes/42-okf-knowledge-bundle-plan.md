@@ -1,0 +1,340 @@
+# 42 — Reference material as an OKF knowledge bundle: refactor plan (2026-10-05)
+
+The question (user): restructure `research/` in the style of the Open Knowledge
+Format, [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
+using subagents and a temporary vector database to cluster what the notes
+already contain. This note is the plan: the target shape, how a sprint runs
+against it, the migration phases, and the decisions taken in the planning
+discussion.
+
+**Status: planned, not started** (user, 2026-10-05). Work waits until the PRs
+and developments in flight have merged, so the migration starts from a quiet
+`research/notes/` and a settled `TODO.md`.
+
+## 1. OKF in brief
+
+A bundle is a directory tree of markdown files. Every file except the reserved
+`index.md` and `log.md` is a *concept*: YAML frontmatter, then a free-form body.
+The only required key is a non-empty `type`. Type values are not registered
+centrally, so a bundle defines its own vocabulary.
+
+| Family | Keys | Use here |
+|---|---|---|
+| Descriptive | `title`, `description`, `resource`, `tags` | every concept |
+| Provenance (§5.1) | `sources[]` (`id`, `resource`, `title`, …) plus `[^id]` body footnotes | papers, upstream code permalinks, Rust paths, archived note sections |
+| Trust (§5.2–5.3) | `generated: {by, at}`, `verified: [{by, at}]` | tiers: unverified / machine-confirmed / human-reviewed |
+| Lifecycle (§5.4–5.5) | `status: draft \| stable \| deprecated`, `stale_after` | `stale_after` only for things that expire with time (§5) |
+| Computation (§10) | `type: Attested Computation`, `runtime`, `parameters`, `executor`, `attester` | optional, for validation gates (Phase 5) |
+
+Actors follow `<producer>/<version>` for agents (`claude-code/claude-opus-5-5`),
+`human:<id>` for people (`human:nsmith-`), `process:<id>` for automation.
+Links are standard markdown, preferably bundle-relative (`/amplitudes/x.md`);
+consumers must tolerate broken links. `index.md` files carry no frontmatter,
+except that the bundle root's may declare `okf_version: "0.2"`. `log.md` is a
+newest-first list under `## YYYY-MM-DD` headings. Unknown frontmatter keys are
+allowed, which is what lets §5's `measured:` block exist without a spec change.
+
+## 2. Starting point
+
+- `research/notes/`: 47 notes, ~38k lines, 1,211 `##`/`###` sections,
+  numbered chronologically. Genres are mixed: conventions and derivations,
+  designs, measurements, surveys of papers and codebases, and sprint plans. The
+  sprint plans (19, 24, 27–38) are ~60% of the lines; notes 24, 28 and 29 alone
+  run 3k–6k lines each, mostly dated amendments.
+- Citations of the form "note NN §x": 109 in `TODO.md`, ~16 in code, validation
+  and scripts, one each in `AGENTS.md` and `.agents/`, 362 between notes. Any
+  move must keep these resolvable.
+- `.agents/agents/*.md` each carry a hand-maintained "Research note index".
+- `research/refs/` holds four submodules (MadGraph5_aMC@NLO, Sherpa,
+  POWHEG-BOX-V2, FeynGraph) and the paper fetch script; fetched papers land in a
+  gitignored `papers/`.
+- `docs/src/` is the user-facing mdBook. It stays separate; its
+  `bibliography.md` overlaps the bundle's `Paper` concepts and may later link
+  to them.
+
+## 3. Target shape
+
+Bundle root **`research/kb/`**. The root `index.md` declares
+`okf_version: "0.2"`. Folders are organised by topic, not by date:
+
+```
+research/
+  kb/
+    index.md  log.md
+    pipeline/             overview; the cross-section and event-weight chain
+    model/                UFO parsing, UFO↔ALOHA type matrix, Lorentz runtime eval
+    amplitudes/           HELAS / typed-repr conventions, vector-vertex signs, colour flow
+    process/              process grammar, diagram enumeration
+    phase-space/          resonance sampling, MadEvent maps, soft angle, VEGAS, variance-flow
+    scales-pdf/           dynamical and per-group scales, kT clustering, hadronic σ
+    events/               LHEF, distributions, proton events
+    validation/           layering, refdata representation, seed headroom, bit-exact oracle method
+    performance/          eval optimisation, egglog, BCE, rooting / arena / threading / AVX2 studies
+    references/papers/    one concept per paper; resource = arXiv / DOI URL
+    references/codebases/ MG5aMC, Sherpa, POWHEG-BOX, FeynGraph; resource = upstream permalink
+    sprints/<name>/       one folder per sprint (§4)
+    history/notes/        the original notes 00–41, archived verbatim
+  refs/                   submodules and paper fetching; outside the bundle (§6)
+  ufo/                    sample UFO models; outside the bundle
+```
+
+The topic folders are provisional. Phase 1's clustering proposes the real
+taxonomy, and you approve it before anything is drafted.
+
+**Type vocabulary** (ours; OKF registers none): `Overview`, `Physics
+Convention`, `Derivation`, `Design`, `Design Decision`, `Algorithm`,
+`Validation Methodology`, `Validation Gate`, `Measurement`, `Feasibility
+Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
+`Session Brief`, `Session Report`, `Sprint Record`, `Audit`, `Working Note`.
+
+**Conventions:**
+- Concept bodies state current truth. History lives in `log.md` and git, which
+  matches the comment rule in `AGENTS.md`: no "Status: APPROVED" banners, no
+  "design amendment 2" sections.
+- `verified` with a `human:` actor is added only when a person actually
+  reviewed the concept, never in bulk.
+- `index.md` files are generated from frontmatter by a script, never by hand.
+- A conformance lint runs in CI as a pixi task. It checks that every
+  non-reserved `.md` under `kb/` parses and has a non-empty `type`, and that the
+  generated indexes are current. It uses a real YAML parser.
+
+## 4. Sprint lifecycle under the bundle
+
+A sprint becomes a folder of linked concepts instead of one plan file that
+grows to thousands of lines. Lasting knowledge is promoted into the topic
+folders at close-out. Shape, using `process-grammar` (note 38) as the example:
+
+```
+kb/sprints/process-grammar/
+  index.md                reading order: overview → decisions → sessions
+  log.md                  dated approvals, amendments, re-scopes
+  sprint.md               type: Sprint — goal, exit criteria, scope, session graph
+  audit.md                type: Audit — snapshot of today's surface (note 38 §2)
+  decisions/D1-….md       type: Design Decision — one per decision
+  sessions/G1.md          type: Session Brief — scope, agent type, dependencies, gate
+  sessions/G1-report.md   type: Session Report — written by the dev agent
+  closeout.md             type: Sprint Record — what was banked, census delta
+```
+
+1. **Open (manager).** Create the folder with `sprint.md` at `status: draft`,
+   and point `TODO.md`'s "Current position" at it. Before writing anything new,
+   look up the topic's existing concepts. Those still at `draft` are open
+   questions; measurements whose recorded commit predates heavy churn in the
+   area are re-measurement candidates (§5).
+2. **Survey.** Reading upstream code (note 38 §1, "MadGraph semantics read from
+   the pinned source") produces or updates a reusable `Codebase Survey` under
+   `references/codebases/`, so the next sprint starts from it instead of
+   re-reading MadGraph. Findings specific to the sprint go in `audit.md`.
+3. **Design and approval.** The design edits topic concepts in place at
+   `status: draft`, with one `Design Decision` concept per decision. Approval is
+   data: `verified: [{by: human:nsmith-, at: …}]`, status flipped to `stable`,
+   and an `**Approval**` entry in the sprint's `log.md`.
+4. **Sessions.** A `Session Brief` is short. It holds the scope and links to the
+   binding design concepts, the decisions and its gate. The dispatch brief names
+   the session concept, and the dev agent follows links from there; that is
+   OKF's progressive disclosure. The note index in `.agents/agents/*.md` becomes
+   "start at `research/kb/index.md`". The agent writes its report as
+   `sessions/<id>-report.md`, with `generated.by` itself and `sources` its commit
+   hashes. That is the one bundle file a dev agent may write. The trust tiers
+   then encode "subagent reports are evidence, not truth":
+
+   | Tier | Meaning |
+   |---|---|
+   | unverified | the agent's own claim |
+   | machine-confirmed | the manager spot-checked it (`verified: claude-code/…`) |
+   | human-reviewed | a person checked it |
+
+   A design deviation still stops the session. The manager edits the design
+   concept in place and adds a dated line to the sprint's `log.md`.
+5. **Validation.** Briefs link to `Validation Gate` concepts. If Phase 5 is
+   adopted, a gate is an Attested Computation whose receipt is a recorded
+   `validation-report` run, checked by the manifest collator.
+6. **Close-out.** The only point where session results reach shared concepts,
+   so parallel sessions never conflict over them.
+   - **Promote:** changed topic concepts go to `stable` after review. New
+     lessons go into methodology concepts. Superseded concepts become
+     `deprecated` and link to their replacement.
+   - **Measurements:** become `Measurement` concepts with a `measured:` block
+     (§5). Take them after the sprint's last code change where possible.
+   - **Record:** `closeout.md` holds what was banked and the census change;
+     `landed_in` is filled for the sprint's measurements once the PR merges.
+   - **Bookkeeping:** update `TODO.md` and the root `log.md`, regenerate
+     indexes, run the lint.
+
+`sprint.md` stays a readable overview, with the session list and decision
+summaries inline, so the plan can still be reviewed in one file. The lint can
+flag a sprint marked `stable` that still links to `draft` design concepts.
+
+## 5. Measurements and staleness
+
+Measurements go stale when code changes, not when time passes. No machinery
+tracks that automatically. A measurement records the facts, and a later session
+judges whether re-measuring is warranted.
+
+- `stale_after` stays empty for anything tied to code that will likely change.
+  It is kept for the rare fact that genuinely expires with time.
+- The commit the numbers came from is recorded, together with what survives a
+  squash-merge. PRs land on `main` as one squash commit, often a whole sprint
+  (`1539abc` is all of `process-grammar`, `nsmith-/vibegraph#12`). So a
+  measurement commit taken inside a sprint never appears on `main`, and its
+  branch may be deleted. GitHub keeps `refs/pull/<n>/head`, so the PR number
+  keeps the commit fetchable.
+
+```yaml
+measured:
+  commit: 4f2c9e1     # the tree the numbers came from
+  pr: 12              # fetch with `git fetch origin pull/12/head`
+  landed_in: 1539abc  # the squash commit on main, filled at close-out
+  host: "M3 Max, macOS 15"
+  command: pixi run bench-eval -- gg_ttg
+```
+
+A session deciding whether to re-measure reads:
+- what changed on `main` since landing:
+  `git log --oneline <landed_in>..origin/main -- <paths the body names>`;
+- what changed between measurement and merge, after fetching the PR ref:
+  `git log --oneline <commit>..FETCH_HEAD`;
+- a direct comparison, `git diff --stat <commit> origin/main -- <paths>`. It
+  compares trees, so it works across a squash once the object is fetched.
+
+Cloud sessions are shallow clones, so the agent briefs say to fetch the ref or
+deepen history first. A missing `landed_in` means the PR has not merged or
+close-out skipped it; `pr` tells which. `host` decides whether two perf numbers
+are comparable, not whether one is stale.
+
+Deferred, to revisit only if this proves too loose: deriving each measurement's
+dependency set (e.g. from a coverage run of its command) and computing
+staleness from per-file git blob IDs.
+
+## 6. External codebases stay outside the bundle
+
+The submodules under `research/refs/` are external code. They are normally not
+checked out; MadGraph is checked out only when a new validation reference is
+generated. So:
+
+- `kb/` never contains them. The lint and index scripts only look inside
+  `kb/`, so populating a submodule cannot break conformance.
+- A `Codebase` concept's `resource`, and every `sources` entry citing external
+  code, is the upstream permalink at the pinned commit, e.g.
+  `https://github.com/mg5amcnlo/mg5amcnlo/blob/<sha>/madgraph/...`. GitLab
+  repositories (Sherpa, POWHEG-BOX-V2) use `/-/blob/<sha>/`. Never
+  `research/refs/...` paths.
+- A survey concept records the pinned commit it read, so a later session can
+  compare it with the current pin and decide whether to re-read.
+- Survey concepts quote the short excerpts they depend on, so an agent without
+  a checkout can use them; the permalink is for checking.
+- Checkout instructions stay in `research/refs/README.md` and the
+  `extended-validation` skill. OKF's `references/` mirroring convention is not
+  used for submodule content; `kb/references/codebases/` holds short concepts
+  that describe and link out.
+- Fetched papers stay in the gitignored `papers/`. `Paper` concepts link the
+  arXiv or DOI URL.
+
+## 7. Migration phases
+
+### Phase 0 — conform in place (one session, mechanical)
+
+Add frontmatter (`type`, `title`, `description`, `tags`, `generated`,
+`status`) to the existing notes where they stand. Generate `index.md`, add
+`log.md`, add the lint. Nothing moves, so no citation breaks; at the end of the
+phase the notes are already a conformant bundle. Provisional types, to be
+confirmed by reading each note:
+
+| Notes | Type |
+|---|---|
+| 00 | Overview |
+| 01 | Paper (survey of several) |
+| 02, 03, 07, 14 | Codebase Survey |
+| 05 | Procedure |
+| 08, 09, 11, 13, 39 | Physics Convention / Derivation |
+| 04, 06, 10, 15, 16, 18, 21, 22, 23, 25, 26, 40 | Design |
+| 12 | Validation Methodology |
+| 17, 30, 36a, `*-results.md` | Measurement |
+| 37 | Codebase Survey + Design |
+| 41 | Feasibility Study |
+| 19, 20, 24, 27–29, 31–36, 38 | Sprint Plan |
+
+During Phase 0 the bundle root is `research/notes/`; Phase 4 moves it to
+`research/kb/`.
+
+### Phase 1 — chunk, embed, cluster (scratchpad only, never committed)
+
+1. Split the notes at `##`/`###` headings (~1.2k chunks). Each chunk records
+   note number, section path, line range, date stamps, and what it cites (note
+   §refs, file paths, arXiv IDs).
+2. Embed with a small local CPU model (e.g. `bge-small` via `fastembed`) into a
+   throwaway LanceDB, in a virtualenv in the session scratchpad. Nothing is
+   added to `pixi.toml`.
+3. Cluster with HDBSCAN on a hybrid similarity: embedding cosine blended with
+   the citation graph. Embeddings alone tend to group by writing style (sprint
+   prose) rather than topic.
+4. Report: proposed clusters → concepts; near-duplicates across notes (the same
+   convention restated, e.g. 13, 16, 39), which become merge candidates; and
+   contradictions (a later amendment overriding an earlier design), which go to
+   the drafting agents as explicit "resolve, don't average" items.
+5. Provide a `kb-query "<text>"` command returning the top-k chunks, for the
+   drafting agents.
+
+**Checkpoint:** the user approves the taxonomy.
+
+### Phase 2 — draft concepts (subagents)
+
+One agent per cluster, ~8–10. Each gets its cluster's chunks plus `kb-query`
+for context the clustering missed. Each writes only into its own folder, and
+marks every concept `status: draft` with `generated.by` itself. Sprint plans are
+mined for their decisions, which become `Design Decision` concepts in topic
+folders; each plan shrinks to a `Sprint Record` linking to them.
+
+### Phase 3 — adversarial verification and coverage
+
+Separate verifier agents trace every number and claim back to a source chunk.
+A coverage map assigns each chunk ID to at least one concept or explicitly tags
+it `history-only`. The script checks coverage; the drafting agents do not get
+to assert it.
+
+### Phase 4 — move and re-cite
+
+Generate a mapping from (note, §) to concept ID. Rewrite the external citations
+(`TODO.md`, code, validation, scripts, `AGENTS.md`, `.agents/`,
+`research/refs/README.md`, `research/README.md`) from it. Move the original
+notes to `kb/history/notes/` as `Working Note`, `status: deprecated`, each
+linking to its replacements; the 362 citations between notes keep resolving
+inside the archive. Update the agent briefs (§4.4) and `AGENTS.md`'s planning
+section, and add a `new-sprint` scaffold script.
+
+### Phase 5 (optional) — Attested Computations for validation gates
+
+The pixi validate tasks are the executor, a `validation-report` run is the
+receipt, the `validation/manifest.toml` collator is the attester. Pilot on two
+or three gates. If it holds, `TODO.md`'s census can be derived from attested
+receipts instead of written by hand.
+
+### Trial
+
+Running the next sprint (MLM) in the §4 shape after Phase 0, before migrating
+the archive, tests the lifecycle on live work at low cost.
+
+## 8. Open decisions
+
+1. **`TODO.md`.** Recommended: stays outside the bundle, since `AGENTS.md`
+   defines its role, with backlog entries linking to concepts. Alternative:
+   backlog topics become `status: draft` concepts.
+2. **Fan-out mechanism.** Phases 2–3 need ~15–20 agents, above the default
+   workflow size; running them as a Workflow needs explicit opt-in. Otherwise
+   they are dispatched one cluster at a time.
+3. **Bundle root name.** `research/kb/` is assumed; a top-level `knowledge/` is
+   the alternative.
+
+## 9. Risks
+
+- **Fragmentation.** Agents and reviewers lose the single scrollable plan.
+  Mitigated by `sprint.md` as an inline overview and by `index.md` reading
+  orders.
+- **Skipped promotion at close-out.** Topic concepts silently drift behind the
+  sprint folders. The lint catches the draft-under-stable case; the rest is
+  close-out discipline.
+- **Lossy distillation.** A drafted concept drops a caveat the original note
+  carried. Phase 3's coverage map and claim tracing guard this, and the
+  archived notes stay available as `sources`.
+- **Frontmatter overhead per sprint.** Kept small by the scaffold script and
+  generated indexes.
