@@ -3,9 +3,11 @@
 The question (user): restructure `research/` in the style of the Open Knowledge
 Format, [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md),
 using subagents and a temporary vector database to cluster what the notes
-already contain. This note is the plan: the target shape, how a sprint runs
-against it, the migration phases, and the decisions taken in the planning
-discussion.
+already contain; and (user, same discussion) make the work backlog that
+`TODO.md` holds today resilient to several work streams at once. This note is
+the plan: the target shape, how a sprint runs against it, the backlog as
+one-file items with a generated view, the migration phases, and the decisions
+taken in the planning discussion.
 
 **Status: planned, not started** (user, 2026-10-05). Work waits until the PRs
 and developments in flight have merged, so the migration starts from a quiet
@@ -44,6 +46,13 @@ allowed, which is what lets §5's `measured:` block exist without a spec change.
 - Citations of the form "note NN §x": 109 in `TODO.md`, ~16 in code, validation
   and scripts, one each in `AGENTS.md` and `.agents/`, 362 between notes. Any
   move must keep these resolvable.
+- `TODO.md`: 1,072 lines, ~120 bullet entries (median 6 lines, longest 33)
+  across the validation, feature and performance backlogs, plus 103 lines of
+  closed-sprint history and ~75 lines of hand-written "current position",
+  scope decisions, census and standing measurement facts. It is the repo's
+  hottest file (24 of the 73 commits in the local history touch it), every
+  work stream edits it, and entries accrete narrative: how a problem was
+  solved, rather than what is still open.
 - `.agents/agents/*.md` each carry a hand-maintained "Research note index".
 - `research/refs/` holds four submodules (MadGraph5_aMC@NLO, Sherpa,
   POWHEG-BOX-V2, FeynGraph) and the paper fetch script; fetched papers land in a
@@ -72,6 +81,7 @@ research/
     performance/          eval optimisation, egglog, BCE, rooting / arena / threading / AVX2 studies
     references/papers/    one concept per paper; resource = arXiv / DOI URL
     references/codebases/ MG5aMC, Sherpa, POWHEG-BOX, FeynGraph; resource = upstream permalink
+    backlog/<area>/       one file per open work item (§7)
     sprints/<name>/       one folder per sprint (§4)
     history/notes/        the original notes 00–41, archived verbatim
   refs/                   submodules and paper fetching; outside the bundle (§6)
@@ -85,7 +95,8 @@ taxonomy, and you approve it before anything is drafted.
 Convention`, `Derivation`, `Design`, `Design Decision`, `Algorithm`,
 `Validation Methodology`, `Validation Gate`, `Measurement`, `Feasibility
 Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
-`Session Brief`, `Session Report`, `Sprint Record`, `Audit`, `Working Note`.
+`Session Brief`, `Session Report`, `Sprint Record`, `Audit`, `Backlog Item`,
+`Working Note`.
 
 **Conventions:**
 - Concept bodies state current truth. History lives in `log.md` and git, which
@@ -116,8 +127,10 @@ kb/sprints/process-grammar/
   closeout.md             type: Sprint Record — what was banked, census delta
 ```
 
-1. **Open (manager).** Create the folder with `sprint.md` at `status: draft`,
-   and point `TODO.md`'s "Current position" at it. Before writing anything new,
+1. **Open (manager).** Create the folder with `sprint.md` at `status: draft`
+   and `active: true`; the generated backlog view (§7) picks it up as the
+   current position. The sprint names the backlog items it takes on and sets
+   their `claimed_by` to the sprint branch. Before writing anything new,
    look up the topic's existing concepts. Those still at `draft` are open
    questions; measurements whose recorded commit predates heavy churn in the
    area are re-measurement candidates (§5).
@@ -130,12 +143,16 @@ kb/sprints/process-grammar/
    data: `verified: [{by: human:nsmith-, at: …}]`, status flipped to `stable`,
    and an `**Approval**` entry in the sprint's `log.md`.
 4. **Sessions.** A `Session Brief` is short. It holds the scope and links to the
-   binding design concepts, the decisions and its gate. The dispatch brief names
-   the session concept, and the dev agent follows links from there; that is
-   OKF's progressive disclosure. The note index in `.agents/agents/*.md` becomes
+   binding design concepts, the decisions, its gate and the backlog items it
+   closes (`closes: [...]`). The dispatch brief names the session concept (or,
+   for work outside a sprint, a single backlog item), and the dev agent follows
+   links from there; that is OKF's progressive disclosure. A dev agent never
+   reads the whole backlog (§7.3). The note index in `.agents/agents/*.md` becomes
    "start at `research/kb/index.md`". The agent writes its report as
    `sessions/<id>-report.md`, with `generated.by` itself and `sources` its commit
-   hashes. That is the one bundle file a dev agent may write. The trust tiers
+   hashes. That is the one bundle file a dev agent may write; new work it
+   discovers goes in the report's "Found" section, not into the backlog. The
+   trust tiers
    then encode "subagent reports are evidence, not truth":
 
    | Tier | Meaning |
@@ -158,8 +175,11 @@ kb/sprints/process-grammar/
      (§5). Take them after the sprint's last code change where possible.
    - **Record:** `closeout.md` holds what was banked and the census change;
      `landed_in` is filled for the sprint's measurements once the PR merges.
-   - **Bookkeeping:** update `TODO.md` and the root `log.md`, regenerate
-     indexes, run the lint.
+   - **Backlog:** delete the files of items the sprint closed, release
+     `claimed_by` on the rest, and file the reports' "Found" entries as new
+     items.
+   - **Bookkeeping:** set `active: false` on `sprint.md`, add to the root
+     `log.md`, regenerate indexes, run the lint.
 
 `sprint.md` stays a readable overview, with the session list and decision
 summaries inline, so the plan can still be reviewed in one file. The lint can
@@ -230,7 +250,97 @@ generated. So:
 - Fetched papers stay in the gitignored `papers/`. `Paper` concepts link the
   arXiv or DOI URL.
 
-## 7. Migration phases
+## 7. The backlog as items
+
+### 7.1 One file per item
+
+Each open work item is a concept under `kb/backlog/<area>/<slug>.md`:
+
+```yaml
+---
+type: Backlog Item
+title: acceptance.yml has never passed
+description: The release acceptance workflow 404s on release assets; the first run since going public should pass.
+area: hygiene            # validation | feature | performance | hygiene
+state: needs-user        # open | claimed | blocked | needs-user
+priority: 2
+closes_when: An acceptance.yml run against a published release is green.
+blocked_by: []           # links to other items
+claimed_by: null         # branch name while a stream works on it
+opened: 2026-08-10
+---
+Problem, what would resolve it, links to the concepts that hold the detail.
+```
+
+What this fixes in the structure rather than by discipline:
+- **Parallel streams stop conflicting.** They touch different files; a conflict
+  happens only when two streams edit the same item, which is a real conflict.
+- **IDs never collide.** Filename slugs, never renamed, so two branches cannot
+  both create item 43. Sequential note numbers have the same weakness; the
+  bundle's slug paths remove it there too.
+- **`closes_when` is required**, so every item says what done means.
+- **Done means deleted.** The PR that finishes an item removes its file. The
+  account of how it was solved lives in the sprint record or session report,
+  where the trust tiers mark it as an agent's claim until checked. The backlog
+  has no place for a success story, so none accumulate there.
+
+Dev agents do not create, edit or close items: they list new work under
+"Found" in their session report, and the manager or the close-out session files
+it. `claimed_by` set on an unmerged branch is invisible to other branches; the
+manager sees across worktrees, which is enough until claims actually collide.
+
+### 7.2 The generated view
+
+`pixi run backlog` renders the backlog from the item files and the sources
+below. The view is **not committed**: a committed generated file changes with
+every item edit, so two squash-merged PRs would conflict on it again, and
+GitHub cannot resolve that server-side. The docs site publishes the same
+rendering for humans. `TODO.md` becomes a stub that says where the backlog
+lives and is not edited again.
+
+| Today's `TODO.md` section | Generated from |
+|---|---|
+| Current position | sprint folders with `active: true` |
+| Scope decisions (user) | `Design Decision` concepts carrying a `verified: human:` stamp |
+| Census | `validation/manifest.toml`, already the source of truth |
+| "Open, and the user's call" | items with `state: needs-user` |
+| Standing measurement facts | `Measurement` concepts |
+| Closed-sprint history | one line from each `Sprint Record`'s `description` |
+| Validation / feature / performance backlogs | items grouped by `area`, then `priority` |
+
+The lint checks: `description` is one sentence under a length cap;
+`closes_when` is present; `blocked_by` links resolve (stricter than OKF
+requires, by choice); an item body past ~40 lines warns, since detail belongs in
+a linked concept.
+
+### 7.3 Who reads what
+
+The full view is for planning: the user, and the manager choosing or scoping a
+sprint. Agents doing the work are pointed at one thing — a session brief or a
+single item — and read outward from its links. `pixi run backlog` takes
+filters for that: `--item <slug>` prints the item, its `blocked_by` chain and
+the titles and descriptions of the concepts it links; `--area`, `--state` and
+`--claimed-by` narrow the planning view. No agent brief tells a dev agent to
+read the whole backlog first.
+
+## 8. Migration phases
+
+### Phase B — split the backlog (first; independent of the notes)
+
+`TODO.md` is the hottest conflict point, and splitting it does not depend on
+migrating the notes, so it goes first. Until Phase 4 the items live in
+`research/notes/backlog/` beside the notes and link to notes by path.
+
+1. Mechanically split each `- **title**` bullet into an item file.
+2. One agent pass per area trims narrative, writes `closes_when` and links the
+   notes that hold the detail. Entries describing finished work are dropped
+   (their record is the note or git history).
+3. Closed-sprint history becomes `Sprint Record` stubs; the scope decisions
+   become `Design Decision` concepts for the user to stamp `verified`.
+4. Add the generator with its filters, the lint and the docs-site page.
+5. Replace `TODO.md` with the stub, and update the `TODO.md` instructions in
+   `AGENTS.md`, `.agents/agents/*.md` and the skills: the manager reads the
+   view; dispatch briefs name a session or an item.
 
 ### Phase 0 — conform in place (one session, mechanical)
 
@@ -295,7 +405,7 @@ to assert it.
 ### Phase 4 — move and re-cite
 
 Generate a mapping from (note, §) to concept ID. Rewrite the external citations
-(`TODO.md`, code, validation, scripts, `AGENTS.md`, `.agents/`,
+(backlog items, code, validation, scripts, `AGENTS.md`, `.agents/`,
 `research/refs/README.md`, `research/README.md`) from it. Move the original
 notes to `kb/history/notes/` as `Working Note`, `status: deprecated`, each
 linking to its replacements; the 362 citations between notes keep resolving
@@ -306,26 +416,23 @@ section, and add a `new-sprint` scaffold script.
 
 The pixi validate tasks are the executor, a `validation-report` run is the
 receipt, the `validation/manifest.toml` collator is the attester. Pilot on two
-or three gates. If it holds, `TODO.md`'s census can be derived from attested
-receipts instead of written by hand.
+or three gates. If it holds, the backlog view's census can be derived from
+attested receipts instead of the manifest's recorded cells.
 
 ### Trial
 
-Running the next sprint (MLM) in the §4 shape after Phase 0, before migrating
+Running the next sprint (MLM) in the §4 shape after Phases B and 0, before migrating
 the archive, tests the lifecycle on live work at low cost.
 
-## 8. Open decisions
+## 9. Open decisions
 
-1. **`TODO.md`.** Recommended: stays outside the bundle, since `AGENTS.md`
-   defines its role, with backlog entries linking to concepts. Alternative:
-   backlog topics become `status: draft` concepts.
-2. **Fan-out mechanism.** Phases 2–3 need ~15–20 agents, above the default
+1. **Fan-out mechanism.** Phases 2–3 need ~15–20 agents, above the default
    workflow size; running them as a Workflow needs explicit opt-in. Otherwise
    they are dispatched one cluster at a time.
-3. **Bundle root name.** `research/kb/` is assumed; a top-level `knowledge/` is
+2. **Bundle root name.** `research/kb/` is assumed; a top-level `knowledge/` is
    the alternative.
 
-## 9. Risks
+## 10. Risks
 
 - **Fragmentation.** Agents and reviewers lose the single scrollable plan.
   Mitigated by `sprint.md` as an inline overview and by `index.md` reading
@@ -336,5 +443,9 @@ the archive, tests the lifecycle on live work at low cost.
 - **Lossy distillation.** A drafted concept drops a caveat the original note
   carried. Phase 3's coverage map and claim tracing guard this, and the
   archived notes stay available as `sources`.
+- **No browsable backlog on GitHub.** The view is generated, not committed;
+  the docs-site page is the browsable copy. The fallback, if that proves too
+  inconvenient, is committing the view with a CI freshness check and the rule
+  "on conflict, regenerate".
 - **Frontmatter overhead per sprint.** Kept small by the scaffold script and
   generated indexes.
