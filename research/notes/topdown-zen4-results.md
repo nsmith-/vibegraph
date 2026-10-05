@@ -341,3 +341,28 @@ the step over §6 is resolved only as "a few percent", consistent with removing
 summary: 1.18–1.55× on the 2→6 and 1.01–1.20× elsewhere. `AMP2` and the
 per-diagram amplitudes still match MadGraph in `amplitude_oracle`.
 
+## 8. Real constant products fold into the real pool
+
+The analysis types every constant product as a complex scalar (`mul_out`), so
+`fold_constant_subgraphs` put even an all-real product, such as a colour
+coefficient times a symmetry factor, in the complex pool. Its readers then paid
+for a complex scale with a zero imaginary part.
+
+A fold root that is a `Mul` tree over real pool leaves now goes to the real
+pool. The exception is a root read by an op that takes its constant operand
+from the scalar arena only, such as a scalar `Add` or a fused vertex's `g_L`/`g_R`.
+Such a root stays complex, so only `Mul` and `Configs` weights see a real fold.
+The pool value is the real part of the complex product it was before, whose
+imaginary part is exactly zero.
+
+| row | `AddScaled` real / complex weights, before → after |
+|---|--:|
+| `uux_to_uux` | 0 / 16 → 16 / 0 |
+| `gg_to_gg` | 88 / 56 → 144 / 0 |
+| every other bench row | unchanged |
+
+Only the multi-flow rows move, because elsewhere the remaining complex weights
+all include a coupling. The saving is two multiply-adds per affected term,
+an estimated 0.4% of `gg_to_gg`'s ops (112 of about 27 000), far below what this VM can time. It was not
+measured.
+

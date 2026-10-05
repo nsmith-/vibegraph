@@ -1101,9 +1101,11 @@ coverage. What is left below is what still refuses, and why.
     configuration value, and the level order holds them all live at once.
     Shrinking it needs `AMP2` accumulated inside the pass.
 
-  Still open: real-only constant products fold to complex pool entries
-  (`mul_out` types any constant product as complex), which costs two extra
-  multiply-adds per such term. (`topdown-zen4-results.md` §6–7.)
+  A product of real constants now folds into the real pool when only products
+  and `Configs` weights read it. On `uux_to_uux` and `gg_to_gg` every JAMP weight
+  turns real, two multiply-adds per term instead of four. The 2→6's complex
+  weights all carry a coupling and stay complex. (`topdown-zen4-results.md`
+  §6–8.)
 - **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
   arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
   checked indexing on Emerald Rapids. That is the ceiling for every safe

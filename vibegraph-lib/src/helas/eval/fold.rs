@@ -791,11 +791,18 @@ fn fold_constant_subgraphs(
     // fold root (a leaf in the rewritten arena; not descended into).
     let mut kept = vec![false; n];
     let mut fold_root = vec![false; n];
+    // Read by an op that takes its constant operand from the scalar arena only (a
+    // sum, a fused vertex's effective coupling), so the fold must stay complex.
+    let mut complex_reader = vec![false; n];
     let root = ast0.root();
     kept[root as usize] = true;
     let mut stack = vec![root];
     while let Some(nid) = stack.pop() {
+        let reads_either = matches!(ast0.value(nid).op, Op::Mul | Op::Configs);
         for &c in ast0.children_ids(nid) {
+            if !reads_either {
+                complex_reader[c as usize] = true;
+            }
             if kept[c as usize] {
                 continue;
             }
@@ -850,6 +857,22 @@ fn fold_constant_subgraphs(
     }
     let const_ast = cbuilder.finish(last_const);
 
+    // A product of real pool leaves is real: it folds into the real pool, so its
+    // readers scale by a real rather than by a complex number with a zero imaginary part.
+    let mut real_product = vec![false; n];
+    for id in ast0.iter() {
+        let node = ast0.value(id);
+        real_product[id as usize] = if is_const_leaf_op(node.op) {
+            an0.out_type(id) == NodeType::RealConst
+        } else {
+            node.op == Op::Mul
+                && ast0
+                    .children_ids(id)
+                    .iter()
+                    .all(|&k| real_product[k as usize])
+        };
+    }
+
     // Rebuild the main arena: fold roots become pool-read leaves (indexed past the base
     // pool, in fold-list order); every other kept node is copied with remapped children.
     let mut mbuilder = AstBuilder::new();
@@ -862,7 +885,13 @@ fn fold_constant_subgraphs(
         }
         let new = if fold_root[old as usize] {
             let cid = const_remap[old as usize];
+            let real = real_product[old as usize] && !complex_reader[old as usize];
             let leaf = match an0.out_type(old) {
+                NodeType::ScalarConst if real => {
+                    let idx = base_f + fold_real.len() as u32;
+                    fold_real.push(cid);
+                    Const::real(idx)
+                }
                 NodeType::ScalarConst => {
                     let idx = base_c + fold_complex.len() as u32;
                     fold_complex.push(cid);
@@ -1230,10 +1259,12 @@ fn scalar_value<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
     }
 }
 
-/// The real value of a folded real-constant subgraph.
+/// The real value of a folded real-constant subgraph. A product of reals evaluates
+/// through the complex product, whose imaginary part is then exactly zero.
 fn real_value<F: Real>(slot: &WaveformSlot<F>) -> F {
     match slot {
         WaveformSlot::Real(r) => *r,
+        WaveformSlot::Scalar(s) if s.value.im == F::zero() => s.value.re,
         other => panic!("folded real constant did not reduce to a real: {other:?}"),
     }
 }
@@ -1539,5 +1570,36 @@ mod tests {
             consts_c[jamp_weight.leaf.index() as usize],
             consts_c[0] * -2.0
         );
+    }
+
+    /// A product of real constants folds into the real pool when only a product reads
+    /// it, and stays complex for a fused vertex coupling, which reads the scalar arena.
+    #[test]
+    fn real_constant_products_fold_into_the_real_pool() {
+        let mut b = AstBuilder::new();
+        let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(23usize)), vec![]);
+        let ext = b.add(
+            Op::External,
+            Sym::Ext {
+                leg_idx: 0,
+                spin: 3,
+                charge: Charge::Particle,
+                incoming: false,
+            },
+            vec![mass],
+        );
+        let two = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        let third = b.add(Op::Coeff, Sym::Coeff(1.0 / 3.0), vec![]);
+        let k = b.add(Op::Mul, Sym::None, vec![two, third]);
+        let root = b.add(Op::Mul, Sym::None, vec![k, ext]);
+        let folded = Folded::build(&b.finish(root));
+        let ast = &folded.ast;
+
+        let w = ast.value(ast.children_ids(ast.root())[0]);
+        assert_eq!(w.op, Op::CoeffRat);
+        assert_eq!(w.leaf.kind(), ConstKind::Real, "a real product folds real");
+        let evaluated = EvaluatedModel::from_model(sm_model(SMRestrict::Default));
+        let (_, consts_f): (Box<[C<f64>]>, Box<[f64]>) = folded.pools(&evaluated);
+        assert_eq!(consts_f[w.leaf.index() as usize], 2.0 * (1.0 / 3.0));
     }
 }
