@@ -514,6 +514,14 @@ pub(super) enum RootKind {
     Hels { n_flows: u32, locs: Box<[u32]> },
 }
 
+/// A configuration amplitude's constant weight: an index into the real or the complex
+/// constant pool.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum AmpWeight {
+    Real(u32),
+    Complex(u32),
+}
+
 /// A folded arena lowered to a typed instruction stream.
 #[derive(Clone, Debug)]
 pub(super) struct Program {
@@ -539,11 +547,16 @@ pub(super) struct Program {
     /// negated signed sum.
     pub(super) mom_operands: Box<[(u32, i8)]>,
     pub(super) root: RootKind,
-    /// Scalar-arena indices of the per-configuration diagram amplitudes `A_d` (the
+    /// Scalar-arena indices of the per-configuration diagram amplitudes' values (the
     /// children of the [`Op::Configs`] root bundle), in configuration order. Under a
     /// [`RootKind::Hels`] root they are combination-major:
     /// `amp_locs[c * n_amps + d]`. Empty when the arena carries no `Configs` bundle.
+    /// The amplitude `A_d` is the value times its [`amp_weights`](Self::amp_weights)
+    /// entry.
     pub(super) amp_locs: Box<[u32]>,
+    /// The constant weight each [`amp_locs`](Self::amp_locs) value is multiplied by to
+    /// give its amplitude, as a constant-pool index.
+    pub(super) amp_weights: Box<[AmpWeight]>,
     /// Diagram amplitudes per helicity combination — the row length of `amp_locs`.
     pub(super) n_amps: u32,
 }
@@ -560,8 +573,9 @@ pub(super) fn arena_reads(op: Op, kids: &[NodeId]) -> &[NodeId] {
 }
 
 /// Unwrap an [`Op::Configs`] root bundle into `(amplitude root, per-configuration
-/// diagram amplitudes)`. A node that is not a bundle is the amplitude root itself and
-/// carries no configuration amplitudes.
+/// diagram amplitudes)`, the amplitudes as flat `(weight, value)` pairs (the folded
+/// bundle's layout, see `fold::pair_config_weights`). A node that is not a bundle is
+/// the amplitude root itself and carries no configuration amplitudes.
 fn split_configs(ast: &Ast<Const>, id: NodeId) -> (NodeId, &[NodeId]) {
     if ast.value(id).op == Op::Configs {
         let kids = ast.children_ids(id);
@@ -612,8 +626,8 @@ pub(super) fn liveness(ast: &Ast<Const>, order: &[NodeId]) -> Liveness {
             } else {
                 live_end[amplitude as usize] = true;
             }
-            for &a in amps {
-                live_end[a as usize] = true;
+            for pair in amps.chunks_exact(2) {
+                live_end[pair[1] as usize] = true;
             }
         };
         if ast.value(root_id).op == Op::Hels {
@@ -1169,13 +1183,28 @@ impl Program {
 
         let root_id = ast.root();
         let mut amp_locs: Vec<u32> = Vec::new();
+        let mut amp_weights: Vec<AmpWeight> = Vec::new();
         let mut n_amps: Option<u32> = None;
         // Collect one combination's configuration amplitudes, checking that every
         // combination carries the same number of them (the row length `amp_locs` is
         // read back with).
         let mut take_amps = |amps: &[NodeId], loc: &[u32]| {
-            amp_locs.extend(amps.iter().map(|&a| loc[a as usize]));
-            let k = amps.len() as u32;
+            for pair in amps.chunks_exact(2) {
+                let w = ast.value(pair[0]);
+                amp_weights.push(match (w.op, w.leaf.kind()) {
+                    (
+                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat,
+                        ConstKind::Real,
+                    ) => AmpWeight::Real(w.leaf.index()),
+                    (
+                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat,
+                        ConstKind::Complex,
+                    ) => AmpWeight::Complex(w.leaf.index()),
+                    _ => panic!("configuration weight must be a constant-pool leaf, got {w:?}"),
+                });
+                amp_locs.push(loc[pair[1] as usize]);
+            }
+            let k = (amps.len() / 2) as u32;
             assert_eq!(
                 n_amps.unwrap_or(k),
                 k,
@@ -1235,6 +1264,7 @@ impl Program {
             mom_operands: mom_operands.into_boxed_slice(),
             root,
             amp_locs: amp_locs.into_boxed_slice(),
+            amp_weights: amp_weights.into_boxed_slice(),
             n_amps: n_amps.unwrap_or(0),
         }
     }

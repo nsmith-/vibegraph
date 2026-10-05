@@ -82,7 +82,10 @@ pub enum Op {
     /// Squared and summed over helicities they are MadGraph's `AMP2`, which is what a
     /// per-event configuration draw reads. Like [`Op::Flows`] it computes nothing —
     /// keeping the wires under the root is what keeps their slots live to the end of
-    /// the pass, so the values are read out of the arena afterwards.
+    /// the pass, so the values are read out of the arena afterwards. The constant
+    /// folding splits each amplitude into a `(weight, value)` pair of children, the
+    /// weight a constant-pool leaf the read-out multiplies the arena value by, so
+    /// the bundle pins the bare value rather than its scaled copy.
     Configs,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.

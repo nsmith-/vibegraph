@@ -284,3 +284,60 @@ Readings:
   All 48 `amplitude_oracle` processes pass against MadGraph, including the
   bit-exact pruned-against-unpruned `|M|²` check.
 
+## 7. Configuration amplitudes read bare, weighted at read-out
+
+After §6 the 4 716 `MulScalarC` left on the 2→6 computed the per-diagram
+amplitudes `A_d = (coupling·coeff) · Metric`. These were the values the
+`Configs` bundle pins for `AMP2`, and they had two readers. `fold.rs` now
+splits each bundle amplitude into a `(weight, value)` pair
+(`pair_config_weights`):
+- The bundle pins the bare value. The weight is a constant-pool leaf, or a
+  unit coefficient when there is none.
+- `Program::amp_weights` carries the weights alongside `amp_locs`.
+- `eval_amp2` and `run_config_amps` multiply them back in from the bound pools.
+
+The JAMP term is then the product's only reader, so a second collection pass
+folds `sym·fermi · coupling · coeff` into its `AddScaled` weight.
+
+| row | VM instructions §6 → §7 | scalar-arena slots §6 → §7 |
+|---|--:|--:|
+| `ee_to_mumu` | 51 → 49 | 12 → 13 |
+| `ee_to_wpwm` | 363 → 333 | 64 → 66 |
+| `uux_to_uux` | 99 → 95 | 25 → 27 |
+| `gg_to_gg` | 551 → 547 | 118 → 118 |
+| `gg_to_ttx` | 253 → 222 | 63 → 77 |
+| `ee_to_mumua` | 239 → 209 | 72 → 74 |
+| `ee_to_mumu_tata_qcd0` | 1 096 → 891 | 416 → 419 |
+| `uux_to_ccx_emmm_qcd0` | 21 815 → 17 163 | 9 280 → 9 284 |
+
+**The scalar arena does not shrink.** On the 2→6, every `Metric` is itself a
+configuration amplitude's value, and the bundle pins all 9 240 of them to the end
+of the pass either way. Before, half of them were consumed by the `MulScalarC`
+that scaled them, but in the level-ordered schedule all `Metric`s are live
+together at their level. That level width already sets the peak, so pinning
+the bare value in place of its scaled copy leaves it unchanged. On `gg_to_ttx`
+the peak grows, since values that the scaling used to release now stay pinned.
+Shrinking this arena needs `AMP2` accumulated inside the pass, so the
+amplitudes need not outlive their JAMP sum, together with an order that
+retires a level's amplitudes before the next level fills.
+
+Timing, in-process A/B on the Emerald Rapids VM with `target-cpu=native`
+(method as in §6, ratios with their 10th–90th percentile slice spread):
+
+| row | width | vs §6 (38c2410) | vs before §6 (5a5e377) |
+|---|--:|--:|--:|
+| `ee_to_mumu` | 1 / 4 / 8 | 1.04 / 1.06 / 1.00 | 1.02 / 1.10 / 0.98 |
+| `ee_to_wpwm` | 1 / 4 / 8 | 1.08 / 1.02 / 1.07 | 1.07 / 1.13 / 1.14 |
+| `uux_to_uux` | 1 / 4 / 8 | 1.05 / 1.03 / 1.01 | 1.09 / 1.08 / 1.10 |
+| `gg_to_gg` | 1 / 4 / 8 | 1.02 / 0.91 / 1.00 | 1.01 / 1.15 / 1.05 |
+| `gg_to_ttx` | 1 / 4 / 8 | 1.07 / 1.01 / 1.06 | 1.16 / 1.19 / 1.20 |
+| `ee_to_mumua` | 1 / 4 / 8 | 1.07 / 1.06 / 1.06 | 1.15 / 1.12 / 1.09 |
+| `ee_to_mumu_tata_qcd0` | 1 / 4 / 8 | 1.01 / 1.04 / 1.05 | 1.14 / 1.18 / 1.19 |
+| `uux_to_ccx_emmm_qcd0` | 1 / 4 / 8 | 1.01 / 1.11 / 1.04 | 1.18 / 1.35 / 1.55 [1.30–1.82] |
+
+The VM was noisier for this run than for §6: most slice spreads are ±15–20%, so
+the step over §6 is resolved only as "a few percent", consistent with removing
+21% of the 2→6's instructions, the cheapest ones. The cumulative column is the
+summary: 1.18–1.55× on the 2→6 and 1.01–1.20× elsewhere. `AMP2` and the
+per-diagram amplitudes still match MadGraph in `amplitude_oracle`.
+

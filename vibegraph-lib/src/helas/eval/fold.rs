@@ -220,6 +220,17 @@ impl Folded {
         let an0 = analysis::analyze(&ast0, &pool_ext);
         let ast0 = collect_constant_factors(&ast0, &an0);
         let an0 = analysis::analyze(&ast0, &pool_ext);
+        // Read the configuration amplitudes bare, their constant weights applied at
+        // read-out, so each term's product has the JAMP sum as its only reader and
+        // a second collection merges it into that sum's weight.
+        let ast0 = if ast0.iter().any(|id| ast0.value(id).op == Op::Configs) {
+            let unit = Const::real(intern_f(RealReq::Coeff(1.0f64.to_bits())));
+            let paired = pair_config_weights(&ast0, &an0, unit);
+            collect_constant_factors(&paired, &analysis::analyze(&paired, &pool_ext))
+        } else {
+            ast0
+        };
+        let an0 = analysis::analyze(&ast0, &pool_ext);
 
         // Collapse every maximal constant composite (a `Mul`/`Add` subgraph of
         // card-time constants) into a single pool-read leaf, so it is resolved once
@@ -1035,6 +1046,49 @@ fn constant_product(
     p
 }
 
+/// Split every configuration amplitude under an [`Op::Configs`] bundle into its
+/// constant weight and its non-constant value, so the bundle reads `(weight, value)`
+/// pairs after the amplitude root.
+///
+/// A configuration amplitude `k · x` (a product of one constant and one non-constant
+/// factor, as [`collect_constant_factors`] leaves every scaled amplitude) becomes the
+/// pair `(k, x)`; any other amplitude is paired with `unit`, a pool leaf holding `1`.
+/// The read-out multiplies the weight back in, so the bundle no longer keeps the
+/// product alive and the product's only reader is the JAMP term built on it.
+fn pair_config_weights(ast: &Ast<Const>, an: &NodeAnalysis, unit: Const) -> Ast<Const> {
+    let n = ast.len();
+    let mut b = AstBuilder::new();
+    let mut remap = vec![u32::MAX; n];
+    let mut unit_node = None;
+    for id in ast.iter() {
+        let node = ast.value(id);
+        let kids = ast.children_ids(id);
+        let new_kids = if node.op == Op::Configs {
+            let mut paired = vec![remap[kids[0] as usize]];
+            for &amp in &kids[1..] {
+                let split = match *ast.children_ids(amp) {
+                    _ if ast.value(amp).op != Op::Mul => None,
+                    [a, x] | [x, a] if an.is_const(a) && !an.is_const(x) => Some((a, x)),
+                    _ => None,
+                };
+                let (w, x) = match split {
+                    Some((a, x)) => (remap[a as usize], remap[x as usize]),
+                    None => {
+                        let w = *unit_node.get_or_insert_with(|| b.add(Op::Coeff, unit, vec![]));
+                        (w, remap[amp as usize])
+                    }
+                };
+                paired.extend([w, x]);
+            }
+            paired
+        } else {
+            kids.iter().map(|&k| remap[k as usize]).collect()
+        };
+        remap[id as usize] = b.add(node.op, node.leaf, new_kids);
+    }
+    retain_reachable(&b.finish(remap[ast.root() as usize]))
+}
+
 /// Fuse the constant-weighted terms of every scalar sum into one [`Op::AddScaled`].
 ///
 /// A term `k · x` of a scalar `Add` whose product has no other reader, `k` a
@@ -1416,5 +1470,74 @@ mod tests {
         let (consts_c, consts_f): (Box<[C<f64>]>, Box<[f64]>) = folded.pools(&evaluated);
         assert_eq!(consts_f[w_real.leaf.index() as usize], -1.0);
         assert_eq!(consts_c[w_cplx.leaf.index() as usize], consts_c[0] * -2.0);
+    }
+
+    /// A configuration amplitude's constants move into its `Configs` weight: the
+    /// bundle reads the bare contraction, the JAMP term that scaled the amplitude
+    /// absorbs every constant into one weight, and the weight the read-out applies
+    /// is the amplitude's own constant.
+    #[test]
+    fn configuration_amplitudes_are_read_bare_with_their_weight() {
+        let mut b = AstBuilder::new();
+        let vector = |b: &mut AstBuilder<Sym>, leg_idx: usize| {
+            let mass = b.add(Op::Mass, Sym::Particle(ParticleId::from(23usize)), vec![]);
+            b.add(
+                Op::External,
+                Sym::Ext {
+                    leg_idx,
+                    spin: 3,
+                    charge: Charge::Particle,
+                    incoming: false,
+                },
+                vec![mass],
+            )
+        };
+        let (v0, v1) = (vector(&mut b, 0), vector(&mut b, 1));
+        let metric = b.add(Op::Metric, Sym::None, vec![v0, v1]);
+        let coup = b.add(
+            Op::Coupling,
+            Sym::Coupling(CouplingId::from(5usize)),
+            vec![],
+        );
+        let coeff = b.add(Op::Coeff, Sym::Coeff(2.0), vec![]);
+        let sign = b.add(Op::Coeff, Sym::Coeff(-1.0), vec![]);
+        // `amp = coup · (coeff · metric)`, read by the bundle and by `sign · amp`.
+        let scaled = b.add(Op::Mul, Sym::None, vec![coeff, metric]);
+        let amp = b.add(Op::Mul, Sym::None, vec![coup, scaled]);
+        let term = b.add(Op::Mul, Sym::None, vec![sign, amp]);
+        let other = b.add(Op::Mul, Sym::None, vec![sign, metric]);
+        let jamp = b.add(Op::Add, Sym::None, vec![term, other]);
+        let root = b.add(Op::Configs, Sym::None, vec![jamp, amp]);
+        let folded = Folded::build(&b.finish(root));
+        let ast = &folded.ast;
+
+        let kids = ast.children_ids(ast.root());
+        assert_eq!(
+            kids.len(),
+            3,
+            "amplitude root, then one (weight, value) pair"
+        );
+        assert_eq!(
+            ast.value(kids[2]).op,
+            Op::Metric,
+            "the bundle reads the bare value"
+        );
+        let weight = ast.value(kids[1]);
+        assert_eq!(weight.leaf.kind(), ConstKind::Complex);
+        assert_eq!(ast.value(kids[0]).op, Op::AddScaled);
+        assert!(
+            ast.iter().all(|id| ast.value(id).op != Op::Mul),
+            "no product survives: the bundle and the sum carry every constant"
+        );
+
+        let evaluated = EvaluatedModel::from_model(sm_model(SMRestrict::Default));
+        let (consts_c, _): (Box<[C<f64>]>, Box<[f64]>) = folded.pools(&evaluated);
+        assert_eq!(consts_c[weight.leaf.index() as usize], consts_c[0] * 2.0);
+        let sum = ast.children_ids(kids[0]);
+        let jamp_weight = ast.value(sum[2]);
+        assert_eq!(
+            consts_c[jamp_weight.leaf.index() as usize],
+            consts_c[0] * -2.0
+        );
     }
 }

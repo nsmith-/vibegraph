@@ -1090,12 +1090,20 @@ coverage. What is left below is what still refuses, and why.
     rows. The default target gains less, since it has no FMA.
   - Width 8 no longer hits the 2→6's L2 cliff.
 
-  Still open: the 4 716 `MulScalarC` that compute the per-diagram amplitudes
-  `AMP2` reads. Fusing them would need `AMP2` to read the bare `Metric` and
-  apply its coupling itself. Also open: real-only constant products still
-  fold to complex pool entries (`mul_out` types any constant product as
-  complex), which costs two extra multiply-adds per such term.
-  (`topdown-zen4-results.md` §6.)
+  The per-diagram amplitudes `AMP2` reads were the next step, and are done too.
+  The `Configs` bundle now pins the bare `Metric` and carries the constant as a
+  pool weight that `eval_amp2` applies, so the JAMP sum absorbs the coupling
+  as well.
+  - The 2→6 drops to 17 163 instructions.
+  - Cumulative over the start, on the 2→6: 1.18 / 1.35 / 1.55× at widths
+    1 / 4 / 8.
+  - The scalar arena does not shrink. Every `Metric` is a pinned
+    configuration value, and the level order holds them all live at once.
+    Shrinking it needs `AMP2` accumulated inside the pass.
+
+  Still open: real-only constant products fold to complex pool entries
+  (`mul_out` types any constant product as complex), which costs two extra
+  multiply-adds per such term. (`topdown-zen4-results.md` §6–7.)
 - **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
   arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
   checked indexing on Emerald Rapids. That is the ceiling for every safe

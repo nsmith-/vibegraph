@@ -17,7 +17,7 @@ use super::fold::{ExtLeg, Folded};
 use super::kernel;
 use super::lane_field::{LaneField, Lanes, SupportedLanes};
 use super::lanes::{transpose_points, unpack};
-use super::layout::{Instr, RootKind, N_ARENAS};
+use super::layout::{AmpWeight, Instr, RootKind, N_ARENAS};
 use super::op::{Const, ConstKind, Node, NodeId, Op};
 #[cfg(test)]
 use super::tree::Tree;
@@ -497,12 +497,13 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         if n == 0 {
             return;
         }
-        for row in program.amp_locs.chunks_exact(n) {
+        let rows = program.amp_locs.chunks_exact(n);
+        for (row, weights) in rows.zip(program.amp_weights.chunks_exact(n)) {
             let mut at = 0;
             for (acc, &span) in amp2.iter_mut().zip(self.eval.config_amp_counts()) {
                 let mut coherent = C::new(F::zero(), F::zero());
-                for &l in &row[at..at + span] {
-                    coherent = coherent + scratch.scalars[l as usize];
+                for (&l, &w) in row[at..at + span].iter().zip(&weights[at..at + span]) {
+                    coherent = coherent + self.weighted(w, scratch.scalars[l as usize]);
                 }
                 *acc = *acc + coherent.norm_sqr();
                 at += span;
@@ -760,12 +761,21 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         resolve_moms(folded, momenta, scratch);
         let env = self.eval_env(folded, momenta, helicities, None);
         fill_arenas(folded, &env, scratch);
-        folded
-            .program()
+        let program = folded.program();
+        program
             .amp_locs
             .iter()
-            .map(|&l| scratch.scalars[l as usize])
+            .zip(program.amp_weights.iter())
+            .map(|(&l, &w)| self.weighted(w, scratch.scalars[l as usize]))
             .collect()
+    }
+
+    /// A configuration amplitude from its arena value and constant weight.
+    fn weighted(&self, w: AmpWeight, value: C<F>) -> C<F> {
+        match w {
+            AmpWeight::Real(i) => value * self.consts_f[i as usize],
+            AmpWeight::Complex(i) => value * self.consts_c[i as usize],
+        }
     }
 
     /// Test-only: evaluate the amplitude with one external boson's polarisation ε^μ
