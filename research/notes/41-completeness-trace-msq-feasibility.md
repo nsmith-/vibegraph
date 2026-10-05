@@ -706,13 +706,60 @@ reconstructed over its *minimal* common denominator, in three exact steps.
   gauge boson, no Ward identity ties the pairs together, and no propagator loses
   a power, on `ud_to_epemud_qcd0` (15 propagators) or `ee_to_mumu_tata_qcd0`
   (13). The minimal common denominator is the full pairwise lcm (degree 30 and
-  26), so the numerator has degree 28 and at most 25. That form is far larger than the per-pair one
-  (§9), and a partial-fraction form can do no better than the per-pair poles
-  already do. What remains unmeasured on that row is numerator-level
-  cancellation inside a partial-fraction basis. With every pole intact, no
-  mechanism for it is known here.
+  26), so the numerator has degree 28 and at most 25. That form is far larger
+  than the per-pair one (§9), and a partial-fraction form can do no better than
+  the per-pair poles already do. What remains unmeasured on these rows is
+  numerator-level cancellation inside a partial-fraction basis. With every pole
+  intact, no mechanism for it is known here.
+- **External masses are not what blocks it.** `ud_to_epemud_qcd0` has only
+  massless external fermions and shows the same nothing-cancels result as the
+  massive-τ row. The τ mass adds degree (the unitary-gauge `q q/M_Z²` term,
+  §9.2), not structure.
 
-### 10.4 Recommendation (updates §9.5)
+### 10.4 Where compactness lives
+
+The famous compact forms (Parke–Taylor; four-fermion amplitudes like
+`⟨13⟩²[24]/(s s′ s″)`) are **per-helicity amplitudes in spinor brackets**, not
+helicity-summed `|M|²` in dot products. Two steps between them and what §9–§10
+measured destroy that compactness:
+
+- **Squaring.** An amplitude of `n` terms gives about `n²` cross terms in
+  `|A|²`, and the sum over helicities adds the expansions of different helicity
+  configurations, which share no structure in dot products.
+- **Rewriting in invariants.** `|⟨ij⟩|² = s_ij`, so brackets are square roots of
+  invariants. Their phases (`⟨ij⟩/[ij]`) have no rational form in the `s_ij`, and
+  the result expands into a much larger polynomial in them.
+
+The helicity evaluator keeps the compact objects, evaluating the amplitudes
+numerically and squaring them as numbers. That is why it wins at 2 → 4. The low
+rank of §9's coefficient matrix (58 linear forms spanning 630 pairs on
+`ud_to_epemud_qcd0`) is that structure showing through the trace form.
+
+So the trace-form question in its natural variables is: **are the per-helicity
+amplitudes compact in spinor variables?** That is the De Laurentis–Maître
+approach (arXiv:1904.04067): reconstruct `A_h` divided by a helicity-carrying
+prefactor as a rational function of momentum-twistor variables. Two properties
+make it a different measurement from this one:
+
+- **No conjugation.** The box is the per-helicity amplitude (`eval_amplitude`)
+  over `F_p`, with no `|·|²`. Momenta can be complex twistor points, and the
+  real-momenta/Frobenius machinery and the root rejection of §8.4.1 and §10.1 go
+  away.
+- **Spinor-built external wavefunctions.** HELAS's `√E` normalisation and phase
+  conventions must be replaced, or divided out per helicity. Massless spinors
+  scaled by `√p⁺` (`u₊ = (p⁺, p_x + i p_y)`) and polarizations written as
+  `⟨n|γ^μ|k]` with HELAS's reference `n` are polynomial in the momentum, with
+  a rational weight per helicity. A massive helicity state keeps one root,
+  `|p⃗|`, because the helicity axis is `p⃗/|p⃗|`. The per-diagram MadGraph
+  amplitude gate would have to divide out the per-helicity factor. This is
+  where the cost of such a study sits.
+
+Prior expectation: recursive numerical evaluation still wins from 2 → 4 on,
+because it shares sub-currents across diagrams in a way closed forms do not. The
+precedent is mixed, though: some NLO codes use closed-form tree amplitudes at
+low multiplicity. Not scheduled.
+
+### 10.5 Recommendation (updates §9.5)
 
 - **2 → 2 and 2 → 3 with an external gauge boson:** a reconstructed closed form
   of the full `|M|²` is 4–10× faster per point than `eval_m2`, and this pipeline
@@ -723,6 +770,8 @@ reconstructed over its *minimal* common denominator, in three exact steps.
   measured deficit is the sampler.
 - **Multi-radiator 2 → 3 (`ee_to_mumua`):** worth it only with partial fractions.
 - **2 → 4 four-fermion:** dropped, now on the full `|M|²` as well as per pair.
+- **Analytic compactness, if pursued, means per-helicity amplitudes in spinor
+  variables (§10.4)**, not `|M|²` in invariants.
 - **Helicity sampling (§7.2) remains the lever** on the expensive rows. The
   per-helicity program stays in every case for `SPINUP` and colour (§5.4).
 
