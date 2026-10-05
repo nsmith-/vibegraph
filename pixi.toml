@@ -256,7 +256,7 @@ validate-generate-proton = { cmd = "cargo test -p vibegraph --profile release-de
 # Run MadGraph's reweight module on vibegraph's own events and bank its weights
 # event by event (validation/madgraph/reweight_mg_reference.json); also prints the
 # comparison over every generated event. Needs gfortran and numpy's f2py.
-generate-reweight-oracle = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/gen_reweight_oracle.py", depends-on = ["fetch-pdf"] }
+generate-reweight-oracle = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/gen_reweight_oracle.py", depends-on = ["init-sm-submodule", "fetch-pdf", "fetch-refdata"] }
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
 # Replay the banked runs through a clustering-instrumented MadGraph and bank the
 # per-event kT-clustering history behind dynamical_scale_choice = -1. Each replay

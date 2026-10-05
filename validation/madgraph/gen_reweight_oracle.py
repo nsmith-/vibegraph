@@ -48,6 +48,7 @@ Prerequisites: the pinned MadGraph (`mg5_pinned.sh`), gfortran and numpy's f2py
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -296,13 +297,23 @@ def param_entries(param_card):
     return entries
 
 
+def relative_difference(vg, mg):
+    """|w_vg / w_mg - 1| for one event: two zeros agree, a zero on one side only
+    or a non-finite weight is an infinite difference."""
+    if not (math.isfinite(vg) and math.isfinite(mg)):
+        return math.inf
+    if mg == 0.0:
+        return 0.0 if vg == 0.0 else math.inf
+    return abs(vg / mg - 1.0)
+
+
 def compare(events, mg, hypotheses):
-    """Per hypothesis: events compared, the largest relative difference, and
-    how many sit beyond twice the files' eight-digit printing."""
+    """Per hypothesis, over every event: events compared, the largest relative
+    difference, and how many sit beyond twice the files' eight-digit printing."""
     out = {}
     for hid, _ in hypotheses:
-        rel = [abs(m / e["vibegraph"][hid] - 1.0) for e, m in zip(events, mg[hid]) if e["vibegraph"][hid] != 0.0]
-        out[hid] = dict(events=len(rel), largest=max(rel), beyond_2e7=sum(r > 2e-7 for r in rel))
+        rel = [relative_difference(e["vibegraph"][hid], m) for e, m in zip(events, mg[hid])]
+        out[hid] = dict(events=len(rel), largest=max(rel, default=0.0), beyond_2e7=sum(r > 2e-7 for r in rel))
     return out
 
 
