@@ -140,7 +140,7 @@ where
     LaneField<N>: Real,
 {
     let mut acc = 0.0;
-    for chunk in pts.chunks_exact(N) {
+    for chunk in pts.as_chunks::<N>().0 {
         let refs: [&[LorentzVector<f64>]; N] = std::array::from_fn(|k| chunk[k].as_slice());
         acc += eval_m2_lanes(amp, &refs, scratch).iter().sum::<f64>();
     }

@@ -432,8 +432,10 @@ impl Folded {
                     .collect(),
                 // A weighted term is dropped with its weight.
                 Op::AddScaled => kids
-                    .chunks_exact(2)
-                    .filter(|pair| !scalar_zero[pair[1] as usize])
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .filter(|&&[_, term]| !scalar_zero[term as usize])
                     .flatten()
                     .copied()
                     .collect(),

@@ -1176,14 +1176,13 @@ fn fill_arenas<F: Real>(folded: &Folded, env: &EvalEnv<'_, F>, scratch: &mut Scr
                 let mid = start + 2 * n_real as usize;
                 let end = mid + 2 * n_complex as usize;
                 let mut value = C::new(F::zero(), F::zero());
-                for pair in rd(ops, start..mid).chunks_exact(2) {
-                    let r = *rd(consts_f, pair[0].index());
-                    value = kernel::scaled_add_real_bare(value, r, *rd(scalars, pair[1].index()));
+                for &[weight, term] in rd(ops, start..mid).as_chunks::<2>().0 {
+                    let r = *rd(consts_f, weight.index());
+                    value = kernel::scaled_add_real_bare(value, r, *rd(scalars, term.index()));
                 }
-                for pair in rd(ops, mid..end).chunks_exact(2) {
-                    let k = *rd(consts_c, pair[0].index());
-                    value =
-                        kernel::scaled_add_complex_bare(value, k, *rd(scalars, pair[1].index()));
+                for &[weight, term] in rd(ops, mid..end).as_chunks::<2>().0 {
+                    let k = *rd(consts_c, weight.index());
+                    value = kernel::scaled_add_complex_bare(value, k, *rd(scalars, term.index()));
                 }
                 *wr(scalars, loc) = value;
             }

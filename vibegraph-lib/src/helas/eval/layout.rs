@@ -626,8 +626,8 @@ pub(super) fn liveness(ast: &Ast<Const>, order: &[NodeId]) -> Liveness {
             } else {
                 live_end[amplitude as usize] = true;
             }
-            for pair in amps.chunks_exact(2) {
-                live_end[pair[1] as usize] = true;
+            for &[_, value] in amps.as_chunks::<2>().0 {
+                live_end[value as usize] = true;
             }
         };
         if ast.value(root_id).op == Op::Hels {
@@ -883,8 +883,9 @@ fn lower_node(
             // so the runtime reads the pool rather than the leaf's arena copy.
             let start = operands.len() as u32;
             let (mut n_real, mut n_complex) = (0u32, 0u32);
-            for pair in kids.chunks_exact(2) {
-                let (weight, term) = (pair[0], pair[1]);
+            let (pairs, unpaired) = kids.as_chunks::<2>();
+            assert!(unpaired.is_empty(), "AddScaled children must pair up");
+            for &[weight, term] in pairs {
                 let w = ast.value(weight);
                 assert!(
                     matches!(
@@ -908,7 +909,6 @@ fn lower_node(
                 operands.push(OperandRef::new(class, w.leaf.index()));
                 operands.push(opref(term));
             }
-            assert_eq!(kids.len() % 2, 0, "AddScaled children must pair up");
             Instr::AddScaled {
                 start,
                 n_real,
@@ -1189,8 +1189,8 @@ impl Program {
         // combination carries the same number of them (the row length `amp_locs` is
         // read back with).
         let mut take_amps = |amps: &[NodeId], loc: &[u32]| {
-            for pair in amps.chunks_exact(2) {
-                let w = ast.value(pair[0]);
+            for &[weight, value] in amps.as_chunks::<2>().0 {
+                let w = ast.value(weight);
                 amp_weights.push(match (w.op, w.leaf.kind()) {
                     (
                         Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat,
@@ -1202,7 +1202,7 @@ impl Program {
                     ) => AmpWeight::Complex(w.leaf.index()),
                     _ => panic!("configuration weight must be a constant-pool leaf, got {w:?}"),
                 });
-                amp_locs.push(loc[pair[1] as usize]);
+                amp_locs.push(loc[value as usize]);
             }
             let k = (amps.len() / 2) as u32;
             assert_eq!(
