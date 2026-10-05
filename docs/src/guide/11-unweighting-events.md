@@ -224,6 +224,21 @@ which is what grouped it, but not necessarily at a hypothesis's — a parameter 
 move one quark flavour's coupling and not another's — so each event is reweighted
 with its own member's amplitude.
 
+A ratio taken in the wrong subprocess would still look like a ratio, so every
+reweighted event's denominator is checked as it is written. The card-point
+`|M|²` the reweighter evaluates must equal the one the integrand drew the event
+with (same subprocess, beam ordering and strong coupling), and the reweighter's
+subprocess flavours must equal the event record's. The run reports how many
+events it checked, per multiplicity and beam ordering. It refuses the file if
+any event fails.
+
+MadGraph's reweight module, by default, takes each event's ratio in the one
+helicity configuration the event records. The ratio here is summed over
+helicities. Both are unbiased for the reweighted cross section, but they differ
+event by event. For an event-by-event comparison, run MadGraph's reweight with
+`change helicity False`: on the same file the two then agree to the printed
+digits.
+
 ### The polynomial path
 
 Reweighting costs amplitude evaluations, and an effective-field-theory study asks

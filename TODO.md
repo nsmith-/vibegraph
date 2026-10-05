@@ -669,20 +669,42 @@ above); the entries here are the eventual features.
   node Gram matrix). `--reweight-couplings a,b,…` serves a whole card jointly in
   the named couplings (`K = 1 + n` for one insertion per diagram) and refuses
   anything else; without it, single-parameter hypotheses are grouped where
-  cheaper. Reweighting amplitudes are pruned at a generic parameter point. Gated
-  by unit tests only (every path against a direct unpruned bind; mutation-checked:
-  a union in place of the per-diagram monomial product, a wrong Gram
-  contraction and pruning at the card each fail a test). Open follow-ups:
-  (a) **a MadGraph oracle** — bank a `reweight_card.dat` run and compare per-event
-  `<rwgt>` weights event by event, not only the reweighted σ; (b) **one
-  evaluation per event** instead of `K` — a graded evaluator carrying each
-  current as its monomial components, so subtrees without the couplings are
-  computed once (the `helas/eval` refactor squared-order constraints also need);
-  (c) **reweighting a stored `.lhe`**, which needs the event's subprocess
-  recovered from its record; (d) `$` (forbidden s-channel) pattern amplitudes
-  and `aS` reweighting, both refused; (e) no extended-validation gate exercises
-  `--reweight-card` end to end on the hadronic path (member-evaluator indexing
-  and the mirrored ordering are covered by construction only).
+  cheaper. Reweighting amplitudes are pruned at a generic parameter point.
+  Validation: unit tests hold every path to a direct unpruned bind evaluated
+  afresh from a param card (mutation-checked: a union in place of the per-diagram
+  monomial product, a wrong Gram contraction, pruning at the card, and stale
+  couplings each fail a test), rebuild every per-helicity, per-flow complex JAMP
+  from the class decomposition at each hypothesis (`u u~ > t t~ h`, two flows),
+  and pin `K = 1 + 3` on a SMEFTsim basis grid (`ctWRe, cHt, cHWB`). **MadGraph
+  oracle** — (a) done, informational: `gen_reweight_oracle.py` runs MadGraph's
+  reweight module on vibegraph's own events (`p p > l+ l- j`, `e+ e- > t t~ h`,
+  `ta+ ta- > t t~ h` 3×3 grid, SMEFTsim `e+ e- > t t~`) and every one of 5000
+  events × 27 hypotheses agrees to the files' printed precision;
+  `reweight_mg_oracle` replays the banked 200 per row through both paths. Enforce
+  it once a hadronic polynomial row and a second SMEFT process are in. **Hadronic
+  indexing** — (e) done: `generate` audits every reweighted event's card-point
+  `|M|²` and flavours against the integrand that drew it and refuses the file on
+  a mismatch; the banked `cli_reweight_proton` reads the audit back on
+  `p p > l+ l- j` and the MLM-matched `p p > e+ e- + 0,1,2 j`, every part and
+  both beam orderings populated (mutation-checked on member offsets, the mirror
+  and αs). Found on the way and fixed: `EvaluatedModel::recompute` left couplings
+  stale behind chains of internal parameters (`aEWM1`, `MZ` hypotheses wrote
+  wrong weights); `HHH`/`HHHH` vertices and Yukawa-only initial-state lines had
+  the wrong relative sign against every other diagram (MadGraph's per-diagram
+  `AMP()`, new standalone rows `tata_to_ttxh`, `tata_to_ttxhh`, `bbx_to_hh`); and
+  `aS`-sharing coefficients (SMEFTsim's `cHWB` through `dWH`) were refused. Open
+  follow-ups: (b) **one evaluation per event** instead of `K` — a graded
+  evaluator carrying each current as its monomial components, so subtrees without
+  the couplings are computed once (the `helas/eval` refactor squared-order
+  constraints also need); (c) **reweighting a stored `.lhe`**, which needs the
+  event's subprocess recovered from its record (`reweight_mg_oracle` does it for
+  its banked events, test-side); (d) `$` (forbidden s-channel) pattern amplitudes
+  and `aS` reweighting, both refused; (f) a coupling that is itself `a + b·c`
+  (one diagram spanning two classes) is exercised only by the polynomial
+  algebra's unit tests — SMEFTsim splits every coefficient into its own coupling
+  order; (g) a derivative all-scalar vertex (`P` operators on scalar legs) has no
+  sign oracle; (h) the hypothesis side on a hadronic polynomial group (both
+  hadronic MadGraph rows are on the exact path).
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the
