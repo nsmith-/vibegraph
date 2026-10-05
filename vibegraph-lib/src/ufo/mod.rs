@@ -623,6 +623,30 @@ impl EvaluatedModel {
         self.coupling_values[id]
     }
 
+    /// The parameters and couplings whose value is not finite, by name, parameters
+    /// first and each list sorted.
+    pub fn non_finite(&self) -> Vec<&str> {
+        let finite = |v: &Complex64| v.re.is_finite() && v.im.is_finite();
+        let mut params: Vec<&str> = self
+            .param_values
+            .iter()
+            .filter(|(_, v)| !finite(v))
+            .map(|(k, _)| k.as_str())
+            .collect();
+        params.sort_unstable();
+        let mut couplings: Vec<&str> = self
+            .model
+            .couplings
+            .keys()
+            .zip(&self.coupling_values)
+            .filter(|(_, v)| !finite(v))
+            .map(|(k, _)| k.as_str())
+            .collect();
+        couplings.sort_unstable();
+        params.extend(couplings);
+        params
+    }
+
     /// Get the coupling entries for a vertex by its name.
     ///
     /// Returns `[(color_idx, lorentz_idx, value)]` or `None` if unknown.

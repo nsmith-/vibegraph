@@ -67,7 +67,7 @@ fn require(test: &str, run_card: &Path) {
 }
 
 /// The audit's report: events checked per `(part, ordering)`, the largest
-/// relative deviation, and the two mismatch counts.
+/// relative deviation, the two mismatch counts and the non-finite weights.
 #[derive(Debug)]
 struct Audit {
     events: usize,
@@ -75,6 +75,7 @@ struct Audit {
     largest: f64,
     m2_mismatches: usize,
     flavour_mismatches: usize,
+    non_finite: usize,
 }
 
 fn audit_of(log: &str) -> Audit {
@@ -83,9 +84,9 @@ fn audit_of(log: &str) -> Audit {
         .find(|l| l.contains("card-point |M|^2 checked against the integrand"))
         .unwrap_or_else(|| panic!("generate did not report the reweighting audit:\n{log}"));
     // `… on N events (part P ORDERING n, …); largest relative deviation D;
-    // beyond T: M; flavour mismatches: F`
+    // beyond T: M; flavour mismatches: F; non-finite weights: W`
     let fields: Vec<&str> = line.split("; ").collect();
-    assert_eq!(fields.len(), 4, "{line}");
+    assert_eq!(fields.len(), 5, "{line}");
     let last = |f: &str| f.rsplit(' ').next().unwrap().to_string();
     let head = fields[0];
     let events = head[head.find(" on ").unwrap() + 4..]
@@ -110,12 +111,14 @@ fn audit_of(log: &str) -> Audit {
     let largest = last(fields[1]).parse().unwrap();
     let m2_mismatches = last(fields[2]).parse().unwrap();
     let flavour_mismatches = last(fields[3]).parse().unwrap();
+    let non_finite = last(fields[4]).parse().unwrap();
     Audit {
         events,
         terms,
         largest,
         m2_mismatches,
         flavour_mismatches,
+        non_finite,
     }
 }
 
@@ -197,6 +200,7 @@ fn check(audit: &Audit, file: &LheFile, nevents: usize, parts: usize) {
     assert_eq!(audit.events, nevents, "{audit:?}");
     assert_eq!(audit.m2_mismatches, 0, "{audit:?}");
     assert_eq!(audit.flavour_mismatches, 0, "{audit:?}");
+    assert_eq!(audit.non_finite, 0, "{audit:?}");
     // Independent compilations of one subprocess: rounding, at most.
     assert!(audit.largest <= 1e-12, "{audit:?}");
     for part in 0..parts {

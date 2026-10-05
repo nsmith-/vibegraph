@@ -587,6 +587,7 @@ impl EventSource for SampleSource<'_, '_> {
                 selection.m2,
                 rw.pdgs(selection.subprocess),
                 &record,
+                (&reweights, rw.launches()),
             );
         }
         Some(WeightedEvent {
@@ -1165,6 +1166,8 @@ struct ReweightAudit {
     largest: f64,
     m2_mismatches: usize,
     flavour_mismatches: usize,
+    /// Events with a hypothesis ratio that is not finite.
+    non_finite: usize,
     first: Option<String>,
 }
 
@@ -1176,7 +1179,17 @@ impl ReweightAudit {
         m2: f64,
         pdgs: &[i32],
         record: &vibegraph::lhef::record::LheEvent,
+        (ratios, launches): (&[f64], &[Launch]),
     ) {
+        if let Some(k) = ratios.iter().position(|r| !r.is_finite()) {
+            self.non_finite += 1;
+            self.first.get_or_insert_with(|| {
+                format!(
+                    "part {} {:?}: hypothesis `{}` weighs the event {}",
+                    term.0, term.1, launches[k].id, ratios[k]
+                )
+            });
+        }
         match self.terms.iter_mut().find(|(t, _)| *t == term) {
             Some((_, n)) => *n += 1,
             None => self.terms.push((term, 1)),
@@ -1225,7 +1238,8 @@ impl ReweightAudit {
     }
 
     /// Report what was checked, and refuse a file whose weights were taken against
-    /// another subprocess than the one each event was drawn in.
+    /// another subprocess than the one each event was drawn in, or are not finite.
+    /// A refused file is removed rather than left beside the error.
     fn finish(&self, out: &std::path::Path) -> Result<(), IntegrateError> {
         let events: usize = self.terms.iter().map(|(_, n)| n).sum();
         let mut terms = self.terms.clone();
@@ -1244,19 +1258,32 @@ impl ReweightAudit {
         info!(
             "reweight: card-point |M|^2 checked against the integrand on {events} events \
              ({breakdown}); largest relative deviation {:.1e}; beyond \
-             {CARD_POINT_TOLERANCE:.0e}: {}; flavour mismatches: {}",
-            self.largest, self.m2_mismatches, self.flavour_mismatches
+             {CARD_POINT_TOLERANCE:.0e}: {}; flavour mismatches: {}; non-finite weights: {}",
+            self.largest, self.m2_mismatches, self.flavour_mismatches, self.non_finite
         );
-        if self.m2_mismatches + self.flavour_mismatches > 0 {
-            return Err(err(format!(
+        let why = if self.m2_mismatches + self.flavour_mismatches > 0 {
+            format!(
                 "reweighting evaluated {} of {events} events in another subprocess than the \
-                 integrand drew them in, so the weights in {} are wrong; first: {}",
-                self.m2_mismatches.max(self.flavour_mismatches),
-                out.display(),
-                self.first.as_deref().unwrap_or("")
-            )));
-        }
-        Ok(())
+                 integrand drew them in",
+                self.m2_mismatches.max(self.flavour_mismatches)
+            )
+        } else if self.non_finite > 0 {
+            format!(
+                "{} of {events} events carry a non-finite reweighting weight",
+                self.non_finite
+            )
+        } else {
+            return Ok(());
+        };
+        let removed = match std::fs::remove_file(out) {
+            Ok(()) => "removed it".to_string(),
+            Err(e) => format!("could not remove it ({e})"),
+        };
+        Err(err(format!(
+            "{why}, so the weights in {} are wrong and {removed}; first: {}",
+            out.display(),
+            self.first.as_deref().unwrap_or("")
+        )))
     }
 }
 
@@ -1629,6 +1656,7 @@ impl EventSource for ProtonSampleSource<'_, '_> {
                 selection.m2,
                 rw.pdgs(sub),
                 &record,
+                (&reweights, rw.launches()),
             );
         }
         Some(WeightedEvent {
@@ -2047,6 +2075,58 @@ mod tests {
 
     fn sm() -> ModelIdentity {
         ModelIdentity::interned_sm(SMRestrict::Default)
+    }
+
+    /// A file the reweighting audit refuses is removed, and a clean audit leaves
+    /// it in place.
+    #[test]
+    fn a_refused_reweighting_removes_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("events.lhe");
+        let launches = vec![Launch {
+            id: "zero".to_string(),
+            info: String::new(),
+            values: vec![("aEWM1".to_string(), 0.0)],
+        }];
+        let record = vibegraph::lhef::record::LheEvent {
+            process_id: 1,
+            weight: 1.0,
+            scale: 0.0,
+            alpha_qed: 0.0,
+            alpha_qcd: 0.0,
+            particles: Vec::new(),
+            trailer: Vec::new(),
+            source: None,
+        };
+
+        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
+        let mut clean = ReweightAudit::default();
+        clean.check(
+            (0, BeamOrdering::Direct),
+            1.0,
+            1.0,
+            &[],
+            &record,
+            (&[2.0], &launches),
+        );
+        clean.finish(&out).unwrap();
+        assert!(out.exists());
+
+        let mut refused = ReweightAudit::default();
+        refused.check(
+            (0, BeamOrdering::Direct),
+            1.0,
+            1.0,
+            &[],
+            &record,
+            (&[f64::NAN], &launches),
+        );
+        let why = refused.finish(&out).unwrap_err().to_string();
+        assert!(
+            why.contains("non-finite") && why.contains("`zero`"),
+            "{why}"
+        );
+        assert!(!out.exists(), "{why}");
     }
 
     fn artifact(process: &str, run_card: RunCard) -> IntegrateArtifact {

@@ -120,8 +120,10 @@ pub struct PolynomialSummary {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SubprocessSummary {
     pub polynomial: Vec<PolynomialSummary>,
-    /// Hypotheses on the exact path, one evaluation each.
+    /// Hypotheses on the exact path.
     pub exact: usize,
+    /// Their distinct parameter points other than the card's, one evaluation each.
+    pub exact_evaluations: usize,
     /// Hypotheses that do not move this subprocess's `|M|²` at all.
     pub unchanged: usize,
 }
@@ -129,7 +131,7 @@ pub struct SubprocessSummary {
 impl SubprocessSummary {
     /// Amplitude evaluations per event, the card's own included.
     pub fn evaluations(&self) -> usize {
-        1 + self.exact + self.polynomial.iter().map(|g| g.evaluations).sum::<usize>()
+        1 + self.exact_evaluations + self.polynomial.iter().map(|g| g.evaluations).sum::<usize>()
     }
 }
 
@@ -161,6 +163,7 @@ impl ReweightPlan {
                 }
             }
         }
+        check_finite(base, &launches)?;
         let generic = generic_point(base, &launches);
         let mut subs = Vec::with_capacity(sets.len());
         for set in sets {
@@ -214,6 +217,13 @@ impl ReweightPlan {
                         })
                         .collect(),
                     exact: sub.exact.len(),
+                    exact_evaluations: sub
+                        .exact
+                        .iter()
+                        .map(|&(_, slot)| slot)
+                        .filter(|&slot| slot != 0)
+                        .collect::<BTreeSet<_>>()
+                        .len(),
                     unchanged: self.launches.len() - served,
                 }
             })
@@ -235,6 +245,8 @@ impl ReweightPlan {
                 BoundSub {
                     amps,
                     scratch,
+                    base_jamps: Vec::new(),
+                    m2_at: Vec::new(),
                     jamps: Vec::new(),
                     contracted: Vec::new(),
                     gram: Vec::new(),
@@ -249,12 +261,17 @@ impl ReweightPlan {
 struct BoundSub<'p> {
     amps: Vec<ScaleAwareAmplitude<'p, f64>>,
     scratch: ScratchSpace<f64>,
+    /// The card point's JAMPs of every helicity combination, read once per event and
+    /// shared by every polynomial group.
+    base_jamps: Vec<Complex64>,
     /// Per node, the JAMPs of every helicity combination.
     jamps: Vec<Vec<Complex64>>,
     /// Per node, the JAMPs contracted with the colour matrix.
     contracted: Vec<Vec<Complex64>>,
     /// The node Gram matrix `R`, row-major.
     gram: Vec<f64>,
+    /// Per slot, its `|M|²` at this event once evaluated.
+    m2_at: Vec<Option<f64>>,
 }
 
 /// A [`ReweightPlan`] bound to numeric pools: the per-event evaluator.
@@ -303,6 +320,10 @@ impl Reweighter<'_> {
         }
         let m0 = bound.amps[0].eval_m2(momenta, &mut bound.scratch);
         let ratio = |m: f64, m0: f64| if m0 > 0.0 { m / m0 } else { 0.0 };
+        if !plan.groups.is_empty() {
+            // Read while the scratch still holds the card point's evaluation.
+            bound.read_card_point(momenta);
+        }
 
         for group in &plan.groups {
             bound.node_gram(&group.nodes, momenta);
@@ -321,30 +342,49 @@ impl Reweighter<'_> {
                 out[*launch] = ratio(m, r00);
             }
         }
+        // Launches sharing a parameter point share its slot, evaluated once.
+        bound.m2_at.clear();
+        bound.m2_at.resize(bound.amps.len(), None);
+        bound.m2_at[0] = Some(m0);
         for &(launch, slot) in &plan.exact {
-            out[launch] = ratio(bound.amps[slot].eval_m2(momenta, &mut bound.scratch), m0);
+            let m = match bound.m2_at[slot] {
+                Some(m) => m,
+                None => {
+                    let m = bound.amps[slot].eval_m2(momenta, &mut bound.scratch);
+                    bound.m2_at[slot] = Some(m);
+                    m
+                }
+            };
+            out[launch] = ratio(m, m0);
         }
         m0
     }
 }
 
 impl BoundSub<'_> {
+    /// Read the card point's JAMPs at `momenta` into `base_jamps`, for every
+    /// [`node_gram`](Self::node_gram) at this event.
+    fn read_card_point(&mut self, momenta: &[LorentzVector<f64>]) {
+        self.amps[0]
+            .amplitude()
+            .eval_hel_jamps(momenta, &mut self.scratch, &mut self.base_jamps);
+    }
+
     /// Fill `gram` with `R_jk = Re Σ_hel Σ_fg CF_fg conj(J_f(P_j)) J_g(P_k)` over
-    /// `nodes` at `momenta`.
+    /// `nodes` at `momenta`; the card point's JAMPs are `base_jamps`, already read.
     fn node_gram(&mut self, nodes: &[NodeSource], momenta: &[LorentzVector<f64>]) {
         let k = nodes.len();
         self.jamps.resize_with(k, Vec::new);
         self.contracted.resize_with(k, Vec::new);
         for (j, node) in nodes.iter().enumerate() {
-            let slot = match *node {
-                NodeSource::Base => 0,
-                NodeSource::Slot(s) => s,
-            };
-            self.amps[slot].amplitude().eval_hel_jamps(
-                momenta,
-                &mut self.scratch,
-                &mut self.jamps[j],
-            );
+            match *node {
+                NodeSource::Base => self.jamps[j].clone_from(&self.base_jamps),
+                NodeSource::Slot(slot) => self.amps[slot].amplitude().eval_hel_jamps(
+                    momenta,
+                    &mut self.scratch,
+                    &mut self.jamps[j],
+                ),
+            }
         }
         let cf = self.amps[0].amplitude().cf_weights();
         let n = self.amps[0].amplitude().evaluator().n_flows();
@@ -389,12 +429,50 @@ fn generic_point(base: &EvaluatedModel, launches: &[Launch]) -> EvaluatedModel {
         seen.push(name);
         let v0 = base.param_values[name].re;
         // Away from the card's value, from zero and from every hypothesis's
-        // round numbers, without leaving their scale.
+        // round numbers, without leaving their scale. Zero is where a coupling's
+        // contributions vanish, so a shift that lands near it is taken the other
+        // way, which puts it at least `offset · scale` from zero.
         let scale = v0.abs().max(value.abs()).max(1.0);
         let offset = 0.291_7 + 0.017 * seen.len() as f64;
-        generic.recompute(name, (v0 + offset * scale).into());
+        let mut shifted = v0 + offset * scale;
+        if shifted.abs() < 0.5 * offset * scale {
+            shifted = v0 - offset * scale;
+        }
+        generic.recompute(name, shifted.into());
     }
     generic
+}
+
+/// Refuse a hypothesis at which a parameter or coupling the card keeps finite is not
+/// (`set aEWM1 0` makes the Standard Model's `aEW = 1/aEWM1` infinite), before any
+/// event is weighted at it.
+fn check_finite(base: &EvaluatedModel, launches: &[Launch]) -> Result<(), ReweightError> {
+    let at_card: BTreeSet<&str> = base.non_finite().into_iter().collect();
+    for launch in launches {
+        let mut point = base.clone();
+        for (name, value) in &launch.values {
+            point.recompute(name, (*value).into());
+        }
+        if let Some(name) = point
+            .non_finite()
+            .into_iter()
+            .find(|n| !at_card.contains(n))
+        {
+            let value = match point.param_values.get(name) {
+                Some(v) => v.to_string(),
+                None => {
+                    let id = point.model().coupling_id(name).expect("a named coupling");
+                    point.coupling(id).to_string()
+                }
+            };
+            return Err(ReweightError::NonFinite {
+                launch: launch.id.clone(),
+                name: name.to_string(),
+                value,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Refuse a hypothesis that moves the mass of one of the subprocess's own legs.
@@ -521,15 +599,32 @@ fn plan_subprocess(
         }
     }
 
+    // One slot per distinct parameter point, the card's own included, which is the
+    // cost the polynomial gate compares against.
     exact.sort_unstable();
+    let mut exact_points: Vec<(Vec<(String, u64)>, usize)> = Vec::new();
     let exact = exact
         .into_iter()
         .map(|k| {
+            let mut key: Vec<(String, u64)> = launches[k]
+                .values
+                .iter()
+                .filter(|(name, value)| base.param_values[name].re != *value)
+                .map(|(name, value)| (name.clone(), value.to_bits()))
+                .collect();
+            key.sort();
+            if key.is_empty() {
+                return (k, 0);
+            }
+            if let Some(&(_, slot)) = exact_points.iter().find(|(p, _)| *p == key) {
+                return (k, slot);
+            }
             let mut point = base.clone();
             for (name, value) in &launches[k].values {
                 point.recompute(name, (*value).into());
             }
             slots.push(point);
+            exact_points.push((key, slots.len() - 1));
             (k, slots.len() - 1)
         })
         .collect();
@@ -1026,6 +1121,7 @@ launch --rwgt_name=y4
         for p in points(&eval, &base, 900.0).iter().take(3) {
             let bound = &mut rw.subs[0];
             let m0 = bound.amps[0].eval_m2(p, &mut bound.scratch);
+            bound.read_card_point(p);
             bound.node_gram(&group.nodes, p);
             let r00 = bound.gram[0];
             assert!((r00 - m0).abs() <= 1e-13 * m0, "{r00} vs {m0}");
@@ -1071,6 +1167,7 @@ launch --rwgt_name=y4
         let mut populated = [vec![false; n], vec![false; n]];
         for p in points(&eval, &base, 1000.0).iter().take(3) {
             let bound = &mut rw.subs[0];
+            bound.read_card_point(p);
             bound.node_gram(&group.nodes, p);
             let (j0, j1) = (bound.jamps[0].clone(), bound.jamps[1].clone());
             // `J(y) = a + y·b`, read off the two nodes.
@@ -1226,6 +1323,96 @@ launch --rwgt_name=y4
         );
         assert_eq!(exact.summary()[0].exact, 5);
         check_against_direct("e+ e- > t t~ h", 800.0, &base, &exact, None, 1e-12);
+    }
+
+    /// Launches at one parameter point share one evaluation, and a launch at the
+    /// card's own point takes none: the exact path costs what the polynomial gate
+    /// compares it against.
+    #[test]
+    fn the_exact_path_evaluates_each_distinct_point_once() {
+        let card = "launch --rwgt_name=a\n set ymt 100\nlaunch --rwgt_name=b\n set ymt 100\n\
+                    launch --rwgt_name=c\n set ymt 173\nlaunch --rwgt_name=d\n set ymt 200\n";
+        let options = ReweightOptions {
+            exact: true,
+            couplings: None,
+        };
+        let (_, base, _, plan) = plan("e+ e- > t t~ h", card, options);
+        assert_eq!(
+            base.param_values["ymt"].re, 173.0,
+            "launch c is at the card"
+        );
+        let summary = &plan.summary()[0];
+        assert_eq!((summary.exact, summary.exact_evaluations), (4, 2));
+        assert_eq!(summary.evaluations(), 3);
+        assert_eq!(plan.subs[0].slots.len(), 3);
+        check_against_direct("e+ e- > t t~ h", 800.0, &base, &plan, None, 1e-12);
+    }
+
+    /// Two polynomial groups in one subprocess share the card point's JAMPs, read
+    /// once per event: `ymt` and `ymtau` scanned separately on `ta+ ta- > t t~ h`.
+    #[test]
+    fn polynomial_groups_share_the_card_point() {
+        let card = "launch\n set ymt 100\nlaunch\n set ymt 200\nlaunch\n set ymt 0\n\
+                    launch\n set ymtau 3\nlaunch\n set ymtau 0\nlaunch\n set ymtau 9\n";
+        let (_, base, _, plan) = plan("ta+ ta- > t t~ h", card, ReweightOptions::default());
+        let summary = &plan.summary()[0];
+        // Each scan is quadratic (diagrams with two Yukawa vertices), K = 3 apiece:
+        // the card's evaluation plus two nodes per group.
+        assert_eq!(summary.polynomial.len(), 2, "{summary:?}");
+        assert_eq!(summary.evaluations(), 5, "{summary:?}");
+        check_against_direct("ta+ ta- > t t~ h", 1200.0, &base, &plan, None, 1e-10);
+    }
+
+    /// A hypothesis at which a parameter the card keeps finite is not is refused
+    /// before any event is weighted: `aEWM1 = 0` makes `aEW = 1/aEWM1` infinite.
+    #[test]
+    fn a_non_finite_hypothesis_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        let sets = sets("e+ e- > mu+ mu-", &model);
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let launches = resolve(
+            &"launch --rwgt_name=zero\n set aEWM1 0\n".parse().unwrap(),
+            &model,
+        )
+        .unwrap();
+        let options = ReweightOptions {
+            exact: true,
+            couplings: None,
+        };
+        match ReweightPlan::new(&refs, &model, &base, launches, options) {
+            Err(ReweightError::NonFinite { launch, .. }) => assert_eq!(launch, "zero"),
+            other => panic!("expected a refusal, got {:?}", other.err()),
+        }
+    }
+
+    /// The pruning point stays away from zero, where a coupling's contributions
+    /// vanish: a card at `ymt = -offset` with a first hypothesis at `ymt = 1` puts
+    /// the plain shift `ymt + offset · max(|ymt|, 1)` exactly at zero, which would
+    /// prune the top-Yukawa diagrams every other hypothesis needs.
+    #[test]
+    fn the_pruning_point_avoids_zero() {
+        let model = sm_model(SMRestrict::Default);
+        let mut base = EvaluatedModel::from_model(model.clone());
+        base.recompute("ymt", (-(0.291_7 + 0.017)).into());
+        let launches = resolve(
+            &"launch\n set ymt 1\nlaunch\n set ymt 173\nlaunch\n set ymt 350\n"
+                .parse()
+                .unwrap(),
+            &model,
+        )
+        .unwrap();
+        let generic = generic_point(&base, &launches);
+        assert!(
+            generic.param_values["ymt"].re.abs() > 0.1,
+            "{}",
+            generic.param_values["ymt"]
+        );
+        let sets = sets("e+ e- > t t~ h", &model);
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let plan =
+            ReweightPlan::new(&refs, &model, &base, launches, ReweightOptions::default()).unwrap();
+        check_against_direct("e+ e- > t t~ h", 1000.0, &base, &plan, None, 1e-9);
     }
 
     /// One hypothesis along a parameter is cheaper evaluated directly, and a

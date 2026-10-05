@@ -108,6 +108,15 @@ pub enum ReweightError {
          each event sits relative to the veto windows; it cannot be reweighted"
     )]
     ForbiddenSChannel,
+    #[error(
+        "launch `{launch}` makes `{name}` non-finite ({value}), which the card's own \
+         parameters keep finite; no weight can be taken there"
+    )]
+    NonFinite {
+        launch: String,
+        name: String,
+        value: String,
+    },
     #[error("failed to compile a subprocess for reweighting: {0}")]
     Compile(String),
     #[error("`{name}` cannot be a reweighting coupling: {reason}")]
