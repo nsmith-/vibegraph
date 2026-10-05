@@ -879,8 +879,35 @@ mod tests {
         }
     }
 
+    /// `at`'s external parameters with `moved` applied, evaluated afresh from a
+    /// parameter card: no `recompute` on the way, so the oracle does not share the
+    /// plan's parameter propagation.
+    fn fresh(at: &EvaluatedModel, moved: &[(String, f64)]) -> EvaluatedModel {
+        let model = at.model().clone();
+        let mut card = String::new();
+        for p in &model.params.externals {
+            let crate::ufo::parameters::ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            let value = moved
+                .iter()
+                .rev()
+                .find(|(n, _)| *n == p.name)
+                .map_or(at.param_values[&p.name].re, |(_, v)| *v);
+            let code: Vec<String> = lha_code.iter().map(i32::to_string).collect();
+            card += &format!("BLOCK {lha_block}\n {} {value:.17e}\n", code.join(" "));
+        }
+        EvaluatedModel::from_model_card(model, &card.parse().unwrap())
+    }
+
     /// The oracle every path answers to: the unpruned amplitude bound directly at
-    /// the hypothesis's parameters, over the one bound at the card's.
+    /// the hypothesis's parameters, over the one bound at the card's, both
+    /// evaluated afresh ([`fresh`]).
     fn direct_ratio(
         set: &DiagramSet,
         model: &UFOModel,
@@ -889,11 +916,9 @@ mod tests {
         momenta: &[V],
     ) -> f64 {
         let eval = AmplitudeEvaluator::compile(set, model).unwrap();
-        let mut point = base.clone();
-        for (name, value) in &launch.values {
-            point.recompute(name, (*value).into());
-        }
-        let old = BoundAmplitude::<f64>::bind(&eval, base);
+        let card = fresh(base, &[]);
+        let point = fresh(base, &launch.values);
+        let old = BoundAmplitude::<f64>::bind(&eval, &card);
         let new = BoundAmplitude::<f64>::bind(&eval, &point);
         let mut scratch = old.scratch_space();
         new.eval_m2(momenta, &mut scratch) / old.eval_m2(momenta, &mut scratch)
@@ -1071,11 +1096,13 @@ launch --rwgt_name=mz2
  set MZ 92.0
 launch --rwgt_name=mz3
  set MZ 93.0
+launch --rwgt_name=aew
+ set aEWM1 130
 ";
         let (_, base, _, plan) = plan("e+ e- > t t~ h", card, ReweightOptions::default());
         let s = &plan.summary()[0];
         assert!(s.polynomial.is_empty(), "{s:?}");
-        assert_eq!(s.exact, 4);
+        assert_eq!(s.exact, 5);
         check_against_direct("e+ e- > t t~ h", 900.0, &base, &plan, None, 1e-12);
     }
 
