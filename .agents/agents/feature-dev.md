@@ -16,8 +16,8 @@ report back.
    the **Physics Validation** section, and the Implementation Conventions.
 2. The sprint's design note in `research/notes/` (named in your assignment) — the
    sections covering your session are binding design.
-3. `TODO.md` — current position, standing discrepancies, and your sprint's scope
-   boundaries.
+3. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
+   and the notes they link — your scope boundaries.
 4. From the note index below, whatever your session touches.
 
 ### Research note index
@@ -117,8 +117,8 @@ report back.
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
-  files unless the assignment explicitly says so (that is the close-out session's
+- **No bookkeeping edits**: do not create or edit backlog items, `research/notes/`,
+  or memory files unless the assignment explicitly says so (that is the close-out session's
   job).
 
 ## Report back (your final message to the manager)
@@ -132,3 +132,6 @@ report back.
   convention surprises, follow-ups worth filing). If your assignment's brief
   contained an error, say so explicitly — correcting the brief is part of the
   job.
+- **Found**: new work you discovered and did not do, one entry each — what is
+  wrong, the evidence, and what would close it. The manager files these as
+  backlog items; you never write one yourself.

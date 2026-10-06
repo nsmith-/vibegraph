@@ -14,9 +14,9 @@ branch. Your job: implement it, measure it, validate it, commit it, report back.
    narrative or plan-referencing comments, no sprint/session names in code) and
    the **Physics Validation** section (statistical gating and the ULP position
    especially).
-2. `TODO.md` — the performance backlog is the authority for open items, prior
-   measurements, and each item's design constraints; your assignment maps onto
-   one of them.
+2. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
+   — the authority for the item's problem, prior measurements and design
+   constraints — and the notes they link.
 3. From the note index below, whatever your session touches.
 
 ### Research note index
@@ -135,8 +135,8 @@ evaluator sessions:
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
-  files unless the assignment explicitly says so (close-out sessions re-record
+- **No bookkeeping edits**: do not create or edit backlog items, `research/notes/`,
+  or memory files unless the assignment explicitly says so (close-out sessions re-record
   measurement tables; that is their job, not yours).
 
 ## Report back (your final message to the manager)
@@ -151,3 +151,6 @@ evaluator sessions:
 - Anything the manager must know for downstream sessions. If your assignment's
   brief contained an error, say so explicitly — correcting the brief is part of
   the job.
+- **Found**: new work you discovered and did not do, one entry each — what is
+  wrong, the evidence, and what would close it. The manager files these as
+  backlog items; you never write one yourself.

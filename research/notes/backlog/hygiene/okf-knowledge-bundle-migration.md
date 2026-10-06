@@ -1,0 +1,34 @@
+---
+type: Backlog Item
+title: Reference material is not yet an OKF knowledge bundle
+description: research/notes and TODO.md are being migrated to an OKF knowledge bundle under research/kb/; the migration is in progress per note 42.
+area: hygiene
+state: open
+priority: high
+closes_when: Note 42's Phase 4 is complete. The notes have moved to research/kb/history/notes/, external citations point to concept IDs, and the agent briefs and AGENTS.md planning section are updated.
+blocked_by: []
+opened: 2026-10-05
+tags: [okf, knowledge-bundle, backlog, migration]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
+sources:
+  - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L566-L571", title: "TODO.md entry T046"}
+---
+The plan is [note 42](../../42-okf-knowledge-bundle-plan.md), with user
+decisions in §9. Phase B is in progress: this directory holds its first output,
+the backlog split into one file per item. What remains, in the order given in
+[note 42 §8](../../42-okf-knowledge-bundle-plan.md):
+
+- **Phase B**, remaining steps 3–5: `Sprint Record` stubs and `Design Decision`
+  concepts for the user to stamp `verified`; the `pixi run backlog` generator
+  with its filters, the lint and the docs page (§7.2); then `TODO.md` becomes a stub,
+  and `AGENTS.md`, `.agents/agents/*.md` and the skills are re-pointed.
+- **Phase 0**: frontmatter on the notes in place, `index.md`, `log.md`, the lint.
+- **Phase 1**: chunk, embed and cluster, in the scratchpad only. The checkpoint is
+  the user approving the taxonomy.
+- **Phase 2**: subagents draft the concepts.
+- **Phase 3**: adversarial verification and a coverage map.
+- **Phase 4**: move to `research/kb/`, re-cite from the (note, §) → concept map,
+  archive the notes as `Working Note`, update the briefs, and add the `new-sprint` scaffold.
+
+Phase 5 (Attested Computations) is optional and outside this item. After the
+migration, the first sprint trials the per-sprint lifecycle (note 42 §4).

@@ -18,8 +18,8 @@ job: execute it, validate it, commit it, report back.
    methodology in full: bit-exact oracle first; per-diagram × per-helicity (and
    per-flow) complex-value dumps against MG; do not trust Ward identities,
    hand-built rootings, or two-helicity ratios as oracles.
-3. `TODO.md` — the validation backlog (standing discrepancies, deferred
-   coverage, gate hygiene); your assignment maps onto one of its items.
+3. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
+   and the notes they link.
 4. From the note index below, whatever your session touches.
 
 ### Research note index
@@ -135,8 +135,8 @@ job: execute it, validate it, commit it, report back.
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
-  files unless the assignment explicitly says so (that is the close-out session's
+- **No bookkeeping edits**: do not create or edit backlog items, `research/notes/`,
+  or memory files unless the assignment explicitly says so (that is the close-out session's
   job).
 
 ## Report back (your final message to the manager)
@@ -151,3 +151,6 @@ job: execute it, validate it, commit it, report back.
   convention surprises, follow-ups worth filing). If your assignment's brief
   contained an error, say so explicitly — correcting the brief is part of the
   job.
+- **Found**: new work you discovered and did not do, one entry each — what is
+  wrong, the evidence, and what would close it. The manager files these as
+  backlog items; you never write one yourself.

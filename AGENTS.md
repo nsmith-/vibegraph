@@ -7,10 +7,19 @@ studying the standard HEP event simulation toolchain step by step.
 
 ## Planning & Progress
 
-**Before starting any new feature or task**, read `TODO.md` — the prioritized task
-list and pipeline status. Deeper derivations live in `research/notes/`.
+The work backlog is one file per open item under `research/notes/backlog/<area>/`
+(the format and rules are note 42 §7). **Start from what your brief names** — a
+sprint's session brief or a single backlog item — and read outward from its
+links: `pixi run backlog --item <slug>` prints the item, what blocks it, and the
+notes it links. Don't read the whole backlog first; the full view
+(`pixi run backlog`, also a page on the documentation site) is for planning.
+Deeper derivations live in `research/notes/`.
 
-**After completing any planned change**, update `TODO.md` to reflect current status.
+**When work closes an item, its PR deletes the item's file**; the account of how
+it was solved belongs in the sprint record or session report, not the backlog.
+Dev agents never create or edit items: new work they find goes in their report's
+"Found" section, and the manager files it. A sprint claims items by opening a
+draft PR whose description lists them, one `Backlog: <slug>` line each.
 
 ## Codebase Exploration
 
