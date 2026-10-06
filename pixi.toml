@@ -367,9 +367,24 @@ validate-mlm-pythia = "python validation/pythia/mlm_match.py"
 python = ">=3.10,<3.12"
 markitdown = "*"
 
+# --- Knowledge bundle: the research notes' index, lint and backlog view ---
+# `scripts/kb.py` reads the concepts' YAML frontmatter with PyYAML. Its own
+# environment keeps Python out of the default one.
+[feature.kb.dependencies]
+python = ">=3.11,<3.14"
+pyyaml = ">=6"
+
+[feature.kb.tasks]
+# The backlog, rendered from research/notes/backlog/ and never committed.
+# `pixi run backlog --item <slug>` prints one item and what it links to.
+backlog = "python scripts/kb.py backlog"
+kb-lint = "python scripts/kb.py lint"
+kb-index = "python scripts/kb.py index"
+
 [environments]
 nougat = { features = ["nougat"], solve-group = "nougat" }
 madgraph = { features = ["madgraph"], solve-group = "madgraph" }
 helas-validation = { features = ["helas-validation"], solve-group = "helas-validation" }
 pythia = { features = ["pythia"], solve-group = "pythia" }
 markitdown = { features = ["markitdown"], solve-group = "markitdown" }
+kb = { features = ["kb"], solve-group = "kb" }

@@ -23,3 +23,7 @@
   - [Command reference](cli/reference.md)
 - [Library API](api.md)
 - [Bibliography](bibliography.md)
+
+# Development
+
+- [Backlog](backlog.md)
