@@ -81,12 +81,15 @@ Run the hermetic suite for everything. On top of it:
 | `coupling/` — αs RGE, μR/μF | `pixi run -e madgraph validate-alphas`, `validate-scales`, `validate-scale-couplings` |
 | `ufo/` parameter or coupling evaluation, a vendored model, a restrict card | `pixi run -e madgraph validate-couplings` |
 | kT clustering, `coupling/cluster/` | the three above, plus the oracle-layer `pixi run -e madgraph validate-kt-cluster` |
+| MLM matching: `rewgt`, `setclscales` under `ickkw = 1`, `multiplicity.rs`, the matched record (`<scales>`, status-2 lines, `<MGRunCard>`) | the kT row above, plus the oracle-layer `pixi run -e madgraph validate-mlm-dumps`, `validate-mlm-sigma`, `validate-mlm-samples`, and `pixi run -e pythia validate-mlm-pythia` |
 | phase space, channel maps, VEGAS, multichannel budgets | `pixi run -e madgraph validate-sigma`, `validate-hadronic` |
 | unweighting, event selection | `pixi run -e madgraph validate-unweighting`, `validate-generate-proton` |
 | the LHEF writer/reader, colour selection in output | `pixi run -e madgraph validate-lhef`, plus `pixi run -e pythia validate-pythia` |
 | PDF grids, interpolation, the subgrid walk | `pixi run -e madgraph validate-pdf-grid` |
 | the UFO loader, the SM model source, the submodule pin | `pixi run check-sm-blob-fresh` |
 | run-card parsing or defaults | `pixi run -e madgraph dump-runcard-defaults`, then the hermetic `scales_run_cards` test |
+| reweighting (`reweight/`, `generate --reweight-card`), and `EvaluatedModel::recompute` | `pixi run validate-reweight` (the hermetic MadGraph-reweight comparison, informational, and the banked `cli_reweight_proton` audit); after an amplitude, model or reweight-card change, `pixi run -e madgraph generate-reweight-oracle`, whose printed full-file comparison against MadGraph's reweight module is the end-to-end check |
+| fermion-line or vertex sign conventions (`diagrams/diagram.rs` `fermion_line_sign`, `helas/eval/root_*`) | the hermetic `standalone_jamps` and `amplitude_oracle` tests; a new vertex or line topology needs its own `gen_standalone_jamps.py` row before a sign rule is claimed for it |
 
 The amplitude gate (`amplitude_oracle`) is itself hermetic — it reads committed
 tables — so `cargo test` runs it. `pixi run -e madgraph validate-amplitudes`
@@ -100,10 +103,10 @@ current run's cells.
 ## Regenerating references
 
 One entry point over every generator, staged
-`deps → madgraph → seeds → refs → bundle`:
+`deps → madgraph → seeds → mlm → refs → bundle`:
 
 ```bash
-pixi run -e madgraph generate-references              # all five stages
+pixi run -e madgraph generate-references              # all six stages
 pixi run -e madgraph generate-references refs bundle  # re-extract and re-archive
 ```
 
@@ -113,10 +116,16 @@ so a reference that moved shows up as a diff. The `seeds` stage banks the
 MadEvent references committed as one run per seed (the decay, decay-chain, `$`,
 `>`/`$$` and polarized cross sections and event summaries); its runs live in
 `validation/madgraph/work/`, and a finished seed is read back rather than re-run
-(`validation/madgraph/madevent_seeds.sh`). Committed references
+(`validation/madgraph/madevent_seeds.sh`). The `mlm` stage
+(`gen_mlm_references.sh`) does the same for the five MLM rows, banks their
+samples-grade runs and `pp_to_ll_0j2j_mlm`'s twenty independent directories
+under `output/`, and replays each samples-grade run instrumented into the
+per-event dumps `validate-mlm-dumps` reads (outside the bundle, pinned in
+`mlm_dump_manifest.json`). Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
 `validation/madgraph/configs.json`,
-`validation/alphas/reference.csv`) are regenerated only when the banked phase-space
+`validation/alphas/reference.csv`, `validation/madgraph/reweight_mg_reference.json`)
+are regenerated only when the banked phase-space
 points, the process list, or the pinned MadGraph version change — never to make a
 failing gate pass. A reference that moves is a finding; diagnose it before
 rebanking it.
@@ -150,3 +159,18 @@ wrap one in a foreground `sleep` loop.
 Before reporting a gate green: the command and its output are the evidence, not
 the exit status you remember. A cell in `report.md` is only evidence if this run
 wrote it.
+
+### A private build without debug info
+
+Several sessions sharing one container each build into their own
+`CARGO_TARGET_DIR`, and dropping debug info keeps such a target near 1–2 GB.
+`CARGO_PROFILE_DEV_DEBUG=0` works, but the `release-debug` profile — the one
+every heavy gate runs under — **cannot be set from the environment**: cargo
+reads `CARGO_PROFILE_RELEASE_DEBUG_DEBUG` as a key under `profile.release` and
+fails with `could not load config key profile.release ... invalid type: Option
+value`, whatever the value. Pass `--config 'profile.release-debug.debug=0'` on
+a cargo command line instead. `validation/validate.sh` and the pixi tasks take
+no cargo flags, so for those put the same setting in an untracked
+`.cargo/config.toml` at the worktree root (`[profile.release-debug]` /
+`debug = 0`) and delete it afterwards; it changes debug info only, never the
+code a gate measures.

@@ -188,7 +188,118 @@ integration's relative error on it plus the share's sampling error, and
 `XMAXUP` the process's own largest weight. A streaming
 (`stochastic-rounding`) run knows the split before its first event only by
 drawing the sample once and replaying it, which it does when there is more
-than one process.
+than one process. A card summing several final-state multiplicities (`@0`, `@1`,
+`@2` of a matched sample) is different: there each multiplicity is integrated as
+its own part and the default strategy normalises every part to its own cross
+section, which unit weights cannot do, so `stochastic-rounding` refuses such a
+card.
+
+## Reweighting
+
+`generate --reweight-card reweight_card.dat` gives every event its weight under
+alternative model parameters too, MadGraph's reweighting workflow. The card is
+MadGraph's: each `launch` block is one hypothesis, and its `set` lines move
+external parameters by LHA address or by name.
+
+```text
+launch --rwgt_name=ymt_150
+  set yukawa 6 150.0
+launch --rwgt_name=ymt_200
+  set ymt 200.0
+```
+
+An event drawn under the model's own parameters is carried to a hypothesis by
+the ratio `|M|²_new / |M|²_old` of its own concrete subprocess at its own momenta
+and strong coupling; the phase-space density, the parton densities and the
+scales cancel. The file declares the hypotheses in an `<initrwgt>` block in its
+`<header>` and writes each event's weights in a `<rwgt>` block, in `XWGTUP`'s own
+units, so the mean of a hypothesis's weights over a buffered file is its cross
+section exactly as the mean of `XWGTUP` is the nominal one. A reweighted sample
+is only as good as the nominal sample's coverage of the phase space the
+hypothesis populates; the ratios say nothing about regions the nominal sample
+never visits.
+
+A hadronic flavour group shares one matrix element at the card's parameters,
+which is what grouped it, but not necessarily at a hypothesis's — a parameter can
+move one quark flavour's coupling and not another's — so each event is reweighted
+with its own member's amplitude.
+
+A ratio taken in the wrong subprocess would still look like a ratio, so every
+reweighted event's denominator is checked as it is written. The card-point
+`|M|²` the reweighter evaluates must equal the one the integrand drew the event
+with (same subprocess, beam ordering and strong coupling), and the reweighter's
+subprocess flavours must equal the event record's. The run reports how many
+events it checked, per multiplicity and beam ordering. It refuses the file if
+any event fails.
+
+MadGraph's reweight module, by default, takes each event's ratio in the one
+helicity configuration the event records. The ratio here is summed over
+helicities. Both are unbiased for the reweighted cross section, but they differ
+event by event. For an event-by-event comparison, run MadGraph's reweight with
+`change helicity False`: on the same file the two then agree to the printed
+digits.
+
+### The polynomial path
+
+Reweighting costs amplitude evaluations, and an effective-field-theory study asks
+for many hypotheses: with `n` new couplings entering at most once per diagram,
+`|M|²` is a quadratic form in them, and the usual card is a basis grid of at
+least `n(n+1)/2` points that pins it down. Evaluating each point directly costs
+one amplitude per point per event.
+
+The polynomial path instead collects the amplitude by coupling monomial. When
+parameters `P` enter a subprocess only through its couplings, each a polynomial
+in `P`, and no mass or width moves with them, the amplitude of every helicity
+combination and colour flow is `A(P) = Σ_μ μ(P)·a_μ`, a sum over monomials `μ`
+with one coupling class `a_μ` each. The monomials are read off the UFO coupling
+expressions and the diagrams' vertices symbolically (`reweight::poly`), not
+fitted: a diagram carries the product of its vertices' monomials. Then
+
+```text
+|M(P)|² = Σ_μν μ(P) ν(P) · Re Σ_hel Σ_fg conj(a_μ,f) CF_fg a_ν,g
+```
+
+is a quadratic form in the monomial vector with a per-event matrix, and every
+hypothesis is one `K × K` quadratic form in it. With one insertion per diagram
+`K = 1 + n`, so an event costs `n` amplitude evaluations beyond its own however
+dense the grid is.
+
+The class amplitudes come from `K` evaluations at parameter nodes rather than
+from splitting diagrams, because a coupling can shift an existing vertex
+(`a + b·c`): that one diagram belongs to two classes. The nodes are chosen for
+conditioning — the card's own point first, the rest taken by a column-pivoted QR
+from a Chebyshev grid over the box the hypotheses span — and each hypothesis's
+weights over them are solved once, before the first event. The matrix is formed
+in the node basis directly, so the class amplitudes are never materialised.
+
+`--reweight-couplings cW,cHW,cHWB` asks for this explicitly: every hypothesis is
+served by one polynomial per subprocess jointly in the named parameters, a card
+that moves anything else is refused, and so is a named parameter that some
+subprocess does not carry polynomially. Without the flag, hypotheses moving one
+and the same parameter are grouped by it where that is cheaper than evaluating
+them, and everything else — a hypothesis moving several parameters, a parameter
+that is not a polynomial coupling (`aEWM1`, which reaches the couplings through
+square roots; `MZ`, which is also a propagator pole) — is evaluated directly:
+its amplitude is bound to its parameters before the first event and evaluated
+once per event. `--reweight-exact` forces that path for every hypothesis; the
+paths agree to within rounding, and the unit tests hold them to it.
+
+The generation's own amplitudes drop what vanishes at the card's parameters,
+and a hypothesis that switches on a coupling the card leaves at zero revives
+exactly that. Reweighting therefore compiles its own amplitudes, pruned at a
+generic point where every parameter any hypothesis moves is set to an
+unremarkable value.
+
+### What is refused
+
+Each of these is an error naming the card line, never a skipped line: `change`
+directives (another model, process or mode), a param-card path in place of `set`
+lines, `scan:` values, an internal or unknown parameter, a parameter the model's
+restriction fixed to zero (its vertices were removed with it), anything that
+moves the strong coupling (each event takes it from the scale choice, so that is
+a scale variation), the mass of an external particle (the momenta sit on the old
+mass shell), and a process with a forbidden s-channel (`$`), whose amplitude
+depends on each event's position relative to the veto windows.
 
 ## Seeds and reproducibility
 
@@ -209,4 +320,5 @@ draws, and [`vibegraph::lhef`](../api/vibegraph/lhef/index.html) with its
 [`write`](../api/vibegraph/lhef/write/index.html),
 [`parse`](../api/vibegraph/lhef/parse/index.html),
 [`build`](../api/vibegraph/lhef/build/index.html) and
-[`emit`](../api/vibegraph/lhef/emit/index.html) layers.
+[`emit`](../api/vibegraph/lhef/emit/index.html) layers;
+[`vibegraph::reweight`](../api/vibegraph/reweight/index.html) for reweighting.

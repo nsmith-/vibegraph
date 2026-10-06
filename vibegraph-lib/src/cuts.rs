@@ -392,7 +392,6 @@ const UNIMPLEMENTED_CUTS: &[&str] = &[
     "ktdurham",
     "dparameter",
     "ptlund",
-    "xqcut",
     "pt_min_pdg",
     "pt_max_pdg",
     "E_min_pdg",
@@ -1615,6 +1614,127 @@ mod tests {
         // A card that switches the thresholds off implies nothing.
         let free = Cuts::compile(&card("0 = ptj\n0 = ptl\n"), &llj_legs()).unwrap();
         assert_eq!(free.energy_floor(0b111), 0.0);
+    }
+
+    /// With `xqcut` set the resolved card carries `setcuts.f`'s rewrites, and the
+    /// filter applies them: the jet threshold is `xqcut`, the lepton–jet
+    /// separation is gone, and the jet–jet mass threshold is `xqcut`, each only
+    /// on legs `do_cuts` admits.
+    #[test]
+    fn an_xqcut_card_cuts_with_the_rewritten_jet_thresholds() {
+        let rc = card("30 = xqcut\n");
+        let llj = Cuts::compile(&rc, &llj_legs()).unwrap();
+        assert_eq!(llj.spacelike_floor(), 900.0);
+        let (b1, b2) = beams(500.0);
+        let lp = lep(50.0, 0.0, 0.0);
+        let lm = lep(50.0, 0.3, std::f64::consts::PI);
+        // A jet at 29 GeV fails, at 31 passes, and passes 0.1 away from a lepton.
+        assert!(!llj.pass(&[b1, b2, lp, lm, lep(29.0, 1.0, 1.0)]));
+        assert!(llj.pass(&[b1, b2, lp, lm, lep(31.0, 1.0, 1.0)]));
+        assert!(llj.pass(&[b1, b2, lp, lm, lep(31.0, 0.1, 0.0)]));
+        let plain = Cuts::compile(&RunCard::default(), &llj_legs()).unwrap();
+        assert!(!plain.pass(&[b1, b2, lp, lm, lep(31.0, 0.1, 0.0)]));
+
+        // Two jets: `mmjj = 30` and `drjj = 0`.
+        let jj = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+        ];
+        let jj_cuts = Cuts::compile(&rc, &jj).unwrap();
+        // Close together: pair mass ≈ 40 · 0.3 = 12 < 30, refused by mmjj alone.
+        assert!(!jj_cuts.pass(&[b1, b2, lep(40.0, 0.0, 0.0), lep(40.0, 0.3, 0.0)]));
+        assert!(jj_cuts.pass(&[b1, b2, lep(40.0, 0.0, 0.0), lep(40.0, 0.9, 0.0)]));
+
+        // `do_cuts`: a leg above 20 GeV of mass is exempt from every jet cut.
+        let heavy = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(1, 25.0),
+            ExternalLeg::outgoing(-1, 25.0),
+        ];
+        let heavy_cuts = Cuts::compile(&rc, &heavy).unwrap();
+        assert_eq!(heavy_cuts.spacelike_floor(), 0.0);
+    }
+
+    /// The phase-space floors MadEvent derives from `xqcut` (`setcuts.f`
+    /// `setxqcuts`, read in `myamp.f` `set_peaks`) are a jet's energy floor
+    /// `√(xqcut² − m²)` and an s-channel jet pair's mass floor `xqcut`. After the
+    /// `ptj = mmjj = xqcut` rewrite the compiled cuts carry both, so the channels
+    /// the maps build from `energy_floor`, `timelike_floor` and `spacelike_floor`
+    /// already start there: a massless jet's energy floor is its `pT` threshold
+    /// `xqcut`, a jet pair's mass floor is `mmjj = xqcut`, and the spacelike
+    /// regulator is `xqcut²`. A rewrite that stopped reaching any of the three
+    /// would show here.
+    #[test]
+    fn madevents_xqcut_floors_reach_the_maps_through_the_rewritten_cuts() {
+        let rc = card("30 = xqcut\n50 = mmll\n");
+        let lljj = vec![
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::incoming(21, 0.0),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+            ExternalLeg::outgoing(21, 0.0),
+            ExternalLeg::outgoing(2, 0.0),
+        ];
+        let cuts = Cuts::compile(&rc, &lljj).unwrap();
+        let (leptons, jet, other_jet) = (0b0011, 0b0100, 0b1000);
+        assert_eq!(cuts.energy_floor(jet), 30.0);
+        assert_eq!(cuts.energy_floor(other_jet), 30.0);
+        assert_eq!(cuts.timelike_floor(jet | other_jet), 900.0);
+        assert_eq!(cuts.timelike_floor(leptons), 2500.0);
+        assert_eq!(cuts.spacelike_floor(), 900.0);
+        // Without `xqcut` the same card's jets keep `ptj = 20`, and their pair
+        // floor is only the one `drjj = 0.4` implies, `2·20²·(1 − cos 0.4) ≈ 63`.
+        let plain = Cuts::compile(&card("50 = mmll\n"), &lljj).unwrap();
+        assert_eq!(plain.energy_floor(jet), 20.0);
+        assert!(plain.timelike_floor(jet | other_jet) < 64.0);
+    }
+
+    /// MadEvent's lower limit on τ under `xqcut` is `(Σ xe)²/s` with a jet's
+    /// floor `max(ptj, sqrt(xqcut² − m²))` (`myamp.f`, `setxqcuts`). With `ptj`
+    /// rewritten to `xqcut` that limit is implied by the cuts: no accepted point
+    /// sits below it, so it moves no cross section. A limit that did cut would
+    /// show here as an accepted point below it.
+    #[test]
+    fn madevents_xqcut_tau_floor_is_implied_by_the_rewritten_cuts() {
+        use rand::{Rng, SeedableRng};
+        let rc = card("30 = xqcut\n");
+        let cuts = Cuts::compile(&rc, &llj_legs()).unwrap();
+        // Leptons at `ptl`, the jet at `max(ptj, xqcut)`.
+        let etot: f64 = rc.float("ptl") * 2.0 + rc.float("ptj").max(30.0);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_41);
+        let mut accepted = 0;
+        for _ in 0..200_000 {
+            let l1 = lep(
+                rng.random_range(5.0..80.0),
+                rng.random_range(-3.0..3.0),
+                rng.random_range(0.0..6.3),
+            );
+            let l2 = lep(
+                rng.random_range(5.0..80.0),
+                rng.random_range(-3.0..3.0),
+                rng.random_range(0.0..6.3),
+            );
+            let (px, py) = (-(l1.px() + l2.px()), -(l1.py() + l2.py()));
+            let pt = (px * px + py * py).sqrt();
+            let y: f64 = rng.random_range(-4.0..4.0);
+            let j = V::new(pt * y.cosh(), px, py, pt * y.sinh());
+            let (e, pz) = (l1.e() + l2.e() + j.e(), l1.pz() + l2.pz() + j.pz());
+            let b1 = V::new((e + pz) / 2.0, 0.0, 0.0, (e + pz) / 2.0);
+            let b2 = V::new((e - pz) / 2.0, 0.0, 0.0, -(e - pz) / 2.0);
+            if cuts.pass(&[b1, b2, l1, l2, j]) {
+                accepted += 1;
+                let shat = e * e - pz * pz;
+                assert!(
+                    shat >= etot * etot,
+                    "ŝ = {shat} below the τ floor {}",
+                    etot * etot
+                );
+            }
+        }
+        assert!(accepted > 1000, "only {accepted} accepted points");
     }
 
     #[test]

@@ -18,6 +18,10 @@ bench-internals = []
 # swept over the orders without a rebuild. A study hook: without it the module is not
 # compiled and the evaluator emits arena order. Never enable in normal builds.
 eval-schedule-study = []
+# Reads and writes the forward pass's arenas through `get_unchecked`, to measure what
+# the bounds checks cost. A study hook: the only `unsafe` in the evaluator, compiled out
+# of every build without it. Never enable in normal builds.
+unchecked-study = []
 
 [lints]
 workspace = true
@@ -45,6 +49,9 @@ zstd = "0.13"
 strum = { version = "0.28.0", features = ["derive"] }
 egglog = "2.0.0"
 ordered-float = "5"
+# Dense linear algebra for the reweighting polynomial: a column-pivoted QR picks
+# well-conditioned interpolation nodes and an LU solve turns them into weights.
+nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 # The regularised incomplete gamma function, which the chi-squared p-value is:
 # a dependency-free special-function crate rather than a hand-rolled series.
 puruspe = "0.4"
@@ -70,6 +77,13 @@ tracing = "0.1"
 criterion = "0.5"
 libm = "0.2"
 libtest-mimic = "0.7"
+# The finite-field reconstruction study (tests/finite_field_msq.rs): word-sized
+# modular arithmetic, a primality test to pick its primes, and the big integers
+# Chinese remaindering lifts the residues into. Versions are the ones the
+# dependency graph already resolves `num-modular` to.
+num-bigint = "0.4"
+num-modular = "0.5"
+num-prime = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # The validation gates read one flag out of validation/manifest.toml — which rows
 # the pinned reference bundle carries. Same version the report collator parses it
@@ -164,6 +178,10 @@ required-features = ["extended-validation"]
 
 [[test]]
 name = "validate_kt_cluster"
+required-features = ["extended-validation"]
+
+[[test]]
+name = "validate_mlm_dumps"
 required-features = ["extended-validation"]
 
 [[test]]

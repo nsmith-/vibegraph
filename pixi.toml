@@ -82,6 +82,11 @@ validate = { cmd = "bash validation/validate.sh", depends-on = [
 ] }
 # The collator alone, over whatever the last `validate` left behind.
 validation-report = "cargo run --profile release-debug -p vibegraph-validation-report"
+# Reweighting, focused: the hermetic MadGraph-reweight comparison on its banked
+# events (informational), and the banked audit of every hadronic event's
+# reweighting denominator against the integrand that drew it. Both also run
+# inside `validate`.
+validate-reweight = { cmd = "cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture && cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_reweight_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "fetch-refdata"] }
 
 # The 2 -> 6 sigma rows, measured in the long tier against the same bank through
 # the same driver as every other cross section. What puts them here is the
@@ -221,6 +226,10 @@ generate-decay-chain-events = "bash validation/madgraph/gen_decay_chain_events.s
 generate-onshell-veto = "bash validation/madgraph/gen_onshell_veto.sh"
 # MadEvent cross sections for `> A`, `$$ A` and polarized W rows, one run per seed
 generate-grammar-sigma = "bash validation/madgraph/gen_grammar_sigma.sh"
+# MLM-matched references (ickkw = 1 / xqcut): per-seed MadEvent runs of the five
+# MLM rows, the instrumented replay of each row's samples-grade run, and the
+# jet-memo / IPROC censuses. MLM_STAGE=runs|dumps|census runs one stage.
+generate-mlm-references = { cmd = "bash validation/madgraph/gen_mlm_references.sh", depends-on = ["fetch-pdf"] }
 # MadGraph standalone per-helicity, per-flow JAMPs for every standalone table;
 # the SMEFTsim row reads the models build.sh stages
 generate-standalone-jamps = { cmd = "python validation/madgraph/gen_standalone_jamps.py all", depends-on = ["build-diagrams"] }
@@ -244,6 +253,14 @@ validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile release-debug
 # and its own event sample. Runs under --profile release-debug.
 validate-generate-proton = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
+# Run MadGraph's reweight module on vibegraph's own events and bank its weights
+# event by event (validation/madgraph/reweight_mg_reference.json); also prints the
+# comparison over every generated event. Needs gfortran and numpy's f2py.
+generate-reweight-oracle = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/gen_reweight_oracle.py", depends-on = ["init-sm-submodule", "fetch-pdf", "fetch-refdata"] }
+# Time `generate --reweight-card` against MadGraph's reweight module on the rows
+# generate-reweight-oracle leaves in its work area; prints a per-row summary
+# (research/notes/reweight-vs-madgraph-results.md records one run).
+bench-reweight = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/bench_reweight.py", depends-on = ["init-sm-submodule", "fetch-pdf", "fetch-refdata"] }
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
 # Replay the banked runs through a clustering-instrumented MadGraph and bank the
 # per-event kT-clustering history behind dynamical_scale_choice = -1. Each replay
@@ -254,6 +271,21 @@ generate-kt-cluster-dumps = { cmd = "bash validation/madgraph/gen_kt_cluster_dum
 # intermediates. The dumps are 75 MB and outside the reference bundle, which is
 # why this is `--ignored` in the banked suite and run here instead.
 validate-kt-cluster = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_kt_cluster -- --ignored --nocapture", depends-on = ["generate-kt-cluster-dumps"] }
+# Oracle layer: the matched and pure-cut scale path against MadEvent's own
+# per-event dump of both setclscales calls (mlm_dump_manifest.json), and the
+# jet memo against the census of every job. The dumps and the MLM runs are
+# outside the reference bundle; generate-mlm-references makes them.
+validate-mlm-dumps = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_mlm_dumps -- --ignored --nocapture --test-threads 1", depends-on = ["fetch-pdf"] }
+# Oracle layer: a matched vibegraph sample's event record (the share of events
+# listing the Z, the share whose jet sits at the collider energy) against the
+# banked MadEvent pp_to_llj_mlm run (in the reference bundle from refdata-9).
+validate-mlm-samples = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --ignored --nocapture matched_sample_record_fractions_against_madevent", depends-on = ["fetch-pdf"] }
+# Long tier: sigma of the five MLM rows against MadEvent's seeds, read under the
+# seed policy on both sides -- the llj rows (pure cut at xqcut = 20, matched,
+# matched at alpsfact = 2), and the two mixed-multiplicity rows per @N and in
+# total through the composite integrand (pp_to_ll_0j2j_mlm against its 21
+# independent directories, pp_to_ttx_0j1j_mlm measured and reported).
+validate-mlm-sigma = { cmd = "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_hadronic -- --ignored --nocapture sigma_llj_xqcut_only_vs_madevent sigma_llj_mlm sigma_ll_0j2j_mlm_vs_madevent sigma_ttx_0j1j_mlm_vs_madevent", depends-on = ["fetch-pdf"] }
 # Build the LHAPDF C++ oracle and dump the committed reference values for both
 # grid shapes (one rectangular subgrid; two bands joined at a seam)
 generate-pdf-oracle = { cmd = "bash validation/pdf/gen_oracle.sh", depends-on = ["fetch-pdf", "fetch-pdf-multigrid"] }
@@ -263,12 +295,12 @@ validate-pdf-grid = { cmd = "cargo test -p vibegraph-lib --features extended-val
 
 
 # The oracle layer's reference generation: one entry point over every generator,
-# staged deps -> madgraph -> seeds -> refs -> bundle. The MadGraph work area is the cache
+# staged deps -> madgraph -> seeds -> mlm -> refs -> bundle. The MadGraph work area is the cache
 # — an existing process directory is never rebuilt — while the extractions, which
 # are cheap and pure functions of it, always rerun so a reference that moved
 # shows up as a diff. Pass stage names to run a subset:
 #
-#   pixi run generate-references              # all five stages
+#   pixi run generate-references              # all six stages
 #   pixi run generate-references refs bundle  # re-extract and re-archive
 #
 # The per-stage scripts survive as internals; what is consolidated here is the
@@ -316,6 +348,19 @@ generate-pythia-samples = { cmd = "bash validation/pythia/generate_samples.sh", 
 validate-pythia = { cmd = "python validation/pythia/consume.py", depends-on = [
     "generate-pythia-samples",
 ] }
+# The matched pp_to_ll_0j2j_mlm samples, vibegraph's side: twenty integrations
+# and 10000-event samples at the row's sigma budget (about seven minutes a seed
+# on two cores).
+generate-mlm-pythia-samples = { cmd = "bash validation/pythia/generate_mlm_samples.sh", depends-on = [
+    "fetch-pdf",
+] }
+# MadEvent's banked runs of the matched row (the samples-grade run and the
+# independent directories its sigma reference is read from) and vibegraph's
+# samples through one Pythia kT-MLM configuration (MadGraph's own driving), ten
+# Pythia seeds: acceptance per @N, merged sigma and the jet rates d01, d12, d23,
+# compared. Informational, oracle layer: it reads the banked MadEvent runs and
+# the samples above, and regenerates neither.
+validate-mlm-pythia = "python validation/pythia/mlm_match.py"
 
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]

@@ -546,19 +546,16 @@ impl Diagram {
     ///   initial–initial case and by `u d > e+ e- u d QCD=0`, whose 35 diagrams split on
     ///   whether a *mixed* quark line carries the propagator, for the mixed case.
     ///
-    ///   **A line whose every bilinear is Dirac-matrix-free takes none of it.**
-    ///   `C Γᵀ C⁻¹` is `Γ` itself for `Identity`, `Gamma5` and the bare chiral
-    ///   projectors, so a line built only from those — a chain of Yukawa-type vertices,
-    ///   with no `Gamma` and no `Sigma` anywhere on it — reverses into itself and carries
-    ///   no propagator sign at all. Measured on `qt qt~ > o8 o8` in the toy colour model,
-    ///   whose s-channel (no fermion propagator) and t/u-channel (one) diagrams must
-    ///   enter the JAMPs with the *same* sign to reproduce MadGraph's `|M|²`. A line that
-    ///   carries a Dirac matrix anywhere keeps the propagator count, including the mixed
-    ///   gauge/Yukawa case: the `b` line of `b b~ > c c~ e+ e- mu+ mu- QCD=0`, one photon
-    ///   vertex and one `b b~ H` vertex across one propagator, is bit-for-bit against
-    ///   MadGraph only with the −1. Which vertex on a mixed line owns which factor is not
-    ///   resolved by any oracle in the suite — every measured case is decided by the
-    ///   all-or-nothing form.
+    ///   The factor does not depend on what the vertices are. A chain of Yukawa-type
+    ///   vertices takes it exactly as a gauge line does: the tau line of
+    ///   `ta+ ta- > t t~ h` that radiates a Higgs and then annihilates into another,
+    ///   and the same lines of `ta+ ta- > t t~ h h`, are bit-for-bit against MadGraph's
+    ///   per-diagram `AMP()` only with the −1, as is the mixed gauge/Yukawa `b` line of
+    ///   `b b~ > c c~ e+ e- mu+ mu- QCD=0` (one photon and one `b b~ H` vertex across
+    ///   one propagator). The toy model's `qt qt~ > o8 o8` agrees with it too: its
+    ///   s-channel runs through an all-scalar cubic vertex, whose own scalar-sink −1
+    ///   (the evaluator's `LorentzEvalTree::build_at_leg`) balances the t/u-channel
+    ///   propagator's.
     /// * A **crossed** line — both ends final-state, kept in the all-incoming
     ///   (conjugate-wavefunction) representation — is read *along* its arrow at every
     ///   vertex, so it takes no per-propagator factor; its single −1 is the operator
@@ -568,32 +565,14 @@ impl Diagram {
     ///   propagator on the crossed lepton line and one on a mixed quark line must give
     ///   opposite signs.
     ///
-    /// Both arms read only the lines themselves — their ends, their propagator count and
-    /// what their vertices carry — so this is a property of the diagram, not of how it
-    /// is rooted or numbered.
+    /// Both arms read only the lines themselves — their ends and their propagator count —
+    /// so this is a property of the diagram, not of how it is rooted or numbered.
     pub fn fermion_line_sign(&self, model: &UFOModel) -> i8 {
-        let carries_dirac_matrix = |v: VtxIdx| {
-            use crate::ufo::lorentz::LorentzOp;
-            let vertex = self.vertex(v);
-            let def = model.vertex_def(vertex.interaction);
-            crate::ufo::topo::flow_groups(def, &model.lorentz)
-                .swap_remove(vertex.flow_group)
-                .lorentz
-                .iter()
-                .any(|&pos| {
-                    model.lorentz_struct(def.lorentz[pos]).expr.iter().any(|t| {
-                        t.ops.iter().any(|op| {
-                            matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })
-                        })
-                    })
-                })
-        };
         let mut sign = 1i8;
         for line in self.fermion_lines(model) {
             let crossed = line.legs.iter().all(|l| l.0 >= self.n_in);
             let propagators = line.vertices.len() - 1;
-            let flip = crossed
-                || (propagators % 2 == 1 && line.vertices.iter().any(|&v| carries_dirac_matrix(v)));
+            let flip = crossed || propagators % 2 == 1;
             if flip {
                 sign = -sign;
             }

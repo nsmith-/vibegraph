@@ -75,6 +75,8 @@
 //! change of variables are documented on the type.
 
 use std::cell::{Cell, RefCell};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -87,7 +89,8 @@ use crate::artifact::ChannelSampler;
 use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceReport, StopSignal};
 use crate::coupling::alphas::AlphaSSource;
 use crate::coupling::cluster::graph::ChannelSet;
-use crate::coupling::scales::{ClosedForms, EventScales, ScaleError};
+use crate::coupling::cluster::rewgt::{rewgt, RewgtHistory};
+use crate::coupling::scales::{ClosedForms, EventScales, MatchedRecord, ScaleError};
 use crate::cuts::{cut_class, CutError, Cuts, ExternalLeg, ForcedResonances};
 use crate::diagrams::diagram::Diagram;
 use crate::diagrams::DiagramSet;
@@ -98,8 +101,9 @@ use crate::hadronic::{
     boost_z, channel_diagrams, compile_class, compile_configuration_weights, compile_scale_source,
     components, constant_scale_report, initial_spin_color_average, make_subs_scale_aware,
     process_external_legs, refuse_polarized_frame, report_channel_maps, BoundSubprocess,
-    ChannelIntegration, EventScaleSource, HadronicError, PointScales, RunningCouplingReport,
-    SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED, VEGAS_ALPHA_MAPPED,
+    ChannelIntegration, EventScaleSource, HadronicError, PointHistory, PointScales,
+    RunningCouplingReport, SampledChannel, SubprocessProto, SCALE_PROBE_DRAWS, SCALE_PROBE_SEED,
+    VEGAS_ALPHA_MAPPED,
 };
 use crate::helas::color::flow_tags::{ColorFlowTags, LegColor};
 use crate::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -109,6 +113,7 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
+use crate::phasespace::diagram_channel::MapIdentity;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
@@ -229,6 +234,10 @@ pub enum BeamOrdering {
 /// cut filter, differing only in the parton-distribution luminosity they carry.
 pub struct FlavorGroup {
     representative: DiagramSet,
+    /// Per member, parallel to `members`: its own diagrams. The members share one
+    /// `|M|²` at the card's parameters, which is what grouped them; at other
+    /// parameters each is its own process again.
+    member_sets: Vec<DiagramSet>,
     evaluator: AmplitudeEvaluator,
     legs: Vec<ExternalLeg>,
     cuts: Cuts,
@@ -253,6 +262,38 @@ fn ordering_slot(ordering: BeamOrdering) -> usize {
     match ordering {
         BeamOrdering::Direct => 0,
         BeamOrdering::Exchanged => 1,
+    }
+}
+
+/// One ordering's symmetry-weighted luminosity, `Σ_i S_i · L_i^o`, with each
+/// member's term multiplied by its matched reweighting factor where there is one.
+fn term_luminosity(
+    g: &FlavorGroup,
+    rows: &[FlavorRow; 2],
+    ordering: BeamOrdering,
+    rewgt: Option<&[f64]>,
+) -> f64 {
+    let slot = ordering_slot(ordering);
+    let Some(factors) = rewgt else {
+        return g.symmetry_weighted_luminosity_rows(&rows[0], &rows[1])[slot];
+    };
+    g.members()
+        .iter()
+        .zip(factors)
+        .enumerate()
+        .map(|(i, (member, factor))| {
+            member.symmetry_factor()
+                * g.member_luminosity_rows(i, &rows[0], &rows[1])[slot]
+                * factor
+        })
+        .sum()
+}
+
+/// An event's per-member reweighting factors for group `gi`, per ordering.
+fn rewgt_of(event: &ProtonEvent, gi: usize) -> [Option<&[f64]>; 2] {
+    match event.group_rewgt.get(gi) {
+        Some([direct, mirrored]) => [direct.as_deref(), mirrored.as_deref()],
+        None => [None, None],
     }
 }
 
@@ -292,6 +333,12 @@ impl FlavorGroup {
     /// phase-space channels are derived from.
     pub fn diagrams(&self) -> &[Diagram] {
         &self.representative.diagrams
+    }
+
+    /// Member `i`'s own diagrams, its legs in the positions of the
+    /// representative's.
+    pub fn member_diagram_set(&self, i: usize) -> &DiagramSet {
+        &self.member_sets[i]
     }
 
     /// The representative subprocess's enumerated particle names.
@@ -684,6 +731,25 @@ fn report_alpha_spread(variance_shares: &[f64], alphas: &[f64]) {
     );
 }
 
+/// What the map rule reads off the channels [`ProtonIntegrand`] builds for
+/// `groups` at collider energy `sqrt_s_had`: every group's channel diagrams, under
+/// the first group's cuts, which every group shares.
+pub fn process_shape(
+    groups: &FlavorGroups,
+    model: &EvaluatedModel,
+    sqrt_s_had: f64,
+) -> ProcessShape {
+    ProcessShape::of(
+        groups
+            .groups()
+            .iter()
+            .flat_map(|g| channel_diagrams(g.diagrams(), model)),
+        model,
+        sqrt_s_had,
+        groups.groups()[0].cuts(),
+    )
+}
+
 /// Partition a hadronic enumeration into flavour groups.
 ///
 /// `sets` are the `DiagramSet`s of one proc card (empty ones ignored), `card` the
@@ -870,6 +936,10 @@ pub fn derive_flavor_groups(
                 })
             })
             .collect::<Result<Vec<_>, ProtonError>>()?;
+        let member_sets = indices
+            .iter()
+            .map(|&i| sets[i].clone().expect("member unclaimed"))
+            .collect();
         let (evaluator, legs, cuts) = compiled[head].take().expect("group head unclaimed");
         let spin_color_avg = initial_spin_color_average(&evaluator, model, evaluated);
         let member_slots = members
@@ -889,6 +959,7 @@ pub fn derive_flavor_groups(
             .collect();
         groups.push(FlavorGroup {
             representative: sets[head].take().expect("group head unclaimed"),
+            member_sets,
             evaluator,
             legs,
             cuts,
@@ -1079,6 +1150,16 @@ pub struct ProtonEvent {
     /// clustered in its own group's configurations, at the momenta its own
     /// matrix element is evaluated at.
     pub group_scales: Vec<[Option<EventScales>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, the matched
+    /// reweighting factor (`rewgt`) of each member of the group, in member order;
+    /// `None` without matching, where every factor is `1`, and where the term
+    /// carries no weight.
+    pub group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
+    /// Per flavour group and beam ordering, `[direct, mirrored]`, what the event
+    /// record reads of the term's matched clustering (`ptclus` and the on-shell
+    /// propagators); `None` without matching and where the term carries no
+    /// weight.
+    pub group_records: Vec<[Option<MatchedRecord>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1123,6 +1204,16 @@ pub struct ProtonSelection {
     /// The scales the drawn group's term was evaluated at — the event's own
     /// `SCALUP` and the argument of its `AQCDUP`.
     pub scales: EventScales,
+    /// Under matching, what the record reads of the drawn term's clustering,
+    /// in the group representative's leg order with the drawn ordering's beams
+    /// in place (the clustering of a mirrored term sees its own first parton on
+    /// the first beam); `None` without matching.
+    pub record: Option<MatchedRecord>,
+    /// The drawn group's `|M|²` under the drawn ordering, as this integrand
+    /// evaluated it for the point's value, at the term's own coupling: what any
+    /// other evaluation of the event's member at the model's own parameters, at
+    /// the same momenta and ordering, must reproduce.
+    pub m2: f64,
 }
 
 /// A VEGAS point's outer coordinates, mapped to the partonic system.
@@ -1199,7 +1290,12 @@ pub struct ProtonIntegrand<'a> {
     /// The one cut filter every group compiles to.
     cuts: &'a Cuts,
     combiner: ScaledMultiChannel<f64>,
+    /// Per sampling channel, the first `(group, diagram)` pair its map was built
+    /// from — the channel's name.
     channel_ids: Vec<ChannelId>,
+    /// Per sampling channel, every `(group, diagram)` pair whose map is this
+    /// channel's ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)), in derivation order.
+    channel_members: Vec<Vec<ChannelId>>,
     /// What the composition rule chose for each channel, read off the channel as
     /// it was built and kept because the built channels are type-erased behind
     /// [`ScaledChannel`] afterwards.
@@ -1229,6 +1325,9 @@ pub struct ProtonIntegrand<'a> {
     /// Per-group draws whose `AMP2` carried no probability at all, where the draw
     /// kept the group's fallback channel instead.
     scale_draw_fallbacks: AtomicU64,
+    /// The mean of the mixture estimator `f/g` over the last α-survey — that
+    /// survey's estimate of the cross section — and zero before any survey.
+    survey_mean: f64,
     /// Per flavour group, the channel forests MadEvent's enhancement weight is a
     /// product over, where the run card makes that weight something other than the
     /// squared amplitude. `None` leaves every configuration draw on `AMP2`.
@@ -1274,6 +1373,12 @@ struct ProtonScratch<'a> {
     /// The last evaluated point's scales, per flavour group
     /// ([`ProtonEvent::group_scales`]).
     group_scales: RefCell<Vec<[Option<EventScales>; 2]>>,
+    /// The last evaluated point's matched reweighting factors
+    /// ([`ProtonEvent::group_rewgt`]).
+    group_rewgt: RefCell<Vec<[Option<Vec<f64>>; 2]>>,
+    /// The last evaluated point's matched record fields
+    /// ([`ProtonEvent::group_records`]).
+    group_records: RefCell<Vec<[Option<MatchedRecord>; 2]>>,
     /// The lab-frame momenta of the mirrored ordering's physical event, in the
     /// orientation the group's matrix element reads them in.
     lab_mirror_buf: RefCell<Vec<V>>,
@@ -1299,6 +1404,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// Every group's diagrams contribute a channel and all of them are pooled into
     /// one mixture, so a peak one group's own diagrams do not cover — the mirrored
     /// `g q` configuration above all — is still covered by another group's.
+    /// Diagrams whose maps are the same function
+    /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)),
+    /// within a group or across groups, share one channel at their summed
+    /// selection weight: a point's value does not depend on which of them drew it.
     ///
     /// The peripheral channels are floored at [`Cuts::spacelike_floor`], the scale
     /// the process's own transverse-momentum cuts imply. The floor is passed because
@@ -1321,6 +1430,7 @@ impl<'a> ProtonIntegrand<'a> {
             sqrt_s_had,
             mu_f,
             true,
+            true,
             MapOptions::default(),
         )
     }
@@ -1338,7 +1448,28 @@ impl<'a> ProtonIntegrand<'a> {
         mu_f: f64,
         maps: MapOptions,
     ) -> Result<Self, ProtonError> {
-        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, maps)
+        Self::build(groups, amps, model, pdf, sqrt_s_had, mu_f, true, true, maps)
+    }
+
+    /// [`new_with_maps`](Self::new_with_maps) with one sampling channel per
+    /// `(group, diagram)` pair, identical maps left unmerged.
+    ///
+    /// Production merges. This builds the mixture the merge collapses, whose
+    /// density is the same function at the same `αⱼ` sums, so the merge can be
+    /// measured and pinned against it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_unmerged_with_maps(
+        groups: &'a FlavorGroups,
+        amps: &'a [BoundAmplitude<'a, f64>],
+        model: &EvaluatedModel,
+        pdf: &'a PdfMember,
+        sqrt_s_had: f64,
+        mu_f: f64,
+        maps: MapOptions,
+    ) -> Result<Self, ProtonError> {
+        Self::build(
+            groups, amps, model, pdf, sqrt_s_had, mu_f, true, false, maps,
+        )
     }
 
     /// The maps this integrand samples under, every choice settled — what an
@@ -1369,6 +1500,7 @@ impl<'a> ProtonIntegrand<'a> {
             sqrt_s_had,
             mu_f,
             false,
+            true,
             MapOptions::default(),
         )
     }
@@ -1382,6 +1514,7 @@ impl<'a> ProtonIntegrand<'a> {
         sqrt_s_had: f64,
         mu_f: f64,
         bound_transfer: bool,
+        merge_maps: bool,
         map_options: MapOptions,
     ) -> Result<Self, ProtonError> {
         if amps.len() != groups.groups().len() {
@@ -1402,15 +1535,7 @@ impl<'a> ProtonIntegrand<'a> {
             }
         }
 
-        let shape = ProcessShape::of(
-            groups
-                .groups()
-                .iter()
-                .flat_map(|g| channel_diagrams(g.diagrams(), model)),
-            model,
-            sqrt_s_had,
-            cuts,
-        );
+        let shape = process_shape(groups, model, sqrt_s_had);
         let maps = map_options.resolve(&shape);
         tracing::info!(
             "phase-space maps: {} ({} soft-emission splits, chains of up to {} rungs)",
@@ -1420,7 +1545,9 @@ impl<'a> ProtonIntegrand<'a> {
         );
         let mut channels: Vec<Box<dyn ScaledChannel<f64>>> = Vec::new();
         let mut channel_ids = Vec::new();
+        let mut channel_members: Vec<Vec<ChannelId>> = Vec::new();
         let mut channel_samplers = Vec::new();
+        let mut by_identity: HashMap<MapIdentity, usize> = HashMap::new();
         for (gi, g) in groups.groups().iter().enumerate() {
             for (di, d) in channel_diagrams(g.diagrams(), model)
                 .into_iter()
@@ -1435,16 +1562,52 @@ impl<'a> ProtonIntegrand<'a> {
                 } else {
                     channel.without_transfer_bound()
                 };
-                channel_samplers.push(ChannelSampler::of(&channel));
-                channels.push(Box::new(channel));
-                channel_ids.push(ChannelId {
+                let id = ChannelId {
                     group: gi,
                     channel: di,
-                });
+                };
+                // Two pairs whose maps are one function share one channel: the
+                // point's value never reads which pair drew it, so the mixture
+                // density is the same at the summed weight, and the one grid
+                // pays one coverage floor instead of one per pair.
+                if merge_maps {
+                    match by_identity.entry(channel.map_identity()) {
+                        Entry::Occupied(slot) => {
+                            channel_members[*slot.get()].push(id);
+                            continue;
+                        }
+                        Entry::Vacant(slot) => {
+                            slot.insert(channels.len());
+                        }
+                    }
+                }
+                channel_samplers.push(ChannelSampler::of(&channel));
+                channels.push(Box::new(channel));
+                channel_ids.push(id);
+                channel_members.push(vec![id]);
             }
         }
 
         report_channel_maps(&channel_samplers);
+        let pairs: usize = channel_members.iter().map(Vec::len).sum();
+        if pairs != channels.len() {
+            tracing::info!(
+                "{} (group, diagram) channels share {} distinct phase-space maps",
+                pairs,
+                channels.len()
+            );
+        }
+        // Each channel starts at its pairs' share, so the mixture density is the
+        // unmerged uniform one.
+        let mut combiner = ScaledMultiChannel::uniform(channels);
+        if pairs != combiner.channels().len() {
+            combiner.set_alphas(
+                channel_members
+                    .iter()
+                    .map(|m| m.len() as f64 / pairs as f64)
+                    .collect(),
+            );
+        }
 
         let n_out = groups.groups()[0].final_masses().len();
         let s_had = sqrt_s_had * sqrt_s_had;
@@ -1454,8 +1617,9 @@ impl<'a> ProtonIntegrand<'a> {
             groups,
             pdf,
             cuts,
-            combiner: ScaledMultiChannel::uniform(channels),
+            combiner,
             channel_ids,
+            channel_members,
             channel_samplers,
             s_had,
             sqrt_s_had,
@@ -1468,6 +1632,7 @@ impl<'a> ProtonIntegrand<'a> {
             amp2_len: 0,
             amp2_alpha_s: None,
             scale_draw_fallbacks: AtomicU64::new(0),
+            survey_mean: 0.0,
             vegas_alpha: VEGAS_ALPHA_MAPPED,
             config_weights: None,
             alpha_s_dependent: false,
@@ -1509,6 +1674,8 @@ impl<'a> ProtonIntegrand<'a> {
                 last_coupling: Cell::new((f64::NAN, f64::NAN)),
                 amp2_buf: RefCell::new(vec![0.0; self.amp2_len]),
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
+                group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 lab_mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 vetoed: bind_vetoes(&self.vetoes),
             }
@@ -1618,6 +1785,11 @@ impl<'a> ProtonIntegrand<'a> {
         // Every pooled sampling channel has to name a channel of its own group's
         // forests: that pairing is the whole of how a drawn channel reaches the
         // cluster scale, and it is an index into a set built elsewhere.
+        // The matched reweighting divides by `αs(μR)` and multiplies by `αs` at
+        // each vertex's own scale, whatever the matrix element is made of.
+        if source.rewgt_settings().is_some() && source.alpha_s().is_none() {
+            return Err(HadronicError::MissingAlphaS.into());
+        }
         if let Some(sets) = source.channels() {
             assert_eq!(sets.len(), self.groups.groups().len());
             for id in &self.channel_ids {
@@ -1713,10 +1885,17 @@ impl<'a> ProtonIntegrand<'a> {
         &self.channel_samplers
     }
 
-    /// Which diagram of which group each sampling channel came from, in channel
-    /// order — the key a per-channel grid is banked under.
+    /// Which diagram of which group each sampling channel was first built from,
+    /// in channel order — the name a per-channel grid is banked under.
     pub fn channel_ids(&self) -> &[ChannelId] {
         &self.channel_ids
+    }
+
+    /// Every `(group, diagram)` pair each sampling channel's map serves, in
+    /// channel order: one pair unless several pairs' maps are the same function
+    /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)).
+    pub fn channel_members(&self) -> &[Vec<ChannelId>] {
+        &self.channel_members
     }
 
     /// The partonic system the outer coordinates `u[0], u[1]` map to — the `(τ, y)`
@@ -1729,8 +1908,8 @@ impl<'a> ProtonIntegrand<'a> {
         self.map_point(u)
     }
 
-    /// The channels the integral is split across: one per diagram of every group,
-    /// pooled into a single mixture.
+    /// The channels the integral is split across: one per distinct map among the
+    /// diagrams of every group, pooled into a single mixture.
     pub fn channel_count(&self) -> usize {
         self.combiner.channels().len()
     }
@@ -1793,6 +1972,11 @@ impl<'a> ProtonIntegrand<'a> {
             self.scale_draw_ndim()
         );
         u.split_at(grid_ndim)
+    }
+
+    /// The damping exponent every channel's grid is built with.
+    pub fn vegas_alpha(&self) -> f64 {
+        self.vegas_alpha
     }
 
     /// The flavour groups this integrand sums.
@@ -1873,7 +2057,7 @@ impl<'a> ProtonIntegrand<'a> {
         sc: &ProtonScratch<'a>,
         m: &OuterPoint,
         out: &[V],
-        channel: SampledChannel,
+        channel: usize,
         scale_u: &[f64],
     ) -> f64 {
         self.build_frames(sc, m, out);
@@ -1887,7 +2071,7 @@ impl<'a> ProtonIntegrand<'a> {
         let acc = if self.scales.draws_configuration() {
             self.per_group_sum(sc, m, &cm, channel, scale_u)
         } else {
-            self.shared_scale_sum(sc, m, &cm, channel)
+            self.shared_scale_sum(sc, m, &cm, self.sampled_channel(channel))
         };
         if acc == 0.0 {
             return 0.0;
@@ -1917,6 +2101,12 @@ impl<'a> ProtonIntegrand<'a> {
             let mut out = sc.group_scales.borrow_mut();
             out.clear();
             out.resize(n_groups, [scales, scales]);
+            let mut factors = sc.group_rewgt.borrow_mut();
+            factors.clear();
+            factors.resize(n_groups, [None, None]);
+            let mut records = sc.group_records.borrow_mut();
+            records.clear();
+            records.resize(n_groups, [None, None]);
         }
         let Some(scales) = scales else {
             return 0.0;
@@ -1953,15 +2143,16 @@ impl<'a> ProtonIntegrand<'a> {
     /// draws share the uniform, which correlates them without changing any one
     /// term's distribution, and the sum is linear in each term.
     ///
-    /// The sampling channel reaches only its own group's direct term, and only as
-    /// the draw's fallback where `AMP2` carries no probability; every other term
-    /// falls back to its group's first configuration.
+    /// The sampling channel reaches only the direct terms of the groups whose
+    /// diagrams it was built from, and only as the draw's fallback where `AMP2`
+    /// carries no probability, where that group's own diagram of the channel is
+    /// kept; every other term falls back to its group's first configuration.
     fn per_group_sum(
         &self,
         sc: &ProtonScratch<'a>,
         m: &OuterPoint,
         cm: &[V],
-        channel: SampledChannel,
+        channel: usize,
         scale_u: &[f64],
     ) -> f64 {
         let &[v] = scale_u else {
@@ -1969,6 +2160,10 @@ impl<'a> ProtonIntegrand<'a> {
         };
         let mut out = sc.group_scales.borrow_mut();
         out.clear();
+        let mut factors = sc.group_rewgt.borrow_mut();
+        factors.clear();
+        let mut records = sc.group_records.borrow_mut();
+        records.clear();
         let mut rows: Option<([f64; 2], [FlavorRow; 2])> = None;
         let mut rows_at = |mu_f: [f64; 2]| match rows {
             Some((at, r)) if at == mu_f => r,
@@ -1981,18 +2176,17 @@ impl<'a> ProtonIntegrand<'a> {
         let mut acc = 0.0;
         let mut mirror = sc.mirror_buf.borrow_mut();
         for (gi, (g, sub)) in self.groups.groups().iter().zip(&sc.subs).enumerate() {
-            let fallback = if gi == channel.group {
-                channel
-            } else {
-                SampledChannel {
-                    group: gi,
-                    channel: 0,
-                }
+            let fallback = SampledChannel {
+                group: gi,
+                channel: self.channel_members[channel]
+                    .iter()
+                    .find(|id| id.group == gi)
+                    .map_or(0, |id| id.channel),
             };
             let direct = {
                 let drawn = self.scale_channel(sc, cm, fallback, v);
                 let lab = sc.lab_buf.borrow();
-                self.scales_at(sc, &lab, drawn)
+                self.term_at(sc, &lab, drawn)
             };
             let mirrored = if g.has_mirror() {
                 g.mirror_into(cm, &mut mirror);
@@ -2010,36 +2204,127 @@ impl<'a> ProtonIntegrand<'a> {
                 mirror_lab_into(&lab, &mut lab_mirror);
                 // Clustered with the beams exchanged, so its per-beam
                 // factorisation scales come back in that order.
-                self.scales_at(sc, &lab_mirror, drawn).map(|s| EventScales {
-                    mu_r: s.mu_r,
-                    mu_f: [s.mu_f[1], s.mu_f[0]],
-                })
+                self.term_at(sc, &lab_mirror, drawn)
+                    .map(|(s, history, record)| {
+                        (
+                            EventScales {
+                                mu_f: [s.mu_f[1], s.mu_f[0]],
+                                mu_f_record: [s.mu_f_record[1], s.mu_f_record[0]],
+                                ..s
+                            },
+                            history,
+                            record,
+                        )
+                    })
             } else {
                 None
             };
+            // The matched reweighting of each member, per ordering. The mirrored
+            // clustering puts the representative's first parton on its first
+            // beam, which is the physical second one.
+            let direct_rewgt = direct.as_ref().and_then(|(_, history, _)| {
+                history
+                    .as_ref()
+                    .map(|h| self.member_rewgts(gi, g, h, [m.x1, m.x2], BeamOrdering::Direct))
+            });
+            let mirrored_rewgt = mirrored.as_ref().and_then(|(_, history, _)| {
+                history
+                    .as_ref()
+                    .map(|h| self.member_rewgts(gi, g, h, [m.x2, m.x1], BeamOrdering::Exchanged))
+            });
+            let (direct, direct_record) = direct.map_or((None, None), |(s, _, r)| (Some(s), r));
+            let (mirrored, mirrored_record) =
+                mirrored.map_or((None, None), |(s, _, r)| (Some(s), r));
             out.push([direct, mirrored]);
+            records.push([direct_record, mirrored_record]);
             // A term whose factorisation scale fell below the floor carries no
             // weight, and the densities are not read there.
             let mut term = 0.0;
             if let Some(scales) = direct {
-                let [f1, f2] = rows_at(scales.mu_f);
-                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                let f = rows_at(scales.mu_f);
+                let lumi = term_luminosity(g, &f, BeamOrdering::Direct, direct_rewgt.as_deref());
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, cm);
                 }
             }
             if let Some(scales) = mirrored {
-                let [f1, f2] = rows_at(scales.mu_f);
-                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&f1, &f2);
+                let f = rows_at(scales.mu_f);
+                let lumi =
+                    term_luminosity(g, &f, BeamOrdering::Exchanged, mirrored_rewgt.as_deref());
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term += lumi * vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &mirror);
                 }
             }
+            factors.push([direct_rewgt, mirrored_rewgt]);
             acc += g.spin_color_average() * term;
         }
         acc
+    }
+
+    /// Each member's matched reweighting factor for one beam ordering of group
+    /// `gi`, from the clustering that ordering's term was scaled in.
+    ///
+    /// `rewgt` reads the flavours of the one combination MadEvent drew for the
+    /// point; here every member carries its own factor, weighted by its own
+    /// luminosity, which is that draw's expectation. A member with no mirrored
+    /// ordering carries no luminosity there and takes `1` unread.
+    ///
+    /// # Panics
+    ///
+    /// Where `reweight.f` stops the run: a colour structure `ipartupdate` does
+    /// not name.
+    fn member_rewgts(
+        &self,
+        gi: usize,
+        g: &FlavorGroup,
+        history: &RewgtHistory,
+        x: [f64; 2],
+        ordering: BeamOrdering,
+    ) -> Vec<f64> {
+        let settings = self
+            .scales
+            .rewgt_settings()
+            .expect("a clustering history is returned only under matching");
+        let colors = self
+            .scales
+            .channels()
+            .expect("matching clusters every event")[gi]
+            .colors();
+        let alpha_s = self
+            .scales
+            .alpha_s()
+            .expect("matching is installed only with a running coupling");
+        let mut flavours: Vec<i64> = Vec::with_capacity(history.n_external);
+        g.members()
+            .iter()
+            .enumerate()
+            .map(|(i, member)| {
+                if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
+                    return 1.0;
+                }
+                flavours.clear();
+                flavours.extend(
+                    member
+                        .incoming
+                        .iter()
+                        .chain(&member.outgoing)
+                        .map(|&c| i64::from(c)),
+                );
+                rewgt(
+                    history,
+                    colors,
+                    &settings,
+                    &flavours,
+                    x,
+                    |q| alpha_s.eval(q),
+                    |pdg, x, q2| self.pdf.xfx_q2(pdg as i32, x, q2),
+                )
+                .unwrap_or_else(|e| panic!("matched reweighting on a sampled point: {e}"))
+                .weight
+            })
+            .collect()
     }
 
     /// One group's `avg_g · (L_g^direct |M_g(q)|² + L_g^mirror |M_g(Rq)|²)` at the
@@ -2172,8 +2457,33 @@ impl<'a> ProtonIntegrand<'a> {
         }
     }
 
+    /// [`scales_at`](Self::scales_at), with the clustering the matched
+    /// reweighting reads where matching is on.
+    fn term_at(
+        &self,
+        sc: &ProtonScratch<'a>,
+        lab: &[V],
+        channel: SampledChannel,
+    ) -> Option<(EventScales, Option<RewgtHistory>, Option<MatchedRecord>)> {
+        let mut buf = sc.scale_buf.borrow_mut();
+        buf.clear();
+        buf.extend(lab[2..].iter().map(components));
+        match self
+            .scales
+            .point_history([components(&lab[0]), components(&lab[1])], &buf, channel)
+            .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
+        {
+            PointHistory::Scales {
+                scales,
+                rewgt,
+                record,
+            } => Some((scales, rewgt, record)),
+            PointHistory::Vetoed => None,
+        }
+    }
+
     /// The pooled sampling channel `j` as the scale prescription names it: the
-    /// flavour group it was built for, and its channel inside that group.
+    /// first flavour group it was built for, and its channel inside that group.
     fn sampled_channel(&self, j: usize) -> SampledChannel {
         let id = self.channel_ids[j];
         SampledChannel {
@@ -2248,13 +2558,7 @@ impl<'a> ProtonIntegrand<'a> {
         let point = self
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
-        let shape = self.shape(
-            self.scratch(),
-            &m,
-            &point.momenta,
-            self.sampled_channel(channel),
-            scale_u,
-        );
+        let shape = self.shape(self.scratch(), &m, &point.momenta, channel, scale_u);
         if shape == 0.0 {
             return 0.0;
         }
@@ -2288,13 +2592,7 @@ impl<'a> ProtonIntegrand<'a> {
             .combiner
             .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
         let sc = self.scratch();
-        let shape = self.shape(
-            sc,
-            &m,
-            &point.momenta,
-            self.sampled_channel(channel),
-            scale_u,
-        );
+        let shape = self.shape(sc, &m, &point.momenta, channel, scale_u);
         if shape == 0.0 {
             return None;
         }
@@ -2302,6 +2600,8 @@ impl<'a> ProtonIntegrand<'a> {
             weight: shape * self.channel_weight(channel, &m, &point.momenta),
             x: [m.x1, m.x2],
             group_scales: sc.group_scales.borrow().clone(),
+            group_rewgt: sc.group_rewgt.borrow().clone(),
+            group_records: sc.group_records.borrow().clone(),
             lab: sc.lab_buf.borrow().clone(),
             cm: sc.cm_buf.borrow().clone(),
         })
@@ -2362,12 +2662,13 @@ impl<'a> ProtonIntegrand<'a> {
             // Each ordering's diagonal is read at its own coupling and densities,
             // the ones its term of the point's value was taken at.
             let [direct_scales, mirrored_scales] = event.group_scales[gi];
+            let [direct_rewgt, mirrored_rewgt] = rewgt_of(event, gi);
             let mut term_m2 = [0.0; 2];
             let mut rows = [no_rows; 2];
             let mut term = 0.0;
             if let Some(scales) = direct_scales {
                 rows[0] = rows_at(scales.mu_f);
-                let [lumi, _] = g.symmetry_weighted_luminosity_rows(&rows[0][0], &rows[0][1]);
+                let lumi = term_luminosity(g, &rows[0], BeamOrdering::Direct, direct_rewgt);
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     term_m2[0] = vetoed_m2(vetoed_of(&sc.vetoed, gi), sub, &event.cm);
@@ -2376,7 +2677,7 @@ impl<'a> ProtonIntegrand<'a> {
             }
             if let Some(scales) = mirrored_scales {
                 rows[1] = rows_at(scales.mu_f);
-                let [_, lumi] = g.symmetry_weighted_luminosity_rows(&rows[1][0], &rows[1][1]);
+                let lumi = term_luminosity(g, &rows[1], BeamOrdering::Exchanged, mirrored_rewgt);
                 if lumi != 0.0 {
                     self.apply_scale_to(sc, sub, scales.mu_r);
                     g.mirror_into(&event.cm, &mut mirror);
@@ -2394,7 +2695,9 @@ impl<'a> ProtonIntegrand<'a> {
 
         // One categorical draw over the group's `(member, ordering)` terms: the
         // matrix element is common to the members, so within an ordering this is the
-        // luminosity share times the member's own identical-particle factor.
+        // luminosity share times the member's own identical-particle factor, and
+        // under matching times its own reweighting factor.
+        let [direct_rewgt, mirrored_rewgt] = rewgt_of(event, group);
         let weights: Vec<f64> = g
             .members()
             .iter()
@@ -2404,7 +2707,14 @@ impl<'a> ProtonIntegrand<'a> {
                 let [direct, _] = g.member_luminosity_rows(i, &direct_rows[0], &direct_rows[1]);
                 let [_, mirrored] =
                     g.member_luminosity_rows(i, &mirrored_rows[0], &mirrored_rows[1]);
-                [s * direct * m2[group][0], s * mirrored * m2[group][1]]
+                let r = [direct_rewgt, mirrored_rewgt].map(|f| f.map_or(1.0, |f| f[i]));
+                match (direct_rewgt, mirrored_rewgt) {
+                    (None, None) => [s * direct * m2[group][0], s * mirrored * m2[group][1]],
+                    _ => [
+                        s * direct * r[0] * m2[group][0],
+                        s * mirrored * r[1] * m2[group][1],
+                    ],
+                }
             })
             .collect();
         let picked = select_index(&weights, u[1])?;
@@ -2453,7 +2763,8 @@ impl<'a> ProtonIntegrand<'a> {
             let outgoing: Vec<[f64; 4]> = event.cm[2..].iter().map(components).collect();
             table.mask_unadmitted(&mut amp2, &outgoing);
         }
-        let color = eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]])?;
+        let color =
+            eval.select_config_and_flow(&amp2, &jamp2, [u[3], u[4]], scales.clustered_config)?;
 
         Some(ProtonSelection {
             group,
@@ -2464,6 +2775,8 @@ impl<'a> ProtonIntegrand<'a> {
             config: color.config,
             leading: color.leading,
             scales,
+            record: event.group_records[group][ordering_slot(ordering)].clone(),
+            m2: m2[group][ordering_slot(ordering)],
         })
     }
 
@@ -2490,7 +2803,7 @@ impl<'a> ProtonIntegrand<'a> {
             self.scratch(),
             &m,
             &point.momenta,
-            self.sampled_channel(j),
+            j,
             &u[self.channel_grid_ndim() + 1..],
         );
         if shape == 0.0 {
@@ -2531,7 +2844,8 @@ impl<'a> ProtonIntegrand<'a> {
         let mut trajectory = vec![self.channel_alphas()];
         let mut variance_shares = vec![0.0; self.channel_count()];
         for it in 0..n_iter {
-            let w = self.survey_variance(seed, ADAPT_STREAM + it as u64, n_survey);
+            let (w, mean) = self.survey_variance(seed, ADAPT_STREAM + it as u64, n_survey);
+            self.survey_mean = mean;
             variance_shares = w.clone();
             let Some(raw) = kleiss_pittau_step(self.combiner.alphas(), &w, damping) else {
                 tracing::debug!("survey iteration {} carried no variance; stopping", it + 1);
@@ -2566,12 +2880,16 @@ impl<'a> ProtonIntegrand<'a> {
     /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
     /// hundreds of megabytes, so the partials are summed per chunk instead. That
     /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.
-    fn survey_variance(&self, seed: u64, stream: u64, n_survey: usize) -> Vec<f64> {
+    ///
+    /// The mean of `f/g` over the same points comes back beside the shares, from
+    /// a slot of its own in each chunk's partial, so it leaves the shares' sums
+    /// untouched.
+    fn survey_variance(&self, seed: u64, stream: u64, n_survey: usize) -> (Vec<f64>, f64) {
         let n = self.channel_count();
         let ndim = self.channel_grid_ndim() + 1;
         let scale_ndim = self.scale_draw_ndim();
         let nchunks = n_survey.div_ceil(SURVEY_CHUNK);
-        let partials: Vec<Vec<f64>> = (0..nchunks)
+        let partials: Vec<(Vec<f64>, f64)> = (0..nchunks)
             .into_par_iter()
             .map(|chunk| {
                 let first = chunk * SURVEY_CHUNK;
@@ -2587,6 +2905,7 @@ impl<'a> ProtonIntegrand<'a> {
                 );
                 let sc = self.scratch();
                 let mut w = vec![0.0; n];
+                let mut est_sum = 0.0;
                 let mut scale_u = vec![0.0; scale_ndim];
                 let mut densities = Vec::with_capacity(n);
                 for _ in 0..points {
@@ -2597,8 +2916,7 @@ impl<'a> ProtonIntegrand<'a> {
                         self.combiner
                             .draw_in_channel_at(j, m.sqrt_shat, &u[OUTER_NDIM + 1..]);
                     scale_draw.fill_uniforms(&mut scale_u);
-                    let shape =
-                        self.shape(sc, &m, &point.momenta, self.sampled_channel(j), &scale_u);
+                    let shape = self.shape(sc, &m, &point.momenta, j, &scale_u);
                     // A point the cuts reject adds zero to every `Wⱼ`, so the
                     // mixture density — one evaluation per channel — is formed only
                     // for points that carry something.
@@ -2621,25 +2939,35 @@ impl<'a> ProtonIntegrand<'a> {
                     if est == 0.0 {
                         continue;
                     }
+                    est_sum += est;
                     let est2 = est * est;
                     for (wj, gj) in w.iter_mut().zip(&densities) {
                         *wj += est2 * gj / g;
                     }
                 }
-                w
+                (w, est_sum)
             })
             .collect();
         let mut w = vec![0.0; n];
-        for partial in &partials {
+        let mut est_sum = 0.0;
+        for (partial, partial_sum) in &partials {
             for (wj, pj) in w.iter_mut().zip(partial) {
                 *wj += pj;
             }
+            est_sum += partial_sum;
         }
         let inv = 1.0 / n_survey as f64;
         for wj in &mut w {
             *wj *= inv;
         }
-        w
+        (w, est_sum * inv)
+    }
+
+    /// The mean of the mixture estimator `f/g` over the last α-survey
+    /// ([`adapt_alphas`](Self::adapt_alphas)): that survey's estimate of the
+    /// cross section in natural units, and zero before any survey.
+    pub fn survey_mean(&self) -> f64 {
+        self.survey_mean
     }
 
     /// Run one VEGAS adaptation per channel, returning each channel's trained grid and
@@ -2708,7 +3036,7 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
         ProtonIntegrand::channel_count(self)
     }
 
-    fn channel_grid_ndim(&self) -> usize {
+    fn channel_grid_ndim(&self, _channel: usize) -> usize {
         ProtonIntegrand::channel_grid_ndim(self)
     }
 
@@ -2753,6 +3081,37 @@ mod tests {
             MU_F,
             MapOptions::fixed(MapChoices::LEGACY),
         )
+    }
+
+    /// The survey's mean is the mean of the undivided mixture estimator
+    /// ([`ProtonIntegrand::value`]) over the survey's own points, drawn here in
+    /// sequence off the same stream under the weights the survey starts from.
+    /// Only the summation order differs, which the survey splits into chunks.
+    #[test]
+    fn the_survey_mean_is_the_mixture_estimator_s_mean_over_its_points() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = llj_card();
+        let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+            .expect("flavour groups");
+        let amps = bind_all(&groups, &evaluated);
+        let pdf = probe_pdf();
+        let mut integ = legacy_integrand(&groups, &amps, &evaluated, &pdf).expect("integrand");
+        let (seed, n) = (0x5EED_3, 3_000);
+        let ndim = integ.vegas_ndim();
+        let mut stream = SubStream::new(seed, ADAPT_STREAM, 0);
+        let mean = (0..n)
+            .map(|_| integ.value(&stream.uniforms::<f64>(ndim)))
+            .sum::<f64>()
+            / n as f64;
+        assert_eq!(integ.survey_mean(), 0.0);
+        integ.adapt_alphas(seed, n, 1, 0.5);
+        let rel = integ.survey_mean() / mean - 1.0;
+        assert!(
+            mean > 0.0 && rel.abs() < 1e-12,
+            "{} against {mean}",
+            integ.survey_mean()
+        );
     }
 
     /// Both `τ` maps carry the Jacobian their draw implies: the flat average of
@@ -3629,8 +3988,9 @@ mod tests {
             .collect()
     }
 
-    /// Every diagram of every group becomes a channel, they are pooled into one
-    /// mixture, and the peripheral ones are regulated at the scale the cuts imply.
+    /// Every diagram of every group is served by a channel, the six groups' 24
+    /// pairs share six distinct maps, they are pooled into one mixture, and the
+    /// peripheral ones are regulated at the scale the cuts imply.
     ///
     /// The scale is what *builds* those channels: at scale zero the same diagrams
     /// give an all-timelike tree, which is why it is passed rather than defaulted.
@@ -3650,9 +4010,10 @@ mod tests {
         let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
             .expect("integrand");
 
-        assert_eq!(integ.channel_count(), 24);
+        assert_eq!(integ.channel_count(), 6);
         assert_eq!(integ.channel_grid_ndim(), 2 + 5);
-        let ids: Vec<ChannelId> = integ.channel_ids().to_vec();
+        let ids: Vec<ChannelId> = integ.channel_members().concat();
+        assert_eq!(ids.len(), 24);
         for (g, group) in groups.groups().iter().enumerate() {
             for d in 0..channel_diagrams(group.diagrams(), &evaluated).len() {
                 assert!(ids.contains(&ChannelId {
@@ -3702,9 +4063,10 @@ mod tests {
         assert_eq!(samplers.len(), integ.channel_count());
         let mut spines = 0;
         let mut resonant = 0;
-        let mut k = 0;
-        for g in groups.groups() {
-            for d in g.diagrams() {
+        for (k, members) in integ.channel_members().iter().enumerate() {
+            for id in members {
+                let g = &groups.groups()[id.group];
+                let d = &channel_diagrams(g.diagrams(), &evaluated)[id.channel];
                 let built = DiagramChannel::<f64>::from_diagram_regulated(
                     d,
                     &evaluated,
@@ -3735,15 +4097,230 @@ mod tests {
                 } else {
                     assert_eq!(pole.width, 0.0);
                 }
-                k += 1;
             }
         }
         assert_eq!(spines, floored);
         assert!(
-            resonant > 0 && resonant < samplers.len(),
+            resonant > 0 && resonant < ids.len(),
             "the summary reports the same pole on every channel, so it cannot be \
              distinguishing the Z exchange from the photon"
         );
+    }
+
+    /// The llj card matched at `xqcut = 20`, which rewrites `ptj`, `mmjj`, `drjj`
+    /// and `drjl` as MadEvent does.
+    fn matched_llj_card() -> RunCard {
+        RunCard::parse(
+            "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+         \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+         \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+         \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n\
+         \x20 1 = ickkw\n  20.0 = xqcut\n",
+        )
+        .expect("matched run card")
+    }
+
+    /// Each pair's production channel, rebuilt as [`ProtonIntegrand::build`]
+    /// builds it, keyed by the pair.
+    fn built_pairs(
+        groups: &FlavorGroups,
+        evaluated: &EvaluatedModel,
+    ) -> Vec<(ChannelId, DiagramChannel<f64>)> {
+        let cuts = groups.groups()[0].cuts();
+        let maps = MapOptions::default().resolve(&process_shape(groups, evaluated, SQRT_S_HAD));
+        let mut out = Vec::new();
+        for (gi, g) in groups.groups().iter().enumerate() {
+            for (di, d) in channel_diagrams(g.diagrams(), evaluated)
+                .into_iter()
+                .enumerate()
+            {
+                out.push((
+                    ChannelId {
+                        group: gi,
+                        channel: di,
+                    },
+                    maps.channel(d, evaluated, SQRT_S_HAD, cuts),
+                ));
+            }
+        }
+        out
+    }
+
+    /// The merge key is identity of the function, measured rather than read off
+    /// the structure: across every pair of `p p > l+ l- j`'s and `p p > l+ l- j j`'s
+    /// channels, two with equal map identities draw bit-identical momenta and
+    /// weights from the same uniforms and give bit-identical densities at points
+    /// drawn from every channel, while two with different identities differ in
+    /// density at some of those points. The integrand's channels are exactly the
+    /// identity classes, in first-appearance order.
+    #[test]
+    fn pairs_with_equal_map_identities_draw_and_weigh_every_point_alike() {
+        use rand::Rng;
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let pdf = probe_pdf();
+        for (process, card, n_pairs, n_maps) in [
+            (LLJ, llj_card(), 24, 6),
+            ("p p > e+ e- j j", matched_llj_card(), 336, 36),
+        ] {
+            let groups = derive_flavor_groups(enumerate(process, &m), &m, &evaluated, &card)
+                .expect("flavour groups");
+            let built = built_pairs(&groups, &evaluated);
+            assert_eq!(built.len(), n_pairs, "{process}");
+            let ids: Vec<MapIdentity> = built.iter().map(|(_, c)| c.map_identity()).collect();
+
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x5EED_F8);
+            let ndim = built[0].1.ndim();
+            let draws: Vec<(f64, Vec<f64>)> = (0..24)
+                .map(|_| {
+                    let sqrt_s = 150.0 + 1850.0 * rng.random::<f64>();
+                    (sqrt_s, (0..ndim).map(|_| rng.random::<f64>()).collect())
+                })
+                .collect();
+            // Points from every channel's own draw, so each density is read where
+            // some channel puts its weight.
+            let points: Vec<(f64, Vec<V>)> = built
+                .iter()
+                .flat_map(|(_, c)| {
+                    draws
+                        .iter()
+                        .take(3)
+                        .map(|(e, u)| (*e, c.sample_at(*e, u).momenta))
+                })
+                .collect();
+            let densities: Vec<Vec<u64>> = built
+                .iter()
+                .map(|(_, c)| {
+                    points
+                        .iter()
+                        .map(|(e, p)| c.density_at(*e, p).to_bits())
+                        .collect()
+                })
+                .collect();
+            let (mut same, mut apart) = (0usize, 0usize);
+            for a in 0..built.len() {
+                for b in a + 1..built.len() {
+                    if ids[a] == ids[b] {
+                        same += 1;
+                        assert_eq!(densities[a], densities[b], "{process} {a} {b}");
+                        for (e, u) in &draws {
+                            let (pa, pb) =
+                                (built[a].1.sample_at(*e, u), built[b].1.sample_at(*e, u));
+                            assert_eq!(pa.weight.to_bits(), pb.weight.to_bits());
+                            for (x, y) in pa.momenta.iter().zip(&pb.momenta) {
+                                assert_eq!(
+                                    [x.e(), x.px(), x.py(), x.pz()].map(f64::to_bits),
+                                    [y.e(), y.px(), y.py(), y.pz()].map(f64::to_bits)
+                                );
+                            }
+                        }
+                    } else {
+                        apart += 1;
+                        assert_ne!(
+                            densities[a], densities[b],
+                            "{process}: channels {a} and {b} have different identities \
+                             and the same density everywhere probed"
+                        );
+                    }
+                }
+            }
+            eprintln!("{process}: {same} equal pairs, {apart} distinct pairs");
+
+            let amps = bind_all(&groups, &evaluated);
+            let integ = ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                .expect("integrand");
+            assert_eq!(integ.channel_count(), n_maps, "{process}");
+            let mut classes: Vec<(MapIdentity, Vec<ChannelId>)> = Vec::new();
+            for ((id, _), key) in built.iter().zip(&ids) {
+                match classes.iter_mut().find(|(k, _)| k == key) {
+                    Some((_, members)) => members.push(*id),
+                    None => classes.push((key.clone(), vec![*id])),
+                }
+            }
+            let want: Vec<Vec<ChannelId>> = classes.into_iter().map(|(_, m)| m).collect();
+            assert_eq!(integ.channel_members(), want.as_slice(), "{process}");
+            let alphas = integ.channel_alphas();
+            for (a, members) in alphas.iter().zip(&want) {
+                assert_eq!(*a, members.len() as f64 / n_pairs as f64);
+            }
+        }
+    }
+
+    /// A merged channel's term is the sum of the unmerged terms it replaces, at
+    /// the same uniforms, on a matched card whose every point clusters each
+    /// group's term in a configuration drawn from its own `AMP2`: the value never
+    /// reads which pair drew the point, and the mixture density is the same
+    /// function at the summed weight. Agreement is to the rounding of the two
+    /// density sums, which group their terms differently.
+    #[test]
+    fn a_merged_channel_is_the_sum_of_the_unmerged_terms_it_replaces() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let card = matched_llj_card();
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        let groups =
+            derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card).expect("groups");
+        let amps = bind_all(&groups, &evaluated);
+        let build = |merge: bool| {
+            let mut integ = if merge {
+                ProtonIntegrand::new_with_maps(
+                    &groups,
+                    &amps,
+                    &evaluated,
+                    &pdf,
+                    SQRT_S_HAD,
+                    MU_F,
+                    MapOptions::default(),
+                )
+            } else {
+                ProtonIntegrand::new_unmerged_with_maps(
+                    &groups,
+                    &amps,
+                    &evaluated,
+                    &pdf,
+                    SQRT_S_HAD,
+                    MU_F,
+                    MapOptions::default(),
+                )
+            }
+            .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+                .expect("the matched prescription compiles");
+            integ
+        };
+        let (merged, unmerged) = (build(true), build(false));
+        assert_eq!((merged.channel_count(), unmerged.channel_count()), (6, 24));
+        assert_eq!(merged.point_ndim(), unmerged.point_ndim());
+        let mut stream = SubStream::from_stream(0x5EED_F8, 3);
+        let (mut nonzero, mut worst) = (0usize, 0.0f64);
+        for _ in 0..600 {
+            let u = stream.uniforms::<f64>(merged.point_ndim());
+            for (k, members) in merged.channel_members().iter().enumerate() {
+                let lhs = merged.value_in_channel(k, &u);
+                let rhs: f64 = members
+                    .iter()
+                    .map(|id| {
+                        let j = unmerged
+                            .channel_ids()
+                            .iter()
+                            .position(|x| x == id)
+                            .expect("every pair is an unmerged channel");
+                        unmerged.value_in_channel(j, &u)
+                    })
+                    .sum();
+                if lhs == 0.0 {
+                    assert_eq!(rhs, 0.0);
+                    continue;
+                }
+                nonzero += 1;
+                worst = worst.max(((lhs - rhs) / rhs).abs());
+            }
+        }
+        eprintln!("{nonzero} nonzero terms, worst relative difference {worst:.1e}");
+        assert!(nonzero > 300, "{nonzero}");
+        assert!(worst < 1e-12, "{worst:e}");
     }
 
     /// The model's own particle id for the Z, so the summary's poles are compared
@@ -3823,6 +4400,15 @@ mod tests {
         for trial in 0..400 {
             let u = stream.uniforms::<f64>(integ.point_ndim());
             let channel = trial % integ.channel_count();
+            // The oracle's mixture is one uniform channel per pair; a merged
+            // channel is its first pair's map at its pairs' summed weight.
+            let members = &integ.channel_members()[channel];
+            let first = members[0];
+            let pair = groups.groups()[..first.group]
+                .iter()
+                .map(|g| g.diagrams().len())
+                .sum::<usize>()
+                + first.channel;
 
             let tau = tau_min.powf(1.0 - u[0]);
             let y_max = -0.5 * tau.ln();
@@ -3831,7 +4417,7 @@ mod tests {
             let sqrt_shat = (tau * SQRT_S_HAD * SQRT_S_HAD).sqrt();
             let jac = (1.0 / tau_min).ln() * 2.0 * y_max;
 
-            let point = combiner.sample_channel_at(channel, sqrt_shat, &u[2..]);
+            let point = combiner.sample_channel_at(pair, sqrt_shat, &u[2..]);
             let e_cm = sqrt_shat / 2.0;
             let mut cm = vec![V::new(e_cm, 0.0, 0.0, e_cm), V::new(e_cm, 0.0, 0.0, -e_cm)];
             cm.extend_from_slice(&point.momenta);
@@ -3867,7 +4453,7 @@ mod tests {
                     acc += g.spin_color_average() * term;
                 }
                 let flux = 1.0 / (2.0 * sqrt_shat * sqrt_shat);
-                jac * flux * lips_2pi * acc * point.weight
+                jac * flux * lips_2pi * acc * point.weight * members.len() as f64
             };
 
             let got = integ.value_in_channel(channel, &u);
@@ -4162,6 +4748,152 @@ mod tests {
             assert_eq!(got[j].neval, n_j, "channel {j} budget");
             for (dim, (a, b)) in got[j].grid.xi().iter().zip(grid.xi()).enumerate() {
                 assert_eq!(a, b, "channel {j} grid edges of dim {dim}");
+            }
+        }
+    }
+
+    /// Under matching every term of a point carries each member's own `rewgt`,
+    /// computed from the clustering its ordering was scaled in, with the
+    /// ordering's own beam momentum fractions: `[x₁, x₂]` for the direct term and
+    /// `[x₂, x₁]` for the mirrored one, whose clustering has the
+    /// representative's first parton on its first beam. Without matching no
+    /// term carries one.
+    #[test]
+    fn matched_terms_carry_each_member_s_own_reweighting() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let base = "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n";
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+        for ickkw in [0, 1] {
+            let card = RunCard::parse(&format!("{base}  {ickkw} = ickkw\n  20.0 = xqcut\n"))
+                .expect("matched run card");
+            let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+                .expect("flavour groups");
+            let amps = bind_all(&groups, &evaluated);
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+                .expect("the matched prescription compiles");
+            let settings = integ.scales.rewgt_settings();
+            assert_eq!(settings.is_some(), ickkw == 1);
+            let mut stream = SubStream::from_stream(0x5EED_4D, 11);
+            let (mut events, mut nontrivial, mut recomputed) = (0usize, 0usize, 0usize);
+            let mut order_sensitive = 0usize;
+            for trial in 0..40_000 {
+                if events == 8 {
+                    break;
+                }
+                let u = stream.uniforms::<f64>(integ.point_ndim());
+                let channel = trial % integ.channel_count();
+                let Some(event) = integ.event_in_channel(channel, &u) else {
+                    continue;
+                };
+                events += 1;
+                assert_eq!(event.group_rewgt.len(), groups.groups().len());
+                let v = u[integ.point_ndim() - 1];
+                for (gi, g) in groups.groups().iter().enumerate() {
+                    for (slot, ordering) in [BeamOrdering::Direct, BeamOrdering::Exchanged]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let factors = &event.group_rewgt[gi][slot];
+                        if ickkw == 0 || event.group_scales[gi][slot].is_none() {
+                            assert!(factors.is_none());
+                            continue;
+                        }
+                        let factors = factors.as_ref().expect("a matched term is reweighted");
+                        assert_eq!(factors.len(), g.members().len());
+                        // The clustering the term was scaled in, drawn and
+                        // clustered again from the event's own momenta.
+                        let sc = integ.scratch();
+                        let (argument, lab, fallback, x) = match ordering {
+                            BeamOrdering::Direct => (
+                                event.cm.clone(),
+                                event.lab.clone(),
+                                SampledChannel {
+                                    group: gi,
+                                    channel: integ.channel_members()[channel]
+                                        .iter()
+                                        .find(|id| id.group == gi)
+                                        .map_or(0, |id| id.channel),
+                                },
+                                event.x,
+                            ),
+                            BeamOrdering::Exchanged => {
+                                let (mut cm, mut lab) = (Vec::new(), Vec::new());
+                                g.mirror_into(&event.cm, &mut cm);
+                                mirror_lab_into(&event.lab, &mut lab);
+                                (
+                                    cm,
+                                    lab,
+                                    SampledChannel {
+                                        group: gi,
+                                        channel: 0,
+                                    },
+                                    [event.x[1], event.x[0]],
+                                )
+                            }
+                        };
+                        let drawn = integ.scale_channel(sc, &argument, fallback, v);
+                        let (_, history, _) = integ.term_at(sc, &lab, drawn).expect("scaled");
+                        let history = history.expect("matched");
+                        let colors = integ.scales.channels().expect("channels")[gi].colors();
+                        let source = integ.scales.alpha_s().expect("running coupling");
+                        for (i, (&factor, member)) in factors.iter().zip(g.members()).enumerate() {
+                            assert!(factor.is_finite() && factor >= 0.0);
+                            if ordering == BeamOrdering::Exchanged && !g.member_slots[i].mirrored {
+                                assert_eq!(factor, 1.0);
+                                continue;
+                            }
+                            let flavours: Vec<i64> = member
+                                .incoming
+                                .iter()
+                                .chain(&member.outgoing)
+                                .map(|&c| i64::from(c))
+                                .collect();
+                            let want = rewgt(
+                                &history,
+                                colors,
+                                settings.as_ref().expect("matched"),
+                                &flavours,
+                                x,
+                                |q| source.eval(q),
+                                |pdg, x, q2| pdf.xfx_q2(pdg as i32, x, q2),
+                            )
+                            .expect("reweights");
+                            assert_eq!(factor.to_bits(), want.weight.to_bits());
+                            recomputed += 1;
+                            // The momentum fractions in the other order give a
+                            // different factor, so the match above pins the order.
+                            let swapped = rewgt(
+                                &history,
+                                colors,
+                                settings.as_ref().expect("matched"),
+                                &flavours,
+                                [x[1], x[0]],
+                                |q| source.eval(q),
+                                |pdg, x, q2| pdf.xfx_q2(pdg as i32, x, q2),
+                            )
+                            .expect("reweights");
+                            order_sensitive += usize::from(swapped.weight != want.weight);
+                            nontrivial += usize::from(factor != 1.0);
+                        }
+                    }
+                }
+            }
+            assert_eq!(events, 8, "too few points inside the cuts");
+            if ickkw == 1 {
+                assert!(recomputed > 0);
+                assert!(order_sensitive > 0, "no factor depends on the beam order");
+            }
+            if ickkw == 1 {
+                assert!(nontrivial > 0, "every matched factor was exactly one");
             }
         }
     }
@@ -4765,7 +5497,7 @@ mod tests {
         let [adapted, adapted_err] = mixture_estimate(&integ, 30_000, 0x9E77_0001);
 
         let alphas = integ.channel_alphas();
-        assert_eq!(alphas.len(), 24);
+        assert_eq!(alphas.len(), 6);
         assert_eq!(alphas.len(), report.variance_shares.len());
         let spread = alphas.iter().fold(0.0f64, |a, &x| a.max(x))
             / alphas.iter().fold(f64::INFINITY, |a, &x| a.min(x));

@@ -48,6 +48,11 @@ mod lanes;
 mod layout;
 mod lower;
 mod op;
+// Per-event operation count (an op-counting scalar field) and arena-traffic census of
+// the forward pass: the inputs to a roofline reading of the evaluator. Study
+// instrumentation, test-only.
+#[cfg(test)]
+mod roofline;
 // Per-event strong coupling: `ScaleAwareAmplitude` owns a bound amplitude's constant
 // pools and moves them to another `alpha_s`, either by scaling the tagged powers of `G`
 // or by re-evaluating the model.

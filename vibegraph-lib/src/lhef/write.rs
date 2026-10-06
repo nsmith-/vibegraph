@@ -18,6 +18,7 @@ use super::parse::{
 };
 use super::record::{BlockSource, LheEvent, LheInit, LheParticle, LheProcess};
 use super::LHE_VERSION;
+use crate::runcard::{ParamValue, RunCard};
 
 /// A C `%[+]w.pe` conversion.
 ///
@@ -262,6 +263,101 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
     String::from_utf8(writer.into_inner()).expect("the generator element is ASCII")
 }
 
+/// The `<MGRunCard>` element MadGraph puts in an event file's header
+/// (`banner.py:69-86`): the run card, one `value = name` line per parameter,
+/// as MadGraph records it ([`RunCard::banner_values`]).
+///
+/// The body is element text, with `<`, `>` and `&` escaped, and not the CDATA
+/// section MadGraph wraps it in: Pythia 8.312's reader drops a CDATA
+/// section's content, so
+/// `Info::header("MGRunCard")` of MadGraph's own file is empty and
+/// `JetMatching:setMad = on` finds none of its parameters there. Plain text is
+/// the spelling it reads.
+///
+/// A shower reads it back: Pythia's `JetMatching:setMad = on` takes `ickkw`,
+/// `xqcut`, `maxjetflavor` and `alpsfact` from it, parsing each line as a
+/// number to the left of the first `=` and a name up to a `!`, and skipping any
+/// line holding a `#`. Every parameter the card resolves is written once,
+/// under the name this crate knows it by; a real is written in its shortest
+/// round-tripping form with a decimal point (`20.0`), a flag as `True` or
+/// `False`, and a list or string as its text; a parameter whose value is
+/// empty (an unset list) is left out.
+pub fn mg_run_card(card: &RunCard) -> String {
+    let mut body = String::from("\n");
+    for (name, value) in card.banner_values() {
+        let text = match value {
+            ParamValue::Float(x) => format!("{x:?}"),
+            ParamValue::Int(i) => i.to_string(),
+            ParamValue::Bool(true) => "True".to_string(),
+            ParamValue::Bool(false) => "False".to_string(),
+            ParamValue::Str(s) | ParamValue::Opaque(s) => s.clone(),
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        body.push_str(&format!("  {text} = {name}\n"));
+    }
+    let mut writer = Writer::new(Vec::new());
+    for event in [
+        XmlEvent::Start(BytesStart::new("MGRunCard")),
+        XmlEvent::Text(BytesText::from_escaped("\n")),
+        // `<`, `>` and `&` only: a reader that does not unescape (Pythia's
+        // does not) then sees every other character as the card spells it.
+        XmlEvent::Text(BytesText::from_escaped(quick_xml::escape::partial_escape(
+            &body,
+        ))),
+        XmlEvent::Text(BytesText::from_escaped("\n")),
+        XmlEvent::End(BytesEnd::new("MGRunCard")),
+    ] {
+        writer
+            .write_event(event)
+            .expect("writing to a Vec cannot fail");
+    }
+    String::from_utf8(writer.into_inner()).expect("a run card is text")
+}
+
+/// The `<initrwgt>` block declaring a file's reweighting weights, one line per
+/// entry, in the layout MadGraph's reweight module writes: one `<weightgroup>`
+/// holding a `<weight id='…'>` per hypothesis, its description as the text.
+///
+/// The ids go into attributes unescaped, so they must be attribute-safe; the
+/// descriptions are escaped.
+pub fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
+    let mut lines = vec![
+        "<initrwgt>".to_string(),
+        "<weightgroup name='mg_reweighting' weight_name_strategy='includeIdInWeightName'>"
+            .to_string(),
+    ];
+    for (id, info) in weights {
+        lines.push(format!(
+            "<weight id='{id}'> {} </weight>",
+            quick_xml::escape::escape(info.as_str())
+        ));
+    }
+    lines.push("</weightgroup>".to_string());
+    lines.push("</initrwgt>".to_string());
+    lines
+}
+
+/// One event's `<rwgt>` block: the event's weight under each hypothesis, in
+/// `XWGTUP`'s own units, as `<wgt id='…'>` lines. Empty when there are none.
+pub fn rwgt_block(ids: &[String], weights: &[f64]) -> Vec<String> {
+    assert_eq!(ids.len(), weights.len(), "one weight per declared id");
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = Vec::with_capacity(ids.len() + 2);
+    lines.push("<rwgt>".to_string());
+    for (id, &w) in ids.iter().zip(weights) {
+        lines.push(format!(
+            "<wgt id='{id}'> {} </wgt>",
+            c_exponential(w, 7, true, 0)
+        ));
+    }
+    lines.push("</rwgt>".to_string());
+    lines
+}
+
 /// Streaming writer for a whole file: root tag, header, `<init>`, then events one
 /// at a time.
 ///
@@ -281,7 +377,19 @@ impl<W: Write> LheWriter<W> {
     /// `header` is embedded as an XML comment inside `<header>`; the accord leaves
     /// that block free-form and consumers ignore it, so it is where a run's
     /// provenance goes.
-    pub fn begin(mut out: W, init: &LheInit, header: Option<&str>) -> io::Result<Self> {
+    pub fn begin(out: W, init: &LheInit, header: Option<&str>) -> io::Result<Self> {
+        Self::begin_with_blocks(out, init, header, &[])
+    }
+
+    /// [`begin`](Self::begin), with `blocks` — complete XML elements such as
+    /// [`mg_run_card`]'s — written inside `<header>` after the comment, each on
+    /// its own line.
+    pub fn begin_with_blocks(
+        mut out: W,
+        init: &LheInit,
+        header: Option<&str>,
+        blocks: &[String],
+    ) -> io::Result<Self> {
         {
             let mut writer = Writer::new(&mut out);
             let mut root = BytesStart::new("LesHouchesEvents");
@@ -298,6 +406,10 @@ impl<W: Write> LheWriter<W> {
                 // document well-formed and the provenance readable.
                 let body = format!("\n{}\n", header.replace("--", "- -"));
                 events.push(XmlEvent::Comment(BytesText::from_escaped(body)));
+                events.push(XmlEvent::Text(BytesText::from_escaped("\n")));
+            }
+            for block in blocks {
+                events.push(XmlEvent::Text(BytesText::from_escaped(block.as_str())));
                 events.push(XmlEvent::Text(BytesText::from_escaped("\n")));
             }
             events.push(XmlEvent::End(BytesEnd::new("header")));
@@ -341,6 +453,50 @@ impl<W: Write> LheWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reweight_markup_has_madgraphs_layout() {
+        let ids = vec!["a".to_string(), "b_2".to_string()];
+        assert_eq!(
+            rwgt_block(&ids, &[1.5, -2.0e-12]),
+            [
+                "<rwgt>",
+                "<wgt id='a'> +1.5000000e+00 </wgt>",
+                "<wgt id='b_2'> -2.0000000e-12 </wgt>",
+                "</rwgt>"
+            ]
+        );
+        assert!(rwgt_block(&[], &[]).is_empty());
+        let block = initrwgt_block(&[("a".to_string(), "set ymt 1 & <more>".to_string())]);
+        assert_eq!(
+            block[2],
+            "<weight id='a'> set ymt 1 &amp; &lt;more&gt; </weight>"
+        );
+    }
+
+    /// Header blocks are markup a reader walks past, and the events still parse.
+    #[test]
+    fn header_blocks_leave_the_file_readable() {
+        let block = initrwgt_block(&[("x".to_string(), "info".to_string())]);
+        let mut out = Vec::new();
+        {
+            let mut writer =
+                LheWriter::begin_with_blocks(&mut out, &init(), Some("provenance"), &block)
+                    .unwrap();
+            let mut e = event();
+            e.trailer = rwgt_block(&["x".to_string()], &[0.25]);
+            writer.write_event(&e).unwrap();
+            writer.finish().unwrap();
+        }
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("<initrwgt>\n<weightgroup"), "{text}");
+        let file = LheFile::parse(&text).unwrap();
+        assert_eq!(file.events.len(), 1);
+        assert_eq!(
+            file.events[0].trailer,
+            ["<rwgt>", "<wgt id='x'> +2.5000000e-01 </wgt>", "</rwgt>"]
+        );
+    }
     use crate::lhef::parse::LheFile;
     use crate::lhef::record::{
         LheProcess, WeightStrategy, SPIN_UNKNOWN, STATUS_INCOMING, STATUS_OUTGOING,
@@ -633,5 +789,71 @@ mod tests {
             element,
             "<generator name=\"vibegraph\" version=\"0.1\">a &amp; b &lt; c</generator>"
         );
+    }
+
+    /// `<MGRunCard>` as Pythia's `MadgraphPar` reads it: the four fields
+    /// `JetMatching:setMad` takes are there as numbers, every parameter appears
+    /// once, and no written line holds a `#` (which that reader skips whole).
+    /// The card is MadGraph's record of it, so the jet thresholds `setcuts.f`
+    /// rewrites under `xqcut` keep the card's values.
+    #[test]
+    fn mg_run_card_carries_what_set_mad_reads() {
+        let card = RunCard::parse(
+            "1 = ickkw\n30 = xqcut\n45 = ptj\n0.4 = drjj\nTrue = use_syst\n2 = alpsfact\n",
+        )
+        .expect("card");
+        assert_eq!(card.float("ptj"), 30.0, "the resolved card is setcuts.f's");
+        let block = mg_run_card(&card);
+        assert!(block.starts_with("<MGRunCard>\n\n  "));
+        assert!(block.ends_with("\n\n</MGRunCard>"));
+        assert!(!block.contains("CDATA"));
+        let mut fields = std::collections::BTreeMap::new();
+        for line in block.lines().filter(|l| l.contains('=')) {
+            assert!(!line.contains('#'), "{line}");
+            let (value, name) = line.split_once('=').expect("=");
+            let previous = fields.insert(name.trim().to_string(), value.trim().to_string());
+            assert!(previous.is_none(), "{} written twice", name.trim());
+        }
+        let number = |name: &str| -> f64 { fields[name].parse().expect(name) };
+        assert_eq!(number("ickkw"), 1.0);
+        assert_eq!(number("xqcut"), 30.0);
+        assert_eq!(number("maxjetflavor"), 4.0);
+        // banner.py's own edits: alpsfact under matching with use_syst, the
+        // separations under xqcut; setcuts.f's ptj/mmjj rewrite is not one.
+        assert_eq!(number("alpsfact"), 1.0);
+        assert_eq!(number("drjj"), 0.0);
+        assert_eq!(number("ptj"), 45.0);
+        assert_eq!(number("mmjj"), 0.0);
+        assert_eq!(fields["use_syst"], "True");
+        assert_eq!(fields.len(), card.iter().filter(|(_, v)| !matches!(v, ParamValue::Opaque(s) | ParamValue::Str(s) if s.trim().is_empty())).count());
+    }
+
+    /// A header with no blocks is the header [`LheWriter::begin`] always
+    /// wrote, byte for byte; blocks land inside `<header>`, after the comment.
+    #[test]
+    fn header_blocks_land_inside_the_header() {
+        let plain = rendered(|out| {
+            LheWriter::begin(&mut *out, &init(), Some("provenance"))?.finish()?;
+            Ok(())
+        });
+        let empty = rendered(|out| {
+            LheWriter::begin_with_blocks(&mut *out, &init(), Some("provenance"), &[])?.finish()?;
+            Ok(())
+        });
+        assert_eq!(plain, empty);
+        let with = rendered(|out| {
+            LheWriter::begin_with_blocks(
+                &mut *out,
+                &init(),
+                Some("provenance"),
+                &["<MGRunCard>\n<![CDATA[\n  1 = ickkw\n]]>\n</MGRunCard>".to_string()],
+            )?
+            .finish()?;
+            Ok(())
+        });
+        assert!(
+            with.contains("-->\n<MGRunCard>\n<![CDATA[\n  1 = ickkw\n]]>\n</MGRunCard>\n</header>")
+        );
+        assert!(LheFile::parse(&with).is_ok());
     }
 }

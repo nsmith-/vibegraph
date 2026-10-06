@@ -178,6 +178,30 @@ impl SubprocessResonances {
         }
     }
 
+    /// The lines of `config` a matched (`ickkw > 0`) event record lists, as
+    /// indices into [`lines`](Self::lines), children first.
+    ///
+    /// Under matching `addmothers` (`addmothers.f:257-264`) writes a timelike
+    /// propagator of the *clustered* configuration as a status-2 line when
+    /// `isbw` holds for its leg set. `isbw` is not a test on that
+    /// configuration: `checkbw` (`cluster.f:386-432`) fills it from the
+    /// integration channel's own propagators that `cut_bw` puts on their
+    /// Breit–Wigner, keyed by the legs below them. `on_shell` is that list of
+    /// leg sets, bit `k` naming external leg `k + 1` with the `n_in` incoming
+    /// legs first ([`MatchedRecord::on_shell`](crate::coupling::scales::MatchedRecord::on_shell)).
+    pub fn clustered_on_shell(&self, config: usize, on_shell: &[u32], n_in: usize) -> Vec<usize> {
+        self.lines(config)
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| {
+                on_shell
+                    .iter()
+                    .any(|&mask| u64::from(mask) == line.slots << n_in)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     /// The outgoing legs' PDG codes, in the subprocess's own order.
     pub fn outgoing(&self) -> &[i32] {
         &self.outgoing
@@ -599,6 +623,29 @@ mod tests {
         };
         assert!(broad(false).on_shell(0, &outgoing).is_empty());
         assert_eq!(broad(true).on_shell(0, &outgoing), [0]);
+    }
+
+    /// Under matching a line is listed exactly when its leg set, shifted past
+    /// the incoming legs, is one the clustering found on its Breit–Wigner —
+    /// whatever its own window says: the flag comes from the integration
+    /// channel, not from the configuration the line belongs to.
+    #[test]
+    fn a_matched_record_lists_the_lines_whose_legs_the_clustering_flagged() {
+        let table = SubprocessResonances {
+            configs: vec![vec![
+                line(0b011, 23, 2.44, false),
+                line(0b111, 23, 2.44, false),
+            ]],
+            outgoing: vec![-11, 11, 22],
+            bwcutoff: 15.0,
+            forced: false,
+        };
+        // Legs 3 and 4 (bits 2 and 3 with two incoming legs first).
+        assert_eq!(table.clustered_on_shell(0, &[0b01100], 2), [0]);
+        assert_eq!(table.clustered_on_shell(0, &[0b11100, 0b01100], 2), [0, 1]);
+        // Unshifted, the same mask names other legs and matches nothing.
+        assert!(table.clustered_on_shell(0, &[0b011], 2).is_empty());
+        assert!(table.clustered_on_shell(0, &[], 2).is_empty());
     }
 
     /// A member of a flavour group names the representative's line, or its
