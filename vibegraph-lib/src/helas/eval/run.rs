@@ -557,6 +557,41 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
         self.contract_per_combination(folded, scratch, hel_m2);
     }
 
+    /// The per-flow JAMPs of every surviving helicity combination at `momenta`,
+    /// written to `out` as `out[combo * n_flows + flow]` — the complex objects
+    /// [`eval_m2`](Self::eval_m2) contracts through [`cf_weights`](Self::cf_weights)
+    /// and sums. Reuses `out`'s allocation.
+    ///
+    /// On a helicity-filtered evaluator this is under the same partonic-CM
+    /// kinematic contract [`eval_m2`](Self::eval_m2) documents.
+    pub fn eval_hel_jamps(
+        &self,
+        momenta: &[LorentzVector<F>],
+        scratch: &mut ScratchSpace<F>,
+        out: &mut Vec<C<F>>,
+    ) {
+        out.clear();
+        if momenta.len() != self.eval.n_ext() {
+            return;
+        }
+        if self.eval.is_pruned() {
+            assert_partonic_cm_beams_along_z(momenta, self.eval.n_in());
+        }
+        let folded = self.eval.folded_hel();
+        self.fill_for(folded, momenta, scratch);
+        let RootKind::Hels { locs, .. } = &folded.program().root else {
+            panic!("eval_hel_jamps on a program without a helicity-expanded root");
+        };
+        out.extend(locs.iter().map(|&l| scratch.scalars[l as usize]));
+    }
+
+    /// The colour-factor weights [`eval_m2`](Self::eval_m2) contracts the JAMPs
+    /// with: `n_flows²` entries, `cf[j * n_flows + i]` weighting `J_j` against
+    /// `conj(J_i)`, so `|M|² = Σ_hel Re Σ_ij cf[j·n+i] J_j conj(J_i)`.
+    pub fn cf_weights(&self) -> &[F] {
+        &self.cf
+    }
+
     /// Contract the filled helicity-expanded root into one CF-weighted `|M_c|²` per
     /// helicity combination, `out[c]`. The arenas must already hold this point's
     /// values.

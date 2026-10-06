@@ -49,6 +49,9 @@ zstd = "0.13"
 strum = { version = "0.28.0", features = ["derive"] }
 egglog = "2.0.0"
 ordered-float = "5"
+# Dense linear algebra for the reweighting polynomial: a column-pivoted QR picks
+# well-conditioned interpolation nodes and an LU solve turns them into weights.
+nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 # The regularised incomplete gamma function, which the chi-squared p-value is:
 # a dependency-free special-function crate rather than a hand-rolled series.
 puruspe = "0.4"

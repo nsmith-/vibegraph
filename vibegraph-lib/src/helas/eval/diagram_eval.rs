@@ -139,21 +139,6 @@ impl VertexTerm {
         first
     }
 
-    /// Whether this vertex-term's bilinear carries a Dirac matrix (see
-    /// [`RootedTerm::carries_dirac_matrix`]). Uniform across a vertex's terms for the
-    /// same reason as [`build_sign`](Self::build_sign): the terms share the vertex's
-    /// fermion legs, and a gauge bilinear does not sit in the same current as a
-    /// Dirac-matrix-free one. Empty term list → `false`.
-    fn carries_dirac_matrix(&self) -> bool {
-        let mut it = self.terms.iter().map(|t| t.carries_dirac_matrix);
-        let Some(first) = it.next() else { return false };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's Lorentz terms disagree on carrying a Dirac matrix"
-        );
-        first
-    }
-
     /// Whether this vertex-term's Lorentz terms are evaluated through the rank-2 tensor
     /// path (see [`RootedTerm::tensor`]). Uniform across the terms: a vertex whose
     /// structures mix a cyclic tensor term with a tree-rootable one has no single
@@ -283,19 +268,6 @@ impl VertexInfo {
         assert!(
             it.all(|s| s == first),
             "a vertex's couplings carry mixed rooting-convention signs"
-        );
-        first
-    }
-
-    /// Whether this vertex's bilinear carries a Dirac matrix, common to all its terms
-    /// (see [`VertexTerm::carries_dirac_matrix`]). Read once per vertex on a fermion
-    /// line by [`spine_sign_from_flow`](super::root_diagram::spine_sign_from_flow).
-    pub(super) fn carries_dirac_matrix(&self) -> bool {
-        let mut it = self.terms.iter().map(|t| t.carries_dirac_matrix());
-        let Some(first) = it.next() else { return false };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's couplings disagree on carrying a Dirac matrix"
         );
         first
     }
