@@ -475,6 +475,7 @@ fn out_type_nonleaf(op: Op, kids: &[NodeId], out: &[NodeType]) -> NodeType {
         | Op::EpsilonAmp
         | Op::FierzPair => NodeType::ScalarWf,
         Op::Add => join_add(kids, out),
+        Op::AddScaled => NodeType::ScalarWf,
         Op::Mul => mul_out(kids, out),
         other => panic!("out_type_nonleaf: unexpected non-leaf op {other:?}"),
     }
@@ -617,8 +618,10 @@ fn momentum_into(
             };
             add(buf, kids[0], vsign);
         }
-        // The runtime takes the first operand's momentum for a sum.
+        // The runtime takes the first operand's momentum for a sum; a weighted sum's
+        // first term follows its constant weight.
         Op::Add => add(buf, kids[0], 1),
+        Op::AddScaled => add(buf, kids[1], 1),
         // Route the scalar factors' momentum into the surviving current (ket subtracts,
         // bra/vector add); an all-scalar product carries the summed scalar momentum.
         Op::Mul => {

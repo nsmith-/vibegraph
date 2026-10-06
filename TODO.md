@@ -745,12 +745,14 @@ above); the entries here are the eventual features.
   within its levels costs 2.2× on the M3 Max under either dispatcher, with
   40–47% of cycles discarded (Instruments' counters), while op-blocked runs
   and a periodic interleave cost nothing. So the production
-  order stays, and any replacement must keep both. One exception, Cascade
-  Lake only: lanes8 on the 2→6 is 15–18% faster in arena / `minlive` order, a
-  working-set effect (2.4 MB of op-blocked arenas against a 1 MiB L2; the M3's
-  16 MiB L2 shows none) that the `f64`-byte, lane-blind `SCHEDULE_BYTE_LIMIT`
-  fallback cannot see. A lane-aware fallback is open, measure-first, at the
-  width lanes would ship at. The 2→6 shuffle has not been run on x86.
+  order stays, and any replacement must keep both. One exception, on hosts
+  with a small L2: lanes8 on the 2→6 is 15–18% faster in arena / `minlive`
+  order on Cascade Lake, a working-set effect (2.4 MB of op-blocked arenas
+  against a 1 MiB L2; the M3's 16 MiB L2 shows none) that the `f64`-byte,
+  lane-blind `SCHEDULE_BYTE_LIMIT` fallback cannot see. Emerald Rapids (2 MiB
+  L2) shows it too: there the 2→6 gains 1.03× from lanes4 to lanes8, against
+  1.25–1.42× on every other row (`roofline-census-results.md`). A lane-aware
+  fallback is open, measure-first, at the width lanes would ship at. The 2→6 shuffle has not been run on x86.
   (`threaded-dispatch-study-results.md`.)
 - **Alternating α / grid refinement** (research) — the Kleiss–Pittau
   α-adaptation runs on a survey before the per-channel grids train, and the α
@@ -844,6 +846,34 @@ above); the entries here are the eventual features.
   `vibegraph-lib` exports, demote what only the CLI and the validation crates
   consume, and decide what the supported library surface actually is. Until
   then releases stay on the 0.x line (first tag `v0.1.0`).
+
+- **`--param-card` for `vibegraph integrate`** (user, 2026-10-06). The library
+  already reads SLHA cards (`ufo/slha.rs`, `ParamCard: FromStr`) and binds a model
+  to one (`EvaluatedModel::from_model_card`); the tests use them, and the MadGraph
+  reweight oracle binds MadGraph's own card through them. The CLI has no option:
+  nothing in `vibegraph-cli` references a param card, so every `integrate` and
+  `generate` run computes at the model's defaults, the selected restriction
+  card's values. The only command-line ways to move a parameter are another
+  restriction or `generate --reweight-card` hypotheses, and a param-card path
+  inside a `launch` block is refused (`reweight/card.rs`). The item:
+  - `integrate --param-card <file>` binds the model through
+    `EvaluatedModel::from_model_card`.
+  - The integration artifact records the card (contents or digest) beside the
+    model identity; `generate` uses the same card or refuses, as it already
+    checks the model and process against the grid.
+  - `generate --reweight-card` takes that card as its card point: the
+    hypotheses' denominators and the per-event audit run against it.
+  - A parameter the restriction fixed to zero stays zero whatever the card
+    says, since the restriction also pruned its vertices; a card that sets one
+    non-zero is refused.
+  - Validation: a card equal to the restriction's defaults reproduces the
+    default run bit for bit, and a run with a moved parameter (`MZ`, `ymt`)
+    matches MadGraph's σ at the same card. The `reweight_mg_oracle` rows already
+    carry MadGraph's cards.
+  - Until it lands, two docs passages read as if the CLI took a card and need
+    correcting: `docs/src/cli/overview.md` ("a run with no param card of its
+    own …") and `docs/src/guide/02-ufo.md` ("the `param_card.dat` read at run
+    time supplies the values the run actually uses").
 
 ### `non-sm-ufo` — collected boundaries a non-SM UFO model will hit
 
@@ -1217,9 +1247,101 @@ coverage. What is left below is what still refuses, and why.
     default-target `f64` chain, +14% to +23%, against a −14% to −19%
     throughput gain there. The currents, `tensor_bilinear` and the ε cofactors
     were already flat. The table is in `x86-avx2-perf-study-results.md`.
-  - Still open: an IPC / top-down reading on a host with a PMU, to say how much
-    of the evaluator's time is latency-bound at all. The Firecracker VM used
-    here exposes no `cpu` event source.
+  - Top-down reading: done on Zen 4 bare metal (`topdown-zen4-results.md`).
+    In about 40% of cycles nothing retires because the oldest op waits on an
+    operand, and loads are seldom the cause, so latency is the second limit
+    after instruction count.
+- **Roofline census: FLOP- or bandwidth-bound?** Measured without counters:
+  `roofline_census` (`helas/eval/roofline.rs`, ignored test) counts every FP
+  operation of `eval_m2` exactly, through an op-counting `F`, and the arena
+  bytes each instruction moves. Paired with `eval_strategies` timings on
+  Emerald Rapids at a measured 3.2 GHz:
+  - Not bytes: arena traffic is 5–9 B/cycle at scalar width, under a tenth of
+    L1. Against the FP-issue ceiling of the actual operation mix (only 14–26%
+    FMAs), the large scalar rows run at 51–68% and the small ones at 37–53%,
+    so a perfect schedule would buy at most about 1.5–2×. Dispatch is a small
+    part of the gap (mispredicts about 2%, bounds checks 3.5–5.5%); dependency
+    latency is the suspect. The lane paths sit at 25–52% of their ceiling.
+  - The 2→6 hits a cache-capacity cliff at lanes8: 1.03× over lanes4, against
+    1.25–1.42× on the other rows. Its arenas are 3.6 MiB against a 2 MiB L2.
+    The lane-aware order fallback (tail-call-threaded dispatch item) is the
+    lever there.
+  - The arithmetic intensity is 0.15–0.29 flop/B, near the L1 machine balance
+    and below L2's.
+  The fixed part is split on Zen 4 (next item). Open: a machine-load count
+  (spills, header reloads, by-value copies). (`roofline-census-results.md`.)
+- **Top-down counters on Zen 4: instruction count first, latency second.**
+  `scripts/topdown_kit.sh` on an EPYC 9534 (bare metal), every bench row at
+  widths 1/4/8 plus order controls. Results:
+  - At widths 1 and 4 the core retires 49–61% of dispatch slots, 3.1–3.6 ops
+    per cycle of 6.
+  - FP pipes, L1D (≤1.7% demand misses at width 1) and the op cache (≥97%
+    hits) all have headroom. Mispredicts cost 1–2% on the 2→6.
+  - Width 8 beats width 4 on every row there, the 2→6 included (1.28× in
+    cycles), unlike Emerald Rapids.
+  - Arena order loses through retire stalls, not misses; a level shuffle loses
+    through mispredicts.
+  The profile of the 2→6 found the largest lever so far. Half its VM
+  instructions (18 648 of 36 506) were single-use `MulScalarR`/`MulScalarC`
+  multiplies by pool constants, chained after each `Metric` amplitude before
+  the JAMP sum, costing 24–27% of cycles. **Done:**
+  - `fold.rs` now collects each chain's constants into one pool entry.
+  - Each JAMP sum becomes an `AddScaled` of `(weight, amplitude)`
+    multiply-adds, with the weights read straight from the pool.
+  - The 2→6 drops to 21 815 instructions and 36% less arena.
+  - Measured in-process on Emerald Rapids with `target-cpu=native`: 1.13 /
+    1.33 / 1.40× on the 2→6 at widths 1 / 4 / 8, and 1.04–1.17× on the other
+    rows. The default target gains less, since it has no FMA.
+  - Width 8 no longer hits the 2→6's L2 cliff.
+
+  The per-diagram amplitudes `AMP2` reads were the next step, and are done too.
+  The `Configs` bundle now pins the bare `Metric` and carries the constant as a
+  pool weight that `eval_amp2` applies, so the JAMP sum absorbs the coupling
+  as well.
+  - The 2→6 drops to 17 163 instructions.
+  - Cumulative over the start, on the 2→6: 1.18 / 1.35 / 1.55× at widths
+    1 / 4 / 8.
+  - The scalar arena does not shrink. Every `Metric` is a pinned
+    configuration value, and the level order holds them all live at once.
+    Shrinking it needs `AMP2` accumulated inside the pass.
+
+  A product of real constants now folds into the real pool when only products
+  and `Configs` weights read it. On `uux_to_uux` and `gg_to_gg` every JAMP weight
+  turns real, two multiply-adds per term instead of four. The 2→6's complex
+  weights all carry a coupling and stay complex. (`topdown-zen4-results.md`
+  §6–8.)
+- **Bounds checks: re-measured, not worth removing.** `get_unchecked` on every
+  arena access (`unchecked-study` feature, a study hook) is 3.5–5.5% faster than
+  checked indexing on Emerald Rapids. That is the ceiling for every safe
+  alternative: clamp (`i.min(len - 1)`) and mask (`i & (len - 1)`) remove the
+  branch but execute as much per access. Routing checked indexing through the
+  `rd`/`wr` accessors moved scalar `forward` by 5.8% on its own. Open, if anyone
+  wants it: `u16` operand indices, which shrink the instruction records, measured
+  as a stream-size lever and not as bounds checks. (Note 17 §10.)
+- **Ahead-of-time rendering of the helicity program: measured, does not scale.**
+  A study (code at commit `03c31e6`, not in the tree) rendered a compiled program
+  to straight-line Rust over the same kernels (bit-identical |M|² on every row). Small programs gain: 1.3–2.0×
+  scalar on `ee_to_mumu` / `gg_to_gg`, best with the kernels called out of line.
+  The code is ~190 B per VM instruction inlined (~45 B out of line), executed once
+  per event, so large programs turn front-end bound: `ee_to_mumu_tata_qcd0` is
+  0.8× inlined (1.3× out of line), the 2→6 0.2× / 0.74×, and its one-function
+  build takes 52 min under fat LTO (11–14 min chunked, no faster at run time). The
+  useful number is the bound: the interpreter spends at least 23–51% of scalar
+  `forward` outside the arithmetic on rows whose rendering stays cache-resident,
+  far more than mispredicts and bounds checks account for — the per-step decode,
+  operand loads and call glue. A lever that keeps code size independent of program
+  length (per-kind batched dispatch) is where that would be recovered.
+  A second study (code at commit `b504391`, not in the tree) rendered the
+  program in MadGraph's form — every value in the interpreter's slot arrays, every
+  instruction one out-of-line call writing its slot in place, no locals —
+  bit-identical again. It is the smallest rendering (26–31 B per VM instruction;
+  0.93 MiB for the 2→6) but not a faster one: 1.05–1.26× the interpreter on the
+  small rows (the by-value form is 1.4–2.2×) and 0.66× on the 2→6 (0.79× at four
+  lanes). Its one-function 2→6 cannot be compiled on a 16 GB host — rustc's MIR
+  `ReferencePropagation` passes 13.9 GiB in the library crate — while 19 functions of
+  2 000 instructions build in 4 min at 2 GiB. So the form fixes the build, not the
+  run time: straight-line rendering loses on the 2→6 in every form tried.
+  (`aot-kernels-study-results.md`, second part.)
 - **Per-lane scales** — `eval_m2_lanes` can only batch points sharing one `αs`;
   a SIMD-batched dynamic-scale integrator would need the scaling fused into the
   constant loads. Nothing needs it today. (`helas/eval/rescale.rs`.)
