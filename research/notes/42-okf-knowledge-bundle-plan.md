@@ -19,8 +19,9 @@ the plan: the target shape, how a sprint runs against it, the backlog as
 one-file items with a generated view, the migration phases, and the decisions
 taken in the planning discussion.
 
-**Status: in progress.** Phase B and Phase 0 ran on 2026-10-06, after the PRs
-in flight had merged (§8 records how each went); Phase 1 is next. All other
+**Status: in progress.** Phases B, 0 and 1 ran on 2026-10-06, after the PRs in
+flight had merged (§8 records how each went). Phase 1 stopped at its
+checkpoint: the proposed taxonomy awaits the user's approval before Phase 2. All other
 work pauses while the migration runs, so no parallel stream writes notes or
 backlog entries in the meantime. The decisions taken are in §9.
 
@@ -452,6 +453,21 @@ carry `measured:` blocks for the hosts and commits they name.
    drafting agents.
 
 **Checkpoint:** the user approves the taxonomy.
+
+**As executed.** 1,376 chunks from 61 files. Raw bge-small embeddings
+clustered by source note: sprint-plan prose reads alike, which is the
+weakness noted in step 3. Subtracting each note's mean embedding gave
+cross-note topic clusters, but none separated cleanly (HDBSCAN left most
+chunks as noise; spectral clustering left one large generic bucket). So the
+clusters and each chunk's nearest neighbours in other notes served as hints
+to eleven agents. Those agents read every chunk and assigned it a kind
+(727 knowledge, 124 decision, 171 measurement, 354 history-only) and one or
+more concepts. They also recorded 169 contradictions, each checked against
+the code for which side holds. Six reconciliation agents merged the
+resulting 428 overlapping proposals into 242 concepts in 16 folders, about
+27.5k lines once drafted. Every proposal is accounted for as merged, moved
+or dropped, and every non-history chunk feeds a concept. The proposal adds
+`run-card/`, `hadronic/`, `tooling/` and `workflow/` to §3's folders.
 
 ### Phase 2 — draft concepts (subagents)
 
