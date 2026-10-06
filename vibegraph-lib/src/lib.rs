@@ -14,6 +14,7 @@ pub mod pdf;
 pub mod phasespace;
 pub mod progress;
 pub mod proton;
+pub mod reweight;
 pub mod runcard;
 pub mod select;
 pub mod stats;

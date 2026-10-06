@@ -82,6 +82,11 @@ validate = { cmd = "bash validation/validate.sh", depends-on = [
 ] }
 # The collator alone, over whatever the last `validate` left behind.
 validation-report = "cargo run --profile release-debug -p vibegraph-validation-report"
+# Reweighting, focused: the hermetic MadGraph-reweight comparison on its banked
+# events (informational), and the banked audit of every hadronic event's
+# reweighting denominator against the integrand that drew it. Both also run
+# inside `validate`.
+validate-reweight = { cmd = "cargo test -p vibegraph-lib --test reweight_mg_oracle -- --nocapture && cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_reweight_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "fetch-refdata"] }
 
 # The 2 -> 6 sigma rows, measured in the long tier against the same bank through
 # the same driver as every other cross section. What puts them here is the
@@ -248,6 +253,14 @@ validate-hadronic = { cmd = "cargo test -p vibegraph-lib --profile release-debug
 # and its own event sample. Runs under --profile release-debug.
 validate-generate-proton = { cmd = "cargo test -p vibegraph --profile release-debug --features extended-validation --test cli_generate_proton -- --nocapture --test-threads 1", depends-on = ["fetch-pdf", "build-diagrams"] }
 # Build the MG |M|^2 probe and (re)generate the pointwise DY integrand oracle
+# Run MadGraph's reweight module on vibegraph's own events and bank its weights
+# event by event (validation/madgraph/reweight_mg_reference.json); also prints the
+# comparison over every generated event. Needs gfortran and numpy's f2py.
+generate-reweight-oracle = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/gen_reweight_oracle.py", depends-on = ["init-sm-submodule", "fetch-pdf", "fetch-refdata"] }
+# Time `generate --reweight-card` against MadGraph's reweight module on the rows
+# generate-reweight-oracle leaves in its work area; prints a per-row summary
+# (research/notes/reweight-vs-madgraph-results.md records one run).
+bench-reweight = { cmd = "cargo build -p vibegraph --profile release-debug && python validation/madgraph/bench_reweight.py", depends-on = ["init-sm-submodule", "fetch-pdf", "fetch-refdata"] }
 generate-dy-oracle = { cmd = "bash validation/madgraph/gen_dy_oracle.sh", depends-on = ["fetch-pdf"] }
 # Replay the banked runs through a clustering-instrumented MadGraph and bank the
 # per-event kT-clustering history behind dynamical_scale_choice = -1. Each replay
