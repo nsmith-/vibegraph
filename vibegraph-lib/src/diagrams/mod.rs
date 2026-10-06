@@ -117,6 +117,7 @@ pub enum DiagramError {
 // ── Output type ───────────────────────────────────────────────────────────────
 
 /// One concrete particle assignment together with its generated diagrams.
+#[derive(Clone)]
 pub struct DiagramSet {
     pub particles_in: Vec<String>,
     pub particles_out: Vec<String>,

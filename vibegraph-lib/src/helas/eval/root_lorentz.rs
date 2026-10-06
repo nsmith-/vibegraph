@@ -74,13 +74,6 @@ pub struct RootedTerm {
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
     /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`]).
     pub reversed_sign: i8,
-    /// Whether this term's bilinear carries a Dirac matrix — a `Gamma` or a `Sigma` —
-    /// rather than being built from `Identity`, `Gamma5` and the chiral projectors
-    /// alone. Read by [`spine_sign_from_flow`](super::root_diagram::spine_sign_from_flow):
-    /// only the first kind conjugates non-trivially under a fermion-line reversal
-    /// (`Cγ^{μT}C⁻¹ = −γ^μ`, `Cσ^{μνT}C⁻¹ = −σ^{μν}`, against `C·1ᵀ·C⁻¹ = 1` and
-    /// `Cγ⁵ᵀC⁻¹ = γ⁵`), so a line built only from the second takes no reversal sign.
-    pub carries_dirac_matrix: bool,
     /// Whether this term's index graph is cyclic, so that it is evaluated through the
     /// rank-2 tensor path (see [`LorentzEvalTree::build_at_leg`]) rather than as a rooted
     /// tree.
@@ -649,6 +642,17 @@ impl LorentzEvalTree {
         // cancels it for every contact that should not carry it.
         if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
             metric_vertex_applied = true;
+            sign = -sign;
+        }
+        // A pure scalar contact (`SSS1`, `SSSS1`: all legs scalars, no operator) sinks
+        // into a scalar wherever it is rooted, so it takes the same −1 against the
+        // −i/D scalar propagator as the scalar-sink bilinears and the pure-metric `VVS`
+        // below; with no operator it reaches neither arm. Pinned per diagram against
+        // MadGraph's `AMP()` on `ta+ ta- > t t~ h` (one `HHH`) and `ta+ ta- > t t~ h h`
+        // (`HHH` as amplitude and as current, `HHHH`, two `HHH` cancelling). A
+        // derivative all-scalar structure, which carries `P` operators, is not covered
+        // by any oracle and is left as it was.
+        if spins.len() >= 3 && spins.iter().all(|&s| s == 1) && term.ops.is_empty() {
             sign = -sign;
         }
 
@@ -1717,10 +1721,6 @@ pub fn root_term(
         coeff: term.coeff,
         build_sign: if sign < 0.0 { -1 } else { 1 },
         reversed_sign,
-        carries_dirac_matrix: term
-            .ops
-            .iter()
-            .any(|op| matches!(op, LorentzOp::Gamma { .. } | LorentzOp::Sigma { .. })),
         tensor: cyclic_index_graph(term),
         tree,
     })

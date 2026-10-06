@@ -88,6 +88,8 @@ Run the hermetic suite for everything. On top of it:
 | PDF grids, interpolation, the subgrid walk | `pixi run -e madgraph validate-pdf-grid` |
 | the UFO loader, the SM model source, the submodule pin | `pixi run check-sm-blob-fresh` |
 | run-card parsing or defaults | `pixi run -e madgraph dump-runcard-defaults`, then the hermetic `scales_run_cards` test |
+| reweighting (`reweight/`, `generate --reweight-card`), and `EvaluatedModel::recompute` | `pixi run validate-reweight` (the hermetic MadGraph-reweight comparison, informational, and the banked `cli_reweight_proton` audit); after an amplitude, model or reweight-card change, `pixi run -e madgraph generate-reweight-oracle`, whose printed full-file comparison against MadGraph's reweight module is the end-to-end check |
+| fermion-line or vertex sign conventions (`diagrams/diagram.rs` `fermion_line_sign`, `helas/eval/root_*`) | the hermetic `standalone_jamps` and `amplitude_oracle` tests; a new vertex or line topology needs its own `gen_standalone_jamps.py` row before a sign rule is claimed for it |
 
 The amplitude gate (`amplitude_oracle`) is itself hermetic — it reads committed
 tables — so `cargo test` runs it. `pixi run -e madgraph validate-amplitudes`
@@ -122,7 +124,8 @@ per-event dumps `validate-mlm-dumps` reads (outside the bundle, pinned in
 `mlm_dump_manifest.json`). Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
 `validation/madgraph/configs.json`,
-`validation/alphas/reference.csv`) are regenerated only when the banked phase-space
+`validation/alphas/reference.csv`, `validation/madgraph/reweight_mg_reference.json`)
+are regenerated only when the banked phase-space
 points, the process list, or the pinned MadGraph version change — never to make a
 failing gate pass. A reference that moves is a finding; diagnose it before
 rebanking it.

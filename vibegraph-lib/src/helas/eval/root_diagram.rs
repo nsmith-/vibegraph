@@ -595,8 +595,6 @@ struct FermionHalf {
     incoming: bool,
     /// Internal fermion propagators crossed.
     props: usize,
-    /// Whether any vertex the descent passed through carries a Dirac matrix.
-    dirac: bool,
 }
 
 /// Descend the fermion line from `node` (a fermion child of a pair-sink) to its
@@ -608,7 +606,6 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> FermionHalf
         EvalNode::External(info) => FermionHalf {
             incoming: info.incoming,
             props: 0,
-            dirac: false,
         },
         EvalNode::Propagate { child, .. } => {
             let half = descend_fermion_line(tree, *child);
@@ -620,7 +617,6 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> FermionHalf
         EvalNode::OffShellCurrent {
             children,
             fermion_pairs,
-            info,
             ..
         } => {
             // The continuing input is the fermion child no closed pair names: at a
@@ -634,11 +630,7 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> FermionHalf
                 })
                 .map(|(_, &c)| c)
                 .expect("a fermion off-shell current has a continuing fermion input");
-            let half = descend_fermion_line(tree, cont);
-            FermionHalf {
-                dirac: half.dirac || info.carries_dirac_matrix(),
-                ..half
-            }
+            descend_fermion_line(tree, cont)
         }
         EvalNode::ContractAmplitude { .. } => {
             unreachable!("the amplitude root is never reached while descending a fermion line")
@@ -654,8 +646,7 @@ fn descend_fermion_line(tree: &DiagramEvalTree, node: EvalNodeId) -> FermionHalf
 /// current rooted at a leg of its *other* line — which outputs a fermion and still
 /// closes this one. Every node's closed pairs are read, so every line is counted once;
 /// descending both halves from where it closes recovers the line's ends, its internal
-/// propagators and whether any vertex on it carries a Dirac matrix, which is all the
-/// sign reads.
+/// propagators, which is all the sign reads.
 pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
     closed_line_sign(tree, |_| true)
 }
@@ -695,19 +686,17 @@ fn closed_line_sign(tree: &DiagramEvalTree, at: impl Fn(&EvalNode) -> bool) -> i
         if !at(node) {
             continue;
         }
-        let (children, fermion_pairs, sink) = match node {
+        let (children, fermion_pairs) = match node {
             EvalNode::ContractAmplitude {
                 children,
                 fermion_pairs,
-                info,
                 ..
             }
             | EvalNode::OffShellCurrent {
                 children,
                 fermion_pairs,
-                info,
                 ..
-            } => (children, fermion_pairs, info),
+            } => (children, fermion_pairs),
             _ => continue,
         };
         // Every line the vertex closes, one at a two-fermion sink and up to two at a
@@ -717,15 +706,9 @@ fn closed_line_sign(tree: &DiagramEvalTree, at: impl Fn(&EvalNode) -> bool) -> i
             let half_a = descend_fermion_line(tree, children[a]);
             let half_b = descend_fermion_line(tree, children[b]);
             let crossed = !half_a.incoming && !half_b.incoming;
-            let gauge = half_a.dirac || half_b.dirac || sink.carries_dirac_matrix();
             // A crossed line takes its single −1 whatever it is built from; an
-            // uncrossed one takes a −1 per internal propagator, but only if it
-            // carries a Dirac matrix somewhere.
-            let flip = if crossed {
-                true
-            } else {
-                gauge && (half_a.props + half_b.props) % 2 == 1
-            };
+            // uncrossed one takes a −1 per internal propagator, whatever its vertices.
+            let flip = crossed || (half_a.props + half_b.props) % 2 == 1;
             if flip {
                 sign = -sign;
             }
@@ -1531,19 +1514,19 @@ mod tests {
         );
     }
 
-    /// A fermion line whose every bilinear is Dirac-matrix-free takes no per-propagator
-    /// reversal sign; a line carrying one anywhere still takes the flip.
+    /// A fermion line takes the per-propagator reversal sign whatever its vertices are:
+    /// an all-Yukawa line exactly as one carrying a photon.
     ///
     /// `b b~ > h h` is the Standard Model's own all-Yukawa line: the two exchange
     /// diagrams run the `b` line through two `b b~ H` vertices and one internal
     /// propagator, the triple-Higgs annihilation diagram through one vertex and none.
-    /// All three must come out `+1` — an exchange diagram that took a propagator flip
-    /// would interfere with the annihilation one at the wrong sign, which is exactly the
-    /// defect `qt qt~ > o8 o8` measures against MadGraph in the toy colour model.
-    /// `b b~ > a h` is the control that keeps the −1: the same one-propagator topology
-    /// with a photon vertex on the line.
+    /// The exchange diagrams take the −1; the annihilation diagram takes its −1 from the
+    /// all-scalar `HHH` vertex instead (its rooting-convention sign), so the two still
+    /// interfere at the sign MadGraph gives them — which the `bbx_to_hh` standalone
+    /// table checks end to end. `b b~ > a h` is the gauge control: the same
+    /// one-propagator topology with a photon vertex on the line.
     #[test]
-    fn dirac_matrix_free_line_takes_no_propagator_sign() {
+    fn every_line_takes_the_propagator_sign() {
         let model = sm_model(SMRestrict::Default);
         let spine = |process: &str| -> Vec<(usize, i8)> {
             generate(process)
@@ -1559,29 +1542,19 @@ mod tests {
                 })
                 .collect()
         };
-
-        let yukawa = spine("b b~ > h h");
-        assert!(
-            yukawa.iter().any(|&(props, _)| props == 1),
-            "b b~ > h h must contribute a one-propagator all-Yukawa line, got {yukawa:?}"
-        );
-        assert!(
-            yukawa.iter().all(|&(_, sign)| sign == 1),
-            "an all-Yukawa fermion line must take no propagator sign, got {yukawa:?}"
-        );
-
-        let gauge = spine("b b~ > a h");
-        assert!(
-            gauge.iter().any(|&(props, _)| props == 1),
-            "b b~ > a h must contribute a one-propagator line, got {gauge:?}"
-        );
-        assert!(
-            gauge
-                .iter()
-                .all(|&(props, sign)| sign == if props % 2 == 1 { -1 } else { 1 }),
-            "a line carrying a photon vertex must keep the per-propagator flip, got \
-             {gauge:?}"
-        );
+        for process in ["b b~ > h h", "b b~ > a h"] {
+            let lines = spine(process);
+            assert!(
+                lines.iter().any(|&(props, _)| props == 1),
+                "{process} must contribute a one-propagator line, got {lines:?}"
+            );
+            assert!(
+                lines
+                    .iter()
+                    .all(|&(props, sign)| sign == if props % 2 == 1 { -1 } else { 1 }),
+                "{process}: every line takes the per-propagator flip, got {lines:?}"
+            );
+        }
     }
 
     /// The per-propagator flip fires on a *mixed* (initial↔final) fermion line, not only

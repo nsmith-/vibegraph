@@ -595,8 +595,10 @@ above); the entries here are the eventual features.
 - **NLO** (after MLM). `[QCD]` and the photon-tag flag are parsed and refused;
   note 38 §3.2 says where the Born/real/virtual split would attach.
 - **Squared-order constraints** (`QCD^2==2`, `NP^2==1`; shelved, user
-  2026-09-25). They need complex amplitudes grouped by coupling order, which is
-  also what reweighting in a coupling would use. That is a sizable `helas/eval`
+  2026-09-25). They need complex amplitudes grouped by coupling order. (Reweighting
+  reads per-monomial amplitude classes off node evaluations — see the
+  `reweight_card.dat` entry — which costs one evaluation per class rather than
+  the one graded pass this would want.) That is a sizable `helas/eval`
   refactor, deferred until the open evaluator performance PRs land. G1 parses
   them and `check_supported` refuses them.
 - **Polarized intermediate resonances** (`p p > w+{0} w-, w+ > e+ ve`, and the
@@ -657,14 +659,69 @@ above); the entries here are the eventual features.
   the truncated `w_max` rule is an improvement rather than a concession. Gate:
   flag on, every banked byte and σ gate unchanged; flag off, a documented
   per-site delta table, and no validation gate runs in the off mode.
-- **`reweight_card.dat`** (feature) — re-evaluate a stored event sample under
-  alternative coupling values, MadGraph's reweighting workflow. The monomial
-  exponent analysis in `helas::eval::rescale` is written for a generic model
-  parameter `G` precisely so that moving the pools to a new value is one
-  multiply per entry per event; a reweighting pass is that analysis over the
-  card's requested parameters plus the per-event |M|² ratio written back as an
-  extra weight (LHEF `<rwgt>` block). Parameters entering couplings other than
-  as monomials fall back to the exact re-evaluation path automatically.
+- **`reweight_card.dat`** — ✅ landed at generation time (`generate
+  --reweight-card`, `vibegraph::reweight`; guide chapter 11 "Reweighting"):
+  per-event `|M|²_new/|M|²_old` of the event's own concrete subprocess, written
+  as LHEF `<rwgt>` in `XWGTUP` units with an `<initrwgt>` header. The polynomial
+  path collects the amplitude by coupling monomial (monomials proven from the UFO
+  expressions and the diagrams; class amplitudes read off `K` node evaluations
+  chosen by pivoted QR; each hypothesis a `K × K` quadratic form in the per-event
+  node Gram matrix). `--reweight-couplings a,b,…` serves a whole card jointly in
+  the named couplings (`K = 1 + n` for one insertion per diagram) and refuses
+  anything else; without it, single-parameter hypotheses are grouped where
+  cheaper. Reweighting amplitudes are pruned at a generic parameter point.
+  Validation: unit tests hold every path to a direct unpruned bind evaluated
+  afresh from a param card (mutation-checked: a union in place of the per-diagram
+  monomial product, a wrong Gram contraction, pruning at the card, and stale
+  couplings each fail a test), rebuild every per-helicity, per-flow complex JAMP
+  from the class decomposition at each hypothesis (`u u~ > t t~ h`, two flows),
+  and pin `K = 1 + 3` on a SMEFTsim basis grid (`ctWRe, cHt, cHWB`). **MadGraph
+  oracle** — (a) done, informational: `gen_reweight_oracle.py` runs MadGraph's
+  reweight module on vibegraph's own events (`p p > l+ l- j`, `e+ e- > t t~ h`,
+  `ta+ ta- > t t~ h` 3×3 grid, SMEFTsim `e+ e- > t t~`) and every one of 5000
+  events × 27 hypotheses agrees to the files' printed precision;
+  `reweight_mg_oracle` replays the banked 200 per row through both paths. Enforce
+  it once a hadronic polynomial row and a second SMEFT process are in. **Hadronic
+  indexing** — (e) done: `generate` audits every reweighted event's card-point
+  `|M|²` and flavours against the integrand that drew it and refuses the file on
+  a mismatch; the banked `cli_reweight_proton` reads the audit back on
+  `p p > l+ l- j` and the MLM-matched `p p > e+ e- + 0,1,2 j`, every part and
+  both beam orderings populated (mutation-checked on member offsets, the mirror
+  and αs). Found on the way and fixed: `EvaluatedModel::recompute` left couplings
+  stale behind chains of internal parameters (`aEWM1`, `MZ` hypotheses wrote
+  wrong weights); `HHH`/`HHHH` vertices and Yukawa-only initial-state lines had
+  the wrong relative sign against every other diagram (MadGraph's per-diagram
+  `AMP()`, new standalone rows `tata_to_ttxh`, `tata_to_ttxhh`, `bbx_to_hh`); and
+  `aS`-sharing coefficients (SMEFTsim's `cHWB` through `dWH`) were refused. Open
+  follow-ups: (b) **one evaluation per event** instead of `K` — a graded
+  evaluator carrying each current as its monomial components, so subtrees without
+  the couplings are computed once (the `helas/eval` refactor squared-order
+  constraints also need); (c) **reweighting a stored `.lhe`**, which needs the
+  event's subprocess recovered from its record (`reweight_mg_oracle` does it for
+  its banked events, test-side); (d) `$` (forbidden s-channel) pattern amplitudes
+  and `aS` reweighting, both refused; (f) a coupling that is itself `a + b·c`
+  (one diagram spanning two classes) is exercised only by the polynomial
+  algebra's unit tests — SMEFTsim splits every coefficient into its own coupling
+  order; (g) a derivative all-scalar vertex (`P` operators on scalar legs) has no
+  sign oracle; (h) the hypothesis side on a hadronic polynomial group (both
+  hadronic MadGraph rows are on the exact path); (i) **helicity-aware
+  reweighting** beside the helicity-summed ratio `generate` writes today: a
+  per-event ratio `|M_hyp(λ)|² / |M_card(λ)|²` in the helicity configuration
+  the event records in `SPINUP` (MadGraph's default, `change helicity True`),
+  selectable per run (e.g. `--reweight-helicity summed|event`). Both are
+  unbiased for the reweighted σ; the per-helicity one keeps the written
+  helicities consistent with the hypothesis, which matters when the sample is
+  showered or decayed with spin correlations, at the cost of larger weight
+  variance where a hypothesis moves a helicity amplitude the card nearly
+  zeroes. Needs the selected helicity carried to the reweighter (it is
+  written, not kept per event), a refusal or fallback for events whose
+  recorded helicity has `|M_card(λ)|² = 0`, and, on the polynomial path, the
+  Gram contraction restricted to one helicity combination. Oracle: the same
+  `gen_reweight_oracle.py` rows with `change helicity True`, event by event.
+  Cost against MadGraph's reweight module on the same rows:
+  `research/notes/reweight-vs-madgraph-results.md` (`pixi run -e madgraph
+  bench-reweight`) — 50–150× less per event and hypothesis on the exact path,
+  100–320× on the polynomial one.
 - **Tail-call-threaded dispatch: built, measured, not adopted** — one
   handler per `Instr` kind, each tail-calling the next through nightly
   `become`, bit-identical to the `match` loop. It does not beat it on the

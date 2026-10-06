@@ -623,6 +623,30 @@ impl EvaluatedModel {
         self.coupling_values[id]
     }
 
+    /// The parameters and couplings whose value is not finite, by name, parameters
+    /// first and each list sorted.
+    pub fn non_finite(&self) -> Vec<&str> {
+        let finite = |v: &Complex64| v.re.is_finite() && v.im.is_finite();
+        let mut params: Vec<&str> = self
+            .param_values
+            .iter()
+            .filter(|(_, v)| !finite(v))
+            .map(|(k, _)| k.as_str())
+            .collect();
+        params.sort_unstable();
+        let mut couplings: Vec<&str> = self
+            .model
+            .couplings
+            .keys()
+            .zip(&self.coupling_values)
+            .filter(|(_, v)| !finite(v))
+            .map(|(k, _)| k.as_str())
+            .collect();
+        couplings.sort_unstable();
+        params.extend(couplings);
+        params
+    }
+
     /// Get the coupling entries for a vertex by its name.
     ///
     /// Returns `[(color_idx, lorentz_idx, value)]` or `None` if unknown.
@@ -649,10 +673,10 @@ impl EvaluatedModel {
             .unwrap_or_else(|| panic!("attempted to recompute unknown parameter '{changed}'"));
         self.model.params.recompute(changed, &mut self.param_values);
 
-        let mut changed_params = vec![changed.to_owned()];
-        if let Some(rdeps) = self.model.params.rdeps.get(changed) {
-            changed_params.extend(rdeps.iter().cloned());
-        }
+        // Every parameter the change reaches, however many internal parameters
+        // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.
+        let mut changed_params = self.model.params.dependents(changed);
+        changed_params.insert(changed.to_owned());
 
         for (i, c) in self.model.couplings.values().enumerate() {
             if c.deps.iter().any(|d| changed_params.contains(d)) {
@@ -915,6 +939,60 @@ mod tests {
             (gc10.re + expected_g).abs() < 1e-6,
             "After recompute: GC_10 = {gc10}"
         );
+    }
+
+    /// `recompute` against the oracle it shortcuts: the whole model evaluated
+    /// afresh from a card carrying the new value. For every external parameter the
+    /// restriction leaves free, every parameter and every coupling must agree —
+    /// including couplings that reach the changed parameter only through a chain
+    /// of internal ones (`aEWM1 → aEW → ee → GC_3`).
+    #[test]
+    fn recompute_matches_a_fresh_evaluation_for_every_external() {
+        let model = sm::sm_model(sm::SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        let close = |a: Complex64, b: Complex64| (a - b).norm() <= 1e-12 * a.norm().max(b.norm());
+        let mut checked = 0;
+        for p in &model.params.externals {
+            let parameters::ParamNature::External {
+                lha_block,
+                lha_code,
+                ..
+            } = &p.nature
+            else {
+                continue;
+            };
+            if model.params.zeros.contains(&p.name) {
+                continue;
+            }
+            let value = base.param_values[&p.name].re * 1.07 + 0.01;
+            let code: Vec<String> = lha_code.iter().map(i32::to_string).collect();
+            let card: ParamCard = format!("BLOCK {lha_block}\n {} {value:.17e}\n", code.join(" "))
+                .parse()
+                .unwrap();
+            let fresh = EvaluatedModel::from_model_card(model.clone(), &card);
+            assert_eq!(fresh.param_values[&p.name].re, value, "{}", p.name);
+            let mut moved = base.clone();
+            moved.recompute(&p.name, value.into());
+            for (name, v) in &fresh.param_values {
+                assert!(
+                    close(moved.param_values[name], *v),
+                    "after moving {}: parameter {name} {} against {v}",
+                    p.name,
+                    moved.param_values[name]
+                );
+            }
+            for (i, (name, _)) in model.couplings.iter().enumerate() {
+                assert!(
+                    close(moved.coupling_values[i], fresh.coupling_values[i]),
+                    "after moving {}: coupling {name} {} against {}",
+                    p.name,
+                    moved.coupling_values[i],
+                    fresh.coupling_values[i]
+                );
+            }
+            checked += 1;
+        }
+        assert!(checked >= 10, "only {checked} externals checked");
     }
 
     /// MadGraph's `0 < v < 99` window: an order declared `expansion_order = 0`

@@ -76,3 +76,7 @@ required-features = ["extended-validation"]
 [[test]]
 name = "cli_pdf_cache_fetched"
 required-features = ["extended-validation"]
+
+[[test]]
+name = "cli_reweight_proton"
+required-features = ["extended-validation"]

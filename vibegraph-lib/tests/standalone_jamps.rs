@@ -269,3 +269,24 @@ fn ttx_to_gg_chg() {
 fn wpwm_to_epem() {
     check("wpwm_to_epem");
 }
+
+/// The tau Yukawa's s-channel Higgs beside Higgsstrahlung and the top Yukawa: the
+/// diagrams carrying both Yukawas, one of them through the Higgs self-coupling.
+#[test]
+fn tata_to_ttxh() {
+    check("tata_to_ttxh");
+}
+
+/// Two Higgs bosons: final-state top lines built of Yukawa vertices alone, across
+/// zero, one and two internal propagators, interfering in one sum.
+#[test]
+fn tata_to_ttxhh() {
+    check("tata_to_ttxhh");
+}
+
+/// The all-Yukawa `b` line: t/u-channel exchange across one propagator beside the
+/// triple-Higgs annihilation, which must interfere at MadGraph's relative sign.
+#[test]
+fn bbx_to_hh() {
+    check("bbx_to_hh");
+}

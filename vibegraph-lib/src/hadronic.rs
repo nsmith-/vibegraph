@@ -1783,7 +1783,7 @@ pub struct ChannelIntegration {
 /// Every one of them is summed over in the cross section, so none of them is a
 /// sampling channel: they are read off diagonal accumulators after the fact, to
 /// fill in an event record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EventSelection {
     /// Index into the integrand's subprocesses
     /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
@@ -1798,6 +1798,10 @@ pub struct EventSelection {
     pub config: Option<usize>,
     /// Whether that configuration reaches the flow at leading colour.
     pub leading: bool,
+    /// The drawn subprocess's `|M|²` as this integrand evaluated it for the point,
+    /// at the event's own coupling: what any other evaluation of the event's
+    /// subprocess at the model's own parameters must reproduce.
+    pub m2: f64,
 }
 
 /// The diagrams the integration channels are built from: one per configuration of
@@ -2936,6 +2940,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             flow: color.flow,
             config: color.config,
             leading: color.leading,
+            m2: m2[subprocess],
         })
     }
 

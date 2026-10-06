@@ -120,6 +120,15 @@ ROWS = {
         # s-channel), banked so the comparison keeps running.
         Row("wpwm_to_epem", "w+ w- > e+ e-", (24, -24), (-11, 11), 500.0, 3, 4049,
             zero_widths=True),
+        # The tau Yukawa's s-channel Higgs, whose diagrams carry both Yukawas and
+        # the only tree-level Higgs self-coupling of a 2 -> 3 SM process here.
+        Row("tata_to_ttxh", "ta+ ta- > t t~ h", (-15, 15), (6, -6, 25), 1000.0, 3, 4061),
+        # A second Higgs off the top line: final-state top lines of Yukawa vertices
+        # alone across zero, one and two propagators, all in one sum.
+        Row("tata_to_ttxhh", "ta+ ta- > t t~ h h", (-15, 15), (6, -6, 25, 25), 1500.0, 3, 4062),
+        # The Standard Model's own all-Yukawa line: t/u-channel b exchange (one
+        # propagator) beside the triple-Higgs annihilation (none).
+        Row("bbx_to_hh", "b b~ > h h", (5, -5), (25, 25), 500.0, 3, 4063),
     ]
 }
 
