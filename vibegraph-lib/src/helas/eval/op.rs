@@ -56,6 +56,13 @@ pub enum Op {
     /// Sum (Lorentz-term, vertex-term, and diagram sums). Lowering emits arity 2
     /// (balanced binary trees); the evaluator itself accepts any arity.
     Add,
+    /// Scalar sum of constant-weighted terms, `Σ kᵢ·xᵢ`. Children are `(kᵢ, xᵢ)`
+    /// pairs: `kᵢ` a constant-pool leaf, `xᵢ` a non-constant scalar; the pairs with a
+    /// real `kᵢ` come before those with a complex one. The sum carries the first
+    /// term's momentum, as [`Op::Add`] does. Never lowered: the constant folding
+    /// builds it from a scalar `Add` over single-use `kᵢ · xᵢ` products, so each
+    /// product is a multiply-add into the sum instead of an operation of its own.
+    AddScaled,
     /// Variadic root over per-color-flow JAMPs `(Flows jamp_0 jamp_1 … jamp_{n-1})`,
     /// one child per color-basis element. Modeled on [`Op::PMomOut`]: no leaf, any
     /// number of children.
@@ -75,7 +82,10 @@ pub enum Op {
     /// Squared and summed over helicities they are MadGraph's `AMP2`, which is what a
     /// per-event configuration draw reads. Like [`Op::Flows`] it computes nothing —
     /// keeping the wires under the root is what keeps their slots live to the end of
-    /// the pass, so the values are read out of the arena afterwards.
+    /// the pass, so the values are read out of the arena afterwards. The constant
+    /// folding splits each amplitude into a `(weight, value)` pair of children, the
+    /// weight a constant-pool leaf the read-out multiplies the arena value by, so
+    /// the bundle pins the bare value rather than its scaled copy.
     Configs,
     // ── Lorentz primitives (semantics mirror the old `LorentzEvalNode`) ──
     /// 2 fermions → off-shell vector current.

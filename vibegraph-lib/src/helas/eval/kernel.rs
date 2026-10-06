@@ -10,8 +10,9 @@
 //! random-slot generators) are also re-exported through the feature-gated
 //! `bench_internals` facade for the microbenches in `benches/`.
 //!
-//! Structural/const/algebraic ops (`External`, `Mul`, `Add`, `Coupling`, `Mass`, `Width`,
-//! `Coeff`) are not kernels — they live in [`apply`](super::run) itself. Each kernel takes
+//! Structural/const/algebraic ops (`External`, `Mul`, `Add`, `AddScaled`, `Coupling`,
+//! `Mass`, `Width`, `Coeff`) are not kernels — they live in [`apply`](super::run) itself,
+//! `AddScaled` through the per-term multiply-adds it shares with the typed runtime. Each kernel takes
 //! the already-evaluated `children` in operand order; the cross-check tests call them
 //! directly.
 
@@ -222,6 +223,23 @@ pub fn scalar_bilinear_bare<F: Real>(
 /// Pseudoscalar bilinear `ψ̄ γ⁵ ψ` on bare spinors.
 pub fn pseudoscalar_bilinear_bare<F: Real>(fo: &Bispinor<F, Bra>, fi: &Bispinor<F, Ket>) -> C<F> {
     Bispinor::pseudoscalar_bilinear(fo, fi, Chirality::Both)
+}
+
+/// One real-weighted term of an [`Op::AddScaled`](super::op::Op::AddScaled) sum:
+/// `acc + r·x`, a multiply-add per component.
+#[inline(always)]
+pub fn scaled_add_real_bare<F: Real>(acc: C<F>, r: F, x: C<F>) -> C<F> {
+    C::new(r.mul_add_fast(x.re, acc.re), r.mul_add_fast(x.im, acc.im))
+}
+
+/// One complex-weighted term of an [`Op::AddScaled`](super::op::Op::AddScaled) sum:
+/// `acc + k·x`, two multiply-adds per component.
+#[inline(always)]
+pub fn scaled_add_complex_bare<F: Real>(acc: C<F>, k: C<F>, x: C<F>) -> C<F> {
+    C::new(
+        k.re.mul_add_fast(x.re, (-k.im).mul_add_fast(x.im, acc.re)),
+        k.re.mul_add_fast(x.im, k.im.mul_add_fast(x.re, acc.im)),
+    )
 }
 
 /// `Metric`: contract two bare contravariant vectors → scalar.
