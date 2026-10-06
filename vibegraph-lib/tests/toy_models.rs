@@ -195,7 +195,13 @@ fn gated_rows_op_census() {
     //   rest on the hermetic pins `literal_sigma_currents_are_rooting_invariant`,
     //   `tensor_four_fermion_currents_are_rooting_invariant` and the kernel
     //   identities `SigmaVoutRev = -SigmaVout`, `SigmaOutRev = -SigmaOut`.
-    const KNOWN_UNCOVERED: [Op; 19] = [
+    // * **No coupling stays a bare pool read.** Every toy coupling scales a
+    //   single-reader product alongside a constant coefficient or colour factor,
+    //   so the constant collection folds it into one composite pool entry (a
+    //   `CoeffRat` leaf) resolved at bind time. The coupling's value is still
+    //   read, through that entry; the bare `Coupling` leaf is the SM census's to
+    //   cover, and it does.
+    const KNOWN_UNCOVERED: [Op; 20] = [
         Op::Hels,
         Op::GammaIout,
         Op::GammaOout,
@@ -215,6 +221,7 @@ fn gated_rows_op_census() {
         Op::FfvIout,
         Op::FfvOout,
         Op::PMom,
+        Op::Coupling,
     ];
 
     let models: Vec<_> = GATED_ROWS
