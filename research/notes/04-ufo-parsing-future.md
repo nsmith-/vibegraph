@@ -1,3 +1,12 @@
+---
+type: Design
+title: "Future: Full UFO Parsing (Take Over from FeynGraph)"
+description: "Options for owning UFO parsing instead of delegating to FeynGraph (PEG, Python AST walker, hybrid), the recommendation, and what FeynGraph drops that ALOHA needs. Implemented."
+note: "04"
+status: stable
+tags: [ufo, parsing, feyngraph, aloha]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Future: Full UFO Parsing (Take Over from FeynGraph)
 
 **Status:** Complete — implemented in `316598bcde65fc889986a630d6c3a907d64b6977` feat(ufo): replace PEG/FeynGraph parsers with Python AST + unified UFOModel

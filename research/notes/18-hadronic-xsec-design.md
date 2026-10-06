@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Hadronic cross section: design + session plan"
+description: "The hadronic-xsec sprint: PDF interpolation, massive RAMBO, two-phase VEGAS and run-card cuts designed, run as sessions H1–H8 with decision records; σ(pp→e+e-) matches MadGraph to 0.14%."
+note: "18"
+created: 2026-07-18
+status: stable
+tags: [pdf, lhapdf, vegas, hadronic-cross-section, cuts]
+generated: {by: claude-code, at: 2026-07-18}
+---
 # 18 — Hadronic cross section: design + session plan
 
 Sprint goal: the first hadron-collider observable —

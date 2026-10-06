@@ -1,3 +1,12 @@
+---
+type: Paper
+title: "Paper Summaries: Key References for vibegraph"
+description: "Implementation-focused summaries of the core papers: ALOHA, UFO, original MadGraph, MG5_aMC@NLO, HELAS, VEGAS/VEGAS+ and others, each with its relevance to vibegraph."
+note: "01"
+status: stable
+tags: [papers, aloha, ufo, helas, vegas, madgraph]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Paper Summaries: Key References for vibegraph
 
 **Status:** Reference material — no action items. Quick-reference summaries of the core papers, focused on what is

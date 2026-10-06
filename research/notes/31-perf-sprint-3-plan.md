@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Performance sprint 3: integration budget, PDF interpolation, evaluator schedule (plan)"
+description: "Third performance sprint (closed 2026-08-05): VEGAS first-iteration bias, w_max budget, parallel integrate, PDF interpolation hot path, fill_arenas study, with an end-to-end close-out measurement."
+note: "31"
+created: 2026-08-04
+status: stable
+tags: [performance, vegas, pdf, evaluator, sprint-plan]
+generated: {by: claude-code, at: 2026-08-04}
+---
 # 31 — Performance sprint 3: integration budget, PDF interpolation, evaluator schedule (plan)
 
 **Status:** PLAN, drafted 2026-08-04 against the note-30 baseline (per-stage timings,

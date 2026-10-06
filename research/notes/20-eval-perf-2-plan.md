@@ -1,3 +1,12 @@
+---
+type: Sprint Plan
+title: "`eval-perf-2` — second evaluator performance sprint (plan)"
+description: "Second evaluator performance sprint (closed 2026-07-21): mul-split, validate-once, zero-amplitude skip, rooting CSE; 1.18–2.19× per-process speedups and a later vs-MadGraph remeasure."
+note: "20"
+status: stable
+tags: [performance, evaluator, sprint-plan, benchmarks, rooting]
+generated: {by: claude-code, at: 2026-07-21}
+---
 # `eval-perf-2` — second evaluator performance sprint (plan)
 
 Follows the eval performance program (note 15, closed 2026-07-17, gap to MG

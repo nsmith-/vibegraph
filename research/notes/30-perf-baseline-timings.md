@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "Per-stage timing baseline: vibegraph against MadGraph on one host"
+description: "Per-stage wall times of the validation layer vs MadGraph's stages on one M3 Max host (2026-08-04), the 16m42s full MG regeneration cost, chain-B draw cost, and samply profiles."
+note: "30"
+created: 2026-08-04
+status: stable
+tags: [performance, timing, profiling, madgraph, baseline]
+generated: {by: claude-code, at: 2026-08-04}
+---
 # 30 — Per-stage timing baseline: vibegraph against MadGraph on one host
 
 **Status:** measurement record, taken 2026-08-04 on `main` @ `45a7d62` (the merge that

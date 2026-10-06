@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Color flow: design + session plan"
+description: "How MadGraph factorizes color from Lorentz (colorize, color basis, JAMPs, color matrix) and the vibegraph multi-flow color design, validation strategy, session plan and outcome."
+note: "16"
+created: 2026-07-12
+status: stable
+tags: [color, qcd, jamp, color-matrix, madgraph]
+generated: {by: claude-code, at: 2026-07-12}
+---
 # 16 — Color flow: design + session plan
 
 Design for the `color-flow` task (TODO.md): multi-flow color algebra, the prerequisite

@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Logging & terminal UI (plan)"
+description: "UX sprint (closed 2026-08-06): tracing-based structured logging across the library, plain-lines mode, a TUI footer with progress, SI-unit formatting, and per-stage instrumentation."
+note: "33"
+created: 2026-08-05
+status: stable
+tags: [logging, tracing, tui, cli, sprint-plan]
+generated: {by: claude-code, at: 2026-08-05}
+---
 # 33 — Logging & terminal UI (plan)
 
 **Status:** PLAN, drafted 2026-08-05. Design settled with the user in the

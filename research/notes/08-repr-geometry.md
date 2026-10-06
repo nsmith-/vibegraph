@@ -1,3 +1,12 @@
+---
+type: Design
+title: "Geometric picture for `repr.rs`"
+description: "The bundle/intertwiner picture of spin(1,3) × gauge representations and the trait strategy it suggested for repr.rs. Superseded as design input by note 13; kept for motivation."
+note: "08"
+status: deprecated
+tags: [representations, intertwiners, spinors, type-design, geometry]
+generated: {by: claude-code, at: 2026-07-08}
+---
 # Geometric picture for `repr.rs`
 
 > **⚠ Superseded as design input (2026-07-08) by `13-typed-repr-conventions-design.md`.**

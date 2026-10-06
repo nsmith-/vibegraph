@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Post-CSE Evaluator Optimization: Research Findings & 3-Track Plan"
+description: "Closed evaluator-optimization program: research findings, eval-layout sessions with results (SoA, helicity expansion, helicity filtering), rooting study, and the NO-GO for e-graph DAG extraction."
+note: "15"
+created: 2026-07-11
+status: stable
+tags: [evaluator, performance, egglog, helicity, memory-layout]
+generated: {by: claude-code, at: 2026-07-11}
+---
 # 15 — Post-CSE Evaluator Optimization: Research Findings & 3-Track Plan
 
 **Status:** CLOSED 2026-07-17 — the program is complete and this note is its design

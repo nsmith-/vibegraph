@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "Is the evaluator bound by FLOPs or by bytes? — a roofline census"
+description: "Counter-free roofline census of the helicity evaluator: exact op and byte counts, achieved rates against FP-issue and L1/L2 ceilings at each lane width."
+created: 2026-10-03
+status: stable
+tags: [performance, roofline, evaluator, simd, memory-bandwidth]
+generated: {by: claude-code, at: 2026-10-03}
+measured: {commit: db5fd03, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM"}
+---
 # Is the evaluator bound by FLOPs or by bytes? — a roofline census
 
 **Status: measurement record, 2026-10-03.** Tree: `db5fd03` plus the census

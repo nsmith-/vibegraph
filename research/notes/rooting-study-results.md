@@ -1,3 +1,11 @@
+---
+type: Measurement
+title: "Rooting-exploration study — results (branch `explore/rooting`, throwaway)"
+description: "How the post-CSE node count depends on per-diagram rooting: greedy rooting saves ~21% of nodes, but every non-baseline rooting broke the amplitude, so no production pass."
+status: stable
+tags: [performance, cse, diagram-rooting, evaluator, amplitudes]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Rooting-exploration study — results (branch `explore/rooting`, throwaway)
 
 Measurement study for Track 2 of the post-CSE optimization program (note 15 §1.3, §3):

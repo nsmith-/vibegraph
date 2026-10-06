@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`kt-spine` feature sprint plan (scales + phase-space, two tracks)"
+description: "Two-track sprint: MadGraph kT clustering for dynamical_scale_choice=-1 (with a binding spec) and the multi-rung t-channel spine, converging on p p > j j gated at MadGraph's default scale."
+note: "28"
+created: 2026-08-01
+status: stable
+tags: [kt-clustering, scales, phase-space, t-channel, sprint-plan, madgraph]
+generated: {by: claude-code, at: 2026-08-01}
+---
 # 28 — `kt-spine` feature sprint plan (scales + phase-space, two tracks)
 
 **Status: APPROVED 2026-08-01 — §6 recommended decisions adopted (D1–D3 resolved); sprint launched.**

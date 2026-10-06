@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`dynamical-scales` — running couplings and the per-event scale (sprint plan)"
+description: "Sprint plan and close-out (2026-07-27) for running αs and per-event scales, opening with a survey of MadGraph's αs RGE and scale choices and the decision on where running couplings multiply in."
+note: "22"
+created: 2026-07-26
+status: stable
+tags: [scales, alphas, running-couplings, madgraph, sprint-plan]
+generated: {by: claude-code, at: 2026-07-26}
+---
 # `dynamical-scales` — running couplings and the per-event scale (sprint plan)
 
 **✅ CLOSED 2026-07-27, merged to `main` (ff, HEAD `249ec5b`).** D1–D4 landed;

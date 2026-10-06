@@ -1,3 +1,16 @@
+---
+type: Measurement
+title: "x86 AVX2 evaluator perf study — results (branch `x86_avx2_perf`)"
+description: "Evaluator perf study on AVX2, M3 Max and Emerald Rapids: inlining tune and FMA shipped, get_unchecked reverted, and a wide-backed LaneField that makes SIMD lanes beat scalar."
+created: 2026-07-31
+status: stable
+tags: [performance, simd, fma, x86, evaluator]
+generated: {by: claude-code, at: 2026-07-31}
+measured:
+  - {commit: be76771, host: "x86-64 with AVX2 + FMA, no AVX-512"}
+  - {host: "Apple M3 Max, macOS"}
+  - {commit: 02e8b25, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM"}
+---
 # x86 AVX2 evaluator perf study — results (branch `x86_avx2_perf`)
 
 **Status: CLOSED (2026-07-31).** Two changes landed (inlining tune + FMA); the third

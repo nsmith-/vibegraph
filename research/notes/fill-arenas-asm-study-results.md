@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "`fill_arenas` instruction-level study"
+description: "Instruction-level profile of the fill_arenas dispatch loop on an M3 Max: jump-table dispatch, the time split across dispatch, loads, FP and bounds checks, and structural findings."
+created: 2026-08-04
+status: stable
+tags: [performance, evaluator, disassembly, dispatch, aarch64]
+generated: {by: claude-code, at: 2026-08-04}
+measured: {commit: 9bad54c, host: "Apple M3 Max, macOS 15.7.7"}
+---
 # `fill_arenas` instruction-level study
 
 **Date:** 2026-08-04 · **Host:** Apple M3 Max, macOS 15.7.7, `aarch64-apple-darwin` · **Repo:** `/Users/ncsmith/src/generators/vibegraph` @ `9bad54c` (shared main checkout; no source edited, nothing committed, `validation/` untouched)

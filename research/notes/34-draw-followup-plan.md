@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Draw-performance sprint record, and the follow-up plan"
+description: "Record of the draw-performance sprint (cut-first density draw, timelike floors), its four-session follow-up (α-survey, llj ladder, MIN_CHANNEL_NEVAL, jacobian memo) and a time-to-accuracy remeasure."
+note: "34"
+created: 2026-08-06
+status: stable
+tags: [performance, phase-space, multichannel, cuts, sprint-plan]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # 34 — Draw-performance sprint record, and the follow-up plan (2026-08-06)
 
 Three parts. §1 is the record of the **draw-performance sprint** — two

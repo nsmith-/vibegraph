@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Lorentz Runtime Evaluator: Detailed Design and Implementation Plan"
+description: "Design and phased plan for the runtime HELAS evaluator (DiagramAst, WaveformSlot, vertex dispatch). Shipped; its future direction is superseded by note 13. Kept as implementation reference."
+note: "10"
+created: 2026-06-01
+status: deprecated
+tags: [helas, evaluator, lorentz, vertex-dispatch, wavefunctions]
+generated: {by: claude-code, at: 2026-06-01}
+---
 # 10 — Lorentz Runtime Evaluator: Detailed Design and Implementation Plan
 
 > **⚠ Implemented, and its future direction superseded (2026-07-08) by

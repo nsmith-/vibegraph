@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`v3-backlog` sprint plan (validation-3 findings burn-down)"
+description: "Burn-down sprint for validation-3 findings (closed 2026-08-01): h→ττ pole bin, ŝ floor, uux colour selection, Drell-Yan banking, AMP2 accumulator, LHE round trip; census and findings register."
+note: "27"
+created: 2026-08-01
+status: stable
+tags: [validation, sprint-plan, color-flow, samples, madgraph]
+generated: {by: claude-code, at: 2026-08-01}
+---
 # 27 — `v3-backlog` sprint plan (validation-3 findings burn-down)
 
 **Status: ACTIVE — launched 2026-08-01; decisions D1/D2 resolved (§6).**

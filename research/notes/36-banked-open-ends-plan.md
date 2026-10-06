@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`banked-open-ends` sprint plan: closing the banked validation open ends"
+description: "Validation sprint (closed 2026-09-07) flipping banked info cells to gates: seed-headroom census, incoming legs in samples, massive fixed beams, coupling oracle, UFO ** precedence, MG channel set."
+note: "36"
+created: 2026-09-07
+status: stable
+tags: [validation, sprint-plan, seed-sweeps, ufo, multichannel]
+generated: {by: claude-code, at: 2026-09-07}
+---
 # 36 — `banked-open-ends` sprint plan: closing the banked validation open ends
 
 **Status: CLOSED 2026-09-07 (§7 is the close-out record).** Eight sessions in

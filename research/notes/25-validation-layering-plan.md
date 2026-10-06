@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Validation layering and the per-process report (`validation-3` sprint plan)"
+description: "Design of the hermetic/banked/oracle validation layers, the per-process × category report and manifest, with the validation-3 sessions and close-out findings register (2026-07-31)."
+note: "25"
+created: 2026-07-31
+status: stable
+tags: [validation, test-layers, manifest, reference-data, report]
+generated: {by: claude-code, at: 2026-07-31}
+---
 # 25 — Validation layering and the per-process report (`validation-3` sprint plan)
 
 Planned 2026-07-31, following the `user-distribution`/`proton-events` close-out.

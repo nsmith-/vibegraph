@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`event-output-lhef` — unweighted event output (sprint plan)"
+description: "Sprint plan and outcomes (closed 2026-07-28) for unweighted events: JAMP2 colour-flow selection, accept/reject, the LHEF writer, the generate CLI, and the model-identity fix in the artifact."
+note: "23"
+created: 2026-07-27
+status: stable
+tags: [lhef, unweighting, events, color-flow, sprint-plan]
+generated: {by: claude-code, at: 2026-07-27}
+---
 # `event-output-lhef` — unweighted event output (sprint plan)
 
 **✅ CLOSED 2026-07-28, merged to `main` (ff, HEAD `49124d5`; the model-digest

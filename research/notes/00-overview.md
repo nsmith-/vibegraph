@@ -1,3 +1,12 @@
+---
+type: Overview
+title: "Overview: LO Monte Carlo Event Generation"
+description: "The project's goal and six-step LO pipeline (UFO, diagrams, helicity amplitudes, phase space, cross section, events), the e+e- → μ+μ- starter process, and how NLO/NNLO differ."
+note: "00"
+status: stable
+tags: [pipeline, leading-order, event-generation, nlo, references]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Overview: LO Monte Carlo Event Generation
 
 ## Goal

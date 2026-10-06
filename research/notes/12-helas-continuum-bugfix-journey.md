@@ -1,3 +1,13 @@
+---
+type: Validation Methodology
+title: "The 2→6 continuum bug: six root causes and the per-diagram oracle"
+description: "Post-mortem of a 2.26e10 |M|² disagreement with MadGraph on a 579-diagram 2→6 process: six physics defects, two validation-setup defects, false leads, and the per-diagram oracle that worked."
+note: "12"
+created: 2026-07-06
+status: stable
+tags: [helas, validation, oracle, fermion-flow, post-mortem]
+generated: {by: claude-code, at: 2026-07-06}
+---
 # 12 — The 2→6 continuum bug: six root causes and the per-diagram oracle
 
 Post-mortem of the HELAS evaluator's continuum |M|² bug (2026-06-12 → 2026-07-06,

@@ -1,3 +1,13 @@
+---
+type: Feasibility Study
+title: "Completeness relations for the helicity-summed |M|²: feasibility"
+description: "Whether a trace-form |M|² from completeness relations speeds integration: finite-field reconstruction measurements, the egglog verdict, and helicity sampling as the cheaper lever."
+note: "41"
+created: 2026-09-26
+status: stable
+tags: [matrix-element, helicity-sum, finite-fields, egglog, performance]
+generated: {by: claude-code, at: 2026-09-26}
+---
 # 41 — Completeness relations for the helicity-summed |M|²: feasibility (2026-09-26)
 
 The question (user): replace the explicit helicity sum in the integrand with

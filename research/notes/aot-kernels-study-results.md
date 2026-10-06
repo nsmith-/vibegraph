@@ -1,3 +1,15 @@
+---
+type: Measurement
+title: "The helicity program compiled ahead of time — results"
+description: "The fill_arenas bytecode rendered to Rust (inlined, out-of-line, MadGraph-style) and timed against the interpreter: small programs gain, large ones lose to code size."
+created: 2026-10-04
+status: stable
+tags: [performance, evaluator, aot-compilation, code-size, interpreter]
+generated: {by: claude-code, at: 2026-10-04}
+measured:
+  - {commit: 03c31e6, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM"}
+  - {commit: b504391, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM"}
+---
 # The helicity program compiled ahead of time — results
 
 **Status: measurement record, 2026-10-04. The study code is not in the tree: it

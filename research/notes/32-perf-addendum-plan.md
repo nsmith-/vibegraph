@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Performance-sprint addendum: budget alignment, bias closure, the serial tail (plan)"
+description: "Cleanup addendum to performance sprint 3 (closed 2026-08-05): budgets aligned to MadGraph precision, seed-combination bias, percentile w_max, Amdahl tail of -j, mg_perf_compare; time-to-accuracy data."
+note: "32"
+created: 2026-08-05
+status: stable
+tags: [performance, integration-budget, parallelism, sprint-plan, benchmarks]
+generated: {by: claude-code, at: 2026-08-05}
+---
 # 32 — Performance-sprint addendum: budget alignment, bias closure, the serial tail (plan)
 
 Planned 2026-08-05 from the user's triage of note 31's open items. This is a

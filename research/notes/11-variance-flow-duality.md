@@ -1,3 +1,12 @@
+---
+type: Physics Convention
+title: "Unifying `Variance` and `Flow` as form-induced dualities"
+description: "Variance and the bra/unbar (Dirac-adjoint) duality as form-induced dualities, a form-kind taxonomy and a Weyl-ε roadmap. Superseded as design input by note 13 §5."
+note: "11"
+status: deprecated
+tags: [variance, dirac-adjoint, bilinear-forms, terminology, spinors]
+generated: {by: claude-code, at: 2026-07-07}
+---
 # Unifying `Variance` and `Flow` as form-induced dualities
 
 > **⚠ Superseded as design input (2026-07-08) by `13-typed-repr-conventions-design.md`.**

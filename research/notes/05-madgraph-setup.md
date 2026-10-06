@@ -1,3 +1,12 @@
+---
+type: Procedure
+title: "MadGraph5_aMC@NLO Setup via pixi/conda"
+description: "How to install and run MadGraph5_aMC@NLO through the conda-forge package in a pixi environment, a measured e+e- → μ+μ- cross section, and caveats (Fortran, LHAPDF, output clobbering)."
+note: "05"
+status: stable
+tags: [madgraph, pixi, conda, setup, cross-section]
+generated: {by: claude-code, at: 2026-05-22}
+---
 # MadGraph5_aMC@NLO Setup via pixi/conda
 
 **Status:** Complete — implemented in `2d8418a31598c2470e68954775a4b1927b916353`

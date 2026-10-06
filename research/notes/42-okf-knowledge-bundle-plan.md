@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Reference material as an OKF knowledge bundle: refactor plan"
+description: "Plan to turn research/ into an OKF v0.2 knowledge bundle and TODO.md into one-file backlog items: target shape, sprint lifecycle, measurement provenance and migration phases."
+note: "42"
+created: 2026-10-05
+status: draft
+tags: [okf, knowledge-bundle, backlog, documentation, migration]
+generated: {by: claude-code, at: 2026-10-05}
+---
 # 42 — Reference material as an OKF knowledge bundle: refactor plan (2026-10-05)
 
 The question (user): restructure `research/` in the style of the Open Knowledge
@@ -9,11 +19,10 @@ the plan: the target shape, how a sprint runs against it, the backlog as
 one-file items with a generated view, the migration phases, and the decisions
 taken in the planning discussion.
 
-**Status: planned, not started** (user, 2026-10-05). Work waits until the PRs
-and developments in flight have merged, so the migration starts from a quiet
-`research/notes/` and a settled `TODO.md`. All other work pauses while the
-migration runs, so no parallel stream writes notes or backlog entries in the
-meantime. The decisions taken are in §9.
+**Status: in progress.** Phase B and Phase 0 ran on 2026-10-06, after the PRs
+in flight had merged (§8 records how each went); Phase 1 is next. All other
+work pauses while the migration runs, so no parallel stream writes notes or
+backlog entries in the meantime. The decisions taken are in §9.
 
 ## 1. OKF in brief
 
@@ -98,7 +107,9 @@ Convention`, `Derivation`, `Design`, `Design Decision`, `Algorithm`,
 `Validation Methodology`, `Validation Gate`, `Measurement`, `Feasibility
 Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
 `Session Brief`, `Session Report`, `Sprint Record`, `Audit`, `Backlog Item`,
-`Working Note`.
+`Caveat` (a standing fact that bounds how results may be read), `Working Note`.
+The pre-migration notes also carry `Paper` and `Sprint Plan` (a whole sprint's
+plan in one file); Phase 2 retires `Sprint Plan` in favour of the §4 shape.
 
 **Conventions:**
 - Concept bodies state current truth. History lives in `log.md` and git, which
@@ -107,6 +118,8 @@ Study`, `Procedure`, `Paper`, `Codebase`, `Codebase Survey`, `Sprint`,
 - `verified` with a `human:` actor is added only when a person actually
   reviewed the concept, never in bulk.
 - `index.md` files are generated from frontmatter by a script, never by hand.
+  The backlog folders have none: an index there would change with every item
+  and conflict between branches, so `pixi run backlog` is their listing.
 - A conformance lint runs in CI as a pixi task. It checks that every
   non-reserved `.md` under `kb/` parses and has a non-empty `type`, and that the
   generated indexes are current.
@@ -223,7 +236,8 @@ measured:
   command: pixi run bench-eval -- gg_ttg
 ```
 
-A session deciding whether to re-measure reads:
+A file measured on several hosts or at several commits carries a list of such
+mappings. A session deciding whether to re-measure reads:
 - what changed on `main` since landing:
   `git log --oneline <landed_in>..origin/main -- <paths the body names>`;
 - what changed between measurement and merge, after fetching the PR ref:
@@ -348,7 +362,7 @@ read the whole backlog first.
 
 ## 8. Migration phases
 
-### Phase B — split the backlog (first; independent of the notes)
+### Phase B — split the backlog (first; independent of the notes) — done 2026-10-06
 
 `TODO.md` is the hottest conflict point, and splitting it does not depend on
 migrating the notes, so it goes first. Until Phase 4 the items live in
@@ -371,7 +385,21 @@ migrating the notes, so it goes first. Until Phase 4 the items live in
    `AGENTS.md`, `.agents/agents/*.md` and the skills: the manager reads the
    view; dispatch briefs name a session or an item.
 
-### Phase 0 — conform in place (one session, mechanical)
+**As executed.** `TODO.md`'s 122 backlog segments (118 entries, 4 section
+intros) went to nine parallel agents, each checking its entries against the
+code before writing. The result: 130 items, 40 validation, 38 feature, 37
+performance and 15 hygiene. 10 entries were finished with nothing left to
+capture, and 4 were finished but left a caveat no note recorded, which went
+to `facts/`. Every entry id is accounted for in the agents' reports. The
+agents corrected the entries where they had gone stale: renamed functions,
+superseded figures, wrong section citations, and refusals that no longer
+exist. Phase B's other concepts sit beside the notes until Phase 4:
+`sprints/<name>/closeout.md` (one `Sprint Record` per closed-sprint line),
+`decisions/` (the scope decisions and the sprint rhythm, awaiting review),
+`facts/` (`Caveat` and `Measurement` concepts) and `pipeline/status.md`.
+The tooling is `scripts/kb.py`; CI runs `kb-lint` in its own job.
+
+### Phase 0 — conform in place (one session, mechanical) — done 2026-10-06
 
 Add frontmatter (`type`, `title`, `description`, `tags`, `generated`,
 `status`) to the existing notes where they stand. Generate `index.md`, add
@@ -395,6 +423,15 @@ confirmed by reading each note:
 
 During Phase 0 the bundle root is `research/notes/`; Phase 4 moves it to
 `research/kb/`.
+
+**As executed.** Three agents added the block to the 54 notes, leaving the
+bodies byte-identical. Departures from the table above: 15, 18, 21, 22 and 23
+are `Sprint Plan`; 08 and 13 are `Design`; 14 is `Paper` (the egglog paper);
+26 is `Feasibility Study`. 08–11 are `deprecated`, superseded by 13. Several
+notes carry stale status banners in their bodies (27 "ACTIVE", 28 "APPROVED",
+38 "PLANNED", 41-mlm "WAITING ON refdata-9") under a closed sprint;
+frontmatter says `stable`, and Phase 2 resolves the bodies. The results files
+carry `measured:` blocks for the hosts and commits they name.
 
 ### Phase 1 — chunk, embed, cluster (scratchpad only, never committed)
 

@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "Reweighting cost: vibegraph against MadGraph's reweight module — results"
+description: "Order-of-magnitude timing of event reweighting: vibegraph's exact and polynomial paths against MadGraph's reweight module, per event and hypothesis, on four oracle rows."
+created: 2026-10-05
+status: stable
+tags: [reweighting, performance, madgraph-comparison, benchmarks]
+generated: {by: claude-code, at: 2026-10-05}
+measured: {commit: f6b1936, host: "4-vCPU cloud VM, Intel Xeon @ 2.80 GHz"}
+---
 # Reweighting cost: vibegraph against MadGraph's reweight module — results
 
 **Status: measurement record, 2026-10-05.** Tree: `claude/fervent-hopper-ytjddf` at

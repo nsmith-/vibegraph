@@ -1,3 +1,12 @@
+---
+type: Codebase Survey
+title: "Reference Implementations: Sherpa and POWHEG-BOX-V2"
+description: "Architectural survey of Sherpa/COMIX (Berends-Giele recursion, UFO loading, phase space) and POWHEG-BOX-V2 (B-tilde integrand, subtraction, MINT, LHE output), compared with MadGraph/HELAS."
+note: "03"
+status: stable
+tags: [sherpa, comix, powheg, berends-giele, nlo]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Reference Implementations: Sherpa and POWHEG-BOX-V2
 
 **Status:** Reference material — no action items. Detailed architectural survey of reference implementations.

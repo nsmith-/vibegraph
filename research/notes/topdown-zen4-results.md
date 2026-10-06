@@ -1,3 +1,15 @@
+---
+type: Measurement
+title: "Top-down counters on Zen 4: where the evaluator's cycles go"
+description: "Top-down PMU slot accounting of the evaluator on Zen 4 across lane widths, and the constant-folding and weighted-JAMP-sum changes it led to, A/B-timed on Emerald Rapids."
+created: 2026-10-05
+status: stable
+tags: [performance, pmu, top-down, zen4, evaluator]
+generated: {by: claude-code, at: 2026-10-05}
+measured:
+  - {commit: 5ced9bb, host: "AMD EPYC 9534 (Zen 4), bare metal, RHEL 9"}
+  - {host: "Intel Xeon Emerald Rapids, 4-vCPU cloud VM"}
+---
 # Top-down counters on Zen 4: where the evaluator's cycles go
 
 **Date:** 2026-10-05 · **Host:** AMD EPYC 9534 (Zen 4 "Genoa", family 25 model 17),

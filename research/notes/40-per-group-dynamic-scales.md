@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Dynamic scales per flavour group and per beam ordering"
+description: "Fix for kT-clustering dynamic scales taken from the wrong flavour group or beam ordering in ProtonIntegrand, with the per-event oracles against MadEvent and the σ rows."
+note: "40"
+created: 2026-09-26
+status: stable
+tags: [scales, kt-clustering, hadronic, flavour-groups, madevent]
+generated: {by: claude-code, at: 2026-09-26}
+---
 # 40 — Dynamic scales per flavour group and per beam ordering (2026-09-26)
 
 **Status: LANDED** on `pg-z1s` (close-out of the `process-grammar` sprint, note 38

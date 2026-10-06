@@ -1,3 +1,12 @@
+---
+type: Physics Convention
+title: "UFO and ALOHA type matrix for medium-term implementation"
+description: "Reference tables of UFO spin codes, ALOHA operator/value families and ProjM/ProjP naming; its intertwiner-trait plan is superseded by note 13, the reference tables remain valid."
+note: "09"
+status: deprecated
+tags: [ufo, aloha, lorentz, type-design, chirality]
+generated: {by: claude-code, at: 2026-07-08}
+---
 # UFO and ALOHA type matrix for medium-term implementation
 
 > **⚠ Design direction superseded (2026-07-08) by `13-typed-repr-conventions-design.md`.**

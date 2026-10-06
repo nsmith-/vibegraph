@@ -1,3 +1,13 @@
+---
+type: Codebase Survey
+title: "MadEvent phase-space map survey, and a soft-shaped 2-body angle"
+description: "Survey of MadEvent's phase-space maps against ours, plus the design and multi-seed measurement of a soft-shaped 2-body decay angle and the τ map, and the --map-* rules they set."
+note: "37"
+created: 2026-09-07
+status: stable
+tags: [phase-space, madevent, importance-sampling, multichannel, vegas]
+generated: {by: claude-code, at: 2026-09-07}
+---
 # 37 — MadEvent phase-space map survey, and a soft-shaped 2-body angle (2026-09-07)
 
 Two things, from one user observation: the 1→2 splitting in the phase-space

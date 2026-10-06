@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "v0.1 validation sprint plan (design–implement–review chains)"
+description: "v0.1 validation sprint (closed 2026-08-03) run as design→implement→review chains: conjugate-rep ICOLUP fix, per-point AMP2 channel draw, run-card hard errors, nn23lo1 re-bank; census 96 ✅/2 ⚠️."
+note: "29"
+created: 2026-08-02
+status: stable
+tags: [validation, sprint-plan, color-flow, run-card, reference-data]
+generated: {by: claude-code, at: 2026-08-02}
+---
 # 29 — v0.1 validation sprint plan (design–implement–review chains)
 
 Planned 2026-08-02, from TODO's "Validation-sprint slate (restricted scope,

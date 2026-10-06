@@ -1,3 +1,13 @@
+---
+type: Design
+title: "Typed Repr Conventions: the intertwiner-basis + peephole design"
+description: "Design of record for typed representations in the evaluator: irreducible-intertwiner primitives, a rewrite catalog, separate propagators, three-axis form/adjoint terminology. Supersedes notes 08–11."
+note: "13"
+created: 2026-07-08
+status: stable
+tags: [representations, intertwiners, evaluator, type-design, peephole]
+generated: {by: claude-code, at: 2026-07-08}
+---
 # 13 — Typed Repr Conventions: the intertwiner-basis + peephole design
 
 **Status:** Design anchor (2026-07-08). Backs `typed-repr-conventions` (TODO cleanup

@@ -1,3 +1,15 @@
+---
+type: Measurement
+title: "Tail-call-threaded dispatch and the execution order — results"
+description: "Tail-call-threaded (become) dispatch against the match loop on Cascade Lake and M3 Max: bit-identical but not adopted; why the op-blocked level execution order stays."
+created: 2026-09-25
+status: stable
+tags: [performance, dispatch, interpreter, instruction-scheduling, tail-calls]
+generated: {by: claude-code, at: 2026-09-25}
+measured:
+  - {commit: 6bd7325, host: "Intel Xeon @ 2.8 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM"}
+  - {commit: 2008fbf, host: "Apple M3 Max, macOS 15.7"}
+---
 # Tail-call-threaded dispatch and the execution order — results
 
 **Status: CLOSED (2026-09-25). The dispatcher code is archived under the git tag

@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`user-distribution` + `proton-events` — cards → `.lhe` for `p p > l+ l- j` (sprint plan)"
+description: "Two-track sprint (closed 2026-07-31): hadronic multichannel integration and events for p p > l+ l- j gated against MadGraph, plus release binaries, PDF interning and the ~/.vibegraph cache."
+note: "24"
+created: 2026-07-30
+status: stable
+tags: [hadronic, pdf, events, packaging, sprint-plan, madgraph]
+generated: {by: claude-code, at: 2026-07-30}
+---
 # `user-distribution` + `proton-events` — cards → `.lhe` for `p p > l+ l- j` (sprint plan)
 
 **Goal (cross-track acceptance A):** a user with no dev toolchain drives

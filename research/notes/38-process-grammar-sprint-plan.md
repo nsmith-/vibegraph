@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`process-grammar` feature sprint plan: MadGraph LO process parity"
+description: "Plan and close-out record of the process-grammar sprint: proc-card parser, s-channel restrictions, polarized particles, decays and decay chains, and the refdata-8 banking."
+note: "38"
+created: 2026-09-25
+status: stable
+tags: [process-grammar, proc-card, decay-chains, polarization, sprint]
+generated: {by: claude-code, at: 2026-09-25}
+---
 # 38 — `process-grammar` feature sprint plan: MadGraph LO process parity
 
 **Status: PLANNED (scope decision 2026-09-25, user).** No session has run.

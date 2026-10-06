@@ -1,3 +1,12 @@
+---
+type: Design
+title: "MadGraph5 Process-Specification Language: PEG Grammar"
+description: "MadGraph's process-string syntax (`generate p p > e+ e- j`) traced through its parser and written as a PEG grammar, with a FeynGraph gap analysis and grammar edge cases."
+note: "06"
+status: stable
+tags: [process-grammar, peg, madgraph, parsing, feyngraph]
+generated: {by: claude-code, at: 2026-05-22}
+---
 # MadGraph5 Process-Specification Language: PEG Grammar
 
 ## Overview

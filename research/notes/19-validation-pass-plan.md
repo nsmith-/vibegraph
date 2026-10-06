@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`validation-2` Sprint Plan"
+description: "Plan and session records of the validation-2 pass (closed 2026-07-21): NHEL pinning, 14-process σ gate via the CLI, PDF seam, the rooting-soundness fix (V5) and branch-level coverage."
+note: "19"
+created: 2026-07-19
+status: stable
+tags: [validation, sprint-plan, rooting, cross-section, nhel, madgraph]
+generated: {by: claude-code, at: 2026-07-19}
+---
 # 19 — `validation-2` Sprint Plan
 
 **Date**: 2026-07-19. **Position in the loop**: validation pass following the

@@ -1,3 +1,12 @@
+---
+type: Codebase Survey
+title: "Reference Implementation Analysis"
+description: "Revision-pinned source survey of FeynGraph and MadGraph5_aMC@NLO, organized by pipeline goal: UFO loading, diagram enumeration, HELAS amplitudes, phase space and cross section."
+note: "02"
+status: stable
+tags: [feyngraph, madgraph, ufo, diagram-enumeration, helas]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # Reference Implementation Analysis
 
 **Status:** Reference material — no action items. Analysis of reference submodules in `research/refs/`.

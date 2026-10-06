@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "Hot-loop bounds/capacity-check elimination: feasibility memo"
+description: "Measured cost of bounds and capacity checks in the evaluator's fill_arenas loop, why no safe mechanism captured it (A3c cancelled), and a 2026-10-04 re-test putting the ceiling at 3.5–5.5%."
+note: "17"
+created: 2026-07-14
+status: stable
+tags: [performance, bounds-checks, evaluator, codegen, benchmarking]
+generated: {by: claude-code, at: 2026-07-14}
+---
 # 17 — Hot-loop bounds/capacity-check elimination: feasibility memo
 
 **Status:** Feasibility investigation + go/no-go (2026-07-14). Companion to

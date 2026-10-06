@@ -1,3 +1,12 @@
+---
+type: Codebase Survey
+title: "MadGraph5 Code Quality Review"
+description: "MadGraph5 strengths, weaknesses and bug categories mined from its UpdateNotes and source, the unit tests they imply for vibegraph, and MG defects found directly (rambo, ALOHA, grouped MadEvent)."
+note: "07"
+status: stable
+tags: [madgraph, code-quality, bugs, testing, aloha]
+generated: {by: claude-code, at: 2026-08-06}
+---
 # MadGraph5 Code Quality Review
 
 **Status:** Reference material — no action items. Code quality assessment; motivates design patterns for vibegraph.

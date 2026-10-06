@@ -1,3 +1,13 @@
+---
+type: Paper
+title: "egglog: Language Notes (Datalog + Equality Saturation)"
+description: "Summary of the egglog paper (PLDI 2023): Datalog and equality-saturation background, the language by example, its formal core and implementation, and relevance to vibegraph's rewrite stage."
+note: "14"
+created: 2026-07-11
+status: stable
+tags: [egglog, equality-saturation, datalog, e-graphs, rewriting]
+generated: {by: claude-code, at: 2026-07-11}
+---
 # 14 — egglog: Language Notes (Datalog + Equality Saturation)
 
 **Status:** Reference summary (2026-07-11). Backs the planned egg/egglog rewrite stage

@@ -1,3 +1,12 @@
+---
+type: Measurement
+title: "B0 — seed-sweep headroom census of the banked layer"
+description: "Session B0 of banked-open-ends (note 36): measured headroom of every enforced tolerance and pull/χ² threshold in the banked validation gates, and the thin list it produced."
+note: "36a"
+status: stable
+tags: [validation, seed-sweeps, tolerances, statistics, census]
+generated: {by: claude-code, at: 2026-09-07}
+---
 # B0 — seed-sweep headroom census of the banked layer
 
 Session B0 of `banked-open-ends` (note 36 §3). Branch `b0-seed-headroom`, base

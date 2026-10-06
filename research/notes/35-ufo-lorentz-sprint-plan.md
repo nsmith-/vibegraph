@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`ufo-lorentz` feature sprint plan: general UFO Lorentz structures"
+description: "Sprint (closed 2026-09-07) for general UFO Lorentz structures: Clifford-basis tensors, Epsilon/γ-chains/Gamma5, four-fermion vertices, SMEFTsim and toy-model rows gated against MadGraph."
+note: "35"
+created: 2026-09-05
+status: stable
+tags: [ufo, lorentz-structures, smeft, four-fermion, sprint-plan, madgraph]
+generated: {by: claude-code, at: 2026-09-05}
+---
 # 35 — `ufo-lorentz` feature sprint plan: general UFO Lorentz structures
 
 **Status: CLOSED 2026-09-07 (§10 is the close-out record). Wave 1 landed 2026-09-05 (R1 `bff5aa9`, L1

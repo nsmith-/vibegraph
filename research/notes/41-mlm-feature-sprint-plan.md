@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "`mlm` feature sprint plan: MadEvent parity for MLM-matched LO generation"
+description: "Plan, session records and close-out of the mlm sprint: xqcut, ickkw = 1 clustering scales, α_s/PDF reweighting, mixed multiplicity and the shower-ready event record."
+note: "41"
+created: 2026-09-28
+status: stable
+tags: [mlm-matching, merging, kt-clustering, lhef, sprint]
+generated: {by: claude-code, at: 2026-09-28}
+---
 # 41 — `mlm` feature sprint plan: MadEvent parity for MLM-matched LO generation
 
 **Status: Z1 DONE, WAITING ON `refdata-9` (2026-10-01).** Every session of

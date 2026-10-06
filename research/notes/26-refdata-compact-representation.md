@@ -1,3 +1,13 @@
+---
+type: Feasibility Study
+title: "A compact banked-event representation: measurement and verdict"
+description: "Measured whether banked MadGraph LHE events could be projected small enough to commit to git: exact projection, but a 27.5 MB floor, so the fetched reference bundle stays (verdict: no)."
+note: "26"
+created: 2026-07-31
+status: stable
+tags: [reference-data, lhef, compression, validation, measurement]
+generated: {by: claude-code, at: 2026-07-31}
+---
 # 26 — A compact banked-event representation: measurement and verdict
 
 Measured 2026-07-31 on the 25 banked MadGraph runs in

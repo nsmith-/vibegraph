@@ -1,3 +1,13 @@
+---
+type: Measurement
+title: "vibegraph against MadGraph on one x86 host — results"
+description: "Both codes on one Cascade Lake VM: per-point matrix-element cost, time to 0.1% on σ and integrand throughput against MadGraph, and why the ratios differ from the M3 Max."
+created: 2026-09-26
+status: stable
+tags: [performance, madgraph-comparison, benchmarks, cross-section, x86]
+generated: {by: claude-code, at: 2026-09-26}
+measured: {commit: cf8b2b7, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM"}
+---
 # vibegraph against MadGraph on one x86 host — results
 
 **Status: measurement record, 2026-09-26.** Tree: PR #8's branch at `cf8b2b7`.

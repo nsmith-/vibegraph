@@ -1,3 +1,13 @@
+---
+type: Physics Convention
+title: "Vector-vertex convention signs: the gluon source sign, the contact sign, and the gluon–scalar current"
+description: "The diagram-level sign rule for triple-gluon sources, four-vector contacts and the gluon–scalar current, the per-diagram oracle that found it, and the W-pair disagreement left open."
+note: "39"
+created: 2026-09-25
+status: stable
+tags: [amplitudes, sign-conventions, vector-vertices, qcd, madgraph-comparison]
+generated: {by: claude-code, at: 2026-09-25}
+---
 # 39 — Vector-vertex convention signs: the gluon source sign, the contact sign, and the gluon–scalar current (2026-09-25)
 
 **Status: LANDED** on `pg-c4v` (validation session beside the `process-grammar`

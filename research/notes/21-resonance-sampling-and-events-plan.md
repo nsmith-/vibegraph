@@ -1,3 +1,13 @@
+---
+type: Sprint Plan
+title: "Resonance-aware sampling → event generation (program plan)"
+description: "Two-sprint program plan (complete 2026-07-28): MadGraph-style multichannel phase space with BW maps and α-adaptation, its addenda (t-channel spine, per-channel VEGAS), and the LHEF outline."
+note: "21"
+created: 2026-07-21
+status: stable
+tags: [phase-space, multichannel, vegas, resonances, sprint-plan, lhef]
+generated: {by: claude-code, at: 2026-07-21}
+---
 # Resonance-aware sampling → event generation (program plan)
 
 **✅ PROGRAM COMPLETE 2026-07-28.** Sprint A `resonance-sampling` closed +
