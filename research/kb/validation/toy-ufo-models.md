@@ -52,11 +52,11 @@ The six rows, all gated in `diagrams`, `amplitudes`, `integrals` and
 | row | process | isolates |
 |---|---|---|
 | `ll_to_qqx_toy_dipole` | `lt~ lt > qt qt~ NP<=1` | literal `Sigma` in a dipole, interfering with a plain gauge coupling (pins `Sigma`'s sign) |
-| `ll_to_qqx_toy_tensor` | | `Sigma⊗Sigma` and its γγ spelling in one process |
-| `ll_to_qqx_toy_yukawa` | | bare `Identity` and `Gamma5` bilinears |
-| `qqx_to_o8o8_toy_dcolor` | | the symmetric structure constant `d` in a colour basis |
-| `p3r3_to_p3r3_toy_epsilon` | | baryonic `Epsilon`/`EpsilonBar` |
-| `p3r3_to_p3r3_toy_sextet` | | sextet Clebsch–Gordan `K6`/`K6Bar` |
+| `ll_to_qqx_toy_tensor` | `lt~ lt > qt qt~ NP<=1 NPGG<=1` | `Sigma⊗Sigma` and its γγ spelling in one process |
+| `ll_to_qqx_toy_yukawa` | `lt~ lt > qt qt~ NP<=2 NPCP<=2` | bare `Identity` and `Gamma5` bilinears |
+| `qqx_to_o8o8_toy_dcolor` | `qt qt~ > o8 o8 NP<=2` | the symmetric structure constant `d` in a colour basis |
+| `p3r3_to_p3r3_toy_epsilon` | `p3 r3 > p3 r3 NP<=2` (`restrict_eps`) | baryonic `Epsilon`/`EpsilonBar` |
+| `p3r3_to_p3r3_toy_sextet` | `p3 r3 > p3 r3 NP<=2` (`restrict_k6`) | sextet Clebsch–Gordan `K6`/`K6Bar` |
 
 Order bounds in the process strings are load-bearing: each structure family has
 its own coupling order, which makes MadGraph split a two-structure vertex into

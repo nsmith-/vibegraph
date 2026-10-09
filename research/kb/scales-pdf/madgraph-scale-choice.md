@@ -5,6 +5,7 @@ description: "Fixed scales, dynamical_scale_choice 1–5 closed forms and -1 clu
 status: draft
 tags: [scales, madgraph, run-card, kt-clustering, convention]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n22-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L60-L89", title: "Note 22 §1.2 (the scale itself; per-beam μF; scalefact placement)"}
   - {id: n22-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on the banked events)"}

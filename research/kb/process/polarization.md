@@ -149,14 +149,15 @@ projects onto the mass shell first. [^n38-p1]
 - **Amplitudes** (hermetic `amplitude_oracle`, gated): `ee_to_wp0wmt`, `ee_to_wp0wm`,
   `ee_to_z0h`, `uux_to_ztg`, `ee_to_mumu_eml`, `ee_to_tlt` against MadGraph's own `NHEL`
   table, per diagram and per colour flow; worst |M|² 2.2e-13, per diagram ≤ 6.0e-15.
-- **σ** (`e+ e- > w+{0} w-`, 500 GeV, MadGraph's default card): the seeded MadEvent
-  reference is 0.257798 ± 0.0002 pb; five seeds here read a mean of 0.257932 (pulls −0.02
-  to +0.48 against a single 10k-event MadEvent run, 0.2578 ± 0.00047), and twenty seeds a
-  χ²/dof of 0.92. The unpolarized `e+ e- > w+ w-` agrees with
-  its seeded reference (7.19516 ± 0.0048 pb): twenty seeds here give a mean of 7.19608, rel
-  +2.6e-4, pull +0.41, χ²/dof 1.45 over 19 dof (p ≈ 0.09). A five-seed subset reads 2.4,
-  and a single MadEvent run had suggested a −0.23% offset; neither held up.
-  [^n38-b1] [^n38-z2] `w+{0}` + `w+{T}` = `w+ w-` to 3.0e-5 across independent seeds.
+- **σ** (`e+ e- > w+{0} w-`, 500 GeV, MadGraph's default card), the gate at 160 000 × 6,
+  ten seeds here against five seeded MadEvent runs: 0.2578727 ± 2.7e-5 pb against 0.2577911 ± 2.0e-4, rel +3.17e-4, pull +0.40, χ²/dof
+  0.97. The transverse row reads +7.86e-4 (pull +1.24) and the unpolarized
+  `e+ e- > w+ w-` +3.16e-4 (pull +0.49) against the policy mean 7.19419 ± 0.00459 (the
+  seeds' plain mean is 7.19516). At the default budget, twenty seeds give χ²/dof 1.45
+  over 19 dof (p ≈ 0.09) unpolarized and 0.92 polarized; an earlier five-seed χ²/dof of
+  2.4 and a −0.23% offset from a single MadEvent run did not hold up. The decomposition
+  `w+{0}` + `w+{T}` = `w+ w-` reads pull −0.04 here and −0.52 in MadEvent's own seeds.
+  [^n38-b1] [^n38-z2]
 - **Samples** (`vibegraph generate`, 20000 events × 3 seeds against MadEvent's 10000):
   the W+ `SPINUP` is 0 on every event on both sides; the W− distribution χ² reads 1.45/2,
   0.35/2, 2.70/2.

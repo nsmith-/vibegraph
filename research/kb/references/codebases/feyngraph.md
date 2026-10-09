@@ -113,8 +113,8 @@ which `(colour, lorentz)` coupling keys each part took[^fg-parser].
 `Model` (`model/mod.rs:307`) holds `particles: IndexMap<String, Particle>`,
 `vertices: IndexMap<String, InteractionVertex>`, the coupling names,
 `splittings`, and `anti_map` (particle index to antiparticle index). Its
-fields, and those of `Particle` and `InteractionVertex`, are `pub(crate)`;
-reading goes through accessors. `Model::default()` is the embedded SM in
+fields are private and those of `Particle` and `InteractionVertex` are
+`pub(crate)`, so reading goes through accessors. `Model::default()` is the embedded SM in
 Feynman gauge. A model can be built without any file[^fg-model]:
 
 ```rust

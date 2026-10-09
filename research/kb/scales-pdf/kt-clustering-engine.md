@@ -5,6 +5,7 @@ description: "coupling/cluster/{graph,kt,setclscales,configs}.rs: channel forest
 status: draft
 tags: [kt-clustering, scales, coupling, hadronic, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n22-collapse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on 2 → 2)"}
   - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2013-L2020", title: "Note 28 §K3 (the engine's modules)"}

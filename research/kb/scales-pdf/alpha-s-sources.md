@@ -5,6 +5,7 @@ description: "MadGraph's own ALPHAS/NEWTON1 running with asmz from the PDF label
 status: draft
 tags: [alpha-s, pdf, lhapdf, coupling, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n22-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L36-L59", title: "Note 22 §1.1 (αs is MadGraph's own RGE)"}
   - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (AQCDUP as an oracle; α_EW constant)"}

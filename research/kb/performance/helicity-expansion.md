@@ -5,6 +5,7 @@ description: "Every helicity combination baked into one hash-consed program so e
 status: draft
 tags: [performance, helicity, evaluator, cse, pruning]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1 (what MadGraph does before emitting Fortran)"}
   - {id: n15-expansion, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2 (helicity-expansion session, CF-factoring analysis)"}
@@ -62,8 +63,9 @@ helicity-support mask did not intersect the changed legs. It underdelivered
 still visited every instruction per combination, and odometer recycling reuses
 only the *previous* combination's values, so a node whose support contains the
 fastest-varying leg recomputes every time although it takes only
-2^|support| distinct values. Expansion removed both, and was 2.4–3.0× faster than
-recycling on every benchmarked process at the time. The support-mask machinery
+2^|support| distinct values. Expansion removed both: against recycling it measured
+2.4–3.0× faster on six of the seven benchmarked processes and 1.68× on `gg_to_gg`,
+in a bench that also carried same-day kernel merges. The support-mask machinery
 was deleted.[^n15-expansion]
 
 Companion pieces:
@@ -147,9 +149,12 @@ O(N_hel · NCOLOR) accumulator beside the existing loop, described in
 The scalar arena holds every configuration amplitude live to the end of the pass
 (the `Configs` bundle pins them for AMP2), which bounds how far the arena can
 shrink: [scalar-arena-holds-all-amplitudes-live](../backlog/performance/scalar-arena-holds-all-amplitudes-live.md).
-Single-helicity evaluation (event accept/reject at one sampled helicity) runs the
-unexpanded program, where expansion buys nothing; how helicities are sampled per
-event is in [colour and helicity selection](../events/colour-and-helicity-selection.md).
+Single-helicity evaluation (`eval_amplitude`) runs the unexpanded program and
+serves oracles and probes; a MadEvent-style mode that accepts or rejects an event
+at one sampled helicity (`nhel = 1`) is in scope but not built
+([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md)). How an
+accepted event's helicity is chosen from the expanded per-helicity diagonals is in
+[colour and helicity selection](../events/colour-and-helicity-selection.md).
 
 [^n15-mg]: Note 15 §1.1.
 [^n15-expansion]: Note 15 §2.2, the expansion session and the CF-factoring wrap-up.

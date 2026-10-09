@@ -5,6 +5,7 @@ description: "SMATRIX weights channel c by AMP2_c·CC_c at sde_strategy 1 and by
 status: draft
 tags: [madevent, multichannel, sde-strategy, configuration, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-d0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2821-L2884", title: "Note 29 §D.0 (get_channel_cut cannot reach ee_to_mumua)"}
   - {id: n29-dm0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3253-L3323", title: "Note 29 §D.M0 (premise re-verified in 3.5.7 and 3.7.1)"}
@@ -51,9 +52,10 @@ So the per-point weight of configuration `c` is
 | 1 | `AMP2_c · CC_c` |
 | 2 | `CC_c` alone; the squared amplitude is discarded |
 
-where `CC_c = get_channel_cut(p, c)` (`genps.f:1817`) is a product over the
-configuration's propagators of `1/(t − m²)²` (spacelike, with an `s_tot·1e-10`
-offset) or `1/((t − m²)² + m²Γ²)` (timelike). Its first statement
+where `CC_c = get_channel_cut(p, c)` (`genps.f:1817`). At strategy 2 it is a
+product over the configuration's first `nexternal − 3` forest lines of
+`1/(t − m²)²` (spacelike, with an `s_tot·1e-10` offset) or
+`1/((t − m²)² + m²Γ²)` (timelike). Its first statement
 (`genps.f:1878-1881`) short-circuits it:[^mg-gcc]
 
 ```fortran
@@ -68,14 +70,17 @@ conditional:** it holds only when `sde_strategy = 1` *and*
 `tmin_for_channel = −1` (its default). Statements of the rule without that
 condition are wrong.[^n29-b1][^n29-b12] Off its default, `tmin_for_channel`
 multiplies `CC` by an exponential suppression of spacelike lines below
-`t/s_tot = tmin`.
+`t/s_tot = tmin`; at strategy 1 that factor is all `CC` is, and there
+`genps.f` reads `t` uninitialised (the propagator invariant is formed only
+under `sde_strat.eq.2`), a MadGraph defect found in note 36 B3. At strategy 1
+`CC` also returns 1 when the configuration has fewer than two t-channel lines.
 
 ### Which strategy a card gets
 
 `banner.py` auto-selects (`:4990-5059`):[^mg-banner] `sde_strategy = 2` when the
 process has a single colour flow (and `proc_characteristic['gauge'] != 'FD'`),
-then back to 1 for a pure-lepton/photon final state from partonic beams or for any
-process with QCD orders; 2 for interference runs; 1 for a `1 → n` decay; and 1
+then back to 1 for a pure-lepton/photon final state from partonic beams, or
+unless every process fixes `QCD = 0` explicitly; 2 for interference runs; 1 for a `1 → n` decay; and 1
 whenever the `$` (forbidden on-shell s-channel) syntax is used. A user may
 override. So most QCD rows run at 1, while e.g. the banked
 `ee_to_mumu_tata_qcd0` card runs at 2.
@@ -130,7 +135,8 @@ introduced.
   `the_configuration_draw_needs_both_run_card_fields` (`hadronic.rs:3892`) pins
   both guards; `the_amp2_configuration_order_matches_the_forest_order`
   (`hadronic.rs:3820`) pins that `AMP2`'s configuration order is the forest's,
-  on `g g → g g` where four diagrams give three configurations.
+  on `g g → g g`, whose diagrams outnumber its three configurations (the
+  contact diagram carries none), so an off-by-one cannot hide.
 - A decay card with `sde_strategy = 2` is refused, because channel forests are
   built for `2 → n` only
   ([backlog](../backlog/feature/decay-card-sde-strategy-2-refused.md)).

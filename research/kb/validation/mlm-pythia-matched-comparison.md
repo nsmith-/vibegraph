@@ -5,6 +5,7 @@ description: "Both sides' matched files through one Pythia main164 configuration
 status: draft
 tags: [mlm, pythia, matching, shower, info-cell]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {command: "pixi run -e pythia validate-mlm-pythia (21 MadEvent against 20 vibegraph files, Pythia 8.312, seeds 20261201-10)"}
 sources:
@@ -130,6 +131,9 @@ are kept at their own weight, so counting events instead of weights moves the
 acceptance.
 
 ## Controls
+
+Measured in M5, on five files a side (MadEvent's `run_01` and four fresh
+directories against five vibegraph samples):
 
 - **`<scales>` removed** (every `<scales …>` line deleted from the vibegraph
   files, so each parton's scale is `SCALUP`): `@1` goes to +25σ against MadEvent

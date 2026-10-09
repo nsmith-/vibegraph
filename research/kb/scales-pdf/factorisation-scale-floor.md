@@ -5,6 +5,7 @@ description: "Per beam carrying a PDF with a dynamical μF, a point with q2fact 
 status: draft
 tags: [scales, pdf, veto, setclscales, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4025-L4121", title: "Note 29 Chain C2 §C2.4 (the μF ≥ 2 GeV veto: reference semantics, reachable runs)"}
   - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4346-L4392", title: "Note 29 C2 amendment A.0 (the veto existed; it panicked)"}

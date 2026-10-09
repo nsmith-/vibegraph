@@ -5,6 +5,7 @@ description: "Each flavour group and beam ordering draws its kT-clustering confi
 status: draft
 tags: [scales, kt-clustering, hadronic, amp2, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4708-L4757", title: "Note 29 Chain B §B.0 (the scale read the sampler's channel; Fact 3)"}
   - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 Chain B §B.1 (MadEvent's rule is conditional on sde_strategy and tmin_for_channel)"}

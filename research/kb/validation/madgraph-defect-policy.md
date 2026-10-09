@@ -61,8 +61,10 @@ field) is catalogued and needs no outcome.
 The permuted-first-call case also shows the outcome's discipline: before the
 decision the per-event harness reported the affected events as
 `info, permuted P1` without gating on them, and the σ gate carries no allowance
-for the deviation — at the measured size it sits inside 3σ only while this side's
-`@2` error stays near its measured value, which the row's manifest note says[^n41-m1].
+for the deviation. Together with the generic 2 → 4 offset (about +0.33 pb and
++0.6 pb, together about 0.7 % of `@2`) it sits inside 3σ only while this side's
+`@2` error stays near the 0.66 pb measured, which the row's manifest note
+says[^n41-m1].
 A reproducer inside MadGraph alone (`validation/madgraph/repro/permuted_first_call/`)
 and the one-line fix (`validation/madgraph/patches/first-call-unpermuted-momenta.patch`)
 back the report. A consequence for references: grouped MadEvent references at

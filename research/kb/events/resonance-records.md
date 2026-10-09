@@ -3,6 +3,7 @@ type: Physics Convention
 title: Status-2 resonance records
 description: "MadEvent's addmothers/cut_bw rules for status-2 lines (flag, same-flavour daughters, order, mothers, colour, mass), written for decay chains and for matched events."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, lhef, resonances, decay-chains, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: Plain processes write no status-2 records for free on-window resonances
-description: MadEvent writes status-2 records for free resonances inside bwcutoff in plain processes too; this generator writes them for decay-chain cards only.
+description: MadEvent writes status-2 records for free resonances inside bwcutoff in plain processes too; this generator writes them only on decay-chain cards and under matching.
 area: feature
 state: open
 priority: medium
@@ -18,7 +18,7 @@ MadEvent writes a status-2 record for every s-channel line of `ICONFIG` that
 free lines within `bwcutoff·Γ` with Γ/M < 0.1 in plain processes: the `Z` of
 `e+ e- > mu+ mu-` at the pole, the `Z` of `p p > mu+ mu- / a`, the `W` of
 `t > b e+ ve`. `SubprocessRecord::event_with_intermediates` writes these
-records for decay-chain cards only.
+records only on decay-chain cards and under matching (`generate.rs`).
 
 Decided (user, 2026-10-09): match MadEvent. This changes every existing LHE
 file for such processes, which is accepted; the record matters downstream,

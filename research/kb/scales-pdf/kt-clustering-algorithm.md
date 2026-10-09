@@ -5,6 +5,7 @@ description: "MadGraph 3.7.1 cluster.f for dynamical_scale_choice = -1: run-card
 status: draft
 tags: [kt-clustering, madgraph, scales, cluster-f, spec]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-k1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L329-L754", title: "Note 28 §K1–K1.4 (entry, constants, measures, merge graph, tie-break, merge step)"}
   - {id: n28-k35, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2171-L2198", title: "Note 28 §K3.5 (single-leg complement PDG)"}
@@ -158,8 +159,9 @@ so an exact tie goes to the earlier-visited pair and a measure `≥ 1e37`
 
 Worked case, `u ū → u ū` at `√ŝ = 500`: flavour admits only `{1,3}` and
 `{3,4}`; with leg 3 backward both beam–leg candidates are crossed, `(3,1)` wins
-at `62500·(1+1e-6)`, and the walk gives `μR = μF = 250.000125` (`SCALUP` prints
-`2.5000012E+02`; derivation in [madgraph-scale-choice](madgraph-scale-choice.md)).
+at `62500·(1+1e-6)`, and the walk gives `μR = μF = 250.000125` (`SCALUP`, seven
+significant digits, reads `250.0001`; derivation in
+[madgraph-scale-choice](madgraph-scale-choice.md)).
 The engine reproduces all 32 inflated candidates over 16 dumped events, pinned by
 `a_wholly_crossed_event_carries_the_tie_break_into_the_scale`, its negative
 control `colourless_beams_keep_the_tie_break_out_of_the_scale`, and

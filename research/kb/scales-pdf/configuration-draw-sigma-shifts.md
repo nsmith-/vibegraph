@@ -5,6 +5,7 @@ description: "Before/after σ of the clustered rows for the AMP2_c configuration
 status: draft
 tags: [scales, sigma, measurement, kt-clustering, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-b0out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5353-L5522", title: "Note 29 B-0 output (baseline and μ-spread census)"}
   - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 Chain B results (val4-b)"}
