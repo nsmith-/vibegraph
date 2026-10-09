@@ -123,21 +123,21 @@ orders. [^mg-orders]
 |---|---|---|
 | `QED=n` | at most n (warns unless n = 0) | upper bound |
 | `QED<=n` | at most n | upper bound |
-| `QED==n` | at most n, **plus** squared order `QED^2==2n` | each diagram exactly n |
-| `QED>n` | no amplitude cap, **plus** squared order `QED^2>2n` | each diagram above n (see caveat) |
+| `QED==n` | diagrams not at exactly n dropped, **plus** squared order `QED^2==2n` | each diagram exactly n |
+| `QED>n` | no amplitude cap, diagrams at order ≤ n dropped, **plus** squared order `QED^2>2n` | each diagram above n |
 | `<`, `>=`, `!=`, `===` | error | `ParseError::OrderOperator` |
 | `NAME^2…`, `aEW=n`, `aS=n` | squared-order constraint (`=` read as `<=`; `aEW`/`aS` become `QED^2`/`QCD^2` at 2n) | refused: not yet supported |
 | `WEIGHTED<=n`, `WEIGHTED=n` | per-diagram weighted bound | supported, the same bound the automatic search uses |
 | `WEIGHTED==n`, `WEIGHTED>n` | adds a squared-order constraint | refused (`Unsupported::WeightedOrder`) |
 
-- `==` here is equivalent to MadGraph's reading: with every diagram at most n and every
-  interference term at exactly 2n, every contributing diagram has order n.
-- **Caveat on `>`.** MadGraph keeps every interference term whose summed order exceeds
-  2n, including a diagram at order ≤ n interfering with one above n. Filtering diagrams
-  above n drops those terms, so the two readings differ whenever such pairs exist.
-  `diagrams::resolve` records MadGraph's squared-order fields for the oracle, but
-  enumeration applies the per-diagram filter (`diagrams/selector.rs`). No MadGraph
-  comparison of a `>` card exists.
+- `==` here is MadGraph's reading: `filter_constrained_orders` keeps only diagrams at
+  exactly n, so every surviving interference term sits at 2n.
+- `>` here is equivalent to MadGraph's reading too. MadGraph's
+  `apply_squared_order_constraints` first runs `filter_constrained_orders`, which drops
+  every diagram whose order is not above n (`diagram_generation.py:864`,
+  `base_objects.py:2906-2908`); the squared constraint `QED^2>2n` it also records is
+  then satisfied by every surviving pair. Enumeration applies the same per-diagram
+  filter (`diagrams/selector.rs`). No MadGraph comparison of a `>` card is banked.
 - An order name the model does not define is refused at resolution. `EW=n` on the SM is
   accepted by MadGraph and constrains nothing there: MadGraph validates the aliased name
   `QED` but records the written `EW`, which no SM coupling carries. It is refused here.

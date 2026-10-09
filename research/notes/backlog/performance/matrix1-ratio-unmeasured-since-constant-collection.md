@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: The README's 0.87× MATRIX1 ratio predates the evaluator's latest changes
-description: "README.md quotes a 0.87× geometric-mean cost against MadGraph's MATRIX1 as current; constant collection, fused scaled sums and bare configuration amplitudes landed after it, unmeasured against MATRIX1."
+description: "README.md quotes a 0.87× geometric-mean cost against MadGraph MATRIX1 as current; constant collection, fused scaled sums and bare configuration amplitudes landed after, unmeasured."
 area: performance
 state: open
 priority: medium
