@@ -95,3 +95,8 @@
 * **Fix briefs** written: F-A, F-B, F-C, F-D, F-E, F-F, F-CLI, F-G1 and F-G2,
   with a shared `sessions/fix-protocol.md`. They run serially in that order,
   each from the previous one's merged head.
+* **F-A dispatched** (`performance-dev`, Opus) on branch `hygiene-fa` from
+  `ea3fd20`, in the warm worktree `/home/user/wt/hygiene-v1`. The refdata
+  bundle, PDF set and `mg5amcnlo` content were copied in. The review and T1
+  worktrees were removed and the debug incremental cache cleared, which freed
+  about 9 GB.
