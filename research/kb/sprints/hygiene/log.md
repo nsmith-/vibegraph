@@ -56,3 +56,7 @@
     17 ignored), unchanged from before V1;
   - `cargo doc --workspace --no-deps --document-private-items` exits 0, with
     28 lib warnings and 1 bin warning. All 16 unresolved links predate V1.
+* **Reviews dispatched**: R-A to R-G2, each a `claude` (Opus) agent in its own
+  detached, read-only worktree at `f7efda6` (`/home/user/wt/hygiene-r-<x>`).
+  The leads from V1b's Found item 4 (production contracts documented on
+  test-only APIs) went to the clusters that hold them.
