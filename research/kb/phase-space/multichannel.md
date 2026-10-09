@@ -13,6 +13,8 @@ sources:
   - {id: n27-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L298-L481", title: "Note 27 B3, MadEvent's colour selection and the channel label"}
   - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7, findings register"}
   - {id: n34-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 Wave 1 S1, α-survey density pass, budget constants, stop factor"}
+  - {id: n28-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1894-L1915", title: "Note 28 S4 B2, the degenerate-map finding under the spacelike floor"}
+  - {id: oracle-merge, resource: "vibegraph-lib/tests/amplitude_oracle.rs#L175-L240", title: "KNOWN_CONFIG_MERGE"}
   - {id: n31-i3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L152-L242", title: "Note 31 I3, the α survey as the Amdahl term of a fitted scaling model"}
   - {id: channel-rs, resource: "vibegraph-lib/src/phasespace/channel.rs#L265-L560", title: "kleiss_pittau_step, select_channel, MultiChannel, AlphaAdaptation, adapt_alphas"}
   - {id: proton-alpha, resource: "vibegraph-lib/src/proton.rs#L2816-L2960", title: "ProtonIntegrand::adapt_alphas and survey_variance"}
@@ -113,8 +115,10 @@ Two measurement rules came out of this:
 
 The survey's cost is a serial or chunked pass whose length does not scale with
 the integration budget, so it appears as the Amdahl term when `-j` wall times
-are fitted to a serial-plus-parallel model; the hadronic survey is now chunked
-and parallel ([RNG substreams](rng-substreams-and-parallel-determinism.md)).
+are fitted to a serial-plus-parallel model. The hadronic survey
+(`survey_variance`) runs in fixed-size chunks in parallel, its sums reduced in
+chunk order so the thread count does not change the answer; the fixed-energy
+survey in `MultiChannel::adapt_alphas` is a serial loop ([RNG substreams](rng-substreams-and-parallel-determinism.md)).
 Its measured share belongs to
 [integrate thread scaling](../performance/integrate-thread-scaling.md)[^n31-i3].
 
@@ -173,26 +177,36 @@ conditions the colour-flow draw on it (`AmplitudeEvaluator::select_color_flow`,
 the clustering scale's configuration is drawn the same way
 ([configuration draw](../scales-pdf/clustering-configuration-draw.md)).
 
-The difference is starkest where channel maps coincide. On a process with only
-massless propagators and no cut-implied spacelike floor, the per-diagram maps
-degenerate onto one map: `uux_to_uux`'s two channel densities and
-`gg_to_gg`'s four were bit-identical, `α` stayed at uniform, and the channel
-index carried no information about the diagram. Conditioning colour on that
-label moved `uux_to_uux`'s `ICOLUP` χ² from 1015 to 7268 on one degree of
-freedom (MadGraph writes flow 1 on 99.96% of events; per-config σ 18.49 pb
-s-channel, 33 400 pb t-channel). Degenerate maps cost variance, not
-correctness; the [spacelike floor](spacelike-floor.md) differentiates them
-where the cuts imply one. `g g > t t~` was the control: its top pole makes the
-maps differ (worst pairwise density gap 0.84, `α` = [0.267, 0.364, 0.369]).
+The difference is starkest where channel maps coincide. Channels whose
+diagrams have only massless propagators and no spacelike line the cut-implied
+floor can act on degenerate onto one map, and the channel index then carries no
+information about the diagram: `gg_to_gg`'s s-channel and four-gluon channels
+are bit-identical to each other. Measured while `uux_to_uux`'s two maps still
+coincided this way (densities bit-identical, `α` frozen at uniform),
+conditioning colour on the sampled channel moved its `ICOLUP` χ² from 1015 to
+7268 on one degree of freedom (MadGraph writes flow 1 on 99.96% of events;
+per-config σ 18.49 pb s-channel, 33 400 pb t-channel). Degenerate maps cost
+variance, not correctness. The [spacelike floor](spacelike-floor.md)
+differentiates the peripheral channels wherever the cuts imply one: with it,
+`uux_to_uux`'s maps differ everywhere and `α` converges to
+`[8.5e-6, 0.99999]`, and `gg_to_gg`'s goes to
+`[3.2e-5, 3.2e-5, 0.496, 0.504]`[^n28-b2], so even distinct maps give a density-share
+label unlike MadEvent's amplitude share. `g g > t t~` is the control: its top
+pole makes the maps differ with no floor (worst pairwise density gap 0.84,
+`α` = [0.267, 0.364, 0.369]).
 
 Two adjacent facts from the same reading:[^n27-findings]
 
 - Helicity pruning moves the incoherent per-diagram `AMP2` (39.5% on
   `gg_to_ttx`) while `|M|²` stays bit-exact, so `AMP2` comparisons must not
   assume pruning is neutral.
-- MadGraph merges `e+ e- > e+ e-`'s two t-channel diagrams into one
-  configuration (`KNOWN_CONFIG_MERGE`): colourless today, a loud failure if a
-  coloured process ever does it ([channel set](channel-set.md)).
+- MadGraph can merge several diagrams into one configuration, as with
+  `e+ e- > e+ e-`'s γ and Z t-channel diagrams. `KNOWN_CONFIG_MERGE`
+  (`tests/amplitude_oracle.rs`) lists every reference row where it does,
+  coloured ones included (`ud_to_epemud_qcd0`: 21 accumulators over 35
+  diagrams), and fails both ways: an unlisted row that merges and a listed row
+  that does not[^oracle-merge] ([per-diagram AMP2](../amplitudes/per-diagram-amp2.md),
+  [channel set](channel-set.md)).
 
 Reference implementations read for this design: Sherpa `PHASIC++/Main/`
 (multichannel integrator with separate colour and helicity integrators) and
@@ -216,3 +230,5 @@ points are spent per channel once `α` is set is
 [^n27-b3]: Note 27 B3.1–B3.2.
 [^n27-findings]: Note 27 §7, findings 3–5.
 [^n21-program]: Note 21, program plan.
+[^n28-b2]: Note 28 S4 B2, `probe_channel_map_degeneracy`.
+[^oracle-merge]: `vibegraph-lib/tests/amplitude_oracle.rs`, `KNOWN_CONFIG_MERGE` and its two-way check.

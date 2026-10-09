@@ -60,7 +60,8 @@ sequence by a bit:
 | `ADAPT_STREAM = 0xA1FA_9110` (+ iteration) | `proton.rs:1107` | hadronic α survey |
 | `CHANNEL_STREAM_BASE = 0xC7A0_0000` (+ channel) | `hadronic.rs:98` | per-channel VEGAS integration |
 | `SCALE_DRAW_STREAM_BASE = 0x5CA1_0000` (+ offset) | `rng.rs:38` | per-point scale-configuration draw |
-| `SCAN_STREAM_BASE = 0x0057_4D41` | `unweight.rs:56` | per-channel `w_max` scans |
+| `SCAN_STREAM_BASE = 0x0057_4D41` (+ channel) | `unweight.rs:56` | per-channel `w_max` scans |
+| `ROUNDING_STREAM = 0x0052_4E44` | `lhef/emit.rs:49` | stochastic-rounding coin flips of a weight strategy |
 
 The scale draw sits on its own family because its coordinates are appended to
 a point *after* the phase-space map has taken its own; with a separate stream

@@ -3,6 +3,7 @@ type: Procedure
 title: "mg_perf_compare: per-point timing against MadGraph MATRIX1"
 description: "Joins MadGraph MATRIX1 ns/eval (host-labelled mg_timings.json) with criterion eval_m2 benches over manifest rows, reporting one-sided rows; what the ratio does and does not license."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [performance, madgraph, benchmark, timing]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -78,13 +79,15 @@ Output: a host fingerprint and the table on stdout, plus
   side is raised (`RUSTFLAGS=-C target-cpu=native`), raise the other too
   (`-march=native` in `build_amplitude.sh`'s `--f77flags`), or the ratio does
   not compare like with like.
-- **Same host, quiet host.** A geomean over the 19 MATRIX1 rows read 0.95×
-  with sibling sessions resident on the host and 0.87× on a quiet host
-  against a same-day MadGraph table.[^n32-remeasure] Contention moves the
+- **Same host, quiet host.** On an Apple M3 Max in 2026-08, when the bench
+  joined 19 rows, the geomean read 0.95× with sibling sessions resident on the
+  host and 0.87× on a quiet host against a same-day MadGraph
+  table.[^n32-remeasure] Contention moves the
   ratio by more than many optimisations do.
-- **The row set is a sample.** A narrower row set once dropped the QCD-dense
-  llj-class rows and read better (14-row geomean 1.06× against 0.95× for 19
-  rows at the time). Report which rows were joined with any geomean; the
+- **The row set is a sample.** Today `BENCH_ROWS` joins 8 rows, so a geomean
+  from the current tool is not comparable with the 19-row figures above. A
+  narrower row set has read better before: dropping the QCD-dense llj-class
+  rows gave a 14-row geomean of 1.06× against 0.95× for 19 rows. Report which rows were joined with any geomean; the
   one-sided list says what was left out.[^n32-s4]
 - **Scalar only.** The forward bench rows are scalar evaluation; SIMD
   lane-width questions use the separate kit (`scripts/dump_lane_asm.sh`).

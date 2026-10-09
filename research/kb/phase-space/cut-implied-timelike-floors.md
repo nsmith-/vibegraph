@@ -5,6 +5,7 @@ description: "Cuts::timelike_floor's provable bounds on subsystem invariants, ho
 status: draft
 tags: [phase-space, cuts, floors, xqcut, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n34-tf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L56-L136", title: "Note 34 §1.2 (timelike-floor)"}
   - {id: n34-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L326-L337", title: "Note 34 deferred S5 (the map's lower edge on the cut edge)"}
@@ -12,7 +13,7 @@ sources:
   - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 (the τ-minimum audit)"}
   - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (xqcut floors already in the maps; τ floor dropped)"}
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L156-L189", title: "MadGraph setcuts.f, the xqcut rewrite of ptj/mmjj"}
-  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L337-L551", title: "MadGraph myamp.f set_peaks (xe, xm, the τ minimum)"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L207-L594", title: "MadGraph myamp.f set_peaks (xe, xm, the τ minimum)"}
 measured:
   - {landed_in: 7664ff9, command: "two-arm five-seed ladders on pp_to_llj and pp_to_llj_dyn"}
   - {commit: 069a951, host: "4-core container shared with another session", command: "τ floor probe on pp_to_llj_fixed, pp_to_llj_mlm and pp_to_ll_0j2j_mlm"}
@@ -56,7 +57,7 @@ run (`Cuts::shat_min`) is [phase-space/hadronic-tau-y-sampling](hadronic-tau-y-s
 every drawn timelike invariant through one shared `draw_lo`
 (`max(μ², min(floor, hi))`), used identically by the draw and the density, so
 reciprocity is structural ([phase-space/channel-contract](channel-contract.md)).
-The production site is `MapChoices::channel` (`phasespace/maps.rs:156`), the
+The production site is `MapChoices::channel` (`phasespace/maps.rs:143`), the
 one place a channel is built for integration or replay, and the floors are part
 of `map_key`/`map_identity`.
 
@@ -107,10 +108,11 @@ likewise `mmjj = xqcut`; `drjj = drjl = 0`. Legs with `do_cuts = .false.`
 exempt.[^n41-14] vibegraph ports the rewrite (`runcard::matching`); the semantics of the
 card fields are [run-card/matching-parameters](../run-card/matching-parameters.md).
 
-MadEvent's `setxqcuts` (`setcuts.f:892`) and `set_peaks` (`myamp.f:337-551`)
+MadEvent's `setxqcuts` (`setcuts.f:892-955`) and `set_peaks` (`myamp.f:207-594`)
 then derive phase-space hints:[^mg-myamp] a jet leg's energy floor
-`xe = max(…, √(xqcut² − m²))`, an s-channel jet-pair mass floor `xm = xqcut`,
-and a τ minimum `(Σ xe)²/s`. `xm` only presets a grid (`setgrid` keeps 10% of
+`xe = max(…, √(xqcut² − m²))` (`:345-348`), an s-channel jet-pair mass floor
+`xm = xqcut` (`:395`), and a τ minimum `(Σ xe)²/s`, the lower limit of the ŝ
+map (`:540-588`). `xm` only presets a grid (`setgrid` keeps 10% of
 the bins below it); the τ minimum is the one hard limit. After the rewrite the
 compiled cuts carry both floors, so the maps already start there:[^n41-m6]
 
@@ -134,7 +136,7 @@ leg's energy is at least its `pT`, and any pair holding a cut jet already has at
 least `xqcut` of energy. It cuts nothing;
 `madevents_xqcut_tau_floor_is_implied_by_the_rewritten_cuts` (`cuts.rs:1701`)
 pins that on 200k sampled points.[^n41-m1] With a resolved `ptj < xqcut`
-(`auto_ptj_mjj = F`, or `ptj < 0`) the τ minimum is a real cut that changes σ
+(`auto_ptj_mjj = F`, `ptj < 0` or `ktscheme ≠ 1`) the τ minimum is a real cut that changes σ
 and differs between integration channels. vibegraph does not build a
 channel-dependent cut; the card is refused with
 `RunCardError::XqcutAboveJetThreshold` (`runcard/matching.rs:84`), a scoped

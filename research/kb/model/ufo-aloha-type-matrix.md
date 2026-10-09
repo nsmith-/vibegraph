@@ -77,7 +77,9 @@ Two normalisations a model author or kernel writer has to know:
 - **`Sigma` is ALOHA's**, half the textbook `(i/2)[γ^μ, γ^ν]`.
 - **`Gamma5` is `ProjP − ProjM`.**
 
-Both are pinned in [gamma chains, Gamma5 and Epsilon](../amplitudes/gamma-chains-gamma5-and-epsilon.md).
+The `Sigma` normalisation is pinned in
+[Levi-Civita and Sigma conventions](../amplitudes/levi-civita-and-sigma-conventions.md),
+`Gamma5` in [gamma chains, Gamma5 and Epsilon](../amplitudes/gamma-chains-gamma5-and-epsilon.md).
 
 ### ProjM and ProjP
 

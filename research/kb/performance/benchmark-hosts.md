@@ -5,6 +5,7 @@ description: "CPU, caches, measured clock, ISA, OS and toolchain of each benchma
 status: draft
 tags: [performance, hosts, measurement-method, noise]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n30-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L44-L69", title: "Note 30 §1 (M3 Max host and both sides' builds)"}
   - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (run-to-run reproducibility)"}
@@ -41,7 +42,7 @@ on any of them is in [benchmarking the evaluator](../performance/microbenchmark-
 | **M3 Max** (desktop) | Apple M3 Max, 12 performance + 4 efficiency cores, 16 logical; 128 KiB L1d per P-core, 16 MiB shared L2 per P-cluster; 48 GiB | not exposed by the OS (`sysctl hw.cpufrequency*` empty); recorded as `null` | aarch64, NEON, no SVE | macOS 15.7, Darwin 24.6; `rustc 1.94.1` for the baseline series, `nightly-2026-09-24` for the dispatch study | no core affinity is possible; whole stretches of a cell can run ~2.1× slow on an efficiency core |
 | **Emerald Rapids VM** | Intel Xeon family 6 model 207, 4-vCPU Firecracker microVM under KVM, 15 GiB; 48 KiB L1d and 2 MiB L2 per core, 260 MiB L3 | reports 2.1 GHz base; **measured 3.2 GHz** (dependent integer `add` chain, 3.16–3.32 G/s pinned to an idle core) | AVX-512 F/DQ/BW/VL, FP16, BF16, AMX; `target-cpu=native` resolves to `emeraldrapids`, whose LLVM tuning carries `prefer-256-bit` | Linux; `rustc 1.94.1` (x86 study), `1.97.0` (AOT study) | no PMU; shared with other sessions at times; separate-process runs spread up to ±35% |
 | **Cascade Lake VM** | Intel Xeon @ 2.80 GHz, family 6 model 85 stepping 7, 4-vCPU Firecracker VM, 15 GiB, 1 thread per core; 32 KiB L1d, 1 MiB L2 per core, 33 MiB L3 | 2.8 GHz | AVX-512 F/DQ/CD/BW/VL + VNNI | Linux; `rustc 1.98.1` (MadGraph comparison), `nightly-2026-09-24` (dispatch study) | no PMU; run-to-run drift 1–4% per cell; provisioned 2026-09-25 |
-| **Zen 4** (bare metal) | AMD EPYC 9534 "Genoa", family 25 model 17; 1 MiB L2 per core | boost 3.1–4.1 GHz across cells, governor `performance` | AVX-512, 512-bit ops executed as two passes | RHEL 9, kernel 5.14, perf 5.14 | the only host with a usable PMU; NMI watchdog holds one of six core counters |
+| **Zen 4** (bare metal) | AMD EPYC 9534 "Genoa", family 25 model 17; 1 MiB L2 per core | boost 3.1–4.1 GHz across cells, governor `performance` | AVX-512, 512-bit ops executed as two passes | RHEL 9, kernel 5.14, perf 5.14 | the only host with `perf` top-down counters (the M3 Max's are read through Instruments' CPU Counters template); NMI watchdog holds one of six core counters |
 
 Sources: M3 Max[^n30-host][^tds-m3], Emerald Rapids[^aot-host][^roofline-host][^x86-avx512],
 Cascade Lake[^cl-host][^tds-hosts], Zen 4[^td-host].
@@ -50,13 +51,20 @@ An unnamed **AVX2 + FMA host without AVX-512** (`zmm` absent from every dump)
 ran the first x86 evaluator study; its CPU model is not recorded.[^x86-avx2]
 The Emerald Rapids and Cascade Lake VMs are different machines: the container
 was reprovisioned from the first onto the second at about 23:25 UTC on
-2026-09-25, and Emerald Rapids figures predate that.[^cl-host]
+2026-09-25, and the x86 study's Emerald Rapids figures predate that.[^cl-host]
+Later sessions ran on an Emerald Rapids VM again (the roofline census of
+2026-10-03, the AOT study of 2026-10-04, the in-process timings of the Zen 4
+note's §6–§7); which host a figure came from is in its own record, not
+implied by its date.[^roofline-host][^aot-host]
 
 ### What differs between hosts that changes a ratio
 
-- **L2 size decides the widest useful lane width on large programs.** The 2→6's
-  op-blocked arenas at eight lanes fit the M3 Max's 16 MiB L2, overflow
-  Cascade Lake's 1 MiB and sat at Emerald Rapids' 2 MiB cliff; see
+- **L2 size decided the widest useful lane width on large programs.** The 2→6's
+  op-blocked arenas at eight lanes (3.6 MiB) fit the M3 Max's 16 MiB L2,
+  overflowed Cascade Lake's 1 MiB and sat at Emerald Rapids' 2 MiB cliff.
+  Constant collection shrank them to 2.3 MiB, and width 8 now beats width 4 on
+  the 2→6 on Emerald Rapids (44.4 against 46.6 µs/event); the Cascade Lake and
+  M3 Max lane ratios predate that change and have not been re-measured. See
   [execution order](../performance/execution-order.md) and
   [lane throughput](../performance/lane-throughput.md).
 - **FMA in the default target.** Default x86-64 codegen (`RUSTFLAGS` unset) has
@@ -69,7 +77,9 @@ was reprovisioned from the first onto the second at about 23:25 UTC on
   [integration against MadGraph](../performance/integration-vs-madgraph.md).
 - **Hybrid cores.** On the M3 Max, MadEvent ran up to 16 concurrent jobs over 12
   performance and 4 efficiency cores with no affinity; a job on an efficiency
-  core adds CPU-seconds without adding work.
+  core, or waiting for a performance core, may add CPU-seconds without adding
+  work. That is one of two readings of the MadGraph denominator gap the
+  Cascade Lake comparison could not separate.
 
 ## Build settings recorded with the M3 Max baseline
 

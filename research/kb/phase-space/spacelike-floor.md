@@ -35,8 +35,8 @@ is safe. A **composite** emitted subsystem leaves a drawn invariant cancelling
 against `ŝ`, and the edge lands on either side of zero at rounding
 scale[^dc-rs]. Over 20 000 recoil invariants at `s = 2.5e5` it landed below
 zero 6 131 times, above 6 218 times and exactly zero 7 651 times, with
-`|t_max| ≤ 4e-8`[^n24-p0]
-(`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`).
+`|t_max| ≤ 4e-8`[^n24-p0]. (The test that recorded this is no longer in the
+tree; `tests/diagram_channel.rs` still cites it by name.)
 
 When it lands just below zero, `t_pole_shapes` switches the propagator draw on
 with `N = ln(|t_min|/|t_max|) ≈ 30` e-folds reaching `|t| ~ 1e-11`, while the
@@ -83,7 +83,7 @@ jet carries the jet's `pT` — and only a scale past three outgoing legs, where 
 partition can balance internally. `a_transverse_momentum_threshold_bounds_the_transfer_it_implies`
 (`cuts.rs`) computes `t` from momenta over 40 rapidities × 3 energies rather
 than asserting the algebra[^n24-p2b]. The default card's `ptj = 20` gives
-400 GeV², eleven orders above the 4e-8 noise; `ptl = 10` alone gives
+400 GeV², ten orders above the 4e-8 noise; `ptl = 10` alone gives
 100 GeV². Under MLM matching the `ptj = xqcut` rewrite makes it `xqcut²`
 ([cut-implied timelike floors](cut-implied-timelike-floors.md)).
 `ProtonIntegrand::spacelike_floor` (`proton.rs:1878`) and

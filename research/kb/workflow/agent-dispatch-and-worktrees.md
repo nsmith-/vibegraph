@@ -5,6 +5,7 @@ description: "Pre-created worktrees with reference data and the submodule copied
 status: draft
 tags: [agents, worktrees, dispatch, process, verification]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-dispatch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L363-L386", title: "Note 24: execution notes (agent dispatch)"}
   - {id: n24-acceptance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L3058-L3113", title: "Note 24 close-out: Acceptance A and the unverifiable transcript"}

@@ -3,6 +3,7 @@ type: Design Decision
 title: "Several @N processes in one event file: per-part normalisation and <init>"
 description: "Each multiplicity's weights are scaled to its integrated σ (overweights kept); one <init> line per @N, XSECUP/XERRUP split by weight share; the header keeps the raw estimate."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, lhef, normalisation, multi-process, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

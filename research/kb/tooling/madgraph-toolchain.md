@@ -3,6 +3,7 @@ type: Procedure
 title: "Running MadGraph here: the pixi env and the pinned submodule"
 description: "The madgraph pixi env supplies the toolchain (packaged 3.5.7, never run as the generator); mg5_pinned.sh runs the pinned 3.7.1 submodule; LHAPDF paths and the C++ runtime link fix."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [madgraph, pixi, lhapdf, toolchain]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -34,8 +35,9 @@ Per-process facts live in `validation/manifest.toml` and
 `pixi.toml`'s `madgraph` feature pins `python = "3.11.*"`,
 `mg5amcnlo = "==3.5.7"` from conda-forge and `pylhe`, and carries the
 reference-generation tasks (`build-diagrams`, `generate-amplitude`,
-`generate-references`, the `validate-*` gates that need generated data, and
-about thirty more; read `pixi.toml` for the list rather than any copy of it).
+`generate-references`, the `validate-*` gates that need generated data; 49
+tasks in all at the time of writing; read `pixi.toml` for the list rather
+than any copy of it).
 Run everything with `pixi run -e madgraph <task>`; `pixi install -e madgraph`
 creates it.[^n05]
 
@@ -95,8 +97,11 @@ not repeat them:
 ## The C++ runtime link fix
 
 A `pdlabel = lhapdf` run links LHAPDF's C++ library into `madevent`
-(`libpdf.a`). MadGraph's `make_opts` adds the C++ runtime as `STDLIB=-lc++`
-only inside an `ifeq ($(origin LDFLAGS),undefined)` guard, and the conda
+(`libpdf.a`). MadGraph's `Source/make_opts` adds the C++ runtime only as
+`LDFLAGS=$(STDLIB) $(MACFLAG)` inside an `ifeq ($(origin LDFLAGS), undefined)`
+guard (`Template/LO/Source/.make_opts:71-73` at the pin; `STDLIB` is written at
+output time, `-lc++` where the compiler uses libc++ and `-lstdc++` otherwise,
+`export_v4.py:2428-2434`), and the conda
 activation exports its own `LDFLAGS`, so the guard sees it set and drops the
 runtime. The link then fails with `__cxa_throw` and `__gxx_personality_v0`
 unresolved.[^n18-ldflags][^n18-outcome] The fix is to append the platform's C++ runtime to

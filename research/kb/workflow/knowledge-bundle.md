@@ -5,6 +5,7 @@ description: "What research/kb is for; OKF v0.2 in brief; the topic folders, typ
 status: draft
 tags: [okf, knowledge-bundle, documentation, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n42-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L11-L26", title: "Note 42: the question and plan"}
   - {id: n42-okf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L28-L49", title: "Note 42 §1: OKF in brief"}
@@ -75,9 +76,9 @@ values, so the bundle defines its own vocabulary.[^n42-okf]
 | `sprints/<name>/` | One folder per sprint ([sprint lifecycle](sprint-lifecycle.md)) |
 | `history/notes/` | The original numbered notes, archived verbatim as `Working Note`, `status: deprecated` |
 
-Topic concepts cite the archived notes as `sources` and link them as
-`../history/notes/<file>.md`. The 362 citations between archived notes keep
-resolving inside the archive.
+Topic concepts cite note sections in `sources` by permalink at a commit, with
+a line range; a body link to an archived note is `../history/notes/<file>.md`.
+The 362 citations between archived notes keep resolving inside the archive.
 
 **Outside the bundle:** `research/refs/` (submodules and paper fetching),
 `research/ufo/` (sample UFO models), and the user-facing mdBook under
@@ -126,6 +127,11 @@ anyway, so a Rust crate would buy nothing.[^n42-decisions]
 | `pixi run kb-lint` | Runs in CI as its own job. |
 | `pixi run backlog` | Renders the backlog view ([backlog items](backlog-items.md)). |
 
+The scripts read one bundle root, `ROOT` in `kb.py`. It is `research/notes/`
+until the migration's Phase 4 moves the notes, backlog and decisions into
+`research/kb/` and repoints it, so until then `kb-lint` and `kb-index` do not
+read the concepts under `research/kb/`.
+
 `kb-lint` checks the following:
 
 - every non-reserved `.md` has parseable frontmatter with a non-empty `type`;
@@ -137,7 +143,7 @@ anyway, so a Rust crate would buy nothing.[^n42-decisions]
   `blocked_by` resolution.
 
 It does not check links between concepts, and it does not yet flag a `stable`
-sprint that still links to `draft` design concepts.
+sprint that still links to `draft` design concepts.[^kb-py]
 
 ## External codebases and papers
 
@@ -145,8 +151,8 @@ The submodules under `research/refs/` are external code and are normally not
 checked out. MadGraph is checked out only when a reference is regenerated.
 So:[^n42-external]
 
-- `kb/` never contains them. The scripts only look inside `kb/`, so
-  populating a submodule cannot break conformance.
+- `kb/` never contains them. The scripts only look inside the bundle root,
+  so populating a submodule cannot break conformance.
 - A `Codebase` concept's `resource`, and every `sources` entry citing external
   code, is the **upstream permalink at the pinned commit**, never a
   `research/refs/...` path. GitHub uses `/blob/<sha>/<path>#L<n>`; the GitLab
@@ -175,3 +181,4 @@ So:[^n42-external]
 [^n42-shape]: Note 42 §3.
 [^n42-external]: Note 42 §6.
 [^n42-decisions]: Note 42 §9, decisions 2 and 9.
+[^kb-py]: `scripts/kb.py`, `ROOT` and `lint()`.

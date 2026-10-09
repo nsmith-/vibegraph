@@ -5,6 +5,7 @@ description: "Per-row wall times of the validation layer and MadGraph's per-stag
 status: draft
 tags: [performance, timing, validation, madgraph, baseline]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 45a7d62, host: "Apple M3 Max (12P + 4E), 48 GiB, macOS 15.7.7, no core affinity", command: "pixi run --skip-deps validate (release-debug, extended-validation, RUSTFLAGS unset); pixi run -e madgraph python validation/madgraph/time_stages.py --out target/s3-mg-timing <31 processes>"}
   - {commit: 62d78e4, host: "Apple M3 Max (12P + 4E), macOS 15.7.7", command: "RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1 cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test <target> -- --nocapture --test-threads=1; pixi run --skip-deps validate; time_stages.py control pass"}
@@ -55,7 +56,7 @@ an unquantified uncertainty on a hybrid CPU.
 |---|--:|--:|
 | elapsed | 691 s | **391 s (−43.4%)** |
 | census | 98 measured: 96 ✅ / 2 ⚠️ / 4 ⏳ | identical |
-| `#[test]` / `#[ignore]` | 861 / 32 | 905 / 34 |
+| `#[test]` / `#[ignore]` | 861 / 32 (counted at `e951045`, the pre-sprint tip) | 905 / 34 |
 
 The second run buys more work (42 more running tests, some deliberately expensive), so −43.4%
 understates the change. A repeat of the baseline agreed per row to a median 0.8%, worst 3.4%,
@@ -178,8 +179,9 @@ the reference bank and are untimed
 - **`samples` vs `events`**: ours also runs the KS and χ² comparisons against the banked
   sample; MadGraph's stage only combines and unweights.
 - At the baseline, side by side, our integrals rows were faster than MadGraph's `integrate`
-  on every 2→2 and 2→3 partonic row, and slower on the hadronic rows (`pp_to_jj` 174.8 s
-  against 25.1 s, `pp_to_llj` 186.2 s against 14.6 s).[^n30-5] Read this as shape, not as a
+  on every 2→2 and 2→3 partonic row, and slower on every hadronic row but `pp_to_ll`
+  (15.8 s against `dy13_default`'s 30.8 s): `pp_to_jj` 174.8 s against 25.1 s, `pp_to_llj`
+  186.2 s against 14.6 s.[^n30-5] Read this as shape, not as a
   ratio.
 
 [^n30]: Note 30 §0–§1, at `45a7d62`.

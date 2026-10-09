@@ -5,6 +5,7 @@ description: "eval_strategies (16 events per iteration, BENCH_ROWS), min over ro
 status: draft
 tags: [performance, benchmarks, methodology, criterion, simd]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n15-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L262-L280", title: "Note 15 §2.1, the honest bench versus the extended-validation harness"}
   - {id: n15-24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L546-L585", title: "Note 15 §2.4, cross-platform rerun kit"}
@@ -49,7 +50,7 @@ A timing claim needs a green gate on the same tree and flags:
 
 - **Strategies**: `forward` (scalar `eval_m2`), `lanes{2,4,8}` (`eval_m2_lanes` at
   `LaneField<N>`), `lanes{N}_prepacked` (transpose hoisted out, so the difference prices it).
-- **Every bar is 16 events per iteration**: `bench_lanes` iterates `chunks_exact(N)` over the
+- **Every bar is 16 events per iteration**: `bench_lanes` iterates `as_chunks::<N>()` over the
   same 16 points, so `lanesN ÷ forward` is already a per-event ratio.[^x86-repro]
 - **Rows**: the fixed `BENCH_ROWS` set (`ee_to_mumu`, `ee_to_wpwm`, `uux_to_uux`, `gg_to_gg`,
   `gg_to_ttx`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`, `uux_to_ccx_emmm_qcd0`). Each names a
@@ -143,8 +144,9 @@ sibling processes on a shared host moved a whole-table geomean by ~13%.
    bit identity holds only between builds that agree on `HARDWARE_FMA`.
 3. Run the lane gate (§1), then the bench (§2), then the census (§4).
 4. Read `lanesN ÷ forward` per row and suite Σ; record the host, commit and flags. Compare
-   with [lane throughput](lane-throughput.md). If N = 8 wins, a 16-wide row is a one-line
-   `bench_lanes::<16>` addition.[^n18-kit]
+   with [lane throughput](lane-throughput.md). Widths stop at N = 8: `LaneField` has packs
+   only for `wide`'s `f64x2`/`f64x4`/`f64x8` (`helas/eval/lane_field.rs`), so a 16-wide
+   row needs a new pack type, not just a `bench_lanes::<16>` line.[^n18-kit]
 
 ## 7. Re-running the MadGraph per-point comparison on another host
 
@@ -159,7 +161,7 @@ Hosts and their quirks are listed in [benchmark hosts](benchmark-hosts.md).
 
 [^n15-21]: Note 15 §2.1; `cross_check_node` in `vibegraph-lib/src/helas/eval/run.rs` is `#[cfg(any(test, debug_assertions, feature = "extended-validation"))]`.
 [^n15-24]: Note 15 §2.4 (its `validate-helas-mg` step is now `validate-amplitudes`).
-[^n18-kit]: Note 18 H4, AVX-512 rerun kit.
+[^n18-kit]: Note 18 H4, AVX-512 rerun kit (written for the `NumericArray` field, where any N compiled).
 [^tds2]: Threaded-dispatch study §2.
 [^tds4]: Threaded-dispatch study §4.
 [^tds5]: Threaded-dispatch study §5.

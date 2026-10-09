@@ -94,7 +94,7 @@ with a veto; a new call site cannot silently inherit a panic.[^n29-a1]
 | `ProtonIntegrand`'s per-point scales | the term's weight is `0.0`, before the coupling is moved and before the PDFs are queried below their grid |
 | `ProtonIntegrand::event_in_channel` | inherits it through the same evaluation, so a sample and its integral veto the same points |
 | both `probe_scale`s | keep drawing past the vetoed point |
-| `FixedBeamIntegrand` | unreachable: a fixed-energy card gives `beam_has_pdf = [false, false]`, so the clustering never constructs the refusal; the site carries an explicit `unreachable!` with the reason |
+| `FixedBeamIntegrand` | unreachable: a fixed-energy card gives `beam_has_pdf = [false, false]`, so the clustering never constructs the floor refusal, and a fixed-energy card with `ickkw ≠ 0` or `xqcut > 0` is refused at compile (`ScaleError::FixedBeamMatching`), so `JetCut` cannot arise either; the site carries an explicit `unreachable!` |
 
 The fixed-beam argument is upstream of the routing: it depends on the card, not
 on which integrand runs.
@@ -136,7 +136,10 @@ A banked sample cannot contain a counter-example: MadGraph vetoed such points
 before writing them. Eight banked runs can reach the floor (`lpp = (1,1)` with
 at least one dynamical `μF`): `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_jj`,
 `pp_to_ll`, `pp_to_ll_qcd0`, `pp_to_ll_scalefact2`, `pp_to_llj`,
-`pp_to_llj_dyn` (`FLOOR_REACHABLE_RUNS`). The `dy13` cards fix both scales, so
+`pp_to_llj_dyn` (`FLOOR_REACHABLE_RUNS`). The matched and pure-cut MLM rows are
+left out of that test, since their floor check runs inside two `setclscales`
+calls; `validate_mlm_dumps` checks that no written event of theirs is rejected.
+The `dy13` cards fix both scales, so
 `setclscales` returns before the check. The minimum banked `μF`
 (`SCALUP = sqrt(max(q2fact(1), q2fact(2)))`, `unwgt.f:752`, cross-checked per
 beam against `<pdfrwt>` where written):[^n29-c24][^n29-a5]
@@ -162,6 +165,10 @@ since the clustered core's transverse mass cannot fall below its heaviest leg.
   `scalefact`. A floor reached through another branch of the `μF` synthesis
   (the backfill or beam-1-from-first branches) is covered only by the shared
   comparison in `setclscales.rs`.[^n29-a6]
+- **The banked minima are this crate's replay.**
+  `banked_hadronic_runs_clear_the_factorisation_floor` replays `μF` with our
+  clustering rather than reading MadGraph's own `q2fact`, so a common-mode
+  scale error moving both sides together would not show.
 
 [^n29-a1]: Note 29 C2 amendment A.0–A.1. The veto predated the design; the defect was that it panicked mid-integration.
 [^n29-a2]: Note 29 C2 amendment A.2.

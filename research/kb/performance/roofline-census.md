@@ -1,10 +1,11 @@
 ---
 type: Measurement
 title: "Roofline census of the helicity evaluator"
-description: "Exact op and byte counts against measured time on Emerald Rapids: scalar is FP-issue limited (51–68% of the mix ceiling), lanes have headroom, the 2→6 at lanes8 was L2-capacity bound."
+description: "Exact op and byte counts against measured time on Emerald Rapids at db5fd03: not byte-bound; large scalar rows reach 51–68% of the operation-mix FP-issue ceiling, lanes 25–52%; the 2→6 at lanes8 was L2-capacity bound."
 status: draft
 tags: [performance, roofline, evaluator, simd, memory-bandwidth]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   commit: db5fd03
   host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 48 KiB L1d, 2 MiB L2"
@@ -64,7 +65,7 @@ memory-bound cell was the 2→6 at lanes8, whose 3.6 MiB working set overflowed 
 
 These are the programs before constant collection. That change and the bare configuration
 amplitudes after it removed 20–53% of the VM instructions on these rows (the 2→6 to
-17 163) and shrank the 2→6's arenas to 288 KiB at
+17 163) and shrank the 2→6's arenas to about 288 KiB at
 `f64`, so instruction counts, arena sizes and achieved rates here describe `db5fd03`, not
 the current tree. See [constant collection](constant-collection-and-fused-sums.md).
 

@@ -5,6 +5,7 @@ description: "The colourless VVV source sign, the four-vector contact sign (per 
 status: draft
 tags: [sign-conventions, vector-vertices, qcd, electroweak, madgraph-comparison]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n39-wrong, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L16-L53", title: "Note 39 §1 (what was wrong)"}
   - {id: n39-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L54-L72", title: "Note 39 §2 (the rule)"}
@@ -177,7 +178,9 @@ so such rows compare with every width zero on both sides (`zero_widths`)[^n39-or
 | `tests/gluon_parke_taylor.rs`[^code-pt] (hermetic, no MadGraph) | 5 and 6 gluons, every MHV and anti-MHV configuration: `J_σ·⟨σ1σ2⟩…⟨σnσ1⟩` constant over flows and `\|J\|·\|cyclic\|/\|⟨ij⟩\|⁴` constant over configurations; tolerance 1e-10 in units of the point's largest flow | global phase and normalisation; per-configuration phase; NMHV; anything with a quark (the triple-gluon source beside a quark, and the gluon–scalar sign, are invisible) |
 | `tests/amplitude_oracle.rs` | per-diagram and per-flow values on the banked rows | anything those rows do not reach: no enforced row has a colourless contact at the anchor |
 
-Mutation results, each against the three suites[^n39-gates]:
+Mutation results, each against the three suites[^n39-gates]. They were measured
+when `standalone_jamps` held its first six rows and `wpwm_to_epem`; the tau
+Yukawa and `bbx_to_hh` tables came later and were not part of the sweep:
 
 | mutation | fails |
 |---|---|

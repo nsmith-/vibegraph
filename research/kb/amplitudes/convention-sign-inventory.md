@@ -81,7 +81,8 @@ uniform over the vertex's Lorentz terms):[^code-build]
   structure.
 
 Two classes, measured on a census of every manifest process plus 23 others (2553
-diagram–chain pairs, at every rooting):[^n38-s1] the Wick and line signs are graph
+diagram–chain pairs, at every rooting; note 38 S1, 2026-09-25, before the gluon
+VVV and gluon-contact exemptions landed, so the counts below are dated):[^n38-s1] the Wick and line signs are graph
 properties that never varied with the rooting; the VVV, build and reversed signs
 are kernel compensations that vary with the reference root (on 214, 92 and 12
 pairs, their product on 234). The choice of reference root carries physics: the
@@ -128,7 +129,10 @@ process. As of the chain-F measurement (note 29, 2026-08-03):
 Since then the standalone JAMP rows `tata_to_ttxh`, `tata_to_ttxhh` and
 `bbx_to_hh` gate Yukawa processes per helicity. Whether any of them puts a
 *varying* scalar-sink bilinear sign in front of an oracle has not been
-re-measured; until it is, treat that arm as possibly unchecked. The production
+re-measured; until it is, treat that arm as possibly unchecked. Read from the code,
+not measured: in `bbx_to_hh` the arm fires exactly once in every diagram (the
+`b b~ H` vertex at the anchor is the amplitude sink; the other is rooted at its
+fermion output), so that row sees it only as a global sign. The production
 comment on the fourth assertion of `mg_guard_processes_exercise_every_convention_channel`
 still attributes `e+ e- > ta+ ta- H`'s build sign to "ProjM/ProjP scalar-sink + the
 crossed-τ standalone projector"; only the second half fires.

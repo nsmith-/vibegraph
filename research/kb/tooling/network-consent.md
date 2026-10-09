@@ -3,6 +3,7 @@ type: Design
 title: Network consent policy
 description: "NetworkPolicy Deny/Ask/Allow from --no-network, $VIBEGRAPH_NO_NETWORK and --yes; refusal outranks consent; no terminal means refusal; HttpFetch is built in one place."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [cli, network, consent, pdf]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -22,7 +23,8 @@ consent, not reachability, and it is decided by a pure function in
 ## The policy
 
 `NetworkPolicy::resolve(no_network_flag, consent_flag, env_denies)`, computed
-once in `main` and threaded down:
+once in `main` (through `NetworkPolicy::from_env`, which reads the variable)
+and threaded down:
 
 | input | policy |
 |---|---|

@@ -13,7 +13,7 @@ sources:
   - {id: n41-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3490-L3512", title: "Note 41 §5 decisions (user, 2026-09-28)"}
   - {id: matching-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/runcard/matching.rs#L1-L80", title: "runcard/matching.rs"}
   - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L436-L447", title: "generate.rs refuse_rounding_on_mixed_multiplicity"}
-  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/auto_dsig_v4.inc#L124-L182", title: "MadGraph auto_dsig_v4.inc (DSIG)"}
+  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/auto_dsig_v4.inc#L124-L182", title: "MadGraph auto_dsig_v4.inc (DSIG)"}
   - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
 ---
 
@@ -60,9 +60,11 @@ On the scalar path (`vector_size = 1`, the default, which every reference pins):
 | `<scales pt_clust_N>`, status-2 resonances, `<MGRunCard>` | [events/mlm-matched-event-record](../events/mlm-matched-event-record.md) | `lhef/build.rs`, `lhef/write.rs` |
 | Pythia's matching settings and how they read our file | [events/pythia-interop](../events/pythia-interop.md) | `validation/pythia/` |
 
-At `ickkw = 0` none of this changes a byte: artifacts and LHE files are binary-identical to
-the unmatched code path, measured binary against binary on six cases (`integrate` and
-`generate` each) against the build before matching existed
+At `ickkw = 0` none of this changes a byte: every `grid.bin.zst` is byte-identical to the
+unmatched code path, and every LHE file is identical except for the header line that names
+the artifact path. That was measured binary against binary on six cases (`integrate` and
+`generate` each) against `85e1459`, the build before matching existed, and is pinned by
+`without_matching_the_record_scale_is_the_density_scale` and `scalup_reads_the_record_scale`
 ([validation/no-change-claims](../validation/no-change-claims.md)).[^n41-m1]
 
 Two MadEvent switches do nothing under `ickkw = 1`: `hmult` and `highestmult`. MadEvent
@@ -79,8 +81,9 @@ the artifact records the card after MadGraph's own edits.[^matching-rs]
 | `ickkw ∉ {0, 1}` | refused (`UnsupportedIckkw`) | MadGraph allows only 0 and 1 |
 | `ickkw = 1`, `maxjetflavor = 6` | refused (`MatchedTopJets`) | MadGraph refuses it (`banner.py:4556`) |
 | `ickkw = 1` with exactly one fixed `μF` | refused (`MatchingWithOneFixedFactorisationScale`) | `reweight.f:1138`'s operator-precedence defect applies `scalefact` and `q2bck` to one beam only; refused rather than reproduced (decision c) |
-| `xqcut > 0` with a resolved `ptj < xqcut` (`auto_ptj_mjj = F`, or `ptj < 0`) | refused (`XqcutAboveJetThreshold`) | MadEvent's τ floor becomes a cut that differs per channel ([backlog: mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md)) |
-| matching or `xqcut` at fixed beams or on a decay | refused (`FixedBeamMatching`) | the fixed-beam integrand cannot zero-weight a clustered-out point, and no reference exists ([backlog: mlm-at-fixed-beams-or-decays-refused](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md)) |
+| `xqcut > 0` with a resolved `ptj < xqcut` (`auto_ptj_mjj = F`, or `ptj < 0`) | refused (`XqcutAboveJetThreshold`) | MadEvent's τ floor becomes a cut that differs per channel; open, low priority ([backlog: mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md)) |
+| matching or `xqcut` at fixed beams | refused (`FixedBeamMatching`) | the fixed-beam integrand cannot zero-weight a clustered-out point, and no reference exists; open, low priority ([backlog: mlm-at-fixed-beams-or-decays-refused](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md)) |
+| matching or `xqcut` on a decay | refused permanently (today through the same `FixedBeamMatching`) | a decay has no incoming partons to match against; not a missing feature ([decisions: mlm-not-on-decays](../decisions/mlm-not-on-decays.md)) |
 | CKKW-L (`ktdurham`, `ptlund`, `dparameter`) | refused as unimplemented cuts | a different merging scheme sharing the clustering; decision b ([backlog: ckkw-l-merging-refused](../backlog/feature/ckkw-l-merging-refused.md)) |
 | `pdlabel1 ≠ pdlabel2` on proton beams | refused (`AsymmetricBeamPdf`) | MadGraph refuses it (`PDLabelBlock`) |
 | `--strategy stochastic-rounding` on a mixed-multiplicity card | refused (`refuse_rounding_on_mixed_multiplicity`) | unit weights would leave each multiplicity's share of the file to the realised sample ([backlog: stochastic-rounding-refuses-mixed-multiplicity](../backlog/feature/stochastic-rounding-refuses-mixed-multiplicity.md))[^generate-rs] |

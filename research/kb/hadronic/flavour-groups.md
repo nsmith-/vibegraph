@@ -78,8 +78,10 @@ where they differ, so they are not vacuous guards:
 
 - `a_group_sharing_one_cut_filter_is_a_real_requirement`: a `pdg = 5` leg compiles to a
   different filter from a light jet at `maxjetflavor = 4` and to the same one at `5`.
-- The colour check is exercised on `p p → t t̄ QED=0`, where both groups have
-  `n_flows = 2` and only the CF matrix separates them.
+- The colour check's quantity is shown to separate real processes on
+  `p p → t t̄ QED=0`, where both groups have `n_flows = 2` and only the CF matrix
+  separates them (`an_identical_parton_initial_state_carries_a_single_ordering`). It
+  does not fire inside any group there, where members differ by generation label alone.
 
 Members of a group share a matrix element but need not share colour reps: a quark and
 an antiquark can share `|M|²`, mass list, cut filter and CF matrix while routing colour

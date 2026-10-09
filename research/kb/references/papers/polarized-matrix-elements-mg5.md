@@ -55,7 +55,10 @@ and to arXiv:2512.10015 for the extensions[^mg-pol-list]. There is no "axial
 
 vibegraph accepts MadGraph's polarization syntax on external legs and reproduces
 its helicity conventions, which are HELAS's
-([polarization](../../process/polarization.md)). A polarization on a leg that
+([polarization](../../process/polarization.md)). Of the paper's frames it
+supports only the partonic centre of mass: a run card whose `me_frame` names
+another frame is refused when any massive leg is polarized
+(`refuse_polarized_frame`, `hadronic.rs`). A polarization on a leg that
 is then decayed, which is where this paper's truncated propagator is needed,
 and the propagator-only codes (`{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}`) are
 refused: [polarized-intermediate-resonances-refused](../../backlog/feature/polarized-intermediate-resonances-refused.md).

@@ -5,6 +5,7 @@ description: "PhaseSpaceMap/Channel/Combiner traits; sample()'s walk weight vs t
 status: draft
 tags: [phase-space, multichannel, density, traits, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, substrate the seam was built on"}
   - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21 close-out (the seam, the combiner)"}
@@ -115,7 +116,8 @@ and `the_chain_density_reads_only_invariants` (`tests/diagram_channel.rs`).
 
 An unfloored massless spacelike pole puts the transfer's upper edge on a
 cancelling difference, and `density`'s recomputed `t` then carries rounding the
-drawn `t` does not. Over the six llj cuts at `√ŝ = 500`:[^n24-p2]
+drawn `t` does not. Over the six llj cuts at `√ŝ = 500`, measured with note
+24 P2's 5 GeV pole-mass floor:[^n24-p2]
 
 | Spacelike pole | Worst walk-vs-density gap | Non-positive self-densities |
 |---|---|---|
@@ -127,9 +129,14 @@ combiner's denominator. So the floor is there for the **combiner's density
 positivity**, not for the channel's own unbiasedness: the correct statement is
 "the unfloored spine breaks the density contract a combiner rests on", pinned by
 `an_unregulated_three_body_spine_breaks_the_density_a_combiner_weights_by` and
-`an_unregulated_spine_breaks_the_positive_density_contract`. Production builds a
-spine for more than two outgoing legs only when a positive fiducial scale is
-supplied. The floor's construction is [phase-space/spacelike-floor](spacelike-floor.md)
+`an_unregulated_spine_breaks_the_positive_density_contract`. The regulator
+production uses today is not that 5 GeV floor but the process's fiducial
+scale: each rung's transfer is bounded at `t ≤ −scale` (support narrowed,
+density exactly zero above it) and the pole is floored at
+`10⁻³ · scale` (`POLE_FRACTION_OF_FIDUCIAL_SCALE`). A spine is built for more
+than two outgoing legs only when that scale is positive
+(`DiagramChannel::from_diagram_with`); otherwise the channel is the
+all-timelike tree. The floor's construction is [phase-space/spacelike-floor](spacelike-floor.md)
 and the spine itself [phase-space/t-channel-spine](t-channel-spine.md). The
 timelike counterpart, [phase-space/cut-implied-timelike-floors](cut-implied-timelike-floors.md),
 moves where a map puts its density without narrowing its support: a

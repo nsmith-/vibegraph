@@ -72,15 +72,18 @@ On the vendored [SMEFTsim topU3l UFO](smeftsim-topu3l.md) [^n35-l1]:
 
 | Restriction | Split interactions | Arity histogram |
 |---|---|---|
-| none (as parsed) | 1985 | — |
+| none (as parsed) | 1985 | `{3: 527, 4: 1234, 5: 212, 6: 12}` |
 | `restrict_SMlimit_massless` | 62 | `{3: 50, 4: 10, 5: 2}` |
 | `restrict_massless` | 913 | `{3: 256, 4: 564, 5: 82, 6: 11}` |
 
-These equal MadGraph's own interaction counts, banked in
-`validation/madgraph/interactions.json` and asserted by
-`interaction_splitting_matches_madgraph` and `restricted_interaction_counts_match_madgraph`
-(`vibegraph-lib/tests/smeftsim.rs`, behind `extended-validation`). Smaller counts
-(60 and 540 vertices) that appear in older notes are pre-split. For the Standard Model,
+The two restricted counts equal MadGraph's own, banked per (model, restrict card)
+pair in `validation/madgraph/interactions.json` and asserted by
+`restricted_interaction_counts_match_madgraph`; MadGraph builds no unrestricted row,
+so the 1985 (from 904 UFO `Vertex` entries, 2737 coupling entries) is a constant in
+`interaction_splitting_matches_madgraph`. The arity histograms are vibegraph's own
+measurement, since MadGraph's log does not report them (`vibegraph-lib/tests/smeftsim.rs`,
+behind `extended-validation`). Smaller counts (60 and 540 vertices) that appear in
+older notes are pre-split. For the Standard Model,
 `splitting_is_the_identity_on_the_standard_model` (`ufo/mod.rs`) pins that splitting
 changes nothing, with the bit-for-bit `amplitude_oracle` as the end-to-end check.
 

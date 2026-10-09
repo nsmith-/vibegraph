@@ -15,7 +15,8 @@ sources:
   - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f", title: "MadEvent myamp.f: cut_bw, set_peaks"}
   - {id: mg-setgrid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L938-L1007", title: "MadEvent dsample.f, setgrid"}
 measured:
-  - {landed_in: 1539abc, pr: 12, host: "4 shared cores (container)", command: "cli_decay_chain.rs σ rows, ten seeds at --target-rel 2e-3; tests/decay_chain_ladder.rs (ignored), one seed"}
+  - {landed_in: 1539abc, pr: 12, command: "cli_decay_chain.rs σ rows, ten seeds at --target-rel 2e-3, against MadEvent 3.7.1 (decay_chain_sigma_reference.json)"}
+  - {landed_in: 1539abc, pr: 12, host: "4 shared cores", command: "tests/decay_chain_ladder.rs (ignored), one seed, integration to 5e-3, 5000 unweighted events"}
 ---
 
 A per-diagram channel draws each composite subsystem's invariant mass² `s`
@@ -83,9 +84,13 @@ over-adapted the near-flat hypercube, which is why mapped integrands run at
 
 ## How MadEvent does it
 
-MadEvent shapes the **grid**, not the map. `set_peaks` gives a zero-width
-s-channel invariant a floor `xo = MIN(10d0/stot, stot/50d0, 0.5)`
-(`myamp.f:455`, `:481`) and calls `setgrid`, which lays the bins out
+MadEvent shapes the **grid**, not the map. For an s-channel invariant with no
+Breit–Wigner (zero width), `set_peaks` sets the grid floor at the invariant's
+lower edge `xo = xm²/stot`, and only where that edge is zero at
+`xo = MIN(10d0/stot, stot/50d0, 0.5)` (`myamp.f:454-455`, `:465-481`). The
+`small_width_treatment` floor on `prwidth_tmp` applies to positive widths only
+(`myamp.f:131-135`), so a zero-width line always takes this branch. It then
+calls `setgrid`, which lays the bins out
 logarithmically, `grid = xo**(1 − i/ngu)` over 90% of the bins, and reserves
 the other ~10% to reach below `xo` (`dsample.f:938-1007`)[^mg-setgrid][^mg-myamp].
 Its `gen_s` draw is flat for a zero pole. Doing it as an analytic map here
@@ -99,8 +104,9 @@ within `bwcutoff` widths ([decay chains](../process/decay-chains.md)).
 
 **MadEvent's semantics, as read**[^mg-myamp][^n38-d3]. `cut_bw` loops over the
 configuration's s-channel propagators; for a forced one (`gForceBW = 1`) it
-tests `onshell = |√p² − M| < bwcutoff·prwidth_tmp` (`myamp.f:136-137`), with
-`prwidth_tmp = max(Γ, M·small_width_treatment)`, and a point outside fails
+tests `onshell = |√p² − M| < bwcutoff·prwidth_tmp` (`myamp.f:136-139`), with
+`prwidth_tmp = max(Γ, M·small_width_treatment)` for `Γ > 0`
+(`myamp.f:131-135`; the loop only visits propagators with `prwidth > 0`), and a point outside fails
 `passcuts` before its matrix element is evaluated. On the phase-space side
 `set_peaks` raises the forced invariant's lower edge to `M − bwcutoff·Γ`
 (`myamp.f:403`) and draws it with `transpole` over its range. `cut_decays = F`
@@ -148,7 +154,8 @@ one-sided low tail, and two 50k-event runs land +0.06% from this side, so
 MadEvent converges upward with budget. The last row is the pairing
 difference: keeping both pairings and their interference puts the
 identical-lepton σ 0.26% ± 0.08% above MadGraph's one pairing ÷ 2. `generate`
-refuses a decay-chain card unless resonance records are written
+writes status-2 resonance records with mother pointers for a decay-chain card,
+so a shower keeps the forced line shapes
 ([resonance records](../events/resonance-records.md)).
 
 The forced invariants are mapped exactly; the decay angles are not. Unweighting

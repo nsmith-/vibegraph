@@ -84,7 +84,7 @@ These are not MadGraph rules, but a new model meets the same constraints:
 - **`Sigma` is ALOHA's.** ALOHA's `Sigma` is half the textbook `(i/2)[γ^μ, γ^ν]`
   (measured on the toy rows). A model author writing a coupling for a literal `Sigma`
   writes it against ALOHA's normalisation; see
-  [gamma chains, Gamma5 and Epsilon](../amplitudes/gamma-chains-gamma5-and-epsilon.md).
+  [Levi-Civita and Sigma conventions](../amplitudes/levi-civita-and-sigma-conventions.md).
 
 How the epsilon and sextet atoms then flow through crossing and the colour basis, and
 which of them stay refused, is in

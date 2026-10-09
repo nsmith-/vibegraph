@@ -5,6 +5,7 @@ description: "Weighted KS and chi2 per observable against MadGraph's banked even
 status: draft
 tags: [validation, samples, ks-test, lhef, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L151-L162", title: "Note 25 §3.4 (samples category)"}
   - {id: n25-machinery, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L377-L395", title: "Note 25 §5.5 (samples machinery)"}
@@ -37,7 +38,7 @@ and every shape untouched when wrong.[^vs-rs]
 | file | rows | path |
 |---|---|---|
 | `vibegraph-lib/tests/validate_samples.rs` | the fixed-beam rows (`ebeam1 = ebeam2`, so lab frame = partonic CM, asserted per row) | library: `FixedBeamIntegrand`, `SubprocessRecord`, the production record assembly |
-| `vibegraph-cli/tests/validate_samples_proton.rs` | the proton rows (`pp_to_jj`, `pp_to_ll` on both dy13 cards, the `llj`, `bb` and `scalefact2` rows) | the shipped binary: one `integrate`, then `generate` per seed |
+| `vibegraph-cli/tests/validate_samples_proton.rs` | the proton rows (`pp_to_jj`, `pp_to_ll` on both dy13 cards, `pp_to_llj_fixed`, `pp_to_llj_dyn`, `pp_to_llj`, `pp_to_bb_fixed`, `pp_to_bb`, `pp_to_bb_qcd2`, `pp_to_ll_scalefact2`) | the shipped binary: one `integrate`, then `generate` per seed |
 
 Both are banked-layer gates (see [layers](validation-layers.md)); the cells
 render in the [validation report](validation-report.md).
@@ -89,8 +90,9 @@ render in the [validation report](validation-report.md).
   below it on both sides.[^n27-b4]
 
 **A sample's σ follows its `IDWTUP`.** `EventSample::from_lhe` takes the
-mean of `XWGTUP` under `-4`, `XSECUP` under `±3`, and panics on any other
-value rather than guessing. Which value MadGraph writes is a property of the
+mean of `XWGTUP` under `-4`, the sum of `XWGTUP` under `-3`, the `<init>`
+block's `XSECUP` under `+3`, and panics on any other value rather than
+guessing.[^samples-rs] Which value MadGraph writes is a property of the
 run card, not the version: `event_norm` defaults to `average` in MadGraph's own
 full cards but to `sum` (giving `-3`) when a hand-written card omits it
 (`madgraph/various/banner.py:4298`, `sys_default='sum'`). The shape statistics
@@ -116,7 +118,8 @@ spurious failure per run; at `1e-4` about 0.1.[^vs-rs]
   `samples` row cannot buy headroom with seeds.[^vs-rs]
 - **The headroom reading is not pinned.** A p-value near the floor moves with
   evaluator re-association that is checked but not bit-identical
-  (`ee_to_mumua` read `1.29e-4`, then `3.605e-4`), so the `P_FLOOR` doc comment
+  (`ee_to_mumua` read `1.29e-4`, then `3.605e-4`; an earlier doc comment had
+quoted `2.74e-4` until a re-measurement corrected it[^n29-addenda]), so the `P_FLOOR` doc comment
   is re-recorded whenever checked rather than trusted. Its current account
   names `ee_to_wpwm` `pt(w+)` at `1.573e-4` (1.6× the floor) as the row to
   watch, unchanged over five seeds (`probe_samples_p_floor_headroom`). See
@@ -206,9 +209,11 @@ momentum conservation, mass shells), with no reference and no physics in it
 [^n28-c5]: Note 28 C.5–C.6.
 [^n28-c26]: Note 28 C2.6.
 [^n29-e4]: Note 29 E.4(a).
-[^n29-rulings]: Note 29 close-out, manager rulings; and addendum A6.
+[^n29-rulings]: Note 29 close-out, manager rulings.
+[^n29-addenda]: Note 29 chain D addendum A6.
 [^n36-b2]: Note 36 B2.
 [^n36-b6]: Note 36 B6 item 1.
 [^n38-z2]: Note 38 §8.5.
 [^vs-rs]: `vibegraph-lib/tests/validate_samples.rs`, module docs and `P_FLOOR`.
+[^samples-rs]: `vibegraph-lib/src/validation/samples.rs`, `EventSample::from_lhe`.
 [^manifest]: `validation/manifest.toml`, the `pp_to_jj` and `ee_to_mumua` `samples` notes.

@@ -5,6 +5,7 @@ description: "How a diagram's Prop chain becomes a 2-body decomposition tree, wi
 status: draft
 tags: [phase-space, multichannel, diagrams, feyngraph, decomposition]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, the diagram substrate (Prop topology)"}
   - {id: n21-nonprefix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L119-L167", title: "Note 21 addendum: non-prefix s-channel recovery"}
@@ -125,9 +126,11 @@ floor), every float by its exact bit pattern. Two channels with equal
 identities are the same function of `(√ŝ, u)` and `(√ŝ, momenta)`, whatever
 diagrams they came from. `map_identity` destructures each struct whole, so a
 field added to the map without being added to the identity does not compile.
-The recorded `t_channels` list is deliberately absent: nothing that samples or
-prices reads it. The identity is finer than pointwise density equality, so it
-can miss a coincidence but never invent one. This is the key the channel set
+The two differ on one field: the recorded `t_channels` list (the diagram's
+spacelike lines' masses and widths, which no draw or density reads) is
+deliberately absent from `map_key` but encoded in `map_identity`
+(`diagram_channel.rs:1089`). Both are finer than pointwise density equality,
+so they can miss a coincidence but never invent one. This is the key the channel set
 merges on ([phase-space/channel-set](channel-set.md)).
 
 ## What is validated, and how

@@ -3,6 +3,7 @@ type: Procedure
 title: Profiling and stage timing
 description: "Profile a gate under samply with scripts/profile.sh (release-debug, extended-validation); per-row duration_s with host.json; time_stages.py for MadGraph's own stages."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [profiling, samply, timing, performance, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -57,10 +58,11 @@ parses the executable path from cargo's output, and `exec`s
 Useful samply flags: `--save-only -o <path>.json.gz` to record without opening
 a browser, and `--unstable-presymbolicate` so the saved profile carries a
 `.syms.json` sidecar with its symbols; browse later with `samply load <path>`.
-At samply's default 1000 Hz, a single-threaded integrand under a rayon pool
-shows the busiest thread doing the work and the other threads parked in
-`__psynch_cvwait` (about 94% of all samples on a 16-core host), so read
-percentages as self time within the busiest thread.[^n30-profiles] Going
+At samply's default 1000 Hz, the 2026-08 profiles of the integrate and
+sample stages (note 30 §7) showed the busiest thread doing the work and the
+other ~16 rayon workers parked in `__psynch_cvwait` (about 94% of all
+samples), so their percentages are self time within the busiest thread. Check
+the thread split of a new profile before reading it the same way.[^n30-profiles] Going
 below function level, to instructions and inlined frames, is
 [instruction-level profiling](instruction-level-profiling.md).
 

@@ -3,6 +3,7 @@ type: Design
 title: Cargo profiles, target directories and load-bearing feature flags
 description: "dev profile at opt-level 2 keeps debug assertions; release (fat LTO) and release-debug (thin LTO, debug info) profiles; a shared CARGO_TARGET_DIR breaks worktrees; serde_json float_roundtrip."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [cargo, build, profiles, worktrees, testing]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -26,7 +27,7 @@ All in the workspace `Cargo.toml`, each with its reason in a comment there:
 |---|---|---|
 | `dev` | `opt-level = 2`; debug assertions and overflow checks on (inherited) | `cargo test`, the hermetic CI job, local work |
 | `release` | `lto = true` (fat) | shipped binaries ([release binaries](release-binaries.md)) |
-| `release-debug` | `inherits = "release"`, `debug = 1`, `lto = "thin"` | every heavy validation gate (`pixi run validate`, the `validate-*` tasks), `scripts/profile.sh`, the validation-report collator |
+| `release-debug` | `inherits = "release"`, `debug = 1`, `lto = "thin"` | the banked layer (`pixi run validate`) and the heavy `validate-*` tasks (`validate-sigma`, `-hadronic`, `-unweighting`, `-lhef`, `-mlm-*`, …), `scripts/profile.sh`, the validation-report collator. The light oracle tasks (`validate-amplitudes`, `-couplings`, `-color-cf`, `-alphas`, `-scales`, `-pdf-grid`, `-helas`) run under `dev` |
 
 There is no `profiling` profile; `release-debug` is the profiling profile
 ([profiling](profiling.md)). Thin LTO keeps most cross-crate inlining in the
@@ -93,7 +94,7 @@ and `AGENTS.md`.
 **Disk pressure is a hazard.** Debug-info targets are large: a worktree
 `target/` has reached 16–17 GB mid-gate and filled a container's disk, and
 three concurrent workspace builds did not fit one container.[^n35-disk] A
-private target with debug info off stays near 0.7–2 GB. Dropping debug info:
+private target with debug info off measured 0.7 GB.[^n41-m2-review] Dropping debug info:
 
 - `CARGO_PROFILE_DEV_DEBUG=0` works for `dev`.
 - **`release-debug` cannot be set from the environment.** Cargo reads

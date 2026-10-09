@@ -5,6 +5,7 @@ description: "ALOHA's Epsilon is ε^{0123}=−1; Sigma is half of (i/2)[γ^μ,γ
 status: draft
 tags: [levi-civita, sigma, aloha, sign-conventions, gamma5]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-ref, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4 (reference conventions read from the pinned MadGraph)"}
   - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (graded Clifford basis; Levi-Civita primitives; the σγ⁵ identity)"}
@@ -14,7 +15,7 @@ sources:
   - {id: n35-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 (what the sprint leaves gated; pinned conventions)"}
   - {id: n35-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1398-L1415", title: "Note 35 §10.3 (the sigma_chained mutation pin)"}
   - {id: aloha-eps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L938-L983", title: "ALOHA aloha_object.py, L_Epsilon.give_parity"}
-  - {id: aloha-sigma, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L728-L790", title: "ALOHA aloha_object.py, L_Sigma.sigma"}
+  - {id: aloha-sigma, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L728-L827", title: "ALOHA aloha_object.py, L_Sigma.sigma"}
   - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/lorentz.rs", title: "epsilon4, epsilon_vector, AsymRank2Tensor::hodge_dual, test_sigma_gamma5_epsilon_identity"}
   - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs", title: "sigma_half and the Sigma kernels"}
   - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "sigma_chained, epsilon_out_order"}
@@ -87,9 +88,13 @@ argument order.
   per-helicity JAMP. A flipped ε changes the relative sign of the two, which the
   per-process global phase `G` cannot absorb. A CP-odd structure alone could
   not see the sign; |M|² of a pure CP-odd process is blind to it[^n35-e1].
-- **Reach.** `EpsilonVout` (ε rooted at a vector leg) is exercised by the
-  SMEFTsim rows `gg_to_gg_cg` and `ee_to_wpwm_cw`. Where no gated row reaches
-  it, it rests on the hermetic identity `EpsilonVout · d = EpsilonAmp`.
+- **Reach.** `EpsilonVout` (ε rooted at a vector leg) is under a gate through
+  `gg_to_gg_cg`, whose amplitudes cell gates at 2.16e-13 and whose manifest
+  note names it as the row that covers `EpsilonVout`. `ee_to_wpwm_cw` reaches
+  O_Wtil's `Epsilon` too, but its amplitudes cell is informational (one
+  |M|² point at 2.08e-12). Beside the gate stands the hermetic identity
+  `EpsilonVout · d = EpsilonAmp` (`epsilon_current_contracts_to_the_epsilon_scalar`
+  in `kernel.rs`).
 
 ## Sigma: half the textbook `σ^{μν}`
 
@@ -106,12 +111,17 @@ banked point. A kernel at the textbook normalisation is 2× too large on a dipol
 and 4× on a tensor⊗tensor contact; it reads |M|² `max_rel` 2.97 on
 `ll_to_qqx_toy_dipole` and 0.569 on `ll_to_qqx_toy_tensor`[^n35-t1][^n35-t2].
 
-**What pins Sigma's sign.** |M|² is blind to the global sign of `Sigma` in the
-tensor row (it enters squared there). The dipole row pins it: there the
-literal-`Sigma` structure `Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)` interferes
-linearly with a plain gauge coupling through one propagator. Negating
-`SigmaVout` flips the fitted `G` to `−i` at per-diagram 3.0e-1; flipping the
-`Sigma` cut of the contact reads 7.55e-1.
+**What pins Sigma's sign.** |M|² is blind to a sign carried by both `Sigma`s
+of the tensor contact (it enters squared there). The dipole row pins it, and
+only through the per-diagram comparison: there the literal-`Sigma` structure
+`Sigma(3,-1,2,-2)*P(-1,3)*ProjM(-2,1)` shares one propagator with a plain gauge
+coupling, but the dipole amplitude is relatively *imaginary* to the gauge one
+(σ^{μν} carries the `i` the plain γ does not), so their interference vanishes
+identically. Negating `SigmaVout` leaves |M|² and JAMP2 unmoved (5.56e-14)
+while per-diagram jumps to 3.0e-1 and the fitted `G` flips to `−i`. An
+|M|²-only gate would not see a flipped dipole sign. On the tensor row, flipping
+the sign of the `Sigma` cut alone (relative to the γγ spelling) moves |M|² to
+7.55e-1 (per-diagram 6.07e-1).
 
 **`Sigma ⊗ Sigma` is the γγ expansion at the process level.** Both spellings
 of the tensor operator are reproduced per diagram and per helicity in one
@@ -153,7 +163,7 @@ sign too (`C γ⁵ᵀ C⁻¹ = γ⁵`).
 
 The SM writes γ⁵ as `ProjP − ProjM` and has no Levi-Civita vertex, so the
 `Gamma5`, `Gamma5Amp`, `EpsilonVout` and `EpsilonAmp` ops are listed in the
-SM's `KNOWN_UNCOVERED` op census and are reached only by SMEFTsim and toy rows.
+SM op census's `SM_KNOWN_UNCOVERED` (`helas/eval/compile.rs`) and are reached only by SMEFTsim and toy rows.
 `Gamma5` preserves its input's adjoint: γ⁵ is diagonal in the Weyl basis, so the
 same weighting acts on a ket from the left and on a bra from the right. The
 fused chiral-FFV peephole refuses a structure containing `Gamma5` (it would
@@ -174,7 +184,8 @@ Reach gaps, measured: `SigmaVout` is reached by the dipole row and `SigmaOut`
 (with `FierzOut`/`FierzOutRev`/`FierzPair`) by the tensor row. `SigmaMv` and
 `MultivectorIout/Oout` need the structure on an internal line and have only
 hermetic rooting tests. `SigmaVoutRev` and `SigmaOutRev` are reached by no
-process in reach; the census note in `tests/smeftsim.rs` records that. The
+process in reach; the census note in `tests/toy_models.rs` records that and
+names the hermetic pins they rest on. The
 toy models built for this are [validation/toy-ufo-models](../validation/toy-ufo-models.md).
 
 One adjacent caveat belongs to the reference rather than to these

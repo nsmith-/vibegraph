@@ -5,6 +5,7 @@ description: "validate_scales replays each banked run's SCALUP, <rscale> and <pd
 status: draft
 tags: [validation, scales, alpha-s, kt-clustering, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L446-L468", title: "Note 24 P0 (gate wiring: banking an amplitude banks a run)"}
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 (the q̄g gap closed)"}
@@ -66,10 +67,11 @@ not carry the configuration. The replay adopts the first configuration whose
 independent `AQCDUP` oracle, off that same configuration, so a wrong clustering
 cannot be repaired field by field.[^vscales-replay] How many events needed a
 configuration other than the first is reported per run: on runs where it is
-zero, the cluster scale is a function of the event alone. It was non-zero on the
-`g q`-initiated llj rows (thousands of events), `pp_to_llj`/`_dyn`,
-`ee_to_mumua`, `ee_to_mumu_tata_qcd0` and `pp_to_bb_qcd2`, and zero on every
-2→2 row.[^n28-k43]
+zero, the cluster scale is a function of the event alone. When every run was
+first replayed (27 runs), it was non-zero on six: the `g q`-initiated llj rows
+(7204 and 7231 events), `pp_to_llj_dyn`/`pp_to_llj` (5768 and 5572),
+`ee_to_mumua` (370), `ee_to_mumu_tata_qcd0` (262) and `pp_to_bb_qcd2` (141,
+a 2→2), and zero on the other twenty-one, `pp_to_jj` among them.[^n28-k43]
 
 This is the oracle's search, not production's rule. Production draws each
 point's configuration `∝ AMP2_c` per flavour group and beam ordering
@@ -91,7 +93,9 @@ offer too few two-scale events. A 2→2 clusters every group to the same scale u
 to rounding (`pp_to_jj` moves by 2e-9 relative), so those rows are blind to the
 per-group and mirror errors.[^n40-oracles] A marginal `SCALUP` KS can pass
 while two initial-state classes carry each other's scales; splitting the column
-by class is what exposed it.[^n40-oracles]
+by class is what exposed it, but that split was a one-off diagnostic and is not
+a committed column, so the `samples` gate's `SCALUP` KS is still the
+marginal.[^n40-oracles]
 
 ## The inventories
 
@@ -117,8 +121,9 @@ reproduces all 20 000 events instead); `MatchedDump` (the five MLM rows, whose
 Cross-cutting lists:
 
 - `GRID_ALPHA_S_RUNS` (in both `validate_scales.rs` and `validate_alphas.rs`):
-  the eight `pdlabel = lhapdf` runs, whose α_s MadGraph reads from the PDF grid
-  (`alfas_functions_lhapdf.f`). It classifies which `AlphaSSource` arm a run
+  the `pdlabel = lhapdf` runs, whose α_s MadGraph reads from the PDF grid
+  (`alfas_functions_lhapdf.f`). `validate_scales.rs` lists the eight it replays;
+  `validate_alphas.rs` lists thirteen, those eight plus the five MLM rows. It classifies which `AlphaSSource` arm a run
   takes. `validate_alphas::banked_run_logs_pin_the_alpha_s_source_rule` asserts
   set equality against the runs whose own MadGraph run log reports a grid α_s,
   and `resolve()` asserts the arm both ways, so a run that changes source fails
@@ -136,8 +141,11 @@ Cross-cutting lists:
 
 **Banking a process banks a run.** `launch` builds `matrix1_optim.f` and writes
 10 000 events, so registering an amplitude process adds a run that every
-inventory must classify, and a `pdlabel = lhapdf` run belongs in
-`GRID_ALPHA_S_RUNS` and in `validate_alphas`' `SCALUP_IS_THE_RENORMALISATION_SCALE`.
+inventory must classify. A `pdlabel = lhapdf` run belongs in
+`GRID_ALPHA_S_RUNS`, and a run whose `SCALUP` is its `μR` in
+`validate_alphas`' `SCALUP_IS_THE_RENORMALISATION_SCALE` (the two
+mixed-multiplicity MLM rows, where `SCALUP` and `μR` part on some events, are
+deliberately left out of it).
 All are asserted, so none can be forgotten silently.[^n24-p0][^n24-p1][^n24-p2b]
 A re-bank that changes a run's α_s source leaves the gate red until the
 classification moves with it; that is the guard working.[^n29-g6]

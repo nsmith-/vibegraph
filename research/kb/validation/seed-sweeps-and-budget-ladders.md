@@ -5,6 +5,7 @@ description: "A fixed-seed pull is not evidence: sweep five or more seeds and re
 status: draft
 tags: [validation, seed-sweep, budget-ladder, vegas, statistics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21 addendum (sampler in production: two defects found by seed sweeps)"}
   - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1772", title: "Note 24 P3 (five-seed sweep necessary, not sufficient)"}
@@ -70,7 +71,7 @@ same rule to references.
 A seed sweep detects a seed that missed a region. It cannot detect a bias every
 seed shares, because the seeds do not disagree about it.[^n24-p3] The case: the
 `p p > l+ l- j` gate at `neval = 60 000` passed a single-seed check, a
-five-seed check and the scatter check (pulls −2.36 … −1.08, χ²/dof 1.55) while
+five-seed check and the scatter check (pulls −2.67 to −1.08, χ²/dof 1.55) while
 being 1.0% low. The budget scan showed steps halving as the budget doubled
 (−3.18, −1.19, −0.67 pb), an `O(1/N)` bias. Its source was VEGAS putting every
 iteration, including the unadapted first ones, into an inverse-variance
@@ -108,19 +109,26 @@ Worked cases:
   pull is floored by the reference and the ladder cannot shrink the residual.
   What the ladder rules out is a defect, which would migrate between seeds at
   fixed size rather than scatter inside a band. `rel_tol` was set at 3.8× the
-  worst seed.[^n28-s6]
-- `pp_to_jj` climbs 0.11% over an eightfold budget, half the reference's own
-  error, without resolving an asymptote: converged *at the scale the comparison
-  is made at*, not demonstrably asymptotic. The ladder is kept so a later
-  session can say more.[^n28-c4][^n28-c24]
+  worst seed as then recorded; after the note-34 draw commits moved the
+  sampling stream, the same five seeds read a worst of `3.954e-3`, 2.5× inside
+  it ([seed headroom census](seed-headroom-census-2026-09.md)).[^n28-s6]
+- `pp_to_jj`'s five-seed ladder over an eightfold budget moves by less than
+  half the reference's own 0.22% error without resolving an asymptote (0.11%
+  when first measured; an `0.08%` span with no direction in the ladder its gate
+  comments quote): converged *at the scale the comparison is made at*, not
+  demonstrably asymptotic. The ladder is kept so a later session can say
+  more.[^n28-c4][^n28-c24]
 - Nothing in the two low llj partonic rows was sampling: quadrupling the budget
   left them at −5.5% on all ten runs. The ladder, not the sweep, said
   so.[^n28-k5b1]
-- The 2→6 rows' five-seed means agree with the bank, but single seeds swing
-  ±4–5% at both ends of a 300k–1.2M ladder without shrinking. That was
+- The 2→6 rows' five-seed means agreed with the bank, but single seeds swung
+  ±3.5–4.8% at every rung of a 300k–1.2M ladder without shrinking. That was
   classified as a heavy-tailed estimator; a fix must make the swings shrink with
-  budget, not merely move them. See
-  [sigma-row gating exceptions](sigma-row-gating-exceptions.md).
+  budget, not merely move them. The accepted-point floor since cut the worst
+  single-seed swing below 1%, but at one budget only, so that falsifier is
+  still unclaimed and the cells stay `info`
+  ([2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md);
+  [sigma-row gating exceptions](sigma-row-gating-exceptions.md)).
 
 ## Rung-to-rung differences need the measured spread
 

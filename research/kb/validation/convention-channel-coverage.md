@@ -110,8 +110,10 @@ processes and the hostile cases[^n29-f10]:
   still refutes rules that predict variation: `g g > t t~`'s crossed top line
   carries 0, 1, 1 propagators with a uniform sign, which pins the crossed arm's
   propagator-independence.
-- In Bhabha and `u u~ > u u~`, `diagram.sign` and the fermion-line sign cancel
-  exactly, so those processes pin the product, not either factor.
+- In Bhabha and `u u~ > u u~`, the Fermi pairing sign
+  (`Diagram::fermion_pairing_sign`) and the fermion-line sign cancel exactly, so
+  `Diagram::sign` (their product) is uniform there: those processes pin the
+  product, not either factor.
 - **The fermion-line sign's two arms** are both checked on
   `u d > e+ e- u d QCD=0`: the line sign is −1 on 11 diagrams (`{4…11, 18, 21,
   22}`, no mixed line carrying a propagator) and +1 on 24, matching
@@ -135,8 +137,9 @@ processes and the hostile cases[^n29-f10]:
   `uux_to_epemg` and `ddx_to_epemg`[^n24-rows].
 - **Row-by-row coverage is uneven.** The four ℓℓj partonic rows do **not** pin
   the fermion-line sign: it fires on all four diagrams of `g q → ℓℓq`, so dropping
-  it is a global sign; that mutation failed 7 `|M|²` rows and two per-diagram rows,
-  none of them ℓℓj[^n24-mut]. A slot rule wrong only for `g u~` was caught by
+  it is a global sign; that mutation (2026-07-30, against the `|M|²` and
+  per-diagram gates since folded into `amplitude_oracle`) failed 7 `|M|²` rows and
+  two per-diagram rows, none of them ℓℓj[^n24-mut]. A slot rule wrong only for `g u~` was caught by
   `gux_to_epemux` alone, which had no other detector[^n24-gux].
 
 Majorana lines (none in the SM UFO) and charge-flow phrasings that agree on every

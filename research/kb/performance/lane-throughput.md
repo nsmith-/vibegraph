@@ -5,6 +5,7 @@ description: "LaneField per-event cost against scalar (0.57/0.32/0.25× at N=2/4
 status: draft
 tags: [performance, simd, lanes, benchmarks, hosts]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 02e8b25, host: "Intel Xeon Emerald Rapids (family 6 model 207) at 2.1 GHz base, 4-vCPU Firecracker VM", command: "RUSTFLAGS='-C target-cpu=native' cargo bench -p vibegraph-lib --bench eval_strategies (and the x86-64-v3 and baseline builds)"}
   - {commit: db5fd03, host: "Intel Xeon Emerald Rapids, 4-vCPU Firecracker VM", command: "eval_strategies forward/lanes2/4/8, target-cpu=native"}
@@ -23,7 +24,7 @@ sources:
 # Lane versus scalar per-event cost, per host
 
 `lanesN ÷ forward` in `eval_strategies` is a per-event ratio as it stands: every bar runs
-16 events per criterion iteration (`bench_lanes` iterates `chunks_exact(N)` over 16 points),
+16 events per criterion iteration (`bench_lanes` iterates `as_chunks::<N>()` over the 16 bench points),
 so no normalisation is needed. Below 1 the lane path is cheaper per event. How lanes are
 built is [the lane field](lane-field-over-wide.md); how they would be used is
 [lane-batched evaluation](simd-lane-evaluation.md). The hosts are described in

@@ -44,8 +44,9 @@ oracle's off-knot interior points:[^n18-h1h2][^n18-outcome]
 
 A direct LHAPDF-against-scipy comparison on the same set had already diverged by about
 120% at some interior points. The in-house replica, which mirrors LHAPDF's per-point
-operation order, lands at **1.32e-15** worst on the same off-knot points, about 250 lines
-of code. The trial dependency was reverted, and `Cargo.toml` and `Cargo.lock` carry no
+operation order, lands at **1.32e-15** worst on the same off-knot points, in about 250 lines
+of code when the decision was taken (`pdf/interp.rs` has since grown to carry the
+multi-band walk and the all-flavour path). The trial dependency was reverted, and `Cargo.toml` and `Cargo.lock` carry no
 scirs2.
 
 **No LHAPDF FFI.** LHAPDF is a C++ dependency wall, and the `lhagrid1` format is simple

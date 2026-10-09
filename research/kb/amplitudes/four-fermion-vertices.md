@@ -37,6 +37,10 @@ if flow == expected:
     return ''
 ```
 
+For four fermions this `expected` evaluates to `{1: 2, 2: 3}`, which no real
+pairing equals, so the early return never fires; the canonical `{1: 2, 3: 4}`
+gets `+1` from the permutation-parity loop that follows (`import_ufo.py:1893-1918`).
+
 Majorana fermions in four-fermion vertices are an `InvalidModel` in MadGraph, so
 they stay out by construction.[^n35-14]
 

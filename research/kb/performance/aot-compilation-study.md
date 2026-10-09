@@ -5,6 +5,7 @@ description: "Rendering the bytecode to Rust (inlined, outlined, MadGraph slot-a
 status: draft
 tags: [performance, evaluator, aot-compilation, code-size, interpreter]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: aot-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L13-L51", title: "AOT study: question and answer"}
   - {id: aot-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L52-L111", title: "AOT study §1–2: host, method, correctness"}
@@ -145,7 +146,8 @@ three arms split it. The MadGraph form removes dispatch and operand decoding but
 keeps every operand and result in memory, as the interpreter does; it gains only
 1.05–1.27× on the small rows. The by-value form removes the same dispatch and
 decode *and* passes values between kernels in registers and the caller's frame;
-it gains 1.4–2.2× with code only 15–30% larger. So the decode-and-dispatch share
+it gains 1.4–2.2×, while the MadGraph form's code is only 15–30% smaller. So the
+decode-and-dispatch share
 of the interpreter's overhead is the small part (the MadGraph-form gain) and the
 store-and-reload of every value through its arena is the larger (the by-value
 form's extra gain). This is inferred from the three arms' differences, not from
@@ -156,7 +158,8 @@ counters.[^mg-form-chunked]
 mix's issue ceiling, against 37–68% interpreted
 ([roofline census](../performance/roofline-census.md)). The gap that census left
 to "dependency latency" is, on these rows, mostly interpreter overhead. The
-ceilings carry that census's ±10%.
+ceilings carry that census's ±10%, and its operation counts include a dozen
+debug-build operations per event.
 
 **Why ahead-of-time compilation does not scale.** Straight-line code costs
 instruction bytes linear in program length, executed once per event; an

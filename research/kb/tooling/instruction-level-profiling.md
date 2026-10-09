@@ -3,6 +3,7 @@ type: Procedure
 title: Per-address profile attribution on macOS (samply, atos, objdump)
 description: "Map unsymbolicated samply samples to instructions and inlined frames with nm, a dSYM, atos -i and llvm-objdump; why cargo-show-asm cannot stand in for the linked test binary."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [profiling, assembly, macos, samply, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -91,7 +92,7 @@ steps 5–7 are short Python over the profile JSON and the `atos` output.[^fas-c
   not.** Do not quote a single instruction's share as its cost.
 - **Line-0 instructions.** About 11% of instructions had no source line. They
   were attributed to the nearest preceding resolved instruction's arm (forward
-  fill), moving 7.7% of samples. The largest were hand-checked against the
+  fill), moving 7.7% of samples. Two of the largest were hand-checked against the
   interleaved disassembly and agreed; the rest were not, so treat sub-1% arm
   shares as ±0.5%.
 - **One binary, one run.** On a host with performance and efficiency cores and

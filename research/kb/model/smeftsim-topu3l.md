@@ -99,8 +99,9 @@ After splitting, **80 of the 1985 interactions** carry structures of both pairin
 one of them same-flavour (`X̄ X X̄ X`). The consequences are in
 [four-fermion vertices](../amplitudes/four-fermion-vertices.md).
 
-**Colour strings:** `1`, `Identity`, `T`, `T(-1,·,·)*T(-1,·,·)`, `f`, `f*f`, `f*f*f`
-chains. No `d`, no sextets, no baryonic `Epsilon`.
+**Colour strings:** `1`, `Identity`, `Identity*Identity`, `T`, `T(-1,·,·)*T(-1,·,·)`,
+`f*T`, and `f` chains of one to four factors (counted from `vertices.py`). No `d`, no
+sextets, no baryonic `Epsilon`.
 
 **Coupling orders** (`coupling_orders.py`): `QCD` hierarchy 1, `QED` 2; `NP`, `NPshifts`,
 `NPprop`, `NPcpv` and `SMHLOOP` hierarchy 99; one order per operator (`NPcG`, `NPctW`, …)

@@ -3,6 +3,7 @@ type: Design
 title: "generate: from an integrate artifact to an event file"
 description: "generate refuses card, model or PDF mismatch, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, generate, cli, artifact, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

@@ -5,6 +5,7 @@ description: "Multivector<F> stores a Cl(1,3)⊗C element as 16 graded coefficie
 status: draft
 tags: [clifford-algebra, fierz, multivector, four-fermion, representations]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (the graded Clifford-basis tensor representation and the completeness relations)"}
   - {id: n35-r4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L549-L601", title: "Note 35 R4 (the tensor slot and the cyclic four-fermion structures)"}

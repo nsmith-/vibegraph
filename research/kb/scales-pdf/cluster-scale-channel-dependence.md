@@ -44,7 +44,8 @@ engine is [kt-clustering-engine](kt-clustering-engine.md).[^n28-k111]
 
 All of them are live in the bank. `pp_to_bb_qcd2`'s `this_config = 3` sees only
 the two `nqcd = 0` channels; `igraphs(1) ≠ iconfig` on 7 to 7877 events per
-dumped run; the memo re-clustered 1873 dumped `pp_to_llj` events restricted.
+dumped run; the memo re-clustered 1857 dumped `pp_to_llj` events restricted
+(`kt_cluster_dump_manifest.json`, re-banked dumps).
 The engine reproduces every one against the
 [kt-cluster-dump-oracle](../validation/kt-cluster-dump-oracle.md).
 

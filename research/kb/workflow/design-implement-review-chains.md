@@ -5,6 +5,7 @@ description: "A work item run as a design session (a pre-registered written sect
 status: draft
 tags: [process, review, sessions, pre-registration]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-protocol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L51-L87", title: "Note 29 §2: session protocol, design → implement → review"}
   - {id: n29-verdicts, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L6088-L6125", title: "Note 29 close-out: per-chain verdicts"}

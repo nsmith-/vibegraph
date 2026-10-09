@@ -5,6 +5,7 @@ description: "Scalar and lane fields share one complex multiply-add on Real::mul
 status: draft
 tags: [performance, fma, floating-point, simd, clippy]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: be76771, host: "x86-64 with AVX2 + FMA, no AVX-512", command: "RUSTFLAGS='-C target-cpu=native' cargo bench --bench eval_strategies (14 processes)"}
   - {host: "Apple M3 Max, macOS", command: "eval_strategies, the inlining tune + FMA against main; note 32 S9 A/B of the packed-complex trait"}

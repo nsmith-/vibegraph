@@ -5,6 +5,7 @@ description: "Unchecked arena access is worth at most 3.5–5.5% today; no shipp
 status: draft
 tags: [performance, evaluator, bounds-checks, unsafe, codegen]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n17-question, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L11-L87", title: "Note 17 §1–3 (question, branch census, method)"}
   - {id: n17-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L88-L126", title: "Note 17 §4–5 (the coupled ceiling, push-era tree)"}
@@ -128,10 +129,12 @@ never-taken `grow_one` cold call forced spills around every write, and the
 effect was coupled.[^n17-results] Writes have since become pre-sized
 direct-index stores, so the `push` family and its coupling are gone, and the
 3.5–5.5% is what remains. The census of that era (57 `panic_bounds_check`
-sites, ~32 `grow_one` paths) describes a tree that no longer exists; on rustc
-1.97 / x86, LLVM outlines the panic calls, so counting `panic_bounds_check`
-symbols reads zero even with every check present, and conditional-jump counts
-are the instrument.[^n17-question][^x86-unchecked]
+sites, ~32 `grow_one` paths) describes a tree that no longer exists. Panic-symbol
+counts also depend on the build: under the x86 study's thin-LTO `profiling`
+profile (rustc 1.97) the checked `fill_arenas` showed zero `panic_bounds_check`
+symbols, because the checks branch to shared outlined blocks, while the AOT
+study's fat-LTO `bench` binary counted 157 such call sites. Conditional-jump
+counts are the instrument.[^n17-question][^x86-unchecked]
 
 ## The `unsafe` prototype, and why it was reverted
 

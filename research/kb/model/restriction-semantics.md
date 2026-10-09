@@ -82,9 +82,19 @@ what makes that true.
 consumer reaches a colour structure through the coupling keys, so an unreferenced one
 is never read. [^n35-l1]
 
-MadGraph's `RestrictModel` also merges couplings that are equal up to sign, which shows
-in its generated code as renamed couplings (`GC_4` called as `-GC_3`). That rewrites
-names, not values; the loader keeps such couplings separate.
+MadGraph's `RestrictModel` also merges couplings whose values, rounded to about ten
+significant digits, are equal or opposite (`detect_identical_couplings`, L2525;
+`merge_iden_couplings`, L2780), so its generated code calls one coupling under another's
+name, with a sign where they are opposite. That rewrites names, not values; the loader
+keeps such couplings separate.
+
+**What counts as zero differs.** The loader drops a coupling whose value at the card
+has `|g| < 1e-20` (`is_zero_coupling`, `ufo/mod.rs`). MadGraph drops `|g| < 1e-13`,
+unless some coupling falls in `[1e-13, 1e-10)`, in which case it reruns with exact
+zero only (`detect_identical_couplings`, L2552–L2558). A coupling between the two
+thresholds survives here and is pruned by MadGraph. The banked interaction counts
+agree on every (model, card) pair, which rules out a whole vertex lost to the gap but
+not a single coupling inside a surviving one.
 
 ## Where it applies, and what is identified
 

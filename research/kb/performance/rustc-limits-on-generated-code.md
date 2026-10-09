@@ -5,6 +5,7 @@ description: "A 36k-call generic function OOMs rustc's MIR ReferencePropagation 
 status: draft
 tags: [performance, code-generation, rustc, llvm, compile-time]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 03c31e6, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 15 GiB", command: "cargo bench --no-run --bench aot_kernels (aot-study-large)"}
   - {commit: b504391, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 15 GiB", command: "cargo bench --no-run --bench aot_kernels (aot-mg-study), per-rustc RUSTC_WRAPPER"}

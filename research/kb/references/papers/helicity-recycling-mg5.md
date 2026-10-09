@@ -50,10 +50,13 @@ node once per distinct helicity assignment of its own legs rather than once per
 full configuration, and prunes zero operands
 ([helicity expansion](../../performance/helicity-expansion.md),
 [helicity sum and pruning](../../amplitudes/helicity-sum-and-pruning.md)). The
-gain applies to the helicity-summed path, which drives integration. Unweighted
-event selection evaluates one specific helicity configuration, where recycling
-buys nothing, so a fair kernel-level comparison with MadGraph needs a
-single-helicity benchmark on both sides; nothing consumes one yet
+gain applies to the helicity-summed path, and that is the only path vibegraph
+has: integration evaluates `eval_m2`, and an accepted event draws its helicity
+from the per-helicity diagonal `eval_hel_m2` of one more summed evaluation
+(`helas/eval/run.rs`, `hadronic.rs`), as MadEvent's `SELECT_HEL` does. No hot
+loop evaluates a single fixed helicity until helicity Monte Carlo (`nhel = 1`,
+not built) exists, so a single-helicity timing against MadGraph would answer
+no current question
 ([mg-single-helicity-bench-no-consumer](../../backlog/performance/mg-single-helicity-bench-no-consumer.md)).
 Sharing across diagrams in the evaluator is extraction-limited in the e-graph
 route ([DAG extraction](../../performance/egraph-dag-extraction.md)), and the

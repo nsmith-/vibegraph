@@ -5,6 +5,7 @@ description: "Components NLO adds to an LO generator (virtuals, UV renormalisati
 status: draft
 tags: [nlo, scope, background, pipeline]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n00-nlo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L70-L139", title: "Note 00: Beyond LO — NLO and fixed-order calculations"}
   - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L351-L368", title: "Note 03 §2.11: POWHEG-BOX relevance to vibegraph"}
@@ -32,7 +33,7 @@ stays visible and the LO data structures are not built in a way that blocks it.
 - **There is a slot for Born/real bookkeeping.** The diagram container handed
   to `helas` records each diagram's provenance (which `@N`, which decay-chain
   node, each propagator's on-shell flag). The same slot is where NLO's
-  Born/real/virtual split would attach.[^n38-room] No other design exists.
+  Born/real bookkeeping would attach.[^n38-room] No other design exists.
 
 ## What NLO adds
 

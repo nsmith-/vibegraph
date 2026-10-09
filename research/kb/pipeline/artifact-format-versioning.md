@@ -5,6 +5,7 @@ description: "How every persisted vibegraph artifact is versioned: what bumps th
 status: draft
 tags: [artifact, versioning, serialization, cli]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L20-L118", title: "artifact.rs: FORMAT_VERSION history and version constants"}
   - {id: artifact-read, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L688-L795", title: "artifact.rs: version_for, refuse_unmerged_grids, read_from_path"}
@@ -46,8 +47,8 @@ concept.
    (`format_version < SCALE_DRAW_VERSION`, `< MULTIPLICITY_VERSION`,
    `< MERGED_CHANNEL_VERSION`) can only see an old artifact if the version
    survives the upgrade. Normalising it on read once blinded the version-7
-   guard to exactly the files it exists for; three round-trip tests now assert
-   the preserved version.[^n29-b4]
+   guard to exactly the files it exists for. The upgrade tests for versions 3,
+   4 and 5, and the round trip over 6–8, assert the preserved version.[^n29-b4]
 5. **Upgrade only what the old file knows.** An upgrade fills a new field with
    what the old writer must have meant, or with an explicit "not recorded"
    (`None`). It never guesses. Example: only two writers could produce a

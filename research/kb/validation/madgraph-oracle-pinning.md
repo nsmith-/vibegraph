@@ -5,6 +5,7 @@ description: "Reference runs use the pinned submodule (3.7.1), not the packaged 
 status: draft
 tags: [madgraph, reference, pdf, lhapdf, version-pin]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6, decisions D2 and D3"}
   - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L271-L295", title: "Note 29 §G, the nn23lo1 re-bank decision"}
@@ -110,10 +111,16 @@ carry no PDF, and under 3.7.1 their `αs` is the model's own.
   the grid runs with the fixed-scale runs and asserts that set non-empty on its
   own account.
 - **A σ cell that flips after a re-card is read on a budget ladder, not one
-  seed.** After the re-card `pp_to_llj` approached the reference from below with
-  budget (−2.07% at 75k points an iteration to +0.02% at 600k) and gates at the
-  600k rung; the other three were flat and gate at 300k[^n29-g10]. See
-  [seed-sweeps-and-budget-ladders](seed-sweeps-and-budget-ladders.md).
+  seed**[^n29-g10]. The four re-carded rows gate on three seeds at the budgets in
+  `RECARDED_ROWS` (`validate_hadronic.rs`): `pp_to_bb`, `pp_to_bb_qcd2` and
+  `pp_to_ll_scalefact2` at 75k points an iteration, where their ladders are
+  flat; `pp_to_llj` at 150k, the lowest rung whose error a single inflated `75k`
+  seed does not dominate. `pp_to_llj`'s five-seed ladder seemed to climb
+  (+0.04% to +0.21% over 75k–600k); a forty-seed-per-rung ensemble found the
+  expectation flat from 150k up, the drift hypothesis failing at 7.3σ (note 34
+  S2). The comment on that entry still calls the climb monotone. See
+  [seed-sweeps-and-budget-ladders](seed-sweeps-and-budget-ladders.md) and
+  [budget-alignment-rule](budget-alignment-rule.md).
 
 Running MadGraph here, the environment and the submodule are described in
 [the toolchain concept](../tooling/madgraph-toolchain.md); how runs are made and
@@ -125,4 +132,4 @@ read is [madgraph-reference-runs](madgraph-reference-runs.md).
 [^n29-g1]: Note 29 G.1–G.2.
 [^mg5-pinned]: `validation/madgraph/mg5_pinned.sh`, header comment.
 [^n29-g6]: Note 29 G.6 and G.8.
-[^n29-g10]: Note 29 G.10, `probe_recarded_budget_ladder`.
+[^n29-g10]: Note 29 G.10, `probe_recarded_budget_ladder`; its 600k/300k budgets were later cut to the `RECARDED_ROWS` values, and note 34 S2 re-measured the `pp_to_llj` ladder.

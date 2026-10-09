@@ -3,6 +3,7 @@ type: Algorithm
 title: Per-event helicity and colour-flow selection
 description: "Helicities summed and colours contracted while integrating; each accepted event draws a helicity, then a configuration (AMP2 or channel-cut weight), then a flow ∝ JAMP2 in its ICOLAMP row."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, colour, helicity, icolup, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -116,7 +117,7 @@ card ([phase-space/madevent-single-diagram-enhancement](../phase-space/madevent-
 | run card | per-configuration weight | where it is formed |
 |---|---|---|
 | `SDE_strategy = 1`, `tmin_for_channel = -1` (MadGraph's default) | `AMP2(c)` | `eval_amp2` |
-| `SDE_strategy = 2` | `GET_CHANNEL_CUT`: product over the configuration's propagators of `1/(t − m²)²` (spacelike) or `1/((t − m²)² + m²Γ²)` (timelike), no amplitude, no coupling | `ChannelSet::channel_cuts` (`coupling/cluster/graph.rs:221`) |
+| `SDE_strategy = 2` | `GET_CHANNEL_CUT`: product over the configuration's propagators of `1/(t − m² + s_tot·10⁻¹⁰)²` (spacelike, i.e. a t-channel line) or `1/((t − m²)² + m²Γ²)` (timelike), no amplitude, no coupling | `ChannelSet::channel_cuts` (`coupling/cluster/graph.rs:221`) |
 
 The switch is `EventScaleSource::weights_configurations_by_amp2`
 (`hadronic.rs:383`), the same condition the clustering-scale configuration draw
@@ -153,14 +154,14 @@ MadGraph's merged one.
 
 ## Measured agreement
 
-Three seeds of 20k events against MadGraph's banked samples[^n27-b6][^n36-b3]:
+Three seeds of 20k events against MadGraph's banked samples; the `ud_to_epemud_qcd0` row is note 36 B3's, the others note 27 B6's[^n27-b6][^n36-b3]:
 
 | row | ICOLUP | note |
 |---|---|---|
 | `uux_to_uux` | 99.960% against 99.960%, χ² p 0.39–1.00 | s-channel config admits only flow 2, t-channel only flow 1 |
 | `pp_to_bb_fixed` | sub-percent flows 0.060/0.070% against 0.070/0.080% | the sharper test: a mask that is merely on cannot fake per-configuration weights |
 | `gg_to_ttx` | χ² p 0.46–0.71 | pruning moves `AMP2` here (below) |
-| `gg_to_gg` | χ² 14.0–18.1 / 5, p 2.8e-3 to 1.6e-2 | gates, but the row where a further colour subtlety would show first |
+| `gg_to_gg` | χ² 14.0–18.1 / 5, p 2.8e-3 to 1.6e-2 | gates, but the row where a further colour subtlety would show first; `gg_to_gg_cg` under the merged partition: ICOLUP p minimum 0.022 |
 | `ud_to_epemud_qcd0` | χ² 0.0/0.1/0.2 (was 590–671 under the `AMP2` weight) | the only banked run with both `SDE_strategy = 2` and NCOLOR > 1; needs both the channel-cut weight and MadGraph's merged configurations[^n36-b4] |
 
 The `ud_to_epemud_qcd0` diagnosis is the worked case for the second ingredient:
@@ -181,7 +182,9 @@ The full `samples` gate is [validation/samples-gate](../validation/samples-gate.
   (`LIMHEL = 1e-8` there, 1e-24 here); the measured `ICOLUP` frequencies support
   it, and the amplitude gate measures the gap every run[^n27-b6].
 - **|M|² cannot see colour labels.** A flow permutation, a per-flow phase or a
-  per-flow rescale leaves |M|² unchanged. `color_jamp_oracle` pins JAMPs
+  per-flow rescale leaves |M|² unchanged. `tests/amplitude_oracle.rs` (which
+  absorbed `color_jamp_oracle`) pins JAMPs
+
   element-wise against MadGraph up to one fitted global phase, with `|g| = 1`
   asserted separately so a uniform rescale cannot hide in the fit[^n23-e1c].
 - **Trace-reversal partners in `g g > g g`** carry identical JAMPs

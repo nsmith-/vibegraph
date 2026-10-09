@@ -5,6 +5,7 @@ description: "Register of MadGraph defects met while validating: where each sits
 status: draft
 tags: [madgraph, defects, reference, upstream-report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n07-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L43-L227", title: "Note 07, weaknesses and bug tables (rows marked found here)"}
   - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L415", title: "Note 07, AQCDUP truncated pi and rambo.py"}
@@ -50,7 +51,7 @@ The six MLM-path defects have no draft
 |---|---|---|---|
 | `AQCDUP`/`AQEDUP` with π truncated to 8 digits | `unwgt.f:760-761` | the record field, +1.7e-8 | truncation reproduced before comparing |
 | `$` never vetoes a flipped-slot fermion propagator | `create_aloha.py:262-263, 527-530` | σ of `$ t t~` 37% high | reference from patched ALOHA |
-| grouped first `setclscales` on the unpermuted point (H1) | `super_auto_dsig_group_v4.inc:842` | process-dependent | registered deviation, [own concept](madgraph-permuted-first-call.md) |
+| grouped first `setclscales` on the unpermuted point (H1) | `super_auto_dsig_group_v4.inc:842`, `update_scale_coupling(pp, wgt)` | process-dependent | registered deviation, [own concept](madgraph-permuted-first-call.md) |
 | `aS` injected into a model with none, inconsistent with `G` | `export_v4.py:7076` | `AQCDUP` on six toy rows | measured, not enforced |
 | UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8 | Python `model_reader` is the arbiter |
 | `t` read uninitialised in `get_channel_cut` | `genps.f`, branch at `:1938` | unreachable here | `tmin_for_channel ≠ -1` refused |
@@ -66,7 +67,8 @@ The six MLM-path defects have no draft
 printing, one-directional, and about a sixth of the last printed digit: it moves
 the rounding of roughly one event in twenty. It was found by replaying banked
 events; modelling it took exact digit agreement from about 95% to 100% of
-events. The `AQCDUP` replay gates on reproducing the printed digits, which is what
+events on constant-scale runs. It is invisible at any tolerance looser than about
+1e-8. The `AQCDUP` replay gates on reproducing the printed digits, which is what
 exposed it; never read the field as `αs` itself[^n07-aqcdup]. Note 07 quotes
 `:694-695`, the 3.5.x numbering.
 
@@ -138,9 +140,9 @@ our σ tracked exactly, since every gate reads `αs` from the run's own card
 | `reweight.f:1138` | `.not.fixed_fac_scale1.or.fixed_fac_scale2` precedence | changes a weight with exactly one fixed μF under matching; refused, the message naming the line |
 | `setcuts.f:939-942` | duplicate `iforest(2)` test | grids only |
 | `cuts.f:565` | `ktdurham` `.and.`/`.or.` precedence | CKKW-L, out of scope |
-| `addmothers.f:115` | compares `igraphs(1)` to a stale loop index | unreachable: `vec_igraph` is never 0 on a written MLM event |
+| `addmothers.f:115` | compares `igraphs(1)` to a stale loop index | unreachable on the banked MLM rows: `vec_igraph` is never 0 on their written events (M0 census) |
 | `banner.py:1706` | `setWeightName` raises when `ickkw ≠ 0` (`"…".str(…)`) | Python systematics only |
-| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty: no `IPROC` of any MLM row mixes jet and non-jet final-state flavours (`mlm_census.json`) |
+| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty on the banked MLM rows: none has an `IPROC` mixing jet and non-jet final-state flavours (`mlm_census.json`) |
 
 **The reweight module.** `launch` blocks after the first in one card each
 rewrite `events_out.lhe` from the unmodified input, so a multi-launch card keeps

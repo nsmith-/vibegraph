@@ -20,9 +20,11 @@ The parts that bear on a leading-order generator:
 
 - **§3.1**: the QCD factorisation formula, which defines the hard cross
   section a matrix-element generator computes;
-- **§3.2**: LO matrix-element generators, surveying how Alpgen, MadGraph and
-  Sherpa/COMIX generate tree-level amplitudes;
-- **§3.3–3.4**: scale choices and parton distributions.
+- **§3.2**: LO matrix-element generators (AlpGen, Amegic, Comix, HELAC,
+  MadGraph, Whizard) and how they generate tree-level amplitudes;
+- **§3.3–3.4**: scale choices and parton distributions;
+- **Appendix B**: matrix-element evaluation, phase-space integration and the
+  interface structures between generators.
 
 ## Relevance to vibegraph
 
@@ -35,4 +37,4 @@ review discusses are implemented in vibegraph as MadGraph makes them
 architectural comparison of matrix-element generators is
 [generators compared](../codebases/generator-architectures-compared.md).
 
-[^n01-review]: Note 01, MC event generators review summary.
+[^n01-review]: Note 01, MC event generators review summary; section numbers and the generators §3.2 names checked against the paper (ar5iv). Journal: Phys. Rept. 504 (2011) 145.

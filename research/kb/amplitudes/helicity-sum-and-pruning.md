@@ -52,9 +52,10 @@ filter for the bound card:[^code-prune]
 
 1. Probe the full expansion at 10 deterministic generic partonic-CM points: beams
    along ±z at two energy scales (3.7× and 11.3× the larger of the incoming and
-   outgoing mass thresholds), five seeded massive-RAMBO final states each.
-2. Keep every combination whose contribution exceeds `HEL_PRUNE_REL = 1e-24` of
-   the helicity sum at any point; re-expand the arena over the survivors.
+   outgoing mass sums, floored at 1), five seeded massive-RAMBO final states each.
+2. Keep every combination whose CF-contracted `|M_c|²` exceeds
+   `Σ_c |M_c|² · HEL_PRUNE_REL / NCOMB` (`HEL_PRUNE_REL = 1e-24`, MadGraph's
+   `LIMHEL` form) at any point; re-expand the arena over the survivors.
 3. Within the survivors, remove the per-diagram operands that are still
    structurally zero (`prune_zero_amplitudes`, MadGraph's `ZEROAMP` layer),
    byte-for-byte with the full expansion.

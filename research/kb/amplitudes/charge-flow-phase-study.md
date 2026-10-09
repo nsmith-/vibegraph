@@ -82,7 +82,7 @@ Two structural findings came before any dump:
 | crossed-pair −1 | yes | no — no varying instance |
 | scalar-sink bilinear −1 | no arrow | no — no varying instance (then) |
 | pure-metric / contact −1 | no arrow | yes (then: `g g > g g` contact vs exchange) |
-| colourless VVV source | no arrow | yes (`e+ e- > W+ W-`, pattern `−,−,+`) |
+| VVV source (then every VVV off vertex 0, gluon ones included) | no arrow | yes (`g g > g g`; `e+ e- > W+ W-`, pattern `−,−,+`) |
 | standalone projector on crossed line | yes | yes (`e+ e- > ta+ ta- H`, 4:1) |
 | colour `3`/`3̄` transpose | yes | value only — under the SM UFO's uniform antifermion-first FFV slot order, "swap unconditionally" and "index by the arrow-out leg" are the same function |
 

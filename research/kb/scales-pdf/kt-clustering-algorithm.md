@@ -97,7 +97,8 @@ has a propagator whose subtree is exactly that pair's legs.
    the merge graph: `g g → g g` has three configurations, not four. vibegraph's
    enumeration keeps the contact diagram, so the derivation must drop it.
 2. **`configs.inc`**: `iforest` daughters, `sprop` (s-channel PDG per
-   subprocess), `tprid` (`|pdg|` of a t-channel line) (`export_v4.py:2249-2267`);
+   subprocess), `tprid` (`|pdg|` of a t-channel line, `0` on an s-channel one)
+   (`export_v4.py:2249-2267`);
    the QCD order per configuration goes to `config_nqcd.inc`.
 3. **`filmap`** (`cluster.f:325-383`) skips every configuration whose `nqcd`
    differs from `nqcd(this_config)`
@@ -115,16 +116,24 @@ has a propagator whose subtree is exactly that pair's legs.
    tagged BW (`resmap` must hold for each); later merges intersect. A pair with
    no surviving graph keeps the sentinel `1e37` and is never a candidate.
 
-The two beams never combine (the loop runs only for `i > 2`, `cluster.f:588`),
-and if no pair is admissible `setclscales` fails and the point's weight is
-zeroed (`reweight.f:667-677`, `:1907-1908`).
+The two beams never combine (the loop runs only for `i > 2`, `cluster.f:588`).
+If no pair is admissible, `cluster` returns false (`cluster.f:672-675`) and
+`setclscales` writes `Clustering failed` to the run's `error` file and `stop`s
+(`reweight.f:667-677`); only in `init_mode` (the helicity-filtering pass) does
+it return false instead, and the caller zero-weights the point
+(`:1907-1908`). vibegraph's `ClusterFailure::NoAdmissiblePair` likewise stays
+an error: `EventScaleSource::point_scales` turns only the factorisation floor
+and `JetCut` into a veto.
 
 **The single-leg complement.** Only the line closing a channel on the beams
-has a single leg (beam 2) as complement, and `export_v4.py:2262` gives it
-`tprid = |leg 2's id|`, so the complement write is beam 2's own code up to sign;
-`isqcd`, `isjet` and `is_octet` read `|pdg|`. The live `ipdgcl` keeps each
-single-leg mask's subprocess flavour (the literal reading disagrees on 7837 of
-10 000 `pp_to_llj` events); vibegraph reproduces the live array, and both give
+has a single leg (beam 2) as complement, and the t-channel branch of the
+`configs.inc` writer
+([`export_v4.py:2264-2266`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2264-L2266))
+gives it `tprid = |leg 2's id|`, so the complement write is beam 2's own code up
+to sign; `isqcd`, `isjet` and `is_octet` read `|pdg|`. The live `ipdgcl` keeps
+each single-leg mask's subprocess flavour (the literal reading disagreed on 7837
+of 10 000 events of the `pp_to_llj` dump as first banked; not re-counted on the
+re-banked dump); vibegraph reproduces the live array, and both give
 identical scales (`b b̄ → b b̄` at `maxjetflavor = 4` included). Pinned by
 `only_the_closing_line_can_write_a_single_leg_entry`,
 `a_single_leg_keeps_its_flavour`, `overwriting_a_single_leg_entry_moves_no_scale`

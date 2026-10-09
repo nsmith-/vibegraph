@@ -5,6 +5,7 @@ description: "The chain from a UFO model and two cards to unweighted LHE events:
 status: draft
 tags: [pipeline, overview, cross-section, architecture]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n00-steps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L12-L56", title: "Note 00: goal, pipeline steps and toy process"}
   - {id: n01-lo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L128-L135", title: "Note 01: MadGraph5_aMC@NLO LO pipeline"}

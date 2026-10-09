@@ -59,6 +59,11 @@ continuation gate therefore makes two statements: a flat `EXTRAP_REL_TOL = 1e-11
 as the coarse net, and a sharp one dividing each point by its own condition
 number `(|y_lo(1−t)| + |t·y_hi|)/|result|` and requiring the remainder to be
 one ulp (`EXTRAP_CONDITIONED_TOL = 1e-14`; measured 8.93e-16 on NNPDF23)[^n28-k5a2].
+The flat bound is `|Δ| ≤ EXTRAP_ABS_TOL + EXTRAP_REL_TOL·|want|` with an absolute
+floor of `1e-30`, under the set's own `1e-10` positivity clamp, so dead corners
+that are pure rounding residue are screened. Only the `above_q2max` branch is a
+two-point line with a writable condition number; the other three continuation
+categories have the flat bound alone (`validate_pdf_grid.rs`).
 The amplitude oracle does the same per event point (`ULP_BUDGET = 10` times the
 point's own one-ulp sensitivity; see [the amplitude oracle](amplitude-oracle.md)).
 

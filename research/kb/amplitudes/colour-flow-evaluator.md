@@ -96,8 +96,9 @@ processes get their `CF(1,1)` of 3 or 9 computed, not hard-coded.
 ## Lowering and evaluation
 
 Per flow `f`, `JAMP_f = Σ_{(d,chain) ∈ f} colourcoeff · sym · fermi_sign ·
-amp_{d,chain}`, all JAMPs under one variadic root `(Flows jamp_0 … jamp_{n−1})`.
-The AST stays single-rooted, and an amplitude shared by several JAMPs with
+amp_{d,chain}`, all JAMPs under one variadic root `(Flows jamp_0 … jamp_{n−1})`
+(at `NCOLOR = 1` the unit coefficient and the wrapper are omitted and the single
+JAMP is the root). The AST stays single-rooted, and an amplitude shared by several JAMPs with
 different weights (both flows of `u u~ > u u~`) is computed once.[^n16-25] Two ops
 carry this: `Op::Flows` (variadic root, no leaf) and `Op::CoeffRat` (exact scalar
 leaf `Sym::Rational { num, den, imag }`, `Nc` already evaluated).

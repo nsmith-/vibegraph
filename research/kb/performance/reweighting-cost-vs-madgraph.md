@@ -5,6 +5,7 @@ description: "Per event and hypothesis: MadGraph 720–800 µs (mostly Python I/
 status: draft
 tags: [performance, reweighting, madgraph-comparison, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   commit: f6b1936
   pr: 13
@@ -28,7 +29,8 @@ reweighting a banked sample takes MadGraph 12–18 s and vibegraph 10–160 ms.
 
 ## What is measured
 
-- **vibegraph** (`--profile release-debug`, debug info off): wall time of `generate` with the
+- **vibegraph** (`--profile release-debug`, the build `bench-reweight` makes; the record says
+  debug info was off for the run, though the profile itself sets `debug = 1`): wall time of `generate` with the
   row's reweight card minus the same run without it (same grid, seed and event count),
   median of 5 interleaved runs. It includes building the plan (compiling every hypothesis's
   amplitude, choosing nodes) and the per-event audit. At the row's own event count the
@@ -75,7 +77,8 @@ move one parameter) and `ee_tth_ymt` takes the same K = 2 plan.
   differ by 20×.
 - **The two loops do not do the same work.** vibegraph reweights momenta it holds inside
   `generate` and reads and writes no file for it. Reweighting a stored `.lhe`, which would
-  pay a parse, is not implemented.
+  pay a parse, is not implemented
+  ([backlog](../backlog/feature/reweight-stored-lhe-unsupported.md)).
 - **The polynomial path gains less than its evaluation count.** 12 → 4 evaluations on
   `ee_ttx_smeft` buy 2.8×, 10 → 6 on `tata_tth_grid` 1.5×: each node is still a full
   amplitude evaluation, and the K×K Gram contraction per helicity combination adds a fixed

@@ -26,12 +26,14 @@ sources:
 
 `|M|²` contracts the colour flows away, so it is blind to everything the event
 record carries about colour: which flow an event is drawn into, and which legs a
-colour line joins. Three banked-layer gates cover that, each against MadGraph's
+colour line joins. Two banked-layer gates, `color_cf_oracle` and
+`color_flow_tags_oracle` (`vibegraph-lib/tests/`), cover that against MadGraph's
 generated sources rather than its events. They need the banked work area
 (`validation/madgraph/output/`) and run under `extended-validation`; each
 compiles every subprocess under the model the manifest records for its row, and
 follows that row's `amplitudes` mode (an `info` row is compared and printed but
-not asserted).
+not asserted). A reference-free slot-legality scan inside the proton samples
+gate completes the set.
 
 ## `color_cf_oracle`: the CF matrix and the decomposition
 
@@ -109,11 +111,11 @@ argument and runs `check_legs` on them before an event can be written. See
 
 ## Reference-free slot legality, and pattern membership
 
-`tests/common/leshouche.rs::illegal_slots` judges an emitted event against the
+`vibegraph-lib/tests/common/leshouche.rs::illegal_slots` judges an emitted event against the
 Les Houches convention alone: a triplet fills only the colour slot, an
 antitriplet only the anticolour slot, an octet both, a singlet neither. It uses
 its own PDG → rep table on purpose, so it shares nothing with the generator.
-`validate_samples_proton.rs` runs it over generated samples (and it must also
+`vibegraph-cli/tests/validate_samples_proton.rs` runs it over generated samples (and it must also
 read zero on MadGraph's own file — an instrument that cannot fail on the
 reference is not one), and checks every generated event's `(roles,
 connectivity)` pattern is one `leshouche.inc` admits, over every `isproc`, every

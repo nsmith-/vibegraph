@@ -78,7 +78,7 @@ resulting sign bookkeeping per line class is
 |---|---|---|
 | `γ^μ` | `−γ^μ` | reversed-bilinear parity at the vector sink (`term_reversed_parity`; runtime `reversed` flag) |
 | `γ^μ P_χ` (gamma-chained projector) | `−γ^μ P_χ̄` | chirality flip per vertex (`chiral_correction`); the `−1` as above |
-| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip; on a crossed line the reordering `−1` (`pair_crossed` at a scalar sink, `standalone_projector_crossed` at a fermion output) |
+| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip; on a crossed line the reordering `−1` (`pair_crossed` at a scalar sink, all four; `standalone_projector_crossed` at a fermion output, `P_χ` and `γ⁵` only — a standalone `Identity` rooted at a fermion output on a crossed line takes no `−1`, and no gated row reaches that case) |
 | `σ^{μν}` | `−σ^{μν}` | the same reversed-bilinear `−1` as `γ^μ`; a projector beside a literal `Sigma` keeps its chirality (`σ^{μν}` commutes with `γ⁵`) |
 | `γ^αγ^β` (tensor-path line) | transposed | the two gammas swap; projectors move with their slots **without** conjugating chirality |
 

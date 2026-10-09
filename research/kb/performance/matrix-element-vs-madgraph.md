@@ -5,6 +5,7 @@ description: "ns per evaluation against MATRIX1 over 19 processes on M3 Max and 
 status: draft
 tags: [performance, madgraph-comparison, matrix-element, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: cf8b2b7, pr: 8, host: "Intel Xeon @ 2.80 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "VIBEGRAPH_BENCH_EXTRA_PROCESSES='…' taskset -c 2 scripts/mg_perf_compare.sh (×2); gen_amplitude.py ×3, median"}
   - {host: "Apple M3 Max (darwin), 2026-08-06, quiet host, MG side regenerated the same day", command: "env -u RUSTFLAGS scripts/mg_perf_compare.sh"}
@@ -15,6 +16,8 @@ sources:
   - {id: cl-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L227-L241", title: "Cascade Lake results, Reproduce"}
   - {id: n32-6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L794-L864", title: "Note 32 §6, MATRIX1 re-measurement 2026-08-06"}
   - {id: n31-68, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1242-L1303", title: "Note 31 §6.8, sprint-level mg_perf_compare"}
+  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L226-L380", title: "Top-down Zen 4 §6–§8, constant collection, bare configuration amplitudes, real pool"}
+  - {id: n15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L546-L582", title: "Note 15 §2.4, cross-platform rerun kit"}
   - {id: n20, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L59-L90", title: "Note 20, fresh vs-MG measurement 2026-07-28"}
 ---
 
@@ -30,11 +33,13 @@ measurement: [integration against MadGraph](integration-vs-madgraph.md).
 
 **Headline: geomean 0.87× (ours/MadGraph) over 19 processes, on both an x86 host and the
 M3 Max.** Thirteen rows are faster than MATRIX1; the slow side is the colour-dense rows and
-`W⁺W⁻`. All figures predate the evaluator's constant collection and fused scaled sums
-(`fold.rs`), which measured 1.00–1.11× faster at scalar width on the small bench rows and
-1.21× on the 2→6 under default codegen on an Emerald Rapids VM (more under
-`target-cpu=native`); the ratio on the current tree is therefore probably lower and has not
-been re-measured. See [constant collection](constant-collection-and-fused-sums.md).
+`W⁺W⁻`. All figures predate the evaluator's constant collection and fused scaled sums,
+bare configuration amplitudes and real-pool folding (`fold.rs`).[^td6] Constant collection
+alone measured 1.00–1.11× faster at scalar width on the other bench rows and 1.21× on the
+2→6 under default codegen on an Emerald Rapids VM (more under `target-cpu=native`); the
+bare configuration amplitudes added a few percent, resolved only under `target-cpu=native`.
+The ratio on the current tree is therefore probably lower and has not been re-measured.
+See [constant collection](constant-collection-and-fused-sums.md).
 
 ## Cascade Lake, `cf8b2b7` (2026-09-26)
 
@@ -115,7 +120,7 @@ which matched the sum of the individual changes' own measurements (−21.5% pred
 
 - **Ratios, never absolute ns**: clocks and microarchitectures differ, and MATRIX1 is
   straight-line Fortran while ours is an interpreter, so the gap need not be constant across
-  hosts. MG's side is a warm-up plus one batch, so ratio shifts under ~10% are noise.
+  hosts. MG's side is a warm-up plus one batch, so ratio shifts under ~10% are noise.[^n15]
 - **Codegen fairness**: default codegen on both sides, or raise both together
   (`RUSTFLAGS="-C target-cpu=native"` *and* `-march=native` in `build_amplitude.sh`'s
   `--f77flags`), never one side only. The checked-in `mg_*.so` modules and `mg_timings.json`
@@ -138,3 +143,5 @@ The hosts are described in [benchmark hosts](benchmark-hosts.md).
 [^n31-68]: Note 31 §6.8.
 [^n20]: Note 20, fresh vs-MG measurement.
 [^cl-repro]: Cascade Lake results, Reproduce.
+[^td6]: Top-down Zen 4 §6–§8 (in-process A/B on an Emerald Rapids VM).
+[^n15]: Note 15 §2.4, cross-platform rerun kit, "Reading the result".

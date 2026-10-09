@@ -81,8 +81,10 @@ and applies one of nine baked-in restrict cards. The blob is regenerated with th
 `gen_sm_blob` dev binary; `pixi run check-sm-blob-fresh` (`--features
 extended-validation`) compares it with a fresh parse of the pinned MadGraph submodule.
 Because the blob holds parsed ASTs, an edit to any of the string grammars or to a
-serialized type requires regenerating it in the same change; the hermetic suite does
-not catch a stale blob. A non-SM model is found on the UFO search path (`--ufo-dir`,
+serialized type requires regenerating it in the same change. The hermetic suite does
+not see a blob that decodes but is stale (a grammar that now parses differently); a
+field added to a serialized type usually fails decoding outright, since bincode is not
+schema-evolving. A non-SM model is found on the UFO search path (`--ufo-dir`,
 an environment variable, or the asset cache; see
 [asset resolution](../tooling/asset-resolution.md)), and a `-<variant>` suffix selects
 `restrict_<variant>.dat` (`GlobalConfig::load_ufo_with_identity`, `config.rs`).

@@ -5,6 +5,7 @@ description: "Beams on their own mass shells at run-card energies; ŝ, E* and |p
 status: draft
 tags: [phase-space, kinematics, beams, flux, frames]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n36-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L192-L352", title: "Note 36 B1 (massive fixed beams)"}
   - {id: guide-fixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/docs/src/guide/07-phase-space.md#L382", title: "Guide chapter 7, 'Fixed beams'"}
@@ -129,8 +130,11 @@ MadGraph's `rap()` is in `Source/kin_functions.f`, not `cuts.f`.
   the `integrals` cells see those.
 - For massless beams every formula reduces exactly to the light-cone case
   (`λ^{1/2}(ŝ,0,0) = ŝ`, `E* = √ŝ/2`, `y_cm = 0` at equal energies), which is
-  why massless rows were byte-identical across the change, and why only rows
-  with massive incoming legs can detect an error here.
+  why massless rows were byte-identical across the change (27 of 34 fixed-beam
+  σ rows), and why only rows with massive incoming legs can detect an error
+  here. The four rows with light massive beams moved by only 2.5e-7–1.7e-6
+  relative, far below any σ tolerance, so in practice the three toy rows
+  above are the only detectors.
 
 Not every lab-boost branch is reached by a banked cell: the cut boost is pinned
 by `the_cut_filter_reads_the_laboratory_rapidity` (`hadronic.rs`), a hand-built point either side of an `|y| ≤ 1` cut, not by a reference

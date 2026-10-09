@@ -3,6 +3,7 @@ type: Design Decision
 title: The default PDF set is fetched, not embedded
 description: "NNPDF23_lo_as_0130_qed is fetched on first use and SHA-256 pinned, not embedded, on an unchecked premise that no redistribution grant exists; member 0 (211–277 kB) was small enough to embed."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [pdf, licensing, distribution, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

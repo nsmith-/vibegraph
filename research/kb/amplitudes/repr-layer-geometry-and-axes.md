@@ -5,6 +5,7 @@ description: "Wavefunctions as sections of Spin(1,3)×gauge bundles, vertices as
 status: draft
 tags: [representations, intertwiners, variance, dirac-adjoint, type-design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n08-picture, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L10-L60", title: "Note 08 (geometric picture; the bundle picture)"}
   - {id: n08-traits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L63-L123", title: "Note 08 §1–§4 (representation-trait strategy)"}
@@ -73,8 +74,9 @@ blanket intertwiner trait as the evaluator's design[^n08-traits].
   per op; see [flat-op-ir](../amplitudes/flat-op-ir.md) and
   [intertwiner-basis-and-peephole](../amplitudes/intertwiner-basis-and-peephole.md).
   Colour does not appear in it at all. The runtime carries no colour vector,
-  and `ColorRepr`'s numeric `Color` fibre is used only by hand-built
-  wavefunction objects; colour is factored symbolically (see
+  and `ColorRepr`'s numeric `Color` fibre is documented as the vocabulary of
+  hand-built wavefunction objects; its one reader, `GaugeVertex::apply`, has no
+  users; colour is factored symbolically (see
   [madgraph-colour-factorization](../amplitudes/madgraph-colour-factorization.md)).
 
 ## Three axes, one gadget for two of them

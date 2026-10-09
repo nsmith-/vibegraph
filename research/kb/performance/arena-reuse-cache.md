@@ -5,6 +5,7 @@ description: "A fill_token plus bit-compared momenta stamp on ScratchSpace lets 
 status: draft
 tags: [performance, evaluator, arena, amp2, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n31-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L704-L749", title: "Note 31 §E3 (chain-B draw work-sharing, measured results)"}
   - {id: run-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L55-L330", title: "ScratchSpace, fill_token and next_fill_token"}
@@ -47,8 +48,8 @@ its read-out.[^run-fill-for] Per-diagram AMP2 and its weights are described in
 - The workspace is per thread, so no thread can observe another's fill.
 
 Every helicity-summed read-out goes through `fill_for`: `eval_m2`, `eval_jamp2`,
-`eval_amp2`, `eval_hel_m2`, `eval_hel_jamps`, the per-combination JAMP dump and
-the helicity-filter probe `mark_contributing_helicities`.
+`eval_amp2`, `eval_hel_m2`, `eval_hel_jamps`, the per-combination JAMP dump
+(`hel_jamps`, test-only) and the helicity-filter probe `mark_contributing_helicities`.
 
 ## What it bought, and what it costs
 

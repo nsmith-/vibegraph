@@ -5,6 +5,7 @@ description: "Five-seed headroom of every enforced tolerance and pull/chi2 thres
 status: draft
 tags: [validation, seed-sweep, tolerances, statistics, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   commit: 44e4e04
   pr: 6
@@ -23,8 +24,9 @@ sources:
 A census of every enforced statistic in the banked validation layer: for each,
 how many seeds form it, how many calibrated its threshold, and how far the
 worst of five seeds sits from the threshold. It was taken on base `0538e2d`
-(branch commit `44e4e04`, merged in PR #6 as `02e8b25`), on the project's
-16-core development host. Rows touched by later sampling-stream changes have
+(branch commit `44e4e04`, merged in PR #6 as `02e8b25`). Note 36a does not
+record the host; the sprint plan budgeted the census for the project's 16-core
+host. Rows touched by later sampling-stream changes have
 moved since; the probes below are the instruments that re-measure
 them.[^n36-b0]
 
@@ -72,8 +74,10 @@ manifest numbers where they existed.[^n36a-sigma]
 | > 10× | `ee_to_wpwm` 10.7×, `ee_to_zh_smeft` 11.4×, `gg_to_gg` 15.2×, `ee_to_mumu` 16.0×, `ll_to_qqx_toy_yukawa` 16.3×, `ee_to_zh` 18.9×, `uux_to_uux` 19.2×, `ee_to_ttx` 21.7×, `ee_to_ee` 27.9×, `gg_to_ttx` 29.9× |
 
 `PULL_LIMIT = 3.5` (class b): worst-of-five pulls ran 0.51 (`gg_to_ttx`) to
-2.65 (`ddx_to_epemg`) on the asserted rows; nine read 1.3×–1.9×, as a correctly
-sized limit should. A single draw exceeds 3.5 with probability 4.7e-4, so the
+2.65 (`ddx_to_epemg`) on the asserted rows; seven read 1.3×–1.9×, as a
+correctly sized limit should. (Note 36a §7's prose says nine; its own table 1b
+lists seven: `ddx_to_epemg`, `ee_to_mumu_tata_qcd0`, `ee_to_ttx_dipole`,
+`uux_to_ttx_4f`, `tata_to_ttx_tensor4f`, `uux_to_mumu`, `ee_to_wpwm_cw`.) A single draw exceeds 3.5 with probability 4.7e-4, so the
 gate's own one-seed reading over 31 rows flags spuriously about once in 70 full
 runs.[^n36a-thin]
 
@@ -123,7 +127,7 @@ readings).[^n36a-hadronic]
 
 | row | `|rel|` headroom (class a) | notes |
 |---|---|---|
-| `pp_to_jj` | **1.5×** (+3.33e-3 vs 0.005) | thin; `JJ_SEEDS` raised 3 → 5 (below) |
+| `pp_to_jj` | **1.5×** (+3.33e-3 vs 0.005) | thin; `JJ_SEEDS` raised 3 → 5 (below). Since moved: the vector-vertex sign fix took it to +0.18% (manifest), about 2.8× |
 | `pp_to_bb_fixed` | 3.2× | |
 | `llj_dyn` | 3.6× | χ²/dof 2.17 vs 4.0 (1.8×, class b) |
 | `pp_to_bb` | 6.9× | |

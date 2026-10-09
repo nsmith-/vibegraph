@@ -1,10 +1,11 @@
 ---
 type: Feasibility Study
 title: "Tail-call-threaded dispatch (not adopted)"
-description: "become-threaded dispatch is bit-identical but loses 1–9% to the match loop; preserve_none with register arenas only ties at lanes8; archived at tag study/threaded-dispatch."
+description: "become-threaded dispatch is bit-identical but loses 1.5–11% to the match loop (geomean, by host and width); preserve_none with register arenas only ties at lanes8; archived at tag study/threaded-dispatch."
 status: draft
 tags: [performance, dispatch, interpreter, tail-calls, nightly]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 6bd7325, host: "Intel Xeon @ 2.8 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM, 1 MiB L2", command: "eval_strategies, nightly-2026-09-24, -C target-cpu=native, bench profile"}
   - {commit: 2008fbf, host: "Apple M3 Max, macOS 15.7, 16 MiB L2 per P-cluster", command: "scripts/bench_dispatch.sh (at the tag), min over rounds"}

@@ -5,6 +5,7 @@ description: "How the release scope is enforced: every card surface vibegraph do
 status: draft
 tags: [scope, hard-errors, process-grammar, run-card]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n38-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L11-L42", title: "Note 38: process-grammar sprint scope"}
   - {id: n38-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–3.2: parse everything, check once; room for MLM and NLO"}
@@ -42,7 +43,8 @@ card at once rather than the first.
 | Proc card, model-dependent | Enumeration | Names that resolve to no particle, order names the model does not define, and one subprocess reached from two process lines. |
 | Run card | `RunCard::from_values` | Only `(lpp1, lpp2)` = `(1, 1)` or `(0, 0)` pass (`UnsupportedLpp`). Then every recognised field is classified, and an `IgnoredPhysics` field moved off its MadGraph default is `UnsupportedField`. |
 | Run-card cuts | `cuts::detect_unimplemented` | A cut parsed but not applied is refused when it deviates from the default (`Consumed(R_UNIMPL)`, e.g. `ktdurham`, `ptlund`). |
-| Scale and matching settings | `coupling::scales` | `ickkw` outside {0, 1} (`UnsupportedMatching`); matching or `xqcut` on fixed beams (`FixedBeamMatching`). |
+| Run-card matching block | `runcard::matching::resolve` | `ickkw` outside {0, 1} (`UnsupportedIckkw`); matched top jets, `maxjetflavor = 6` (`MatchedTopJets`); a resolved `ptj` below `xqcut` (`XqcutAboveJetThreshold`). |
+| Scale and matching settings | `coupling::scales` | `ickkw` outside {0, 1} (`UnsupportedMatching`); matching or `xqcut` on fixed beams, which includes every 1→n decay (`FixedBeamMatching`). |
 | UFO model | Diagram conversion | A custom `propagators.py` form (`ConvertError::CustomPropagator`). |
 
 `SupportedCard` is a **narrower type**: it has no field for a refused feature,
@@ -83,12 +85,23 @@ orders and photon tags are parsed and refused rather than dropped, and
 `SupportedCard` holds a list of processes, each with its own legs and `@N`. A
 single final-state multiplicity is never assumed at the type level.[^n38-check]
 
-Some refusals are in scope and open as backlog items. Squared-order
-constraints are one
-([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)),
-and the `check.rs` table still marks them "not planned"; the PR that lifts the
-refusal updates that line. NLO is out of scope
-([beyond leading order](beyond-leading-order.md)).
+Some refusals are in scope and open as backlog items:
+
+- squared-order constraints
+  ([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)),
+  which the `check.rs` table still marks "not planned"; the PR that lifts the
+  refusal updates that line;
+- helicity Monte Carlo, `nhel = 1`
+  ([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md));
+- MLM matching at fixed beams
+  ([mlm-at-fixed-beams-or-decays-refused](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md))
+  and a resolved `ptj` below `xqcut`
+  ([mlm-ptj-below-xqcut-refused](../backlog/feature/mlm-ptj-below-xqcut-refused.md)),
+  both low priority.
+
+MLM matching on a 1→n decay is refused permanently: a decay has no incoming
+partons to cluster against ([mlm-not-on-decays](../decisions/mlm-not-on-decays.md)).
+NLO is out of scope ([beyond leading order](beyond-leading-order.md)).
 
 ## Deviating from MadGraph
 

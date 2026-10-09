@@ -54,7 +54,8 @@ exponent span wider than 16). The fallback is never a guess.[^rescale-rs]
 
 The scaling path is validated **against** the reference path, entry by entry, at 100 random
 `αs` on the 14 amplitude-gate processes it was built against (`validate-scale-couplings`). The two agree to a few
-ulp (worst 5 ulp measured); bit equality is unreachable because they are different
+ulp (worst 5 ulp measured, asserted at `MAX_ULP = 8` per pool entry, and `|M|²` at
+`1e-13` relative); bit equality is unreachable because they are different
 floating-point routes to the same value. At the card's own `αs`, `r = 1` exactly and the
 pools return bit for bit to the bound ones, which is what leaves the MadGraph amplitude
 gate untouched.[^n22-out]

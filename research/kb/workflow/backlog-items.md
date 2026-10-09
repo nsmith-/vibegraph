@@ -5,6 +5,7 @@ description: "One file per open item with a required closes_when; an uncommitted
 status: draft
 tags: [backlog, workflow, knowledge-bundle, process]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n42-items, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L282-L323", title: "Note 42 §7.1: one file per item"}
   - {id: n42-view, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L325-L352", title: "Note 42 §7.2: the generated view"}
@@ -16,8 +17,11 @@ sources:
 ---
 The work backlog is one file per open item under
 `research/kb/backlog/<area>/<slug>.md`, where the area is `validation`,
-`feature`, `performance` or `hygiene`. There is no backlog document to edit.
-`TODO.md` at the repository root is a stub that points here and is not edited.
+`feature`, `performance` or `hygiene`. Until the migration's Phase 4 moves
+them into the bundle, the item files live under `research/notes/backlog/<area>/`
+and `scripts/kb.py` reads them from there. There is no backlog document to edit.
+`TODO.md` at the repository root is a stub that points to the items and is not
+edited.
 This design replaced a single `TODO.md` that every work stream edited, which
 was the repository's hottest conflict point, and whose entries accreted
 accounts of how problems were solved rather than what was still open.
@@ -89,7 +93,7 @@ resolve that server-side.[^n42-view] The page has these sections:
 | Section | Generated from |
 |---|---|
 | Current position | `Sprint` concepts with `active: true` |
-| Standing decisions | every non-deprecated `Design Decision`; those without a `human:` `verified` stamp are marked "awaiting review" |
+| Standing decisions | non-deprecated `Design Decision` concepts with a `human:` `verified` stamp; the unreviewed rest are only counted, in one line |
 | Open, and the user's call | items with `state: needs-user` |
 | Census | `validation/manifest.toml` |
 | Standing measurement facts and caveats | `Measurement` and `Caveat` concepts |
@@ -126,7 +130,7 @@ read the whole backlog first.[^n42-readers]
 - `title`, `description`, `closes_when` or `opened` is missing;
 - the description is longer than 200 characters or more than one line;
 - its slug duplicates another item's;
-- a `blocked_by` entry names no item. This is stricter than OKF requires, by
+- `blocked_by` is not a list, or one of its entries names no item. This is stricter than OKF requires, by
   choice.
 
 It warns on `state: blocked` without a `blocked_by` entry, and on a body
@@ -142,4 +146,4 @@ How a sprint opens with the claim and closes by deleting items is in the
 [^n42-view]: Note 42 §7.2.
 [^n42-readers]: Note 42 §7.3.
 [^n42-risks]: Note 42 §10, "No browsable backlog" and "Unreadable claims".
-[^kb-py]: `scripts/kb.py`, `lint()` (`ITEM_BODY_WARN = 40`, `DESCRIPTION_MAX = 200`).
+[^kb-py]: `scripts/kb.py`, `lint()` (`ITEM_BODY_WARN = 40`, `DESCRIPTION_MAX = 200`) and `backlog()`.

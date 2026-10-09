@@ -5,6 +5,7 @@ description: "The Lorentz evaluator is a general typed node tree; a non-exhausti
 status: draft
 tags: [intertwiners, evaluator, peephole, eft, lorentz-structures]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n13-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L23-L39", title: "Note 13 §0 (one-paragraph summary)"}
   - {id: n13-primitives, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a (primitives are irreducible intertwiners)"}
@@ -170,7 +171,8 @@ One family of patterns is fused today: the **chiral-pair FFV** sites
 
 The fused kernels (`ffv_vout`, `ffv_iout`, `ffv_oout` in `helas/eval/kernel.rs`)
 reorder floating-point operations relative to the generic composition, so
-agreement is approximate (≲1e-15 per kernel). The tests
+agreement is approximate (≲1e-15 per kernel; the tests gate at
+`FUSED_TOL = 1e-14`). The tests
 `ffv_vout_matches_generic_chiral_pair` (both operand orders, so the
 reversed-line coupling swap is covered),
 `ffv_fermion_out_matches_generic_chiral_pair` and
@@ -218,7 +220,7 @@ Propagators are not fused into vertex kernels; see
 
 [^n13-summary]: Note 13 §0, the two-tier summary.
 [^n13-primitives]: Note 13 §1a, the FFV coordinate table and the ALOHA-as-oracle stance.
-[^n13-basis]: Note 13 §2–§2b. The node names in the §2b table there (`LowerVout`, "P-node") predate the current node set; the table above is re-derived from `root_lorentz.rs` and `op.rs`.
+[^n13-basis]: Note 13 §2–§2b. The node names in the §2b table there (`LowerVout`, "P-node") predate the current node set, and its FFS rows have the scalar-output and fermion-output nodes swapped (`ProjMAmp`/`ProjPAmp` take two fermions and return the scalar bilinear; `ProjM`/`ProjP` act on one fermion). The table above is re-derived from `root_lorentz.rs` and `op.rs`.
 [^n13-catalog]: Note 13 §3–§3a.
 [^n13-scope]: Note 13 §6 recorded `Epsilon`, `Sigma` and arbitrary-grade momenta as a documented but unbuilt extension point; they are now implemented and gated, and the general-tier-as-extension-point decision stands.
 [^code-lower]: `vibegraph-lib/src/helas/eval/lower.rs`, `ChiralSite`, `chiral_gamma_site`, `lower_vertex`.

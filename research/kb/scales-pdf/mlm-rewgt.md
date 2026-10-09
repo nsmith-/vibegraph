@@ -12,7 +12,7 @@ sources:
   - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L758-L1013", title: "Note 41 M2 (rewgt: implementation and dump gates)"}
   - {id: rewgt-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/rewgt.rs#L1-L40", title: "coupling/cluster/rewgt.rs module documentation"}
   - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
-  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/auto_dsig_v4.inc#L141-L151", title: "MadGraph auto_dsig_v4.inc (IPSEL draw)"}
+  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/auto_dsig_v4.inc#L141-L151", title: "MadGraph auto_dsig_v4.inc (IPSEL draw)"}
 ---
 
 # `rewgt`: α_s and PDF reweighting under `ickkw = 1`
@@ -24,8 +24,10 @@ clustering. That correction is MadEvent's `rewgt` (`reweight.f:1333-1824`), and
 vibegraph's port is `rewgt` in `vibegraph-lib/src/coupling/cluster/rewgt.rs`.[^mg-reweight][^rewgt-rs]
 Where it sits in MLM as a whole: [scales-pdf/mlm-matching](mlm-matching.md).
 
-`rewgt = 1` immediately if `ickkw ≤ 0` and not `use_syst` (`:1421`). Otherwise it is the
-product of an `α_s` factor and a PDF-ratio factor.
+`rewgt = 1` whenever `ickkw ≤ 0`: it returns at once unless `use_syst` (`:1421`), and with
+`use_syst` it only records the systematics inputs and jumps past both factors
+(`:1450-1461`). Under `ickkw = 1` it is the product of an `α_s` factor and a PDF-ratio
+factor. vibegraph's port returns a unit `Rewgt` at any `ickkw ≤ 0`.
 
 ## The `α_s` factor (`:1557-1616`)
 

@@ -82,7 +82,7 @@ learn.
 Unweighting efficiency (`probe_unweighting_weight_max`), per-channel maxima
 against one global maximum:
 
-| process | global `w_max` | per-channel | gain | largest channel's share of `Σⱼ w_maxⱼ` |
+| process | efficiency, global `w_max` | efficiency, per-channel `w_maxⱼ` | gain | largest channel's share of `Σⱼ w_maxⱼ` |
 |---|---|---|---|---|
 | `ee_to_mumua` | 3.3e-3 | 9.3e-3 | 2.86× | 29% |
 | `gg_to_ttx` | 7.1e-2 | 1.7e-1 | 2.37× | 38% |
@@ -109,8 +109,9 @@ Every gated σ row kept passing with a smaller error at the same budget
 (0.74–0.96× the shared-grid error). One row moved the wrong way: sharper
 per-channel grids stopped compromising with each other and covered the
 spacelike collinear region of `uux_to_uux` less, roughly doubling its standing
-negative bias. The cause was the flat transfer draw at the collinear edge,
-which [the spacelike floor](spacelike-floor.md) later removed.
+negative bias (−0.17% → −0.30%). The cause was the flat transfer draw at the
+collinear edge; with [the spacelike floor](spacelike-floor.md) the five-seed
+mean reads +0.019%.
 
 ## The artifact
 

@@ -49,14 +49,16 @@ h-Z-γ coupling: the UFO writes `gHza` from literals like `0.4583333333333333`
 (11/24), the writer prints `4.583333D-01`, and the Fortran value sits 1.2e-8 off
 MadGraph's own Python. That defect belongs to the list in
 [MadGraph defects](madgraph-defects.md). Matching it would mean rounding a literal
-on purpose, so the two affected amplitude rows stay informational instead (see
-also [the defect policy](madgraph-defect-policy.md)).
+on purpose, so `ee_to_zh_smeft`'s amplitude cell stays informational instead (see
+also [the defect policy](madgraph-defect-policy.md)). `wpwm_to_wpwmz_cw` carries
+the same deviation, but its amplitude cell is informational for a far larger,
+unrelated residual (`|M|²` 2.79e1; see [the amplitude oracle](amplitude-oracle.md)).
 
 ## Tolerances and the two lists
 
 | comparison | bound | measured | list |
 |---|---|---|---|
-| crate vs Python | `PYTHON_REL_TOL = 1e-13` | worst 8.85e-15 (40 ulp, SM `GC_64`); SMEFTsim's 355-coupling `ee_to_ttx_smeft` 6.48e-15; the toy models exact | `KNOWN_CRATE_DEFECTS`, **empty** |
+| crate vs Python | `PYTHON_REL_TOL = 1e-13` | over the 41 rows at landing (`a8a19e0`, not re-quoted since): worst 8.85e-15 (40 ulp, SM `GC_64`); SMEFTsim's 355-coupling `ee_to_ttx_smeft` 6.48e-15; the toy models exact | `KNOWN_CRATE_DEFECTS`, **empty** |
 | Fortran vs Python | `FORTRAN_REL_TOL = 1e-14` | 3.00e-16 (1.4 ulp) over every agreeing coupling | `KNOWN_FORTRAN_DEVIATIONS`: `GC_303` on `ee_to_zh_smeft` and `wpwm_to_wpwmz_cw`, 1.2e-8 |
 
 The crate/Python bound sits ~11× above the measured maximum: both sides evaluate

@@ -5,6 +5,7 @@ description: "PMU slot accounting at widths 1/4/8 on EPYC 9534: the evaluator is
 status: draft
 tags: [performance, pmu, top-down, zen4, evaluator]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   commit: 5ced9bb
   host: "AMD EPYC 9534 (Zen 4 Genoa, family 25 model 17), bare metal, RHEL 9 kernel 5.14, governor performance, boost on, pinned to CPU 255"
@@ -46,7 +47,8 @@ per instruction, which confirms the per-instruction normalisation.
 - Cycle samples without IBS skid by a few instructions: handler-level shares are reliable,
   single-instruction weights approximate.
 - The programs are those of `5ced9bb`, before [constant collection](constant-collection-and-fused-sums.md),
-  which this measurement motivated and which removed about half the 2→6's instructions.
+  which this measurement motivated and which removed 40% of the 2→6's instructions
+  (36 506 → 21 815; 17 163 after the bare configuration amplitudes that followed).
 
 ## Slot accounting, selected cells
 

@@ -3,6 +3,7 @@ type: Design Decision
 title: "LHEF weight strategy: Buffer (IDWTUP = −4) or StochasticRounding (+3)"
 description: "σ is the mean XWGTUP at −4, the sum at −3, XSECUP at +3. Buffer writes pb weights normalised to the integration; StochasticRounding streams floor(w)+Bernoulli unit copies."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, lhef, idwtup, unweighting, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

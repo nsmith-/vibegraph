@@ -5,6 +5,7 @@ description: "Graph-property signs live on Diagram; kernel-compensation signs ar
 status: draft
 tags: [rooting, sign-conventions, diagrams, anchor, canonical-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 §V5 (rooting-soundness: the sign derivation)"}
   - {id: n38-container, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L254-L291", title: "Note 38 §3.3 (the diagram container is the oracle boundary)"}
@@ -224,7 +225,7 @@ only signs that compensate its own kernels[^n38-container][^n38-decisions].
 | gate | checks | cannot see |
 |---|---|---|
 | `helas::eval::rooting_soundness::all_rootings_preserve_amplitude` (`#[ignore]`, slow full sweep) | re-roots diagrams (per diagram for ≤ 40-diagram processes, whole-process for the 2→6 rows) and asserts \|M\|² equals the unoverridden baseline at `REL_TOL = 1e-10` | a sign that is wrong but rooting-invariant; the baseline is pinned to MadGraph separately |
-| `helas::eval::renumbering::renumbering_preserves_signs_and_amplitudes` | renumbers every census diagram twice with the anchor forced off index 0; exact `fermi_sign` per chain, same anchor and canonical form, per-helicity per-flow amplitudes to 1e-10 | a wrong function of the graph |
+| `helas::eval::renumbering::renumbering_preserves_signs_and_amplitudes` | renumbers every census diagram twice (once at random, once with the anchor's vertex forced off index 0); exact `fermi_sign` per chain, same anchor and canonical form; per-helicity per-flow amplitudes to 1e-10 on subprocesses of at most 40 diagrams (`AMP_MAX_DIAGRAMS`) | a wrong function of the graph |
 | the debug-build `spine_sign_from_flow == fermion_line_sign` assertion | the graph line sign against the tree derivation, on every compiled diagram | release builds (it is a `debug_assert`) |
 | `tests/amplitude_oracle.rs` | the anchor-rooted signs against MadGraph, per diagram and per flow | see [validation/amplitude-oracle](../validation/amplitude-oracle.md) |
 

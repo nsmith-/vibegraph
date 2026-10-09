@@ -5,6 +5,7 @@ description: "Grouped DSIGPROC clusters and rejects the unpermuted PP while the 
 status: draft
 tags: [madgraph, madevent, scales, grouping, mlm, h1]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n07-h1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L539-L727", title: "Note 07 appendix, grouped MadEvent scales and rejects the unpermuted point"}
   - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L625-L757", title: "Note 41 M1 dump gates, the finding"}
@@ -23,7 +24,7 @@ in `super_auto_dsig_group_v4.inc` (pinned tree `b7687064`, 3.7.1)[^mg-dsig]:
 
 1. builds `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))` (`:805`), the channel's
    symmetry permutation of the sampled point;
-2. mirrors `P1` when `IMIRROR = 2` (`:814-826`);
+2. mirrors `P1` when `IMIRROR = 2` (`:815-830`);
 3. calls `update_scale_coupling(pp, wgt)` (`:842`), handing the **unpermuted**
    `PP` to the first `setclscales` call:
 
@@ -36,7 +37,7 @@ in `super_auto_dsig_group_v4.inc` (pinned tree `b7687064`, 3.7.1)[^mg-dsig]:
 The matrix element and `REWGT`'s second `setclscales` call read `P1`. The first
 call sets μR, sets `q2fact` (which `DSIG` evaluates the densities at before
 `REWGT` runs), sets `q2bck`, and can reject the point (the `xqcut` test on every
-clustering vertex with a jet daughter, `reweight.f:1066-1085`, or the 2 GeV
+clustering vertex with a jet daughter, `reweight.f:1066-1089`, or the 2 GeV
 factorisation floor). `REWGT` returns 0 when the second call rejects, so a point
 is kept only if both accept. Where the permutation is not the identity, the first
 call clusters an event whose momenta do not match the flavour table and diagram
@@ -103,8 +104,8 @@ On the dumps regenerated for `refdata-9`[^n41-z2]:
   none with other first-call scales;
 - `pp_to_ll_0j2j_mlm`: 160 permuted events, 83 agreeing, 77 with other
   first-call scales, all `@2` (58 `P2_qq_llqq`, 19 `P2_gg_llqq`); the harness's
-  informational weight-factor ratio between the two sides spans 0.67–1.60, mean
-  0.996.
+  informational weight factor, MadEvent's over vibegraph's, spans 0.67–1.60, mean
+  0.996 (`validation/manifest.toml`, the row's `integrals` note).
 
 The event record is unaffected: `<scales>`, the resonances and colour come from
 the second call, which clusters `P1` on both sides, and every record field agrees
@@ -146,12 +147,12 @@ reproducer). Both scale paths involved are described in
 - The clustering path behind the identical-quark channels.
 
 Rejected candidates for the reproducer, which show no effect: `u u~ > e+ e- u u~`
-alone (patched and unpatched bit-identical; its permuted channels carry 0.17% of
-σ), `g g > e+ e- u u~` and `t t~ j` (their swaps leave the clustering pairs
+alone (patched and unpatched bit-identical at one seed; its two permuted
+configs carry 0.17% of σ), `g g > e+ e- u u~` and `t t~ j` (their swaps leave the clustering pairs
 symmetric), and the same subprocesses written with `add process`, which land in
 separate directories with no permutation.
 
-[^mg-dsig]: `super_auto_dsig_group_v4.inc:805,842` at `b7687064`.
+[^mg-dsig]: `super_auto_dsig_group_v4.inc:805,842` at `b7687064`; note 07 quotes the mirror as `:814-826`, which does not match the pinned file.
 [^n07-h1]: Note 07 appendix, "`super_auto_dsig_group_v4.inc` — Direct Bug Found".
 [^n41-d2]: Note 41, D2 diagnosis ("H1 is real, and lives in `P2_qq_llqq`") and D2 decisions.
 [^n41-z2]: Note 41, Z2 "Dumps".

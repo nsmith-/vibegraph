@@ -88,8 +88,11 @@ the unmerged mixture so the merge can be measured against it. Channel sets and t
 merging are [phase-space/channel-set](../phase-space/channel-set.md).
 
 - `channel_grid_ndim = 2 + (3n − 4)`; the undivided mixture form (`value`) adds one
-  channel-selection coordinate (`vegas_ndim`).
-- A channel is a `ChannelId { group, diagram }`, the first pair whose map it is. An
+  channel-selection coordinate, and one more uniform for the configuration draw where
+  the per-term scale path is live (`vegas_ndim = channel_grid_ndim + 1 +
+  scale_draw_ndim`). The scale-draw uniform is not a grid coordinate.
+- A channel is named by a `ChannelId { group, channel }`: the first (group, per-diagram
+  channel) pair whose map it is; `channel_members` lists every pair merged into it. An
   artifact must carry the dimension and the ids; a fixed-beam artifact cannot be read as
   a hadronic one by shape alone.[^n24-p2d-p3]
 - Peripheral channels are floored at `Cuts::spacelike_floor()`, the scale the process's

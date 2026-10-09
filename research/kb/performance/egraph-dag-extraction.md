@@ -5,6 +5,7 @@ description: "egglog extracts by tree cost; the DAG extractor in egraph.rs; why 
 status: draft
 tags: [performance, egglog, e-graph, extraction, cse]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n15-tree-cost, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L63-L79", title: "Note 15 §1.2 (egglog 2.0 extraction is tree-cost)"}
   - {id: n15-sharing, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L112-L133", title: "Note 15 §1.4 (sharing vertices across propagating particles)"}
@@ -136,9 +137,14 @@ extractor reproduced it faithfully (37 ↔ DAG cost 2 048, 38 ↔ 2 144 under
 - Consequence for any cost comparison used as an extraction oracle: compile the
   AST **once** and reuse it (the extract tests do), or pin the lowering's
   iteration order (a `BTreeSet` or sorted iteration in `root_diagram`/`lower`).
-- The lowering still iterates `HashMap`/`HashSet` (`lower.rs`, `root_diagram.rs`);
-  whether the ±1-node variance persists on the current tree has not been
-  re-measured. Timing rigs that compile per process should assume it does.
+- On the current tree the hashed collections in `lower.rs` and
+  `root_diagram.rs` (`amp_cache`, `interned`, `processed_vertices`, `uncross`)
+  are used only for lookups and inserts, and the one hashed iteration in the
+  compile path (`evals.values().next()` in `compile.rs`) only checks the leg
+  count. The AOT study also found its renderings of four rows in separate
+  processes byte-identical. Both suggest the variance is gone, but the 37/38
+  subterm count on `e+ e- > mu+ mu-` has not been re-measured; a cost
+  comparison used as an oracle should still compile once and reuse the AST.
 
 ## References
 

@@ -101,8 +101,9 @@ fn mirror_visibility_floor(sqrt_s: f64) -> f64 {
 The test asserts, at `√ŝ ∈ {25, 65, 150, 400, 1200}` GeV, that the **tenth percentile**
 of the visibility over 32 draws exceeds the floor. The floor sits 1.58 to 4.86 times
 under every point of `probe_mirror_visibility_ladder` (`#[ignore]`), which measures 25 GeV
-to 4 TeV over three independent streams and two sample sizes (32 and 512), none of them
-the gate's own draw.
+to 4 TeV over three independent streams and two sample sizes (32 and 512). One of those
+six rows (32 draws on stream `0x0FF5E7ED`) is the gate's own draw; the other five are
+independent of it.
 
 **It is a percentile, not a minimum,** because the two orderings agree exactly wherever a
 configuration is symmetric. The minimum visibility over the same draws falls by a decade

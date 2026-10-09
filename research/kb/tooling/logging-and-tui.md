@@ -3,6 +3,7 @@ type: Design
 title: Logging and the terminal UI
 description: "tracing events under vibegraph::* targets, the progress contract, plain/TUI/file layers, inline-viewport footer, stdout for results only, and graceful stop on q/Ctrl-C."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [cli, logging, tui, tracing, progress]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

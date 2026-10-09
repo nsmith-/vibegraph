@@ -67,9 +67,12 @@ working detail and the cases that established it.
       --lib helas::eval::run::tests::probe_process_diagrams -- --ignored --nocapture
   ```
 
-- **Matching**: `validation/madgraph/compare_amps.py` pairs the two diagram
-  sets. It matches by helicity fingerprint, and it prefers the identity pairing
-  whenever that fits at least as well as any other. That rule exists because the
+- **Matching**: `validation/madgraph/compare_amps.py` (a diagnosis tool, not a
+  gate; it reads the probe dump and MadGraph's values at CSV point 0) pairs the
+  per-diagram rows by full-helicity-vector overlap and reports each pair's complex
+  ratio. For `NCOLOR > 1` it runs the same matcher over the per-flow JAMPs, and
+  there it takes the identity pairing whenever that fits at least as well as any
+  other, since both sides order flows by the colour basis's sorted keys. That rule exists because the
   `[flow × helicity]` JAMP matrix of a tree-level all-gluon MHV process is rank 1
   (Parke–Taylor: every colour-ordered partial carries the same ⟨ij⟩⁴), so a greedy
   max-overlap matcher pairs its rows arbitrarily; that artefact once produced a

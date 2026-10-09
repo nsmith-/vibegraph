@@ -5,6 +5,7 @@ description: "The phased migration of research/notes and TODO.md into the resear
 status: draft
 tags: [okf, migration, knowledge-bundle, backlog, sprint]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n42-phaseb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L366-L401", title: "Note 42 §8 Phase B (with As executed)"}
   - {id: n42-phase0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L403-L435", title: "Note 42 §8 Phase 0 (with As executed)"}
@@ -28,8 +29,8 @@ migration's `Sprint Record`.
   naming scheme and note numbers cannot collide mid-migration.
 - Phases 2 and 3 fan out to about 15–20 parallel agents.
 - The `measured:` convention ([measurement provenance](../workflow/measurement-provenance.md))
-  applies from the migration on. Drafted numbers carry only the host and
-  commit their notes gave.
+  starts after the migration. Drafted numbers carry only the host and commit
+  their notes gave.
 
 ## Starting point
 
@@ -148,6 +149,11 @@ repository changes in this phase.[^n42-phase2-5]
   what it folded, what it could not settle, and new work it found.
 - The reviewed decisions under `decisions/` are linked, never redrafted.
 
+**As executed (2026-10-09).** Sixteen agents drafted 229 concepts. Of the 241
+approved, `workflow/sprint-rhythm` folded into a sibling and eleven papers
+became `sources` entries on the concepts that cite them rather than `Paper`
+concepts.
+
 ## Phase 3 — adversarial verification and coverage
 
 Separate verifier agents trace every number and claim back to a source chunk.
@@ -166,8 +172,9 @@ available as `sources`.[^n42-risks]
 3. Move the original notes to `kb/history/notes/` as `Working Note`,
    `status: deprecated`, each linking to its replacements. Citations between
    notes keep resolving inside the archive.
-4. Move the backlog to `kb/backlog/`, and point `scripts/kb.py`'s root and the
-   docs build at `research/kb/`.
+4. Move the backlog to `kb/backlog/` and the reviewed decisions to
+   `kb/decisions/`, and point `scripts/kb.py`'s root and the docs build at
+   `research/kb/`.
 5. Update the agent briefs (start at `research/kb/index.md`) and the planning
    section of `AGENTS.md`.
 6. Add a `new-sprint` scaffold script.

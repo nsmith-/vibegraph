@@ -32,8 +32,8 @@ the same order for both kinds and returns `Located { dir, source, found }`:
 
 | step | PDF set | UFO model | existence checked? |
 |---|---|---|---|
-| 1. flag | `--pdf-dir <base>` → `<base>/<name>/` | `--ufo-dir <base>` | reported, never blocks: an explicit path is returned even if absent |
-| 2. env | `$VIBEGRAPH_PDF_DIR` | `$VIBEGRAPH_UFO_DIR` | same as the flag |
+| 1. flag | `--pdf-dir <base>` → `<base>/<name>/` | `--ufo-dir <base>` → `<base>/<name>/` | reported, never blocks: an explicit path is returned even if absent |
+| 2. env | `$VIBEGRAPH_PDF_DIR/<name>/` | `$VIBEGRAPH_UFO_DIR/<name>/` | same as the flag |
 | 3. cache | `<root>/pdf/<name>/` | `<root>/ufo/<name>/` | taken only if the directory exists |
 | 4. dev fallback | `validation/pdf/<name>/` relative to the cwd | `./<name>/` (the cwd) | taken only if it exists |
 | nothing found | `found: false`, `dir` = the cache path, as the write target for a fetch | same | — |
@@ -41,7 +41,7 @@ the same order for both kinds and returns `Located { dir, source, found }`:
 Flag and env take the step even when the directory is missing, so "explicit
 but wrong path" is an error naming that path rather than a silent fall-through.
 `locate` reads no environment and no home directory; every input is a
-parameter, and six unit tests in `cache::resolve::tests` each pin one
+parameter, and seven unit tests in `cache::resolve::tests` each pin one
 precedence edge. `locate_from_env` is the thin wrapper that reads the real
 variables; it is deliberately untested, since testing it would mean mutating
 process environment across parallel tests.

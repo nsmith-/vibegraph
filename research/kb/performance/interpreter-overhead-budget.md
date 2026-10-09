@@ -5,6 +5,7 @@ description: "The fill_arenas per-address profile (M3 Max, 9bad54c), x86 counter
 status: draft
 tags: [performance, evaluator, interpreter, dispatch, profiling]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 9bad54c, host: "Apple M3 Max, macOS 15.7.7", command: "samply on validate_sigma (sigma_gate_matches_madgraph), release-debug, extended-validation"}
   - {commit: 03c31e6, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "cargo bench --bench aot_kernels (aot-study feature)"}
@@ -57,8 +58,8 @@ samples       %  #insns  kind
 - **Dispatch is a jump table**: 38 `u16` entries, `ldrb`/`adr`/`ldrh`/`add`/`br`, one
   `br` in the function, checked entry by entry against the 38 `Instr` variants of that
   commit. There was no compare chain to fix.
-- **The 30.5% block is ten instructions** executed once per program instruction. Of it,
-  10.87% sat on the jump-table `ldrh` that the `br` consumes, the classic load-dependent
+- **The 30.5% block is ten instructions** executed once per program instruction. Within it,
+  10.87% of `fill_arenas`'s samples sat on the jump-table `ldrh` that the `br` consumes, the classic load-dependent
   indirect-branch stall, and 16.6% on the `cmp` at the arms' merge point.
 - **Bounds checks** were identified structurally: a branch into the `panic_bounds_check`
   tail plus its feeding `cmp` and the length load (108 panic sites). Only 12 samples

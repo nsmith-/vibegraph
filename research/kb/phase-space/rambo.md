@@ -52,9 +52,11 @@ the weight[^n18-h3]. All-zero masses take a fast path: no Newton solve,
 
 `rambo_massless(sqrt_s, n, &mut rng)` and `rambo_massive` are thin wrappers
 that draw the `4n` uniforms from a generator in the original call order and
-call the same core, so the massless output is bit-for-bit what it was before
-the map was split from its generator; existing benches and sanity tests kept
-their goldens[^n18-h3]. Behind the phase-space seam the same map is
+call the same arithmetic (`massless_momenta`, and `rambo`), so the massless
+output is bit-for-bit what it was before the map was split from its generator;
+existing benches and sanity tests kept their goldens[^n18-h3]. Both return
+momenta only and discard the weight, so `rambo_massive`'s points are on-shell,
+momentum-conserving test kinematics, not an unbiased flat sample. Behind the phase-space seam the same map is
 `RamboChannel` ([channel contract](channel-contract.md)).
 
 ## Where it is used, and where it must not be
@@ -79,15 +81,16 @@ stream, which is also why no MadGraph-compatible RNG is needed
 | `rambo_oracle.rs::replay_matches_python`: `(u[4n], momenta, ξ, weight)` dumped by the pure-stdlib `validation/rambo/dump_rambo_fixture.py`, 8 cases | the deterministic map | momenta and `ξ` rel ≤ 1e-13, weight ≤ 1e-12; observed 1.3e-15 and 3.4e-16 | which uniform feeds which draw |
 | bits→uniform conversion goldens and one seeded end-to-end momenta golden | stream addressing and draw order | exact | — |
 | conservation and on-shell fuzz over random `(n, masses, √ŝ)`, threshold-adjacent included | numerics | — | any exactly-conserving wrong map |
-| `flat_mc_two_body_normalization`: σ(e⁺e⁻ → μ⁺μ⁻) at √s = 10 GeV against `4πα²/(3s)` | the `R_n` volume and the `(2π)` measure factor | 929.4 ± 0.5 pb against 928.9 pb, rel 6e-4 at N = 2e5 | per-point errors that integrate away |
+| `flat_mc_two_body_normalization`: σ(e⁺e⁻ → μ⁺μ⁻) at √s = 10 GeV against the QED-only `4πα²/(3s)` | the `R_n` volume and the `(2π)` measure factor | asserts rel < 0.03 (MC noise plus the Z interference the formula omits); observed 929.4 ± 0.5 pb against 928.9 pb, rel 6e-4 at N = 2e5 | per-point errors that integrate away |
 
-`flat_mc_partonic_sigma` (`#[ignore]`) integrates `u u~ > c c~ e+ e- mu+ mu-`
-at √ŝ = 500 GeV against MadGraph's banked 6.556e-7 pb. Four seeds at N = 2e4
-scatter by a factor of several, all above the bank, because flat sampling on a
-collinear-peaked integrand has a heavy tail and its naive `σ/√N` understates
-the error. Its assertion is a same-order band, an order-of-magnitude
-end-to-end check only; the two-body analytic comparison is the normalisation
-gate[^n18-h3].
+`flat_mc_partonic_sigma` (`#[ignore]`) integrates
+`u u~ > c c~ e+ e- mu+ mu- QCD=0` at √ŝ = 500 GeV, uncut, against MadGraph's
+banked 6.556e-7 pb. Four seeds at N = 2e4 read 1.13–5.30e-6 pb, a factor of
+several apart and all above the bank: flat sampling on a collinear-peaked
+integrand has a heavy tail and its naive `σ/√N` understates the error, and the
+banked run likely carries default lepton cuts this estimate omits. Its
+assertion is a same-order band, an order-of-magnitude end-to-end check only;
+the two-body analytic comparison is the normalisation gate[^n18-h3].
 
 ## MadGraph's copy
 

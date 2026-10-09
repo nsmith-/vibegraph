@@ -5,6 +5,7 @@ description: "Work that adds gates records a newly failing cell as informational
 status: draft
 tags: [validation, process, gates, scope]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-sessions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L501-L560", title: "Note 25 §8: sprint discipline — expose, don't fix"}
   - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9: decisions (user, 2026-07-31)"}
@@ -16,7 +17,9 @@ references and comparisons. When a gate it newly exposes fails, the session
 does three things:[^n25-sessions][^n25-decisions]
 
 1. Record the measurement as an **informational** (⚠️) cell.
-2. File a debug or fix item in the backlog.
+2. Report a debug or fix item for the backlog: a dev agent lists it under
+   **Found** in its report, and the manager files it
+   ([backlog items](backlog-items.md)).
 3. Move on.
 
 It does not diagnose, tune, or touch physics or sampler code to make a new

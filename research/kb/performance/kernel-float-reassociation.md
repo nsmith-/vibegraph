@@ -5,6 +5,7 @@ description: "Serial accumulation chains in dot/dot4/dot_lorentz/contract* are s
 status: draft
 tags: [performance, floating-point, kernels, latency, benchmarks]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, one pinned core"
   command: "cargo bench -p vibegraph-lib --bench lorentz_kernels (A/B/A/B, native and default targets); eval_strategies three interleaved rounds per variant"
@@ -64,8 +65,8 @@ Protocol: A/B/A/B over three rounds on one pinned core, native (AVX-512) and def
 that is the noise floor.
 
 **`dot` as two chains** (per-round change, B vs A): chain −18% to −21% at `f64` on both
-targets and at lanes4 native; throughput −4% to −6% native, −13% to −18% on the default
-target `f64`; default-target lanes4 within noise. Adopted on these kernel merits although the
+targets and at lanes4 native; throughput −4% to −6% native `f64` (−2% to −4% native lanes4),
+−13% to −18% on the default target `f64`; default-target lanes4 within noise. Adopted on these kernel merits although the
 8-process bench showed a null.
 
 **The full rewrite** (range of per-round change, throughput / chain, %):
@@ -125,7 +126,9 @@ Median `forward` effect over the 8 rows (positive = slower; control drift 1–9%
   ulp, 1.8e-13 relative), and `test_fierz_reconstruction` failed on v3: the same bilinear
   through `fierz_coefficients().scalar()` and `scalar_bilinear()` differed (`im` 2.6e-18 vs
   0) because two inlining contexts contracted differently. The amplitude oracle stayed green
-  at the control's residual scale.
+  (42/42) at the control's residual scale, and the helicity-expansion, alternative-schedule,
+  batched-VEGAS and fixed-seed bit-identity tests passed: only the lane-vs-scalar and
+  two-path comparisons see the drift.
 - **Noise**: lane code was census-identical between control and vw yet moved −2.8% to +9.7%
   between builds, so single-digit effects in this bench are not resolvable.
 

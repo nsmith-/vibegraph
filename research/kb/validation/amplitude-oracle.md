@@ -38,7 +38,7 @@ sources:
 `vibegraph-lib/tests/amplitude_oracle.rs` is the gate behind the `amplitudes`
 column of the validation report. It is hermetic: it reads only the committed
 tables under `validation/madgraph/amplitudes/<key>.json` (one trial per table, 48
-tables at `787070e`) and runs in about a second. Run it with
+tables at `787070e`); over the 19 rows it first carried it ran in ~1.1 s[^n25-close]. Run it with
 `pixi run validate-amplitudes`, or with `--skip-deps` to avoid regenerating the
 tables. Per-row enforcement follows the row's `categories.amplitudes.mode` in
 `validation/manifest.toml`; the manifest also lists the gate as the
@@ -159,12 +159,16 @@ and its partition as
 
 ## The fitted constants carry bits, not phases
 
-Measured over all 113 configurations of the banked set: `k/G ∈ {+1, −1}`
-exactly, suite-wide worst residual 1.19e-13 (`ee_to_mumu_tata_qcd0`). Where
-`jamp_coefficients` are banked, that bit *is* MadGraph's `c_j`; where they are
-not (`gg_to_gg`, `gg_to_ttx`, `ud_to_epemud_qcd0`, `uux_to_uux` all bank
-`jamp_coefficients: null`), the oracle runs no per-diagram fit, and `k/G` is the
-only per-diagram sign oracle there is[^n29-f10][^n29-f13]. So the fitted content
+Measured on 2026-08-03 over the 113 configurations the banked set then held
+(not re-harvested since): `k/G ∈ {+1, −1}` exactly, suite-wide worst residual
+1.19e-13 (`ee_to_mumu_tata_qcd0`). Where `jamp_coefficients` are banked, that
+bit *is* MadGraph's `c_j`; where they are not, the oracle runs no per-diagram
+fit (`per_diagram_fit = banks_amps && table.coefficients.is_some()`), and `k/G`
+is the only per-diagram sign oracle there is[^n29-f10][^n29-f13]. At `787070e`
+eleven tables bank `jamp_coefficients: null`: `gg_to_gg`, `gg_to_gg_cg`,
+`gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2`, `ud_to_epemud_qcd0`,
+`uux_to_uux`, `uux_to_ttx_4f`, `qqx_to_o8o8_toy_dcolor` and the two `p3r3` toy
+rows. So the fitted content
 is `1 + Σ N_config` bits, most of them already banked in the reference.
 
 The sign of `G` tracks MadGraph's own colour-coefficient sign, not any invariant
@@ -229,6 +233,7 @@ inventory itself is [convention signs](../amplitudes/convention-sign-inventory.m
 
 [^n24-p1]: Note 24 §P1, "New gate: `amp_diagram_oracle`".
 [^n25-events]: Note 25 §5.3, "`amplitudes` on MG's own events".
+[^n25-close]: Note 25 §10, L2.
 [^n29-f4]: Note 29 §F.4, the table schema.
 [^n29-f5]: Note 29 §F.5, what the investigation cannot decide.
 [^n29-f8]: Note 29 §F.8, the `A_d = φ_d · H_d` framework.

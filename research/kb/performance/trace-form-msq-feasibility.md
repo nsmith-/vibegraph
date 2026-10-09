@@ -5,6 +5,7 @@ description: "Whether a trace-form |M|² speeds integration: cost by multiplicit
 status: draft
 tags: [performance, matrix-element, helicity-sum, finite-fields, trace-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   landed_in: ef84a12
   pr: 15
@@ -190,7 +191,11 @@ denominators).[^n41-9][^n41-10]
 - **2 → 2 and llj-type 2 → 3**: reconstruct, lift to `Q`, emit, after checking conditioning near
   the collinear poles against the f64 evaluator, since a common-denominator numerator cancels
   there. Worth building only if those rows' integration cost matters; the stage cap still
-  applies ([backlog](../backlog/performance/generated-closed-form-msq-2to2.md)). Generated Rust for
+  applies ([backlog](../backlog/performance/generated-closed-form-msq-2to2.md)). The kill
+  criterion note 41 pre-registered for a build: less than 1.3× on `pp_to_llj_dyn` CPU time
+  to target over ≥ 5 seeds (the Amdahl cap predicts about 1.9× at best). The oracle is the
+  evaluator's per-pair `Σ_hel A_i A_j*`, not `|M|²` alone, which can hide relative diagram
+  phases and fermion signs.[^n41-5] Generated Rust for
   any larger form must be chunked ([rustc limits](rustc-limits-on-generated-code.md)).
 - **Helicity sampling** (MadEvent's `nhel = 1`): one helicity combination per point drawn with
   adapted probability `p_h`, weighted by `1/p_h`. The cost side saves up to `N_kept / sharing`
@@ -214,7 +219,7 @@ Related papers: [CalcHEP](https://arxiv.org/abs/1207.6082),
 
 [^n41-0]: Note 41 §0–§1 (2026-09-26, `db5fd03`).
 [^n41-2]: Note 41 §2–§4.
-[^n41-5]: Note 41 §5–§6.
+[^n41-5]: Note 41 §5–§7.
 [^n41-8]: Note 41 §8.
 [^n41-9]: Note 41 §9, measured on PR #15 (squash `ef84a12`).
 [^n41-10]: Note 41 §10, same PR.

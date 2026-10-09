@@ -3,6 +3,7 @@ type: Design
 title: "LHEF reader and writer: records, emit, parse, build, and the source-preserving round trip"
 description: "The lhef module's layers: quick-xml owns the document, fixed-format records are written by hand, and parsed blocks keep their source text so both MadGraph dialects round-trip."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, lhef, io, round-trip, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -100,11 +101,15 @@ spell the record being written**[^n27-b7]:
 
 `LheInit` and `LheEvent` compare by value with a hand-written `PartialEq`: the
 source says how one file spelled a record, not what the record is. Owned
-strings rather than spans were measured to be the right trade: carrying a
-verified line was cheaper than reformatting thirteen fields (23.7 s and 853 MB
-peak RSS against 22.3 s and 724 MB on the 34-file corpus of the time, the extra
-memory being the two 200k-event Drell–Yan banks' text), and spans would have
-put a lifetime on `LheFile`[^n27-b7].
+strings rather than spans were measured to be the right trade: with the source
+carried *and* the gate's second, source-dropped pass, the 34-file corpus of the
+time took 23.7 s and 853 MB peak RSS, against 22.3 s and 724 MB with the source
+dropped at parse and no second pass. The whole second pass therefore costs about
+what the reformatting it replaces cost, so carrying a verified line is cheaper
+than formatting thirteen fields; the extra memory is the owned text of the two
+200k-event Drell–Yan banks. Spans would have put a lifetime on
+`LheFile`[^n27-b7].
+
 
 ## A file is a lossy record of the run
 

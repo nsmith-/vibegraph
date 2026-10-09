@@ -5,6 +5,7 @@ description: "What vibegraph integrate persists (per-channel grids, model identi
 status: draft
 tags: [artifact, integrate, generate, model-identity, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L150-L346", title: "artifact.rs: ChannelKey, ChannelSampler, ChannelGrid, IntegrateArtifact"}
   - {id: integrate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/integrate.rs#L585-L710", title: "integrate.rs: building and writing the artifact"}
@@ -127,8 +128,10 @@ in the Python must not refuse an artifact. A restrict card regenerated with
 different contents under an unchanged name must refuse it, and only the digest
 can see that case.[^n23-identity]
 
-The digest is reproducible because every map reachable from `ParsedModel` is a
-`BTreeMap` or `BTreeSet`. With `HashMap`s it varied per process, and `generate`
+The digest is reproducible because nothing reachable from `ParsedModel` is a
+`HashMap` or `HashSet`: the name-keyed collections are `IndexMap`s, whose order
+is semantic, and everything else is a `BTreeMap` or `BTreeSet`
+(`ufo/identity.rs`). With `HashMap`s it varied per process, and `generate`
 would have refused artifacts at random. Known-answer tests pin `digest_bytes` to
 `shasum -a 256`, since a digest that changed silently would refuse every
 existing artifact. When both comparisons were removed in a mutation check, a

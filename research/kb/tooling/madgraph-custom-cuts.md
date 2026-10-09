@@ -3,6 +3,7 @@ type: Procedure
 title: Custom MadGraph cuts via dummy_cuts
 description: "Expressing a cut no run-card parameter can (an m(ττ) or pT(γ) window) by patching SubProcesses/dummy_fct.f, which passcuts calls last and which leaves phase-space generation untouched."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [madgraph, cuts, references, windows]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -71,7 +72,10 @@ As done in `validation/madgraph/gen_higgs_window.sh` (m(ττ)) and
 1. Generate the process directory as usual, then **assert the leg order**
    against the generated `leshouche.inc` rather than assuming it, e.g.
    `DATA (IDUP(I,1,1),I=1,6)/-11,11,-13,13,-15,15/` so legs 5 and 6 are the τ
-   pair. The index into `P(0:3,i)` is the external leg number.
+   pair. The index into `P(0:3,i)` is the external leg number. When the
+   window run must integrate the banked run's channel decomposition, also
+   diff the generated `configs.inc` against the bank's, as
+   `gen_pta_windows.sh` does (and exits on a difference for its 3.7.1 leg).
 2. **Patch the body by exact match.** Require the stock line
    `      dummy_cuts=.true.` to occur exactly once, then replace it with
    declarations, `dummy_cuts=.true.`, and the test. For the script's default
@@ -92,9 +96,10 @@ As done in `validation/madgraph/gen_higgs_window.sh` (m(ττ)) and
    window and its complement partition the space exactly. Echo the patched
    lines into the log (`grep -n mtt2 …dummy_fct.f`) so the run records what it
    applied.
-3. Use the banked run's own `Cards/run_card.dat` verbatim, changing only
-   `nevents` and `iseed`, so each windowed run is comparable to the banked
-   cross section and to the others.
+3. Use the banked run's own `Cards/run_card.dat` and `param_card.dat`
+   verbatim, changing only `nevents` and `iseed` (and, for
+   `gen_pta_windows.sh`'s refocused windows, the photon pT cuts), so each
+   windowed run is comparable to the banked cross section and to the others.
 4. Run `bin/generate_events` with the C++ runtime on `LDFLAGS`
    ([the toolchain concept](madgraph-toolchain.md)) and read σ from
    `SubProcesses/results.dat`.
@@ -105,7 +110,8 @@ The momenta reaching `dummy_cuts` are in the partonic rest frame (the
 function's own header says so). With fixed equal-energy beams that is the lab
 frame. With hadronic beams it is not: invariant masses and transverse momenta
 need no boost, but a rapidity or any other non-invariant observable would have
-to be boosted to the lab first, as `cuts.f`'s own rapidity cuts are.
+to be boosted to the lab first, as `cuts.f`'s own rapidity cuts are: they
+call `rap()` (`Source/kin_functions.f:95`), which adds the stored `cm_rap`.
 
 ## Caveats
 

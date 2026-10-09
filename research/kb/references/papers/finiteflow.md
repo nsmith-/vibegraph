@@ -55,10 +55,15 @@ measurement in-tree rather than through FiniteFlow
 ([trace-form feasibility](../../performance/trace-form-msq-feasibility.md)).
 The black box is the unchanged evaluator, run over a test-only scalar `Fz`: an
 element of `Z_p` (extended by `i`) carried with an `f64` shadow that decides
-the comparisons the wavefunction routines branch on. The fit is a dense
+the comparisons the wavefunction routines branch on. The per-pair fit is a dense
 monomial ansatz solved by exact row reduction mod `p`, lifted to `Q(i)` by
-Chinese remaindering and Wang's rational reconstruction; Thiele/Newton and
-sparse interpolation were not needed at the sizes measured[^ff-test].
+Chinese remaindering and Wang's rational reconstruction; sparse interpolation
+was not needed (the largest system is 3 114 × 3 102). The full-`|M|²` box uses
+Thiele interpolation along random rational curves to fix each propagator's
+exponent in the common denominator, then a dense numerator fit where that is
+affordable[^ff-test]. Because the box *is* the evaluator, this pins the field
+arithmetic, the roots and the fit, not the amplitudes; a coefficient divisible
+by `p` reads as zero, so counts must agree across two primes.
 
 Square roots in the wavefunctions are not a blocker over `Z_p`. The helicity
 sum depends only on each leg's completeness relation, and taking the root

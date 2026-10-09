@@ -74,8 +74,8 @@ MadGraph's own Fortran on a 792-point grid at `nloop` 1–3
 | any `lpp ≠ 0` | **the PDF label's tabulated value** (`pdfwrap.f`), e.g. `nn23lo1 → 0.130` | 2 unless the label overrides |
 
 With a PDF, MadGraph **overrides the parameter card's `aS(M_Z)`**. A hadronic
-QCD comparison that used the card's `0.118` would be wrong by ~10 % in σ before
-any running. A label `pdfwrap.f` does not know falls back to `0.118` in MadGraph;
+QCD comparison that used the card's `0.118` would be wrong by ~10 % per power of
+`αs` in σ before any running. A label `pdfwrap.f` does not know falls back to `0.118` in MadGraph;
 vibegraph refuses it (`AlphaSError::UnknownPdLabel`).[^n22-11]
 
 **Below the perturbative solve.** Once `Q` approaches the `nf = 3` divergence the
@@ -133,7 +133,7 @@ algorithm.
 
 | oracle | measurement | test |
 |---|---|---|
-| run log's 17-digit `alpha_s for scale 91.188… is 0.13000271085472237` | residual `0`; `GRID_ALPHA_S_TOL = 1e-14` (two orders above one `ln` call's noise, room for a different system `libm`) | `banked_run_logs_pin_the_alpha_s_source_rule` (`tests/validate_alphas.rs`) |
+| run log's 17-digit `New value of alpha_s from PDF lhapdf : 0.13000271085472234`, against the grid read at `ZMASS = 91.188` | residual `0`; `GRID_ALPHA_S_TOL = 1e-14` (two orders above one `ln` call's noise, room for a different system `libm`) | `banked_run_logs_pin_the_alpha_s_source_rule` (`tests/validate_alphas.rs`) |
 | per-event `AQCDUP` on the dynamical grid runs | `pp_to_llj_dyn`: 0 events outside budget, worst 0.999; `pp_to_jj`: 0 outside, worst 0.996. A straight line through the same knots puts 9976 and 9993 of 10 000 events outside, worst 1777× and 1076× | `banked_events_reproduce_aqcdup` |
 | LHAPDF's own `alphasQ`, through `validation/pdf/gen_oracle.cpp` | 414 probes over NNPDF23 and NNPDF31 (every knot, `t = ¼, ½, ¾` of every interval, NNPDF31's repeated `Q = 4.92`, four above `q_max`, four below `q_min`): `0.00e0` relative in every category | `alpha_s_matches_lhapdf_across_the_table_and_past_both_ends` (`tests/validate_pdf_grid.rs`) |
 | LHAPDF up to `Q = 10⁷` | the last tabulated value to the bit, both sets | `above_the_alpha_s_table_lhapdf_freezes_rather_than_extrapolates` |

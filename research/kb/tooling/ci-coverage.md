@@ -3,6 +3,7 @@ type: Caveat
 title: What a green CI run covers
 description: "ci.yml runs fmt, kb-lint, featureless clippy plus hermetic cargo test, and the banked layer; extended-validation code, cfg-gated guards and the SM blob have their own rules."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [ci, testing, clippy, validation, features]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -118,8 +119,8 @@ mirrors that guard's cfg.
 ## The interned SM blob
 
 `vibegraph-lib/src/ufo/sm_assets/` holds a zstd+bincode blob of the parsed SM
-UFO plus every restrict card verbatim, written by the `gen_sm_blob` dev
-binary. The blob, not the submodule, is the hermetic truth: it is what a bare
+UFO (`sm_parsed.bin.zst`, written by the `gen_sm_blob` dev binary) beside
+every restrict card verbatim (`restrict_*.dat`, compiled in with `include_str!`). The blob, not the submodule, is the hermetic truth: it is what a bare
 clone and every hermetic test read. Whether it still matches the source it was
 built from is checked by `tests/sm_interned_blob.rs` (evaluated physics, and
 field by field including the restrict cards byte for byte). That target is

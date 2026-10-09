@@ -5,6 +5,7 @@ description: "Deterministic per-channel N_j (ByAlpha, or Neyman ∝ s_j); floors
 status: draft
 tags: [phase-space, budget, neyman, multichannel, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n32-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to target; the floor overrides --neval)"}
   - {id: n34-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L251-L325", title: "Note 34 S3 (floor counts accepted points)"}
@@ -15,7 +16,7 @@ sources:
 measured:
   - {landed_in: b6a0b88, command: "five-seed sweeps on the 2→6 rows and pp_to_llj"}
   - {commit: 069a951, host: "4-core container shared with another session", command: "vibegraph integrate pp_to_ll_0j2j_mlm --fixed-budget --allocate neyman --neval 200000 --niter 8"}
-  - {commit: ef660f3, host: "4-core container shared with another session (load 7-12)", command: "vibegraph integrate pp_to_ll_0j2j_mlm --fixed-budget --allocate neyman --neval 200000 --niter 8, seeds 20260928-37"}
+  - {commit: ef660f3, host: "4-core container shared with another session (load 7-12)", command: "vibegraph integrate pp_to_ll_0j2j_mlm --fixed-budget --allocate neyman --neval 200000 --niter 8, seeds 20260928-32 (the unmerged base; the merged arm, seeds 20260928-37, ran on F-B's build, whose commit note 41 does not name)"}
 ---
 
 # Per-channel budget allocation
@@ -68,7 +69,10 @@ region is how a multichannel integral becomes confidently wrong.
   `⌈512 / acceptance_j⌉`, capped at
   **`MAX_FLOOR_ACCEPTANCE_SCALE = 4`** times the floor (`budget.rs:139`), i.e.
   at most **2048** points. Cold start (no acceptance measured yet) gets 512; a
-  channel that has accepted nothing gets the cap.
+  channel that has accepted nothing gets the cap. The cap of 4 sits at the
+  wide rows' measured median acceptance (~0.25); a channel accepting less
+  buys fewer than 512 accepted points (on `pp_to_ll_0j2j_mlm` before merging,
+  144 of the 336 two-jet channels sat at the cap).[^n41-m6]
 - `acceptance_j` is read from the channel's own **completed** iterations,
   never from the draws it sizes. Counting draws until enough are accepted was
   rejected: that count correlates with the iteration's own estimate, the bias
@@ -79,12 +83,17 @@ region is how a multichannel integral becomes confidently wrong.
 ### The floor overrides `--neval` on wide splits
 
 When `Σ_j max(share_j, floor_j)` exceeds `--neval`, coverage wins and the run
-warns: the spend is then set by the channel count. An iteration costs at least
-`n_channels × 512` and at most `4 × n_channels × 512` after the acceptance
-correction, a number computable before spending anything. On the 579-channel
-`u u~ > c c~ e+ e- mu+ mu-` row, 554 channels sat at the floor and an iteration
-spent 399,217 points against `--neval 120000`: above roughly 230 channels
-`--neval` stops setting the budget.[^n32-s7]
+warns: the spend is then set by the channel count. Before any acceptance is
+measured an iteration costs `Σ_j max(share_j, 512)`, at least
+`n_channels × 512`, and the acceptance correction can raise that by at most
+the factor 4, a bound computable before spending anything (the warning in
+`integrate_channels` prints both). Above roughly `neval / 512` channels it is
+the channel count, not `--neval`, that sets the budget. Measured on
+2026-08-06, before the floor was acceptance-scaled: on the 579-channel
+`u u~ > c c~ e+ e- mu+ mu-` row, 554 channels sat at the floor and an
+iteration spent 399,217 points against `--neval 120000` (≈230
+channels).[^n32-s7] A single-channel integration has no floor; it spends
+`neval`.
 
 Measured when the floor became acceptance-scaled:[^n34-s3] tail suppression,
 not cheaper points. The worst single-seed relative error on the `2 → 6` `bbx`
@@ -143,8 +152,9 @@ point count (`--neval 600000`, three seeds) every part improves, 8.6× in
 rel²·CPU by quoted error. `--neval` is therefore the knob that sets `@2`'s
 precision until the allocation prices the tail
 ([backlog](../backlog/performance/mlm-at2-tail-unpriced-in-allocation.md)).
-On `pp_to_llj_mlm` (24 → 6 channels) no floor binds after merging; seed χ²/dof
-fell from 3.06 to 0.80 and rel²·CPU by seed spread 5.7×.
+On `pp_to_llj_mlm` (24 → 6 channels; by α, `--fixed-budget --neval 150000
+--niter 10`, ten seeds) no floor binds after merging; seed χ²/dof fell from
+3.06 to 0.80 and rel²·CPU by seed spread 5.7×.
 
 The banked mixed-row σ gate integrates at exactly that configuration (ten
 seeds, `--fixed-budget --allocate neyman --neval 200000 --niter 8`); `@2`'s
@@ -156,7 +166,7 @@ A sum over `@N` parts ([phase-space/mixed-multiplicity-integrand](mixed-multipli
 first splits the per-iteration budget between parts by `n_k ∝ s_k`, the
 standard deviation of part `k`'s undivided mixture estimator,
 `√(Σ_j α_j W_j − σ_k²)` from its α survey (`MultiplicitySum::adapt_alphas`,
-`multiplicity.rs:298`); each channel then gets `α_j · share_k`. `s_k` ranks the
+`multiplicity.rs:307`); each channel then gets `α_j · share_k`. `s_k` ranks the
 parts rather than predicting their errors, and under Neyman it sets only the
 first iteration.
 

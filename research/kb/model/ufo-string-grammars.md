@@ -157,9 +157,10 @@ How colour strings become flows and the CF matrix is in
 sextet configurations stay refused is in
 [colour crossing, epsilon and sextets](../amplitudes/colour-crossing-epsilon-and-sextets.md).
 
-A grammar question that is MadGraph's, not ours: ALOHA's own expression parser applies
-a momentum sign flip inside the square of the `$`-veto theta function for one fermion
-propagator form (`FFV2P1D_1`). That defect and its consequences are in
+A related defect is MadGraph's, not ours: for a fermion built from a vertex's second
+spinor slot, ALOHA flips momentum signs with a regex substitution (`P(` → `-P(`), which
+turns the `P(-1,id)**2` inside the `$`-veto theta function into `-(p²)`; only
+`FFV2P1D_1` changes. That defect and its consequences are in
 [MadGraph defects](../validation/madgraph-defects.md).
 
 [^n16-vocab]: Note 16 §1d: the SM colour vocabulary, the `T` index convention and `treat_color`'s `Identity` rules.

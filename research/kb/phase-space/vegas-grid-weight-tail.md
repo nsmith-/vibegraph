@@ -51,9 +51,11 @@ width into their weight ([VEGAS integrator](vegas-integrator.md)).
 
 ## MadEvent's counter, and how far it goes
 
-MadEvent adapts on `Σ|w|` per bin (`dsample.f:1890`)[^mg-dsample-grid] and
-rescales each bin by `non_zero/inon_zero`, the inverse of the bin's own
-acceptance, capped at 10⁴ (`dsample.f:2106-2124`):[^mg-dsample-rescale]
+MadEvent adapts on `Σ|w|` per bin (`dsample.f:1890`)[^mg-dsample-grid] and,
+while the grid is still adapting under the default `use_cut = 2`
+(`dsample.f:420`, `:753`), rescales each bin by `non_zero/inon_zero`, the
+inverse of the bin's own acceptance, capped at 10⁴
+(`dsample.f:2106-2124`):[^mg-dsample-rescale]
 
 ```fortran
 grid(1,i,j) = grid(1,i,j)
@@ -98,9 +100,11 @@ diagnosed:[^n41-m6]
   events and 3% efficiency its binomial error alone is ~1%, while `XERRUP`
   carries the integration's ±0.16%, about 7× smaller. MadEvent pins each
   channel's events to its integral, so its `@N` shares scatter well inside
-  their binomial variance. The LHEF writer therefore normalises each
-  integrated part's events to that part's integrated σ (`lhef/emit.rs`), which
-  removes the excess without bias; overweights themselves survive it
+  their binomial variance. The LHEF writer's buffered strategy
+  (`IDWTUP = −4`) therefore normalises each integrated part's events to that
+  part's integrated σ (`lhef/emit.rs`), which removes the excess without bias;
+  overweights themselves survive it. Stochastic rounding writes unit weights
+  and so refuses a sample of several parts
   ([multi-process normalisation](../events/multi-process-normalisation.md)).
 - **One spike holds a convergence stop.** A target run reads each channel's
   error widened by an iteration-consistency factor; a single point in one

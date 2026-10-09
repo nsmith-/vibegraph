@@ -69,7 +69,7 @@ exactly rather than at rounding level.
 | `fz_wavefunctions_satisfy_completeness` | default | the root convention keeps each leg's completeness relation |
 | `square_root_legs_never_miss_a_root` | default | the constructed legs always have roots, massless and massive, spinors and vectors |
 | `per_pair_numerators_lift_to_the_f64_evaluator` | default | per-pair numerators `N_ij = D_i D_j* Σ_hel A_i A_j*` fitted mod `p`, lifted to `Q(i)` by Chinese remaindering and rational reconstruction (8 primes on `ee_to_mumu`, 12 on `ee_to_mumua`, confirmed by one more), then evaluated in `f64` at fresh physical points against the evaluator's own per-pair sums: worst 7.5e-15 and 1.2e-15 of the largest term |
-| `full_msq_matches_the_textbook_closed_form` | default | against physics rather than the evaluator: `u ū → e⁺e⁻ g` must satisfy `\|M\|² · s₃₄ s₁₅ s₂₅ / (s₁₃² + s₁₄² + s₂₃² + s₂₄²) = const` (the crossing of `e⁺e⁻ → q q̄ g`), exactly mod `p`, at 20 points — through `eval_m2`'s colour and helicity sums |
+| `full_msq_matches_the_textbook_closed_form` | default | against physics rather than the evaluator: `u ū → e⁺e⁻ g` with the Z excluded (`u u~ > e+ e- g / z`, photon exchange only) must satisfy `\|M\|² · s₃₄ s₁₅ s₂₅ / (s₁₃² + s₁₄² + s₂₃² + s₂₄²) = const` (the crossing of `e⁺e⁻ → q q̄ g`), exactly mod `p`, at 20 points — through `eval_m2`'s colour and helicity sums |
 | `measure_trace_form`, `measure_full_msq` | `#[ignore]` | the reconstruction census itself (`cargo test --release -p vibegraph-lib --test finite_field_msq measure_trace_form -- --ignored --nocapture`) |
 
 The full-`|M|²` reconstruction reads pole exponents as multiplicities in a

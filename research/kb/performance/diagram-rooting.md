@@ -5,6 +5,7 @@ description: "canonical_root picks the vertex with fewest attached external legs
 status: draft
 tags: [performance, rooting, cse, evaluator, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n15-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L80-L111", title: "Note 15 §1.3 (rooting symmetry)"}
   - {id: n15-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L611-L667", title: "Note 15 §3.1 (rooting study results)"}
@@ -47,7 +48,7 @@ Rooting at a low-external vertex keeps sub-currents closer to the
 `(edge, direction)` signatures CSE deduplicates across diagrams; rooting at a
 high-external hub duplicates them. In test builds `choose_root` consults a
 per-thread override (`set_root_override`) so a harness can re-root diagrams; in
-release builds it is `canonical_root` alone.
+every non-test build it is `canonical_root` alone.
 
 ## Why it is sound
 
@@ -77,7 +78,9 @@ RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
 
 The MadGraph amplitude gate (`tests/amplitude_oracle.rs`) stayed at its
 **1e-12** tolerance under canonical rooting; only the all-rootings check uses
-1e-10. Agreement was unchanged or better after the switch (e.g. `ee_to_mumua`
+1e-10. (The gate's event points now also accept up to ten times a point's own
+one-ulp sensitivity, `ULP_BUDGET`, for points on a narrow resonance; that is a
+conditioning allowance, unrelated to rooting.) Agreement was unchanged or better after the switch (e.g. `ee_to_mumua`
 3.92e-13 → 1.62e-14): shorter, more-shared current chains reduce floating-point
 drift.[^n20-s4][^n20-outcome]
 
@@ -109,7 +112,8 @@ totals:[^rs-totals]
 - The extremes are the 8-point QCD=0 processes: `u u~ > c c~ e+ e- mu+ mu-`
   goes 3 876 → 3 040 nodes and realises 642 → 251 distinct `Propagate` currents
   (against 2 895 internal edges with no sharing); `b b~ > c c~ e+ e- mu+ mu-`
-  4 248 → 3 304. `e+ e- > mu+ mu- a` is the only 2→3 that moves (95 → 87).[^rs-tables]
+  4 248 → 3 304. Both 2→3 rows move: `e+ e- > mu+ mu- a` 95 → 87 and
+  `e+ e- > ta+ ta- H` 82 → 76.[^rs-tables]
 - The deduplicated `(edge, direction)` "floor" (2 090 on the `uux` 2→6) counts
   both directions of every edge, about 3× what any single rooting realises; it is
   not a reachable target. The informative comparison is realised `Propagate`

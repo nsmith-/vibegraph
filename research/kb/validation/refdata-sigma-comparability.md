@@ -5,6 +5,7 @@ description: "A partonic sigma from refdata-2 is not comparable to refdata-3 or 
 status: draft
 tags: [validation, refdata, madgraph, alpha-s, pdf]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: fact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/refdata-sigma-comparability.md#L11-L20", title: "Phase B fact: refdata sigma comparability"}
   - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5 (the 3.7.1 re-bank and the alpha_s finding)"}
@@ -41,10 +42,10 @@ run, even though those beams carry no PDF; 3.7.1 keeps the model's own
 
 The partonic σ therefore scales as `0.920ⁿ` in the power of α_s: the pure-QCD
 2→2 rows (`gg_to_gg`, `gg_to_ttx`, `uux_to_uux`) moved −15.4%, the
-`QCD=2 QED=2` 2→3 rows −8%, and every pure-QED row did not move. Our side
-did not move with it in any meaningful sense: every gate resolves α_s from the
-run's own parameter card, so our σ tracked the step and the gates stayed
-green.[^n27-b5]
+`QCD=2 QED=2` 2→3 rows −8%, and every pure-QED row did not move. Our σ moved
+with it: every gate resolves α_s from the run's own parameter card, so our σ
+tracked the step exactly and the gates stayed green. A green gate across this
+boundary therefore says nothing about which α_s is right.[^n27-b5]
 
 The six runs that stay at 3.5.7 on purpose (the `ee_to_mumu_tata_qcd0`
 window, anti-window and control runs, and `var_sde1`, the evidence for a 3.5.7
@@ -71,10 +72,11 @@ the local retired area of the machine that banked them.[^manifest]
 
 ## What this does not cover
 
-Cuts after 5 (6 through the current pin) are stated in the manifest as
-byte-identical supersets of their predecessor plus new runs, apart from one
-amplitude CSV header line in cut 7, so they introduce no further σ
-boundary.[^manifest] A reader comparing against numbers in archived notes
+Cuts after 5 (6 through the current pin, `refdata-9`) leave every existing
+run's σ unchanged, per the manifest: cut 6 adds 26 `matrix<N>_orig.f` files
+that cut 5's archive had silently dropped, cuts 7–9 add new runs, and the only
+changed member is one amplitude CSV header line in cut 7 (values unchanged), so
+they introduce no further σ boundary.[^manifest] A reader comparing against numbers in archived notes
 should still check which cut the note measured against before reading a shift
 as physics.
 

@@ -5,6 +5,7 @@ description: "integrate stops when the sum of channel variances, each widened by
 status: draft
 tags: [phase-space, vegas, stop-rule, target-rel, budget]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n31-i4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L243-L328", title: "Note 31 I4 (convergence-targeted integration)"}
   - {id: n32-s51, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (S3: --target-rel becomes the default)"}
@@ -17,8 +18,8 @@ sources:
   - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12 (the pooled consistency factor)"}
   - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (a target run that never stopped)"}
 measured:
-  - {commit: 098c9e2, host: "M3 Max, macOS", command: "vibegraph integrate <proc card> --run-card <run card> --target-rel 0.001 -j 1, seeds 20260719-21"}
-  - {commit: ef660f3, host: "4-core container shared with another session", command: "vibegraph integrate pp_to_ll_0j2j_mlm --target-rel 2e-3 --neval 200000 --max-iters 24"}
+  - {commit: 098c9e2, host: "M3 Max", command: "vibegraph integrate <proc card> --run-card <run card> --target-rel 0.001 -j 1, seeds 20260719-21"}
+  - {commit: d2b4b7b, command: "vibegraph integrate pp_to_ll_0j2j_mlm --target-rel 2e-3 --neval 200000 --max-iters 24, seeds 20260928-30; d2b4b7b is the old-χ² base arm, the pooled arm is P12's build (tree d4b8ae3)"}
 ---
 
 # Convergence-targeted integration
@@ -136,13 +137,15 @@ projection and the log line ("consistency-scaled") changed.
 
 ## `pp_to_llj` converges, at 140–156 iterations
 
-`pp_to_llj` at the default 0.1% target needs 140/156/145 iterations
-(16.8–18.7M evaluations, three seeds), which is why `--max-iters` is 500: the
+`pp_to_llj` at the default 0.1% target needed 140/156/145 iterations
+(16.8–18.7M evaluations, three seeds, measured 2026-08-07 under the χ²-scaled
+stop then in force, and before channel merging; not re-measured under the
+pooled factor), which is why `--max-iters` is 500: the
 cap is a safety bound a converging run never touches, and a stock run stopped at
 the same iteration with a SHA-256-identical artifact after the cap was raised.
 At its achieved accuracy the row is at CPU parity with MadGraph; the remaining
 cost is its map quality (9× MadGraph's points) times its χ²/dof ≈ 1.38 through
-the scaled stop.[^n34-ttt] The per-row time-to-target tables are
+the χ²-scaled stop of the time.[^n34-ttt] The per-row time-to-target tables are
 [performance/integration-vs-madgraph](../performance/integration-vs-madgraph.md).
 
 The row's σ ladder once appeared to climb with budget and was read as a

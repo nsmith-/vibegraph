@@ -12,6 +12,7 @@ sources:
   - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
   - {id: kek-pdf, resource: "https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf", title: "KEK preprint scan (the URL research/refs/fetch-papers.sh uses)"}
   - {id: repr, resource: "vibegraph-lib/src/helas/repr/lorentz.rs", title: "ComplexVector and Bispinor"}
+  - {id: mg-helas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/HELAS/ixxxxx.F", title: "MadGraph HELAS ixxxxx.F header: nsf +1 particle, -1 anti-particle"}
 ---
 
 HELAS (Murayama, Watanabe and Hagiwara, KEK Report 91-11, January 1992; not
@@ -37,9 +38,10 @@ and the four-momentum packed into two complex numbers,
 | `SXXXXX(P, NSS, SC)` | scalar (unity plus momentum) |
 
 - `NHEL` is the helicity: ±1 for spin 1/2 (in units of 1/2), +1/0/−1 for spin 1.
-- `NSF`, `NSV`, `NSS` are +1 for a final-state and −1 for an initial-state
-  particle; for fermions `NSF` also selects particle (`u`) or antiparticle
-  (`v`).
+- `NSV` and `NSS` are +1 for a final-state and −1 for an initial-state
+  boson. `NSF` is +1 for a particle (`u`, `ū`) and −1 for an antiparticle
+  (`v`, `v̄`), whichever side it is on: the outgoing `t̄` below is
+  `IXXXXX(…, -1, …)`[^mg-helas].
 - `P(0:3)` has `P(0)` the energy, always positive.
 
 ## Vertices
@@ -118,3 +120,4 @@ and fermion flow and crossed legs are
 
 [^n01-helas]: Note 01, second HELAS entry (summarised from the OCR'd report); authors and report number confirmed on INSPIRE.
 [^repr]: `vibegraph-lib/src/helas/repr/lorentz.rs`: `ComplexVector` (line 338), `Bispinor` (767).
+[^mg-helas]: Header comments of `HELAS/ixxxxx.F` and `oxxxxx.F` (`nsf`: +1 particle, −1 anti-particle), `vxxxxx.F` and `sxxxxx.F` (`nsv`/`nss`: +1 final, −1 initial) at `b7687064`. Note 01 states the final/initial meaning for all three. vibegraph's `DiracWf::from_momentum` takes `nsf` as `Charge::{Particle, Antiparticle}` (`helas/wavefn.rs:26`).

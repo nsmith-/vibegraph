@@ -5,6 +5,7 @@ description: "A sprint as a folder of linked concepts: open with a draft-PR clai
 status: draft
 tags: [sprint, workflow, process, knowledge-bundle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n42-lifecycle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L135-L214", title: "Note 42 §4: sprint lifecycle under the bundle"}
   - {id: n42-readers, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L354-L362", title: "Note 42 §7.3: who reads what"}
@@ -15,7 +16,11 @@ sources:
 ---
 A sprint is a **folder of linked concepts**, not one plan file that grows to
 thousands of lines. Lasting knowledge is promoted into the topic folders at
-close-out. The procedure below is how a sprint runs.
+close-out. The procedure below is how a sprint runs.[^n42-lifecycle] No sprint
+has run in this shape yet: the dev-agent definitions and `AGENTS.md` adopt it
+at the migration's Phase 4. Until then a dev agent returns its report,
+including **Found**, as its final message, and does not edit `research/notes/`
+unless its assignment says so.
 
 Under [one PR per backlog item](../decisions/pr-per-backlog-item.md), most work
 is a single item's PR. A manager runs feature, validation and performance
@@ -129,8 +134,9 @@ it lands after those PRs or rebases onto them.[^n38-rhythm]
   sprint folders. Close-out discipline is the guard. A lint check that flags a
   `stable` sprint still linking `draft` design concepts is possible, but
   `kb-lint` does not have it yet.
-- **Frontmatter overhead per sprint.** A `new-sprint` scaffold script and the
-  generated indexes keep it small.
+- **Frontmatter overhead per sprint.** The generated indexes keep it small,
+  and so will a `new-sprint` scaffold script, which Phase 4 of the migration
+  adds; it does not exist yet.
 
 Validation sessions in a sprint follow
 [expose, don't fix](expose-dont-fix.md). The older three-session chain is

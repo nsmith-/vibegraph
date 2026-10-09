@@ -5,6 +5,7 @@ description: "The rows built to isolate one feature: ud_to_epemud_qcd0 as the mu
 status: draft
 tags: [validation, manifest, reference-rows, madgraph, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L392-L445", title: "Note 24 P0 (what was banked for llj)"}
   - {id: n28-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6 (decisions D1–D4)"}
@@ -85,8 +86,12 @@ was scrambled. Rows in `KNOWN_CONFIG_MERGE` now pair each configuration with
 the diagram behind it.[^n28-b3][^n28-s6] The full method is
 [bit-exact amplitude debugging](bit-exact-amplitude-debugging.md).
 
-Its σ gates at `rel_tol 0.01`, set from the five-seed spread (worst
-`|rel| 2.6e-3`), not from the reference error: at four times the budget our
+Its σ gates at `rel_tol 0.01`, set from the five-seed spread, not from the
+reference error. The spread was recorded as worst `|rel| 2.6e-3`; the
+September 2026 headroom census reran the same seeds after the note-34 draw
+commits and measured `3.954e-3`, still well inside 0.01 (see
+[the seed-headroom census](seed-headroom-census-2026-09.md)).
+Either way: at four times the budget our
 error is a third of MadGraph's, so the pull is floored by the reference and the
 budget ladder cannot shrink the residual. What the ladder does show is that no
 defect migrates between seeds.[^n28-s6][^manifest]
@@ -123,12 +128,16 @@ structural reason: a 2→2 final state gives the clustering no merge to choose, 
 `μR` and both `μF` are functions of the momenta alone. So `JJ_MAX_REL = 0.005`
 (2.3× MadGraph's own 0.22%), five seeds, and the pull asserted: MadGraph's error
 dominates the combination, so no budget here can drive the pull up.[^n28-c][^n28-c24]
-It is the tightest measured cell in the banked layer, clearing `rel_tol` by
-about 1.5×, and blind below about 0.2%: its ladder climbs 0.11% over an
-eightfold budget without resolving an asymptote, so it is converged at the
-scale the comparison is made at, not demonstrably asymptotic.[^n28-c24][^manifest]
-The current numbers are in the manifest note (measured after the
-vector-vertex sign fix; see [vector-vertex signs](../amplitudes/vector-vertex-signs.md)).
+It is blind below about 0.2%. Its five-seed ladder over an eightfold budget
+(75k to 600k) showed no resolved asymptote, so it is converged at the scale the
+comparison is made at, not demonstrably asymptotic.[^n28-c24][^manifest] Before
+the vector-vertex sign fix ([vector-vertex signs](../amplitudes/vector-vertex-signs.md))
+the gate read `+0.33%`, the tightest measured cell in the banked layer (clearing
+`rel_tol` by 1.5×), which is why it runs five seeds rather than three. The
+manifest's current reading, after that fix, is `+0.18%` (pull `+0.80`) over the
+same five seeds at `75 000 × 10`. The doc comments on `JJ_SEEDS`, `JJ_NEVAL` and
+`JJ_MAX_REL` in `validate_hadronic.rs` still quote the pre-fix `+0.33%` and
+ladder.[^manifest]
 
 Two cells stay open on purpose. `diagrams` is `uncovered`: we count 15
 topologies to MadGraph's 17, the whole deficit `g g > g g` (4 against 6),
@@ -155,8 +164,8 @@ dimension each:[^manifest][^n24-p0]
   a three-body final state, a jet cut and a strong coupling, the four things the
   Drell-Yan rows cannot see. Every per-event scale field is replayable exactly.
   `mmll = 50` keeps it off the low-`m_ll` photon-pole region. Its proc card
-  differs from the explicit-order script only in the `output` line MadGraph
-  writes into it.[^n24-p0]
+  differed from that of the since-pruned `pp_to_llj_qcd2_qed2` (below) only in
+  the `output` line MadGraph writes into it.[^n24-p0]
 - **`pp_to_llj_dyn`** differs from it in the three fixed-scale booleans and
   nothing else (its `SCALUP` takes 9966 distinct values over 10 000 events,
   against 1). A σ that agrees on the fixed row and disagrees here isolates the

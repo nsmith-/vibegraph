@@ -171,7 +171,8 @@ never asked of the channel:
 The controls make it non-vacuous:
 
 - **Swapped chain must fail.** The same channel with rungs reversed
-  (`with_rung_order`, test-only) must fail, and only in rung 1's projection: a
+  (`with_rung_order`, which also backs the `--map-rung-order` option through
+  `RungOrder::Reversed`) must fail, and only in rung 1's projection: a
   two-rung swap leaves `t_2 = (p_a − p_{B_1} − p_{B_2})²` unchanged and moves
   `t_1` to `(p_a − p_{B_2})²`, which is not a propagator of the diagram. The
   reversed order falls to 0.91% in rung 1 and stays at 2.62% in rung 2; both

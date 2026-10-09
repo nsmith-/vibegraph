@@ -1,10 +1,11 @@
 ---
 type: Design
 title: Constant collection and fused scaled sums
-description: "collect_constant_factors, fuse_scaled_sums (Op::AddScaled), pair_config_weights and real-pool folding remove single-use constant scalings; measured on Zen 4."
+description: "collect_constant_factors, fuse_scaled_sums (Op::AddScaled), pair_config_weights and real-pool folding remove single-use constant scalings; found by Zen 4 counters, timed on Emerald Rapids."
 status: draft
 tags: [performance, evaluator, constant-folding, fma, fold]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: td-fill, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L128-L191", title: "Top-down Zen 4 §3 (inside fill_arenas on the 2→6)"}
   - {id: td-changes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L209-L225", title: "Top-down Zen 4 §5 (ranked levers)"}
@@ -137,8 +138,8 @@ instructions, the cheapest ones.[^td-bare]
   the gain is larger on every row.
 - **Width 8 now beats width 4 on the 2→6 on Emerald Rapids** (44.4 against
   46.6 µs/event). The fused terms hold no arena slots, so the 2→6's arenas shrank
-  36% (2.3 MiB at eight lanes, from 3.6 MiB), below the 2 MiB-L2 cliff that left
-  width 8 only 1.03× ahead of width 4 in the
+  36% (2.3 MiB at eight lanes, from 3.6 MiB). That is still above the 2 MiB L2,
+  but no longer at the cliff that left width 8 only 1.03× ahead of width 4 in the
   [roofline census](../performance/roofline-census.md); that census figure is
   pre-fusion. Per-host lane results are in
   [lane throughput](../performance/lane-throughput.md).
@@ -149,7 +150,7 @@ The weights are products of the same constants, and a sum's terms are
 re-associated (real weights first), a last-ulp change at the scale AGENTS.md
 tolerates. The 2→6 is bit-identical at width 1 (all its weights are real ±1
 symmetry factors); elsewhere passes agree to 1e-12 relative or better. All 48
-`amplitude_oracle` processes pass against MadGraph, including the bit-exact
+`amplitude_oracle` processes of the time passed against MadGraph, including the bit-exact
 pruned-against-unpruned |M|² check, and `AMP2` and the per-diagram amplitudes
 still match MadGraph.[^td-impl][^td-bare]
 

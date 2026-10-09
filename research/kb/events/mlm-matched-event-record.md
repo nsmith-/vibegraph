@@ -3,6 +3,7 @@ type: Design
 title: The matched event record for the shower
 description: "What an ickkw = 1 event carries for Pythia's MLM matching: <scales pt_clust_N>, status-2 lines of the clustered configuration, <MGRunCard>, matched SCALUP/AQCDUP."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, mlm, lhef, pythia, matching]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

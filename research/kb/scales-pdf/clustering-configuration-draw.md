@@ -172,7 +172,7 @@ draw's expected matched weight over MadEvent's at MadEvent's own channel is
 | `madevents_scale_configuration_is_drawn_from_its_own_matrix_elements_amp2` (`tests/validate_hadronic.rs`) | on `pp_to_llj_dyn`'s 7197 `q g → ℓℓq` events with configurations at two scales, 1429 land on the higher against 1488.3 expected (pull −1.83); the unrotated-mirror control expects 1748.8 (pull −9.31) and is asserted rejected | `q q̄` groups (one scale per configuration); the integrand's own use of the rule |
 | `our_own_events_replay_in_their_own_flavour_group` (`vibegraph-cli/tests/cli_decay_chain_events.rs`) | 2000/2000 generated events on `p p > t t~` (decayed, dynamical) and `p p > l+ l- j` replay `SCALUP` (to 1e-6) and `AQCDUP` in their own group | which configuration inside the group; mirror orientation on these cards |
 | `probe_the_scale_draw_reads_the_point_and_not_the_sampler` (`tests/validate_sigma.rs`, ignored) | scale independent of the sampling channel; unchanged after 256 intervening evaluations | the frequency law |
-| `the_amp2_configuration_order_matches_the_forest_order` (`hadronic.rs`) | the two index orders agree on `g g → g g` (4 diagrams, 3 configurations) | anything about momenta |
+| `the_amp2_configuration_order_matches_the_forest_order` (`hadronic.rs`) | the two index orders agree on `g g → g g` (vibegraph's 4 diagrams, the contact one carrying all three colour structures, against MadGraph's 6; 3 configurations) | anything about momenta |
 | fixed-scale byte identity | constant-scale artifacts and LHE files byte-identical across the per-group change | the clustered path |
 
 The `∝ w_c` frequency law of *this* integrand's draw is asserted only through

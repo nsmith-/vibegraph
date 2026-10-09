@@ -5,6 +5,7 @@ description: "The SIMD lane field is a wide::f64xN newtype implementing num_trai
 status: draft
 tags: [performance, simd, lanes, wide, inlining]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 02e8b25, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "RUSTFLAGS='-C target-cpu=native' scripts/dump_lane_asm.sh 'fill_arenas'; cargo bench --bench eval_strategies"}
   - {host: "Apple M3 Max, macOS", command: "samply record on the fat-LTO eval_strategies binary, --profile-time 20"}
@@ -91,10 +92,10 @@ bit on every target, pinned by `eval_m2_lanes_match_scalar` and `lanes4_lanes8_m
 packed op bit for bit against `f64` at N = 2 / 4 / 8, with the multiply-add pinned to
 whichever semantics `HARDWARE_FMA` claims, so the flag cannot drift from `wide`'s own
 per-width condition. Bit equality holds between builds that agree on `HARDWARE_FMA`;
-across that flag results agree to rounding. When the field first landed, before
-`mul_add_fast`, the baseline x86-64 comparison was relative (`1e-10`) because the lane
-multiply-add rounded twice while scalar `f64::mul_add` fused in software; routing both
-through `mul_add_fast` removed that exception.[^x86-relaxed]
+across that flag results agree to rounding. There is no baseline-x86-64 exception: the
+relative `1e-10` lane tolerance (`LANE_UNFUSED_REL_TOL`) and the `FUSED_MUL_ADD` flag that
+the study record describes are gone, because both fields now take the multiply-add
+through `mul_add_fast`.[^x86-relaxed]
 
 ## Census of the result
 

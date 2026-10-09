@@ -5,6 +5,7 @@ description: "MadGraph splits M into JAMPs times an exact-rational colour matrix
 status: draft
 tags: [colour, madgraph, jamp, colour-matrix, su3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-ncolor6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16, the NCOLOR=6 JAMP caveat resolved"}
   - {id: n16-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L100-L228", title: "Note 16 §1 (how MadGraph factorizes colour from Lorentz)"}

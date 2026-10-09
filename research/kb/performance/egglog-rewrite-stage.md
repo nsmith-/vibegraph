@@ -5,6 +5,7 @@ description: "How the lowered AST maps onto an egglog Node datatype, the identit
 status: draft
 tags: [performance, egglog, e-graph, rewriting, evaluator]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n14-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L21-L38", title: "Note 14 §0 (egglog in one paragraph)"}
   - {id: n14-rewrite, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L152-L192", title: "Note 14 §3.4 (datatype + rewrite is equality saturation)"}

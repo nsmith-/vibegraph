@@ -5,6 +5,7 @@ description: "Op::Configs roots and eval_amp2; MadGraph's get_amp2_lines configu
 status: draft
 tags: [amp2, configurations, colour-selection, amplitude-oracle, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 §B6 (the per-diagram AMP2 accumulator)"}
   - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register (pruning moves AMP2; config merge)"}
@@ -164,13 +165,21 @@ asserted. Pruning itself is
 
 - **The partition.** `config_groups`' partition equals the `amp2_groups` banked
   from MadGraph's own generated `matrix1.f` (the `AMP()` indices each `AMP2()`
-  accumulator sums), in MadGraph's order. `g g > g g` gives `[[3],[4],[5]]`:
-  `AMP(1..3)`, the contact diagram's three colour structures, carry none.
+  accumulator sums), in MadGraph's order. `g g > g g` gives `[[3],[4],[5]]`
+  (0-based `AMP()` indices, so `AMP(4..6)`): `AMP(1..3)`, the contact diagram's
+  three colour structures, carry none.
 - **`KNOWN_CONFIG_MERGE`** lists the rows whose derived partition merges
-  diagrams, each with the reason: `ee_to_ee` (t-channel γ and Z share one;
-  colourless, so the label cannot reach an event), `ud_to_epemud_qcd0`
-  (21 accumulators over 35 diagrams), `ll_to_qqx_toy_yukawa` (the
-  `Identity`/`Gamma5` scalar). The list is checked both ways: a listed row that
+  diagrams, each with the reason. It has 14 entries. The SM ones are `ee_to_ee`
+  (t-channel γ and Z share one; colourless, so the label cannot reach an
+  event) and `ud_to_epemud_qcd0` (21 accumulators over 35 diagrams). The toy
+  `ll_to_qqx_toy_yukawa` (the `Identity`/`Gamma5` scalar) is the row the rule
+  was read for. The three 2→1 rows (`bbx_to_h_identity`, `gg_to_h_cpeven`,
+  `gg_to_h_cpodd`) have no internal line, so MadGraph writes one accumulator
+  over every graph. The remaining SMEFTsim and toy rows put the SM structure
+  and the new ones on the same boson line, which is one topology to the channel
+  mapping (`ee_to_ttx_dipole`, `ee_to_wpwm_cw`, `ee_to_zh_smeft`, `gg_to_gg_cg`,
+  `wpwm_to_wpwmz_cw`, `ee_to_mumu_4f`, `ee_to_ttx_smeft`,
+  `ll_to_qqx_toy_dipole`). The list is checked both ways: a listed row that
   stops merging fails, and an unlisted row that merges fails. It records why a
   row merges; it is not an exemption from the comparison.
 - **The mask.** Each configuration's union of reached flows equals every member

@@ -41,7 +41,9 @@ primitive is a statically compiled kernel dispatched through a flat `Op` enum
 3. **Lower (3a).** `lower::lower_flows` inlines every diagram into one whole-amplitude
    `Ast<Sym>`: per flow, `JAMP_f = Σ (colour coeff) · (symmetry · fermi_sign) ·
    amp_{d,chain}`, under a single `Flows` root (bundled with per-configuration
-   amplitudes under `Configs`). Hash-consing shares every sub-current used by more
+   amplitudes under `Configs`). A single-flow process omits unit colour
+   coefficients and the `Flows` wrapper: its one JAMP is the root, and the
+   constant colour factor is applied after the helicity sum. Hash-consing shares every sub-current used by more
    than one diagram, flow or colour chain.
 4. **Fold (3b).** `Folded::build` interns constants into a card-independent
    skeleton with constant-pool specs.

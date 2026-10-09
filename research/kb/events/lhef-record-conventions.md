@@ -3,6 +3,7 @@ type: Physics Convention
 title: LHE header and event-line field conventions
 description: "What each <init> and <event> field holds: SCALUP the larger record μF, AQCDUP untruncated α_s(μR), AQEDUP, PDFSUP, EBMUP, MOTHUP, SPINUP, pole masses; which are per-event oracles."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, lhef, scalup, aqcdup, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -67,7 +68,8 @@ unit test, `scalup_is_the_factorisation_scale_not_the_renormalisation_one`
 scale reaches the record through `AQCDUP`[^n23-e3].
 
 Under matching the record scale and the density scale differ;
-`EventScales::mu_f_record` (`coupling/scales.rs:83`) carries the one
+`EventScales::mu_f_record` (`coupling/scales.rs:66`)
+ carries the one
 `SCALUP` reads ([events/mlm-matched-event-record](mlm-matched-event-record.md)).
 Without matching they are one value (`EventScales::unmatched`).
 

@@ -5,6 +5,7 @@ description: "One deliverable per session; oracle before engine; inert plumbing 
 status: draft
 tags: [sessions, scoping, process, agents]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6: colour-flow sprint debrief"}
   - {id: n28-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L65-L86", title: "Note 28 §2: session-scoping ground rules"}
@@ -53,7 +54,8 @@ and `AGENTS.md` "Physics Validation".
    - A new kernel that no row exercises shows as a red op census, not a
      passing suite.[^n35-rules]
    - In a validation session, a newly exposed failure stays informational and
-     is filed ([expose, don't fix](expose-dont-fix.md)).
+     goes to the report's Found section for the manager to file
+     ([expose, don't fix](expose-dont-fix.md)).
 5. **A stop-rule for bugs that are not the session's.** Fix only if the fix is
    unambiguous; otherwise pin the finding, localise it, and report.
    - The first process to exercise a code path is as likely to find a
