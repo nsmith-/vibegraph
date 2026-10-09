@@ -4,11 +4,11 @@ title: Squared-order constraints are refused
 description: "Squared-order constraints (`NP^2==1`, `QCD^2<=4`) are a hard error, so no SMEFT interference-only or pure-BSM-squared |M|² can be generated."
 area: feature
 state: open
-priority: low
+priority: medium
 closes_when: "`e+ e- > t t~ NP^2==1` (interference only) and `NP^2==2` match MadGraph's |M|² and σ on banked SMEFTsim rows, and `Unsupported::SquaredOrder` is removed."
 blocked_by: []
 opened: 2026-09-05
-tags: [non-sm-ufo, descoped-v1, smeft, coupling-orders, process-grammar]
+tags: [non-sm-ufo, smeft, coupling-orders, process-grammar, in-scope]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L924-L925", title: "TODO.md entry T079"}
@@ -20,12 +20,11 @@ A squared-order constraint is refused in the card check
 also refused in decay-chain resolution (`vibegraph-lib/src/diagrams/resolve.rs:361`).
 The test `a_squared_order_constraint_is_a_hard_error` pins the refusal.
 
-Descoped by user decision D4 ([note 35 §7](../../35-ufo-lorentz-sprint-plan.md)).
-Every SMEFT row compares the full |M|² at `NP<=1`.
-
-The check module's table lists this as "amplitudes split by coupling order (not
-planned)". The decision record files it as tracked backlog, not as refused for
-good.
+In scope (user, 2026-10-09). It was descoped from `ufo-lorentz` by decision D4
+([note 35 §7](../../35-ufo-lorentz-sprint-plan.md)), so every SMEFT row
+compares the full |M|² at `NP<=1`. The check module's table still says
+"amplitudes split by coupling order (not planned)"; the PR that closes this
+item updates that line.
 
 **What's needed.** Split the amplitude by coupling-order class and form only the
 cross terms the constraint selects. `reweight::poly` already proves each
