@@ -1,7 +1,7 @@
 ---
 type: Caveat
 title: Rows gated differently from the default, and why
-description: "The lasting reasons a row reports rather than asserts a statistic (ee_to_mumua's pull, the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, the info cells); open residuals are backlog items, linked not restated."
+description: "Why some rows report rather than assert a statistic (ee_to_mumua's pull, the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items."
 status: draft
 tags: [validation, gating, cross-section, samples, exceptions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

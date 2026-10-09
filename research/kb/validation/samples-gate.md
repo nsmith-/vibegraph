@@ -24,7 +24,7 @@ sources:
   - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml samples cells"}
 ---
 
-The `samples` category compares the events a generator actually emits against
+The `samples` category[^n25-samples] compares the events a generator actually emits against
 MadGraph's banked event samples, distribution by distribution. Every other
 category compares a number (a diagram count, an amplitude, a σ); this one is
 the only place several things become visible at all: a mis-sampled region of

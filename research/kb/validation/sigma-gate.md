@@ -1,7 +1,7 @@
 ---
 type: Validation Gate
 title: Cross-section gates against MadGraph
-description: "validate_sigma and validate_hadronic compare sigma through the production integrand under MadGraph's own run card: pull plus rel_tol, multi-seed statistics, the reported-pull list, and the blind spots."
+description: "validate_sigma and validate_hadronic compare sigma through the production integrand under MadGraph's own run card: pull plus rel_tol, multi-seed statistics and the blind spots."
 status: draft
 tags: [validation, cross-section, madgraph, vegas, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

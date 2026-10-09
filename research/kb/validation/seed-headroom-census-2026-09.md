@@ -1,7 +1,7 @@
 ---
 type: Measurement
 title: Seed-sweep headroom of the enforced gate statistics (base 0538e2d)
-description: "Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, how to read it by threshold class, and the finding that calibrations written before e73b158 no longer reproduce."
+description: "Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce."
 status: draft
 tags: [validation, seed-sweep, tolerances, statistics, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

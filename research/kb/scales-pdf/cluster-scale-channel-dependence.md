@@ -45,7 +45,8 @@ engine is [kt-clustering-engine](kt-clustering-engine.md).[^n28-k111]
 All of them are live in the bank. `pp_to_bb_qcd2`'s `this_config = 3` sees only
 the two `nqcd = 0` channels; `igraphs(1) ≠ iconfig` on 7 to 7877 events per
 dumped run; the memo re-clustered 1873 dumped `pp_to_llj` events restricted.
-The engine reproduces every one.
+The engine reproduces every one against the
+[kt-cluster-dump-oracle](../validation/kt-cluster-dump-oracle.md).
 
 The size of the effect is uneven. On the gluon-beam `2 → 3` rows
 (`gu_to_epemu`, `gux_to_epemux`) `μR` at one drawn point differs by up to a
@@ -137,8 +138,7 @@ fixed-scale control on the same path:[^n28-c3]
 | `j j`, permutations collapsed | `+1.03e-3` | `9.6e-4` |
 | `pp_to_llj_fixed` (control) | `−1.32e-4` | `1.4e-3` |
 
-So `pp_to_jj`'s tolerance is set by the reference's own error and seed spread,
-not by a partition band.
+So `pp_to_jj`'s tolerance is set by its reference error and seed spread.
 
 ## The jet memo: MadEvent's rule and ours
 

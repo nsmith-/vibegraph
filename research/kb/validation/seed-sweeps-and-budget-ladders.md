@@ -1,7 +1,7 @@
 ---
 type: Validation Methodology
 title: Seed sweeps, budget ladders and when a pull is asserted
-description: "A fixed-seed pull is not evidence: sweep at least five seeds and read spread and chi2/dof, add a budget ladder for shared bias, calibrate rung differences on measured spread, and assert a pull only for fluctuations."
+description: "A fixed-seed pull is not evidence: sweep five or more seeds and read spread and chi2/dof, add a budget ladder for shared bias, and assert a pull only for fluctuations."
 status: draft
 tags: [validation, seed-sweep, budget-ladder, vegas, statistics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

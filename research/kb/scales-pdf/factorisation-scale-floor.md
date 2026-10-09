@@ -112,7 +112,9 @@ run is refused with `HadronicError::FactorisationScaleBelowFloor`:
 > density is fitted down to, so the cross section this card asks for is zero by
 > construction
 
-If no draw passes the cuts, the probe says nothing about the scale. A run whose
+If no draw passes the cuts, the probe says nothing about the scale. A vetoed
+point is never written, so it carries no record scale
+([record-scales](record-scales.md)). A run whose
 64 probe draws find support while the bulk of the measure is vetoed integrates
 normally: the σ is right, merely inefficient.[^n29-a2]
 

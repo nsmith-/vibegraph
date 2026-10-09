@@ -20,7 +20,7 @@ section *means*, so a σ quoted from one side is a different quantity from a σ
 quoted from the other.
 
 **Rule.** Compare a banked σ only against a reference from the same side of
-both boundaries below. A shift across a boundary is a change of inputs, not a
+both boundaries below.[^fact] A shift across a boundary is a change of inputs, not a
 regression and not a fix.
 
 ## refdata-2 → refdata-3: partonic α_s

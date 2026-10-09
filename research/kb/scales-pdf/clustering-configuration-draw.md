@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "The clustering configuration is drawn ∝ AMP2 per flavour group and beam ordering"
-description: "Each flavour group and each beam ordering draws its kT-clustering configuration ∝ its own AMP2_c (or MadEvent's channel-cut weight) from a substream uniform in u, so σ stops depending on the channel partition."
+description: "Each flavour group and beam ordering draws its kT-clustering configuration ∝ its own AMP2_c (or MadEvent's channel-cut weight) from a substream uniform, so σ is partition-free."
 status: draft
 tags: [scales, kt-clustering, hadronic, amp2, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -66,9 +66,8 @@ short-circuits to 1 only when
          get_channel_cut = 1d0
 ```
 
-So `w_c = AMP2_c` holds only under `sde_strategy = 1` **and**
-`tmin_for_channel = -1` (both defaults). At `sde_strategy = 2` the squared
-amplitude is discarded and `w_c = CC_c`.[^n29-b1][^n29-bres]
+So `w_c = AMP2_c` only under `sde_strategy = 1` **and** `tmin_for_channel = -1`
+(both defaults); at `sde_strategy = 2`, `w_c = CC_c`.[^n29-b1][^n29-bres]
 
 vibegraph follows both branches. `EventScaleSource::weights_configurations_by_amp2`
 (`hadronic.rs`) reads both fields; where it is false,
@@ -85,13 +84,12 @@ guards. A `1 → n` decay with `sde_strategy = 2` is refused
 
 ## Per group and per beam ordering
 
-MadEvent integrates each subprocess group separately: `DSIGPROC` clusters with
-`ipdgcl(·, igraphs(1), iproc)`, the flavours of the subprocess whose matrix
-element the point evaluates. A point's scale is never another group's. For a
-mirrored ordering (`IMIRROR = 2`) it flips the momenta the matrix element reads
-and clusters the unflipped event with the subprocess's own flavour order, i.e.
-the mirrored physical event in the orientation its matrix element reads it, with
-the configuration drawn from that matrix element's `AMP2`.
+MadEvent integrates each subprocess group separately, clustering with
+`ipdgcl(·, igraphs(1), iproc)` of the subprocess whose matrix element the point
+evaluates: a point's scale is never another group's. At `IMIRROR = 2` it flips
+the momenta the matrix element reads and clusters the unflipped event in the
+subprocess's own flavour order, i.e. the mirrored physical event as its matrix
+element reads it, weighted by that matrix element's `AMP2`.
 
 `ProtonIntegrand::per_group_sum` (`proton.rs`) does the same. For each group:
 
@@ -139,9 +137,8 @@ the weights are formed at the coupling the amplitudes were bound at
 configuration is a function of the momenta, not of evaluation history, even where
 configurations carry different `NQCD` (`pp_to_bb*`'s `P1_qq_bbx`).
 
-**Index composition.** `AMP2` index `c` is in the evaluator's order and
-`ClusterInput::this_config` in the forests' order; they are composed through the
-diagram index (`config_of_channel(config_diagrams()[c])`), never assumed equal
+**Index composition.** `AMP2`'s evaluator order and the forests' order are
+composed through the diagram index, never assumed equal
 ([kt-clustering-engine](kt-clustering-engine.md)).
 
 **The draw lives in the integrand**, which owns the evaluator; it passes the
@@ -184,9 +181,8 @@ moves was a one-off measurement
 ([drawn-scale-config-frequency-law-ungated](../backlog/validation/drawn-scale-config-frequency-law-ungated.md)).
 `pp_to_jj`'s groups agree on the scale to seven digits, not to the last bit
 ([pp-jj-across-group-scale-spread](../backlog/validation/pp-jj-across-group-scale-spread.md)).
-The σ evidence is
-[configuration-draw-sigma-shifts](configuration-draw-sigma-shifts.md); the
-replay gate is [scale-replay-gate](../validation/scale-replay-gate.md).
+σ evidence: [configuration-draw-sigma-shifts](configuration-draw-sigma-shifts.md);
+replay gate: [scale-replay-gate](../validation/scale-replay-gate.md).
 
 **Cost.** One extra `eval_amp2` per group per point (two for a mirrored group)
 plus a `set_alpha_s`; the draw is noisier at low budget (`pp_to_llj_dyn`'s

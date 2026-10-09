@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "vibegraph's kT clustering engine and how the scale is wired"
-description: "coupling/cluster/{graph,kt,setclscales,configs}.rs: channel forests derived from our diagrams, the per-event inputs the engine consumes, ScaleChoice::cluster_scales and ClusterInput, one channel set per group."
+description: "coupling/cluster/{graph,kt,setclscales,configs}.rs: channel forests from our diagrams, the inputs a scale consumes, cluster_scales and ClusterInput, one channel set per group."
 status: draft
 tags: [kt-clustering, scales, coupling, hadronic, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
