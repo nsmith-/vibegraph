@@ -5,6 +5,7 @@ description: "MadGraph's polarization syntax and codes, NHEL lists, IDEN averagi
 status: draft
 tags: [polarization, helicity, process-grammar, madgraph-parity, frame]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-pol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L466-L482", title: "Note 01, polarized matrix elements in MG5_aMC: conventions and truncated propagator"}
   - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 §4 P1, polarized external particles"}

@@ -5,6 +5,7 @@ description: "> and $$ are diagram filters inside the WEIGHTED search with MadGr
 status: draft
 tags: [process-grammar, s-channel, onshell-veto, madgraph-parity, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n38-sem, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L77-L128", title: "Note 38 §1.2, the s-channel restrictions in MadGraph"}
   - {id: n38-pred, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L292-L307", title: "Note 38 §3.4, the s-channel predicate"}

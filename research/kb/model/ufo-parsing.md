@@ -5,6 +5,7 @@ description: "UFO files are parsed with rustpython-parser into our own UFOModel;
 status: draft
 tags: [ufo, parser, feyngraph, model, propagators]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L57-L77", title: "Note 01, UFO module structure and data model"}
   - {id: n04-options, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/04-ufo-parsing-future.md#L30-L97", title: "Note 04, full UFO parsing: options, recommendation, FeynGraph's parser gaps"}

@@ -5,6 +5,7 @@ description: "Topology-then-assignment generation via feyngraph and what vibegra
 status: draft
 tags: [diagrams, feyngraph, enumeration, madgraph, ngraphs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-sl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L94-L106", title: "Note 01, Stelzer and Long: the diagram enumeration algorithm"}
   - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L160-L283", title: "Note 02, FeynGraph Goal 2: diagram enumeration (read at 1dc4ea7)"}

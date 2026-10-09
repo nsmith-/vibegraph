@@ -5,6 +5,7 @@ description: "UFO spin codes (2s+1, −1 for ghosts), ALOHA value families by sp
 status: draft
 tags: [ufo, aloha, spin, lorentz, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n02-mg-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L310-L356", title: "Note 02, MadGraph Goal 1: UFO model loading"}
   - {id: n09-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/09-ufo-aloha-type-matrix.md#L32-L58", title: "Note 09, ground truth from UFO and ALOHA"}

@@ -5,6 +5,7 @@ description: "How MadGraph reads a process line and proc card: modifier strip or
 status: draft
 tags: [process-grammar, proc-card, madgraph-parity, parser, coupling-orders]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n06-grammar, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L12-L150", title: "Note 06 §1–§4, MadGraph's process parser, regexes and token syntax"}
   - {id: n06-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L334-L454", title: "Note 06 §6–§7, data flow and the e+ e- > mu+ mu- walk-through"}

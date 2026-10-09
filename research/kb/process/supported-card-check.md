@@ -5,6 +5,7 @@ description: "ProcCardAst mirrors ProcessDefinition; check_supported reports eve
 status: draft
 tags: [process-grammar, check, refusal, squared-orders, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n38-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–§3.2, parse everything, check once; room for MLM and NLO"}
   - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, grammar, AST and the one check"}

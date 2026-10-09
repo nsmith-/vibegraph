@@ -5,6 +5,7 @@ description: "Core and decays are enumerated separately and glued at forced line
 status: draft
 tags: [decay-chains, diagrams, process-grammar, madgraph-parity, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
   - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, decay assignment measured with MadGraph"}

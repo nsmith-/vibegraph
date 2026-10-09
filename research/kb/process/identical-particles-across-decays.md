@@ -5,6 +5,7 @@ description: "Unlike MadGraph's single pairing with identical_decay_chain_factor
 status: draft
 tags: [decay-chains, identical-particles, madgraph-deviation, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 decided: 2026-09-26
 decided_by: human:nsmith-
 sources:

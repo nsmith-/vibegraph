@@ -5,6 +5,7 @@ description: "One interaction per coupling-order tuple, as MadGraph's add_intera
 status: draft
 tags: [ufo, coupling-orders, weighted, smeftsim, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n02-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L527", title: "Note 02, UFO parsing: FeynGraph vs vibegraph"}
   - {id: n35-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L144-L174", title: "Note 35 §1.3, the measured SMEFTsim loader probe"}

@@ -5,6 +5,7 @@ description: "The integrate artifact banks the import label and a SHA-256 of the
 status: draft
 tags: [artifact, model, identity, digest, generate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23, model identity in the artifact"}
   - {id: code-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/identity.rs", title: "vibegraph-lib/src/ufo/identity.rs"}

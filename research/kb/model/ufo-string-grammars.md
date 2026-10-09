@@ -5,6 +5,7 @@ description: "Python-precedence expression grammar; the Lorentz-structure gramma
 status: draft
 tags: [ufo, grammar, peg, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-vocab, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L208-L228", title: "Note 16 §1d, SM tree-level colour vocabulary"}
   - {id: n16-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L300-L317", title: "Note 16 §2.3, UFO parser changes for colour"}

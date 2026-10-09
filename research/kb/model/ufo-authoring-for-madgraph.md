@@ -5,6 +5,7 @@ description: "A non-self-conjugate vertex needs its h.c. listed; without a T(a,i
 status: draft
 tags: [ufo, madgraph, toy-models, colour, authoring]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 §6 T1, authoring vibegraph_toy_UFO and banking its oracle"}
   - {id: mg-color-rep, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1651-L1700", title: "MadGraph import_ufo.py find_color_anti_color_rep"}

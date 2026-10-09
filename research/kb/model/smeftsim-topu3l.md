@@ -5,6 +5,7 @@ description: "What SMEFTsim_topU3l_MwScheme_UFO contains and what its restrict c
 status: draft
 tags: [smeftsim, ufo, non-sm-ufo, vendoring, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L111-L143", title: "Note 35 §1.2, SMEFTsim static census"}
   - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
