@@ -46,3 +46,44 @@ pub(crate) trait Tree {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestTree {
+        values: Vec<i32>,
+        children: Vec<Vec<usize>>,
+    }
+
+    impl Tree for TestTree {
+        type NodeId = usize;
+        type Item = i32;
+
+        fn value(&self, node: Self::NodeId) -> &Self::Item {
+            &self.values[node]
+        }
+        fn children(&self, node: Self::NodeId) -> impl Iterator<Item = usize> {
+            self.children[node].iter().copied()
+        }
+        fn root(&self) -> Self::NodeId {
+            0
+        }
+        fn iter(&self) -> impl Iterator<Item = Self::NodeId> {
+            0..self.values.len()
+        }
+    }
+
+    /// `fold_recursive` directly: count nodes and sum values.
+    #[test]
+    fn test_fold_recursive() {
+        let tree = TestTree {
+            values: vec![1, 2, 3, 4],
+            children: vec![vec![1, 2], vec![3], vec![], vec![]],
+        };
+        let count = tree.fold_recursive(&|_, a: usize| a + 1, &|a, r| a + r, 0usize, 0);
+        assert_eq!(count, 4);
+        let sum = tree.fold_recursive(&|v, a: i32| v + a, &|a, r| a + r, 0i32, 0);
+        assert_eq!(sum, 10);
+    }
+}
