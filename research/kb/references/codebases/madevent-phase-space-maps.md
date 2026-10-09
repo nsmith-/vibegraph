@@ -120,8 +120,9 @@ The details are [single-diagram enhancement](../../phase-space/madevent-single-d
 vibegraph instead samples a Kleiss–Pittau mixture `Σ αⱼ gⱼ` with
 variance-minimising `α` and one VEGAS grid per channel
 ([per-channel grids](../../phase-space/per-channel-vegas-grids.md)). The
-multichannel description in the [loop-induced MG5 paper](../papers/loop-induced-madgraph5.md)
-is a paraphrase of the method, not of this code.
+[loop-induced MG5 paper](../papers/loop-induced-madgraph5.md) §2.2 summarises
+this diagram-enhancement scheme in prose; the code above is the authority on
+its details.
 
 `nzoom` re-draws inside the last bin during unweighting refinement; it is an
 unweighting device, not a map.
