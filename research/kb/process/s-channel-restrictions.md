@@ -162,7 +162,7 @@ other and neither in the window. [^n38-s3]
 | same, √s = 200 (outside) | 2.78715 ± 0.00064 | 2.78740 ± 0.00050 | +0.31 |
 | `t > b e+ ve $ w+` | 1.43508e-3 ± 7.4e-7 GeV | 1.43423e-3 ± 4.8e-7 | −0.97 |
 | `p p > e+ e- $ z`, dy13 card | 303.83 ± 0.27 | 303.84 ± 0.14 | +0.05 |
-| `e+ e- > mu+ mu- z $ z, z > e+ e-` | 2.97573e-4 ± 2.2e-7 | 2.97134e-4 ± 3.6e-7 | +1.05 |
+| `e+ e- > mu+ mu- z $ z, z > e+ e-` | 2.97134e-4 ± 3.6e-7 | 2.97573e-4 ± 2.2e-7 (+0.15%) | +1.05 |
 
 Known-wrong comparisons (the unrestricted runs): 2023.95 pb at the pole, 51.28 pb at
 100 GeV, 933.15 pb for Drell–Yan.
@@ -171,8 +171,11 @@ Known-wrong comparisons (the unrestricted runs): 2023.95 pb at the pole, 51.28 p
 propagator form: a fermion `P1D` built from its second spinor slot (`FFV2P1D_1`, the `t`)
 has the momentum sign flip applied inside the square, `(p² + (M − cΓ)²)(p² + (M + cΓ)²)`,
 which is never negative, so MadEvent never zeroes the `t` window (it zeroes the `t~`'s).
-Unpatched MadEvent reads 0.06811 pb against 0.04982 here. Patched, MadEvent still sits
-about 2% below this side and moves with budget while this side does not; the row stays
+Unpatched MadEvent reads 0.06811 ± 0.00008 pb against 0.04982 ± 0.00004 here. With that
+one line patched in the generated `Source/DHELAS`, at fixed μ = 173 GeV, MadEvent reads
+0.04934 ± 0.00007 (50k events) against 0.050695 ± 0.000024 here: about 2% apart, with
+MadEvent moving down with budget while this side does not (nor under another split-angle
+map), and the unrestricted fixed-μ rows agreeing (15.060 against 15.052). The row stays
 informational. See [MadGraph defects](../validation/madgraph-defects.md) and the
 [backlog item](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md).
 

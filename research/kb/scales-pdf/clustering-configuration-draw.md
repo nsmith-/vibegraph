@@ -8,9 +8,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
   - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4708-L4757", title: "Note 29 Chain B §B.0 (the scale read the sampler's channel; Fact 3)"}
   - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 Chain B §B.1 (MadEvent's rule is conditional on sde_strategy and tmin_for_channel)"}
-  - {id: n29-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4826-L4886", title: "Note 29 Chain B §B.2 (pre-registered movement census)"}
-  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4887-L5017", title: "Note 29 Chain B §B.3 (where the draw lives, its randomness, pinned coupling, index composition, fallback)"}
-  - {id: n29-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5138-L5167", title: "Note 29 Chain B §B.7 (stages and the known-wrong comparison)"}
+  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4826-L5167", title: "Note 29 Chain B §B.2–B.7 (movement census; where the draw lives, its randomness, pinned coupling, index composition, fallback; stages)"}
   - {id: n29-b11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5262-L5352", title: "Note 29 Chain B §B.11–B.12 (risks; errors in the brief)"}
   - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 Chain B results (why the draw reproduces MadEvent; acceptance tests)"}
   - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L16-L116", title: "Note 40 §1–4 (per group and per beam ordering; per-event oracles; byte identity)"}
@@ -26,11 +24,11 @@ sources:
 
 MadGraph's default scale is clustered inside an integration configuration
 ([cluster-scale-channel-dependence](cluster-scale-channel-dependence.md)).
-vibegraph does not cluster in its sampler's channel. At every point, every
-flavour group, and every beam ordering of a group, draws its own configuration
-`c` with probability `w_c / Σ w`, from that term's own matrix element, and
-clusters in it. This reproduces the per-event scale distribution MadEvent
-produces, while σ stays independent of how either side partitions its channels.
+vibegraph does not cluster in its sampler's channel: at every point, each
+flavour group and each beam ordering draws its own configuration `c` with
+probability `w_c / Σ w` from its own matrix element and clusters in it. That
+reproduces MadEvent's per-event scale distribution while σ stays independent of
+either side's channel partition.
 
 ## MadEvent's rule, and the condition it holds under
 
@@ -105,69 +103,57 @@ the configuration drawn from that matrix element's `AMP2`.
   with the beams exchanged (`mirror_lab_into`), and swap the per-beam `μF` back
   to physical beam order.
 
-All draws share the one trailing uniform, which correlates them without changing
-any single term's distribution; σ is linear in each term. `ProtonEvent::group_scales`
-holds `[direct, mirrored]` per group, and the record's `SCALUP`/`AQCDUP` are
-those of the term the event's flavour draw selects
-([record-scales](record-scales.md)). Constant scales and closed forms take a
-shared path with one scale for every group, unchanged. The mirror identity
-itself is [beam-mirror-identity](../hadronic/beam-mirror-identity.md); the
-integrand is [proton-integrand](../hadronic/proton-integrand.md).[^n40]
+All draws share the trailing uniform, which correlates them without changing
+any term's distribution; σ is linear in each term. `ProtonEvent::group_scales`
+holds `[direct, mirrored]` per group; the record's `SCALUP`/`AQCDUP` are the
+selected term's ([record-scales](record-scales.md)). Constant scales and closed
+forms keep one shared scale. See
+[beam-mirror-identity](../hadronic/beam-mirror-identity.md) and
+[proton-integrand](../hadronic/proton-integrand.md).[^n40]
 
-The `FixedBeamIntegrand` has one group and no mirror; it draws the same way.
-Every fixed-beam 2 → n card with a dynamical scale compiles the prescription,
-with an `αs` source whenever the model declares one, even when the matrix
-element carries no strong coupling, so the record reports the clustered scale.
+`FixedBeamIntegrand` (one group, no mirror) draws the same way; every
+fixed-beam 2 → n card with a dynamical scale compiles the prescription, even
+when the matrix element carries no `αs`, so the record reports the clustered scale.
 
 ## Where the randomness comes from
 
-An accepted event is rebuilt from `(channel, u)` alone
-(`Unweighter::trial` → `AcceptedPoint` → `event_in_channel`), after rejected
-trials have run in between. Any randomness the draw consumes must therefore be
-a pure function of the arguments both calls receive; a counter advanced per
-call would give an event whose recorded scale is not the one its weight was
-taken at.[^n29-b0] So:
+An accepted event is rebuilt from `(channel, u)` alone (`AcceptedPoint` →
+`event_in_channel`) after rejected trials ran in between, so the draw's
+randomness must be a function of those arguments; a per-call counter would
+record a scale other than the one the weight used.[^n29-b0] So:
 
-- `scale_draw_ndim()` is 1 when the prescription draws; the slice handed to
-  `value_in_channel`/`event_in_channel` is `channel_grid_ndim() +
-  scale_draw_ndim()` long, both assert it, and the trailing coordinate is the
-  draw's uniform `v`.
+- `scale_draw_ndim()` is 1 when the prescription draws; `u` is
+  `channel_grid_ndim() + scale_draw_ndim()` long (asserted) and its trailing
+  coordinate is the draw's uniform `v`.
 - `v` comes from `SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j)`
-  (`phasespace/rng.rs`), in the unweighter's scan and trial, in the integration
-  grids and in the α-adaptation survey. It consumes **zero bits** from any
-  pre-existing stream, so point sequences, channel selections, acceptance draws
-  and VEGAS grids are unchanged on every row.
-- Rejected alternatives: an extra VEGAS dimension (it would resample every
-  clustered row, and put a step function under grid refinement), and summing
-  `Σ_c w_c f(p, μ_c)` instead of drawing (an event still carries exactly one
-  `SCALUP`, so events and σ would disagree).[^n29-b3]
+  (`phasespace/rng.rs`) in the unweighter, the integration and the α survey,
+  consuming **zero bits** of any pre-existing stream: point sequences, channel
+  selections, acceptance draws and VEGAS grids are unchanged.
+- Rejected: an extra VEGAS dimension (resamples every clustered row; a step
+  function under grid refinement) and summing `Σ_c w_c f(p, μ_c)` (an event
+  carries one `SCALUP`, so events and σ would disagree).[^n29-b3]
 
-**`AMP2` at a pinned coupling.** `eval_amp2` reads whatever `αs` is bound, and
-the scale is not known until after the draw. The weights are formed at the
-coupling the amplitudes were bound at (`RunningCouplingReport::alpha_s_ref`),
-then `αs(μR)` is set for the matrix element. The drawn configuration is then a
-function of the momenta, not of evaluation history; this also covers processes
-whose configurations carry different `NQCD` (`pp_to_bb*`'s `P1_qq_bbx`).
+**`AMP2` at a pinned coupling.** The scale is unknown until after the draw, so
+the weights are formed at the coupling the amplitudes were bound at
+(`RunningCouplingReport::alpha_s_ref`), then `αs(μR)` is set: the drawn
+configuration is a function of the momenta, not of evaluation history, even where
+configurations carry different `NQCD` (`pp_to_bb*`'s `P1_qq_bbx`).
 
 **Index composition.** `AMP2` index `c` is in the evaluator's order and
 `ClusterInput::this_config` in the forests' order; they are composed through the
 diagram index (`config_of_channel(config_diagrams()[c])`), never assumed equal
 ([kt-clustering-engine](kt-clustering-engine.md)).
 
-**The draw lives in the integrand.** `ScaleChoice::cluster_scales` has no
-evaluator; the integrand forms the weights and passes the resulting
-configuration down through `SampledChannel`/`ClusterInput`. Nothing in
+**The draw lives in the integrand**, which owns the evaluator; it passes the
+configuration down through `SampledChannel`/`ClusterInput`, and nothing in
 `coupling/` knows about the draw.
 
-**Fallback.** `select_index` returns `None` when no weight carries probability;
-a group then keeps its own diagram of the sampling channel (or its first
-configuration if the channel has none of its diagrams), and a mirrored term its
-first configuration. Such points are counted (`scale_draw_fallbacks()`), and the
-gated fixed-beam and hadronic integrations assert the count is zero. This is the
-only place the sampling channel reaches a scale. Merged sampling channels
-therefore need no configuration rule: a merged channel hands every group exactly
-what an unmerged one did, and only the fallback's choice of diagram reads it.[^n41-fb]
-MadEvent's counterpart (`NB_FAIL`) stops after ten such points.
+**Fallback.** Where no weight carries probability (`select_index` → `None`) a
+group keeps its own member of the sampling channel (or its first configuration),
+a mirrored term its first configuration. Such points are counted
+(`scale_draw_fallbacks()`, asserted zero on every gated integration; MadEvent's
+`NB_FAIL` stops after ten). This is the only place the sampling channel reaches
+a scale, so merged sampling channels need no configuration rule.[^n41-fb]
 
 ## Under MLM matching
 
@@ -202,11 +188,11 @@ The σ evidence is
 [configuration-draw-sigma-shifts](configuration-draw-sigma-shifts.md); the
 replay gate is [scale-replay-gate](../validation/scale-replay-gate.md).
 
-**Cost.** One extra `eval_amp2` per group per point, two for a mirrored group,
-plus one `set_alpha_s`. The draw is noisier at low budget: `pp_to_llj_dyn`'s
-five-seed χ²/dof was 6.38 at `neval = 75 000` and ≤ 0.82 from 150 000 up, so a
-row gated near 75k would feel it. Artifacts written before the draw are refused
-on a clustering-scale card ([artifact-format-versioning](../pipeline/artifact-format-versioning.md)).
+**Cost.** One extra `eval_amp2` per group per point (two for a mirrored group)
+plus a `set_alpha_s`; the draw is noisier at low budget (`pp_to_llj_dyn`'s
+five-seed χ²/dof 6.38 at `neval = 75 000`, ≤ 0.82 from 150 000 up). Artifacts
+from before the draw are refused on a clustering-scale card
+([artifact-format-versioning](../pipeline/artifact-format-versioning.md)).
 
 [^n29-b1]: Note 29 Chain B §B.1, re-read at the pinned template.
 [^n29-bres]: Note 29 "Chain B results", "Why the draw reproduces MadEvent even though MadEvent does not draw".

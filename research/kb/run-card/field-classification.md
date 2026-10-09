@@ -70,8 +70,8 @@ written for are now consumed, resolved as `banner.py`'s `PDLabelBlock` does).
 
 ## Two rulings worth their reasons
 
-**`SDE_strategy` is Consumed.** It was once argued benign, on the ground that it
-only directs MadEvent's own integrator. That was false: it decides the
+**`SDE_strategy` is Consumed.** It looks like a directive for MadEvent's own
+integrator, which this crate replaces, but it is not benign: it decides the
 per-configuration weight that both the clustering-scale configuration draw and
 the colour-flow configuration draw follow — `AMP2_c` at 1, `get_channel_cut`'s
 propagator-denominator product at 2 (`EventScaleSource::weights_configurations_by_amp2`)
@@ -114,14 +114,16 @@ The audit that survives is three passes[^n29-c21]:
 Where a field has no consumer, the evidence is a **positive** argument for
 inertness — an existing guard that makes it unreachable, or a reading of
 MadGraph's source showing it cannot enter σ or the record — never "no consumer
-found". Reviewing those strings one at a time against MadGraph's source caught
-two misclassified fields in review (`cluster.f`), which is why every field
-whose argument is not uniform carries its own string[^n29-close].
+found". The strings are written to be checked one at a time against MadGraph's
+source; doing exactly that against `cluster.f` caught two misclassified fields
+in review, which is why every field whose argument is not uniform across a
+block carries its own string[^n29-close].
 
-When the audit first ran, no gated reference rested on an unread
+The audit's corpus measurement found no gated reference resting on an unread
 physics-relevant field: every name any banked card sets away from its default
-was either consumed or dispositioned[^n29-c20]. The output was prophylactic, and
-`banked_run_cards_are_accepted` keeps it true.
+was either consumed or dispositioned, so the classification is prophylactic
+rather than corrective[^n29-c20][^n29-c23]; `banked_run_cards_are_accepted`
+keeps every banked card parsing.
 
 ## Enforcement
 
@@ -140,7 +142,7 @@ it never derives or rewrites a value, so it cannot move any σ row, and
 | `banked_run_cards_are_accepted` (`validate_scales.rs`; hermetic sibling `the_committed_run_cards_are_accepted` in `scales_run_cards.rs`) | an enforcement rejecting a card a banked reference ran with — the most likely defect | an enforcement that is too weak |
 | `opaque_defaults_known_to_differ_from_banner_py` | a MadGraph bump that changes which opaque defaults differ | whether those fields are individually harmless (that rests on their benign reasons) |
 
-[^n29-c27]
+The failure and blind-spot statements are the design's own[^n29-c27].
 
 **Residual blind spot.** Without MadGraph's `user_set` tracking, "the card
 wrote this field" and "the field differs from its default" are one predicate,
@@ -157,6 +159,7 @@ reads here as an override. The fix belongs before any enforcement covers them:
 [hygiene/runcard-opaque-defaults-unverified](../backlog/hygiene/runcard-opaque-defaults-unverified.md)[^n29-c25].
 
 [^n29-c20]: Note 29 C2.0, the trigger measured on the banked corpus.
+[^n29-c23]: Note 29 C2.3, the per-field audit table (its counts predate the matching and SDE_strategy reclassifications).
 [^n29-c21]: Note 29 C2.1, the three-pass audit and the positive-evidence rule.
 [^n29-c22]: Note 29 C2.2, the enum, the enforcement point, the deliberate non-changes.
 [^n29-c25]: Note 29 C2.5, opaque defaults.
