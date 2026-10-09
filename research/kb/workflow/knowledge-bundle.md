@@ -38,7 +38,7 @@ values, so the bundle defines its own vocabulary.[^n42-okf]
 | Provenance | `sources[]` (`id`, `resource`, `title`) plus `[^id]` body footnotes | papers, upstream permalinks, Rust paths, archived note sections |
 | Trust | `generated: {by, at}`, `verified: [{by, at}]` | unverified, machine-confirmed or human-reviewed |
 | Lifecycle | `status: draft \| stable \| deprecated`, `stale_after` | `stale_after` only for facts that expire with time |
-| Computation | `type: Attested Computation`, `runtime`, `parameters`, `executor`, `attester` | optional, for validation gates |
+| Computation | `type: Attested Computation`, `runtime`, `parameters`, `executor`, `attester` | not used: CI is the attestation for the gates it runs |
 
 - **Actors.** Agents are written `<producer>/<version>`
   (`claude-code/claude-opus-5-5`), people `human:<id>` (`human:nsmith-`), and

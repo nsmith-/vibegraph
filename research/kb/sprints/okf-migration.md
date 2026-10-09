@@ -19,8 +19,7 @@ sources:
 The migration turned the numbered notes in `research/notes/` and the backlog
 that `TODO.md` held into the topic-organised bundle under `research/kb/`
 ([the knowledge bundle](../workflow/knowledge-bundle.md)). It ran from
-2026-10-06 to 2026-10-09 and closed with Phase 4; Phase 5 stays optional and
-outside it.
+2026-10-06 to 2026-10-09 and closed with Phase 4. Phase 5 was dropped.
 
 **Ground rules (user, 2026-10-05):**[^n42-decisions]
 
@@ -194,13 +193,15 @@ outside the archive, and `pixi run new-sprint` scaffolds a sprint folder. The
 concepts stay `status: draft` with machine-tier `verified` stamps until a
 person reviews them.
 
-## Phase 5 (optional) — Attested Computations for gates
+## Phase 5 — Attested Computations for gates (dropped)
 
-The pixi validate tasks would be the executor, a `validation-report` run the
-receipt, and the `validation/manifest.toml` collator the attester. The plan is
-to pilot this on two or three gates. If it holds, the backlog view's census can
-come from attested receipts instead of the manifest's recorded cells. This
-phase is outside the migration item.
+The plan was to make each validation gate an OKF Attested Computation: the
+pixi task as executor, a `validation-report` run as receipt, the manifest
+collator as attester. Dropped (user, 2026-10-09): a CI run already is one for
+everything CI runs (the commit, the pinned command and the required check), so
+receipts would duplicate it. What CI never runs, the long-tier gates, keeps the
+one useful part as a backlog item without the OKF machinery:
+[long-tier-gates-write-no-receipt](../backlog/validation/long-tier-gates-write-no-receipt.md).
 
 ## After the migration
 

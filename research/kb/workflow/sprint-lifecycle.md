@@ -88,9 +88,10 @@ guard against fragmentation, together with `index.md` reading orders.[^n42-risks
      in place and adds a dated line to `log.md`.
    - Scoping rules are in [session scoping](session-scoping-rules.md), and
      dispatch mechanics in [agent dispatch](agent-dispatch-and-worktrees.md).
-5. **Validation.** Briefs link to `Validation Gate` concepts. If gates become
-   Attested Computations (optional), a gate's receipt is a recorded
-   `validation-report` run, checked by the manifest collator.
+5. **Validation.** Briefs link to `Validation Gate` concepts. A gate CI runs
+   is evidenced by the PR's check; a long-tier gate, which CI never runs, is
+   evidenced by the recorded `validation-report` rows of a run on the stated
+   commit.
 6. **Close-out.** This is the only point where session results reach shared
    concepts, so parallel sessions never conflict over them.
    - **Promote.** Changed topic concepts go to `stable` after review. New
