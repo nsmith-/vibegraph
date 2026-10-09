@@ -177,5 +177,5 @@ Our validation focuses on **LO (tree-level)** only.
 ## References
 
 - MadGraph5 manual: https://launchpad.net/madgraph5
-- `research/notes/06-process-grammar.md` — vibegraph process grammar
-- `research/notes/02-reference-implementations.md` — MG5 design patterns
+- `research/kb/process/proc-card-grammar.md` — vibegraph process grammar
+- `research/kb/references/codebases/madgraph5-amcnlo.md` — MG5 design patterns

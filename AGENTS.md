@@ -7,10 +7,19 @@ studying the standard HEP event simulation toolchain step by step.
 
 ## Planning & Progress
 
-**Before starting any new feature or task**, read `TODO.md` — the prioritized task
-list and pipeline status. Deeper derivations live in `research/notes/`.
+The work backlog is one file per open item under `research/kb/backlog/<area>/`
+(the format and rules are `research/kb/workflow/backlog-items.md`). **Start from what your brief names** — a
+sprint's session brief or a single backlog item — and read outward from its
+links: `pixi run backlog --item <slug>` prints the item, what blocks it, and the
+notes it links. Don't read the whole backlog first; the full view
+(`pixi run backlog`, also a page on the documentation site) is for planning.
+Deeper derivations live in the knowledge bundle under `research/kb/`.
 
-**After completing any planned change**, update `TODO.md` to reflect current status.
+**When work closes an item, its PR deletes the item's file**; the account of how
+it was solved belongs in the sprint record or session report, not the backlog.
+Dev agents never create or edit items: new work they find goes in their report's
+"Found" section, and the manager files it. A sprint claims items by opening a
+draft PR whose description lists them, one `Backlog: <slug>` line each.
 
 ## Codebase Exploration
 
@@ -38,7 +47,7 @@ For paper references, submodule locations and key paths, and instructions for fe
 
 - **Natural units**: ℏ = c = 1 (GeV is the fundamental energy scale)
 - **Metric signature**: (+, −, −, −)
-- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction. Comments must be self-contained: never reference `TODO.md`, planning docs, sprint/task names, or plan "stages"/"sessions" (e.g. "Stage A", "the convention-refactor session"). Those artifacts are temporary and invisible to a future reader of the code, so such comments read as vacuous. Describe the code's behavior and rationale in its own terms; if a follow-up is genuinely worth flagging, describe the work itself, not the plan item that tracks it.
+- **Comment guidelines**: Avoid narrative comments; add notes only for non-obvious constraints or physics assumptions. Document what the code *does now*, not what it used to do or what was tried before — git history records that, and "the old X" / "no longer Y" framing is just distraction. Comments must be self-contained: never reference backlog items, planning docs, sprint/task names, or plan "stages"/"sessions" (e.g. "Stage A", "the convention-refactor session"). Those artifacts are temporary and invisible to a future reader of the code, so such comments read as vacuous. Describe the code's behavior and rationale in its own terms; if a follow-up is genuinely worth flagging, describe the work itself, not the plan item that tracks it.
 - **Four-momentum layout**: `[E, px, py, pz]` (energy first, spatial components follow)
 - **Never hand-write a standard primitive** (hash, RNG, compression): add the
   crate instead — "no suitable dependency in the set yet" is a reason to add
@@ -60,8 +69,8 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Keep a known-wrong informational comparison running** while a feature is under
   construction (enforce it later): it turns "the feature went live" into an instant
   end-to-end signal against the reference.
-- **Amplitude disagreements: bit-exact oracle first** (note 12 is the full
-  methodology). Match parameter provenance on both sides, then go straight to
+- **Amplitude disagreements: bit-exact oracle first** (`research/kb/validation/bit-exact-amplitude-debugging.md`
+  is the full methodology). Match parameter provenance on both sides, then go straight to
   per-diagram × per-helicity (and per-flow) complex dumps. Ward identities,
   hand-built test diagrams, two-helicity ratios and total |M|² are
   underdetermined oracles; machine-check census claims (by-hand diagram counts
@@ -165,7 +174,9 @@ use the `claude` agent type with an explicit model override — never
 - **Own the worktrees.** Harness worktree isolation has repeatedly failed here:
   agents (especially resumed ones) editing the shared main checkout, sessions
   branched from a stale base, and fresh worktrees missing the gitignored MG
-  reference data (whose absence silently triggers a multi-hour MG regeneration).
+  reference data (missing reference data makes the build-diagrams-dependent
+  tasks regenerate it through MadGraph (hours); `pixi run validate` fetches the
+  pinned bundle instead).
   Pre-create each worktree off `main` (`git worktree add -b <branch> <path>
   main`), verify its HEAD equals current `main` right after dispatch, COW-copy
   the reference data in (`cp -Rc`, instant on APFS) — that means
@@ -193,6 +204,13 @@ use the `claude` agent type with an explicit model override — never
   absent on macOS). An interrupted worktree `git submodule update` leaves partial
   state under `.git/worktrees/<wt>/modules/` — remove it before retrying.
 
-## Working Notes
+## Knowledge Bundle
 
-See `research/notes/` for step-by-step derivations and implementation notes.
+`research/kb/` is the project's knowledge bundle (OKF v0.2): topic concepts
+(conventions, designs, decisions, measurements), the backlog, reviewed
+decisions and sprint records. Start at `research/kb/index.md` and follow the
+links; `pixi run kb-index` regenerates the indexes and `pixi run kb-lint`
+checks the bundle (CI runs it). The original working notes are archived,
+unchanged, under `research/kb/history/notes/`; each lists the concepts that
+replaced it in `replaced_by`. New knowledge goes into a concept, never a new
+numbered note.

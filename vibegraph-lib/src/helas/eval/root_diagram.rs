@@ -1411,7 +1411,7 @@ mod tests {
     }
 
     /// Coverage map for the rooting-convention sign channels lifted into `fermi_sign`
-    /// (`research/notes/19` §V5): each channel is exercised by a *named* process, so a
+    /// (`research/kb/validation/convention-channel-coverage.md`): each channel is exercised by a *named* process, so a
     /// refactor or enumeration change that silently stops exercising a branch fails here
     /// rather than rotting undetected against its still-exercised sibling — the failure
     /// mode that produced the `g g > g g` VVVV phase bug (note 16 §6).

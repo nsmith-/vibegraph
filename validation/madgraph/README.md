@@ -141,11 +141,10 @@ event, and every event's dumped μR and μF reproduce that event's own `SCALUP`,
 `<rscale>` and `<pdfrwt>`. The dumps themselves are work-area sized (75 MB) and
 live under `output/ktdump/dumps/`; the committed manifest pins their checksums.
 
-The reference bundle does **not** carry them, and the consequence is not a
-detail: `validate_kt_cluster` returns early when the dumps are absent, so on a
-checkout that fetched the bundle that gate is green without having compared
-anything. Whether the dumps join a bundle or the gate moves to the oracle layer
-is an open decision (`TODO.md`, gate + tooling hygiene).
+The reference bundle does **not** carry them, so the gate lives in the oracle
+layer: `validate_kt_cluster`'s test is `#[ignore]`d in the banked run and fails,
+naming the command, when the dumps or their manifest are absent;
+`pixi run -e madgraph validate-kt-cluster` builds the dumps and runs it.
 
 ## Coupling-order semantics
 

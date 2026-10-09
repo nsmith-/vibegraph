@@ -3,7 +3,7 @@
 # Why this exact process:
 #   - s⊕t-channel interference with IDENTICAL initial/final flavors: the
 #     sharpest regression for crossed-line conjugation and the relative sign
-#     between crossed diagram classes (research/notes/12, fix 5).
+#     between crossed diagram classes (research/kb/amplitudes/convention-sign-inventory.md).
 #   - Colorless, massless externals => no new evaluator features needed.
 #
 # launch with lpp=0 fixed-energy beams; the default run_card lepton pT cut

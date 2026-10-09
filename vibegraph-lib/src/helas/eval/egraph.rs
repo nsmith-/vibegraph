@@ -23,7 +23,7 @@
 //! round-trips through egglog's parser. With no rewrite rules registered, extraction
 //! returns exactly the inserted term, so the result is structurally identical to the
 //! input. This is the seam the future algebraic-rewrite and congruence-CSE rules slot
-//! into (see `research/notes/14-egglog-notes.md`); the rules will turn this identity
+//! into (see `research/kb/performance/egglog-rewrite-stage.md`); the rules will turn this identity
 //! pass into an optimizing one.
 //!
 //! No production code consumes this module: measurement showed a greedy extractor

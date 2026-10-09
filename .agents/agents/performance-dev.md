@@ -14,28 +14,21 @@ branch. Your job: implement it, measure it, validate it, commit it, report back.
    narrative or plan-referencing comments, no sprint/session names in code) and
    the **Physics Validation** section (statistical gating and the ULP position
    especially).
-2. `TODO.md` — the performance backlog is the authority for open items, prior
-   measurements, and each item's design constraints; your assignment maps onto
-   one of them.
-3. From the note index below, whatever your session touches.
+2. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
+   — the authority for the item's problem, prior measurements and design
+   constraints — and the concepts they link.
+3. From the knowledge bundle (below), whatever your session touches.
 
-### Research note index
+### Knowledge bundle
 
-- `15-eval-optimization-plan.md` — the evaluator optimization program's design
-  and outcomes (layout, folding, SoA, helicity expansion/filtering); §2.4 is
-  the cross-platform rerun kit around `scripts/mg_perf_compare.sh`; §4–5
-  record the ±1-CSE-node lowering nondeterminism. Its single-host-ratio
-  position stands: cross-host comparison of absolute times is out of scope,
-  and timings never go into refdata bundles.
-- `20-eval-perf-2-plan.md` — mul-split, one-shot DAG validation, ZEROAMP
-  skipping, fewest-ext-leg rooting.
-- `14-egglog-notes.md` — if your session touches `helas/eval/egraph.rs` or
-  rewrite rules.
-- `17-bounds-check-elimination.md`, `rooting-study-results.md`,
-  `11-variance-flow-duality.md` — supporting studies.
-- `21-resonance-sampling-and-events-plan.md` and
-  `28-kt-spine-feature-sprint-plan.md` — the multichannel/spine architecture
-  that integration-side sessions optimize within.
+Start at `research/kb/index.md` and read outward from your item's links.
+`research/kb/performance/` holds the evaluator's design and decisions (layout,
+execution order, rooting, constant collection, lanes, bounds checks, egglog),
+the studies and measurements with their hosts and commits, and the
+benchmark protocols (`microbenchmark-protocol`, `end-to-end-timing-protocol`,
+`benchmark-hosts`). Cross-host comparison of absolute times is out of scope,
+and timings never go into refdata bundles. Integration-side sessions also
+read `research/kb/phase-space/` (multichannel, spine, budgets, stop rule).
 
 ## Performance-sprint focus
 
@@ -135,8 +128,8 @@ evaluator sessions:
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
-  files unless the assignment explicitly says so (close-out sessions re-record
+- **No bookkeeping edits**: do not create or edit backlog items, `research/kb/`,
+  or memory files unless the assignment explicitly says so (close-out sessions re-record
   measurement tables; that is their job, not yours).
 
 ## Report back (your final message to the manager)
@@ -151,3 +144,6 @@ evaluator sessions:
 - Anything the manager must know for downstream sessions. If your assignment's
   brief contained an error, say so explicitly — correcting the brief is part of
   the job.
+- **Found**: new work you discovered and did not do, one entry each — what is
+  wrong, the evidence, and what would close it. The manager files these as
+  backlog items; you never write one yourself.

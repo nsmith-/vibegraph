@@ -1,0 +1,577 @@
+---
+type: Working Note
+original_type: "Sprint Plan"
+title: "Resonance-aware sampling → event generation (program plan)"
+description: "Two-sprint program plan (complete 2026-07-28): MadGraph-style multichannel phase space with BW maps and α-adaptation, its addenda (t-channel spine, per-channel VEGAS), and the LHEF outline."
+note: "21"
+created: 2026-07-21
+status: deprecated
+tags: [phase-space, multichannel, vegas, resonances, sprint-plan, lhef]
+generated: {by: claude-code, at: 2026-07-21}
+replaced_by: [validation/sigma-row-gating-exceptions, phase-space/resonance-and-pole-maps, phase-space/diagram-channels, phase-space/t-channel-spine, phase-space/per-channel-vegas-grids, events/unweighting, phase-space/multichannel, phase-space/channel-contract, validation/integrand-and-sampler-oracles, phase-space/vegas-integrator, validation/seed-sweeps-and-budget-ladders, events/colour-and-helicity-selection]
+---
+# Resonance-aware sampling → event generation (program plan)
+
+**✅ PROGRAM COMPLETE 2026-07-28.** Sprint A `resonance-sampling` closed +
+merged 2026-07-26 (close-out below); Sprint B `event-output-lhef` closed +
+merged 2026-07-28 (own note, 23).
+
+The last two remaining pipeline features, planned as **two sequenced feature
+sprints** under the standing feature → validation → performance rhythm:
+
+- **Sprint A — `lips-nbody` remainder: resonance-aware multichannel phase space**
+  (5 sessions, L1–L5). Detailed session-by-session below.
+- **Sprint B — `event-output-lhef`: unweighted event output** (4 sessions,
+  E1–E4). Outlined below; expanded into its own note when it opens. B depends on
+  A (genuine n-body final states + a sampler that resolves propagator peaks, so
+  accept/reject efficiency is not catastrophic on resonant processes).
+
+A validation pass may slot between A and B in the usual rhythm — the natural
+subject is whatever A's sampler exposes at the gate (see §"Validation regime").
+
+Program decisions (2026-07-21, with the user):
+- **Two sequenced sprints**, not one combined (LHEF rides on the sampler).
+- **Full MadGraph-style multichannel** is the target for Sprint A: per-diagram
+  propagator-pole channels + Breit-Wigner mappings + the variance-minimising
+  weight `1/Σᵢ(1/Jᵢ)` + α-adaptation across channels.
+- **`mg-single-helicity-bench` rides with Sprint B** (session E2), where
+  single-helicity evaluation through the *unexpanded* program becomes the actual
+  accept/reject hot path and the MG-harness single-config timing change is on the
+  critical path anyway (the A6 go/no-go deferral condition, TODO Later section).
+- `dynamical-scales` is **not** in scope (separate feature; not required for
+  LHEF). It stays the blocker on a real σ gate for the QCD processes.
+
+Design inputs already gathered (TODO `lips-nbody` section; notes 01 §"Loop-Induced
+Processes and Phase-Space Optimisation", 03 §1.5 Sherpa integrators, 07
+phase-space/numerical hazard catalog, 11 variance↔flow duality, 18 §H3 RAMBO
+seam). Reference implementations (submodules, paths in `research/refs/README.md`):
+Sherpa `PHASIC++/Main/` (multi-channel adaptive integrator + separate
+`Color_Integrator`/`Helicity_Integrator`), MG `madgraph/various/rambo.py` (note-07
+line-218 sign bug), POWHEG `integrator.f` (MINT).
+
+---
+
+## Substrate already on `main` (what A/B build on)
+
+- **Flat RAMBO** generic over `F: Real` with the KSE weight
+  (`phasespace/rambo.rs`), and **splittable counter-based RNG substreams**
+  (`phasespace/rng.rs`, `SubStream(seed, stream, position)`) — the sampler input
+  seam (H3, note 18).
+- **2-body LIPS map** + prefactor helpers (`phasespace/mod.rs`:
+  `lips2_jacobian_u`, `u_to_costheta`, `prefactor2`, `GEV2_TO_PB`).
+- **VEGAS as a two-phase serde object** (`vegas.rs`): `adapt` / `sample_frozen`
+  (+ `_batched`/`_parallel` variants, deterministic ChaCha8 substream per rayon
+  chunk). `sample_frozen` is the accept/reject primitive for Sprint B.
+- **Compiled cuts** (`cuts.rs`, `Cuts::pass(&momenta) -> bool`) — already an
+  accept-gate shape. **Run/proc-card assembly** + `vibegraph integrate` CLI +
+  `IntegrateArtifact` (bincode+zstd: trained grid + run metadata) — the handoff
+  format into Sprint B's `generate` phase.
+- **Per-diagram propagator topology** is directly readable off the owned
+  `Diagram` (`diagrams/diagram.rs`): `Prop { particle, endpoints, momentum:
+  Vec<i8> }` gives, per internal line, the particle (→ mass + width via the UFO
+  model, `UFOModel::decay_width`/particle mass) and the signed combination of
+  external momenta (→ which invariant the pole sits on). `Prop::is_spacelike(n_in)`
+  already separates t-channel (spacelike) from s-channel (timelike) lines. This
+  is the raw material for channel construction — no new diagram plumbing needed.
+
+Gap to close (Sprint A): the multichannel sampler, its BW/t-channel maps, the
+channel-weight adaptation, and the phase-space **abstraction seam** that lets
+sampler / channel-map / integrator be swapped independently (the explicit
+"abstraction is the point" design constraint from the TODO).
+
+---
+
+## Sprint A — resonance-aware multichannel phase space
+
+Figure of merit: **variance × CPU-time at fixed target precision** (not ns/point;
+note the explicit warning in the TODO `lips-nbody` section). Every session stays
+behind the 14-process `validate_helas_mg` bit-exact net (unchanged — the sampler
+does not touch |M|²) and gains a phase-space-specific gate as it comes online.
+
+| Session | Scope |
+|---|---|
+| **L1 `phasespace-abstraction`** | Trait seam so sampler, channel map, and integrator are separately swappable/composable. Introduce `Channel` (unit-hypercube → `n` momenta + Jacobian, on a fixed `√ŝ` and external-mass set), `PhaseSpaceMap`/`Sampler`, and a combiner interface; refactor **flat RAMBO** and the **2-body LIPS map** to sit behind it with no numeric change. **Gate: pure refactor** — DY σ(pp→e⁺e⁻) and the banked partonic σ̂ (uux 2→6 flat-MC check `rambo_oracle::flat_mc_partonic_sigma`) reproduce **bit-for-bit** (pinned seed + unchanged sampling order). |
+| **L2 `diagram-channels`** | Turn a `Diagram` into a **recursive 2-body-decomposition channel tree** from its `Prop` chain: each internal line is a node parametrised by its invariant (s-channel timelike vs t-channel spacelike via `is_spacelike`), carrying the propagator particle's mass/width. Build the tree + a **flat** parametrisation of every invariant first (no BW yet). **Gate:** every channel emits on-shell, momentum-conserving points, and the flat channel Jacobian **reproduces the RAMBO phase-space volume** ∫dΦₙ = Vₙ(√ŝ; masses) for 2→2…2→6 (analytic massless volume + the banked massive σ̂). Keep a known-wrong flat-RAMBO comparison running (AGENTS.md rule). |
+| **L3 `bw-invariant-map`** | The resonance mapping proper: **Breit-Wigner tan-substitution** for timelike invariants (pole at `m²`, width `mΓ`) with its exact Jacobian, plus the massless/massive **t-channel** map for spacelike lines. **Gate:** each 1-D map's Jacobian verified against the analytic BW / t-channel integral; a single-channel sampler on a resonant process (Z pole) reproduces σ at **lower variance than flat RAMBO at fixed N**, and the sampled invariant-mass histogram matches the analytic Breit-Wigner. |
+| **L4 `multichannel-weight`** | Combine channels: draw channel `i` with probability `αᵢ`, weight each point by the **variance-minimising** `1/Σⱼ(1/Jⱼ)` (note 01 §"RAMBO/multichannel"; note 11 variance↔flow duality). Wire the multichannel sampler as VEGAS's integrand map (VEGAS refines the per-channel unit-hypercube on top). **Gate:** σ of a resonant/multi-peak process matches MG within MC uncertainty with **variance strictly below** the single-channel and flat samplers at fixed N. |
+| **L5 `alpha-adaptation`** | MadGraph-style **α refinement** (survey → refine of channel weights, driving αᵢ toward each channel's variance share; job-strategy analogue, note 01 §A) **plus the distribution-level validation regime** (below). **Gate:** invariant-mass / angular **histograms vs MG** (not σ alone) on ≥1 resonant and ≥1 multi-peak process; α converges; documented variance×CPU improvement vs L4 at fixed precision; the note-07 sampler-bug hazard checks (BW mapping, T-channel ordering, threshold kinematics, conflicting-BW configs) each have a firing test. |
+
+Order: **L1 → L2 → L3 → L4 → L5** (strictly linear; each builds on the prior).
+
+### Validation regime (the load-bearing part — plan it *with* the feature)
+
+σ-agreement is a **weak oracle** here: MG's own sampler bugs stayed latent 5–10
+years precisely because a mis-sampled region of small measure shifts σ smoothly
+rather than tripping a gate (note 07; AGENTS.md "every oracle has a blind spot").
+So the sampler is gated at three levels, finest first:
+
+1. **Bit-for-bit** where a pinned RNG seed + unchanged sampling order allow it
+   (L1's refactor gate; any later change that must preserve order).
+2. **Distribution-level** — sampled invariant-mass and angular histograms vs the
+   analytic BW (L3) and vs MG's `.lhe`/plots (L5). This is what catches
+   mis-sampled small-measure regions that σ hides.
+3. **σ within quoted MC uncertainty** — the `validate_vegas.rs` targets + the
+   banked σ̂ flat-MC check, as a coarse backstop only.
+
+Each of the note-07 hazards (BW denominator, T-channel invariant ordering,
+threshold kinematics `s → (m₁+m₂)²`, overlapping resonances) gets a test that
+would fire if the map were wrong — a passing σ is never accepted as confirmation
+of a convention (AGENTS.md "convention claims are hypotheses").
+
+### Addendum — non-prefix s-channel recovery (momentum-routing convention)
+
+While wiring the per-diagram channels (`DiagramChannel::from_diagram`), the
+subsystem classifier that reads each internal line's stored `Prop.momentum`
+(`Vec<i8>`, a signed external-momentum combination) was found to miss a class of
+genuine final-state s-channel poles. Root cause is a **feyngraph momentum-routing
+convention**:
+
+- feyngraph assigns each external the unit momentum indicator, then **eliminates
+  the highest-indexed external** via global conservation (`assign_momenta`
+  last-external elimination). The stored vector for an internal line is therefore
+  the signed combination for the cut side **away from** that highest external —
+  the raw beam coefficients are **gauge-dependent** and cannot be read as "is this
+  the beam side".
+- The convention-robust classifier is the **beam content of the cut**: a genuine
+  final-state s-channel subsystem is the side carrying **no beam**. That zero-beam
+  side is the stored side when the stored coefficients touch no beam (`beams == 0`,
+  the "prefix" case that already worked), and the **complementary** final-state set
+  when they touch every beam (`beams == n_in`, the case that was missed). A cut
+  whose two sides each carry a beam (`beams == 1` for a 2→n process) is a spacelike
+  transfer and bounds no subsystem — that is genuine t-channel, and it is **left
+  untouched here** (its importance map is a separate, still-deferred concern).
+
+Concrete instance, `e+ e- > mu+ mu- ta+ ta-` (externals `0=e+,1=e-,2=mu-,3=mu+,
+4=ta-,5=ta+`; feyngraph eliminates `5=τ⁺`): the τ⁺τ⁻ Z line is genuinely timelike
+(a real s-channel pole on the `{ta⁻,ta⁺}` pair) but is stored as
+`[1,1,-1,-1,0,0]` — both beams present, τ slots zero. The previous "any beam
+coefficient nonzero ⇒ not a subsystem" test dropped it, so `from_diagram`
+resonated only on the µ⁺µ⁻ pair (stored `[0,0,1,1,0,0]`, zero beams) and never on
+τ⁺τ⁻. The µµ line is stored as a zero-beam indicator only because µ⁻,µ⁺ are not
+the eliminated external; the τ line's both-beam form is a pure artifact of the
+elimination, not a physical difference between the two pairs.
+
+Note the empirical stored vector is `[1,1,-1,-1,0,0]`, **not** a bare indicator
+`[1,1,1,1,0,0]`: feyngraph stores the *signed* momentum-flow combination, so the
+individual coefficients carry flow signs. Only the **nonzero pattern** is
+load-bearing for classification (the beam count and the outgoing-slot set), and
+that pattern confirms the model exactly — both beams nonzero, τ slots zero.
+
+Fix (relabel only): when the stored side carries every beam, return the
+**complement** of its outgoing-slot set as the subsystem, under the same
+`2 ≤ count < n_out` guard (which still excludes the s-channel core, whose
+zero-beam complement is the whole final state). No new node type, no Jacobian,
+kinematics, or sampler change — the recovered poles flow through the existing
+L3 Breit-Wigner `draw_invariant`/`invariant_measure` machinery unchanged. The
+classification is cross-checked against an **independent graph-cut** derivation
+of the same partition (connected components after removing the line), so a future
+feyngraph routing-convention change trips a test in either derivation.
+
+### Addendum — t-channel spine (single spacelike line, `2 → 2`)
+
+Genuine spacelike lines are no longer metadata-only for the simplest case. A
+diagram with **exactly one spacelike line building a `2 → 2` final state** is
+decomposed as a peripheral **spine** rather than an all-timelike tree.
+
+- **New peripheral node type.** `DiagramChannel` now holds a
+  `ChannelTopology` — `Timelike(Branch)` (the existing decay tree, unchanged) or
+  `Spine(Spine)`. A `Spine` carries an `emitted` and a `recoil` `Node` plus the
+  spacelike propagator's `t_mass2` (width forced to zero — note-07 2.8.0/2.9.3:
+  a spacelike line has no Breit-Wigner). The emitted/recoil subsystems recurse
+  into the **existing** `sample_branch`/`branch_jacobian` machinery unchanged, so
+  timelike subtrees hang off the spine with no duplication.
+- **Beam-frame state.** `DiagramChannel` now stores `beams: [LorentzVector; 2]`
+  (beam 0 along `+z` in the CM), computed from `√ŝ` and the incoming masses. This
+  is the reference for the transfer `t`; the timelike tree never needed it. It is
+  the *only* new channel state, and `channel.rs` is untouched — the spine still
+  satisfies `Channel::density`.
+- **The `t` map (`draw_t`/`t_measure`).** Importance-samples the propagator
+  `1/(t − m²)` with density `∝ 1/(m² − t)` via the logarithmic substitution
+  `t = m² − (m²−t_min)·exp(−x·N)`, `N = ln[(m²−t_min)/(m²−t_max)]`, exact Jacobian
+  `dt/dx = N·(m² − t)`. Both endpoints are `≤ 0`; a massless beam pins `t_max = 0`
+  (collinear edge) and a massive initial state pushes `t_max < 0` (2.9.3). At the
+  collinear edge or a threshold-degenerate window the pole cannot shape the draw,
+  so it **falls back to flat in `t`** (the spine then reduces to the isotropic
+  2-body split) — the exact analogue of the BW map's zero-width flat fallback.
+- **Peripheral kinematics.** The emitted subsystem's polar angle is fixed by `t`
+  (`t = m_a² + s₁ − 2E_aE₁ + 2k·p*·cosθ`), only `φ` free. The 2-body LIPS `R₂` is
+  reparametrised from `(cosθ, φ)` to `(t, φ)` via `dcosθ = dt/(2k·p*)`, giving the
+  rung factor `π·(dt/dx)/(4√ŝ·k)` (the `p*` cancels) — a different Jacobian from
+  the timelike `r2_factor = π|p*|/√ŝ`.
+- **`density` off the channel's own points.** Each rung's `t` is recomputed as the
+  frame-independent invariant `(beams[0] − p_emitted)²` from the final momenta plus
+  the stored beam, and `s₁,s₂` from the subsystem masses — so `Channel::density`
+  stays well-defined on foreign configs (the L4 contract).
+- **Spine ordering strategy (and why).** The emitted subsystem is anchored to
+  **beam 0** and is the final-state legs on beam 0's side of the spacelike cut,
+  read from the stored `Prop.momentum` nonzero pattern (the same convention-robust
+  reading as `subsystem_mask`, cross-checked against the independent graph cut).
+  Pairing the emitted blob with the wrong beam would read the crossed `u`-channel
+  invariant; this is pinned by a firing test (emitted/recoil transfer consistency
+  by momentum conservation, and a forward-bias test that a silent emitted/recoil
+  swap flips). For the single-rung case the spine's `t_mass2` **supersedes** the
+  old `t_channels` mass/width metadata as the kinematic driver; the `t_channels`
+  accessor is retained only for higher-multiplicity/ladder diagrams that still
+  fall back to the all-timelike tree.
+
+**Deferred — multi-rung spine (Part 2).** A genuine multi-spacelike-line ladder
+(VBF/DIS, `≥ 2` t-channel lines) needs an **explicit ordered chain of rungs** —
+which final-state blobs attach to which rung, in what order along
+`q_i = p_a − (p₁+…+p_i)` — derived from the `Prop` chain, superseding the
+unordered `t_channels` metadata. This is note-07 2.9.0 ("four ordering strategies;
+wrong default for many processes"), the session's stated bug magnet. It was
+**deferred rather than committed** because its ordering Jacobian cannot be pinned
+against an analytic/independent oracle in-session (volume `Vₙ` and a passing σ are
+both blind to a wrong-but-valid ordering — AGENTS.md "a passing gate that cannot
+see the convention is not confirmation"), and a single spacelike line inside a
+`2 → n>2` final state is folded into the same deferral. Hand-off: extend `Spine`
+to `rungs: Vec<SpineRung>` + a terminal `recoil`, each rung emitting one blob with
+its own `t` against the running `q_i`; the load-bearing new oracle is an ordering
+firing test (1-D `t_i` projections smooth and covering the full range; swapping
+rung order changes the result as the physics dictates).
+
+### Sprint A close-out
+
+Sprint A (`resonance-sampling`, sessions L1 → L2 → L3 → L4 → L5, plus the R
+non-prefix-recovery and T t-channel-spine addenda) is **complete on branch
+`resonance-sampling`**. What it delivered:
+
+- **The phase-space abstraction seam** (L1): `PhaseSpaceMap`/`Channel`/`Combiner`
+  with flat RAMBO and the 2-body LIPS map behind it, no numeric change (bit-for-bit
+  L1 gate).
+- **Per-diagram channels** (L2, R): a `Diagram`'s `Prop` chain becomes a recursive
+  2-body-decomposition tree; the flat channel Jacobian reproduces `Vₙ` for 2→2…2→6.
+  R fixed the non-prefix s-channel recovery (feyngraph highest-external elimination).
+- **Resonance maps** (L3, T): the Breit–Wigner tan-substitution for timelike
+  invariants and the logarithmic t-map for a single-rung spacelike spine, each with
+  an exact Jacobian pinned by a zero-variance-on-the-pole test.
+- **The multichannel combiner** (L4): `MultiChannel` with the variance-minimising
+  weight `1/Σⱼαⱼgⱼ`, wired as VEGAS's integrand map.
+- **α-adaptation + the distribution-level validation regime** (L5): the
+  Kleiss–Pittau survey→refine loop `αⱼ ← αⱼ√Wⱼ` (`MultiChannel::adapt_alphas`),
+  composed with VEGAS as an outer survey (fix the mixture) → inner grid (refine the
+  per-channel hypercube) with α frozen.
+
+**Cumulative variance wins** (all against flat RAMBO at fixed N, each with its own
+firing test so the win is never mistaken for convention confirmation): the BW map
+alone (L3, Z pole), the multichannel combiner strictly below every single channel
+and below flat on a multi-peak integrand (L4), the t-channel spine below flat on a
+forward-peaked integrand (T), and α-adaptation below fixed-uniform α (L5). On the
+L5 asymmetric multi-peak (a 4:1 amplitude ratio across two channels) α converged
+[0.5,0.5] → [0.80,0.20] in ~2 iterations, tracking the amplitude ratio; the
+per-channel variance shares `Wⱼ` equalised (2.66e-2 vs 2.67e-2); and per-point
+variance fell ~1900× (uniform 9.4e-3 → adapted 5.3e-6) at essentially equal
+per-point cost (248 → 242 ns/pt). That magnitude is the **best case** — the
+synthetic integrand is exactly a linear combination of the two channels' BW shapes,
+so variance-matched α approaches the zero-variance importance-sampling optimum; on a
+real `|M|²` with continuum and interference the practical win is smaller, and the
+test pins only the direction and strict inequality, not the number. Distribution
+gates: the resonant BW line shape (χ²/dof ≈ 0.6) and the overlapping double-peak
+line shape (χ²/dof ≈ 0.6) both match the analytic oracle.
+
+**note-07 sampler-bug hazard firing-test inventory** (each fires if the map were
+wrong; a passing σ is never accepted as confirmation):
+
+| Hazard | Firing test |
+|---|---|
+| BW denominator / `ds/dθ` | `bw_map_is_measure_preserving`, `bw_map_zero_variance_on_bw_integrand` |
+| T-channel invariant ordering (2.9.0) | `spine_transfer_pairs_emitted_with_beam0`, `spine_emitted_is_forward_biased` (silent swap flips the bias), `spine_built_for_real_t_channel_process` |
+| Threshold kinematics `s→(m₁+m₂)²` (2.9.3) | `t_channel_threshold_window_collapses`, `t_bounds_include_initial_state_mass` |
+| Overlapping / conflicting resonances | `overlapping_resonances_double_peak_resolved` (**added in L5**: two nearby timelike poles on the same invariant; the combiner resolves both, dropping the second channel collapses its coverage ~1000×) |
+
+**Deferred** (carried forward, not regressions):
+
+- **Multi-rung spine (Part 2)** — ladder topologies (VBF/DIS, ≥2 spacelike lines);
+  the ordering Jacobian needs an in-session firing oracle before it can land (see
+  the preceding deferral note).
+- **MG-plot distribution comparison** — L5 validated sampled histograms against the
+  *analytic* BW and t-channel oracles (exact) and used MG **σ** as the coarse
+  backstop; comparing the sampled invariant-mass/angular histograms against MG's own
+  `.lhe`/plots needs the MG toolchain and is a follow-up.
+- **Massless-t-channel fiducial-cut question** — a massless beam pins `t_max = 0`
+  (collinear edge), where the t-map falls back to flat; whether a fiducial cut is
+  wanted there (rather than the flat fallback) for a physical massless-initial-state
+  t-channel is unresolved.
+- ~~**Wiring the multichannel + α sampler into the CLI `integrate` path**~~ — **done**
+  in session P (addendum below); `ee_to_tatah` and `ee_to_mumua` flipped to GATE,
+  `ee_to_mumu_tata_qcd0` is informational on an open +3.0% offset.
+- **Low-`m_ll` reconciliation** (new, from session P) — `ee_to_mumu_tata_qcd0` sits
+  +3.0% above the banked MG σ, entirely below `m_ll ≈ 20 GeV`. Needs a differential
+  `dσ/dm_ll` comparison against MG; the scalar σ cannot decide which side is right.
+
+### Addendum — putting the sampler into production (`sampler-in-production`)
+
+Wiring the multichannel into `validate_sigma`'s fixed-energy path — the step that
+promotes the resonant rows from `Plan::Skip` to real gates — surfaced two defects
+the sprint's own unit gates could not see. Both were found by **sweeping RNG
+seeds**, not by a fixed-seed pull: the first fixed-seed run of
+`ee_to_mumu_tata_qcd0` showed pull `+3.19`, which looks like an ordinary
+few-sigma miss and would have ridden into production as a passing gate.
+
+**Why a fixed-seed pull was not enough.** Both defects produce a *confidently
+wrong* σ rather than a visibly noisy one, because VEGAS combines iterations by
+`1/σ²` (`combine_iterations`, `vegas.rs`). An iteration that misses a narrow
+region reports a small integral **and** a small variance, so it dominates the
+weighted mean and shrinks the quoted error. Worst observed: σ 25× low quoted as
+`5.48e-5 ± 2.79e-6` — a 5% error bar on an answer off by a factor 25. Seed
+sweeps are now part of the gate's evidence (`probe_resonant_seed_stability`).
+
+**Defect 1 — the massless timelike pole kept the flat draw.** `bw_scale` returned
+`None` for `mΓ ≤ 0`, so a zero-width propagator (the `γ* → l⁺l⁻` of a lepton-pair
+subsystem) was drawn *flat* against a `1/(s−m²)²` rise. The estimator's variance
+is then dominated by the kinematic edge. Diagnosis was by elimination, each step
+refuting a cheaper hypothesis:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| α-adaptation collapsed a channel | `probe_alpha_collapse` | **Refuted** — 0 channels at the floor; *uniform* α collapses too (seed 44 → 5e-7) |
+| Survey budget too small | 30k → 300k survey | **Refuted** — rescues seed 33, breaks seed 44; the failure moves, it does not converge away |
+| The low-`m_ll` photon pole | `probe_photon_pole_is_the_instability` | **Confirmed** — `mmll` 0→20 GeV takes the 5-seed spread from 24.96× to 1.01×, χ²/dof 1159 → 1.18 |
+
+MadEvent's counterpart is `set_peaks` (`myamp.f`): a zero-width s-channel
+propagator gets its grid pre-shaped to a `1/x` profile by `setgrid` (`dsample.f`,
+`grid = xo^(1−i/ngu)`, logarithmic bins), with an **invented floor** when the pole
+is massless (`xo = min(10/stot, stot/50, 0.5)`) and ~10% of bins reserved to reach
+below it. Note MG does *not* do this in `gen_s`, which is flat for `spole = 0` —
+the importance sampling lives in the grid, not the map. vibegraph does it as an
+analytic map instead (`log_scale`/`draw_invariant`), which does not depend on
+having a per-channel grid.
+
+**Defect 2 — VEGAS over-adapts on top of a good map.** With the log map in,
+4/5 seeds converged but one still collapsed. `probe_vegas_iteration_path` showed
+the tell: iterations 1–3 agree at 1.357e-3 (χ²≈0.1), then iteration 4 drops to
+4.8e-4 and *stays* — a grid collapsing into a corner, not a sampler missing a
+spike. `probe_grid_adaptation_is_the_residue` isolated the cause by sweeping the
+damping exponent:
+
+| `vegas_alpha` | 5 seeds | error |
+|---|---|---|
+| 0.0 (frozen) | all stable, χ²≈1 | 1.15e-5 |
+| 0.5 | all stable, χ²≈1 | **5.1e-6** |
+| 1.5 (Lepage) | one seed −64%, χ²=580 | — |
+
+Lepage's `1.5` assumes the grid must *discover* the integrand's structure. After a
+converged multichannel map the hypercube is nearly featureless, the per-bin `f²`
+statistics are noise-dominated, and a high exponent amplifies that noise into a
+real distortion. Hence `VEGAS_ALPHA_MAPPED = 0.5`, selected by the *sampler*
+(`FixedBeamIntegrand::vegas_alpha`), leaving the raw-RAMBO and Drell–Yan paths on
+`1.5` so their banked numbers are untouched.
+
+**A degenerate case the fix had to handle.** When the kinematic edge already sits
+above the floor there is no sub-floor region, and allotting the linear piece its
+10% of `x` maps that share onto a zero-width interval carrying zero measure —
+infinite weights, and zero density for any channel evaluating a foreign point.
+`LogMap::frac` drops to zero there so the logarithmic piece takes the whole draw
+(`log_map_without_subfloor_region_stays_finite`).
+
+**Dispositions.** `ee_to_tatah` and `ee_to_mumua` flip `Skip → Gate`: |pull| ≤ 0.89
+and ≤ 1.66 respectively, χ²/dof ≈ 1, across five seeds. `ee_to_mumu_tata_qcd0`
+becomes `Plan::Info`, **not** because it is unstable — it is now the tightest of
+the three, five seeds within 0.6% of each other — but because a genuine **+3.0%
+offset vs MadGraph** is now exposed (pull +7.9…+9.5) that the broken error bar
+previously hid. The offset is entirely localised below `m_ll ≈ 20 GeV` (cutting
+there agrees to −0.1%), and its **sign rules out under-coverage on this side**:
+missing the photon pole reads low, not high.
+
+_Open question for a follow-up:_ whether MG is the side under-counting — its `xo`
+floor truncates the same region — or whether this sampler over-weights it. The
+scalar σ cannot answer this; it needs a differential `dσ/dm_ll` comparison against
+MG, which is the L5 distribution-level regime pointed at a new observable. Until
+then the row stays informational rather than gated to a loosened tolerance.
+
+---
+
+### Addendum — one VEGAS grid vs. MadGraph's grid-per-channel
+
+vibegraph runs **one** VEGAS grid over `ndim = 1 + channel_ndim`, with `u[0]`
+selecting the channel by cumulative `α` (`MultiChannel::sample`) and `u[1..]`
+feeding the chosen channel. MadEvent instead splits the integral by channel —
+one job, one grid, one σⱼ ± Δσⱼ per configuration (`G<config>/` directories) —
+and sums. Both are unbiased; the difference is what the grid can learn.
+
+**Why MG's split is the stronger arrangement.**
+
+1. *Coordinate semantics differ per channel.* `u[k]` is a Breit-Wigner-mapped
+   invariant in one channel and a t-channel `t` in another. A shared grid learns
+   the α-weighted **average** density in each coordinate slot, which is not the
+   right refinement for any single channel; the per-channel structure a grid
+   could exploit (the residual `|M|²` angular shape, cut boundaries, the
+   non-resonant background under a peak) is averaged away.
+2. *VEGAS is a product density, and the selection coordinate is exactly the
+   correlation it cannot represent.* The optimal conditional density of `u[1..]`
+   depends on which channel `u[0]` picked. A separable `∏ᵢ gᵢ(uᵢ)` grid has no
+   way to express that, so refinement on `u[0]` is at best a second, blunter
+   copy of the α-adaptation and at worst fights it.
+3. *Per-channel error estimates* let sample budget be allocated by channel
+   variance, and give per-channel `w_max` for unweighting — which is how MG gets
+   a usable unweighting efficiency (Sprint B, E2). A single global `w_max` over
+   a mixture is set by the worst channel.
+
+**Why it has not bitten us yet.** The channel maps already flatten the poles they
+were built for, so the residual integrand in the hypercube is nearly featureless
+— which is precisely the regime where the grid has little left to learn and where
+over-adaptation is the live risk (`VEGAS_ALPHA_MAPPED = 0.5`, Defect 2 above).
+The current arrangement is therefore *cheap and adequate*, not wrong.
+
+**Cost of switching.** Moderate, and structurally clean, because the estimator
+already decomposes exactly the way the split needs:
+
+```text
+∫dΦ f = Σⱼ ∫dΦ f·αⱼgⱼ/g = Σⱼ E_{p∼gⱼ}[ αⱼ·f(p)/g(p) ]
+```
+
+so term `j` is *this* integrand with the channel index frozen and an extra `αⱼ`:
+sample `Channel j` directly (`ndim = channel_ndim`, no selection coordinate),
+weight by the same `1/g` the combiner already computes over all channels. The
+work is: a channel-frozen integrand wrapper; `Vec<VegasGrid>` in place of the
+single grid, with per-channel `neval` allocation; summing σⱼ with errors in
+quadrature; and — the part that reaches outside the sampler — the
+`IntegrateArtifact` schema and its frozen-grid replay path become per-channel.
+Estimate ~1–2 sessions. The α-adaptation survives unchanged (α still sets both
+the weight denominator and the natural sample allocation).
+
+**Sequencing.** The artifact-schema change is the reason to do this *before* the
+frozen-grid consumer in Sprint B E2/E4 hardens around a single grid, not after;
+and E2's unweighting efficiency is the concrete payoff. Deferred, not dismissed.
+
+#### Outcome — implemented, one session (`per-channel-vegas`, 2026-07-27)
+
+Landed as designed: `MultiChannel::sample_channel(j, u)` draws from channel `j`
+alone over `channel_ndim` coordinates and weights by `αⱼ/g`,
+`FixedBeamIntegrand::adapt_grids` runs one VEGAS pass per channel on a budget
+`αⱼ·neval` (floored at 512 so no channel goes unsampled) and sums the terms with
+their errors in quadrature, and `IntegrateArtifact` (`format_version` 1 → 2)
+banks `Vec<ChannelGrid>` — grid, `αⱼ`, `nevalⱼ`, `σⱼ ± Δσⱼ`, `χ²/dofⱼ` — with the
+version checked from the payload prefix before the body is decoded. α-adaptation
+is untouched: it still surveys the mixture, and its α now sets the weight
+denominator *and* the sample allocation.
+
+**Variance × CPU** (`probe_per_channel_grid_variance_cpu`, both arrangements on
+the same built integrand, four seeds, gate budgets), as
+`(Δσ²·T)_shared / (Δσ²·T)_split`:
+
+| process | channels | Δσ ratio | err²·CPU |
+|---|---|---|---|
+| `ee_to_mumua` | 8 | 1.28–1.37× | **1.68×** |
+| `ee_to_mumu_tata_qcd0` | 25 | 1.24–1.36× | **1.46×** |
+| `gg_to_ttx` | 3 | 1.16× | **1.39×** |
+| `uux_to_uux` | 2 | 1.01–1.33× | **1.36×** |
+| `ee_to_tatah` | 5 | 1.05× | **1.07×** |
+
+The win is real but modest, and it is smallest where one channel already carries
+almost all of `α` (`ee_to_tatah`) — which is what the addendum predicted: the
+split buys a *conditional* density, and there is nothing conditional to learn
+when the mixture is effectively one channel. CPU is within ±13% of the shared
+arrangement (the split pays the evaluation floor and per-grid bookkeeping), so
+the figure of merit is carried almost entirely by the variance.
+
+**Per-channel `w_max`** (`probe_unweighting_weight_max`). With events drawn from
+channel `j` ∝ `σⱼ` and unweighted against that channel's own maximum, the overall
+efficiency is `σ / Σⱼ w_maxⱼ` against `σ / w_max` for the single grid:
+
+| process | global `w_max` eff | per-channel eff | gain | largest channel's share of `Σ w_maxⱼ` |
+|---|---|---|---|---|
+| `ee_to_mumua` | 3.3e-3 | 9.3e-3 | **2.86×** | 29% |
+| `gg_to_ttx` | 7.1e-2 | 1.7e-1 | **2.37×** | 38% |
+| `ee_to_mumu_tata_qcd0` | 5.0e-3 | 1.0e-2 | **2.04×** | 24% |
+| `uux_to_uux` | 1.6e-2 | 2.7e-2 | **1.69×** | 90% |
+| `ee_to_tatah` | 4.6e-2 | 4.2e-2 | **0.91×** | 100% |
+
+`ee_to_tatah` is the honest negative: one channel is the whole sum, so there is
+no worst-channel penalty to remove, and its own maximum comes out slightly
+*above* the mixture's because the per-channel scan spends all its draws where
+that channel lives and therefore finds a higher extremum. The efficiency gain
+tracks the largest channel's share of the sum — which is the number to watch, not
+the channel count.
+
+**σ agreement.** All 11 `validate_sigma` GATE rows still pass, with every `Δσ`
+smaller at the same budget (0.74–0.96× the shared-grid error). Seed sweeps:
+`ee_to_tatah` |pull| ≤ 0.94, `ee_to_mumua` ≤ 1.00, `gg_to_ttx` ≤ 0.35,
+`gg_to_gg` ≤ 1.63, `uux_to_uux` ≤ 2.69. `ee_to_mumu_tata_qcd0` stays
+informational; its offset *shrank* from +3.0% to +2.2%, and its seed spread from
+0.6% to 0.45% — a data point for the low-`m_ll` reconciliation, not a resolution
+of it. Drell–Yan is untouched (single grid, same seed, same integrand): σ
+reproduces bit-for-bit at 0.14% / 0.07% vs banked MG.
+
+**The one regression.** `uux_to_uux`'s known negative mean bias roughly doubled:
+−0.17% under one shared grid to −0.30% split (same four seeds), and it does not
+shrink with budget (−0.25% at 4×). The row still gates (worst |pull| 2.69 vs the
+3.5 limit) but with a thinner mean margin. Reading: sharper per-channel grids stop
+compromising with each other and so cover the spacelike collinear tail *less*
+than the shared grid did — the same under-resolved region the single-rung
+t-channel spine already accounts for, now more visible. It is evidence for the
+multi-rung spine work, not a new defect.
+
+---
+
+**Next: Sprint B — `event-output-lhef`** (E1 → E4, `mg-single-helicity-bench`
+folded into E2). Unweighted event output via accept/reject over the frozen VEGAS
+grid + this sprint's peak-resolving sampler, serialised to LHEF; expanded into its
+own note when it opens.
+
+---
+
+## Helicity & color handling (both sprints)
+
+The multichannel structure of Sprint A is over **momentum configurations only** —
+one channel per diagram, parametrised by its propagator poles (L2). **Helicity
+and color are not sampling channels.** Spelled out because the phrase "channel"
+otherwise invites building per-helicity channels, which this plan does not do:
+
+- **During integration (Sprint A): helicities are summed, colors are contracted**
+  — exactly as on `main` today. `|M|²(p) = Σ_hel |M_hel(p)|²` via the shipped
+  helicity-expanded arena + `prune_zero_helicities` (MG's `GOODHEL` filter, note
+  15 §2.3), with the CF color contraction inside. The momentum channels are
+  driven by the *full* helicity-summed `|M|²`; no channel is weighted by any
+  single helicity's contribution. There is **no separate channel per helicity**.
+- **At event-writing (Sprint B, E2): helicity and color are *selected* per
+  accepted event, not sampled into the integral.** Once a point `p` is accepted,
+  draw one helicity combination with probability `|M_hel(p)|² / Σ_hel |M_hel(p)|²`
+  (MG's `SELECT_HEL`) and one color flow `∝ JAMP2(i)` (MG's `SELECT_COLOR`, E1).
+  Both are cheap per-event categorical draws off **diagonal accumulators on the
+  existing `eval_m2` loop** (the JAMP2 diagonal, note 15 §2.2; a parallel
+  per-helicity `|M|²` diagonal), with **zero effect on σ or the integrand** —
+  they only fill in the LHE record's helicity and `(color, anticolor)` tags.
+- **Out of scope — Sherpa-style MC *sampling* of helicity/color** (its
+  `Helicity_Integrator`/`Color_Integrator`, note 03 §1.5): treating helicity
+  and/or color as extra sampled dimensions with their own adaptive weights
+  *instead of* summing/contracting. That is a high-multiplicity optimisation
+  (smaller per-point cost, extra variance) and a different sampler design; it is
+  the TODO `lips-nbody` "possibly Sherpa-style sampling over color/helicity"
+  future direction, **not** this program. For 2→2…2→6 with `GOODHEL` already
+  pruning dead combinations, MG-style summation is the correct default and reuses
+  the on-`main` machinery unchanged.
+
+---
+
+## Sprint B — `event-output-lhef` (outline; own note at open)
+
+Unweighted events via accept/reject `w(p) = |M(p)|²/w_max`, serialised to Les
+Houches Event File format. Depends on Sprint A (n-body + peak-resolving sampler,
+so unweighting efficiency is usable). Handoff format is A-sprint's
+`IntegrateArtifact`; the `generate` phase deserialises it and refuses a mismatched
+run rather than re-taking raw CLI flags.
+
+| Session | Scope |
+|---|---|
+| **E1 `jamp2-flow-select`** | Diagonal `JAMP2(i) = Σ_hel |JAMPᵢ|²` accumulator on the existing `eval_m2` combination loop (cheap, note 15 §2.2), then the **flow → `(color, anticolor)` LHEF tag dictionary** per external leg, sampled ∝ JAMP2. **Pin the dictionary against MG's `SELECT_COLOR` / `color_flow_decomposition` / `get_color_flow_string`** — a transposed dictionary is invisible to any |M|²-level gate (validation backlog; gg_to_gg NCOLOR=6 flow-basis ordering caveat applies). |
+| **E2 `accept-reject` + `mg-single-helicity-bench`** | Unweighting over the frozen VEGAS grid + Sprint-A sampler: `w_max` estimation, overweight bookkeeping, unweighting efficiency, and **per-event helicity + color-flow *selection*** (not sampling — see §"Helicity & color handling"): draw helicity `∝ |M_hel(p)|²` (`SELECT_HEL`) and flow `∝ JAMP2(i)` (`SELECT_COLOR`, E1), both off diagonal `eval_m2` accumulators, with zero effect on σ. This makes **single-helicity evaluation through the unexpanded program** the hot path, so land `mg-single-helicity-bench` here (vibegraph `eval_amplitude` at one fixed helicity + the MG single-config Fortran-harness timing — half an oracle until now). **Gate:** unweighted sample reproduces σ and the L5 distributions within MC error. |
+| **E3 `lhef-writer`** | LHE serialiser: `<init>` block (beams, PDF, process ids, xsec/xerr/xmax) + `<event>` blocks (NUP, PDG, status, mother indices, **color tags from E1**, momenta, mass, helicity, weight). **Pin the byte-level format against an MG-generated `.lhe`.** |
+| **E4 `generate-cli`** | `vibegraph generate <artifact> [--nevents …]`: deserialise `IntegrateArtifact`, refuse a run whose proc/run card mismatches, drive E2 accept/reject → E3 `.lhe`. **Gate:** end-to-end `.lhe` parses in a downstream tool; σ from event weights matches the `integrate` σ. |
+
+Order: **E1 → E2 → E3 → E4** (E1 unblocks color tags E3 needs; E2 the events;
+E3 the format; E4 the CLI). `mg-single-helicity-bench` folds into E2.
+
+---
+
+## Execution notes (agent dispatch)
+
+- Use the **`feature-dev`** agent (Opus; never general-purpose — that ignores
+  model overrides and always runs Fable). Sonnet override only for a genuinely
+  light session (none of L1–L5 obviously qualifies; L1 is a careful refactor).
+- **Pre-create worktrees off `main` manually and COW-clone the validation data
+  dirs** — worktree isolation has leaked into the shared checkout twice
+  (`eval-perf-2`), especially on resume. Hard `cd`-verify before each agent acts.
+- One session per agent; measure vs the stated baseline; run the session's gate;
+  commit on the sprint branch. ff-merge to `main` at sprint close (user decides
+  the merge).
