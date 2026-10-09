@@ -5,6 +5,7 @@ description: "vibegraph_toy_UFO and vibegraph_toy_color_UFO put one Lorentz or c
 status: draft
 tags: [validation, ufo, toy-model, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 T1 (authoring the toy UFOs and banking their oracle)"}
   - {id: n35-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7 (decisions D1–D5)"}

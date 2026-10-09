@@ -49,7 +49,8 @@ far off the restricted reference[^n38-z2].
 **Independent directories.** Seeds run in one MadEvent process directory are not
 independent draws: later seeds inherit their predecessors' grids. On the MLM rows,
 nine seeds in a shared directory scattered *less* than they quoted (χ²/dof
-0.4–0.7), which was the sign; against 21 independently generated directories the
+0.3–0.8 over the rows, 0.4–0.7 on `pp_to_ll_0j2j_mlm`), which was the sign;
+against 21 independently generated directories the
 shared-directory reference read `@1` 0.43 % high (−1.8σ combined) and `@2` 0.34 %
 low[^n41-z]. The remedy is **one freshly generated directory per seed**, its error
 the spread over those directories. It is not part of the written policy in the

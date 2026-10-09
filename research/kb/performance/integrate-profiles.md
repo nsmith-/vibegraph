@@ -5,6 +5,7 @@ description: "samply profiles: evaluator 50–63% of self time, PDF interpolatio
 status: draft
 tags: [performance, profiling, pdf, allocation, scales]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n30-draw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L408-L459", title: "Note 30 §6 (chain B's live-draw cost)"}
   - {id: n30-profiles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L460-L478", title: "Note 30 §7 (profiles: method and paths)"}
@@ -134,6 +135,9 @@ cargo test -p vibegraph-lib --profile release-debug --features extended-validati
   --test validate_sigma    -- --ignored --nocapture --test-threads=1 probe_scale_draw_cost
 cargo test -p vibegraph-lib --profile release-debug --features extended-validation \
   --test validate_hadronic -- --ignored --nocapture --test-threads=1 probe_scale_draw_cost
+# the clustered-scale cost per point (the allocation work's instrument)
+cargo test -p vibegraph-lib --profile release-debug --features extended-validation \
+  --test validate_sigma    -- --ignored --nocapture --test-threads=1 probe_scale_cost
 ```
 
 The per-row costs these profiles sit under are in

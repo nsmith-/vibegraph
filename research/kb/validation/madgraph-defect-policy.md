@@ -56,7 +56,7 @@ field) is catalogued and needs no outcome.
 | `rewgt` reads the final-state `ipdgcl` left by the previous event | only if jet-ness differs between flavour combinations of one `IPROC` | not reached: a census found no such `IPROC` on any banked MLM row |
 | `setcuts.f:939-942` duplicate `iforest(2)` test; `banner.py:1706` `setWeightName` | no | catalogued |
 | `cuts.f:565` `ktdurham` precedence | CKKW-L only | out of scope (CKKW-L is refused) |
-| `addmothers.f:115` compares `igraphs(1)` to a stale loop index | record only, to be measured | catalogued |
+| `addmothers.f:115` compares `igraphs(1)` to a stale loop index | record only, and unreachable on the banked MLM rows: `vec_igraph` is never 0 on a written event (M0 census) | catalogued |
 
 The permuted-first-call case also shows the outcome's discipline: before the
 decision the per-event harness reported the affected events as
