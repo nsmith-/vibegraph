@@ -100,3 +100,8 @@
   bundle, PDF set and `mg5amcnlo` content were copied in. The review and T1
   worktrees were removed and the debug incremental cache cleared, which freed
   about 9 GB.
+* **Container restart during F-A.** F-A's process was lost with no commits,
+  but 24 files of uncommitted work (+760/−1029) and its program-dump
+  baselines survived on disk. The manager saved a backup patch and resumed
+  the agent from its transcript with a reconciliation step: verify, commit in
+  checkpoints, re-run what was in flight (session scoping rule 7).
