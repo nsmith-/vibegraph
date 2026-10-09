@@ -4,12 +4,12 @@ title: "R-D: hygiene review of phase space and sampling"
 description: "Review phasespace, vegas, budget, cuts and the unweighting and statistics modules on the four hygiene points."
 status: draft
 agent: claude (Opus), read-only
-depends_on: [V1]
+depends_on: [V1b]
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 ---
 Follow the [review protocol](review-protocol.md). Review the sprint branch
-at V1's commit (the dispatch names the commit).
+at V1b's commit (the dispatch names the commit).
 
 **Cluster.** `vibegraph-lib/src/phasespace/`, `vegas.rs`, `budget.rs`, `cuts.rs`, `multiplicity.rs`, `unweight.rs`, `stats.rs`, `select.rs` (about 17k lines) and their in-module tests.
 

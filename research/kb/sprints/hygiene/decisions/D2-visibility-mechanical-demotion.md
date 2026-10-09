@@ -28,7 +28,15 @@ Chosen over "propose and apply" and "audit only".
   *used by the CLI*, *used by validation-report* and *test-only*. That list is
   the proposal.
 - **Dead code.** An item that demotion leaves unused (clippy's `dead_code`
-  fires) is deleted when nothing references it and no doc gives it a
-  planned use. Otherwise it goes to Found.
+  fires) is handled by who still uses it. If only unit tests use it, it is
+  gated with `#[cfg(test)]` or moved into the tests. If only feature-gated
+  code uses it, it gets that code's `cfg`. If no code uses it, it is deleted
+  and the docs naming it are reworded. A bare `#[allow(dead_code)]` is not a
+  disposition. (Amended 2026-10-09 after V1, which met an earlier rule with
+  144 allows.)
+- **Docs document private items.** Intra-doc links to demoted items stay
+  links. Every rustdoc build (`docs-api`, `scripts/build-docs.sh`) passes
+  `--document-private-items`, so the API site stays a developer reference
+  until the supported surface is decided. (Amended 2026-10-09.)
 - **Inert by construction.** A visibility change cannot change behaviour, so
   V1's gate is the build, the lints and the hermetic tests.

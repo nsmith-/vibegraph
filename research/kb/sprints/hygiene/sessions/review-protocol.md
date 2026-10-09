@@ -46,7 +46,7 @@ says how to review it.
    name or doc claims to guard. For each, name the **mutation that would
    prove it vacuous**: the one-line code change the test should catch and,
    you claim, does not. The fix session runs it.
-3. **Visibility.** V1 has demoted everything with no outside user. Report
+3. **Visibility.** V1 and V1b have demoted everything with no outside user. Report
    what remains `pub` that should not be (a module re-exporting an internal
    type, a `pub` field that breaks an invariant), and fields or methods whose
    visibility exceeds the type's.

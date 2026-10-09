@@ -20,8 +20,11 @@ step 6 and [session scoping](../../../workflow/session-scoping-rules.md) rule 1.
    - Drop the `Backlog:` line of each item left open, with the reason in
      `closeout.md`.
    - File every triaged *file* finding and every Found entry as a new item.
-   - Add V1's surface proposal to the body of lib-pub-api-surface-unaudited,
-     as a link to V1's report.
+   - Re-derive the remaining `pub` surface from the final tree, grouped as
+     V1 did (used by vibegraph-cli, test/bench-only, pub only through a pub
+     signature). Use a per-item demote-and-compile run or rustdoc JSON
+     rather than a name grep. Link it from lib-pub-api-surface-unaudited as
+     the proposal.
 3. **Promote.** D1–D4 are already `stable` (signed off 2026-10-09). Move the
    review protocol to `stable` once the user has reviewed it, folding in the
    reports' brief corrections. `workflow/hygiene-review.md` stays

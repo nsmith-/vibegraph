@@ -122,8 +122,9 @@ sprint supplies its proposal).
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
 | [V1](sessions/V1.md) visibility demotion | `feature-dev` (Opus) | — | lint + hermetic, inert | dead-types-with-stale-docs |
+| [V1b](sessions/V1b.md) allows and doc links | `feature-dev` (Opus), fresh | V1 | lint + hermetic, inert | — |
 | [T1](sessions/T1.md) tooling and CI | `validation-dev` (Sonnet) | — | scripts' own checks | five tooling items |
-| [R-A](sessions/R-A.md) … [R-G2](sessions/R-G2.md) reviews (8) | `claude` (Opus), read-only | V1 | none: report only | — |
+| [R-A](sessions/R-A.md) … [R-G2](sessions/R-G2.md) reviews (8) | `claude` (Opus), read-only | V1b | none: report only | — |
 | Triage (manager) | — | all R | — | — |
 | F-A … F-G fixes (≤ 7) | per brief, written at triage | triage, run serially | lint + hermetic + `--skip-deps validate` | the cluster's claimed items |
 | L lessons | `claude` (Opus) | all F | `kb-lint` | — |

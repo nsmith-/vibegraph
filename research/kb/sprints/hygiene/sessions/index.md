@@ -19,8 +19,10 @@
 * [R-G2: hygiene review of the sampling, scale, PDF and event test targets](R-G2.md) - Review the vibegraph-lib integration tests on sampling, scales, PDFs, MLM and events, and the manifest notes, for non-vacuity first, then the other three points.
 * [T1: tooling and CI fixes](T1.md) - Five small script and workflow fixes that touch no Rust: host_info on Linux, profile.sh arguments, -lc++ by platform, stale CI and skill text, acceptance on refdata releases.
 * [V1: mechanical visibility demotion](V1.md) - Demote every pub item no outside user names, delete what that shows dead, and list the remaining surface as the proposal for the user.
+* [V1b: replace V1's dead-code allows and restore its doc links](V1b.md) - Continue V1 in its worktree: turn the 144 dead_code allows into cfg(test)/cfg_attr gating or deletions, restore the de-linked intra-doc links, and document private items in every doc build.
 * [Z: hygiene sprint close-out](Z.md) - Close-out only: verify the exit criteria, delete closed items, file triaged and Found work, write closeout.md, and mark the PR ready.
 
 ## Session Report
 
 * [T1 report: tooling and CI fixes](T1-report.md) - Five script and workflow fixes, one commit each; four items meet closes_when, and the acceptance.yml change awaits the next refdata release.
+* [V1 report: mechanical visibility demotion](V1-report.md) - pub lines cut from 2601 to 1359 in vibegraph-lib and to 0 in the two binary crates; dead types deleted; 144 dead_code allows and ~120 de-linked doc links left for V1b.

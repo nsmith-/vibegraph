@@ -32,3 +32,17 @@
   the next `refdata-*` release. The report is recorded as `sessions/T1-report.md`,
   machine-confirmed by the manager's re-run of the lints and demonstrations.
   Three Found entries, to be filed at close-out.
+* **V1 reported** (`hygiene-v1`, 827e098..34f92ea). The manager re-ran fmt,
+  both clippy configurations and the hermetic suite (35 suites, 1348 passed,
+  0 failed, 17 ignored) and reproduced the `pub` counts. The report is recorded
+  as `sessions/V1-report.md`, machine-confirmed. It is not yet merged.
+* **Decision** (human:nsmith-, on V1's results), amending
+  [D2](decisions/D2-visibility-mechanical-demotion.md):
+  - V1's 144 `#[allow(dead_code)]` are replaced by `cfg(test)` or
+    feature gating, or by deletion.
+  - The ~120 intra-doc links V1 turned into code spans are restored, and
+    every rustdoc build documents private items.
+  - This work runs as **V1b**, in V1's worktree, by a fresh agent seeded with
+    V1's report rather than a resumed V1. Its transcript was about 333k
+    tokens, and the user asked for it compacted.
+  - The reviews now depend on V1b.
