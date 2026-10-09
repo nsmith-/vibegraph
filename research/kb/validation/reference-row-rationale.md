@@ -75,9 +75,13 @@ property (35 diagrams, `NCOLOR = 2`, `CF`, 8 helicities, spin/colour average
 1/36) agreed: a missed cancellation between diagrams, not a normalisation. The
 cause was a missing crossing sign on mixed fermion lines.[^n28-b3] The rule now
 lives in `Diagram::fermion_line_sign` (`vibegraph-lib/src/diagrams/diagram.rs`)[^diagram-rs];
-see [fermion-line sign](../amplitudes/fermion-line-sign.md). With it, every
-diagram matches MadGraph's bare `AMP()` at `6.6e-15` under one global phase
-(`G = −i`), and `amplitude_oracle`'s `KNOWN_LINEAR_DISAGREEMENT` is
+see [fermion-line sign](../amplitudes/fermion-line-sign.md). With it, the
+per-flow amplitudes match MadGraph's `JAMP` at `3.0e-15` under one global phase
+(`G = −i`), and each of the 35 configuration amplitudes (one diagram each)
+matches MadGraph's bare `AMP()` at `6.6e-15` up to its own fitted unit-modulus
+constant. The row banks no single-flow colour coefficients
+(`jamp_coefficients: null`), so the oracle's per-diagram contribution fit does
+not run on it. `amplitude_oracle`'s `KNOWN_LINEAR_DISAGREEMENT` is
 empty.[^n28-s6][^manifest] Two oracle details surfaced on the way: MadGraph
 groups this process's 35 diagrams into 21 `AMP2` accumulators
 (`N_MAX_CG = 21`), and its grouping is `[0,2,4,6],[1,3,5,7],…`, so a

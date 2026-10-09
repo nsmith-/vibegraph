@@ -135,8 +135,9 @@ read (code-located defects are [madgraph-defects](madgraph-defects.md)):
   (`e+ e- > e+ e-`) against their own quotes. Seeds run in one shared
   directory each inherit their predecessors' grids and are not independent
   draws: on the MLM rows they scattered *less* than they quoted (χ²/dof
-  0.3–0.8), and against 21 independent directories the shared-directory
-  `pp_to_ll_0j2j_mlm` reference read `@1` 0.43% high.
+  0.3–0.8 across the rows, only the top-pair `@0` at 1.03). The
+  shared-directory `pp_to_ll_0j2j_mlm` reference, whose seeds read χ²/dof
+  0.4–0.7, read `@1` 0.43% high against 21 independent directories.
   The seed policy and one freshly generated directory per seed answer
   both[^n41-z].
 - **A `dummy_cuts`-windowed run understates its own seed spread**, by about 2× in

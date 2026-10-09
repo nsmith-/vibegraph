@@ -37,7 +37,9 @@ MadGraph's own release-note bug history is in
 [the code-quality review](../references/codebases/madgraph5-code-quality-review.md).
 Treatment follows [the defect policy](madgraph-defect-policy.md): a defect that
 changes a weight on a card we support is reproduced bug-for-bug with a comment
-naming it, or refused, never silently "fixed". Lines are at the pinned tree
+naming it, or refused, or (by user decision, measured and named in the
+affected rows' manifest notes) kept as a registered deviation; it is never
+silently "fixed". Lines are at the pinned tree
 `b7687064` (3.7.1) unless stated.
 
 **Upstream status: nothing filed.** Report drafts for the AQCDUP truncation,

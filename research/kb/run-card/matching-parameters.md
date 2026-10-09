@@ -72,8 +72,9 @@ Tests: `xqcut_sets_the_jet_thresholds_under_auto_ptj_mjj`,
 ## The τ floor, and why `ptj < xqcut` is refused
 
 MadEvent's `setxqcuts` (`setcuts.f:892-955`, called at `:883-884`) sets per-leg
-and per-pair `xqcut` thresholds, from which `set_peaks` (`myamp.f:337-560`)
-builds phase-space hints: jet energy floors `max(ptj, √(xqcut² − m²))`,
+and per-pair `xqcut` thresholds, from which `set_peaks` (`myamp.f:207-594`;
+the leg floors at `:345-348`, the pair floor at `:395`, the ŝ lower limit at
+`:540-582`) builds phase-space hints: jet energy floors `max(ptj, √(xqcut² − m²))`,
 an extra floor of `xqcut` on the energy of an outgoing pair meeting in an
 s-channel of the given channel, and a lower limit on τ, `(Σ xe)²/s`. The τ
 limit acts as a hard cut. With the resolved `ptj = xqcut` (the default, the

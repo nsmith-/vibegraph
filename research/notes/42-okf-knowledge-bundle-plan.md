@@ -19,11 +19,11 @@ the plan: the target shape, how a sprint runs against it, the backlog as
 one-file items with a generated view, the migration phases, and the decisions
 taken in the planning discussion.
 
-**Status: in progress.** Phases B, 0 and 1 ran on 2026-10-06, after the PRs in
-flight had merged (§8 records how each went). Phase 1 stopped at its
-checkpoint: the proposed taxonomy awaits the user's approval before Phase 2. All other
-work pauses while the migration runs, so no parallel stream writes notes or
-backlog entries in the meantime. The decisions taken are in §9.
+**Status: in progress.** Phases B, 0 and 1 ran on 2026-10-06; the user approved
+the taxonomy on 2026-10-09, and Phases 2 and 3 ran the same day (§8 records how
+each went). Phase 4, the move and re-citation, is next. All other work pauses
+while the migration runs, so no parallel stream writes notes or backlog entries
+in the meantime. The decisions taken are in §9.
 
 ## 1. OKF in brief
 
@@ -469,7 +469,7 @@ resulting 428 overlapping proposals into 242 concepts in 16 folders, about
 or dropped, and every non-history chunk feeds a concept. The proposal adds
 `run-card/`, `hadronic/`, `tooling/` and `workflow/` to §3's folders.
 
-### Phase 2 — draft concepts (subagents)
+### Phase 2 — draft concepts (subagents) — done 2026-10-09
 
 One agent per cluster, ~8–10. Each gets its cluster's chunks plus `kb-query`
 for context the clustering missed. Each writes only into its own folder, and
@@ -477,12 +477,38 @@ marks every concept `status: draft` with `generated.by` itself. Sprint plans are
 mined for their decisions, which become `Design Decision` concepts in topic
 folders; each plan shrinks to a `Sprint Record` linking to them.
 
-### Phase 3 — adversarial verification and coverage
+**As executed.** Sixteen agents drafted the approved concepts into
+`research/kb/<folder>/`, each from its concepts' chunks and their `resolve`
+lines, settling each contradiction against the code and, for MadGraph, against
+the pinned source fetched at the full commit. 229 concepts, about 33k lines:
+241 approved, less `workflow/sprint-rhythm` (folded into `sprint-lifecycle`,
+since the decision it held is deprecated) and 11 papers cited only in passing,
+which became `sources` entries instead of concepts (decision 5 on the taxonomy
+page). Three Phase B facts were absorbed and their files retire at Phase 4. The
+drafters' input `links` still carried pre-reconciliation ids; each drafter
+mapped them to the nearest surviving concept, and a bundle-wide check confirmed
+every concept link resolves. Short commit hashes in permalinks were expanded to
+full ones, since the short form does not resolve for raw fetches.
+
+### Phase 3 — adversarial verification and coverage — done 2026-10-09
 
 Separate verifier agents trace every number and claim back to a source chunk.
 A coverage map assigns each chunk ID to at least one concept or explicitly tags
 it `history-only`. The script checks coverage; the drafting agents do not get
 to assert it.
+
+**As executed.** Coverage: every one of the 1,022 non-history chunks is used by
+a concept, left out with a stated reason, or carried by a backlog item; none is
+missing. Sixteen fresh agents then verified one drafting group each against the
+source chunks, the code and MadGraph at the pin. All 229 concepts carry a
+`verified` stamp at the machine tier, and most needed fixes: superseded numbers
+presented as current, claims about the code that no longer hold, MadGraph line
+numbers from 3.5.x, dropped caveats, and a few outright errors (an `IDWTUP`
+rule stated as the defect it guards against, MadGraph's no-admissible-pair
+behaviour, a reverted fermion-sign rule told as correct). Corrections that
+crossed groups went to one cross-fix pass. Work the agents found in the code
+and backlog, over a hundred raw reports, was verified, deduplicated and filed
+as backlog items. Concepts stay `status: draft` until a person reviews them.
 
 ### Phase 4 — move and re-cite
 
