@@ -16,17 +16,15 @@ pub(crate) mod vertex;
 pub mod wavefn;
 
 pub use repr::lorentz::{Bispinor, LorentzVector};
-#[allow(unused_imports)]
-pub(crate) use vertex::{ffv2_4_3, j3xxxx};
 pub use vertex::{iovxxx, jioxxx};
-#[allow(unused_imports)]
-pub(crate) use wavefn::VectorWf;
 pub use wavefn::{InDiracWf, OutDiracWf};
 
 #[cfg(test)]
 mod tests {
     use crate::helas::repr::lorentz::{ComplexVector, SpinorRepr};
 
+    use super::vertex::j3xxxx;
+    use super::wavefn::VectorWf;
     use super::*;
     use itertools::iproduct;
     use num_complex::Complex64;

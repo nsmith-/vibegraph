@@ -112,8 +112,6 @@ pub mod op_census {
 
 pub use compile::{config_groups, AmplitudeEvaluator};
 pub use lane_field::{LaneField, Lanes, SupportedLanes};
-#[allow(unused_imports)]
-pub(crate) use op::Sym;
 pub use rescale::ScaleAwareAmplitude;
 pub use run::{
     eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, BoundAmplitude, ScratchSpace,

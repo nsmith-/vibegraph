@@ -1956,8 +1956,9 @@ mod tests {
         helas::{
             eval::diagram_eval::{ExtLegInfo, PropInfo, VertexInfo, VertexTerm},
             eval::root_diagram::{EvalNode, EvalNodeId},
-            ffv2_4_3, iovxxx, jioxxx,
+            iovxxx, jioxxx,
             repr::numbers::Charge,
+            vertex::ffv2_4_3,
             OutDiracWf,
         },
         ufo::color::ColorExpr,
@@ -3839,7 +3840,7 @@ mod tests {
     #[test]
     fn test_sexpr_roundtrip_eemumu() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use crate::helas::eval::Sym;
+        use crate::helas::eval::op::Sym;
 
         let model = sm_model(SMRestrict::Default);
         let opts = ParsingOptions::default();
