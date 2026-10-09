@@ -29,7 +29,7 @@ scripts/gen-cli-docs.sh target/debug/vibegraph
 claims=()
 [[ -n "${GITHUB_TOKEN:-}" ]] && claims=(--claims)
 pixi run backlog ${claims[@]+"${claims[@]}"} \
-  --link-base "https://github.com/nsmith-/vibegraph/blob/main/research/notes/" \
+  --link-base "https://github.com/nsmith-/vibegraph/blob/main/research/kb/" \
   -o docs/src/backlog.md
 
 RUSTDOCFLAGS="--html-in-header $repo/doc-include/mathjax-header.html" \

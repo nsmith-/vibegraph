@@ -17,9 +17,7 @@ sources:
 ---
 The work backlog is one file per open item under
 `research/kb/backlog/<area>/<slug>.md`, where the area is `validation`,
-`feature`, `performance` or `hygiene`. Until the migration's Phase 4 moves
-them into the bundle, the item files live under `research/notes/backlog/<area>/`
-and `scripts/kb.py` reads them from there. There is no backlog document to edit.
+`feature`, `performance` or `hygiene`. There is no backlog document to edit.
 `TODO.md` at the repository root is a stub that points to the items and is not
 edited.
 This design replaced a single `TODO.md` that every work stream edited, which

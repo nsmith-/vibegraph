@@ -14,34 +14,22 @@ report back.
 1. `AGENTS.md` — project conventions. Binding throughout: the comment guidelines
    (no narrative or plan-referencing comments, no sprint/session names in code),
    the **Physics Validation** section, and the Implementation Conventions.
-2. The sprint's design note in `research/notes/` (named in your assignment) — the
-   sections covering your session are binding design.
+2. Your session brief under `research/kb/sprints/<name>/sessions/` (named in your
+   assignment) and the design concepts it links — binding design.
 3. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
-   and the notes they link — your scope boundaries.
-4. From the note index below, whatever your session touches.
+   and the concepts they link — your scope boundaries.
+4. From the knowledge bundle (below), whatever your session touches.
 
-### Research note index
+### Knowledge bundle
 
-- `13-typed-repr-conventions-design.md` — representation types, HELAS kernels,
-  eval-graph ops (binding for anything touching them).
-- `06-process-grammar.md` — process specification and diagram enumeration.
-- `16-color-flow-design.md` — multi-flow color, JAMP/CF conventions; §6 is the
-  fermion-flow slot-swap debrief.
-- `18-hadronic-xsec-design.md` — PDF convolution, (τ,y) mapping, run-card cuts.
-- `21-resonance-sampling-and-events-plan.md` — multichannel design, channel
-  maps, phase-space abstraction.
-- `22-dynamical-scales-plan.md` — αs RGE, μR/μF plumbing (note 07 records MG's
-  own SCALUP/AQCDUP defects).
-- `23-event-output-lhef-plan.md` — LHEF writer/reader, unweighting, colour
-  selection.
-- `28-kt-spine-feature-sprint-plan.md` — kT clustering, multi-rung t-channel
-  spine, channel-dependent scales.
-- `35-ufo-lorentz-sprint-plan.md` — general UFO Lorentz structures: the
-  rank-2 tensor representation, SMEFTsim as the gated test case (interaction
-  splitting, `Epsilon`, γ-chains, four-fermion, tensor⊗tensor), the toy UFO.
-- `01-paper-summaries.md`, `02-reference-implementations.md`,
-  `03-sherpa-powheg.md` §1.5, `research/refs/README.md` — papers,
-  reference-implementation key paths, and how to fetch both.
+Start at `research/kb/index.md` and read outward from your item's links. The
+topic folders follow the pipeline: `model/` (UFO), `process/` (proc cards,
+enumeration, decays), `amplitudes/` (representation types, HELAS kernels,
+evaluator IR, sign and colour conventions; binding for anything touching
+them), `phase-space/`, `scales-pdf/`, `hadronic/`, `run-card/`, `events/`
+(unweighting, LHEF), `pipeline/` (overview, release scope, artifacts), and
+`references/` (papers and upstream codebases read at the pinned commits;
+`research/refs/README.md` says how to fetch them).
 
 ## Feature-sprint focus
 
@@ -117,7 +105,7 @@ report back.
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not create or edit backlog items, `research/notes/`,
+- **No bookkeeping edits**: do not create or edit backlog items, `research/kb/`,
   or memory files unless the assignment explicitly says so (that is the close-out session's
   job).
 

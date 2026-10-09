@@ -1,8 +1,9 @@
 ---
-type: Procedure
+type: Sprint Record
 title: OKF migration of the research notes
-description: "The phased migration of research/notes and TODO.md into the research/kb bundle, with each completed phase's record; holds until Phase 4 completes, then becomes the migration's Sprint Record."
-status: draft
+description: "The migration of the research notes and TODO.md into the research/kb OKF bundle, 2026-10-06 to 10-09: what each phase did and what it produced."
+closed: 2026-10-09
+status: stable
 tags: [okf, migration, knowledge-bundle, backlog, sprint]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
@@ -15,13 +16,11 @@ sources:
   - {id: n42-risks, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L537-L555", title: "Note 42 §10: risks"}
   - {id: n42-start, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L51-L74", title: "Note 42 §2: starting point"}
 ---
-The migration turns the numbered notes in `research/notes/` and the backlog
+The migration turned the numbered notes in `research/notes/` and the backlog
 that `TODO.md` held into the topic-organised bundle under `research/kb/`
-([the knowledge bundle](../workflow/knowledge-bundle.md)). It is tracked by the
-backlog item
-[okf-knowledge-bundle-migration](../backlog/hygiene/okf-knowledge-bundle-migration.md),
-which closes when Phase 4 is complete. At that point this procedure becomes the
-migration's `Sprint Record`.
+([the knowledge bundle](../workflow/knowledge-bundle.md)). It ran from
+2026-10-06 to 2026-10-09 and closed with Phase 4; Phase 5 stays optional and
+outside it.
 
 **Ground rules (user, 2026-10-05):**[^n42-decisions]
 
@@ -44,8 +43,8 @@ touched by 24 of the 73 commits then in the local history.[^n42-start]
 ## Phase B — split the backlog (before the notes)
 
 Splitting `TODO.md` does not depend on migrating the notes, so it went first.
-Items live in `research/notes/backlog/` beside the notes, linking notes by
-path, until Phase 4 moves them.[^n42-phaseb]
+Items lived in `research/notes/backlog/` beside the notes until Phase 4 moved
+them to `backlog/`.[^n42-phaseb]
 
 1. Mechanically split each `TODO.md` entry into an item file.
 2. One agent pass per area trims narrative, writes `closes_when`, assigns
@@ -72,7 +71,7 @@ path, until Phase 4 moves them.[^n42-phaseb]
 - Every entry ID is accounted for in the agents' reports. Stale entries were
   corrected: renamed functions, superseded figures, wrong section citations,
   and refusals that no longer exist.
-- Phase B's other outputs sit beside the notes until Phase 4:
+- Phase B's other outputs sat beside the notes until Phase 4:
   `sprints/<name>/closeout.md` (one record per closed-sprint line), `decisions/`,
   `facts/` and `pipeline/status.md`.
 - The tooling is `scripts/kb.py`. CI runs `kb-lint` in its own job.
@@ -140,7 +139,7 @@ Sixteen agents draft in parallel, one group of concepts each, and write only
 their own concepts under `research/kb/<folder>/`. Nothing else in the
 repository changes in this phase.[^n42-phase2-5]
 
-- Each concept is `status: draft`, with `generated.by` set to the agent.
+- Each concept is `status: stable`, with `generated.by` set to the agent.
 - Each states current truth: it settles its listed contradictions against the
   code or the later note, keeps every caveat, and carries no sprint narrative.
 - Sprint plans are mined for their decisions, which become `Design Decision`
@@ -178,6 +177,22 @@ available as `sources`.[^n42-risks]
 5. Update the agent briefs (start at `research/kb/index.md`) and the planning
    section of `AGENTS.md`.
 6. Add a `new-sprint` scaffold script.
+
+**As executed (2026-10-09).** The 54 notes moved to `history/notes/` as
+deprecated Working Notes, each with `original_type` and a `replaced_by` list
+built from the chunk-to-concept map (the concepts its chunks feed, largest
+first). The backlog, the reviewed decisions and the Sprint Records moved in
+beside the topic folders. The four Phase B facts and the pipeline status table
+retired: each was absorbed by a concept, and links to them were rewritten. 192
+relative links in the moved files were recomputed for the new layout. Citations
+outside the bundle that named a `research/notes/` path (code comments,
+`AGENTS.md`, the agent briefs, `README.md`, `TODO.md`, the docs, the
+validation scripts) were re-pointed at the replacing concepts; bare
+"note NN" mentions, as in the manifest's notes, still resolve under
+`history/notes/`. `kb.py`'s root is `research/kb/`, its lint checks every link
+outside the archive, and `pixi run new-sprint` scaffolds a sprint folder. The
+concepts stay `status: draft` with machine-tier `verified` stamps until a
+person reviews them.
 
 ## Phase 5 (optional) — Attested Computations for gates
 

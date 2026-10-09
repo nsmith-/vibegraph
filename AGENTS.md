@@ -7,13 +7,13 @@ studying the standard HEP event simulation toolchain step by step.
 
 ## Planning & Progress
 
-The work backlog is one file per open item under `research/notes/backlog/<area>/`
-(the format and rules are note 42 §7). **Start from what your brief names** — a
+The work backlog is one file per open item under `research/kb/backlog/<area>/`
+(the format and rules are `research/kb/workflow/backlog-items.md`). **Start from what your brief names** — a
 sprint's session brief or a single backlog item — and read outward from its
 links: `pixi run backlog --item <slug>` prints the item, what blocks it, and the
 notes it links. Don't read the whole backlog first; the full view
 (`pixi run backlog`, also a page on the documentation site) is for planning.
-Deeper derivations live in `research/notes/`.
+Deeper derivations live in the knowledge bundle under `research/kb/`.
 
 **When work closes an item, its PR deletes the item's file**; the account of how
 it was solved belongs in the sprint record or session report, not the backlog.
@@ -69,8 +69,8 @@ For paper references, submodule locations and key paths, and instructions for fe
 - **Keep a known-wrong informational comparison running** while a feature is under
   construction (enforce it later): it turns "the feature went live" into an instant
   end-to-end signal against the reference.
-- **Amplitude disagreements: bit-exact oracle first** (note 12 is the full
-  methodology). Match parameter provenance on both sides, then go straight to
+- **Amplitude disagreements: bit-exact oracle first** (`research/kb/validation/bit-exact-amplitude-debugging.md`
+  is the full methodology). Match parameter provenance on both sides, then go straight to
   per-diagram × per-helicity (and per-flow) complex dumps. Ward identities,
   hand-built test diagrams, two-helicity ratios and total |M|² are
   underdetermined oracles; machine-check census claims (by-hand diagram counts
@@ -202,6 +202,13 @@ use the `claude` agent type with an explicit model override — never
   absent on macOS). An interrupted worktree `git submodule update` leaves partial
   state under `.git/worktrees/<wt>/modules/` — remove it before retrying.
 
-## Working Notes
+## Knowledge Bundle
 
-See `research/notes/` for step-by-step derivations and implementation notes.
+`research/kb/` is the project's knowledge bundle (OKF v0.2): topic concepts
+(conventions, designs, decisions, measurements), the backlog, reviewed
+decisions and sprint records. Start at `research/kb/index.md` and follow the
+links; `pixi run kb-index` regenerates the indexes and `pixi run kb-lint`
+checks the bundle (CI runs it). The original working notes are archived,
+unchanged, under `research/kb/history/notes/`; each lists the concepts that
+replaced it in `replaced_by`. New knowledge goes into a concept, never a new
+numbered note.

@@ -17,7 +17,7 @@
 //! bit-for-bit even when it is correct.
 //!
 //! Full sweep (passes — the rooting-dependent convention signs are lifted to the
-//! diagram's `fermi_sign` at the anchor rooting; see `research/notes/19` §V5):
+//! diagram's `fermi_sign` at the anchor rooting; see `research/kb/amplitudes/rooting-invariance-and-anchor.md`):
 //! ```text
 //! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
 //!     --lib helas::eval::rooting_soundness::all_rootings_preserve_amplitude \
@@ -233,7 +233,7 @@ fn record(
 /// root (all *other* diagrams held at `VtxIdx(0)`), and require the resulting |M|² to
 /// match the baseline within `REL_TOL`. A correct amplitude is root-invariant; a
 /// deviation is a soundness bug in momentum routing / Lorentz-output rooting /
-/// fermion-spine signs (see `research/notes/19` §V5).
+/// fermion-spine signs (see `research/kb/amplitudes/rooting-invariance-and-anchor.md`).
 ///
 /// This passes: the honest currents are rooting-invariant tensors and every
 /// rooting-dependent convention sign (build-convention, reversed-bilinear) is lifted to

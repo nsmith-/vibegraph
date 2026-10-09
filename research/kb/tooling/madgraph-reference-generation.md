@@ -198,4 +198,4 @@ C++ runtime appended to `LDFLAGS`; the platform rules are in
 [^n41-z]: Note 41 §Z.3, the bank procedure's run-time estimate (runs 30–160 s, replays 8–62 min, about four hours in all).
 [^n41-writer]: Note 41 §Z, "How it was written, and how B1 reproduces it".
 [^n41-b1]: Note 41 §B1, generation and the reproduction check.
-[^fact-missing-dir]: `research/notes/facts/extract-diagrams-reruns-madgraph-on-missing-dir.md`.
+[^fact-missing-dir]: [the retired Phase B fact](https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/extract-diagrams-reruns-madgraph-on-missing-dir.md).

@@ -258,7 +258,7 @@ the way MadEvent sums its `P<n>` directories). Colour sextets and baryonic epsil
 corners still refused rather than guessed: a `T6` carrying adjoint indices, and
 any colour basis in which such a tensor survives to an external leg, which no
 Les Houches record can write. See the [backlog](https://nsmith-.github.io/vibegraph/backlog.html) and the
-design notes in [`research/notes/`](research/notes/).
+design record in [`research/kb/`](research/kb/index.md).
 
 ## Validation
 
@@ -302,7 +302,8 @@ Every ratio below compares both sides **on one host, in one sitting**:
 - **Our side:** default x86-64 codegen.
 
 The full record, with every command, is
-[`research/notes/mg-comparison-cascade-lake-results.md`](research/notes/mg-comparison-cascade-lake-results.md).
+[`research/kb/performance/integration-vs-madgraph.md`](research/kb/performance/integration-vs-madgraph.md) and
+[`research/kb/performance/matrix-element-vs-madgraph.md`](research/kb/performance/matrix-element-vs-madgraph.md).
 Figures that could not be re-measured there are marked as Apple M3 Max ones.
 
 ### The matrix element, per point
@@ -330,7 +331,7 @@ matrix-element gate throughout:
   match bit for bit;
 - specialising the arithmetic itself.
 
-The full record lives in [`research/notes/`](research/notes/).
+The full record lives in [`research/kb/performance/`](research/kb/performance/index.md).
 
 ### End to end: the integrand, not just the matrix element
 
@@ -472,7 +473,8 @@ vibegraph-lib/        Library: ufo/, diagrams/, helas/, phasespace/, vegas,
                       lhef/, artifact
 vibegraph-cli/        The `vibegraph` binary (integrate, generate, check-events)
 validation/           MadGraph/HELAS/PDF reference generation + banked references
-research/notes/       Numbered design and outcome notes (the project's real record)
+research/kb/          The knowledge bundle: topic concepts, backlog items, decisions,
+                      sprint records, and the original notes under history/notes/
 research/refs/        Reference code as submodules (mg5amcnlo, feyngraph) — see
                       research/refs/README.md
 scripts/              Acceptance run, profiling and perf-comparison kits, and
@@ -481,10 +483,13 @@ docs/                 The documentation site (mdBook); scripts/build-docs.sh
                       assembles it with the API and CLI references
 ```
 
-The backlog is one file per open work item under `research/notes/backlog/`,
-rendered as a single page by `pixi run backlog` and on the documentation
-site; the notes in `research/notes/` record the design, the bugs found, and the measured outcome of
-each piece of work in full.
+`research/kb/` is the project's record, an
+[OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+knowledge bundle: one concept per convention, design, decision or measurement,
+under topic folders, starting at [`research/kb/index.md`](research/kb/index.md).
+The backlog is one file per open work item under `research/kb/backlog/`,
+rendered as a single page by `pixi run backlog` and on the documentation site.
+The original working notes are archived under `research/kb/history/notes/`.
 
 ## Contributing
 

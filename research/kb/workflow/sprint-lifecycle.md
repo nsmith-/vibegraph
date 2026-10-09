@@ -17,10 +17,10 @@ sources:
 A sprint is a **folder of linked concepts**, not one plan file that grows to
 thousands of lines. Lasting knowledge is promoted into the topic folders at
 close-out. The procedure below is how a sprint runs.[^n42-lifecycle] No sprint
-has run in this shape yet: the dev-agent definitions and `AGENTS.md` adopt it
-at the migration's Phase 4. Until then a dev agent returns its report,
-including **Found**, as its final message, and does not edit `research/notes/`
-unless its assignment says so.
+has run in this shape yet; the hygiene sprint is the first. A dev agent
+returns its report, including **Found**, as its final message, and edits
+nothing under `research/kb/` unless its assignment says so; the manager
+records the report as `sessions/<id>-report.md`.
 
 Under [one PR per backlog item](../decisions/pr-per-backlog-item.md), most work
 is a single item's PR. A manager runs feature, validation and performance
@@ -134,9 +134,8 @@ it lands after those PRs or rebases onto them.[^n38-rhythm]
   sprint folders. Close-out discipline is the guard. A lint check that flags a
   `stable` sprint still linking `draft` design concepts is possible, but
   `kb-lint` does not have it yet.
-- **Frontmatter overhead per sprint.** The generated indexes keep it small,
-  and so will a `new-sprint` scaffold script, which Phase 4 of the migration
-  adds; it does not exist yet.
+- **Frontmatter overhead per sprint.** The generated indexes and
+  `pixi run new-sprint <name>` keep it small.
 
 Validation sessions in a sprint follow
 [expose, don't fix](expose-dont-fix.md). The older three-session chain is

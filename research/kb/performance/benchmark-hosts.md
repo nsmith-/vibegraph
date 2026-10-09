@@ -136,7 +136,7 @@ filled in by hand from `/proc/cpuinfo`.[^cl-uncovered][^host-info] Open as
 [^cl-host]: Cascade Lake comparison §1.
 [^cl-uncovered]: Cascade Lake comparison §5.
 [^td-host]: Top-down counters on Zen 4, host and measurement caveats.
-[^fact-noise]: `research/notes/facts/m3-max-host-timing-noise.md`, the Phase-B fact replaced here.
+[^fact-noise]: [the Phase B fact replaced here](https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/m3-max-host-timing-noise.md).
 [^tds-hosts]: Threaded-dispatch study, Cascade Lake host block (caches, toolchain, drift).
 [^tds-m3]: Threaded-dispatch study §4, M3 Max host (caches, E-core slow stretches).
 [^host-info]: `validation/madgraph/host_info.py`, `sysctl`-only `host_block`.

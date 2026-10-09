@@ -127,10 +127,9 @@ anyway, so a Rust crate would buy nothing.[^n42-decisions]
 | `pixi run kb-lint` | Runs in CI as its own job. |
 | `pixi run backlog` | Renders the backlog view ([backlog items](backlog-items.md)). |
 
-The scripts read one bundle root, `ROOT` in `kb.py`. It is `research/notes/`
-until the migration's Phase 4 moves the notes, backlog and decisions into
-`research/kb/` and repoints it, so until then `kb-lint` and `kb-index` do not
-read the concepts under `research/kb/`.
+The scripts read one bundle root, `ROOT` in `kb.py`: `research/kb/`.
+`pixi run new-sprint <name>` scaffolds `sprints/<name>/` with `sprint.md`,
+`log.md`, `sessions/` and `decisions/`.
 
 `kb-lint` checks the following:
 
