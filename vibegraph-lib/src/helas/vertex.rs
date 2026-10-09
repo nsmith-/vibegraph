@@ -23,7 +23,8 @@ use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 /// * `gzf`    – Z couplings       `[g_L^Z, g_R^Z]`
 /// * `zmass`  – Z mass
 /// * `zwidth` – Z total decay width (Breit-Wigner)
-pub fn j3xxxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn j3xxxx<F: Real>(
     fo: &OutDiracWf<F>,
     fi: &InDiracWf<F>,
     gaf: [F; 2],
@@ -87,7 +88,7 @@ pub fn j3xxxx<F: Real>(
 /// Mirrors the HELAS `jioxxx` routine.  Uses Feynman gauge for massless bosons
 /// and unitary gauge (with the Fabio fixed-width prescription) for massive ones.
 ///
-/// Unlike [`j3xxxx`], this routine handles a single boson species (photon *or*
+/// Unlike `j3xxxx`, this routine handles a single boson species (photon *or*
 /// Z) at a time.  To compute the full SM `e⁺e⁻ → μ⁺μ⁻` matrix element, call
 /// this once for the photon and once for the Z, then sum the resulting
 /// amplitudes before squaring.
@@ -174,6 +175,7 @@ pub fn iovxxx<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, v: &VectorWf<F>, g
 // `jioxxx` current times that `−i`.
 
 /// The four Weyl-basis spinor components, ordered as the HELAS/ALOHA `F(3..6)` array.
+#[allow(dead_code)]
 fn spinor_components<F: Real, Adj: DiracAdjoint>(s: &Bispinor<F, Adj>) -> [C<F>; 4] {
     [
         s.component(0),
@@ -186,7 +188,8 @@ fn spinor_components<F: Real, Adj: DiracAdjoint>(s: &Bispinor<F, Adj>) -> [C<F>;
 /// ALOHA `FFV2_3`: off-shell vector current with the pure-left (P_L) structure.
 ///
 /// `f1` is the flow-IN (ket) fermion `F1`, `f2` the flow-OUT (bra) fermion `F2`.
-pub fn ffv2_3<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn ffv2_3<F: Real>(
     f1: &InDiracWf<F>,
     f2: &OutDiracWf<F>,
     coup: C<F>,
@@ -223,7 +226,8 @@ pub fn ffv2_3<F: Real>(
 /// ALOHA `FFV4_3`: off-shell vector current with the (P_L + 2·P_R) structure.
 ///
 /// `f1` is the flow-IN (ket) fermion `F1`, `f2` the flow-OUT (bra) fermion `F2`.
-pub fn ffv4_3<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn ffv4_3<F: Real>(
     f1: &InDiracWf<F>,
     f2: &OutDiracWf<F>,
     coup: C<F>,
@@ -285,7 +289,8 @@ pub fn ffv4_3<F: Real>(
 ///
 /// Equivalent to `ffv2_3(.., coup1, ..) + ffv4_3(.., coup2, ..)` — exactly the body
 /// of the generated `FFV2_4_3.f` wrapper.
-pub fn ffv2_4_3<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn ffv2_4_3<F: Real>(
     f1: &InDiracWf<F>,
     f2: &OutDiracWf<F>,
     coup1: C<F>,
@@ -311,7 +316,8 @@ pub fn ffv2_4_3<F: Real>(
 /// component is part of ALOHA's gamma algebra; the overall current relates to the
 /// vibegraph evaluator's by the same global `−i` UFO-coupling factor as the other
 /// ALOHA references.
-pub fn ffv2_2<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn ffv2_2<F: Real>(
     f1: &InDiracWf<F>,
     v: &VectorWf<F>,
     coup: C<F>,
@@ -363,7 +369,8 @@ pub fn ffv2_2<F: Real>(
 /// SM Z fermion absorption (`FFV2_4_2 = ffv2_2(coup1) + ffv4_2(coup2)`). Transcribed
 /// component-for-component from `FFV4_2.f`; relates to the vibegraph evaluator by the
 /// same global `−i` factor.
-pub fn ffv4_2<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn ffv4_2<F: Real>(
     f1: &InDiracWf<F>,
     v: &VectorWf<F>,
     coup: C<F>,
@@ -457,7 +464,8 @@ pub fn ffv4_2<F: Real>(
 /// Off-shell fermion current as `InDiracWf<F>` (the codebase stores every
 /// off-shell fermion in the flow-IN representation so it can be paired with a
 /// flow-OUT leg at the next vertex).
-pub fn fvixxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn fvixxx<F: Real>(
     fi: &InDiracWf<F>,
     v: &VectorWf<F>,
     gc: [F; 2],
@@ -495,7 +503,8 @@ pub fn fvixxx<F: Real>(
 /// # Returns
 /// Off-shell fermion current as `OutDiracWf<F>`. `ε̸` and the propagator are
 /// flow-preserving, so a flow-OUT (bra) input yields a flow-OUT current.
-pub fn fvoxxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn fvoxxx<F: Real>(
     fo: &OutDiracWf<F>,
     v: &VectorWf<F>,
     g: [F; 2],
@@ -533,7 +542,8 @@ pub fn fvoxxx<F: Real>(
 ///
 /// # Returns
 /// Off-shell vector boson as `VectorWf<F>`.
-pub fn jvvxxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn jvvxxx<F: Real>(
     v2: &VectorWf<F>,
     v3: &VectorWf<F>,
     g: C<F>,
@@ -580,7 +590,8 @@ pub fn jvvxxx<F: Real>(
 ///
 /// # Returns
 /// Off-shell scalar current as `ScalarWf<F>`.
-pub fn jsixxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn jsixxx<F: Real>(
     fo: &OutDiracWf<F>,
     fi: &InDiracWf<F>,
     g: C<F>,
@@ -615,7 +626,8 @@ pub fn jsixxx<F: Real>(
 ///
 /// # Returns
 /// Complex amplitude.
-pub fn iosxxx<F: Real>(
+#[allow(dead_code)]
+pub(crate) fn iosxxx<F: Real>(
     fo: &OutDiracWf<F>,
     fi: &InDiracWf<F>,
     s: &ScalarWf<F>,

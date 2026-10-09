@@ -265,7 +265,7 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 
 /// The `<MGRunCard>` element MadGraph puts in an event file's header
 /// (`banner.py:69-86`): the run card, one `value = name` line per parameter,
-/// as MadGraph records it ([`RunCard::banner_values`]).
+/// as MadGraph records it (`RunCard::banner_values`).
 ///
 /// The body is element text, with `<`, `>` and `&` escaped, and not the CDATA
 /// section MadGraph wraps it in: Pythia 8.312's reader drops a CDATA
@@ -322,7 +322,7 @@ pub fn mg_run_card(card: &RunCard) -> String {
 ///
 /// The ids go into attributes unescaped, so they must be attribute-safe; the
 /// descriptions are escaped.
-pub fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
+pub(crate) fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
     let mut lines = vec![
         "<initrwgt>".to_string(),
         "<weightgroup name='mg_reweighting' weight_name_strategy='includeIdInWeightName'>"
@@ -341,7 +341,7 @@ pub fn initrwgt_block(weights: &[(String, String)]) -> Vec<String> {
 
 /// One event's `<rwgt>` block: the event's weight under each hypothesis, in
 /// `XWGTUP`'s own units, as `<wgt id='…'>` lines. Empty when there are none.
-pub fn rwgt_block(ids: &[String], weights: &[f64]) -> Vec<String> {
+pub(crate) fn rwgt_block(ids: &[String], weights: &[f64]) -> Vec<String> {
     assert_eq!(ids.len(), weights.len(), "one weight per declared id");
     if ids.is_empty() {
         return Vec::new();
@@ -384,7 +384,7 @@ impl<W: Write> LheWriter<W> {
     /// [`begin`](Self::begin), with `blocks` — complete XML elements such as
     /// [`mg_run_card`]'s — written inside `<header>` after the comment, each on
     /// its own line.
-    pub fn begin_with_blocks(
+    pub(crate) fn begin_with_blocks(
         mut out: W,
         init: &LheInit,
         header: Option<&str>,
@@ -430,7 +430,7 @@ impl<W: Write> LheWriter<W> {
     }
 
     /// How many events have been written.
-    pub fn events_written(&self) -> u64 {
+    pub(crate) fn events_written(&self) -> u64 {
         self.events
     }
 

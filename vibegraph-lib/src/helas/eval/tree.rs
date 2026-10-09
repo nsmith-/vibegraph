@@ -12,7 +12,7 @@
 /// `max_depth`, `linearize`) build on them. All traversals assume a genuine tree: every
 /// node is reached exactly once. A DAG (shared child) will be visited — and evaluated —
 /// once per path to it.
-pub trait Tree {
+pub(crate) trait Tree {
     type Item;
     type NodeId: Copy;
 
@@ -86,7 +86,7 @@ pub trait Tree {
 /// (e.g. wavefunctions for the real run, strings for a debug trace) and shared
 /// across threads, each supplying its own scratch buffer.
 #[derive(Debug)]
-pub struct Linearized<'a, N> {
+pub(crate) struct Linearized<'a, N> {
     /// Depth-first post-order representation of the tree (node, number of children).
     ops: Vec<(&'a N, usize)>,
 }
@@ -97,7 +97,7 @@ impl<'a, N> Linearized<'a, N> {
     /// `scratch` is the working stack; it is cleared on entry and left empty on
     /// return. The caller owns it so it can be reused across evaluations (and so
     /// `&self` can be shared concurrently, each thread passing its own buffer).
-    pub fn eval<R, F>(&self, scratch: &mut Vec<R>, f: F) -> R
+    pub(crate) fn eval<R, F>(&self, scratch: &mut Vec<R>, f: F) -> R
     where
         F: Fn(&N, &[R]) -> R,
     {
@@ -114,7 +114,7 @@ impl<'a, N> Linearized<'a, N> {
 
     /// Convenience wrapper for callers not in a hot loop: allocates a fresh scratch
     /// buffer per call. Prefer [`Linearized::eval`] with a reused buffer on hot paths.
-    pub fn eval_once<R, F>(&self, f: F) -> R
+    pub(crate) fn eval_once<R, F>(&self, f: F) -> R
     where
         F: Fn(&N, &[R]) -> R,
     {
@@ -122,11 +122,11 @@ impl<'a, N> Linearized<'a, N> {
     }
 
     /// Number of nodes in the plan.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.ops.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
 }

@@ -5,7 +5,7 @@
 //! one resolution order ([`resolve::locate`]): an explicit path, an
 //! environment variable, the cache, then a repo-local dev fallback. What
 //! differs between the two kinds is how an entry is checksum-pinned once
-//! fetched — a UFO model by the existing [`crate::ufo::identity::model_digest`]
+//! fetched — a UFO model by the existing `crate::ufo::identity::model_digest`
 //! computed over its parsed form, a PDF set by the SHA-256 of the archive it
 //! was fetched as ([`store`]) — because a UFO model's digest is already the
 //! project's identity for "this is the same model", and pinning archive bytes
@@ -37,7 +37,7 @@ pub enum AssetKind {
 
 impl AssetKind {
     /// Subdirectory of the cache root holding this kind's entries.
-    pub fn cache_subdir(self) -> &'static str {
+    pub(crate) fn cache_subdir(self) -> &'static str {
         match self {
             AssetKind::Ufo => "ufo",
             AssetKind::Pdf => "pdf",

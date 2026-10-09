@@ -48,7 +48,7 @@ pub fn digest_bytes(bytes: &[u8]) -> String {
 /// Callers pass the model with its restriction already applied
 /// ([`ParsedModel::apply_restriction`]), so the digest identifies the model that
 /// was actually built rather than the pre-restriction one every variant shares.
-pub fn model_digest(model: &ParsedModel) -> String {
+pub(crate) fn model_digest(model: &ParsedModel) -> String {
     digest_bytes(&bincode::serialize(model).expect("serialize ParsedModel"))
 }
 
@@ -60,7 +60,7 @@ pub struct ModelIdentity {
     pub name: String,
     /// Restrict-card selector; `"default"` for a bare `import model sm`.
     pub restrict: String,
-    /// [`model_digest`] over the restricted model this run was built from.
+    /// `model_digest` over the restricted model this run was built from.
     pub digest: String,
 }
 
@@ -81,7 +81,7 @@ impl ModelIdentity {
 
     /// Identity of a model loaded from a UFO directory, given the digest the
     /// loader computed from the restricted model it built.
-    pub fn from_loaded(name: &str, restrict: &str, digest: String) -> Self {
+    pub(crate) fn from_loaded(name: &str, restrict: &str, digest: String) -> Self {
         ModelIdentity {
             name: name.to_string(),
             restrict: restrict.to_string(),

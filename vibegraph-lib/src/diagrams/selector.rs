@@ -13,12 +13,12 @@ const MAX_COUPLING_POWER: usize = 20;
 
 /// A fully concrete process: every leg a model particle name.
 #[derive(Debug, Clone)]
-pub struct ConcreteProcess {
-    pub initial: Vec<String>,
-    pub final_state: Vec<String>,
+pub(crate) struct ConcreteProcess {
+    pub(crate) initial: Vec<String>,
+    pub(crate) final_state: Vec<String>,
     /// Particles that may not appear as a propagator.
-    pub forbidden_particles: Vec<String>,
-    pub orders: Vec<AmplitudeOrder>,
+    pub(crate) forbidden_particles: Vec<String>,
+    pub(crate) orders: Vec<AmplitudeOrder>,
 }
 
 /// Translate a `ConcreteProcess` into a feyngraph `DiagramSelector`.
@@ -27,7 +27,7 @@ pub struct ConcreteProcess {
 /// are refused before enumeration. When they are supported they filter
 /// converted [`super::Diagram`]s, whose propagators carry the signed
 /// external-momentum combination that decides whether a line is an s-channel.
-pub fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
+pub(crate) fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
     let mut sel = DiagramSelector::new();
 
     // Forbidden propagator species: `/ Z` → zero Z propagators in the diagram.

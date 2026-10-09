@@ -102,7 +102,7 @@ pub enum PdfPointError {
 /// hierarchy. Every continuation is assembled from in-range readings taken at
 /// the grid's own edge, so an implementation is handed the interpolator the
 /// in-range path uses rather than the raw knots.
-pub trait Extrapolate2D {
+pub(crate) trait Extrapolate2D {
     /// `x·f(x, Q²)` at a point outside `interp`'s support (`pdg` 0 aliases the
     /// gluon 21).
     fn xfx_q2<I: Bicubic2D>(
@@ -116,7 +116,7 @@ pub trait Extrapolate2D {
 
 /// LHAPDF's `continuation` extrapolator, the one both fetched sets resolve to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Continuation;
+pub(crate) struct Continuation;
 
 impl Extrapolate2D for Continuation {
     fn xfx_q2<I: Bicubic2D>(
@@ -247,7 +247,7 @@ fn extrapolate_linear(x: f64, xl: f64, xh: f64, yl: f64, yh: f64) -> f64 {
 /// Whether `(x, Q²)` lies inside the flattened grid extent, i.e. whether it is
 /// the interpolator's point rather than the continuation's. This is LHAPDF's
 /// `KnotArray::inRangeX` / `inRangeQ2` pair, with both edges inclusive.
-pub fn in_grid_range(e: &GridEdges, x: f64, q2: f64) -> bool {
+pub(crate) fn in_grid_range(e: &GridEdges, x: f64, q2: f64) -> bool {
     x >= e.x_min && x <= e.x_max && q2 >= e.q2_min && q2 <= e.q2_max
 }
 

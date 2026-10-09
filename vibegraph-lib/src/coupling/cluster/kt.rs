@@ -26,11 +26,11 @@ use super::graph::{ChannelSet, ColorTable, MergeTable};
 
 /// `cluster.f`'s inflation of a beam–leg candidate whose legs point in opposite
 /// directions.
-pub const TIE_BREAK: f64 = 1.0 + 1e-6;
+pub(crate) const TIE_BREAK: f64 = 1.0 + 1e-6;
 
 /// The sentinel `cluster.f` leaves on a pair no channel allows. A candidate at or
 /// above it can never win, so an infinite measure is inert rather than fatal.
-pub const NO_MEASURE: f64 = 1.0e37;
+pub(crate) const NO_MEASURE: f64 = 1.0e37;
 
 /// The squared boost invariant below which `cluster.f:736` declines to change
 /// frame, in GeV².
@@ -102,7 +102,7 @@ pub struct Merge {
 /// One candidate pair, whether or not the merge graph allowed it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Candidate {
-    pub pass: usize,
+    pub(crate) pass: usize,
     /// The two lines' positions in the surviving list, outer first.
     pub position: [usize; 2],
     /// Their original leg numbers.
@@ -122,7 +122,7 @@ pub struct Candidate {
 /// A frame change at an initial-state merge.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Boost {
-    pub merge: usize,
+    pub(crate) merge: usize,
     pub fired: bool,
     pub lines_left: usize,
     pub frame: [f64; 4],
@@ -146,7 +146,8 @@ pub struct Clustering {
     pub tagged: Vec<(u32, i32)>,
     /// `pcl(0:4, mask)` of every line the clustering built, in whatever frame it
     /// left them.
-    pub lines: Vec<[f64; 5]>,
+    #[allow(dead_code)]
+    pub(crate) lines: Vec<[f64; 5]>,
     pub candidates: Vec<Candidate>,
     pub boosts: Vec<Boost>,
 }
@@ -202,14 +203,14 @@ impl Channel<'_> {
         &self.set.configs[self.this_config - 1]
     }
 
-    pub fn pdg(&self, mask: u32, graph: usize) -> i64 {
+    pub(crate) fn pdg(&self, mask: u32, graph: usize) -> i64 {
         self.table.ipdgcl.get(&(mask, graph)).copied().unwrap_or(0)
     }
 }
 
 /// `dot` (`kin_functions.f:593`), with the clamp that returns an exactly massless
 /// leg as massless rather than as the residue eleven printed digits leave.
-pub fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
+pub(crate) fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
     let dot = p1[0] * p2[0] - p1[1] * p2[1] - p1[2] * p2[2] - p1[3] * p2[3];
     if dot.abs() < 1e-6 {
         // The Fortran literal is single precision and underflows to zero, so the
@@ -234,7 +235,7 @@ fn sum_dot(p1: &[f64; 5], p2: &[f64; 5]) -> f64 {
 }
 
 /// `djb`: one line's measure against the beams.
-pub fn djb(settings: &ClusterSettings, p: &[f64; 5]) -> f64 {
+pub(crate) fn djb(settings: &ClusterSettings, p: &[f64; 5]) -> f64 {
     if settings.hadronic {
         (p[0] - p[3]) * (p[0] + p[3])
     } else {
@@ -244,7 +245,7 @@ pub fn djb(settings: &ClusterSettings, p: &[f64; 5]) -> f64 {
 }
 
 /// `dj`: two final-state lines against each other.
-pub fn dj(
+pub(crate) fn dj(
     settings: &ClusterSettings,
     colors: &ColorTable,
     p1: &[f64; 5],
@@ -533,7 +534,7 @@ fn cut_bw(channel: &Channel<'_>, settings: &ClusterSettings, p: &[[f64; 4]]) -> 
 /// `p` carries the external momenta in the order the channel's leg numbers use,
 /// beams first. `chcluster` restricts the merge graph to the integration channel
 /// alone, which the caller sets while the jet memo is being filled.
-pub fn cluster(
+pub(crate) fn cluster(
     channel: &Channel<'_>,
     settings: &ClusterSettings,
     p: &[[f64; 4]],

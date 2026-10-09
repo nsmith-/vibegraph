@@ -42,12 +42,12 @@ pub struct ResonanceLine {
     pub pdg: i32,
     /// Its SU(3) representation in the UFO's code (`1`, `3`, `-3`, `8`, …).
     pub color: i32,
-    pub mass: f64,
+    pub(crate) mass: f64,
     /// MadGraph's `prwidth_tmp`: the width floored at `small_width_treatment`
     /// times the mass, `0` for a line without width.
-    pub width: f64,
+    pub(crate) width: f64,
     /// Whether a decay chain forces the line on shell.
-    pub forced: bool,
+    pub(crate) forced: bool,
 }
 
 impl ResonanceLine {
@@ -65,7 +65,7 @@ impl ResonanceLine {
 }
 
 /// The sum of the outgoing momenta a slot mask names.
-pub fn sum_slots(slots: u64, outgoing: &[[f64; 4]]) -> [f64; 4] {
+pub(crate) fn sum_slots(slots: u64, outgoing: &[[f64; 4]]) -> [f64; 4] {
     let mut p = [0.0; 4];
     for (k, q) in outgoing.iter().enumerate() {
         if slots & (1u64 << k) != 0 {
@@ -129,7 +129,8 @@ impl SubprocessResonances {
     }
 
     /// Whether any configuration carries a line a decay chain forces.
-    pub fn has_forced(&self) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn has_forced(&self) -> bool {
         self.forced
     }
 
@@ -141,7 +142,7 @@ impl SubprocessResonances {
     /// Whether every forced line of `config` is inside its window at these
     /// outgoing momenta: MadEvent's `cut_bw` on that configuration, which
     /// rejects the point in its channel otherwise.
-    pub fn admits(&self, config: usize, outgoing: &[[f64; 4]]) -> bool {
+    pub(crate) fn admits(&self, config: usize, outgoing: &[[f64; 4]]) -> bool {
         self.lines(config)
             .iter()
             .filter(|l| l.forced)
@@ -157,7 +158,7 @@ impl SubprocessResonances {
     /// particles across its decays forces the same lines and admits the same
     /// points, so this changes nothing there; with them, it keeps the pairing
     /// whose windows the point is inside.
-    pub fn mask_unadmitted(&self, amp2: &mut [f64], outgoing: &[[f64; 4]]) {
+    pub(crate) fn mask_unadmitted(&self, amp2: &mut [f64], outgoing: &[[f64; 4]]) {
         if !self.forced {
             return;
         }

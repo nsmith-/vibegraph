@@ -7,7 +7,7 @@
 //! `αs(Q)` is obtained by solving the `nloop`-order β function *implicitly*: the
 //! integrated β function is inverted by Newton iteration ([`newton1`]) rather
 //! than by an explicit expansion in `1/ln(Q²/Λ²)`. The iteration stops on a
-//! **relative** step size below [`TOL`] `= 5e-4`, so the returned value is a
+//! **relative** step size below `TOL` `= 5e-4`, so the returned value is a
 //! specific iterate rather than the exact root — reproducing MadGraph therefore
 //! means reproducing the iteration, not just the underlying differential
 //! equation.
@@ -71,7 +71,7 @@ pub const BMASS: f64 = 4.7;
 pub const ZMASS: f64 = 91.188;
 
 /// Newton stopping criterion on `|Δa / a|`.
-pub const TOL: f64 = 5e-4;
+pub(crate) const TOL: f64 = 5e-4;
 
 /// β-function coefficients indexed by `nf - 3`, for `nf ∈ {3, 4, 5}`.
 ///
@@ -183,7 +183,8 @@ impl RunningAlphaS {
 
     /// `αs(BMASS)` and `αs(CMASS)`, the cached threshold values the low-scale
     /// branches evolve from.
-    pub fn thresholds(&self) -> (f64, f64) {
+    #[allow(dead_code)]
+    pub(crate) fn thresholds(&self) -> (f64, f64) {
         (self.alpha_b, self.alpha_c)
     }
 

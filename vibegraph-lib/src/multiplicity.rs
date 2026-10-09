@@ -162,7 +162,7 @@ impl<'a> MultiplicitySum<'a> {
     /// # Panics
     ///
     /// If `channel` is not a channel index.
-    pub fn locate(&self, channel: usize) -> (usize, usize) {
+    pub(crate) fn locate(&self, channel: usize) -> (usize, usize) {
         assert!(
             channel < self.channel_count(),
             "channel {channel} of {}",
@@ -185,7 +185,7 @@ impl<'a> MultiplicitySum<'a> {
 
     /// The trailing uniforms a point carries past its grid coordinates: the
     /// most any part consumes. A part that consumes fewer reads the leading ones.
-    pub fn scale_draw_ndim(&self) -> usize {
+    pub(crate) fn scale_draw_ndim(&self) -> usize {
         self.parts
             .iter()
             .map(ProtonIntegrand::scale_draw_ndim)
@@ -200,12 +200,12 @@ impl<'a> MultiplicitySum<'a> {
 
     /// The `channel`-th term at `u ∈ [0,1]^(channel_grid_ndim(channel) +
     /// scale_draw_ndim)`: that of the part it belongs to.
-    pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
+    pub(crate) fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (k, j) = self.locate(channel);
         self.parts[k].value_in_channel(j, self.part_point(k, u))
     }
 
-    /// [`value_in_channel`](Self::value_in_channel) with the point kept, and the
+    /// `value_in_channel` with the point kept, and the
     /// part it belongs to: [`ProtonIntegrand::event_in_channel`] of that part.
     pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<(usize, ProtonEvent)> {
         let (k, j) = self.locate(channel);
@@ -263,12 +263,12 @@ impl<'a> MultiplicitySum<'a> {
 
     /// Every channel's selection weight in its own part's mixture, in channel
     /// order — the `αⱼ` each term carries. They sum to one per part.
-    pub fn channel_alphas(&self) -> Vec<f64> {
+    pub(crate) fn channel_alphas(&self) -> Vec<f64> {
         self.parts.iter().flat_map(|p| p.channel_alphas()).collect()
     }
 
     /// Install every part's selection weights from one list in channel order, as
-    /// [`channel_alphas`](Self::channel_alphas) returns it.
+    /// `channel_alphas` returns it.
     ///
     /// # Panics
     ///
@@ -287,7 +287,8 @@ impl<'a> MultiplicitySum<'a> {
     }
 
     /// Each part's share of the per-iteration budget, summing to one.
-    pub fn budget_shares(&self) -> &[f64] {
+    #[allow(dead_code)]
+    pub(crate) fn budget_shares(&self) -> &[f64] {
         &self.budget_shares
     }
 
@@ -338,24 +339,9 @@ impl<'a> MultiplicitySum<'a> {
         adaptations
     }
 
-    /// Install budget shares taken from elsewhere instead of the survey's.
-    ///
-    /// # Panics
-    ///
-    /// If `shares` is not one positive share per part summing to one.
-    pub fn set_budget_shares(&mut self, shares: Vec<f64>) {
-        assert_eq!(shares.len(), self.parts.len(), "one share per part");
-        let sum: f64 = shares.iter().sum();
-        assert!(
-            shares.iter().all(|&s| s > 0.0) && (sum - 1.0).abs() < 1e-9,
-            "the budget shares are positive and sum to one"
-        );
-        self.budget_shares = shares;
-    }
-
     /// The per-channel shares the budget is split by: each channel's `αⱼ` times
     /// its part's budget share. With one part, the part's own weights.
-    pub fn allocation_alphas(&self) -> Vec<f64> {
+    pub(crate) fn allocation_alphas(&self) -> Vec<f64> {
         if self.parts.len() == 1 {
             return self.parts[0].channel_alphas();
         }
@@ -368,7 +354,7 @@ impl<'a> MultiplicitySum<'a> {
 
     /// Integrate every channel of every part under `budget`, one grid per
     /// channel at its part's dimension, allocated by
-    /// [`allocation_alphas`](Self::allocation_alphas) (or re-split by the channels'
+    /// `allocation_alphas` (or re-split by the channels'
     /// measured spread under a Neyman allocation).
     ///
     /// Each returned [`ChannelIntegration::alpha`] is the channel's weight in its

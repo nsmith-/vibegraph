@@ -32,9 +32,9 @@ pub enum SplitAngle {
     Isotropic,
     /// Flat in `cos θ*` from the parent's direction of flight, confined to the
     /// angles at which both daughters clear their cut-implied energy floors, on
-    /// every split whose parent moves ([`AngleShape::Windowed`]).
+    /// every split whose parent moves (`AngleShape::Windowed`).
     Windowed,
-    /// The soft-shaped map `∝ 1/(E₁E₂)` ([`AngleShape::Soft`]) on the splits with a
+    /// The soft-shaped map `∝ 1/(E₁E₂)` (`AngleShape::Soft`) on the splits with a
     /// single massless vector daughter — a gluon or photon emission, where a
     /// splitting kernel is soft-singular — and isotropic elsewhere.
     SoftEmission,
@@ -76,9 +76,9 @@ pub struct MapOptions {
 /// artifact; a generator rebuilds its channels from these and nothing else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MapChoices {
-    pub split_angle: SplitAngle,
-    pub tau: TauMap,
-    pub rung_order: RungOrder,
+    pub(crate) split_angle: SplitAngle,
+    pub(crate) tau: TauMap,
+    pub(crate) rung_order: RungOrder,
 }
 
 /// What the rule needs to know about a process to settle the choices: read off
@@ -87,22 +87,22 @@ pub struct MapChoices {
 pub struct ProcessShape {
     /// Splits with a single massless vector daughter whose parent can move, summed
     /// over the channel set. Zero means [`SplitAngle::SoftEmission`] shapes nothing.
-    pub soft_emission_splits: usize,
+    pub(crate) soft_emission_splits: usize,
     /// Every split whose parent can move, summed over the channel set: every split
     /// but the root of an all-timelike tree. Zero means no angular map shapes
     /// anything, as on every `2 → 2` process.
-    pub moving_splits: usize,
+    pub(crate) moving_splits: usize,
     /// The longest peripheral chain any channel draws.
-    pub max_rungs: usize,
+    pub(crate) max_rungs: usize,
     /// Whether any channel's diagram carries a finite-width s-channel resonance
     /// spanning the whole final state, whose peak then sits in the `τ` draw.
-    pub whole_state_resonance: bool,
+    pub(crate) whole_state_resonance: bool,
 }
 
 impl ProcessShape {
     /// Read the shape off the channels `diagrams` decompose into, built as
     /// [`MapChoices::channel`] builds them but before any map option is applied.
-    pub fn of<'d>(
+    pub(crate) fn of<'d>(
         diagrams: impl IntoIterator<Item = &'d Diagram>,
         model: &EvaluatedModel,
         sqrt_s: f64,
@@ -140,7 +140,7 @@ impl MapChoices {
     /// on the splits it selects, and the chosen rung order. The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
-    pub fn channel(
+    pub(crate) fn channel(
         &self,
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -191,7 +191,7 @@ impl MapChoices {
     }
 
     /// One line naming each choice and whether the rule or the caller made it.
-    pub fn describe(&self, asked: &MapOptions) -> String {
+    pub(crate) fn describe(&self, asked: &MapOptions) -> String {
         let how = |named: bool| if named { "" } else { " (auto)" };
         format!(
             "split-angle {}{}, tau {}{}, rung-order {}{}",
@@ -232,7 +232,7 @@ impl MapOptions {
     ///   `χ²/dof` 0.91 under either map — a decision about that cell, not the map.
     /// * `tau`: [`TauMap::Log`]. MadEvent's rule — `1/τ²` unless a finite-width
     ///   resonance spans the whole final state, which
-    ///   [`ProcessShape::whole_state_resonance`] detects — measures better where it
+    ///   `ProcessShape::whole_state_resonance` detects — measures better where it
     ///   differs: `p p > j j` 0.77 ± 0.03, `p p > b b~` 0.65 ± 0.05 in error² ×
     ///   evaluations (it stops on the iteration floor), Drell–Yan 1.06 ± 0.05 the
     ///   other way, `p p > l+ l- j` neutral. It is not the rule yet because the
@@ -258,7 +258,7 @@ impl MapOptions {
 
 impl SplitAngle {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             SplitAngle::Isotropic => "isotropic",
             SplitAngle::Windowed => "windowed",
@@ -270,7 +270,7 @@ impl SplitAngle {
 
 impl TauMap {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             TauMap::Log => "log",
             TauMap::InverseSquare => "inverse-square",
@@ -280,7 +280,7 @@ impl TauMap {
 
 impl RungOrder {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             RungOrder::Derived => "derived",
             RungOrder::Reversed => "reversed",

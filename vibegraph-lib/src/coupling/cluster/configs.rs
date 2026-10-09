@@ -67,11 +67,13 @@ pub struct DerivedChannels {
     /// `diagram_of[c - 1]` indexes the diagram the forest of channel `c` was
     /// written from — the lowest-numbered member of the channel's configuration,
     /// which is the representative MadGraph's `configs.inc` writes.
-    pub diagram_of: Vec<usize>,
+    #[allow(dead_code)]
+    pub(crate) diagram_of: Vec<usize>,
     /// `config_of_diagram[d]` is the channel (from `1`) diagram `d` belongs to, or
     /// `None` where the vertex filter dropped it. Several diagrams share a channel
     /// wherever the configuration mapping merges them.
-    pub config_of_diagram: Vec<Option<usize>>,
+    #[allow(dead_code)]
+    pub(crate) config_of_diagram: Vec<Option<usize>>,
 }
 
 /// One vertex of the re-rooted tree, in the shape `configs.inc` writes.

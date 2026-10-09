@@ -153,12 +153,12 @@ impl<F: Real> ScratchSpace<F> {
 /// The per-evaluation immutable context every node reduction reads: the bound
 /// constant pools and leg table, plus one phase-space point's kinematics.
 pub(super) struct EvalEnv<'a, F: Real> {
-    pub consts_c: &'a [C<F>],
-    pub consts_f: &'a [F],
-    pub ext_legs: &'a [ExtLeg],
-    pub momenta: &'a [LorentzVector<F>],
-    pub helicities: &'a [i32],
-    pub ward_leg: Option<usize>,
+    pub(crate) consts_c: &'a [C<F>],
+    pub(crate) consts_f: &'a [F],
+    pub(crate) ext_legs: &'a [ExtLeg],
+    pub(crate) momenta: &'a [LorentzVector<F>],
+    pub(crate) helicities: &'a [i32],
+    pub(crate) ward_leg: Option<usize>,
 }
 
 /// A compiled amplitude bound to a parameter card at scalar precision `F`.
@@ -532,7 +532,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// ([`AmplitudeEvaluator::helicities`](crate::helas::eval::AmplitudeEvaluator::helicities)),
     /// which on a helicity-filtered evaluator is the pruned set, under the same
     /// partonic-CM kinematic contract [`eval_m2`](Self::eval_m2) documents.
-    pub fn eval_hel_m2(
+    pub(crate) fn eval_hel_m2(
         &self,
         momenta: &[LorentzVector<F>],
         scratch: &mut ScratchSpace<F>,
@@ -564,7 +564,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     ///
     /// On a helicity-filtered evaluator this is under the same partonic-CM
     /// kinematic contract [`eval_m2`](Self::eval_m2) documents.
-    pub fn eval_hel_jamps(
+    pub(crate) fn eval_hel_jamps(
         &self,
         momenta: &[LorentzVector<F>],
         scratch: &mut ScratchSpace<F>,
@@ -588,7 +588,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     /// The colour-factor weights [`eval_m2`](Self::eval_m2) contracts the JAMPs
     /// with: `n_flows²` entries, `cf[j * n_flows + i]` weighting `J_j` against
     /// `conj(J_i)`, so `|M|² = Σ_hel Re Σ_ij cf[j·n+i] J_j conj(J_i)`.
-    pub fn cf_weights(&self) -> &[F] {
+    pub(crate) fn cf_weights(&self) -> &[F] {
         &self.cf
     }
 
@@ -759,7 +759,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     }
 
     /// Walk the folded arena for one (momenta, helicity) point, returning the
-    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Backs the
+    /// per-flow JAMPs `J_i` — the scalar children of the `Op::Flows` root. Backs the
     /// per-flow JAMP probes ([`eval_m2`](Self::eval_m2) reads its JAMPs from the
     /// helicity-expanded root instead).
     ///

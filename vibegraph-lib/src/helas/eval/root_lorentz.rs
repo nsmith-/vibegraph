@@ -20,7 +20,7 @@ use crate::{
 /// variants, so baking it makes the line direction explicit and lets the rooting choose
 /// the correct in/out fermion routine ([`LorentzEvalTree::build_at_leg`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Adjoint {
+pub(crate) enum Adjoint {
     /// Ket (`u`/`v` column); external via `ixxxxx`.
     Ket,
     /// Bra (`ū`/`v̄` row); external via `oxxxxx`.
@@ -49,18 +49,18 @@ impl std::fmt::Display for Adjoint {
 /// `ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁` this is exact for vector structures and requires
 /// conjugating `P_χ → P_χ̄` (no sign) for gamma-chained chiral projectors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LegAdjoint {
+pub(crate) struct LegAdjoint {
     /// Ket/bra adjoint of the bound wavefunction.
-    pub adjoint: Adjoint,
+    pub(crate) adjoint: Adjoint,
     /// True iff the leg's fermion line is crossed (its externals are final-state).
-    pub crossed: bool,
+    pub(crate) crossed: bool,
 }
 
 /// A single LorentzTerm, already rooted at the output leg and ready to eval.
 #[derive(Clone, Debug)]
-pub struct RootedTerm {
+pub(crate) struct RootedTerm {
     /// Coefficient carried from the UFO LorentzTerm.coeff (real, since couplings are stored separately).
-    pub coeff: f64,
+    pub(crate) coeff: f64,
     /// The ±1 rooting-convention sign this term picked up from [`LorentzEvalTree::build_at_leg`]
     /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
@@ -68,18 +68,18 @@ pub struct RootedTerm {
     /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
     /// amplitude vertex ([`DiagramEvalTree::build_convention_sign`]) and carried in the
     /// diagram's `fermi_sign`.
-    pub build_sign: i8,
+    pub(crate) build_sign: i8,
     /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
     /// contributes (see [`term_reversed_parity`]). Like `build_sign` it depends on the
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
     /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`]).
-    pub reversed_sign: i8,
+    pub(crate) reversed_sign: i8,
     /// Whether this term's index graph is cyclic, so that it is evaluated through the
     /// rank-2 tensor path (see [`LorentzEvalTree::build_at_leg`]) rather than as a rooted
     /// tree.
-    pub tensor: bool,
+    pub(crate) tensor: bool,
     /// Resolved primitive with output fiber fixed.
-    pub tree: LorentzEvalTree,
+    pub(crate) tree: LorentzEvalTree,
 }
 
 impl std::fmt::Display for RootedTerm {
@@ -110,7 +110,7 @@ pub enum RootLorentzError {
 /// - i,j for fermions (i=row, j=col)
 /// - mu, nu, ... for vectors
 #[derive(Clone, Debug, PartialEq)]
-pub enum LorentzEvalNode {
+pub(crate) enum LorentzEvalNode {
     /// Leg index (0-indexed)
     Leg(usize),
     /// 2-fermion in, vector out
@@ -196,7 +196,7 @@ pub enum LorentzEvalNode {
 }
 
 impl LorentzEvalNode {
-    pub fn children(&self) -> Vec<usize> {
+    pub(crate) fn children(&self) -> Vec<usize> {
         match self {
             LorentzEvalNode::Leg(_) => vec![],
             LorentzEvalNode::Gamma5 { i } => vec![*i],
@@ -288,7 +288,7 @@ fn epsilon_out_order(args: [isize; 4], k: usize) -> [isize; 3] {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LorentzEvalTree {
+pub(crate) struct LorentzEvalTree {
     nodes: Vec<LorentzEvalNode>,
     root: Option<usize>,
 }
@@ -333,7 +333,7 @@ fn vector_out_node(child: usize) -> LorentzEvalNode {
 impl LorentzEvalTree {
     /// The value at the root node. Used by tests to assert the rooted primitive.
     #[cfg(test)]
-    pub fn root_value(&self) -> &LorentzEvalNode {
+    pub(crate) fn root_value(&self) -> &LorentzEvalNode {
         self.value(self.root())
     }
 
@@ -602,7 +602,7 @@ impl LorentzEvalTree {
     /// where `Cγ^{μT}C⁻¹ = −γ^μ` cancels it — see [`chiral_correction`]).
     ///
     /// Note: idx is 0-indexed
-    pub fn build_at_leg(
+    pub(crate) fn build_at_leg(
         term: &LorentzTerm,
         spins: &[i32],
         flow: &[(usize, usize)],
@@ -1680,7 +1680,7 @@ fn cyclic_index_graph(term: &LorentzTerm) -> bool {
 /// path does not cover is one statement naming the structure, instead of an
 /// "index has no operator" failure deep in a walk that has already consumed half the
 /// cycle.
-pub fn reject_cyclic_structure(
+pub(crate) fn reject_cyclic_structure(
     name: &str,
     structure: &str,
     spins: &[i32],
@@ -1708,7 +1708,7 @@ pub fn reject_cyclic_structure(
 ///
 /// # Returns
 /// A `RootedTerm` ready for evaluation, or a `RootLorentzError`.
-pub fn root_term(
+pub(crate) fn root_term(
     term: &crate::ufo::lorentz::LorentzTerm,
     spins: &[i32],
     flow: &[(usize, usize)],

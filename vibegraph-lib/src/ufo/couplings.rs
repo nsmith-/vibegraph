@@ -28,7 +28,7 @@ impl From<usize> for CouplingId {
 
 impl CouplingId {
     /// The raw index this id wraps.
-    pub const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0
     }
 }
@@ -59,19 +59,19 @@ impl Index<CouplingId> for Vec<Complex64> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Coupling {
     /// Python variable name, e.g. `"GC_10"`.
-    pub python_name: String,
+    pub(crate) python_name: String,
     /// UFO `name` field.
-    pub name: String,
+    pub(crate) name: String,
     /// Symbolic expression for the coupling constant value.
-    pub value: Expr,
+    pub(crate) value: Expr,
     /// Coupling order dict, e.g. `{"QCD": 1}`.
     pub orders: BTreeMap<String, usize>,
     /// Parameter names this coupling directly depends on.
-    pub deps: Vec<String>,
+    pub(crate) deps: Vec<String>,
 }
 
 /// Parse `couplings.py` content into a list of [`Coupling`]s.
-pub fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError> {
+pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError> {
     let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 

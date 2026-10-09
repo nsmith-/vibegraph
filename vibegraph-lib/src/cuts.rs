@@ -78,19 +78,19 @@ pub(crate) const SMALL_WIDTH_TREATMENT: f64 = 1e-6;
 /// One propagator a decay chain forces on shell: the final-state legs whose
 /// momenta it carries, and the pole it is kept near.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ForcedLine {
+pub(crate) struct ForcedLine {
     /// The outgoing legs the line carries, bit `k` naming the `k`-th final-state
     /// leg.
-    pub slots: u64,
-    pub mass: f64,
-    pub width: f64,
+    pub(crate) slots: u64,
+    pub(crate) mass: f64,
+    pub(crate) width: f64,
 }
 
 impl ForcedLine {
     /// The width the window is measured in: MadGraph's `prwidth_tmp`, the width
     /// floored at `small_width_treatment` times the mass, or zero for a line
     /// without width.
-    pub fn window_width(&self) -> f64 {
+    pub(crate) fn window_width(&self) -> f64 {
         if self.width > 0.0 {
             self.width.max(self.mass * SMALL_WIDTH_TREATMENT)
         } else {
@@ -100,7 +100,7 @@ impl ForcedLine {
 
     /// The window `(M − bwcutoff·Γ, M + bwcutoff·Γ)` on the line's invariant
     /// mass (GeV), or `None` for a line of zero width, which is never cut.
-    pub fn mass_window(&self, bwcutoff: f64) -> Option<(f64, f64)> {
+    pub(crate) fn mass_window(&self, bwcutoff: f64) -> Option<(f64, f64)> {
         let width = self.window_width();
         (width > 0.0).then_some((self.mass - bwcutoff * width, self.mass + bwcutoff * width))
     }
@@ -124,7 +124,7 @@ pub struct ForcedResonances {
 
 impl ForcedResonances {
     /// No forced line: a process without decay chains.
-    pub fn none() -> Self {
+    pub(crate) fn none() -> Self {
         ForcedResonances::default()
     }
 
@@ -153,20 +153,20 @@ impl ForcedResonances {
         ForcedResonances { patterns }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.patterns.is_empty()
     }
 
     /// The distinct sets of forced lines, one per group of diagrams that force
     /// the same lines.
-    pub fn patterns(&self) -> &[Vec<ForcedLine>] {
+    pub(crate) fn patterns(&self) -> &[Vec<ForcedLine>] {
         &self.patterns
     }
 
     /// The outgoing legs that descend from a forced line in every diagram, bit
     /// `k` naming the `k`-th final-state leg: the legs `cut_decays = F` leaves
     /// uncut.
-    pub fn decay_products(&self) -> u64 {
+    pub(crate) fn decay_products(&self) -> u64 {
         self.patterns
             .iter()
             .map(|p| p.iter().fold(0u64, |m, l| m | l.slots))
@@ -176,7 +176,7 @@ impl ForcedResonances {
 }
 
 /// The forced lines of one diagram.
-pub fn forced_lines(diagram: &Diagram, model: &EvaluatedModel) -> Vec<ForcedLine> {
+pub(crate) fn forced_lines(diagram: &Diagram, model: &EvaluatedModel) -> Vec<ForcedLine> {
     let n_in = diagram.n_in;
     diagram
         .props
@@ -212,7 +212,7 @@ struct WindowCut {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ExternalLeg {
     /// PDG code (signed).
-    pub pdg: i32,
+    pub(crate) pdg: i32,
     /// Pole mass in GeV.
     pub mass: f64,
     /// True for final-state legs (cuts apply); false for incoming beams.
@@ -601,12 +601,13 @@ impl Cuts {
 
     /// `bwcutoff`: how many widths either side of its pole a forced line's mass
     /// may lie.
-    pub fn bwcutoff(&self) -> f64 {
+    pub(crate) fn bwcutoff(&self) -> f64 {
         self.bwcutoff
     }
 
     /// Whether any line of the process is forced on shell.
-    pub fn has_windows(&self) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn has_windows(&self) -> bool {
         !self.windows.is_empty()
     }
 
@@ -753,7 +754,7 @@ impl Cuts {
     ///
     /// [`DiagramChannel::with_split_angles`]:
     ///     crate::phasespace::diagram_channel::DiagramChannel::with_split_angles
-    pub fn energy_floor(&self, slots: u64) -> f64 {
+    pub(crate) fn energy_floor(&self, slots: u64) -> f64 {
         self.finals
             .iter()
             .enumerate()
@@ -980,7 +981,7 @@ fn describe(v: &ParamValue) -> String {
 
 /// The cut class `cuts.f` files an outgoing particle under — `j`, `b`, `l` or
 /// `a` — or `None` for one no class-keyed cut reads.
-pub fn cut_class(pdg: i32, maxjetflavor: i64) -> Option<char> {
+pub(crate) fn cut_class(pdg: i32, maxjetflavor: i64) -> Option<char> {
     classify(0, &ExternalLeg::outgoing(pdg, 0.0), maxjetflavor)
         .letter
         .map(letter_char)

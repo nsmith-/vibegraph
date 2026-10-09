@@ -145,7 +145,7 @@ pub struct PartSigma {
 impl EmitPlan {
     /// The parts the sample is normalised over: [`EmitPlan::parts`], or the
     /// whole integration as the one part when that is empty.
-    pub fn part_sigmas(&self) -> Vec<PartSigma> {
+    pub(crate) fn part_sigmas(&self) -> Vec<PartSigma> {
         if self.parts.is_empty() {
             vec![PartSigma {
                 sigma_pb: self.sigma_pb,
@@ -170,19 +170,23 @@ pub struct EmitSummary {
     /// The cross section the accept/reject sample itself estimated
     /// ([`EventSource::sigma_pb`]) before any normalisation, and that estimate's
     /// statistical error (see [`sample_estimate_error`]).
-    pub sample_sigma_pb: f64,
+    #[allow(dead_code)]
+    pub(crate) sample_sigma_pb: f64,
     pub sample_sigma_err_pb: f64,
     /// The `XMAXUP` the file declares.
     pub xmax: f64,
     /// The sum of the emitted `XWGTUP` values. Under `IDWTUP = -4` this over
     /// [`written`](Self::written) is the cross section the file declares.
-    pub weight_sum: f64,
+    #[allow(dead_code)]
+    pub(crate) weight_sum: f64,
     /// The mean generator weight over the events drawn — `1` when nothing went
     /// overweight, and the mean multiplicity a stochastic-rounding pass has to
     /// reproduce.
-    pub mean_source_weight: f64,
+    #[allow(dead_code)]
+    pub(crate) mean_source_weight: f64,
     /// The largest generator weight drawn.
-    pub max_source_weight: f64,
+    #[allow(dead_code)]
+    pub(crate) max_source_weight: f64,
 }
 
 #[derive(Debug)]
@@ -333,7 +337,7 @@ fn shared_processes(
 
 /// The words [`Buffer`]'s header line opens with, before the sample's own
 /// estimate and its error: `sample estimate before normalisation <σ̂> +- <err>`.
-pub const SAMPLE_ESTIMATE_LINE: &str = "sample estimate before normalisation";
+pub(crate) const SAMPLE_ESTIMATE_LINE: &str = "sample estimate before normalisation";
 
 /// The sample's own estimate and its error, read back from the first header
 /// line [`Buffer`] wrote them on, or `None` in a file without one.
@@ -357,7 +361,7 @@ pub fn sample_estimate_in(text: &str) -> Option<(f64, f64)> {
 /// and leaves an expression of the accepted weights alone:
 /// `σ̂·√(Σwᵢ²)/Σwᵢ`. The same holds for any subset of the events, a part's or a
 /// process's, with `σ̂` that subset's share.
-pub fn sample_estimate_error(sigma: f64, weights: impl IntoIterator<Item = f64>) -> f64 {
+pub(crate) fn sample_estimate_error(sigma: f64, weights: impl IntoIterator<Item = f64>) -> f64 {
     let (sum, sum_sq) = weights
         .into_iter()
         .fold((0.0f64, 0.0f64), |(s, q), w| (s + w, q + w * w));
@@ -458,7 +462,7 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 ///
 /// # Normalisation
 ///
-/// Each part `k` of [`EmitPlan::part_sigmas`] — a final-state multiplicity of a
+/// Each part `k` of `EmitPlan::part_sigmas` — a final-state multiplicity of a
 /// sum over several, or the whole run — has its events' weights scaled by one
 /// common factor so that they contribute exactly its integrated `σₖ` to the
 /// file's cross section: `Σ_{i∈k} XWGTUPᵢ / N = σₖ` over the file's `N` events,
@@ -675,7 +679,7 @@ impl UnweightStrategy for Buffer {
 /// mean, and exactly zero on the integer weights that make up almost the whole
 /// sample. For `w ≤ 1` it degenerates to plain accept/reject, so it changes only
 /// the overweight tail.
-pub fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
+pub(crate) fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
     if !(weight > 0.0) {
         return 0;
     }
@@ -701,7 +705,7 @@ pub fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
 /// own stream.
 #[derive(Clone, Copy, Debug)]
 pub struct StochasticRounding {
-    pub seed: u64,
+    pub(crate) seed: u64,
 }
 
 impl StochasticRounding {

@@ -63,16 +63,16 @@ fn checked_add_ratio(a: Ratio<i64>, b: Ratio<i64>) -> Ratio<i64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ColorCoeff {
     /// Rational magnitude.
-    pub q: Ratio<i64>,
+    pub(crate) q: Ratio<i64>,
     /// Whether the coefficient carries one factor of `i`.
     pub imag: bool,
     /// Power of the symbolic color count `Nc`.
-    pub nc_power: i32,
+    pub(crate) nc_power: i32,
 }
 
 impl ColorCoeff {
     /// The multiplicative identity `1`.
-    pub fn one() -> Self {
+    pub(crate) fn one() -> Self {
         ColorCoeff {
             q: Ratio::from_integer(1),
             imag: false,
@@ -81,7 +81,7 @@ impl ColorCoeff {
     }
 
     /// The additive identity `0`.
-    pub fn zero() -> Self {
+    pub(crate) fn zero() -> Self {
         ColorCoeff {
             q: Ratio::from_integer(0),
             imag: false,
@@ -90,7 +90,7 @@ impl ColorCoeff {
     }
 
     /// A real rational coefficient `n/d` with no `i` and `Nc^0`.
-    pub fn rational(n: i64, d: i64) -> Self {
+    pub(crate) fn rational(n: i64, d: i64) -> Self {
         ColorCoeff {
             q: Ratio::new(n, d),
             imag: false,
@@ -99,13 +99,13 @@ impl ColorCoeff {
     }
 
     /// Whether the rational magnitude is zero.
-    pub fn is_zero(&self) -> bool {
+    pub(crate) fn is_zero(&self) -> bool {
         *self.q.numer() == 0
     }
 
     /// Product of two coefficients, following complex algebra on the `i` flag:
     /// `i·i = −1` flips the sign and clears the flag; a single `i` sets it.
-    pub fn mul(&self, other: &ColorCoeff) -> ColorCoeff {
+    pub(crate) fn mul(&self, other: &ColorCoeff) -> ColorCoeff {
         let mut q = checked_mul_ratio(self.q, other.q);
         let nc_power = self
             .nc_power
@@ -123,7 +123,7 @@ impl ColorCoeff {
     /// Whether two coefficients are addition-compatible: same `i` flag and
     /// same `Nc` power (the color-tensor structure is compared separately, at
     /// the string level).
-    pub fn can_add(&self, other: &ColorCoeff) -> bool {
+    pub(crate) fn can_add(&self, other: &ColorCoeff) -> bool {
         self.imag == other.imag && self.nc_power == other.nc_power
     }
 
@@ -131,7 +131,7 @@ impl ColorCoeff {
     ///
     /// # Panics
     /// If the coefficients are not [`can_add`](ColorCoeff::can_add)-compatible.
-    pub fn add(&self, other: &ColorCoeff) -> ColorCoeff {
+    pub(crate) fn add(&self, other: &ColorCoeff) -> ColorCoeff {
         assert!(
             self.can_add(other),
             "ColorCoeff::add on incompatible coefficients"
@@ -145,7 +145,7 @@ impl ColorCoeff {
 
     /// Complex conjugate: negates the magnitude iff the coefficient is
     /// imaginary; `Nc` power and the flag are unchanged.
-    pub fn conj(&self) -> ColorCoeff {
+    pub(crate) fn conj(&self) -> ColorCoeff {
         ColorCoeff {
             q: if self.imag { -self.q } else { self.q },
             imag: self.imag,

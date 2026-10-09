@@ -12,12 +12,16 @@
 pub mod color;
 pub mod eval;
 pub mod repr;
-pub mod vertex;
+pub(crate) mod vertex;
 pub mod wavefn;
 
 pub use repr::lorentz::{Bispinor, LorentzVector};
-pub use vertex::{ffv2_2, ffv2_3, ffv2_4_3, ffv4_3, iovxxx, j3xxxx, jioxxx};
-pub use wavefn::{DiracWf, InDiracWf, OutDiracWf, VectorWf};
+#[allow(unused_imports)]
+pub(crate) use vertex::{ffv2_4_3, j3xxxx};
+pub use vertex::{iovxxx, jioxxx};
+#[allow(unused_imports)]
+pub(crate) use wavefn::VectorWf;
+pub use wavefn::{InDiracWf, OutDiracWf};
 
 #[cfg(test)]
 mod tests {

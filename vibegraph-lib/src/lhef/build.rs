@@ -87,7 +87,8 @@ pub struct EventHeader {
 impl EventHeader {
     /// The header of an event evaluated at `scales`, with the couplings those
     /// scales imply.
-    pub fn from_scales(
+    #[allow(dead_code)]
+    pub(crate) fn from_scales(
         process_id: i32,
         weight: f64,
         scales: &EventScales,
@@ -165,6 +166,7 @@ pub struct SubprocessRecord {
     n_in: usize,
     /// The colour rep and direction of every leg *this record* describes — the reps
     /// [`SubprocessRecord::flows`] is checked against.
+    #[allow(dead_code)]
     legs: Vec<LegColor>,
     /// `(colour, anticolour)` line labels per leg, per flow.
     flows: ColorFlowTags,
@@ -262,12 +264,14 @@ impl SubprocessRecord {
     }
 
     /// The colour rep and direction of every leg, in this record's own order.
-    pub fn legs(&self) -> &[LegColor] {
+    #[allow(dead_code)]
+    pub(crate) fn legs(&self) -> &[LegColor] {
         &self.legs
     }
 
     /// This record's per-flow `(colour, anticolour)` tags.
-    pub fn flows(&self) -> &ColorFlowTags {
+    #[allow(dead_code)]
+    pub(crate) fn flows(&self) -> &ColorFlowTags {
         &self.flows
     }
 
@@ -282,18 +286,13 @@ impl SubprocessRecord {
         &self.pdg
     }
 
-    /// The pole mass of every external leg, in process order.
-    pub fn masses(&self) -> &[f64] {
-        &self.mass
-    }
-
     /// The number of incoming legs.
     pub fn n_in(&self) -> usize {
         self.n_in
     }
 
     /// The number of colour flows a record may select from.
-    pub fn n_flows(&self) -> usize {
+    pub(crate) fn n_flows(&self) -> usize {
         self.flows.n_flows()
     }
 
@@ -397,7 +396,7 @@ impl SubprocessRecord {
     ///   (`elim_indices`, `addmothers.f:793`), which has to fit its own
     ///   representation: nothing for a singlet, one colour for a triplet, one
     ///   anticolour for an antitriplet, one of each for an octet.
-    /// * **`SPINUP`** [`SPIN_UNKNOWN`]: an intermediate's helicity is summed over.
+    /// * **`SPINUP`** `SPIN_UNKNOWN`: an intermediate's helicity is summed over.
     ///
     /// An intermediate that shares its outgoing legs with another, or whose
     /// daughters' colour does not fit it, is refused rather than written.

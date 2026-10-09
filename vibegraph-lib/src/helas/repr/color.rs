@@ -11,7 +11,7 @@
 //!
 //! The scalar type is `num_rational::Ratio<i64>`: exact rational arithmetic
 //! over machine integers, with checked operations that panic on overflow (see
-//! the `color` algebra engine). The [`GroupScalar`] trait boundary insulates
+//! the `color` algebra engine). The `GroupScalar` trait boundary insulates
 //! downstream code from that choice, so `Ratio<i128>` — or an arbitrary-
 //! precision crate — remains a drop-in escape hatch if the tree-level factors
 //! ever outgrow `i64`.
@@ -29,9 +29,9 @@ use num_rational::Ratio;
 
 /// An SU(3) color representation, tagged by its UFO color charge.
 ///
-/// This is the lightweight, runtime-value counterpart of the [`ColorRepr`]
+/// This is the lightweight, runtime-value counterpart of the `ColorRepr`
 /// marker types: colorize and the `Identity` resolution key off it, and each
-/// marker type names its rep through [`ColorRepr::REP`].
+/// marker type names its rep through `ColorRepr::REP`.
 ///
 /// The ordering is the declaration order and carries no group-theoretic meaning:
 /// it exists so that types holding a rep can derive one, and nothing reads it as
@@ -58,7 +58,7 @@ impl ColorRep {
     /// `8 → Octet`. The self-conjugate reps also accept their negated charge,
     /// which the antiparticle constructor produces (`color: -self.color`):
     /// `-1 → Singlet`, `-8 → Octet`. Any other value returns `None`.
-    pub fn from_ufo(color: i32) -> Option<Self> {
+    pub(crate) fn from_ufo(color: i32) -> Option<Self> {
         match color {
             1 | -1 => Some(ColorRep::Singlet),
             3 => Some(ColorRep::Triplet),
@@ -72,7 +72,7 @@ impl ColorRep {
 
     /// The conjugate representation (`3 ↔ 3̄`, `6 ↔ 6̄`; self-conjugate
     /// otherwise).
-    pub fn anti(self) -> Self {
+    pub(crate) fn anti(self) -> Self {
         match self {
             ColorRep::Singlet => ColorRep::Singlet,
             ColorRep::Triplet => ColorRep::AntiTriplet,
@@ -141,7 +141,8 @@ mod color_rep_tests {
 ///
 /// The choice of library (num-rational vs. rug for arbitrary precision) is
 /// deferred; this trait boundary insulates downstream code from the decision.
-pub trait GroupScalar:
+#[allow(dead_code)]
+pub(crate) trait GroupScalar:
     num_traits::Num + Copy + std::fmt::Debug + std::fmt::Display + PartialOrd + 'static
 {
 }
@@ -166,7 +167,8 @@ impl GroupScalar for i32 {}
 /// - `DIM` -- dimension of the representation
 /// - `casimir()` -- quadratic Casimir C2(R) defined by T^a T^a = C2(R) * 1
 /// - `dynkin()` -- Dynkin index T(R) defined by Tr[T^a T^b] = T(R) * delta^{ab}
-pub trait ColorRepr<F: Real>: Sized + Copy + 'static {
+#[allow(dead_code)]
+pub(crate) trait ColorRepr<F: Real>: Sized + Copy + 'static {
     /// The fiber over each momentum point: a complex vector of dimension `DIM`.
     type Color: Copy;
 
@@ -204,7 +206,8 @@ pub trait ColorRepr<F: Real>: Sized + Copy + 'static {
 /// - `C2(F) = 4/3` (quadratic Casimir for the fundamental)
 /// - `T(F) = 1/2` (Dynkin index)
 #[derive(Clone, Copy, Debug)]
-pub struct SU3Fundamental;
+#[allow(dead_code)]
+pub(crate) struct SU3Fundamental;
 
 impl<F: Real> ColorRepr<F> for SU3Fundamental {
     type Color = [C<F>; 3];
@@ -245,7 +248,8 @@ impl<F: Real> ColorRepr<F> for SU3Fundamental {
 /// needed. (The Mangano–Parke–Xu leading-Nc flow decomposition is likewise not
 /// used here; it returns only for LHEF color tags, a separate feature.)
 #[derive(Clone, Copy, Debug)]
-pub struct SU3Adjoint;
+#[allow(dead_code)]
+pub(crate) struct SU3Adjoint;
 
 impl<F: Real> ColorRepr<F> for SU3Adjoint {
     type Color = [C<F>; 8];
@@ -273,7 +277,8 @@ impl<F: Real> ColorRepr<F> for SU3Adjoint {
 ///
 /// Group-theoretic values: DIM=1, C2=0, T=0.
 #[derive(Clone, Copy, Debug)]
-pub struct ColorSinglet;
+#[allow(dead_code)]
+pub(crate) struct ColorSinglet;
 
 impl<F: Real> ColorRepr<F> for ColorSinglet {
     type Color = C<F>;

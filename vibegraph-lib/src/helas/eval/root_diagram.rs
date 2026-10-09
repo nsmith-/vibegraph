@@ -211,19 +211,19 @@ impl<'a> RawBuilder<'a> {
 
 /// Node id into a [`DiagramEvalTree`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EvalNodeId(usize);
+pub(crate) struct EvalNodeId(usize);
 
 impl EvalNodeId {
     /// Reference a node by its position in a hand-built node list (tests only).
     #[cfg(test)]
-    pub fn new(idx: usize) -> Self {
+    pub(crate) fn new(idx: usize) -> Self {
         EvalNodeId(idx)
     }
 }
 
 /// A node in the evaluable diagram tree, typed by what it produces.
 #[derive(Clone, Debug)]
-pub enum EvalNode {
+pub(crate) enum EvalNode {
     /// External wavefunction (leaf): built from momentum + helicity at eval time.
     External(ExtLegInfo),
     /// Off-shell current: apply the vertex to its input children. `children` are in
@@ -317,7 +317,7 @@ fn adjoint_tag(adjoint: Option<Adjoint>) -> String {
 
 /// The evaluable rooted tree for a single diagram (second-pass output).
 #[derive(Clone, Debug)]
-pub struct DiagramEvalTree {
+pub(crate) struct DiagramEvalTree {
     nodes: Vec<EvalNode>,
     root: EvalNodeId,
 }
@@ -975,15 +975,15 @@ pub(super) fn root_tree_at(
 /// [`DiagramEvalTree`]: external legs are leaves, internal vertices are off-shell
 /// currents wrapped by propagators, and the root contracts into the scalar amplitude.
 #[derive(Clone, Debug)]
-pub struct DiagramEval {
+pub(crate) struct DiagramEval {
     /// Number of external legs (determines array indexing for momenta)
-    pub n_ext: usize,
+    pub(crate) n_ext: usize,
     /// Rooted evaluation tree for this diagram
-    pub tree: DiagramEvalTree,
+    pub(crate) tree: DiagramEvalTree,
     /// Symmetry factor: 1 / (vertex_sym × propagator_sym)
-    pub symmetry_factor: f64,
+    pub(crate) symmetry_factor: f64,
     /// ±1 from the diagram's Fermi permutation sign
-    pub fermi_sign: i8,
+    pub(crate) fermi_sign: i8,
 }
 
 impl DiagramEval {
@@ -994,7 +994,7 @@ impl DiagramEval {
     /// reconstructed amplitude is exactly the rooted contraction of the given nodes —
     /// used to drive single-vertex primitives through the production `run_forward` path.
     #[cfg(test)]
-    pub fn from_nodes(n_ext: usize, nodes: Vec<EvalNode>) -> Self {
+    pub(crate) fn from_nodes(n_ext: usize, nodes: Vec<EvalNode>) -> Self {
         let root = EvalNodeId(nodes.len() - 1);
         DiagramEval {
             n_ext,
@@ -1007,7 +1007,8 @@ impl DiagramEval {
     /// Internal propagator particle ids appearing in this diagram (one per
     /// `Propagate` node). Used to characterize a diagram by its propagator content.
     #[cfg(test)]
-    pub fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
+    #[allow(dead_code)]
+    pub(crate) fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
         self.tree.iter().filter_map(|id| match self.tree.value(id) {
             EvalNode::Propagate { info, .. } => Some(info.id),
             _ => None,
@@ -1252,7 +1253,8 @@ pub(super) fn compile_single_diagram(
 /// For each diagram, recursively walks from an arbitrary root vertex to build a
 /// directed evaluation tree. External legs become leaves; internal vertices emit an
 /// off-shell current + propagator pair; the root emits the amplitude contraction.
-pub fn compile_diagram_ast(
+#[allow(dead_code)]
+pub(crate) fn compile_diagram_ast(
     set: &DiagramSet,
     model: &UFOModel,
 ) -> Result<Vec<DiagramEval>, CompileError> {

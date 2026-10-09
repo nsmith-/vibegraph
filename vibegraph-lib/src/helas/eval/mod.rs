@@ -91,10 +91,8 @@ mod waveform_slot;
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub mod bench_internals {
-    pub use super::kernel::{
-        ffv_iout, ffv_oout, ffv_vout, gamma_iout, gamma_oout, gamma_vout, metric, proj_m, proj_p,
-        propagate_core,
-    };
+    pub use super::kernel::{ffv_iout, ffv_vout, gamma_iout, gamma_vout, proj_m, proj_p};
+
     pub use super::prop_harness::{
         rand_bra, rand_c, rand_ket, rand_vector, seeded_rng, slots_approx_eq,
     };
@@ -109,20 +107,16 @@ pub mod bench_internals {
 #[cfg(feature = "extended-validation")]
 #[doc(hidden)]
 pub mod op_census {
-    pub use super::compile::{
-        assert_op_coverage, assert_op_coverage_across, op_census, MG_VALIDATED_PROCESSES,
-    };
+    pub use super::compile::assert_op_coverage_across;
+
     pub use super::op::Op;
 }
 
-pub use ast::{Ast, ParseAstError};
-pub use compile::{config_groups, AmplitudeEvaluator, ColorSelection};
-pub use error::{CompileError, EvalError, RootDiagramError};
+pub use compile::{config_groups, AmplitudeEvaluator};
 pub use lane_field::{LaneField, Lanes, SupportedLanes};
-pub use op::{Const, ConstKind, Node, Op, Sym};
-pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
-pub use root_diagram::compile_diagram_ast;
-pub use root_lorentz::RootLorentzError;
+#[allow(unused_imports)]
+pub(crate) use op::Sym;
+pub use rescale::ScaleAwareAmplitude;
 pub use run::{
     eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, BoundAmplitude, ScratchSpace,
 };

@@ -140,11 +140,6 @@ impl ParamCard {
             .and_then(|b| b.get(code))
             .copied()
     }
-
-    /// Returns `true` if the named block exists.
-    pub fn has_block(&self, block: &str) -> bool {
-        self.blocks.contains_key(block.to_lowercase().as_str())
-    }
 }
 
 #[cfg(test)]

@@ -41,7 +41,7 @@
 //! 512 of them are ~120 points of coverage. Each channel's allocation is
 //! therefore floored at `MIN_CHANNEL_NEVAL / acceptanceⱼ`, with `acceptanceⱼ`
 //! measured from that channel's own completed iterations and capped at
-//! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see [`floor_for_acceptance`] for the cap's
+//! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see `floor_for_acceptance` for the cap's
 //! rationale and the cold start. The correction is read from iterations already
 //! finished, never from the draws it sizes, which is what keeps an allocation
 //! uncorrelated with the estimate it weights (see [`ChannelHistory::combine`]).
@@ -58,7 +58,7 @@
 //!   by the correlation between an iteration's estimate and its own variance, and
 //!   the bias comes with a *small* error bar — precisely the shape that makes a
 //!   convergence test stop early on a wrong number. A `Target` budget refuses an
-//!   [`IterationCombination::InverseVariance`] grid rather than reading its error.
+//!   `IterationCombination::InverseVariance` grid rather than reading its error.
 //! * **A minimum iteration count**, so the consistency factor below has degrees
 //!   of freedom and the grid has been refined more than a couple of times.
 //! * **An iteration-consistency scale factor.** The stopping test reads not the
@@ -120,7 +120,7 @@ use crate::vegas::{
 /// contributes exactly zero to the channel's term and exactly zero to its
 /// variance, so it is not coverage of anything. What a channel is allocated is
 /// therefore this many points divided by its own measured acceptance, capped —
-/// see [`floor_for_acceptance`].
+/// see `floor_for_acceptance`.
 pub const MIN_CHANNEL_NEVAL: usize = 512;
 
 /// The most the acceptance correction may multiply a channel's allocation by.
@@ -147,7 +147,7 @@ pub const MAX_FLOOR_ACCEPTANCE_SCALE: usize = 4;
 /// allocation was before any acceptance existed. A channel that has accepted
 /// *nothing* is not the same case: it has a measurement, and the measurement says
 /// no finite allocation buys the floor's coverage, so it gets the cap.
-pub fn floor_for_acceptance(acceptance: Option<f64>) -> usize {
+pub(crate) fn floor_for_acceptance(acceptance: Option<f64>) -> usize {
     let cap = MIN_CHANNEL_NEVAL.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE);
     match acceptance {
         None => MIN_CHANNEL_NEVAL,
@@ -228,7 +228,7 @@ pub enum Budget {
 
 impl Budget {
     /// Points per iteration, before the per-channel floor.
-    pub fn neval(&self) -> usize {
+    pub(crate) fn neval(&self) -> usize {
         match *self {
             Budget::Fixed { neval, .. } | Budget::Target { neval, .. } => neval,
         }
@@ -263,7 +263,8 @@ pub enum StopReason {
 impl StopReason {
     /// Whether the run reached the accuracy it was asked for. `true` for a fixed
     /// budget, which was asked for points rather than accuracy.
-    pub fn converged(self) -> bool {
+    #[allow(dead_code)]
+    pub(crate) fn converged(self) -> bool {
         matches!(self, StopReason::Budget | StopReason::TargetMet)
     }
 }
@@ -294,7 +295,7 @@ impl StopSignal {
     }
 
     /// Whether the request has been made.
-    pub fn requested(&self) -> bool {
+    pub(crate) fn requested(&self) -> bool {
         self.0.load(Ordering::SeqCst)
     }
 }
@@ -340,7 +341,8 @@ pub struct ConvergenceReport {
     /// iteration — the floor guardrail as realised rather than as intended. A
     /// cumulative point count cannot see a channel starved after the first
     /// iteration, since the first iteration's α split dominates the sum.
-    pub min_channel_neval: usize,
+    #[allow(dead_code)]
+    pub(crate) min_channel_neval: usize,
     /// The smallest number of *accepted* points any channel gathered in any
     /// iteration after the first — the coverage the floor exists to buy, as
     /// realised.
@@ -355,7 +357,7 @@ pub struct ConvergenceReport {
     /// α share of the budget — the channels the floor's denomination can move at
     /// all.
     pub floor_bound_channels: usize,
-    /// Channels whose floor was held at [`floor_for_acceptance`]'s cap in the
+    /// Channels whose floor was held at `floor_for_acceptance`'s cap in the
     /// last iteration: their acceptance is too low for the floor to buy
     /// [`MIN_CHANNEL_NEVAL`] accepted points at the capped spend, so on those
     /// channels the coverage promise is bounded by the cap.
@@ -545,7 +547,7 @@ fn chunk_size(channel_neval: usize, threads: usize) -> usize {
 ///
 /// The floors are per channel because they are denominated in accepted points and
 /// channels do not share an acceptance — see [`floor_for_acceptance`].
-pub fn neyman_allocation(sd: &[f64], total: usize, floors: &[usize]) -> Vec<usize> {
+pub(crate) fn neyman_allocation(sd: &[f64], total: usize, floors: &[usize]) -> Vec<usize> {
     assert_eq!(
         sd.len(),
         floors.len(),
@@ -614,7 +616,7 @@ pub fn neyman_allocation(sd: &[f64], total: usize, floors: &[usize]) -> Vec<usiz
 /// to present, and the grids, while sampled, were never trained past the
 /// iterations that were meant to be thrown away.
 #[allow(clippy::too_many_arguments)]
-pub fn integrate_channels<I>(
+pub(crate) fn integrate_channels<I>(
     integrand: &I,
     alphas: &[f64],
     vegas_alpha: f64,

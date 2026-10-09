@@ -65,8 +65,8 @@ use crate::vegas::{IterationCombination, VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
-pub const VEGAS_NBINS: usize = 64;
-pub const VEGAS_ALPHA: f64 = 1.5;
+pub(crate) const VEGAS_NBINS: usize = 64;
+pub(crate) const VEGAS_ALPHA: f64 = 1.5;
 
 /// Grid-damping exponent used once a resonance-aware multichannel map is
 /// installed, in place of the [`VEGAS_ALPHA`] Lepage recommends for a raw
@@ -84,7 +84,7 @@ pub const VEGAS_ALPHA: f64 = 1.5;
 /// of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable across every
 /// seed *and* halves the error — the grid still absorbing the residual structure
 /// the channel maps do not cover.
-pub const VEGAS_ALPHA_MAPPED: f64 = 0.5;
+pub(crate) const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 
 /// RNG substream index the multichannel α-adaptation survey draws on, kept distinct
 /// from the VEGAS integration substreams so the survey and the integral neither
@@ -218,7 +218,7 @@ pub struct SampledChannel {
 impl SampledChannel {
     /// The `channel`-th channel of the only channel set — a fixed-beam run,
     /// where one subprocess supplies every channel.
-    pub fn sole(channel: usize) -> Self {
+    pub(crate) fn sole(channel: usize) -> Self {
         SampledChannel { group: 0, channel }
     }
 }
@@ -235,7 +235,7 @@ pub struct Channels {
 }
 
 impl Channels {
-    pub fn input(&self, this_config: usize) -> ClusterInput<'_> {
+    pub(crate) fn input(&self, this_config: usize) -> ClusterInput<'_> {
         ClusterInput {
             set: &self.derived.set,
             colors: &self.colors,
@@ -247,7 +247,7 @@ impl Channels {
 
     /// The colour table the clustering and the matched reweighting read codes
     /// through.
-    pub fn colors(&self) -> &ColorTable {
+    pub(crate) fn colors(&self) -> &ColorTable {
         &self.colors
     }
 
@@ -257,7 +257,7 @@ impl Channels {
     /// The sampling channels and the channel forests are one per configuration of
     /// MadGraph's channel mapping and are built from the same diagram slice, so
     /// the two numberings are the same one shifted by the Fortran origin.
-    pub fn config_of_channel(&self, channel: usize) -> usize {
+    pub(crate) fn config_of_channel(&self, channel: usize) -> usize {
         assert!(
             channel < self.len(),
             "a point was drawn in channel {channel} of {}",
@@ -269,7 +269,8 @@ impl Channels {
     /// The integration channel diagram `d` belongs to, or `None` where the vertex
     /// filter dropped it. Several diagrams share a channel wherever the
     /// configuration mapping merges them.
-    pub fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
+    #[allow(dead_code)]
+    pub(crate) fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
         self.derived
             .config_of_diagram
             .get(diagram)
@@ -278,7 +279,7 @@ impl Channels {
     }
 
     /// How many integration channels the process has, which is the range
-    /// [`Channels::input`] accepts and the number of sampling channels its
+    /// `Channels::input` accepts and the number of sampling channels its
     /// diagrams produce.
     pub fn len(&self) -> usize {
         self.derived.set.configs.len()
@@ -292,7 +293,7 @@ impl Channels {
 impl EventScaleSource {
     /// One constant scale on both beams and no running coupling — the prescription
     /// a caller that supplies `μF` directly is asking for.
-    pub fn constant(mu: f64) -> Self {
+    pub(crate) fn constant(mu: f64) -> Self {
         EventScaleSource {
             kind: ScaleSourceKind::Constant(EventScales::unmatched(mu, [mu, mu])),
             alpha_s: None,
@@ -306,7 +307,7 @@ impl EventScaleSource {
     /// is built at all, and `param_card_as` is the `αs(M_Z)` it would run from —
     /// `None` where the model declares no strong coupling, which is a refusal
     /// rather than a default when one was asked for.
-    pub fn from_run_card(
+    pub(crate) fn from_run_card(
         card: &RunCard,
         param_card_as: Option<f64>,
         grid: Option<&AlphaSInfo>,
@@ -359,7 +360,7 @@ impl EventScaleSource {
     /// colour flow's configuration is drawn under.
     ///
     /// [`weights_configurations_by_amp2`]: Self::weights_configurations_by_amp2
-    pub fn draws_configuration(&self) -> bool {
+    pub(crate) fn draws_configuration(&self) -> bool {
         matches!(
             &self.kind,
             ScaleSourceKind::PerEvent {
@@ -385,7 +386,7 @@ impl EventScaleSource {
     }
 
     /// The scales, when they are the same on every event.
-    pub fn constant_scales(&self) -> Option<EventScales> {
+    pub(crate) fn constant_scales(&self) -> Option<EventScales> {
         match self.kind {
             ScaleSourceKind::Constant(scales) => Some(scales),
             ScaleSourceKind::PerEvent { .. } => None,
@@ -452,7 +453,7 @@ impl EventScaleSource {
     /// that evaluates points has to be able to say "no weight" without saying
     /// "this run cannot proceed" — and every other error means exactly the
     /// latter, so it stays an `Err` and stays fatal at the call site.
-    pub fn point_scales(
+    pub(crate) fn point_scales(
         &self,
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
@@ -468,7 +469,7 @@ impl EventScaleSource {
     }
 
     /// The constants the matched reweighting reads, or `None` without matching.
-    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+    pub(crate) fn rewgt_settings(&self) -> Option<RewgtSettings> {
         match &self.kind {
             ScaleSourceKind::Constant(_) => None,
             ScaleSourceKind::PerEvent { choice, .. } => choice.rewgt_settings(),
@@ -482,7 +483,7 @@ impl EventScaleSource {
     /// # Panics
     ///
     /// If `channel` names a group this prescription has no channel set for.
-    pub fn point_history(
+    pub(crate) fn point_history(
         &self,
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
@@ -534,7 +535,7 @@ impl EventScaleSource {
 // history would add an allocation per term for no saving.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum PointHistory {
+pub(crate) enum PointHistory {
     /// The scales to evaluate this point at; under matching, also what `rewgt`
     /// and the event record read of the event's clustering, `None` otherwise.
     Scales {
@@ -548,7 +549,7 @@ pub enum PointHistory {
 
 /// What resolving one point's scales produced.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PointScales {
+pub(crate) enum PointScales {
     /// The scales to evaluate this point at.
     Scales(EventScales),
     /// The point carries no weight: a beam carrying a parton density ended below
@@ -573,9 +574,10 @@ pub struct RunningCouplingReport {
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
     /// The coupling at that constant renormalisation scale.
-    pub constant_alpha_s: Option<f64>,
+    #[allow(dead_code)]
+    pub(crate) constant_alpha_s: Option<f64>,
     /// The coupling the amplitudes were bound at.
-    pub alpha_s_ref: Option<f64>,
+    pub(crate) alpha_s_ref: Option<f64>,
     /// Why a subprocess must re-evaluate the whole model on each scale change
     /// instead of scaling its constant pools — roughly two orders of magnitude
     /// slower per event, so it is reported rather than absorbed.
@@ -597,7 +599,7 @@ pub(crate) fn boost_z(p: V, beta: f64) -> V {
 
 /// Compile and helicity-prune a class amplitude from its representative
 /// subprocess `DiagramSet`.
-pub fn compile_class(
+pub(crate) fn compile_class(
     set: &DiagramSet,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
@@ -735,7 +737,7 @@ impl FixedBeams {
     }
 
     /// Two beams of the given laboratory energies and pole masses.
-    pub fn new(energies: [f64; 2], masses: [f64; 2]) -> Self {
+    pub(crate) fn new(energies: [f64; 2], masses: [f64; 2]) -> Self {
         FixedBeams {
             energies,
             masses,
@@ -745,18 +747,14 @@ impl FixedBeams {
 
     /// Two massless beams sharing `sqrt_s` evenly, the head-on light-cone
     /// configuration.
-    pub fn massless(sqrt_s: f64) -> Self {
+    #[allow(dead_code)]
+    pub(crate) fn massless(sqrt_s: f64) -> Self {
         Self::new([sqrt_s / 2.0, sqrt_s / 2.0], [0.0, 0.0])
     }
 
     /// The partonic invariant mass `√ŝ`.
     pub fn sqrt_s(&self) -> f64 {
         self.sqrt_s
-    }
-
-    /// The beams' pole masses, in beam order.
-    pub fn masses(&self) -> [f64; 2] {
-        self.masses
     }
 
     /// The two incoming momenta in the partonic centre of mass, beam `0` along
@@ -767,7 +765,7 @@ impl FixedBeams {
     }
 
     /// The `1/F` the master formula multiplies, `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))`.
-    pub fn inverse_flux(&self) -> f64 {
+    pub(crate) fn inverse_flux(&self) -> f64 {
         let s = self.sqrt_s * self.sqrt_s;
         let lambda = beams::kallen(
             s,
@@ -780,7 +778,7 @@ impl FixedBeams {
     /// The `z` velocity carrying a centre-of-mass momentum into the laboratory.
     /// Exactly zero for beams of equal energy and mass, where the two frames
     /// coincide.
-    pub fn lab_beta(&self) -> f64 {
+    pub(crate) fn lab_beta(&self) -> f64 {
         beams::lab_beta_z(self.energies, self.masses)
     }
 }
@@ -810,7 +808,7 @@ impl DecayAtRest {
     ///
     /// If `mass` is not positive: a massless or zero-mass particle has no rest
     /// frame and decays to nothing.
-    pub fn new(mass: f64) -> Self {
+    pub(crate) fn new(mass: f64) -> Self {
         assert!(
             mass > 0.0,
             "a decaying particle needs a positive pole mass, got {mass}"
@@ -920,7 +918,7 @@ impl InitialState {
 
     /// The incoming momenta in the frame the integrand works in: the partonic
     /// centre of mass for two beams, the rest frame for a decay.
-    pub fn momenta(&self) -> Vec<V> {
+    pub(crate) fn momenta(&self) -> Vec<V> {
         match self {
             InitialState::Beams(b) => b.momenta().to_vec(),
             InitialState::Decay(d) => vec![LorentzVector::new(d.mass, 0.0, 0.0, 0.0)],
@@ -929,7 +927,7 @@ impl InitialState {
 
     /// The `1/F` the master formula multiplies: the Møller flux for two beams,
     /// `1/(2M)` for a decay.
-    pub fn inverse_flux(&self) -> f64 {
+    pub(crate) fn inverse_flux(&self) -> f64 {
         match self {
             InitialState::Beams(b) => b.inverse_flux(),
             InitialState::Decay(d) => 1.0 / (2.0 * d.mass),
@@ -939,7 +937,7 @@ impl InitialState {
     /// The `z` velocity from the frame the momenta are built in to the one the
     /// cuts read. A decay's cuts read its rest frame, as `cuts.f` does for one
     /// incoming particle (no boost is applied there when `nincoming = 1`).
-    pub fn lab_beta(&self) -> f64 {
+    pub(crate) fn lab_beta(&self) -> f64 {
         match self {
             InitialState::Beams(b) => b.lab_beta(),
             InitialState::Decay(_) => 0.0,
@@ -1568,12 +1566,12 @@ pub(crate) fn constant_scale_report(
 /// ```
 ///
 /// with `F = 2 λ^{1/2}(ŝ, m_a², m_b²)` the Møller flux of the two beams
-/// ([`FixedBeams::inverse_flux`]), `2ŝ` when both are massless,
+/// (`FixedBeams::inverse_flux`), `2ŝ` when both are massless,
 ///
 /// and where `|M_sub|²` is a subprocess's colour+helicity-summed matrix element
 /// ([`eval_m2`]), the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n`
 /// into the full `dΦ_n` measure, and `S_sub = 1/Π_s n_s!` is that subprocess's own
-/// identical-particle symmetry factor ([`identical_particle_factor`]), undoing
+/// identical-particle symmetry factor (`identical_particle_factor`), undoing
 /// `dΦ_n`'s over-counting of the permutations of its identical outgoing legs. It
 /// sits inside the sum because subprocesses sharing one map — one outgoing mass
 /// list — need not share an outgoing multiset.
@@ -1786,7 +1784,7 @@ pub struct ChannelIntegration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSelection {
     /// Index into the integrand's subprocesses
-    /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
+    /// (`FixedBeamIntegrand::subprocess_evaluator`).
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
@@ -1934,7 +1932,7 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Draw an event's configuration only among those whose forced
     /// Breit–Wigner lines are inside their windows at the event's momenta
-    /// ([`SubprocessResonances::mask_unadmitted`]), as MadEvent writes an event
+    /// (`SubprocessResonances::mask_unadmitted`), as MadEvent writes an event
     /// from a channel whose `cut_bw` passed. The configuration names the
     /// resonances [`select_event`](Self::select_event)'s caller writes.
     ///
@@ -2071,7 +2069,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// stops the run at setup instead of at the first VEGAS point.
     ///
     /// On a decay the card is read as MadEvent reads it for one incoming particle
-    /// ([`RunCard::for_decay`]): the renormalisation scale is the decaying
+    /// (`RunCard::for_decay`): the renormalisation scale is the decaying
     /// particle's mass unless the card fixes it, and the factorisation scales are
     /// the card's constants, so no event is ever clustered.
     pub fn use_running_coupling(
@@ -2811,11 +2809,6 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self.incoming
     }
 
-    /// The initial state the integrand was built on.
-    pub fn initial_state(&self) -> InitialState {
-        self.initial
-    }
-
     /// What the integral measures, and so the unit it is reported in.
     pub fn observable(&self) -> Observable {
         self.initial.observable()
@@ -2847,15 +2840,11 @@ impl<'a> FixedBeamIntegrand<'a> {
         ext
     }
 
-    /// The subprocesses whose `|M|²` this integrand adds.
-    pub fn subprocess_count(&self) -> usize {
-        self.subs.len()
-    }
-
     /// The compiled evaluator of one subprocess — the source of the external
     /// particle ids, the helicity combinations and the colour-flow tag table an
     /// event record is written from.
-    pub fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
+    #[allow(dead_code)]
+    pub(crate) fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
         self.subs[subprocess].evaluator()
     }
 
@@ -2866,7 +2855,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// uniforms. The subprocess is drawn `∝ |M_s|²` (the incoherent sum this
     /// integrand forms), then within it the helicity `∝ |M_c|²` (MadGraph's
     /// `SELECT_HEL`), and finally the colour flow through
-    /// [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
+    /// `AmplitudeEvaluator::select_color_flow` — the integration configuration
     /// from `u[2]` and the flow `∝ JAMP2(i)` within that configuration's admitted
     /// set from `u[3]` (`SELECT_COLOR`).
     ///
@@ -2951,7 +2940,8 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Integrate with VEGAS, returning `(σ, Δσ)` in picobarns — or, on a decay,
     /// `(Γ, ΔΓ)` in GeV ([`Observable::per_natural_unit`]).
-    pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
+    #[allow(dead_code)]
+    pub(crate) fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
         let result = self.adapt_grids(neval, niter, seed).1;
         let unit = self.observable().per_natural_unit();
         (result.integral * unit, result.std_dev * unit)

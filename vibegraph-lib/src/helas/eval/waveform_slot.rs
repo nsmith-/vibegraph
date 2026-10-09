@@ -15,8 +15,8 @@ use std::ops::{Add, Mul};
 /// the vertex's all-incoming momentum sum.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MultivectorWf<F: Real> {
-    pub m: Multivector<F>,
-    pub momentum: LorentzVector<F>,
+    pub(crate) m: Multivector<F>,
+    pub(crate) momentum: LorentzVector<F>,
 }
 
 /// A runtime wavefunction register (holds one particle's wavefunction).
@@ -140,7 +140,7 @@ impl<F: Real> WaveformSlot<F> {
         }
     }
 
-    pub fn momentum(&self) -> Option<LorentzVector<F>> {
+    pub(crate) fn momentum(&self) -> Option<LorentzVector<F>> {
         match self {
             WaveformSlot::FermionIn(f) => Some(f.momentum),
             WaveformSlot::FermionOut(f) => Some(f.momentum),
@@ -154,7 +154,8 @@ impl<F: Real> WaveformSlot<F> {
 
     /// Extract a flow-in (column / ket) fermion, applying the Dirac adjoint if
     /// the slot holds a flow-out current (the topology asked for the opposite flow).
-    pub fn expect_fermion_in(self) -> InDiracWf<F> {
+    #[allow(dead_code)]
+    pub(crate) fn expect_fermion_in(self) -> InDiracWf<F> {
         match self {
             WaveformSlot::FermionIn(f) => f,
             // A fermion line carries one flow throughout. With flow-typed externals
@@ -171,7 +172,8 @@ impl<F: Real> WaveformSlot<F> {
 
     /// Extract a flow-out (row / bra) fermion, applying the Dirac adjoint if
     /// the slot holds a flow-in current (the topology asked for the opposite flow).
-    pub fn expect_fermion_out(self) -> OutDiracWf<F> {
+    #[allow(dead_code)]
+    pub(crate) fn expect_fermion_out(self) -> OutDiracWf<F> {
         match self {
             WaveformSlot::FermionOut(f) => f,
             // See expect_fermion_in: flow is an enforced invariant, not coerced.

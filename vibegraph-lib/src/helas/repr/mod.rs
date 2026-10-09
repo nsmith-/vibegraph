@@ -29,10 +29,9 @@
 //! Each vertex intertwiner has multiple *orientations* depending on which legs
 //! are incoming vs. outgoing: the same coupling constant appears in all
 //! orientations, but the map between fibers changes because each orientation
-//! contracts different leg bundles. The [`intertwiner`] module carries the
-//! leg-count traits that name an orientation; the vertex factors themselves are
-//! methods on the [`lorentz`] representation types, which is where each has a
-//! concrete basis to be written in.
+//! contracts different leg bundles. The vertex factors are methods on the
+//! [`lorentz`] representation types, which is where each has a concrete basis
+//! to be written in.
 //!
 //! ## Scalar primitives
 //!
@@ -41,11 +40,10 @@
 //! submodules can import them from `super`.
 
 pub mod color;
-pub mod coupling;
-pub mod intertwiner;
+pub(crate) mod intertwiner;
 pub mod lorentz;
 pub mod numbers;
-pub mod vectorspace;
+pub(crate) mod vectorspace;
 
 /// Blanket trait alias for the real floating-point scalar used throughout.
 ///
@@ -72,7 +70,7 @@ pub trait Real:
     num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync
 {
     /// `self * a + b` as the target computes it fastest: one hardware FMA
-    /// (single rounding) where [`HARDWARE_FMA`] holds, a product and a sum
+    /// (single rounding) where `HARDWARE_FMA` holds, a product and a sum
     /// (two roundings) otherwise. `Float::mul_add` always rounds once, which
     /// without FMA hardware means a software FMA per call, several times the
     /// cost of the two-instruction form.
@@ -91,7 +89,7 @@ pub trait Real:
 /// x86 with `fma` enabled (`x86-64-v3` and up) or aarch64. It decides what
 /// [`Real::mul_add_fast`] computes, so results agree across targets to
 /// rounding, and bit for bit only between builds that agree on this flag.
-pub const HARDWARE_FMA: bool = cfg!(any(
+pub(crate) const HARDWARE_FMA: bool = cfg!(any(
     target_feature = "fma",
     all(target_arch = "aarch64", target_feature = "neon")
 ));
@@ -116,6 +114,6 @@ pub fn r<F: Real>(x: F) -> C<F> {
 ///
 /// Convenience shorthand for `C::new(0, x)`.
 #[inline(always)]
-pub fn ri<F: Real>(x: F) -> C<F> {
+pub(crate) fn ri<F: Real>(x: F) -> C<F> {
     C::i() * x
 }

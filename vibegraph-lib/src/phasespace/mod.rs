@@ -4,10 +4,10 @@
 //! final states in the CM frame, and provides the unit-hypercube mapping used
 //! by the VEGAS integrator. The [`rambo`] submodule generalizes to `n`-body
 //! flat sampling over an arbitrary scalar field, and [`rng`] supplies the
-//! counter-based uniform substreams that feed it. The [`channel`] submodule is
+//! counter-based uniform substreams that feed it. The `channel` submodule is
 //! the abstraction seam — [`PhaseSpaceMap`]/[`Channel`]/[`Combiner`] — that lets
 //! the sampler, channel map, and integrator be swapped independently; flat RAMBO
-//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and [`Lips2Channel`],
+//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and `Lips2Channel`,
 //! and [`MultiChannel`] combines per-diagram channels into one variance-minimising
 //! [`Combiner`].
 //!
@@ -60,21 +60,20 @@
 
 use std::f64::consts::PI;
 
-pub mod beams;
-pub mod channel;
+pub(crate) mod beams;
+pub(crate) mod channel;
 pub mod diagram_channel;
 pub mod maps;
-pub mod rambo;
+pub(crate) mod rambo;
 pub mod rng;
 
+pub(crate) use channel::{kleiss_pittau_step, PhaseSpacePoint, ScaledChannel, ScaledMultiChannel};
 pub use channel::{
-    kleiss_pittau_step, select_channel, AlphaAdaptation, Channel, Combiner, Lips2Channel,
-    MultiChannel, PhaseSpaceMap, PhaseSpacePoint, RamboChannel, ScaledChannel, ScaledMultiChannel,
-    SubsystemMemo,
+    AlphaAdaptation, Channel, Combiner, MultiChannel, PhaseSpaceMap, RamboChannel, SubsystemMemo,
 };
-pub use diagram_channel::{AngleShape, DiagramChannel, Resonance, RungSpec, TChannel};
-pub use maps::{MapChoices, MapOptions, ProcessShape, RungOrder, SplitAngle, TauMap};
-pub use rambo::{rambo, rambo_massive, rambo_massless, RamboPoint};
+pub use diagram_channel::{DiagramChannel, Resonance, RungSpec};
+pub use maps::MapOptions;
+pub use rambo::{rambo, rambo_massive, rambo_massless};
 
 /// Conversion factor: 1 GeV⁻² = 3.893793721×10⁸ pb.
 ///
@@ -104,7 +103,7 @@ pub const GEV2_TO_PB: f64 = 3.893_793_721e8;
 /// the per-diagram channel set is already closed under them, since the image of a
 /// diagram under a swap of two identical outgoing legs is another diagram of the
 /// same process.
-pub fn identical_particle_factor<S: PartialEq>(outgoing: &[S]) -> f64 {
+pub(crate) fn identical_particle_factor<S: PartialEq>(outgoing: &[S]) -> f64 {
     // Each leg contributes the next factor of its own species' factorial, counted
     // by how many earlier legs it matches, so one pass builds `Π_s n_s!`.
     let permutations: f64 = outgoing
@@ -120,7 +119,8 @@ pub fn identical_particle_factor<S: PartialEq>(outgoing: &[S]) -> f64 {
 /// For massless final-state particles this is `|p_cm| / (8π √s)`, which
 /// simplifies to `1 / (16π)` when `|p_cm| = √s / 2`.
 #[inline]
-pub fn lips2_dcostheta(sqrt_s: f64) -> f64 {
+#[allow(dead_code)]
+pub(crate) fn lips2_dcostheta(sqrt_s: f64) -> f64 {
     let p_cm = sqrt_s / 2.0; // massless: |p_cm| = E_cm/2
     p_cm / (8.0 * PI * sqrt_s)
 }
@@ -130,13 +130,15 @@ pub fn lips2_dcostheta(sqrt_s: f64) -> f64 {
 ///
 /// `J = dΦ₂/d(cosθ) × d(cosθ)/du = 2 × lips2_dcostheta(sqrt_s)`.
 #[inline]
-pub fn lips2_jacobian_u(sqrt_s: f64) -> f64 {
+#[allow(dead_code)]
+pub(crate) fn lips2_jacobian_u(sqrt_s: f64) -> f64 {
     2.0 * lips2_dcostheta(sqrt_s)
 }
 
 /// Map a unit-interval sample `u ∈ [0, 1)` to `cosθ ∈ (−1, 1)`.
 #[inline]
-pub fn u_to_costheta(u: f64) -> f64 {
+#[allow(dead_code)]
+pub(crate) fn u_to_costheta(u: f64) -> f64 {
     2.0 * u - 1.0
 }
 

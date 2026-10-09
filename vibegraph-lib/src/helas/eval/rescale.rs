@@ -117,7 +117,7 @@ struct RescalePlan {
 /// A bound amplitude that can be moved to a per-event value of the strong coupling.
 ///
 /// Owns its constant pools, so it is mutable state: one instance per thread, obtained
-/// by [`fork`](Self::fork). Nothing is shared mutably, so a parallel integrator cannot
+/// by `fork`. Nothing is shared mutably, so a parallel integrator cannot
 /// have one thread read another's coupling.
 ///
 /// Construction never needs a running-coupling object; the scale is supplied as a bare
@@ -171,7 +171,7 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
     }
 
     /// An independent copy for another thread: same shared plan, its own pools.
-    pub fn fork(&self) -> Self {
+    pub(crate) fn fork(&self) -> Self {
         ScaleAwareAmplitude {
             amp: self.amp.clone(),
             base_c: self.base_c.clone(),
@@ -246,19 +246,19 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
     }
 
     /// The strong coupling the pools currently hold.
-    pub fn alpha_s(&self) -> f64 {
+    pub(crate) fn alpha_s(&self) -> f64 {
         self.alpha_s
     }
 
     /// The parameter card's own strong coupling — the value the pools are exact at.
-    pub fn alpha_s_ref(&self) -> f64 {
+    pub(crate) fn alpha_s_ref(&self) -> f64 {
         self.plan.alpha_s_ref
     }
 
     /// Whether any constant of this amplitude moves with the strong coupling. `false`
     /// for a matrix element with no QCD coupling in it, whose caller then needs no
     /// running coupling at all.
-    pub fn depends_on_alpha_s(&self) -> bool {
+    pub(crate) fn depends_on_alpha_s(&self) -> bool {
         self.plan.scale_dependent
     }
 

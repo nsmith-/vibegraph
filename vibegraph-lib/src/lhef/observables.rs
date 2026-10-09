@@ -55,7 +55,7 @@ pub enum Labelling {
 /// is a jet, `b` and `t` stand apart because their masses do, and the charged
 /// leptons and neutrinos are grouped by charge sign. Anything unrecognised keeps
 /// its numeric code, so a new species is visible rather than silently merged.
-pub fn leg_label(pdg: i32, labelling: Labelling) -> String {
+pub(crate) fn leg_label(pdg: i32, labelling: Labelling) -> String {
     if labelling == Labelling::Fine {
         let name = match pdg.abs() {
             1 => "d",
@@ -169,7 +169,7 @@ pub fn canonical(event: &LheEvent, labelling: Labelling) -> LheEvent {
 /// The final-state legs of a canonical event, with the names every observable
 /// below is built from: the label, suffixed by a 1-based rank when the label
 /// occurs more than once.
-pub fn final_state_names(event: &LheEvent, labelling: Labelling) -> Vec<String> {
+pub(crate) fn final_state_names(event: &LheEvent, labelling: Labelling) -> Vec<String> {
     let labels: Vec<String> = event
         .particles
         .iter()
@@ -208,7 +208,7 @@ pub fn final_state_names(event: &LheEvent, labelling: Labelling) -> Vec<String> 
 /// pair's transverse momentum, rapidity and Collins–Soper polar cosine.
 ///
 /// The event must already be [`canonical`]; the names come from
-/// [`final_state_names`].
+/// `final_state_names`.
 pub fn kinematics(event: &LheEvent, labelling: Labelling) -> Vec<(String, f64)> {
     let names = final_state_names(event, labelling);
     let legs: Vec<&LheParticle> = event
@@ -285,7 +285,7 @@ fn charged_lepton_pair<'a>(legs: &[&'a LheParticle]) -> Option<(&'a LheParticle,
 /// convention that orients the axis along the boost of the pair, which is the
 /// only way to name a "forward" direction when both beams are protons; at
 /// `Q_z = 0` the sign is taken positive, an arbitrary but measure-zero choice.
-pub fn collins_soper(minus: &LheParticle, plus: &LheParticle) -> f64 {
+pub(crate) fn collins_soper(minus: &LheParticle, plus: &LheParticle) -> f64 {
     let lc = |p: &LheParticle| {
         (
             (p.momentum[0] + p.momentum[3]) / std::f64::consts::SQRT_2,
@@ -313,7 +313,8 @@ pub fn collins_soper(minus: &LheParticle, plus: &LheParticle) -> f64 {
 
 /// The event's flavour assignment: the PDG code of every leg of a canonical
 /// event, incoming first.
-pub fn flavour_key(event: &LheEvent) -> String {
+#[allow(dead_code)]
+pub(crate) fn flavour_key(event: &LheEvent) -> String {
     join(event.particles.iter().map(|p| p.pdg.to_string()))
 }
 
@@ -323,14 +324,16 @@ pub fn flavour_key(event: &LheEvent) -> String {
 /// a massive vector, or `9` for a leg whose helicity was summed over. It is
 /// rendered here at one decimal so that the key is exact rather than
 /// format-dependent.
-pub fn helicity_key(event: &LheEvent) -> String {
+#[allow(dead_code)]
+pub(crate) fn helicity_key(event: &LheEvent) -> String {
     join(event.particles.iter().map(|p| format!("{:.1}", p.spin)))
 }
 
 /// The event's colour flow, as the partition of leg slots the colour labels
 /// induce — blind to a relabelling, which carries no information, and to nothing
 /// else.
-pub fn colour_key(event: &LheEvent) -> String {
+#[allow(dead_code)]
+pub(crate) fn colour_key(event: &LheEvent) -> String {
     join(
         event
             .color_connectivity()
@@ -339,6 +342,7 @@ pub fn colour_key(event: &LheEvent) -> String {
     )
 }
 
+#[allow(dead_code)]
 fn join(parts: impl IntoIterator<Item = String>) -> String {
     parts.into_iter().collect::<Vec<_>>().join(" ")
 }

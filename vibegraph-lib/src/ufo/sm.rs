@@ -98,7 +98,7 @@ static SM_PARSED_BLOB: &[u8] = include_bytes!("sm_assets/sm_parsed.bin.zst");
 /// Over the variant's *restricted* parsed model, so it separates two builds whose
 /// restrict cards were regenerated with different contents under the same name —
 /// while ignoring anything that does not survive parsing.
-pub fn sm_digest(restrict: SMRestrict) -> &'static str {
+pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
     static CACHE: [OnceLock<String>; SMRestrict::ALL.len()] =
         [const { OnceLock::new() }; SMRestrict::ALL.len()];
 
@@ -136,7 +136,7 @@ fn sm_parsed() -> &'static ParsedModel {
 /// A copy of the interned pre-restriction SM, for callers that need a model the baked
 /// restrict variants do not cover — deriving a deliberately altered model to test how
 /// the rest of the pipeline reacts to it, for instance. Restricting it with
-/// [`ParsedModel::into_model`] reproduces exactly what [`sm_model`] caches.
+/// `ParsedModel::into_model` reproduces exactly what [`sm_model`] caches.
 pub fn sm_parsed_model() -> ParsedModel {
     sm_parsed().clone()
 }
