@@ -4,7 +4,9 @@ title: Release scope is MadGraph leading-order process parity
 description: "The release goal is MadGraph LO process parity, without MLM matching and NLO; unsupported card features are refused by one check on the fully parsed proc card."
 decided: 2026-09-25
 decided_by: human:nsmith-
-status: draft
+status: deprecated
+superseded_by: release-scope-lo-mlm
+verified: [{by: "human:nsmith-", at: 2026-10-09}]
 tags: [scope, process-grammar]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
@@ -25,5 +27,5 @@ unsupported feature before anything downstream reads the card
 ([note 38 §3.1](../38-process-grammar-sprint-plan.md)). Its `Unsupported` enum
 is the feature backlog against MadGraph.
 
-MLM has since landed (`mlm` sprint, [note 41](../41-mlm-feature-sprint-plan.md));
-NLO remains outside the scope.
+Superseded on 2026-10-09 by [release-scope-lo-mlm](release-scope-lo-mlm.md):
+MLM matching landed (`mlm` sprint, PR 14) and joined the release scope.

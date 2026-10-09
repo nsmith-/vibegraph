@@ -6,6 +6,7 @@ decided: 2026-08-02
 decided_by: human:nsmith-
 superseded_by: release-scope-mg-lo-parity
 status: deprecated
+verified: [{by: "human:nsmith-", at: 2026-10-09}]
 tags: [scope]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:

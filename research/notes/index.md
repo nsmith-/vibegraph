@@ -92,8 +92,8 @@ okf_version: "0.2"
 
 ## Directories
 
-* [backlog](backlog/) - 130 concepts; rendered by `pixi run backlog`
-* [decisions](decisions/index.md) - 3 concepts
+* [backlog](backlog/) - 133 concepts; rendered by `pixi run backlog`
+* [decisions](decisions/index.md) - 5 concepts
 * [facts](facts/index.md) - 4 concepts
 * [pipeline](pipeline/index.md) - 1 concepts
 * [sprints](sprints/index.md) - 27 concepts

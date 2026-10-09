@@ -4,6 +4,8 @@
 
 ## Design Decision
 
+* [One PR per backlog item, seen by every session type](pr-per-backlog-item.md) - After the knowledge-bundle migration, work runs in parallel as one PR per backlog item; a manager runs feature, validation, performance and later hygiene sessions on it in turn.
+* [Release scope is arbitrary-multiplicity LO with MLM merging](release-scope-lo-mlm.md) - The release goal is leading-order generation at arbitrary leg multiplicity with MLM merging; beam polarization and other beam configurations stay in the backlog.
 * [Release scope is MadGraph leading-order process parity](release-scope-mg-lo-parity.md) - The release goal is MadGraph LO process parity, without MLM matching and NLO; unsupported card features are refused by one check on the fully parsed proc card.
 * [Release scope restricted to fixed-order Standard Model processes](release-scope-sm-fixed-order.md) - The release goal covers arbitrary fixed-order SM processes over unpolarized pp or fixed-energy partonic beams; every descoped surface a card can reach is a hard error.
 * [Sprints cycle feature → validation → performance](sprint-rhythm.md) - A feature lands behind the MadGraph validation net, a validation pass hardens the net around what it exposed, and a performance pass optimizes against the hardened gate.

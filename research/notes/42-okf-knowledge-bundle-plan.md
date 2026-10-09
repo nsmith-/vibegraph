@@ -503,9 +503,13 @@ attested receipts instead of the manifest's recorded cells.
 
 ### Trial
 
-The first sprint after the migration runs in the §4 shape, including the
-draft-PR claim, and is the lifecycle's test on live work. It takes a backlog
-item chosen at that point (MLM, the one planned earlier, has since merged).
+The first sprint after the migration is the dedicated hygiene sprint
+(`backlog/hygiene/hygiene-sprint.md`). It runs in the §4 shape, including the
+draft-PR claim, and is the lifecycle's test on live work. After it, work moves
+to one PR per backlog item, with a manager running each session type on the
+PR in turn (`decisions/pr-per-backlog-item.md`, user, 2026-10-09). §4's
+session briefs, reports and close-out then apply per PR rather than per
+sprint.
 
 ## 9. Decisions (user, 2026-10-05)
 
@@ -522,7 +526,8 @@ item chosen at that point (MLM, the one planned earlier, has since merged).
 8. **`priority` is `low | medium | high`.**
 9. **Tooling is Python under pixi** (§3): it runs as pixi tasks anyway, so a
    Rust crate would buy nothing.
-10. **The trial sprint** takes a backlog item chosen when the migration ends.
+10. **The trial sprint** is the hygiene sprint (user, 2026-10-09), followed by
+    one PR per backlog item.
 11. **Draft PRs are the claim mechanism** (§4.1, §7.1), with pushes at
     infrequent checkpoints.
 
