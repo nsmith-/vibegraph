@@ -6,6 +6,7 @@ resource: "https://doi.org/10.1016/0021-9991(78)90004-9"
 status: draft
 tags: [vegas, integration, importance-sampling, paper, monte-carlo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L155-L172", title: "Note 01, classic VEGAS summary"}
   - {id: n01-lips, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L183-L196", title: "Note 01, phase-space integration and relevance"}

@@ -6,6 +6,7 @@ resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064b9a013317ca164aa1
 status: draft
 tags: [madgraph, aloha, helas, diagrams, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n02-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L303-L510", title: "Note 02, MadGraph5_aMC@NLO survey"}
   - {id: n06-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L20-L45", title: "Note 06 §1, parser location in mg5amcnlo"}

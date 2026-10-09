@@ -6,6 +6,7 @@ resource: "https://arxiv.org/abs/1402.1178"
 status: draft
 tags: [widths, decays, ufo, paper, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-madwidth, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L562-L601", title: "Note 01, MadWidth summary"}
   - {id: ufo-mod, resource: "vibegraph-lib/src/ufo/mod.rs#L613-L619", title: "UfoModel::width, read from the width parameter"}

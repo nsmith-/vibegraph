@@ -6,6 +6,7 @@ resource: "https://github.com/Jens-Braun/FeynGraph/tree/fd5aa8306746b432e098c40d
 status: draft
 tags: [feyngraph, diagrams, ufo, rust, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L17-L294", title: "Note 02, FeynGraph survey (read at 1dc4ea7)"}
   - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L555", title: "Note 02, cross-cutting notes: UFO parsing, MadGraph vs FeynGraph"}

@@ -5,6 +5,7 @@ description: "Worked cases behind AGENTS.md's validation rules: each oracle's bl
 status: draft
 tags: [validation, methodology, negative-control, blind-spot, non-vacuity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6, sprint debrief"}
   - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the IDWTUP blind spot"}
@@ -93,8 +94,9 @@ A gate's negative control is part of the gate: assert that a known-wrong input
 fails it, and print the margin.
 
 - **The swapped chain.** The rung-ordering coverage test builds the same channel
-  with its rungs reversed and asserts that at least one criterion fails for it
-  (`assert!(swapped_fails, "the ordering test cannot fire")`). A precondition
+  with its rungs reversed and asserts that the measurement fires on it
+  (`the_rung_ordering_test_fires_on_a_swapped_chain`, NEG-A, in
+  `tests/diagram_channel.rs`). A precondition
   check requires the two maps to differ in density at all, at the floor a real
   run uses: at floor zero, all four `g g > g g` channels collapse onto one map and
   the test would have no content[^n28-s23].
@@ -114,9 +116,10 @@ fails it, and print the margin.
   σ by more than 1%; deleting `<scales>` moves the Pythia acceptances by up to
   25σ; the unrotated mirror convention is rejected at pull −9.31; the PDF grid and
   the parameter card's `αs` are separated by more than half a printed `AQCDUP`
-  digit, or 20000 events would agree with either source and pin neither; the
-  bundle fetch refuses the previous cut by digest as well as accepting the current
-  one.
+  digit, or 20000 events would agree with either source and pin neither. At the
+  `refdata-5` cut the fetch path was run both ways by hand: it accepted the new
+  archive and refused `refdata-4` by name and by digest (note 29 G.9). That is a
+  recorded one-off, not a standing test.
 - **Inventories asserted both ways.** `GRID_ALPHA_S_RUNS`, `SCALE_FALLBACK_ROWS`
   and declined-run lists fail when a run joins or leaves the class, and a
   known-defect allowlist entry is required present, so it cannot outlive its

@@ -5,6 +5,7 @@ description: "One committed file names every reference process, its script and p
 status: draft
 tags: [validation, manifest, layers, report, reference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-41, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L198-L235", title: "Note 25 §4.1, the scripts and their rationale headers"}
   - {id: n25-43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L243-L253", title: "Note 25 §4.3, gating mechanisms"}

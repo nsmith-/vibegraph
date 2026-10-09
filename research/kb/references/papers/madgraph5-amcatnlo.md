@@ -6,6 +6,7 @@ resource: "https://arxiv.org/abs/1405.0301"
 status: draft
 tags: [madgraph, pipeline, lo, nlo, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-mg5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L120-L147", title: "Note 01, MadGraph5_aMC@NLO summary"}
   - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}

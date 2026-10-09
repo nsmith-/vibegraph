@@ -6,8 +6,10 @@ resource: "https://arxiv.org/abs/hep-ph/9605323"
 status: draft
 tags: [nlo, subtraction, dipoles, paper, infrared]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-cs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L296-L344", title: "Note 01, Catani-Seymour summary"}
+  - {id: cdst, resource: "https://arxiv.org/abs/hep-ph/0201036", title: "Catani, Dittmaier, Seymour, Trócsányi, The dipole formalism for NLO QCD calculations with massive partons (2002)"}
   - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
 ---
 
@@ -41,9 +43,10 @@ one-parton emission phase space:
 The counterterm is a sum of **dipoles**, each with an emitter `i`, an emitted
 parton `j` and a spectator `k`, and a momentum mapping `(i, j) → ĩ` onto
 `m`-parton kinematics that interpolates smoothly between the soft and
-collinear limits and keeps every parton on shell. Appendix C collects every
+collinear limits and keeps every parton on shell. The paper gives every
 dipole formula needed to implement the method, for final- and initial-state
-emitters and spectators, including massive quarks.
+emitters and spectators, for massless partons; massive quarks are the later
+extension by Catani, Dittmaier, Seymour and Trócsányi[^cdst].
 
 ## Relevance to vibegraph
 
@@ -56,3 +59,4 @@ FKS-style subtraction instead ([POWHEG-BOX](../codebases/powheg-box.md),
 [generators compared](../codebases/generator-architectures-compared.md)).
 
 [^n01-cs]: Note 01, Catani-Seymour summary. Note 01 says MadFKS uses the dipole method; MadFKS implements FKS subtraction.
+[^cdst]: arXiv:hep-ph/0201036. Note 01 says the 1996 paper includes massive quarks; its abstract and scope are massless.

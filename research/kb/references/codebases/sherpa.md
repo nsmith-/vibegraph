@@ -6,6 +6,7 @@ resource: "https://gitlab.com/sherpa-team/sherpa/-/tree/e12c72f4dc358759677da620
 status: draft
 tags: [sherpa, comix, berends-giele, external-code, matrix-elements]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n03-sherpa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L10-L162", title: "Note 03 Part 1, Sherpa / COMIX survey"}
   - {id: n03-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison of all surveyed generators"}

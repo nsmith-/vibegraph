@@ -5,6 +5,7 @@ description: "Classify artifacts, generate on the bank host, check reproduction 
 status: draft
 tags: [refdata, banking, madgraph, procedure, release]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-c5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3701-L3745", title: "Note 28 C.5, multi-group runs never by bytes"}
   - {id: n28-z7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4297-L4326", title: "Note 28 Z.7, publish then flip the pin"}
@@ -99,8 +100,9 @@ and report it, do not overwrite.
 ## 5. Gate on the host
 
 `pixi run --skip-deps validate` against the work area, so every new row's gate
-meets its fresh run before the bundle is frozen; a bare `pixi run validate` would
-regenerate. Then run the oracle-layer gates the new rows have, recording each
+meets its fresh run before the bundle is frozen. `--skip-deps` only skips the
+fetch tasks, which leave a populated work area untouched anyway; the banked layer
+never runs MadGraph. Then run the oracle-layer gates the new rows have, recording each
 command with its output. Gates that sweep the work area meet every new run, which
 is where an undeclared row first fails.
 

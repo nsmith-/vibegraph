@@ -6,6 +6,7 @@ resource: "https://arxiv.org/abs/2102.00773"
 status: draft
 tags: [madgraph, helicity, cse, performance, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1, what MadGraph does before emitting Fortran"}
   - {id: n15-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L788-L799", title: "Note 15, references"}

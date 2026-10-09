@@ -6,6 +6,7 @@ resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/tree/e26982d7ad3d61d
 status: draft
 tags: [powheg, nlo, subtraction, external-code, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L10-L34", title: "Note 03, surveyed revisions and purpose"}
   - {id: n03-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L165-L368", title: "Note 03 Part 2, POWHEG-BOX-V2 survey"}

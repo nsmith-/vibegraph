@@ -6,6 +6,7 @@ resource: "https://arxiv.org/abs/1905.08019"
 status: draft
 tags: [finite-fields, reconstruction, rational-functions, paper, trace-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-swell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L153-L189", title: "Note 41 §3.1, intermediate swell is not final size"}
   - {id: n41-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L329-L351", title: "Note 41 §8–8.1, functional reconstruction: what the method is"}

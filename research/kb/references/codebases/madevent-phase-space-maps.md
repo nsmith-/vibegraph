@@ -6,6 +6,7 @@ resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064b9a013317ca164aa1
 status: draft
 tags: [madevent, phase-space, importance-sampling, vegas, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1, MadEvent's maps against ours"}
   - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f", title: "genps.f: one_tree (710), gen_s (1363), GENCMS (1621), get_channel_cut (1817)"}

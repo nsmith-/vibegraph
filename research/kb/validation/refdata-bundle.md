@@ -5,6 +5,7 @@ description: "Banked MadGraph runs ship as a sha256-pinned release asset with pl
 status: draft
 tags: [refdata, bundle, madgraph, banked-layer, fetch]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L198-L266", title: "Note 25 §4, inventory and reference-data census"}
   - {id: n25-52, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L283-L325", title: "Note 25 §5.2, one entry point and the bundle"}
@@ -108,8 +109,8 @@ small enough to commit. It was built and measured, and rejected[^n26]:
   (per leg `IDUP`, `ISTUP`, `MOTHUP`, `ICOLUP`, momenta, mass, lifetime, `SPINUP`;
   per event `IDPRUP`, `XWGTUP`, `SCALUP`, `AQEDUP`, `AQCDUP` and the `<mgrwt>`
   replay payload) shrank the events 3.4×, to about 27.5 MB against a 5–10 MB
-  target. Most of the gain was dropping `<rwgt>`, 62% of the hadronic runs' text,
-  which no gate reads.
+  target. Most of the gain was dropping `<rwgt>`: 61.8% of all the banked event
+  text, all of it on the hadronic runs, and read by no gate.
 - **The floor is information, not format.** The momentum columns were 81% of
   what remained. A component printed to eleven significant digits carries about
   36.5 bits, and re-encoding the printed decimals instead of doubles saved only 9%.
@@ -128,8 +129,8 @@ The generator (`compact_events.py`) and its `lhe-compact` environment were
 deleted afterwards, so these numbers are not reproducible from the current tree;
 the verdict stands and note 26 keeps the measurements. The byte round-trip gate
 needs raw text by construction, which no projection can serve; had the projection
-won, three short raw runs reaching every layout this crate writes would have been
-kept for it, rather than moving the gate to the oracle layer.
+won, two or three short raw runs reaching every layout this crate writes would
+have been kept for it, rather than moving the gate to the oracle layer.
 
 ## Reading numbers across cuts
 

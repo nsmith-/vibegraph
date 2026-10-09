@@ -5,6 +5,7 @@ description: "Before measuring, fix the verdict table, the cells allowed to move
 status: draft
 tags: [validation, methodology, pre-registration, may-move, verdict]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-f2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L438-L491", title: "Note 29 F.2, the pre-registered bar"}
   - {id: n29-f5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L606-L663", title: "Note 29 F.5, vacuity modes"}

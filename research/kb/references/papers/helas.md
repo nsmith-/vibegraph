@@ -6,6 +6,7 @@ resource: "https://inspirehep.net/literature/336604"
 status: draft
 tags: [helas, helicity-amplitudes, wavefunctions, paper, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-helas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L345-L455", title: "Note 01, HELAS summary (from the OCR'd report)"}
   - {id: n01-helas-stub, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L148-L154", title: "Note 01, first HELAS entry (reference only)"}
@@ -104,9 +105,10 @@ double-precision `DHELAS`.
 
 vibegraph keeps HELAS's structure (external wavefunctions, off-shell currents
 with the propagator attached, a final contraction to a complex amplitude) and
-its conventions: the Weyl basis, the `NHEL`/`NSF` meaning of helicity and
-crossing, and unitary gauge for massive vector bosons (Goldstones and ghosts
-are dropped before diagram enumeration). It does not keep the `complex(6)`
+its conventions: the Weyl basis, `NHEL` for helicity, `NSF` for particle
+versus antiparticle and `NSV`/`NSS` for outgoing versus incoming, and
+unitary gauge for massive vector bosons (Goldstones and ghosts are dropped
+before diagram enumeration). It does not keep the `complex(6)`
 layout or the `G(2)` coupling array. Wavefunctions are typed values generic
 over the scalar field, `Bispinor<F, Adj>` with the Dirac adjoint in the type
 and `ComplexVector<F, V>` with its variance in the type (`helas/repr`); momenta
