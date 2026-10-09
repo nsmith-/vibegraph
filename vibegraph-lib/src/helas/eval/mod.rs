@@ -92,7 +92,6 @@ mod waveform_slot;
 #[doc(hidden)]
 pub mod bench_internals {
     pub use super::kernel::{ffv_iout, ffv_vout, gamma_iout, gamma_vout, proj_m, proj_p};
-
     pub use super::prop_harness::{
         rand_bra, rand_c, rand_ket, rand_vector, seeded_rng, slots_approx_eq,
     };
@@ -108,7 +107,6 @@ pub mod bench_internals {
 #[doc(hidden)]
 pub mod op_census {
     pub use super::compile::assert_op_coverage_across;
-
     pub use super::op::Op;
 }
 
