@@ -41,7 +41,7 @@
 //! 512 of them are ~120 points of coverage. Each channel's allocation is
 //! therefore floored at `MIN_CHANNEL_NEVAL / acceptanceⱼ`, with `acceptanceⱼ`
 //! measured from that channel's own completed iterations and capped at
-//! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see `floor_for_acceptance` for the cap's
+//! [`MAX_FLOOR_ACCEPTANCE_SCALE`] — see [`floor_for_acceptance`] for the cap's
 //! rationale and the cold start. The correction is read from iterations already
 //! finished, never from the draws it sizes, which is what keeps an allocation
 //! uncorrelated with the estimate it weights (see [`ChannelHistory::combine`]).
@@ -58,7 +58,7 @@
 //!   by the correlation between an iteration's estimate and its own variance, and
 //!   the bias comes with a *small* error bar — precisely the shape that makes a
 //!   convergence test stop early on a wrong number. A `Target` budget refuses an
-//!   `IterationCombination::InverseVariance` grid rather than reading its error.
+//!   [`IterationCombination::InverseVariance`] grid rather than reading its error.
 //! * **A minimum iteration count**, so the consistency factor below has degrees
 //!   of freedom and the grid has been refined more than a couple of times.
 //! * **An iteration-consistency scale factor.** The stopping test reads not the
@@ -120,7 +120,7 @@ use crate::vegas::{
 /// contributes exactly zero to the channel's term and exactly zero to its
 /// variance, so it is not coverage of anything. What a channel is allocated is
 /// therefore this many points divided by its own measured acceptance, capped —
-/// see `floor_for_acceptance`.
+/// see [`floor_for_acceptance`].
 pub const MIN_CHANNEL_NEVAL: usize = 512;
 
 /// The most the acceptance correction may multiply a channel's allocation by.
@@ -357,7 +357,7 @@ pub struct ConvergenceReport {
     /// α share of the budget — the channels the floor's denomination can move at
     /// all.
     pub floor_bound_channels: usize,
-    /// Channels whose floor was held at `floor_for_acceptance`'s cap in the
+    /// Channels whose floor was held at [`floor_for_acceptance`]'s cap in the
     /// last iteration: their acceptance is too low for the floor to buy
     /// [`MIN_CHANNEL_NEVAL`] accepted points at the capped spend, so on those
     /// channels the coverage promise is bounded by the cap.

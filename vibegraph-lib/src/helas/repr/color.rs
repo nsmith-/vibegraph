@@ -11,7 +11,7 @@
 //!
 //! The scalar type is `num_rational::Ratio<i64>`: exact rational arithmetic
 //! over machine integers, with checked operations that panic on overflow (see
-//! the `color` algebra engine). The `GroupScalar` trait boundary insulates
+//! the `color` algebra engine). The [`GroupScalar`] trait boundary insulates
 //! downstream code from that choice, so `Ratio<i128>` — or an arbitrary-
 //! precision crate — remains a drop-in escape hatch if the tree-level factors
 //! ever outgrow `i64`.
@@ -30,7 +30,7 @@ use num_rational::Ratio;
 
 /// An SU(3) color representation, tagged by its UFO color charge.
 ///
-/// This is the lightweight, runtime-value counterpart of the `ColorRepr`
+/// This is the lightweight, runtime-value counterpart of the [`ColorRepr`]
 /// marker types: colorize and the `Identity` resolution key off it.
 ///
 /// The ordering is the declaration order and carries no group-theoretic meaning:

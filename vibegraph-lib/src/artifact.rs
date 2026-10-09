@@ -34,11 +34,11 @@ use crate::vegas::VegasGrid;
 /// `5` adds [`ChannelGrid::sampler`], the summary of what the rule-based channel
 /// composition chose for that channel — the map it draws through and the
 /// propagator poles that map is shaped by. Versions 3 and 4 are still read,
-/// through `v3` and `v4`, and upgrade with no sampler recorded (`None`),
+/// through [`v3`] and [`v4`], and upgrade with no sampler recorded (`None`),
 /// which is what those writers knew.
 ///
 /// `6` replaces `ChannelSampler`'s single spine pole with
-/// `ChannelSampler::spine_poles_gev2`, one entry per rung in chain order: a
+/// [`ChannelSampler::spine_poles_gev2`], one entry per rung in chain order: a
 /// peripheral channel is a chain of rungs, and a scalar could only report the
 /// first of them. A version-5 file records exactly that first pole, so it upgrades
 /// to a one-entry list, which for the ladder-free processes a version-5 writer
@@ -688,7 +688,7 @@ impl v3::IntegrateArtifact {
 impl IntegrateArtifact {
     /// The version an artifact banking `channels` records: the oldest whose
     /// schema holds every key among them. A [`ChannelKey::MergedChannel`] needs
-    /// `MERGED_CHANNEL_VERSION`, a [`ChannelKey::MultiplicityChannel`]
+    /// [`MERGED_CHANNEL_VERSION`], a [`ChannelKey::MultiplicityChannel`]
     /// [`MULTIPLICITY_VERSION`]; every other key is version 9's.
     pub fn version_for(channels: &[ChannelGrid]) -> u32 {
         channels

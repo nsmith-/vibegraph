@@ -26,7 +26,7 @@
 //! direction: a **3** index lands in the colour slot for an outgoing leg and in
 //! the anticolour slot for an incoming one, and vice versa for a **3̄** index.
 //!
-//! That crossing rule is not assumed: `color_flow_tags` checks, for every
+//! That crossing rule is not assumed: [`color_flow_tags`] checks, for every
 //! flow, that the slots the derived lines occupy are exactly the slots the leg's
 //! particle rep allows (a triplet fills only the colour slot, an antitriplet
 //! only the anticolour slot, an octet both, a singlet neither), each exactly
@@ -363,7 +363,7 @@ impl LeadingColorFlows {
     }
 
     /// Diagram `d`'s row, one flag per flow. Empty for a diagram outside the
-    /// table, which leaves `select_flow_reached_by` unrestricted.
+    /// table, which leaves [`select_flow_reached_by`] unrestricted.
     pub fn reached_by(&self, diagram: usize) -> &[bool] {
         let start = diagram * self.n_flows;
         self.reached.get(start..start + self.n_flows).unwrap_or(&[])

@@ -25,12 +25,12 @@
 //! |---|---|---|---|---|
 //! | [`DiracWf::from_momentum`] | `nsf`: [`Charge`] | [`Charge::Particle`], a $u$ spinor | [`Charge::Antiparticle`], a $v$ spinor | $n_{sf}\\,p$ |
 //! | [`VectorWf::vxxxxx`] | `nsv`: `i32` | outgoing leg | incoming leg | $n_{sv}\\,p$ |
-//! | `ScalarWf::sxxxxx` | `nss`: `i32` | outgoing leg | incoming leg | $n_{ss}\\,p$ |
+//! | [`ScalarWf::sxxxxx`] | `nss`: `i32` | outgoing leg | incoming leg | $n_{ss}\\,p$ |
 //!
 //! `nsv` and `nss` panic on any value other than $\pm 1$. The signed momentum is
-//! what lets the off-shell-current routines in `crate::helas::vertex` add and
-//! subtract leg momenta directly to obtain the momentum of the internal line;
-//! `DiracWf::charge` reads the flag back off the sign of the stored energy.
+//! what lets the off-shell-current routines in [`crate::helas::vertex`] add and
+//! subtract leg momenta directly to obtain the momentum of the internal line,
+//! and it leaves the flag readable off the sign of the stored energy.
 //!
 //! ### Spinor wavefunctions
 //!
@@ -191,7 +191,7 @@
 //! ### Scalar wavefunctions
 //!
 //! HELAS gives an external scalar the wavefunction $1$ — all of the dynamics sits in
-//! the couplings and propagators — so `ScalarWf::sxxxxx` stores `value = 1 + 0i`
+//! the couplings and propagators — so [`ScalarWf::sxxxxx`] stores `value = 1 + 0i`
 //! and carries the flow-signed momentum $n_{ss}\\,p$ that downstream vertex routines
 //! need for routing. It has no helicity argument.
 use crate::helas::repr::lorentz::{

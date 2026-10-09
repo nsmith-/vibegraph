@@ -136,7 +136,7 @@ fn sm_parsed() -> &'static ParsedModel {
 /// A copy of the interned pre-restriction SM, for callers that need a model the baked
 /// restrict variants do not cover — deriving a deliberately altered model to test how
 /// the rest of the pipeline reacts to it, for instance. Restricting it with
-/// `ParsedModel::into_model` reproduces exactly what [`sm_model`] caches.
+/// [`ParsedModel::into_model`] reproduces exactly what [`sm_model`] caches.
 pub fn sm_parsed_model() -> ParsedModel {
     sm_parsed().clone()
 }

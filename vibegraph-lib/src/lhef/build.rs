@@ -396,7 +396,7 @@ impl SubprocessRecord {
     ///   (`elim_indices`, `addmothers.f:793`), which has to fit its own
     ///   representation: nothing for a singlet, one colour for a triplet, one
     ///   anticolour for an antitriplet, one of each for an octet.
-    /// * **`SPINUP`** `SPIN_UNKNOWN`: an intermediate's helicity is summed over.
+    /// * **`SPINUP`** [`SPIN_UNKNOWN`]: an intermediate's helicity is summed over.
     ///
     /// An intermediate that shares its outgoing legs with another, or whose
     /// daughters' colour does not fit it, is refused rather than written.

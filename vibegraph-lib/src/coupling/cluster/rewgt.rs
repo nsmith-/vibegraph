@@ -36,7 +36,7 @@
 //! MadEvent part. A final-state leg that is not a jet keeps whatever code the
 //! table last held for it — the subprocess's first combination until some
 //! event of the run labels it a jet — and an internal line keeps whatever flavour
-//! the last `ipartupdate` pass handed it. `RewgtHistory::pdg` is the table
+//! the last `ipartupdate` pass handed it. [`RewgtHistory::pdg`] is the table
 //! as the scale walk of *this* event leaves it, which is MadEvent's state on
 //! the first event of a run. The two agree whenever the jet-ness of every leg
 //! and the flavour transmission of every vertex are the same across a

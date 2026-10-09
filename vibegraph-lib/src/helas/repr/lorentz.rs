@@ -1109,7 +1109,7 @@ pub(crate) fn epsilon_vector<F: Real>(
 /// |------|---|---|---|---|---|---|
 /// | `(μ,ν)` | (0,1) | (0,2) | (0,3) | (1,2) | (1,3) | (2,3) |
 ///
-/// `get` reads any `(μ,ν)` with the antisymmetry applied. Read as a
+/// [`get`](Self::get) reads any `(μ,ν)` with the antisymmetry applied. Read as a
 /// Clifford element the tensor is `Σ_{μ<ν} T^{μν} σ_{μν} = ½ T^{μν} σ_{μν}`, so
 /// `σ^{μν}` for one index pair is the tensor with a single unit slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1139,7 +1139,7 @@ impl<F: Real> AsymRank2Tensor<F> {
     pub(crate) const INDEX_PAIRS: [(usize, usize); 6] =
         [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)];
 
-    /// Build from the six `μ < ν` components, in `INDEX_PAIRS` order.
+    /// Build from the six `μ < ν` components, in [`INDEX_PAIRS`](Self::INDEX_PAIRS) order.
     #[inline(always)]
     pub fn new(components: [C<F>; 6]) -> Self {
         AsymRank2Tensor(components)

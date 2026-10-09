@@ -9,7 +9,7 @@
 //! # The polynomial path, concretely
 //!
 //! A subprocess's amplitude is `A(P) = Σ_μ μ(P)·a_μ` over the monomials `μ` its
-//! `Support` proves — per helicity combination and colour flow, with `a_μ` the
+//! [`Support`] proves — per helicity combination and colour flow, with `a_μ` the
 //! amplitude of that coupling class. Its value at `K = |Support|` well-chosen
 //! parameter nodes `P_j` determines every `a_μ`: `A(P_j) = Σ_μ V_jμ a_μ` with
 //! `V_jμ = μ(P_j)`. Then for any hypothesis `P_L`,

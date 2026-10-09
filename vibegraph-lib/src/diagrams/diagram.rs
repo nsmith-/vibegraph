@@ -6,7 +6,7 @@
 //! lives in an `is_anti` flag, and each vertex's rays must be re-ordered to the UFO
 //! interaction's particle-slot order (`propagators_ordered`).
 //!
-//! `Diagram::from_view` is the single boundary where those conventions are read: it
+//! [`Diagram::from_view`] is the single boundary where those conventions are read: it
 //! produces a UFO-resolved, `feyngraph`-free owned copy so downstream rooting
 //! ([`crate::helas::eval`]) never touches a feyngraph view. Every positional index is a
 //! distinct newtype so a leg index can't be used where a ray slot is expected.
@@ -77,7 +77,7 @@ pub struct Prop {
     /// Of the combinations momentum conservation allows, the one without the last
     /// external momentum: the external legs on the side of the line that does not hold
     /// the last leg, incoming ones `+1` and outgoing ones `−1`, negated when that side is
-    /// at `endpoints[1]` (`Diagram::tree_momentum`).
+    /// at `endpoints[1]` ([`Diagram::tree_momentum`]).
     pub momentum: Vec<i8>,
     /// MadGraph's `onshell` flag for this line.
     pub onshell: OnShell,
@@ -116,7 +116,7 @@ pub(crate) struct DecayOrigin {
 
 /// Where a diagram came from on the proc card.
 ///
-/// Bookkeeping, not part of the graph: `CanonicalDiagram` equality ignores it.
+/// Bookkeeping, not part of the graph: [`CanonicalDiagram`] equality ignores it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Provenance {
     /// MadGraph's process number of the card line (`@N`, or its position among the

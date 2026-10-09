@@ -265,7 +265,7 @@ pub fn generator_element(name: &str, version: &str, note: &str) -> String {
 
 /// The `<MGRunCard>` element MadGraph puts in an event file's header
 /// (`banner.py:69-86`): the run card, one `value = name` line per parameter,
-/// as MadGraph records it (`RunCard::banner_values`).
+/// as MadGraph records it ([`RunCard::banner_values`]).
 ///
 /// The body is element text, with `<`, `>` and `&` escaped, and not the CDATA
 /// section MadGraph wraps it in: Pythia 8.312's reader drops a CDATA

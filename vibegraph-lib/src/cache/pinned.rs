@@ -16,8 +16,8 @@
 //! Shipping only member 0 would be a partial redistribution, not an exemption
 //! from that.
 //!
-//! [`ensure_pdf_set`] layers verification on top of `store::cache_pdf_set` by
-//! wrapping the caller's [`Fetch`] in a `VerifiedFetch`, so an archive whose
+//! [`ensure_pdf_set`] layers verification on top of [`store::cache_pdf_set`] by
+//! wrapping the caller's [`Fetch`] in a [`VerifiedFetch`], so an archive whose
 //! bytes do not match the pin is rejected *before* the storage layer extracts
 //! or publishes anything.
 
@@ -40,7 +40,7 @@ pub struct PinnedPdfSet {
     /// Archive URL. Stored rather than derived so a set served from somewhere
     /// other than the LHAPDF data server can be pinned without special-casing;
     /// a test asserts the entries that *are* LHAPDF-served agree with
-    /// `store::lhapdf_download_url`.
+    /// [`store::lhapdf_download_url`].
     pub url: &'static str,
     /// Lowercase hex SHA-256 of the archive at `url`, in the same form
     /// [`digest_bytes`] produces.

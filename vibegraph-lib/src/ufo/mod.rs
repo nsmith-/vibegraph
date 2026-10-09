@@ -177,7 +177,7 @@ pub struct UFOModel {
 ///
 /// Holds everything that is independent of a specific restrict card and is
 /// serializable — i.e. everything in [`UFOModel`] except the feyngraph `topo`
-/// model (which is rebuilt by `ParsedModel::into_model`). Vertices are the
+/// model (which is rebuilt by [`ParsedModel::into_model`]). Vertices are the
 /// full unpruned set; parameters have not yet had a restriction baked in.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ParsedModel {
@@ -348,7 +348,7 @@ impl UFOModel {
         Self::load_with_digest(path, restrict_card).map(|(model, _)| model)
     }
 
-    /// [`load`](Self::load), also returning the `model_digest` of the restricted
+    /// [`load`](Self::load), also returning the [`model_digest`] of the restricted
     /// model it built.
     ///
     /// Loading and identifying share this one path so the digest can never

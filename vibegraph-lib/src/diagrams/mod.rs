@@ -3,7 +3,7 @@
 //! A `proc_card.dat` goes through three stages before feyngraph sees it:
 //!
 //! 1. [`parse::parse_proc_card_ast`] reads the whole of MadGraph's process
-//!    language into a `ProcCardAst`, dropping nothing;
+//!    language into a [`ProcCardAst`](parse::ProcCardAst), dropping nothing;
 //! 2. [`check::check_supported`] refuses, all at once, every feature this
 //!    generator does not honour, and narrows the card to a [`SupportedCard`];
 //! 3. enumeration resolves the names against the model (case-insensitively, as

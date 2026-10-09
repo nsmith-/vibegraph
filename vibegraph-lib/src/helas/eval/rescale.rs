@@ -117,7 +117,7 @@ struct RescalePlan {
 /// A bound amplitude that can be moved to a per-event value of the strong coupling.
 ///
 /// Owns its constant pools, so it is mutable state: one instance per thread, obtained
-/// by `fork`. Nothing is shared mutably, so a parallel integrator cannot
+/// by [`fork`](Self::fork). Nothing is shared mutably, so a parallel integrator cannot
 /// have one thread read another's coupling.
 ///
 /// Construction never needs a running-coupling object; the scale is supplied as a bare

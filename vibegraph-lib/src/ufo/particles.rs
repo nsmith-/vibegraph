@@ -75,7 +75,7 @@ pub struct Particle {
     pub(crate) line_style: Option<String>,
     /// Python variable name of the `propagators.py` entry this particle
     /// propagates with (`propagator = Prop.Z1`), when the model overrides the
-    /// default form. Rejected — see `crate::ufo::propagators` — only when such
+    /// default form. Rejected — see [`crate::ufo::propagators`] — only when such
     /// a particle actually propagates in a selected diagram.
     pub propagator: Option<String>,
 }

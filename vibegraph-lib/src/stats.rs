@@ -18,7 +18,7 @@
 //!
 //! The price is that a weighted sample of `n` entries carries less information
 //! than `n` independent ones. The standard summary of how much less is
-//! `effective_size`, `(Σw)²/Σw²`, which is `n` for equal weights and falls as
+//! [`effective_size`], `(Σw)²/Σw²`, which is `n` for equal weights and falls as
 //! the weights spread; it is what both tests use in place of a count when they
 //! turn a statistic into a p-value.
 //!

@@ -33,7 +33,7 @@ pixi run backlog ${claims[@]+"${claims[@]}"} \
   -o docs/src/backlog.md
 
 RUSTDOCFLAGS="--html-in-header $repo/doc-include/mathjax-header.html" \
-  cargo doc -q --no-deps -p vibegraph-lib
+  cargo doc -q --no-deps --document-private-items -p vibegraph-lib
 
 rm -rf "$site"
 # mdbook-katex leaves a formula it cannot parse as source and only warns, so

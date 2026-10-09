@@ -31,7 +31,7 @@
 //!
 //! `$` is a property of the process line and MadGraph marks each subprocess's
 //! own diagrams, so each subprocess gets its own veto; flavour groups sharing one
-//! matrix element are required to share the marking too (`check_group_members`).
+//! matrix element are required to share the marking too ([`check_group_members`]).
 
 use std::collections::BTreeMap;
 

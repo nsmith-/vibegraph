@@ -10,9 +10,9 @@
 //! pool and changes nothing else; it is accepted there so a driver can set one
 //! thread count for a whole pipeline.
 //!
-//! The thread count is a scheduling knob and nothing more:
-//! [`VegasGrid::adapt_parallel_seeded`](vibegraph::vegas::VegasGrid::adapt_parallel_seeded)
-//! reproduces the sequential draw and accumulation order whatever the pool size,
+//! The thread count is a scheduling knob and nothing more: the parallel VEGAS
+//! adaptation ([`vibegraph::vegas`]) reproduces the sequential draw and
+//! accumulation order whatever the pool size,
 //! so `-j 1` and `-j 16` write byte-identical artifacts. That is what makes a
 //! single-threaded validation run a measurement of the numbers the parallel
 //! command produces.

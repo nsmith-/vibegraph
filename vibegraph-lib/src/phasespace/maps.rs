@@ -32,9 +32,9 @@ pub enum SplitAngle {
     Isotropic,
     /// Flat in `cos θ*` from the parent's direction of flight, confined to the
     /// angles at which both daughters clear their cut-implied energy floors, on
-    /// every split whose parent moves (`AngleShape::Windowed`).
+    /// every split whose parent moves ([`AngleShape::Windowed`]).
     Windowed,
-    /// The soft-shaped map `∝ 1/(E₁E₂)` (`AngleShape::Soft`) on the splits with a
+    /// The soft-shaped map `∝ 1/(E₁E₂)` ([`AngleShape::Soft`]) on the splits with a
     /// single massless vector daughter — a gluon or photon emission, where a
     /// splitting kernel is soft-singular — and isotropic elsewhere.
     SoftEmission,
@@ -232,7 +232,7 @@ impl MapOptions {
     ///   `χ²/dof` 0.91 under either map — a decision about that cell, not the map.
     /// * `tau`: [`TauMap::Log`]. MadEvent's rule — `1/τ²` unless a finite-width
     ///   resonance spans the whole final state, which
-    ///   `ProcessShape::whole_state_resonance` detects — measures better where it
+    ///   [`ProcessShape::whole_state_resonance`] detects — measures better where it
     ///   differs: `p p > j j` 0.77 ± 0.03, `p p > b b~` 0.65 ± 0.05 in error² ×
     ///   evaluations (it stops on the iteration floor), Drell–Yan 1.06 ± 0.05 the
     ///   other way, `p p > l+ l- j` neutral. It is not the rule yet because the

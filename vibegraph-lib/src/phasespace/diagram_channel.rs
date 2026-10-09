@@ -98,7 +98,7 @@
 //! The tree is a `√ŝ`-independent structure: masks, masses, resonances and the
 //! spacelike pole do not move with the collision energy. The fixed-energy
 //! [`PhaseSpaceMap`]/[`Channel`] impls use the `sqrt_s` a channel was built at;
-//! `ScaledChannel` takes it per draw, which is what lets one channel set serve a
+//! [`ScaledChannel`] takes it per draw, which is what lets one channel set serve a
 //! hadronic run whose `ŝ = τ s` changes every event.
 
 use std::collections::BTreeMap;
@@ -339,7 +339,7 @@ enum ChannelTopology<F: Real> {
 /// A single-diagram phase-space channel on one outgoing-mass set.
 ///
 /// `sqrt_s` is the energy the fixed-energy [`PhaseSpaceMap`]/[`Channel`] impls
-/// draw at; `ScaledChannel` takes the energy per draw instead and leaves this
+/// draw at; [`ScaledChannel`] takes the energy per draw instead and leaves this
 /// field unread.
 #[derive(Clone, Debug)]
 pub struct DiagramChannel<F: Real> {
@@ -768,7 +768,7 @@ impl<F: Real> DiagramChannel<F> {
     /// and remainder floor.
     ///
     /// Two channels with equal keys are the same map. [`Channel::density`],
-    /// `ScaledChannel::density_at` and the two `sample` entry points read
+    /// [`ScaledChannel::density_at`] and the two `sample` entry points read
     /// `n_out`, `beam_masses`, `sqrt_s` and `topology` and nothing else, and the
     /// encoding is injective on those, so equal keys give a pointwise equal
     /// density — the condition under which two terms of a mixture may be replaced

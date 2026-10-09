@@ -164,7 +164,7 @@ pub struct LheParticle {
     /// `MOTHUP` — 1-based positions of this leg's mothers within the same event,
     /// `0` for none.
     pub mothers: [i32; 2],
-    /// `ICOLUP` — `[colour, anticolour]` line labels, `NO_COLOR_LINE` for an
+    /// `ICOLUP` — `[colour, anticolour]` line labels, [`NO_COLOR_LINE`] for an
     /// empty slot. Slot 1 is the *physical* colour whichever way the leg runs.
     pub color: [i32; 2],
     /// The four-momentum as `[E, px, py, pz]`, in the crate's layout. The file
@@ -179,7 +179,7 @@ pub struct LheParticle {
     pub mass: f64,
     /// `VTIMUP` — the proper lifetime `c·τ` in mm.
     pub lifetime: f64,
-    /// `SPINUP` — the selected helicity, or `SPIN_UNKNOWN`.
+    /// `SPINUP` — the selected helicity, or [`SPIN_UNKNOWN`].
     pub spin: f64,
 }
 

@@ -208,7 +208,7 @@ pub(crate) fn final_state_names(event: &LheEvent, labelling: Labelling) -> Vec<S
 /// pair's transverse momentum, rapidity and Collins–Soper polar cosine.
 ///
 /// The event must already be [`canonical`]; the names come from
-/// `final_state_names`.
+/// [`final_state_names`].
 pub fn kinematics(event: &LheEvent, labelling: Labelling) -> Vec<(String, f64)> {
     let names = final_state_names(event, labelling);
     let legs: Vec<&LheParticle> = event

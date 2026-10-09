@@ -11,7 +11,7 @@
 //!    `position ← draw counter` — with no reliance on hash-mixing for
 //!    independence.
 //!
-//! 2. A documented **bits→uniform** conversion (`u64_to_uniform`) that turns
+//! 2. A documented **bits→uniform** conversion ([`u64_to_uniform`]) that turns
 //!    each 64-bit draw into a `[0, 1)` value in the scalar field `F`. The
 //!    conversion is defined on the integer bits, so lane-batched `f64` sampling
 //!    reproduces scalar `f64` sampling bit-for-bit: the same integer draw feeds

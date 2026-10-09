@@ -759,7 +759,7 @@ impl<'a, F: Real> BoundAmplitude<'a, F> {
     }
 
     /// Walk the folded arena for one (momenta, helicity) point, returning the
-    /// per-flow JAMPs `J_i` — the scalar children of the `Op::Flows` root. Backs the
+    /// per-flow JAMPs `J_i` — the scalar children of the [`Op::Flows`] root. Backs the
     /// per-flow JAMP probes ([`eval_m2`](Self::eval_m2) reads its JAMPs from the
     /// helicity-expanded root instead).
     ///

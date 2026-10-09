@@ -205,7 +205,7 @@ impl<'a> MultiplicitySum<'a> {
         self.parts[k].value_in_channel(j, self.part_point(k, u))
     }
 
-    /// `value_in_channel` with the point kept, and the
+    /// [`value_in_channel`](Self::value_in_channel) with the point kept, and the
     /// part it belongs to: [`ProtonIntegrand::event_in_channel`] of that part.
     pub fn event_in_channel(&self, channel: usize, u: &[f64]) -> Option<(usize, ProtonEvent)> {
         let (k, j) = self.locate(channel);
@@ -268,7 +268,7 @@ impl<'a> MultiplicitySum<'a> {
     }
 
     /// Install every part's selection weights from one list in channel order, as
-    /// `channel_alphas` returns it.
+    /// [`channel_alphas`](Self::channel_alphas) returns it.
     ///
     /// # Panics
     ///
@@ -354,7 +354,7 @@ impl<'a> MultiplicitySum<'a> {
 
     /// Integrate every channel of every part under `budget`, one grid per
     /// channel at its part's dimension, allocated by
-    /// `allocation_alphas` (or re-split by the channels'
+    /// [`allocation_alphas`](Self::allocation_alphas) (or re-split by the channels'
     /// measured spread under a Neyman allocation).
     ///
     /// Each returned [`ChannelIntegration::alpha`] is the channel's weight in its

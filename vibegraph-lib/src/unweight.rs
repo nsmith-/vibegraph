@@ -578,7 +578,7 @@ impl Unweighter {
     /// This is what an unweighted sample is worth, and comparing it against the
     /// integration's own `σ` is the check that accept/reject preserved the
     /// normalisation. It has the same expectation as
-    /// `sigma_from_trials` but a larger variance — the
+    /// [`sigma_from_trials`](Self::sigma_from_trials) but a larger variance — the
     /// rejected trials are exactly the information unweighting throws away.
     pub fn sigma_from_events(&self) -> f64 {
         self.total_w_max * ratio(self.stats.event_weight_sum, self.stats.trials as f64)

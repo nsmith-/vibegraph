@@ -1,7 +1,7 @@
 //! Names to particles: a parsed card read against a model, as MadGraph reads it.
 //!
 //! Two consumers. Enumeration needs every leg as a list of model particle
-//! names (`leg_names`, `forbidden_propagator_names`). The parser oracle needs the
+//! names ([`leg_names`], [`forbidden_propagator_names`]). The parser oracle needs the
 //! whole of MadGraph's `ProcessDefinition` — PDG codes, polarization states,
 //! the coupling-order dictionaries MadGraph derives from the constraints as
 //! written — so that a card parsed here can be compared field by field with

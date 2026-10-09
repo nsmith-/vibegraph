@@ -60,7 +60,7 @@ pub struct ModelIdentity {
     pub name: String,
     /// Restrict-card selector; `"default"` for a bare `import model sm`.
     pub restrict: String,
-    /// `model_digest` over the restricted model this run was built from.
+    /// [`model_digest`] over the restricted model this run was built from.
     pub digest: String,
 }
 

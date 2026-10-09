@@ -32,16 +32,16 @@
 //! Two independent knobs control the combination, both recoverable to the plain
 //! Lepage behaviour:
 //!
-//! * `VegasGrid::warmup` — leading iterations excluded from the combination.
+//! * [`VegasGrid::warmup`] — leading iterations excluded from the combination.
 //!   They still draw their points and still refine the grid; only their
 //!   estimates are dropped, so this costs `warmup/niter` of the run's
 //!   statistics and no integrand evaluations. What it buys is variance, not
 //!   bias: the first iterations run on a grid that has not found the peak, and
 //!   their estimates are the noisy ones.
-//! * `VegasGrid::combination` — how the surviving iterations are averaged.
-//!   `IterationCombination::Unweighted` takes the arithmetic mean, whose
+//! * [`VegasGrid::with_combination`] — how the surviving iterations are averaged.
+//!   [`IterationCombination::Unweighted`] takes the arithmetic mean, whose
 //!   weights are fixed in advance and therefore cannot correlate with the
-//!   estimates; `IterationCombination::InverseVariance` is Lepage's `1/σ²`
+//!   estimates; [`IterationCombination::InverseVariance`] is Lepage's `1/σ²`
 //!   mean.
 //!
 //! Measured on a 5-dimensional product of Gaussians (`σ = 0.15`) whose exact
@@ -72,7 +72,7 @@
 //!
 //! # Two-phase usage: adapt, then freeze
 //!
-//! `VegasGrid::adapt` both estimates the integral and reshapes the grid.
+//! [`VegasGrid::adapt`] both estimates the integral and reshapes the grid.
 //! Once a grid has converged it can be serialized ([`VegasGrid`] implements
 //! `Serialize`/`Deserialize`), shipped elsewhere, and reused for importance
 //! sampling with no further refinement via [`VegasGrid::sample_frozen`] — the
@@ -183,7 +183,7 @@ pub(crate) enum VegasGridError {
 /// The grid `xi[d][k]` stores the `k`-th bin boundary in dimension `d`,
 /// with `xi[d][0] = 0` and `xi[d][nbins] = 1`.
 ///
-/// `Deserialize` runs the same validation as `VegasGrid::from_raw`
+/// `Deserialize` runs the same validation as [`VegasGrid::from_raw`]
 /// (monotone edges, `0`/`1` endpoints, shape consistency) so a corrupt grid
 /// is rejected at deserialize time rather than surfacing as silent
 /// mis-sampling later.
@@ -247,8 +247,8 @@ impl VegasGrid {
     /// * `nbins` – bins per dimension (50–100 is typical)
     /// * `alpha` – grid-damping exponent (Lepage: 1.5)
     ///
-    /// Starts at `DEFAULT_WARMUP_ITERS` warm-up iterations; use
-    /// `with_warmup` to change or disable the discard.
+    /// Starts at [`DEFAULT_WARMUP_ITERS`] warm-up iterations; use
+    /// [`with_warmup`](Self::with_warmup) to change or disable the discard.
     pub fn new(ndim: usize, nbins: usize, alpha: f64) -> Self {
         let xi = (0..ndim)
             .map(|_| (0..=nbins).map(|i| i as f64 / nbins as f64).collect())
@@ -1201,7 +1201,7 @@ fn substream_id(iter_idx: u32, chunk_idx: u32) -> u64 {
 }
 
 /// Compatibility shim preserving the pre-split `Vegas::new` / `integrate`
-/// API as a thin wrapper over `VegasGrid::adapt`.
+/// API as a thin wrapper over [`VegasGrid::adapt`].
 pub struct Vegas {
     grid: VegasGrid,
 }
@@ -1232,7 +1232,7 @@ impl Vegas {
         self
     }
 
-    /// Integrate `f` over `[0, 1]^ndim`. See `VegasGrid::adapt`.
+    /// Integrate `f` over `[0, 1]^ndim`. See [`VegasGrid::adapt`].
     pub fn integrate(
         &mut self,
         f: impl FnMut(&[f64]) -> f64,

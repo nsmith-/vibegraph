@@ -271,7 +271,7 @@ impl GridAlphaS {
         Ok(self.at_q2(q * q))
     }
 
-    /// Like `try_eval` but panics on a scale that is not a
+    /// Like [`try_eval`](Self::try_eval) but panics on a scale that is not a
     /// positive finite number.
     ///
     /// A cross section that has reached the point of evaluating a coupling has

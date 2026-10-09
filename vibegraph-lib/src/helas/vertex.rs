@@ -95,7 +95,7 @@ pub(crate) fn j3xxxx<F: Real>(
 /// Mirrors the HELAS `jioxxx` routine.  Uses Feynman gauge for massless bosons
 /// and unitary gauge (with the Fabio fixed-width prescription) for massive ones.
 ///
-/// Unlike `j3xxxx`, this routine handles a single boson species (photon *or*
+/// Unlike [`j3xxxx`], this routine handles a single boson species (photon *or*
 /// Z) at a time.  To compute the full SM `e⁺e⁻ → μ⁺μ⁻` matrix element, call
 /// this once for the photon and once for the Z, then sum the resulting
 /// amplitudes before squaring.

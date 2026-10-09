@@ -8,18 +8,21 @@
 //!
 //! ## Vocabulary
 //!
-//! - `ColorCoeff` — the scalar prefactor `q · i^imag · Nc^nc_power`, exact
-//!   rational, checked arithmetic.
-//! - `ColorTensor` — a generalized color object: `T`, `Tr`, `f`, `d`, `One`.
-//! - `ColorString` — a coefficient times a product of tensors.
-//! - `ColorFactor` — a sum of color strings; `ColorFactor::full_simplify`
-//!   reduces it to canonical form.
+//! - [`ColorCoeff`](coeff::ColorCoeff) — the scalar prefactor
+//!   `q · i^imag · Nc^nc_power`, exact rational, checked arithmetic.
+//! - [`ColorTensor`](tensor::ColorTensor) — a generalized color object: `T`,
+//!   `Tr`, `f`, `d`, `One`.
+//! - [`ColorString`](factor::ColorString) — a coefficient times a product of
+//!   tensors.
+//! - [`ColorFactor`](factor::ColorFactor) — a sum of color strings;
+//!   [`ColorFactor::full_simplify`](factor::ColorFactor::full_simplify) reduces
+//!   it to canonical form.
 //!
 //! The reduction is a fixed-point iteration of the SU(3) rewrite rules (`f`/`d`
 //! to traces, `T`-chain merge, `T` closing to a trace, the three Fierz
-//! variants, trace values, and conjugation). `ColorString::to_immutable` and
-//! `ColorString::to_canonical` give the basis-key and index-canonical forms
-//! used downstream to assemble the color basis and the color matrix.
+//! variants, trace values, and conjugation).
+//! [`ColorString::to_immutable`](factor::ColorString::to_immutable) gives the
+//! basis key used downstream to assemble the color basis and the color matrix.
 //!
 //! [`flow_tags`] reads the resulting basis keys back as color *lines*, giving the
 //! `(color, anticolor)` label pair per external leg that a Les Houches event

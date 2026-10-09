@@ -14,7 +14,7 @@
 //! # The grouping rule
 //!
 //! Two subprocesses join a group when their `|M|²` agree, to
-//! `GROUP_REL_TOL`, at a shared set of probe phase-space points spanning
+//! [`GROUP_REL_TOL`], at a shared set of probe phase-space points spanning
 //! several partonic energies. Nothing is hand-listed: the coupling classes
 //! (up-type vs down-type), the generation copies (`u`/`c`, `d`/`s`), the lepton
 //! flavours (`e`/`mu`) and the separation of `q g` from `q̄ g` all fall out of
@@ -22,7 +22,7 @@
 //! *outgoing pole masses* (so one phase-space map serves the group), an equal
 //! [`Cuts`] filter (so one cut indicator does) and an equal colour basis (so an
 //! event's colour flow can be read off the representative), and unless distinct
-//! groups separate by more than `GROUP_SEPARATION_MIN` — a partition resting
+//! groups separate by more than [`GROUP_SEPARATION_MIN`] — a partition resting
 //! on a knife edge is a measurement that failed, not a decomposition.
 //!
 //! The extra requirements are there because `|M|²` is a sum: it is blind to a
@@ -62,8 +62,8 @@
 //! which the grouping rule does not constrain: members share `|M|²` and outgoing
 //! *masses*, and `p p → j j` puts `g g → g g` (`1/2`) and `q q̄ → q q̄` (`1`) in
 //! different groups with the same mass list `[0, 0]`. Every member therefore
-//! carries its own factor (`Subprocess::symmetry_factor`) into the luminosity
-//! sum (`FlavorGroup::symmetry_weighted_luminosity`), which is where the sum over
+//! carries its own factor ([`Subprocess::symmetry_factor`]) into the luminosity
+//! sum ([`FlavorGroup::symmetry_weighted_luminosity`]), which is where the sum over
 //! subprocesses can still tell them apart.
 //!
 //! # The integrand
@@ -411,8 +411,8 @@ impl FlavorGroup {
     ///
     /// This reads the densities itself. Every group of a process evaluates them
     /// at the same two points, so a caller summing over groups reads the two
-    /// beam rows once with `beam_rows` and takes
-    /// `luminosity_rows` instead.
+    /// beam rows once with [`beam_rows`] and takes
+    /// [`luminosity_rows`](Self::luminosity_rows) instead.
     pub fn luminosity(&self, pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [f64; 2] {
         let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
         self.luminosity_rows(&f1, &f2)
@@ -1179,7 +1179,7 @@ pub struct ProtonSelection {
     /// element and a colour-factor matrix while routing their colour lines between
     /// different pairs of legs. Each member's own table is reindexed into this
     /// indexing once at group construction, by the permutation stored on
-    /// `Subprocess::flow_permutation`, so the index is meaningful for every member
+    /// [`Subprocess::flow_permutation`], so the index is meaningful for every member
     /// without their bases agreeing. A beam exchange permutes the legs of a flow
     /// rather than the flows, and so does not touch it either.
     pub flow: usize,
@@ -1231,7 +1231,7 @@ pub struct OuterPoint {
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
-/// (`FlavorGroup::symmetry_weighted_luminosity`), and `R` the mirror map
+/// ([`FlavorGroup::symmetry_weighted_luminosity`]), and `R` the mirror map
 /// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
 /// unreflected final state: the mirror is an argument to the matrix element, not a
 /// second event.
@@ -1260,7 +1260,7 @@ pub struct OuterPoint {
 /// built directly from `x·f` products, leaving the bare `ln(1/τ_min)·2·y_max`.
 ///
 /// The remaining `3n−4` coordinates are the multichannel's, evaluated at the event's
-/// own `√ŝ = √(τ s)` (`ScaledMultiChannel`) — the channel trees are `√ŝ`-independent
+/// own `√ŝ = √(τ s)` ([`ScaledMultiChannel`]) — the channel trees are `√ŝ`-independent
 /// structures, so nothing is rebuilt per point.
 ///
 /// # Frames
@@ -1392,7 +1392,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// one mixture, so a peak one group's own diagrams do not cover — the mirrored
     /// `g q` configuration above all — is still covered by another group's.
     /// Diagrams whose maps are the same function
-    /// (`DiagramChannel::map_identity`),
+    /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)),
     /// within a group or across groups, share one channel at their summed
     /// selection weight: a point's value does not depend on which of them drew it.
     ///
@@ -2614,7 +2614,7 @@ impl<'a> ProtonIntegrand<'a> {
     ///   identical-particle factor — the whole of what distinguishes one member of a
     ///   group from another, since they share the matrix element exactly;
     /// * the helicity `∝ |M_c|²`, then the colour flow through
-    ///   `AmplitudeEvaluator::select_color_flow` — the integration configuration
+    ///   [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
     ///   `∝ AMP2(d)` and the flow `∝ JAMP2(i)` inside that configuration's
     ///   admitted set — all evaluated at the argument the drawn ordering implies,
     ///   as on a fixed-beam run.
@@ -2806,13 +2806,13 @@ impl<'a> ProtonIntegrand<'a> {
     /// Refine the channel selection weights toward the variance-minimising mixture,
     /// jointly over the `(group, diagram)` channel space.
     ///
-    /// This is `MultiChannel::adapt_alphas`'
+    /// This is [`MultiChannel::adapt_alphas`](crate::phasespace::MultiChannel::adapt_alphas)'
     /// survey→refine loop driven from outside the combiner, because the integrand —
     /// not the combiner — owns the `(τ, y)` coordinates and so owns the energy each
     /// draw is made at. Each survey draws `n_survey` points from the *current*
     /// mixture over the full hypercube (outer coordinates, a channel-selection
     /// coordinate, then the channel's own), estimates every channel's variance share
-    /// `Wⱼ = E_g[(f/g)²·gⱼ/g]`, and reallocates by `kleiss_pittau_step`.
+    /// `Wⱼ = E_g[(f/g)²·gⱼ/g]`, and reallocates by [`kleiss_pittau_step`].
     ///
     /// The surveyed `f` is the whole integrand shape — the `(τ, y)` Jacobian, the
     /// flux, the cut and the luminosity-weighted sum over groups — so weight flows to

@@ -279,7 +279,7 @@ impl Channels {
     }
 
     /// How many integration channels the process has, which is the range
-    /// `Channels::input` accepts and the number of sampling channels its
+    /// [`Channels::input`] accepts and the number of sampling channels its
     /// diagrams produce.
     pub fn len(&self) -> usize {
         self.derived.set.configs.len()
@@ -1566,12 +1566,12 @@ pub(crate) fn constant_scale_report(
 /// ```
 ///
 /// with `F = 2 λ^{1/2}(ŝ, m_a², m_b²)` the Møller flux of the two beams
-/// (`FixedBeams::inverse_flux`), `2ŝ` when both are massless,
+/// ([`FixedBeams::inverse_flux`]), `2ŝ` when both are massless,
 ///
 /// and where `|M_sub|²` is a subprocess's colour+helicity-summed matrix element
 /// ([`eval_m2`]), the `(2π)^{4−3n}` factor turns the map's invariant volume `R_n`
 /// into the full `dΦ_n` measure, and `S_sub = 1/Π_s n_s!` is that subprocess's own
-/// identical-particle symmetry factor (`identical_particle_factor`), undoing
+/// identical-particle symmetry factor ([`identical_particle_factor`]), undoing
 /// `dΦ_n`'s over-counting of the permutations of its identical outgoing legs. It
 /// sits inside the sum because subprocesses sharing one map — one outgoing mass
 /// list — need not share an outgoing multiset.
@@ -1784,7 +1784,7 @@ pub struct ChannelIntegration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSelection {
     /// Index into the integrand's subprocesses
-    /// (`FixedBeamIntegrand::subprocess_evaluator`).
+    /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
@@ -1932,7 +1932,7 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Draw an event's configuration only among those whose forced
     /// Breit–Wigner lines are inside their windows at the event's momenta
-    /// (`SubprocessResonances::mask_unadmitted`), as MadEvent writes an event
+    /// ([`SubprocessResonances::mask_unadmitted`]), as MadEvent writes an event
     /// from a channel whose `cut_bw` passed. The configuration names the
     /// resonances [`select_event`](Self::select_event)'s caller writes.
     ///
@@ -2069,7 +2069,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// stops the run at setup instead of at the first VEGAS point.
     ///
     /// On a decay the card is read as MadEvent reads it for one incoming particle
-    /// (`RunCard::for_decay`): the renormalisation scale is the decaying
+    /// ([`RunCard::for_decay`]): the renormalisation scale is the decaying
     /// particle's mass unless the card fixes it, and the factorisation scales are
     /// the card's constants, so no event is ever clustered.
     pub fn use_running_coupling(
@@ -2855,7 +2855,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// uniforms. The subprocess is drawn `∝ |M_s|²` (the incoherent sum this
     /// integrand forms), then within it the helicity `∝ |M_c|²` (MadGraph's
     /// `SELECT_HEL`), and finally the colour flow through
-    /// `AmplitudeEvaluator::select_color_flow` — the integration configuration
+    /// [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
     /// from `u[2]` and the flow `∝ JAMP2(i)` within that configuration's admitted
     /// set from `u[3]` (`SELECT_COLOR`).
     ///

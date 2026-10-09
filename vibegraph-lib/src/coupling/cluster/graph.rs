@@ -264,7 +264,7 @@ impl ChannelSet {
     ///
     /// `this_config` enters only by naming the QCD coupling order that selects
     /// which channels contribute, so channels of one order share a table set —
-    /// which is what `MergeTablesByOrder` hoists out of the per-event path.
+    /// which is what [`MergeTablesByOrder`] hoists out of the per-event path.
     /// Every other channel-dependent step is a property of the forest being
     /// walked, including the last line taking beam 2's flavour where that
     /// forest names no propagator there.

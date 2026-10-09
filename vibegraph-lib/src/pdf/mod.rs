@@ -1,11 +1,11 @@
 //! LHAPDF6 grid access: parsed set metadata, per-member subgrids, PDG flavor
 //! indexing, and log-bicubic `x·f(x, Q²)` interpolation.
 //!
-//! Interpolation lives behind the `interp` seam (`interp::Bicubic2D`); the
-//! backend that matches LHAPDF6 (and hence MadGraph) is `interp::LogBicubic`.
-//! Points past the tabulated range go to the `extrap` seam
-//! (`extrap::Extrapolate2D`), whose LHAPDF-matching backend is
-//! `extrap::Continuation` — the split, and which one a point takes, is
+//! Interpolation lives behind the [`interp`] seam ([`interp::Bicubic2D`]); the
+//! backend that matches LHAPDF6 (and hence MadGraph) is [`interp::LogBicubic`].
+//! Points past the tabulated range go to the [`extrap`] seam
+//! ([`extrap::Extrapolate2D`]), whose LHAPDF-matching backend is
+//! [`extrap::Continuation`] — the split, and which one a point takes, is
 //! LHAPDF's own (`GridPDF::_xfxQ2`).
 //!
 //! A set also carries the strong coupling it was fitted at ([`alphas::GridAlphaS`]),
@@ -14,7 +14,7 @@
 //! # Reading a point
 //!
 //! [`PdfMember::xfx_all`] is the form a luminosity sum wants: one `(x, Q²)`,
-//! every flavor, into a `FlavorRow` indexed by `flavor_slot`. A hadronic
+//! every flavor, into a [`FlavorRow`] indexed by [`flavor_slot`]. A hadronic
 //! phase-space point has exactly two distinct evaluation points — one per beam —
 //! however many subprocesses are summed over it, so the guards, the band
 //! selection, the two logarithms and the two knot searches happen twice per
@@ -42,7 +42,7 @@ pub(crate) fn normalize_flavor_pdg(pdg: i32) -> i32 {
     }
 }
 
-/// Slots a `FlavorRow` carries. Fourteen are used — the six quarks, their
+/// Slots a [`FlavorRow`] carries. Fourteen are used — the six quarks, their
 /// antiquarks, the gluon and the photon, which is every code an `lhagrid1`
 /// flavor list holds; the array is rounded up to a power of two.
 pub const FLAVOR_SLOTS: usize = 16;
@@ -235,7 +235,7 @@ impl PdfMember {
         Ok(())
     }
 
-    /// Like `PdfMember::try_xfx_all` but panics on a point with no reading.
+    /// Like [`PdfMember::try_xfx_all`] but panics on a point with no reading.
     pub fn xfx_all(&self, x: f64, q2: f64, out: &mut FlavorRow) {
         self.try_xfx_all(x, q2, out)
             .unwrap_or_else(|e| panic!("{e}"))

@@ -348,7 +348,7 @@ pub trait Combiner<F: Real>: PhaseSpaceMap<F> {
 /// map `u ↦ w(p(u))·f(p(u))` integrates to `∫ dΦ f` over the fixed unit hypercube
 /// regardless of how VEGAS remaps it. The `αⱼ` are held fixed here; adapting them
 /// toward each channel's variance share is a separate concern that reads and
-/// rewrites `alphas`/`set_alphas`
+/// rewrites [`alphas`](MultiChannel::alphas)/[`set_alphas`](MultiChannel::set_alphas)
 /// without touching the estimator.
 ///
 /// # Splitting the estimator by channel
@@ -360,7 +360,7 @@ pub trait Combiner<F: Real>: PhaseSpaceMap<F> {
 /// ∫ dΦ f = Σⱼ ∫ dΦ f·αⱼgⱼ/g = Σⱼ E_{p∼gⱼ}[ αⱼ·f(p)/g(p) ]
 /// ```
 ///
-/// whose `j`-th term is `sample_channel`: draw from channel
+/// whose `j`-th term is [`sample_channel`](Self::sample_channel): draw from channel
 /// `j` alone over `channel_ndim` coordinates — no selection coordinate — and weight
 /// by `αⱼ/g` with the *same* combined `g` the mixture uses. Summing the terms
 /// recovers the same integral, so the two arrangements differ only in how sampling
@@ -377,7 +377,7 @@ pub struct MultiChannel<F: Real> {
     memo: ThreadMemo<F>,
 }
 
-/// The record of a survey→refine α-adaptation pass (`MultiChannel::adapt_alphas`).
+/// The record of a survey→refine α-adaptation pass ([`MultiChannel::adapt_alphas`]).
 ///
 /// The channel selection weights `αⱼ` are driven toward the variance-minimising
 /// mixture by the Kleiss–Pittau reallocation rule (R. Kleiss, R. Pittau,

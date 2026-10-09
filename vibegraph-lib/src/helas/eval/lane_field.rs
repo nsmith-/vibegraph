@@ -391,7 +391,7 @@ where
     fn abs(self) -> Self {
         Self(self.0.abs())
     }
-    /// Single rounding on every target: the packed FMA where `HARDWARE_FMA`
+    /// Single rounding on every target: the packed FMA where [`HARDWARE_FMA`]
     /// holds, a software FMA per lane otherwise.
     #[inline(always)]
     #[allow(clippy::disallowed_methods)] // the contract-preserving fallback

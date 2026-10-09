@@ -7,7 +7,7 @@
 //! `αs(Q)` is obtained by solving the `nloop`-order β function *implicitly*: the
 //! integrated β function is inverted by Newton iteration ([`newton1`]) rather
 //! than by an explicit expansion in `1/ln(Q²/Λ²)`. The iteration stops on a
-//! **relative** step size below `TOL` `= 5e-4`, so the returned value is a
+//! **relative** step size below [`TOL`] `= 5e-4`, so the returned value is a
 //! specific iterate rather than the exact root — reproducing MadGraph therefore
 //! means reproducing the iteration, not just the underlying differential
 //! equation.

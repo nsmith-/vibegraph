@@ -13,7 +13,7 @@
 //! * [`card`] reads the card as data.
 //! * [`resolve`] names each change as an external parameter of the model and
 //!   refuses what reweighting cannot honour.
-//! * `poly` proves, symbolically, which monomials in a set of parameters a
+//! * [`poly`] proves, symbolically, which monomials in a set of parameters a
 //!   subprocess's amplitude is a polynomial in.
 //! * [`engine`] turns that into a per-event evaluation plan.
 //!
@@ -26,7 +26,7 @@
 //! The **polynomial path** collects the amplitude by coupling monomial. When the
 //! parameters `P` enter a subprocess only through its couplings, each of them a
 //! polynomial in `P`, the amplitude is `A(P) = Σ_μ μ(P)·a_μ` over the monomials
-//! `poly` proves, per helicity combination and colour flow — the amplitude of
+//! [`poly`] proves, per helicity combination and colour flow — the amplitude of
 //! each coupling class. Every hypothesis is then a quadratic form in the classes,
 //! `|M(P)|² = Σ_μν μ(P) ν(P) Re Σ conj(a_μ)·CF·a_ν`, so an event costs one
 //! amplitude evaluation per monomial and each hypothesis a `K × K` quadratic form,

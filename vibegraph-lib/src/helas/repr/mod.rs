@@ -70,7 +70,7 @@ pub trait Real:
     num_traits::Float + num_traits::FloatConst + Copy + 'static + std::fmt::Debug + Send + Sync
 {
     /// `self * a + b` as the target computes it fastest: one hardware FMA
-    /// (single rounding) where `HARDWARE_FMA` holds, a product and a sum
+    /// (single rounding) where [`HARDWARE_FMA`] holds, a product and a sum
     /// (two roundings) otherwise. `Float::mul_add` always rounds once, which
     /// without FMA hardware means a software FMA per call, several times the
     /// cost of the two-instruction form.

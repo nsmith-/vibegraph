@@ -455,7 +455,7 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 ///
 /// # Normalisation
 ///
-/// Each part `k` of `EmitPlan::part_sigmas` — a final-state multiplicity of a
+/// Each part `k` of [`EmitPlan::part_sigmas`] — a final-state multiplicity of a
 /// sum over several, or the whole run — has its events' weights scaled by one
 /// common factor so that they contribute exactly its integrated `σₖ` to the
 /// file's cross section: `Σ_{i∈k} XWGTUPᵢ / N = σₖ` over the file's `N` events,

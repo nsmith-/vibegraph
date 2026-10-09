@@ -86,7 +86,7 @@ pub struct SupportedProcess {
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
     /// The overall orders of a decay-chain line (`@1 QED=2`), as upper bounds on
-    /// every stitched diagram's orders; each part's `orders`
+    /// every stitched diagram's orders; each part's [`orders`](Self::orders)
     /// already carries them folded in. Empty on a decay and on a line without
     /// overall orders.
     pub chain_orders: Vec<AmplitudeOrder>,
