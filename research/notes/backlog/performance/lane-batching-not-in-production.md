@@ -9,13 +9,15 @@ closes_when: The x86-64-v3 release asset evaluates lane-batched (N = 4) behind a
 blocked_by: [per-point-chain-f64-only, lane-eval-shares-one-alpha-s]
 opened: 2026-09-23
 tags: [simd, lanes, release, x86-64-v3]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
+generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L1186-L1210", title: "TODO.md entry T110"}
 ---
 `LaneField<N>` (`vibegraph-lib/src/helas/eval/lane_field.rs`) is a
 `wide`-backed field whose ops all inline. On Emerald Rapids, median per-event
-cost vs that build's own scalar:
+cost vs that build's own scalar, **measured on the pre-constant-collection
+program** (02e8b25, [x86-avx2 study](../../x86-avx2-perf-study-results.md)
+~:615-633):
 
 | build | lanes2 | lanes4 | lanes8 |
 |---|--:|--:|--:|
@@ -34,6 +36,14 @@ Missing: a consumer (a batched integrator, which needs the per-point chain
 generic in `F` and, for dynamic scales, per-lane `αs`) and a `lanes4` σ/event
 gate against scalar. The best width is host-dependent: on Zen 4 width 8 wins on
 every row ([topdown-zen4-results](../../topdown-zen4-results.md) §5).
+
+**Re-measure before the adoption decision** (noted 2026-10-09). Constant
+collection, weighted JAMP sums and bare configuration amplitudes landed after
+the table: they shrank the 2→6 arenas by 36%, and on Emerald Rapids width 8
+now beats width 4 there (44.4 against 46.6 µs/event,
+[topdown-zen4-results §6](../../topdown-zen4-results.md)). Every lane ratio
+above, and the Zen 4 §5 reading, predates them. The 1.00–1.21× scalar gains
+change the denominator too. Found by Phase 2 drafter D5.
 
 Detail: [x86-avx2-perf-study-results](../../x86-avx2-perf-study-results.md),
 AVX-512 section and "The two x86 release builds".

@@ -5,7 +5,7 @@ description: "The PDF-distribution decision rests on 'no redistribution grant ex
 area: hygiene
 state: open
 priority: low
-closes_when: "The licence covering NNPDF23_lo_as_0130_qed (and the other fetched sets) is read and recorded with its source; the fetch-on-first-use design is kept or changed to match."
+closes_when: "The licence covering NNPDF23_lo_as_0130_qed (and the other fetched sets) is read and recorded with its source; the fetch-on-first-use design and the cache/pinned.rs module doc are kept or changed to match."
 blocked_by: []
 opened: 2026-10-09
 tags: [licensing, pdf, distribution]
@@ -25,3 +25,8 @@ collaboration's release terms, the LHAPDF set index, the set's own `.info`
 file), record it with a link, and decide whether embedding member 0 or
 bundling the set into release binaries is allowed. Repeat for any other set
 the CLI fetches.
+
+The code states the unchecked premise as fact: the module doc of
+`vibegraph-lib/src/cache/pinned.rs` (~:9-17) says "no redistribution grant is
+published for these sets". Whatever the licence turns out to be, that doc
+should say what was found and cite it (added 2026-10-09; Phase 3 verifier V15).
