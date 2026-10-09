@@ -1015,7 +1015,7 @@ impl DiagramEval {
     /// The last node is the root; children reference earlier nodes by index (see
     /// [`EvalNodeId::new`]). Symmetry factor and Fermi sign are trivial (1, +1), so the
     /// reconstructed amplitude is exactly the rooted contraction of the given nodes —
-    /// used to drive single-vertex primitives through the production `run_forward` path.
+    /// used to drive single-vertex primitives through the generic `run_forward_slot` pass.
     #[cfg(test)]
     pub(crate) fn from_nodes(n_ext: usize, nodes: Vec<EvalNode>) -> Self {
         let root = EvalNodeId(nodes.len() - 1);

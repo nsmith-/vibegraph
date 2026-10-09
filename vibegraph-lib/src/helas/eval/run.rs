@@ -914,7 +914,9 @@ where
 /// pass, returning the root slot. Nodes are visited in arena (storage) order; each node's
 /// children are already computed and read from `res` by id, so a shared (DAG) node is
 /// evaluated exactly once. Rooting a sub-tree returns that node's slot, which the
-/// per-diagram probes read through production kernels.
+/// per-diagram probes read. It shares the kernels with production but not the typed
+/// [`Program`](super::layout::Program) that `fill_arenas` runs, so a probe through it
+/// checks rooting, lowering and kernels, not the production instruction stream.
 #[cfg(test)]
 pub(super) fn run_forward_slot<F: Real>(
     folded: &Folded,
@@ -1868,10 +1870,11 @@ pub fn mul_apply<F: Real>(children: impl IntoIterator<Item = WaveformSlot<F>>) -
     }
 }
 
-/// Test helper: lower a single diagram (symmetry × Fermi sign folded in) and run the
-/// unified forward pass, returning the root [`WaveformSlot`]. With a `ContractAmplitude`
-/// root this is the scalar amplitude; rooting at an off-shell current returns that
-/// current, which lets the cross-checks read an intermediate node through production.
+/// Test helper: lower a single diagram (symmetry × Fermi sign folded in) with the
+/// test-only [`lower::lower`] and run the generic [`run_forward_slot`] pass, returning
+/// the root [`WaveformSlot`]. With a `ContractAmplitude` root this is the scalar
+/// amplitude; rooting at an off-shell current returns that current, which lets the
+/// cross-checks read an intermediate node.
 #[cfg(test)]
 fn eval_single_diagram_slot<F: Real + FromPrimitive>(
     diagram: &DiagramEval,
@@ -2140,16 +2143,20 @@ mod tests {
     }
 
     /// Cross-check the s-channel FFV current and amplitude — evaluated through the
-    /// production `run_forward` path — against the `jioxxx`/`iovxxx` reference routines.
+    /// generic `run_forward_slot` pass — against the `jioxxx`/`iovxxx` reference
+    /// routines.
     ///
     /// Hand-built single diagrams (e⁺e⁻ → boson* [→ μ⁺μ⁻]) are assembled from `EvalNode`s
-    /// and run through the same lower → fold → `run_forward` runtime used for real
-    /// amplitudes. Rooting at the propagator returns the dressed s-channel current, which
+    /// and run through lower → fold → `run_forward_slot`, which shares the kernels with
+    /// the production `fill_arenas` pass but not its typed instruction stream. Rooting at the propagator returns the dressed s-channel current, which
     /// must equal `jioxxx` for every FFV structure (vector / left / left+2·right) and both
     /// the photon and Z propagators. For the unambiguous vector coupling (FFV1) the full
     /// μ⁺μ⁻ amplitude is also cross-checked against `iovxxx(·, jioxxx(·))`.
     #[test]
     fn test_eval_jioxxx() {
+        // Both sides evaluate the same few products and one propagator division, so
+        // they agree to a handful of roundings.
+        const JIOXXX_REL_TOL: f64 = 1e-12;
         let model = sm_model(SMRestrict::Default);
         let evaluated = EvaluatedModel::from_model(model.clone());
 
@@ -2248,9 +2255,9 @@ mod tests {
 
             // Single s-channel current sub-diagram e⁺e⁻ → (FFV) → boson*: the two
             // externals feed the off-shell current (rooted at the vector leg), and the
-            // propagator dresses it. Rooting at the propagator makes `run_forward` return
-            // the dressed current itself (a vector), so we read it straight from the
-            // production pass. Children reference earlier nodes by index.
+            // propagator dresses it. Rooting at the propagator makes `run_forward_slot`
+            // return the dressed current itself (a vector), so we read it straight off
+            // the pass. Children reference earlier nodes by index.
             let current_diagram = DiagramEval::from_nodes(
                 2,
                 vec![
@@ -2297,16 +2304,36 @@ mod tests {
             );
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+            // Both comparisons are relative to the largest reference over the helicities,
+            // so a helicity whose reference vanishes is still held to the same scale and
+            // the photon's and the Z's currents, three orders of magnitude apart at this
+            // √s, are held to the same relative precision.
+            let ref_current = |hel1, hel2| {
+                let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
+                let fo_ep = OutDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
+                jioxxx(&fo_ep, &fi_em, gc, mprop, wprop)
+            };
+            let current_scale = iproduct!(hels, hels)
+                .map(|(h1, h2)| ref_current(h1, h2).eps.bare_norm_sq().sqrt())
+                .fold(0.0_f64, f64::max);
+            assert!(current_scale > 0.0, "every reference current vanishes");
+            let ref_amp = |hel1, hel2, hel3, hel4| {
+                let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
+                let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
+                iovxxx(&fo_out_m, &fi_out_p, &ref_current(hel1, hel2), gc) * -Complex64::i()
+            };
+            let amp_scale = iproduct!(hels, hels, hels, hels)
+                .map(|(h1, h2, h3, h4)| ref_amp(h1, h2, h3, h4).norm())
+                .fold(0.0_f64, f64::max);
+            assert!(amp_scale > 0.0, "every reference amplitude vanishes");
             for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
                 // Physical adjoint (per the leg charge labels): leg1 (Particle, in) and
                 // leg4 (Antiparticle, out) are kets; leg2 (Antiparticle, in) and
                 // leg3 (Particle, out) are bras. The reference s-channel current is
                 // jioxxx(fo=leg2 bra, fi=leg1 ket); the sink is iovxxx.
-                let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
-                let fo_ep = OutDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
-                let v_gamma_exp = jioxxx(&fo_ep, &fi_em, gc, mprop, wprop);
+                let v_gamma_exp = ref_current(hel1, hel2);
 
-                // The dressed s-channel current from the production pass must match jioxxx
+                // The dressed s-channel current from the forward pass must match jioxxx
                 // exactly (value + routed momentum jmom = fo.p − fi.p), for every FFV
                 // structure (vector / left / left+2·right) and both propagators.
                 let WaveformSlot::Vector(v_gamma) = eval_single_diagram_slot(
@@ -2321,10 +2348,11 @@ mod tests {
                     v_gamma.momentum, v_gamma_exp.momentum,
                     "current momentum ({coup_str}/{prop_name}, hel {hel1}{hel2})"
                 );
-                let cdiff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq();
+                let cdiff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq().sqrt();
                 assert!(
-                    cdiff < 1e-8,
-                    "current vs jioxxx ({coup_str}/{prop_name}, hel {hel1}{hel2}): diff={cdiff}"
+                    cdiff <= JIOXXX_REL_TOL * current_scale,
+                    "current vs jioxxx ({coup_str}/{prop_name}, hel {hel1}{hel2}): \
+                     |diff|={cdiff:.3e}, scale={current_scale:.3e}"
                 );
 
                 // The vector (FFV1) coupling has no chirality ambiguity, so the full
@@ -2336,20 +2364,14 @@ mod tests {
                 // the chiral amplitude sink is covered by the full-process tests
                 // (`test_whole_amplitude_equals_diagram_sum_eemumu`, `validate_helas`).
                 if coup_str == "FFV1" {
-                    let fo_out_m =
-                        OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
-                    let fi_out_p =
-                        InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
-                    let amp_exp = iovxxx(&fo_out_m, &fi_out_p, &v_gamma_exp, gc);
-
                     let momenta = [p_in_m, p_in_p, p_out_m, p_out_p];
                     let hel_codes = [hel1.sign(), hel2.sign(), hel3.sign(), hel4.sign()];
                     let got = eval_single_diagram(&amp_diagram, &momenta, &hel_codes, &evaluated);
 
-                    let want = amp_exp * -Complex64::i();
+                    let want = ref_amp(hel1, hel2, hel3, hel4);
                     let diff = (got - want).norm();
                     assert!(
-                        diff < 1e-8,
+                        diff <= JIOXXX_REL_TOL * amp_scale,
                         "amplitude vs iovxxx∘jioxxx ({coup_str}/{prop_name}, \
                          hel {hel1}{hel2}{hel3}{hel4}): got={got:.6e} want={want:.6e} diff={diff}"
                     );
@@ -2358,8 +2380,8 @@ mod tests {
         }
     }
 
-    /// Cross-check the production *combined* SM Z off-shell current — built through
-    /// `run_forward` from a two-term (FFV2 ⊕ FFV4) vertex — against the ALOHA
+    /// Cross-check the *combined* SM Z off-shell current — built through
+    /// `run_forward_slot` from a two-term (FFV2 ⊕ FFV4) vertex — against the ALOHA
     /// `FFV2_4_3` reference routine.
     ///
     /// `FFV2_4_3` adds the pure-left (FFV2, ProjM) and left+2·right (FFV4,
@@ -2488,7 +2510,7 @@ mod tests {
                     );
                 }
 
-                // Headline: the production combined current (run_forward) matches the
+                // Headline: the combined current (run_forward_slot) matches the
                 // ALOHA reference up to the global −i UFO-coupling convention factor.
                 let WaveformSlot::Vector(got) = eval_single_diagram_slot(
                     &current_diagram,
@@ -3446,7 +3468,7 @@ mod tests {
             }
         }
 
-        // amps[d][hel] via the production forward pass, one diagram at a time.
+        // amps[d][hel] via the generic forward pass, one diagram at a time.
         let amps: Vec<Vec<C<f64>>> = asts
             .iter()
             .map(|d| {
@@ -4342,8 +4364,8 @@ mod tests {
             // Photon absorption is chirality-blind (γ couples L=R), so it pins the
             // rooting/adjoint/propagator/momentum machinery: VG's γ-path off-shell electron
             // must equal MadGraph's EXACTLY (the fermion chain carries the Feynman
-            // propagator −i, in phase with ALOHA). (The Z-path carries the chiral
-            // physics and is the localiser — printed above.)
+            // propagator −i, in phase with ALOHA). The Z path, below, adds the chiral
+            // physics.
             let kmax = (0..4)
                 .max_by(|&a, &b| mg_eg[a].norm().total_cmp(&mg_eg[b].norm()))
                 .unwrap();
@@ -4358,22 +4380,22 @@ mod tests {
                 );
             }
 
-            // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs.
-            // With the adjoint-corrected chiral projector the off-shell electron equals
-            // MG exactly at BOTH helicities (the historical per-Z 0.6403 at the
-            // flipped-μ helicity is gone).
+            // Z path: identical machinery, only the chiral (FFV2/FFV4) vertex differs,
+            // and the adjoint-corrected chiral projector must reproduce MadGraph's
+            // off-shell electron to the same precision, component by component.
             let kz = (0..4)
                 .max_by(|&a, &b| mg_ez[a].norm().total_cmp(&mg_ez[b].norm()))
                 .unwrap();
-            let zfac = vg_ez[kz] / mg_ez[kz];
-            eprintln!(
-                "  Z-path VG/MG = {:+.4}{:+.4}i   (expected 1)",
-                zfac.re, zfac.im
-            );
-            assert!(
-                (zfac.re - 1.0).abs() < 2e-3 && zfac.im.abs() < 2e-3,
-                "{label} Z-path off-shell e: VG/MG={zfac:.4}, expected 1"
-            );
+            let zscale = mg_ez[kz].norm();
+            for k in 0..4 {
+                let diff = (vg_ez[k] - mg_ez[k]).norm();
+                assert!(
+                    diff < 1e-6 * zscale,
+                    "{label} Z-path off-shell e [{k}]: VG={:.4e} vs MG={:.4e}, diff={diff:.2e}",
+                    vg_ez[k],
+                    mg_ez[k]
+                );
+            }
         }
     }
 
@@ -5214,24 +5236,27 @@ mod hel_expand_stats {
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
     use crate::ufo::sm::{sm_model, SMRestrict};
 
-    /// Size/shape probe of the helicity expansion (`--ignored --nocapture` to read the
-    /// numbers): the expanded arena must be strictly smaller than combinations × base
-    /// nodes (hash-consing shares something on every process), and the liveness
-    /// allocator must keep each result arena well below one slot per node.
-    #[test]
-    #[ignore]
-    fn expansion_shares_nodes_and_bounds_arenas() {
+    const PROCESSES: [&str; 4] = [
+        "e+ e- > mu+ mu-",
+        "g g > g g",
+        "e+ e- > mu+ mu- ta+ ta- QCD=0",
+        "u u~ > c c~ e+ e- mu+ mu- QCD=0",
+    ];
+
+    fn compiled(process: &str) -> AmplitudeEvaluator {
         let model = sm_model(SMRestrict::Default);
-        let opts = ParsingOptions::default();
-        for process in [
-            "e+ e- > mu+ mu-",
-            "g g > g g",
-            "e+ e- > mu+ mu- ta+ ta- QCD=0",
-            "u u~ > c c~ e+ e- mu+ mu- QCD=0",
-        ] {
-            let pc = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
-            let sets = generate_from_proc_card(&pc, &model).unwrap();
-            let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
+        let pc =
+            parse_proc_card(&format!("generate {process}"), &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&pc, &model).unwrap();
+        AmplitudeEvaluator::compile(&sets[0], &model).unwrap()
+    }
+
+    /// Hash-consing shares something on every process: the helicity-expanded arena is
+    /// strictly smaller than combinations × base nodes (`--nocapture` prints the sizes).
+    #[test]
+    fn expansion_shares_nodes() {
+        for process in PROCESSES {
+            let eval = compiled(process);
             let base = eval.folded();
             let n_combos = eval.helicities().len();
             let t0 = std::time::Instant::now();
@@ -5246,7 +5271,21 @@ mod hel_expand_stats {
                 base.program().arena_sizes,
                 hel.program().arena_sizes,
             );
-            assert!(hel.ast.len() < n_combos * base.ast.len());
+            assert!(
+                hel.ast.len() < n_combos * base.ast.len(),
+                "[{process}] the expansion shares no node"
+            );
+        }
+    }
+
+    /// The liveness allocator keeps the arenas well below one slot per node.
+    #[test]
+    #[ignore = "fails on three of the four processes: the read-out scalars are pinned \
+                live, and they dominate the scalar arena"]
+    fn expansion_bounds_arenas() {
+        for process in PROCESSES {
+            let eval = compiled(process);
+            let hel = eval.folded_hel();
             let peak: u32 = hel.program().arena_sizes.iter().sum();
             assert!(
                 (peak as usize) < hel.ast.len() / 2,
