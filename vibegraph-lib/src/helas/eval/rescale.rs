@@ -4,7 +4,7 @@
 //! constant pools. The compiled skeleton, the helicity expansion and the color-factor
 //! matrix are all independent of it. [`ScaleAwareAmplitude`] therefore owns a private
 //! copy of the pools and rewrites them per event, leaving the shared
-//! [`AmplitudeEvaluator`](super::compile::AmplitudeEvaluator) untouched.
+//! [`AmplitudeEvaluator`] untouched.
 //!
 //! Two ways to rewrite them:
 //!

@@ -9,7 +9,7 @@
 //! The result is independent of both the parameter card and the scalar field `F`.
 //! Resolving a card (and choosing `F`) happens in
 //! [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind), which produces the
-//! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
+//! runtime [`BoundAmplitude`].
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -55,7 +55,7 @@ pub(crate) type FlowFingerprint = Vec<(usize, Vec<u8>, i32, Ratio<i64>)>;
 /// Built once into a [`Folded`] skeleton (pass 1+2 rooting → `lower` → `fold`).
 /// [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind) resolves a
 /// `&EvaluatedModel` at a chosen scalar precision `F` into a runtime
-/// [`BoundAmplitude`](super::run::BoundAmplitude), so the same evaluator works with any
+/// [`BoundAmplitude`], so the same evaluator works with any
 /// parameter card and any precision.
 #[derive(Debug)]
 pub struct AmplitudeEvaluator {

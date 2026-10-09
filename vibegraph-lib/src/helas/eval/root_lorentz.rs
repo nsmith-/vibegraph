@@ -66,13 +66,13 @@ pub(crate) struct RootedTerm {
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
     /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
     /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
-    /// amplitude vertex ([`DiagramEvalTree::build_convention_sign`]) and carried in the
+    /// amplitude vertex ([`DiagramEvalTree::build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign)) and carried in the
     /// diagram's `fermi_sign`.
     pub(crate) build_sign: i8,
     /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
     /// contributes (see [`term_reversed_parity`]). Like `build_sign` it depends on the
     /// rooting and is common to a vertex's terms, so it is lifted to a per-diagram scalar
-    /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`]).
+    /// at the anchor rooting ([`DiagramEvalTree::reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign)).
     pub(crate) reversed_sign: i8,
     /// Whether this term's index graph is cyclic, so that it is evaluated through the
     /// rank-2 tensor path (see [`LorentzEvalTree::build_at_leg`]) rather than as a rooted
@@ -141,7 +141,7 @@ pub(crate) enum LorentzEvalNode {
     /// 4-momentum of leg `leg` (0-indexed) as a vector at a free Lorentz index
     P { leg: usize },
     /// 4-momentum of the *output* leg as a vector: −Σ (input momenta). Emitted by
-    /// the leg-compaction pass in [`build_at_leg`] when a `P` references the leg
+    /// the leg-compaction pass in [`LorentzEvalTree::build_at_leg`] when a `P` references the leg
     /// the tree is rooted at (which has no input current to read a momentum from).
     POut,
     /// Full scalar bilinear ψ̄_i δ ψ_j (Identity amplitude contraction)
@@ -323,7 +323,7 @@ impl Tree for LorentzEvalTree {
 /// Yang-Mills (VVV) vertex needs relative to it is *not* a property of the rooted
 /// current (which would make it depend on the output-leg choice); it is a
 /// rooting-invariant per-vertex sign carried at the diagram level by
-/// [`super::root_diagram::yang_mills_vvv_sign`], applied once per colourless VVV
+/// `root_diagram::yang_mills_vvv_sign`, applied once per colourless VVV
 /// vertex off the anchor so `σ_V·(honest current)` matches MadGraph independent of
 /// the root.
 fn vector_out_node(child: usize) -> LorentzEvalNode {
@@ -890,14 +890,14 @@ fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegA
 /// A `Gamma` op becomes a fermion→vector sink (`GammaVout`, later fused to `FfvVout`)
 /// unless the term is rooted at one of the gamma's own fermion legs — then it is a
 /// fermion-continuing `GammaIout`/`GammaOout`, which takes no reversed sign. At a
-/// `GammaVout` the runtime [`super::kernel::resolve_bra_ket`] reads `reversed = true`
+/// `GammaVout` the runtime `kernel::resolve_bra_ket` reads `reversed = true`
 /// when the first operand (the gamma's UFO row index `i`) is a *ket*; the C-conjugation
 /// `Cγ^{μT}C⁻¹ = −γ^μ` then flips the current's sign. That flag is fixed by the baked
 /// leg adjoint in `flows`, so it is knowable at compile time here. `idx` is the corrected
 /// output leg (post [`correct_spin_index_for_flow`]), matching the routing `build_child`
 /// performs. Like the build-convention sign, this depends on the rooting, so it is lifted
 /// to a per-diagram scalar evaluated at the rooting that takes the diagram's anchor as
-/// the amplitude vertex ([`DiagramEvalTree::reversed_convention_sign`]).
+/// the amplitude vertex ([`DiagramEvalTree::reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign)).
 fn term_reversed_parity(
     term: &LorentzTerm,
     idx: Option<usize>,

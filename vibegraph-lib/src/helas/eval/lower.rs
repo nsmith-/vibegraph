@@ -153,7 +153,7 @@ pub(crate) fn lower_flows(
 
 /// Structure-optimization pass: re-n-aryfy the binary `Add` trees, then
 /// common-subexpression elimination. The planned egglog rewrite stage will run
-/// *before* both, on the binary [`lower`] output (egglog extraction yields a
+/// *before* both, on the binary [`lower_flows`] output (egglog extraction yields a
 /// minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
 pub(crate) fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
     let deduped = cse(&flatten_adds(&ast));
