@@ -68,7 +68,7 @@ Partonic (`validate_sigma`) rows are cheap as a block and were left alone; the
 but estimator-limited: before the accepted-point floor, single-seed pulls reached
 ±3.5–4.8 % at every rung of a 300k/600k/1.2M ladder and did not shrink with
 budget. The floor cut the worst single-seed rel to +0.89 % (uux) and +0.46 % (bbx),
-but at one budget only, so whether swings now shrink with budget is unmeasured.
+but at one budget only, so whether swings shrink with budget is unmeasured.
 They are measured and reported on the long tier rather than gated (see
 [sigma-row gating exceptions](sigma-row-gating-exceptions.md) and
 [two-to-six-integrals-not-enforced](../backlog/validation/two-to-six-integrals-not-enforced.md)).

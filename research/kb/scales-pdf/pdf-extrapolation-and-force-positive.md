@@ -168,7 +168,7 @@ the clamp fired, the clamped reading is bit-equal to `xf`; where it did not, cla
 unclamped agree bit for bit; counts asserted (205 of 935, 0 of 1190, and > 0 so the test
 cannot go vacuous).[^n29-eb] `an_in_grid_value_lhapdf_floors_is_floored_here_too` checks
 in-range points where LHAPDF returns exactly `1e-10`. The interpolation gates keep their
-`FORCE_POSITIVE_FLOOR = 1e-8` screen, which now absorbs only the band where the two
+`FORCE_POSITIVE_FLOOR = 1e-8` screen, which absorbs only the band where the two
 libraries' raw readings could land either side of `1e-10`; the nearest in-range value
 above the floor sits 10.4% above it. 22 of the multigrid oracle's knot values are
 negative, so a clamp misplaced into the interpolator or `xf_at` fails

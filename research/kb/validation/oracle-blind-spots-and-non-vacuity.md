@@ -52,7 +52,7 @@ Two cases show the cost of an unlisted blind spot:
   `IDWTUP = −4`. Every banked file was `−4`, and every `samples` cell was KS or χ²,
   invariant under rescaling one sample's weights. The first absolute comparison
   (`dσ/dm_ll` in pb) read MadGraph a factor 2.0e5 low, uniformly: those files were
-  `−3`, where the sum is σ. The reader now dispatches on the field and panics on a
+  `−3`, where the sum is σ. The reader dispatches on the field and panics on a
   value it does not know[^n27-b4].
 - **Two σ rows 5.5% wrong** gated their `samples` cells, correctly: the defect
   was a nearly uniform factor, which a shape statistic cannot see. The cells say
@@ -131,7 +131,7 @@ Refuse to pass when the instance set is empty, and draw the instance from state
 the repository keeps. A guard asserted that some manifest row was
 `bundled = false` so its absent-row rule had something to check; `bundled = false`
 is transient, so the coverage vanished exactly when the manifest was tidiest. The
-test now builds all three classifications from sets it makes itself and keeps the
+test builds all three classifications from sets it makes itself and keeps the
 manifest's set only where it is the right oracle (a row that silently acquires
 `bundled = false` fails)[^n28-z3].
 
@@ -139,7 +139,7 @@ A missing input fails rather than skips. The banked layer takes no runtime skips
 its inputs are acquired by `pixi run validate`'s dependency tasks, and a gate that
 still finds one missing fails naming it. The kT clustering gate once printed "no kT
 clustering dumps" and passed, having compared nothing, on every fetching checkout;
-it is now registered at the oracle layer (`#[ignore]`, `pixi run -e madgraph
+it is registered at the oracle layer (`#[ignore]`, `pixi run -e madgraph
 validate-kt-cluster`) and asserts the dumps are present[^kt-gate]. What a green CI
 run covers is [tooling/ci-coverage](../tooling/ci-coverage.md).
 

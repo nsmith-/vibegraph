@@ -130,7 +130,7 @@ itself.
 Publish the archive as the release asset of tag `refdata-<n>` and check the
 downloaded asset hashes to the pin. Update `[refdata]` (`version`, `archive`,
 `url`, `sha256`, `size_bytes`) with a comment line for the cut; drop
-`bundled = false` and `status = "planned"` on the rows it now carries. Commit
+`bundled = false` and `status = "planned"` on the rows the bundle carries. Commit
 with the host, the MadGraph version and the wall time in the message body. If any
 pixi environment changed, check `pixi.lock` with a locked install: a close-out
 once tripped CI on exactly that. Until the asset exists the pinned `url` 404s and

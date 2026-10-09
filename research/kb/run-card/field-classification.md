@@ -67,7 +67,7 @@ its reason in the code; a few that are easy to get wrong:
 
 `Applicability` has a `ProtonBeams` variant for a field that can only bite when
 both beams carry a PDF; no row uses it today (the per-beam PDF labels it was
-written for are now consumed, resolved as `banner.py`'s `PDLabelBlock` does).
+written for are consumed, resolved as `banner.py`'s `PDLabelBlock` does).
 
 ## Two rulings worth their reasons
 

@@ -75,7 +75,7 @@ concept.
 9. **Pin the version tests to old shapes.** A refusal test must write an
    unreadable version's real shape. A test that wrote `FORMAT_VERSION - 1`
    silently became a test of the upgrade path once that version was readable
-   again. The refusal test now writes version 2's shape, where every field after
+   again. The refusal test writes version 2's shape, where every field after
    `process` sits one slot early: the exact payload a positional misread would
    consume.[^n24-fv4]
 

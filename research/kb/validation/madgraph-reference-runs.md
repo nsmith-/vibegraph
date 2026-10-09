@@ -103,9 +103,9 @@ the run card MadGraph actually ran is part of the reference:
   μR; μR is in `AQCDUP` as `αs(μR)`, with π truncated
   ([madgraph-defects](madgraph-defects.md),
   [scales-pdf/record-scales](../scales-pdf/record-scales.md)).
-- **3.7.1 no longer prints the per-scale `αs` diagnostic**: `setclscales` moved
-  into a vectorised `reweight.f` and its 17-digit `alpha_s for scale` line is
-  commented out. The `New value of alpha_s from PDF lhapdf` line still prints.
+- **3.7.1 does not print the per-scale `αs` diagnostic** that 3.5.x did:
+  `setclscales` sits in a vectorised `reweight.f` with its 17-digit
+  `alpha_s for scale` line commented out. The `New value of alpha_s from PDF lhapdf` line still prints.
 - **`<MGRunCard>`** in the banner is the card after `banner.py`'s own edits,
   wrapped in `<![CDATA[ … ]]>`; it is not the resolved card `setcuts.f` and
   `setrun.f` later act on ([events/pythia-interop](../events/pythia-interop.md)).

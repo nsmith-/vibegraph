@@ -50,8 +50,7 @@ Zero-spread rows were pre-registered bit-identical, the rest "may move":[^b0]
 
 At this commit nine further clustered fixed-beam rows (`ee_*`, `uux_to_mumu`)
 compiled no per-event prescription because their matrix element carries no
-`αs`. That is no longer so: every fixed-beam 2 → n clustered card now compiles
-one. The may-move set was exactly `gu_to_epemu`, `gux_to_epemux`,
+`αs`; every fixed-beam 2 → n clustered card compiles one at HEAD. The may-move set was exactly `gu_to_epemu`, `gux_to_epemux`,
 `pp_to_llj_dyn`.
 
 **Result.** With the uniform drawn but unread, the validation report was
@@ -106,7 +105,7 @@ the row crosses the reference between the last two rungs. The χ²/dof of 6.38 a
 partition exemption was retired: `gu_to_epemu`/`gux_to_epemux` gate at
 `rel_tol 0.005` (`validate_sigma.rs`), `LLJ_DYN_MAX_REL = 0.005`
 (`validate_hadronic.rs`) with its pull asserted, and
-`PULL_REPORTED_NOT_ASSERTED` now holds only `ee_to_mumua`, for an unrelated
+`PULL_REPORTED_NOT_ASSERTED` holds only `ee_to_mumua`, for an unrelated
 reason. Each bound was set as the larger of the reference's own error with
 headroom and the measured five-seed spread, not fitted to the central value.
 

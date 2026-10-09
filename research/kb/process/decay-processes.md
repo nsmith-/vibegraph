@@ -87,7 +87,8 @@ MadEvent's layout for `t > b e+ ve`, matched field by field [^n38-d1]:
 - `PDFSUP` is MadEvent's `get_pdf_id(pdlabel)` (247000 on the banked fixed-energy runs),
   as for every fixed-energy run.
 - MadEvent also writes a status-2 `W` when it is inside its Breit–Wigner window; this
-  generator writes resonance records for decay-chain cards only
+  generator writes resonance records only on decay-chain cards and under matching
+  (`ickkw = 1`), so a plain decay card like this one gets none
   ([backlog](../backlog/feature/plain-process-onwindow-resonance-records.md)).
 
 `check-events` reads an empty beam 2 as a decay.

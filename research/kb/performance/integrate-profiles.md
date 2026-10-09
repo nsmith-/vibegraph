@@ -69,7 +69,7 @@ What the four agree on:[^n30-agree][^n30-each]
 
 Two artefacts to read past: the other ~16 threads in these profiles were rayon
 workers parked in `__psynch_cvwait`, from an integrand that was single-threaded
-then (integration is parallel now; see
+when they were taken (integration is parallel; see
 [integrate thread scaling](../performance/integrate-thread-scaling.md)); and
 on macOS, samples on dylib import stubs symbolicate to whatever text symbol
 precedes the stub section.
@@ -94,7 +94,7 @@ what changed is when it is computed:
   ≈18%;[^n31-e3]
 - [arena reuse](../performance/arena-reuse-cache.md) lets `eval_amp2` and
   `eval_m2` share one fill when their pools match (−83% draw cost on `pp_to_ll`);
-- the fixed-beam integrand now checks the cut before drawing (`scale_u` is a
+- the fixed-beam integrand checks the cut before drawing (`scale_u` is a
   slice of the point's own uniforms, so cutting first is a pure dead-work skip,
   bit-identical for every accepted point), where 22% of
   `gu_to_epemu`/`gux_to_epemux` points had paid ~190 ns of dead draw
@@ -104,7 +104,7 @@ what changed is when it is computed:
 
 The unweighting profile named the clustered scale path's allocations. What was
 hoisted: `ScaleChoice::cluster_scales` rebuilt three `BTree` merge-table
-containers per event; `MergeTablesByOrder` now builds one table set per coupling
+containers per event; `MergeTablesByOrder` builds one table set per coupling
 order at setup.[^merge-tables] `probe_scale_cost` read −16.9% (`gg_to_gg`),
 −21.6% (`gg_to_ttx`), −22.3% (`uux_to_uux`) ns/point; `validate_unweighting`
 −16.8% and the partonic σ gate −11.1% end to end; byte-identical throughout

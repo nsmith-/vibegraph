@@ -55,7 +55,7 @@ verification, repeated after any resume.[^n24-dispatch]
 
 | Data | Without it |
 |---|---|
-| `validation/madgraph/output` | A bare `pixi run validate` silently launches a multi-hour MadGraph regeneration. Gates run with `--skip-deps` regardless. |
+| `validation/madgraph/output` | `pixi run validate` does not run MadGraph: its dependencies only fetch, so a missing work area means downloading and sha-verifying the pinned refdata bundle (asked at a terminal, refused without one unless `VIBEGRAPH_FETCH_CONSENT=1`). The single-gate tasks that depend on `build-diagrams` (`validate-scales`, `validate-lhef`, `validate-hadronic`, and others) run `validation/madgraph/build.sh`, which regenerates every missing process directory through MadGraph, a multi-hour job. Gates run with `--skip-deps` regardless, which skips both. |
 | the fetched `validation/pdf` sets | PDF-dependent gates cannot run. Copying onto the tracked `validation/pdf` directory nests the sets one level down, so copy into the right level.[^n36-closeout] |
 | `research/refs/mg5amcnlo` content (at minimum `models/`) | `cargo test` fails fast on the missing SM UFO source, so the whole `validate_*` layer never runs. A fresh worktree gets none of the submodule. |
 

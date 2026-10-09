@@ -62,7 +62,7 @@ implied by its date.[^roofline-host][^aot-host]
 - **L2 size decided the widest useful lane width on large programs.** The 2→6's
   op-blocked arenas at eight lanes (3.6 MiB) fit the M3 Max's 16 MiB L2,
   overflowed Cascade Lake's 1 MiB and sat at Emerald Rapids' 2 MiB cliff.
-  Constant collection shrank them to 2.3 MiB, and width 8 now beats width 4 on
+  Constant collection shrank them to 2.3 MiB, and width 8 beats width 4 on
   the 2→6 on Emerald Rapids (44.4 against 46.6 µs/event); the Cascade Lake and
   M3 Max lane ratios predate that change and have not been re-measured. See
   [execution order](../performance/execution-order.md) and

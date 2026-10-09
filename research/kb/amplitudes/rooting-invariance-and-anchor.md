@@ -47,8 +47,8 @@ displaces a four-point vertex that holds leg 0. It reads only the labelled
 external legs and slot order, so every numbering of a diagram has the same
 anchor.
 
-The rule reproduces feyngraph's own vertex 0, which the convention signs were
-originally calibrated against. "The vertex leg 0 attaches to" does **not**: on
+The rule reproduces feyngraph's own vertex 0, against which the convention signs
+were calibrated. "The vertex leg 0 attaches to" does **not**: on
 a census of 2517 diagrams it agreed in 2475, and the other 42
 (`g g > g g g` 6, `g g > t t~ g` 1, `W+ W- > W+ W- Z NP<=1` 35) put leg 0 on a
 four-point contact while feyngraph numbers a three-point vertex first. The sign
@@ -76,9 +76,9 @@ the initial `b` line gains the `t` propagator; that is a global sign, visible
 only to container equality and per-diagram amplitudes, never to |M|²
 ([process/decay-chains](../process/decay-chains.md))[^n38-d2].
 
-The line sign used to be read off the rooted tree (`spine_sign_from_flow`). It
-is now a graph function, and `compile_single_diagram` keeps the tree
-derivation as a **debug-build cross-check on the live tree**:
+The line sign is a graph function (`Diagram::fermion_line_sign`), and
+`compile_single_diagram` keeps the rooted-tree derivation (`spine_sign_from_flow`)
+as a **debug-build cross-check on the live tree**:
 `debug_assert_eq!(spine_sign_from_flow(&tree), diagram.fermion_line_sign(model))`.
 Measured on a census of every rooting of 2553 (diagram, chain) pairs, the tree
 derivation never varied with the rooting. It does count every closed line,
@@ -106,7 +106,10 @@ signs.
 
 - **`build_convention_sign`**: per vertex, the ±1 that `build_at_leg` picks up for
   the role the vertex plays at that rooting (the VVS `pure_metric` −1, the FFS
-  scalar-sink −1, the crossed-pair −1, `standalone_projector_crossed`). It is
+  scalar-sink −1, the crossed-pair −1, `standalone_projector_crossed`, the −1 of
+  an all-vector contact of four or more legs, the −1 of an operator-free
+  all-scalar contact `SSS1`/`SSSS1`, and the crossed-line −1 on the tensor
+  path; `root_lorentz.rs`, the sign `build_sign` records). It is
   kept on `RootedTerm::build_sign`, not folded into the term's `coeff`.
 - **`reversed_convention_sign`**: per vertex, the parity of the runtime
   `reversed` flag at a fermion→vector sink (`GammaVout`/`FfvVout`, and
@@ -207,7 +210,7 @@ diagrams distinct[^code-diagram].
 The diagram container is the oracle boundary between diagram generation and
 `helas`: decay-chain stitching is checked by container equality against the
 filtered full final state, not by amplitudes. That works because every sign
-that is a property of the diagram now lives on the container, and `helas` keeps
+that is a property of the diagram lives on the container, and `helas` keeps
 only signs that compensate its own kernels[^n38-container][^n38-decisions].
 
 **Blind spots of container equality:**

@@ -36,7 +36,7 @@ is safe. A **composite** emitted subsystem leaves a drawn invariant cancelling
 against `ŝ`, and the edge lands on either side of zero at rounding
 scale[^dc-rs]. Over 20 000 recoil invariants at `s = 2.5e5` it landed below
 zero 6 131 times, above 6 218 times and exactly zero 7 651 times, with
-`|t_max| ≤ 4e-8`[^n24-p0]. (The test that recorded this is no longer in the
+`|t_max| ≤ 4e-8`[^n24-p0]. (The test that recorded this is not in the
 tree; `tests/diagram_channel.rs` still cites it by name.)
 
 When it lands just below zero, `t_pole_shapes` switches the propagator draw on
@@ -44,7 +44,7 @@ with `N = ln(|t_min|/|t_max|) ≈ 30` e-folds reaching `|t| ~ 1e-11`, while the
 density recomputes `t` from the momenta with a cancellation error of the same
 size. The channel's own walk weight is fine — an unregulated three-body spine
 weighting by its walk reproduces flat RAMBO's `V_3` to 1.003 — but a combiner
-weights every point by `Σₖ αₖ gₖ` from the densities, and those no longer
+weights every point by `Σₖ αₖ gₖ` from the densities, and those do not
 describe the map that drew the point:[^n24-p2]
 
 | spacelike pole, six llj cuts at √ŝ = 500 | worst walk-vs-density gap | non-positive self-densities |

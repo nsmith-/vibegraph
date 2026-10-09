@@ -137,7 +137,7 @@ helicity average):[^n38-s1][^code-current-line]
 so the rule is confined to tensor-path vertices. `u u~ > t t~ g NP<=1` under
 `vg_c4q` once missed MadGraph under either line rule; the four-quark contacts were
 innocent — the cause was the triple-gluon source sign beside a quark-line anchor
-([vector-vertex-signs](vector-vertex-signs.md)), and the process now agrees per
+([vector-vertex-signs](vector-vertex-signs.md)), and the process agrees per
 flow.[^n39-1] The full sign inventory is
 [convention-sign-inventory](convention-sign-inventory.md).
 

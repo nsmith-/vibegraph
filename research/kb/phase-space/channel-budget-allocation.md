@@ -53,7 +53,7 @@ stopping rule's consistency factor charges exactly those. On `p p > l+ l- j`
 at a 0.179% target over 8 seeds it took 2.94M evaluations against 6.41M, and
 the seed-to-seed spread of the spend narrowed from 2.75M–12.4M to 1.97M–4.26M,
 with σ agreeing in both arms. These readings predate channel merging
-([phase-space/channel-set](channel-set.md)): `p p > l+ l- j` now integrates 6
+([phase-space/channel-set](channel-set.md)): `p p > l+ l- j` integrates 6
 channels and `p p > e+ e-` one.
 
 ## Coverage floors
@@ -146,8 +146,8 @@ channels to 43. Measured against the unmerged base at
 | `@2` σ (pb), sd, χ²/dof | 132.06, 0.51, 0.32 | 131.26, 2.07, 1.89 |
 | total rel²·CPU, by quoted error / by seed spread | 1.10e-2 / 4.37e-3 s | 3.64e-3 / 2.89e-3 s |
 
-At the same `--neval` the floors no longer buy `@2` ~600k points an iteration
-against the ~13k its share asks for, and `@2`'s heavy tail makes its quoted
+At the same `--neval`, merging removes the ~600k floor points an iteration
+the unmerged base spent on `@2` against the ~13k its share asks for, and `@2`'s heavy tail makes its quoted
 spread (which the part split and Neyman both read) an underestimate. So by
 seed spread the gain is 1.5×, not the 3× the quoted errors claim. At the same
 point count (`--neval 600000`, three seeds) every part improves, 8.6× in

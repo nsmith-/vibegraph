@@ -136,16 +136,18 @@ invariant; dropping the second channel collapses its coverage ~1000×)[^n21-clos
 
 ## What MadEvent does instead
 
-The MG5 loop-induced paper's appendix describes multichannel weights as
-"RAMBO-style flat phase space × per-channel Jacobian" with the optimal weight
-`1/Σᵢ(1/Jᵢ)` and samples drawn from the mixed distribution[^n01-loopind].
-That is a paraphrase of the method, **not MadEvent's LO implementation**, and
-should not be cited as one. MadEvent integrates **one configuration per
+The MG5 loop-induced paper (§2.2) describes MadEvent's diagram-enhancement
+method: the integral is split into channels, one per diagram topology, each
+integrated with a parametrisation that undoes that topology's peaks. The
+"RAMBO-style flat phase space × per-channel Jacobian" weight with optimum
+`1/Σᵢ(1/Jᵢ)` that note 01's summary attributes to the paper's appendix is not
+in the paper[^n01-loopind], and is not MadEvent's LO implementation either.
+MadEvent integrates **one configuration per
 `G<n>` directory**: `genps.f` maps the run's `iconfig` once
 (`genps.f:681-684`), so every event a directory writes carries the same
 configuration and there is no per-event channel draw[^mg-genps]. Under
 `MULTI_CHANNEL` the matrix element is multiplied by `AMP2(j)/Σᵢ AMP2(i)`
-(`matrix_madevent_v4.inc:174-185`):[^mg-matrix]
+(non-grouped output, `matrix_madevent_v4.inc:174-185`):[^mg-matrix]
 
 ```fortran
 IF (MULTI_CHANNEL) THEN
@@ -157,6 +159,10 @@ IF (MULTI_CHANNEL) THEN
 
 a partition of unity over configurations built from per-diagram squared
 amplitudes ([single-diagram enhancement](madevent-single-diagram-enhancement.md)).
+Grouped output (`group_subprocesses`, on by default) forms the same ratio in
+`matrix_madevent_group_v4.inc:213-228`, where `sde_strategy = 1` multiplies each
+`AMP2` by `GET_CHANNEL_CUT(P, I)` and `sde_strategy = 2` replaces it with that
+propagator factor.
 Its channel phase space is the configuration's own map, never a mixture
 density.
 

@@ -112,7 +112,7 @@ commit had exactly one consumer and multiplied by a pool constant, in chains
 `Metric → MulScalarR → AddScalar` and
 `Metric → MulScalarR → MulScalarC → MulScalarR → AddScalar`: 51% of the VM instructions
 (18 648 of 36 506), 24–27% of cycles. Constant folding could not see them because the
-product is associated around the non-constant amplitude. The fix this pointed to, now in
+product is associated around the non-constant amplitude. The fix this pointed to, in
 `fold.rs`, is described in [constant collection](constant-collection-and-fused-sums.md).
 
 ## Width 1 under `target-cpu=native`

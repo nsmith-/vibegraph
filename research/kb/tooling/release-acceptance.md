@@ -24,7 +24,7 @@ physics gate.
 [acceptance-yml-never-passed](../backlog/hygiene/acceptance-yml-never-passed.md)
 for the open state and the next step, and
 [acceptance-yml-fails-on-refdata-releases](../backlog/hygiene/acceptance-yml-fails-on-refdata-releases.md)
-for why every `refdata-*` prerelease currently produces a red run. The script
+for why every `refdata-*` prerelease produces a red run. The script
 itself is exercised locally through `--binary`.
 
 ## The script

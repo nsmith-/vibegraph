@@ -21,7 +21,7 @@ measured:
 # Constant collection and fused scaled sums
 
 Before these passes, about half of a large program's VM instructions were
-single-use multiplications by constants. They now collapse into one weight per
+single-use multiplications by constants. These passes collapse them into one weight per
 term of a fused weighted sum, `Op::AddScaled`, read straight from the constant
 pools. This is the form MadGraph emits: the coupling goes into the amplitude
 call, and `JAMP += coef·AMP`.
@@ -136,7 +136,7 @@ instructions, the cheapest ones.[^td-bare]
 - **FMA hardware matters.** Default x86-64 has no FMA, so a weighted term is a
   multiply and an add; with `target-cpu=native` it is one FMA per component, and
   the gain is larger on every row.
-- **Width 8 now beats width 4 on the 2→6 on Emerald Rapids** (44.4 against
+- **Width 8 beats width 4 on the 2→6 on Emerald Rapids** (44.4 against
   46.6 µs/event). The fused terms hold no arena slots, so the 2→6's arenas shrank
   36% (2.3 MiB at eight lanes, from 3.6 MiB). That is still above the 2 MiB L2,
   but no longer at the cliff that left width 8 only 1.03× ahead of width 4 in the

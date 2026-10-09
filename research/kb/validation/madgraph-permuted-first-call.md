@@ -152,7 +152,7 @@ configs carry 0.17% of σ), `g g > e+ e- u u~` and `t t~ j` (their swaps leave t
 symmetric), and the same subprocesses written with `add process`, which land in
 separate directories with no permutation.
 
-[^mg-dsig]: `super_auto_dsig_group_v4.inc:805,842` at `b7687064`; note 07 quotes the mirror as `:814-826`, which does not match the pinned file.
+[^mg-dsig]: `super_auto_dsig_group_v4.inc:805,842` at `b7687064`; note 07 quotes the mirror as `:814-826`; at the pin the `IMIRROR = 2` block is `:815-830`.
 [^n07-h1]: Note 07 appendix, "`super_auto_dsig_group_v4.inc` — Direct Bug Found".
 [^n41-d2]: Note 41, D2 diagnosis ("H1 is real, and lives in `P2_qq_llqq`") and D2 decisions.
 [^n41-z2]: Note 41, Z2 "Dumps".

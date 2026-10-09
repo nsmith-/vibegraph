@@ -101,8 +101,14 @@ Three oracles, because each is blind to something:[^n38-d2]
    resonances are s-channels with exactly the stated daughters (10 cards, 147
    diagrams).
 2. **Per-diagram amplitudes**: all 147 pairs agree per helicity and per flow.
-3. **MadGraph census**: 19 cards, 17 matched on 54 (process, decays), final-state
-   order included.
+3. **MadGraph census**: 24 cards (`decay_chain_census.json`), 21 stitched and
+   matched on 69 (process, decays) subprocesses, final-state order included;
+   3 refused as MadGraph refuses or drops (`ee_zz_qed3`, `not_a_decay`, and the
+   dropped `w+` decay of `ee_ttx_unused_w`). The 19 original cards gave 17 on
+   54; five overall-order cards (`pp_ttx_qed2`, `pp_ttx_qed4`, `pp_ttx_qcd0`,
+   `ee_ttx_qed4`, `ee_zz_qed3`) were added with chain orders. The 21/69 split
+   is counted from the banked file by the test's own subprocess key, not read
+   from a logged run.
 
 Mutations show why all three are kept. Dropping the between-block permutations
 of identical particles fails oracle 1. A naive sign (core × decays, not rebuilt

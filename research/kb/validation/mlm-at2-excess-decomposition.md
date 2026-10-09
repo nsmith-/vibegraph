@@ -100,7 +100,7 @@ scattering beyond their quotes, point at MadEvent's tail coverage. An acceptance
 difference in regions MadEvent never populates is the one class the per-event
 oracle cannot see, so the decisive test is σ in sliced regions on both sides.
 
-## Where `@2` stands now
+## Where `@2` stands
 
 The recommendations were adopted: the `@2` reference was regenerated from
 independent directories, H1 was registered, and the generic offset was filed.

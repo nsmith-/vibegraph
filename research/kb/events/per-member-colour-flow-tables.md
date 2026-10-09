@@ -113,7 +113,7 @@ first repair, a global slot exchange, was falsified by the crossing class[^n28-c
 
 **Why the net missed it.** `color_flow_tags_oracle` compared the derived table
 against `leshouche.inc` only for the first subprocess of each `P*` directory —
-the representative, the one member that was right. It now reads every `isproc`
+the representative, the one member that was right. It reads every `isproc`
 row of every banked directory ([validation/colour-oracles](../validation/colour-oracles.md)).
 An oracle on each directory's first subprocess cannot see this defect class at
 all[^n28-c25].

@@ -127,7 +127,7 @@ run's realised split was 0.198%). The 3.7.1 form,
 `tmp = (t-Mass**2)` with a plain Breit–Wigner, gives α ≈ 1; an `sde_strategy = 1`
 rerun agreed within 1.1σ. The fix is upstream `286feb8e` (first released in
 3.6.2, never backported to 3.5.x).[^n27-b1][^mg-genps] See
-[MadGraph defects](madgraph-defects.md). The windowed agreement is now a live
+[MadGraph defects](madgraph-defects.md). The windowed agreement is a live
 measurement, `validate_samples::the_higgs_pole_window_is_measured_against_madgraph`,
 against the committed `higgs_window_reference.json`.
 
@@ -147,8 +147,9 @@ verified row by row (58 of 58) against the MadGraph run directories that
 produced it, but those live under the gitignored `validation/madgraph/output/`,
 which may be pruned; anything later readers need is read from the JSON.[^n29-addenda]
 A windowed study that changes no production code should move no report cell;
-check with `pixi run --skip-deps validate` (never bare, which can launch a
-multi-hour MadGraph regeneration) and an empty report diff.[^n29-d7]
+check with `pixi run --skip-deps validate` (which skips the fetch steps; the
+bare task fetches and verifies the pinned data but never runs MadGraph) and an
+empty report diff.[^n29-d7]
 
 ## What it cannot decide
 

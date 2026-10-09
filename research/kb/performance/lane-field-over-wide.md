@@ -92,10 +92,9 @@ bit on every target, pinned by `eval_m2_lanes_match_scalar` and `lanes4_lanes8_m
 packed op bit for bit against `f64` at N = 2 / 4 / 8, with the multiply-add pinned to
 whichever semantics `HARDWARE_FMA` claims, so the flag cannot drift from `wide`'s own
 per-width condition. Bit equality holds between builds that agree on `HARDWARE_FMA`;
-across that flag results agree to rounding. There is no baseline-x86-64 exception: the
-relative `1e-10` lane tolerance (`LANE_UNFUSED_REL_TOL`) and the `FUSED_MUL_ADD` flag that
-the study record describes are gone, because both fields now take the multiply-add
-through `mul_add_fast`.[^x86-relaxed]
+across that flag results agree to rounding. There is no baseline-x86-64 exception: both fields take the multiply-add through
+`mul_add_fast`, so the code has neither the relative `1e-10` lane tolerance
+(`LANE_UNFUSED_REL_TOL`) nor the `FUSED_MUL_ADD` flag that the study record describes.[^x86-relaxed]
 
 ## Census of the result
 
@@ -112,8 +111,8 @@ Every lane op inlines, each width lands on the register class it should, lanes8 
 row (median 0.57× / 0.32× / 0.25× of scalar per event at N = 2 / 4 / 8). Scalar `forward`
 was unchanged within noise.
 
-`dump_lane_asm.sh` itself was fixed for the blind spot this exposed: it once counted packed
-ops per function, so out-of-line leaves censused as packed. It now reports `calls` /
+`dump_lane_asm.sh` guards the blind spot this exposed (counting packed ops per function
+censuses out-of-line leaves as packed): it reports `calls` /
 `arith_calls` per function and an inlining verdict, and reads its width verdict from packed
 arithmetic on zmm rather than any zmm use.
 

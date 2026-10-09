@@ -75,7 +75,7 @@ five-seed check and the scatter check (pulls −2.67 to −1.08, χ²/dof 1.55) 
 being 1.0% low. The budget scan showed steps halving as the budget doubled
 (−3.18, −1.19, −0.67 pb), an `O(1/N)` bias. Its source was VEGAS putting every
 iteration, including the unadapted first ones, into an inverse-variance
-mean.[^n24-p3] VEGAS now combines iterations by **unweighted mean**
+mean.[^n24-p3] VEGAS combines iterations by **unweighted mean**
 (`IterationCombination::Unweighted`, the `#[default]` in `vegas.rs`): weights
 fixed before sampling cannot correlate with what they weight.[^vegas] See
 [iteration combination](../phase-space/vegas-iteration-combination.md). The
@@ -160,7 +160,7 @@ threshold.[^n34-floor]
 
 - `pp_to_llj_dyn`'s three-seed scatter read χ²/dof 4.24 against a 4.0 bound
   calibrated on five-seed ladders, while the five-seed reading was 2.49 and σ
-  moved *closer* to MadGraph. Both llj gates now form over the five calibration
+  moved *closer* to MadGraph. Both llj gates form over the five calibration
   seeds.
 - `ee_to_mumua`'s σ pull failed at 3.56 on the gate's one seed; five seeds
   showed a fixed +1.04% on both arms, which moved the row to the reported-pull
@@ -193,7 +193,7 @@ measurement that applies it:[^n29-b8]
 - If the residual does not become Monte Carlo, nothing moves, and that is
   reported.
 
-The worked case is the reason the clustering configuration is now drawn per
+The worked case is the reason the clustering configuration is drawn per
 point `∝ AMP2_c`: while the cluster scale was read in the channel the sampler
 drew the point in, σ depended on the channel partition (`gu_to_epemu` moved by
 1.5e-2 between converged and uniform `αⱼ`, at 9σ, while the two rows whose

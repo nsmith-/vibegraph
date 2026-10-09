@@ -120,7 +120,7 @@ Mechanisms that do not work, and why:[^n17-mechanisms]
   replacing the bounds branch; and write-once semantics forbid the slot
   overwriting that liveness recycling relies on.
 
-## Why the old +7–11% no longer applies
+## Why the earlier +7–11% does not apply
 
 The first measurement (arm64, `rustc 1.94.1`) found a **+7–11%** ceiling, but
 only when *both* the read bounds checks and the `Vec::push` capacity checks were
@@ -129,7 +129,7 @@ never-taken `grow_one` cold call forced spills around every write, and the
 effect was coupled.[^n17-results] Writes have since become pre-sized
 direct-index stores, so the `push` family and its coupling are gone, and the
 3.5–5.5% is what remains. The census of that era (57 `panic_bounds_check`
-sites, ~32 `grow_one` paths) describes a tree that no longer exists. Panic-symbol
+sites, ~32 `grow_one` paths) describes a tree the code does not have. Panic-symbol
 counts also depend on the build: under the x86 study's thin-LTO `profiling`
 profile (rustc 1.97) the checked `fill_arenas` showed zero `panic_bounds_check`
 symbols, because the checks branch to shared outlined blocks, while the AOT

@@ -66,7 +66,7 @@ section; the exceptions below are worked cases of them.
 | `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then a residual ~2% | [uux wbwb veto 2% off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md) |
 | `e+ e- > z z, z > e+ e-` (decay chain, `INFORMATIONAL` in `cli_decay_chain.rs`) | reported | we keep both pairings and their interference; MadGraph takes one pairing ÷ 2 | none (a decision; [identical particles across decays](../process/identical-particles-across-decays.md)) |
 
-Every manifest cell declared `mode = "info"` at the time of writing appears
+Every manifest cell declared `mode = "info"` at `6ccc6e4` appears
 in this table; list the current set with
 `awk '/^key = /{k=$3} /mode = "info"/{print k, $1}' validation/manifest.toml`.
 
@@ -93,7 +93,7 @@ channel's scanned maximum), the same photon-pole region.[^n23-e2]
 
 **The 2→6 rows.** The evaluator is not the obstacle (the manifest records
 5.8 µs per integration point at uniform α on `uux_to_ccx_emmm_qcd0`, since
-rejected points no longer walk the channels). The channel floor is: 579/615
+rejected points do not walk the channels). The channel floor is: 579/615
 channels at `MIN_CHANNEL_NEVAL = 512` put about 300 000 evaluations under the
 first iteration whatever budget is asked, and the acceptance-corrected floor
 (capped at 4×) raises later iterations to about 1.2 million on
@@ -109,7 +109,7 @@ swings shrinking with budget.[^n32-s7][^manifest]
 A fix must make the single-seed swings shrink with budget; reducing them at
 fixed budget is a variance win, not a resolution.[^n32-follow] Their per-iteration
 χ²/dof overflows (above 1e250) on wide splits and is passed through as "not a
-statistic"; `--target-rel`'s stop no longer consumes it.[^n32-follow] The kT
+statistic"; `--target-rel`'s stop does not consume it.[^n32-follow] The kT
 replay enforces their scales event by event instead
 ([scale replay](scale-replay-gate.md)).
 

@@ -73,7 +73,7 @@ cleanly. The parts, in measured size:[^n32-amdahl][^n32-outcomes]
 - **The α-adaptation survey.** `survey_variance` visits every channel's density
   per point, O(n_survey × n_channels), and `adapt_alphas` runs several surveys
   back to back, budget-independently. Re-measured on a fixed-budget `-j 16` wall
-  it was 41–52% of the run (llj 1.04 of 2.51 s, dy13 0.24 of 0.46 s). It now runs
+  it was 41–52% of the run (llj 1.04 of 2.51 s, dy13 0.24 of 0.46 s). The survey runs
   its point loop in one rayon region over the deterministic chunking, asserted
   bit-identical at `-j {1, 4, 16}`.[^proton-survey] This was the largest term,
   and the speedup roughly doubled when it went.

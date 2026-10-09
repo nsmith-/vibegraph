@@ -118,7 +118,7 @@ for symmetric diagrams) is why each written status-2 line is checked against an
 actual propagator of the configuration rather than trusted
 ([validation/madgraph-defects](../validation/madgraph-defects.md))[^n07-io].
 
-[^n38-e1]: Note 38 E1: MadEvent's record rules read from `addmothers.f`, `unwgt.f:737`, `myamp.f:76` and five MadEvent runs; the gates.
+[^n38-e1]: Note 38 E1: MadEvent's record rules read from `addmothers.f`, `unwgt.f:737`, `myamp.f`'s `cut_bw` (`:2`) and five MadEvent runs; the gates.
 [^n41-m4]: Note 41 M4, where §1.4's plan text was short of the source.
 [^mg-addmothers]: MadGraph 3.7.1 `addmothers.f:253-268`, the status assignment.
 [^mg-cutbw]: MadGraph `myamp.f`, `cut_bw` (declared at `:2`; the positive-width gate and window test at `:123-139`, the same-flavour withdrawal at `:146-176`).

@@ -92,7 +92,7 @@ which the implementer had caught:
 All were cheap to fix in one loop, and no chain needed a second review loop.
 Reviewers also re-derived what designs had only asserted: one independently
 reproduced a 20k-event categorical result, and another derived the step a
-design had taken on faith. That derivation now stands in the record.[^n29-verdicts]
+design had taken on faith. That derivation stands in the record.[^n29-verdicts]
 
 **Costs:**
 
@@ -103,7 +103,7 @@ design had taken on faith. That derivation now stands in the record.[^n29-verdic
   deferred across a pause. The fix is to quote deferred text verbatim when
   putting it on hold.
 - An implementer lost uncommitted work to its own `git reset`, and a
-  design-session worktree was found reset. Briefs now require committing early.
+  design-session worktree was found reset. Briefs require committing early.
 
 Worktree pre-provisioning had zero failures across the nine sessions.[^n29-observations]
 
@@ -112,7 +112,7 @@ Worktree pre-provisioning had zero failures across the nine sessions.[^n29-obser
 [Session scoping](session-scoping-rules.md) carries the rules that outlived the
 chain: one deliverable per session, and oracle before engine. The sprint's
 per-chain record is its Sprint Record (`sprints/note-29-validation/closeout.md`).
-The [sprint lifecycle](sprint-lifecycle.md) is the procedure work runs in now.
+The [sprint lifecycle](sprint-lifecycle.md) is the procedure work runs in.
 
 [^n29-protocol]: Note 29 §2.
 [^n29-verdicts]: Note 29 close-out, "Per-chain verdicts".

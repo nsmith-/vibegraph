@@ -103,7 +103,7 @@ fallback threshold (`SCHEDULE_BYTE_LIMIT`, `vibegraph-lib/src/helas/eval/layout.
 evaluated at `f64` bytes, so it is blind to the N× larger lane working set
 ([backlog](../backlog/performance/schedule-fallback-lane-blind.md)).
 
-## The earlier negative verdict, and why it no longer holds
+## The earlier negative verdict, and why it does not hold
 
 The first lane field was `NumericArray<f64, N>`, chosen on the premise that LLVM would
 auto-vectorise its elementwise operations. On the M3 Max (NEON, 2×f64) every width was

@@ -103,7 +103,7 @@ search**: from `(n_ext − 2) × min hierarchy` upward, one pass per bound, unti
 subprocess has a diagram or the bound reaches `(n_ext − 2) × max hierarchy`. With explicit
 orders it runs once ([coupling orders](../model/coupling-orders.md)).
 
-What feyngraph lacked for MadGraph's process language is all handled in vibegraph now:
+What feyngraph lacked for MadGraph's process language is all handled in vibegraph:
 alias expansion and subprocess dedup, required and forbidden s-channels (diagram filters on
 the converted diagrams, not feyngraph custom functions), `$` (a pointwise integrand, not a
 filter), decay chains ([stitching](decay-chains.md)), polarization, and the order search.

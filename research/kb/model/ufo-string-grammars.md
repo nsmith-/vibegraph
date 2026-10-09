@@ -61,7 +61,7 @@ Pins: unit tests on `-a**2`, `(-a)**2`, `a**-b`, `-a**-b`, `2**3**2` and on thre
 expressions against Python's own arithmetic; and `coupling_oracle`
 (`vibegraph-lib/tests/coupling_oracle.rs`), which compares every coupling of every banked
 row with MadGraph's Python `model_reader` (`PYTHON_REL_TOL` 1e-13) and fails if a listed
-crate defect disappears (`KNOWN_CRATE_DEFECTS`, now empty). It is the check that
+crate defect disappears (`KNOWN_CRATE_DEFECTS`, empty). It is the check that
 sees a precedence error: binding unary minus tighter than `**` reads `-ee**2/(2.*cw)` as
 `(-ee)**2/…`, which flips SM `GC_7`, `GC_54` and SMEFTsim's `dWT`, none of them reachable
 by a banked row, so no amplitude gate would. [^n36-b5] See [coupling oracle](../validation/coupling-oracle.md).

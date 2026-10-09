@@ -98,7 +98,7 @@ the `d` colour basis, literal `Sigma`, the Yukawa-only fermion line, baryonic
 
 ## Cell status
 
-Read the live state from `validation/manifest.toml`; at the time of writing:
+Read the live state from `validation/manifest.toml`; at `6ccc6e4`:
 - **gate**: every `diagrams` cell but `gg_to_gg_cg`'s; every `amplitudes` cell
   but three; `integrals` and `samples` on every row that has a banked σ and
   sample, except `gg_to_gg_cg`'s σ. Integrals budgets are sized from the
@@ -115,7 +115,7 @@ Read the live state from `validation/manifest.toml`; at the time of writing:
   sign fix of note 39, owned by O_W's five-vector and momentum-bearing contact
   structures ([wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md));
   its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
-  for it, which this crate refuses for now: `nhel = 1` is in scope but not built
+  for it, which this crate refuses: `nhel = 1` is in scope but not built
   ([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md)).
 - **`gg_to_gg_cg`**: `diagrams` info by convention (21 diagrams against
   MadGraph's 27 `NGRAPHS`, one `AMP()` per diagram and colour-ordered contact

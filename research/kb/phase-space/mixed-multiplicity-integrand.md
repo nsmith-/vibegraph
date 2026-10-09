@@ -112,7 +112,8 @@ artifact below `MULTIPLICITY_VERSION` on a card of several multiplicities,
 naming both versions (`refuse_stale_artifact_on_mixed_multiplicity`), and an
 older build refuses a newer file by its version. The version table is
 `artifact.rs`'s `FORMAT_VERSION` doc comment
-(`MULTIPLICITY_VERSION = 10`, `FORMAT_VERSION = 11` at the time of writing);
+(`MULTIPLICITY_VERSION = 10`; `FORMAT_VERSION`, 11 at commit `6ccc6e4`, moves
+with every format change);
 see [pipeline/artifact-format-versioning](../pipeline/artifact-format-versioning.md).
 
 ## Tests

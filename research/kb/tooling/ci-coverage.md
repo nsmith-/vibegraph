@@ -47,8 +47,8 @@ nothing to do.[^n24-u1] The `--lib` target has no per-test registration, so the 
 library unit tests that need banked inputs use
 `#[cfg(feature = "extended-validation")]` instead; integration tests never do.
 
-The tests that once soft-skipped with an `eprintln!` and an early return when
-the submodule was absent are now gated targets that fail loudly:
+The tests that need the submodule are gated targets that fail loudly when it
+is absent, never soft-skipping:
 `tests/ufo.rs` (`test_load_loop_sm`, `test_load_mssm`) and
 `tests/sm_interned_blob.rs` panic naming `pixi run init-sm-submodule` when the
 model source is missing, and the banked layer's inputs fail through

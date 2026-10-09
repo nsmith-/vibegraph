@@ -71,7 +71,7 @@ process[^n19-v6]:
 | build −1, scalar-bilinear arm | `e+ e- > ta+ ta- H` | its build sign comes only from the τ Yukawa |
 | reversed-bilinear parity | `e+ e- > mu+ mu-` | never fires on pure-gauge processes |
 
-Production roots at `canonical_root` (the anchor); re-rooting no longer corrupts
+Production roots at `canonical_root` (the anchor); re-rooting does not corrupt
 amplitudes, because every rooting-dependent sign is read off the anchor-rooted
 tree. The guard is non-vacuity only; per-channel properties live in
 `yang_mills_vvv_sign_fires_only_for_source_vvv`,
@@ -124,8 +124,14 @@ processes and the hostile cases[^n29-f10]:
   build sign comes from the `ta ta H` `FFS4` vertex rooted at a fermion output,
   not from the scalar-sink arm.
 - **The scalar-sink `ProjM/ProjP/Identity` −1 at a scalar or amplitude sink** had
-  no varying instance anywhere in the banked set when this was measured, and the
-  guard comment on its fourth assertion still attributes `e+ e- > ta+ ta- H`'s
+  no varying instance in the per-diagram processes chain F probed[^n29-f13]. The
+  gated flows-only row `bbx_to_ccx_emmm_qcd0` did vary it under note 19's
+  `VtxIdx(0)` rooting: it fired on diagram 121 (the `bbH` Yukawa at the amplitude
+  root consumes the `H`) and not on diagram 72 (the same `H` consumed as a
+  fermion current), and dropping it broke that row's per-flow comparison
+  (`1.99e0`)[^n19-v5]. That row banks flows only, so it can pin the arm through
+  flows but never per diagram, and whether it still varies under the anchor
+  rooting has not been re-measured. The guard comment on its fourth assertion still attributes `e+ e- > ta+ ta- H`'s
   build sign to that arm, which does not fire there[^n29-f13]. The Standard-Model
   Yukawa and Higgs self-coupling rows added since (`tata_to_ttxh`,
   `tata_to_ttxhh`, `bbx_to_hh` in `standalone_jamps`, after the all-scalar vertex

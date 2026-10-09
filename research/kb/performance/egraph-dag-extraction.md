@@ -114,7 +114,7 @@ spinor pair, so even the `WorkCost` optimum is only ~13%.
 - (c) a demo process with **≥3 consumers** of the same pure current, so the
   payoff is not marginal.
 
-Re-rooting rules additionally need the rooting-soundness property, which now
+Re-rooting rules additionally need the rooting-soundness property, which
 holds (see [diagram rooting](../performance/diagram-rooting.md)); their bar is
 the −19…−26% ns/eval the fixed fewest-legs rule already delivers.[^n15-consequences]
 

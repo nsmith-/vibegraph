@@ -88,8 +88,11 @@ drift.[^n20-s4][^n20-outcome]
 
 A per-diagram root override, six variants, 14 processes; nodes are the reachable
 nodes of the colour-aware post-CSE arena (pre-helicity-expansion), "weighted" is
-Σ output-slot bytes (scalars 16 B, currents 96 B).[^rs-defs] Cross-process
-totals:[^rs-totals]
+Σ output-slot bytes (scalars 16 B, currents 96 B).[^rs-defs] Neither the study
+test (`rooting_study::rooting_headroom_study`) nor the `profiling` cargo profile
+its recorded command names exists in the current tree (the workspace's
+optimised-with-debug profile is `release-debug`), so that command records the
+run and does not reproduce it. Cross-process totals:[^rs-totals]
 
 | variant | Σ nodes | Σ weighted (B) | vs `VtxIdx(0)` |
 |---|--:|--:|--:|

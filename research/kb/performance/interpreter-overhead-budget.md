@@ -90,7 +90,7 @@ structural findings against the current code:[^n31-e2]
 
 - **Header reloads.** The study found 143 loads re-fetching arena `ptr`/`len` off the
   `ScratchSpace` pointer, because LLVM could not prove arena stores miss the `Vec`
-  headers (`MulScalarR`: 17 instructions around one `fmul.2d`). `fill_arenas` now takes
+  headers (`MulScalarR`: 17 instructions around one `fmul.2d`). `fill_arenas` takes
   each arena once as a local slice through split field borrows; that cut the reloads
   to 20 and `eval_m2/forward` by 4.2% geomean. The 108 `panic_bounds_check` sites stayed:
   the indices come from the instruction stream, so hoisting did not make them hoistable.

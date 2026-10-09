@@ -29,7 +29,7 @@ cases.
 ## A cell goes green by resolution, never by loosening
 
 A threshold is not moved to make a cell pass. A disagreement either is resolved
-(and the cell goes green because the numbers now agree), or the cell stays
+(and the cell goes green because the numbers agree), or the cell stays
 ⚠️/`info` with a note saying exactly what is unresolved and why, and the finding
 is filed[^n27-rule]. The workflow half of this — who fixes what, and when — is
 [expose, don't fix](../workflow/expose-dont-fix.md). Every enforced threshold's
@@ -97,9 +97,12 @@ For a class-(a) statistic under 2×, the remedies are (in order) more seeds
 forming the statistic, more points per seed, or recording the measurement with
 its diagnosis — never a wider bound[^n36a-thin]:
 
-- `pp_to_jj` `rel` vs `JJ_MAX_REL` stayed at 1.5×: the residual is a converged
-  offset, not scatter, so `JJ_SEEDS` 3 → 5 changed what the gate reads (a
-  five-seed mean, χ²/dof on 4 dof) but not the ratio.
+- `pp_to_jj` `rel` vs `JJ_MAX_REL` stayed at 1.5× through `JJ_SEEDS` 3 → 5:
+  the residual was a converged offset, not scatter, so more seeds changed what
+  the gate reads (a five-seed mean, χ²/dof on 4 dof) but not the ratio. The
+  row's current reading, measured after the vector-vertex sign fix, is
+  `rel +0.18%`, about 2.8× inside `JJ_MAX_REL = 0.005` (manifest `pp_to_jj`
+  integrals note); `JJ_MAX_REL`'s doc comment still quotes the earlier 1.5×.
 - `ddx_to_epemg` (offset) and `gux_to_epemux` (one seed of five) were recorded
   with their diagnoses; four times the points buys them margin, and that budget
   decision belongs with the row's ladder ([budget alignment](budget-alignment-rule.md)).

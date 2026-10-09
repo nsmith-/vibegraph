@@ -52,7 +52,7 @@ The six rows, all gated in `diagrams`, `amplitudes`, `integrals` and
 
 | row | process | isolates |
 |---|---|---|
-| `ll_to_qqx_toy_dipole` | `lt~ lt > qt qt~ NP<=1` | literal `Sigma` in a dipole, interfering with a plain gauge coupling (pins `Sigma`'s sign) |
+| `ll_to_qqx_toy_dipole` | `lt~ lt > qt qt~ NP<=1` | literal `Sigma` in a dipole beside a plain gauge diagram (pins `Sigma`'s sign per diagram; the two are relatively imaginary, so `\|M\|²` cannot) |
 | `ll_to_qqx_toy_tensor` | `lt~ lt > qt qt~ NP<=1 NPGG<=1` | `Sigma⊗Sigma` and its γγ spelling in one process |
 | `ll_to_qqx_toy_yukawa` | `lt~ lt > qt qt~ NP<=2 NPCP<=2` | bare `Identity` and `Gamma5` bilinears |
 | `qqx_to_o8o8_toy_dcolor` | `qt qt~ > o8 o8 NP<=2` | the symmetric structure constant `d` in a colour basis |
@@ -72,8 +72,12 @@ Conventions the toy rows fixed, each by a test that fails if it is false:[^n35-g
 - **ALOHA's `Sigma` is half the textbook `(i/2)[γ^μ, γ^ν]`** (`L_Sigma.sigma`
   carries ±½), measured as `AMP(FFFFG)/AMP(FFFFT) = 4 × ggam/gtens` to 4.7e-14;
   a kernel at textbook normalisation is 4× too large on the tensor row and 2× on
-  the dipole row. The square is blind to `Sigma`'s global sign; the dipole row,
-  linear and interfering with the gauge coupling, pins it.
+  the dipole row. The square is blind to `Sigma`'s global sign, and so is the
+  dipole row's `|M|²`: the dipole amplitude is relatively imaginary to the
+  gauge one, so their interference vanishes identically. The row pins the sign
+  through the per-diagram comparison and the fitted `G` (negating `SigmaVout`
+  leaves `|M|²` at 5.56e-14 but moves per-diagram to 3.0e-1 and `G` from `+i`
+  to `−i`).
 - **A chiral projector beside a literal `Sigma` keeps its chirality**: `σ^{μν}`
   commutes with `γ⁵`; it is `γ^μ P_χ = P_χ̄ γ^μ` that conjugates.
 - **`Sigma⊗Sigma` equals its γγ expansion** per diagram and per helicity in one

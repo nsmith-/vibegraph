@@ -117,7 +117,7 @@ sibling processes on a shared host moved a whole-table geomean by ~13%.
   suffix; the widest-register instance is the widest N.
 - **Profiles**: `samply` on the bench binary with `--profile-time`; build with
   `CARGO_PROFILE_BENCH_DEBUG=line-tables-only` or use the `release-debug` profile (thin LTO,
-  `debug = 1`; the old `profiling` profile no longer exists). Don't chase `libsystem_kernel`
+  `debug = 1`; there is no `profiling` profile). Don't chase `libsystem_kernel`
   samples (a blocked thread's wall clock) or dylib import stubs, which symbolicate to the
   preceding text symbol (`RawVec::reserve`).[^tds5] Sample skid makes a dispatch tail look
   hot; per-instruction shares say where the core waits, not what an instruction costs.

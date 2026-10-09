@@ -98,7 +98,7 @@ for more scalar FMAs.
   8 rows.[^x86-alg] See [float reassociation](kernel-float-reassociation.md).
 
 Whether `Complex::mul_add` on a lane field that implements `MulAdd` beats the shared path
-is unmeasured. `LaneField` is local now, so the orphan problem is gone
+is unmeasured. `LaneField` is local, so the orphan rule does not block it
 ([backlog](../backlog/performance/lane-field-complex-muladd-unmeasured.md)); any replacement
 must keep lane-vs-scalar bit identity.
 

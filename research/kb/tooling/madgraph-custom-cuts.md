@@ -120,7 +120,7 @@ call `rap()` (`Source/kin_functions.f:95`), which adds the stored `cm_rap`.
   unexplained. It matters before any comparison reads a windowed MadEvent
   sample event by event: [madevent-dummy-cuts-window-leakage](../backlog/validation/madevent-dummy-cuts-window-leakage.md).
   Cross sections of windowed runs are not known to be affected.
-- A patched directory is no longer a stock reference directory. The window
+- A patched directory is not a stock reference directory. The window
   generators generate their own process directories and copy only the banked
   run's `run_card.dat` and `param_card.dat` into them; they never patch a
   banked directory in place.

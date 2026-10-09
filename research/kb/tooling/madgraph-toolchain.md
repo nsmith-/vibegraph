@@ -38,7 +38,7 @@ Per-process facts live in `validation/manifest.toml` and
 `mg5amcnlo = "==3.5.7"` from conda-forge and `pylhe`, and carries the
 reference-generation tasks (`build-diagrams`, `generate-amplitude`,
 `generate-references`, the `validate-*` gates that need generated data; 49
-tasks in all at the time of writing; read `pixi.toml` for the list rather
+tasks in all at `6ccc6e4`; read `pixi.toml` for the list rather
 than any copy of it).
 Run everything with `pixi run -e madgraph <task>`; `pixi install -e madgraph`
 creates it.[^n05]

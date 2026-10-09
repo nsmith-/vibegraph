@@ -111,7 +111,7 @@ diagnosed:[^n41-m6]
   error widened by an iteration-consistency factor; a single point in one
   floor-bound two-jet channel carrying 0.004% of σ put that channel's χ²/dof
   at 5 675. The pooled factor (`budget.rs`, `pooled_scale`) together with
-  merging channels that share a map now stops this row at 8–10 iterations,
+  merging channels that share a map stops this row at 8–10 iterations,
   with σ inside the fixed-budget sweep. The tail is still there; its handling
   in the stop is [convergence stop rule](convergence-stop-rule.md)[^n41-fb].
 

@@ -66,7 +66,7 @@ too heavy for the banked budget: the 2→6 σ rows, the budget ladders behind
 enforced σ budgets, and the kT clustering replay.[^n25-reframe] An oracle gate
 whose input is absent fails with a plain `assert!`/`panic!` naming the input
 and the task that builds it, not with `require`, whose message points at
-`pixi run validate`, a layer that no longer runs it.[^n29-e]
+`pixi run validate`, a layer that does not run it.[^n29-e]
 
 ### The `--lib` exception
 

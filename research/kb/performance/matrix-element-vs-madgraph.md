@@ -96,8 +96,12 @@ Two traps this run exposed:
   host. The quiet re-run's improvement is attributed to host conditions, not proven (no
   bisect): holding the vibegraph medians fixed and swapping only the MG table gives 0.829×
   against the 2026-08-05 snapshot and 0.870× against the regenerated one, since MG itself
-  read 4.8% faster that day. A −13% swing from host load alone matches the quiet-host effect
-  measured on `validate` (−12.7%).
+  read 4.8% faster that day. Note 32 likens this −13% to `validate`'s −12.7%, but that
+  figure is the addendum's quiet-host wall *saving* from code changes (341.4 s against the
+  earlier 391 s reference), not a host-load effect; the loaded `validate` run read +13.4%
+  over the same reference, mixed with recompilation
+  ([benchmark hosts](benchmark-hosts.md)). No clean host-load measurement backs the
+  attribution.
 - **A stale MG table joins to nothing.** A pre-`host`-block `mg_timings.json` has no
   `processes` key and read as an empty table; the script now names that case instead of
   reporting the empty join.

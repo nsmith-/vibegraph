@@ -103,7 +103,7 @@ is what
 ## Consequence for a cross section: the channel partition
 
 With a channel-dependent scale, the multichannel estimator
-`σ = Σⱼ ∫ dΦ f(p, j)·αⱼgⱼ(p)/g(p)` is no longer independent of the weights
+`σ = Σⱼ ∫ dΦ f(p, j)·αⱼgⱼ(p)/g(p)` is not independent of the weights
 `αⱼ`: they decide which scale a region is evaluated at, not just how often it is
 visited. σ is then defined only up to the channel partition. Measured by
 `probe_channel_partition_moves_sigma` (`tests/validate_sigma.rs`), integrating
@@ -122,7 +122,7 @@ gap sits at their own Monte Carlo error, the other two at 9σ. MadGraph's own σ
 lay inside the interval our two partitions spanned, and MadEvent's partition is
 a third one: single-diagram enhancement weights channel `c` by
 `AMP2_c/Σ AMP2`, a function of the point that no constant `αⱼ` reproduces. That
-is the reason the scale configuration is now drawn `∝ AMP2_c`: drawing the
+is the reason the scale configuration is drawn `∝ AMP2_c`: drawing the
 conditional MadEvent's channel induces removes the partition from σ (the gap on
 the two gluon rows fell to `+1.9e-3` and `+1.5e-3`). The partition argument is
 the reason for the draw, not a tolerance; see

@@ -171,8 +171,8 @@ the reference bank and are untimed
   our-side counterpart.
 - **`integrals` vs `integrate`**: we spend a fixed `seeds × neval × niter`; MadGraph refines to
   a requested accuracy. Ours also carries construction, the multichannel α survey and grid
-  adaptation. MadGraph runs up to 16 jobs in parallel; our integrators now use the machine
-  internally too (the hadronic path is no longer single-threaded), so wall times on both sides
+  adaptation. MadGraph runs up to 16 jobs in parallel; our integrators use the machine
+  internally too (the hadronic path is multi-threaded), so wall times on both sides
   reflect parallel work. A per-point comparison needs CPU time or
   [integration against MadGraph](integration-vs-madgraph.md)'s throughput denominators; thread
   scaling is in [integrate thread scaling](integrate-thread-scaling.md).

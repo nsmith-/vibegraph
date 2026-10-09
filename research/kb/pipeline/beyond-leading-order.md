@@ -63,7 +63,7 @@ and the [POWHEG-BOX survey](../references/codebases/powheg-box.md).
 
 POWHEG-BOX is the reference for how NLO+PS is organised:[^n03-powheg]
 
-1. Its user interface (`setborn`, `setvirtual`, `sigreal_btl`) separates the
+1. Its user interface (`setborn`, `setvirtual`, `setreal`) separates the
    matrix elements from the integration and generation machinery, a design
    principle worth keeping in vibegraph.
 2. **MINT** is an alternative to VEGAS: adaptive grids with folding, which

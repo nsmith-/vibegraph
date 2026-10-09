@@ -73,7 +73,7 @@ lines and two mixed (initial↔final) fermion lines. σ first came out 7.7× hig
 and `|M|²` disagreed point by point by factors of 2 to 63 while every countable
 property (35 diagrams, `NCOLOR = 2`, `CF`, 8 helicities, spin/colour average
 1/36) agreed: a missed cancellation between diagrams, not a normalisation. The
-cause was a missing crossing sign on mixed fermion lines.[^n28-b3] The rule now
+cause was a missing crossing sign on mixed fermion lines.[^n28-b3] The rule
 lives in `Diagram::fermion_line_sign` (`vibegraph-lib/src/diagrams/diagram.rs`)[^diagram-rs];
 see [fermion-line sign](../amplitudes/fermion-line-sign.md). With it, the
 per-flow amplitudes match MadGraph's `JAMP` at `3.0e-15` under one global phase
@@ -86,7 +86,7 @@ empty.[^n28-s6][^manifest] Two oracle details surfaced on the way: MadGraph
 groups this process's 35 diagrams into 21 `AMP2` accumulators
 (`N_MAX_CG = 21`), and its grouping is `[0,2,4,6],[1,3,5,7],…`, so a
 per-configuration comparison that flattened the grouping to get `AMP()` indices
-was scrambled. Rows in `KNOWN_CONFIG_MERGE` now pair each configuration with
+was scrambled. Rows in `KNOWN_CONFIG_MERGE` pair each configuration with
 the diagram behind it.[^n28-b3][^n28-s6] The full method is
 [bit-exact amplitude debugging](bit-exact-amplitude-debugging.md).
 
@@ -115,7 +115,7 @@ not, so σ came out +36% high, and the `samples` cell failed every column except
 subprocess against another). The scalar σ alone would have read the
 double-counted subprocesses as normalisation, which is why
 `jj_subprocesses_are_madgraphs_own`
-(`vibegraph-lib/tests/validate_hadronic.rs`) now asserts the 65 assignments
+(`vibegraph-lib/tests/validate_hadronic.rs`) asserts the 65 assignments
 equal to the run's `leshouche.inc` entry for entry, each with its outgoing
 legs in MadGraph's order. 52 of the 65 have two different outgoing flavours and
 neither side lists the swap. The near-degenerate relabelled channels also cost

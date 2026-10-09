@@ -32,7 +32,7 @@ extended-validation CLI test that parses stdout is `cli_generate_proton`.
 This is the decision a user might revisit; the reason to keep it is that
 machine consumers (`… | jq`, the CLI tests) must observe no change when
 logging changes. Whether the stdout σ line adopts the SI formatter is left
-open; it stays frozen for now.
+open; it stays frozen.
 
 ## Emission (library side)
 
@@ -175,9 +175,9 @@ no `trials` on `progress::unweighting`; the line layer's format is fixed at
 init from the starting level, so climbing to DEBUG at runtime keeps the
 compact form; crossterm's cursor-position probe costs about 2 s before falling
 back to plain lines where nothing answers DSR (bare `script(1)`). That item
-also lists the consent prompt garbling the pane; `network::confirm` now routes
+also lists the consent prompt garbling the pane; `network::confirm` routes
 the question through the pane (`tui::ask_to_download`), so that part of the
-item no longer describes the code.
+item does not describe the code.
 
 ## Non-goals
 

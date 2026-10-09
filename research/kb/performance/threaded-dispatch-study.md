@@ -61,8 +61,8 @@ Inside the `kind() == OP` branch `step`'s `match` folds to one arm, so instructi
 are textually shared and the arms differ in dispatch alone. Each `Threaded` record carries
 the instruction, its destination and the next opcode, so a handler finds its successor in
 the line it already loaded. At the tag the instruction set had 53 kinds (212 handler
-instances over the bench's four fields), each ending in one `jmp *table(,%rax,8)`; the
-instruction set now has 54 (`N_KINDS`, `vibegraph-lib/src/helas/eval/layout.rs`).
+instances over the bench's four fields), each ending in one `jmp *table(,%rax,8)`; at `6ccc6e4` it
+has 54 (`N_KINDS`, `vibegraph-lib/src/helas/eval/layout.rs`).
 
 **Correctness.** `threaded_dispatch_matches_match_loop_bit_for_bit` ran both dispatchers in
 one build and compared `AMP2`, `JAMP2` and per-helicity `|M|²` `to_bits` over every
@@ -83,7 +83,7 @@ Each is a general lesson for any dispatcher change:
 - **A permuted `kind()` evicted the kernels.** Kinds that were a permutation of declaration
   order compiled `kind()` to a table lookup, whose cost tipped soft-`#[inline]` kernels
   over LLVM's threshold: 116 out-of-line `*_bare` calls against 0, and the threaded arm fell
-  to 1.15 / 1.12 / 1.32. `Instr` is now declared in `kind` order, so `kind()` is the tag
+  to 1.15 / 1.12 / 1.32. `Instr` is declared in `kind` order, so `kind()` is the tag
   load. **Diff the out-of-line call census between builds, not only the timings.**
 
 ## Why it loses
@@ -146,7 +146,7 @@ process environment: `ee_to_mumu` under `match` ran 3.92 µs with 0–128 bytes 
 environment, 4.80 µs (+22%) with 136–300 and again near 640, and 3.9–4.0 µs from 768 bytes
 to 8 KiB, each point steady to 1%. The windows are not periodic, and heap placement after
 earlier benchmarks in the same process is a likelier mechanism than stack alignment
-alone; it was not isolated. The bench scripts now pad the environment by a different
+alone; it was not isolated. The bench scripts pad the environment by a different
 length each round, the same for every arm, and take min over rounds. The protocol is in
 [benchmarking the evaluator](microbenchmark-protocol.md).
 
@@ -163,7 +163,7 @@ interpreter does carry is mostly the arena round trip, not the dispatch jump (se
 
 Two costs common to both arms were found and fixed on the way: fermion propagators called
 libm `hypot` through `num_complex`'s overflow-safe reciprocal (≈1% scalar, ≈2–3% with the
-lane fallback's `memset_pattern16`); they now take `Complex::inv` (`conj / |z|²`). And two
+lane fallback's `memset_pattern16`); they take `Complex::inv` (`conj / |z|²`). And two
 profile artefacts not to chase: `libsystem_kernel` at ~4.5% is wall-clock samples of a
 blocked thread, and samples on dylib import stubs symbolicate to the preceding text symbol
 (`RawVec::reserve`), reading as an allocation that does not exist.

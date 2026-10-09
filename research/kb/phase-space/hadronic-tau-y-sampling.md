@@ -13,7 +13,7 @@ sources:
   - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L899", title: "Note 24 P2 (ScaledChannel / ScaledMultiChannel)"}
   - {id: n27-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L212-L297", title: "Note 27 B2 (hadronic ŝ floor)"}
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L527-L707", title: "MadGraph setcuts.f (smin derivation)"}
-  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L540-L588", title: "MadGraph myamp.f set_peaks (the ŝ map's lower limit)"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L540-L582", title: "MadGraph myamp.f set_peaks (the ŝ map's lower limit)"}
 ---
 
 # Sample hadronic collisions in (τ, y)
@@ -87,7 +87,7 @@ hold for any multiplicity, without a back-to-back argument. They are the bounds
 MadGraph's `setcuts.f` derives (`smin_p²` per letter class, `:527-690`, and
 `max(smin, (Σ pmass)², dsqrt_shat²)`, `:702-707`). On a proton run MadEvent
 applies it in `set_peaks` as the lower limit of the `1/ŝ` map, raising its
-`xo` to at least `smin/stot` (`myamp.f:540-588`, `:570`, `:576`); where a
+`xo` to at least `smin/stot` (`myamp.f:540-582`, `:570`, `:576`); where a
 Breit–Wigner on ŝ is kept instead, `smin` does not bound the map, and `GENCMS`
 itself starts τ at 0 (`genps.f:1659`).[^mg-setcuts] Two deliberate departures, both in the
 direction of the derivation:[^n27-b2]

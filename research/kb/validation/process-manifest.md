@@ -60,7 +60,7 @@ what the file is for and what holds it honest.
   unbundled is not exempt from anything.
 - **`rationale` says why this exact process**, including what it is not used for;
   the full set of reasons is [reference-row-rationale](reference-row-rationale.md).
-- **A cell note says what is true now.** When a blocker lands, the cells naming
+- **A cell note states current truth.** When a blocker lands, the cells naming
   it are re-worded to what actually blocks them, measured (a `kt-clustering`
   blocker that had landed became `mg-internal-pdf` on eight cells, and a "refuses
   to load" note became the gate's measurement). The collator prefers the curated
@@ -87,7 +87,7 @@ declare, fails rather than renders.
 - `bundled = false` and `status = "planned"` are transient: they exist between a
   locally banked run and the next bundle, so a test must not depend on some row
   carrying them ([oracle-blind-spots-and-non-vacuity](oracle-blind-spots-and-non-vacuity.md)).
-- The `blocked` tier currently has no cell using it
+- The `blocked` tier has no cell using it
   ([manifest-blocked-tier-unused](../backlog/hygiene/manifest-blocked-tier-unused.md)).
 - A row whose reference is a committed summary rather than a banked run (decay
   widths, decay-chain events) is deliberately not a `[[process]]` row: as one, its

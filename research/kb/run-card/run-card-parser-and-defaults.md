@@ -70,7 +70,7 @@ Its blind spots:
   so a MadGraph bump that moves the set fails; they are harmless only because
   each is classified benign for a reason independent of its default
   ([hygiene/runcard-opaque-defaults-unverified](../backlog/hygiene/runcard-opaque-defaults-unverified.md)).
-  `me_frame` now stores MadGraph's `[1, 2]`.
+  `me_frame` stores MadGraph's `[1, 2]`.
 
 ## Resolution: what happens after parsing
 

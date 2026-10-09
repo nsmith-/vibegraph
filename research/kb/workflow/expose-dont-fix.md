@@ -57,7 +57,7 @@ while a fix is under construction, and new physics lands informational first
 ([session scoping](session-scoping-rules.md), `AGENTS.md` "Physics
 Validation").
 
-## Where it applies now
+## Where it applies
 
 Under [one PR per backlog item](../decisions/pr-per-backlog-item.md), the rule
 applies to a validation session on any item's PR. If its new gate exposes a
