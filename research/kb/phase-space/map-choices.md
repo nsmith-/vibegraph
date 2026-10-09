@@ -5,6 +5,7 @@ description: "MapOptions/MapChoices (split angle, τ map, rung order); auto = so
 status: draft
 tags: [phase-space, maps, vegas, madevent, configuration]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1 (MadEvent's maps against ours)"}
   - {id: n37-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L162-L249", title: "Note 37 §3 (fixed-beam measurements; ee_to_mumua)"}
@@ -73,7 +74,10 @@ and falls back to the option every gated row was banked under where no
 measurement exists. A rule with no measurement behind it is not written down
 (`maps.rs` module doc). The figure of merit is the evaluations the convergence
 stop needs to reach a scaled 0.1% ([phase-space/convergence-stop-rule](convergence-stop-rule.md)),
-as a ratio to the map replaced.
+as a ratio to the map replaced. Every table below was measured in September
+2026 under the χ²/dof-scaled stop and before channels were merged by map
+identity ([phase-space/channel-set](channel-set.md)); the ratios have not been
+re-measured under the pooled consistency factor or the merged channel set.
 
 ### Twenty-seed hadronic measurements (M3 Max)
 

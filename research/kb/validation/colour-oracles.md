@@ -149,7 +149,8 @@ frequencies.
 ## The JAMP values themselves
 
 Per-flow JAMP values are compared by [the amplitude oracle](amplitude-oracle.md),
-which absorbed the earlier standalone JAMP gate. At `NCOLOR = 6` (`g g > g g`)
+which absorbed the earlier `color_jamp_oracle` (a different gate from today's
+`standalone_jamps`). At `NCOLOR = 6` (`g g > g g`)
 the bases are identical in order and this crate's JAMPs equal MadGraph's
 element-wise up to one global phase, at every point and helicity (worst
 3.7e-16)[^n16-caveat]. The CF matrix there is `(7/2)I + P − (1/3)J` with `P` the

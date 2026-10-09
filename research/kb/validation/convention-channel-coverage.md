@@ -180,3 +180,4 @@ own production value; and any sign whose live and anchor factors coincide.
 [^n24-mut]: Note 24 P1, mutation experiments 3 and 4.
 [^n29-f10]: Note 29 §F.8 and §F.10, hostile cases H2–H5.
 [^n29-f13]: Note 29 §F.13 item 3.
+[^n39-gates]: Note 39 §6, the mutation table.

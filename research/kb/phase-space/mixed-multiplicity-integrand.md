@@ -5,6 +5,7 @@ description: "MultiplicitySum: one ProtonIntegrand per @N multiplicity with its 
 status: draft
 tags: [phase-space, mlm, multiplicity, integrand, artifact]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-33, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L253-L275", title: "Note 41 §3.3 (a composite integrand, not a wider one)"}
   - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1214", title: "Note 41 M3 (MultiplicitySum as built)"}

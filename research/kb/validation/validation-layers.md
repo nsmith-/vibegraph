@@ -5,6 +5,7 @@ description: "Each test declares by its registration which external inputs it ma
 status: draft
 tags: [validation, layers, ci, testing, manifest]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L15-L111", title: "Note 25 §1–2 (the reframing and the three layers)"}
   - {id: n25-registration, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L236-L242", title: "Note 25 §4.2 (registration in N places)"}

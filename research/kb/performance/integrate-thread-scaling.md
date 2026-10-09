@@ -5,6 +5,7 @@ description: "Serial/parallel fit of integrate at -j 16 (Amdahl, not stalled thr
 status: draft
 tags: [performance, parallelism, amdahl, integrate, determinism]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n31-j, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7 (the -j column)"}
   - {id: n32-amdahl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L77-L113", title: "Note 32 §1.1 (why -j 16 yields only 4.7–5.4×: Amdahl)"}

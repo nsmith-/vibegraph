@@ -62,7 +62,7 @@ processes with different numbers of initial particles (`do_add`, L3317). [^n06-f
 | Step | Construct | Pattern |
 |---|---|---|
 | 1 | `@N` process number | `^(.+)@\s*(\d+)\s*(.*)$`: text may follow, so `p p > j j @1 QED=0` is valid |
-| 2 | `[...]` loop / perturbation spec | `^(?P<proc>.+>.+)\s*\[\s*((?P<option>\w+)\s*=)?\s*(?P<pert>(\w+\s*)*)\s*\]\s*(?P<rest>.*)$` |
+| 2 | `[...]` loop / perturbation spec | `^(?P<proc>.+>.+)\s*\[\s*((?P<option>\w+)\s*=)?\s*(?P<pertOrders>(\w+\s*)*)\s*\]\s*(?P<rest>.*)$` |
 | 3 | coupling orders, repeated | `^(?P<before>.+>.+)\s+(?P<name>(\w\|(\^2))+)\s*(?P<type>(=\|(<=)\|(==)\|(===)\|(!=)\|(>=)\|<\|>))\s*(?P<value>-?\d+)\s*?(?P<after>.*)` |
 | 4 | `/` forbidden particles | `^(.+)\s*/\s*(.+\s*)(\$.*)$`, else `^(.+)\s*/\s*(.+\s*)$` |
 | 5 | `$$` forbidden s-channels | `^(.+)\s*\$\s*\$\s*(.+)\s*$` |

@@ -3,6 +3,7 @@ type: Algorithm
 title: "Unweighting: accept/reject over per-channel grids and the truncated maximum"
 description: "Draw a channel ∝ w_max_j, accept at w/w_max_j, keep overweights at weight > 1 (efficiency ≤ σ/Σ w_max_j); w_max from MadGraph unwgt.f's truncation ladder, because the scanned extremum never converges."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, unweighting, accept-reject, vegas, overweights]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -114,9 +115,11 @@ lumpiness.
 **Scan budget** (`--scan-points N|share`, `ScanBudget`): `share` (default) gives
 each channel the points the integration spent on it per iteration; `N` gives
 every channel the same count. Allocation is the much weaker lever: on the llj
-grids the two land on the same curve within the scan's own ±20% seed spread on
-`Σ w_max_j`. The scan runs channels in parallel on per-channel streams, which
-moves no number[^n31-i2][^n32-out].
+grids the two land on the same overweight-versus-efficiency curve within the
+5-stream spread (±7%), and the scan's own seed-to-seed spread on `Σ w_max_j` is
+±20% over five seeds (`unweight.rs:83`). The scan runs channels in parallel on
+per-channel streams, which moves no number[^n31-i2][^n32-out].
+
 
 **Where truncation still cannot help.** The ladder cannot step below the top
 of a scan whose single largest weight already exceeds 1% of its sum, which under
