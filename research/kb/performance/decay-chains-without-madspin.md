@@ -2,10 +2,10 @@
 type: Design Decision
 title: Decay chains are sampled in-process, with no MadSpin step
 description: "The decay-chain cost ladder: |M|² cost stays near its core's while unweighting efficiency falls 2.6–16× from flat decay angles; correctness and convergence need no decay-after-generation step."
-status: draft
+status: stable
 tags: [performance, decay-chains, unweighting, madspin, phase-space]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 §D3 (decay-chain phase space, σ and the sampler ladder)"}
   - {id: ladder-test, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/decay_chain_ladder.rs#L1-L60", title: "vibegraph-lib/tests/decay_chain_ladder.rs"}

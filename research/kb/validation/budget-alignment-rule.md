@@ -2,10 +2,10 @@
 type: Design Decision
 title: Validation budgets matched to reference precision
 description: "Size each sigma gate so our error is about MadGraph's, subject to seed-scatter and convergence floors that always win."
-status: draft
+status: stable
 tags: [validation, sigma, budget, vegas, seeds]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: n32-premise, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L48-L74", title: "Note 32 §0 — the budget-alignment argument"}
   - {id: n32-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L354-L434", title: "Note 32 §2 S6 — the rule and its floors"}
@@ -88,6 +88,14 @@ They are measured and reported on the long tier rather than gated (see
   and the drift hypothesis fails at 7.3σ (see
   [seed sweeps and budget ladders](seed-sweeps-and-budget-ladders.md)). The 150k
   budget stands on the seed floor either way.
+- **The reference has the same failure modes.** MadEvent is also a VEGAS
+  integrator: its σ can carry seed scatter beyond its quoted error and can be
+  unconverged at the budget it was banked with. A MadGraph-only study measured
+  χ²/dof of 3–14 across MadEvent seeds at the 0.1 % level, even on full-process
+  runs ([identical particles across decays](../process/identical-particles-across-decays.md)).
+  Matching `σ_ours` to a quoted `σ_MG` assumes that quoted error is honest;
+  the hadronic σ references are single runs and nothing tests it
+  ([reference-sigma-seed-scatter-untested](../backlog/validation/reference-sigma-seed-scatter-untested.md)).
 - **A tolerance is not part of this rule.** Budgets move under it; tolerances
   do not. A cut that would need a wider tolerance is not licensed.
 

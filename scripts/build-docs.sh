@@ -7,8 +7,8 @@
 #
 # and refresh docs/src/cli/reference.md from the built binary first, so the
 # published CLI reference is always the binary's own help text. The backlog
-# page, docs/src/backlog.md, is rendered from the research notes' backlog
-# items (`pixi run backlog`) and is gitignored: committed, it would change with
+# page, docs/src/backlog.md, is rendered from the knowledge bundle's
+# backlog items (`pixi run backlog`) and is gitignored: committed, it would change with
 # every item and conflict between branches. `docs.yml` runs
 # exactly this script; locally, `pixi run docs` does too. Requires `pixi` on
 # PATH, and `mdbook`, `mdbook-katex` and `mdbook-mermaid`, which

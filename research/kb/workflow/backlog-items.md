@@ -18,8 +18,6 @@ sources:
 The work backlog is one file per open item under
 `research/kb/backlog/<area>/<slug>.md`, where the area is `validation`,
 `feature`, `performance` or `hygiene`. There is no backlog document to edit.
-`TODO.md` at the repository root is a stub that points to the items and is not
-edited.
 This design replaced a single `TODO.md` that every work stream edited, which
 was the repository's hottest conflict point, and whose entries accreted
 accounts of how problems were solved rather than what was still open.

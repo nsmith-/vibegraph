@@ -51,11 +51,14 @@ resolution and enumeration: names that resolve to no particle (`ResolveError`), 
 names the model does not define, and the same subprocess reached from two process lines
 (`DiagramError::DuplicateSubprocess`).
 
-The run card has had the same pattern longer: every recognised name in
-`runcard/classes.rs` is `Consumed` (with its consumer named), `IgnoredBenign` (with an
+The run card has had the same pattern longer
+([field classification](../run-card/field-classification.md)): every recognised
+name in `runcard/classes.rs` is `Consumed` (with its consumer named), `IgnoredBenign` (with an
 argument that it cannot reach σ, the record or the cuts) or `IgnoredPhysics` (refused
 whenever it could bite). A parameter MadGraph acts on that this crate silently dropped
-would be a wrong answer, so it is refused at parse time instead.
+would be a wrong answer, so it is refused at parse time instead. The param,
+reweight and restrict cards have no such classification yet
+([input-cards-lack-field-classification](../backlog/feature/input-cards-lack-field-classification.md)).
 
 ## The current refusals
 

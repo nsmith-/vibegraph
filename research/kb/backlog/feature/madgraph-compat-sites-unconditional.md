@@ -35,3 +35,9 @@ Not sites, leave alone: `AQCDUP` is already untruncated, the jet-count memo
 is not carried across events, `SCALUP = max(μF)` is the accord's definition,
 and the truncated `w_max` rule is an improvement. No validation gate runs in
 the off mode.
+
+The flag also carries the MadGraph defects that are easy to reproduce
+([defect policy](../../validation/madgraph-defect-policy.md)): on, the defect
+is reproduced bug-for-bug; off, the more robust calculation runs. A defect
+upstream fixes leaves the flag's scope when the MadGraph pin moves past the
+fix.

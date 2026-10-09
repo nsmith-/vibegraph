@@ -51,9 +51,10 @@ jobs:
           set -euo pipefail
           scripts/install-mdbook-tools.sh "$HOME/.cargo/bin"
 
-      # The backlog page is rendered from the research notes' backlog items by
-      # the `kb` pixi environment; the token lets it mark the items open pull
-      # requests claim.
+      # The backlog page is rendered from the knowledge bundle's backlog items
+      # by the `kb` pixi environment. Marking the items open pull requests
+      # claim lists them through the GitHub API; the job's read-only token
+      # keeps that call off the unauthenticated rate limit shared by runners.
       - uses: prefix-dev/setup-pixi@v0.10.0
         with:
           pixi-version: v0.63.2

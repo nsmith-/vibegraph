@@ -2,10 +2,10 @@
 type: Design Decision
 title: Policy for MadGraph defects
 description: "A defect that changes a weight on a supported card is reproduced bug-for-bug or refused, never silently fixed; a documented, registered deviation is the user-approved third outcome."
-status: draft
+status: stable
 tags: [madgraph, defects, parity, policy, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: n41-15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L191-L205", title: "Note 41 §1.5 — MadGraph defects met, and the two-outcome policy"}
   - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 — the reweight.f:1138 refusal and the permuted first call found"}
@@ -47,6 +47,16 @@ them upstream is the user's
 [mlm-madgraph-defects-undrafted](../backlog/validation/mlm-madgraph-defects-undrafted.md)).
 A defect that changes no weight (grids only, Python systematics, a record-only
 field) is catalogued and needs no outcome.
+
+Outcomes 1 and 3 need not exclude each other. Where a defect is easy to
+reproduce, the planned `--madgraph-compat` flag
+([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md))
+lets the user choose: on, the defect is reproduced; off, the more robust
+calculation runs. Upstream MadGraph may also fix defects over time, so a
+reproduction is tied to the pinned MadGraph version
+([oracle pinning](madgraph-oracle-pinning.md)); when the pin moves past a fix,
+the reproduction becomes a deviation from the new reference and is
+re-decided.
 
 ## The cases on record
 

@@ -2,10 +2,10 @@
 type: Design Decision
 title: "Validation sprints expose and record; follow-ups fix"
 description: "Work that adds gates records a newly failing cell as informational with a backlog item and moves on; it fixes only regressions it caused, and never loosens a tolerance."
-status: draft
+status: stable
 tags: [validation, process, gates, scope]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: n25-sessions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L501-L560", title: "Note 25 §8: sprint discipline — expose, don't fix"}
   - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9: decisions (user, 2026-07-31)"}

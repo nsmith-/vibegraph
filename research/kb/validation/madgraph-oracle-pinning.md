@@ -2,10 +2,10 @@
 type: Design Decision
 title: References come from pinned MadGraph 3.7.1 with LHAPDF PDF sets
 description: "Reference runs use the pinned submodule (3.7.1), not the packaged 3.5.7, and only LHAPDF sets, since MadGraph's internal nn23lo1 has no oracle here."
-status: draft
+status: stable
 tags: [madgraph, reference, pdf, lhapdf, version-pin]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6, decisions D2 and D3"}
   - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L271-L295", title: "Note 29 §G, the nn23lo1 re-bank decision"}
