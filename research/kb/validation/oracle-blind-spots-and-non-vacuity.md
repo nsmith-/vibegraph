@@ -67,11 +67,18 @@ JAMPs[^n16-debrief].
   because none could falsify it; the first process mixing `f`- and `T`-structures
   did. Schedule the falsifying probe early and read "all gates green" as "not yet
   contradicted"[^n16-debrief].
-- The fermion-line reversal sign was charged per internal fermion propagator. On
-  every SM row that equals the right rule (the `CΓᵀC⁻¹` parity of the line's
-  bilinears), because every SM fermion line reaches a gauge vertex. A toy row
-  built entirely of Yukawa-type bilinears was the first to tell them apart: the
-  case for toy models as validation instruments ([toy-ufo-models](toy-ufo-models.md)).
+- A passing row can be two compensating errors. The toy `qt qt~ > o8 o8`, a line
+  built only of Yukawa-type bilinears, agreed with MadGraph once Yukawa-only lines
+  were exempted from the per-propagator fermion-line reversal sign. The exemption
+  was compensating for a second missing sign: an all-scalar `SSS1`/`SSSS1` vertex
+  did not take its scalar-sink −1. No suite process had a Higgs self-coupling or
+  a Yukawa-only initial-state line interfering with other diagrams; MadGraph's
+  reweighting of `ta+ ta- > t t~ h` exposed both (24 of the 96 diagrams of
+  `ta+ ta- > t t~ h h` had the wrong sign). The exemption was reverted in
+  `7f523ad`: `Diagram::fermion_line_sign` takes one −1 per internal propagator on
+  a non-crossed line, whatever the vertices are
+  ([amplitudes/fermion-line-sign](../amplitudes/fermion-line-sign.md),
+  [toy-ufo-models](toy-ufo-models.md)).
 - The conventions pinned this way, each by a test that fails if it is false, are
   catalogued in
   [amplitudes/convention-sign-inventory](../amplitudes/convention-sign-inventory.md)

@@ -5,6 +5,7 @@ description: "How non-SM rows are banked and gated: per-class restrict cards, or
 status: draft
 tags: [smeftsim, toy-ufo, non-sm, oracle, coverage]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L676-L746", title: "Note 35 V1, SMEFTsim into the oracle pipeline"}
   - {id: n35-l2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L747-L787", title: "Note 35 L2, the SM-limit gate"}

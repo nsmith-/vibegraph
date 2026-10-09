@@ -12,7 +12,8 @@ sources:
   - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L207-L500", title: "myamp.f: set_peaks, width floor, BW and setgrid branches"}
   - {id: mg-dsample, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f", title: "dsample.f: setgrid (938), sample_get_x (1245), transpole call (1396)"}
   - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L5504-L5760", title: "export_v4.py: tstrategy and reorder_tchannels"}
-  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_v4.inc#L174-L185", title: "matrix_madevent_v4.inc: multichannel AMP2 normalisation"}
+  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L214-L228", title: "matrix_madevent_group_v4.inc: multichannel AMP2 and get_channel_cut by sde_strat"}
+  - {id: mg-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4447", title: "banner.py: tmin_for_channel default -1 (hidden)"}
   - {id: maps-rs, resource: "vibegraph-lib/src/phasespace/maps.rs", title: "TauMap, SplitAngle, RungOrder and the auto rules"}
   - {id: channel-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs", title: "draw_invariant, log_scale, draw_t, spine_chain"}
 ---
@@ -102,11 +103,18 @@ MadEvent integrates **one configuration per job**: in a `G<config>/` directory
 (`genps.f:683–687`), and the per-configuration results are summed. Each job has
 its own VEGAS grid. The channel weight partitions `|M|²` among configurations:
 
-- `sde_strategy = 1`: `|A_c|² / Σ_d |A_d|²`, from the `AMP2` array normalised
-  in the generated matrix element (`matrix_madevent_v4.inc:174–185`);
-- `sde_strategy = 2`: the product of the configuration's propagator
-  denominators (`get_channel_cut`, `genps.f:1817`), with t-channel damping
-  `exp((t − t_min)/(t + 1))` below `tmin_for_channel`.
+- `sde_strategy = 1`: `AMP2_c · CC_c / Σ_d AMP2_d · CC_d`, in the grouped
+  matrix-element template (`matrix_madevent_group_v4.inc:214–228`).
+  `CC = get_channel_cut` (`genps.f:1817`) is 1 at the default
+  `tmin_for_channel = −1` and for configurations with fewer than two t-channel
+  lines, so the weight is the familiar `|A_c|² / Σ_d |A_d|²`. The non-grouped
+  template (`matrix_madevent_v4.inc:174–185`) has only that `AMP2` ratio.
+- `sde_strategy = 2`: `CC_c` alone, the product of the configuration's
+  propagator denominators.
+
+Under either strategy, a `tmin_for_channel` above its default −1 multiplies
+`CC` by `exp((t − t_min)/(t + 1))` for each t-channel line with
+`t/s_tot < t_min` (`t` in units of `s_tot`).
 
 The details are [single-diagram enhancement](../../phase-space/madevent-single-diagram-enhancement.md).
 vibegraph instead samples a Kleiss–Pittau mixture `Σ αⱼ gⱼ` with

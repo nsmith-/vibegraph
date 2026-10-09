@@ -46,8 +46,8 @@ codebase itself is [the MadGraph survey](madgraph5-amcnlo.md).
 - **Helicity recycling** (v2.9.0) filters vanishing helicities at run time for
   about a 2× LO speed-up ([helicity recycling](../papers/helicity-recycling-mg5.md)).
 - **ALOHA** keeps physics separate from the output language.
-- **About 400 distinct bug entries since 2011**, a sign of an active
-  regression culture.
+- **About 400 distinct bug entries since 2011** (note 07's count, not
+  recounted at the pin), a sign of an active regression culture.
 
 ## Recurring weaknesses
 

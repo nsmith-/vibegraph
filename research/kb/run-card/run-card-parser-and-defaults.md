@@ -3,6 +3,7 @@ type: Design
 title: MadGraph run_card parsing, defaults and beam modes
 description: "run_card.dat syntax, MadGraph's LO defaults transcribed and checked against a banner.py dump, unknown names as hard errors, the edits applied on resolution, and the two accepted beam modes."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [run-card, parser, defaults, beams, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -127,10 +128,11 @@ card-writing step; vibegraph reads only the card it is given.
 ## The lhaid trap
 
 The pinned NNPDF23_lo_as_0130_qed set is **lhaid 247000**. 244600
-(NNPDF23_nlo_as_0118_qed) and 230000 (NNPDF23_nlo_as_0119, the value in the
-parser fixture `vibegraph-lib/tests/data/run_card_parser_fixture.dat`) are
-different, NLO, non-QED sets — a
+(NNPDF23_nlo_as_0118_qed, an NLO set) and 230000 (NNPDF23_nlo_as_0119, an NLO,
+non-QED set, the value in the parser fixture
+`vibegraph-lib/tests/data/run_card_parser_fixture.dat`) are different sets — a
 parser fixture is not a statement about which set a run uses[^n18-records]
+
 ([scales-pdf/pinned-pdf-set](../scales-pdf/pinned-pdf-set.md)).
 
 Release scope — what is supported at all — is
