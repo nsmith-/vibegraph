@@ -3,6 +3,7 @@ type: Design
 title: MLM run-card parameters and the xqcut cut rewrites
 description: "ickkw, xqcut, maxjetflavor, pdfwgt, alpsfact and use_syst rules; the ptj = mmjj = xqcut and drjj = drjl = 0 rewrites applied when the card is resolved; and the matching combinations that are refused."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [run-card, mlm, matching, xqcut, cuts]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -18,7 +19,7 @@ sources:
 
 MadGraph edits a matched card in three places before anything reads it:
 `banner.py`'s `RunCardLO.check_validity` refuses some combinations and rewrites
-others (`banner.py:4543-4577`), `setrun.f` forces `alpsfact` under systematics
+others (`banner.py:4543-4577`)[^mg-banner-mlm], `setrun.f` forces `alpsfact` under systematics
 (`setrun.f:151-159`), and `setcuts.f` rewrites the jet cuts once `xqcut` is set
 (`setcuts.f:156-189`). vibegraph applies all of them once, in
 `runcard::matching::resolve` (`vibegraph-lib/src/runcard/matching.rs`), called
@@ -36,7 +37,8 @@ the same values[^n41-m1]. What matching then does with these values is
 | `ickkw = 1` with `maxjetflavor = 6` | refused (`MatchedTopJets`) | `banner.py:4556` |
 | `use_syst = T` with `alpsfact ≠ 1` | `alpsfact` set to 1, with a warning, **whether or not matching is on** | `setrun.f:151-159` (`banner.py` does it only under `ickkw > 0`, which the Fortran supersedes) |
 | `xqcut > 0` with `ickkw = 0` | accepted as a pure cut, with a warning | `banner.py`: an error log and a 5 s sleep, then it runs |
-| `ickkw = 1` or `xqcut > 0` at fixed beams or on a decay | refused (`ScaleError::FixedBeamMatching`) | none: no fixed-beam reference, and the fixed-beam integrand cannot zero-weight a point the clustering rejects ([feature/mlm-at-fixed-beams-or-decays-refused](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md)) |
+| `ickkw = 1` or `xqcut > 0` at fixed beams | refused (`ScaleError::FixedBeamMatching`) | none: no fixed-beam reference, and the fixed-beam integrand cannot zero-weight a point the clustering rejects; open, low-priority parity work ([feature/mlm-at-fixed-beams-or-decays-refused](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md)) |
+| `ickkw = 1` or `xqcut > 0` on a decay | refused permanently, today through the same `FixedBeamMatching` | MLM clusters against incoming partons, which a decay lacks ([decisions/mlm-not-on-decays](../decisions/mlm-not-on-decays.md)) |
 | `ickkw = 1` with exactly one μF fixed | refused (`MatchingWithOneFixedFactorisationScale`) | `reweight.f:1138` reads `.not.fixed_fac_scale1.or.fixed_fac_scale2` without the parentheses the surrounding branches imply, applying `scalefact` and `q2bck` to one beam only; refused rather than reproduced |
 | `pdfwgt` | consumed only at `ickkw > 0` | `setrun.f:82` clears it at `ickkw = 0` |
 | `ktscheme ≠ 1`, `chcluster` | refused ([run-card/field-classification](field-classification.md)) | |
@@ -56,7 +58,7 @@ When `xqcut > 0` (`setcuts.f:156-189`)[^mg-setcuts-xqcut]:
   **`ptj = xqcut`**; otherwise a `ptj > xqcut` is set to 0;
 - if `auto_ptj_mjj` and `mmjj ≥ 0`: **`mmjj = xqcut`**; otherwise an
   `mmjj > xqcut` is set to 0;
-- **`drjj = drjl = 0`**, whatever their sign (`banner.py:4562-4571` zeroes any
+- **`drjj = drjl = 0`**, whatever their sign (`banner.py:4566-4573` zeroes any
   nonzero value before `setcuts.f`'s `> 0` test sees it).
 
 Legs with `do_cuts = .false.` are exempt as for every cut: decay products under
@@ -69,8 +71,9 @@ Tests: `xqcut_sets_the_jet_thresholds_under_auto_ptj_mjj`,
 
 ## The τ floor, and why `ptj < xqcut` is refused
 
-MadEvent's `setxqcuts` (`myamp.f:337-560`, called at `setcuts.f:892-955`) builds
-phase-space hints under `xqcut`: jet energy floors `max(ptj, √(xqcut² − m²))`,
+MadEvent's `setxqcuts` (`setcuts.f:892-955`, called at `:883-884`) sets per-leg
+and per-pair `xqcut` thresholds, from which `set_peaks` (`myamp.f:337-560`)
+builds phase-space hints: jet energy floors `max(ptj, √(xqcut² − m²))`,
 an extra floor of `xqcut` on the energy of an outgoing pair meeting in an
 s-channel of the given channel, and a lower limit on τ, `(Σ xe)²/s`. The τ
 limit acts as a hard cut. With the resolved `ptj = xqcut` (the default, the
@@ -121,3 +124,5 @@ the rewrite at a second value)[^n41-m0]. Their gates are
 [^n41-m0]: Note 41 M0: the five reference cards and the card choices beyond the brief.
 [^n41-m1]: Note 41 M1 landed: the run-card rules as implemented, the τ-minimum audit, the `setrun.f:82` finding.
 [^mg-setcuts-xqcut]: MadGraph `setcuts.f:156-189`.
+[^mg-banner-mlm]: MadGraph `banner.py:4543-4577`, `RunCardLO.check_validity`'s matching block.
+

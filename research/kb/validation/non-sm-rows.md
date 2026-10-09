@@ -77,13 +77,13 @@ tensor four-fermion structure or a baryonic colour atom.
 | `gg_to_h_cpeven` / `_cpodd` | `g g > h NP<=1` | `cHG` / + `cHGtil` | `P(1,2)*P(2,1)` VVS; `Epsilon` VVS, its sign via interference |
 | `ee_to_wpwm_cw` | `e+ e- > W+ W- NP<=1` | `cW` + `cWtil` | VVV with three momenta; `Epsilon` VVV |
 | `gg_to_gg_cg` | `g g > g g NP<=1` | `cG` + `cGtil` | higher-derivative VVVV, `Epsilon` VVVV, `f·f·f` colour |
-| `ee_to_ttx_dipole` | `e+ e- > t t~ NP<=1` | `ctZ` + `ctA` (Re and Im) | momentum-slashed γ-chains; `Gamma5` in a chain |
+| `ee_to_ttx_dipole` | `e+ e- > t t~ NP<=1` | `ctW` + `ctB`, Re and Im (the `ctZ`/`ctA` directions) | momentum-slashed γ-chains; `Gamma5` in a chain |
 | `ee_to_zh_smeft` | `e+ e- > Z h NP<=1` | `cHW` + `cHB` + `cHWB` + `cHDD` | derivative VVS, input-scheme shifts |
 | `ee_to_mumu_4f` | `e+ e- > mu+ mu- NP<=1` | `cll1` + `cle` + `cee` | scalar and vector four-fermion, both pairings in one vertex |
 | `uux_to_ttx_4f` | `u u~ > t t~ NP<=1` | `cQj11`, `cQj18`, `ctu1`, `ctu8` | four-quark `T·T` / `Identity·Identity` colour |
 | `tata_to_ttx_tensor4f` | `ta+ ta- > t t~ NP<=1` | `cleQt3` with `MTA`, `ymtau` restored | cyclic tensor⊗tensor |
 | `ee_to_ttx_smeft` | `e+ e- > t t~ NP<=1` | `massless` (all) | every class at once; the σ capstone |
-| `wpwm_to_wpwmz_cw` | `W+ W- > W+ W- Z NP<=1` | `cW` | a five-vector vertex |
+| `wpwm_to_wpwmz_cw` | `W+ W- > W+ W- Z NP<=1` | `cW` + `cWtil` (the same card) | a five-vector vertex |
 
 Card facts that shape the table[^n35-cov]: every cyclic tensor⊗tensor structure
 reaches its vertex only through a lepton-Yukawa coupling, which
@@ -114,7 +114,8 @@ Read the live state from `validation/manifest.toml`; at the time of writing:
   sign fix of note 39, owned by O_W's five-vector and momentum-bearing contact
   structures ([wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md));
   its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
-  for it, which this crate refuses.
+  for it, which this crate refuses for now: `nhel = 1` is in scope but not built
+  ([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md)).
 - **`gg_to_gg_cg`**: `diagrams` info by convention (21 diagrams against
   MadGraph's 27 `NGRAPHS`, one `AMP()` per diagram and colour-ordered contact
   structure, as SM `gg_to_gg` sits at 4/6); `integrals` info, taken at MadGraph's
@@ -128,9 +129,11 @@ Read the live state from `validation/manifest.toml`; at the time of writing:
   banked record at its printed precision.
 - **`AQCDUP` on the six toy rows** is measured, not enforced: MadGraph injects an
   inconsistent `aS` into models that declare none.
-- **`gg_to_ttx_smlimit_qcd2`** is the suite's one scale-change fallback:
-  SMEFTsim's effective `g g h` coupling is not a monomial in `G`, so the model is
-  re-evaluated per scale change; `SCALE_FALLBACK_ROWS` asserts that both ways.
+- **`gg_to_ttx_smlimit_qcd2` and `gg_to_gg_cg`** are the suite's two
+  scale-change fallbacks: SMEFTsim's effective `g g h` coupling and `O_G`'s
+  four-gluon vertex are not monomials in `G`, so the model is re-evaluated per
+  scale change; `SCALE_FALLBACK_ROWS` (`validate_sigma.rs`) asserts membership
+  both ways.
 
 ## The capstone
 
@@ -151,7 +154,9 @@ digest) is pinned by the hermetic `cli_ufo_model.rs`[^n35-c].
 - A rounding both sides share is invisible to the coupling and amplitude gates.
 - The σ gate cannot see amplitude residuals of 1e-12 or a 6e-11 derived-parameter
   spread, far below any budget's Monte-Carlo error.
-- `NP^2==1` and other squared-order constraints are refused, not compared.
+- `NP^2==1` and other squared-order constraints are refused, not compared. They
+  are in scope but not built
+  ([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)).
 
 [^n35-v1]: Note 35 V1.
 [^n35-l2]: Note 35 L2.
