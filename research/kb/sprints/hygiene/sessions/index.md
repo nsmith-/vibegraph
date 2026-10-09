@@ -26,3 +26,4 @@
 
 * [T1 report: tooling and CI fixes](T1-report.md) - Five script and workflow fixes, one commit each; four items meet closes_when, and the acceptance.yml change awaits the next refdata release.
 * [V1 report: mechanical visibility demotion](V1-report.md) - pub lines cut from 2601 to 1359 in vibegraph-lib and to 0 in the two binary crates; dead types deleted; 144 dead_code allows and ~120 de-linked doc links left for V1b.
+* [V1b report: V1's dead-code allows replaced, doc links restored](V1b-report.md) - The 144 dead_code allows became cfg gating (127) or deletions (17); 119 intra-doc links restored; rustdoc builds document private items, with private_intra_doc_links allowed workspace-wide.

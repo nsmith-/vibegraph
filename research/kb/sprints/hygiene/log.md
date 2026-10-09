@@ -46,3 +46,6 @@
     V1's report rather than a resumed V1. Its transcript was about 333k
     tokens, and the user asked for it compacted.
   - The reviews now depend on V1b.
+* **V1b reported** (`hygiene-v1`, 22f1955..371f854). The report is recorded as
+  `sessions/V1b-report.md`. The manager's gate re-run is in progress, and the
+  merge waits on it.
