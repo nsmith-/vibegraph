@@ -1232,7 +1232,7 @@ mod tests {
     /// would leave a per-kind table slot no instruction fills.
     #[test]
     fn instr_kinds_are_a_bijection_onto_the_kind_range() {
-        let mut seen = vec![false; N_KINDS];
+        let mut seen = [false; N_KINDS];
         for &k in <InstrKind as strum::VariantArray>::VARIANTS {
             let i = k.index() as usize;
             assert!(i < N_KINDS, "{k:?} has kind {i}, outside 0..{N_KINDS}");
