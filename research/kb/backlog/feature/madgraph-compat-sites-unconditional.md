@@ -41,3 +41,12 @@ The flag also carries the MadGraph defects that are easy to reproduce
 is reproduced bug-for-bug; off, the more robust calculation runs. A defect
 upstream fixes leaves the flag's scope when the MadGraph pin moves past the
 fix.
+
+- (d) identical particles across decays
+  ([concept](../../process/identical-particles-across-decays.md)): on, one
+  pairing per MadGraph block and the `identical_decay_chain_factor` division,
+  with the interference between pairings dropped; off, every pairing and its
+  interference. Cheap to reproduce: the stitching already marks which stitched
+  diagrams lead to MadGraph's blocks. This site is an approximation rather than
+  a defect, and with the flag on by default it changes today's output on such
+  cards; their σ row is informational, so no gate moves.
