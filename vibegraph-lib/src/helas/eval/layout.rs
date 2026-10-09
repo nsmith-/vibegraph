@@ -8,9 +8,12 @@
 //! resolution and chirality that the generic dispatch decides at runtime are baked into
 //! the instruction at build time.
 //!
-//! The element types are the `wavefn.rs` currents (momentum still embedded), so the
-//! runtime arithmetic is byte-identical to the generic [`WaveformSlot`](super::waveform_slot::WaveformSlot)
-//! forward pass — the layout changes *where* results live, not *how* they are computed.
+//! The arenas hold momentum-stripped values (a bare `C`, `ComplexVector`, `Multivector`
+//! or `Bispinor`); a current's routing momentum lives in the per-point momentum table,
+//! keyed by its node's momentum id. The arithmetic is done by the `*_bare` kernels, which
+//! the [`WaveformSlot`](super::waveform_slot::WaveformSlot) kernels of the generic
+//! forward pass wrap — the layout changes *where* results live, not *how* they are
+//! computed.
 
 use super::analysis::{NodeAnalysis, NodeType, Storage};
 use super::ast::Ast;
@@ -99,7 +102,12 @@ impl std::fmt::Debug for OperandRef {
 /// (a `GammaVout` reads its bra from the flow-out arena and its ket from the flow-in
 /// arena, etc.); variadic/mixed-class operands are a `(start, len)` slice of the shared
 /// [`Program::operands`] table.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, strum::EnumDiscriminants)]
+#[strum_discriminants(
+    name(InstrKind),
+    derive(strum::VariantArray, strum::IntoStaticStr),
+    vis(pub(super))
+)]
 pub(super) enum Instr {
     /// Complex-pool read (coupling or imaginary rational) → a zero-momentum scalar.
     ComplexConst {
@@ -370,131 +378,88 @@ pub(super) enum Instr {
 
 /// The number of [`Instr`] variants, and so of distinct [`Instr::kind`]s.
 #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
-pub(super) const N_KINDS: usize = 54;
+pub(super) const N_KINDS: usize = <InstrKind as strum::VariantArray>::VARIANTS.len();
+
+impl InstrKind {
+    /// A dense index per variant, `0..N_KINDS`. The numbering is not declaration
+    /// order; it is the op-blocking sort key, so renumbering a variant reorders the
+    /// emitted stream.
+    const fn index(self) -> u8 {
+        match self {
+            InstrKind::ComplexConst => 0,
+            InstrKind::RealConst => 1,
+            InstrKind::ExternalScalar => 2,
+            InstrKind::ExternalVector => 3,
+            InstrKind::ExternalFin => 4,
+            InstrKind::ExternalFout => 5,
+            InstrKind::PropagateScalar => 6,
+            InstrKind::PropagateVector => 7,
+            InstrKind::PropagateFin => 8,
+            InstrKind::PropagateFout => 9,
+            InstrKind::AddScalar => 10,
+            InstrKind::AddVector => 11,
+            InstrKind::AddFin => 12,
+            InstrKind::AddFout => 13,
+            InstrKind::MulScalarC => 14,
+            InstrKind::MulScalarR => 15,
+            InstrKind::ScaleVecC => 16,
+            InstrKind::ScaleVecR => 17,
+            InstrKind::ScaleFinC => 18,
+            InstrKind::ScaleFinR => 19,
+            InstrKind::ScaleFoutC => 20,
+            InstrKind::ScaleFoutR => 21,
+            InstrKind::GammaVout => 22,
+            InstrKind::FfvVout => 23,
+            InstrKind::GammaFin => 24,
+            InstrKind::GammaFout => 25,
+            InstrKind::FfvFin => 26,
+            InstrKind::FfvFout => 27,
+            InstrKind::ProjFin => 28,
+            InstrKind::ProjFout => 29,
+            InstrKind::Gamma5Fin => 30,
+            InstrKind::Gamma5Fout => 31,
+            InstrKind::Bilinear => 32,
+            InstrKind::Pseudoscalar => 33,
+            InstrKind::Metric => 34,
+            InstrKind::MetricVout => 35,
+            InstrKind::EpsilonVout => 36,
+            InstrKind::EpsilonAmp => 37,
+            InstrKind::PMom => 38,
+            InstrKind::PMomOut => 39,
+            InstrKind::Flows => 40,
+            InstrKind::Hels => 41,
+            InstrKind::Configs => 42,
+            InstrKind::FierzOut => 43,
+            InstrKind::MultivectorFin => 44,
+            InstrKind::MultivectorFout => 45,
+            InstrKind::FierzPair => 46,
+            InstrKind::ScaleMvC => 47,
+            InstrKind::ScaleMvR => 48,
+            InstrKind::AddMultivector => 49,
+            InstrKind::SigmaVout => 50,
+            InstrKind::SigmaMv => 51,
+            InstrKind::SigmaOut => 52,
+            InstrKind::AddScaled => 53,
+        }
+    }
+}
 
 impl Instr {
     /// A dense index per variant, `0..N_KINDS`: the grouping key of
     /// [`op_blocked_order`], whose run lengths over the stream are what the forward
     /// pass's dispatch branch predicts on.
     pub(super) fn kind(&self) -> u8 {
-        match self {
-            Instr::ComplexConst { .. } => 0,
-            Instr::RealConst { .. } => 1,
-            Instr::ExternalScalar { .. } => 2,
-            Instr::ExternalVector { .. } => 3,
-            Instr::ExternalFin { .. } => 4,
-            Instr::ExternalFout { .. } => 5,
-            Instr::PropagateScalar { .. } => 6,
-            Instr::PropagateVector { .. } => 7,
-            Instr::PropagateFin { .. } => 8,
-            Instr::PropagateFout { .. } => 9,
-            Instr::AddScalar { .. } => 10,
-            Instr::AddVector { .. } => 11,
-            Instr::AddFin { .. } => 12,
-            Instr::AddFout { .. } => 13,
-            Instr::MulScalarC { .. } => 14,
-            Instr::MulScalarR { .. } => 15,
-            Instr::ScaleVecC { .. } => 16,
-            Instr::ScaleVecR { .. } => 17,
-            Instr::ScaleFinC { .. } => 18,
-            Instr::ScaleFinR { .. } => 19,
-            Instr::ScaleFoutC { .. } => 20,
-            Instr::ScaleFoutR { .. } => 21,
-            Instr::GammaVout { .. } => 22,
-            Instr::FfvVout { .. } => 23,
-            Instr::GammaFin { .. } => 24,
-            Instr::GammaFout { .. } => 25,
-            Instr::FfvFin { .. } => 26,
-            Instr::FfvFout { .. } => 27,
-            Instr::ProjFin { .. } => 28,
-            Instr::ProjFout { .. } => 29,
-            Instr::Gamma5Fin { .. } => 30,
-            Instr::Gamma5Fout { .. } => 31,
-            Instr::Bilinear { .. } => 32,
-            Instr::Pseudoscalar { .. } => 33,
-            Instr::Metric { .. } => 34,
-            Instr::MetricVout { .. } => 35,
-            Instr::EpsilonVout { .. } => 36,
-            Instr::EpsilonAmp { .. } => 37,
-            Instr::PMom { .. } => 38,
-            Instr::PMomOut { .. } => 39,
-            Instr::Flows => 40,
-            Instr::Hels => 41,
-            Instr::Configs => 42,
-            Instr::FierzOut { .. } => 43,
-            Instr::MultivectorFin { .. } => 44,
-            Instr::MultivectorFout { .. } => 45,
-            Instr::FierzPair { .. } => 46,
-            Instr::ScaleMvC { .. } => 47,
-            Instr::ScaleMvR { .. } => 48,
-            Instr::AddMultivector { .. } => 49,
-            Instr::SigmaVout { .. } => 50,
-            Instr::SigmaMv { .. } => 51,
-            Instr::SigmaOut { .. } => 52,
-            Instr::AddScaled { .. } => 53,
-        }
+        InstrKind::from(self).index()
     }
 
-    /// Human-readable variant name, for the study's per-kind tables.
+    /// The variant name of a [`kind`](Self::kind), for the study's per-kind tables.
     #[cfg_attr(not(any(test, feature = "eval-schedule-study")), allow(dead_code))]
     pub(super) fn kind_name(kind: u8) -> &'static str {
-        const NAMES: [&str; N_KINDS] = [
-            "ComplexConst",
-            "RealConst",
-            "ExternalScalar",
-            "ExternalVector",
-            "ExternalFin",
-            "ExternalFout",
-            "PropagateScalar",
-            "PropagateVector",
-            "PropagateFin",
-            "PropagateFout",
-            "AddScalar",
-            "AddVector",
-            "AddFin",
-            "AddFout",
-            "MulScalarC",
-            "MulScalarR",
-            "ScaleVecC",
-            "ScaleVecR",
-            "ScaleFinC",
-            "ScaleFinR",
-            "ScaleFoutC",
-            "ScaleFoutR",
-            "GammaVout",
-            "FfvVout",
-            "GammaFin",
-            "GammaFout",
-            "FfvFin",
-            "FfvFout",
-            "ProjFin",
-            "ProjFout",
-            "Gamma5Fin",
-            "Gamma5Fout",
-            "Bilinear",
-            "Pseudoscalar",
-            "Metric",
-            "MetricVout",
-            "EpsilonVout",
-            "EpsilonAmp",
-            "PMom",
-            "PMomOut",
-            "Flows",
-            "Hels",
-            "Configs",
-            "FierzOut",
-            "MultivectorFin",
-            "MultivectorFout",
-            "FierzPair",
-            "ScaleMvC",
-            "ScaleMvR",
-            "AddMultivector",
-            "SigmaVout",
-            "SigmaMv",
-            "SigmaOut",
-            "AddScaled",
-        ];
-        NAMES[kind as usize]
+        <InstrKind as strum::VariantArray>::VARIANTS
+            .iter()
+            .find(|k| k.index() == kind)
+            .map(|&k| k.into())
+            .unwrap_or_else(|| panic!("no instruction kind {kind}"))
     }
 }
 
@@ -585,6 +550,25 @@ fn split_configs(ast: &Ast<Const>, id: NodeId) -> (NodeId, &[NodeId]) {
     }
 }
 
+/// The helicity combinations the evaluator reads out after the pass, each split by
+/// [`split_configs`] into its amplitude root and configuration amplitudes: every child
+/// of an [`Op::Hels`] root in order, or the root itself when there is no helicity
+/// expansion.
+fn readout_combinations(ast: &Ast<Const>) -> impl Iterator<Item = (NodeId, &[NodeId])> {
+    let root = ast.root();
+    let expanded = ast.value(root).op == Op::Hels;
+    let combos: &[NodeId] = if expanded {
+        ast.children_ids(root)
+    } else {
+        &[]
+    };
+    combos
+        .iter()
+        .copied()
+        .chain((!expanded).then_some(root))
+        .map(move |c| split_configs(ast, c))
+}
+
 /// Liveness of every node's result over one execution order: where its last arena read
 /// happens, and whether the evaluator reads it out after the pass.
 pub(super) struct Liveness {
@@ -615,27 +599,16 @@ pub(super) fn liveness(ast: &Ast<Const>, order: &[NodeId]) -> Liveness {
     }
     // Root scalars read out by the evaluator after the pass.
     let mut live_end = vec![false; n];
-    {
-        let root_id = ast.root();
-        let mark = |live_end: &mut Vec<bool>, id: NodeId| {
-            let (amplitude, amps) = split_configs(ast, id);
-            if ast.value(amplitude).op == Op::Flows {
-                for &j in ast.children_ids(amplitude) {
-                    live_end[j as usize] = true;
-                }
-            } else {
-                live_end[amplitude as usize] = true;
-            }
-            for &[_, value] in amps.as_chunks::<2>().0 {
-                live_end[value as usize] = true;
-            }
-        };
-        if ast.value(root_id).op == Op::Hels {
-            for &c in ast.children_ids(root_id) {
-                mark(&mut live_end, c);
+    for (amplitude, amps) in readout_combinations(ast) {
+        if ast.value(amplitude).op == Op::Flows {
+            for &j in ast.children_ids(amplitude) {
+                live_end[j as usize] = true;
             }
         } else {
-            mark(&mut live_end, root_id);
+            live_end[amplitude as usize] = true;
+        }
+        for &[_, value] in amps.as_chunks::<2>().0 {
+            live_end[value as usize] = true;
         }
     }
     let mut expiry_off = vec![0u32; n + 1];
@@ -888,10 +861,7 @@ fn lower_node(
             for &[weight, term] in pairs {
                 let w = ast.value(weight);
                 assert!(
-                    matches!(
-                        w.op,
-                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
-                    ),
+                    w.op.is_pool_leaf(),
                     "AddScaled weight must be a constant-pool leaf, got {w:?}"
                 );
                 let class = match w.leaf.kind() {
@@ -1181,7 +1151,6 @@ impl Program {
             dest.push(loc[id as usize]);
         }
 
-        let root_id = ast.root();
         let mut amp_locs: Vec<u32> = Vec::new();
         let mut amp_weights: Vec<AmpWeight> = Vec::new();
         let mut n_amps: Option<u32> = None;
@@ -1191,15 +1160,9 @@ impl Program {
         let mut take_amps = |amps: &[NodeId], loc: &[u32]| {
             for &[weight, value] in amps.as_chunks::<2>().0 {
                 let w = ast.value(weight);
-                amp_weights.push(match (w.op, w.leaf.kind()) {
-                    (
-                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat,
-                        ConstKind::Real,
-                    ) => AmpWeight::Real(w.leaf.index()),
-                    (
-                        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat,
-                        ConstKind::Complex,
-                    ) => AmpWeight::Complex(w.leaf.index()),
+                amp_weights.push(match w.leaf.kind() {
+                    ConstKind::Real if w.op.is_pool_leaf() => AmpWeight::Real(w.leaf.index()),
+                    ConstKind::Complex if w.op.is_pool_leaf() => AmpWeight::Complex(w.leaf.index()),
                     _ => panic!("configuration weight must be a constant-pool leaf, got {w:?}"),
                 });
                 amp_locs.push(loc[value as usize]);
@@ -1212,46 +1175,36 @@ impl Program {
             );
             n_amps = Some(k);
         };
-        let root = match ast.value(root_id).op {
-            Op::Hels => {
-                let mut n_flows = 0u32;
-                let mut locs: Vec<u32> = Vec::new();
-                for &c in ast.children_ids(root_id) {
-                    let (amplitude, amps) = split_configs(ast, c);
-                    take_amps(amps, &loc);
-                    let combo_flows = if ast.value(amplitude).op == Op::Flows {
-                        let jamps = ast.children_ids(amplitude);
-                        locs.extend(jamps.iter().map(|&j| loc[j as usize]));
-                        jamps.len() as u32
-                    } else {
-                        locs.push(loc[amplitude as usize]);
-                        1
-                    };
-                    assert!(
-                        n_flows == 0 || n_flows == combo_flows,
-                        "helicity combinations disagree on flow count"
-                    );
-                    n_flows = combo_flows;
-                }
-                RootKind::Hels {
-                    n_flows,
-                    locs: locs.into_boxed_slice(),
-                }
+        let mut n_flows: Option<u32> = None;
+        let mut flows_root = false;
+        let mut locs: Vec<u32> = Vec::new();
+        for (amplitude, amps) in readout_combinations(ast) {
+            take_amps(amps, &loc);
+            flows_root = ast.value(amplitude).op == Op::Flows;
+            let combo_flows = if flows_root {
+                let jamps = ast.children_ids(amplitude);
+                locs.extend(jamps.iter().map(|&j| loc[j as usize]));
+                jamps.len() as u32
+            } else {
+                locs.push(loc[amplitude as usize]);
+                1
+            };
+            assert_eq!(
+                n_flows.unwrap_or(combo_flows),
+                combo_flows,
+                "helicity combinations disagree on flow count"
+            );
+            n_flows = Some(combo_flows);
+        }
+        let root = if ast.value(ast.root()).op == Op::Hels {
+            RootKind::Hels {
+                n_flows: n_flows.unwrap_or(0),
+                locs: locs.into_boxed_slice(),
             }
-            _ => {
-                let (amplitude, amps) = split_configs(ast, root_id);
-                take_amps(amps, &loc);
-                if ast.value(amplitude).op == Op::Flows {
-                    RootKind::Flows(
-                        ast.children_ids(amplitude)
-                            .iter()
-                            .map(|&c| loc[c as usize])
-                            .collect(),
-                    )
-                } else {
-                    RootKind::Single(loc[amplitude as usize])
-                }
-            }
+        } else if flows_root {
+            RootKind::Flows(locs.into_boxed_slice())
+        } else {
+            RootKind::Single(locs[0])
         };
 
         Program {
@@ -1267,5 +1220,26 @@ impl Program {
             amp_weights: amp_weights.into_boxed_slice(),
             n_amps: n_amps.unwrap_or(0),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Instr, InstrKind, N_KINDS};
+
+    /// The kind numbering is a bijection from the variants onto `0..N_KINDS`: two
+    /// variants sharing a kind would interleave in the op-blocked order, and a gap
+    /// would leave a per-kind table slot no instruction fills.
+    #[test]
+    fn instr_kinds_are_a_bijection_onto_the_kind_range() {
+        let mut seen = vec![false; N_KINDS];
+        for &k in <InstrKind as strum::VariantArray>::VARIANTS {
+            let i = k.index() as usize;
+            assert!(i < N_KINDS, "{k:?} has kind {i}, outside 0..{N_KINDS}");
+            assert!(!seen[i], "{k:?} shares kind {i} with another variant");
+            seen[i] = true;
+            assert_eq!(Instr::kind_name(k.index()), <&str>::from(k));
+        }
+        assert!(seen.iter().all(|&s| s), "kinds do not fill 0..{N_KINDS}");
     }
 }

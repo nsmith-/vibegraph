@@ -624,37 +624,9 @@ impl LorentzEvalTree {
             nodes: vec![],
             root: None,
         };
-        let mut sign = 1.0;
+        let (mut sign, mut metric_vertex_applied) = vertex_contact_sign(term, spins);
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
-        // Whether this term's once-per-vertex −1 has been applied; guards against
-        // double application for structures with several Metric ops (VVVV).
-        let mut metric_vertex_applied = false;
-
-        // An all-vector contact of four or more legs carries the −1 as a property of
-        // the *vertex*, not of the operators a particular term happens to contain: the
-        // four-gluon vertex and the field-strength operators sharing its legs sit in
-        // one interaction whose structures range over pure metrics, momentum products
-        // and Levi-Civita tensors, and a term-by-term test would give the same vertex
-        // different signs (and leave the Levi-Civita-only terms, which carry no Metric
-        // at all, unsigned). Applying it here also covers those terms. Where the −1
-        // survives is a diagram-level convention: `root_diagram::vector_contact_sign`
-        // cancels it for every contact that should not carry it.
-        if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
-            metric_vertex_applied = true;
-            sign = -sign;
-        }
-        // A pure scalar contact (`SSS1`, `SSSS1`: all legs scalars, no operator) sinks
-        // into a scalar wherever it is rooted, so it takes the same −1 against the
-        // −i/D scalar propagator as the scalar-sink bilinears and the pure-metric `VVS`
-        // below; with no operator it reaches neither arm. Pinned per diagram against
-        // MadGraph's `AMP()` on `ta+ ta- > t t~ h` (one `HHH`) and `ta+ ta- > t t~ h h`
-        // (`HHH` as amplitude and as current, `HHHH`, two `HHH` cancelling). A
-        // derivative all-scalar structure, which carries `P` operators, is not covered
-        // by any oracle and is left as it was.
-        if spins.len() >= 3 && spins.iter().all(|&s| s == 1) && term.ops.is_empty() {
-            sign = -sign;
-        }
 
         // If idx is specified, build the tree rooted at that leg
         if let Some(root_leg) = idx {
@@ -695,170 +667,16 @@ impl LorentzEvalTree {
             else {
                 break; // no more unvisited ops
             };
-            // pick a leg index from this op that we know how to contract and return a scalar
-            let term = match op {
-                LorentzOp::Gamma { mu, .. } => {
-                    // route through a vector leg, which can always be contracted with a metric to return a scalar
-                    // two-pass: one for the gamma and one for the leg
-                    let v_in =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    let v_out =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::Metric {
-                        mu: v_in,
-                        nu: v_out,
-                    })
-                }
-                LorentzOp::ProjM { i, j } => {
-                    visited_ops.push(iop);
-                    // Scalar-sink bilinear (amplitude or scalar-out current): −1
-                    // against the −i/D scalar propagator (see `propagate_core`),
-                    // on top of the crossed-pair −1.
-                    sign = -sign;
-                    if pair_crossed(*i, *j, flows) {
-                        sign = -sign;
-                    }
-                    let child_i =
-                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_j =
-                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::ProjMAmp {
-                        i: child_i,
-                        j: child_j,
-                    })
-                }
-                LorentzOp::ProjP { i, j } => {
-                    visited_ops.push(iop);
-                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
-                    sign = -sign;
-                    if pair_crossed(*i, *j, flows) {
-                        sign = -sign;
-                    }
-                    let child_i =
-                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_j =
-                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::ProjPAmp {
-                        i: child_i,
-                        j: child_j,
-                    })
-                }
-                LorentzOp::Metric { mu, nu } => {
-                    visited_ops.push(iop);
-                    let child_mu =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_nu =
-                        tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
-                    // A pure-metric boson structure (VVS/VVSS) carries an explicit
-                    // −1 vertex factor, once per term (Gamma-/P-carrying structures —
-                    // FFV, VVV — contract plainly). The sign holds whether the
-                    // contraction sinks into the *amplitude* or into a scalar output
-                    // leg (the H-current from two Z chains, −1 against the −i/D scalar
-                    // propagator): both are pinned per-diagram against MadGraph
-                    // AMP() — gg→gg for the amplitude root, the uux 2→6 and b b̄ 2→6
-                    // H classes for the output-leg root. The all-vector contact takes
-                    // the same −1 from the vertex-level test above, whatever its
-                    // structure contains.
-                    let pure_metric = !term
-                        .ops
-                        .iter()
-                        .any(|op| matches!(op, LorentzOp::P { .. } | LorentzOp::Gamma { .. }));
-                    if pure_metric && !metric_vertex_applied {
-                        metric_vertex_applied = true;
-                        sign = -sign;
-                    }
-                    tree.add_node(LorentzEvalNode::Metric {
-                        mu: child_mu,
-                        nu: child_nu,
-                    })
-                }
-                LorentzOp::P { mu, .. } => {
-                    // p^μ contracted with the vector leg at the same index
-                    let p_node =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    let leg_node =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::Metric {
-                        mu: p_node,
-                        nu: leg_node,
-                    })
-                }
-                LorentzOp::Identity { i, j } => {
-                    visited_ops.push(iop);
-                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
-                    sign = -sign;
-                    if pair_crossed(*i, *j, flows) {
-                        sign = -sign;
-                    }
-                    let child_i =
-                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_j =
-                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::IdentityAmp {
-                        i: child_i,
-                        j: child_j,
-                    })
-                }
-                LorentzOp::Gamma5 { i, j } => {
-                    visited_ops.push(iop);
-                    // Scalar-sink bilinear: −1, as in the ProjM arm above.
-                    sign = -sign;
-                    if pair_crossed(*i, *j, flows) {
-                        sign = -sign;
-                    }
-                    let child_i =
-                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_j =
-                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::Gamma5Amp {
-                        i: child_i,
-                        j: child_j,
-                    })
-                }
-                LorentzOp::Epsilon { mu, nu, rho, sigma } => {
-                    visited_ops.push(iop);
-                    let a =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    let b =
-                        tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
-                    let c =
-                        tree.build_child(term, *rho, &mut visited_ops, flows, None, &mut sign)?;
-                    let d =
-                        tree.build_child(term, *sigma, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::EpsilonAmp { a, b, c, d })
-                }
-                LorentzOp::Sigma { mu, nu, i, j } => {
-                    visited_ops.push(iop);
-                    // Both Lorentz indices sink into the amplitude (or into a scalar
-                    // output leg), so the structure closes the same way an FFV `Gamma`
-                    // does: build the vector current the pair produces and contract it
-                    // with whatever sits at the remaining slot.
-                    let child_i =
-                        tree.build_child(term, *i, &mut visited_ops, flows, None, &mut sign)?;
-                    let child_j =
-                        tree.build_child(term, *j, &mut visited_ops, flows, None, &mut sign)?;
-                    let v =
-                        tree.build_child(term, *nu, &mut visited_ops, flows, None, &mut sign)?;
-                    let current = tree.add_node(LorentzEvalNode::SigmaVout {
-                        i: child_i,
-                        j: child_j,
-                        v,
-                    });
-                    let other =
-                        tree.build_child(term, *mu, &mut visited_ops, flows, None, &mut sign)?;
-                    tree.add_node(LorentzEvalNode::Metric {
-                        mu: current,
-                        nu: other,
-                    })
-                }
-                _ => {
-                    todo!(
-                        "Routing for remaining ops not yet implemented in tree builder: {:?}",
-                        op
-                    );
-                }
-            };
-            term_roots.push(term);
+            let root = tree.scalar_root(
+                term,
+                iop,
+                op,
+                &mut visited_ops,
+                flows,
+                &mut sign,
+                &mut metric_vertex_applied,
+            )?;
+            term_roots.push(root);
         }
 
         // Find any scalar legs not connected to any operator and add them as scalar roots.
@@ -890,6 +708,125 @@ impl LorentzEvalTree {
         tree.root = Some(root);
 
         Ok((tree.compact_legs(idx), sign, reversed_parity))
+    }
+
+    /// Root one operator no leg-rooted walk reached as a scalar: an amplitude
+    /// contraction, or a scalar factor of an off-shell current. Marks the operators it
+    /// consumes in `visited_ops` and applies the scalar-sink and pure-metric signs.
+    #[allow(clippy::too_many_arguments)]
+    fn scalar_root(
+        &mut self,
+        term: &LorentzTerm,
+        iop: usize,
+        op: &LorentzOp,
+        visited_ops: &mut Vec<usize>,
+        flows: &[Option<LegAdjoint>],
+        sign: &mut f64,
+        metric_vertex_applied: &mut bool,
+    ) -> Result<usize, RootLorentzError> {
+        Ok(match op {
+            LorentzOp::Gamma { mu, .. } => {
+                // route through a vector leg, which can always be contracted with a metric to return a scalar
+                // two-pass: one for the gamma and one for the leg
+                let v_in = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                let v_out = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                self.add_node(LorentzEvalNode::Metric {
+                    mu: v_in,
+                    nu: v_out,
+                })
+            }
+            LorentzOp::ProjM { i, j }
+            | LorentzOp::ProjP { i, j }
+            | LorentzOp::Identity { i, j }
+            | LorentzOp::Gamma5 { i, j } => {
+                visited_ops.push(iop);
+                // Scalar-sink bilinear (amplitude or scalar-out current): −1
+                // against the −i/D scalar propagator (see `propagate_core`),
+                // on top of the crossed-pair −1.
+                *sign = -*sign;
+                if pair_crossed(*i, *j, flows) {
+                    *sign = -*sign;
+                }
+                let i = self.build_child(term, *i, visited_ops, flows, None, sign)?;
+                let j = self.build_child(term, *j, visited_ops, flows, None, sign)?;
+                self.add_node(match op {
+                    LorentzOp::ProjM { .. } => LorentzEvalNode::ProjMAmp { i, j },
+                    LorentzOp::ProjP { .. } => LorentzEvalNode::ProjPAmp { i, j },
+                    LorentzOp::Identity { .. } => LorentzEvalNode::IdentityAmp { i, j },
+                    _ => LorentzEvalNode::Gamma5Amp { i, j },
+                })
+            }
+            LorentzOp::Metric { mu, nu } => {
+                visited_ops.push(iop);
+                let child_mu = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                let child_nu = self.build_child(term, *nu, visited_ops, flows, None, sign)?;
+                // A pure-metric boson structure (VVS/VVSS) carries an explicit
+                // −1 vertex factor, once per term (Gamma-/P-carrying structures —
+                // FFV, VVV — contract plainly). The sign holds whether the
+                // contraction sinks into the *amplitude* or into a scalar output
+                // leg (the H-current from two Z chains, −1 against the −i/D scalar
+                // propagator): both are pinned per-diagram against MadGraph
+                // AMP() — gg→gg for the amplitude root, the uux 2→6 and b b̄ 2→6
+                // H classes for the output-leg root. The all-vector contact takes
+                // the same −1 from [`vertex_contact_sign`], whatever its
+                // structure contains.
+                let pure_metric = !term
+                    .ops
+                    .iter()
+                    .any(|op| matches!(op, LorentzOp::P { .. } | LorentzOp::Gamma { .. }));
+                if pure_metric && !*metric_vertex_applied {
+                    *metric_vertex_applied = true;
+                    *sign = -*sign;
+                }
+                self.add_node(LorentzEvalNode::Metric {
+                    mu: child_mu,
+                    nu: child_nu,
+                })
+            }
+            LorentzOp::P { mu, .. } => {
+                // p^μ contracted with the vector leg at the same index
+                let p_node = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                let leg_node = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                self.add_node(LorentzEvalNode::Metric {
+                    mu: p_node,
+                    nu: leg_node,
+                })
+            }
+            LorentzOp::Epsilon { mu, nu, rho, sigma } => {
+                visited_ops.push(iop);
+                let a = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                let b = self.build_child(term, *nu, visited_ops, flows, None, sign)?;
+                let c = self.build_child(term, *rho, visited_ops, flows, None, sign)?;
+                let d = self.build_child(term, *sigma, visited_ops, flows, None, sign)?;
+                self.add_node(LorentzEvalNode::EpsilonAmp { a, b, c, d })
+            }
+            LorentzOp::Sigma { mu, nu, i, j } => {
+                visited_ops.push(iop);
+                // Both Lorentz indices sink into the amplitude (or into a scalar
+                // output leg), so the structure closes the same way an FFV `Gamma`
+                // does: build the vector current the pair produces and contract it
+                // with whatever sits at the remaining slot.
+                let child_i = self.build_child(term, *i, visited_ops, flows, None, sign)?;
+                let child_j = self.build_child(term, *j, visited_ops, flows, None, sign)?;
+                let v = self.build_child(term, *nu, visited_ops, flows, None, sign)?;
+                let current = self.add_node(LorentzEvalNode::SigmaVout {
+                    i: child_i,
+                    j: child_j,
+                    v,
+                });
+                let other = self.build_child(term, *mu, visited_ops, flows, None, sign)?;
+                self.add_node(LorentzEvalNode::Metric {
+                    mu: current,
+                    nu: other,
+                })
+            }
+            _ => {
+                todo!(
+                    "Routing for remaining ops not yet implemented in tree builder: {:?}",
+                    op
+                );
+            }
+        })
     }
 
     /// Drop the output leg's hole from the input-leg numbering.
@@ -1055,6 +992,36 @@ fn other_spinor_index(op: &LorentzOp, idx: isize) -> Option<isize> {
     } else {
         None
     }
+}
+
+/// The sign a term takes from the shape of its vertex alone, before any operator is
+/// rooted, and whether that sign is the once-per-vertex −1 a pure-metric term would
+/// otherwise apply (so a structure with several `Metric` ops, VVVV, applies it once).
+fn vertex_contact_sign(term: &LorentzTerm, spins: &[i32]) -> (f64, bool) {
+    // An all-vector contact of four or more legs carries the −1 as a property of
+    // the *vertex*, not of the operators a particular term happens to contain: the
+    // four-gluon vertex and the field-strength operators sharing its legs sit in
+    // one interaction whose structures range over pure metrics, momentum products
+    // and Levi-Civita tensors, and a term-by-term test would give the same vertex
+    // different signs (and leave the Levi-Civita-only terms, which carry no Metric
+    // at all, unsigned). Applying it here also covers those terms. Where the −1
+    // survives is a diagram-level convention: `root_diagram::vector_contact_sign`
+    // cancels it for every contact that should not carry it.
+    if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
+        return (-1.0, true);
+    }
+    // A pure scalar contact (`SSS1`, `SSSS1`: all legs scalars, no operator) sinks
+    // into a scalar wherever it is rooted, so it takes the same −1 against the
+    // −i/D scalar propagator as the scalar-sink bilinears and the pure-metric `VVS`
+    // of [`LorentzEvalTree::scalar_root`]; with no operator it reaches neither arm. Pinned per diagram against
+    // MadGraph's `AMP()` on `ta+ ta- > t t~ h` (one `HHH`) and `ta+ ta- > t t~ h h`
+    // (`HHH` as amplitude and as current, `HHHH`, two `HHH` cancelling). A
+    // derivative all-scalar structure, which carries `P` operators, is not covered
+    // by any oracle and takes no sign here.
+    if spins.len() >= 3 && spins.iter().all(|&s| s == 1) && term.ops.is_empty() {
+        return (-1.0, false);
+    }
+    (1.0, false)
 }
 
 fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {

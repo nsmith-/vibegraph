@@ -649,9 +649,7 @@ impl Folded {
             let n = self.const_ast.value(id);
             let kids = self.const_ast.children_ids(id);
             let power = match n.op {
-                Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => {
-                    leaf_power(n.leaf)
-                }
+                op if op.is_pool_leaf() => leaf_power(n.leaf),
                 // A product of monomials is a monomial of the summed power.
                 Op::Mul => kids.iter().try_fold(0i32, |acc, &k| {
                     node[k as usize].map(|p: i32| acc.saturating_add(p))
@@ -747,15 +745,6 @@ struct FoldRewrite {
     fold_real: Box<[NodeId]>,
 }
 
-/// Whether an op is a bare constant-pool leaf (already a single pool read), as opposed
-/// to a constant *composite* (`Mul`/`Add` of constants) worth collapsing.
-fn is_const_leaf_op(op: Op) -> bool {
-    matches!(
-        op,
-        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
-    )
-}
-
 /// Rewrite `ast0` so every maximal constant composite becomes one pool-read leaf
 /// (`Op::CoeffRat` over a `Const::Complex`/`Const::Real` index past the base pool).
 ///
@@ -795,7 +784,7 @@ fn fold_constant_subgraphs(
             kept[c as usize] = true;
             if an0.is_const(c) {
                 // A bare constant leaf stays a pool read; a constant composite folds.
-                if !is_const_leaf_op(ast0.value(c).op) {
+                if !ast0.value(c).op.is_pool_leaf() {
                     fold_root[c as usize] = true;
                 }
             } else {
@@ -848,7 +837,7 @@ fn fold_constant_subgraphs(
     let mut real_product = vec![false; n];
     for id in ast0.iter() {
         let node = ast0.value(id);
-        real_product[id as usize] = if is_const_leaf_op(node.op) {
+        real_product[id as usize] = if node.op.is_pool_leaf() {
             an0.out_type(id) == NodeType::RealConst
         } else {
             node.op == Op::Mul
@@ -1009,7 +998,7 @@ fn collect_constant_factors(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
         }
         let new_kids = kids.iter().map(|&k| remap[k as usize]).collect();
         let new = b.add(node.op, node.leaf, new_kids);
-        if is_const_leaf_op(node.op) {
+        if node.op.is_pool_leaf() {
             leaf_node.entry((node.op, node.leaf)).or_insert(new);
         }
         remap[id as usize] = new;
@@ -1031,7 +1020,7 @@ fn constant_factors(
         for &c in ast.children_ids(k) {
             constant_factors(ast, c, remap, leaf_node, out);
         }
-    } else if is_const_leaf_op(node.op) {
+    } else if node.op.is_pool_leaf() {
         out.push(leaf_node[&(node.op, node.leaf)]);
     } else {
         out.push(remap[k as usize]);
@@ -1122,7 +1111,7 @@ fn fuse_scaled_sums(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
         let &[a, b] = ast.children_ids(k) else {
             return None;
         };
-        let is_weight = |c: NodeId| is_const_leaf_op(ast.value(c).op) && an.is_const(c);
+        let is_weight = |c: NodeId| ast.value(c).op.is_pool_leaf() && an.is_const(c);
         let (w, x) = if is_weight(a) {
             (a, b)
         } else if is_weight(b) {
