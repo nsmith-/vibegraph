@@ -5,6 +5,7 @@ description: "Match parameter provenance, then compare per-diagram x per-helicit
 status: draft
 tags: [amplitudes, debugging, oracle, madgraph, signs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n12-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L11-L19", title: "Note 12 — the 2→6 continuum bug"}
   - {id: n12-hard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L20-L36", title: "Note 12 — why it was hard"}

@@ -5,6 +5,7 @@ description: "At least five seeds (ten under a gate tighter than 0.3%), stored p
 status: draft
 tags: [madgraph, references, seeds, statistics, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n34-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S2 — a five-seed misread, and MadGraph's last-3 combination"}
   - {id: n34-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 — the converged llj value against MadGraph's combination"}
@@ -67,7 +68,10 @@ directories too. The shared-directory reading is one of the unseparated causes o
 ([ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
 
 **Which references are seeded.** `grammar_sigma_reference.json`, the decay, decay-chain
-and on-shell-veto tables, and `mlm_sigma_reference.json` are seeded. The cross
+and on-shell-veto tables, and `mlm_sigma_reference.json` are seeded through
+`madevent_seeds.sh`; `higgs_window_reference.json` (its unwindowed control) and
+`pta_window_reference.json` also store per-seed runs, from their own generators'
+seed loops. The cross
 sections in `sigma_reference.json` and `hadronic_sigma_reference.json` predate the
 rule and are single runs; a row moved onto a seeded reference says so in its
 manifest cell.

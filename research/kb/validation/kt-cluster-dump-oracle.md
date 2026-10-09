@@ -5,6 +5,7 @@ description: "Instrumented MadGraph 3.7.1 dumps every candidate, merge, frame ch
 status: draft
 tags: [kt-clustering, scales, madgraph, oracle, per-event]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-k110, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1146-L1267", title: "Note 28 K1.10 — what an instrumented run must record"}
   - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 K1.11 — findings for the engine"}

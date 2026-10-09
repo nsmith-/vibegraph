@@ -5,6 +5,7 @@ description: "Crate couplings against MadGraph's Python model_reader (the arbite
 status: draft
 tags: [couplings, madgraph, oracle, ufo, model]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5 — a coupling-level oracle ahead of the amplitude gate"}
   - {id: code-coupling, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/coupling_oracle.rs", title: "vibegraph-lib/tests/coupling_oracle.rs"}

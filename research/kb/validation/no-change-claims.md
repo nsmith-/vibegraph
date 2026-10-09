@@ -5,6 +5,7 @@ description: "How 'nothing else moved' is measured: per-cell report JSON and the
 status: draft
 tags: [validation, byte-identity, regression, procedure, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-k5b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3237-L3272", title: "Note 28 K5b.6, the report differing on five rows"}
   - {id: n28-c23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3888-L3917", title: "Note 28 C2.3, blast radius measured"}
@@ -28,11 +29,13 @@ set of cells or cases written down beforehand
 
 `pixi run --skip-deps validate` writes one JSON per measured cell under
 `target/validation-report/{integrals,samples}/` (`sigma_vg_pb`, `sigma_vg_err_pb`,
-`rel`, `pull`, `chi2_dof`, `per_seed`) and renders `report.md`;
-`validation/validate.sh` deletes the directory first, so every cell is this
-invocation's measurement ([validation-report](validation-report.md)). Always
-`--skip-deps`: a bare `pixi run validate` takes the MadGraph dependency live and
-starts a multi-hour regeneration.
+`rel`, `pull`, `chi2_dof`, `per_seed` on an `integrals` cell) and renders
+`report.md`; `validation/validate.sh` first deletes the four category
+directories and `host.json`, so every cell is this invocation's measurement
+([validation-report](validation-report.md)). Once the inputs are on disk, use
+`--skip-deps`: a bare `pixi run validate` first re-runs its fetch tasks (the SM
+submodule, both PDF sets, the refdata bundle). The banked layer never runs
+MadGraph.
 
 Steps[^n29-b6]:
 1. Before touching a production line, on a clean tree: run it, copy

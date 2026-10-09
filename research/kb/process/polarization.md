@@ -19,6 +19,7 @@ sources:
   - {id: mg-frame, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4296", title: "MadGraph banner.py, me_frame"}
 measured:
   - {commit: 3c023b2, pr: 12, landed_in: 1539abc, command: "cargo test -p vibegraph-lib --test polarization_census --test polarization_frame; amplitude_oracle polarized rows"}
+  - {commit: e9177b5, pr: 12, landed_in: 1539abc, command: "validate_sigma the_grammar_rows_match_madevents_seeds: ten seeds at 160 000 × 6 against grammar_sigma_reference.json"}
 ---
 
 A polarized leg restricts that leg's helicity sum to the listed states. For external

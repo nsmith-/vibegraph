@@ -5,6 +5,7 @@ description: "The CF matrix and colour-basis order against matrix1_orig.f with s
 status: draft
 tags: [colour-flow, madgraph, oracle, lhef, icolup]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-caveat, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16 — the NCOLOR=6 JAMP question, resolved"}
   - {id: n16-strategy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L423-L456", title: "Note 16 §3 — validation strategy (CF oracle)"}

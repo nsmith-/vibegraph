@@ -5,6 +5,7 @@ description: "The five MLM rows: per-@N sigma through the composite integrand ag
 status: draft
 tags: [mlm, sigma, madevent-reference, seed-policy, long-tier]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {commit: 590f87a, host: "Apple M3 Max (16 cores), macOS 15.7", command: "pixi run -e madgraph --skip-deps validate-mlm-sigma"}
 sources:
@@ -61,7 +62,8 @@ matching is on), and this crate applies the same override, so a card with
   true`): the samples-grade `run_01`, itself the first run of a fresh directory,
   and twenty fresh directories `run_s20261101`…`20`. Its error is their spread,
   which puts MadEvent's measured inter-directory spread into the tolerance
-  (`@2` per run: sd 0.93 pb, 0.71%, against 0.84 pb quoted). The other rows'
+  (`@2` per run at `refdata-9`: sd 0.89 pb, 0.68%, against about 0.82 pb
+  quoted, χ²/dof 1.17, computed from the committed per-run values). The other rows'
   references are `run_01` plus nine seeds run in one shared directory; those
   seeds inherit each other's grids and scatter at χ²/dof 0.3–0.8, too little to be
   independent draws, and on the mixed row the shared directory read `@1` 0.43%

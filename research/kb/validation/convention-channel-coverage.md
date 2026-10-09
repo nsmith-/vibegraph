@@ -5,6 +5,7 @@ description: "Guard processes asserted to exercise every sign branch, mutation e
 status: draft
 tags: [amplitudes, signs, coverage, rooting, non-vacuity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — the rooting-soundness gate"}
   - {id: n19-v6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L711-L750", title: "Note 19 V6 — branch-level coverage and the guard census"}

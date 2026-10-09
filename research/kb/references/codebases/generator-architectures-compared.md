@@ -21,7 +21,7 @@ against MadGraph's own numbers. The surveys are
 | | MadGraph5_aMC@NLO | Sherpa / COMIX | POWHEG-BOX-V2 |
 |---|---|---|---|
 | What it is | a generator: model, diagrams, code, integration, events | a full framework; COMIX is its tree-level ME generator | an NLO+PS framework; no ME generation |
-| Amplitude unit | one Feynman diagram, a chain of ALOHA (HELAS-style) calls in generated Fortran | an off-shell current `J(S)`, built recursively by `Vertex::Evaluate()` | the user's `setborn`, `setvirtual`, `sigreal_btl` |
+| Amplitude unit | one Feynman diagram, a chain of ALOHA (HELAS-style) calls in generated Fortran | an off-shell current `J(S)`, built recursively by `Vertex::Evaluate()` | the user's `setborn`, `setvirtual`, `setreal` |
 | Cost growth | factorial in the number of legs (number of diagrams), with sub-diagram reuse | about `3ⁿ` recursion steps | whatever the user's code costs |
 | Colour | diagrams accumulate into colour-stripped partial amplitudes (JAMPs) contracted with a precomputed colour matrix | colour-dressed currents carry explicit indices; external colours summed or sampled by `Color_Integrator` | colour-correlated Born `bornjk` for subtraction |
 | Helicity | an explicit loop over helicity configurations calling the generated routines, with run-time filtering of vanishing ones | `Spin_Structure` holds all configurations; `Helicity_Integrator` sums or samples | inside the user's code |

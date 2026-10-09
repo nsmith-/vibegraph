@@ -3,6 +3,7 @@ type: Physics Convention
 title: MadGraph cut conventions (cuts.f) and what vibegraph implements
 description: "Cut families and class membership, rapidity not pseudorapidity, ΔR and mass thresholds as signed squares, lab-frame evaluation, and parse-and-detect refusal of unimplemented cuts."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [run-card, cuts, conventions, madgraph-parity, kinematics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -10,9 +11,9 @@ sources:
   - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L312-L341", title: "Note 18 §2.6, cuts.rs as a compiled filter"}
   - {id: n18-h6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, H6 cuts.f convention pins and H7 lab-frame cuts"}
   - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome, load-bearing findings"}
-  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L219-L221", title: "MadGraph LO cuts.f (FIRSTTIME squaring of dr)"}
+  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L225", title: "MadGraph LO cuts.f (FIRSTTIME squaring of dr)"}
   - {id: mg-kin, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L95", title: "MadGraph kin_functions.f rap, R2, DELTA_PHI"}
-  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L212-L217", title: "MadGraph setcuts.f class membership"}
+  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L200-L235", title: "MadGraph setcuts.f class membership"}
 ---
 
 # MadGraph cut conventions and what vibegraph implements
@@ -28,7 +29,7 @@ letter classes and bakes the active thresholds into a flat check list;
 generated Fortran (`SubProcesses/cuts.f`, `setcuts.f`, `Source/kin_functions.f`
 of the LO template), not the run-card comments or the Python layer[^n18-design].
 
-## Class membership (`setcuts.f:212-217`)
+## Class membership (`setcuts.f:200-235`)
 
 | class | rule |
 |---|---|
@@ -50,15 +51,15 @@ under `cut_decays = F`, for decay products of a forced line[^mg-setcuts].
   as `abs(rap)` at `cuts.f:426`). Equal to pseudorapidity for massless legs, but
   rapidity is the enforced definition[^mg-kin].
 - **ΔR² = Δφ² + Δy²** (`kin_functions.f:42`, `R2`), with
-  `Δφ = acos(clamp(·, ±0.99999999))` (`DELTA_PHI`, `:180`), the azimuthal
+  `Δφ = acos(clamp(·, ±0.99999999))` (`DELTA_PHI`, `:164`, clamp at `:181-182`), the azimuthal
   opening angle in `[0, π]`, so wrap-around is intrinsic. The clamp invents up to
   `acos(0.99999999) ≈ 1.5e-4` of separation for a collinear pair, and every
   separation bound derived from a ΔR threshold is taken at the correspondingly
   relaxed radius (`DELTA_PHI_CLAMP_SLACK`).
-- **The `dr` threshold is squared once.** `setcuts.f:345` stores the raw value,
-  and `cuts.f`'s FIRSTTIME block squares it (`r2min = r2min·|r2min|`,
-  `cuts.f:219-221`, "Since r2 returns distance squared") before the
-  `r2(...) < r2min` test (`:429`). The effective bound is the ordinary
+- **The `dr` threshold is squared once.** `setcuts.f:346` stores the raw value,
+  and `cuts.f`'s FIRSTTIME block (`:207-280`) squares it (`r2min = r2min·|r2min|`,
+  `cuts.f:225`, "Since r2 returns distance squared") before the
+  `r2(...) < r2min` test (`:443`). The effective bound is the ordinary
   `ΔR ≥ dr`; vibegraph stores the signed square `dr·|dr|`[^mg-cuts]. Read the
   surrounding control flow, not just the cited line: the cited line alone
   suggests a different bound.
@@ -69,7 +70,7 @@ under `cut_decays = F`, for decay products of a forced line[^mg-setcuts].
   (`setcuts.f:396, 473`).
 - **An energy minimum is a strict `≤` reject** (`cuts.f:413`).
 - **The ŝ window** (`dsqrt_shat`, `dsqrt_shatmax`) compares `(p₁+p₂)²` against
-  the squared thresholds, and only with two incoming legs (`cuts.f:312`,
+  the squared thresholds, and only with two incoming legs (`cuts.f:310`,
   `nincoming.eq.2`), so a decay never reads it[^n18-h6].
 
 ## Cuts are evaluated in the laboratory frame
@@ -88,9 +89,9 @@ on a given process[^n18-h6][^n18-outcome].
 
 Implemented: the ŝ window; single-leg pT, E, rapidity min and max for classes
 j, b, a, l; pairwise ΔR and invariant mass (min and max) over the class-pair
-tags; `ptll`; `mmnl`; the decay-chain Breit–Wigner windows (`cut_bw`,
-`myamp.f:76`: a forced line rejects the point unless `|√p² − M| < bwcutoff·Γ`,
-Γ floored at `M·small_width_treatment`) and `cut_decays`. Under `xqcut > 0` the
+tags; `ptll`; `mmnl`; the decay-chain Breit–Wigner windows (`cut_bw` in
+`myamp.f`: a forced line rejects the point unless `|√p² − M| < bwcutoff·Γ`,
+a positive Γ floored at `M·small_width_treatment`) and `cut_decays`. Under `xqcut > 0` the
 jet thresholds are rewritten first ([run-card/matching-parameters](matching-parameters.md)).
 
 Everything else tagged `cut=` in `banner.py` is **parse-and-detect**:
@@ -141,6 +142,7 @@ The parser and defaults are [run-card/run-card-parser-and-defaults](run-card-par
 [^n18-design]: Note 18 §2.6, implemented families and parse-and-detect.
 [^n18-h6]: Note 18 §5 H6 (cuts.f pins) and H7 (lab-frame cuts).
 [^n18-outcome]: Note 18 outcome: the `(τ, y)` remap, lab-frame cuts, the dr-squaring lesson.
-[^mg-cuts]: MadGraph `cuts.f:219-221` and `:429`.
-[^mg-kin]: MadGraph `kin_functions.f:95` (`rap`), `:42` (`R2`), `:180` (`DELTA_PHI`).
-[^mg-setcuts]: MadGraph `setcuts.f:212-217`, class membership and `do_cuts`.
+[^mg-cuts]: MadGraph `cuts.f:225` (the squaring, inside the FIRSTTIME block `:207-280`) and `:443` (the test), at the pinned commit.
+[^mg-kin]: MadGraph `kin_functions.f:95` (`rap`), `:42` (`R2`), `:164` (`DELTA_PHI`, clamp `:181-182`).
+[^mg-setcuts]: MadGraph `setcuts.f:200-235`, `do_cuts` (`:201-215`) and class membership (`:217-235`).
+

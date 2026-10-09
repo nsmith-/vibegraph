@@ -136,7 +136,9 @@ leg's energy is at least its `pT`, and any pair holding a cut jet already has at
 least `xqcut` of energy. It cuts nothing;
 `madevents_xqcut_tau_floor_is_implied_by_the_rewritten_cuts` (`cuts.rs:1701`)
 pins that on 200k sampled points.[^n41-m1] With a resolved `ptj < xqcut`
-(`auto_ptj_mjj = F`, `ptj < 0` or `ktscheme ≠ 1`) the τ minimum is a real cut that changes σ
+(`auto_ptj_mjj = F` or `ptj < 0`; `ktscheme ≠ 1` would also leave it below
+`xqcut` in MadEvent, but vibegraph refuses that field off its default as
+`IgnoredPhysics`, `runcard/classes.rs:268`) the τ minimum is a real cut that changes σ
 and differs between integration channels. vibegraph does not build a
 channel-dependent cut; the card is refused with
 `RunCardError::XqcutAboveJetThreshold` (`runcard/matching.rs:84`), a scoped

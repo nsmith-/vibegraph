@@ -5,6 +5,7 @@ description: "A partition of one integration cannot audit it; independently re-s
 status: draft
 tags: [validation, cross-section, madgraph, windows, attribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1 (the h → ττ pole bin: windowed σ on both sides)"}
   - {id: n29-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2921-L2974", title: "Note 29 D.2 (the windows and the rule that fixes them)"}

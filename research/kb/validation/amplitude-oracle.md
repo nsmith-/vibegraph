@@ -5,6 +5,7 @@ description: "amplitude_oracle compares per point, helicity, diagram and flow wi
 status: draft
 tags: [amplitudes, madgraph, oracle, colour-flow, configurations]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L704-L755", title: "Note 24 §P1 — the per-diagram gate and the c_i·AMP(i) correction"}
   - {id: n25-amps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L127-L139", title: "Note 25 §3.2 — the amplitudes category"}

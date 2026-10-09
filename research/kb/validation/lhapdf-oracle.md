@@ -5,6 +5,7 @@ description: "gen_oracle.cpp against MadGraph's own LHAPDF 6.5.6 over knot, off-
 status: draft
 tags: [pdf, lhapdf, oracle, interpolation, alpha-s]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L40-L62", title: "Note 18 §1.1 — why the oracle is LHAPDF, not a spline"}
   - {id: n18-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 — validation regime"}

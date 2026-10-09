@@ -10,6 +10,7 @@ sources:
   - {id: n38-pred, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L292-L307", title: "Note 38 §3.4, the s-channel predicate"}
   - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 §4 S2, > and $$ as diagram filters"}
   - {id: n38-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L802-L881", title: "Note 38 §4 S3, $ as the pointwise integrand"}
+  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5, the seeded σ gate"}
   - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 §4 E1, $ on a chain's core"}
   - {id: mg-schannel-id, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L2435", title: "MadGraph base_objects.py Vertex.get_s_channel_id"}
   - {id: mg-filters, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L715-L795", title: "MadGraph diagram_generation.py, required, forbidden and on-shell-forbidden s-channels"}
@@ -18,7 +19,7 @@ sources:
   - {id: mg-banner-sde, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L5055", title: "MadGraph banner.py, $ forces sde_strategy = 1"}
   - {id: code-onshell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/onshell.rs#L1-L54", title: "vibegraph-lib/src/onshell.rs module documentation"}
 measured:
-  - {commit: c52e4f7, pr: 12, landed_in: 1539abc, command: "vibegraph integrate, seeds 1–5, against pinned MadEvent (mg5_pinned.sh), e+ e- at 500 GeV"}
+  - {commit: e9177b5, pr: 12, landed_in: 1539abc, command: "validate_sigma the_grammar_rows_match_madevents_seeds: ten seeds at 160 000 × 6 against grammar_sigma_reference.json"}
   - {commit: 7a1eb52, pr: 12, landed_in: 1539abc, command: "cli_onshell_veto, five seeds, against validation/madgraph/onshell_veto_reference.json"}
 ---
 
@@ -79,15 +80,22 @@ own generation. 43 are generated and matched subprocess for subprocess, on the d
 count and each diagram's multiset of oriented s-channel ids; 6 are refused by both
 (`u d~ > w- > e+ ve`, `p p > w- > e+ ve`, `e+ e- > z a > mu+ mu- a`,
 `u d~ > e+ ve $$ w+`, `e+ e- > mu+ mu- WEIGHTED<=3`, one `/ j` card); 8 one-initial cards
-are banked for decays. σ at 500 GeV, five seeds against pinned MadEvent:
+are banked for decays.
 
-| Card | MadEvent (pb) | here, mean | pulls |
-|---|---|---|---|
-| `e+ e- > z > mu+ mu-` | 0.05221 ± 0.000019 | 0.052206 (−0.007%) | −0.84 … 0.53 |
-| `e+ e- > e+ e- $$ z` | 157.5 ± 0.11 | 157.56 (+0.04%) | −0.78 … 1.66 |
+σ at 500 GeV is gated against seeded MadEvent references (`grammar_sigma_reference.json`,
+`validate_sigma`): ten seeds here at 160 000 × 6 against MadEvent's five, each side's
+inverse-variance mean with an error no smaller than spread/√n. [^n38-z2]
 
-The unrestricted `e+ e- > mu+ mu-` is 0.4196 pb there, the known-wrong comparison. The
-`$$ z` Bhabha row's twenty-seed mean climbs 0.5% with budget before plateauing
+| Card | MadEvent (pb) | here (pb) | rel | pull |
+|---|---|---|---|---|
+| `e+ e- > z > mu+ mu-` | 0.05220506 ± 8.7e-6 | 0.05219763 ± 5.7e-6 | −1.42e-4 | −0.72 |
+| `e+ e- > e+ e- $$ z` | 157.226 ± 0.195 | 157.618 ± 0.083 | +2.50e-3 | +1.85 |
+
+The unrestricted controls (0.4198 pb and 154.9 pb on MadEvent's side) are the known-wrong
+comparisons, and the gate fails if a restriction removed nothing. The `$$ z` pull is the
+reference's spread: MadEvent's five seeds sit at χ²/dof 20 (four at 157.26–157.53, one at
+156.48), and this side agrees with the majority. This side's own `$$ z` mean climbs about
+0.5% with budget before plateauing at the gated rung
 ([backlog](../backlog/validation/ee-ee-nsz-sigma-low-at-low-budget.md)).
 
 ## `$`: the on-shell veto, pointwise in the amplitude
@@ -204,6 +212,7 @@ are in [decay chains](decay-chains.md); the enumeration the filters act on is in
 [^n38-pred]: Note 38 §3.4: the s-channel predicate on `Prop.momentum`, filters inside the WEIGHTED search.
 [^n38-s2]: Note 38 §4, `>` and `$$` as diagram filters: orientation rule, census, σ rows, gauge-invariance warning, one-initial behaviour.
 [^n38-s3]: Note 38 §4, `$` as the pointwise integrand: |M'|², pointwise pins, σ rows, the `FFV2P1D_1` defect, the complement measurement.
+[^n38-z2]: Note 38 §8.5: the seeded σ gate for the `> z` and `$$ z` rows, its budget ladder and MadEvent's Bhabha seed spread.
 [^n38-e1]: Note 38 §4, event records and `add process` completion: `$` on a chain's core, `$` on a decay refused.
 [^mg-schannel-id]: `madgraph/core/base_objects.py` `get_s_channel_id`, L2435.
 [^mg-filters]: `madgraph/core/diagram_generation.py` L715 (required), L742 and L754 (forbidden), L781 (on-shell forbidden).

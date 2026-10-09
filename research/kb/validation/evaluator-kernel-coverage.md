@@ -5,6 +5,7 @@ description: "Each hand-written kernel is checked fused == generic on typed rand
 status: draft
 tags: [evaluator, kernels, coverage, property-tests, ufo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n13-3a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L200-L222", title: "Note 13 §3a — fused(random) == generic(random) as the per-kernel oracle"}
   - {id: n13-7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 — the harness and the IEEE-exact sign shuffles"}

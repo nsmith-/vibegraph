@@ -5,6 +5,7 @@ description: "Running the production evaluator over Z_p with an f64 shadow gives
 status: draft
 tags: [finite-field, oracle, evaluator, reconstruction, exact-arithmetic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L452-L462", title: "Note 41 (completeness) §9 — the per-pair trace form by reconstruction"}
   - {id: n41-91, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L463-L518", title: "Note 41 (completeness) §9.1 — the box"}

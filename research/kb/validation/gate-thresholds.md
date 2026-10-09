@@ -5,6 +5,7 @@ description: "Tolerances sit at the algorithm's error scale with measured ulp he
 status: draft
 tags: [validation, tolerances, statistics, headroom, ulp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n27-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L11-L26", title: "Note 27 — never a loosened tolerance"}
   - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2021-L2064", title: "Note 28 K3.1 — a 1e-12 bound over an observed 0.0"}

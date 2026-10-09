@@ -15,6 +15,7 @@ sources:
   - {id: pw-sigreal, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/sigreal.f#L1-L110", title: "sigreal.f, btildereal"}
   - {id: pw-mint, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/integrator.f#L12", title: "integrator.f, mint"}
   - {id: pw-lhef, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/lhefwrite.f#L3-L124", title: "lhefwrite.f"}
+  - {id: pw-user, resource: "https://gitlab.com/POWHEG-BOX/V2/User-Processes/hvq", title: "POWHEG-BOX V2 user process hvq (GitLab group User-Processes)"}
   - {id: nason, resource: "https://arxiv.org/abs/hep-ph/0409146", title: "P. Nason, A new method for combining NLO QCD with shower Monte Carlo algorithms (2004)"}
   - {id: powheg-box, resource: "https://arxiv.org/abs/1002.2581", title: "Alioli, Nason, Oleari, Re, A general framework for implementing NLO calculations in shower Monte Carlo programs: the POWHEG BOX (2010)"}
 ---
@@ -45,10 +46,9 @@ The user supplies, in a process directory:
 |---|---|---|
 | `setborn(p,bflav,born,bornjk,bmunu)` | `sigborn.f:237` (in `setborn0`) | Born `|M|²`, colour-correlated `bornjk(j,k)`, spin-correlated `bmunu(μ,ν,j)` |
 | `setvirtual(p,bflav,virtual)` | `sigvirtual.f:42`, `:74` | the one-loop virtual |
-| `sigreal_btl(rr)` | `sigreal.f:52`, `:107` | real-emission `|M|²` per singular region (ALR) |
+| `setreal(p,rflav,amp2)` | `sigreal.f:1399`, inside the BOX's `sigreal_btl` (`:1011`), which `btildereal` calls at `:52`, `:107` | real-emission `|M|²` for one real flavour structure; the BOX splits it over singular regions (ALR) |
 | `born_phsp(xborn)` | `gen_Born_phsp.f` | unit cube to Born momenta |
 | `init_processes` | initialisation | the `flst_born` / `flst_real` flavour tables |
-| `bbinit` | `pwhg_init.f:203` | process initialisation |
 
 `setborn0` wraps the user call: it zeroes any non-finite `born`, `bornjk` or
 `bmunu` entry and divides each by the flux `2 * kn_sborn`[^pw-sigborn]:
@@ -60,11 +60,12 @@ if (.not.pwhg_isfinite(born)) born=0d0
 born=born/(2*kn_sborn)
 ```
 
-Process directories (the canonical example is `hvq`, heavy-quark pairs) are
-not in this repository; they live in POWHEG-BOX's separate collection of user
-processes. Each holds `nlegborn.h`, `nlegreal.h`, `maxprocborn.h`,
-`maxprocreal.h`, `maxalr.h`, `born.f`, `virtual.f`, `real.f`, `born_phsp.f`,
-`init_processes.f`, `bbinit.f` and a `Makefile`.
+Process directories are not in this repository; each is its own project under
+the GitLab group `POWHEG-BOX/V2/User-Processes` (88 of them, `hvq` for
+heavy-quark pairs among them)[^pw-user]. `hvq` holds `nlegborn.h` (which also
+sets `nlegreal`, `ndiminteg`, `maxprocborn` and `maxprocreal`), `Born.f`,
+`Born_phsp.f`, `virtual.f`, `real.f`, `init_processes.f`, `init_couplings.f`
+and a `Makefile`. `bbinit.f` is the BOX's own, not user code.
 
 Data passes between the BOX and user code in common blocks under `include/`:
 `pwhg_flst.h` (flavour structures, `flst_nborn`, `flst_born`, `flst_nalr`),
@@ -76,8 +77,10 @@ Data passes between the BOX and user code in common blocks under `include/`:
 
 `pwhg_main.f`: `pwhginit()` (flavour tables via `init_flsttag` at
 `pwhg_init.f:16`, flags at 41–114, physics and PDFs via `init_phys` at 150,
-then the user's `bbinit`), MINT with `imode = 0` to build the grid and
-`imode = 1` to integrate and build the upper-bound envelope, then per event
+then `bbinit` at 203). `bbinit` (`bbinit.f`) runs the integration in stages,
+which `#parallelstage` can split across runs: importance-sampling grids
+(MINT with `imode = 0`), the upper-bounding envelope for `B̃` (`imode = 1`),
+the upper bound for radiation, then events. Per event the main program calls
 `pwhgevent()` and `lhefwritev`.
 
 ## The B-tilde integrand
@@ -166,3 +169,4 @@ write(buffer,220) idup(i),istup(i),mothup(1,i),
 [^pw-lhef]: `lhefwrite.f:97–119` at `e26982d7`.
 [^nason]: arXiv:hep-ph/0409146.
 [^powheg-box]: arXiv:1002.2581.
+[^pw-user]: GitLab API listing of group `POWHEG-BOX/V2/User-Processes` and the `hvq` repository tree at its default branch (not pinned), read 2026-10-09; `bbinit.f` at `e26982d7`. Note 03 lists `bbinit.f`, `nlegreal.h`, `maxprocborn.h`, `maxprocreal.h` and `maxalr.h` as user files.

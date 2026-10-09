@@ -5,6 +5,7 @@ description: "Four per-process categories (diagrams, amplitudes, integrals, samp
 status: draft
 tags: [validation, report, collator, manifest]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L15-L39", title: "Note 25 §1 (the reframing)"}
   - {id: n25-categories, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L112-L195", title: "Note 25 §3 (categories and the report table)"}
@@ -15,7 +16,7 @@ sources:
 ---
 
 `pixi run validate` ends by running the collator (`validation-report`, a Rust
-dev binary; `pixi run validation-report` runs it alone). It reads every row
+dev binary; `pixi run validation-report` runs it alone).[^n25-driver] It reads every row
 file the gates wrote under `target/validation-report/`, renders
 `report.md` and `report.json`, and checks that what was measured is exactly
 what [`validation/manifest.toml`](process-manifest.md) declares.[^collator]
@@ -31,7 +32,7 @@ every row added and is regenerated on each run; read it from a fresh
 
 | category | what is compared | metric | concept |
 |---|---|---|---|
-| `diagrams` | the same Feynman diagrams as MadGraph, per concrete subprocess | `k/n` diagrams | [structural censuses](structural-censuses.md) |
+| `diagrams` | diagram counts against MadGraph's `NGRAPHS`, one representative per subprocess class (per-concrete-subprocess matching is the design goal, still open; below) | `k/n` diagrams | [structural censuses](structural-censuses.md) |
 | `amplitudes` | per point × per helicity × per colour flow complex amplitudes, at MadGraph's own banked events projected on shell | max relative deviation | [amplitude oracle](amplitude-oracle.md) |
 | `integrals` | σ against banked MadGraph, always through the generic path (no special-cased integrand) | pull and seed-sweep stability | [σ gate](sigma-gate.md) |
 | `samples` | unweighted-event distributions against MadGraph's banked samples | minimum KS / χ² p-value | [samples gate](samples-gate.md) |
@@ -133,7 +134,8 @@ How a gate's verdict should be fixed before measuring is
 [pre-registered verdicts](pre-registered-verdicts.md).
 
 [^n25-reframe]: Note 25 §1.
-[^n25-categories]: Note 25 §3.1–3.6 and §5.7.
+[^n25-categories]: Note 25 §3.1–3.6.
+[^n25-driver]: Note 25 §5.7.
 [^n25-report]: Note 25 §10, "The report".
 [^collator]: `validation-report/src/main.rs`, module docs and `resolve_cell`.
 [^render]: `validation-report/src/render.rs`, `standalone_verdict`.

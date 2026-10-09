@@ -5,6 +5,7 @@ description: "Samplers gate bit-for-bit where order allows and on analytic distr
 status: draft
 tags: [phase-space, sampling, hadronic, oracle, distributions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 — RAMBO replay oracle, flat-MC normalisation, the pointwise DY oracle"}
   - {id: n21-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L99-L118", title: "Note 21 — the sampler validation regime"}

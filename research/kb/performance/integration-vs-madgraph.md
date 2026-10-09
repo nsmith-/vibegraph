@@ -5,6 +5,7 @@ description: "Integrand points per CPU-second and CPU seconds to 0.1% on σ agai
 status: draft
 tags: [performance, madgraph, integration, throughput, measurement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n30-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L352-L407", title: "Note 30 §5.3 (throughput on a denominator that means something)"}
   - {id: n31-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1036-L1103", title: "Note 31 §6.4 (throughput recomputed)"}
@@ -40,7 +41,9 @@ Headline, geomeans:[^cl-summary]
 | integrand throughput, ours/MG, 26 rows | **3.97×** | **8.76×** |
 
 The per-point ratio carries across hosts unchanged; both end-to-end ratios
-halve. The evaluators are not the cause (below).
+halve. The evaluators are not the cause (below). Every figure here predates the
+evaluator's constant collection and fused scaled sums (2026-10-05), which sped
+the matrix element up by 1.01–1.55× in-process; none has been re-measured since.
 
 ## Integrand throughput
 
@@ -130,8 +133,9 @@ stop is in [the convergence stop rule](../phase-space/convergence-stop-rule.md).
 MadGraph's `MATRIX1` is 3.02× slower on Cascade Lake than on the M3 Max,
 uniformly (2.75–3.33× per process), and ours slows by the same factor
 (`pp_to_llj` 20.8 µs per integrand point against 6.9 µs). What does not slow 3×
-is the rest of MadEvent's summed job CPU, which is mostly not matrix element:
-it rose only 1.10× (`ee_to_mumu`) to 1.47× (`pp_to_llj`). On `gg_to_gg`,
+is the rest of MadEvent's summed job CPU, which is mostly not matrix element: it
+is only 1.1–1.6× above the M3 bank's, so MadEvent's total CPU-seconds rose only
+1.10× (`ee_to_mumu`) to 1.47× (`pp_to_llj`). On `gg_to_gg`,
 `MATRIX1` is 1.4 of 10.2 CPU-s on Cascade Lake and 0.44 of 7.1 CPU-s on the M3
 Max; the remainder (process start-up, grid I/O, phase space, PDFs) grew only
 1.3×.[^cl-summary][^cl-tta]
