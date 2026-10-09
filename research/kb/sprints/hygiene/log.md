@@ -60,3 +60,5 @@
   detached, read-only worktree at `f7efda6` (`/home/user/wt/hygiene-r-<x>`).
   The leads from V1b's Found item 4 (production contracts documented on
   test-only APIs) went to the clusters that hold them.
+* **R-E reported**: 15 findings, recorded as `sessions/R-E-report.md`. The
+  manager spot-checked R-E.1, R-E.8 and R-E.11. Triage waits for all eight.
