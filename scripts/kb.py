@@ -279,12 +279,27 @@ def census():
     return lines
 
 
+CODE_SPAN = re.compile(r"(`[^`]*`)")
+
+
+def code_dollars(text):
+    """Put every `$` outside a code span into one, so the docs' KaTeX pass never
+    reads proc-card syntax such as `$$ z` as a math delimiter."""
+    parts = CODE_SPAN.split(str(text))
+    return "".join(p if p.startswith("`") else re.sub(r"\$+", lambda m: f"`{m.group(0)}`", p)
+                   for p in parts)
+
+
+def entry(c, base, after=""):
+    return f"- [{code_dollars(c['title'])}]({link(c, base)}){after} — {code_dollars(c['description'])}"
+
+
 def link(c, base):
     return f"{base}{c.rel}" if base is not None else c.path.relative_to(REPO).as_posix()
 
 
 def item_line(c, base, claims):
-    s = f"- [{c['title']}]({link(c, base)}) — {c['description']}"
+    s = entry(c, base)
     tags = [c["state"]] if c["state"] != "open" else []
     if c["blocked_by"]:
         tags.append("after " + ", ".join(f"`{d}`" for d in c["blocked_by"]))
@@ -358,7 +373,7 @@ def backlog(args):
                 "`Backlog: <slug>` line in its description.", ""]
         sprints = [c for c in concepts if c["type"] == "Sprint" and c["active"]]
         out += ["## Current position", ""]
-        out += [f"- [{c['title']}]({link(c, base)}) — {c['description']}" for c in sprints] or \
+        out += [entry(c, base) for c in sprints] or \
                ["No sprint is active."]
         out.append("")
         decisions = [c for c in concepts if c["type"] == "Design Decision" and c["status"] != "deprecated"]
@@ -366,7 +381,7 @@ def backlog(args):
                     if any(str(v.get("by", "")).startswith("human:") for v in c["verified"] or [])]
         if decisions:
             out += ["## Standing decisions", ""]
-            out += [f"- [{c['title']}]({link(c, base)}) — {c['description']}" for c in verified]
+            out += [entry(c, base) for c in verified]
             if len(decisions) > len(verified):
                 out.append(f"- {len(decisions) - len(verified)} more design decisions are drafted "
                            "but not yet reviewed by a person.")
@@ -378,7 +393,7 @@ def backlog(args):
         facts = [c for c in concepts if c["type"] in ("Measurement", "Caveat")]
         if facts:
             out += ["## Standing measurement facts and caveats", ""]
-            out += [f"- [{c['title']}]({link(c, base)}) — {c['description']}" for c in facts] + [""]
+            out += [entry(c, base) for c in facts] + [""]
     for area in AREAS:
         group = [c for c in selected if c["area"] == area]
         if not group:
@@ -394,7 +409,7 @@ def backlog(args):
         out += ["## Closed sprints", ""]
         for c in records:
             when = f" ({c['closed']})" if c["closed"] else ""
-            out.append(f"- [{c['title']}]({link(c, base)}){when} — {c['description']}")
+            out.append(entry(c, base, when))
         out.append("")
     text = "\n".join(out)
     if args.output:
