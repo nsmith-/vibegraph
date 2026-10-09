@@ -41,11 +41,11 @@ The sprint is done when:
 
 ## Decisions
 
-Decided by the user on 2026-10-09 (`log.md`, Approval):
+Decided by the user on 2026-10-09, and the decision concepts reviewed and signed off the same day (`log.md`, Approval):
 
-- [D1](decisions/D1-scope-localised-items.md): claim the localised hygiene items
-  next to the fresh review. Items that are `needs-user`, need a MadGraph re-run,
-  or need a long re-measurement stay out.
+- [D1](decisions/D1-scope-localised-items.md): claim filed items from any area
+  that are local, need no MadGraph or Pythia run or seed re-measurement, and
+  settle no open physics question. `needs-user` items stay out.
 - [D2](decisions/D2-visibility-mechanical-demotion.md): visibility is mechanical
   demotion only. Anything another crate or a test target uses stays `pub`, and
   the supported surface is proposed, not decided.
@@ -94,6 +94,9 @@ the session that closes each:
 | validate-scales-module-doc-stale | F-G |
 | validate-hadronic-calibration-comments-superseded | F-G |
 | manifest-notes-describe-superseded-state | F-G |
+| jj-banked-orderings-eta-uses-wrong-components (validation) | F-G |
+| config-amp-phase-and-sign-unpinned (validation) | F-G |
+| smeftsim-vendored-checksum-not-hermetic (validation) | F-G |
 | host-info-null-cpu-block-on-linux | T1 |
 | profile-script-forwards-one-filter | T1 |
 | madgraph-generators-hardcode-lcxx-and-bypass-pin | T1 |
@@ -106,7 +109,9 @@ llvm-preserve-none-musttail-bug-unfiled, manifest-blocked-tier-unused (all
 `needs-user` or blocked on one); kt-dump-tables-lack-directory-key,
 pp-to-jj-tie-break-no-cluster-dump (MadGraph re-extraction);
 llj-gate-comments-quote-pre-floor-ladders, sigma-calibration-comments-stale
-(long re-measurement); nnpdf23-redistribution-terms-unverified (licence research,
+(long re-measurement); jioxxx-reference-port-comparison-has-no-teeth (settles
+a HELAS-against-ALOHA question); pythia-gate-momenta-unchecked (needs the Pythia
+environment); nnpdf23-redistribution-terms-unverified (licence research,
 not code); lorentz-coefficients-still-f64 (R-A recommends a disposition; no
 code change in this sprint); hygiene-agent-type (blocked on this sprint; its
 own PR uses the lessons); lib-pub-api-surface-unaudited (`needs-user`; this

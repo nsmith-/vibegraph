@@ -4,9 +4,10 @@ title: "Hygiene sprint shape: one PR, sessions by module cluster on all four poi
 description: "One sprint folder and one draft PR; each review session covers one module cluster for maintainability, non-vacuity, visibility and abstractions together."
 decided: 2026-10-09
 decided_by: human:nsmith-
-status: draft
+status: stable
 tags: [hygiene, process, sprint]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: user, resource: "../log.md", title: "Hygiene sprint log, 2026-10-09: the user's answers in the planning session"}
 ---

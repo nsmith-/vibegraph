@@ -22,8 +22,9 @@ step 6 and [session scoping](../../../workflow/session-scoping-rules.md) rule 1.
    - File every triaged *file* finding and every Found entry as a new item.
    - Add V1's surface proposal to the body of lib-pub-api-surface-unaudited,
      as a link to V1's report.
-3. **Promote.** Move the D1–D4 decisions and the review protocol to `stable`
-   once the user has reviewed them. `workflow/hygiene-review.md` stays
+3. **Promote.** D1–D4 are already `stable` (signed off 2026-10-09). Move the
+   review protocol to `stable` once the user has reviewed it, folding in the
+   reports' brief corrections. `workflow/hygiene-review.md` stays
    `draft` until the hygiene agent's own PR.
 4. **Record.** Write `closeout.md` (`type: Sprint Record`): what was banked,
    the items closed, filed and released, and the `pub` counts before and after.

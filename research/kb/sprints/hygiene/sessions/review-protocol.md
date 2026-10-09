@@ -19,10 +19,17 @@ says how to review it.
 - **Every finding is checked against the code before it is reported**, with
   its `path:line`. "Probably unused" is not a finding. "`grep -rn Foo` over
   the workspace returns only its definition" is.
-- **Claimed items are not findings.** The sprint already claims the sites
-  listed in the cluster's items ([sprint.md](../sprint.md), "Scope"). Read them
-  so as not to re-report them. A wrong or missing site in one of them *is* a
-  finding.
+- **Check the backlog before reporting.** Start the session by listing every
+  filed item, in any area, that names a path in the cluster:
+  `grep -rlF -e <name> research/kb/backlog/` for each file and directory in
+  the brief's cluster, then `pixi run backlog --item <slug>` on each hit. Items
+  cite paths with different prefixes (`vibegraph-lib/src/helas/eval/op.rs`,
+  `src/helas/eval/op.rs`, `helas/eval/op.rs`), so search for the shortest
+  unambiguous tail, such as `eval/op.rs`, and for the bare file name. Filed
+  items, claimed or not, are not findings. Report a filed item only when one of
+  its sites is wrong or missing, or when the code shows it is already fixed;
+  either of those *is* a finding. List the items you found this way at the
+  top of the report, so triage can tell a rediscovery from a new finding.
 - **AGENTS.md conventions are the standard,** especially the comment
   guidelines and "Physics Validation". A finding that cites a rule names it.
 

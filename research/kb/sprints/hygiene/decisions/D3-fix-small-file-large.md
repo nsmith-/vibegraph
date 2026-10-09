@@ -4,9 +4,10 @@ title: "Hygiene sprint findings: reviews expose, fix sessions fix what is local,
 description: "Review sessions only report; fix sessions take local changes (comments, demotions, tightened asserts, small dedupes); multi-file refactors and new abstractions are filed as items."
 decided: 2026-10-09
 decided_by: human:nsmith-
-status: draft
+status: stable
 tags: [hygiene, process, expose-dont-fix]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: user, resource: "../log.md", title: "Hygiene sprint log, 2026-10-09: the user's answers in the planning session"}
 ---

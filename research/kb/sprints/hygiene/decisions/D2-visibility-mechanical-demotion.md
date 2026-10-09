@@ -4,9 +4,10 @@ title: "Hygiene sprint visibility: mechanical demotion only"
 description: "Demote pub items nothing outside their crate uses; anything another crate or a test target uses stays pub; the supported library surface is proposed for the user, not decided."
 decided: 2026-10-09
 decided_by: human:nsmith-
-status: draft
+status: stable
 tags: [hygiene, visibility, api]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: "human:nsmith-", at: 2026-10-09}]
 sources:
   - {id: user, resource: "../log.md", title: "Hygiene sprint log, 2026-10-09: the user's answers in the planning session"}
 ---
