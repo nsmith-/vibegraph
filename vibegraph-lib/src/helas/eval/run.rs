@@ -1,9 +1,11 @@
-//! Runtime amplitude evaluation: a single forward pass over the folded `Ast`.
+//! Runtime amplitude evaluation: a single forward pass over a compiled [`Program`](super::layout::Program).
 //!
 //! [`BoundAmplitude`] holds a compiled [`AmplitudeEvaluator`] together with its
 //! card-resolved constant pools (see [`BoundAmplitude::bind`]). For each
-//! phase-space point it walks the arena in storage (topological) order, reducing each
-//! node from its already-computed children via the single [`apply`] match.
+//! phase-space point `fill_arenas` runs the program's typed instructions in their
+//! execution order, each writing its result to the arena its output class selects.
+//! The generic [`apply`], which reduces one folded node over
+//! [`WaveformSlot`]s, serves constant folding and the test-only reference pass.
 
 use crate::helas::repr::lorentz::{Bispinor, Bra, ComplexVector, Ket, LorentzVector, Multivector};
 use crate::helas::repr::numbers::{Charge, SpinorHelicity};
@@ -3359,7 +3361,7 @@ mod tests {
     /// Run: VG_PROBE_NAME=ee_to_ee cargo test -p vibegraph-lib --features extended-validation \
     ///        --lib helas::eval::run::tests::probe_process_diagrams -- --ignored --nocapture
     #[test]
-    #[ignore]
+    #[ignore = "writes a per-flow JAMP dump for compare_amps.py; needs VG_PROBE_NAME"]
     #[cfg(feature = "extended-validation")]
     fn probe_process_diagrams() {
         use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
@@ -3684,7 +3686,7 @@ mod tests {
     ///   - a fermion propagator chaining two vertices on one line (FSR: the muon
     ///     line absorbs the s-channel boson, propagates, then radiates the photon),
     ///   - an off-shell γ/Z (internal `VectorWf`, −i/q²) absorbed by a fermion line
-    ///     via `GammaIout`/`GammaJout`.
+    ///     via `GammaIout`/`GammaOout`.
     ///
     /// If the relative phases/signs between continuum diagrams are wrong (the
     /// diagnosed bug), this sum will NOT cancel.
@@ -3789,7 +3791,7 @@ mod tests {
     /// `GammaVout` uses `fo.p − fi.p` (the HELAS jioxxx convention). The sum is
     /// harmless at the amplitude sink (momentum unused there) but non-conserving when
     /// the scalar is an off-shell Higgs current feeding a VVS vertex — which only
-    /// happens with ≥3 fermion lines. See `probe_2to5_momentum`.
+    /// happens with ≥3 fermion lines.
     #[test]
     fn test_ward_identity_full_amplitude_eemumutata_a() {
         let r3 = 3.0_f64.sqrt();
@@ -4798,7 +4800,7 @@ mod tests {
     /// spectrum, to see the gap between contributing combinations and the
     /// floating-point residues of identically-zero ones.
     #[test]
-    #[ignore]
+    #[ignore = "diagnostic table; run with --nocapture"]
     fn helicity_contribution_spectrum() {
         use rand::rngs::StdRng;
         use rand::SeedableRng;

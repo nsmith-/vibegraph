@@ -47,8 +47,7 @@ impl<T> Ast<T> {
 
 /// The arena exposes its shape through [`Tree`]: `value`/`children`/`root` give a node,
 /// its operands, and the whole-amplitude root; `iter` scans every id in storage
-/// (topological) order. The default `linearize`/`fold_recursive` then come for free —
-/// kept so the forward-scan runtime can be benchmarked against a linearized stack walk.
+/// (topological) order.
 impl<T> Tree for Ast<T> {
     type Item = Node<T>;
     type NodeId = NodeId;

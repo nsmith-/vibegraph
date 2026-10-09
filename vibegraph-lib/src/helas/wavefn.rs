@@ -319,11 +319,10 @@ impl<F: Real> OutDiracWf<F> {
 /// Used as both the result of `j3xxxx` and the input to `iovxxx`.
 ///
 /// The polarisation carries its [`Variance`] in the type (`V`, default
-/// [`Contravariant`]). External legs and the P-less off-shell currents are
-/// contravariant `ε^μ`; index-lowering vertex/propagator kernels produce the
-/// covariant `ε_μ`, so the raise/lower at the propagator seam is type-checked
-/// rather than hand-coded. The `momentum` is always the physical contravariant
-/// 4-momentum `p^μ`.
+/// [`Contravariant`]). Every vector the evaluator builds — external legs, off-shell
+/// currents and propagated currents alike — is contravariant `ε^μ`; a kernel that
+/// contracts an index applies the metric itself. The `momentum` is always the
+/// physical contravariant 4-momentum `p^μ`.
 #[derive(Clone, Copy, Debug)]
 pub struct VectorWf<F: Real, V: Variance = Contravariant> {
     /// Polarisation / Lorentz components in HELAS convention, at variance `V`.
@@ -457,7 +456,8 @@ impl<F: Real> VectorWf<F, Contravariant> {
 pub struct ScalarWf<F: Real> {
     /// Scalar amplitude (always 1+0i for external scalars).
     pub value: C<F>,
-    /// Signed momentum: particle → +p, antiparticle → −p
+    /// Flow-signed momentum: outgoing → +p, incoming → −p (the `nss` flag, not the
+    /// charge)
     pub momentum: LorentzVector<F, Contravariant>,
 }
 
