@@ -68,3 +68,7 @@
 * **R-B reported**: 25 findings plus one rediscovery (R-B.0), recorded as
   `sessions/R-B-report.md`. The manager spot-checked R-B.1, R-B.5, R-B.10 and
   R-B.14.
+* **R-C reported**: 20 findings, recorded as `sessions/R-C-report.md`. The
+  manager spot-checked R-C.1, R-C.5 and Found 1–2. Three reviewers have now
+  hit the empty `mg5amcnlo` submodule. Fix sessions get it copied in, and the
+  dispatch procedure should say review worktrees need it too.
