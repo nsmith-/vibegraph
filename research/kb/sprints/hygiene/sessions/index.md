@@ -20,3 +20,7 @@
 * [T1: tooling and CI fixes](T1.md) - Five small script and workflow fixes that touch no Rust: host_info on Linux, profile.sh arguments, -lc++ by platform, stale CI and skill text, acceptance on refdata releases.
 * [V1: mechanical visibility demotion](V1.md) - Demote every pub item no outside user names, delete what that shows dead, and list the remaining surface as the proposal for the user.
 * [Z: hygiene sprint close-out](Z.md) - Close-out only: verify the exit criteria, delete closed items, file triaged and Found work, write closeout.md, and mark the PR ready.
+
+## Session Report
+
+* [T1 report: tooling and CI fixes](T1-report.md) - Five script and workflow fixes, one commit each; four items meet closes_when, and the acceptance.yml change awaits the next refdata release.

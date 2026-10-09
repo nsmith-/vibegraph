@@ -27,3 +27,8 @@
   measure.
 * **Approval** (human:nsmith-): D1–D4 reviewed and signed off, D1 including the
   amendment above. All four are stamped `verified` and moved to `stable`.
+* **T1 landed** (fast-forward of `hygiene-t1`, commits f578bde..a4db76f): four
+  items meet `closes_when`. `acceptance-yml-fails-on-refdata-releases` waits for
+  the next `refdata-*` release. The report is recorded as `sessions/T1-report.md`,
+  machine-confirmed by the manager's re-run of the lints and demonstrations.
+  Three Found entries, to be filed at close-out.
