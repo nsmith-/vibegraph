@@ -5,6 +5,7 @@ description: "SCALUP is the larger per-beam μF, not μR; AQCDUP is αs(μR), wh
 status: draft
 tags: [lhef, scales, scalup, aqcdup, alpha-s]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L403", title: "Note 07 (unwgt.f: truncated π in AQCDUP)"}
   - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2 (banked-layer hygiene, the p3r3 AQCDUP reading)"}

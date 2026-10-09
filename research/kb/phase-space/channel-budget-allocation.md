@@ -52,7 +52,9 @@ it feeds are the ones whose iterations disagree with themselves, and the
 stopping rule's consistency factor charges exactly those. On `p p > l+ l- j`
 at a 0.179% target over 8 seeds it took 2.94M evaluations against 6.41M, and
 the seed-to-seed spread of the spend narrowed from 2.75M–12.4M to 1.97M–4.26M,
-with σ agreeing in both arms.
+with σ agreeing in both arms. These readings predate channel merging
+([phase-space/channel-set](channel-set.md)): `p p > l+ l- j` now integrates 6
+channels and `p p > e+ e-` one.
 
 ## Coverage floors
 

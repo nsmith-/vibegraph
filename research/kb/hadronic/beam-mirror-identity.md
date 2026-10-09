@@ -5,6 +5,7 @@ description: "|M_ba(p1,p2,q)|² = |M_ab(p1,p2,Rq)|² with R reflecting only outg
 status: draft
 tags: [hadronic, mirror, beam-ordering, convention, proton]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (the mirror term is mandatory)"}
   - {id: n24-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1252-L1295", title: "Note 24 P2c (the mirror term, and what its test can and cannot catch)"}

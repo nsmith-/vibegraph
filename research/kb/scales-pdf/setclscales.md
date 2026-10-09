@@ -5,6 +5,7 @@ description: "reweight.f's walk (ipart, jfirst/jlast/jcentral), mt2last/jcentral
 status: draft
 tags: [scales, kt-clustering, setclscales, madgraph, scalefact]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-k15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L755-L839", title: "Note 28 §K1.5 (cluster sequence to jfirst/jlast/jcentral)"}
   - {id: n28-k16, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L840-L910", title: "Note 28 §K1.6 (μR, the geometric-mean prescription)"}

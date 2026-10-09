@@ -5,6 +5,7 @@ description: "The reference set is lhaid 247000; 244600 and 230000 are different
 status: draft
 tags: [pdf, lhapdf, nnpdf, reference-data, caveat]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L230-L245", title: "Note 18 §2.2 (PDF evaluation, the pinned set)"}
   - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H1 grid structure, H7 lhaid surprise)"}

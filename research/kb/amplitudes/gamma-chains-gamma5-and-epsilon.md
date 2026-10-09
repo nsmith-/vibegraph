@@ -5,6 +5,7 @@ description: "Adjoint inference along summed spinor indices, Gamma5/Gamma5Amp, E
 status: draft
 tags: [lorentz-structures, smeft, gamma5, levi-civita, rooting]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1: tree-shaped structures (Epsilon, γ-chains, Gamma5, momentum algebra)"}
   - {id: code-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L985-L1040", title: "root_lorentz.rs: chain_adjoint"}

@@ -5,6 +5,7 @@ description: "Instrumented MadEvent replay and validate_mlm_dumps: engine replay
 status: draft
 tags: [mlm, oracle, per-event, scales, rewgt, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0, references and the extended replay"}
   - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1, implementation and dump gates"}
@@ -142,8 +143,12 @@ six digits, and the test requires more than a 1% effect:
 |---|---|---|
 | `pp_to_llj_mlm` | 0.8547 | −14.5% (about 140 reference errors) |
 | `pp_to_llj_mlm_alps2` | 0.9522 | −4.8% |
-| `pp_to_ll_0j2j_mlm` | 0.9337 | −6.6% |
-| `pp_to_ttx_0j1j_mlm` | 0.9046 | −9.5% |
+| `pp_to_ll_0j2j_mlm` | 0.9329 | −6.7% |
+| `pp_to_ttx_0j1j_mlm` | 0.9050 | −9.5% |
+
+The two mixed rows read 0.9329 and 0.9050 on the dumps regenerated for
+`refdata-9` (the rows' `integrals` notes in `validation/manifest.toml`); M2's
+first dumps gave 0.9337 and 0.9046. The llj rows' values are M2's.
 
 `alpsfact = 2` is pinned by its own row: the dump shows the numerator read at
 `2·kt` on every reweighted vertex.

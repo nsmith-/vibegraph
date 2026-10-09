@@ -5,6 +5,7 @@ description: "σ = ∫dτ dy dΦ Σ_g avg_g[L_d|M(q)|² + L_m|M(Rq)|²]Θ/(2ŝ):
 status: draft
 tags: [hadronic, proton, integrand, pdf, cross-section]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-goal, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L11-L37", title: "Note 18 (hadronic cross section: goal formula)"}
   - {id: n18-assembly, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly)"}

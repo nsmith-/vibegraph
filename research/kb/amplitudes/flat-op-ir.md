@@ -5,6 +5,7 @@ description: "Primitives are irreducible intertwiners named one-to-one with a fl
 status: draft
 tags: [evaluator, ir, design-decision, kernels, representation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n13-1a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a: primitives are irreducible intertwiners, not HELAS routines"}
   - {id: n13-1b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L78-L112", title: "Note 13 §1b and its revision: a flat op set, not a two-level enum"}

@@ -9,7 +9,7 @@ sources:
   - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, MadEvent's record rules and the decay-chain gates"}
   - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, resonances under matching"}
   - {id: mg-addmothers, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/madgraph/iolibs/template_files/addmothers.f#L240-L350", title: "MadGraph 3.7.1 addmothers.f"}
-  - {id: mg-cutbw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L76", title: "MadGraph myamp.f cut_bw"}
+  - {id: mg-cutbw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L2", title: "MadGraph myamp.f cut_bw"}
   - {id: n07-io, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L206-L227", title: "Note 07, MadGraph LHE output defects"}
 ---
 
@@ -17,7 +17,7 @@ sources:
 
 An LHE event may list intermediate particles with `ISTUP = 2`: resonances
 whose mass a shower should preserve. MadEvent writes one for a propagator of
-the event's configuration when `cut_bw` (`myamp.f:76`) leaves it flagged `OnBW`,
+the event's configuration when `cut_bw` (`myamp.f`) leaves it flagged `OnBW`[^mg-cutbw],
 and `addmothers` (`addmothers.f:253`, `ickkw = 0`) fills in the record[^mg-addmothers].
 The rules below are vibegraph's reading, implemented in
 `vibegraph-lib/src/lhef/resonance.rs` (`SubprocessResonances`) and written by
@@ -31,7 +31,8 @@ configuration — the one its colour flow was drawn in
 resolved once per configuration from the diagram MadGraph writes it from
 (`AmplitudeEvaluator::config_diagram`). A line is flagged when:
 
-- it has nonzero width and its invariant mass is inside its window,
+- it has positive width (`prwidth > 0`; a zero-width line is never a
+  candidate) and its invariant mass is inside its window,
   `|√p² − M| < bwcutoff·Γ`, with `Γ` floored at `M·small_width_treatment`
   (`prwidth_tmp`), **and** it is narrow, `Γ/M < 0.1` — unless a decay chain
   forces it on shell (`gForceBW = 1`), in which case the width ratio is not
@@ -84,10 +85,11 @@ handled locally ([hygiene/make-anti-negates-singlet-octet-colour](../backlog/hyg
 | plain process (`e+ e- > mu+ mu-` at the pole, `p p > mu+ mu- / a`) | **none**; MadEvent writes the on-window free `Z` (or `W`) here too |
 | matched (`ickkw = 1`) | the clustered configuration's lines whose leg sets the integration channel put on its Breit–Wigner ([events/mlm-matched-event-record](mlm-matched-event-record.md)) |
 
-The plain-process gap is deliberate pending a decision: matching MadEvent
-changes every existing LHE file for such processes, so it waits behind the
-unchanged-output rule as
-[feature/plain-process-onwindow-resonance-records](../backlog/feature/plain-process-onwindow-resonance-records.md).
+The plain-process gap is open work: the backlog item
+[feature/plain-process-onwindow-resonance-records](../backlog/feature/plain-process-onwindow-resonance-records.md)
+records the decision to match MadEvent, accepting that this changes every
+existing LHE file for such processes, because a shower keeps a resonance's
+mass when it reshuffles momenta only if the resonance is in the record.
 Under matching the test is `checkbw` over the integration channel's
 propagators, keyed by leg set and applied to the clustered configuration's lines
 — not "the lines the clustering found on their Breit–Wigner"[^n41-m4].
@@ -118,4 +120,5 @@ actual propagator of the configuration rather than trusted
 [^n38-e1]: Note 38 E1: MadEvent's record rules read from `addmothers.f`, `unwgt.f:737`, `myamp.f:76` and five MadEvent runs; the gates.
 [^n41-m4]: Note 41 M4, where §1.4's plan text was short of the source.
 [^mg-addmothers]: MadGraph 3.7.1 `addmothers.f:253-268`, the status assignment.
+[^mg-cutbw]: MadGraph `myamp.f`, `cut_bw` (declared at `:2`; the positive-width gate and window test at `:123-139`, the same-flavour withdrawal at `:146-176`).
 [^n07-io]: Note 07, I/O and output-format defects.

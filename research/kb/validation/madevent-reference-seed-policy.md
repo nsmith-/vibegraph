@@ -79,7 +79,7 @@ finished under a byte-identical run card is read back from
 `Events/run_<tag>/vg_seed_result.txt`, and `VG_FORCE=1` re-runs. Work areas live
 under `validation/madgraph/work/` (gitignored, outside the bundle); `ROWS=` and
 `SEEDS=` run a subset and keep the committed rows they did not run.
-`generate_references.sh` has a `seeds` stage. MLM's fresh-directory runs use
+`validation/generate_references.sh` has a `seeds` stage. MLM's fresh-directory runs use
 `FRESH_ROWS`/`FRESH_SEEDS`. Every MadEvent seed reproduced bit-equal between the
 Linux container and the macOS bank host (176 seeds over 40 rows)[^n38-b1]. Two
 macOS traps in that loop are fixed but worth knowing: BSD `seq` prints `%g`, which

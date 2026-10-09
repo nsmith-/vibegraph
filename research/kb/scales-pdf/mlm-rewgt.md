@@ -5,6 +5,7 @@ description: "MadEvent's rewgt factor per flavour combination: vertex classes, t
 status: draft
 tags: [mlm, rewgt, alpha-s, pdf, reweighting]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L105-L145", title: "Note 41 §1.3 (rewgt under ickkw = 1)"}
   - {id: n41-32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L235-L252", title: "Note 41 §3.2 (the reweighting is a per-term factor)"}

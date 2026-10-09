@@ -5,6 +5,7 @@ description: "ICOLUP lines are read from each basis key's T/Tr chains, incoming 
 status: draft
 tags: [colour, lhef, icolup, conjugation, colour-flow]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: code-tags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/flow_tags.rs#L1-L60", title: "helas/color/flow_tags.rs module doc: chain reading, crossing rule, labels"}
   - {id: code-conj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/flow_tags.rs#L195-L230", title: "ColorFlowTags::conjugated (full conjugates only)"}

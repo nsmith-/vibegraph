@@ -5,6 +5,7 @@ description: "LHAPDF's ContinuationExtrapolator per quadrant with log-or-linear 
 status: draft
 tags: [pdf, lhapdf, extrapolation, force-positive, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n28-k5a2-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2915-L2944", title: "Note 28 §K5a2.1 (which continuation, and what pins each line)"}
   - {id: n28-k5a2-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2945-L2965", title: "Note 28 §K5a2.2 (the oracle)"}

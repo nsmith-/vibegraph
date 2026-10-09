@@ -5,6 +5,7 @@ description: "Flow-typed fermion slots, bra/ket chosen by physical flow, the per
 status: draft
 tags: [fermion-flow, spinors, crossing, helas, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12: root causes 2, 3 and 5 (flow-typed slots, flow-driven dispatch, crossed-line conjugation)"}
   - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: sinks closing two fermion lines; per-pair bra/ket and crossed bookkeeping"}

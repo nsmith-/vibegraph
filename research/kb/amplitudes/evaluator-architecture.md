@@ -5,6 +5,7 @@ description: "A process compiles once into a card-independent program, binds a p
 status: draft
 tags: [evaluator, architecture, rooting, compile, amplitudes]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n10-goal, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L27-L46", title: "Note 10 §1: compile phase and evaluation phase"}
   - {id: n10-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L355-L382", title: "Note 10 §5.4: rooting a tree diagram into currents"}

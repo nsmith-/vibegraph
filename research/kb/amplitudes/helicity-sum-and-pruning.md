@@ -5,6 +5,7 @@ description: "|M|² sums (not averages) helicities and colours, coherent over di
 status: draft
 tags: [helicity, pruning, evaluator, madgraph-parity, amp2]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n10-hel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L383-L395", title: "Note 10 §5.5: helicity iteration"}
   - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11: coherent sum, gauge choice"}

@@ -5,6 +5,7 @@ description: "scirs2's global B-spline missed LHAPDF by up to 98.6% off-knot and
 status: draft
 tags: [pdf, lhapdf, interpolation, dependencies, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L63-L99", title: "Note 18 §1.2 (Rust spline options and the decision rule)"}
   - {id: n18-h1h2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L560", title: "Note 18 §5 H1/H2 decision records (oracle backend, scirs2 trial)"}

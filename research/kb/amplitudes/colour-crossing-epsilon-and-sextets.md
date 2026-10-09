@@ -5,6 +5,7 @@ description: "Undoing feyngraph's all-incoming crossing transposes each T per te
 status: draft
 tags: [colour, crossing, sextet, epsilon, toy-ufo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: code-convert, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/colorize.rs#L140-L340", title: "colorize.rs: convert_expr, slot_indices, check_slot_reps"}
   - {id: code-tensor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/tensor.rs#L50-L90", title: "tensor.rs: TensorKind order and ColorTensor atoms"}

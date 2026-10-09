@@ -5,6 +5,7 @@ description: "Diagram counts against matrix<N>_orig.f NGRAPHS (not MAPCONFIG), a
 status: draft
 tags: [validation, diagrams, census, proc-card, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n19-v7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L751-L787", title: "Note 19 V7 (per-flavour diagram matching; NGRAPHS vs MAPCONFIG)"}
   - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 G1 (grammar oracle)"}

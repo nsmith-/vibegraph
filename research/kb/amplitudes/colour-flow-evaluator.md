@@ -5,6 +5,7 @@ description: "Exact Ratio<i64> colour coefficients through colorize, basis and C
 status: draft
 tags: [colour, evaluator, exact-arithmetic, cf-matrix, jamp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n16-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L231-L263", title: "Note 16 §2.1: shape of the change"}
   - {id: n16-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L264-L299", title: "Note 16 §2.2: repr/color.rs as a working algebra"}

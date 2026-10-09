@@ -5,6 +5,7 @@ description: "Diagram::fermion_line_sign: an uncrossed line takes one −1 per i
 status: draft
 tags: [fermion-flow, sign-convention, crossing, diagrams, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L526-L581", title: "Diagram::fermion_line_sign and its derivation doc"}
   - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L718", title: "spine_sign_from_flow / closed_line_sign: the rooted-tree cross-check"}

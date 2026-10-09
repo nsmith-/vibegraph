@@ -5,6 +5,7 @@ description: "Research-only test of whether charge flow fixes every pinned phase
 status: draft
 tags: [phase-conventions, fermion-flow, sign-convention, research, negative-result]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n29-chainf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L227-L270", title: "Note 29 chain F: the hypothesis and its sidecar terms"}
   - {id: n29-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L682", title: "Note 29 F.1–F.6: inventory, pre-registered bar, hostile cases, method, vacuity modes, brief errors"}

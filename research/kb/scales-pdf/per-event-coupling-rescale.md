@@ -5,6 +5,7 @@ description: "ScaleAwareAmplitude moves pools to a per-event α_s by G-power tag
 status: draft
 tags: [alpha-s, couplings, evaluator, scales, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n22-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L157-L201", title: "Note 22 §2 (where the running coupling multiplies in)"}
   - {id: n22-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 session outcomes (D1–D4)"}

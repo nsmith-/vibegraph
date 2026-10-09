@@ -5,6 +5,7 @@ description: "Program::build groups instructions by Instr variant inside each AS
 status: draft
 tags: [performance, evaluator, scheduling, branch-prediction, ilp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L517-L617", title: "Note 31 §E1/E1b (execution-order study and production pass)"}
   - {id: tds-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L13-L48", title: "Threaded-dispatch study summary and Cascade Lake host"}
@@ -85,8 +86,8 @@ not matter; on long ones, predictability does.[^tds-orders][^tds-m3]
 
 ## What was measured against it
 
-Relative to `match@opblocked` (Cascade Lake, sweep B; M3 Max, sweep A), scalar
-`forward` geomean over the 8 bench rows:
+Relative to `match@opblocked` (Cascade Lake, sweeps A and B; M3 Max, sweep A,
+and sweep B for `levelshuffle`), scalar `forward` geomean over the 8 bench rows:
 
 | order | what it does | Cascade Lake | M3 Max |
 |---|---|--:|--:|
@@ -121,7 +122,8 @@ smaller. The limit sits a few times above the largest program built today and
 fires on nothing measured.[^layout-build][^layout-order]
 
 The limit counts `f64` bytes and is **lane-blind**. At eight lanes the 2→6's
-op-blocked arenas are 2.4 MB against arena order's 1.9 MB and `minlive`'s 1.6 MB.
+op-blocked arenas were 2.4 MB against arena order's 1.9 MB and `minlive`'s 1.6 MB
+(live peak at `6bd7325`, before constant collection).
 On Cascade Lake (1 MiB L2) lanes8 on the 2→6 is 15–18% *faster* in any
 non-op-blocked order, under both dispatchers; on the M3 Max (16 MiB L2) there is
 no such flip (0.980). Emerald Rapids (2 MiB L2) sat on the edge until the fused
@@ -131,7 +133,8 @@ A lane-aware fallback needs a per-width program or order, since one `Program` is
 shared by every `F`; it must be sized at the width production lanes would ship
 (lanes4 on a v3 target, where the effect is absent), and any fallback order must
 stay predictable on long programs, or it trades an L2 miss for a mispredict per
-instruction. The within-level shuffle has not been run on x86. Open as
+instruction; Zen 4 measured that trade's price on x86 (the shuffle's 1.57× above).
+Open as
 [schedule-fallback-lane-blind](../backlog/performance/schedule-fallback-lane-blind.md).[^tds-orders][^tds-leaves]
 The [roofline census](../performance/roofline-census.md) and
 [top-down counters](../performance/topdown-zen4.md) carry the per-host working-set
