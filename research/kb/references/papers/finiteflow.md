@@ -1,7 +1,7 @@
 ---
 type: Paper
 title: FiniteFlow
-description: "arXiv:1905.08019 (Peraro 2019): numerical algorithms as dataflow graphs evaluated over Z_p, with multivariate rational functions reconstructed from the samples; the method behind vibegraph's finite-field study."
+description: "arXiv:1905.08019 (Peraro 2019): black-box algorithms evaluated over Z_p as dataflow graphs, rational functions reconstructed from samples; the method behind the finite-field study."
 resource: "https://arxiv.org/abs/1905.08019"
 status: draft
 tags: [finite-fields, reconstruction, rational-functions, paper, trace-form]

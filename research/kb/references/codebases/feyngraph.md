@@ -45,7 +45,7 @@ the two:
 - leg ids can be queried from the Rust interface.
 
 The parser rules, structs and generator entry points below sit at the same or
-nearby lines in both revisions. A session reading the submodule should expect
+nearby lines in both revisions. A reader of the submodule should expect
 `model/mod.rs` and `diagram/mod.rs` line numbers to differ by 10–80 lines.
 
 ## Source layout

@@ -207,4 +207,5 @@ and [setclscales](../../scales-pdf/setclscales.md).
 [^mg-dg]: `madgraph/core/diagram_generation.py` at `b7687064`.
 [^mg-tag]: `DiagramTag` in `diagram_generation.py` at `b7687064`.
 [^mg-helas]: `HELAS/` at `b7687064`.
-[^n28-k1]: Note 28 K1, read at the pin; subroutine lines re-checked at `b7687064`.
+[^mg-sm]: `models/sm/` at `b7687064`; `particles.py` counted there.
+[^n28-k1]: Note 28, "MadGraph kT clustering for dynamical_scale_choice = -1", read at the pin; subroutine lines re-checked at `b7687064`.

@@ -132,4 +132,4 @@ the scale replay on MadGraph's 2 → 6 runs).
 [^mg-lhe-event]: `madgraph/various/lhe_parser.py:2606` at `b7687064`.
 [^mg-banner-init]: `madgraph/various/banner.py:1096` and `:1106` at `b7687064`.
 [^validate-lhef]: `vibegraph-lib/tests/validate_lhef.rs`, module docs and lines 157–263.
-[^n23-e3]: Note 23 E3 outcome.
+[^n23-e3]: Note 23, the LHEF writer outcome (2026-07-28).
