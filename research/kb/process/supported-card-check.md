@@ -73,9 +73,10 @@ would be a wrong answer, so it is refused at parse time instead.
 | `ModelOption`, `Command` | `import model X -modelname`, `add model`, other commands | not planned |
 | `InitialState`, `MixedInitialStates` | more than two initial particles; lines with different initial counts | MadGraph errors too |
 
-The module table in `check.rs` still marks `SquaredOrder` and `WeightedOrder` "not
-planned"; squared-order constraints were put in scope by the user on 2026-10-09, and the
-change that closes the backlog item updates that line. Card-level refusals that need the
+The module table in `check.rs` still marks `SquaredOrder`, `WeightedOrder`, `ChainOrders`
+and `PropagatorPolarization` "not planned". Squared-order constraints were put in scope by
+the user on 2026-10-09, and the other two have open backlog items (linked above); the
+backlog, not that column, is current. Card-level refusals that need the
 model live in `DiagramError` (for example `MixedOnShellVeto`,
 [backlog](../backlog/feature/onshell-veto-lists-differing-per-line-refused.md)).
 
