@@ -26,7 +26,8 @@ written. A cell that moves outside the set, or an outcome no row of the table
 covers, is stop-and-report: never retune, re-seed or widen a tolerance to absorb
 it. This is how validation work exposes rather than fixes
 ([workflow/expose-dont-fix](../workflow/expose-dont-fix.md)), and the instruments
-for reading "what moved" are in [no-change-claims](no-change-claims.md).
+for reading "what moved" are in [no-change-claims](no-change-claims.md), over the
+per-cell report the collator renders ([validation-report](validation-report.md)).
 
 ## The verdict table
 

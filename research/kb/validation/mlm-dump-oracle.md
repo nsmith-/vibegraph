@@ -19,7 +19,7 @@ A matched MadEvent run is replayed through an instrumented MadEvent that dumps
 every intermediate of both `setclscales` calls and of `rewgt` for each written
 event. `vibegraph-lib/tests/validate_mlm_dumps.rs` then recomputes those
 intermediates and compares them field by field. It is the finest oracle the MLM
-port has: a σ integrates over everything, and a per-event field shows which
+port has: a σ ([mlm-sigma-gate](mlm-sigma-gate.md)) integrates over everything, and a per-event field shows which
 quantity is wrong and on which event. The semantics it checks are described in
 [scales-pdf/mlm-scales](../scales-pdf/mlm-scales.md) and
 [scales-pdf/mlm-rewgt](../scales-pdf/mlm-rewgt.md); it extends the unmatched

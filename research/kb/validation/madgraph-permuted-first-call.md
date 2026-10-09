@@ -118,7 +118,8 @@ behaviour. Reproducing MadEvent would need its per-channel symmetry permutation
 (`SYMCONF`, `PERMS(MAPCONFIG)`), which the integrand does not carry, since its
 channels are its own diagrams; refusing would refuse the canonical matched card.
 Under [the defect policy](madgraph-defect-policy.md) it is therefore a
-registered deviation:
+registered deviation, listed with the other defects in
+[madgraph-defects](madgraph-defects.md):
 - the manifest notes of the affected rows name it;
 - the per-event gates report permuted events as `info, permuted P1` and do not
   gate on them ([mlm-dump-oracle](mlm-dump-oracle.md));
