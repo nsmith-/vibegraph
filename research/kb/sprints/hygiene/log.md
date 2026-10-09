@@ -72,3 +72,7 @@
   manager spot-checked R-C.1, R-C.5 and Found 1–2. Three reviewers have now
   hit the empty `mg5amcnlo` submodule. Fix sessions get it copied in, and the
   dispatch procedure should say review worktrees need it too.
+* **R-G1, R-G2 and R-F reported**: 27, 22 and 28 findings, recorded as
+  `sessions/R-G1-report.md`, `R-G2-report.md` and `R-F-report.md`, with the
+  manager's spot checks in each. Seven of eight reviews are in; R-A is
+  outstanding.
