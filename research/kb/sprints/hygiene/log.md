@@ -105,3 +105,8 @@
   baselines survived on disk. The manager saved a backup patch and resumed
   the agent from its transcript with a reconciliation step: verify, commit in
   checkpoints, re-run what was in flight (session scoping rule 7).
+* **Second container restart during F-A**, after 5 commits (9bb2849..c01b93a),
+  with its gate run in flight. Clippy had found one `useless_vec` in the lib
+  tests. The disk was down to 2 GB free because of the debug incremental cache,
+  which the manager cleared again (9.8 GB free). The agent was resumed to fix
+  the lint and re-run the gate with `CARGO_INCREMENTAL=0`.
