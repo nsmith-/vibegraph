@@ -6,7 +6,7 @@ status: draft
 tags: [mlm, sigma, madevent-reference, diagnosis, 2to4]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 measured:
-  - {host: "shared 4-core Linux container (load from a sibling session)", command: "vibegraph integrate per subprocess directory; MadEvent fresh and patched directories (note 41 D2)"}
+  - {command: "vibegraph integrate per subprocess directory against fresh and patched MadEvent directories (note 41 D2)"}
   - {commit: 590f87a, host: "Apple M3 Max (16 cores), macOS 15.7", command: "pixi run -e madgraph --skip-deps validate-mlm-sigma"}
 sources:
   - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3, the budget ladder, D2 diagnosis, decisions and R1"}
