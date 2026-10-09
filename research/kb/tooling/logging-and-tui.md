@@ -6,12 +6,12 @@ status: draft
 tags: [cli, logging, tui, tracing, progress]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n33-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/33-logging-tui-plan.md#L43-L69", title: "Note 33 §1, decisions (user, 2026-08-05)"}
-  - {id: n33-arch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/33-logging-tui-plan.md#L72-L197", title: "Note 33 §2–3, architecture and dependencies"}
-  - {id: n33-nongoals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/33-logging-tui-plan.md#L272-L292", title: "Note 33 §6–7, non-goals and open decisions"}
-  - {id: n33-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/33-logging-tui-plan.md#L302-L383", title: "Note 33 §9, close-out: plan vs code, decisions, abort, verified vs asserted"}
-  - {id: code-logging, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/logging.rs", title: "vibegraph-cli/src/logging.rs"}
-  - {id: code-progress, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/progress.rs", title: "vibegraph-lib/src/progress.rs"}
+  - {id: n33-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/33-logging-tui-plan.md#L43-L69", title: "Note 33 §1, decisions (user, 2026-08-05)"}
+  - {id: n33-arch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/33-logging-tui-plan.md#L72-L197", title: "Note 33 §2–3, architecture and dependencies"}
+  - {id: n33-nongoals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/33-logging-tui-plan.md#L272-L292", title: "Note 33 §6–7, non-goals and open decisions"}
+  - {id: n33-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/33-logging-tui-plan.md#L302-L383", title: "Note 33 §9, close-out: plan vs code, decisions, abort, verified vs asserted"}
+  - {id: code-logging, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/logging.rs", title: "vibegraph-cli/src/logging.rs"}
+  - {id: code-progress, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/progress.rs", title: "vibegraph-lib/src/progress.rs"}
 ---
 # Logging and the terminal UI
 

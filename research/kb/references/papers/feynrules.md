@@ -7,8 +7,8 @@ status: draft
 tags: [feynrules, ufo, model, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-feynrules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L217-L252", title: "Note 01, FeynRules summary"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: n01-feynrules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L217-L252", title: "Note 01, FeynRules summary"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
   - {id: feynrules2, resource: "https://arxiv.org/abs/1310.1921", title: "Alloul, Christensen, Degrande, Duhr, Fuks, FeynRules 2.0 (full UFO output)"}
 ---
 

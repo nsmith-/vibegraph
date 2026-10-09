@@ -6,11 +6,11 @@ status: draft
 tags: [phase-space, kinematics, beams, flux, frames]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n36-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L192-L352", title: "Note 36 B1 (massive fixed beams)"}
-  - {id: guide-fixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/docs/src/guide/07-phase-space.md#L382", title: "Guide chapter 7, 'Fixed beams'"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L676", title: "MadGraph genps.f (stot :676, cm_rap :388, flux :427)"}
-  - {id: mg-rap, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/kin_functions.f#L95-L132", title: "MadGraph kin_functions.f rap()"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L1014", title: "validation/manifest.toml, qqx_to_o8o8_toy_dcolor integrals cell"}
+  - {id: n36-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L192-L352", title: "Note 36 B1 (massive fixed beams)"}
+  - {id: guide-fixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/docs/src/guide/07-phase-space.md#L382", title: "Guide chapter 7, 'Fixed beams'"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L676", title: "MadGraph genps.f (stot :676, cm_rap :388, flux :427)"}
+  - {id: mg-rap, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L95-L132", title: "MadGraph kin_functions.f rap()"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L1014", title: "validation/manifest.toml, qqx_to_o8o8_toy_dcolor integrals cell"}
 ---
 
 # Fixed beams with masses

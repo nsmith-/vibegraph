@@ -8,11 +8,11 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 measured:
   - {command: "pixi run -e pythia validate-mlm-pythia (21 MadEvent against 20 vibegraph files, Pythia 8.312, seeds 20261201-10)"}
 sources:
-  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, the record and the CDATA finding"}
-  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, matched end to end"}
-  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A, the weight tail"}
-  - {id: n41-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2558-L2701", title: "Note 41 C, the acceptances at four times the statistics"}
-  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12, per-part normalisation"}
+  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, the record and the CDATA finding"}
+  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, matched end to end"}
+  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A, the weight tail"}
+  - {id: n41-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2558-L2701", title: "Note 41 C, the acceptances at four times the statistics"}
+  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12, per-part normalisation"}
 ---
 # Matched MLM comparison through Pythia
 

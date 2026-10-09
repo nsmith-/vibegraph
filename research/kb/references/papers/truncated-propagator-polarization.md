@@ -7,8 +7,8 @@ status: draft
 tags: [polarization, propagators, gauge, paper, interference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-trunc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L492-L524", title: "Note 01, truncated propagator paradigm summary"}
-  - {id: mg-pol-list, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L2095-L2098", title: "base_objects.py, polarization codes citing this paper"}
+  - {id: n01-trunc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L492-L524", title: "Note 01, truncated propagator paradigm summary"}
+  - {id: mg-pol-list, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L2095-L2098", title: "base_objects.py, polarization codes citing this paper"}
 ---
 
 Basu and Ruiz (2025) build on the polarized-propagator approach of

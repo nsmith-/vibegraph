@@ -7,8 +7,8 @@ status: draft
 tags: [comix, berends-giele, sherpa, paper, matrix-elements]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-comix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L253-L295", title: "Note 01, COMIX summary"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: n01-comix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L253-L295", title: "Note 01, COMIX summary"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
 ---
 
 COMIX (Gleisberg and Höche, JHEP 0812 (2008) 039) is the high-multiplicity

@@ -6,13 +6,13 @@ status: draft
 tags: [kt-clustering, scales, coupling, hadronic, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-collapse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on 2 → 2)"}
-  - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2013-L2020", title: "Note 28 §K3 (the engine's modules)"}
-  - {id: n28-k32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2065-L2095", title: "Note 28 §K3.2 (declared consumed state)"}
-  - {id: n28-k38, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2245-L2270", title: "Note 28 §K3.8 (what production wiring inherits)"}
-  - {id: n28-k4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2404-L2478", title: "Note 28 §K4, §K4.1–K4.2 (ConfigForest from our diagrams; closed forms deleted)"}
-  - {id: n28-k6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3283-L3343", title: "Note 28 §K6.1–K6.3 (SampledChannel, the diagram→config map, per-group sets)"}
-  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L2193-L2197", title: "MadGraph 3.7.1 export_v4.py (minimal-arity filter)"}
+  - {id: n22-collapse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on 2 → 2)"}
+  - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2013-L2020", title: "Note 28 §K3 (the engine's modules)"}
+  - {id: n28-k32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2065-L2095", title: "Note 28 §K3.2 (declared consumed state)"}
+  - {id: n28-k38, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2245-L2270", title: "Note 28 §K3.8 (what production wiring inherits)"}
+  - {id: n28-k4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2404-L2478", title: "Note 28 §K4, §K4.1–K4.2 (ConfigForest from our diagrams; closed forms deleted)"}
+  - {id: n28-k6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3283-L3343", title: "Note 28 §K6.1–K6.3 (SampledChannel, the diagram→config map, per-group sets)"}
+  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2193-L2197", title: "MadGraph 3.7.1 export_v4.py (minimal-arity filter)"}
 ---
 # vibegraph's kT clustering engine and how the scale is wired
 
@@ -52,7 +52,7 @@ s-channel lines (subtree carrying neither beam) ahead of the spacelike chain
 only for a channel that reaches the beams through a spacelike line
 (`export_v4.py:2229`, `if len(tchannels) > 1`), and drops every diagram whose
 largest vertex exceeds the set's minimum arity
-([`export_v4.py:2193-2197`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L2193-L2197)).
+([`export_v4.py:2193-2197`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2193-L2197)).
 On a timelike line `configs.inc` writes the particle that *decays into* the
 subtree, not the one leaving it.
 

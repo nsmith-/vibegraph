@@ -6,13 +6,13 @@ status: draft
 tags: [ci, testing, clippy, validation, features]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n19-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L79-L91", title: "Note 19 §V1: quick guards (pruned-frame guard, interned-SM check)"}
-  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome: fresh-checkout CI simulation"}
-  - {id: n29-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1682-L1721", title: "Note 29 §E.3: the release-debug contract tests"}
-  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 §T2: clippy findings visible only with extended-validation"}
-  - {id: n35-clippy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1462-L1493", title: "Note 35 §10.6: the clippy debt CI's lint step cannot see"}
-  - {id: ci-yml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/.github/workflows/ci.yml", title: ".github/workflows/ci.yml"}
-  - {id: validate-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/validate.sh", title: "validation/validate.sh"}
+  - {id: n19-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L79-L91", title: "Note 19 §V1: quick guards (pruned-frame guard, interned-SM check)"}
+  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome: fresh-checkout CI simulation"}
+  - {id: n29-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1682-L1721", title: "Note 29 §E.3: the release-debug contract tests"}
+  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 §T2: clippy findings visible only with extended-validation"}
+  - {id: n35-clippy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1462-L1493", title: "Note 35 §10.6: the clippy debt CI's lint step cannot see"}
+  - {id: ci-yml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/.github/workflows/ci.yml", title: ".github/workflows/ci.yml"}
+  - {id: validate-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/validate.sh", title: "validation/validate.sh"}
 ---
 # What a green CI run covers
 

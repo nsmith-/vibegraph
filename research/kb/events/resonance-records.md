@@ -6,11 +6,11 @@ status: draft
 tags: [events, lhef, resonances, decay-chains, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, MadEvent's record rules and the decay-chain gates"}
-  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, resonances under matching"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, MadEvent's record rules and the decay-chain gates"}
+  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, resonances under matching"}
   - {id: mg-addmothers, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/madgraph/iolibs/template_files/addmothers.f#L240-L350", title: "MadGraph 3.7.1 addmothers.f"}
-  - {id: mg-cutbw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/myamp.f#L76", title: "MadGraph myamp.f cut_bw"}
-  - {id: n07-io, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L206-L227", title: "Note 07, MadGraph LHE output defects"}
+  - {id: mg-cutbw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L76", title: "MadGraph myamp.f cut_bw"}
+  - {id: n07-io, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L206-L227", title: "Note 07, MadGraph LHE output defects"}
 ---
 
 # Status-2 resonance records

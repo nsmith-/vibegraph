@@ -6,13 +6,13 @@ status: draft
 tags: [backlog, workflow, knowledge-bundle, process]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n42-items, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L282-L323", title: "Note 42 §7.1: one file per item"}
-  - {id: n42-view, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L325-L352", title: "Note 42 §7.2: the generated view"}
-  - {id: n42-readers, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L354-L362", title: "Note 42 §7.3: who reads what"}
-  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions"}
-  - {id: n42-risks, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L537-L555", title: "Note 42 §10: risks"}
-  - {id: kb-py, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/kb.py", title: "scripts/kb.py: lint and backlog view"}
-  - {id: build-docs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/build-docs.sh", title: "scripts/build-docs.sh: the backlog docs page"}
+  - {id: n42-items, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L282-L323", title: "Note 42 §7.1: one file per item"}
+  - {id: n42-view, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L325-L352", title: "Note 42 §7.2: the generated view"}
+  - {id: n42-readers, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L354-L362", title: "Note 42 §7.3: who reads what"}
+  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions"}
+  - {id: n42-risks, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L537-L555", title: "Note 42 §10: risks"}
+  - {id: kb-py, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/kb.py", title: "scripts/kb.py: lint and backlog view"}
+  - {id: build-docs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/build-docs.sh", title: "scripts/build-docs.sh: the backlog docs page"}
 ---
 The work backlog is one file per open item under
 `research/kb/backlog/<area>/<slug>.md`, where the area is `validation`,

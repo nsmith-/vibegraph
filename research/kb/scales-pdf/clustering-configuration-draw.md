@@ -6,19 +6,19 @@ status: draft
 tags: [scales, kt-clustering, hadronic, amp2, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4708-L4757", title: "Note 29 Chain B §B.0 (the scale read the sampler's channel; Fact 3)"}
-  - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 Chain B §B.1 (MadEvent's rule is conditional on sde_strategy and tmin_for_channel)"}
-  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4826-L5167", title: "Note 29 Chain B §B.2–B.7 (movement census; where the draw lives, its randomness, pinned coupling, index composition, fallback; stages)"}
-  - {id: n29-b11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5262-L5352", title: "Note 29 Chain B §B.11–B.12 (risks; errors in the brief)"}
-  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 Chain B results (why the draw reproduces MadEvent; acceptance tests)"}
-  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L16-L116", title: "Note 40 §1–4 (per group and per beam ordering; per-event oracles; byte identity)"}
-  - {id: n41-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1 (call flow; colour from igraphs(1) under matching)"}
-  - {id: n41-34, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L276-L283", title: "Note 41 §3.4 (colour from the clustered graph)"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 §4 M1 (clustered_config; colour under ickkw = 1)"}
-  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 §4 M3 (the draw under matching, E_vg/W_MG)"}
-  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2701", title: "Note 41 §4 F-B (merged channels need no configuration rule)"}
-  - {id: mg-sde, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L213-L238", title: "MadGraph 3.7.1 matrix_madevent_group_v4.inc (single-diagram enhancement block)"}
-  - {id: mg-chcut, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L1817-L1881", title: "MadGraph 3.7.1 genps.f get_channel_cut"}
+  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4708-L4757", title: "Note 29 Chain B §B.0 (the scale read the sampler's channel; Fact 3)"}
+  - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 Chain B §B.1 (MadEvent's rule is conditional on sde_strategy and tmin_for_channel)"}
+  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4826-L5167", title: "Note 29 Chain B §B.2–B.7 (movement census; where the draw lives, its randomness, pinned coupling, index composition, fallback; stages)"}
+  - {id: n29-b11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5262-L5352", title: "Note 29 Chain B §B.11–B.12 (risks; errors in the brief)"}
+  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 Chain B results (why the draw reproduces MadEvent; acceptance tests)"}
+  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L16-L116", title: "Note 40 §1–4 (per group and per beam ordering; per-event oracles; byte identity)"}
+  - {id: n41-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1 (call flow; colour from igraphs(1) under matching)"}
+  - {id: n41-34, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L276-L283", title: "Note 41 §3.4 (colour from the clustered graph)"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 §4 M1 (clustered_config; colour under ickkw = 1)"}
+  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 §4 M3 (the draw under matching, E_vg/W_MG)"}
+  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2701", title: "Note 41 §4 F-B (merged channels need no configuration rule)"}
+  - {id: mg-sde, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L213-L238", title: "MadGraph 3.7.1 matrix_madevent_group_v4.inc (single-diagram enhancement block)"}
+  - {id: mg-chcut, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1817-L1881", title: "MadGraph 3.7.1 genps.f get_channel_cut"}
 ---
 # The clustering configuration is drawn ∝ AMP2 per flavour group and beam ordering
 
@@ -35,7 +35,7 @@ either side's channel partition.
 MadEvent does not draw anything: it clusters in the channel that sampled the
 point (`genps.f:221,245` set `this_config = iconfig`). But under single-diagram
 enhancement the integrand of channel `c` carries `AMP2_c / XTOT`
-([`matrix_madevent_group_v4.inc:213-238`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L213-L238)):
+([`matrix_madevent_group_v4.inc:213-238`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L213-L238)):
 
 ```fortran
 	    if(sde_strat.eq.1) then
@@ -59,7 +59,7 @@ independent of `g_c` and of the partition. Drawing that conditional directly is
 the same distribution. The weight `w_c` is `AMP2_c · CC_c`, where `CC_c` is
 `get_channel_cut`, a product of inverse propagator denominators that
 short-circuits to 1 only when
-([`genps.f:1878-1881`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L1878-L1881))
+([`genps.f:1878-1881`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1878-L1881))
 
 ```fortran
       if(sde_strat.eq.1.and.tmin_for_channel.eq.-1)then

@@ -6,18 +6,18 @@ status: draft
 tags: [scales, madgraph, run-card, kt-clustering, convention]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L60-L89", title: "Note 22 §1.2 (the scale itself; per-beam μF; scalefact placement)"}
-  - {id: n22-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on the banked events)"}
-  - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (the per-event oracle: SCALUP, AQCDUP, mgrwt)"}
-  - {id: n22-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L217-L255", title: "Note 22 §4 (risks: the fixed DY branches, loud refusals)"}
-  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 close-out (scale compilation; per-beam μF wired)"}
-  - {id: n28-k18, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L963-L1096", title: "Note 28 §K1.8 (reconciliation of the collapse table with the general path)"}
-  - {id: n28-k42, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2452-L2478", title: "Note 28 §K4.2 (closed forms replaced; scalefact once)"}
-  - {id: n29-a3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4541-L4606", title: "Note 29 C2 amendment A.3 (choices 1–5 refused only where read)"}
-  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 §4 B6 (choices 1–5 honoured at fixed beams; gg_to_gg_cg)"}
-  - {id: mg-setscales, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setscales.f#L44-L100", title: "MadGraph 3.7.1 setscales.f (set_ren_scale)"}
-  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cuts.f#L1233-L1241", title: "MadGraph 3.7.1 cuts.f (where the scales are set)"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L752", title: "MadGraph 3.7.1 unwgt.f (SCALUP)"}
+  - {id: n22-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L60-L89", title: "Note 22 §1.2 (the scale itself; per-beam μF; scalefact placement)"}
+  - {id: n22-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L90-L126", title: "Note 22 §1.3 (what -1 collapses to on the banked events)"}
+  - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (the per-event oracle: SCALUP, AQCDUP, mgrwt)"}
+  - {id: n22-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L217-L255", title: "Note 22 §4 (risks: the fixed DY branches, loud refusals)"}
+  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 close-out (scale compilation; per-beam μF wired)"}
+  - {id: n28-k18, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L963-L1096", title: "Note 28 §K1.8 (reconciliation of the collapse table with the general path)"}
+  - {id: n28-k42, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2452-L2478", title: "Note 28 §K4.2 (closed forms replaced; scalefact once)"}
+  - {id: n29-a3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4541-L4606", title: "Note 29 C2 amendment A.3 (choices 1–5 refused only where read)"}
+  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 §4 B6 (choices 1–5 honoured at fixed beams; gg_to_gg_cg)"}
+  - {id: mg-setscales, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setscales.f#L44-L100", title: "MadGraph 3.7.1 setscales.f (set_ren_scale)"}
+  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L1233-L1241", title: "MadGraph 3.7.1 cuts.f (where the scales are set)"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L752", title: "MadGraph 3.7.1 unwgt.f (SCALUP)"}
 ---
 # MadGraph's renormalisation and factorisation scale choices
 
@@ -39,7 +39,7 @@ inconsistently is the one combination where vibegraph's disjunction and
 MadGraph's tracking differ, and MadGraph warns about it. `cuts.f` calls
 `set_ren_scale` only when `μR` is not fixed and `set_fac_scale` only when a beam
 is not fixed
-([`cuts.f:1233-1241`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cuts.f#L1233-L1241)),
+([`cuts.f:1233-1241`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L1233-L1241)),
 so a fixed scale never sees `scalefact`. A fully fixed card resolves once at
 setup and reads no kinematics.
 
@@ -52,7 +52,7 @@ constants. The fixed and dynamic branches are pinned by disjoint evidence.[^n22-
 ## Dynamical choices
 
 `dynamical_scale_choice` applies to every scale not fixed. `set_ren_scale` in
-[`setscales.f:44-100`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setscales.f#L44-L100),
+[`setscales.f:44-100`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setscales.f#L44-L100),
 sums over final-state legs `i = 3 … nexternal`:
 
 | choice | `μR` before `scalefact` |
@@ -150,7 +150,7 @@ compiled (`RunCard::for_decay`).[^n29-a3]
 Every banked run's `unweighted_events.lhe.gz` carries `SCALUP` and `AQCDUP` on
 each `<event>` line, a per-event oracle finer than σ. `SCALUP` is the
 **factorisation** scale, `sqrt(max(q2fact(1), q2fact(2)))`
-([`unwgt.f:752`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L752));
+([`unwgt.f:752`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L752));
 it doubles as `μR` only where the clustering reads both off the same vertex.
 `AQCDUP` recovers `μR` to about `1e-6` relative independently of any scale field.
 Runs with `use_syst` also write `<mgrwt>`: `<rscale>` is `μR`, `<pdfrwt>` each

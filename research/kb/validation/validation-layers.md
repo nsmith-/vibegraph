@@ -6,14 +6,14 @@ status: draft
 tags: [validation, layers, ci, testing, manifest]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L15-L111", title: "Note 25 §1–2 (the reframing and the three layers)"}
-  - {id: n25-registration, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L236-L242", title: "Note 25 §4.2 (registration in N places)"}
-  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L561-L621", title: "Note 25 §9–10 (decisions and close-out)"}
-  - {id: n29-e, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1522-L1806", title: "Note 29 chain E (kT replay to the oracle layer; diagrams.json selector)"}
-  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (validate census and wall-time reading)"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L1-L60", title: "validation/manifest.toml, the Layers block"}
-  - {id: validation-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/validation.rs#L1-L40", title: "vibegraph::validation::require"}
-  - {id: ci, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/.github/workflows/ci.yml#L1-L20", title: "ci.yml header: hermetic and banked jobs"}
+  - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L15-L111", title: "Note 25 §1–2 (the reframing and the three layers)"}
+  - {id: n25-registration, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L236-L242", title: "Note 25 §4.2 (registration in N places)"}
+  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L621", title: "Note 25 §9–10 (decisions and close-out)"}
+  - {id: n29-e, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1522-L1806", title: "Note 29 chain E (kT replay to the oracle layer; diagrams.json selector)"}
+  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (validate census and wall-time reading)"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L1-L60", title: "validation/manifest.toml, the Layers block"}
+  - {id: validation-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/validation.rs#L1-L40", title: "vibegraph::validation::require"}
+  - {id: ci, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/.github/workflows/ci.yml#L1-L20", title: "ci.yml header: hermetic and banked jobs"}
 ---
 
 The validation suite needs very different external inputs: nothing at all,

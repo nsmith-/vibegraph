@@ -6,12 +6,12 @@ status: draft
 tags: [run-card, mlm, matching, xqcut, cuts]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, setup cuts and run-card rules"}
-  - {id: n41-card, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L284-L298", title: "Note 41 §3.5, the run card"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0, the reference cards"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1, xqcut and the ickkw = 1 scales"}
-  - {id: mg-setcuts-xqcut, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setcuts.f#L156-L189", title: "MadGraph setcuts.f, the xqcut rewrites"}
-  - {id: mg-banner-mlm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4543-L4577", title: "MadGraph banner.py RunCardLO.check_validity, matching rules"}
+  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, setup cuts and run-card rules"}
+  - {id: n41-card, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L284-L298", title: "Note 41 §3.5, the run card"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0, the reference cards"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1, xqcut and the ickkw = 1 scales"}
+  - {id: mg-setcuts-xqcut, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L156-L189", title: "MadGraph setcuts.f, the xqcut rewrites"}
+  - {id: mg-banner-mlm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4543-L4577", title: "MadGraph banner.py RunCardLO.check_validity, matching rules"}
 ---
 
 # MLM run-card parameters and the `xqcut` cut rewrites

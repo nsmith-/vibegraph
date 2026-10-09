@@ -6,14 +6,14 @@ status: draft
 tags: [validation, tolerances, statistics, headroom, ulp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n27-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L11-L26", title: "Note 27 — never a loosened tolerance"}
-  - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2021-L2064", title: "Note 28 K3.1 — a 1e-12 bound over an observed 0.0"}
-  - {id: n28-k5a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2795-L2817", title: "Note 28 K5a.2 — printing budgets and GRID_ALPHA_S_TOL"}
-  - {id: n28-k5a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2966-L2991", title: "Note 28 K5a2.3 — a flat bound plus a conditioned one-ulp bound"}
-  - {id: n36a-read, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L16-L51", title: "Note 36a §0 — the two classes of threshold"}
-  - {id: n36a-thin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L326-L364", title: "Note 36a §7 — the thin list and what was done"}
-  - {id: n37-cells, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L489-L528", title: "Note 37 §6.3 — a one-in-eight quintet, and a reference that reads high"}
-  - {id: code-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_samples.rs#L140-L177", title: "validate_samples.rs — P_FLOOR and its calibration"}
+  - {id: n27-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L11-L26", title: "Note 27 — never a loosened tolerance"}
+  - {id: n28-k3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2021-L2064", title: "Note 28 K3.1 — a 1e-12 bound over an observed 0.0"}
+  - {id: n28-k5a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2795-L2817", title: "Note 28 K5a.2 — printing budgets and GRID_ALPHA_S_TOL"}
+  - {id: n28-k5a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2966-L2991", title: "Note 28 K5a2.3 — a flat bound plus a conditioned one-ulp bound"}
+  - {id: n36a-read, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L16-L51", title: "Note 36a §0 — the two classes of threshold"}
+  - {id: n36a-thin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L326-L364", title: "Note 36a §7 — the thin list and what was done"}
+  - {id: n37-cells, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L489-L528", title: "Note 37 §6.3 — a one-in-eight quintet, and a reference that reads high"}
+  - {id: code-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_samples.rs#L140-L177", title: "validate_samples.rs — P_FLOOR and its calibration"}
 ---
 
 # Setting gate thresholds and reading headroom

@@ -6,16 +6,16 @@ status: draft
 tags: [rooting, sign-conventions, diagrams, anchor, canonical-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 §V5 (rooting-soundness: the sign derivation)"}
-  - {id: n38-container, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L254-L291", title: "Note 38 §3.3 (the diagram container is the oracle boundary)"}
-  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 §4 S1 (signs to the diagrams stage)"}
-  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 §4 D2 (decay-chain stitching; the canonical-form correction)"}
-  - {id: n38-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5 (decisions)"}
-  - {id: rooting-study, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/rooting-study-results.md#L233-L266", title: "Rooting-exploration study, findings"}
-  - {id: code-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::anchor, canonical, fermion_line_sign, fermion_pairing_sign"}
-  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "compile_single_diagram, canonical_root, choose_root"}
-  - {id: code-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "all_rootings_preserve_amplitude"}
-  - {id: code-renumber, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
+  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 §V5 (rooting-soundness: the sign derivation)"}
+  - {id: n38-container, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L254-L291", title: "Note 38 §3.3 (the diagram container is the oracle boundary)"}
+  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 §4 S1 (signs to the diagrams stage)"}
+  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 §4 D2 (decay-chain stitching; the canonical-form correction)"}
+  - {id: n38-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5 (decisions)"}
+  - {id: rooting-study, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/rooting-study-results.md#L233-L266", title: "Rooting-exploration study, findings"}
+  - {id: code-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::anchor, canonical, fermion_line_sign, fermion_pairing_sign"}
+  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "compile_single_diagram, canonical_root, choose_root"}
+  - {id: code-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "all_rootings_preserve_amplitude"}
+  - {id: code-renumber, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
 ---
 
 # Rooting invariance, the diagram anchor and canonical form

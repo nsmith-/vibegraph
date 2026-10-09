@@ -6,14 +6,14 @@ status: draft
 tags: [validation, diagrams, census, proc-card, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n19-v7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L751-L787", title: "Note 19 V7 (per-flavour diagram matching; NGRAPHS vs MAPCONFIG)"}
-  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 G1 (grammar oracle)"}
-  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 S2 (s-channel census)"}
-  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 D2 (decay-chain stitching and census)"}
-  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 P1 (polarization census and frame)"}
-  - {id: vdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_madgraph_diagrams.rs#L1-L200", title: "validate_madgraph_diagrams.rs"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml diagrams cells and standalone census rows"}
-  - {id: mg-helas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/helas_objects.py#L4581", title: "MadGraph helas_objects.py identical_decay_chain_factor"}
+  - {id: n19-v7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L751-L787", title: "Note 19 V7 (per-flavour diagram matching; NGRAPHS vs MAPCONFIG)"}
+  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 G1 (grammar oracle)"}
+  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 S2 (s-channel census)"}
+  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 D2 (decay-chain stitching and census)"}
+  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 P1 (polarization census and frame)"}
+  - {id: vdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_madgraph_diagrams.rs#L1-L200", title: "validate_madgraph_diagrams.rs"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml diagrams cells and standalone census rows"}
+  - {id: mg-helas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4581", title: "MadGraph helas_objects.py identical_decay_chain_factor"}
 ---
 
 These gates compare *structure* (which diagrams, subprocesses, s-channels,

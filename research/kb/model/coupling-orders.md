@@ -6,14 +6,14 @@ status: draft
 tags: [ufo, coupling-orders, weighted, smeftsim, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n02-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L519-L527", title: "Note 02, UFO parsing: FeynGraph vs vibegraph"}
-  - {id: n35-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L144-L174", title: "Note 35 §1.3, the measured SMEFTsim loader probe"}
-  - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
-  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, loader and model-topology surface (ufo-lorentz)"}
-  - {id: mg-add-interaction, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L1773", title: "MadGraph import_ufo.py add_interaction / order_to_int"}
-  - {id: mg-expansion-import, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L662-L677", title: "MadGraph import_ufo.py, model expansion_order"}
-  - {id: mg-check-expansion, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L3757-L3770", title: "MadGraph base_objects.py Process.check_expansion_orders"}
-  - {id: mg-optimal-orders, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L1685-L1688", title: "MadGraph diagram_generation.py, expansion caps after find_optimal_process_orders"}
+  - {id: n02-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L527", title: "Note 02, UFO parsing: FeynGraph vs vibegraph"}
+  - {id: n35-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L144-L174", title: "Note 35 §1.3, the measured SMEFTsim loader probe"}
+  - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
+  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, loader and model-topology surface (ufo-lorentz)"}
+  - {id: mg-add-interaction, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1773", title: "MadGraph import_ufo.py add_interaction / order_to_int"}
+  - {id: mg-expansion-import, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L662-L677", title: "MadGraph import_ufo.py, model expansion_order"}
+  - {id: mg-check-expansion, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3757-L3770", title: "MadGraph base_objects.py Process.check_expansion_orders"}
+  - {id: mg-optimal-orders, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L1685-L1688", title: "MadGraph diagram_generation.py, expansion caps after find_optimal_process_orders"}
 measured:
   - {commit: 00858a8, pr: 5, landed_in: e73b158, command: "cargo test -p vibegraph-lib --features extended-validation --test smeftsim"}
 ---

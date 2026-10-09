@@ -6,10 +6,10 @@ status: draft
 tags: [phase-space, symmetry-factor, identical-particles, polarization, cross-section]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L339-L369", title: "Note 22 close-out (gg → gg exactly twice MadGraph)"}
-  - {id: n28-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1299-L1363", title: "Note 28 S1 (channel-enumeration decision for identical particles)"}
-  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 P1 (polarized external particles)"}
-  - {id: mg-ipf, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L3742", title: "MadGraph base_objects.py identical_particle_factor"}
+  - {id: n22-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L339-L369", title: "Note 22 close-out (gg → gg exactly twice MadGraph)"}
+  - {id: n28-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1299-L1363", title: "Note 28 S1 (channel-enumeration decision for identical particles)"}
+  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 P1 (polarized external particles)"}
+  - {id: mg-ipf, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3742", title: "MadGraph base_objects.py identical_particle_factor"}
 ---
 
 # Identical final-state particle factor

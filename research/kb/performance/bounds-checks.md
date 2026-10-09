@@ -6,13 +6,13 @@ status: draft
 tags: [performance, evaluator, bounds-checks, unsafe, codegen]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n17-question, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/17-bounds-check-elimination.md#L11-L87", title: "Note 17 §1–3 (question, branch census, method)"}
-  - {id: n17-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/17-bounds-check-elimination.md#L88-L126", title: "Note 17 §4–5 (the coupled ceiling, push-era tree)"}
-  - {id: n17-mechanisms, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/17-bounds-check-elimination.md#L127-L226", title: "Note 17 §6–9 (candidate mechanisms, go/no-go, resolution)"}
-  - {id: n17-retest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/17-bounds-check-elimination.md#L227-L311", title: "Note 17 §10 (re-test 2026-10-04)"}
-  - {id: x86-unchecked, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L117-L186", title: "x86 AVX2 study: get_unchecked on the dispatch loop"}
-  - {id: run-rd-wr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L1035-L1069", title: "run.rs rd/wr accessors"}
-  - {id: cargo-features, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/Cargo.toml#L11-L25", title: "vibegraph-lib features (unchecked-study)"}
+  - {id: n17-question, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L11-L87", title: "Note 17 §1–3 (question, branch census, method)"}
+  - {id: n17-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L88-L126", title: "Note 17 §4–5 (the coupled ceiling, push-era tree)"}
+  - {id: n17-mechanisms, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L127-L226", title: "Note 17 §6–9 (candidate mechanisms, go/no-go, resolution)"}
+  - {id: n17-retest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L227-L311", title: "Note 17 §10 (re-test 2026-10-04)"}
+  - {id: x86-unchecked, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L117-L186", title: "x86 AVX2 study: get_unchecked on the dispatch loop"}
+  - {id: run-rd-wr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L1035-L1069", title: "run.rs rd/wr accessors"}
+  - {id: cargo-features, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/Cargo.toml#L11-L25", title: "vibegraph-lib features (unchecked-study)"}
 measured:
   - {host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "scripts/bench_schedule.sh 6 opblocked (arms orig=c4bc739, head, unchecked)"}
 ---

@@ -6,17 +6,17 @@ status: draft
 tags: [amplitudes, debugging, oracle, madgraph, signs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n12-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L11-L19", title: "Note 12 — the 2→6 continuum bug"}
-  - {id: n12-hard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L20-L36", title: "Note 12 — why it was hard"}
-  - {id: n12-false, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L88-L108", title: "Note 12 — false leads"}
-  - {id: n12-tool, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L109-L134", title: "Note 12 — the instrument that worked"}
-  - {id: n12-lessons, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L135-L164", title: "Note 12 — lessons"}
-  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — rooting-soundness probes (methodology only)"}
-  - {id: n28-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2305-L2327", title: "Note 28 S5 — the W-current defect localised to eleven diagrams"}
-  - {id: n39-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L124-L155", title: "Note 39 §4 — per-diagram sign recovery and the GF(2) solve"}
-  - {id: code-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L3358-L3366", title: "probe_process_diagrams"}
-  - {id: code-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/compare_amps.py", title: "validation/madgraph/compare_amps.py"}
-  - {id: code-signs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L1100-L1245", title: "root_diagram.rs — vector-vertex signs and fermi_sign assembly"}
+  - {id: n12-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L11-L19", title: "Note 12 — the 2→6 continuum bug"}
+  - {id: n12-hard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L20-L36", title: "Note 12 — why it was hard"}
+  - {id: n12-false, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L88-L108", title: "Note 12 — false leads"}
+  - {id: n12-tool, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L109-L134", title: "Note 12 — the instrument that worked"}
+  - {id: n12-lessons, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L135-L164", title: "Note 12 — lessons"}
+  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — rooting-soundness probes (methodology only)"}
+  - {id: n28-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2305-L2327", title: "Note 28 S5 — the W-current defect localised to eleven diagrams"}
+  - {id: n39-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L124-L155", title: "Note 39 §4 — per-diagram sign recovery and the GF(2) solve"}
+  - {id: code-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L3358-L3366", title: "probe_process_diagrams"}
+  - {id: code-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/compare_amps.py", title: "validation/madgraph/compare_amps.py"}
+  - {id: code-signs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1100-L1245", title: "root_diagram.rs — vector-vertex signs and fermi_sign assembly"}
 ---
 
 # Localising an amplitude disagreement with a bit-exact oracle

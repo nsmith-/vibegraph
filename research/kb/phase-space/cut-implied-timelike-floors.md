@@ -6,13 +6,13 @@ status: draft
 tags: [phase-space, cuts, floors, xqcut, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n34-tf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L56-L136", title: "Note 34 §1.2 (timelike-floor)"}
-  - {id: n34-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L326-L337", title: "Note 34 deferred S5 (the map's lower edge on the cut edge)"}
-  - {id: n41-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4 (MadGraph cuts and setup under xqcut)"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 (the τ-minimum audit)"}
-  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (xqcut floors already in the maps; τ floor dropped)"}
-  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setcuts.f#L156-L189", title: "MadGraph setcuts.f, the xqcut rewrite of ptj/mmjj"}
-  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/myamp.f#L337-L551", title: "MadGraph myamp.f set_peaks (xe, xm, the τ minimum)"}
+  - {id: n34-tf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L56-L136", title: "Note 34 §1.2 (timelike-floor)"}
+  - {id: n34-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L326-L337", title: "Note 34 deferred S5 (the map's lower edge on the cut edge)"}
+  - {id: n41-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4 (MadGraph cuts and setup under xqcut)"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 (the τ-minimum audit)"}
+  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (xqcut floors already in the maps; τ floor dropped)"}
+  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L156-L189", title: "MadGraph setcuts.f, the xqcut rewrite of ptj/mmjj"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L337-L551", title: "MadGraph myamp.f set_peaks (xe, xm, the τ minimum)"}
 measured:
   - {landed_in: 7664ff9, command: "two-arm five-seed ladders on pp_to_llj and pp_to_llj_dyn"}
   - {commit: 069a951, host: "4-core container shared with another session", command: "τ floor probe on pp_to_llj_fixed, pp_to_llj_mlm and pp_to_ll_0j2j_mlm"}

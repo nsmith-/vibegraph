@@ -6,12 +6,12 @@ status: draft
 tags: [colour, crossing, sextet, epsilon, toy-ufo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: code-convert, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/colorize.rs#L140-L340", title: "colorize.rs: convert_expr, slot_indices, check_slot_reps"}
-  - {id: code-tensor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/tensor.rs#L50-L90", title: "tensor.rs: TensorKind order and ColorTensor atoms"}
-  - {id: n35-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L432-L474", title: "Note 35 §3.5: the four-quark contact's crossing and gg_to_gg_cg's exact colour"}
-  - {id: n35-t3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1042-L1112", title: "Note 35 T3: d, Epsilon and sextet colour"}
-  - {id: n35-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1: conventions pinned by the close-out"}
-  - {id: fact-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/fermion-line-sign-ignores-vertex-content.md#L12-L35", title: "Fact: the d-colour row's sign was the SSS1/SSSS1 scalar-sink −1"}
+  - {id: code-convert, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/colorize.rs#L140-L340", title: "colorize.rs: convert_expr, slot_indices, check_slot_reps"}
+  - {id: code-tensor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/tensor.rs#L50-L90", title: "tensor.rs: TensorKind order and ColorTensor atoms"}
+  - {id: n35-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L432-L474", title: "Note 35 §3.5: the four-quark contact's crossing and gg_to_gg_cg's exact colour"}
+  - {id: n35-t3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1042-L1112", title: "Note 35 T3: d, Epsilon and sextet colour"}
+  - {id: n35-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1: conventions pinned by the close-out"}
+  - {id: fact-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/fermion-line-sign-ignores-vertex-content.md#L12-L35", title: "Fact: the d-colour row's sign was the SSS1/SSSS1 scalar-sink −1"}
 ---
 
 # Colour tensors under crossing; epsilon and sextet atoms

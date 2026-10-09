@@ -11,13 +11,13 @@ measured:
   - {commit: 5ced9bb, host: "AMD EPYC 9534 (Zen 4), bare metal", command: "scripts/topdown_kit.sh"}
   - {commit: 38c2410, host: "Intel Xeon Emerald Rapids, 4-vCPU cloud VM", command: "in-process A/B against 5a5e377, target-cpu=native"}
 sources:
-  - {id: x86-ratio, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L399-L456", title: "x86 study, AVX-512 re-measurement: per-event ratio to scalar (NumericArray)"}
-  - {id: x86-fix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L505-L668", title: "x86 study: force-inlining probe, corrections, the fix, the two release builds"}
-  - {id: x86-arm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L275-L324", title: "x86 study, ARM results: lane ratios and the transpose isolated"}
-  - {id: rc3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/roofline-census-results.md#L141-L159", title: "Roofline census §3 reading (the 2→6 capacity cliff)"}
-  - {id: td2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L53-L127", title: "Top-down Zen 4 §2 slot accounting"}
-  - {id: td4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L192-L225", title: "Top-down Zen 4 §4–§5"}
-  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 timing table"}
+  - {id: x86-ratio, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L399-L456", title: "x86 study, AVX-512 re-measurement: per-event ratio to scalar (NumericArray)"}
+  - {id: x86-fix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L505-L668", title: "x86 study: force-inlining probe, corrections, the fix, the two release builds"}
+  - {id: x86-arm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L275-L324", title: "x86 study, ARM results: lane ratios and the transpose isolated"}
+  - {id: rc3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/roofline-census-results.md#L141-L159", title: "Roofline census §3 reading (the 2→6 capacity cliff)"}
+  - {id: td2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L53-L127", title: "Top-down Zen 4 §2 slot accounting"}
+  - {id: td4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L192-L225", title: "Top-down Zen 4 §4–§5"}
+  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 timing table"}
 ---
 
 # Lane versus scalar per-event cost, per host

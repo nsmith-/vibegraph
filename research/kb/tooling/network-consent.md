@@ -6,10 +6,10 @@ status: draft
 tags: [cli, network, consent, pdf]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-u4-policy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2715-L2793", title: "Note 24 §U4 outcome: the interaction policy, as implemented"}
-  - {id: code-network, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/network.rs", title: "vibegraph-cli/src/network.rs"}
-  - {id: code-assets, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/assets.rs", title: "vibegraph-cli/src/assets.rs"}
-  - {id: code-fetch-common, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/fetch_common.sh", title: "validation/fetch_common.sh (the dev-side counterpart)"}
+  - {id: n24-u4-policy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2715-L2793", title: "Note 24 §U4 outcome: the interaction policy, as implemented"}
+  - {id: code-network, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/network.rs", title: "vibegraph-cli/src/network.rs"}
+  - {id: code-assets, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/assets.rs", title: "vibegraph-cli/src/assets.rs"}
+  - {id: code-fetch-common, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/fetch_common.sh", title: "validation/fetch_common.sh (the dev-side counterpart)"}
 ---
 # Network consent policy
 

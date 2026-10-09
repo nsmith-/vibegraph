@@ -6,13 +6,13 @@ status: draft
 tags: [sign-convention, fermi-sign, rooting, amplitudes, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L1020-L1250", title: "root_diagram.rs: yang_mills_vvv_sign, vector_contact_sign, gluon_scalar_current_sign, compile_single_diagram"}
-  - {id: code-build, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs#L620-L830", title: "root_lorentz.rs build_at_leg: the per-vertex build-sign arms"}
-  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L1393-L1470", title: "channel_counts and mg_guard_processes_exercise_every_convention_channel"}
-  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L755", title: "Note 24 P1: rows enforced per channel; c_i·AMP(i) is the comparable object"}
-  - {id: n28-s5s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2346-L2756", title: "Note 28 S5–S6: falsified candidates and the crossing sign rule"}
-  - {id: n29-f, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L353-L1152", title: "Note 29 chain F: the pinned-convention inventory and what the dumps pin"}
-  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: signs to the diagrams stage, the anchor, the tensor-path line rule"}
+  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1020-L1250", title: "root_diagram.rs: yang_mills_vvv_sign, vector_contact_sign, gluon_scalar_current_sign, compile_single_diagram"}
+  - {id: code-build, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L620-L830", title: "root_lorentz.rs build_at_leg: the per-vertex build-sign arms"}
+  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1393-L1470", title: "channel_counts and mg_guard_processes_exercise_every_convention_channel"}
+  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L755", title: "Note 24 P1: rows enforced per channel; c_i·AMP(i) is the comparable object"}
+  - {id: n28-s5s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2346-L2756", title: "Note 28 S5–S6: falsified candidates and the crossing sign rule"}
+  - {id: n29-f, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L1152", title: "Note 29 chain F: the pinned-convention inventory and what the dumps pin"}
+  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: signs to the diagrams stage, the anchor, the tensor-path line rule"}
   - {id: pr13, resource: "https://github.com/nsmith-/vibegraph/commit/7f523ad", title: "7f523ad (PR #13): SSS1/SSSS1 scalar-sink −1, Yukawa standalone JAMP rows"}
 ---
 

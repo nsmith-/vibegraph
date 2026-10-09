@@ -6,14 +6,14 @@ status: draft
 tags: [performance, egglog, e-graph, extraction, cse]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-tree-cost, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L63-L79", title: "Note 15 §1.2 (egglog 2.0 extraction is tree-cost)"}
-  - {id: n15-sharing, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L112-L133", title: "Note 15 §1.4 (sharing vertices across propagating particles)"}
-  - {id: n15-track3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L668-L701", title: "Note 15 §4 (dag-extraction investigation)"}
-  - {id: n15-nogo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L702-L746", title: "Note 15 §4.1 (go/no-go: NO-GO)"}
-  - {id: n15-variance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L747-L768", title: "Note 15 §4.2 (run-to-run AST variance upstream of egraph.rs)"}
-  - {id: n15-consequences, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L769-L787", title: "Note 15 §5 (consequences for egraph-rewrite)"}
-  - {id: n15-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L788-L799", title: "Note 15 references"}
-  - {id: egraph-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/egraph.rs#L180-L830", title: "egraph.rs enumerate / extract / decode_extraction"}
+  - {id: n15-tree-cost, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L63-L79", title: "Note 15 §1.2 (egglog 2.0 extraction is tree-cost)"}
+  - {id: n15-sharing, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L112-L133", title: "Note 15 §1.4 (sharing vertices across propagating particles)"}
+  - {id: n15-track3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L668-L701", title: "Note 15 §4 (dag-extraction investigation)"}
+  - {id: n15-nogo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L702-L746", title: "Note 15 §4.1 (go/no-go: NO-GO)"}
+  - {id: n15-variance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L747-L768", title: "Note 15 §4.2 (run-to-run AST variance upstream of egraph.rs)"}
+  - {id: n15-consequences, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L769-L787", title: "Note 15 §5 (consequences for egraph-rewrite)"}
+  - {id: n15-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L788-L799", title: "Note 15 references"}
+  - {id: egraph-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/egraph.rs#L180-L830", title: "egraph.rs enumerate / extract / decode_extraction"}
   - {id: extraction-gym, resource: "https://github.com/egraphs-good/extraction-gym", title: "egg community extraction gym (greedy DAG and ILP extractors)"}
 ---
 
@@ -142,7 +142,7 @@ extractor reproduced it faithfully (37 ↔ DAG cost 2 048, 38 ↔ 2 144 under
 
 ## References
 
-[MadGraph 5: Going Beyond](../references/papers/madgraph5-going-beyond.md) is the
+[MadGraph 5: Going Beyond](https://arxiv.org/abs/1106.0522) is the
 diagram-level wavefunction-reuse precedent; helicity recycling is in
 [the helicity-recycling paper](../references/papers/helicity-recycling-mg5.md).[^n15-refs]
 

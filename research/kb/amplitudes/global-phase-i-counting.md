@@ -6,13 +6,13 @@ status: draft
 tags: [phase-conventions, propagators, vector-current, madgraph-oracle, derivation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs#L405-L500", title: "kernel.rs: propagate_core and the −i/D propagators"}
-  - {id: code-metricvout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs#L890-L910", title: "kernel.rs: metric_vout, the contravariant current"}
-  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/amplitude_oracle.rs#L1-L100", title: "amplitude_oracle.rs module doc: G, |G| = 1, Re G = 0, known blind spots"}
-  - {id: n13-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7: one physical contravariant vector convention (Stage B)"}
-  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 F.1: the i-counting observation"}
-  - {id: n29-f6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L664-L682", title: "Note 29 F.6: the VVVV phase was a real −1 (b62ac17)"}
-  - {id: n29-f12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1037-L1095", title: "Note 29 F.12: G tracks MadGraph's colour-coefficient sign"}
+  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L405-L500", title: "kernel.rs: propagate_core and the −i/D propagators"}
+  - {id: code-metricvout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L890-L910", title: "kernel.rs: metric_vout, the contravariant current"}
+  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/amplitude_oracle.rs#L1-L100", title: "amplitude_oracle.rs module doc: G, |G| = 1, Re G = 0, known blind spots"}
+  - {id: n13-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7: one physical contravariant vector convention (Stage B)"}
+  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 F.1: the i-counting observation"}
+  - {id: n29-f6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L664-L682", title: "Note 29 F.6: the VVVV phase was a real −1 (b62ac17)"}
+  - {id: n29-f12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1037-L1095", title: "Note 29 F.12: G tracks MadGraph's colour-coefficient sign"}
 ---
 
 # The global amplitude phase

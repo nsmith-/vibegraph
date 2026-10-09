@@ -6,10 +6,10 @@ status: draft
 tags: [phase-conventions, fermion-flow, sign-convention, research, negative-result]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-chainf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L227-L270", title: "Note 29 chain F: the hypothesis and its sidecar terms"}
-  - {id: n29-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L353-L682", title: "Note 29 F.1–F.6: inventory, pre-registered bar, hostile cases, method, vacuity modes, brief errors"}
-  - {id: n29-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L693-L1152", title: "Note 29 F.7–F.13: P0, the rule, hostile cases, verdict, negative result, errors"}
-  - {id: n29-notdecided, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1208-L1224", title: "Note 29 F.15: what the study provably did not decide"}
+  - {id: n29-chainf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L227-L270", title: "Note 29 chain F: the hypothesis and its sidecar terms"}
+  - {id: n29-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L682", title: "Note 29 F.1–F.6: inventory, pre-registered bar, hostile cases, method, vacuity modes, brief errors"}
+  - {id: n29-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L693-L1152", title: "Note 29 F.7–F.13: P0, the rule, hostile cases, verdict, negative result, errors"}
+  - {id: n29-notdecided, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1208-L1224", title: "Note 29 F.15: what the study provably did not decide"}
 ---
 
 # Deriving diagram phases from U(1) charge flow

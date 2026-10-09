@@ -6,16 +6,16 @@ status: draft
 tags: [vegas, bias, integration, statistics, convergence]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1717", title: "Note 24 P3, the five-seed sweep was not sufficient: the budget scan"}
-  - {id: n24-p4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1934-L1953", title: "Note 24 P4, the sample's own σ does not inherit the integrator's bias"}
-  - {id: n31-i1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L49-L109", title: "Note 31 I1, VEGAS first-iteration convergence bias (plan and measured result)"}
-  - {id: n32-s1-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 Wave 1, I5 combine_seeds unweighted (plan)"}
-  - {id: n32-s1-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, per-session outcomes (combine_seeds moved)"}
-  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 / F-A, MadEvent's iteration combination as read"}
-  - {id: n34-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S2, MadGraph's last-three combination on the recarded llj row"}
+  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1717", title: "Note 24 P3, the five-seed sweep was not sufficient: the budget scan"}
+  - {id: n24-p4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1934-L1953", title: "Note 24 P4, the sample's own σ does not inherit the integrator's bias"}
+  - {id: n31-i1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L49-L109", title: "Note 31 I1, VEGAS first-iteration convergence bias (plan and measured result)"}
+  - {id: n32-s1-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 Wave 1, I5 combine_seeds unweighted (plan)"}
+  - {id: n32-s1-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, per-session outcomes (combine_seeds moved)"}
+  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 / F-A, MadEvent's iteration combination as read"}
+  - {id: n34-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S2, MadGraph's last-three combination on the recarded llj row"}
   - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs#L20-L135", title: "vegas.rs, 'Combining the iterations', DEFAULT_WARMUP_ITERS, IterationCombination"}
   - {id: budget-rs, resource: "vibegraph-lib/src/budget.rs", title: "ChannelHistory::combine, Target budget refusal of InverseVariance"}
-  - {id: mg-dsample-comb, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f#L296-L332", title: "MadEvent dsample.f, last-three-iteration combination"}
+  - {id: mg-dsample-comb, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L296-L332", title: "MadEvent dsample.f, last-three-iteration combination"}
 measured:
   - {commit: ea58ab9, landed_in: e99b05c, command: "5 seeds × 75k/150k/300k/600k points per iteration on the llj rows, before/after, same host"}
 ---

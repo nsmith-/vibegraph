@@ -6,19 +6,19 @@ status: draft
 tags: [lhef, unweighting, generate, events, format-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2 — accept/reject and validate_unweighting"}
-  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3 — the format oracle and its mutation controls"}
-  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4 — generate, weight strategies and the replay pin"}
-  - {id: n23-model, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23 — model identity in the artifact"}
-  - {id: n24-p4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L2010", title: "Note 24 P4 — generate at proton beams, the four gates"}
-  - {id: n24-p4c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4 — plan corrections"}
-  - {id: n26-home, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/26-refdata-compact-representation.md#L182-L203", title: "Note 26 — the byte-round-trip gate's home"}
-  - {id: n36a-unw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L278-L290", title: "Note 36a §4 — validate_unweighting thresholds and headroom"}
-  - {id: code-lhef, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_lhef.rs", title: "vibegraph-lib/tests/validate_lhef.rs"}
-  - {id: code-unw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_unweighting.rs", title: "vibegraph-lib/tests/validate_unweighting.rs"}
-  - {id: code-unweight, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/unweight.rs#L1-L45", title: "unweight.rs — why the channel is drawn ∝ w_max"}
-  - {id: code-proton, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/tests/cli_generate_proton.rs", title: "vibegraph-cli/tests/cli_generate_proton.rs"}
-  - {id: code-generate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/generate.rs#L425-L445", title: "generate.rs — stochastic rounding refused on mixed multiplicity"}
+  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2 — accept/reject and validate_unweighting"}
+  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3 — the format oracle and its mutation controls"}
+  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4 — generate, weight strategies and the replay pin"}
+  - {id: n23-model, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23 — model identity in the artifact"}
+  - {id: n24-p4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L2010", title: "Note 24 P4 — generate at proton beams, the four gates"}
+  - {id: n24-p4c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4 — plan corrections"}
+  - {id: n26-home, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/26-refdata-compact-representation.md#L182-L203", title: "Note 26 — the byte-round-trip gate's home"}
+  - {id: n36a-unw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L278-L290", title: "Note 36a §4 — validate_unweighting thresholds and headroom"}
+  - {id: code-lhef, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_lhef.rs", title: "vibegraph-lib/tests/validate_lhef.rs"}
+  - {id: code-unw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_unweighting.rs", title: "vibegraph-lib/tests/validate_unweighting.rs"}
+  - {id: code-unweight, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/unweight.rs#L1-L45", title: "unweight.rs — why the channel is drawn ∝ w_max"}
+  - {id: code-proton, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/tests/cli_generate_proton.rs", title: "vibegraph-cli/tests/cli_generate_proton.rs"}
+  - {id: code-generate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L425-L445", title: "generate.rs — stochastic rounding refused on mixed multiplicity"}
 ---
 
 # LHEF, unweighting and generate gates

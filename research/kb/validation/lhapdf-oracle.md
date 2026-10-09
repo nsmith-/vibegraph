@@ -6,13 +6,13 @@ status: draft
 tags: [pdf, lhapdf, oracle, interpolation, alpha-s]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L40-L62", title: "Note 18 §1.1 — why the oracle is LHAPDF, not a spline"}
-  - {id: n18-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 — validation regime"}
-  - {id: n18-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 H1/H2 — oracle backend, scirs2 rejected, accept bars"}
-  - {id: n31-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L431-L485", title: "Note 31 §2.4 — the real accept bars, LHAPDF's operation order, the absolute screen"}
-  - {id: code-gen, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/pdf/gen_oracle.cpp#L1-L30", title: "validation/pdf/gen_oracle.cpp"}
-  - {id: code-gate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_pdf_grid.rs", title: "vibegraph-lib/tests/validate_pdf_grid.rs"}
-  - {id: code-interp, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/pdf/interp.rs#L655-L700", title: "pdf/interp.rs — bilinear_in_log_is_reproduced_exactly"}
+  - {id: n18-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L40-L62", title: "Note 18 §1.1 — why the oracle is LHAPDF, not a spline"}
+  - {id: n18-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 — validation regime"}
+  - {id: n18-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 H1/H2 — oracle backend, scirs2 rejected, accept bars"}
+  - {id: n31-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L431-L485", title: "Note 31 §2.4 — the real accept bars, LHAPDF's operation order, the absolute screen"}
+  - {id: code-gen, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/pdf/gen_oracle.cpp#L1-L30", title: "validation/pdf/gen_oracle.cpp"}
+  - {id: code-gate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_pdf_grid.rs", title: "vibegraph-lib/tests/validate_pdf_grid.rs"}
+  - {id: code-interp, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/pdf/interp.rs#L655-L700", title: "pdf/interp.rs — bilinear_in_log_is_reproduced_exactly"}
 ---
 
 # LHAPDF PDF oracle

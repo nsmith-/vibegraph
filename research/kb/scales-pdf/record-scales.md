@@ -6,15 +6,15 @@ status: draft
 tags: [lhef, scales, scalup, aqcdup, alpha-s]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L367-L403", title: "Note 07 (unwgt.f: truncated π in AQCDUP)"}
-  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2 (banked-layer hygiene, the p3r3 AQCDUP reading)"}
-  - {id: n35-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1359-L1397", title: "Note 35 §10.2 (colour-toy runs promoted in validate_scales)"}
-  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 §7.1 (B8, the fixed-beam scale record, user decision)"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L547-L624", title: "Note 41 M1 (the scale split)"}
-  - {id: build-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/lhef/build.rs#L21-L41", title: "lhef/build.rs scalup()"}
-  - {id: hadronic-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/hadronic.rs#L2773-L2794", title: "FixedBeamIntegrand::record_scales"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L694-L695", title: "MadGraph unwgt.f (aaqcd = g*g/4d0/3.1415926d0)"}
-  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L7076-L7079", title: "MadGraph export_v4.py (aS injected for a model without one)"}
+  - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L403", title: "Note 07 (unwgt.f: truncated π in AQCDUP)"}
+  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2 (banked-layer hygiene, the p3r3 AQCDUP reading)"}
+  - {id: n35-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1359-L1397", title: "Note 35 §10.2 (colour-toy runs promoted in validate_scales)"}
+  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 §7.1 (B8, the fixed-beam scale record, user decision)"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L547-L624", title: "Note 41 M1 (the scale split)"}
+  - {id: build-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/lhef/build.rs#L21-L41", title: "lhef/build.rs scalup()"}
+  - {id: hadronic-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/hadronic.rs#L2773-L2794", title: "FixedBeamIntegrand::record_scales"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L694-L695", title: "MadGraph unwgt.f (aaqcd = g*g/4d0/3.1415926d0)"}
+  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L7076-L7079", title: "MadGraph export_v4.py (aS injected for a model without one)"}
 measured:
   - {commit: 2803e17, command: "pixi run --skip-deps validate"}
 ---

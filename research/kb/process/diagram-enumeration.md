@@ -6,16 +6,16 @@ status: draft
 tags: [diagrams, feyngraph, enumeration, madgraph, ngraphs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-sl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L94-L106", title: "Note 01, Stelzer and Long: the diagram enumeration algorithm"}
-  - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L160-L283", title: "Note 02, FeynGraph Goal 2: diagram enumeration (read at 1dc4ea7)"}
-  - {id: n02-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L357-L409", title: "Note 02, MadGraph Goal 2: diagram enumeration"}
-  - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L528-L555", title: "Note 02, FeynGraph as a dependency; MadGraph vs FeynGraph"}
-  - {id: n06-gap, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L460-L544", title: "Note 06 §8, feyngraph gap analysis and model construction"}
-  - {id: n25-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L678-L719", title: "Note 25 §10, findings register (g g > g g counting decision)"}
-  - {id: n35-ngraphs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1494-L1515", title: "Note 35 §10.7, gg_to_gg_cg 21/27 under the NGRAPHS convention"}
-  - {id: mg-generate-diagrams, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L520", title: "MadGraph diagram_generation.py Amplitude.generate_diagrams"}
-  - {id: mg-diagramtag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L46", title: "MadGraph diagram_generation.py DiagramTag"}
-  - {id: code-enum, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/mod.rs#L690-L960", title: "vibegraph-lib/src/diagrams/mod.rs generation loop"}
+  - {id: n01-sl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L94-L106", title: "Note 01, Stelzer and Long: the diagram enumeration algorithm"}
+  - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L160-L283", title: "Note 02, FeynGraph Goal 2: diagram enumeration (read at 1dc4ea7)"}
+  - {id: n02-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L357-L409", title: "Note 02, MadGraph Goal 2: diagram enumeration"}
+  - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L528-L555", title: "Note 02, FeynGraph as a dependency; MadGraph vs FeynGraph"}
+  - {id: n06-gap, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L460-L544", title: "Note 06 §8, feyngraph gap analysis and model construction"}
+  - {id: n25-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L678-L719", title: "Note 25 §10, findings register (g g > g g counting decision)"}
+  - {id: n35-ngraphs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1494-L1515", title: "Note 35 §10.7, gg_to_gg_cg 21/27 under the NGRAPHS convention"}
+  - {id: mg-generate-diagrams, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L520", title: "MadGraph diagram_generation.py Amplitude.generate_diagrams"}
+  - {id: mg-diagramtag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L46", title: "MadGraph diagram_generation.py DiagramTag"}
+  - {id: code-enum, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/mod.rs#L690-L960", title: "vibegraph-lib/src/diagrams/mod.rs generation loop"}
 ---
 
 vibegraph enumerates tree-level Feynman diagrams with the `feyngraph` crate

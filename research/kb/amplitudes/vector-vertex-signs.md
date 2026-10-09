@@ -6,18 +6,18 @@ status: draft
 tags: [sign-conventions, vector-vertices, qcd, electroweak, madgraph-comparison]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n39-wrong, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L16-L53", title: "Note 39 §1 (what was wrong)"}
-  - {id: n39-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L54-L72", title: "Note 39 §2 (the rule)"}
-  - {id: n39-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L73-L123", title: "Note 39 §3 (the standalone JAMP oracle)"}
-  - {id: n39-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L124-L155", title: "Note 39 §4 (how the rule was found; falsified candidates)"}
-  - {id: n39-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L156-L171", title: "Note 39 §5 (open)"}
-  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 (gates and their blind spots)"}
-  - {id: n35-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L432-L474", title: "Note 35 §3.5 (C1 colour, E2 the contact sign)"}
-  - {id: n16-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L19-L36", title: "Note 16 outcome (the gg→gg contact phase)"}
-  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "yang_mills_vvv_sign, vector_contact_sign, gluon_scalar_current_sign, anchor_rooted_outputs"}
-  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "build_at_leg: the per-vertex contact −1"}
-  - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/standalone_jamps.rs", title: "standalone_jamps (per-flow JAMPs against MadGraph standalone)"}
-  - {id: code-pt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/gluon_parke_taylor.rs", title: "gluon_parke_taylor (hermetic MHV check)"}
+  - {id: n39-wrong, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L16-L53", title: "Note 39 §1 (what was wrong)"}
+  - {id: n39-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L54-L72", title: "Note 39 §2 (the rule)"}
+  - {id: n39-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L73-L123", title: "Note 39 §3 (the standalone JAMP oracle)"}
+  - {id: n39-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L124-L155", title: "Note 39 §4 (how the rule was found; falsified candidates)"}
+  - {id: n39-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L156-L171", title: "Note 39 §5 (open)"}
+  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 (gates and their blind spots)"}
+  - {id: n35-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L432-L474", title: "Note 35 §3.5 (C1 colour, E2 the contact sign)"}
+  - {id: n16-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L19-L36", title: "Note 16 outcome (the gg→gg contact phase)"}
+  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "yang_mills_vvv_sign, vector_contact_sign, gluon_scalar_current_sign, anchor_rooted_outputs"}
+  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "build_at_leg: the per-vertex contact −1"}
+  - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/standalone_jamps.rs", title: "standalone_jamps (per-flow JAMPs against MadGraph standalone)"}
+  - {id: code-pt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/gluon_parke_taylor.rs", title: "gluon_parke_taylor (hermetic MHV check)"}
 ---
 
 # Vector-vertex convention signs

@@ -6,12 +6,12 @@ status: draft
 tags: [performance, evaluator, constant-folding, fma, fold]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: td-fill, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L128-L191", title: "Top-down Zen 4 §3 (inside fill_arenas on the 2→6)"}
-  - {id: td-changes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L209-L225", title: "Top-down Zen 4 §5 (ranked levers)"}
-  - {id: td-impl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 (constant collection and weighted JAMP sums)"}
-  - {id: td-bare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L299-L355", title: "Top-down Zen 4 §7 (configuration amplitudes read bare)"}
-  - {id: td-real, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L356-L381", title: "Top-down Zen 4 §8 (real constant products to the real pool)"}
-  - {id: fold-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/fold.rs#L215-L250", title: "Folded::build pass order"}
+  - {id: td-fill, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L128-L191", title: "Top-down Zen 4 §3 (inside fill_arenas on the 2→6)"}
+  - {id: td-changes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L209-L225", title: "Top-down Zen 4 §5 (ranked levers)"}
+  - {id: td-impl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 (constant collection and weighted JAMP sums)"}
+  - {id: td-bare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L299-L355", title: "Top-down Zen 4 §7 (configuration amplitudes read bare)"}
+  - {id: td-real, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L356-L381", title: "Top-down Zen 4 §8 (real constant products to the real pool)"}
+  - {id: fold-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/fold.rs#L215-L250", title: "Folded::build pass order"}
 measured:
   - {commit: 5ced9bb, pr: 17, landed_in: aeb96a7, host: "AMD EPYC 9534 (Zen 4), bare metal, RHEL 9", command: "scripts/topdown_kit.sh"}
   - {pr: 17, landed_in: aeb96a7, host: "Intel Xeon Emerald Rapids, 4-vCPU cloud VM", command: "in-process A/B driver, 100 ms slices (400 ms on the 2→6), 40 per arm, pinned core"}

@@ -6,10 +6,10 @@ status: draft
 tags: [pdf, licensing, distribution, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-licence, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2358-L2410", title: "Note 24 §U2 outcome: licence finding (not settled)"}
-  - {id: n24-sizes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2411-L2432", title: "Note 24 §U2 outcome: measured sizes"}
-  - {id: n24-decision, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2433-L2444", title: "Note 24 §U2 outcome: decision, fetch at first use"}
-  - {id: code-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/cache/pinned.rs#L1-L22", title: "vibegraph-lib/src/cache/pinned.rs module doc"}
+  - {id: n24-licence, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2358-L2410", title: "Note 24 §U2 outcome: licence finding (not settled)"}
+  - {id: n24-sizes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2411-L2432", title: "Note 24 §U2 outcome: measured sizes"}
+  - {id: n24-decision, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2433-L2444", title: "Note 24 §U2 outcome: decision, fetch at first use"}
+  - {id: code-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/cache/pinned.rs#L1-L22", title: "vibegraph-lib/src/cache/pinned.rs module doc"}
 measured:
   command: "download of https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz on 2026-07-30; sizes of the archive, member 0 and .info, raw and recompressed"
 ---
@@ -89,9 +89,9 @@ decision:
 > NNPDF Collaboration: R. D. Ball, V. Bertone, S. Carrazza, L. Del Debbio,
 > S. Forte, A. Guffanti, N. P. Hartland, J. Rojo, "Parton distributions with
 > QED corrections", Nucl. Phys. B877 (2013) 290, arXiv:1308.0598
-> ([paper](../references/papers/nnpdf23-qed.md)). Delivered via LHAPDF6:
+> ([paper](https://arxiv.org/abs/1308.0598)). Delivered via LHAPDF6:
 > A. Buckley et al., Eur. Phys. J. C75 (2015) 132, arXiv:1412.7420
-> ([paper](../references/papers/lhapdf6.md)).
+> ([paper](https://arxiv.org/abs/1412.7420)).
 
 The licensing of what the binary *does* embed, the MadGraph SM model, is
 [licensing](licensing.md).

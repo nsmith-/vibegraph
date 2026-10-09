@@ -9,8 +9,8 @@ measured:
   - {command: "vibegraph integrate per subprocess directory against fresh and patched MadEvent directories (note 41 D2)"}
   - {commit: 590f87a, host: "Apple M3 Max (16 cores), macOS 15.7", command: "pixi run -e madgraph --skip-deps validate-mlm-sigma"}
 sources:
-  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3, the budget ladder, D2 diagnosis, decisions and R1"}
-  - {id: n41-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3403-L3489", title: "Note 41 Z2, the mixed rows' sigma gate"}
+  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3, the budget ladder, D2 diagnosis, decisions and R1"}
+  - {id: n41-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3403-L3489", title: "Note 41 Z2, the mixed rows' sigma gate"}
 ---
 # The `pp_to_ll_0j2j_mlm` `@2` excess decomposed
 

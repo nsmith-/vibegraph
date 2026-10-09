@@ -10,9 +10,9 @@ measured:
   host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 48 KiB L1d, 2 MiB L2"
   command: "RUSTFLAGS='-C target-cpu=native' cargo test -p vibegraph-lib --lib roofline -- --include-ignored --nocapture; cargo bench --bench eval_strategies"
 sources:
-  - {id: rc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/roofline-census-results.md#L11-L272", title: "Roofline census results"}
-  - {id: aot5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L194-L226", title: "AOT study §5 (the census ceiling against compiled arithmetic)"}
-  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 (constant collection; width 8 on Emerald Rapids afterwards)"}
+  - {id: rc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/roofline-census-results.md#L11-L272", title: "Roofline census results"}
+  - {id: aot5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L194-L226", title: "AOT study §5 (the census ceiling against compiled arithmetic)"}
+  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6 (constant collection; width 8 on Emerald Rapids afterwards)"}
 ---
 
 # Roofline census of the helicity evaluator

@@ -6,11 +6,11 @@ status: draft
 tags: [phase-space-map, soft-emission, splitting-kernel, energy-floor, map-choices]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n37-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L71-L123", title: "Note 37 §2.1–2.2, the z(1−z) structure and the map"}
-  - {id: n37-llj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L124-L161", title: "Note 37 §2.3, where it can fire in p p > l+ l- j"}
-  - {id: n37-meas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L181-L230", title: "Note 37 §3.1, partonic evaluations to 0.1%, three seeds"}
-  - {id: n37-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L268-L296", title: "Note 37 §4, decisions"}
-  - {id: n37-had, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L416-L466", title: "Note 37 §6.1, hadronic measurements at twenty seeds"}
+  - {id: n37-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L71-L123", title: "Note 37 §2.1–2.2, the z(1−z) structure and the map"}
+  - {id: n37-llj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L124-L161", title: "Note 37 §2.3, where it can fire in p p > l+ l- j"}
+  - {id: n37-meas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L181-L230", title: "Note 37 §3.1, partonic evaluations to 0.1%, three seeds"}
+  - {id: n37-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L268-L296", title: "Note 37 §4, decisions"}
+  - {id: n37-had, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L416-L466", title: "Note 37 §6.1, hadronic measurements at twenty seeds"}
   - {id: dc-soft, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L1960-L2120", title: "SoftSplit, ShapedSplit, angle_window, shaped_split"}
   - {id: dc-with, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L955-L995", title: "DiagramChannel::with_split_angles"}
   - {id: cuts-ef, resource: "vibegraph-lib/src/cuts.rs#L741-L756", title: "Cuts::energy_floor"}

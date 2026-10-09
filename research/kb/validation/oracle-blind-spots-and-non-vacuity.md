@@ -6,16 +6,16 @@ status: draft
 tags: [validation, methodology, negative-control, blind-spot, non-vacuity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6, sprint debrief"}
-  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the IDWTUP blind spot"}
-  - {id: n28-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1299-L1363", title: "Note 28 S1, permutation-closure control"}
-  - {id: n28-s23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1539-L1622", title: "Note 28 S2.3, the ordering test and its negative controls"}
-  - {id: n28-cov, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1851-L1873", title: "Note 28, coverage per process"}
-  - {id: n28-spine, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2746-L2756", title: "Note 28, what the spine-sign test cannot see"}
-  - {id: n28-k5b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3207-L3236", title: "Note 28 K5b.5, samples cells and what they cannot see"}
-  - {id: n28-z3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3, the vacuity guard's instance"}
-  - {id: n36-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L86-L143", title: "Note 36 B0, seed-sweep headroom census"}
-  - {id: kt-gate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_kt_cluster.rs#L500-L510", title: "validate_kt_cluster.rs, the dumps-present assertion"}
+  - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6, sprint debrief"}
+  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the IDWTUP blind spot"}
+  - {id: n28-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1299-L1363", title: "Note 28 S1, permutation-closure control"}
+  - {id: n28-s23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1539-L1622", title: "Note 28 S2.3, the ordering test and its negative controls"}
+  - {id: n28-cov, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1851-L1873", title: "Note 28, coverage per process"}
+  - {id: n28-spine, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2746-L2756", title: "Note 28, what the spine-sign test cannot see"}
+  - {id: n28-k5b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3207-L3236", title: "Note 28 K5b.5, samples cells and what they cannot see"}
+  - {id: n28-z3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3, the vacuity guard's instance"}
+  - {id: n36-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L86-L143", title: "Note 36 B0, seed-sweep headroom census"}
+  - {id: kt-gate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_kt_cluster.rs#L500-L510", title: "validate_kt_cluster.rs, the dumps-present assertion"}
 ---
 # Oracle blind spots, convention claims and non-vacuity
 

@@ -6,11 +6,11 @@ status: draft
 tags: [performance, simd, lanes, evaluator, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L100-L132", title: "Note 18 §1.3, the Real seam and lane divergence"}
-  - {id: n18-h4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L622-L748", title: "Note 18 §5 decision record H4 (bounds, divergence inventory, gate, AVX-512 kit)"}
-  - {id: n18-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 Outcome"}
-  - {id: lanes-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/lanes.rs#L1-L40", title: "helas/eval/lanes.rs module doc (lane-uniformity contract)"}
-  - {id: run-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L835-L910", title: "broadcast_lanes, eval_m2_lanes, pack_lane_points, eval_m2_lanes_packed"}
+  - {id: n18-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L100-L132", title: "Note 18 §1.3, the Real seam and lane divergence"}
+  - {id: n18-h4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L622-L748", title: "Note 18 §5 decision record H4 (bounds, divergence inventory, gate, AVX-512 kit)"}
+  - {id: n18-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 Outcome"}
+  - {id: lanes-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/lanes.rs#L1-L40", title: "helas/eval/lanes.rs module doc (lane-uniformity contract)"}
+  - {id: run-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L835-L910", title: "broadcast_lanes, eval_m2_lanes, pack_lane_points, eval_m2_lanes_packed"}
 ---
 
 # Lane-batched evaluation of `eval_m2`

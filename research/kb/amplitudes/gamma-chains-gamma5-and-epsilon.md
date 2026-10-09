@@ -6,12 +6,12 @@ status: draft
 tags: [lorentz-structures, smeft, gamma5, levi-civita, rooting]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1: tree-shaped structures (Epsilon, γ-chains, Gamma5, momentum algebra)"}
-  - {id: code-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs#L985-L1040", title: "root_lorentz.rs: chain_adjoint"}
-  - {id: code-eps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs#L268-L288", title: "root_lorentz.rs: epsilon_out_order"}
-  - {id: code-pmomout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs#L512-L536", title: "kernel.rs: pmom_out, p_bra − p_ket for a fermion pair"}
-  - {id: code-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/lower.rs#L340-L400", title: "lower.rs: chiral_gamma_site, the fusion guard"}
-  - {id: mg-epsilon, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_object.py#L938-L948", title: "ALOHA aloha_object.py: L_Epsilon.give_parity"}
+  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1: tree-shaped structures (Epsilon, γ-chains, Gamma5, momentum algebra)"}
+  - {id: code-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L985-L1040", title: "root_lorentz.rs: chain_adjoint"}
+  - {id: code-eps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L268-L288", title: "root_lorentz.rs: epsilon_out_order"}
+  - {id: code-pmomout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L512-L536", title: "kernel.rs: pmom_out, p_bra − p_ket for a fermion pair"}
+  - {id: code-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/lower.rs#L340-L400", title: "lower.rs: chiral_gamma_site, the fusion guard"}
+  - {id: mg-epsilon, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L938-L948", title: "ALOHA aloha_object.py: L_Epsilon.give_parity"}
 ---
 
 # Gamma chains, Gamma5 and Levi-Civita nodes

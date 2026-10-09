@@ -6,17 +6,17 @@ status: draft
 tags: [validation, manifest, reference-rows, madgraph, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L392-L445", title: "Note 24 P0 (what was banked for llj)"}
-  - {id: n28-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6 (decisions D1–D4)"}
-  - {id: n28-s26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1765-L1803", title: "Note 28 S2.6 (the spine reference process and its card)"}
-  - {id: n28-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1916-L1955", title: "Note 28 S4 B3 (the spine reference σ and what it found)"}
-  - {id: n28-k44, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2507-L2538", title: "Note 28 K4.4 (decisions on llj partonic, 2→6, pp_to_jj)"}
-  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2685-L2745", title: "Note 28 S6 (crossing sign rule: measured, row promoted)"}
-  - {id: n28-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3625-L3775", title: "Note 28 C.3–C.6 (pp_to_jj capstone)"}
-  - {id: n28-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3918-L3984", title: "Note 28 C2.4 (pp_to_jj σ cell gated)"}
-  - {id: n28-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4100-L4135", title: "Note 28 Z.1 (the duplicate llj run pruned)"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml rationale fields and cell notes"}
-  - {id: diagram-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/diagram.rs#L570", title: "Diagram::fermion_line_sign"}
+  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L392-L445", title: "Note 24 P0 (what was banked for llj)"}
+  - {id: n28-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6 (decisions D1–D4)"}
+  - {id: n28-s26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1765-L1803", title: "Note 28 S2.6 (the spine reference process and its card)"}
+  - {id: n28-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1916-L1955", title: "Note 28 S4 B3 (the spine reference σ and what it found)"}
+  - {id: n28-k44, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2507-L2538", title: "Note 28 K4.4 (decisions on llj partonic, 2→6, pp_to_jj)"}
+  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2685-L2745", title: "Note 28 S6 (crossing sign rule: measured, row promoted)"}
+  - {id: n28-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3625-L3775", title: "Note 28 C.3–C.6 (pp_to_jj capstone)"}
+  - {id: n28-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3918-L3984", title: "Note 28 C2.4 (pp_to_jj σ cell gated)"}
+  - {id: n28-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4100-L4135", title: "Note 28 Z.1 (the duplicate llj run pruned)"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml rationale fields and cell notes"}
+  - {id: diagram-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L570", title: "Diagram::fermion_line_sign"}
 ---
 
 Most rows in the [process manifest](process-manifest.md) are there because a

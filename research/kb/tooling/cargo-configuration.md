@@ -6,13 +6,13 @@ status: draft
 tags: [cargo, build, profiles, worktrees, testing]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-h5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L758-L768", title: "Note 18 §5 H5 decision record: the float_roundtrip footgun"}
-  - {id: n24-commit-time, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L3114-L3149", title: "Note 24 close-out: the commit-time regression"}
-  - {id: n35-disk, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35: SMEFT cross section session, disk finding"}
-  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L850-L861", title: "Note 41 §M2: a shared CARGO_TARGET_DIR does not separate worktrees"}
-  - {id: n41-m2-review, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1003-L1007", title: "Note 41 §M2: a concurrent session overwrote this worktree's test binary"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3291-L3297", title: "Note 41 §Z: CARGO_PROFILE_RELEASE_DEBUG_DEBUG cannot work"}
-  - {id: cargo-toml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/Cargo.toml", title: "Workspace Cargo.toml"}
+  - {id: n18-h5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L758-L768", title: "Note 18 §5 H5 decision record: the float_roundtrip footgun"}
+  - {id: n24-commit-time, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L3114-L3149", title: "Note 24 close-out: the commit-time regression"}
+  - {id: n35-disk, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35: SMEFT cross section session, disk finding"}
+  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L850-L861", title: "Note 41 §M2: a shared CARGO_TARGET_DIR does not separate worktrees"}
+  - {id: n41-m2-review, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1003-L1007", title: "Note 41 §M2: a concurrent session overwrote this worktree's test binary"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3291-L3297", title: "Note 41 §Z: CARGO_PROFILE_RELEASE_DEBUG_DEBUG cannot work"}
+  - {id: cargo-toml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/Cargo.toml", title: "Workspace Cargo.toml"}
 measured:
   command: "touch vibegraph-lib/src/lib.rs && cargo fmt --check && cargo test (warm target directory), before and after [profile.dev] opt-level = 2"
 ---

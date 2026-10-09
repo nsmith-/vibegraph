@@ -6,28 +6,28 @@ status: draft
 tags: [madgraph, defects, reference, upstream-report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n07-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L43-L227", title: "Note 07, weaknesses and bug tables (rows marked found here)"}
-  - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L367-L415", title: "Note 07, AQCDUP truncated pi and rambo.py"}
-  - {id: n07-p1d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L439-L538", title: "Note 07, ALOHA P1D flipped-fermion veto, with upstream draft"}
-  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L339-L357", title: "Note 22 close-out headline"}
-  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1, the h to tau tau pole bin and get_channel_cut"}
-  - {id: n29-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3324-L3770", title: "Note 29 chain D measurements"}
-  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 (GC_303 literal rounding)"}
-  - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5, the coupling oracle"}
-  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3 (genps.f uninitialised t)"}
-  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 7.1 B8 (injected aS)"}
-  - {id: n38-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L802-L881", title: "Note 38 S3, $ as the pointwise integrand"}
-  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 8.1 Z1 (patched $ t t~ reference)"}
-  - {id: n41-15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L191-L205", title: "Note 41 1.5, MadGraph defects met on the way"}
-  - {id: n41-mlm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3, D2 and R1"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z close-out"}
-  - {id: rw-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/reweight-vs-madgraph-results.md#L32-L49", title: "Reweighting against MadGraph, what is measured"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L752-L761", title: "MadGraph unwgt.f, SCALUP and the truncated pi"}
-  - {id: mg-aloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/create_aloha.py#L527-L530", title: "MadGraph create_aloha.py, the 1D numerator (flip at L262-L263)"}
-  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L7076", title: "MadGraph export_v4.py, aS injection"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L1817", title: "MadGraph genps.f, get_channel_cut"}
+  - {id: n07-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L43-L227", title: "Note 07, weaknesses and bug tables (rows marked found here)"}
+  - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L415", title: "Note 07, AQCDUP truncated pi and rambo.py"}
+  - {id: n07-p1d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L439-L538", title: "Note 07, ALOHA P1D flipped-fermion veto, with upstream draft"}
+  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L339-L357", title: "Note 22 close-out headline"}
+  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1, the h to tau tau pole bin and get_channel_cut"}
+  - {id: n29-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3324-L3770", title: "Note 29 chain D measurements"}
+  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 (GC_303 literal rounding)"}
+  - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5, the coupling oracle"}
+  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3 (genps.f uninitialised t)"}
+  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 7.1 B8 (injected aS)"}
+  - {id: n38-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L802-L881", title: "Note 38 S3, $ as the pointwise integrand"}
+  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 8.1 Z1 (patched $ t t~ reference)"}
+  - {id: n41-15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L191-L205", title: "Note 41 1.5, MadGraph defects met on the way"}
+  - {id: n41-mlm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3, D2 and R1"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z close-out"}
+  - {id: rw-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/reweight-vs-madgraph-results.md#L32-L49", title: "Reweighting against MadGraph, what is measured"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L752-L761", title: "MadGraph unwgt.f, SCALUP and the truncated pi"}
+  - {id: mg-aloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/create_aloha.py#L527-L530", title: "MadGraph create_aloha.py, the 1D numerator (flip at L262-L263)"}
+  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L7076", title: "MadGraph export_v4.py, aS injection"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1817", title: "MadGraph genps.f, get_channel_cut"}
   - {id: mg-286feb8, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/286feb8e606a4e55951f6ea10ea0e3d145213b13", title: "mg5amcnlo commit 286feb8e, change sde_strategy2 to avoid negative weights"}
-  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/rambo.py#L218", title: "MadGraph rambo.py overflow check"}
+  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/rambo.py#L218", title: "MadGraph rambo.py overflow check"}
 ---
 # MadGraph defects found by this project
 

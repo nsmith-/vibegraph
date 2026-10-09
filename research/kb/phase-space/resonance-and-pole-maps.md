@@ -6,14 +6,14 @@ status: draft
 tags: [breit-wigner, resonance, decay-chains, phase-space-map, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out (BW map, firing-test inventory)"}
-  - {id: n21-production, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21, putting the sampler into production (massless pole, log map)"}
-  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 D3, decay-chain phase space, σ and the sampler ladder"}
+  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out (BW map, firing-test inventory)"}
+  - {id: n21-production, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21, putting the sampler into production (massless pole, log map)"}
+  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 D3, decay-chain phase space, σ and the sampler ladder"}
   - {id: dc-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L1773-L1960", title: "bw_scale, LogMap, log_scale, draw_lo, windowed, draw_invariant, invariant_measure"}
   - {id: cuts-rs, resource: "vibegraph-lib/src/cuts.rs#L76-L140", title: "SMALL_WIDTH_TREATMENT, ForcedLine::mass_window, ForcedResonances"}
   - {id: maps-rs, resource: "vibegraph-lib/src/phasespace/maps.rs#L143-L170", title: "MapChoices::channel installs floors and forced windows"}
-  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/myamp.f", title: "MadEvent myamp.f: cut_bw, set_peaks"}
-  - {id: mg-setgrid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f#L938-L1007", title: "MadEvent dsample.f, setgrid"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f", title: "MadEvent myamp.f: cut_bw, set_peaks"}
+  - {id: mg-setgrid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L938-L1007", title: "MadEvent dsample.f, setgrid"}
 measured:
   - {landed_in: 1539abc, pr: 12, host: "4 shared cores (container)", command: "cli_decay_chain.rs σ rows, ten seeds at --target-rel 2e-3; tests/decay_chain_ladder.rs (ignored), one seed"}
 ---

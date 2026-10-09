@@ -6,14 +6,14 @@ status: draft
 tags: [t-channel, spine, phase-space-map, firing-test, ladder]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-spine, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L168-L230", title: "Note 21, t-channel spine (single spacelike line)"}
-  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, close-out: t-map firing tests"}
-  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0, llj topology and the three-body spine"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L1010", title: "Note 24 P2, per-energy channels, walk weight, channel coverage across groups"}
-  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1049-L1092", title: "Note 24 P2b, the floor applies to every spine"}
-  - {id: n28-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1376-L1538", title: "Note 28 §S2.1–S2.2, the rung chain and its types"}
-  - {id: n28-ord, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1539-L1622", title: "Note 28 §S2.3, the ordering firing test and its negative controls"}
-  - {id: n28-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1827-L1850", title: "Note 28 §S4, the spine in production"}
+  - {id: n21-spine, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L168-L230", title: "Note 21, t-channel spine (single spacelike line)"}
+  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, close-out: t-map firing tests"}
+  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0, llj topology and the three-body spine"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L1010", title: "Note 24 P2, per-energy channels, walk weight, channel coverage across groups"}
+  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1049-L1092", title: "Note 24 P2b, the floor applies to every spine"}
+  - {id: n28-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1376-L1538", title: "Note 28 §S2.1–S2.2, the rung chain and its types"}
+  - {id: n28-ord, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1539-L1622", title: "Note 28 §S2.3, the ordering firing test and its negative controls"}
+  - {id: n28-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1827-L1850", title: "Note 28 §S4, the spine in production"}
   - {id: dc-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs", title: "SpineRung, Spine, spine_chain, draw_t, t_measure, t_kinematics, peripheral_factor, sample_spine, spine_jacobian"}
   - {id: diagram-rs, resource: "vibegraph-lib/src/diagrams/diagram.rs#L130-L138", title: "Prop::is_spacelike"}
   - {id: dc-tests, resource: "vibegraph-lib/tests/diagram_channel.rs", title: "Chain, graph-cut, ordering and walk-vs-density tests"}

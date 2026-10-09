@@ -6,12 +6,12 @@ status: draft
 tags: [validation, manifest, layers, report, reference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-41, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L198-L235", title: "Note 25 §4.1, the scripts and their rationale headers"}
-  - {id: n25-43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L243-L253", title: "Note 25 §4.3, gating mechanisms"}
-  - {id: n25-51, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L269-L282", title: "Note 25 §5.1, the manifest"}
-  - {id: n25-book, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L720-L739", title: "Note 25 §10, bookkeeping the sweep turned up"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml"}
-  - {id: manifest-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/common/manifest.rs", title: "vibegraph-lib/tests/common/manifest.rs"}
+  - {id: n25-41, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L198-L235", title: "Note 25 §4.1, the scripts and their rationale headers"}
+  - {id: n25-43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L243-L253", title: "Note 25 §4.3, gating mechanisms"}
+  - {id: n25-51, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L269-L282", title: "Note 25 §5.1, the manifest"}
+  - {id: n25-book, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L720-L739", title: "Note 25 §10, bookkeeping the sweep turned up"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml"}
+  - {id: manifest-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/common/manifest.rs", title: "vibegraph-lib/tests/common/manifest.rs"}
 ---
 # `validation/manifest.toml`: the per-process source of truth
 

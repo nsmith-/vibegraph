@@ -6,12 +6,12 @@ status: draft
 tags: [events, pythia, lhef, mlm, shower]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L396-L403", title: "Note 25 §5.6, Pythia consumption"}
-  - {id: n25-landed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10, what each session landed (L5)"}
-  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, shower side as first read"}
-  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, Pythia on the matched record, the CDATA finding"}
-  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, MadGraph's own Pythia settings"}
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, Pythia reads the decay-chain sample"}
+  - {id: n25-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L396-L403", title: "Note 25 §5.6, Pythia consumption"}
+  - {id: n25-landed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10, what each session landed (L5)"}
+  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, shower side as first read"}
+  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, Pythia on the matched record, the CDATA finding"}
+  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, MadGraph's own Pythia settings"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, Pythia reads the decay-chain sample"}
 ---
 
 # Pythia 8 as the consumer

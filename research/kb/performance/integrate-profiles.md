@@ -6,17 +6,17 @@ status: draft
 tags: [performance, profiling, pdf, allocation, scales]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n30-draw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L408-L459", title: "Note 30 §6 (chain B's live-draw cost)"}
-  - {id: n30-profiles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L460-L478", title: "Note 30 §7 (profiles: method and paths)"}
-  - {id: n30-grouped, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L479-L498", title: "Note 30 §7.1 (where the time sits, grouped)"}
-  - {id: n30-each, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L499-L540", title: "Note 30 §7.2 (one paragraph each)"}
-  - {id: n30-agree, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L541-L551", title: "Note 30 §7.3 (what the four agree on)"}
-  - {id: n32-s5-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 §2 Wave 1 (S1 and S5 briefs)"}
-  - {id: n32-outcomes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (per-session outcomes)"}
-  - {id: n32-followups, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (standing follow-ups)"}
-  - {id: n31-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L704-L749", title: "Note 31 §E3 (re-baselined draw cost)"}
-  - {id: setclscales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/cluster/setclscales.rs#L270-L325", title: "coupling/cluster/setclscales.rs per-call Vecs"}
-  - {id: merge-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/cluster/graph.rs#L345-L373", title: "MergeTablesByOrder"}
+  - {id: n30-draw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L408-L459", title: "Note 30 §6 (chain B's live-draw cost)"}
+  - {id: n30-profiles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L460-L478", title: "Note 30 §7 (profiles: method and paths)"}
+  - {id: n30-grouped, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L479-L498", title: "Note 30 §7.1 (where the time sits, grouped)"}
+  - {id: n30-each, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L499-L540", title: "Note 30 §7.2 (one paragraph each)"}
+  - {id: n30-agree, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L541-L551", title: "Note 30 §7.3 (what the four agree on)"}
+  - {id: n32-s5-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 §2 Wave 1 (S1 and S5 briefs)"}
+  - {id: n32-outcomes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (per-session outcomes)"}
+  - {id: n32-followups, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (standing follow-ups)"}
+  - {id: n31-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L704-L749", title: "Note 31 §E3 (re-baselined draw cost)"}
+  - {id: setclscales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/setclscales.rs#L270-L325", title: "coupling/cluster/setclscales.rs per-call Vecs"}
+  - {id: merge-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/graph.rs#L345-L373", title: "MergeTablesByOrder"}
 measured:
   - {commit: 45a7d62, host: "Apple M3 Max, macOS 15.7", command: "scripts/profile.sh (release-debug, extended-validation, samply 1 kHz)"}
   - {host: "Apple M3 Max", command: "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma -- --ignored --nocapture --test-threads=1 probe_scale_cost"}

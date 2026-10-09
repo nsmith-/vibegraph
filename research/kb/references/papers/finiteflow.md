@@ -7,11 +7,11 @@ status: draft
 tags: [finite-fields, reconstruction, rational-functions, paper, trace-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-swell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L153-L189", title: "Note 41 §3.1, intermediate swell is not final size"}
-  - {id: n41-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L329-L351", title: "Note 41 §8–8.1, functional reconstruction: what the method is"}
-  - {id: n41-obstacles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L375-L426", title: "Note 41 §8.4, obstacles specific to this codebase"}
-  - {id: n41-box, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L452-L518", title: "Note 41 §9.1, the box"}
-  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
+  - {id: n41-swell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L153-L189", title: "Note 41 §3.1, intermediate swell is not final size"}
+  - {id: n41-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L329-L351", title: "Note 41 §8–8.1, functional reconstruction: what the method is"}
+  - {id: n41-obstacles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L375-L426", title: "Note 41 §8.4, obstacles specific to this codebase"}
+  - {id: n41-box, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L452-L518", title: "Note 41 §9.1, the box"}
+  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
   - {id: peraro16, resource: "https://arxiv.org/abs/1608.01902", title: "Peraro, Scattering amplitudes over finite fields and multivariate functional reconstruction (2016)"}
   - {id: firefly, resource: "https://arxiv.org/abs/1904.00009", title: "Klappert, Lange, FireFly: reconstructing rational functions from finite field evaluations (C++)"}
   - {id: multivariate-apart, resource: "https://arxiv.org/abs/2101.08283", title: "Heller, von Manteuffel, MultivariateApart: multivariate partial fractioning (Leinartas decomposition)"}

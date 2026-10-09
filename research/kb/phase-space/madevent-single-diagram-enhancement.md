@@ -6,15 +6,15 @@ status: draft
 tags: [madevent, multichannel, sde-strategy, configuration, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-d0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2821-L2884", title: "Note 29 §D.0 (get_channel_cut cannot reach ee_to_mumua)"}
-  - {id: n29-dm0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3253-L3323", title: "Note 29 §D.M0 (premise re-verified in 3.5.7 and 3.7.1)"}
-  - {id: n29-dm2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3341-L3360", title: "Note 29 §D.M2 (3.5.7 vs 3.7.1: 0.074%)"}
-  - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 §B.1 (the rule is conditional)"}
-  - {id: n29-b12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5323-L5352", title: "Note 29 §B.12 (errors in the brief)"}
-  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29, chain B results (P(c|p) derivation)"}
-  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L214-L228", title: "MadGraph matrix template, multi-channel block"}
-  - {id: mg-gcc, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L1817-L1951", title: "MadGraph genps.f get_channel_cut"}
-  - {id: mg-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4990-L5059", title: "MadGraph banner.py sde_strategy auto-selection"}
+  - {id: n29-d0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2821-L2884", title: "Note 29 §D.0 (get_channel_cut cannot reach ee_to_mumua)"}
+  - {id: n29-dm0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3253-L3323", title: "Note 29 §D.M0 (premise re-verified in 3.5.7 and 3.7.1)"}
+  - {id: n29-dm2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3341-L3360", title: "Note 29 §D.M2 (3.5.7 vs 3.7.1: 0.074%)"}
+  - {id: n29-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4758-L4825", title: "Note 29 §B.1 (the rule is conditional)"}
+  - {id: n29-b12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5323-L5352", title: "Note 29 §B.12 (errors in the brief)"}
+  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29, chain B results (P(c|p) derivation)"}
+  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L214-L228", title: "MadGraph matrix template, multi-channel block"}
+  - {id: mg-gcc, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1817-L1951", title: "MadGraph genps.f get_channel_cut"}
+  - {id: mg-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4990-L5059", title: "MadGraph banner.py sde_strategy auto-selection"}
 ---
 
 # MadEvent's single-diagram enhancement and `get_channel_cut`

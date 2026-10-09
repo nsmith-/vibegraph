@@ -6,10 +6,10 @@ status: draft
 tags: [validation, refdata, madgraph, alpha-s, pdf]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: fact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/refdata-sigma-comparability.md#L11-L20", title: "Phase B fact: refdata sigma comparability"}
-  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5 (the 3.7.1 re-bank and the alpha_s finding)"}
-  - {id: n29-g2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5783-L5799", title: "Note 29 G.2 (the cross sections move, and by how much)"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L130-L197", title: "validation/manifest.toml [refdata] cut history"}
+  - {id: fact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/refdata-sigma-comparability.md#L11-L20", title: "Phase B fact: refdata sigma comparability"}
+  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5 (the 3.7.1 re-bank and the alpha_s finding)"}
+  - {id: n29-g2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5783-L5799", title: "Note 29 G.2 (the cross sections move, and by how much)"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L130-L197", title: "validation/manifest.toml [refdata] cut history"}
 ---
 
 The banked MadGraph references come in numbered cuts (`refdata-N`, pinned in

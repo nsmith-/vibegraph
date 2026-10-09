@@ -6,14 +6,14 @@ status: draft
 tags: [okf, knowledge-bundle, documentation, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n42-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L11-L26", title: "Note 42: the question and plan"}
-  - {id: n42-okf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L28-L49", title: "Note 42 §1: OKF in brief"}
-  - {id: n42-shape, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L76-L133", title: "Note 42 §3: target shape, type vocabulary, conventions"}
-  - {id: n42-external, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L258-L280", title: "Note 42 §6: external codebases stay outside the bundle"}
-  - {id: n42-phaseb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L366-L401", title: "Note 42 §8 Phase B: tooling as executed"}
-  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions (user, 2026-10-05)"}
+  - {id: n42-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L11-L26", title: "Note 42: the question and plan"}
+  - {id: n42-okf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L28-L49", title: "Note 42 §1: OKF in brief"}
+  - {id: n42-shape, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L76-L133", title: "Note 42 §3: target shape, type vocabulary, conventions"}
+  - {id: n42-external, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L258-L280", title: "Note 42 §6: external codebases stay outside the bundle"}
+  - {id: n42-phaseb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L366-L401", title: "Note 42 §8 Phase B: tooling as executed"}
+  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions (user, 2026-10-05)"}
   - {id: okf-spec, resource: "https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md", title: "Open Knowledge Format v0.2 specification"}
-  - {id: kb-py, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/kb.py", title: "scripts/kb.py: index, lint and backlog view"}
+  - {id: kb-py, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/kb.py", title: "scripts/kb.py: index, lint and backlog view"}
 ---
 `research/kb/` holds the project's reference material as an
 [OKF v0.2](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)

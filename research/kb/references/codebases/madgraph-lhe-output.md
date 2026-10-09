@@ -7,13 +7,13 @@ status: draft
 tags: [madgraph, lhef, event-output, formats, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3 outcome (LHEF writer, MadGraph as format oracle)"}
-  - {id: mg-lhe-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/lhe_parser.py#L133-L160", title: "lhe_parser.py, Particle.parse and the particle-line format"}
-  - {id: mg-lhe-event, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/lhe_parser.py#L2600-L2612", title: "lhe_parser.py, the event-info line format"}
-  - {id: mg-banner-init, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L1096-L1108", title: "banner.py, the <init> line formats"}
-  - {id: mg-rw-events, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/rw_events.f#L183", title: "rw_events.f, the Fortran event-info format"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L752-L761", title: "unwgt.f, SCALUP and the coupling fields"}
-  - {id: mg-addmothers, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/addmothers.f#L253", title: "addmothers.f, status-2 resonance records"}
+  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3 outcome (LHEF writer, MadGraph as format oracle)"}
+  - {id: mg-lhe-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/lhe_parser.py#L133-L160", title: "lhe_parser.py, Particle.parse and the particle-line format"}
+  - {id: mg-lhe-event, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/lhe_parser.py#L2600-L2612", title: "lhe_parser.py, the event-info line format"}
+  - {id: mg-banner-init, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L1096-L1108", title: "banner.py, the <init> line formats"}
+  - {id: mg-rw-events, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/rw_events.f#L183", title: "rw_events.f, the Fortran event-info format"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L752-L761", title: "unwgt.f, SCALUP and the coupling fields"}
+  - {id: mg-addmothers, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/addmothers.f#L253", title: "addmothers.f, status-2 resonance records"}
   - {id: lhef-mod, resource: "vibegraph-lib/src/lhef/mod.rs#L1-L80", title: "lhef module docs: formats, two dialects, lossy records, SCALUP"}
   - {id: validate-lhef, resource: "vibegraph-lib/tests/validate_lhef.rs#L157-L263", title: "banked_files_round_trip_byte_for_byte and the mutation test"}
 measured:

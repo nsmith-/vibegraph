@@ -6,19 +6,19 @@ status: draft
 tags: [process-grammar, proc-card, madgraph-parity, parser, coupling-orders]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n06-grammar, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L12-L150", title: "Note 06 §1–§4, MadGraph's process parser, regexes and token syntax"}
-  - {id: n06-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L334-L454", title: "Note 06 §6–§7, data flow and the e+ e- > mu+ mu- walk-through"}
-  - {id: n06-edges, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L587-L620", title: "Note 06 §9, grammar edge cases"}
-  - {id: n38-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L47-L76", title: "Note 38 §1.1, the process line"}
-  - {id: n38-commands, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L157-L169", title: "Note 38 §1.4, proc-card commands"}
-  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, grammar, AST and the parser oracle"}
-  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 §4 S2, WEIGHTED bounds and the p/j rewrite"}
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 §4 E1, @N and add process by content"}
-  - {id: mg-extract-process, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L4822", title: "MadGraph madgraph_interface.py extract_process"}
-  - {id: mg-orders, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L4883-L5000", title: "MadGraph madgraph_interface.py coupling-order parsing"}
-  - {id: mg-do-add, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L3270-L3380", title: "MadGraph madgraph_interface.py do_add"}
-  - {id: mg-generate, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L4791-L4820", title: "MadGraph madgraph_interface.py clean_process and do_generate"}
-  - {id: mg-multiparticles, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L5998-L6060", title: "MadGraph madgraph_interface.py add_default_multiparticles"}
+  - {id: n06-grammar, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L12-L150", title: "Note 06 §1–§4, MadGraph's process parser, regexes and token syntax"}
+  - {id: n06-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L334-L454", title: "Note 06 §6–§7, data flow and the e+ e- > mu+ mu- walk-through"}
+  - {id: n06-edges, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L587-L620", title: "Note 06 §9, grammar edge cases"}
+  - {id: n38-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L47-L76", title: "Note 38 §1.1, the process line"}
+  - {id: n38-commands, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L157-L169", title: "Note 38 §1.4, proc-card commands"}
+  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, grammar, AST and the parser oracle"}
+  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 §4 S2, WEIGHTED bounds and the p/j rewrite"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 §4 E1, @N and add process by content"}
+  - {id: mg-extract-process, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L4822", title: "MadGraph madgraph_interface.py extract_process"}
+  - {id: mg-orders, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L4883-L5000", title: "MadGraph madgraph_interface.py coupling-order parsing"}
+  - {id: mg-do-add, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L3270-L3380", title: "MadGraph madgraph_interface.py do_add"}
+  - {id: mg-generate, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L4791-L4820", title: "MadGraph madgraph_interface.py clean_process and do_generate"}
+  - {id: mg-multiparticles, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L5998-L6060", title: "MadGraph madgraph_interface.py add_default_multiparticles"}
 measured:
   - {commit: 1f5f924, pr: 12, landed_in: 1539abc, command: "cargo test -p vibegraph-lib --test proc_grammar_oracle"}
 ---

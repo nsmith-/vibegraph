@@ -6,13 +6,13 @@ status: draft
 tags: [performance, helicity, evaluator, cse, pruning]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1 (what MadGraph does before emitting Fortran)"}
-  - {id: n15-expansion, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2 (helicity-expansion session, CF-factoring analysis)"}
-  - {id: n15-filter, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L466-L545", title: "Note 15 §2.3 (helicity filtering)"}
-  - {id: n20-zeroamp, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L186-L218", title: "Note 20 S3 zeroamp-skip"}
-  - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L560-L575", title: "Note 31 §E1 (working-set correction)"}
-  - {id: compile-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/compile.rs#L60-L370", title: "compile.rs (folded_hel OnceLock, prune_zero_helicities)"}
-  - {id: fold-prune, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/fold.rs#L289-L400", title: "fold.rs expand_helicities and prune_zero_scalar_operands"}
+  - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1 (what MadGraph does before emitting Fortran)"}
+  - {id: n15-expansion, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2 (helicity-expansion session, CF-factoring analysis)"}
+  - {id: n15-filter, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L466-L545", title: "Note 15 §2.3 (helicity filtering)"}
+  - {id: n20-zeroamp, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L186-L218", title: "Note 20 S3 zeroamp-skip"}
+  - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L560-L575", title: "Note 31 §E1 (working-set correction)"}
+  - {id: compile-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs#L60-L370", title: "compile.rs (folded_hel OnceLock, prune_zero_helicities)"}
+  - {id: fold-prune, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/fold.rs#L289-L400", title: "fold.rs expand_helicities and prune_zero_scalar_operands"}
 measured:
   - {commit: c9f826d, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies"}
 ---
@@ -32,7 +32,7 @@ concept covers the evaluator side.
 MadGraph applies two generations of optimisation before emitting
 Fortran:[^n15-mg]
 - **wavefunction reuse across diagrams** within one helicity configuration
-  ([MadGraph 5: Going Beyond](../references/papers/madgraph5-going-beyond.md)),
+  ([MadGraph 5: Going Beyond](https://arxiv.org/abs/1106.0522)),
   the analogue of our hash-cons CSE;
 - **helicity recycling**
   ([the helicity-recycling paper](../references/papers/helicity-recycling-mg5.md)):

@@ -6,15 +6,15 @@ status: draft
 tags: [performance, rooting, cse, evaluator, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L80-L111", title: "Note 15 §1.3 (rooting symmetry)"}
-  - {id: n15-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L611-L667", title: "Note 15 §3.1 (rooting study results)"}
-  - {id: rs-defs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/rooting-study-results.md#L9-L51", title: "Rooting study: harness, definitions, variants"}
-  - {id: rs-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/rooting-study-results.md#L54-L221", title: "Rooting study: per-process tables"}
-  - {id: rs-totals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/rooting-study-results.md#L222-L266", title: "Rooting study: cross-process totals and findings"}
-  - {id: n20-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L23-L58", title: "Note 20 sprint outcome"}
-  - {id: n20-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L219-L267", title: "Note 20 S4 rooting-cse"}
-  - {id: root-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L850-L920", title: "canonical_root and choose_root"}
-  - {id: rooting-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/rooting_soundness.rs#L1-L60", title: "rooting_soundness.rs (all-rootings gate, REL_TOL)"}
+  - {id: n15-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L80-L111", title: "Note 15 §1.3 (rooting symmetry)"}
+  - {id: n15-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L611-L667", title: "Note 15 §3.1 (rooting study results)"}
+  - {id: rs-defs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/rooting-study-results.md#L9-L51", title: "Rooting study: harness, definitions, variants"}
+  - {id: rs-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/rooting-study-results.md#L54-L221", title: "Rooting study: per-process tables"}
+  - {id: rs-totals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/rooting-study-results.md#L222-L266", title: "Rooting study: cross-process totals and findings"}
+  - {id: n20-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L23-L58", title: "Note 20 sprint outcome"}
+  - {id: n20-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L219-L267", title: "Note 20 S4 rooting-cse"}
+  - {id: root-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L850-L920", title: "canonical_root and choose_root"}
+  - {id: rooting-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rooting_soundness.rs#L1-L60", title: "rooting_soundness.rs (all-rootings gate, REL_TOL)"}
 measured:
   - {commit: 9bb8e14, command: "RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib --profile profiling --features extended-validation rooting_study::rooting_headroom_study -- --ignored --nocapture --test-threads=1"}
   - {commit: 6ab25f1, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies"}

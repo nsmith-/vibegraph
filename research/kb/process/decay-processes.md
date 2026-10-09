@@ -6,10 +6,10 @@ status: draft
 tags: [decays, partial-width, process-grammar, run-card, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
-  - {id: n38-d1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L497-L598", title: "Note 38 §4 D1, 1→n decay processes"}
-  - {id: mg-banner-decay, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4784", title: "MadGraph banner.py, a decay's default run card"}
-  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setcuts.f#L137", title: "MadEvent setcuts.f, nincoming = 1"}
+  - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
+  - {id: n38-d1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L497-L598", title: "Note 38 §4 D1, 1→n decay processes"}
+  - {id: mg-banner-decay, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4784", title: "MadGraph banner.py, a decay's default run card"}
+  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L137", title: "MadEvent setcuts.f, nincoming = 1"}
 measured:
   - {commit: fa07c04, pr: 12, landed_in: 1539abc, command: "cli_decay, ten seeds at --target-rel 2e-3, against MadEvent 3.7.1 ten seeds of 10k events"}
 ---

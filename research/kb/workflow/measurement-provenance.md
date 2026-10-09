@@ -6,8 +6,8 @@ status: draft
 tags: [measurement, provenance, git, knowledge-bundle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n42-meas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L216-L256", title: "Note 42 §5: measurements and staleness"}
-  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions 5 and the deferred dependency tracking"}
+  - {id: n42-meas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L216-L256", title: "Note 42 §5: measurements and staleness"}
+  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions 5 and the deferred dependency tracking"}
 ---
 Measurements go stale when **code** changes, not when time passes. Nothing
 tracks that automatically. A measurement records the facts that let a later

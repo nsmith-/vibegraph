@@ -6,10 +6,10 @@ status: draft
 tags: [propagators, evaluator, aloha, intertwiners]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n13-prop, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L223-L243", title: "Note 13 §4 (propagator stays separate from vertex)"}
-  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/op.rs", title: "Op::Propagate"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs", title: "propagate_core and the per-type propagator kernels"}
-  - {id: code-slot, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/waveform_slot.rs", title: "WaveformSlot (every vector slot contravariant)"}
+  - {id: n13-prop, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L223-L243", title: "Note 13 §4 (propagator stays separate from vertex)"}
+  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/op.rs", title: "Op::Propagate"}
+  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs", title: "propagate_core and the per-type propagator kernels"}
+  - {id: code-slot, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/waveform_slot.rs", title: "WaveformSlot (every vector slot contravariant)"}
 ---
 
 # Propagators stay separate from vertices

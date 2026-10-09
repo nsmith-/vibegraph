@@ -6,16 +6,16 @@ status: draft
 tags: [run-card, classification, hard-errors, audit, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-c20, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3847-L3876", title: "Note 29 C2.0, the measured trigger"}
-  - {id: n29-c21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3877-L3904", title: "Note 29 C2.1, audit method"}
-  - {id: n29-c22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3905-L3965", title: "Note 29 C2.2, the classification asserted"}
-  - {id: n29-c23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3966-L4024", title: "Note 29 C2.3, the audit table"}
-  - {id: n29-c25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4122-L4146", title: "Note 29 C2.5, opaque defaults"}
-  - {id: n29-c27, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4164-L4256", title: "Note 29 C2.7, acceptance tests"}
-  - {id: n29-c29, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4291-L4338", title: "Note 29 C2.9, risks and the residual blind spot"}
-  - {id: n29-b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 chain B results, the SDE_strategy and tmin_for_channel rulings"}
-  - {id: n29-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L6088-L6125", title: "Note 29 close-out, per-chain verdicts"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1, matching fields moved to Consumed"}
+  - {id: n29-c20, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3847-L3876", title: "Note 29 C2.0, the measured trigger"}
+  - {id: n29-c21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3877-L3904", title: "Note 29 C2.1, audit method"}
+  - {id: n29-c22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3905-L3965", title: "Note 29 C2.2, the classification asserted"}
+  - {id: n29-c23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3966-L4024", title: "Note 29 C2.3, the audit table"}
+  - {id: n29-c25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4122-L4146", title: "Note 29 C2.5, opaque defaults"}
+  - {id: n29-c27, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4164-L4256", title: "Note 29 C2.7, acceptance tests"}
+  - {id: n29-c29, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4291-L4338", title: "Note 29 C2.9, risks and the residual blind spot"}
+  - {id: n29-b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 chain B results, the SDE_strategy and tmin_for_channel rulings"}
+  - {id: n29-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L6088-L6125", title: "Note 29 close-out, per-chain verdicts"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1, matching fields moved to Consumed"}
 ---
 
 # Every run-card field is classified

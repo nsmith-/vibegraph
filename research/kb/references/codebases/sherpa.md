@@ -7,14 +7,14 @@ status: draft
 tags: [sherpa, comix, berends-giele, external-code, matrix-elements]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n03-sherpa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L10-L162", title: "Note 03 Part 1, Sherpa / COMIX survey"}
-  - {id: n03-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison of all surveyed generators"}
-  - {id: sh-current, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/METOOLS/Explicit/Current.H#L43-L178", title: "METOOLS/Explicit/Current.H, class Current"}
-  - {id: sh-vertex, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/METOOLS/Explicit/Vertex.C#L102-L179", title: "METOOLS/Explicit/Vertex.C, Vertex::Evaluate"}
-  - {id: sh-amp, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/COMIX/Amplitude/Amplitude.C#L1366-L1460", title: "COMIX/Amplitude/Amplitude.C, EvaluateAll"}
-  - {id: sh-ufo, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/MODEL/UFO/UFO_Model.H#L11-L44", title: "MODEL/UFO/UFO_Model.H"}
-  - {id: sh-hel, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/PHASIC++/Main/Helicity_Integrator.H", title: "PHASIC++/Main/Helicity_Integrator.H"}
-  - {id: sh-col, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4/PHASIC++/Main/Color_Integrator.H", title: "PHASIC++/Main/Color_Integrator.H"}
+  - {id: n03-sherpa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L10-L162", title: "Note 03 Part 1, Sherpa / COMIX survey"}
+  - {id: n03-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison of all surveyed generators"}
+  - {id: sh-current, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/METOOLS/Explicit/Current.H#L43-L178", title: "METOOLS/Explicit/Current.H, class Current"}
+  - {id: sh-vertex, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/METOOLS/Explicit/Vertex.C#L102-L179", title: "METOOLS/Explicit/Vertex.C, Vertex::Evaluate"}
+  - {id: sh-amp, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/COMIX/Amplitude/Amplitude.C#L1366-L1460", title: "COMIX/Amplitude/Amplitude.C, EvaluateAll"}
+  - {id: sh-ufo, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/MODEL/UFO/UFO_Model.H#L11-L44", title: "MODEL/UFO/UFO_Model.H"}
+  - {id: sh-hel, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/PHASIC++/Main/Helicity_Integrator.H", title: "PHASIC++/Main/Helicity_Integrator.H"}
+  - {id: sh-col, resource: "https://gitlab.com/sherpa-team/sherpa/-/blob/e12c72f4dc358759677da62037ae2bea197bed83/PHASIC++/Main/Color_Integrator.H", title: "PHASIC++/Main/Color_Integrator.H"}
   - {id: comix, resource: "https://arxiv.org/abs/0808.3674", title: "Gleisberg, Höche, COMIX (JHEP 0812 (2008) 039)"}
 ---
 

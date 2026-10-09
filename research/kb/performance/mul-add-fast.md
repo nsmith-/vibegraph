@@ -10,14 +10,14 @@ measured:
   - {host: "Apple M3 Max, macOS", command: "eval_strategies, the inlining tune + FMA against main; note 32 S9 A/B of the packed-complex trait"}
   - {host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "baseline x86-64 target, scalar forward, before (rustc 1.94, software FMA) vs after (rustc 1.98, mul_add_fast)"}
 sources:
-  - {id: x86-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L14-L116", title: "x86 study: findings, FMA / mul_add, the latent test-fixture NaN"}
-  - {id: x86-cum, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L187-L204", title: "x86 study: cumulative outcome"}
-  - {id: x86-arm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L231-L274", title: "x86 study, ARM: Δ% of the two shipped changes"}
-  - {id: x86-armc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L378-L398", title: "x86 study, ARM: correctness (reassociating, not order-preserving)"}
-  - {id: x86-builds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L651-L699", title: "x86 study: the two release builds; relaxed scalar multiply-add"}
-  - {id: x86-alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study: algebraic float arithmetic (SLP packs complex products)"}
-  - {id: n32-s9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L300-L353", title: "Note 32 §2 S9, the packed-complex workaround design"}
-  - {id: n32-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L575-L597", title: "Note 32 §5.1, S9 outcome (8–9% loss on ARM)"}
+  - {id: x86-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L14-L116", title: "x86 study: findings, FMA / mul_add, the latent test-fixture NaN"}
+  - {id: x86-cum, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L187-L204", title: "x86 study: cumulative outcome"}
+  - {id: x86-arm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L231-L274", title: "x86 study, ARM: Δ% of the two shipped changes"}
+  - {id: x86-armc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L378-L398", title: "x86 study, ARM: correctness (reassociating, not order-preserving)"}
+  - {id: x86-builds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L651-L699", title: "x86 study: the two release builds; relaxed scalar multiply-add"}
+  - {id: x86-alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study: algebraic float arithmetic (SLP packs complex products)"}
+  - {id: n32-s9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L300-L353", title: "Note 32 §2 S9, the packed-complex workaround design"}
+  - {id: n32-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L575-L597", title: "Note 32 §5.1, S9 outcome (8–9% loss on ARM)"}
 ---
 
 # Kernel multiply-adds go through `Real::mul_add_fast`

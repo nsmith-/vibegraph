@@ -6,17 +6,17 @@ status: draft
 tags: [validation, cross-section, madgraph, vegas, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 (hadronic validation regime)"}
-  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7 hadronic-sigma, H8 cli-integrate)"}
-  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 Outcome (load-bearing findings)"}
-  - {id: n19-v3b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L116-L138", title: "Note 19 V3b (σ gate through the run card)"}
-  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1649-L1772", title: "Note 24 P3 (the σ gate at lpp = 1)"}
-  - {id: n25-integrals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L140-L150", title: "Note 25 §3.3 (integrals)"}
-  - {id: n25-generic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L355-L376", title: "Note 25 §5.4 (integrals genericization)"}
-  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9 (decisions)"}
-  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_sigma.rs#L1-L270", title: "validate_sigma.rs module docs, PULL_LIMIT, PULL_REPORTED_NOT_ASSERTED, Plan"}
-  - {id: vhad, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_hadronic.rs#L1-L430", title: "validate_hadronic.rs module docs, budgets, combine_seeds"}
-  - {id: runcard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/runcard.rs#L10-L20", title: "runcard.rs accepted beam configurations"}
+  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 (hadronic validation regime)"}
+  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7 hadronic-sigma, H8 cli-integrate)"}
+  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 Outcome (load-bearing findings)"}
+  - {id: n19-v3b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L116-L138", title: "Note 19 V3b (σ gate through the run card)"}
+  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1649-L1772", title: "Note 24 P3 (the σ gate at lpp = 1)"}
+  - {id: n25-integrals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L140-L150", title: "Note 25 §3.3 (integrals)"}
+  - {id: n25-generic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L355-L376", title: "Note 25 §5.4 (integrals genericization)"}
+  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9 (decisions)"}
+  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_sigma.rs#L1-L270", title: "validate_sigma.rs module docs, PULL_LIMIT, PULL_REPORTED_NOT_ASSERTED, Plan"}
+  - {id: vhad, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_hadronic.rs#L1-L430", title: "validate_hadronic.rs module docs, budgets, combine_seeds"}
+  - {id: runcard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/runcard.rs#L10-L20", title: "runcard.rs accepted beam configurations"}
 ---
 
 Two banked-layer test files compare our integrated cross section with

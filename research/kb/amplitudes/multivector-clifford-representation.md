@@ -6,11 +6,11 @@ status: draft
 tags: [clifford-algebra, fierz, multivector, four-fermion, representations]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (the graded Clifford-basis tensor representation and the completeness relations)"}
-  - {id: n35-r4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L549-L601", title: "Note 35 R4 (the tensor slot and the cyclic four-fermion structures)"}
-  - {id: n35-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decision D2"}
-  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/repr/lorentz.rs", title: "Multivector, AsymRank2Tensor, SpinorRepr::fierz_coefficients and their tests"}
-  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/op.rs", title: "FierzOut, MultivectorIout/Oout, FierzPair"}
+  - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (the graded Clifford-basis tensor representation and the completeness relations)"}
+  - {id: n35-r4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L549-L601", title: "Note 35 R4 (the tensor slot and the cyclic four-fermion structures)"}
+  - {id: n35-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decision D2"}
+  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/lorentz.rs", title: "Multivector, AsymRank2Tensor, SpinorRepr::fierz_coefficients and their tests"}
+  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/op.rs", title: "FierzOut, MultivectorIout/Oout, FierzPair"}
 ---
 
 # Multivector: the graded 1+4+6+4+1 Clifford representation

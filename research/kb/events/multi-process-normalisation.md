@@ -6,11 +6,11 @@ status: draft
 tags: [events, lhef, normalisation, multi-process, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, one <init> entry per @N"}
-  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, samples against their integrations"}
-  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A, the weight tail and MadEvent's normalisation"}
-  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12, each part normalised to its integration"}
-  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2298", title: "Note 41 F-B, the sample against its integration after channel merging"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, one <init> entry per @N"}
+  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, samples against their integrations"}
+  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A, the weight tail and MadEvent's normalisation"}
+  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12, each part normalised to its integration"}
+  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2298", title: "Note 41 F-B, the sample against its integration after channel merging"}
   - {id: mg-unwgt-store, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/Template/LO/SubProcesses/unwgt.f#L270-L446", title: "MadGraph 3.7.1 unwgt.f store_events"}
 ---
 

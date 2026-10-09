@@ -6,10 +6,10 @@ status: draft
 tags: [subprocesses, diagrams, alias-expansion, hadronic, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2, design decisions: one ordering per initial state, the mirror term"}
-  - {id: n28-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3538-L3624", title: "Note 28 §C.1–§C.2, the p p > j j surplus counted against leshouche.inc and its σ cost"}
-  - {id: n28-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3830-L3917", title: "Note 28 §C2, the dedup key repaired, the set at zero tolerance, blast radius"}
-  - {id: code-dedup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/mod.rs#L800-L900", title: "vibegraph-lib/src/diagrams/mod.rs generate_sets_inner"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2, design decisions: one ordering per initial state, the mirror term"}
+  - {id: n28-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3538-L3624", title: "Note 28 §C.1–§C.2, the p p > j j surplus counted against leshouche.inc and its σ cost"}
+  - {id: n28-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3830-L3917", title: "Note 28 §C2, the dedup key repaired, the set at zero tolerance, blast radius"}
+  - {id: code-dedup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/mod.rs#L800-L900", title: "vibegraph-lib/src/diagrams/mod.rs generate_sets_inner"}
 ---
 
 A process line with multiparticle labels (`p p > j j`, `p p > l+ l- j`) stands for many

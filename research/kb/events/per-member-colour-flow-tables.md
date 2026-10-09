@@ -6,17 +6,17 @@ status: draft
 tags: [events, colour, icolup, flavour-groups, proton]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-c25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3985-L4049", title: "Note 28 C2.5, the pp_to_jj ICOLUP slot defect"}
-  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2205-L2301", title: "Note 29 chain A, A.2 acceptance tests"}
-  - {id: n29-a4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2335-L2372", title: "Note 29 chain A, A.4 risks"}
-  - {id: n29-a5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2373-L2403", title: "Note 29 chain A, A.5 what it cannot break"}
-  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2437-L2491", title: "Note 29 chain A amendment, B.0 the crossing class"}
-  - {id: n29-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2512-L2624", title: "Note 29 chain A amendment, B.2 the design"}
-  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2625-L2677", title: "Note 29 chain A amendment, B.3 tests T9–T12"}
-  - {id: n29-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2699-L2745", title: "Note 29 chain A amendment, B.5 risks"}
-  - {id: n29-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2753-L2770", title: "Note 29 chain A amendment 2, C.1 the self-pairing clause"}
-  - {id: n29-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2771-L2794", title: "Note 29 chain A amendment 2, C.2 why it is not a tie-break"}
-  - {id: n29-c3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2795-L2813", title: "Note 29 chain A amendment 2, C.3 measurements"}
+  - {id: n28-c25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3985-L4049", title: "Note 28 C2.5, the pp_to_jj ICOLUP slot defect"}
+  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2205-L2301", title: "Note 29 chain A, A.2 acceptance tests"}
+  - {id: n29-a4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2335-L2372", title: "Note 29 chain A, A.4 risks"}
+  - {id: n29-a5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2373-L2403", title: "Note 29 chain A, A.5 what it cannot break"}
+  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2437-L2491", title: "Note 29 chain A amendment, B.0 the crossing class"}
+  - {id: n29-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2512-L2624", title: "Note 29 chain A amendment, B.2 the design"}
+  - {id: n29-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2625-L2677", title: "Note 29 chain A amendment, B.3 tests T9–T12"}
+  - {id: n29-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2699-L2745", title: "Note 29 chain A amendment, B.5 risks"}
+  - {id: n29-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2753-L2770", title: "Note 29 chain A amendment 2, C.1 the self-pairing clause"}
+  - {id: n29-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2771-L2794", title: "Note 29 chain A amendment 2, C.2 why it is not a tie-break"}
+  - {id: n29-c3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2795-L2813", title: "Note 29 chain A amendment 2, C.3 measurements"}
 ---
 
 # Each flavour-group member writes its own colour-flow table

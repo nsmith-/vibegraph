@@ -6,11 +6,11 @@ status: draft
 tags: [alpha-s, couplings, evaluator, scales, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L157-L201", title: "Note 22 §2 (where the running coupling multiplies in)"}
-  - {id: n22-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 session outcomes (D1–D4)"}
-  - {id: n35-v3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1524-L1692", title: "Note 35 §10.9 addendum (V3), the scale-change fallback row"}
-  - {id: rescale-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/rescale.rs#L1-L88", title: "helas/eval/rescale.rs module documentation and RescaleFallback"}
-  - {id: vs-fallback, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_sigma.rs#L200-L218", title: "validate_sigma.rs SCALE_FALLBACK_ROWS"}
+  - {id: n22-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L157-L201", title: "Note 22 §2 (where the running coupling multiplies in)"}
+  - {id: n22-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 session outcomes (D1–D4)"}
+  - {id: n35-v3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1524-L1692", title: "Note 35 §10.9 addendum (V3), the scale-change fallback row"}
+  - {id: rescale-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rescale.rs#L1-L88", title: "helas/eval/rescale.rs module documentation and RescaleFallback"}
+  - {id: vs-fallback, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_sigma.rs#L200-L218", title: "validate_sigma.rs SCALE_FALLBACK_ROWS"}
 ---
 
 # Per-event `α_s` by rescaling the folded constant pools

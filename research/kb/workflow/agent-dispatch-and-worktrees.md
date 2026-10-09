@@ -6,15 +6,15 @@ status: draft
 tags: [agents, worktrees, dispatch, process, verification]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-dispatch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L363-L386", title: "Note 24: execution notes (agent dispatch)"}
-  - {id: n24-acceptance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L3058-L3113", title: "Note 24 close-out: Acceptance A and the unverifiable transcript"}
-  - {id: n24-hook, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L3114-L3149", title: "Note 24 close-out: the commit-time regression"}
-  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 T2: ENOSPC recovery and a session-wide pkill"}
-  - {id: n36-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L669-L708", title: "Note 36 §7: operational notes for the next manager"}
-  - {id: n36a-serial, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L365-L397", title: "Note 36a §8: run gate suites one at a time"}
-  - {id: n29-protocol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L6137-L6158", title: "Note 29 close-out: protocol observations"}
-  - {id: agents-md, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/AGENTS.md", title: "AGENTS.md: Sprint & Subagent Operations"}
-  - {id: feature-dev, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/.agents/agents/feature-dev.md#L63-L82", title: "feature-dev: Worktree & long-command discipline"}
+  - {id: n24-dispatch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L363-L386", title: "Note 24: execution notes (agent dispatch)"}
+  - {id: n24-acceptance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L3058-L3113", title: "Note 24 close-out: Acceptance A and the unverifiable transcript"}
+  - {id: n24-hook, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L3114-L3149", title: "Note 24 close-out: the commit-time regression"}
+  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 T2: ENOSPC recovery and a session-wide pkill"}
+  - {id: n36-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L669-L708", title: "Note 36 §7: operational notes for the next manager"}
+  - {id: n36a-serial, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L365-L397", title: "Note 36a §8: run gate suites one at a time"}
+  - {id: n29-protocol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L6137-L6158", title: "Note 29 close-out: protocol observations"}
+  - {id: agents-md, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/AGENTS.md", title: "AGENTS.md: Sprint & Subagent Operations"}
+  - {id: feature-dev, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/.agents/agents/feature-dev.md#L63-L82", title: "feature-dev: Worktree & long-command discipline"}
 ---
 The binding rules for dispatching dev agents are in `AGENTS.md` ("Sprint &
 Subagent Operations") and in the "Worktree & long-command discipline" section

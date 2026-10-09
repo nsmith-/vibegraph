@@ -6,14 +6,14 @@ status: draft
 tags: [phase-space, sampling, hadronic, oracle, distributions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 — RAMBO replay oracle, flat-MC normalisation, the pointwise DY oracle"}
-  - {id: n21-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L99-L118", title: "Note 21 — the sampler validation regime"}
-  - {id: n21-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21 — Sprint A close-out and the hazard firing tests"}
-  - {id: n24-p2d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1447-L1501", title: "Note 24 P2d — in-session validation of the hadronic integrand"}
-  - {id: code-proton, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L4332-L4480", title: "proton.rs — a_point_reproduces_an_independently_assembled_integrand"}
-  - {id: code-slice, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L5258-L5370", title: "proton.rs — the fixed-energy slice test"}
-  - {id: code-dy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_hadronic.rs#L588-L640", title: "validate_hadronic.rs — pointwise_integrand_oracle"}
-  - {id: code-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/rambo_flat_mc.rs", title: "tests/rambo_flat_mc.rs"}
+  - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 — RAMBO replay oracle, flat-MC normalisation, the pointwise DY oracle"}
+  - {id: n21-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L99-L118", title: "Note 21 — the sampler validation regime"}
+  - {id: n21-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21 — Sprint A close-out and the hazard firing tests"}
+  - {id: n24-p2d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1447-L1501", title: "Note 24 P2d — in-session validation of the hadronic integrand"}
+  - {id: code-proton, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L4332-L4480", title: "proton.rs — a_point_reproduces_an_independently_assembled_integrand"}
+  - {id: code-slice, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L5258-L5370", title: "proton.rs — the fixed-energy slice test"}
+  - {id: code-dy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_hadronic.rs#L588-L640", title: "validate_hadronic.rs — pointwise_integrand_oracle"}
+  - {id: code-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/rambo_flat_mc.rs", title: "tests/rambo_flat_mc.rs"}
 ---
 
 # Oracles below sigma for samplers and the hadronic integrand

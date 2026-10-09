@@ -6,11 +6,11 @@ status: draft
 tags: [rng, determinism, parallelism, vegas, reproducibility]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-rng, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L133-L162", title: "Note 18 §1.4, RNG: splittable and modern, not RANMAR"}
-  - {id: n18-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H3 (SubStream, bits→uniform) and H5 (parallel VEGAS)"}
-  - {id: n31-i3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L152-L242", title: "Note 31 I3, parallel integrate: Sync hadronic integrand and -j"}
-  - {id: n31-jcol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7, the -j column at the CLI"}
-  - {id: n32-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, survey_variance parallelised (S3)"}
+  - {id: n18-rng, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L133-L162", title: "Note 18 §1.4, RNG: splittable and modern, not RANMAR"}
+  - {id: n18-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H3 (SubStream, bits→uniform) and H5 (parallel VEGAS)"}
+  - {id: n31-i3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L152-L242", title: "Note 31 I3, parallel integrate: Sync hadronic integrand and -j"}
+  - {id: n31-jcol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7, the -j column at the CLI"}
+  - {id: n32-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, survey_variance parallelised (S3)"}
   - {id: rng-rs, resource: "vibegraph-lib/src/phasespace/rng.rs", title: "SubStream, u64_to_uniform, SCALE_DRAW_STREAM_BASE"}
   - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs#L474-L560", title: "adapt_parallel, adapt_parallel_seeded, adapt_blocks_iteration"}
   - {id: parallel-rs, resource: "vibegraph-cli/src/parallel.rs", title: "The -j/--parallel flag"}

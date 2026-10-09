@@ -6,11 +6,11 @@ status: draft
 tags: [run-card, parser, defaults, beams, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-inventory, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L163-L196", title: "Note 18 §1.5, the run-card inventory"}
-  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L312-L341", title: "Note 18 §2.6, run card and cuts abstraction"}
-  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (defaults oracle)"}
-  - {id: n18-records, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H6 run-card-cuts)"}
-  - {id: mg-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4208", title: "MadGraph banner.py RunCardLO.default_setup"}
+  - {id: n18-inventory, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L163-L196", title: "Note 18 §1.5, the run-card inventory"}
+  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L312-L341", title: "Note 18 §2.6, run card and cuts abstraction"}
+  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (defaults oracle)"}
+  - {id: n18-records, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H6 run-card-cuts)"}
+  - {id: mg-banner, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4208", title: "MadGraph banner.py RunCardLO.default_setup"}
 ---
 
 # MadGraph run_card parsing, defaults and beam modes

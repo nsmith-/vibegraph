@@ -6,12 +6,12 @@ status: draft
 tags: [vegas, weight-tail, unweighting, mlm, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 and F-A, the weight tail localised"}
-  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6, xqcut-aware phase space, the τ floor, and the target run"}
-  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2520", title: "Note 41 F-B, channel merging and the pooled stop"}
+  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 and F-A, the weight tail localised"}
+  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6, xqcut-aware phase space, the τ floor, and the target run"}
+  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2520", title: "Note 41 F-B, channel merging and the pooled stop"}
   - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs#L976-L1042", title: "BlockIteration::hist accumulating (f·w)², refine_grid"}
-  - {id: mg-dsample-grid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f#L1890", title: "MadEvent dsample.f, grid adaptation on Σ|w|"}
-  - {id: mg-dsample-rescale, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f#L2106-L2124", title: "MadEvent dsample.f, per-bin acceptance rescale capped at 10⁴"}
+  - {id: mg-dsample-grid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L1890", title: "MadEvent dsample.f, grid adaptation on Σ|w|"}
+  - {id: mg-dsample-rescale, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L2106-L2124", title: "MadEvent dsample.f, per-bin acceptance rescale capped at 10⁴"}
 measured:
   - {commit: ef660f3, landed_in: 403cff8, pr: 14, command: "30 000 scan points per channel on nine channels of M5's seed-20260928 pp_to_ll_0j2j_mlm artifact, banked grid vs flat grid over the same map; env-gated instrumentation, never committed"}
 ---

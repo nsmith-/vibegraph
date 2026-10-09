@@ -6,14 +6,14 @@ status: draft
 tags: [validation, methodology, pre-registration, may-move, verdict]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-f2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L438-L491", title: "Note 29 F.2, the pre-registered bar"}
-  - {id: n29-f5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L606-L663", title: "Note 29 F.5, vacuity modes"}
-  - {id: n29-d6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3114-L3138", title: "Note 29 D.6, the pre-registered decision rule"}
-  - {id: n29-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4826-L4886", title: "Note 29 B.2, the movement census"}
-  - {id: n29-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5102-L5167", title: "Note 29 B.6-B.7, before/after comparison and stages"}
-  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5353-L5522", title: "Note 29 B-0 output, the census measured"}
-  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3, a may-move set wrong twice"}
-  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L1-L110", title: "Note 40, per-group dynamic scales"}
+  - {id: n29-f2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L438-L491", title: "Note 29 F.2, the pre-registered bar"}
+  - {id: n29-f5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L606-L663", title: "Note 29 F.5, vacuity modes"}
+  - {id: n29-d6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3114-L3138", title: "Note 29 D.6, the pre-registered decision rule"}
+  - {id: n29-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4826-L4886", title: "Note 29 B.2, the movement census"}
+  - {id: n29-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5102-L5167", title: "Note 29 B.6-B.7, before/after comparison and stages"}
+  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5353-L5522", title: "Note 29 B-0 output, the census measured"}
+  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3, a may-move set wrong twice"}
+  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L1-L110", title: "Note 40, per-group dynamic scales"}
 ---
 # Pre-registered verdict tables and may-move sets
 

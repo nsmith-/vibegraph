@@ -6,15 +6,15 @@ status: draft
 tags: [mlm, matching, ickkw, xqcut, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L11-L42", title: "Note 41 (goal and division of labour)"}
-  - {id: n41-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1 (call flow per point)"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 (xqcut and the ickkw = 1 scales)"}
-  - {id: n41-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1357-L1374", title: "Note 41 D2 decisions (user, 2026-09-29)"}
-  - {id: n41-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3490-L3512", title: "Note 41 §5 decisions (user, 2026-09-28)"}
-  - {id: matching-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/runcard/matching.rs#L1-L80", title: "runcard/matching.rs"}
-  - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/generate.rs#L436-L447", title: "generate.rs refuse_rounding_on_mixed_multiplicity"}
-  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/auto_dsig_v4.inc#L124-L182", title: "MadGraph auto_dsig_v4.inc (DSIG)"}
-  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
+  - {id: n41-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L11-L42", title: "Note 41 (goal and division of labour)"}
+  - {id: n41-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1 (call flow per point)"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 (xqcut and the ickkw = 1 scales)"}
+  - {id: n41-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1357-L1374", title: "Note 41 D2 decisions (user, 2026-09-29)"}
+  - {id: n41-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3490-L3512", title: "Note 41 §5 decisions (user, 2026-09-28)"}
+  - {id: matching-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/runcard/matching.rs#L1-L80", title: "runcard/matching.rs"}
+  - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L436-L447", title: "generate.rs refuse_rounding_on_mixed_multiplicity"}
+  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/auto_dsig_v4.inc#L124-L182", title: "MadGraph auto_dsig_v4.inc (DSIG)"}
+  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
 ---
 
 # MLM matching: what vibegraph does and what the shower does

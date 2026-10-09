@@ -6,17 +6,17 @@ status: draft
 tags: [process-grammar, s-channel, onshell-veto, madgraph-parity, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-sem, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L77-L128", title: "Note 38 §1.2, the s-channel restrictions in MadGraph"}
-  - {id: n38-pred, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L292-L307", title: "Note 38 §3.4, the s-channel predicate"}
-  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 §4 S2, > and $$ as diagram filters"}
-  - {id: n38-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L802-L881", title: "Note 38 §4 S3, $ as the pointwise integrand"}
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 §4 E1, $ on a chain's core"}
-  - {id: mg-schannel-id, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L2435", title: "MadGraph base_objects.py Vertex.get_s_channel_id"}
-  - {id: mg-filters, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L715-L795", title: "MadGraph diagram_generation.py, required, forbidden and on-shell-forbidden s-channels"}
-  - {id: mg-p1d, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/helas_call_writers.py#L1184", title: "MadGraph helas_call_writers.py, the P1D flag"}
-  - {id: mg-fkw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L4820", title: "MadGraph export_v4.py, fk_W"}
-  - {id: mg-banner-sde, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L5055", title: "MadGraph banner.py, $ forces sde_strategy = 1"}
-  - {id: code-onshell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/onshell.rs#L1-L54", title: "vibegraph-lib/src/onshell.rs module documentation"}
+  - {id: n38-sem, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L77-L128", title: "Note 38 §1.2, the s-channel restrictions in MadGraph"}
+  - {id: n38-pred, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L292-L307", title: "Note 38 §3.4, the s-channel predicate"}
+  - {id: n38-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L433-L496", title: "Note 38 §4 S2, > and $$ as diagram filters"}
+  - {id: n38-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L802-L881", title: "Note 38 §4 S3, $ as the pointwise integrand"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 §4 E1, $ on a chain's core"}
+  - {id: mg-schannel-id, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L2435", title: "MadGraph base_objects.py Vertex.get_s_channel_id"}
+  - {id: mg-filters, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L715-L795", title: "MadGraph diagram_generation.py, required, forbidden and on-shell-forbidden s-channels"}
+  - {id: mg-p1d, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/helas_call_writers.py#L1184", title: "MadGraph helas_call_writers.py, the P1D flag"}
+  - {id: mg-fkw, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L4820", title: "MadGraph export_v4.py, fk_W"}
+  - {id: mg-banner-sde, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L5055", title: "MadGraph banner.py, $ forces sde_strategy = 1"}
+  - {id: code-onshell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/onshell.rs#L1-L54", title: "vibegraph-lib/src/onshell.rs module documentation"}
 measured:
   - {commit: c52e4f7, pr: 12, landed_in: 1539abc, command: "vibegraph integrate, seeds 1–5, against pinned MadEvent (mg5_pinned.sh), e+ e- at 500 GeV"}
   - {commit: 7a1eb52, pr: 12, landed_in: 1539abc, command: "cli_onshell_veto, five seeds, against validation/madgraph/onshell_veto_reference.json"}

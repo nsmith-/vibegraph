@@ -6,20 +6,20 @@ status: draft
 tags: [performance, benchmarks, methodology, criterion, simd]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L262-L280", title: "Note 15 §2.1, the honest bench versus the extended-validation harness"}
-  - {id: n15-24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L546-L585", title: "Note 15 §2.4, cross-platform rerun kit"}
-  - {id: n18-kit, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L697-L748", title: "Note 18 H4, AVX-512 rerun kit"}
-  - {id: tds2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L93-L122", title: "Threaded-dispatch study §2, three traps"}
-  - {id: tds4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L221-L296", title: "Threaded-dispatch study §4, min over rounds on the M3 Max"}
-  - {id: tds5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L371-L428", title: "Threaded-dispatch study §5, profile pitfalls"}
-  - {id: tds6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L460-L511", title: "Threaded-dispatch study §6, the memory-layout confound"}
-  - {id: tds-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L583-L608", title: "Threaded-dispatch study, Reproduce"}
-  - {id: td0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L13-L38", title: "Top-down Zen 4, kit and caveats"}
-  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6, in-process A/B timing"}
-  - {id: x86-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L205-L230", title: "x86 study, Reproduce and ARM setup (profiles, 16 events per bar)"}
-  - {id: x86-bench, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L558-L568", title: "x86 study, bench changes (BENCH_ROWS)"}
-  - {id: x86-alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study, algebraic float protocol (pinned core, interleaved rounds)"}
-  - {id: x86-repro2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L835-L844", title: "x86 study, AVX-512 Reproduce"}
+  - {id: n15-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L262-L280", title: "Note 15 §2.1, the honest bench versus the extended-validation harness"}
+  - {id: n15-24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L546-L585", title: "Note 15 §2.4, cross-platform rerun kit"}
+  - {id: n18-kit, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L697-L748", title: "Note 18 H4, AVX-512 rerun kit"}
+  - {id: tds2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L93-L122", title: "Threaded-dispatch study §2, three traps"}
+  - {id: tds4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L221-L296", title: "Threaded-dispatch study §4, min over rounds on the M3 Max"}
+  - {id: tds5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L371-L428", title: "Threaded-dispatch study §5, profile pitfalls"}
+  - {id: tds6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L460-L511", title: "Threaded-dispatch study §6, the memory-layout confound"}
+  - {id: tds-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L583-L608", title: "Threaded-dispatch study, Reproduce"}
+  - {id: td0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L13-L38", title: "Top-down Zen 4, kit and caveats"}
+  - {id: td6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L226-L298", title: "Top-down Zen 4 §6, in-process A/B timing"}
+  - {id: x86-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L205-L230", title: "x86 study, Reproduce and ARM setup (profiles, 16 events per bar)"}
+  - {id: x86-bench, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L558-L568", title: "x86 study, bench changes (BENCH_ROWS)"}
+  - {id: x86-alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study, algebraic float protocol (pinned core, interleaved rounds)"}
+  - {id: x86-repro2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L835-L844", title: "x86 study, AVX-512 Reproduce"}
 ---
 
 # Benchmarking the evaluator

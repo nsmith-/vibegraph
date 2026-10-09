@@ -9,8 +9,8 @@ measured:
   host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, one pinned core"
   command: "cargo bench -p vibegraph-lib --bench lorentz_kernels (A/B/A/B, native and default targets); eval_strategies three interleaved rounds per variant"
 sources:
-  - {id: alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study: algebraic float arithmetic (rustc 1.98), not adopted"}
-  - {id: kb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L749-L834", title: "x86 study: kernel microbenchmarks (benches/lorentz_kernels.rs)"}
+  - {id: alg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L700-L748", title: "x86 study: algebraic float arithmetic (rustc 1.98), not adopted"}
+  - {id: kb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L749-L834", title: "x86 study: kernel microbenchmarks (benches/lorentz_kernels.rs)"}
 ---
 
 # Float reassociation in the Lorentz kernels

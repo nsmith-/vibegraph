@@ -6,16 +6,16 @@ status: draft
 tags: [smeftsim, toy-ufo, non-sm, oracle, coverage]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L676-L746", title: "Note 35 V1, SMEFTsim into the oracle pipeline"}
-  - {id: n35-l2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L747-L787", title: "Note 35 L2, the SM-limit gate"}
-  - {id: n35-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35 C, the capstone"}
-  - {id: n35-cov, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L842-L902", title: "Note 35 §5, coverage table and V1's corrections"}
-  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2, banked-layer hygiene"}
-  - {id: n35-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decisions"}
-  - {id: n35-101, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1, what the sprint leaves gated"}
-  - {id: n35-107, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1494-L1515", title: "Note 35 §10.7, diagram-count cells"}
-  - {id: n35-109, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1524-L1692", title: "Note 35 §10.9 (V3), sigma and samples for the non-SM rows"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml (cell notes of the non-SM rows)"}
+  - {id: n35-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L676-L746", title: "Note 35 V1, SMEFTsim into the oracle pipeline"}
+  - {id: n35-l2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L747-L787", title: "Note 35 L2, the SM-limit gate"}
+  - {id: n35-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35 C, the capstone"}
+  - {id: n35-cov, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L842-L902", title: "Note 35 §5, coverage table and V1's corrections"}
+  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2, banked-layer hygiene"}
+  - {id: n35-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decisions"}
+  - {id: n35-101, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1, what the sprint leaves gated"}
+  - {id: n35-107, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1494-L1515", title: "Note 35 §10.7, diagram-count cells"}
+  - {id: n35-109, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1524-L1692", title: "Note 35 §10.9 (V3), sigma and samples for the non-SM rows"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml (cell notes of the non-SM rows)"}
 ---
 # SMEFTsim and toy rows in the MadGraph oracle
 

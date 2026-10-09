@@ -6,11 +6,11 @@ status: draft
 tags: [evaluator, ir, design-decision, kernels, representation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n13-1a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a: primitives are irreducible intertwiners, not HELAS routines"}
-  - {id: n13-1b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L78-L112", title: "Note 13 §1b and its revision: a flat op set, not a two-level enum"}
-  - {id: n13-7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7: kernel factor-out, 1-1 Op naming, typed propagator seam"}
-  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/op.rs", title: "helas/eval/op.rs: the Op enum"}
-  - {id: code-slot, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/waveform_slot.rs#L31-L52", title: "helas/eval/waveform_slot.rs: WaveformSlot"}
+  - {id: n13-1a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a: primitives are irreducible intertwiners, not HELAS routines"}
+  - {id: n13-1b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L78-L112", title: "Note 13 §1b and its revision: a flat op set, not a two-level enum"}
+  - {id: n13-7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7: kernel factor-out, 1-1 Op naming, typed propagator seam"}
+  - {id: code-op, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/op.rs", title: "helas/eval/op.rs: the Op enum"}
+  - {id: code-slot, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/waveform_slot.rs#L31-L52", title: "helas/eval/waveform_slot.rs: WaveformSlot"}
 ---
 
 # Evaluator IR is a flat Op set; variance lives on the register

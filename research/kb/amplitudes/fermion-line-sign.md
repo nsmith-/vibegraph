@@ -6,13 +6,13 @@ status: draft
 tags: [fermion-flow, sign-convention, crossing, diagrams, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/diagram.rs#L526-L581", title: "Diagram::fermion_line_sign and its derivation doc"}
-  - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L718", title: "spine_sign_from_flow / closed_line_sign: the rooted-tree cross-check"}
-  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes 4–6 (initial-state spine sign, crossed-line conjugation, per-propagator parity)"}
-  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2598-L2756", title: "Note 28 S6, the crossing sign rule (mixed lines)"}
-  - {id: n35-t3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1042-L1112", title: "Note 35 T3 (the Dirac-content exemption, since reverted)"}
-  - {id: n35-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 close-out (rule 5, since reverted)"}
-  - {id: fact-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/fermion-line-sign-ignores-vertex-content.md#L12-L35", title: "Fact: the fermion-line sign ignores vertex content (replaced by this concept)"}
+  - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L526-L581", title: "Diagram::fermion_line_sign and its derivation doc"}
+  - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L718", title: "spine_sign_from_flow / closed_line_sign: the rooted-tree cross-check"}
+  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes 4–6 (initial-state spine sign, crossed-line conjugation, per-propagator parity)"}
+  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2598-L2756", title: "Note 28 S6, the crossing sign rule (mixed lines)"}
+  - {id: n35-t3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1042-L1112", title: "Note 35 T3 (the Dirac-content exemption, since reverted)"}
+  - {id: n35-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 close-out (rule 5, since reverted)"}
+  - {id: fact-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/fermion-line-sign-ignores-vertex-content.md#L12-L35", title: "Fact: the fermion-line sign ignores vertex content (replaced by this concept)"}
   - {id: pr13, resource: "https://github.com/nsmith-/vibegraph/commit/7f523ad", title: "7f523ad (PR #13): revert of the Dirac-content exemption, SSS1/SSSS1 scalar-sink −1"}
 ---
 

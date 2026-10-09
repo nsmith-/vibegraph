@@ -6,14 +6,14 @@ status: draft
 tags: [madgraph, reference, run-card, lhe, standalone]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n12-roots, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes and the two oracle defects"}
-  - {id: n19-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L32-L76", title: "Note 19 §2, survey of the banked runs"}
-  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the 3.7.1 mechanism, IDWTUP and packed CF"}
-  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5, the re-bank and the LHE dialects"}
-  - {id: n27-reg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 findings register"}
-  - {id: n29-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3324-L3770", title: "Note 29 chain D measurements"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3076-L3402", title: "Note 41 Z1 and B1 records"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml"}
+  - {id: n12-roots, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes and the two oracle defects"}
+  - {id: n19-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L32-L76", title: "Note 19 §2, survey of the banked runs"}
+  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the 3.7.1 mechanism, IDWTUP and packed CF"}
+  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5, the re-bank and the LHE dialects"}
+  - {id: n27-reg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 findings register"}
+  - {id: n29-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3324-L3770", title: "Note 29 chain D measurements"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3076-L3402", title: "Note 41 Z1 and B1 records"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml"}
 ---
 # How MadGraph reference runs are made and read
 

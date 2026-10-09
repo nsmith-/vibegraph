@@ -6,12 +6,12 @@ status: draft
 tags: [phase-space, hadronic, vegas, change-of-variables, multichannel]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly, direct x-map)"}
-  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7: the (τ, y) remap)"}
-  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L899", title: "Note 24 P2 (ScaledChannel / ScaledMultiChannel)"}
-  - {id: n27-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L212-L297", title: "Note 27 B2 (hadronic ŝ floor)"}
-  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setcuts.f#L527-L707", title: "MadGraph setcuts.f (smin derivation)"}
+  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly, direct x-map)"}
+  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7: the (τ, y) remap)"}
+  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L899", title: "Note 24 P2 (ScaledChannel / ScaledMultiChannel)"}
+  - {id: n27-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L212-L297", title: "Note 27 B2 (hadronic ŝ floor)"}
+  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L527-L707", title: "MadGraph setcuts.f (smin derivation)"}
 ---
 
 # Sample hadronic collisions in (τ, y)

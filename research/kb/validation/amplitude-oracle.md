@@ -6,31 +6,31 @@ status: draft
 tags: [amplitudes, madgraph, oracle, colour-flow, configurations]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L704-L755", title: "Note 24 §P1 — the per-diagram gate and the c_i·AMP(i) correction"}
-  - {id: n25-amps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L127-L139", title: "Note 25 §3.2 — the amplitudes category"}
-  - {id: n25-events, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L326-L354", title: "Note 25 §5.3 — amplitudes on MadGraph's own events"}
-  - {id: n25-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10 — what the layering landed"}
-  - {id: n28-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1916-L1955", title: "Note 28 B3 — the W-current row's 35 vs 21 configurations"}
-  - {id: n28-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2286-L2304", title: "Note 28 S5 — ud_to_epemud_qcd0 registered as an amplitude row"}
-  - {id: n28-s5-landed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2379-L2394", title: "Note 28 S5 — KNOWN_LINEAR_DISAGREEMENT as a two-way list"}
-  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2685-L2710", title: "Note 28 S6 — measured after the crossing sign rule; the config-index oracle bug"}
-  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 §F.1 — the fitted constants G and k"}
-  - {id: n29-f3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L492-L560", title: "Note 29 §F.3 — hostile cases and the dump schema"}
-  - {id: n29-f4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L561-L605", title: "Note 29 §F.4 — table schema and harvesting"}
-  - {id: n29-f5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L606-L663", title: "Note 29 §F.5 — vacuity modes and what cannot be decided"}
-  - {id: n29-f8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L738-L773", title: "Note 29 §F.8 — what the dumps pin"}
-  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 §F.10 — k/G is one bit per configuration"}
-  - {id: n29-f12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1037-L1095", title: "Note 29 §F.12 — the sign of G tracks MadGraph's colour coefficients"}
-  - {id: n29-f13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1096-L1152", title: "Note 29 §F.13 — rows without per-diagram coefficients"}
-  - {id: n29-f14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1153-L1207", title: "Note 29 §F.14 — k-phase and sign-pattern hardening drafts"}
-  - {id: n29-f15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1208-L1224", title: "Note 29 §F.15 — what the dumps cannot decide"}
-  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2 — config_groups is IdentifyConfigTag; partitions as sets"}
-  - {id: n35-wpwmz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1435-L1461", title: "Note 35 §10.5 — wpwm_to_wpwmz_cw's partition is not a shift"}
-  - {id: n39-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L73-L123", title: "Note 39 §3 — the standalone JAMP oracle and zero widths"}
-  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 — gates and mutation table"}
-  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/amplitude_oracle.rs", title: "vibegraph-lib/tests/amplitude_oracle.rs"}
-  - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/standalone_jamps.rs", title: "vibegraph-lib/tests/standalone_jamps.rs"}
-  - {id: mg-group-subprocs, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/group_subprocs.py", title: "MadGraph group_subprocs.py (IdentifyConfigTag)"}
+  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L704-L755", title: "Note 24 §P1 — the per-diagram gate and the c_i·AMP(i) correction"}
+  - {id: n25-amps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L127-L139", title: "Note 25 §3.2 — the amplitudes category"}
+  - {id: n25-events, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L326-L354", title: "Note 25 §5.3 — amplitudes on MadGraph's own events"}
+  - {id: n25-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10 — what the layering landed"}
+  - {id: n28-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1916-L1955", title: "Note 28 B3 — the W-current row's 35 vs 21 configurations"}
+  - {id: n28-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2286-L2304", title: "Note 28 S5 — ud_to_epemud_qcd0 registered as an amplitude row"}
+  - {id: n28-s5-landed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2379-L2394", title: "Note 28 S5 — KNOWN_LINEAR_DISAGREEMENT as a two-way list"}
+  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2685-L2710", title: "Note 28 S6 — measured after the crossing sign rule; the config-index oracle bug"}
+  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 §F.1 — the fitted constants G and k"}
+  - {id: n29-f3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L492-L560", title: "Note 29 §F.3 — hostile cases and the dump schema"}
+  - {id: n29-f4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L561-L605", title: "Note 29 §F.4 — table schema and harvesting"}
+  - {id: n29-f5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L606-L663", title: "Note 29 §F.5 — vacuity modes and what cannot be decided"}
+  - {id: n29-f8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L738-L773", title: "Note 29 §F.8 — what the dumps pin"}
+  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 §F.10 — k/G is one bit per configuration"}
+  - {id: n29-f12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1037-L1095", title: "Note 29 §F.12 — the sign of G tracks MadGraph's colour coefficients"}
+  - {id: n29-f13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1096-L1152", title: "Note 29 §F.13 — rows without per-diagram coefficients"}
+  - {id: n29-f14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1153-L1207", title: "Note 29 §F.14 — k-phase and sign-pattern hardening drafts"}
+  - {id: n29-f15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1208-L1224", title: "Note 29 §F.15 — what the dumps cannot decide"}
+  - {id: n35-v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1113-L1190", title: "Note 35 V2 — config_groups is IdentifyConfigTag; partitions as sets"}
+  - {id: n35-wpwmz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1435-L1461", title: "Note 35 §10.5 — wpwm_to_wpwmz_cw's partition is not a shift"}
+  - {id: n39-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L73-L123", title: "Note 39 §3 — the standalone JAMP oracle and zero widths"}
+  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 — gates and mutation table"}
+  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/amplitude_oracle.rs", title: "vibegraph-lib/tests/amplitude_oracle.rs"}
+  - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/standalone_jamps.rs", title: "vibegraph-lib/tests/standalone_jamps.rs"}
+  - {id: mg-group-subprocs, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/group_subprocs.py", title: "MadGraph group_subprocs.py (IdentifyConfigTag)"}
 ---
 
 # Amplitude oracle against MadGraph AMP, JAMP and AMP2

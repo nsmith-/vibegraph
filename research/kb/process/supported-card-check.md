@@ -6,12 +6,12 @@ status: draft
 tags: [process-grammar, check, refusal, squared-orders, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–§3.2, parse everything, check once; room for MLM and NLO"}
-  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, grammar, AST and the one check"}
-  - {id: n38-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5, decisions (user, 2026-09-25/26)"}
-  - {id: n35-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35 §4 C, the silently dropped NP^2==1"}
-  - {id: n35-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7 D4, squared-order constraints kept out of the SMEFT rows"}
-  - {id: code-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/check.rs", title: "vibegraph-lib/src/diagrams/check.rs"}
+  - {id: n38-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–§3.2, parse everything, check once; room for MLM and NLO"}
+  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, grammar, AST and the one check"}
+  - {id: n38-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5, decisions (user, 2026-09-25/26)"}
+  - {id: n35-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35 §4 C, the silently dropped NP^2==1"}
+  - {id: n35-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7 D4, squared-order constraints kept out of the SMEFT rows"}
+  - {id: code-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/check.rs", title: "vibegraph-lib/src/diagrams/check.rs"}
 decided: 2026-09-25
 decided_by: human:nsmith-
 ---

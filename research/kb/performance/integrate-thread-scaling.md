@@ -6,13 +6,13 @@ status: draft
 tags: [performance, parallelism, amdahl, integrate, determinism]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n31-j, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7 (the -j column)"}
-  - {id: n32-amdahl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L77-L113", title: "Note 32 §1.1 (why -j 16 yields only 4.7–5.4×: Amdahl)"}
-  - {id: n32-outcomes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (S3: survey parallelised)"}
-  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (close-out -j 16 measurement)"}
-  - {id: n32-followups, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (standing follow-ups)"}
-  - {id: proton-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L2832-L2900", title: "proton.rs adapt_alphas and survey_variance"}
-  - {id: cli-parallel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/parallel.rs#L20-L75", title: "vibegraph-cli parallel.rs (-j)"}
+  - {id: n31-j, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7 (the -j column)"}
+  - {id: n32-amdahl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L77-L113", title: "Note 32 §1.1 (why -j 16 yields only 4.7–5.4×: Amdahl)"}
+  - {id: n32-outcomes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (S3: survey parallelised)"}
+  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (close-out -j 16 measurement)"}
+  - {id: n32-followups, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (standing follow-ups)"}
+  - {id: proton-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L2832-L2900", title: "proton.rs adapt_alphas and survey_variance"}
+  - {id: cli-parallel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/parallel.rs#L20-L75", title: "vibegraph-cli parallel.rs (-j)"}
 measured:
   - {commit: b0e08d3, host: "Apple M3 Max (load average 6–19 during the sweep)", command: "vibegraph integrate <cards> --fixed-budget --neval 120000 --niter 12 -j {1,16}, min of 5 rounds"}
   - {host: "Apple M3 Max (quiet, load 3.5–3.9)", command: "vibegraph integrate <cards> --neval 120000 --niter 12 -j {1,16}, min of 4 rounds"}

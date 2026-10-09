@@ -6,15 +6,15 @@ status: draft
 tags: [rambo, phase-space, flat-sampling, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L246-L257", title: "Note 18 §2.3, massive RAMBO over F: Real"}
-  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (RAMBO rows)"}
-  - {id: n18-h3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision record H3 (RAMBO and its oracle)"}
-  - {id: n32-2to6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, flat RAMBO on the 2→6 rows"}
+  - {id: n18-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L246-L257", title: "Note 18 §2.3, massive RAMBO over F: Real"}
+  - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (RAMBO rows)"}
+  - {id: n18-h3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision record H3 (RAMBO and its oracle)"}
+  - {id: n32-2to6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, flat RAMBO on the 2→6 rows"}
   - {id: rambo-rs, resource: "vibegraph-lib/src/phasespace/rambo.rs", title: "rambo, rambo_massless, rambo_massive, RamboPoint"}
   - {id: oracle-rs, resource: "vibegraph-lib/tests/rambo_oracle.rs", title: "Uniforms-replay oracle against validation/rambo/rambo_fixture.json"}
   - {id: flatmc-rs, resource: "vibegraph-lib/tests/rambo_flat_mc.rs", title: "flat_mc_two_body_normalization, flat_mc_partonic_sigma"}
   - {id: kse, resource: "https://doi.org/10.1016/0010-4655(86)90119-0", title: "R. Kleiss, W. J. Stirling, S. D. Ellis, A new Monte Carlo treatment of multiparticle phase space at high energies, CPC 40 (1986) 359"}
-  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/rambo.py#L218", title: "MadGraph various/rambo.py, massive overflow warning"}
+  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/rambo.py#L218", title: "MadGraph various/rambo.py, massive overflow warning"}
 ---
 
 ## The map

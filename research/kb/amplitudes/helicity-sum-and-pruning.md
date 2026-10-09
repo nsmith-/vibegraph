@@ -6,14 +6,14 @@ status: draft
 tags: [helicity, pruning, evaluator, madgraph-parity, amp2]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n10-hel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/10-lorentz-runtime-eval-plan.md#L383-L395", title: "Note 10 §5.5: helicity iteration"}
-  - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11: coherent sum, gauge choice"}
-  - {id: n15-23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L466-L545", title: "Note 15 §2.3: helicity filtering (prune_zero_helicities)"}
-  - {id: n19-v1v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L79-L100", title: "Note 19 V1–V2: the frame guard; NHEL pinning 14/14"}
-  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 B6: per-diagram AMP2, and what pruning does to it"}
-  - {id: code-prune, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/compile.rs#L630-L780", title: "compile.rs: prune_zero_helicities, generic_probe_points, prune_zero_amplitudes"}
-  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L939-L990", title: "run.rs: assert_partonic_cm_beams_along_z"}
-  - {id: code-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L4890-L4970", title: "run.rs: prune_zero_helicities_matches_madgraph_filter_bitwise"}
+  - {id: n10-hel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L383-L395", title: "Note 10 §5.5: helicity iteration"}
+  - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11: coherent sum, gauge choice"}
+  - {id: n15-23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L466-L545", title: "Note 15 §2.3: helicity filtering (prune_zero_helicities)"}
+  - {id: n19-v1v2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L79-L100", title: "Note 19 V1–V2: the frame guard; NHEL pinning 14/14"}
+  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 B6: per-diagram AMP2, and what pruning does to it"}
+  - {id: code-prune, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs#L630-L780", title: "compile.rs: prune_zero_helicities, generic_probe_points, prune_zero_amplitudes"}
+  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L939-L990", title: "run.rs: assert_partonic_cm_beams_along_z"}
+  - {id: code-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L4890-L4970", title: "run.rs: prune_zero_helicities_matches_madgraph_filter_bitwise"}
 ---
 
 # Helicity sum and zero-helicity pruning

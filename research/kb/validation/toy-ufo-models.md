@@ -6,14 +6,14 @@ status: draft
 tags: [validation, ufo, toy-model, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 T1 (authoring the toy UFOs and banking their oracle)"}
-  - {id: n35-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7 (decisions D1–D5)"}
-  - {id: n35-gated, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 (what the sprint leaves gated; pinned conventions)"}
-  - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1416-L1434", title: "Note 35 §10.4 (the toy models' op census)"}
-  - {id: fact-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/fermion-line-sign-ignores-vertex-content.md", title: "Phase B fact: the fermion-line reversal sign ignores vertex content"}
-  - {id: toy-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/toy_models.rs#L1-L200", title: "vibegraph-lib/tests/toy_models.rs"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml toy rows"}
-  - {id: diagram-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/diagram.rs#L570", title: "Diagram::fermion_line_sign"}
+  - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 T1 (authoring the toy UFOs and banking their oracle)"}
+  - {id: n35-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7 (decisions D1–D5)"}
+  - {id: n35-gated, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 (what the sprint leaves gated; pinned conventions)"}
+  - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1416-L1434", title: "Note 35 §10.4 (the toy models' op census)"}
+  - {id: fact-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/fermion-line-sign-ignores-vertex-content.md", title: "Phase B fact: the fermion-line reversal sign ignores vertex content"}
+  - {id: toy-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/toy_models.rs#L1-L200", title: "vibegraph-lib/tests/toy_models.rs"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml toy rows"}
+  - {id: diagram-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L570", title: "Diagram::fermion_line_sign"}
 ---
 
 Two small UFO models live under `validation/ufo/` (MIT, written here):

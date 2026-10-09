@@ -6,20 +6,20 @@ status: draft
 tags: [performance, hosts, measurement-method, noise]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n30-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L44-L69", title: "Note 30 §1 (M3 Max host and both sides' builds)"}
-  - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (run-to-run reproducibility)"}
-  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (close-out measurements, loaded vs quiet host)"}
-  - {id: aot-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L52-L96", title: "AOT study §1 (Emerald Rapids host and method)"}
-  - {id: roofline-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/roofline-census-results.md#L39-L58", title: "Roofline census §1 (Emerald Rapids clock and peaks)"}
-  - {id: x86-avx512, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L399-L415", title: "x86 study: Emerald Rapids AVX-512 re-measurement host"}
-  - {id: x86-avx2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L14-L45", title: "x86 AVX2 study host and figure of merit"}
-  - {id: cl-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L38-L55", title: "Cascade Lake comparison §1 (host and builds)"}
-  - {id: cl-uncovered, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L215-L226", title: "Cascade Lake comparison §5 (what is not covered)"}
-  - {id: td-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L13-L38", title: "Top-down counters on Zen 4: host and caveats"}
-  - {id: fact-noise, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/m3-max-host-timing-noise.md#L13-L28", title: "Phase-B fact: M3 Max timing noise (replaced by this concept)"}
-  - {id: tds-hosts, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L32-L40", title: "Threaded-dispatch study: Cascade Lake host block"}
-  - {id: tds-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L221-L240", title: "Threaded-dispatch study §4: M3 Max host and min-over-rounds estimator"}
-  - {id: host-info, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/host_info.py#L20-L65", title: "validation/madgraph/host_info.py"}
+  - {id: n30-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L44-L69", title: "Note 30 §1 (M3 Max host and both sides' builds)"}
+  - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (run-to-run reproducibility)"}
+  - {id: n32-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L638-L748", title: "Note 32 §5.3 (close-out measurements, loaded vs quiet host)"}
+  - {id: aot-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L52-L96", title: "AOT study §1 (Emerald Rapids host and method)"}
+  - {id: roofline-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/roofline-census-results.md#L39-L58", title: "Roofline census §1 (Emerald Rapids clock and peaks)"}
+  - {id: x86-avx512, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L399-L415", title: "x86 study: Emerald Rapids AVX-512 re-measurement host"}
+  - {id: x86-avx2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L14-L45", title: "x86 AVX2 study host and figure of merit"}
+  - {id: cl-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L38-L55", title: "Cascade Lake comparison §1 (host and builds)"}
+  - {id: cl-uncovered, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L215-L226", title: "Cascade Lake comparison §5 (what is not covered)"}
+  - {id: td-host, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L13-L38", title: "Top-down counters on Zen 4: host and caveats"}
+  - {id: fact-noise, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/m3-max-host-timing-noise.md#L13-L28", title: "Phase-B fact: M3 Max timing noise (replaced by this concept)"}
+  - {id: tds-hosts, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L32-L40", title: "Threaded-dispatch study: Cascade Lake host block"}
+  - {id: tds-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L221-L240", title: "Threaded-dispatch study §4: M3 Max host and min-over-rounds estimator"}
+  - {id: host-info, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/host_info.py#L20-L65", title: "validation/madgraph/host_info.py"}
 measured:
   - {commit: b0e08d3, host: "Apple M3 Max, macOS 15.7 (loaded, load average 6–25)", command: "pixi run --skip-deps validate"}
   - {commit: 8cdb180, host: "Apple M3 Max, macOS 15.7 (quiet, load average 1.8)", command: "pixi run --skip-deps validate"}

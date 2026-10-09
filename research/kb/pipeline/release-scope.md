@@ -6,15 +6,15 @@ status: draft
 tags: [scope, hard-errors, process-grammar, run-card]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L11-L42", title: "Note 38: process-grammar sprint scope"}
-  - {id: n38-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–3.2: parse everything, check once; room for MLM and NLO"}
-  - {id: n38-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5: decisions (2026-09-25/26)"}
-  - {id: dec-parity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/decisions/release-scope-mg-lo-parity.md#L13-L30", title: "Decision: release scope is MadGraph LO process parity (deprecated)"}
-  - {id: dec-sm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/decisions/release-scope-sm-fixed-order.md#L14-L25", title: "Decision: fixed-order SM scope (deprecated; source of the hard-error rule)"}
-  - {id: n29-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1225-L1233", title: "Note 29 chain C1: hard errors at each parser boundary"}
-  - {id: n29-rulings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L6126-L6136", title: "Note 29 close-out: manager rulings (tmin_for_channel stays refused)"}
-  - {id: check-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/check.rs#L1-L41", title: "check.rs: the one check and the Unsupported table"}
-  - {id: classes-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/runcard/classes.rs#L1-L60", title: "runcard/classes.rs: field classification"}
+  - {id: n38-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L11-L42", title: "Note 38: process-grammar sprint scope"}
+  - {id: n38-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L199-L253", title: "Note 38 §3.1–3.2: parse everything, check once; room for MLM and NLO"}
+  - {id: n38-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1144-L1201", title: "Note 38 §5: decisions (2026-09-25/26)"}
+  - {id: dec-parity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/decisions/release-scope-mg-lo-parity.md#L13-L30", title: "Decision: release scope is MadGraph LO process parity (deprecated)"}
+  - {id: dec-sm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/decisions/release-scope-sm-fixed-order.md#L14-L25", title: "Decision: fixed-order SM scope (deprecated; source of the hard-error rule)"}
+  - {id: n29-c1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1225-L1233", title: "Note 29 chain C1: hard errors at each parser boundary"}
+  - {id: n29-rulings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L6126-L6136", title: "Note 29 close-out: manager rulings (tmin_for_channel stays refused)"}
+  - {id: check-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/check.rs#L1-L41", title: "check.rs: the one check and the Unsupported table"}
+  - {id: classes-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/runcard/classes.rs#L1-L60", title: "runcard/classes.rs: field classification"}
 ---
 **What is in the release** is the reviewed decision
 [release-scope-lo-mlm](../decisions/release-scope-lo-mlm.md): leading-order

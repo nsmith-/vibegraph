@@ -6,12 +6,12 @@ status: draft
 tags: [ufo, aloha, spin, lorentz, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n02-mg-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L310-L356", title: "Note 02, MadGraph Goal 1: UFO model loading"}
-  - {id: n09-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/09-ufo-aloha-type-matrix.md#L32-L58", title: "Note 09, ground truth from UFO and ALOHA"}
-  - {id: n09-chirality, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/09-ufo-aloha-type-matrix.md#L74-L93", title: "Note 09, basis and chirality layering"}
-  - {id: n10-sm-table, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/10-lorentz-runtime-eval-plan.md#L402-L415", title: "Note 10 §6.1, SM pattern table"}
-  - {id: mg-sm-lorentz, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/sm/lorentz.py", title: "MadGraph models/sm/lorentz.py"}
-  - {id: mg-aloha-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_parsers.py#L45", title: "ALOHA aloha_parsers.py UFOExpressionParser"}
+  - {id: n02-mg-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L310-L356", title: "Note 02, MadGraph Goal 1: UFO model loading"}
+  - {id: n09-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/09-ufo-aloha-type-matrix.md#L32-L58", title: "Note 09, ground truth from UFO and ALOHA"}
+  - {id: n09-chirality, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/09-ufo-aloha-type-matrix.md#L74-L93", title: "Note 09, basis and chirality layering"}
+  - {id: n10-sm-table, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L402-L415", title: "Note 10 §6.1, SM pattern table"}
+  - {id: mg-sm-lorentz, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/sm/lorentz.py", title: "MadGraph models/sm/lorentz.py"}
+  - {id: mg-aloha-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_parsers.py#L45", title: "ALOHA aloha_parsers.py UFOExpressionParser"}
   - {id: ufo-paper, resource: "https://arxiv.org/abs/1108.2040", title: "UFO — The Universal FeynRules Output"}
 ---
 

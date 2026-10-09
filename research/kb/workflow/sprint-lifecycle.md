@@ -6,12 +6,12 @@ status: draft
 tags: [sprint, workflow, process, knowledge-bundle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n42-lifecycle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L135-L214", title: "Note 42 §4: sprint lifecycle under the bundle"}
-  - {id: n42-readers, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L354-L362", title: "Note 42 §7.3: who reads what"}
-  - {id: n42-trial, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L504-L512", title: "Note 42 §8: Trial"}
-  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions 10 and 11"}
-  - {id: n42-risks, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/42-okf-knowledge-bundle-plan.md#L537-L555", title: "Note 42 §10: risks"}
-  - {id: n38-rhythm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1162-L1166", title: "Note 38 §5: feature work beside open evaluator PRs"}
+  - {id: n42-lifecycle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L135-L214", title: "Note 42 §4: sprint lifecycle under the bundle"}
+  - {id: n42-readers, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L354-L362", title: "Note 42 §7.3: who reads what"}
+  - {id: n42-trial, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L504-L512", title: "Note 42 §8: Trial"}
+  - {id: n42-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L514-L535", title: "Note 42 §9: decisions 10 and 11"}
+  - {id: n42-risks, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/42-okf-knowledge-bundle-plan.md#L537-L555", title: "Note 42 §10: risks"}
+  - {id: n38-rhythm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1162-L1166", title: "Note 38 §5: feature work beside open evaluator PRs"}
 ---
 A sprint is a **folder of linked concepts**, not one plan file that grows to
 thousands of lines. Lasting knowledge is promoted into the topic folders at

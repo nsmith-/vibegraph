@@ -7,16 +7,16 @@ status: draft
 tags: [madgraph, code-quality, bugs, testing, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n07, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L10-L67", title: "Note 07, scope, strengths and weaknesses"}
-  - {id: n07-cat, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L70-L254", title: "Note 07, bug categories 1–7"}
-  - {id: n07-tests, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L257-L364", title: "Note 07, implications for unit tests"}
-  - {id: n07-src, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L416-L750", title: "Note 07 appendix, source observations"}
-  - {id: mg-updatenotes, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/UpdateNotes.txt", title: "UpdateNotes.txt (2633 lines, v1.0.0 to v3.7.1)"}
-  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/rambo.py#L215-L220", title: "rambo.py, massive overflow check"}
-  - {id: mg-color, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/color_algebra.py#L365", title: "color_algebra.py, rule_eps_aeps_nosum"}
-  - {id: mg-alohalib, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_lib.py#L132", title: "aloha_lib.py, known_fct"}
-  - {id: mg-createaloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/create_aloha.py#L52-L123", title: "create_aloha.py, module constants and prop_lib"}
-  - {id: mg-lheparser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/lhe_parser.py#L133-L140", title: "lhe_parser.py, Particle.parse"}
+  - {id: n07, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L10-L67", title: "Note 07, scope, strengths and weaknesses"}
+  - {id: n07-cat, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L70-L254", title: "Note 07, bug categories 1–7"}
+  - {id: n07-tests, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L257-L364", title: "Note 07, implications for unit tests"}
+  - {id: n07-src, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L416-L750", title: "Note 07 appendix, source observations"}
+  - {id: mg-updatenotes, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/UpdateNotes.txt", title: "UpdateNotes.txt (2633 lines, v1.0.0 to v3.7.1)"}
+  - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/rambo.py#L215-L220", title: "rambo.py, massive overflow check"}
+  - {id: mg-color, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/color_algebra.py#L365", title: "color_algebra.py, rule_eps_aeps_nosum"}
+  - {id: mg-alohalib, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_lib.py#L132", title: "aloha_lib.py, known_fct"}
+  - {id: mg-createaloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/create_aloha.py#L52-L123", title: "create_aloha.py, module constants and prop_lib"}
+  - {id: mg-lheparser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/lhe_parser.py#L133-L140", title: "lhe_parser.py, Particle.parse"}
   - {id: diagrams-json, resource: "validation/madgraph/diagrams.json", title: "MadGraph diagram counts per reference row"}
 ---
 

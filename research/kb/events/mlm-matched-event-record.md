@@ -6,13 +6,13 @@ status: draft
 tags: [events, mlm, lhef, pythia, matching]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1, call flow per point"}
-  - {id: n41-setcl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L69-L104", title: "Note 41 §1.2, setclscales under matching (ptclus)"}
-  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, cuts, setup and the event record"}
-  - {id: n41-colour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L276-L283", title: "Note 41 §3.4, colour from the clustered graph"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0, references and the dump oracle"}
-  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, the event record for the shower"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z, close-out (bundle and cell flips)"}
+  - {id: n41-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L49-L68", title: "Note 41 §1.1, call flow per point"}
+  - {id: n41-setcl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L69-L104", title: "Note 41 §1.2, setclscales under matching (ptclus)"}
+  - {id: n41-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L146-L190", title: "Note 41 §1.4, cuts, setup and the event record"}
+  - {id: n41-colour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L276-L283", title: "Note 41 §3.4, colour from the clustered graph"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0, references and the dump oracle"}
+  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, the event record for the shower"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z, close-out (bundle and cell flips)"}
   - {id: mg-addmothers, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/madgraph/iolibs/template_files/addmothers.f#L253-L268", title: "MadGraph 3.7.1 addmothers.f, the status-2 rule"}
 ---
 

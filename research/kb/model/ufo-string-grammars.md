@@ -6,12 +6,12 @@ status: draft
 tags: [ufo, grammar, peg, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-vocab, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L208-L228", title: "Note 16 §1d, SM tree-level colour vocabulary"}
-  - {id: n16-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L300-L317", title: "Note 16 §2.3, UFO parser changes for colour"}
-  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, Gamma5, ** powers, colour strings under restriction"}
-  - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5, the coupling-level oracle and the precedence defect it found"}
-  - {id: n36-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L525-L564", title: "Note 36 B7, UFO expression precedence fixed"}
-  - {id: mg-treat-color, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L1946", title: "MadGraph import_ufo.py treat_color"}
+  - {id: n16-vocab, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L208-L228", title: "Note 16 §1d, SM tree-level colour vocabulary"}
+  - {id: n16-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L300-L317", title: "Note 16 §2.3, UFO parser changes for colour"}
+  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, Gamma5, ** powers, colour strings under restriction"}
+  - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5, the coupling-level oracle and the precedence defect it found"}
+  - {id: n36-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L525-L564", title: "Note 36 B7, UFO expression precedence fixed"}
+  - {id: mg-treat-color, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1946", title: "MadGraph import_ufo.py treat_color"}
   - {id: python-grammar, resource: "https://docs.python.org/3/reference/expressions.html#the-power-operator", title: "Python reference, the power operator"}
 measured:
   - {commit: f3425e2, pr: 6, landed_in: 02e8b25, command: "cargo test -p vibegraph-lib --test coupling_oracle"}

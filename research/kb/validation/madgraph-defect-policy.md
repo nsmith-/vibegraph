@@ -6,12 +6,12 @@ status: draft
 tags: [madgraph, defects, parity, policy, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L191-L205", title: "Note 41 §1.5 — MadGraph defects met, and the two-outcome policy"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 — the reweight.f:1138 refusal and the permuted first call found"}
-  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3 — D2 diagnosis and the user's decisions of 2026-09-29"}
-  - {id: n41-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3490-L3512", title: "Note 41 §5 — decisions settled 2026-09-28"}
-  - {id: code-scales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/scales.rs#L180-L195", title: "coupling/scales.rs — the reweight.f:1138 refusal"}
-  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L1272", title: "validation/manifest.toml — pp_to_ll_0j2j_mlm integrals note naming the deviation"}
+  - {id: n41-15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L191-L205", title: "Note 41 §1.5 — MadGraph defects met, and the two-outcome policy"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 M1 — the reweight.f:1138 refusal and the permuted first call found"}
+  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3 — D2 diagnosis and the user's decisions of 2026-09-29"}
+  - {id: n41-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3490-L3512", title: "Note 41 §5 — decisions settled 2026-09-28"}
+  - {id: code-scales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/scales.rs#L180-L195", title: "coupling/scales.rs — the reweight.f:1138 refusal"}
+  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L1272", title: "validation/manifest.toml — pp_to_ll_0j2j_mlm integrals note naming the deviation"}
 ---
 
 # Policy for MadGraph defects

@@ -6,11 +6,11 @@ status: draft
 tags: [events, lhef, io, round-trip, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3, the LHEF writer"}
-  - {id: n27-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1039-L1124", title: "Note 27 B7, the source-text-preserving round trip"}
-  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register"}
-  - {id: n24-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L1975", title: "Note 24 P4 gate (a), the corpus guard"}
-  - {id: mg-lhe-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/lhe_parser.py", title: "MadGraph lhe_parser.py (delivered-file formats)"}
+  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3, the LHEF writer"}
+  - {id: n27-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1039-L1124", title: "Note 27 B7, the source-text-preserving round trip"}
+  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register"}
+  - {id: n24-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L1975", title: "Note 24 P4 gate (a), the corpus guard"}
+  - {id: mg-lhe-parser, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/lhe_parser.py", title: "MadGraph lhe_parser.py (delivered-file formats)"}
 ---
 
 # LHEF reader and writer

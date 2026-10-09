@@ -6,19 +6,19 @@ status: draft
 tags: [amplitudes, signs, coverage, rooting, non-vacuity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — the rooting-soundness gate"}
-  - {id: n19-v6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L711-L750", title: "Note 19 V6 — branch-level coverage and the guard census"}
-  - {id: n24-rows, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L682", title: "Note 24 P1 — rows enforced and channel counts"}
-  - {id: n24-gux, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 — the q̄ g row"}
-  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — four mutation experiments"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 — what the llj rows pin and do not"}
-  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 §F.1 — the pinned-convention inventory"}
-  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 §F.10 — which rows vary which channel"}
-  - {id: n29-f13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1096-L1152", title: "Note 29 §F.13 — row 4b's attribution was wrong"}
-  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L1393-L1470", title: "channel_counts and mg_guard_processes_exercise_every_convention_channel"}
-  - {id: code-fermi, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L1204-L1248", title: "compile_single_diagram — fermi_sign assembly"}
-  - {id: code-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
-  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 — vector-vertex sign mutations"}
+  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — the rooting-soundness gate"}
+  - {id: n19-v6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L711-L750", title: "Note 19 V6 — branch-level coverage and the guard census"}
+  - {id: n24-rows, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L682", title: "Note 24 P1 — rows enforced and channel counts"}
+  - {id: n24-gux, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 — the q̄ g row"}
+  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — four mutation experiments"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 — what the llj rows pin and do not"}
+  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 §F.1 — the pinned-convention inventory"}
+  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 §F.10 — which rows vary which channel"}
+  - {id: n29-f13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1096-L1152", title: "Note 29 §F.13 — row 4b's attribution was wrong"}
+  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1393-L1470", title: "channel_counts and mg_guard_processes_exercise_every_convention_channel"}
+  - {id: code-fermi, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1204-L1248", title: "compile_single_diagram — fermi_sign assembly"}
+  - {id: code-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
+  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 — vector-vertex sign mutations"}
 ---
 
 # Which gate pins which convention-sign channel

@@ -6,20 +6,20 @@ status: draft
 tags: [colour-flow, madgraph, oracle, lhef, icolup]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-caveat, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16 — the NCOLOR=6 JAMP question, resolved"}
-  - {id: n16-strategy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L423-L456", title: "Note 16 §3 — validation strategy (CF oracle)"}
-  - {id: n23-e1b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L66-L129", title: "Note 23 E1b — leshouche.inc as the oracle"}
-  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L130-L195", title: "Note 23 E1 outcome — chain reading, crossing rule, strong form at NCOLOR=6"}
-  - {id: n23-e1c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L196-L257", title: "Note 23 E1c — JAMPs equal MadGraph's under the identity pairing"}
-  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — mutation experiments against the colour gates"}
-  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1994-L2079", title: "Note 29 §A.0 — conjugate members and the reversed flow index"}
-  - {id: n29-a1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2080-L2204", title: "Note 29 §A.1 — the widened oracle"}
-  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2205-L2301", title: "Note 29 §A.2 — the instrument ladder"}
-  - {id: n29-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2678-L2698", title: "Note 29 §B.4 — trial counts corrected"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z — the four-gluon contact's structure order and the structure controls"}
-  - {id: code-cf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/color_cf_oracle.rs", title: "vibegraph-lib/tests/color_cf_oracle.rs"}
-  - {id: code-tags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/color_flow_tags_oracle.rs", title: "vibegraph-lib/tests/color_flow_tags_oracle.rs"}
-  - {id: code-leshouche, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/common/leshouche.rs#L260-L290", title: "tests/common/leshouche.rs — the reference-free slot scan"}
+  - {id: n16-caveat, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16 — the NCOLOR=6 JAMP question, resolved"}
+  - {id: n16-strategy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L423-L456", title: "Note 16 §3 — validation strategy (CF oracle)"}
+  - {id: n23-e1b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L66-L129", title: "Note 23 E1b — leshouche.inc as the oracle"}
+  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L130-L195", title: "Note 23 E1 outcome — chain reading, crossing rule, strong form at NCOLOR=6"}
+  - {id: n23-e1c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L196-L257", title: "Note 23 E1c — JAMPs equal MadGraph's under the identity pairing"}
+  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — mutation experiments against the colour gates"}
+  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1994-L2079", title: "Note 29 §A.0 — conjugate members and the reversed flow index"}
+  - {id: n29-a1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2080-L2204", title: "Note 29 §A.1 — the widened oracle"}
+  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2205-L2301", title: "Note 29 §A.2 — the instrument ladder"}
+  - {id: n29-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2678-L2698", title: "Note 29 §B.4 — trial counts corrected"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z — the four-gluon contact's structure order and the structure controls"}
+  - {id: code-cf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/color_cf_oracle.rs", title: "vibegraph-lib/tests/color_cf_oracle.rs"}
+  - {id: code-tags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/color_flow_tags_oracle.rs", title: "vibegraph-lib/tests/color_flow_tags_oracle.rs"}
+  - {id: code-leshouche, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/common/leshouche.rs#L260-L290", title: "tests/common/leshouche.rs — the reference-free slot scan"}
 ---
 
 # Colour oracles: CF matrix, colour basis and leshouche tags

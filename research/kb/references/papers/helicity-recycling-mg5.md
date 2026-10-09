@@ -7,10 +7,10 @@ status: draft
 tags: [madgraph, helicity, cse, performance, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1, what MadGraph does before emitting Fortran"}
-  - {id: n15-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L788-L799", title: "Note 15, references"}
-  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
-  - {id: mg-runcard, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Cards/run_card.dat#L80", title: "MadGraph LO run_card.dat template, sde_strategy line"}
+  - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1, what MadGraph does before emitting Fortran"}
+  - {id: n15-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L788-L799", title: "Note 15, references"}
+  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
+  - {id: mg-runcard, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Cards/run_card.dat#L80", title: "MadGraph LO run_card.dat template, sde_strategy line"}
   - {id: mg5-beyond, resource: "https://arxiv.org/abs/1106.0522", title: "Alwall et al., MadGraph 5: Going Beyond (wavefunction reuse within one helicity)"}
 ---
 

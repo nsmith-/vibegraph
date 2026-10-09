@@ -6,18 +6,18 @@ status: draft
 tags: [kt-clustering, scales, channels, madevent, caveat]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 §K1.11 (findings: the scale is not a pure function of momenta and process)"}
-  - {id: n28-k32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2065-L2137", title: "Note 28 §K3.2–K3.3 (consumed state; stale isbw)"}
-  - {id: n28-k43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2479-L2506", title: "Note 28 §K4.3 (replay channel search, per-run counts)"}
-  - {id: n28-k5b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3090-L3174", title: "Note 28 §K5b.2–K5b.3 (the channel met in production)"}
-  - {id: n28-k6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3331-L3524", title: "Note 28 §K6.3–K6.8 (per group; μR spread; the channel partition and its negative control)"}
-  - {id: n28-c3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3625-L3662", title: "Note 28 §C.3 (pp_to_jj: no partition residual on a 2 → 2)"}
-  - {id: n41-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L69-L104", title: "Note 41 §1.2 (setclscales under matching; the jet memo)"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 §4 M0 (jet-memo census)"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 §4 M1 (jet-memo rule and proof)"}
-  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2701", title: "Note 41 §4 F-B (MadEvent's per-directory configurations)"}
-  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f", title: "MadGraph 3.7.1 cluster.f"}
-  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f", title: "MadGraph 3.7.1 reweight.f"}
+  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 §K1.11 (findings: the scale is not a pure function of momenta and process)"}
+  - {id: n28-k32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2065-L2137", title: "Note 28 §K3.2–K3.3 (consumed state; stale isbw)"}
+  - {id: n28-k43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2479-L2506", title: "Note 28 §K4.3 (replay channel search, per-run counts)"}
+  - {id: n28-k5b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3090-L3174", title: "Note 28 §K5b.2–K5b.3 (the channel met in production)"}
+  - {id: n28-k6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3331-L3524", title: "Note 28 §K6.3–K6.8 (per group; μR spread; the channel partition and its negative control)"}
+  - {id: n28-c3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3625-L3662", title: "Note 28 §C.3 (pp_to_jj: no partition residual on a 2 → 2)"}
+  - {id: n41-12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L69-L104", title: "Note 41 §1.2 (setclscales under matching; the jet memo)"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 §4 M0 (jet-memo census)"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L531-L757", title: "Note 41 §4 M1 (jet-memo rule and proof)"}
+  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2701", title: "Note 41 §4 F-B (MadEvent's per-directory configurations)"}
+  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f", title: "MadGraph 3.7.1 cluster.f"}
+  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f", title: "MadGraph 3.7.1 reweight.f"}
 ---
 # MadGraph's clustering scale depends on the integration channel
 
@@ -36,10 +36,10 @@ engine is [kt-clustering-engine](kt-clustering-engine.md).[^n28-k111]
 
 | route | where | what it changes |
 |---|---|---|
-| coupling-order filter | [`cluster.f:359-366`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L359-L366) | configurations with `nqcd ≠ nqcd(this_config)` leave the merge graph |
-| resonance tagging | `checkbw`, [`cluster.f:419-423`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L419-L423) | only `this_config`'s lines can be tagged on-shell, switching their measure to the invariant mass |
-| graph collapse | [`cluster.f:809-817`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L809-L817) | `igraphs(1) = this_config` when it survives; every line PDG the walk reads comes from `igraphs(1)` |
-| jet memo | [`reweight.f:662-679`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L662-L679), `:985-1030` | an event whose jet count disagrees with the channel's stored count is re-clustered restricted to the channel |
+| coupling-order filter | [`cluster.f:359-366`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L359-L366) | configurations with `nqcd ≠ nqcd(this_config)` leave the merge graph |
+| resonance tagging | `checkbw`, [`cluster.f:419-423`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L419-L423) | only `this_config`'s lines can be tagged on-shell, switching their measure to the invariant mass |
+| graph collapse | [`cluster.f:809-817`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L809-L817) | `igraphs(1) = this_config` when it survives; every line PDG the walk reads comes from `igraphs(1)` |
+| jet memo | [`reweight.f:662-679`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L662-L679), `:985-1030` | an event whose jet count disagrees with the channel's stored count is re-clustered restricted to the channel |
 | `chcluster` | `cluster.f:466-470` | restricts the clustering to `iconfig` itself (forced on by the memo) |
 
 All of them are live in the bank. `pp_to_bb_qcd2`'s `this_config = 3` sees only

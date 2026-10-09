@@ -6,8 +6,8 @@ status: draft
 tags: [profiling, assembly, macos, samply, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: fas-limits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/fill-arenas-asm-study-results.md#L221-L231", title: "fill_arenas instruction-level study §5: anomalies and limitations"}
-  - {id: fas-commands, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/fill-arenas-asm-study-results.md#L232-L450", title: "fill_arenas instruction-level study §6: commands, verbatim"}
+  - {id: fas-limits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/fill-arenas-asm-study-results.md#L221-L231", title: "fill_arenas instruction-level study §5: anomalies and limitations"}
+  - {id: fas-commands, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/fill-arenas-asm-study-results.md#L232-L450", title: "fill_arenas instruction-level study §6: commands, verbatim"}
 measured:
   commit: 9bad54c
   host: "Apple Silicon (arm64), macOS"

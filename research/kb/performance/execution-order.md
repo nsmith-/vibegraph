@@ -6,16 +6,16 @@ status: draft
 tags: [performance, evaluator, scheduling, branch-prediction, ilp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L517-L617", title: "Note 31 §E1/E1b (execution-order study and production pass)"}
-  - {id: tds-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L13-L48", title: "Threaded-dispatch study summary and Cascade Lake host"}
-  - {id: tds-orders, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L123-L220", title: "Threaded-dispatch study §3 (dispatcher × execution order, Cascade Lake)"}
-  - {id: tds-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L221-L370", title: "Threaded-dispatch study §4 (M3 Max and the shuffle control)"}
-  - {id: tds-layout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L475-L549", title: "Threaded-dispatch study §6 (layout-randomised sweeps)"}
-  - {id: tds-leaves, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L550-L582", title: "Threaded-dispatch study §7 (what this leaves)"}
-  - {id: td-slots, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L53-L127", title: "Top-down Zen 4 §2 (slot accounting, arena and shuffled controls)"}
-  - {id: layout-order, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/layout.rs#L690-L740", title: "layout.rs op_blocked_order and SCHEDULE_BYTE_LIMIT"}
-  - {id: layout-build, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/layout.rs#L1121-L1145", title: "layout.rs Program::build"}
-  - {id: schedule-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/schedule.rs#L1-L80", title: "schedule.rs (study orders and metrics)"}
+  - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L517-L617", title: "Note 31 §E1/E1b (execution-order study and production pass)"}
+  - {id: tds-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L13-L48", title: "Threaded-dispatch study summary and Cascade Lake host"}
+  - {id: tds-orders, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L123-L220", title: "Threaded-dispatch study §3 (dispatcher × execution order, Cascade Lake)"}
+  - {id: tds-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L221-L370", title: "Threaded-dispatch study §4 (M3 Max and the shuffle control)"}
+  - {id: tds-layout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L475-L549", title: "Threaded-dispatch study §6 (layout-randomised sweeps)"}
+  - {id: tds-leaves, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L550-L582", title: "Threaded-dispatch study §7 (what this leaves)"}
+  - {id: td-slots, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L53-L127", title: "Top-down Zen 4 §2 (slot accounting, arena and shuffled controls)"}
+  - {id: layout-order, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/layout.rs#L690-L740", title: "layout.rs op_blocked_order and SCHEDULE_BYTE_LIMIT"}
+  - {id: layout-build, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/layout.rs#L1121-L1145", title: "layout.rs Program::build"}
+  - {id: schedule-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/schedule.rs#L1-L80", title: "schedule.rs (study orders and metrics)"}
 measured:
   - {commit: 052a00e, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies (6-round round-robin, min over rounds)"}
   - {commit: 6bd7325, host: "Intel Xeon @ 2.8 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM", command: "VIBEGRAPH_EVAL_SCHEDULE sweep, eval-schedule-study feature"}

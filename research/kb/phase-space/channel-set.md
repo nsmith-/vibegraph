@@ -6,11 +6,11 @@ status: draft
 tags: [phase-space, multichannel, channels, madevent, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3 (MadGraph's channel set)"}
-  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2298", title: "Note 41 F-B (channel merging)"}
-  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (36 distinct maps among 336)"}
-  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/group_subprocs.py#L56-L103", title: "MadGraph group_subprocs.py IdentifyConfigTag"}
-  - {id: mg-confsub, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/group_subprocs.py#L387-L404", title: "MadGraph group_subprocs.py get_subproc_diagrams_for_config"}
+  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3 (MadGraph's channel set)"}
+  - {id: n41-fb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2006-L2298", title: "Note 41 F-B (channel merging)"}
+  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (36 distinct maps among 336)"}
+  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/group_subprocs.py#L56-L103", title: "MadGraph group_subprocs.py IdentifyConfigTag"}
+  - {id: mg-confsub, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/group_subprocs.py#L387-L404", title: "MadGraph group_subprocs.py get_subproc_diagrams_for_config"}
 ---
 
 # Integration channels

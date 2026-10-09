@@ -6,10 +6,10 @@ status: draft
 tags: [licensing, release, madgraph, distribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome, third-party notice follow-up"}
-  - {id: n25-backlog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L453-L500", title: "Note 25 §7: licensing closed by user decision 2026-07-31"}
-  - {id: notices, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/THIRD-PARTY-NOTICES", title: "THIRD-PARTY-NOTICES"}
-  - {id: mg-license, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/LICENSE", title: "MadGraph5_aMC@NLO LICENSE at the pinned commit"}
+  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome, third-party notice follow-up"}
+  - {id: n25-backlog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L453-L500", title: "Note 25 §7: licensing closed by user decision 2026-07-31"}
+  - {id: notices, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/THIRD-PARTY-NOTICES", title: "THIRD-PARTY-NOTICES"}
+  - {id: mg-license, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/LICENSE", title: "MadGraph5_aMC@NLO LICENSE at the pinned commit"}
 ---
 # Licensing: the interned SM model and banked MadGraph outputs
 

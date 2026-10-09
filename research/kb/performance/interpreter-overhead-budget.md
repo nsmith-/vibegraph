@@ -10,14 +10,14 @@ measured:
   - {commit: 03c31e6, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "cargo bench --bench aot_kernels (aot-study feature)"}
   - {commit: b504391, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "cargo bench --bench aot_kernels (aot-mg-study feature)"}
 sources:
-  - {id: fas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/fill-arenas-asm-study-results.md#L16-L231", title: "fill_arenas instruction-level study, §0–§5"}
-  - {id: n31-e0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L488-L516", title: "Note 31 E0 (summary of the study)"}
-  - {id: n31-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L618-L703", title: "Note 31 E2 (arena hoisting and the measured-dead items)"}
-  - {id: aot5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L194-L226", title: "AOT study §5, Reading"}
-  - {id: aotm7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L515-L549", title: "AOT study §M7, Reading"}
-  - {id: n17-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/17-bounds-check-elimination.md#L227-L300", title: "Note 17 §10, bounds-check re-test (Emerald Rapids, 2026-10-04)"}
-  - {id: td, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L39-L52", title: "Top-down Zen 4, §1 Answers"}
-  - {id: tds4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L297-L370", title: "Threaded-dispatch study §4 reading (M3 Max counters)"}
+  - {id: fas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/fill-arenas-asm-study-results.md#L16-L231", title: "fill_arenas instruction-level study, §0–§5"}
+  - {id: n31-e0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L488-L516", title: "Note 31 E0 (summary of the study)"}
+  - {id: n31-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L618-L703", title: "Note 31 E2 (arena hoisting and the measured-dead items)"}
+  - {id: aot5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L194-L226", title: "AOT study §5, Reading"}
+  - {id: aotm7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L515-L549", title: "AOT study §M7, Reading"}
+  - {id: n17-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/17-bounds-check-elimination.md#L227-L300", title: "Note 17 §10, bounds-check re-test (Emerald Rapids, 2026-10-04)"}
+  - {id: td, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L39-L52", title: "Top-down Zen 4, §1 Answers"}
+  - {id: tds4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L297-L370", title: "Threaded-dispatch study §4 reading (M3 Max counters)"}
 ---
 
 # Where the interpreter's time goes

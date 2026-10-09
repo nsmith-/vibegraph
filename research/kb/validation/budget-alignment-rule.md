@@ -6,10 +6,10 @@ status: draft
 tags: [validation, sigma, budget, vegas, seeds]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n32-premise, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L48-L74", title: "Note 32 §0 — the budget-alignment argument"}
-  - {id: n32-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L354-L434", title: "Note 32 §2 S6 — the rule and its floors"}
-  - {id: n32-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 — which rows were cut and which held"}
-  - {id: code-hadronic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_hadronic.rs", title: "vibegraph-lib/tests/validate_hadronic.rs — budget constants and their ladders"}
+  - {id: n32-premise, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L48-L74", title: "Note 32 §0 — the budget-alignment argument"}
+  - {id: n32-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L354-L434", title: "Note 32 §2 S6 — the rule and its floors"}
+  - {id: n32-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 — which rows were cut and which held"}
+  - {id: code-hadronic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_hadronic.rs", title: "vibegraph-lib/tests/validate_hadronic.rs — budget constants and their ladders"}
 ---
 
 # Validation budgets matched to reference precision

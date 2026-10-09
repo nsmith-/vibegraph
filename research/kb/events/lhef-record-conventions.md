@@ -6,12 +6,12 @@ status: draft
 tags: [events, lhef, scalup, aqcdup, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4, the per-event LHE fields as an oracle"}
-  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3, conventions decided and pinned"}
-  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, LPRUP per @N, PDFSUP as MadEvent's, decay-chain records"}
-  - {id: n24-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4 plan corrections (AQCDUP/AQEDUP digits)"}
+  - {id: n22-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4, the per-event LHE fields as an oracle"}
+  - {id: n23-e3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L383-L561", title: "Note 23 E3, conventions decided and pinned"}
+  - {id: n38-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1032-L1143", title: "Note 38 E1, LPRUP per @N, PDFSUP as MadEvent's, decay-chain records"}
+  - {id: n24-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4 plan corrections (AQCDUP/AQEDUP digits)"}
   - {id: mg-unwgt-scalup, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/Template/LO/SubProcesses/unwgt.f#L751-L761", title: "MadGraph 3.7.1 unwgt.f, SCALUP and AQCDUP"}
-  - {id: mg-pdfid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L3839", title: "MadGraph banner.py get_pdf_id"}
+  - {id: mg-pdfid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L3839", title: "MadGraph banner.py get_pdf_id"}
 ---
 
 # LHE header and event-line field conventions

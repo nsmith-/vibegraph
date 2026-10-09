@@ -6,16 +6,16 @@ status: draft
 tags: [helas, wavefunctions, propagators, conventions, aloha]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n10-prims, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/10-lorentz-runtime-eval-plan.md#L140-L236", title: "Note 10 §4.1–§4.6 (vxxxxx, sxxxxx, Dirac/massless/massive propagators, GammaV)"}
-  - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11 (open questions)"}
-  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes (momentum routing, chain-phase normalisation)"}
-  - {id: n12-stand, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L165-L173", title: "Note 12, where things stand"}
-  - {id: code-wavefn, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/wavefn.rs", title: "DiracWf, VectorWf::vxxxxx, ScalarWf::sxxxxx"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs", title: "propagate_*_bare kernels"}
-  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs", title: "build_external_core"}
-  - {id: code-vertex, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/vertex.rs", title: "Reference HELAS/ALOHA ports (jioxxx, ffv2_3, fvixxx, …)"}
-  - {id: code-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::fermion_line_sign (massive reversed spines)"}
-  - {id: aloha-om, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_writers.py#L624-L626", title: "ALOHA writer: OM = 1/M**2 for the massive vector numerator"}
+  - {id: n10-prims, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L140-L236", title: "Note 10 §4.1–§4.6 (vxxxxx, sxxxxx, Dirac/massless/massive propagators, GammaV)"}
+  - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11 (open questions)"}
+  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes (momentum routing, chain-phase normalisation)"}
+  - {id: n12-stand, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L165-L173", title: "Note 12, where things stand"}
+  - {id: code-wavefn, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/wavefn.rs", title: "DiracWf, VectorWf::vxxxxx, ScalarWf::sxxxxx"}
+  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs", title: "propagate_*_bare kernels"}
+  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs", title: "build_external_core"}
+  - {id: code-vertex, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/vertex.rs", title: "Reference HELAS/ALOHA ports (jioxxx, ffv2_3, fvixxx, …)"}
+  - {id: code-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::fermion_line_sign (massive reversed spines)"}
+  - {id: aloha-om, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_writers.py#L624-L626", title: "ALOHA writer: OM = 1/M**2 for the massive vector numerator"}
 ---
 
 # External wavefunctions and propagators

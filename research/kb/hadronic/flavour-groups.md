@@ -6,14 +6,14 @@ status: draft
 tags: [hadronic, flavour-groups, proton, probe, colour]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 outcome (what P2 must take from it)"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (group by measured |M|²)"}
-  - {id: n24-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1202-L1251", title: "Note 24 P2c (the grouping rule, as implemented)"}
-  - {id: n24-qqbar, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1296-L1310", title: "Note 24 P2c (q ↔ q̄ grouping: checked, not asserted)"}
-  - {id: n24-sym, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1311-L1323", title: "Note 24 P2c (symmetry factor)"}
-  - {id: n24-api, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c (what the ProtonIntegrand session must know)"}
-  - {id: proton-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L1-L70", title: "proton.rs module documentation"}
-  - {id: derive, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L758-L979", title: "derive_flavor_groups"}
+  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 outcome (what P2 must take from it)"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (group by measured |M|²)"}
+  - {id: n24-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1202-L1251", title: "Note 24 P2c (the grouping rule, as implemented)"}
+  - {id: n24-qqbar, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1296-L1310", title: "Note 24 P2c (q ↔ q̄ grouping: checked, not asserted)"}
+  - {id: n24-sym, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1311-L1323", title: "Note 24 P2c (symmetry factor)"}
+  - {id: n24-api, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c (what the ProtonIntegrand session must know)"}
+  - {id: proton-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L1-L70", title: "proton.rs module documentation"}
+  - {id: derive, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L758-L979", title: "derive_flavor_groups"}
 ---
 
 # Flavour groups derived from measured `|M|²` equality

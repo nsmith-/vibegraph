@@ -6,16 +6,16 @@ status: draft
 tags: [madgraph, references, pixi, regeneration, mlm]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p0-bank, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L392-L445", title: "Note 24 §P0 outcome: what was banked"}
-  - {id: n24-p0-files, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L637-L657", title: "Note 24 §P0 outcome: files and commands"}
-  - {id: n30-regen, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L253-L281", title: "Note 30 §4.3: the regeneration-cost answer"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L342-L440", title: "Note 41 §M0: MLM references and the instrumented replay"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2958-L3000", title: "Note 41 §Z.3: banking refdata-9 on the bank host"}
-  - {id: n41-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3336-L3403", title: "Note 41 §B1: refdata-9 generated, reproduction check"}
-  - {id: n41-writer, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3234-L3247", title: "Note 41: write_mlm_sigma_reference.py"}
-  - {id: fact-missing-dir, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/facts/extract-diagrams-reruns-madgraph-on-missing-dir.md#L11-L30", title: "Fact: MadGraph pixi tasks regenerate any missing run directory"}
-  - {id: gen-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/generate_references.sh", title: "validation/generate_references.sh"}
-  - {id: gen-mlm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/gen_mlm_references.sh", title: "validation/madgraph/gen_mlm_references.sh"}
+  - {id: n24-p0-bank, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L392-L445", title: "Note 24 §P0 outcome: what was banked"}
+  - {id: n24-p0-files, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L637-L657", title: "Note 24 §P0 outcome: files and commands"}
+  - {id: n30-regen, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L253-L281", title: "Note 30 §4.3: the regeneration-cost answer"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L342-L440", title: "Note 41 §M0: MLM references and the instrumented replay"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2958-L3000", title: "Note 41 §Z.3: banking refdata-9 on the bank host"}
+  - {id: n41-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3336-L3403", title: "Note 41 §B1: refdata-9 generated, reproduction check"}
+  - {id: n41-writer, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3234-L3247", title: "Note 41: write_mlm_sigma_reference.py"}
+  - {id: fact-missing-dir, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/facts/extract-diagrams-reruns-madgraph-on-missing-dir.md#L11-L30", title: "Fact: MadGraph pixi tasks regenerate any missing run directory"}
+  - {id: gen-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/generate_references.sh", title: "validation/generate_references.sh"}
+  - {id: gen-mlm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/gen_mlm_references.sh", title: "validation/madgraph/gen_mlm_references.sh"}
 ---
 # Generating and regenerating MadGraph reference runs
 

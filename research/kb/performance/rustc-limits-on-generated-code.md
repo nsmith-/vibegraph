@@ -9,9 +9,9 @@ measured:
   - {commit: 03c31e6, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 15 GiB", command: "cargo bench --no-run --bench aot_kernels (aot-study-large)"}
   - {commit: b504391, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM, 15 GiB", command: "cargo bench --no-run --bench aot_kernels (aot-mg-study), per-rustc RUSTC_WRAPPER"}
 sources:
-  - {id: aot6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L227-L251", title: "AOT study §6, compile cost"}
-  - {id: aotm4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L403-L432", title: "AOT study §M4, the 2→6 in one function does not compile"}
-  - {id: aotm6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L494-L549", title: "AOT study §M6–§M7, compile cost side by side and reading"}
+  - {id: aot6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L227-L251", title: "AOT study §6, compile cost"}
+  - {id: aotm4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L403-L432", title: "AOT study §M4, the 2→6 in one function does not compile"}
+  - {id: aotm6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L494-L549", title: "AOT study §M6–§M7, compile cost side by side and reading"}
 ---
 
 # rustc and LLVM limits on huge generated functions

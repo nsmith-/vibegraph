@@ -6,13 +6,13 @@ status: draft
 tags: [madgraph, madevent, scales, grouping, mlm, h1]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n07-h1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/07-mg5-code-quality.md#L539-L727", title: "Note 07 appendix, grouped MadEvent scales and rejects the unpermuted point"}
-  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L625-L757", title: "Note 41 M1 dump gates, the finding"}
-  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L877-L1013", title: "Note 41 M2 dump gates, permuted P1"}
-  - {id: n41-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1215-L1414", title: "Note 41 D2 diagnosis, decisions and R1"}
-  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4 (record fields on permuted events)"}
-  - {id: n41-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3403-L3489", title: "Note 41 Z2, dumps against refdata-9"}
-  - {id: mg-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc#L805-L842", title: "MadGraph super_auto_dsig_group_v4.inc, DSIGPROC"}
+  - {id: n07-h1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L539-L727", title: "Note 07 appendix, grouped MadEvent scales and rejects the unpermuted point"}
+  - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L625-L757", title: "Note 41 M1 dump gates, the finding"}
+  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L877-L1013", title: "Note 41 M2 dump gates, permuted P1"}
+  - {id: n41-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1215-L1414", title: "Note 41 D2 diagnosis, decisions and R1"}
+  - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4 (record fields on permuted events)"}
+  - {id: n41-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L3403-L3489", title: "Note 41 Z2, dumps against refdata-9"}
+  - {id: mg-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc#L805-L842", title: "MadGraph super_auto_dsig_group_v4.inc, DSIGPROC"}
 ---
 # Grouped MadEvent sets scales on the unpermuted point
 

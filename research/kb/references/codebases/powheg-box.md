@@ -7,14 +7,14 @@ status: draft
 tags: [powheg, nlo, subtraction, external-code, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L10-L34", title: "Note 03, surveyed revisions and purpose"}
-  - {id: n03-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L165-L368", title: "Note 03 Part 2, POWHEG-BOX-V2 survey"}
-  - {id: n03-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison table and primary references"}
-  - {id: pw-btilde, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7/btilde.f#L1-L101", title: "btilde.f"}
-  - {id: pw-sigborn, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7/sigborn.f#L222-L275", title: "sigborn.f, setborn0"}
-  - {id: pw-sigreal, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7/sigreal.f#L1-L110", title: "sigreal.f, btildereal"}
-  - {id: pw-mint, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7/integrator.f#L12", title: "integrator.f, mint"}
-  - {id: pw-lhef, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7/lhefwrite.f#L3-L124", title: "lhefwrite.f"}
+  - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L10-L34", title: "Note 03, surveyed revisions and purpose"}
+  - {id: n03-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L165-L368", title: "Note 03 Part 2, POWHEG-BOX-V2 survey"}
+  - {id: n03-compare, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison table and primary references"}
+  - {id: pw-btilde, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/btilde.f#L1-L101", title: "btilde.f"}
+  - {id: pw-sigborn, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/sigborn.f#L222-L275", title: "sigborn.f, setborn0"}
+  - {id: pw-sigreal, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/sigreal.f#L1-L110", title: "sigreal.f, btildereal"}
+  - {id: pw-mint, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/integrator.f#L12", title: "integrator.f, mint"}
+  - {id: pw-lhef, resource: "https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2/-/blob/e26982d7ad3d61db9fcbfcdccf4dd281fc12d1aa/lhefwrite.f#L3-L124", title: "lhefwrite.f"}
   - {id: nason, resource: "https://arxiv.org/abs/hep-ph/0409146", title: "P. Nason, A new method for combining NLO QCD with shower Monte Carlo algorithms (2004)"}
   - {id: powheg-box, resource: "https://arxiv.org/abs/1002.2581", title: "Alioli, Nason, Oleari, Re, A general framework for implementing NLO calculations in shower Monte Carlo programs: the POWHEG BOX (2010)"}
 ---

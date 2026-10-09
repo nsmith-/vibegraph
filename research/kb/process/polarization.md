@@ -6,17 +6,17 @@ status: draft
 tags: [polarization, helicity, process-grammar, madgraph-parity, frame]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-pol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L466-L482", title: "Note 01, polarized matrix elements in MG5_aMC: conventions and truncated propagator"}
-  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 §4 P1, polarized external particles"}
-  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 §8.4, the seeded e+ e- > w+ w- reference"}
-  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5, twenty-seed sweep of the polarized rows"}
-  - {id: mg-pol-codes, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L5110-L5188", title: "MadGraph madgraph_interface.py, polarization codes"}
-  - {id: mg-hel-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/helas_objects.py#L4834", title: "MadGraph helas_objects.py get_helicity_matrix"}
-  - {id: mg-denominator, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/helas_objects.py#L4910", title: "MadGraph helas_objects.py get_denominator_factor"}
-  - {id: mg-identical, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L3742", title: "MadGraph base_objects.py identical_particle_factor"}
-  - {id: mg-check-pol, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L3869", title: "MadGraph base_objects.py check_polarization"}
-  - {id: mg-massless-zero, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L1748-L1795", title: "MadGraph diagram_generation.py, helicity 0 of massless bosons removed"}
-  - {id: mg-frame, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4296", title: "MadGraph banner.py, me_frame"}
+  - {id: n01-pol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L466-L482", title: "Note 01, polarized matrix elements in MG5_aMC: conventions and truncated propagator"}
+  - {id: n38-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L882-L1031", title: "Note 38 §4 P1, polarized external particles"}
+  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 §8.4, the seeded e+ e- > w+ w- reference"}
+  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5, twenty-seed sweep of the polarized rows"}
+  - {id: mg-pol-codes, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L5110-L5188", title: "MadGraph madgraph_interface.py, polarization codes"}
+  - {id: mg-hel-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4834", title: "MadGraph helas_objects.py get_helicity_matrix"}
+  - {id: mg-denominator, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4910", title: "MadGraph helas_objects.py get_denominator_factor"}
+  - {id: mg-identical, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3742", title: "MadGraph base_objects.py identical_particle_factor"}
+  - {id: mg-check-pol, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3869", title: "MadGraph base_objects.py check_polarization"}
+  - {id: mg-massless-zero, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L1748-L1795", title: "MadGraph diagram_generation.py, helicity 0 of massless bosons removed"}
+  - {id: mg-frame, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4296", title: "MadGraph banner.py, me_frame"}
 measured:
   - {commit: 3c023b2, pr: 12, landed_in: 1539abc, command: "cargo test -p vibegraph-lib --test polarization_census --test polarization_frame; amplitude_oracle polarized rows"}
 ---

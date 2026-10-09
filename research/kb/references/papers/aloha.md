@@ -7,8 +7,8 @@ status: draft
 tags: [aloha, helas, ufo, lorentz, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-aloha, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L17-L48", title: "Note 01, ALOHA summary"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: n01-aloha, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L17-L48", title: "Note 01, ALOHA summary"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
 ---
 
 ALOHA takes a UFO model and writes a helicity-amplitude routine for every

@@ -6,14 +6,14 @@ status: draft
 tags: [performance, egglog, e-graph, rewriting, evaluator]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n14-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/14-egglog-notes.md#L21-L38", title: "Note 14 §0 (egglog in one paragraph)"}
-  - {id: n14-rewrite, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/14-egglog-notes.md#L152-L192", title: "Note 14 §3.4 (datatype + rewrite is equality saturation)"}
-  - {id: n14-relevance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/14-egglog-notes.md#L280-L312", title: "Note 14 §8 (relevance to vibegraph)"}
-  - {id: n15-schema, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L163-L182", title: "Note 15 §1.6 (egglog schema decisions)"}
-  - {id: n15-consequences, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L769-L787", title: "Note 15 §5 (consequences for egraph-rewrite)"}
-  - {id: n41-egglog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L251-L286", title: "Note 41 §6 (where egglog fits)"}
-  - {id: egraph-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/egraph.rs#L1-L131", title: "helas/eval/egraph.rs (module doc, NODE_SCHEMA, roundtrip)"}
-  - {id: lower-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/lower.rs#L599-L640", title: "lower.rs FuseCtx (chiral-pair FFV fusion at lowering)"}
+  - {id: n14-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L21-L38", title: "Note 14 §0 (egglog in one paragraph)"}
+  - {id: n14-rewrite, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L152-L192", title: "Note 14 §3.4 (datatype + rewrite is equality saturation)"}
+  - {id: n14-relevance, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L280-L312", title: "Note 14 §8 (relevance to vibegraph)"}
+  - {id: n15-schema, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L163-L182", title: "Note 15 §1.6 (egglog schema decisions)"}
+  - {id: n15-consequences, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L769-L787", title: "Note 15 §5 (consequences for egraph-rewrite)"}
+  - {id: n41-egglog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L251-L286", title: "Note 41 §6 (where egglog fits)"}
+  - {id: egraph-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/egraph.rs#L1-L131", title: "helas/eval/egraph.rs (module doc, NODE_SCHEMA, roundtrip)"}
+  - {id: lower-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/lower.rs#L599-L640", title: "lower.rs FuseCtx (chiral-pair FFV fusion at lowering)"}
 ---
 
 # The egglog rewrite stage as built
@@ -132,7 +132,7 @@ pipeline has three stages and the e-graph suits only the middle one:[^n41-egglog
 |---|---|
 | Dirac algebra and trace evaluation (terminating, confluent rules) | a normaliser; equality saturation meets AC blow-up on sums and products. egglog 2.0's `MultiSet`/`BigRat` sorts could store one AC-normal form, but some other code would compute it |
 | choosing a representation (momentum elimination, invariant basis, Schouten/Gram relations, common denominators) | e-graph — real choice problems, but every one pays off only through sharing, so it needs the global extractor too |
-| evaluating the polynomial | multivariate Horner plus CSE ([FORM code optimisation](../references/papers/form-code-optimization.md)); the existing CSE covers half |
+| evaluating the polynomial | multivariate Horner plus CSE ([FORM code optimisation](https://arxiv.org/abs/1310.7007)); the existing CSE covers half |
 
 Even there, an e-graph fits best as a post-pass on an expression already
 reconstructed against an ansatz, not by saturating a huge expanded input.

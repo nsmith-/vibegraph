@@ -6,11 +6,11 @@ status: draft
 tags: [finite-field, oracle, evaluator, reconstruction, exact-arithmetic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L452-L462", title: "Note 41 (completeness) §9 — the per-pair trace form by reconstruction"}
-  - {id: n41-91, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L463-L518", title: "Note 41 (completeness) §9.1 — the box"}
-  - {id: n41-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L613-L621", title: "Note 41 (completeness) §10 — the full |M|²"}
-  - {id: n41-101, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L622-L674", title: "Note 41 (completeness) §10.1 — method and oracles"}
-  - {id: code-ff, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/finite_field_msq.rs", title: "vibegraph-lib/tests/finite_field_msq.rs"}
+  - {id: n41-9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L452-L462", title: "Note 41 (completeness) §9 — the per-pair trace form by reconstruction"}
+  - {id: n41-91, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L463-L518", title: "Note 41 (completeness) §9.1 — the box"}
+  - {id: n41-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L613-L621", title: "Note 41 (completeness) §10 — the full |M|²"}
+  - {id: n41-101, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L622-L674", title: "Note 41 (completeness) §10.1 — method and oracles"}
+  - {id: code-ff, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/finite_field_msq.rs", title: "vibegraph-lib/tests/finite_field_msq.rs"}
 ---
 
 # The finite-field evaluator as an exact oracle
@@ -83,7 +83,7 @@ polynomial shared with no other invariant, on a curve that does not close on
 it[^n41-101]. Without that, the photon's `1/s²` in `ee_to_mumu` read as exponent 0.
 
 The method is Peraro's functional reconstruction over finite fields; see
-[the paper](../references/papers/peraro-finite-field-reconstruction.md) and
+[the paper](https://arxiv.org/abs/1608.01902) and
 [FiniteFlow](../references/papers/finiteflow.md).
 
 ## Blind spots

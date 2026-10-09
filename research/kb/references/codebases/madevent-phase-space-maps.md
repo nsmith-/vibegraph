@@ -7,12 +7,12 @@ status: draft
 tags: [madevent, phase-space, importance-sampling, vegas, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1, MadEvent's maps against ours"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f", title: "genps.f: one_tree (710), gen_s (1363), GENCMS (1621), get_channel_cut (1817)"}
-  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/myamp.f#L207-L500", title: "myamp.f: set_peaks, width floor, BW and setgrid branches"}
-  - {id: mg-dsample, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f", title: "dsample.f: setgrid (938), sample_get_x (1245), transpole call (1396)"}
-  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L5504-L5760", title: "export_v4.py: tstrategy and reorder_tchannels"}
-  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_v4.inc#L174-L185", title: "matrix_madevent_v4.inc: multichannel AMP2 normalisation"}
+  - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1, MadEvent's maps against ours"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f", title: "genps.f: one_tree (710), gen_s (1363), GENCMS (1621), get_channel_cut (1817)"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L207-L500", title: "myamp.f: set_peaks, width floor, BW and setgrid branches"}
+  - {id: mg-dsample, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f", title: "dsample.f: setgrid (938), sample_get_x (1245), transpole call (1396)"}
+  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L5504-L5760", title: "export_v4.py: tstrategy and reorder_tchannels"}
+  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_v4.inc#L174-L185", title: "matrix_madevent_v4.inc: multichannel AMP2 normalisation"}
   - {id: maps-rs, resource: "vibegraph-lib/src/phasespace/maps.rs", title: "TauMap, SplitAngle, RungOrder and the auto rules"}
   - {id: channel-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs", title: "draw_invariant, log_scale, draw_t, spine_chain"}
 ---

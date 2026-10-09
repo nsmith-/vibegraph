@@ -6,19 +6,19 @@ status: draft
 tags: [validation, scales, alpha-s, kt-clustering, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L446-L468", title: "Note 24 P0 (gate wiring: banking an amplitude banks a run)"}
-  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 (the q̄g gap closed)"}
-  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1175-L1194", title: "Note 24 P2b (a grid-sourced bank is classified in two lists)"}
-  - {id: n28-k38, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2245-L2270", title: "Note 28 K3.8 (the llj partonic rows have no dump)"}
-  - {id: n28-k43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2479-L2538", title: "Note 28 K4.3–K4.4 (every run through the clustering; decisions)"}
-  - {id: n29-e5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1807-L1888", title: "Note 29 E.5 and acceptance tests (grid α_s runs join the AQCDUP oracle)"}
-  - {id: n29-g6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5852-L5926", title: "Note 29 G.6–G.8 (classification guard; α_s source pinned by run logs)"}
-  - {id: n29-g11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5989-L5997", title: "Note 29 G.11 (what the σ cells cannot see)"}
-  - {id: n40-oracles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L66-L151", title: "Note 40 §3 and §6 (per-event oracles for per-group scales)"}
-  - {id: vscales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_scales.rs#L1-L330", title: "validate_scales.rs module docs and inventories"}
-  - {id: vscales-replay, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_scales.rs#L780-L860", title: "validate_scales.rs replay()"}
-  - {id: valphas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_alphas.rs#L100-L150", title: "validate_alphas.rs GRID_ALPHA_S_RUNS, GRID_ALPHA_S_TOL"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L751-L756", title: "MadGraph unwgt.f: SCALUP from q2fact"}
+  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L446-L468", title: "Note 24 P0 (gate wiring: banking an amplitude banks a run)"}
+  - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 (the q̄g gap closed)"}
+  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1175-L1194", title: "Note 24 P2b (a grid-sourced bank is classified in two lists)"}
+  - {id: n28-k38, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2245-L2270", title: "Note 28 K3.8 (the llj partonic rows have no dump)"}
+  - {id: n28-k43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2479-L2538", title: "Note 28 K4.3–K4.4 (every run through the clustering; decisions)"}
+  - {id: n29-e5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1807-L1888", title: "Note 29 E.5 and acceptance tests (grid α_s runs join the AQCDUP oracle)"}
+  - {id: n29-g6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5852-L5926", title: "Note 29 G.6–G.8 (classification guard; α_s source pinned by run logs)"}
+  - {id: n29-g11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5989-L5997", title: "Note 29 G.11 (what the σ cells cannot see)"}
+  - {id: n40-oracles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L66-L151", title: "Note 40 §3 and §6 (per-event oracles for per-group scales)"}
+  - {id: vscales, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_scales.rs#L1-L330", title: "validate_scales.rs module docs and inventories"}
+  - {id: vscales-replay, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_scales.rs#L780-L860", title: "validate_scales.rs replay()"}
+  - {id: valphas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_alphas.rs#L100-L150", title: "validate_alphas.rs GRID_ALPHA_S_RUNS, GRID_ALPHA_S_TOL"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L751-L756", title: "MadGraph unwgt.f: SCALUP from q2fact"}
 ---
 
 Every banked MadGraph run carries, per event, the scales MadGraph chose. The

@@ -6,20 +6,20 @@ status: draft
 tags: [performance, evaluator, instruction-stream, arenas, interpreter]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n13-sketch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 (kernel factor-out; Stage A fusion deferred)"}
-  - {id: n15-sizes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L134-L162", title: "Note 15 §1.5 (measured sizes; Const packing)"}
-  - {id: n15-track1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L183-L261", title: "Note 15 §2 (eval-layout sessions A0–A6)"}
-  - {id: n20-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L91-L115", title: "Note 20 (Mul instruction census)"}
-  - {id: n20-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L118-L160", title: "Note 20 S1 mul-split"}
-  - {id: n20-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L161-L185", title: "Note 20 S2 dag-validate-once"}
-  - {id: n31-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L618-L703", title: "Note 31 §E2 (fill_arenas overhead reduction)"}
-  - {id: tds-traps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L93-L122", title: "Threaded-dispatch study §2 (three traps)"}
-  - {id: x86-inline, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L48-L60", title: "x86 AVX2 study: inlining tune"}
-  - {id: layout-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/layout.rs#L1-L440", title: "layout.rs (arena classes, OperandRef, Instr, N_KINDS, kind)"}
-  - {id: program-struct, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/layout.rs#L527-L562", title: "layout.rs Program"}
-  - {id: op-const, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/op.rs#L289-L355", title: "op.rs ConstKind and the packed Const"}
-  - {id: run-fill, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L1070-L1120", title: "run.rs fill_arenas"}
-  - {id: lower-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/lower.rs#L599-L640", title: "lower.rs chiral-pair FFV fusion"}
+  - {id: n13-sketch, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 (kernel factor-out; Stage A fusion deferred)"}
+  - {id: n15-sizes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L134-L162", title: "Note 15 §1.5 (measured sizes; Const packing)"}
+  - {id: n15-track1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L183-L261", title: "Note 15 §2 (eval-layout sessions A0–A6)"}
+  - {id: n20-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L91-L115", title: "Note 20 (Mul instruction census)"}
+  - {id: n20-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L118-L160", title: "Note 20 S1 mul-split"}
+  - {id: n20-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L161-L185", title: "Note 20 S2 dag-validate-once"}
+  - {id: n31-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L618-L703", title: "Note 31 §E2 (fill_arenas overhead reduction)"}
+  - {id: tds-traps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L93-L122", title: "Threaded-dispatch study §2 (three traps)"}
+  - {id: x86-inline, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L48-L60", title: "x86 AVX2 study: inlining tune"}
+  - {id: layout-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/layout.rs#L1-L440", title: "layout.rs (arena classes, OperandRef, Instr, N_KINDS, kind)"}
+  - {id: program-struct, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/layout.rs#L527-L562", title: "layout.rs Program"}
+  - {id: op-const, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/op.rs#L289-L355", title: "op.rs ConstKind and the packed Const"}
+  - {id: run-fill, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L1070-L1120", title: "run.rs fill_arenas"}
+  - {id: lower-fuse, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/lower.rs#L599-L640", title: "lower.rs chiral-pair FFV fusion"}
 measured:
   - {commit: 95fca7f, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies"}
   - {commit: 82b68d1, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies; scripts/mg_perf_compare.sh"}

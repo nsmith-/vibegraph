@@ -6,22 +6,22 @@ status: draft
 tags: [validation, seed-sweep, budget-ladder, vegas, statistics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21 addendum (sampler in production: two defects found by seed sweeps)"}
-  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1772", title: "Note 24 P3 (five-seed sweep necessary, not sufficient)"}
-  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1 (Higgs pole: MadGraph confidently wrong)"}
-  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2711-L2745", title: "Note 28 S6 (ud row: two axes)"}
-  - {id: n28-k5b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3059-L3089", title: "Note 28 K5b.1 (four partonic rows, both axes)"}
-  - {id: n28-k65, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3382-L3433", title: "Note 28 K6.5 (channel partition residual)"}
-  - {id: n28-c4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3663-L3700", title: "Note 28 C.4 (pp_to_jj σ, both axes)"}
-  - {id: n28-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3918-L3984", title: "Note 28 C2.4 (pp_to_jj gated)"}
-  - {id: n29-d4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3041-L3057", title: "Note 29 D.4 (seed and budget protocol)"}
-  - {id: n29-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5168-L5197", title: "Note 29 B.8 (tolerance decision rule, pre-registered)"}
-  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 chain B results"}
-  - {id: n29-g10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5947-L5988", title: "Note 29 G.10 (re-carded rows: the second axis)"}
-  - {id: n34-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L56-L136", title: "Note 34 §1.2 (the gate cascade)"}
-  - {id: n34-w1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 wave 1 (S1 survey seeds; S2 the climb was a misread)"}
-  - {id: vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/vegas.rs#L121-L135", title: "vegas.rs IterationCombination"}
-  - {id: vhad, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_hadronic.rs#L412-L423", title: "validate_hadronic.rs combine_seeds"}
+  - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21 addendum (sampler in production: two defects found by seed sweeps)"}
+  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1772", title: "Note 24 P3 (five-seed sweep necessary, not sufficient)"}
+  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1 (Higgs pole: MadGraph confidently wrong)"}
+  - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2711-L2745", title: "Note 28 S6 (ud row: two axes)"}
+  - {id: n28-k5b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3059-L3089", title: "Note 28 K5b.1 (four partonic rows, both axes)"}
+  - {id: n28-k65, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3382-L3433", title: "Note 28 K6.5 (channel partition residual)"}
+  - {id: n28-c4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3663-L3700", title: "Note 28 C.4 (pp_to_jj σ, both axes)"}
+  - {id: n28-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3918-L3984", title: "Note 28 C2.4 (pp_to_jj gated)"}
+  - {id: n29-d4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3041-L3057", title: "Note 29 D.4 (seed and budget protocol)"}
+  - {id: n29-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5168-L5197", title: "Note 29 B.8 (tolerance decision rule, pre-registered)"}
+  - {id: n29-bres, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5523-L5756", title: "Note 29 chain B results"}
+  - {id: n29-g10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5947-L5988", title: "Note 29 G.10 (re-carded rows: the second axis)"}
+  - {id: n34-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L56-L136", title: "Note 34 §1.2 (the gate cascade)"}
+  - {id: n34-w1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 wave 1 (S1 survey seeds; S2 the climb was a misread)"}
+  - {id: vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/vegas.rs#L121-L135", title: "vegas.rs IterationCombination"}
+  - {id: vhad, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_hadronic.rs#L412-L423", title: "validate_hadronic.rs combine_seeds"}
 ---
 
 `AGENTS.md` ("Samplers gate statistically, and a fixed-seed pull is not

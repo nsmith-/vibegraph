@@ -6,15 +6,15 @@ status: draft
 tags: [four-fermion, smeft, fermion-flow, fierz, tensor]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4: reference conventions read from the pinned MadGraph source"}
-  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: four-fermion vertices"}
-  - {id: n35-r4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L549-L601", title: "Note 35 R4: the tensor slot and the cyclic four-fermion structures"}
-  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: the tensor-path line rule (2d99872)"}
-  - {id: n39-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/39-vector-vertex-signs.md#L40-L60", title: "Note 39 §1: the u u~ > t t~ g (vg_c4q) defect was the triple-gluon source sign"}
-  - {id: mg-signflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L1878", title: "MadGraph import_ufo.py: UFOMG5Converter.get_sign_flow"}
-  - {id: mg-fermionflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_fct.py#L26", title: "MadGraph aloha_fct.py: get_fermion_flow"}
-  - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/ufo/topo.rs#L200-L380", title: "ufo/topo.rs: fermion_flow, permutation_sign, flow_groups"}
-  - {id: code-current-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L654-L680", title: "root_diagram.rs: fermion_current_line_sign"}
+  - {id: n35-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4: reference conventions read from the pinned MadGraph source"}
+  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: four-fermion vertices"}
+  - {id: n35-r4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L549-L601", title: "Note 35 R4: the tensor slot and the cyclic four-fermion structures"}
+  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: the tensor-path line rule (2d99872)"}
+  - {id: n39-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L40-L60", title: "Note 39 §1: the u u~ > t t~ g (vg_c4q) defect was the triple-gluon source sign"}
+  - {id: mg-signflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1878", title: "MadGraph import_ufo.py: UFOMG5Converter.get_sign_flow"}
+  - {id: mg-fermionflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_fct.py#L26", title: "MadGraph aloha_fct.py: get_fermion_flow"}
+  - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/topo.rs#L200-L380", title: "ufo/topo.rs: fermion_flow, permutation_sign, flow_groups"}
+  - {id: code-current-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L654-L680", title: "root_diagram.rs: fermion_current_line_sign"}
 ---
 
 # Four-fermion vertices

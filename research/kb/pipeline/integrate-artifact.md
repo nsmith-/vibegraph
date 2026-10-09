@@ -6,16 +6,16 @@ status: draft
 tags: [artifact, integrate, generate, model-identity, cache]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/artifact.rs#L150-L346", title: "artifact.rs: ChannelKey, ChannelSampler, ChannelGrid, IntegrateArtifact"}
-  - {id: integrate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/integrate.rs#L585-L710", title: "integrate.rs: building and writing the artifact"}
-  - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/generate.rs#L257-L433", title: "generate.rs: card_mismatches, pdf_mismatches and version guards"}
-  - {id: generate-keys, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/generate.rs#L1460-L1500", title: "generate.rs: check_channel_keys"}
-  - {id: n18-h8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L871-L911", title: "Note 18 §5 H8: the first integrate CLI and artifact layout"}
-  - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23: model identity in the artifact"}
-  - {id: n23-cache, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L805-L855", title: "Note 23: the compiled-program cache slot"}
-  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1548-L1648", title: "Note 24: what P3 must know; channel keys"}
-  - {id: n37-maps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L297-L324", title: "Note 37 §5: map choices banked in the artifact"}
-  - {id: n37-defects, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L542-L551", title: "Note 37 §6.5: version-guard defects"}
+  - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L150-L346", title: "artifact.rs: ChannelKey, ChannelSampler, ChannelGrid, IntegrateArtifact"}
+  - {id: integrate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/integrate.rs#L585-L710", title: "integrate.rs: building and writing the artifact"}
+  - {id: generate-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L257-L433", title: "generate.rs: card_mismatches, pdf_mismatches and version guards"}
+  - {id: generate-keys, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L1460-L1500", title: "generate.rs: check_channel_keys"}
+  - {id: n18-h8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L871-L911", title: "Note 18 §5 H8: the first integrate CLI and artifact layout"}
+  - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23: model identity in the artifact"}
+  - {id: n23-cache, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L805-L855", title: "Note 23: the compiled-program cache slot"}
+  - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1548-L1648", title: "Note 24: what P3 must know; channel keys"}
+  - {id: n37-maps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L297-L324", title: "Note 37 §5: map choices banked in the artifact"}
+  - {id: n37-defects, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L542-L551", title: "Note 37 §6.5: version-guard defects"}
 ---
 `vibegraph integrate` writes one file, `<out>/grid.bin.zst` (`--out` defaults
 to the current directory). It holds the trained VEGAS grids plus every input

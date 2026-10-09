@@ -6,9 +6,9 @@ status: draft
 tags: [madgraph, sherpa, powheg, architecture, comparison]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n00-ps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L76-L92", title: "Note 00, what parton-shower programs do at ME level"}
-  - {id: n03-compare-sherpa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L146-L162", title: "Note 03 §1.6, COMIX against MadGraph/HELAS"}
-  - {id: n03-compare-all, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison of all surveyed generators"}
+  - {id: n00-ps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L76-L92", title: "Note 00, what parton-shower programs do at ME level"}
+  - {id: n03-compare-sherpa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L146-L162", title: "Note 03 §1.6, COMIX against MadGraph/HELAS"}
+  - {id: n03-compare-all, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L369-L383", title: "Note 03 Part 3, comparison of all surveyed generators"}
 ---
 
 Three reference codes take three different positions on how a leading-order

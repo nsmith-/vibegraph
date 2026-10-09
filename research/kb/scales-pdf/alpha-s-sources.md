@@ -6,18 +6,18 @@ status: draft
 tags: [alpha-s, pdf, lhapdf, coupling, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n22-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L36-L59", title: "Note 22 §1.1 (αs is MadGraph's own RGE)"}
-  - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (AQCDUP as an oracle; α_EW constant)"}
-  - {id: n22-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L217-L255", title: "Note 22 §4 (the aS(M_Z) override risk)"}
-  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 close-out (RunningAlphaS bit-exact; gated on AQCDUP)"}
-  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 §4 B6 item 3 (RunningAlphaS below 0.5 GeV)"}
-  - {id: n24-pc1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L469-L517", title: "Note 24 plan correction 1 (pdlabel = lhapdf puts αs outside the coupling layer)"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 decisions (αs from the grid)"}
-  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1093-L1156", title: "Note 24 P2b §2 (GridAlphaS and AlphaSSource)"}
-  - {id: n28-k5a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2765-L2878", title: "Note 28 §K5a.1–K5a.4 (AlphaS_Ipol, the 20 000 events, the ceiling, refusals)"}
-  - {id: mg-alfas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/alfas_functions.f#L74-L210", title: "MadGraph 3.7.1 alfas_functions.f (ALPHAS, NEWTON1)"}
-  - {id: mg-alfas-lhapdf, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/alfas_functions_lhapdf.f#L74-L83", title: "MadGraph 3.7.1 alfas_functions_lhapdf.f (ALPHAS = alphasPDF)"}
-  - {id: mg-setrun, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/setrun.f#L130-L145", title: "MadGraph 3.7.1 setrun.f (asmz source)"}
+  - {id: n22-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L36-L59", title: "Note 22 §1.1 (αs is MadGraph's own RGE)"}
+  - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (AQCDUP as an oracle; α_EW constant)"}
+  - {id: n22-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L217-L255", title: "Note 22 §4 (the aS(M_Z) override risk)"}
+  - {id: n22-close, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L283-L338", title: "Note 22 close-out (RunningAlphaS bit-exact; gated on AQCDUP)"}
+  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 §4 B6 item 3 (RunningAlphaS below 0.5 GeV)"}
+  - {id: n24-pc1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L469-L517", title: "Note 24 plan correction 1 (pdlabel = lhapdf puts αs outside the coupling layer)"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 decisions (αs from the grid)"}
+  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1093-L1156", title: "Note 24 P2b §2 (GridAlphaS and AlphaSSource)"}
+  - {id: n28-k5a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2765-L2878", title: "Note 28 §K5a.1–K5a.4 (AlphaS_Ipol, the 20 000 events, the ceiling, refusals)"}
+  - {id: mg-alfas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/alfas_functions.f#L74-L210", title: "MadGraph 3.7.1 alfas_functions.f (ALPHAS, NEWTON1)"}
+  - {id: mg-alfas-lhapdf, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/alfas_functions_lhapdf.f#L74-L83", title: "MadGraph 3.7.1 alfas_functions_lhapdf.f (ALPHAS = alphasPDF)"}
+  - {id: mg-setrun, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/setrun.f#L130-L145", title: "MadGraph 3.7.1 setrun.f (asmz source)"}
 ---
 # Where α_s comes from: MadGraph's RGE or the PDF set's grid
 
@@ -42,7 +42,7 @@ from is [madgraph-scale-choice](madgraph-scale-choice.md).
 `ALPHAS(Q)` evolves `asmz` from `M_Z` by inverting the integrated `nloop`-order
 β function with Newton's method (`NEWTON1`), stopping on a **relative** step
 below `TOL = 5d-4`
-([`alfas_functions.f:172`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/alfas_functions.f#L172)).
+([`alfas_functions.f:172`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/alfas_functions.f#L172)).
 The result is a specific iterate, not the exact root, so reproducing MadGraph
 means reproducing the iteration. Thresholds are fixed constants, not the
 model's masses: `CMASS = 1.42`, `BMASS = 4.7`, `ZMASS = 91.188`
@@ -52,7 +52,7 @@ MadGraph's own Fortran on a 792-point grid at `nloop` 1–3
 (`alphas_reference_grid.rs`).[^n22-close]
 
 **Where `asmz` and `nloop` come from**
-([`setrun.f:130-145`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/setrun.f#L130-L145)):
+([`setrun.f:130-145`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/setrun.f#L130-L145)):
 
 ```fortran
       if(lpp(1).ne.0.or.lpp(2).ne.0) then
@@ -93,7 +93,7 @@ At `pdlabel = lhapdf` MadGraph's `ALPHAS` is a one-line forward:
       ALPHAS=alphasPDF(Q)
 ```
 
-([`alfas_functions_lhapdf.f:83`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/alfas_functions_lhapdf.f#L83)),
+([`alfas_functions_lhapdf.f:83`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/alfas_functions_lhapdf.f#L83)),
 which LHAPDF resolves as `PDF::alphasQ(Q)` → `alphasQ2(q*q)` on the set's
 `AlphaS` object; for `AlphaS_Type: ipol` that is `AlphaS_Ipol`. A PDF set is
 fitted at its own coupling, so its densities and that coupling are one object.

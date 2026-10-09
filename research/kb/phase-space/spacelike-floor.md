@@ -6,12 +6,12 @@ status: draft
 tags: [t-channel, spine, cuts, conditioning, madgraph-agreement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0, the three-body spine probe and what P2 must take from it"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L1010", title: "Note 24 P2, per-energy channels, walk weight, the bias re-read, design decisions"}
-  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1049-L1092", title: "Note 24 P2b, Cuts::spacelike_floor(): the floor's scale is process data"}
-  - {id: n28-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6, decisions D2 and D3"}
-  - {id: n28-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1670-L1764", title: "Note 28 §S2.5, D3 decided by measurement"}
-  - {id: n28-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1827-L1988", title: "Note 28 §S4, spine in production: coverage, B1, B2, B4, C"}
+  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0, the three-body spine probe and what P2 must take from it"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L1010", title: "Note 24 P2, per-energy channels, walk weight, the bias re-read, design decisions"}
+  - {id: n24-p2b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1049-L1092", title: "Note 24 P2b, Cuts::spacelike_floor(): the floor's scale is process data"}
+  - {id: n28-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L254-L279", title: "Note 28 §6, decisions D2 and D3"}
+  - {id: n28-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1670-L1764", title: "Note 28 §S2.5, D3 decided by measurement"}
+  - {id: n28-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1827-L1988", title: "Note 28 §S4, spine in production: coverage, B1, B2, B4, C"}
   - {id: cuts-rs, resource: "vibegraph-lib/src/cuts.rs#L615-L653", title: "Cuts::spacelike_floor"}
   - {id: dc-rs, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L50-L85", title: "diagram_channel.rs module doc, 'Regulating the spacelike pole'"}
   - {id: dc-chain, resource: "vibegraph-lib/src/phasespace/diagram_channel.rs#L1643-L1708", title: "POLE_FRACTION_OF_FIDUCIAL_SCALE, spine_chain"}

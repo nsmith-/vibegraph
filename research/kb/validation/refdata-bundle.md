@@ -6,19 +6,19 @@ status: draft
 tags: [refdata, bundle, madgraph, banked-layer, fetch]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L198-L266", title: "Note 25 §4, inventory and reference-data census"}
-  - {id: n25-52, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L283-L325", title: "Note 25 §5.2, one entry point and the bundle"}
-  - {id: n25-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L561-L621", title: "Note 25 §9-10, decisions and close-out"}
-  - {id: n25-rd2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L740-L765", title: "Note 25 §10, refdata-2"}
-  - {id: n26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/26-refdata-compact-representation.md#L16-L218", title: "Note 26, a compact banked-event representation: measurement and verdict"}
-  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5, the 3.7.1 re-bank"}
-  - {id: n27-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1039-L1124", title: "Note 27 B7, the source-preserving round trip and the export proof"}
-  - {id: n28-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4136-L4326", title: "Note 28 Z.2-Z.7, refdata-4"}
-  - {id: n28-zplan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L239-L253", title: "Note 28 §5 Z, the close-out plan"}
-  - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5832-L6009", title: "Note 29 G.5-G.12, the re-bank bundle and pin flip"}
-  - {id: n36-ci, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L750-L768", title: "Note 36 7.2, the CI failure"}
-  - {id: n38-71, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1226-L1246", title: "Note 38 7.1, what a bundle carries"}
-  - {id: assemble, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/assemble_bundle.sh", title: "validation/madgraph/assemble_bundle.sh"}
+  - {id: n25-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L198-L266", title: "Note 25 §4, inventory and reference-data census"}
+  - {id: n25-52, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L283-L325", title: "Note 25 §5.2, one entry point and the bundle"}
+  - {id: n25-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L621", title: "Note 25 §9-10, decisions and close-out"}
+  - {id: n25-rd2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L740-L765", title: "Note 25 §10, refdata-2"}
+  - {id: n26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/26-refdata-compact-representation.md#L16-L218", title: "Note 26, a compact banked-event representation: measurement and verdict"}
+  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5, the 3.7.1 re-bank"}
+  - {id: n27-b7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1039-L1124", title: "Note 27 B7, the source-preserving round trip and the export proof"}
+  - {id: n28-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4136-L4326", title: "Note 28 Z.2-Z.7, refdata-4"}
+  - {id: n28-zplan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L239-L253", title: "Note 28 §5 Z, the close-out plan"}
+  - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5832-L6009", title: "Note 29 G.5-G.12, the re-bank bundle and pin flip"}
+  - {id: n36-ci, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L750-L768", title: "Note 36 7.2, the CI failure"}
+  - {id: n38-71, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1226-L1246", title: "Note 38 7.1, what a bundle carries"}
+  - {id: assemble, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/assemble_bundle.sh", title: "validation/madgraph/assemble_bundle.sh"}
 ---
 # The fetched reference-data bundle
 

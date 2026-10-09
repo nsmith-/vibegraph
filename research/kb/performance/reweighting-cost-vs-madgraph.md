@@ -11,7 +11,7 @@ measured:
   host: "4-vCPU cloud VM, Intel Xeon @ 2.80 GHz"
   command: "pixi run -e madgraph bench-reweight (validation/madgraph/bench_reweight.py)"
 sources:
-  - {id: rw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/reweight-vs-madgraph-results.md#L11-L97", title: "Reweighting cost: vibegraph against MadGraph's reweight module — results"}
+  - {id: rw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/reweight-vs-madgraph-results.md#L11-L97", title: "Reweighting cost: vibegraph against MadGraph's reweight module — results"}
 ---
 
 # Reweighting cost against MadGraph's reweight module

@@ -6,11 +6,11 @@ status: draft
 tags: [phase-space, maps, vegas, madevent, configuration]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1 (MadEvent's maps against ours)"}
-  - {id: n37-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L162-L249", title: "Note 37 §3 (fixed-beam measurements; ee_to_mumua)"}
-  - {id: n37-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L268-L296", title: "Note 37 §4 (decisions)"}
-  - {id: n37-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L297-L359", title: "Note 37 §5 (the map choices as configuration)"}
-  - {id: n37-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L400-L541", title: "Note 37 §6 (hadronic measurements, the rules, the held-back cells)"}
+  - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1 (MadEvent's maps against ours)"}
+  - {id: n37-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L162-L249", title: "Note 37 §3 (fixed-beam measurements; ee_to_mumua)"}
+  - {id: n37-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L268-L296", title: "Note 37 §4 (decisions)"}
+  - {id: n37-s5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L297-L359", title: "Note 37 §5 (the map choices as configuration)"}
+  - {id: n37-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L400-L541", title: "Note 37 §6 (hadronic measurements, the rules, the held-back cells)"}
 measured:
   - {host: "4-core Linux container", command: "vibegraph integrate <proc> --run-card <gu_to_epemu run card> --target-rel 0.001 --seed {20260719,20,21}, lpp = 0, ebeam = 250"}
   - {commit: 02e8b25, host: "M3 Max", command: "vibegraph integrate <banked card> --target-rel 0.001 -j 16 --map-*, seeds 20260719-38 (160 seeds for g u > e+ e- u)"}

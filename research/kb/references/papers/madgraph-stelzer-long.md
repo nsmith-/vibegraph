@@ -7,7 +7,7 @@ status: draft
 tags: [madgraph, diagram-enumeration, helas, paper, topologies]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L87-L119", title: "Note 01, original MadGraph summary"}
+  - {id: n01-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L87-L119", title: "Note 01, original MadGraph summary"}
   - {id: mg5-beyond, resource: "https://arxiv.org/abs/1106.0522", title: "Alwall et al., MadGraph 5: Going Beyond (leg-combination generation, wavefunction reuse)"}
 ---
 

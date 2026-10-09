@@ -6,12 +6,12 @@ status: draft
 tags: [performance, evaluator, aot-compilation, code-size, interpreter]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: aot-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L13-L51", title: "AOT study: question and answer"}
-  - {id: aot-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L52-L111", title: "AOT study §1–2: host, method, correctness"}
-  - {id: aot-timings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L112-L193", title: "AOT study §3–4: timings, code size and codegen"}
-  - {id: aot-reading, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L194-L289", title: "AOT study §5–7 and reproduce: reading, compile cost, caveats"}
-  - {id: mg-form, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L290-L432", title: "MadGraph-form study M1–M4"}
-  - {id: mg-form-chunked, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/aot-kernels-study-results.md#L433-L587", title: "MadGraph-form study M5–M9"}
+  - {id: aot-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L13-L51", title: "AOT study: question and answer"}
+  - {id: aot-method, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L52-L111", title: "AOT study §1–2: host, method, correctness"}
+  - {id: aot-timings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L112-L193", title: "AOT study §3–4: timings, code size and codegen"}
+  - {id: aot-reading, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L194-L289", title: "AOT study §5–7 and reproduce: reading, compile cost, caveats"}
+  - {id: mg-form, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L290-L432", title: "MadGraph-form study M1–M4"}
+  - {id: mg-form-chunked, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/aot-kernels-study-results.md#L433-L587", title: "MadGraph-form study M5–M9"}
 measured:
   - {commit: 03c31e6, pr: 17, landed_in: aeb96a7, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "RUSTFLAGS=\"-C target-cpu=native\" cargo bench -p vibegraph-lib --features aot-study --bench aot_kernels"}
   - {commit: b504391, pr: 17, landed_in: aeb96a7, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "RUSTFLAGS=\"-C target-cpu=native\" CARGO_BUILD_JOBS=2 cargo bench -p vibegraph-lib --profile aot-study --features aot-mg-study-large --bench aot_kernels"}

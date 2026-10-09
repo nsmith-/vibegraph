@@ -6,16 +6,16 @@ status: draft
 tags: [representations, intertwiners, variance, dirac-adjoint, type-design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n08-picture, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/08-repr-geometry.md#L10-L60", title: "Note 08 (geometric picture; the bundle picture)"}
-  - {id: n08-traits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/08-repr-geometry.md#L63-L123", title: "Note 08 §1–§4 (representation-trait strategy)"}
-  - {id: n11-idea, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/11-variance-flow-duality.md#L10-L84", title: "Note 11 (form-induced dualities; the one real difference)"}
-  - {id: n11-cautions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/11-variance-flow-duality.md#L111-L121", title: "Note 11 cautions"}
-  - {id: n13-axes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L244-L271", title: "Note 13 §5 (form/adjoint discipline, three-axis terminology)"}
-  - {id: n13-impl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 (implementation: rename, typed seam, contravariant-only vectors)"}
-  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/repr/lorentz.rs", title: "Variance, DiracAdjoint, VectorRepr, SpinorRepr, Bispinor"}
-  - {id: code-intertwiner, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/repr/intertwiner.rs", title: "Intertwiner2Leg/3Leg/4Leg"}
-  - {id: code-wavefn, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/wavefn.rs", title: "DiracWf, VectorWf, ScalarWf and the momentum-flow signs"}
-  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "Adjoint, LegAdjoint (runtime adjoint and the crossed bit)"}
+  - {id: n08-picture, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L10-L60", title: "Note 08 (geometric picture; the bundle picture)"}
+  - {id: n08-traits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L63-L123", title: "Note 08 §1–§4 (representation-trait strategy)"}
+  - {id: n11-idea, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/11-variance-flow-duality.md#L10-L84", title: "Note 11 (form-induced dualities; the one real difference)"}
+  - {id: n11-cautions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/11-variance-flow-duality.md#L111-L121", title: "Note 11 cautions"}
+  - {id: n13-axes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L244-L271", title: "Note 13 §5 (form/adjoint discipline, three-axis terminology)"}
+  - {id: n13-impl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 (implementation: rename, typed seam, contravariant-only vectors)"}
+  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/lorentz.rs", title: "Variance, DiracAdjoint, VectorRepr, SpinorRepr, Bispinor"}
+  - {id: code-intertwiner, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/intertwiner.rs", title: "Intertwiner2Leg/3Leg/4Leg"}
+  - {id: code-wavefn, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/wavefn.rs", title: "DiracWf, VectorWf, ScalarWf and the momentum-flow signs"}
+  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "Adjoint, LegAdjoint (runtime adjoint and the crossed bit)"}
 ---
 
 # The repr layer: bundle picture, variance, Dirac adjoint and flow

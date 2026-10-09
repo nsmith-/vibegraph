@@ -6,11 +6,11 @@ status: draft
 tags: [pdf, lhapdf, interpolation, hadronic, kernel]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L40-L62", title: "Note 18 §1.1 (LHAPDF format; oracle backend switched to LHAPDF)"}
-  - {id: n18-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L230-L245", title: "Note 18 §2.2 (PDF evaluation design)"}
-  - {id: n18-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records H1–H2 (oracle backend; in-house log-bicubic)"}
-  - {id: n31-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L331-L390", title: "Note 31 §2.1–2.2 (subgrid structure; SIMT shape)"}
-  - {id: n31-23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L391-L485", title: "Note 31 §2.3–2.4 (the all-flavour kernel; Horner in x only)"}
+  - {id: n18-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L40-L62", title: "Note 18 §1.1 (LHAPDF format; oracle backend switched to LHAPDF)"}
+  - {id: n18-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L230-L245", title: "Note 18 §2.2 (PDF evaluation design)"}
+  - {id: n18-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records H1–H2 (oracle backend; in-house log-bicubic)"}
+  - {id: n31-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L331-L390", title: "Note 31 §2.1–2.2 (subgrid structure; SIMT shape)"}
+  - {id: n31-23, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L391-L485", title: "Note 31 §2.3–2.4 (the all-flavour kernel; Horner in x only)"}
   - {id: lhapdf-paper, resource: "https://arxiv.org/abs/1412.7420", title: "LHAPDF6: parton density access in the LHC precision era"}
 ---
 # LHAPDF grids and the log-bicubic interpolation vibegraph replicates
@@ -24,7 +24,7 @@ generic spline crate is [pdf-interpolation-in-house](pdf-interpolation-in-house.
 what happens outside the grid is
 [pdf-extrapolation-and-force-positive](pdf-extrapolation-and-force-positive.md);
 the gate is [lhapdf-oracle](../validation/lhapdf-oracle.md). The library is
-described in [lhapdf6](../references/papers/lhapdf6.md).
+described in [lhapdf6](https://arxiv.org/abs/1412.7420).
 
 ## The files
 

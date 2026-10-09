@@ -9,14 +9,14 @@ measured:
   - {commit: 45a7d62, host: "Apple M3 Max (12P + 4E), 48 GiB, macOS 15.7.7, no core affinity", command: "pixi run --skip-deps validate (release-debug, extended-validation, RUSTFLAGS unset); pixi run -e madgraph python validation/madgraph/time_stages.py --out target/s3-mg-timing <31 processes>"}
   - {commit: 62d78e4, host: "Apple M3 Max (12P + 4E), macOS 15.7.7", command: "RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1 cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test <target> -- --nocapture --test-threads=1; pixi run --skip-deps validate; time_stages.py control pass"}
 sources:
-  - {id: n30, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L11-L69", title: "Note 30 §0–§1, the question and both sides' build settings"}
-  - {id: n30-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L108-L187", title: "Note 30 §3, our per-row wall times"}
-  - {id: n30-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L190-L281", title: "Note 30 §4, MadGraph per-stage times and regeneration cost"}
-  - {id: n30-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L284-L351", title: "Note 30 §5.1–§5.2, stage mapping and side-by-side wall time"}
-  - {id: n31-61, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L840-L926", title: "Note 31 §6.1–§6.2, the corrected protocol and what is comparable"}
-  - {id: n31-63, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L927-L1035", title: "Note 31 §6.3, per-row integrals and samples"}
-  - {id: n31-65, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1104-L1194", title: "Note 31 §6.5–§6.6, the layer as a user runs it; MadGraph control"}
-  - {id: n31-610, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1360-L1378", title: "Note 31 §6.10, what moved"}
+  - {id: n30, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L11-L69", title: "Note 30 §0–§1, the question and both sides' build settings"}
+  - {id: n30-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L108-L187", title: "Note 30 §3, our per-row wall times"}
+  - {id: n30-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L190-L281", title: "Note 30 §4, MadGraph per-stage times and regeneration cost"}
+  - {id: n30-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L284-L351", title: "Note 30 §5.1–§5.2, stage mapping and side-by-side wall time"}
+  - {id: n31-61, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L840-L926", title: "Note 31 §6.1–§6.2, the corrected protocol and what is comparable"}
+  - {id: n31-63, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L927-L1035", title: "Note 31 §6.3, per-row integrals and samples"}
+  - {id: n31-65, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1104-L1194", title: "Note 31 §6.5–§6.6, the layer as a user runs it; MadGraph control"}
+  - {id: n31-610, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1360-L1378", title: "Note 31 §6.10, what moved"}
 ---
 
 # Validation-layer and MadGraph stage timings on the M3 Max

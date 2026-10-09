@@ -6,12 +6,12 @@ status: draft
 tags: [pdf, lhapdf, nnpdf, reference-data, caveat]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L230-L245", title: "Note 18 §2.2 (PDF evaluation, the pinned set)"}
-  - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H1 grid structure, H7 lhaid surprise)"}
-  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome (lhaid correction)"}
-  - {id: n28-z4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4227-L4258", title: "Note 28 Z.4 (nn23lo1 is MadGraph-internal)"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L130-L147", title: "validation/manifest.toml [refdata] pin and cut 5 re-carding"}
-  - {id: alphas-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/alphas.rs#L237-L294", title: "coupling/alphas.rs pdf_label_alpha_s"}
+  - {id: n18-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L230-L245", title: "Note 18 §2.2 (PDF evaluation, the pinned set)"}
+  - {id: n18-h, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H1 grid structure, H7 lhaid surprise)"}
+  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome (lhaid correction)"}
+  - {id: n28-z4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4227-L4258", title: "Note 28 Z.4 (nn23lo1 is MadGraph-internal)"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L130-L147", title: "validation/manifest.toml [refdata] pin and cut 5 re-carding"}
+  - {id: alphas-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/alphas.rs#L237-L294", title: "coupling/alphas.rs pdf_label_alpha_s"}
 ---
 
 # The pinned PDF set is `NNPDF23_lo_as_0130_qed`, lhaid 247000
@@ -22,7 +22,7 @@ Every reference cross section on proton beams is computed with **`NNPDF23_lo_as_
 LHAPDF id 247000**, member 0. It is MadGraph 5's LO default (`nn23lo1` names it), and it is
 vibegraph's default PDF set (`cache::pinned::DEFAULT_PDF_SET`; the CLI's `--pdf-set`).
 Fetching and caching it is [tooling/pdf-set-distribution](../tooling/pdf-set-distribution.md),
-and the paper is [references/papers/nnpdf23-qed](../references/papers/nnpdf23-qed.md).[^n18-22]
+and the paper is [references/papers/nnpdf23-qed](https://arxiv.org/abs/1308.0598).[^n18-22]
 
 Two ids that look plausible are **different sets**:[^n18-h][^n18-outcome]
 

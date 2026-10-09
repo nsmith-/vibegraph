@@ -6,16 +6,16 @@ status: draft
 tags: [performance, measurement-method, validation, timing, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n30-scope, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L34-L43", title: "Note 30: the comparison this note does and does not license"}
-  - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (reproducibility)"}
-  - {id: n30-stages, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L284-L312", title: "Note 30 §5.1 (stage mapping)"}
-  - {id: n31-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L768-L797", title: "Note 31 §5 (gates and measurement honesty)"}
-  - {id: n31-protocol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L805-L874", title: "Note 31 §6.1 (correction to the close-out protocol)"}
-  - {id: n31-comparable, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L875-L926", title: "Note 31 §6.2 (what is and is not comparable)"}
-  - {id: n31-mg-control, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1140-L1194", title: "Note 31 §6.6 (MadGraph's side as the host-drift control)"}
-  - {id: n31-disagree, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1304-L1359", title: "Note 31 §6.9 (where this record disagrees)"}
-  - {id: n32-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to a target accuracy; cost vs acceptance)"}
-  - {id: n34-cutfirst, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L29-L55", title: "Note 34 §1.1 (cut-first density draw)"}
+  - {id: n30-scope, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L34-L43", title: "Note 30: the comparison this note does and does not license"}
+  - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (reproducibility)"}
+  - {id: n30-stages, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L284-L312", title: "Note 30 §5.1 (stage mapping)"}
+  - {id: n31-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L768-L797", title: "Note 31 §5 (gates and measurement honesty)"}
+  - {id: n31-protocol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L805-L874", title: "Note 31 §6.1 (correction to the close-out protocol)"}
+  - {id: n31-comparable, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L875-L926", title: "Note 31 §6.2 (what is and is not comparable)"}
+  - {id: n31-mg-control, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1140-L1194", title: "Note 31 §6.6 (MadGraph's side as the host-drift control)"}
+  - {id: n31-disagree, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1304-L1359", title: "Note 31 §6.9 (where this record disagrees)"}
+  - {id: n32-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to a target accuracy; cost vs acceptance)"}
+  - {id: n34-cutfirst, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L29-L55", title: "Note 34 §1.1 (cut-first density draw)"}
 ---
 
 # Timing validation rows and integrate runs

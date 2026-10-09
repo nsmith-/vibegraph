@@ -6,17 +6,17 @@ status: draft
 tags: [pdf, lhapdf, extrapolation, force-positive, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-k5a2-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2915-L2944", title: "Note 28 §K5a2.1 (which continuation, and what pins each line)"}
-  - {id: n28-k5a2-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2945-L2965", title: "Note 28 §K5a2.2 (the oracle)"}
-  - {id: n28-k5a2-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2966-L2991", title: "Note 28 §K5a2.3 (the residual is one ulp of its conditioning)"}
-  - {id: n28-k5a2-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2992-L3008", title: "Note 28 §K5a2.4 (what is refused)"}
-  - {id: n28-k5a2-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3009-L3032", title: "Note 28 §K5a2.5 (the ForcePositive finding)"}
-  - {id: n29-e, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1522-L1544", title: "Note 29 chain E design (read before touching anything)"}
-  - {id: n29-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1545-L1618", title: "Note 29 §E.1 (ForcePositive)"}
-  - {id: n29-eb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1862-L1888", title: "Note 29 chain E (b) acceptance tests"}
-  - {id: n29-ed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1925-L1986", title: "Note 29 chain E (d) risks and blind spots"}
-  - {id: extrap-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/pdf/extrap.rs#L1-L57", title: "pdf/extrap.rs module documentation"}
-  - {id: pdf-mod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/pdf/mod.rs#L147-L270", title: "PdfMember::try_xfx_q2 and force_positive_clamp"}
+  - {id: n28-k5a2-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2915-L2944", title: "Note 28 §K5a2.1 (which continuation, and what pins each line)"}
+  - {id: n28-k5a2-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2945-L2965", title: "Note 28 §K5a2.2 (the oracle)"}
+  - {id: n28-k5a2-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2966-L2991", title: "Note 28 §K5a2.3 (the residual is one ulp of its conditioning)"}
+  - {id: n28-k5a2-4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2992-L3008", title: "Note 28 §K5a2.4 (what is refused)"}
+  - {id: n28-k5a2-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3009-L3032", title: "Note 28 §K5a2.5 (the ForcePositive finding)"}
+  - {id: n29-e, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1522-L1544", title: "Note 29 chain E design (read before touching anything)"}
+  - {id: n29-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1545-L1618", title: "Note 29 §E.1 (ForcePositive)"}
+  - {id: n29-eb, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1862-L1888", title: "Note 29 chain E (b) acceptance tests"}
+  - {id: n29-ed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1925-L1986", title: "Note 29 chain E (d) risks and blind spots"}
+  - {id: extrap-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/pdf/extrap.rs#L1-L57", title: "pdf/extrap.rs module documentation"}
+  - {id: pdf-mod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/pdf/mod.rs#L147-L270", title: "PdfMember::try_xfx_q2 and force_positive_clamp"}
 ---
 
 # Out-of-grid PDFs and the `ForcePositive` clamp

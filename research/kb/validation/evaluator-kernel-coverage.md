@@ -6,15 +6,15 @@ status: draft
 tags: [evaluator, kernels, coverage, property-tests, ufo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n13-3a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L200-L222", title: "Note 13 §3a — fused(random) == generic(random) as the per-kernel oracle"}
-  - {id: n13-7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 — the harness and the IEEE-exact sign shuffles"}
-  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 — new kernels, the fusion guard and the SMEFTsim census"}
-  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 L1 — the per-model op census"}
-  - {id: n35-toy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1416-L1434", title: "Note 35 §10.4 — the toy models' census"}
-  - {id: code-harness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/prop_harness.rs", title: "helas/eval/prop_harness.rs"}
-  - {id: code-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/compile.rs#L1053-L1160", title: "assert_op_coverage_across and the SM census"}
-  - {id: code-smeft, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/smeftsim.rs#L700-L746", title: "tests/smeftsim.rs — SMEFTsim census"}
-  - {id: code-toy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/toy_models.rs#L195-L240", title: "tests/toy_models.rs — toy-model census"}
+  - {id: n13-3a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L200-L222", title: "Note 13 §3a — fused(random) == generic(random) as the per-kernel oracle"}
+  - {id: n13-7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 — the harness and the IEEE-exact sign shuffles"}
+  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 — new kernels, the fusion guard and the SMEFTsim census"}
+  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 L1 — the per-model op census"}
+  - {id: n35-toy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1416-L1434", title: "Note 35 §10.4 — the toy models' census"}
+  - {id: code-harness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/prop_harness.rs", title: "helas/eval/prop_harness.rs"}
+  - {id: code-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs#L1053-L1160", title: "assert_op_coverage_across and the SM census"}
+  - {id: code-smeft, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/smeftsim.rs#L700-L746", title: "tests/smeftsim.rs — SMEFTsim census"}
+  - {id: code-toy, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/toy_models.rs#L195-L240", title: "tests/toy_models.rs — toy-model census"}
 ---
 
 # Kernel correctness and reach: property harness and op census

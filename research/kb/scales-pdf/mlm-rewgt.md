@@ -6,13 +6,13 @@ status: draft
 tags: [mlm, rewgt, alpha-s, pdf, reweighting]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L105-L145", title: "Note 41 §1.3 (rewgt under ickkw = 1)"}
-  - {id: n41-32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L235-L252", title: "Note 41 §3.2 (the reweighting is a per-term factor)"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0 (references, dump records, censuses)"}
-  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L758-L1013", title: "Note 41 M2 (rewgt: implementation and dump gates)"}
-  - {id: rewgt-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/cluster/rewgt.rs#L1-L40", title: "coupling/cluster/rewgt.rs module documentation"}
-  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
-  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/auto_dsig_v4.inc#L141-L151", title: "MadGraph auto_dsig_v4.inc (IPSEL draw)"}
+  - {id: n41-13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L105-L145", title: "Note 41 §1.3 (rewgt under ickkw = 1)"}
+  - {id: n41-32, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L235-L252", title: "Note 41 §3.2 (the reweighting is a per-term factor)"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0 (references, dump records, censuses)"}
+  - {id: n41-m2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L758-L1013", title: "Note 41 M2 (rewgt: implementation and dump gates)"}
+  - {id: rewgt-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/rewgt.rs#L1-L40", title: "coupling/cluster/rewgt.rs module documentation"}
+  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1333-L1824", title: "MadGraph reweight.f rewgt"}
+  - {id: mg-auto-dsig, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/auto_dsig_v4.inc#L141-L151", title: "MadGraph auto_dsig_v4.inc (IPSEL draw)"}
 ---
 
 # `rewgt`: α_s and PDF reweighting under `ickkw = 1`

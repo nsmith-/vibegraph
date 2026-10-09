@@ -6,17 +6,17 @@ status: draft
 tags: [scales, kt-clustering, setclscales, madgraph, scalefact]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-k15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L755-L839", title: "Note 28 §K1.5 (cluster sequence to jfirst/jlast/jcentral)"}
-  - {id: n28-k16, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L840-L910", title: "Note 28 §K1.6 (μR, the geometric-mean prescription)"}
-  - {id: n28-k17, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L911-L962", title: "Note 28 §K1.7 (per-beam μF)"}
-  - {id: n28-k19, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1097-L1145", title: "Note 28 §K1.9 (where scalefact lands, against 3.7.1)"}
-  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 §K1.11 (findings for downstream sessions)"}
-  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 §K3.7 (confirmed against the bank)"}
-  - {id: n28-k42, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2452-L2478", title: "Note 28 §K4.2 (what replaced the closed forms)"}
-  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L555-L1284", title: "MadGraph reweight.f setclscales (3.7.1)"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/unwgt.f#L750-L756", title: "MadGraph unwgt.f (SCALUP)"}
-  - {id: setcl-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/coupling/cluster/setclscales.rs#L1-L40", title: "vibegraph setclscales.rs module documentation"}
-  - {id: vs-scalefact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_scales.rs#L322", title: "validate_scales.rs SCALEFACT_RUNS"}
+  - {id: n28-k15, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L755-L839", title: "Note 28 §K1.5 (cluster sequence to jfirst/jlast/jcentral)"}
+  - {id: n28-k16, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L840-L910", title: "Note 28 §K1.6 (μR, the geometric-mean prescription)"}
+  - {id: n28-k17, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L911-L962", title: "Note 28 §K1.7 (per-beam μF)"}
+  - {id: n28-k19, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1097-L1145", title: "Note 28 §K1.9 (where scalefact lands, against 3.7.1)"}
+  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 §K1.11 (findings for downstream sessions)"}
+  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 §K3.7 (confirmed against the bank)"}
+  - {id: n28-k42, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2452-L2478", title: "Note 28 §K4.2 (what replaced the closed forms)"}
+  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L555-L1284", title: "MadGraph reweight.f setclscales (3.7.1)"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L750-L756", title: "MadGraph unwgt.f (SCALUP)"}
+  - {id: setcl-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/setclscales.rs#L1-L40", title: "vibegraph setclscales.rs module documentation"}
+  - {id: vs-scalefact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_scales.rs#L322", title: "validate_scales.rs SCALEFACT_RUNS"}
 ---
 
 # `setclscales`: from the cluster sequence to μR and per-beam μF

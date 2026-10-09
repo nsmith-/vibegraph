@@ -6,14 +6,14 @@ status: draft
 tags: [scales, pdf, veto, setclscales, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n29-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4025-L4121", title: "Note 29 Chain C2 §C2.4 (the μF ≥ 2 GeV veto: reference semantics, reachable runs)"}
-  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4346-L4392", title: "Note 29 C2 amendment A.0 (the veto existed; it panicked)"}
-  - {id: n29-a1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4393-L4472", title: "Note 29 C2 amendment A.1 (routing through PointScales)"}
-  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4473-L4540", title: "Note 29 C2 amendment A.2 (tests; refuse at setup)"}
-  - {id: n29-a5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4645-L4667", title: "Note 29 C2 amendment A.5 (eight reachable runs)"}
-  - {id: n29-a6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L4668-L4699", title: "Note 29 C2 amendment A.6 (blind spots)"}
-  - {id: mg-veto, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1205-L1220", title: "MadGraph 3.7.1 reweight.f (the 2 GeV check)"}
-  - {id: mg-zero, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1907-L1908", title: "MadGraph 3.7.1 reweight.f (a failed setclscales zeroes the weight)"}
+  - {id: n29-c24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4025-L4121", title: "Note 29 Chain C2 §C2.4 (the μF ≥ 2 GeV veto: reference semantics, reachable runs)"}
+  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4346-L4392", title: "Note 29 C2 amendment A.0 (the veto existed; it panicked)"}
+  - {id: n29-a1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4393-L4472", title: "Note 29 C2 amendment A.1 (routing through PointScales)"}
+  - {id: n29-a2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4473-L4540", title: "Note 29 C2 amendment A.2 (tests; refuse at setup)"}
+  - {id: n29-a5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4645-L4667", title: "Note 29 C2 amendment A.5 (eight reachable runs)"}
+  - {id: n29-a6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L4668-L4699", title: "Note 29 C2 amendment A.6 (blind spots)"}
+  - {id: mg-veto, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1205-L1220", title: "MadGraph 3.7.1 reweight.f (the 2 GeV check)"}
+  - {id: mg-zero, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1907-L1908", title: "MadGraph 3.7.1 reweight.f (a failed setclscales zeroes the weight)"}
 ---
 # The μF ≥ 2 GeV factorisation-scale veto
 
@@ -27,7 +27,7 @@ choices that make `μF` dynamical are in
 
 ## Reference semantics
 
-[`reweight.f:1205-1220`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1205-L1220):
+[`reweight.f:1205-1220`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1205-L1220):
 
 ```fortran
 c     Check that factorization scale is >= 2 GeV
@@ -41,7 +41,7 @@ c     Check that factorization scale is >= 2 GeV
 ```
 
 and at the call site
-([`:1907-1908`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f#L1907-L1908))
+([`:1907-1908`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L1907-L1908))
 `if(.not.setclscales(...)) all_wgt(i) = 0d0`. Three properties no summary
 carries:
 

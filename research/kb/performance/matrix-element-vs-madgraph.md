@@ -11,11 +11,11 @@ measured:
   - {commit: 62d78e4, host: "Apple M3 Max, 2026-08-05", command: "scripts/mg_perf_compare.sh, after arm against before arm e951045, min over two alternating rounds"}
   - {commit: 405d18b, host: "Apple M3 Max, rustc 1.94.1, 2026-07-28", command: "scripts/mg_perf_compare.sh"}
 sources:
-  - {id: cl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L11-L99", title: "vibegraph against MadGraph on one x86 host, §0–§2"}
-  - {id: cl-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L227-L241", title: "Cascade Lake results, Reproduce"}
-  - {id: n32-6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L794-L864", title: "Note 32 §6, MATRIX1 re-measurement 2026-08-06"}
-  - {id: n31-68, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1242-L1303", title: "Note 31 §6.8, sprint-level mg_perf_compare"}
-  - {id: n20, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/20-eval-perf-2-plan.md#L59-L90", title: "Note 20, fresh vs-MG measurement 2026-07-28"}
+  - {id: cl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L11-L99", title: "vibegraph against MadGraph on one x86 host, §0–§2"}
+  - {id: cl-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L227-L241", title: "Cascade Lake results, Reproduce"}
+  - {id: n32-6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L794-L864", title: "Note 32 §6, MATRIX1 re-measurement 2026-08-06"}
+  - {id: n31-68, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1242-L1303", title: "Note 31 §6.8, sprint-level mg_perf_compare"}
+  - {id: n20, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L59-L90", title: "Note 20, fresh vs-MG measurement 2026-07-28"}
 ---
 
 # Matrix element per point against MadGraph's MATRIX1

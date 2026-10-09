@@ -6,14 +6,14 @@ status: draft
 tags: [amp2, configurations, colour-selection, amplitude-oracle, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 §B6 (the per-diagram AMP2 accumulator)"}
-  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register (pruning moves AMP2; config merge)"}
-  - {id: zen4-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L299-L355", title: "Top-down Zen 4 results §7 (configuration amplitudes read bare, weighted at read-out)"}
-  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/compile.rs", title: "config_carrying_diagrams, config_groups, config_tag, select_config_and_flow"}
-  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs", title: "eval_amp2, run_config_amps"}
-  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/amplitude_oracle.rs", title: "amplitude_oracle: configurations, AMP2 and the per-configuration phase"}
-  - {id: mg-amp2, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L1390", title: "MadGraph export_v4.py, get_amp2_lines (L1390) and get_icolamp_lines (L1295)"}
-  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/group_subprocs.py#L56", title: "MadGraph group_subprocs.py, IdentifyConfigTag"}
+  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 §B6 (the per-diagram AMP2 accumulator)"}
+  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register (pruning moves AMP2; config merge)"}
+  - {id: zen4-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L299-L355", title: "Top-down Zen 4 results §7 (configuration amplitudes read bare, weighted at read-out)"}
+  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs", title: "config_carrying_diagrams, config_groups, config_tag, select_config_and_flow"}
+  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs", title: "eval_amp2, run_config_amps"}
+  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/amplitude_oracle.rs", title: "amplitude_oracle: configurations, AMP2 and the per-configuration phase"}
+  - {id: mg-amp2, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L1390", title: "MadGraph export_v4.py, get_amp2_lines (L1390) and get_icolamp_lines (L1295)"}
+  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/group_subprocs.py#L56", title: "MadGraph group_subprocs.py, IdentifyConfigTag"}
 ---
 
 # Per-diagram AMP2 and configurations

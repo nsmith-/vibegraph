@@ -6,11 +6,11 @@ status: draft
 tags: [intertwiners, evaluator, peephole, eft, lorentz-structures]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n13-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L23-L39", title: "Note 13 §0 (one-paragraph summary)"}
-  - {id: n13-primitives, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a (primitives are irreducible intertwiners)"}
-  - {id: n13-basis, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L113-L171", title: "Note 13 §2, §2a, §2b (the basis from the leg reps; glossary; SM enumeration)"}
-  - {id: n13-catalog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L172-L222", title: "Note 13 §3, §3a (rewrite catalog and mechanics)"}
-  - {id: n13-scope, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/13-typed-repr-conventions-design.md#L272-L288", title: "Note 13 §6 (scope: the EFT extension point)"}
+  - {id: n13-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L23-L39", title: "Note 13 §0 (one-paragraph summary)"}
+  - {id: n13-primitives, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L45-L77", title: "Note 13 §1a (primitives are irreducible intertwiners)"}
+  - {id: n13-basis, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L113-L171", title: "Note 13 §2, §2a, §2b (the basis from the leg reps; glossary; SM enumeration)"}
+  - {id: n13-catalog, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L172-L222", title: "Note 13 §3, §3a (rewrite catalog and mechanics)"}
+  - {id: n13-scope, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L272-L288", title: "Note 13 §6 (scope: the EFT extension point)"}
   - {id: code-lower, resource: "vibegraph-lib/src/helas/eval/lower.rs", title: "chiral_gamma_site / lower_vertex: the chiral-pair fusion"}
   - {id: code-kernel, resource: "vibegraph-lib/src/helas/eval/kernel.rs", title: "ffv_vout / ffv_iout / ffv_oout and their fused-vs-generic tests"}
   - {id: code-op, resource: "vibegraph-lib/src/helas/eval/op.rs", title: "The flat Op set"}

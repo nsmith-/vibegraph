@@ -6,10 +6,10 @@ status: draft
 tags: [acceptance, release, ci, pdf, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-u4-acc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2816-L2902", title: "Note 24 §U4 outcome: Acceptance A, what it covers and cannot see"}
-  - {id: n24-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L3058-L3113", title: "Note 24 close-out: Acceptance A, one process"}
-  - {id: script, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/acceptance.sh", title: "scripts/acceptance.sh"}
-  - {id: workflow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/.github/workflows/acceptance.yml", title: ".github/workflows/acceptance.yml"}
+  - {id: n24-u4-acc, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2816-L2902", title: "Note 24 §U4 outcome: Acceptance A, what it covers and cannot see"}
+  - {id: n24-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L3058-L3113", title: "Note 24 close-out: Acceptance A, one process"}
+  - {id: script, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/acceptance.sh", title: "scripts/acceptance.sh"}
+  - {id: workflow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/.github/workflows/acceptance.yml", title: ".github/workflows/acceptance.yml"}
 measured:
   command: "bash scripts/acceptance.sh --binary target/release/vibegraph (live CERN download)"
 ---

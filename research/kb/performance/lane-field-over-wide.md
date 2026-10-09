@@ -9,10 +9,10 @@ measured:
   - {commit: 02e8b25, host: "Intel Xeon Emerald Rapids (family 6 model 207), 4-vCPU Firecracker VM", command: "RUSTFLAGS='-C target-cpu=native' scripts/dump_lane_asm.sh 'fill_arenas'; cargo bench --bench eval_strategies"}
   - {host: "Apple M3 Max, macOS", command: "samply record on the fat-LTO eval_strategies binary, --profile-time 20"}
 sources:
-  - {id: x86-arm-samply, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L325-L377", title: "x86 study, ARM results: where the time actually is (samply)"}
-  - {id: x86-disasm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L457-L557", title: "x86 study, AVX-512: the disassembly, the force-inlining probe, what this corrects"}
-  - {id: x86-fix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L569-L650", title: "x86 study, AVX-512: the fix, LaneField<N> over wide"}
-  - {id: x86-relaxed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/x86-avx2-perf-study-results.md#L669-L699", title: "x86 study: relaxed scalar multiply-add"}
+  - {id: x86-arm-samply, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L325-L377", title: "x86 study, ARM results: where the time actually is (samply)"}
+  - {id: x86-disasm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L457-L557", title: "x86 study, AVX-512: the disassembly, the force-inlining probe, what this corrects"}
+  - {id: x86-fix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L569-L650", title: "x86 study, AVX-512: the fix, LaneField<N> over wide"}
+  - {id: x86-relaxed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/x86-avx2-perf-study-results.md#L669-L699", title: "x86 study: relaxed scalar multiply-add"}
 ---
 
 # `LaneField<N>` as a newtype over `wide`

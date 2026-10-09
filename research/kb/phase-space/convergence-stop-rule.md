@@ -6,16 +6,16 @@ status: draft
 tags: [phase-space, vegas, stop-rule, target-rel, budget]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n31-i4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L243-L328", title: "Note 31 I4 (convergence-targeted integration)"}
-  - {id: n32-s51, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (S3: --target-rel becomes the default)"}
-  - {id: n32-s54, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (χ²/dof overflow on wide splits)"}
-  - {id: n32-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to target; the stop consumed the overflow)"}
-  - {id: n34-w1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S1 Part C and S2 (stop-scale calibration; the llj ladder misread)"}
-  - {id: n34-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L251-L325", title: "Note 34 S3 (few-accepted-point iterations drive the inflation)"}
-  - {id: n34-ttt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 (llj converges; cap raised to 500)"}
-  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A (a single spike holds the χ² stop)"}
-  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12 (the pooled consistency factor)"}
-  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (a target run that never stopped)"}
+  - {id: n31-i4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L243-L328", title: "Note 31 I4 (convergence-targeted integration)"}
+  - {id: n32-s51, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1 (S3: --target-rel becomes the default)"}
+  - {id: n32-s54, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L749-L793", title: "Note 32 §5.4 (χ²/dof overflow on wide splits)"}
+  - {id: n32-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to target; the stop consumed the overflow)"}
+  - {id: n34-w1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S1 Part C and S2 (stop-scale calibration; the llj ladder misread)"}
+  - {id: n34-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L251-L325", title: "Note 34 S3 (few-accepted-point iterations drive the inflation)"}
+  - {id: n34-ttt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 (llj converges; cap raised to 500)"}
+  - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1823-L2005", title: "Note 41 F-A (a single spike holds the χ² stop)"}
+  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2557", title: "Note 41 P12 (the pooled consistency factor)"}
+  - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6 (a target run that never stopped)"}
 measured:
   - {commit: 098c9e2, host: "M3 Max, macOS", command: "vibegraph integrate <proc card> --run-card <run card> --target-rel 0.001 -j 1, seeds 20260719-21"}
   - {commit: ef660f3, host: "4-core container shared with another session", command: "vibegraph integrate pp_to_ll_0j2j_mlm --target-rel 2e-3 --neval 200000 --max-iters 24"}

@@ -9,10 +9,10 @@ measured:
   - {commit: 6bd7325, host: "Intel Xeon @ 2.8 GHz, Cascade Lake (family 6 model 85), 4-vCPU Firecracker VM, 1 MiB L2", command: "eval_strategies, nightly-2026-09-24, -C target-cpu=native, bench profile"}
   - {commit: 2008fbf, host: "Apple M3 Max, macOS 15.7, 16 MiB L2 per P-cluster", command: "scripts/bench_dispatch.sh (at the tag), min over rounds"}
 sources:
-  - {id: tds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L13-L608", title: "Tail-call-threaded dispatch and the execution order — results"}
-  - {id: tds1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L49-L122", title: "§1 The dispatcher; §2 three traps"}
-  - {id: tds5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L371-L428", title: "§5 Profile of a threaded handler"}
-  - {id: tds6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/threaded-dispatch-study-results.md#L429-L582", title: "§6 preserve_none; §7 what this leaves"}
+  - {id: tds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L13-L608", title: "Tail-call-threaded dispatch and the execution order — results"}
+  - {id: tds1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L49-L122", title: "§1 The dispatcher; §2 three traps"}
+  - {id: tds5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L371-L428", title: "§5 Profile of a threaded handler"}
+  - {id: tds6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/threaded-dispatch-study-results.md#L429-L582", title: "§6 preserve_none; §7 what this leaves"}
 ---
 
 # Tail-call-threaded dispatch (not adopted)

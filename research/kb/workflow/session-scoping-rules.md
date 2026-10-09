@@ -6,10 +6,10 @@ status: draft
 tags: [sessions, scoping, process, agents]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6: colour-flow sprint debrief"}
-  - {id: n28-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L65-L86", title: "Note 28 §2: session-scoping ground rules"}
-  - {id: n28-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L239-L253", title: "Note 28 §5 Z: a close-out session that does nothing else"}
-  - {id: n35-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L215-L239", title: "Note 35 §2: session-scoping ground rules"}
+  - {id: n16-debrief, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L497-L554", title: "Note 16 §6: colour-flow sprint debrief"}
+  - {id: n28-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L65-L86", title: "Note 28 §2: session-scoping ground rules"}
+  - {id: n28-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L239-L253", title: "Note 28 §5 Z: a close-out session that does nothing else"}
+  - {id: n35-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L215-L239", title: "Note 35 §2: session-scoping ground rules"}
 ---
 How to cut a body of work into dev-agent sessions. These rules were sized
 against what has gone wrong in earlier sprints. They apply both to a sprint's

@@ -6,12 +6,12 @@ status: draft
 tags: [artifact, versioning, serialization, cli]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/artifact.rs#L20-L118", title: "artifact.rs: FORMAT_VERSION history and version constants"}
-  - {id: artifact-read, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/artifact.rs#L688-L795", title: "artifact.rs: version_for, refuse_unmerged_grids, read_from_path"}
-  - {id: n29-b9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5198-L5223", title: "Note 29 §B.9: a meaning change with no schema change"}
-  - {id: n29-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5650-L5661", title: "Note 29 chain B results: upgrades must keep the recorded version"}
-  - {id: n24-fv4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1617-L1648", title: "Note 24: version dispatch, the fv3 reader and the refusal test"}
-  - {id: n37-defects, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L542-L551", title: "Note 37 §6.5: two version-guard defects"}
+  - {id: artifact-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L20-L118", title: "artifact.rs: FORMAT_VERSION history and version constants"}
+  - {id: artifact-read, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/artifact.rs#L688-L795", title: "artifact.rs: version_for, refuse_unmerged_grids, read_from_path"}
+  - {id: n29-b9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5198-L5223", title: "Note 29 §B.9: a meaning change with no schema change"}
+  - {id: n29-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5650-L5661", title: "Note 29 chain B results: upgrades must keep the recorded version"}
+  - {id: n24-fv4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1617-L1648", title: "Note 24: version dispatch, the fv3 reader and the refusal test"}
+  - {id: n37-defects, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L542-L551", title: "Note 37 §6.5: two version-guard defects"}
 ---
 vibegraph persists one artifact today, the `vibegraph integrate` grid file
 ([the integrate artifact](integrate-artifact.md)). A diagram artifact written

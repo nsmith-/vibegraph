@@ -6,12 +6,12 @@ status: draft
 tags: [kt-clustering, madgraph, scales, cluster-f, spec]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-k1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L329-L754", title: "Note 28 §K1–K1.4 (entry, constants, measures, merge graph, tie-break, merge step)"}
-  - {id: n28-k35, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2171-L2198", title: "Note 28 §K3.5 (single-leg complement PDG)"}
-  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 §K3.7 (confirmed against the bank)"}
-  - {id: n28-k45, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2539-L2561", title: "Note 28 §K4.5 (the single-leg complement explained)"}
-  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f", title: "MadGraph 3.7.1 cluster.f"}
-  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L2193-L2197", title: "MadGraph 3.7.1 export_v4.py (configs.inc writer, minimal-arity filter)"}
+  - {id: n28-k1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L329-L754", title: "Note 28 §K1–K1.4 (entry, constants, measures, merge graph, tie-break, merge step)"}
+  - {id: n28-k35, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2171-L2198", title: "Note 28 §K3.5 (single-leg complement PDG)"}
+  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 §K3.7 (confirmed against the bank)"}
+  - {id: n28-k45, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2539-L2561", title: "Note 28 §K4.5 (the single-leg complement explained)"}
+  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f", title: "MadGraph 3.7.1 cluster.f"}
+  - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2193-L2197", title: "MadGraph 3.7.1 export_v4.py (configs.inc writer, minimal-arity filter)"}
 ---
 # MadGraph kT clustering: measures, admissible merges and the merge step
 
@@ -29,7 +29,7 @@ the MadGraph tree as a whole is
 ## Entry and run-card constants
 
 Under `-1` `set_ren_scale`/`set_fac_scale` return zero
-([`setscales.f:46-49`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setscales.f#L46-L49),
+([`setscales.f:46-49`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setscales.f#L46-L49),
 `:133-137`) and `setclscales` fills `scale` and `q2fact(1:2)` from the
 clustering, driven per event by `update_scale_coupling_vec`
 (`reweight.f:1890-1913`); the map is built once per process directory at the
@@ -54,7 +54,7 @@ would make every non-resonant final-state merge `+Infinity`. `clusinfo`
 ## The four measures (all squared, GeV²)
 
 **`DJB(p)`, one leg against the beams**
-([`kin_functions.f:421-429`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/kin_functions.f#L421-L429)):
+([`kin_functions.f:421-429`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L421-L429)):
 `djb = max(p(0),0)**2` if `lpp(1) = lpp(2) = 0`, else
 `djb = (p(0)-p(3))*(p(0)+p(3))`. The switch is on **both** beams being
 PDF-less, not per beam and not on energy: `m² + p_T²` with any PDF, `E²` with none.
@@ -79,7 +79,7 @@ reachable from no supported card.
 
 **Breit–Wigner override.** A final-state pair whose mask is tagged on-shell
 (`isbw`) is measured by its invariant mass squared, `SumDot(pcl_i, pcl_j, 1d0)`
-([`cluster.f:604-605`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L604-L605)).
+([`cluster.f:604-605`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L604-L605)).
 `checkbw` (`:386-434`) tags only **`this_config`'s** lines, refreshing `OnBW`
 with `cut_bw(p)` (`:419-423`; new in 3.7.1), so tagging is a property of the
 channel; `isbw` is a common block that keeps stale flags between events
@@ -92,7 +92,7 @@ has a propagator whose subtree is exactly that pair's legs.
 
 1. **Diagrams of minimal vertex arity only.** `export_v4.py` computes
    `minvert` and skips any configuration with a larger vertex
-   ([`:2193-2197`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L2193-L2197),
+   ([`:2193-2197`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2193-L2197),
    "Only 3-vertices allowed in configs.inc"). Four-point contact diagrams leave
    the merge graph: `g g → g g` has three configurations, not four. vibegraph's
    enumeration keeps the contact diagram, so the derivation must drop it.
@@ -101,11 +101,11 @@ has a propagator whose subtree is exactly that pair's legs.
    the QCD order per configuration goes to `config_nqcd.inc`.
 3. **`filmap`** (`cluster.f:325-383`) skips every configuration whose `nqcd`
    differs from `nqcd(this_config)`
-   ([`:359-366`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L359-L366)):
+   ([`:359-366`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L359-L366)):
    a no-op when all diagrams share one order, live on mixed QCD/QED processes.
 4. **`filgrp`** (`cluster.f:191-322`) registers each internal line under its
    leg mask and under the **complement** `2^nexternal − 1 − mask`
-   ([`:262`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L260-L262)),
+   ([`:262`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L260-L262)),
    so a t-channel line between beam 1 and leg 3 is found as `{1,3}`. Its PDG is
    `sprop` if nonzero, else `tprid`, else at the last level beam 2's own PDG.
    `filprp` appends configs in ascending order, which `findmt`'s sorted-list
@@ -138,12 +138,12 @@ Candidates are visited `i = 3 … nexternal`, `j = 1 … i−1`:
 (`:838-906`). A beam–leg candidate is multiplied by `(1d0+1d-6)` when
 `sign(1d0,pcl(3,idi)).ne.sign(1d0,pcl(3,idj))`, "prefer clustering when outgoing
 in direction of incoming"
-([`cluster.f:629-631`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L629-L631)).
+([`cluster.f:629-631`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L629-L631)).
 `sign(1d0, −0.0)` is `−1`, so signed zero is observable. Only beam–leg
 candidates are inflated; when all admissible ones are crossed, the minimum
 itself carries the factor.
 The comparison is strict `<` against `1.0d37`
-([`:641-645`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L641-L645)),
+([`:641-645`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L641-L645)),
 so an exact tie goes to the earlier-visited pair and a measure `≥ 1e37`
 (including `+Infinity`) never wins.
 
@@ -185,7 +185,7 @@ fired boost is undone (`:786-792`); after an initial-state last merge the core
 scale stays in the boosted frame. "The 2 → 2 core" is therefore `nc − 1` and
 `nc` read together; the stored `nc` is a 2 → 1. Finally, if `this_config` is
 among the surviving graphs the list collapses to it
-([`:809-817`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f#L809-L817));
+([`:809-817`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f#L809-L817));
 otherwise `igraphs(1)` is the lowest-numbered survivor. Every internal PDG the
 walk reads comes from `ipdgcl(·, igraphs(1), iproc)`, so the PDG assignment is
 channel-dependent. A 2 → 1 (`nexternal = 3`) short-circuits at `:651-668`.

@@ -6,11 +6,11 @@ status: draft
 tags: [smeftsim, ufo, non-sm-ufo, vendoring, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L111-L143", title: "Note 35 §1.2, SMEFTsim static census"}
-  - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
-  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 §3 F1, four-fermion vertices (pairing census corrected)"}
-  - {id: n35-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decisions (user, 2026-09-05)"}
-  - {id: ufo-readme, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/ufo/README.md", title: "validation/ufo/README.md, provenance of the vendored and authored UFOs"}
+  - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L111-L143", title: "Note 35 §1.2, SMEFTsim static census"}
+  - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
+  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 §3 F1, four-fermion vertices (pairing census corrected)"}
+  - {id: n35-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1191-L1218", title: "Note 35 §7, decisions (user, 2026-09-05)"}
+  - {id: ufo-readme, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/ufo/README.md", title: "validation/ufo/README.md, provenance of the vendored and authored UFOs"}
   - {id: smeftsim-upstream, resource: "https://github.com/SMEFTsim/SMEFTsim/tree/db7d4a80bdcff424eee27dde71f1eb09ac894039/UFO_models/SMEFTsim_topU3l_MwScheme_UFO", title: "SMEFTsim upstream at v3.0.2"}
   - {id: brivio, resource: "https://arxiv.org/abs/2012.11343", title: "I. Brivio, SMEFTsim 3.0 — a practical guide, JHEP 04 (2021) 073"}
 ---

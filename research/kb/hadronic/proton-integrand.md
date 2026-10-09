@@ -6,17 +6,17 @@ status: draft
 tags: [hadronic, proton, integrand, pdf, cross-section]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-goal, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L11-L37", title: "Note 18 (hadronic cross section: goal formula)"}
-  - {id: n18-assembly, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly)"}
-  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7 averaging, cut frame, x-map)"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (design decisions for the general integrand)"}
-  - {id: n24-p2-cost, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1032-L1041", title: "Note 24 P2 (what P3 must know)"}
-  - {id: n24-p2c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c (what the ProtonIntegrand session must know)"}
-  - {id: n24-p2d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1394-L1423", title: "Note 24 P2d (ProtonIntegrand as built)"}
-  - {id: n24-p2d-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1502-L1524", title: "Note 24 P2d (plan corrections)"}
-  - {id: n24-p2d-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1548-L1578", title: "Note 24 P2d (what P3 must know)"}
-  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L16-L65", title: "Note 40 §1–2 (per-group, per-ordering scales)"}
-  - {id: proton-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L1233-L1285", title: "ProtonIntegrand type documentation"}
+  - {id: n18-goal, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L11-L37", title: "Note 18 (hadronic cross section: goal formula)"}
+  - {id: n18-assembly, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly)"}
+  - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7 averaging, cut frame, x-map)"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (design decisions for the general integrand)"}
+  - {id: n24-p2-cost, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1032-L1041", title: "Note 24 P2 (what P3 must know)"}
+  - {id: n24-p2c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c (what the ProtonIntegrand session must know)"}
+  - {id: n24-p2d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1394-L1423", title: "Note 24 P2d (ProtonIntegrand as built)"}
+  - {id: n24-p2d-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1502-L1524", title: "Note 24 P2d (plan corrections)"}
+  - {id: n24-p2d-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1548-L1578", title: "Note 24 P2d (what P3 must know)"}
+  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L16-L65", title: "Note 40 §1–2 (per-group, per-ordering scales)"}
+  - {id: proton-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L1233-L1285", title: "ProtonIntegrand type documentation"}
 ---
 
 # The hadronic cross section and `ProtonIntegrand`

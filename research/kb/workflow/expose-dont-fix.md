@@ -6,10 +6,10 @@ status: draft
 tags: [validation, process, gates, scope]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-sessions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L501-L560", title: "Note 25 §8: sprint discipline — expose, don't fix"}
-  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9: decisions (user, 2026-07-31)"}
-  - {id: n27-charter, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L14-L24", title: "Note 27: the fixing sprint's charter and its scope control"}
-  - {id: n36-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L26-L32", title: "Note 36: the standing rules"}
+  - {id: n25-sessions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L501-L560", title: "Note 25 §8: sprint discipline — expose, don't fix"}
+  - {id: n25-decisions, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L561-L579", title: "Note 25 §9: decisions (user, 2026-07-31)"}
+  - {id: n27-charter, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L14-L24", title: "Note 27: the fixing sprint's charter and its scope control"}
+  - {id: n36-rules, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L26-L32", title: "Note 36: the standing rules"}
 ---
 **Decision (user, 2026-07-31).** Work whose job is to *expose* adds gates,
 references and comparisons. When a gate it newly exposes fails, the session

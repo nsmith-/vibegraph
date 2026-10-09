@@ -7,9 +7,9 @@ status: draft
 tags: [spinor-helicity, reconstruction, analytic-amplitudes, paper, trace-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n41-swell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L153-L189", title: "Note 41 §3.1, intermediate swell is not final size"}
-  - {id: n41-compact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L729-L771", title: "Note 41 §10.4, where compactness lives"}
-  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
+  - {id: n41-swell, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L153-L189", title: "Note 41 §3.1, intermediate swell is not final size"}
+  - {id: n41-compact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L729-L771", title: "Note 41 §10.4, where compactness lives"}
+  - {id: n41-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L788-L810", title: "Note 41, references"}
 ---
 
 "Extracting analytical one-loop amplitudes from numerical evaluations" (De

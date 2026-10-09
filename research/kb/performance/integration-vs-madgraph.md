@@ -6,15 +6,15 @@ status: draft
 tags: [performance, madgraph, integration, throughput, measurement]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n30-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L352-L407", title: "Note 30 §5.3 (throughput on a denominator that means something)"}
-  - {id: n31-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L1036-L1103", title: "Note 31 §6.4 (throughput recomputed)"}
-  - {id: n32-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to a target accuracy, protocol)"}
-  - {id: n34-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 (time to accuracy, remeasured post-sprint)"}
-  - {id: cl-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L11-L37", title: "Cascade Lake comparison: headline"}
-  - {id: cl-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L100-L156", title: "Cascade Lake comparison §3 (time to 0.1% on σ)"}
-  - {id: cl-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L157-L214", title: "Cascade Lake comparison §4 (integrand throughput)"}
-  - {id: cl-uncovered, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/mg-comparison-cascade-lake-results.md#L215-L226", title: "Cascade Lake comparison §5 (not covered)"}
-  - {id: integrate-cli, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/integrate.rs#L285-L335", title: "integrate CLI budget and convergence flags"}
+  - {id: n30-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L352-L407", title: "Note 30 §5.3 (throughput on a denominator that means something)"}
+  - {id: n31-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1036-L1103", title: "Note 31 §6.4 (throughput recomputed)"}
+  - {id: n32-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to a target accuracy, protocol)"}
+  - {id: n34-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 (time to accuracy, remeasured post-sprint)"}
+  - {id: cl-summary, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L11-L37", title: "Cascade Lake comparison: headline"}
+  - {id: cl-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L100-L156", title: "Cascade Lake comparison §3 (time to 0.1% on σ)"}
+  - {id: cl-throughput, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L157-L214", title: "Cascade Lake comparison §4 (integrand throughput)"}
+  - {id: cl-uncovered, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/mg-comparison-cascade-lake-results.md#L215-L226", title: "Cascade Lake comparison §5 (not covered)"}
+  - {id: integrate-cli, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/integrate.rs#L285-L335", title: "integrate CLI budget and convergence flags"}
 measured:
   - {host: "Apple M3 Max", command: "RUST_TEST_THREADS=1 RAYON_NUM_THREADS=1 per-row validate_sigma / validate_hadronic"}
   - {commit: 098c9e2, host: "Apple M3 Max", command: "vibegraph integrate <proc card> --run-card <run card> --target-rel 0.001 --seed {20260719,20260720,20260721} -j 1"}

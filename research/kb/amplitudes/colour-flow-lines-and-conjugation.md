@@ -6,15 +6,15 @@ status: draft
 tags: [colour, lhef, icolup, conjugation, colour-flow]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: code-tags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/flow_tags.rs#L1-L60", title: "helas/color/flow_tags.rs module doc: chain reading, crossing rule, labels"}
-  - {id: code-conj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/flow_tags.rs#L195-L230", title: "ColorFlowTags::conjugated (full conjugates only)"}
-  - {id: code-perm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L1050-L1100", title: "proton.rs: flow_permutation by flow fingerprint"}
-  - {id: code-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/lhef/build.rs#L195-L230", title: "lhef/build.rs: SubprocessRecord::relabelled takes the member's own flows"}
-  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L66-L195", title: "Note 23 E1b and E1 outcome: deriving tags from the basis"}
-  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1994-L2079", title: "Note 29 A.0: per-isproc leshouche tables, full conjugation"}
-  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2437-L2511", title: "Note 29 B.0–B.1: the crossing class; the permutation is a computation"}
-  - {id: n29-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2771-L2794", title: "Note 29 C.2: a basis against itself is the identity"}
-  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 F.10: H2 and H7 (colour transpose; per-diagram phase across flows)"}
+  - {id: code-tags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/flow_tags.rs#L1-L60", title: "helas/color/flow_tags.rs module doc: chain reading, crossing rule, labels"}
+  - {id: code-conj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/flow_tags.rs#L195-L230", title: "ColorFlowTags::conjugated (full conjugates only)"}
+  - {id: code-perm, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L1050-L1100", title: "proton.rs: flow_permutation by flow fingerprint"}
+  - {id: code-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/lhef/build.rs#L195-L230", title: "lhef/build.rs: SubprocessRecord::relabelled takes the member's own flows"}
+  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L66-L195", title: "Note 23 E1b and E1 outcome: deriving tags from the basis"}
+  - {id: n29-a0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1994-L2079", title: "Note 29 A.0: per-isproc leshouche tables, full conjugation"}
+  - {id: n29-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2437-L2511", title: "Note 29 B.0–B.1: the crossing class; the permutation is a computation"}
+  - {id: n29-c2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2771-L2794", title: "Note 29 C.2: a basis against itself is the identity"}
+  - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 F.10: H2 and H7 (colour transpose; per-diagram phase across flows)"}
 ---
 
 # Colour lines from the basis, and how flows transform under conjugation

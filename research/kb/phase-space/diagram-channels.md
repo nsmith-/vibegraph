@@ -6,9 +6,9 @@ status: draft
 tags: [phase-space, multichannel, diagrams, feyngraph, decomposition]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, the diagram substrate (Prop topology)"}
-  - {id: n21-nonprefix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L119-L167", title: "Note 21 addendum: non-prefix s-channel recovery"}
-  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out"}
+  - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, the diagram substrate (Prop topology)"}
+  - {id: n21-nonprefix, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L119-L167", title: "Note 21 addendum: non-prefix s-channel recovery"}
+  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out"}
 ---
 
 # Per-diagram channels from the propagator chain

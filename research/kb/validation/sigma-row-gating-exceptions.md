@@ -6,20 +6,20 @@ status: draft
 tags: [validation, gating, cross-section, samples, exceptions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L300-L511", title: "Note 21 addenda (sampler in production; grid per channel)"}
-  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2 outcome (ee_to_mumua overweight tail)"}
-  - {id: n32-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L354-L597", title: "Note 32 waves 2 and §5.1 (the 2→6 rows turned on)"}
-  - {id: n32-follow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L749-L955", title: "Note 32 §5.4 and §7 (heavy-tail falsifier; wide-split mechanisms)"}
-  - {id: n34-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L56-L250", title: "Note 34 §1.2 and wave 1 (the gate cascade; ee_to_mumua decisions)"}
-  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 B6 (scale columns; gg_to_gg_cg)"}
-  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 §7.1 (B8: the fixed-beam scale record)"}
-  - {id: n36a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L140-L190", title: "Note 36a §1c (exemption is load-bearing)"}
-  - {id: n37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L231-L249", title: "Note 37 §3.2 (ee_to_mumua under the soft-angle rule)"}
-  - {id: n38-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L497-L881", title: "Note 38 D1, D3, S3 (decays, chains, on-shell veto)"}
-  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 (seeded grammar gate)"}
-  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L117-L144", title: "Note 40 §5 (σ rows after per-group scales)"}
-  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_sigma.rs#L136-L218", title: "validate_sigma.rs PULL_LIMIT, PULL_REPORTED_NOT_ASSERTED, SCALE_FALLBACK_ROWS"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml cell notes"}
+  - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L511", title: "Note 21 addenda (sampler in production; grid per channel)"}
+  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2 outcome (ee_to_mumua overweight tail)"}
+  - {id: n32-s7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L354-L597", title: "Note 32 waves 2 and §5.1 (the 2→6 rows turned on)"}
+  - {id: n32-follow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L749-L955", title: "Note 32 §5.4 and §7 (heavy-tail falsifier; wide-split mechanisms)"}
+  - {id: n34-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L56-L250", title: "Note 34 §1.2 and wave 1 (the gate cascade; ee_to_mumua decisions)"}
+  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 B6 (scale columns; gg_to_gg_cg)"}
+  - {id: n36-b8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L709-L749", title: "Note 36 §7.1 (B8: the fixed-beam scale record)"}
+  - {id: n36a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L140-L190", title: "Note 36a §1c (exemption is load-bearing)"}
+  - {id: n37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L231-L249", title: "Note 37 §3.2 (ee_to_mumua under the soft-angle rule)"}
+  - {id: n38-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L497-L881", title: "Note 38 D1, D3, S3 (decays, chains, on-shell veto)"}
+  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 (seeded grammar gate)"}
+  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L117-L144", title: "Note 40 §5 (σ rows after per-group scales)"}
+  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_sigma.rs#L136-L218", title: "validate_sigma.rs PULL_LIMIT, PULL_REPORTED_NOT_ASSERTED, SCALE_FALLBACK_ROWS"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml cell notes"}
 ---
 
 By default a row's cells gate: the [σ gate](sigma-gate.md) asserts pull and

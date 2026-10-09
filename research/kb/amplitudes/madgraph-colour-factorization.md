@@ -6,18 +6,18 @@ status: draft
 tags: [colour, madgraph, jamp, colour-matrix, su3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-ncolor6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16, the NCOLOR=6 JAMP caveat resolved"}
-  - {id: n16-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L100-L228", title: "Note 16 §1 (how MadGraph factorizes colour from Lorentz)"}
-  - {id: guide-colour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/docs/src/guide/05-color.md", title: "User guide, Colour chapter"}
-  - {id: mg-colorize, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/color_amp.py#L62", title: "MadGraph color_amp.py, ColorBasis.colorize"}
-  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/color_amp.py#L537", title: "MadGraph color_amp.py, ColorMatrix"}
-  - {id: mg-algebra, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/color_algebra.py#L304-L333", title: "MadGraph color_algebra.py, f → traces"}
-  - {id: mg-jamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/helas_objects.py#L4978", title: "MadGraph helas_objects.py, get_color_amplitudes"}
-  - {id: mg-treat, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L1946", title: "MadGraph import_ufo.py, treat_color"}
-  - {id: mg-cfdata, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L1250-L1287", title: "MadGraph export_v4.py, get_color_data_lines"}
-  - {id: mg-template, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L360-L374", title: "MadGraph matrix_madevent_group_v4.inc, the colour-sum loop"}
-  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/amplitude_oracle.rs", title: "The amplitude oracle (per-flow JAMPs)"}
-  - {id: code-cforacle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/color_cf_oracle.rs", title: "The CF-matrix oracle"}
+  - {id: n16-ncolor6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L37-L99", title: "Note 16, the NCOLOR=6 JAMP caveat resolved"}
+  - {id: n16-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L100-L228", title: "Note 16 §1 (how MadGraph factorizes colour from Lorentz)"}
+  - {id: guide-colour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/docs/src/guide/05-color.md", title: "User guide, Colour chapter"}
+  - {id: mg-colorize, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/color_amp.py#L62", title: "MadGraph color_amp.py, ColorBasis.colorize"}
+  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/color_amp.py#L537", title: "MadGraph color_amp.py, ColorMatrix"}
+  - {id: mg-algebra, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/color_algebra.py#L304-L333", title: "MadGraph color_algebra.py, f → traces"}
+  - {id: mg-jamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L4978", title: "MadGraph helas_objects.py, get_color_amplitudes"}
+  - {id: mg-treat, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1946", title: "MadGraph import_ufo.py, treat_color"}
+  - {id: mg-cfdata, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L1250-L1287", title: "MadGraph export_v4.py, get_color_data_lines"}
+  - {id: mg-template, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_group_v4.inc#L360-L374", title: "MadGraph matrix_madevent_group_v4.inc, the colour-sum loop"}
+  - {id: code-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/amplitude_oracle.rs", title: "The amplitude oracle (per-flow JAMPs)"}
+  - {id: code-cforacle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/color_cf_oracle.rs", title: "The CF-matrix oracle"}
 ---
 
 # How MadGraph factorizes colour: colorize, basis, JAMPs, CF matrix

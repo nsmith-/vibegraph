@@ -11,14 +11,14 @@ measured:
   host: "4-core cloud container, release profile"
   command: "cargo test --release -p vibegraph-lib --test finite_field_msq measure_trace_form -- --ignored --nocapture (and measure_full_msq)"
 sources:
-  - {id: n41-0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L11-L89", title: "Note 41 §0–§1, verdict and what the helicity sum costs"}
-  - {id: n41-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L90-L216", title: "Note 41 §2–§4, completeness, cost scaling, the Amdahl bound"}
-  - {id: n41-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L217-L328", title: "Note 41 §5–§7, obstacles, egglog, recommendation"}
-  - {id: n41-8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L335-L433", title: "Note 41 §8, functional reconstruction"}
-  - {id: n41-9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L463-L612", title: "Note 41 §9, the per-pair trace form measured"}
-  - {id: n41-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-completeness-trace-msq-feasibility.md#L622-L787", title: "Note 41 §10, the full |M|² measured"}
-  - {id: n21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L512-L544", title: "Note 21, helicity and colour handling during integration and events"}
-  - {id: ff-test, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/finite_field_msq.rs", title: "vibegraph-lib/tests/finite_field_msq.rs"}
+  - {id: n41-0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L11-L89", title: "Note 41 §0–§1, verdict and what the helicity sum costs"}
+  - {id: n41-2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L90-L216", title: "Note 41 §2–§4, completeness, cost scaling, the Amdahl bound"}
+  - {id: n41-5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L217-L328", title: "Note 41 §5–§7, obstacles, egglog, recommendation"}
+  - {id: n41-8, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L335-L433", title: "Note 41 §8, functional reconstruction"}
+  - {id: n41-9, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L463-L612", title: "Note 41 §9, the per-pair trace form measured"}
+  - {id: n41-10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-completeness-trace-msq-feasibility.md#L622-L787", title: "Note 41 §10, the full |M|² measured"}
+  - {id: n21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L512-L544", title: "Note 21, helicity and colour handling during integration and events"}
+  - {id: ff-test, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/finite_field_msq.rs", title: "vibegraph-lib/tests/finite_field_msq.rs"}
 ---
 
 # Helicity-summed |M|² from completeness relations
@@ -112,7 +112,7 @@ is still missing. It is not on the critical path. See
 ## The method: functional reconstruction over finite fields
 
 FiniteFlow-style reconstruction (Peraro; see
-[finite-field reconstruction](../references/papers/peraro-finite-field-reconstruction.md) and
+[finite-field reconstruction](https://arxiv.org/abs/1608.01902) and
 [FiniteFlow](../references/papers/finiteflow.md)) treats a numerical algorithm as a black box
 over prime fields `Z_p` and reconstructs the rational function it computes, never forming the
 trace expansion; its cost tracks the size of the *final* answer. It measures exactly the open
@@ -209,8 +209,8 @@ denominators).[^n41-9][^n41-10]
 - **The box is reusable**: an exact field-valued evaluator gives exact zeros (helicity pruning
   without a threshold), exact per-pair identities and exact gauge-cancellation checks.
 
-Related papers: [CalcHEP](../references/papers/calchep.md),
-[EXCALIBUR](../references/papers/excalibur.md).
+Related papers: [CalcHEP](https://arxiv.org/abs/1207.6082),
+[EXCALIBUR](https://doi.org/10.1016/0550-3213(94)90297-6).
 
 [^n41-0]: Note 41 §0–§1 (2026-09-26, `db5fd03`).
 [^n41-2]: Note 41 §2–§4.

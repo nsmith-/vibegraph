@@ -6,13 +6,13 @@ status: draft
 tags: [phase-space, multichannel, density, traits, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, substrate the seam was built on"}
-  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21 close-out (the seam, the combiner)"}
-  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0 (three-body spine probe; vacuous reciprocity)"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L937", title: "Note 24 P2 (walk weight; plan correction 3)"}
-  - {id: n28-s24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1623-L1669", title: "Note 28 §S2.4 (foreign-configuration density contract for rung chains)"}
-  - {id: n34-draw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L29-L55", title: "Note 34 §1.1 (cut-first density)"}
-  - {id: n34-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L251-L325", title: "Note 34 wave 2 (S4 subtree memo close-out)"}
+  - {id: n21-substrate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L52-L81", title: "Note 21, substrate the seam was built on"}
+  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21 close-out (the seam, the combiner)"}
+  - {id: n24-p0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L525-L618", title: "Note 24 P0 (three-body spine probe; vacuous reciprocity)"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L937", title: "Note 24 P2 (walk weight; plan correction 3)"}
+  - {id: n28-s24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1623-L1669", title: "Note 28 §S2.4 (foreign-configuration density contract for rung chains)"}
+  - {id: n34-draw, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L29-L55", title: "Note 34 §1.1 (cut-first density)"}
+  - {id: n34-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L251-L325", title: "Note 34 wave 2 (S4 subtree memo close-out)"}
 measured:
   - {commit: 470eb8f, landed_in: 443f6bc, command: "probe_2to6_eval_cost"}
   - {commit: f85718d, landed_in: df109b9}

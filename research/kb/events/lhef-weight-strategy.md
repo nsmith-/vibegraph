@@ -6,11 +6,11 @@ status: draft
 tags: [events, lhef, idwtup, unweighting, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-e2corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L344-L369", title: "Note 23 E2 correction: unit weights can carry the overweight tail"}
-  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4, the two strategies"}
-  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, IDWTUP = −3 and event_norm"}
-  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2357", title: "Note 41 P12, each part normalised to its integration"}
-  - {id: mg-event-norm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/various/banner.py#L4298", title: "MadGraph banner.py, event_norm declaration"}
+  - {id: n23-e2corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L344-L369", title: "Note 23 E2 correction: unit weights can carry the overweight tail"}
+  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4, the two strategies"}
+  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, IDWTUP = −3 and event_norm"}
+  - {id: n41-p12, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2299-L2357", title: "Note 41 P12, each part normalised to its integration"}
+  - {id: mg-event-norm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L4298", title: "MadGraph banner.py, event_norm declaration"}
 ---
 
 # LHEF weight strategy

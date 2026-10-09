@@ -6,12 +6,12 @@ status: draft
 tags: [validation, report, collator, manifest]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L15-L39", title: "Note 25 §1 (the reframing)"}
-  - {id: n25-categories, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L112-L195", title: "Note 25 §3 (categories and the report table)"}
-  - {id: n25-driver, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L404-L412", title: "Note 25 §5.7 (the report driver)"}
-  - {id: n25-report, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L622-L677", title: "Note 25 §10 (the report: three rules)"}
-  - {id: collator, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation-report/src/main.rs#L1-L64", title: "validation-report/src/main.rs module docs"}
-  - {id: render, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation-report/src/render.rs#L310-L420", title: "validation-report/src/render.rs standalone verdicts"}
+  - {id: n25-reframe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L15-L39", title: "Note 25 §1 (the reframing)"}
+  - {id: n25-categories, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L112-L195", title: "Note 25 §3 (categories and the report table)"}
+  - {id: n25-driver, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L404-L412", title: "Note 25 §5.7 (the report driver)"}
+  - {id: n25-report, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L622-L677", title: "Note 25 §10 (the report: three rules)"}
+  - {id: collator, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation-report/src/main.rs#L1-L64", title: "validation-report/src/main.rs module docs"}
+  - {id: render, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation-report/src/render.rs#L310-L420", title: "validation-report/src/render.rs standalone verdicts"}
 ---
 
 `pixi run validate` ends by running the collator (`validation-report`, a Rust

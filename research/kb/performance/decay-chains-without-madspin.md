@@ -6,8 +6,8 @@ status: draft
 tags: [performance, decay-chains, unweighting, madspin, phase-space]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 §D3 (decay-chain phase space, σ and the sampler ladder)"}
-  - {id: ladder-test, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/decay_chain_ladder.rs#L1-L60", title: "vibegraph-lib/tests/decay_chain_ladder.rs"}
+  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 §D3 (decay-chain phase space, σ and the sampler ladder)"}
+  - {id: ladder-test, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/decay_chain_ladder.rs#L1-L60", title: "vibegraph-lib/tests/decay_chain_ladder.rs"}
 measured:
   - {host: "4 shared cores (host not recorded)", command: "cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test decay_chain_ladder -- --ignored --nocapture"}
 ---

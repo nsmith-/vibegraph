@@ -6,13 +6,13 @@ status: draft
 tags: [vegas, multichannel, unweighting, madevent-parity, grid-coordinates]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L382-L511", title: "Note 21, one VEGAS grid vs MadGraph's grid-per-channel (design and outcome)"}
-  - {id: n23-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L898-L943", title: "Note 23, per-channel VEGAS grids: what event output inherits"}
-  - {id: n37-abs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/37-madevent-map-survey-and-soft-angle.md#L360-L399", title: "Note 37 §5.2, absolute grid coordinates: the design"}
+  - {id: n21-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L382-L511", title: "Note 21, one VEGAS grid vs MadGraph's grid-per-channel (design and outcome)"}
+  - {id: n23-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L898-L943", title: "Note 23, per-channel VEGAS grids: what event output inherits"}
+  - {id: n37-abs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L360-L399", title: "Note 37 §5.2, absolute grid coordinates: the design"}
   - {id: channel-rs, resource: "vibegraph-lib/src/phasespace/channel.rs#L355-L375", title: "MultiChannel, 'Splitting the estimator by channel'"}
   - {id: unweight-rs, resource: "vibegraph-lib/src/unweight.rs#L1-L40", title: "unweight.rs, why the channel is drawn ∝ w_max_j"}
   - {id: artifact-rs, resource: "vibegraph-lib/src/artifact.rs#L255-L282", title: "ChannelGrid"}
-  - {id: mg-sample-get-x, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/dsample.f#L1245", title: "MadEvent dsample.f, sample_get_x"}
+  - {id: mg-sample-get-x, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L1245", title: "MadEvent dsample.f, sample_get_x"}
 ---
 
 ## Decision

@@ -7,9 +7,9 @@ status: draft
 tags: [vegas, integration, importance-sampling, paper, monte-carlo]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L155-L172", title: "Note 01, classic VEGAS summary"}
-  - {id: n01-lips, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L183-L196", title: "Note 01, phase-space integration and relevance"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L155-L172", title: "Note 01, classic VEGAS summary"}
+  - {id: n01-lips, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L183-L196", title: "Note 01, phase-space integration and relevance"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
   - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs", title: "VegasGrid and the iteration combination"}
 ---
 

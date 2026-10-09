@@ -6,15 +6,15 @@ status: draft
 tags: [events, unweighting, accept-reject, vegas, overweights]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n21-grids, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L382-L511", title: "Note 21 addendum, one grid per channel and per-channel w_max"}
-  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2, accept/reject"}
-  - {id: n23-grids, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L898-L943", title: "Note 23, per-channel VEGAS grids before E2"}
-  - {id: n24-wmax, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1907-L1933", title: "Note 24 P4, w_max against budget"}
-  - {id: n24-bias, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1934-L1953", title: "Note 24 P4, the sample's σ does not inherit the integrator's bias"}
-  - {id: n31-i2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L110-L151", title: "Note 31 I2, the maxima never converge"}
-  - {id: n32-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 wave 1, w_max from a percentile"}
-  - {id: n32-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, the truncation rule's measured effect"}
-  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 and F-A, MadEvent's unweighting and the weight tail"}
+  - {id: n21-grids, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L382-L511", title: "Note 21 addendum, one grid per channel and per-channel w_max"}
+  - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2, accept/reject"}
+  - {id: n23-grids, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L898-L943", title: "Note 23, per-channel VEGAS grids before E2"}
+  - {id: n24-wmax, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1907-L1933", title: "Note 24 P4, w_max against budget"}
+  - {id: n24-bias, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1934-L1953", title: "Note 24 P4, the sample's σ does not inherit the integrator's bias"}
+  - {id: n31-i2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L110-L151", title: "Note 31 I2, the maxima never converge"}
+  - {id: n32-plan, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L164-L353", title: "Note 32 wave 1, w_max from a percentile"}
+  - {id: n32-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, the truncation rule's measured effect"}
+  - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 and F-A, MadEvent's unweighting and the weight tail"}
   - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/Template/LO/SubProcesses/unwgt.f#L355-L446", title: "MadGraph 3.7.1 unwgt.f, trunc_max ladder and overweights"}
 ---
 

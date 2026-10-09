@@ -6,9 +6,9 @@ status: draft
 tags: [release, ci, distribution, musl]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome: release workflow, musl decision, version scheme"}
-  - {id: release-yml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/.github/workflows/release.yml", title: ".github/workflows/release.yml"}
-  - {id: build-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/build.rs", title: "vibegraph-cli/build.rs"}
+  - {id: n24-u1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2098-L2352", title: "Note 24 §U1 outcome: release workflow, musl decision, version scheme"}
+  - {id: release-yml, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/.github/workflows/release.yml", title: ".github/workflows/release.yml"}
+  - {id: build-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/build.rs", title: "vibegraph-cli/build.rs"}
 ---
 # Release binaries
 

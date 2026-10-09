@@ -6,15 +6,15 @@ status: draft
 tags: [decay-chains, diagrams, process-grammar, madgraph-parity, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
-  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, decay assignment measured with MadGraph"}
-  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 §4 D2, decay-chain enumeration by stitching"}
-  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 §4 D3, decay chains accepted; overall orders"}
-  - {id: code-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/chain.rs#L1-L40", title: "vibegraph-lib/src/diagrams/chain.rs module documentation"}
-  - {id: mg-decay-chain-process, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L5661", title: "MadGraph madgraph_interface.py extract_decay_chain_process"}
-  - {id: mg-decay-amp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L1337", title: "MadGraph diagram_generation.py DecayChainAmplitude"}
-  - {id: mg-combine, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/helas_objects.py#L5427", title: "MadGraph helas_objects.py combine_decay_chain_processes"}
-  - {id: mg-legs-with-decays, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L3667", title: "MadGraph base_objects.py Process.get_legs_with_decays"}
+  - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
+  - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, decay assignment measured with MadGraph"}
+  - {id: n38-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L599-L688", title: "Note 38 §4 D2, decay-chain enumeration by stitching"}
+  - {id: n38-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L689-L801", title: "Note 38 §4 D3, decay chains accepted; overall orders"}
+  - {id: code-chain, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/chain.rs#L1-L40", title: "vibegraph-lib/src/diagrams/chain.rs module documentation"}
+  - {id: mg-decay-chain-process, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L5661", title: "MadGraph madgraph_interface.py extract_decay_chain_process"}
+  - {id: mg-decay-amp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L1337", title: "MadGraph diagram_generation.py DecayChainAmplitude"}
+  - {id: mg-combine, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/helas_objects.py#L5427", title: "MadGraph helas_objects.py combine_decay_chain_processes"}
+  - {id: mg-legs-with-decays, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3667", title: "MadGraph base_objects.py Process.get_legs_with_decays"}
 measured:
   - {commit: 337b5c3, pr: 12, landed_in: 1539abc, command: "cargo test -p vibegraph-lib --test decay_chain_census"}
 ---

@@ -6,12 +6,12 @@ status: draft
 tags: [refdata, banking, madgraph, procedure, release]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-c5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3701-L3745", title: "Note 28 C.5, multi-group runs never by bytes"}
-  - {id: n28-z7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4297-L4326", title: "Note 28 Z.7, publish then flip the pin"}
-  - {id: n38-73, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1290-L1323", title: "Note 38 7.3-7.4, B1 and Z2 steps"}
-  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 8.1, Z1 and the committed summaries"}
-  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 8.4, B1 on the bank host"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z, close-out, B1 and Z2"}
+  - {id: n28-c5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3701-L3745", title: "Note 28 C.5, multi-group runs never by bytes"}
+  - {id: n28-z7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4297-L4326", title: "Note 28 Z.7, publish then flip the pin"}
+  - {id: n38-73, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1290-L1323", title: "Note 38 7.3-7.4, B1 and Z2 steps"}
+  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 8.1, Z1 and the committed summaries"}
+  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 8.4, B1 on the bank host"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z, close-out, B1 and Z2"}
 ---
 # Banking and publishing a refdata bundle
 

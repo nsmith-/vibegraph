@@ -6,14 +6,14 @@ status: draft
 tags: [hadronic, mirror, beam-ordering, convention, proton]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (the mirror term is mandatory)"}
-  - {id: n24-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1252-L1295", title: "Note 24 P2c (the mirror term, and what its test can and cannot catch)"}
-  - {id: n24-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1885-L1906", title: "Note 24 (the exchanged beam ordering, and MadGraph's own answer)"}
-  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L745-L750", title: "Note 27 B5 (mirror-term bound as a function of ŝ)"}
-  - {id: n27-b5-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L902-L911", title: "Note 27 B5 outcome (the measured bound)"}
-  - {id: n25-register, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L678-L719", title: "Note 25 findings register (item 4, the mirror term's visibility)"}
-  - {id: proton-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L380-L402", title: "FlavorGroup::mirror_into"}
-  - {id: proton-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/proton.rs#L3430-L3665", title: "Mirror test, mirror_visibility_floor and probe_mirror_visibility_ladder"}
+  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (the mirror term is mandatory)"}
+  - {id: n24-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1252-L1295", title: "Note 24 P2c (the mirror term, and what its test can and cannot catch)"}
+  - {id: n24-record, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1885-L1906", title: "Note 24 (the exchanged beam ordering, and MadGraph's own answer)"}
+  - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L745-L750", title: "Note 27 B5 (mirror-term bound as a function of ŝ)"}
+  - {id: n27-b5-out, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L902-L911", title: "Note 27 B5 outcome (the measured bound)"}
+  - {id: n25-register, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L678-L719", title: "Note 25 findings register (item 4, the mirror term's visibility)"}
+  - {id: proton-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L380-L402", title: "FlavorGroup::mirror_into"}
+  - {id: proton-floor, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/proton.rs#L3430-L3665", title: "Mirror test, mirror_visibility_floor and probe_mirror_visibility_ladder"}
 ---
 
 # The beam-exchange mirror identity

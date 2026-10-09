@@ -6,18 +6,18 @@ status: draft
 tags: [levi-civita, sigma, aloha, sign-conventions, gamma5]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n35-ref, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4 (reference conventions read from the pinned MadGraph)"}
-  - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (graded Clifford basis; Levi-Civita primitives; the σγ⁵ identity)"}
-  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 (Epsilon, Gamma5, γ-chains against MadGraph)"}
-  - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 T1 (the toy UFO; Sigma's half measured)"}
-  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 T2 (literal Sigma primitives)"}
-  - {id: n35-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 (what the sprint leaves gated; pinned conventions)"}
-  - {id: n35-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L1398-L1415", title: "Note 35 §10.3 (the sigma_chained mutation pin)"}
-  - {id: aloha-eps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_object.py#L938-L983", title: "ALOHA aloha_object.py, L_Epsilon.give_parity"}
-  - {id: aloha-sigma, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/aloha_object.py#L728-L790", title: "ALOHA aloha_object.py, L_Sigma.sigma"}
-  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/repr/lorentz.rs", title: "epsilon4, epsilon_vector, AsymRank2Tensor::hodge_dual, test_sigma_gamma5_epsilon_identity"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs", title: "sigma_half and the Sigma kernels"}
-  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "sigma_chained, epsilon_out_order"}
+  - {id: n35-ref, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4 (reference conventions read from the pinned MadGraph)"}
+  - {id: n35-r1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L242-L333", title: "Note 35 R1 (graded Clifford basis; Levi-Civita primitives; the σγ⁵ identity)"}
+  - {id: n35-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L334-L431", title: "Note 35 E1 (Epsilon, Gamma5, γ-chains against MadGraph)"}
+  - {id: n35-t1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L905-L991", title: "Note 35 T1 (the toy UFO; Sigma's half measured)"}
+  - {id: n35-t2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L992-L1041", title: "Note 35 T2 (literal Sigma primitives)"}
+  - {id: n35-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1281-L1358", title: "Note 35 §10.1 (what the sprint leaves gated; pinned conventions)"}
+  - {id: n35-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1398-L1415", title: "Note 35 §10.3 (the sigma_chained mutation pin)"}
+  - {id: aloha-eps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L938-L983", title: "ALOHA aloha_object.py, L_Epsilon.give_parity"}
+  - {id: aloha-sigma, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_object.py#L728-L790", title: "ALOHA aloha_object.py, L_Sigma.sigma"}
+  - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/lorentz.rs", title: "epsilon4, epsilon_vector, AsymRank2Tensor::hodge_dual, test_sigma_gamma5_epsilon_identity"}
+  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs", title: "sigma_half and the Sigma kernels"}
+  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "sigma_chained, epsilon_out_order"}
 ---
 
 # ALOHA Levi-Civita and Sigma conventions

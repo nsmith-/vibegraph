@@ -6,10 +6,10 @@ status: draft
 tags: [vegas, integration, importance-sampling, grid, serialisation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L159-L182", title: "Note 01, VEGAS and VEGAS+ summaries"}
-  - {id: n18-phases, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L258-L282", title: "Note 18 §2.4, VEGAS phases and serialisation"}
-  - {id: n18-h5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H5 and H8 (VEGAS split, serde, artifact format)"}
-  - {id: n21-production, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21, putting the sampler into production (damping exponent)"}
+  - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L159-L182", title: "Note 01, VEGAS and VEGAS+ summaries"}
+  - {id: n18-phases, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L258-L282", title: "Note 18 §2.4, VEGAS phases and serialisation"}
+  - {id: n18-h5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H5 and H8 (VEGAS split, serde, artifact format)"}
+  - {id: n21-production, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21, putting the sampler into production (damping exponent)"}
   - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs", title: "VegasGrid, adapt/sample_frozen/draw, parallel forms, refine_grid"}
   - {id: hadronic-rs, resource: "vibegraph-lib/src/hadronic.rs#L68-L87", title: "VEGAS_NBINS, VEGAS_ALPHA, VEGAS_ALPHA_MAPPED"}
   - {id: lepage, resource: "https://doi.org/10.1016/0021-9991(78)90004-9", title: "G. P. Lepage, A new algorithm for adaptive multidimensional integration (1978)"}

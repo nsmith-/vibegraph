@@ -6,11 +6,11 @@ status: draft
 tags: [ufo, parser, feyngraph, model, propagators]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L57-L77", title: "Note 01, UFO module structure and data model"}
-  - {id: n04-options, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/04-ufo-parsing-future.md#L30-L97", title: "Note 04, full UFO parsing: options, recommendation, FeynGraph's parser gaps"}
-  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, loader and model-topology surface (propagators.py)"}
-  - {id: code-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/ufo/mod.rs", title: "vibegraph-lib/src/ufo/mod.rs"}
-  - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/ufo/topo.rs#L64-L183", title: "vibegraph-lib/src/ufo/topo.rs build_feyngraph_model"}
+  - {id: n01-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L57-L77", title: "Note 01, UFO module structure and data model"}
+  - {id: n04-options, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/04-ufo-parsing-future.md#L30-L97", title: "Note 04, full UFO parsing: options, recommendation, FeynGraph's parser gaps"}
+  - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, loader and model-topology surface (propagators.py)"}
+  - {id: code-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/mod.rs", title: "vibegraph-lib/src/ufo/mod.rs"}
+  - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/topo.rs#L64-L183", title: "vibegraph-lib/src/ufo/topo.rs build_feyngraph_model"}
 ---
 
 vibegraph reads UFO models itself. The `.py` files are parsed as Python, the quoted

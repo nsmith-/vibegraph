@@ -6,10 +6,10 @@ status: draft
 tags: [nlo, scope, background, pipeline]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n00-nlo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L70-L139", title: "Note 00: Beyond LO — NLO and fixed-order calculations"}
-  - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/03-sherpa-powheg.md#L351-L368", title: "Note 03 §2.11: POWHEG-BOX relevance to vibegraph"}
-  - {id: n38-room, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L227-L253", title: "Note 38 §3.2: room for MLM and NLO"}
-  - {id: check-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/diagrams/check.rs#L12-L37", title: "Unsupported variants table (check.rs)"}
+  - {id: n00-nlo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L70-L139", title: "Note 00: Beyond LO — NLO and fixed-order calculations"}
+  - {id: n03-powheg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/03-sherpa-powheg.md#L351-L368", title: "Note 03 §2.11: POWHEG-BOX relevance to vibegraph"}
+  - {id: n38-room, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L227-L253", title: "Note 38 §3.2: room for MLM and NLO"}
+  - {id: check-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/check.rs#L12-L37", title: "Unsupported variants table (check.rs)"}
 ---
 vibegraph generates leading-order (tree-level) matrix elements only. NLO is
 outside the release goal ([release-scope decision](../decisions/release-scope-lo-mlm.md);

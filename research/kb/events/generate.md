@@ -6,15 +6,15 @@ status: draft
 tags: [events, generate, cli, artifact, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4, the generate CLI"}
-  - {id: n24-built, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1834-L1849", title: "Note 24 P4, generate at proton beams"}
-  - {id: n24-flavour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1850-L1884", title: "Note 24 P4, the (member, ordering) draw"}
-  - {id: n24-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1885-L1906", title: "Note 24 P4, the exchanged beam ordering"}
-  - {id: n24-mirror-p2c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c, the mirror reflects outgoing legs only"}
-  - {id: n24-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L2010", title: "Note 24 P4, the four gates"}
-  - {id: n24-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4, plan corrections"}
-  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/40-per-group-dynamic-scales.md#L66-L80", title: "Note 40 §3, our own events replay in their own group"}
-  - {id: n24-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2794-L2815", title: "Note 24 U4, check-events"}
+  - {id: n23-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L571-L712", title: "Note 23 E4, the generate CLI"}
+  - {id: n24-built, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1834-L1849", title: "Note 24 P4, generate at proton beams"}
+  - {id: n24-flavour, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1850-L1884", title: "Note 24 P4, the (member, ordering) draw"}
+  - {id: n24-mirror, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1885-L1906", title: "Note 24 P4, the exchanged beam ordering"}
+  - {id: n24-mirror-p2c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1349-L1386", title: "Note 24 P2c, the mirror reflects outgoing legs only"}
+  - {id: n24-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1954-L2010", title: "Note 24 P4, the four gates"}
+  - {id: n24-corr, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2011-L2041", title: "Note 24 P4, plan corrections"}
+  - {id: n40, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/40-per-group-dynamic-scales.md#L66-L80", title: "Note 40 §3, our own events replay in their own group"}
+  - {id: n24-check, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2794-L2815", title: "Note 24 U4, check-events"}
 ---
 
 # generate: from an integrate artifact to an event file

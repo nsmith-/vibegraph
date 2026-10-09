@@ -6,14 +6,14 @@ status: draft
 tags: [madgraph, pixi, lhapdf, toolchain]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n05, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/05-madgraph-setup.md#L14-L163", title: "Note 05: MadGraph setup via pixi/conda (package, env, caveats)"}
-  - {id: n18-h1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L498", title: "Note 18 §5 H1: the LHAPDF oracle build"}
-  - {id: n18-ldflags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L856-L862", title: "Note 18 §5 H7: MG–LHAPDF link workaround"}
-  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L1003-L1009", title: "Note 18 Outcome: the LDFLAGS finding"}
-  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L560", title: "Note 27 §B4: the 3.7.1 mechanism"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L432-L440", title: "Note 41 §M0: libstdc++ on Linux"}
-  - {id: mg5-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/mg5_pinned.sh", title: "validation/madgraph/mg5_pinned.sh"}
-  - {id: build-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/build.sh#L160-L185", title: "validation/madgraph/build.sh, the LDFLAGS block"}
+  - {id: n05, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/05-madgraph-setup.md#L14-L163", title: "Note 05: MadGraph setup via pixi/conda (package, env, caveats)"}
+  - {id: n18-h1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L498", title: "Note 18 §5 H1: the LHAPDF oracle build"}
+  - {id: n18-ldflags, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L856-L862", title: "Note 18 §5 H7: MG–LHAPDF link workaround"}
+  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L1003-L1009", title: "Note 18 Outcome: the LDFLAGS finding"}
+  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L560", title: "Note 27 §B4: the 3.7.1 mechanism"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L432-L440", title: "Note 41 §M0: libstdc++ on Linux"}
+  - {id: mg5-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/mg5_pinned.sh", title: "validation/madgraph/mg5_pinned.sh"}
+  - {id: build-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/build.sh#L160-L185", title: "validation/madgraph/build.sh, the LDFLAGS block"}
   - {id: mg-repo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064", title: "mg5amcnlo at the pinned commit (3.7.1)"}
 ---
 # Running MadGraph here: the pixi env and the pinned submodule

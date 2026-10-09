@@ -6,9 +6,9 @@ status: draft
 tags: [artifact, model, identity, digest, generate]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23, model identity in the artifact"}
-  - {id: code-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/ufo/identity.rs", title: "vibegraph-lib/src/ufo/identity.rs"}
-  - {id: code-generate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/generate.rs#L274-L330", title: "vibegraph-cli/src/generate.rs card_mismatches"}
+  - {id: n23-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L713-L804", title: "Note 23, model identity in the artifact"}
+  - {id: code-identity, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/identity.rs", title: "vibegraph-lib/src/ufo/identity.rs"}
+  - {id: code-generate, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/generate.rs#L274-L330", title: "vibegraph-cli/src/generate.rs card_mismatches"}
 ---
 
 `vibegraph generate` replays the grids an `integrate` run trained, so it must refuse a

@@ -7,9 +7,9 @@ status: draft
 tags: [polarization, helicity, madgraph, paper, propagators]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-pol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L456-L491", title: "Note 01, polarized matrix element automation summary"}
-  - {id: mg-pol-parse, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L5095-L5185", title: "madgraph_interface.py, the {…} polarization parser"}
-  - {id: mg-pol-list, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/base_objects.py#L2095-L2098", title: "base_objects.py, list_of_allowed_polarizations"}
+  - {id: n01-pol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L456-L491", title: "Note 01, polarized matrix element automation summary"}
+  - {id: mg-pol-parse, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L5095-L5185", title: "madgraph_interface.py, the {…} polarization parser"}
+  - {id: mg-pol-list, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L2095-L2098", title: "base_objects.py, list_of_allowed_polarizations"}
 ---
 
 "Automated Predictions from Polarized Matrix Elements" (Buarque Franzosi,

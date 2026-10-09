@@ -6,18 +6,18 @@ status: draft
 tags: [events, colour, helicity, icolup, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n15-jamp2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2, the JAMP2 diagonal as SELECT_COLOR's input"}
-  - {id: n21-helcol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L512-L544", title: "Note 21, helicity and colour handling"}
-  - {id: n23-e1a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L49-L65", title: "Note 23 E1a, the JAMP2 diagonal requirements"}
-  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L130-L195", title: "Note 23 E1 outcome (eval_jamp2, flow tags)"}
-  - {id: n23-e1c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/23-event-output-lhef-plan.md#L196-L257", title: "Note 23 E1c, NCOLOR=6 JAMP comparison"}
-  - {id: n27-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L298-L481", title: "Note 27 B3, MadEvent's colour selection as read"}
-  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 B6, the per-configuration AMP2 accumulator"}
-  - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6 decisions D1/D4"}
-  - {id: n36-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L355-L412", title: "Note 36 B4, ud_to_epemud_qcd0 ICOLUP diagnosis"}
-  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3, MadGraph's channel set and the channel-cut weight"}
+  - {id: n15-jamp2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2, the JAMP2 diagonal as SELECT_COLOR's input"}
+  - {id: n21-helcol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L512-L544", title: "Note 21, helicity and colour handling"}
+  - {id: n23-e1a, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L49-L65", title: "Note 23 E1a, the JAMP2 diagonal requirements"}
+  - {id: n23-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L130-L195", title: "Note 23 E1 outcome (eval_jamp2, flow tags)"}
+  - {id: n23-e1c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L196-L257", title: "Note 23 E1c, NCOLOR=6 JAMP comparison"}
+  - {id: n27-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L298-L481", title: "Note 27 B3, MadEvent's colour selection as read"}
+  - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 B6, the per-configuration AMP2 accumulator"}
+  - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6 decisions D1/D4"}
+  - {id: n36-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L355-L412", title: "Note 36 B4, ud_to_epemud_qcd0 ICOLUP diagnosis"}
+  - {id: n36-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L567-L650", title: "Note 36 B3, MadGraph's channel set and the channel-cut weight"}
   - {id: mg-select-color, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/3.7.1/madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc#L1087", title: "MadGraph 3.7.1 SELECT_COLOR"}
-  - {id: mg-icolamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/export_v4.py#L1295", title: "MadGraph get_icolamp_lines"}
+  - {id: mg-icolamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L1295", title: "MadGraph get_icolamp_lines"}
 ---
 
 # Per-event helicity and colour-flow selection

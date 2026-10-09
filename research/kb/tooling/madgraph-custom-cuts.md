@@ -6,11 +6,11 @@ status: draft
 tags: [madgraph, cuts, references, windows]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L84-L101", title: "Note 27 §B1: the window on MadGraph's side"}
-  - {id: gen-higgs-window, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/gen_higgs_window.sh", title: "validation/madgraph/gen_higgs_window.sh"}
-  - {id: gen-pta-windows, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/gen_pta_windows.sh", title: "validation/madgraph/gen_pta_windows.sh"}
-  - {id: mg-dummy-fct, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/dummy_fct.f#L1-L40", title: "MadGraph dummy_fct.f, dummy_cuts"}
-  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cuts.f#L1223-L1229", title: "MadGraph cuts.f, passcuts calls dummy_cuts"}
+  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L84-L101", title: "Note 27 §B1: the window on MadGraph's side"}
+  - {id: gen-higgs-window, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/gen_higgs_window.sh", title: "validation/madgraph/gen_higgs_window.sh"}
+  - {id: gen-pta-windows, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/gen_pta_windows.sh", title: "validation/madgraph/gen_pta_windows.sh"}
+  - {id: mg-dummy-fct, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/dummy_fct.f#L1-L40", title: "MadGraph dummy_fct.f, dummy_cuts"}
+  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L1223-L1229", title: "MadGraph cuts.f, passcuts calls dummy_cuts"}
 ---
 # Custom MadGraph cuts via dummy_cuts
 

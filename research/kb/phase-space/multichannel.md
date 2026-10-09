@@ -6,20 +6,20 @@ status: draft
 tags: [multichannel, kleiss-pittau, alpha-adaptation, madevent-parity, phase-space]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-loopind, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L535-L553", title: "Note 01, loop-induced MG5 paper: phase-space appendix and multichannel"}
-  - {id: n21-program, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L11-L51", title: "Note 21, resonance-aware sampling program and reference implementations"}
-  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out (combiner, α-adaptation, firing tests)"}
-  - {id: n24-alpha, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L1424-L1446", title: "Note 24 P2d, joint α-adaptation"}
-  - {id: n27-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L298-L481", title: "Note 27 B3, MadEvent's colour selection and the channel label"}
-  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7, findings register"}
-  - {id: n34-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 Wave 1 S1, α-survey density pass, budget constants, stop factor"}
-  - {id: n31-i3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/31-perf-sprint-3-plan.md#L152-L242", title: "Note 31 I3, the α survey as the Amdahl term of a fitted scaling model"}
+  - {id: n01-loopind, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L535-L553", title: "Note 01, loop-induced MG5 paper: phase-space appendix and multichannel"}
+  - {id: n21-program, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L11-L51", title: "Note 21, resonance-aware sampling program and reference implementations"}
+  - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out (combiner, α-adaptation, firing tests)"}
+  - {id: n24-alpha, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1424-L1446", title: "Note 24 P2d, joint α-adaptation"}
+  - {id: n27-b3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L298-L481", title: "Note 27 B3, MadEvent's colour selection and the channel label"}
+  - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7, findings register"}
+  - {id: n34-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 Wave 1 S1, α-survey density pass, budget constants, stop factor"}
+  - {id: n31-i3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L152-L242", title: "Note 31 I3, the α survey as the Amdahl term of a fitted scaling model"}
   - {id: channel-rs, resource: "vibegraph-lib/src/phasespace/channel.rs#L265-L560", title: "kleiss_pittau_step, select_channel, MultiChannel, AlphaAdaptation, adapt_alphas"}
   - {id: proton-alpha, resource: "vibegraph-lib/src/proton.rs#L2816-L2960", title: "ProtonIntegrand::adapt_alphas and survey_variance"}
   - {id: integrate-rs, resource: "vibegraph-cli/src/integrate.rs#L97-L107", title: "MIN_ADAPT_SURVEY, MAX_ADAPT_SURVEY, ADAPT_ITERS"}
   - {id: kp, resource: "https://doi.org/10.1016/0010-4655(94)90043-4", title: "R. Kleiss, R. Pittau, Weight optimization in multichannel Monte Carlo, CPC 83 (1994) 141"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L646-L684", title: "MadEvent genps.f, one configuration per G directory"}
-  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/iolibs/template_files/matrix_madevent_v4.inc#L174-L189", title: "MadEvent matrix_madevent_v4.inc, AMP2 multi-channel factor and SELECT_COLOR"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L646-L684", title: "MadEvent genps.f, one configuration per G directory"}
+  - {id: mg-matrix, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/template_files/matrix_madevent_v4.inc#L174-L189", title: "MadEvent matrix_madevent_v4.inc, AMP2 multi-channel factor and SELECT_COLOR"}
 ---
 
 ## The estimator

@@ -6,14 +6,14 @@ status: draft
 tags: [colour, evaluator, exact-arithmetic, cf-matrix, jamp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n16-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L231-L263", title: "Note 16 §2.1: shape of the change"}
-  - {id: n16-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L264-L299", title: "Note 16 §2.2: repr/color.rs as a working algebra"}
-  - {id: n16-24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L318-L352", title: "Note 16 §2.4: colorize over diagrams::Diagram"}
-  - {id: n16-25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L353-L412", title: "Note 16 §2.5: evaluator integration"}
-  - {id: n16-26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/16-color-flow-design.md#L413-L422", title: "Note 16 §2.6: what we deliberately do not do"}
-  - {id: code-colorize, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/colorize.rs", title: "helas/color/colorize.rs: slot indices, convert_expr, ColorBasis"}
-  - {id: code-coeff, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/color/coeff.rs", title: "helas/color/coeff.rs: ColorCoeff"}
-  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/run.rs#L330-L400", title: "run.rs: eval_m2's CF contraction"}
+  - {id: n16-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L231-L263", title: "Note 16 §2.1: shape of the change"}
+  - {id: n16-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L264-L299", title: "Note 16 §2.2: repr/color.rs as a working algebra"}
+  - {id: n16-24, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L318-L352", title: "Note 16 §2.4: colorize over diagrams::Diagram"}
+  - {id: n16-25, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L353-L412", title: "Note 16 §2.5: evaluator integration"}
+  - {id: n16-26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L413-L422", title: "Note 16 §2.6: what we deliberately do not do"}
+  - {id: code-colorize, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/colorize.rs", title: "helas/color/colorize.rs: slot indices, convert_expr, ColorBasis"}
+  - {id: code-coeff, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/color/coeff.rs", title: "helas/color/coeff.rs: ColorCoeff"}
+  - {id: code-run, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L330-L400", title: "run.rs: eval_m2's CF contraction"}
 ---
 
 # Multi-flow colour in the evaluator

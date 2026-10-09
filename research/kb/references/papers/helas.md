@@ -7,9 +7,9 @@ status: draft
 tags: [helas, helicity-amplitudes, wavefunctions, paper, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n01-helas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L345-L455", title: "Note 01, HELAS summary (from the OCR'd report)"}
-  - {id: n01-helas-stub, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/01-paper-summaries.md#L148-L154", title: "Note 01, first HELAS entry (reference only)"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: n01-helas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L345-L455", title: "Note 01, HELAS summary (from the OCR'd report)"}
+  - {id: n01-helas-stub, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L148-L154", title: "Note 01, first HELAS entry (reference only)"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
   - {id: kek-pdf, resource: "https://lib-extopc.kek.jp/preprints/PDF/1991/9124/9124011.pdf", title: "KEK preprint scan (the URL research/refs/fetch-papers.sh uses)"}
   - {id: repr, resource: "vibegraph-lib/src/helas/repr/lorentz.rs", title: "ComplexVector and Bispinor"}
 ---

@@ -6,13 +6,13 @@ status: draft
 tags: [run-card, cuts, conventions, madgraph-parity, kinematics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n18-inventory, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L163-L196", title: "Note 18 §1.5, the cut inventory and what must actually cut"}
-  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L312-L341", title: "Note 18 §2.6, cuts.rs as a compiled filter"}
-  - {id: n18-h6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, H6 cuts.f convention pins and H7 lab-frame cuts"}
-  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome, load-bearing findings"}
-  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cuts.f#L219-L221", title: "MadGraph LO cuts.f (FIRSTTIME squaring of dr)"}
-  - {id: mg-kin, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/Source/kin_functions.f#L95", title: "MadGraph kin_functions.f rap, R2, DELTA_PHI"}
-  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/setcuts.f#L212-L217", title: "MadGraph setcuts.f class membership"}
+  - {id: n18-inventory, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L163-L196", title: "Note 18 §1.5, the cut inventory and what must actually cut"}
+  - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L312-L341", title: "Note 18 §2.6, cuts.rs as a compiled filter"}
+  - {id: n18-h6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, H6 cuts.f convention pins and H7 lab-frame cuts"}
+  - {id: n18-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L935-L1039", title: "Note 18 outcome, load-bearing findings"}
+  - {id: mg-cuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cuts.f#L219-L221", title: "MadGraph LO cuts.f (FIRSTTIME squaring of dr)"}
+  - {id: mg-kin, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/kin_functions.f#L95", title: "MadGraph kin_functions.f rap, R2, DELTA_PHI"}
+  - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L212-L217", title: "MadGraph setcuts.f class membership"}
 ---
 
 # MadGraph cut conventions and what vibegraph implements

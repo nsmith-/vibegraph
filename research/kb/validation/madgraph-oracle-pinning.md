@@ -6,13 +6,13 @@ status: draft
 tags: [madgraph, reference, pdf, lhapdf, version-pin]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6, decisions D2 and D3"}
-  - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L271-L295", title: "Note 29 §G, the nn23lo1 re-bank decision"}
-  - {id: n29-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5765-L5831", title: "Note 29 G.1-G.4, the re-banked runs"}
-  - {id: n29-g6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5852-L5889", title: "Note 29 G.6, the alpha_s classification guard"}
-  - {id: n29-g10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L5947-L5988", title: "Note 29 G.10, the eight cells measured"}
-  - {id: n28-z4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3-Z.4, the mg-internal-pdf blocker"}
-  - {id: mg5-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/mg5_pinned.sh", title: "validation/madgraph/mg5_pinned.sh"}
+  - {id: n27-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1158-L1181", title: "Note 27 §6, decisions D2 and D3"}
+  - {id: n29-g, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L271-L295", title: "Note 29 §G, the nn23lo1 re-bank decision"}
+  - {id: n29-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5765-L5831", title: "Note 29 G.1-G.4, the re-banked runs"}
+  - {id: n29-g6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5852-L5889", title: "Note 29 G.6, the alpha_s classification guard"}
+  - {id: n29-g10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L5947-L5988", title: "Note 29 G.10, the eight cells measured"}
+  - {id: n28-z4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3-Z.4, the mg-internal-pdf blocker"}
+  - {id: mg5-pinned, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/mg5_pinned.sh", title: "validation/madgraph/mg5_pinned.sh"}
 ---
 # References come from pinned MadGraph 3.7.1 with LHAPDF PDF sets
 

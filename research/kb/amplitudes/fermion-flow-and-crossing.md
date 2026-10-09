@@ -6,12 +6,12 @@ status: draft
 tags: [fermion-flow, spinors, crossing, helas, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12: root causes 2, 3 and 5 (flow-typed slots, flow-driven dispatch, crossed-line conjugation)"}
-  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: sinks closing two fermion lines; per-pair bra/ket and crossed bookkeeping"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/kernel.rs#L538-L600", title: "kernel.rs: resolve_bra_ket, off_shell_fermion_current"}
-  - {id: code-adjoint, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/diagram_eval.rs#L38-L55", title: "diagram_eval.rs: ExtLegInfo::adjoint"}
-  - {id: code-rootlorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_lorentz.rs#L942-L1140", title: "root_lorentz.rs: standalone_projector_crossed, term_reversed_parity, pair_crossed, chiral_correction"}
-  - {id: code-mixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/helas/eval/root_diagram.rs#L720-L850", title: "root_diagram.rs: collect_fermion_pairs, mixed_line_final_legs"}
+  - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12: root causes 2, 3 and 5 (flow-typed slots, flow-driven dispatch, crossed-line conjugation)"}
+  - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: sinks closing two fermion lines; per-pair bra/ket and crossed bookkeeping"}
+  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L538-L600", title: "kernel.rs: resolve_bra_ket, off_shell_fermion_current"}
+  - {id: code-adjoint, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/diagram_eval.rs#L38-L55", title: "diagram_eval.rs: ExtLegInfo::adjoint"}
+  - {id: code-rootlorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L942-L1140", title: "root_lorentz.rs: standalone_projector_crossed, term_reversed_parity, pair_crossed, chiral_correction"}
+  - {id: code-mixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L720-L850", title: "root_diagram.rs: collect_fermion_pairs, mixed_line_final_legs"}
 ---
 
 # Fermion flow, bra/ket dispatch and crossed legs

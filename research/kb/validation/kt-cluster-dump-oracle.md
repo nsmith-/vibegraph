@@ -6,18 +6,18 @@ status: draft
 tags: [kt-clustering, scales, madgraph, oracle, per-event]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n28-k110, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1146-L1267", title: "Note 28 K1.10 — what an instrumented run must record"}
-  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 K1.11 — findings for the engine"}
-  - {id: n28-k31, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2021-L2064", title: "Note 28 K3.1 — every dumped event reproduces"}
-  - {id: n28-k33, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2096-L2137", title: "Note 28 K3.3 — isbw is stale across events"}
-  - {id: n28-k34, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2138-L2170", title: "Note 28 K3.4 — the dump cannot name a process directory"}
-  - {id: n28-k36, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2199-L2219", title: "Note 28 K3.6 — branch coverage"}
-  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 K3.7 — confirmed against the bank"}
-  - {id: n28-z3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3 — green having compared nothing"}
-  - {id: code-kt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_kt_cluster.rs", title: "vibegraph-lib/tests/validate_kt_cluster.rs"}
-  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/kt_cluster_dump_manifest.json", title: "validation/madgraph/kt_cluster_dump_manifest.json"}
-  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/cluster.f", title: "MadGraph Template/LO/SubProcesses/cluster.f"}
-  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/reweight.f", title: "MadGraph Template/LO/SubProcesses/reweight.f"}
+  - {id: n28-k110, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1146-L1267", title: "Note 28 K1.10 — what an instrumented run must record"}
+  - {id: n28-k111, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1268-L1298", title: "Note 28 K1.11 — findings for the engine"}
+  - {id: n28-k31, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2021-L2064", title: "Note 28 K3.1 — every dumped event reproduces"}
+  - {id: n28-k33, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2096-L2137", title: "Note 28 K3.3 — isbw is stale across events"}
+  - {id: n28-k34, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2138-L2170", title: "Note 28 K3.4 — the dump cannot name a process directory"}
+  - {id: n28-k36, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2199-L2219", title: "Note 28 K3.6 — branch coverage"}
+  - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 K3.7 — confirmed against the bank"}
+  - {id: n28-z3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4159-L4226", title: "Note 28 Z.3 — green having compared nothing"}
+  - {id: code-kt, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_kt_cluster.rs", title: "vibegraph-lib/tests/validate_kt_cluster.rs"}
+  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/kt_cluster_dump_manifest.json", title: "validation/madgraph/kt_cluster_dump_manifest.json"}
+  - {id: mg-cluster, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/cluster.f", title: "MadGraph Template/LO/SubProcesses/cluster.f"}
+  - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f", title: "MadGraph Template/LO/SubProcesses/reweight.f"}
 ---
 
 # kT clustering dump oracle

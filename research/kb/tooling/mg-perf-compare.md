@@ -6,11 +6,11 @@ status: draft
 tags: [performance, madgraph, benchmark, timing]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n32-triage, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L114-L156", title: "Note 32 §1.2: the mg_perf_compare triage findings"}
-  - {id: n32-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1: per-session outcomes (the tool changes)"}
-  - {id: n32-remeasure, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/32-perf-addendum-plan.md#L794-L864", title: "Note 32 §6: MATRIX1 re-measurement"}
-  - {id: script, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/mg_perf_compare.sh", title: "scripts/mg_perf_compare.sh"}
-  - {id: bench, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/benches/eval_strategies.rs#L110-L165", title: "vibegraph-lib/benches/eval_strategies.rs, BENCH_ROWS"}
+  - {id: n32-triage, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L114-L156", title: "Note 32 §1.2: the mg_perf_compare triage findings"}
+  - {id: n32-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1: per-session outcomes (the tool changes)"}
+  - {id: n32-remeasure, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L794-L864", title: "Note 32 §6: MATRIX1 re-measurement"}
+  - {id: script, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/mg_perf_compare.sh", title: "scripts/mg_perf_compare.sh"}
+  - {id: bench, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/benches/eval_strategies.rs#L110-L165", title: "vibegraph-lib/benches/eval_strategies.rs, BENCH_ROWS"}
 ---
 # mg_perf_compare: per-point timing against MadGraph MATRIX1
 

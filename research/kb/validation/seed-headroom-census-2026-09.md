@@ -11,13 +11,13 @@ measured:
   landed_in: 02e8b25
   command: "#[ignore] probes run with --ignored under --features extended-validation: probe_gate_row_seed_headroom (validate_sigma), probe_samples_p_floor_headroom (validate_samples), probe_hadronic_seed_headroom (validate_hadronic), plus the unweighting and cli_generate_proton sweeps"
 sources:
-  - {id: n36-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L86-L143", title: "Note 36 B0 (the census brief and outcome)"}
-  - {id: n36a-classes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L12-L51", title: "Note 36a §0 (how to read headroom)"}
-  - {id: n36a-sigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L52-L190", title: "Note 36a §1 (validate_sigma: 31 Plan::Gate rows)"}
-  - {id: n36a-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L191-L212", title: "Note 36a §2 (P_FLOOR)"}
-  - {id: n36a-hadronic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L213-L277", title: "Note 36a §3 (validate_hadronic)"}
-  - {id: n36a-other, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L278-L325", title: "Note 36a §4–6 (unweighting, cli_generate_proton, samples_proton)"}
-  - {id: n36a-thin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36a-seed-headroom-census.md#L326-L397", title: "Note 36a §7–8 (the thin list; downstream)"}
+  - {id: n36-b0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L86-L143", title: "Note 36 B0 (the census brief and outcome)"}
+  - {id: n36a-classes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L12-L51", title: "Note 36a §0 (how to read headroom)"}
+  - {id: n36a-sigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L52-L190", title: "Note 36a §1 (validate_sigma: 31 Plan::Gate rows)"}
+  - {id: n36a-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L191-L212", title: "Note 36a §2 (P_FLOOR)"}
+  - {id: n36a-hadronic, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L213-L277", title: "Note 36a §3 (validate_hadronic)"}
+  - {id: n36a-other, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L278-L325", title: "Note 36a §4–6 (unweighting, cli_generate_proton, samples_proton)"}
+  - {id: n36a-thin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36a-seed-headroom-census.md#L326-L397", title: "Note 36a §7–8 (the thin list; downstream)"}
 ---
 
 A census of every enforced statistic in the banked validation layer: for each,

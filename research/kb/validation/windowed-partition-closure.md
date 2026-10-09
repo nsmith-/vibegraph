@@ -6,14 +6,14 @@ status: draft
 tags: [validation, cross-section, madgraph, windows, attribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1 (the h → ττ pole bin: windowed σ on both sides)"}
-  - {id: n29-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2921-L2974", title: "Note 29 D.2 (the windows and the rule that fixes them)"}
-  - {id: n29-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L2975-L3040", title: "Note 29 D.3 (the four estimators)"}
-  - {id: n29-d4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3041-L3057", title: "Note 29 D.4 (seed and budget protocol)"}
-  - {id: n29-d7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3139-L3231", title: "Note 29 D.7–D.8 (gates afterwards; risks and blind spots)"}
-  - {id: n29-addenda, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3771-L3844", title: "Note 29 chain D addenda (error conventions, provenance, ruling)"}
-  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_sigma.rs#L158-L199", title: "validate_sigma.rs PULL_REPORTED_NOT_ASSERTED (the adjudicated ee_to_mumua offset)"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/Template/LO/SubProcesses/genps.f#L1949-L1951", title: "MadGraph genps.f get_channel_cut (3.7.1 form)"}
+  - {id: n27-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L44-L211", title: "Note 27 B1 (the h → ττ pole bin: windowed σ on both sides)"}
+  - {id: n29-d2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2921-L2974", title: "Note 29 D.2 (the windows and the rule that fixes them)"}
+  - {id: n29-d3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L2975-L3040", title: "Note 29 D.3 (the four estimators)"}
+  - {id: n29-d4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3041-L3057", title: "Note 29 D.4 (seed and budget protocol)"}
+  - {id: n29-d7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3139-L3231", title: "Note 29 D.7–D.8 (gates afterwards; risks and blind spots)"}
+  - {id: n29-addenda, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3771-L3844", title: "Note 29 chain D addenda (error conventions, provenance, ruling)"}
+  - {id: vsigma, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_sigma.rs#L158-L199", title: "validate_sigma.rs PULL_REPORTED_NOT_ASSERTED (the adjudicated ee_to_mumua offset)"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1949-L1951", title: "MadGraph genps.f get_channel_cut (3.7.1 form)"}
 ---
 
 When our σ and MadGraph's disagree by a fixed amount, the question is which side

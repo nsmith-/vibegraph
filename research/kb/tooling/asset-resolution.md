@@ -6,12 +6,12 @@ status: draft
 tags: [cli, cache, pdf, ufo, distribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n24-u2-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2445-L2495", title: "Note 24 §U2 outcome: where the pin lives, what landed"}
-  - {id: n24-u2-gaps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2518-L2540", title: "Note 24 §U2 outcome: not verified / known gaps"}
-  - {id: n24-u3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2573-L2698", title: "Note 24 §U3 outcome: the cache module, resolution order, Fetch contract"}
-  - {id: n24-u4-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/24-user-distribution-and-proton-events-plan.md#L2903-L2969", title: "Note 24 §U4 outcome: the UFO decision, no fetching"}
-  - {id: code-cache, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/cache/mod.rs", title: "vibegraph-lib/src/cache/ (mod, resolve, store, pinned)"}
-  - {id: code-assets, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-cli/src/assets.rs", title: "vibegraph-cli/src/assets.rs"}
+  - {id: n24-u2-pin, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2445-L2495", title: "Note 24 §U2 outcome: where the pin lives, what landed"}
+  - {id: n24-u2-gaps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2518-L2540", title: "Note 24 §U2 outcome: not verified / known gaps"}
+  - {id: n24-u3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2573-L2698", title: "Note 24 §U3 outcome: the cache module, resolution order, Fetch contract"}
+  - {id: n24-u4-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L2903-L2969", title: "Note 24 §U4 outcome: the UFO decision, no fetching"}
+  - {id: code-cache, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/cache/mod.rs", title: "vibegraph-lib/src/cache/ (mod, resolve, store, pinned)"}
+  - {id: code-assets, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-cli/src/assets.rs", title: "vibegraph-cli/src/assets.rs"}
 ---
 # ~/.vibegraph asset resolution and pinned fetch
 

@@ -7,15 +7,15 @@ status: draft
 tags: [feyngraph, diagrams, ufo, rust, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L17-L294", title: "Note 02, FeynGraph survey (read at 1dc4ea7)"}
-  - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L519-L555", title: "Note 02, cross-cutting notes: UFO parsing, MadGraph vs FeynGraph"}
-  - {id: n04-limits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/04-ufo-parsing-future.md#L88-L134", title: "Note 04, FeynGraph parser limitations and what it drops"}
-  - {id: n06-gap, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L460-L544", title: "Note 06 §8, feyngraph gap analysis"}
-  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
-  - {id: fg-parser, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa83/src/model/ufo_parser.rs", title: "FeynGraph ufo_parser.rs at fd5aa83"}
-  - {id: fg-model, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa83/src/model/mod.rs", title: "FeynGraph model/mod.rs at fd5aa83"}
-  - {id: fg-diagram, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa83/src/diagram/mod.rs", title: "FeynGraph diagram/mod.rs at fd5aa83"}
-  - {id: fg-filter, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa83/src/diagram/filter.rs", title: "FeynGraph diagram/filter.rs at fd5aa83"}
+  - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L17-L294", title: "Note 02, FeynGraph survey (read at 1dc4ea7)"}
+  - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L555", title: "Note 02, cross-cutting notes: UFO parsing, MadGraph vs FeynGraph"}
+  - {id: n04-limits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/04-ufo-parsing-future.md#L88-L134", title: "Note 04, FeynGraph parser limitations and what it drops"}
+  - {id: n06-gap, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L460-L544", title: "Note 06 §8, feyngraph gap analysis"}
+  - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
+  - {id: fg-parser, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/model/ufo_parser.rs", title: "FeynGraph ufo_parser.rs at fd5aa83"}
+  - {id: fg-model, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/model/mod.rs", title: "FeynGraph model/mod.rs at fd5aa83"}
+  - {id: fg-diagram, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/mod.rs", title: "FeynGraph diagram/mod.rs at fd5aa83"}
+  - {id: fg-filter, resource: "https://github.com/Jens-Braun/FeynGraph/blob/fd5aa8306746b432e098c40dcd96d7cb7ef20125/src/diagram/filter.rs", title: "FeynGraph diagram/filter.rs at fd5aa83"}
   - {id: topo-rs, resource: "vibegraph-lib/src/ufo/topo.rs", title: "build_feyngraph_model: vibegraph's UFO data into a feyngraph Model"}
   - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L34", title: "feyngraph git dependency, rev fd5aa8306746"}
 ---

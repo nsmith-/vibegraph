@@ -7,7 +7,7 @@ status: draft
 tags: [egglog, e-graphs, equality-saturation, datalog, paper]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/14-egglog-notes.md#L11-L322", title: "Note 14, egglog language notes (paper summary)"}
+  - {id: n14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/14-egglog-notes.md#L11-L322", title: "Note 14, egglog language notes (paper summary)"}
   - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L50", title: "egglog = \"2.0.0\""}
   - {id: egraph-rs, resource: "vibegraph-lib/src/helas/eval/egraph.rs#L1-L33", title: "egraph.rs module docs: the identity round trip"}
 ---

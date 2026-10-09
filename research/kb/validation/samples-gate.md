@@ -6,22 +6,22 @@ status: draft
 tags: [validation, samples, ks-test, lhef, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n25-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L151-L162", title: "Note 25 §3.4 (samples category)"}
-  - {id: n25-machinery, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L377-L395", title: "Note 25 §5.5 (samples machinery)"}
-  - {id: n25-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10 (what each session landed)"}
-  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4 (Drell-Yan event banks, IDWTUP, the m_ll spectrum)"}
-  - {id: n28-k5b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3207-L3236", title: "Note 28 K5b.5 (samples cells and what they cannot see)"}
-  - {id: n28-c5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L3701-L3775", title: "Note 28 C.5–C.6 (pp_to_jj samples cell and instruments)"}
-  - {id: n28-c26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L4050-L4075", title: "Note 28 C2.6 (instruments after the enumeration repair)"}
-  - {id: n29-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L1722-L1806", title: "Note 29 E.4 (mode decided by a rule stated before measuring)"}
-  - {id: n29-addenda, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3771-L3844", title: "Note 29 chain D addenda (A6: ee_to_mumua headroom)"}
-  - {id: n29-rulings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L6126-L6136", title: "Note 29 close-out rulings (p-floor not raised)"}
-  - {id: n36-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L144-L191", title: "Note 36 B2 (incoming legs in samples)"}
-  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 B6 (SCALUP/AQCDUP columns)"}
-  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 (polarized-leg count column)"}
-  - {id: vs-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/tests/validate_samples.rs#L1-L200", title: "validate_samples.rs module docs, P_FLOOR, Row"}
-  - {id: samples-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/vibegraph-lib/src/validation/samples.rs", title: "vibegraph::validation::samples"}
-  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml samples cells"}
+  - {id: n25-samples, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L151-L162", title: "Note 25 §3.4 (samples category)"}
+  - {id: n25-machinery, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L377-L395", title: "Note 25 §5.5 (samples machinery)"}
+  - {id: n25-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L585-L621", title: "Note 25 §10 (what each session landed)"}
+  - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4 (Drell-Yan event banks, IDWTUP, the m_ll spectrum)"}
+  - {id: n28-k5b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3207-L3236", title: "Note 28 K5b.5 (samples cells and what they cannot see)"}
+  - {id: n28-c5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L3701-L3775", title: "Note 28 C.5–C.6 (pp_to_jj samples cell and instruments)"}
+  - {id: n28-c26, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L4050-L4075", title: "Note 28 C2.6 (instruments after the enumeration repair)"}
+  - {id: n29-e4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1722-L1806", title: "Note 29 E.4 (mode decided by a rule stated before measuring)"}
+  - {id: n29-addenda, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L3771-L3844", title: "Note 29 chain D addenda (A6: ee_to_mumua headroom)"}
+  - {id: n29-rulings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L6126-L6136", title: "Note 29 close-out rulings (p-floor not raised)"}
+  - {id: n36-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L144-L191", title: "Note 36 B2 (incoming legs in samples)"}
+  - {id: n36-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L458-L524", title: "Note 36 B6 (SCALUP/AQCDUP columns)"}
+  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 (polarized-leg count column)"}
+  - {id: vs-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_samples.rs#L1-L200", title: "validate_samples.rs module docs, P_FLOOR, Row"}
+  - {id: samples-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/validation/samples.rs", title: "vibegraph::validation::samples"}
+  - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml", title: "validation/manifest.toml samples cells"}
 ---
 
 The `samples` category[^n25-samples] compares the events a generator actually emits against

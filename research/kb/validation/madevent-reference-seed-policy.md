@@ -6,16 +6,16 @@ status: draft
 tags: [madgraph, references, seeds, statistics, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n34-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S2 — a five-seed misread, and MadGraph's last-3 combination"}
-  - {id: n34-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 — the converged llj value against MadGraph's combination"}
-  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 §8.1 — the seeded generators and the policy"}
-  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 §8.4 — MadEvent seeds bit-equal across hosts; Bhabha's quoted errors"}
-  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 — the seeded σ gate; the e+e- > w+w- chi2 reading closed"}
-  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0 — MLM references, shared-directory seeds"}
-  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3 — D2: the reference sits low against fresh directories"}
-  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z — @2's reference from 21 independent directories"}
-  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml#L91-L110", title: "validation/manifest.toml — the seed policy header"}
-  - {id: code-seeds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/madevent_seeds.sh", title: "validation/madgraph/madevent_seeds.sh"}
+  - {id: n34-s2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L145-L250", title: "Note 34 S2 — a five-seed misread, and MadGraph's last-3 combination"}
+  - {id: n34-3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L338-L415", title: "Note 34 §3 — the converged llj value against MadGraph's combination"}
+  - {id: n38-z1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1332-L1429", title: "Note 38 §8.1 — the seeded generators and the policy"}
+  - {id: n38-b1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1474-L1527", title: "Note 38 §8.4 — MadEvent seeds bit-equal across hosts; Bhabha's quoted errors"}
+  - {id: n38-z2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L1528-L1686", title: "Note 38 §8.5 — the seeded σ gate; the e+e- > w+w- chi2 reading closed"}
+  - {id: n41-m0, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L303-L530", title: "Note 41 M0 — MLM references, shared-directory seeds"}
+  - {id: n41-m3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1014-L1414", title: "Note 41 M3 — D2: the reference sits low against fresh directories"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2916-L3489", title: "Note 41 Z — @2's reference from 21 independent directories"}
+  - {id: code-manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/manifest.toml#L91-L110", title: "validation/manifest.toml — the seed policy header"}
+  - {id: code-seeds, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/madevent_seeds.sh", title: "validation/madgraph/madevent_seeds.sh"}
 ---
 
 # Seed policy for MadEvent references

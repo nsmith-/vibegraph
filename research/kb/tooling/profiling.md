@@ -6,12 +6,12 @@ status: draft
 tags: [profiling, samply, timing, performance, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n19-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L32-L57", title: "Note 19 §2: survey findings (banked runs, profiling substrate)"}
-  - {id: n19-v3b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/19-validation-pass-plan.md#L116-L138", title: "Note 19 §V3b: the profiling recipe on the σ gate"}
-  - {id: n30-instrumented, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L70-L105", title: "Note 30 §2: what was instrumented"}
-  - {id: n30-profiles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/30-perf-baseline-timings.md#L460-L478", title: "Note 30 §7: profiles"}
-  - {id: profile-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/scripts/profile.sh", title: "scripts/profile.sh"}
-  - {id: time-stages, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/madgraph/time_stages.py", title: "validation/madgraph/time_stages.py"}
+  - {id: n19-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L32-L57", title: "Note 19 §2: survey findings (banked runs, profiling substrate)"}
+  - {id: n19-v3b, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L116-L138", title: "Note 19 §V3b: the profiling recipe on the σ gate"}
+  - {id: n30-instrumented, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L70-L105", title: "Note 30 §2: what was instrumented"}
+  - {id: n30-profiles, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L460-L478", title: "Note 30 §7: profiles"}
+  - {id: profile-sh, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/scripts/profile.sh", title: "scripts/profile.sh"}
+  - {id: time-stages, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/validation/madgraph/time_stages.py", title: "validation/madgraph/time_stages.py"}
 ---
 # Profiling and stage timing
 

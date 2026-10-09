@@ -10,7 +10,7 @@ measured:
   host: "AMD EPYC 9534 (Zen 4 Genoa, family 25 model 17), bare metal, RHEL 9 kernel 5.14, governor performance, boost on, pinned to CPU 255"
   command: "scripts/topdown_kit.sh (eval_loop example, release, -C target-cpu=native, feature eval-schedule-study), summarised by scripts/topdown_summary.py"
 sources:
-  - {id: td, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/topdown-zen4-results.md#L13-L225", title: "Top-down counters on Zen 4, §0–§5"}
+  - {id: td, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/topdown-zen4-results.md#L13-L225", title: "Top-down counters on Zen 4, §0–§5"}
 ---
 
 # Top-down counters on Zen 4

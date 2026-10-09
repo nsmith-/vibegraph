@@ -7,19 +7,19 @@ status: draft
 tags: [madgraph, aloha, helas, diagrams, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
-  - {id: n02-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/02-reference-implementations.md#L303-L510", title: "Note 02, MadGraph5_aMC@NLO survey"}
-  - {id: n06-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L20-L45", title: "Note 06 §1, parser location in mg5amcnlo"}
-  - {id: n06-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/06-process-grammar.md#L334-L392", title: "Note 06 §6, parsed string to diagram generation"}
-  - {id: n28-k1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/28-kt-spine-feature-sprint-plan.md#L329-L345", title: "Note 28 K1, MadGraph kT clustering read at the pin"}
-  - {id: mg-version, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/VERSION", title: "MadGraph VERSION (3.7.1, 2026-04-29)"}
-  - {id: mg-dg, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L433-L545", title: "diagram_generation.py, Amplitude.generate_diagrams"}
-  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/core/diagram_generation.py#L46-L245", title: "diagram_generation.py, DiagramTag"}
-  - {id: mg-iface, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/madgraph/interface/madgraph_interface.py#L4811-L4822", title: "madgraph_interface.py, do_generate and extract_process"}
-  - {id: mg-import, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/models/import_ufo.py#L243", title: "models/import_ufo.py, import_model and UFOMG5Converter"}
-  - {id: mg-aloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/aloha/create_aloha.py#L59-L159", title: "aloha/create_aloha.py, AbstractRoutine and AbstractRoutineBuilder"}
-  - {id: mg-sm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064/models/sm", title: "models/sm, the SM UFO"}
-  - {id: mg-helas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064/HELAS", title: "HELAS/, the hand-written Fortran library"}
-  - {id: mg-multi, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064/input/multiparticles_default.txt", title: "input/multiparticles_default.txt"}
+  - {id: n02-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L303-L510", title: "Note 02, MadGraph5_aMC@NLO survey"}
+  - {id: n06-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L20-L45", title: "Note 06 §1, parser location in mg5amcnlo"}
+  - {id: n06-flow, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/06-process-grammar.md#L334-L392", title: "Note 06 §6, parsed string to diagram generation"}
+  - {id: n28-k1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L329-L345", title: "Note 28 K1, MadGraph kT clustering read at the pin"}
+  - {id: mg-version, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/VERSION", title: "MadGraph VERSION (3.7.1, 2026-04-29)"}
+  - {id: mg-dg, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L433-L545", title: "diagram_generation.py, Amplitude.generate_diagrams"}
+  - {id: mg-tag, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L46-L245", title: "diagram_generation.py, DiagramTag"}
+  - {id: mg-iface, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/interface/madgraph_interface.py#L4811-L4822", title: "madgraph_interface.py, do_generate and extract_process"}
+  - {id: mg-import, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L243", title: "models/import_ufo.py, import_model and UFOMG5Converter"}
+  - {id: mg-aloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/create_aloha.py#L59-L159", title: "aloha/create_aloha.py, AbstractRoutine and AbstractRoutineBuilder"}
+  - {id: mg-sm, resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/sm", title: "models/sm, the SM UFO"}
+  - {id: mg-helas, resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064b9a013317ca164aa1395bc9c0e39ae1e/HELAS", title: "HELAS/, the hand-written Fortran library"}
+  - {id: mg-multi, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/input/multiparticles_default.txt", title: "input/multiparticles_default.txt"}
 ---
 
 MadGraph5_aMC@NLO is the reference generator vibegraph validates against: every
