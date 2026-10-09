@@ -174,7 +174,9 @@ use the `claude` agent type with an explicit model override — never
 - **Own the worktrees.** Harness worktree isolation has repeatedly failed here:
   agents (especially resumed ones) editing the shared main checkout, sessions
   branched from a stale base, and fresh worktrees missing the gitignored MG
-  reference data (whose absence silently triggers a multi-hour MG regeneration).
+  reference data (missing reference data makes the build-diagrams-dependent
+  tasks regenerate it through MadGraph (hours); `pixi run validate` fetches the
+  pinned bundle instead).
   Pre-create each worktree off `main` (`git worktree add -b <branch> <path>
   main`), verify its HEAD equals current `main` right after dispatch, COW-copy
   the reference data in (`cp -Rc`, instant on APFS) — that means
