@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: Policy for MadGraph defects
-description: "A defect that changes a weight on a supported card is reproduced bug-for-bug or refused, never silently fixed; a documented, registered deviation is the user-approved third outcome."
+description: "A MadGraph failure or approximation that changes a weight on a supported card is reproduced or refused, or kept as a registered deviation; never silently fixed."
 status: stable
 tags: [madgraph, defects, parity, policy, decision]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -57,6 +57,27 @@ reproduction is tied to the pinned MadGraph version
 ([oracle pinning](madgraph-oracle-pinning.md)); when the pin moves past a fix,
 the reproduction becomes a deviation from the new reference and is
 re-decided.
+
+## Two kinds of defect
+
+- **A failure.** MadGraph intends something and its code does not achieve it:
+  an operator-precedence slip, a stale index, a truncated constant. The upstream
+  report is a bug report. Reproducing it is the default; a deviation needs the
+  case that reproducing is impractical and refusing would refuse a card users
+  need.
+- **An approximation.** MadGraph deliberately chooses an approximation, and
+  this project has decided it can do better at no significant cost: the
+  dropped interference between pairings of
+  [identical particles across decays](../process/identical-particles-across-decays.md).
+  The better calculation is a registered deviation when it moves a compared
+  result; the upstream ask, if any, is an option or documentation, not a fix.
+  An approximation not yet judged worth improving is matched: the fixed quark
+  masses and Newton stop of MadGraph's αs evolution and the kT tie-break
+  inflation are reproduced today
+  ([madgraph-compat-sites-unconditional](../backlog/feature/madgraph-compat-sites-unconditional.md)).
+
+Either kind, where it is cheap to reproduce, becomes a site of the planned
+`--madgraph-compat` flag.
 
 ## The cases on record
 

@@ -49,6 +49,12 @@ and unfiled; filing is the user's step
 The six MLM-path defects have no draft
 ([mlm-madgraph-defects-undrafted](../backlog/validation/mlm-madgraph-defects-undrafted.md)).
 
+Every entry is a **failure** (MadGraph's code does not do what it intends)
+except those marked as an **approximation** (a deliberate choice this project
+improves on at no significant cost); the
+[defect policy](madgraph-defect-policy.md#two-kinds-of-defect) says how each
+kind is treated.
+
 | defect | where | changes a compared weight? | handling |
 |---|---|---|---|
 | `AQCDUP`/`AQEDUP` with π truncated to 8 digits | `unwgt.f:760-761` | the record field, +1.7e-8 | truncation reproduced before comparing |
@@ -62,7 +68,7 @@ The six MLM-path defects have no draft
 | six MLM-path defects | note 41 §1.5 | at most one, refused | table below |
 | reweight module keeps one hypothesis per card | `reweight_interface.py` | the reweight oracle | one hypothesis per work area |
 | `rambo.py` overflow warning never fires | `rambo.py:218` | no | none needed |
-| identical particles across decays: one pairing, the interference between pairings dropped (an approximation, not a code bug) | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
+| **approximation**: identical particles across decays, one pairing kept and the interference between pairings dropped | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
 
 **`AQCDUP` with a truncated π.** `unwgt.f` writes
 `aaqcd = g*g/4d0/3.1415926d0` (and `aaqed` alike) while `g = √(4π·αs)` used full

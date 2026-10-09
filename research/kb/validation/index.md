@@ -22,7 +22,7 @@
 ## Design Decision
 
 * [Validation budgets matched to reference precision](budget-alignment-rule.md) - Size each sigma gate so our error is about MadGraph's, subject to seed-scatter and convergence floors that always win.
-* [Policy for MadGraph defects](madgraph-defect-policy.md) - A defect that changes a weight on a supported card is reproduced bug-for-bug or refused, never silently fixed; a documented, registered deviation is the user-approved third outcome.
+* [Policy for MadGraph defects](madgraph-defect-policy.md) - A MadGraph failure or approximation that changes a weight on a supported card is reproduced or refused, or kept as a registered deviation; never silently fixed.
 * [References come from pinned MadGraph 3.7.1 with LHAPDF PDF sets](madgraph-oracle-pinning.md) - Reference runs use the pinned submodule (3.7.1), not the packaged 3.5.7, and only LHAPDF sets, since MadGraph's internal nn23lo1 has no oracle here.
 
 ## Measurement
