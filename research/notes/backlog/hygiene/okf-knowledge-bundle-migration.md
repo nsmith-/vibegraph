@@ -14,21 +14,17 @@ sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L566-L571", title: "TODO.md entry T046"}
 ---
 The plan is [note 42](../../42-okf-knowledge-bundle-plan.md), with user
-decisions in §9. Phase B is in progress: this directory holds its first output,
-the backlog split into one file per item. What remains, in the order given in
-[note 42 §8](../../42-okf-knowledge-bundle-plan.md):
+decisions in §9; [note 42 §8](../../42-okf-knowledge-bundle-plan.md) records
+how each phase went. Phases B, 0 and 1 are done, and the user approved the
+taxonomy on 2026-10-09. What remains:
 
-- **Phase B**, remaining steps 3–5: `Sprint Record` stubs and `Design Decision`
-  concepts for the user to stamp `verified`; the `pixi run backlog` generator
-  with its filters, the lint and the docs page (§7.2); then `TODO.md` becomes a stub,
-  and `AGENTS.md`, `.agents/agents/*.md` and the skills are re-pointed.
-- **Phase 0**: frontmatter on the notes in place, `index.md`, `log.md`, the lint.
-- **Phase 1**: chunk, embed and cluster, in the scratchpad only. The checkpoint is
-  the user approving the taxonomy.
-- **Phase 2**: subagents draft the concepts.
+- **Phase 2**: subagents draft the concepts into `research/kb/`.
 - **Phase 3**: adversarial verification and a coverage map.
-- **Phase 4**: move to `research/kb/`, re-cite from the (note, §) → concept map,
-  archive the notes as `Working Note`, update the briefs, and add the `new-sprint` scaffold.
+- **Phase 4**: move the backlog, decisions and archived notes under
+  `research/kb/`, re-cite from the (note, §) → concept map, re-point
+  `scripts/kb.py` and the docs build, update the briefs, and add the
+  `new-sprint` scaffold.
 
-Phase 5 (Attested Computations) is optional and outside this item. After the
-migration, the first sprint trials the per-sprint lifecycle (note 42 §4).
+Phase 5 (Attested Computations) is optional and outside this item. The first
+sprint after the migration is the hygiene sprint, which also trials the
+per-sprint lifecycle (note 42 §4).

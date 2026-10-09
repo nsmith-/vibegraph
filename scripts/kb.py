@@ -351,12 +351,14 @@ def backlog(args):
                ["No sprint is active."]
         out.append("")
         decisions = [c for c in concepts if c["type"] == "Design Decision" and c["status"] != "deprecated"]
+        verified = [c for c in decisions
+                    if any(str(v.get("by", "")).startswith("human:") for v in c["verified"] or [])]
         if decisions:
             out += ["## Standing decisions", ""]
-            for c in decisions:
-                verified = any(str(v.get("by", "")).startswith("human:") for v in c["verified"] or [])
-                mark = "" if verified else " *(awaiting review)*"
-                out.append(f"- [{c['title']}]({link(c, base)}) — {c['description']}{mark}")
+            out += [f"- [{c['title']}]({link(c, base)}) — {c['description']}" for c in verified]
+            if len(decisions) > len(verified):
+                out.append(f"- {len(decisions) - len(verified)} more design decisions are drafted "
+                           "but not yet reviewed by a person.")
             out.append("")
         user = [c for c in selected if c["state"] == "needs-user"]
         if user:
