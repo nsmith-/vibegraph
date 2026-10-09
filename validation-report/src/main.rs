@@ -74,33 +74,33 @@ use crate::cells::RowFile;
 use crate::manifest::{Category, Manifest, Mode, Process, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
-pub struct ResolvedCell {
-    pub category: Category,
-    pub tier: Tier,
-    pub mode: Option<Mode>,
+pub(crate) struct ResolvedCell {
+    pub(crate) category: Category,
+    pub(crate) tier: Tier,
+    pub(crate) mode: Option<Mode>,
     /// The glyph the table shows, and the metric or reason beside it.
-    pub mark: &'static str,
-    pub body: String,
+    pub(crate) mark: &'static str,
+    pub(crate) body: String,
     /// Why this cell is not a plain green measurement, for the note list under
     /// the table.
-    pub note: Option<String>,
+    pub(crate) note: Option<String>,
     /// What the manifest says about a cell that needs no note — the run-card cut
     /// that regulates a divergence, the point of a row. Reported with the
     /// measurements rather than in the table.
-    pub context: Option<String>,
+    pub(crate) context: Option<String>,
     /// Assigned in table order to the cells that carry a note.
-    pub note_ref: Option<usize>,
+    pub(crate) note_ref: Option<usize>,
     /// The measurements behind the cell, worst first.
-    pub detail: Vec<String>,
-    pub sources: Vec<String>,
+    pub(crate) detail: Vec<String>,
+    pub(crate) sources: Vec<String>,
     /// What each of those measurements cost in wall-clock seconds, labelled the
     /// way the cell labels them. Only the ones whose gate timed itself appear.
-    pub durations: Vec<(String, f64)>,
+    pub(crate) durations: Vec<(String, f64)>,
 }
 
-pub struct ResolvedRow<'a> {
-    pub process: &'a Process,
-    pub cells: Vec<ResolvedCell>,
+pub(crate) struct ResolvedRow<'a> {
+    pub(crate) process: &'a Process,
+    pub(crate) cells: Vec<ResolvedCell>,
 }
 
 fn main() {

@@ -28,7 +28,7 @@ use crate::fetch::HttpFetch;
 use crate::network::{self, Consent, Download, NetworkPolicy};
 
 /// Environment override for the asset cache root, otherwise `~/.vibegraph`.
-pub const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
+pub(crate) const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
 
 /// Repo-local PDF data, tried last. Relative to the working directory, so it
 /// only ever resolves inside a dev checkout and is simply absent for a user
@@ -40,7 +40,7 @@ const DEV_PDF_FALLBACK: &str = "validation/pdf";
 const DEV_UFO_FALLBACK: &str = ".";
 
 /// The cache root: `$VIBEGRAPH_HOME` if set, else `~/.vibegraph`.
-pub fn cache_root() -> Option<PathBuf> {
+pub(crate) fn cache_root() -> Option<PathBuf> {
     std::env::var_os(CACHE_ROOT_VAR)
         .map(PathBuf::from)
         .or_else(vibegraph::cache::default_cache_root)
@@ -62,7 +62,7 @@ fn no_home(flag: &str) -> String {
 /// for usable. The cache step is the one that decides on the user's behalf what
 /// a bare set name means, so there the compiled-in pin is authoritative — an
 /// entry pinned to anything else is refetched rather than trusted.
-pub fn resolve_pdf_set_dir(
+pub(crate) fn resolve_pdf_set_dir(
     pdf_set: &str,
     pdf_dir: Option<&Path>,
     policy: NetworkPolicy,
@@ -153,7 +153,7 @@ fn ask_for(pin: &PinnedPdfSet, destination: &Path, policy: NetworkPolicy) -> Con
 /// wrong in two ways at once: it 404s for most models, and for some it succeeds
 /// and hands back FeynRules Mathematica sources instead of a UFO. So a model
 /// that is not on disk is an error naming where to put one, not a download.
-pub fn resolve_ufo_search_path(
+pub(crate) fn resolve_ufo_search_path(
     import: Option<&ModelImport>,
     ufo_dir: Option<&Path>,
 ) -> Result<PathBuf, String> {

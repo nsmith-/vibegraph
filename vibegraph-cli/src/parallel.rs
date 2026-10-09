@@ -30,22 +30,22 @@ use vibegraph::diagrams::EnumerationPool;
 
 /// The `-j/--parallel` flag, shared by every command that integrates.
 #[derive(Args, Debug, Clone, Copy)]
-pub struct ParallelArgs {
+pub(crate) struct ParallelArgs {
     /// Worker threads (default: one per core). Results do not depend on it: any
     /// thread count produces byte-identical output.
     #[arg(long = "parallel", short = 'j', value_name = "N")]
-    pub parallel: Option<usize>,
+    pub(crate) parallel: Option<usize>,
 
     /// Enumerate diagrams on the worker pool too, instead of on one thread. Pays
     /// off only for processes whose enumeration costs seconds; below that the
     /// fan-out is a slowdown. Timing only: the artifact is identical either way.
     #[arg(long = "parallel-diagrams")]
-    pub parallel_diagrams: bool,
+    pub(crate) parallel_diagrams: bool,
 }
 
 impl ParallelArgs {
     /// The pool diagram enumeration runs on.
-    pub fn enumeration(&self) -> EnumerationPool {
+    pub(crate) fn enumeration(&self) -> EnumerationPool {
         if self.parallel_diagrams {
             EnumerationPool::Ambient
         } else {
@@ -58,7 +58,7 @@ impl ParallelArgs {
     /// A number the platform cannot honour is a refusal rather than a silent
     /// fallback to the default: a run asked for a thread count is usually being
     /// timed, and quietly giving it another one would misattribute the result.
-    pub fn install(&self) -> Result<(), String> {
+    pub(crate) fn install(&self) -> Result<(), String> {
         let Some(n) = self.parallel else {
             return Ok(());
         };

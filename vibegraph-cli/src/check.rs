@@ -39,17 +39,17 @@ use crate::integrate::IntegrateError;
 const DEFAULT_TOLERANCE: f64 = 1e-6;
 
 #[derive(Args, Debug)]
-pub struct CheckArgs {
+pub(crate) struct CheckArgs {
     /// Les Houches file to read back.
-    pub events: PathBuf,
+    pub(crate) events: PathBuf,
 
     /// Relative tolerance for momentum conservation and mass shells.
     #[arg(long, default_value_t = DEFAULT_TOLERANCE)]
-    pub tolerance: f64,
+    pub(crate) tolerance: f64,
 
     /// Fail unless the file holds at least this many events.
     #[arg(long)]
-    pub min_events: Option<usize>,
+    pub(crate) min_events: Option<usize>,
 }
 
 fn err(msg: impl Into<String>) -> IntegrateError {
@@ -71,7 +71,7 @@ impl std::fmt::Display for Complaint {
     }
 }
 
-pub fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
     let text = std::fs::read_to_string(&args.events)
         .map_err(|e| err(format!("cannot read {}: {e}", args.events.display())))?;
     let file = LheFile::parse(&text)
