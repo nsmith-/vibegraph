@@ -4,12 +4,12 @@ title: "R-A: hygiene review of the evaluator (helas/eval)"
 description: "Review helas/eval for maintainability, test non-vacuity, visibility and reusable abstractions."
 status: draft
 agent: claude (Opus), read-only
-depends_on: [V1]
+depends_on: [V1b]
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 ---
 Follow the [review protocol](review-protocol.md). Review the sprint branch
-at V1's commit (the dispatch names the commit).
+at V1b's commit (the dispatch names the commit).
 
 **Cluster.** `vibegraph-lib/src/helas/eval/` (about 26k lines) and its in-module tests. For context only: `benches/` and the study features (`bench-internals`, `eval-schedule-study`, `unchecked-study`).
 

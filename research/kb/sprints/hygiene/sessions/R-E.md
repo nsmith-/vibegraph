@@ -4,12 +4,12 @@ title: "R-E: hygiene review of hadronic integration, PDFs and scales"
 description: "Review proton, hadronic, pdf and coupling (couplings, alpha_s, scales, kT clustering) on the four hygiene points."
 status: draft
 agent: claude (Opus), read-only
-depends_on: [V1]
+depends_on: [V1b]
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 ---
 Follow the [review protocol](review-protocol.md). Review the sprint branch
-at V1's commit (the dispatch names the commit).
+at V1b's commit (the dispatch names the commit).
 
 **Cluster.** `vibegraph-lib/src/proton.rs`, `hadronic.rs`, `pdf/`, `coupling/` (about 21k lines) and their in-module tests.
 
