@@ -249,17 +249,9 @@ pub(crate) struct ChannelScan {
     /// above it under a truncating rule, so the ratio of the two is how much
     /// acceptance the truncation bought in this channel.
     pub(crate) w_peak: f64,
-    /// Points drawn.
-    #[allow(dead_code)]
-    pub(crate) draws: usize,
     /// Points with a non-zero weight — a channel whose grid mostly lands outside
     /// the cuts shows up here.
     pub(crate) nonzero: usize,
-    /// The scan's own mean weight: an independent (and much cruder) estimate of
-    /// this channel's `σⱼ`, useful for spotting a channel whose banked term and
-    /// whose grid disagree.
-    #[allow(dead_code)]
-    pub(crate) mean: f64,
 }
 
 /// Running counts of an accept/reject pass.
@@ -373,7 +365,6 @@ fn scan_channel<I: ChannelIntegrand>(
     rng.set_stream(SCAN_STREAM_BASE + j as u64);
     let mut trailing = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
     let mut w_peak = 0.0f64;
-    let mut sum = 0.0f64;
     let mut nonzero = 0usize;
     // A truncating rule reads the whole weight distribution, not just its top, so
     // the non-zero weights are held; the extremum rule needs none of them.
@@ -385,7 +376,6 @@ fn scan_channel<I: ChannelIntegrand>(
         let w = jac * integrand.value_in_channel(j, &u);
         if w > 0.0 {
             nonzero += 1;
-            sum += w;
             w_peak = w_peak.max(w);
             if keep {
                 weights.push(w);
@@ -405,9 +395,7 @@ fn scan_channel<I: ChannelIntegrand>(
             scan: ChannelScan {
                 w_max,
                 w_peak,
-                draws,
                 nonzero,
-                mean: ratio(sum, draws as f64),
             },
         },
         trailing,
@@ -548,7 +536,7 @@ impl Unweighter {
     }
 
     /// Per-channel maxima, in channel order.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn w_max(&self) -> Vec<f64> {
         self.channels.iter().map(|c| c.w_max).collect()
     }
@@ -579,7 +567,7 @@ impl Unweighter {
 
     /// The cross section estimated from every trial, accepted or not — the plain
     /// weighted estimator over the same draws, in the integrand's own units.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn sigma_from_trials(&self) -> f64 {
         self.total_w_max * ratio(self.stats.ratio_sum, self.stats.trials as f64)
     }

@@ -346,12 +346,6 @@ impl FlavorGroup {
         &self.representative
     }
 
-    /// External legs in process order (incoming first), for the representative.
-    #[allow(dead_code)]
-    pub(crate) fn external_legs(&self) -> &[ExternalLeg] {
-        &self.legs
-    }
-
     /// The cut filter every member compiles to.
     pub fn cuts(&self) -> &Cuts {
         &self.cuts
@@ -445,7 +439,7 @@ impl FlavorGroup {
     /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
     /// group unless they happen to agree: a group is a statement about the matrix
     /// element, not about the outgoing multiset.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn symmetry_weighted_luminosity(
         &self,
         pdf: &PdfMember,
@@ -475,23 +469,9 @@ impl FlavorGroup {
     }
 
     /// One member's `[direct, mirror]` luminosity — the share that decides which
-    /// concrete flavour an accepted event of this group is labelled with.
-    #[allow(dead_code)]
-    pub(crate) fn member_luminosity(
-        &self,
-        member: usize,
-        pdf: &PdfMember,
-        x1: f64,
-        x2: f64,
-        mu_f: [f64; 2],
-    ) -> [f64; 2] {
-        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
-        self.member_luminosity_rows(member, &f1, &f2)
-    }
-
-    /// [`member_luminosity`](Self::member_luminosity) off the two beam flavour
-    /// rows directly: two array reads per ordering, at slots resolved when the
-    /// group was built.
+    /// concrete flavour an accepted event of this group is labelled with — off the
+    /// two beam flavour rows: two array reads per ordering, at slots resolved when
+    /// the group was built.
     pub(crate) fn member_luminosity_rows(
         &self,
         member: usize,
@@ -1465,7 +1445,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// density is the same function at the same `αⱼ` sums, so the merge can be
     /// measured and pinned against it.
     #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn new_unmerged_with_maps(
         groups: &'a FlavorGroups,
         amps: &'a [BoundAmplitude<'a, f64>],
@@ -1883,7 +1863,7 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
     /// the process's own cuts.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn spacelike_floor(&self) -> f64 {
         self.cuts.spacelike_floor()
     }

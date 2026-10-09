@@ -606,7 +606,7 @@ impl Cuts {
     }
 
     /// Whether any line of the process is forced on shell.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn has_windows(&self) -> bool {
         !self.windows.is_empty()
     }

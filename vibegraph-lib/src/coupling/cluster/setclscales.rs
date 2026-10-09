@@ -221,13 +221,9 @@ pub struct ClusterScales {
     /// rewrite per beam.
     pub overrides: [bool; 3],
     pub jcode: i64,
-    #[allow(dead_code)]
-    pub(crate) njets: usize,
     pub iqjets: Vec<i64>,
     /// `pt2ijcl` after every rewrite.
     pub pt2: Vec<f64>,
-    #[allow(dead_code)]
-    pub(crate) mt2: Vec<f64>,
     pub lines: Vec<LineState>,
     pub attempts: Vec<Attempt>,
     /// The accepted clustering.
@@ -528,10 +524,8 @@ pub fn setclscales(
         muf_branch,
         overrides,
         jcode: walk.jcode,
-        njets: walk.jets_counted,
         iqjets: walk.iqjets,
         pt2,
-        mt2,
         lines: walk.lines,
         attempts,
         clustering,

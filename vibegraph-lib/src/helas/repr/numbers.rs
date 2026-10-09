@@ -27,7 +27,7 @@ impl SpinorHelicity {
     }
 
     /// Return the opposite helicity (Up ↔ Down).
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn flip(self) -> Self {
         match self {
             SpinorHelicity::Up => SpinorHelicity::Down,

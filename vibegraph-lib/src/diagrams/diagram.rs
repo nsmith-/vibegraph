@@ -209,7 +209,7 @@ pub(crate) struct CanonicalDiagram(Diagram);
 
 impl CanonicalDiagram {
     /// The canonically numbered diagram.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn diagram(&self) -> &Diagram {
         &self.0
     }

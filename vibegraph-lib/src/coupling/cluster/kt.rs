@@ -144,10 +144,6 @@ pub struct Clustering {
     pub graphs_before_claim: Vec<usize>,
     /// `ibwlist`: (leg set, forest line) of each resonance tagged on-shell.
     pub tagged: Vec<(u32, i32)>,
-    /// `pcl(0:4, mask)` of every line the clustering built, in whatever frame it
-    /// left them.
-    #[allow(dead_code)]
-    pub(crate) lines: Vec<[f64; 5]>,
     pub candidates: Vec<Candidate>,
     pub boosts: Vec<Boost>,
 }
@@ -661,7 +657,6 @@ pub(crate) fn cluster(
             graphs: vec![channel.this_config],
             graphs_before_claim: vec![channel.this_config],
             tagged,
-            lines: pcl,
             candidates,
             boosts,
         });
@@ -818,7 +813,6 @@ pub(crate) fn cluster(
                 graphs,
                 graphs_before_claim,
                 tagged,
-                lines: pcl,
                 candidates,
                 boosts,
             });

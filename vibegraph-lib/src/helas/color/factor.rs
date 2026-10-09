@@ -7,6 +7,7 @@
 //! rules, only the first applicable rewrite fires per pass, similar strings
 //! are merged, and the whole factor is iterated to a fixed point.
 
+#[cfg(test)]
 use std::collections::HashMap;
 
 use super::coeff::ColorCoeff;
@@ -34,8 +35,8 @@ pub type ImmutableString = Vec<(TensorKind, Vec<Idx>)>;
 /// index relabelled `1, 2, 3, …` by order of first appearance, then re-sorted.
 /// Two color strings share a canonical form iff they are equal up to a
 /// relabelling of their indices.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[allow(dead_code)]
 pub(crate) struct CanonicalString(pub(crate) Vec<(TensorKind, Vec<Idx>)>);
 
 impl ColorString {
@@ -109,7 +110,7 @@ impl ColorString {
     /// The canonical form together with the index relabelling used to build it
     /// (`old_index -> new_index`). Indices are numbered `1, 2, 3, …` in order
     /// of first appearance across the sorted immutable form.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn to_canonical(&self) -> (CanonicalString, HashMap<Idx, Idx>) {
         let immutable = self.to_immutable();
         let mut repl: HashMap<Idx, Idx> = HashMap::new();
@@ -132,7 +133,7 @@ impl ColorString {
     }
 
     /// The canonical form alone.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn canonical(&self) -> CanonicalString {
         self.to_canonical().0
     }

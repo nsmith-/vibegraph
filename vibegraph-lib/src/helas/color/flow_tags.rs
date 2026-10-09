@@ -215,7 +215,7 @@ impl ColorFlowTags {
     /// legs, and exchanging slots can only move an endpoint between the two slots of
     /// the leg it already sits on. Such a subprocess's table has to come from its own
     /// colour basis.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn conjugated(&self) -> ColorFlowTags {
         ColorFlowTags {
             n_ext: self.n_ext,

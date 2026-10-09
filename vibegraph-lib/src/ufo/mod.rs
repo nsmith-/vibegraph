@@ -171,10 +171,6 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
-    /// Custom propagator forms from `propagators.py`, keyed by Python variable
-    /// name — what [`Particle::propagator`] refers to.
-    #[allow(dead_code)]
-    pub(crate) propagators: IndexMap<String, Propagator>,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -339,7 +335,6 @@ impl ParsedModel {
             topo,
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
-            propagators: self.propagators,
         })
     }
 }
@@ -405,7 +400,7 @@ impl UFOModel {
     }
 
     /// Get a LorentzId by its name
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
         self.lorentz.get_index_of(name).map(LorentzId::from)
     }

@@ -19,6 +19,7 @@
 use std::collections::HashSet;
 
 use crate::diagrams::diagram::{Diagram, Leg, LegIdx, PropIdx, Ray, RaySlot, VtxIdx};
+#[cfg(test)]
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::diagram_eval::{vertex_flow_group, ExtLegInfo, PropInfo, VertexInfo};
 use crate::helas::eval::tree::Tree;
@@ -1006,8 +1007,7 @@ impl DiagramEval {
 
     /// Internal propagator particle ids appearing in this diagram (one per
     /// `Propagate` node). Used to characterize a diagram by its propagator content.
-    #[cfg(test)]
-    #[allow(dead_code)]
+    #[cfg(all(test, feature = "extended-validation"))]
     pub(crate) fn propagator_particles(&self) -> impl Iterator<Item = ParticleId> + '_ {
         self.tree.iter().filter_map(|id| match self.tree.value(id) {
             EvalNode::Propagate { info, .. } => Some(info.id),
@@ -1253,7 +1253,7 @@ pub(super) fn compile_single_diagram(
 /// For each diagram, recursively walks from an arbitrary root vertex to build a
 /// directed evaluation tree. External legs become leaves; internal vertices emit an
 /// off-shell current + propagator pair; the root emits the amplitude contraction.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn compile_diagram_ast(
     set: &DiagramSet,
     model: &UFOModel,

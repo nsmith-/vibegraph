@@ -70,7 +70,7 @@ impl Support {
     }
 
     /// The largest total degree, or `None` for the empty set.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn degree(&self) -> Option<u32> {
         self.terms
             .iter()

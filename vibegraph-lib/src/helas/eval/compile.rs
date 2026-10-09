@@ -463,7 +463,7 @@ impl AmplitudeEvaluator {
     /// A process whose colour basis has one flow reduces to a no-op: every diagram
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn select_color_flow(
         &self,
         amp2: &[f64],
@@ -775,7 +775,7 @@ impl AmplitudeEvaluator {
     /// Helicity-expanded arena node counts `(before, after)` the zero-amplitude
     /// elimination pass, or `(0, 0)` if [`prune_zero_helicities`](Self::prune_zero_helicities)
     /// has not run. A diagnostic for the per-`(helicity, diagram)` skipping headroom.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn zeroamp_node_reduction(&self) -> (usize, usize) {
         (self.zeroamp_nodes_before, self.zeroamp_nodes_after)
     }
@@ -823,8 +823,7 @@ fn report_flow_tags(tags: &ColorFlowTags) {
 /// amplitude and not only colourless ones and `2 -> 2`s. A process added to the
 /// amplitude gate belongs here too; the cost is another full re-rooting sweep to
 /// re-verify.
-#[cfg(any(test, feature = "extended-validation"))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
@@ -1046,8 +1045,7 @@ pub(crate) fn op_census(
 /// Assert that the ops *missing* from `model`'s census over `processes` are
 /// exactly `known_uncovered` — two-way, so an op the list newly covers must be
 /// removed from the allowlist rather than left standing.
-#[cfg(any(test, feature = "extended-validation"))]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn assert_op_coverage(
     label: &str,
     model: &UFOModel,

@@ -313,7 +313,7 @@ pub(crate) fn collins_soper(minus: &LheParticle, plus: &LheParticle) -> f64 {
 
 /// The event's flavour assignment: the PDG code of every leg of a canonical
 /// event, incoming first.
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 pub(crate) fn flavour_key(event: &LheEvent) -> String {
     join(event.particles.iter().map(|p| p.pdg.to_string()))
 }
@@ -324,7 +324,7 @@ pub(crate) fn flavour_key(event: &LheEvent) -> String {
 /// a massive vector, or `9` for a leg whose helicity was summed over. It is
 /// rendered here at one decimal so that the key is exact rather than
 /// format-dependent.
-#[allow(dead_code)]
+#[cfg(feature = "extended-validation")]
 pub(crate) fn helicity_key(event: &LheEvent) -> String {
     join(event.particles.iter().map(|p| format!("{:.1}", p.spin)))
 }
@@ -332,7 +332,7 @@ pub(crate) fn helicity_key(event: &LheEvent) -> String {
 /// The event's colour flow, as the partition of leg slots the colour labels
 /// induce — blind to a relabelling, which carries no information, and to nothing
 /// else.
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 pub(crate) fn colour_key(event: &LheEvent) -> String {
     join(
         event
@@ -342,7 +342,7 @@ pub(crate) fn colour_key(event: &LheEvent) -> String {
     )
 }
 
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 fn join(parts: impl IntoIterator<Item = String>) -> String {
     parts.into_iter().collect::<Vec<_>>().join(" ")
 }

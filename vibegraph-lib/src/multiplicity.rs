@@ -287,7 +287,7 @@ impl<'a> MultiplicitySum<'a> {
     }
 
     /// Each part's share of the per-iteration budget, summing to one.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn budget_shares(&self) -> &[f64] {
         &self.budget_shares
     }

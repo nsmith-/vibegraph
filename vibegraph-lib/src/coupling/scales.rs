@@ -379,13 +379,13 @@ impl ScaleChoice {
     }
 
     /// `ickkw`: whether MLM matching is on.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn ickkw(&self) -> i64 {
         self.ickkw
     }
 
     /// `xqcut`, zero when the clustering cut is off.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn xqcut(&self) -> f64 {
         self.xqcut
     }

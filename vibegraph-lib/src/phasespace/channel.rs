@@ -25,6 +25,7 @@ use crate::helas::repr::Real;
 
 use super::rambo::{flat_weight, rambo};
 use super::rng::SubStream;
+#[cfg(any(test, doc))]
 use super::{lips2_jacobian_u, u_to_costheta};
 
 /// A generated phase-space point: `n` on-shell momenta in the CM frame (total
@@ -608,7 +609,7 @@ impl<F: Real> MultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn sample_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
         let pt = self.draw_in_channel(j, u);
         let weight = self.channel_weight(j, &pt.momenta);
@@ -853,7 +854,7 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn sample_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
         let pt = self.draw_in_channel_at(j, sqrt_s, u);
         let weight = self.channel_weight_at(j, sqrt_s, &pt.momenta);
@@ -958,20 +959,21 @@ impl<F: Real> Channel<F> for RamboChannel<F> {
 /// azimuth integrated out into the weight. The weight is flat in `cosθ`, so the
 /// density is the constant reciprocal of the LIPS Jacobian. Massive endpoints and
 /// resonance-shaped invariants are a separate mapping, not this flat map.
+#[cfg(any(test, doc))]
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub(crate) struct Lips2Channel {
     sqrt_s: f64,
 }
 
+#[cfg(any(test, doc))]
 impl Lips2Channel {
     /// A massless 2-body channel at CM energy `sqrt_s`.
-    #[allow(dead_code)]
     pub(crate) fn new(sqrt_s: f64) -> Self {
         Lips2Channel { sqrt_s }
     }
 }
 
+#[cfg(any(test, doc))]
 impl PhaseSpaceMap<f64> for Lips2Channel {
     fn ndim(&self) -> usize {
         1
@@ -992,6 +994,7 @@ impl PhaseSpaceMap<f64> for Lips2Channel {
     }
 }
 
+#[cfg(any(test, doc))]
 impl Channel<f64> for Lips2Channel {
     fn density(&self, _momenta: &[LorentzVector<f64>]) -> f64 {
         1.0 / lips2_jacobian_u(self.sqrt_s)

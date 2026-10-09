@@ -53,7 +53,7 @@ pub enum StatsError {
 
 /// The effective number of independent entries a weighted sample carries,
 /// `(Σw)²/Σw²` — `n` when the weights are equal, and less otherwise.
-#[allow(dead_code)]
+#[cfg(any(test, doc, feature = "extended-validation"))]
 pub(crate) fn effective_size(weights: impl IntoIterator<Item = f64>) -> f64 {
     let (sum, sum_sq) = weights
         .into_iter()
@@ -66,8 +66,8 @@ pub(crate) fn effective_size(weights: impl IntoIterator<Item = f64>) -> f64 {
 }
 
 /// The outcome of a two-sample Kolmogorov–Smirnov test.
+#[cfg(any(test, feature = "extended-validation"))]
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub(crate) struct KsTest {
     /// The largest absolute gap between the two weighted empirical CDFs.
     pub(crate) d: f64,
@@ -101,7 +101,7 @@ pub(crate) struct KsTest {
 /// Ties are handled by advancing both CDFs past *every* entry sharing a value
 /// before the gap is measured, so a value present in both samples contributes one
 /// comparison rather than two order-dependent ones.
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 pub(crate) fn ks_two_sample(a: &[(f64, f64)], b: &[(f64, f64)]) -> Result<KsTest, StatsError> {
     let mut a = prepare(a)?;
     let mut b = prepare(b)?;
@@ -152,7 +152,7 @@ pub(crate) fn ks_two_sample(a: &[(f64, f64)], b: &[(f64, f64)]) -> Result<KsTest
 /// until a term is negligible against the running sum; for very small `λ` it does
 /// not converge in a bounded number of terms, and the limit `Q(0) = 1` is
 /// returned (Press et al., *Numerical Recipes* 3rd ed., §14.3.3).
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 fn kolmogorov_q(lambda: f64) -> f64 {
     if !(lambda > 0.0) {
         return 1.0;
@@ -173,7 +173,7 @@ fn kolmogorov_q(lambda: f64) -> f64 {
     1.0
 }
 
-#[allow(dead_code)]
+#[cfg(any(test, feature = "extended-validation"))]
 fn prepare(sample: &[(f64, f64)]) -> Result<Vec<(f64, f64)>, StatsError> {
     if sample.is_empty() {
         return Err(StatsError::Empty);

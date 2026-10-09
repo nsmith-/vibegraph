@@ -24,9 +24,9 @@ pub struct MultivectorWf<F: Real> {
 /// Fermion slots carry their flow direction in the type: a column (ket, `u`/`v`)
 /// current is [`WaveformSlot::FermionIn`] and a row (bra, `ū`/`v̄`) current is
 /// [`WaveformSlot::FermionOut`]. An off-shell current produced by a `GammaIout`-style
-/// node is flow-in; a `GammaJout`-style node is flow-out. Consumers request the flow
-/// they need (see [`WaveformSlot::expect_fermion_in`] / [`WaveformSlot::expect_fermion_out`]),
-/// applying the Dirac adjoint only when the topology genuinely needs the opposite flow.
+/// node is flow-in; a `GammaJout`-style node is flow-out. A fermion line carries one
+/// flow throughout, so a consumer always finds the flow it needs: a slot of the other
+/// flow would mean a mis-assigned flow, not a call for a mid-line Dirac adjoint.
 #[derive(Clone, Debug, Copy)]
 pub enum WaveformSlot<F: Real> {
     /// Ket (column) Dirac spinor or off-shell fermion current
@@ -149,38 +149,6 @@ impl<F: Real> WaveformSlot<F> {
             WaveformSlot::Scalar(s) => Some(s.momentum),
             WaveformSlot::Real(_) => None,
             WaveformSlot::Empty => None,
-        }
-    }
-
-    /// Extract a flow-in (column / ket) fermion, applying the Dirac adjoint if
-    /// the slot holds a flow-out current (the topology asked for the opposite flow).
-    #[allow(dead_code)]
-    pub(crate) fn expect_fermion_in(self) -> InDiracWf<F> {
-        match self {
-            WaveformSlot::FermionIn(f) => f,
-            // A fermion line carries one flow throughout. With flow-typed externals
-            // (`build_external_slot`) and flow-preserving currents, the flow a
-            // consumer needs always matches the slot — a flow-out slot here means
-            // the dispatch mis-assigned the flow, so panic instead of silently
-            // applying a (physically wrong) mid-line Dirac adjoint.
-            WaveformSlot::FermionOut(_) => {
-                panic!("expect_fermion_in: slot is flow-OUT (fermion-flow mismatch)")
-            }
-            _ => panic!("expected a fermion waveform slot"),
-        }
-    }
-
-    /// Extract a flow-out (row / bra) fermion, applying the Dirac adjoint if
-    /// the slot holds a flow-in current (the topology asked for the opposite flow).
-    #[allow(dead_code)]
-    pub(crate) fn expect_fermion_out(self) -> OutDiracWf<F> {
-        match self {
-            WaveformSlot::FermionOut(f) => f,
-            // See expect_fermion_in: flow is an enforced invariant, not coerced.
-            WaveformSlot::FermionIn(_) => {
-                panic!("expect_fermion_out: slot is flow-IN (fermion-flow mismatch)")
-            }
-            _ => panic!("expected a fermion waveform slot"),
         }
     }
 }

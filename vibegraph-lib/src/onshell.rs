@@ -303,7 +303,7 @@ impl OnShellVeto {
     }
 
     /// The number of distinct marked lines.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn n_lines(&self) -> usize {
         self.lines.len()
     }

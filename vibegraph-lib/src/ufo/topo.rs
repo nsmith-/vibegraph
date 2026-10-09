@@ -301,7 +301,7 @@ fn term_fermion_flow(term: &LorentzTerm, fermion_legs: &[isize]) -> Option<Fermi
 /// per-diagram gate measures. The function is here as the statement of MadGraph's
 /// convention, checked structure by structure against the model in
 /// `madgraph_fermion_flow_of_smeftsims_four_fermion_structures`.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn permutation_sign(flow: &FermionFlow, fermion_legs: &[usize]) -> i8 {
     if fermion_legs.len() < 4 {
         return 1;

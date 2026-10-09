@@ -251,7 +251,7 @@ impl GridAlphaS {
 
     /// Lowest and highest tabulated scale — the range inside which the reading
     /// interpolates rather than continues.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn q_range(&self) -> (f64, f64) {
         (self.qs[0], self.qs[self.qs.len() - 1])
     }

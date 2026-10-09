@@ -129,7 +129,7 @@ impl SubprocessResonances {
     }
 
     /// Whether any configuration carries a line a decay chain forces.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn has_forced(&self) -> bool {
         self.forced
     }

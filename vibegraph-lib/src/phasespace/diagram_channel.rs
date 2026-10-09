@@ -586,7 +586,7 @@ impl<F: Real> DiagramChannel<F> {
     /// construction as [`from_diagram`](Self::from_diagram) without a diagram, for
     /// exercising a controlled topology. Each entry of `subsystems` is a set of
     /// outgoing-leg slots (`0..masses.len()`) that share an s-channel line.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_topology(sqrt_s: F, masses: Vec<F>, subsystems: &[Vec<usize>]) -> Self {
         let n_out = masses.len();
         assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
@@ -608,7 +608,7 @@ impl<F: Real> DiagramChannel<F> {
     /// [`Resonance`] to each subsystem so its invariant is Breit–Wigner-mapped — the
     /// same tree as [`from_topology`](Self::from_topology) but with resonance-aware
     /// invariant draws, for exercising the pole map on a controlled topology.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_topology_resonant(
         sqrt_s: F,
         masses: Vec<F>,

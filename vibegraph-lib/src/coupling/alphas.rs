@@ -183,7 +183,7 @@ impl RunningAlphaS {
 
     /// `αs(BMASS)` and `αs(CMASS)`, the cached threshold values the low-scale
     /// branches evolve from.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn thresholds(&self) -> (f64, f64) {
         (self.alpha_b, self.alpha_c)
     }

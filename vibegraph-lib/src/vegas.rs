@@ -131,7 +131,7 @@ pub(crate) enum IterationCombination {
     #[default]
     Unweighted,
     /// Lepage's `1/σ²` weighted mean, quoting `1/√(Σ1/σᵢ²)`.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     InverseVariance,
 }
 
@@ -338,18 +338,18 @@ impl VegasGrid {
         self.ndim
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn nbins(&self) -> usize {
         self.nbins
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn alpha(&self) -> f64 {
         self.alpha
     }
 
     /// Bin edges per dimension: `xi()[d]` has length `nbins() + 1`.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn xi(&self) -> &[Vec<f64>] {
         &self.xi
     }
@@ -371,27 +371,21 @@ impl VegasGrid {
     /// An adaptation always contributes at least its last iteration: a
     /// `warmup` at or above `niter` is clamped to `niter - 1`, since an
     /// estimate from no iterations is not an estimate.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn set_warmup(&mut self, warmup: usize) {
         self.warmup = warmup;
     }
 
     /// Builder form of [`set_warmup`](Self::set_warmup).
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
         self.warmup = warmup;
         self
     }
 
-    /// How the surviving iterations are averaged.
-    #[allow(dead_code)]
-    pub(crate) fn combination(&self) -> IterationCombination {
-        self.combination
-    }
-
     /// Set how the surviving iterations are averaged. See
     /// [`IterationCombination`].
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn set_combination(&mut self, combination: IterationCombination) {
         self.combination = combination;
     }
@@ -479,7 +473,7 @@ impl VegasGrid {
     /// see [`substream_id`]) and reduced sequentially in chunk order — so
     /// the result is bit-identical regardless of the rayon thread-pool
     /// size. `f` must be `Sync` since chunks run concurrently.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn adapt_parallel<Fp>(
         &mut self,
         f: Fp,
@@ -531,7 +525,7 @@ impl VegasGrid {
     /// own, positioned from the chunk's first global point index — and `f`
     /// evaluates one point against it.
     #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn adapt_parallel_seeded<S, Init, Fp>(
         &mut self,
         init: Init,
@@ -604,7 +598,7 @@ impl VegasGrid {
 
     /// Deterministic-parallel form of [`VegasGrid::sample_frozen`]. See
     /// [`VegasGrid::adapt_parallel`] for the substream addressing contract.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn sample_frozen_parallel<Fp>(
         &self,
         f: Fp,
@@ -749,7 +743,7 @@ impl VegasGrid {
 
     /// Sequential accumulation of `neval` points for one chunk of the
     /// deterministic-parallel path.
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn accumulate_points(
         &self,
         f: &(impl Fn(&[f64]) -> f64 + Sync),
@@ -779,7 +773,7 @@ impl VegasGrid {
     /// Split `neval` into fixed-size chunks, each on its own `(iter,
     /// chunk_idx)`-keyed `ChaCha8Rng` substream, evaluated in parallel and
     /// reduced sequentially in chunk order.
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn run_iter_parallel<Fp>(
         &self,
         f: &Fp,
@@ -836,7 +830,7 @@ impl VegasGrid {
     /// the pool size: the first reproduces the sequential draw sequence, the second
     /// reproduces its summation order.
     #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn run_iter_seeded<S, Init, Fp>(
         &self,
         init: &Init,
@@ -1201,7 +1195,7 @@ pub(crate) fn combine_iterations(
 /// its own structurally independent stream with no collisions for
 /// realistic iteration/chunk counts. The same addressing scheme extends to
 /// multi-machine sharding: a shard is just a chunk-index range.
-#[allow(dead_code)]
+#[cfg(test)]
 fn substream_id(iter_idx: u32, chunk_idx: u32) -> u64 {
     ((iter_idx as u64) << 32) | chunk_idx as u64
 }
@@ -1225,14 +1219,14 @@ impl Vegas {
     }
 
     /// See [`VegasGrid::set_warmup`].
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
         self.grid.set_warmup(warmup);
         self
     }
 
     /// See [`VegasGrid::set_combination`].
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.grid.set_combination(combination);
         self

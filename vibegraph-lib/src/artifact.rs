@@ -728,7 +728,7 @@ impl IntegrateArtifact {
     }
 
     /// The single trained grid of a run that was not split across channels.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn sole_grid(&self) -> Option<&VegasGrid> {
         match self.channels.as_slice() {
             [only] => Some(&only.grid),

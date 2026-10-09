@@ -170,23 +170,16 @@ pub struct EmitSummary {
     /// The cross section the accept/reject sample itself estimated
     /// ([`EventSource::sigma_pb`]) before any normalisation, and that estimate's
     /// statistical error (see [`sample_estimate_error`]).
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) sample_sigma_pb: f64,
     pub sample_sigma_err_pb: f64,
     /// The `XMAXUP` the file declares.
     pub xmax: f64,
-    /// The sum of the emitted `XWGTUP` values. Under `IDWTUP = -4` this over
-    /// [`written`](Self::written) is the cross section the file declares.
-    #[allow(dead_code)]
-    pub(crate) weight_sum: f64,
     /// The mean generator weight over the events drawn — `1` when nothing went
     /// overweight, and the mean multiplicity a stochastic-rounding pass has to
     /// reproduce.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) mean_source_weight: f64,
-    /// The largest generator weight drawn.
-    #[allow(dead_code)]
-    pub(crate) max_source_weight: f64,
 }
 
 #[derive(Debug)]
@@ -647,10 +640,8 @@ impl UnweightStrategy for Buffer {
 
         let init = init_block(plan, self.weight_strategy(), processes);
         let mut writer = begin(sink, &init, Some(&header), plan)?;
-        let mut weight_sum = 0.0;
         for event in &events {
             let record = finished_record(event, tally[event.part].scale * event.weight, plan);
-            weight_sum += record.weight;
             writer.write_event(&record)?;
         }
         let written = writer.events_written();
@@ -663,9 +654,7 @@ impl UnweightStrategy for Buffer {
             sample_sigma_pb,
             sample_sigma_err_pb,
             xmax,
-            weight_sum,
             mean_source_weight: if n > 0 { total_weight / n as f64 } else { 0.0 },
-            max_source_weight: events.iter().map(|e| e.weight).fold(0.0f64, f64::max),
         })
     }
 }
@@ -802,7 +791,6 @@ impl UnweightStrategy for StochasticRounding {
         let mut drawn = 0usize;
         let mut weight_total = 0.0f64;
         let mut weight_sq = 0.0f64;
-        let mut max_source_weight = 0.0f64;
         progress::unweighting(0, plan.nevents as u64);
         while writer.events_written() < plan.nevents as u64 {
             let Some(event) = source.next_event() else {
@@ -814,7 +802,6 @@ impl UnweightStrategy for StochasticRounding {
             drawn += 1;
             weight_total += event.weight;
             weight_sq += event.weight * event.weight;
-            max_source_weight = max_source_weight.max(event.weight);
             // Every copy of an event is written before the loop re-checks the
             // budget: truncating an event's copies mid-way would bias exactly the
             // overweight tail this strategy exists to represent.
@@ -840,13 +827,11 @@ impl UnweightStrategy for StochasticRounding {
                 0.0
             },
             xmax: 1.0,
-            weight_sum: written as f64,
             mean_source_weight: if drawn > 0 {
                 weight_total / drawn as f64
             } else {
                 0.0
             },
-            max_source_weight,
         })
     }
 }

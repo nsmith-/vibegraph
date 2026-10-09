@@ -19,7 +19,9 @@ use flate2::read::GzDecoder;
 use tar::Archive;
 
 use crate::ufo::identity::digest_bytes;
-use crate::ufo::{UFOModel, UfoError};
+#[cfg(test)]
+use crate::ufo::UFOModel;
+use crate::ufo::UfoError;
 
 use super::AssetKind;
 
@@ -61,16 +63,10 @@ fn io_err(dir: &Path, source: std::io::Error) -> StoreError {
 
 /// The LHAPDF data-server URL for a set's `.tar.gz` — exactly the pattern
 /// `validation/pdf/fetch.sh` already fetches by hand.
-#[allow(dead_code)]
+#[cfg(any(test, doc))]
 pub(crate) fn lhapdf_download_url(set_name: &str) -> String {
     format!("https://lhapdfsets.web.cern.ch/current/{set_name}.tar.gz")
 }
-
-/// The LHAPDF `pdfsets.index` listing all set names the data server carries —
-/// what a caller would fetch (through [`Fetch`]) to validate a set name or
-/// offer suggestions before attempting the set's own download.
-#[allow(dead_code)]
-pub(crate) const LHAPDF_INDEX_URL: &str = "https://lhapdfsets.web.cern.ch/current/pdfsets.index";
 
 // There is no UFO counterpart to `lhapdf_download_url`, and it is not an
 // omission. UFO models are published on the FeynRules wiki, one page per model,
@@ -192,7 +188,7 @@ pub(crate) fn cache_pdf_set(
 /// tarballs differing only in comments, file order, or packaging pin
 /// identically; that is the reason to reuse the model digest here rather
 /// than hash bytes as [`cache_pdf_set`] does.
-#[allow(dead_code)]
+#[cfg(any(test, doc))]
 pub(crate) fn cache_ufo_model(
     cache_root: &Path,
     name: &str,

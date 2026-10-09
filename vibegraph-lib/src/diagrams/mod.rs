@@ -322,28 +322,6 @@ pub fn forbidden_onshell_ids(
     Ok(common.map(|(_, ids)| ids).unwrap_or_default())
 }
 
-/// Enumerate one `1 → n` decay on its own: one [`DiagramSet`] per concrete
-/// assignment of its legs (`w+ > j j` has one per quark pair), every diagram with
-/// the decaying particle as external leg `0` and `n_in = 1`.
-///
-/// This is the enumeration a `1 → n` process line runs, exposed as a unit so a
-/// decay can be enumerated apart from any process it attaches to. The automatic
-/// lowest-`WEIGHTED` search runs over the decay alone, as MadGraph's
-/// `DecayChainAmplitude` generates each decay as a separate amplitude.
-#[allow(dead_code)]
-pub(crate) fn enumerate_decay(
-    decay: &SupportedProcess,
-    model: &UFOModel,
-) -> Result<Vec<DiagramSet>, DiagramError> {
-    if decay.initial.len() != 1 {
-        return Err(DiagramError::NotADecay {
-            process: decay.to_string(),
-            n_in: decay.initial.len(),
-        });
-    }
-    generate_from_process(decay, model)
-}
-
 /// A leg as a subprocess's identity sees it: the particle and, for a
 /// polarized leg, its helicities.
 type KeyLeg = (String, Option<Vec<i32>>);

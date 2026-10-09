@@ -82,8 +82,8 @@ impl SubStream {
     }
 
     /// The index of the next 64-bit draw within this substream.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn position(&self) -> u64 {
         (self.rng.get_word_pos() / WORDS_PER_DRAW) as u64
     }

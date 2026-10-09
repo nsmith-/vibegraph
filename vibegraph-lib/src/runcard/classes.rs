@@ -25,10 +25,10 @@ use FieldClass::{Consumed, IgnoredBenign, IgnoredPhysics};
 /// Where a recognized run-card parameter goes.
 pub(crate) enum FieldClass {
     /// Read by this crate. The string names the consumer.
-    Consumed(#[allow(dead_code)] &'static str),
+    Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(#[allow(dead_code)] &'static str),
+    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///

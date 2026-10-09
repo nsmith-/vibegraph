@@ -118,8 +118,8 @@ pub(crate) fn identical_particle_factor<S: PartialEq>(outgoing: &[S]) -> f64 {
 ///
 /// For massless final-state particles this is `|p_cm| / (8π √s)`, which
 /// simplifies to `1 / (16π)` when `|p_cm| = √s / 2`.
+#[cfg(test)]
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn lips2_dcostheta(sqrt_s: f64) -> f64 {
     let p_cm = sqrt_s / 2.0; // massless: |p_cm| = E_cm/2
     p_cm / (8.0 * PI * sqrt_s)
@@ -129,15 +129,15 @@ pub(crate) fn lips2_dcostheta(sqrt_s: f64) -> f64 {
 /// `cosθ = 2u − 1` (the mapping used by the VEGAS driver).
 ///
 /// `J = dΦ₂/d(cosθ) × d(cosθ)/du = 2 × lips2_dcostheta(sqrt_s)`.
+#[cfg(any(test, doc))]
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn lips2_jacobian_u(sqrt_s: f64) -> f64 {
     2.0 * lips2_dcostheta(sqrt_s)
 }
 
 /// Map a unit-interval sample `u ∈ [0, 1)` to `cosθ ∈ (−1, 1)`.
+#[cfg(any(test, doc))]
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn u_to_costheta(u: f64) -> f64 {
     2.0 * u - 1.0
 }

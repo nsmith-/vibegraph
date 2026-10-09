@@ -25,7 +25,9 @@
 
 use crate::ufo::UFOModel;
 
-use super::diagram::{Diagram, LegIdx, Prop, PropIdx};
+use super::diagram::{Diagram, Prop};
+#[cfg(test)]
+use super::diagram::{LegIdx, PropIdx};
 
 /// Required and forbidden s-channels of one process, as PDG codes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -113,8 +115,8 @@ fn towards_final_state(prop: &Prop, n_in: usize, n_ext: usize) -> bool {
 ///
 /// It generalises [`SChannelFilter`]'s membership test to what the line leads to, and
 /// is what a stitched decay chain is compared against.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) struct Resonance {
     /// PDG code, oriented towards the final state.
     pub(crate) particle: i64,
@@ -124,9 +126,9 @@ pub(crate) struct Resonance {
     pub(crate) decays: Vec<Resonance>,
 }
 
+#[cfg(test)]
 impl Resonance {
     /// The final-state particles the resonance ends in, its decays' included, sorted.
-    #[allow(dead_code)]
     fn content(&self) -> Vec<String> {
         let mut all = self.daughters.clone();
         all.extend(self.decays.iter().flat_map(Resonance::content));
@@ -142,7 +144,7 @@ impl Resonance {
 /// `names` are the external particles' names, incoming first. With identical particles
 /// a diagram may hold the chain in more than one way; the first assignment found is
 /// returned.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn match_resonances(
     diagram: &Diagram,
     model: &UFOModel,
@@ -164,7 +166,7 @@ pub(crate) fn match_resonances(
 /// Place `resonances`, siblings inside the final-state legs `within`, onto propagators
 /// not yet in `chosen`, disjoint from each other; on success `chosen` holds them and
 /// their decays in walk order.
-#[allow(dead_code)]
+#[cfg(test)]
 fn assign(
     resonances: &[Resonance],
     within: &[LegIdx],
@@ -211,7 +213,7 @@ fn assign(
 /// Whether the legs of `legs` outside the lines of the resonance's decays (the first
 /// `decays.len()` top-level entries of `inner`, which lists them in walk order) are its
 /// stated direct daughters.
-#[allow(dead_code)]
+#[cfg(test)]
 fn direct_daughters_match(
     resonance: &Resonance,
     legs: &[LegIdx],

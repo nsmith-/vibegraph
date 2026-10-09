@@ -263,7 +263,7 @@ pub enum StopReason {
 impl StopReason {
     /// Whether the run reached the accuracy it was asked for. `true` for a fixed
     /// budget, which was asked for points rather than accuracy.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn converged(self) -> bool {
         matches!(self, StopReason::Budget | StopReason::TargetMet)
     }
@@ -341,7 +341,7 @@ pub struct ConvergenceReport {
     /// iteration — the floor guardrail as realised rather than as intended. A
     /// cumulative point count cannot see a channel starved after the first
     /// iteration, since the first iteration's α split dominates the sum.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) min_channel_neval: usize,
     /// The smallest number of *accepted* points any channel gathered in any
     /// iteration after the first — the coverage the floor exists to buy, as

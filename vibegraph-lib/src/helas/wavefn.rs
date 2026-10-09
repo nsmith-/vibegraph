@@ -264,25 +264,12 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
         Self { spinor, momentum }
     }
 
-    /// Return the charge (particle vs antiparticle) based on the sign of the energy component of the momentum.
-    ///
-    /// This relies on the HELAS convention that the momentum stored in the wavefunction is `p * nsf.sign()`,
-    /// where `nsf` is the charge sign parameter used when constructing the spinor.
-    #[allow(dead_code)]
-    pub(crate) fn charge(&self) -> Charge {
-        if self.momentum.e().is_sign_positive() {
-            Charge::Particle
-        } else {
-            Charge::Antiparticle
-        }
-    }
-
     /// Flip the adjoint (ket/bra) by taking the Dirac conjugate of the spinor (`u ↔ ū`).
     ///
     /// This is the bra/ket dual of the *same* physical particle, so the stored
     /// (HELAS-signed) momentum is carried through unchanged — matching the
     /// no-flip momentum routing used throughout off-shell-current evaluation.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
         DiracWf {
             spinor: self.spinor.dualize(),
@@ -293,7 +280,7 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
 
 impl<F: Real> InDiracWf<F> {
     /// Convert to a bra wavefunction by taking the Dirac conjugate of the spinor
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn to_outgoing(self) -> OutDiracWf<F> {
         self.flip_adjoint()
     }
@@ -303,12 +290,12 @@ impl<F: Real> OutDiracWf<F> {
     /// Convert to a ket wavefunction by taking the Dirac conjugate of the spinor
     ///
     /// This is the inverse of [`InDiracWf::to_outgoing`].
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn to_incoming(self) -> InDiracWf<F> {
         self.flip_adjoint()
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
         Bispinor::scalar_bilinear(&self.spinor, &other.spinor, chirality)
     }

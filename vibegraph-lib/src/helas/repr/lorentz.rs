@@ -199,8 +199,8 @@ impl<F: Real> LorentzVector<F, Covariant> {}
 impl<F: Real> LorentzVector<F, Contravariant> {
     /// Active Lorentz boost by velocity `beta = [βx, βy, βz]` (|β| < 1):
     /// `E' = γ(E + β⃗·p⃗)`, `p⃗' = p⃗ + β⃗ (γ²/(γ+1) β⃗·p⃗ + γE)`.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn boost(self, beta: [F; 3]) -> Self {
         let b2 = beta[0] * beta[0] + beta[1] * beta[1] + beta[2] * beta[2];
         let gamma = F::one() / (F::one() - b2).sqrt();
@@ -223,8 +223,8 @@ impl<F: Real, V: Variance> LorentzVector<F, V> {
     }
 
     /// Construct from mass and cartesian 3-momentum
+    #[cfg(test)]
     #[inline(always)]
-    #[allow(dead_code)]
     pub(crate) fn from_pxpypzmass(px: F, py: F, pz: F, mass: F) -> Self {
         let p3_squared = px * px + py * py + pz * pz;
         let e = (p3_squared + mass * mass).sqrt();
@@ -1001,8 +1001,8 @@ impl<F: Real> Bispinor<F, Ket> {
 
 impl<F: Real> Bispinor<F, Bra> {
     /// Unbar the spinor to get the ket: `u = γ^0 ψ̄†`.
+    #[cfg(test)]
     #[inline(always)]
-    #[allow(dead_code)]
     pub(crate) fn unbar(self) -> Bispinor<F, Ket> {
         self.dualize()
     }
@@ -1152,16 +1152,16 @@ impl<F: Real> AsymRank2Tensor<F> {
     }
 
     /// Slot holding `T^{μν}` for `μ < ν`.
+    #[cfg(any(test, doc))]
     #[inline(always)]
-    #[allow(dead_code)]
     fn slot(mu: usize, nu: usize) -> usize {
         mu * (5 - mu) / 2 + nu - 1
     }
 
     /// `T^{μν}` for any index pair, with the antisymmetry applied:
     /// `T^{νμ} = −T^{μν}` and `T^{μμ} = 0`.
+    #[cfg(any(test, doc))]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn get(&self, mu: usize, nu: usize) -> C<F> {
         match mu.cmp(&nu) {
             std::cmp::Ordering::Equal => C::zero(),
@@ -1201,8 +1201,8 @@ impl<F: Real> AsymRank2Tensor<F> {
 
     /// Lower (equivalently raise) both indices: `T_{μν} = g_{μα} g_{νβ} T^{αβ}`.
     /// Only the three `(0,i)` slots change sign.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn dualize(&self) -> Self {
         let t = &self.0;
         AsymRank2Tensor([-t[0], -t[1], -t[2], t[3], t[4], t[5]])
@@ -1217,8 +1217,8 @@ impl<F: Real> AsymRank2Tensor<F> {
     /// corresponding Clifford element it acts as `−i` on the left-chiral block and
     /// `+i` on the right-chiral one — the (anti-)self-dual split. Flipping the ε
     /// convention would exchange the two blocks' eigenvalues.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn hodge_dual(&self) -> Self {
         let t = &self.0;
         AsymRank2Tensor([-t[5], t[4], -t[3], t[2], -t[1], t[0]])
@@ -1270,8 +1270,8 @@ fn pauli_block<F: Real>(alpha: C<F>, u: [C<F>; 3]) -> [[C<F>; 2]; 2] {
 }
 
 /// Inverse of [`pauli_block`]: recover `(α, u⃗)` from a 2×2 block.
+#[cfg(test)]
 #[inline(always)]
-#[allow(dead_code)]
 fn unpauli_block<F: Real>(blk: &[[C<F>; 2]; 2]) -> (C<F>, [C<F>; 3]) {
     let half = F::one() / (F::one() + F::one());
     (
@@ -1404,8 +1404,8 @@ impl<F: Real> Multivector<F> {
     }
 
     /// The identity element `1`.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn identity() -> Self {
         Self::from_scalar(C::new(F::one(), F::zero()))
     }
@@ -1419,8 +1419,8 @@ impl<F: Real> Multivector<F> {
     }
 
     /// The pure grade-4 element `c γ^5`.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn from_pseudoscalar(c: C<F>) -> Self {
         let mut m = Self::zero();
         m.0[Self::PSEUDOSCALAR] = c;
@@ -1428,8 +1428,8 @@ impl<F: Real> Multivector<F> {
     }
 
     /// The gamma-slash `v̸ = v^μ γ_μ = v_μ γ^μ`.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn from_gamma(v: &ComplexVector<F, Contravariant>) -> Self {
         let mut m = Self::zero();
         m.0[Self::VECTOR..Self::BIVECTOR].copy_from_slice(v.as_array());
@@ -1437,8 +1437,8 @@ impl<F: Real> Multivector<F> {
     }
 
     /// The axial slash `γ^5 v̸ = v^μ γ^5 γ_μ`.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn from_axial(v: &ComplexVector<F, Contravariant>) -> Self {
         let mut m = Self::zero();
         m.0[Self::AXIAL..Self::PSEUDOSCALAR].copy_from_slice(v.as_array());
@@ -1455,8 +1455,8 @@ impl<F: Real> Multivector<F> {
 
     /// A chiral projector: `P_L = (1 − γ^5)/2`, `P_R = (1 + γ^5)/2`, or the
     /// identity for [`Chirality::Both`].
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn from_projector(chirality: Chirality) -> Self {
         let half = C::new(F::one() / (F::one() + F::one()), F::zero());
         match chirality {
@@ -1480,8 +1480,8 @@ impl<F: Real> Multivector<F> {
 
     /// The two-gamma chain `a̸ b̸ = (a·b) − i σ^{μν} a_μ b_ν`, which lives entirely
     /// in grades 0 and 2.
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub(crate) fn from_gamma_pair(
         a: &ComplexVector<F, Contravariant>,
         b: &ComplexVector<F, Contravariant>,
@@ -1546,7 +1546,7 @@ impl<F: Real> Multivector<F> {
     /// Recover the sixteen graded coefficients from a Weyl-basis matrix — the
     /// inverse of [`to_weyl_matrix`](Self::to_weyl_matrix), and the trace
     /// projection `c_A ∝ Tr[X Γ_A]` written out in blocks.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_weyl_matrix(mat: &[[C<F>; 4]; 4]) -> Self {
         let block = |r: usize, c: usize| {
             [
@@ -1580,7 +1580,7 @@ impl<F: Real> Multivector<F> {
     /// Computed through the faithful 4×4 Weyl-basis representation rather than a
     /// table of 256 structure constants; the products of the basis elements are
     /// pinned against explicitly built gamma matrices in this module's tests.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn clifford_product(&self, rhs: &Self) -> Self {
         let a = self.to_weyl_matrix();
         let b = rhs.to_weyl_matrix();

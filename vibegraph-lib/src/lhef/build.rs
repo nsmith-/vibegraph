@@ -87,7 +87,7 @@ pub struct EventHeader {
 impl EventHeader {
     /// The header of an event evaluated at `scales`, with the couplings those
     /// scales imply.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_scales(
         process_id: i32,
         weight: f64,
@@ -166,7 +166,7 @@ pub struct SubprocessRecord {
     n_in: usize,
     /// The colour rep and direction of every leg *this record* describes — the reps
     /// [`SubprocessRecord::flows`] is checked against.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     legs: Vec<LegColor>,
     /// `(colour, anticolour)` line labels per leg, per flow.
     flows: ColorFlowTags,
@@ -264,13 +264,13 @@ impl SubprocessRecord {
     }
 
     /// The colour rep and direction of every leg, in this record's own order.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn legs(&self) -> &[LegColor] {
         &self.legs
     }
 
     /// This record's per-flow `(colour, anticolour)` tags.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn flows(&self) -> &ColorFlowTags {
         &self.flows
     }

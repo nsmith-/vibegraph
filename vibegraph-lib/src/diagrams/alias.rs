@@ -58,7 +58,7 @@ impl AliasTable {
     }
 
     /// Build from `default_sm()` plus a list of `define` commands (applied in order).
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn from_defines(defines: &[MultiparticleDef]) -> Self {
         let mut table = Self::default_sm();
         for def in defines {

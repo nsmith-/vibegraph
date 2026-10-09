@@ -269,7 +269,7 @@ impl Channels {
     /// The integration channel diagram `d` belongs to, or `None` where the vertex
     /// filter dropped it. Several diagrams share a channel wherever the
     /// configuration mapping merges them.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
         self.derived
             .config_of_diagram
@@ -574,7 +574,7 @@ pub struct RunningCouplingReport {
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
     /// The coupling at that constant renormalisation scale.
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) constant_alpha_s: Option<f64>,
     /// The coupling the amplitudes were bound at.
     pub(crate) alpha_s_ref: Option<f64>,
@@ -747,7 +747,7 @@ impl FixedBeams {
 
     /// Two massless beams sharing `sqrt_s` evenly, the head-on light-cone
     /// configuration.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn massless(sqrt_s: f64) -> Self {
         Self::new([sqrt_s / 2.0, sqrt_s / 2.0], [0.0, 0.0])
     }
@@ -2843,7 +2843,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// The compiled evaluator of one subprocess — the source of the external
     /// particle ids, the helicity combinations and the colour-flow tag table an
     /// event record is written from.
-    #[allow(dead_code)]
+    #[cfg(any(test, doc))]
     pub(crate) fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
         self.subs[subprocess].evaluator()
     }
@@ -2940,7 +2940,7 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Integrate with VEGAS, returning `(σ, Δσ)` in picobarns — or, on a decay,
     /// `(Γ, ΔΓ)` in GeV ([`Observable::per_natural_unit`]).
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
         let result = self.adapt_grids(neval, niter, seed).1;
         let unit = self.observable().per_natural_unit();

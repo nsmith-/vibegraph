@@ -615,7 +615,7 @@ fn check_process_format(text: &str) -> Result<(), ParseError> {
 
 /// Parse a single process string against the default labels, as the argument
 /// of a `generate` line.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn parse_process_string(s: &str) -> Result<ProcessDefinition, ParseError> {
     parse_definition(&split_arg(s).join(" "), &AliasTable::default_sm())
 }
