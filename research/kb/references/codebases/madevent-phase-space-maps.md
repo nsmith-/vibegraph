@@ -67,9 +67,7 @@ A line whose width is exactly zero (a UFO with `WZ = 0`) keeps zero and takes
 the `setgrid` branch, as vibegraph's `log_scale` branch does for `mΓ ≤ 0`. The
 floor matters only for tiny positive widths, which MadEvent maps as a
 Breit–Wigner of width `m × small_width_treatment` while vibegraph maps the
-model's own width. Both are unbiased; only the variance differs. Note 37 states
-that the floor also gives zero-width lines a Breit–Wigner map; the `if` above
-says it does not.
+model's own width. Both are unbiased; only the variance differs.
 
 ## Floors come from the cuts
 
@@ -139,5 +137,5 @@ unweighting device, not a map.
 - A `1/s` pre-warp for a massive line drawn flat: rare here, since a massive
   s-channel line has a width and takes the Breit–Wigner map.
 
-[^n37-survey]: Note 37 §1; the cited lines re-read at `b7687064`.
+[^n37-survey]: Note 37 §1; the cited lines re-read at `b7687064`. Note 37 says the width floor also gives zero-width lines a Breit–Wigner map; `myamp.f:131–135` shows it does not.
 [^maps-rs]: `vibegraph-lib/src/phasespace/maps.rs`, `TauMap` and `MapOptions::resolve`.
