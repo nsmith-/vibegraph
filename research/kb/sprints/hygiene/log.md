@@ -65,3 +65,6 @@
 * **R-D reported**: 17 findings, recorded as `sessions/R-D-report.md`. The
   manager spot-checked R-D.2, R-D.4 and R-D.11. Protocol note for later reviews:
   grep path tails (`/vegas.rs`), not bare names, in the backlog check.
+* **R-B reported**: 25 findings plus one rediscovery (R-B.0), recorded as
+  `sessions/R-B-report.md`. The manager spot-checked R-B.1, R-B.5, R-B.10 and
+  R-B.14.
