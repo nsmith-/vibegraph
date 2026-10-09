@@ -203,9 +203,9 @@ diagram for this process. [^n06-flow]
 [^n06-edges]: Note 06 §9: `$$` before `$`, greedy matches, `=` semantics, case and whitespace.
 [^n38-line]: Note 38 §1.1: modifier order from the back, leg precedence, restriction lists.
 [^n38-commands]: Note 38 §1.4: `generate`, `add process`, duplicates, `set`.
-[^n38-g1]: Note 38 §4 G1 (`34d6d45` grammar, check and resolution; `1f5f924` oracle): the oracle, duplicates and decay assignment measured, and the corrections (only four operators, `]`-only spacing fix-up, `EW`, `/` by |PDG|, `set` after `launch`).
-[^n38-s2]: Note 38 §4 S2 (`c52e4f7`): `WEIGHTED<=n` lifted, the `p`/`j` rewrite and its census.
-[^n38-e1]: Note 38 §4 E1: `@N` → `LPRUP`, `add process` grouped by content.
+[^n38-g1]: Note 38 §4, grammar, AST and the one check: the oracle, duplicates and decay assignment measured, and the corrections (only four operators, `]`-only spacing fix-up, `EW`, `/` by |PDG|, `set` after `launch`).
+[^n38-s2]: Note 38 §4, `>` and `$$` as diagram filters: `WEIGHTED<=n` lifted, the `p`/`j` rewrite and its census.
+[^n38-e1]: Note 38 §4, event records and `add process` completion: `@N` → `LPRUP`, `add process` grouped by content.
 [^mg-extract-process]: `madgraph/interface/madgraph_interface.py` `extract_process`, L4822 (`proc_number_pattern` L4844, `order_pattern` L4883).
 [^mg-orders]: `madgraph/interface/madgraph_interface.py` L4883–L5000: aliases, `^2` handling, `==`/`>` adding squared orders.
 [^mg-do-add]: `madgraph/interface/madgraph_interface.py` `do_add`: decay-chain branch L3282, mixed initial states L3317, duplicates L3375–L3379.

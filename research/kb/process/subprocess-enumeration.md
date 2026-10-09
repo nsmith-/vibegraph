@@ -118,7 +118,7 @@ outside `p p > j j` no gate checks that the concrete subprocess set is MadGraph'
 - A concrete subprocess reached from two process lines is refused
   ([proc-card grammar](proc-card-grammar.md)).
 
-[^n24-p2]: Note 24 P2: one ordering per unordered initial state, the mirror term as an identity, grouping by measured |M|², the `llj` subprocess count (the mirror's refined, outgoing-only form is in the beam-mirror concept).
+[^n24-p2]: Note 24, the proton-events design decisions: one ordering per unordered initial state, the mirror term as an identity, grouping by measured |M|², the `llj` subprocess count (the mirror's refined, outgoing-only form is in the beam-mirror concept).
 [^n28-c1]: Note 28 §C.1–§C.2: the surplus counted against `leshouche.inc`, MadGraph's sample, the predicted and measured σ ratio.
-[^n28-c2]: Note 28 §C2: the key that sorts the final state, the set test at zero tolerance, the negative control.
+[^n28-c2]: Note 28, the enumeration repaired: the key that sorts the final state, the set test at zero tolerance, the negative control.
 [^code-dedup]: `vibegraph-lib/src/diagrams/mod.rs` `generate_sets_inner` and `subprocess_key`.

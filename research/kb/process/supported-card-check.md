@@ -89,9 +89,10 @@ squares the whole amplitude, so it has no way to honour one. The refusal is
 `a_squared_order_constraint_is_a_hard_error` (`vibegraph-lib/tests/diagrams.rs`). The
 message suggests the amplitude-level order (`QED<=n`) instead.
 
-Why a hard error matters: `NP^2==1` was once parsed and **silently dropped**, and the run
-produced 34 channels and σ = 3.6686 pb on the SMEFTsim CLI path, a different process from
-the interference-only one asked for. [^n35-c] Every SMEFTsim row therefore compares the full
+Why a hard error matters: a squared-order constraint that is parsed and **silently
+dropped** gives a confident wrong answer. With `NP^2==1` ignored, the SMEFTsim CLI path
+produces 34 channels and σ = 3.6686 pb, a different process from the interference-only
+one asked for. [^n35-c] Every SMEFTsim row therefore compares the full
 |M|² at `NP<=1` ([coupling orders](../model/coupling-orders.md)). [^n35-decisions]
 
 Supporting them means extracting the complex amplitudes grouped by coupling order and

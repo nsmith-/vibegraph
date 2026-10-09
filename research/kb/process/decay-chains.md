@@ -161,9 +161,9 @@ event record in [resonance records](../events/resonance-records.md). `cut_decays
 consumed. A decay chain's dynamic scale is the core process's.
 
 [^n38-decays]: Note 38 §1.3: MadGraph's decay-chain syntax, `DecayChainAmplitude`, `gForceBW = 1`, the dropped decay.
-[^n38-g1]: Note 38 §4 G1: decay assignment measured with MadGraph's generation.
-[^n38-d2]: Note 38 §4 D2 (`c933976` stitching, `337b5c3` census): stitching, representation, refusals, the three oracles and the mutations.
-[^n38-d3]: Note 38 §4 D3: chains accepted by the check, overall orders, the census extension, the BW window fraction.
+[^n38-g1]: Note 38 §4, grammar, AST and the one check: decay assignment measured with MadGraph's generation.
+[^n38-d2]: Note 38 §4, decay-chain enumeration by stitching: stitching, representation, refusals, the three oracles and the mutations.
+[^n38-d3]: Note 38 §4, decay-chain phase space and σ: chains accepted by the check, overall orders, the census extension, the BW window fraction.
 [^code-chain]: `vibegraph-lib/src/diagrams/chain.rs` module documentation.
 [^mg-decay-chain-process]: `madgraph/interface/madgraph_interface.py` `extract_decay_chain_process`, L5661.
 [^mg-decay-amp]: `madgraph/core/diagram_generation.py` `DecayChainAmplitude`, L1337; the dropped decay at L1405.

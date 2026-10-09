@@ -129,6 +129,6 @@ instead of exact; such a run should skip refinement
 ([backlog](../backlog/performance/vegas-refinement-noises-constant-integrand.md)).
 
 [^n38-decays]: Note 38 §1.3: 1 → n processes as `ninitial = 1`, integrated to a partial width; no mixed initial counts.
-[^n38-d1]: Note 38 §4 D1 (`596c32b`, `49f3ab0`, `11dcd0a`, `fa07c04`): enumeration, integrand, decay run card, event file, gates and findings.
+[^n38-d1]: Note 38 §4, 1→n decay processes: enumeration, integrand, decay run card, event file, gates and findings.
 [^mg-banner-decay]: `madgraph/various/banner.py` L4784 (`remove_all_cut()` for `ninitial == 1`) and L5045 (`sde_strategy`).
 [^mg-setcuts]: `Template/LO/SubProcesses/setcuts.f` L137.

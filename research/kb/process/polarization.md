@@ -164,7 +164,7 @@ projects onto the mass shell first. [^n38-p1]
 Related: [proc-card grammar](proc-card-grammar.md) for how legs are parsed.
 
 [^n01-pol]: Note 01, the polarized-matrix-element paper summary: helicity conventions and the truncated propagator. Its "λ = ±2 (axial)" vector label is not among MadGraph's codes and is not carried here.
-[^n38-p1]: Note 38 §4 P1 (`3b3f71e` feature, `3c023b2` rows): every MadGraph rule above, the refusals, the frame, census, amplitude, σ and sample evidence.
+[^n38-p1]: Note 38 §4, polarized external particles: every MadGraph rule above, the refusals, the frame, census, amplitude, σ and sample evidence.
 [^n38-b1]: Note 38 §8.4: the seeded references for `e+ e- > w+ w-` and `w+{0} w-`; the −0.23% was a single MadEvent run's.
 [^n38-z2]: Note 38 §8.5: twenty seeds close the χ²/dof ≈ 2.4 finding.
 [^mg-pol-codes]: `madgraph/interface/madgraph_interface.py` L5110–L5188.

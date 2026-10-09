@@ -117,7 +117,7 @@ as one graph per colour structure, where vibegraph writes one diagram whose vert
 all three. So `g g > g g` is 4 here against MadGraph's 6 (3 + 1 against 3 + 3), and
 SMEFTsim's `gg_to_gg_cg` is 21 against 27. [^n25-findings] [^n35-ngraphs]
 
-**Decision** (validation-layering close-out): report vibegraph's count in its own
+**Decision** (note 25's findings register): report vibegraph's count in its own
 convention and mark those `diagrams` cells informational (⚠️ in the report). Re-splitting
 the enumeration to match a counting convention would change the thing being validated to
 make a number match, and `g g > g g` is pinned per colour flow at 8.25e-14, far below what

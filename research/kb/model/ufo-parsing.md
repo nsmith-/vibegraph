@@ -137,6 +137,6 @@ a custom propagator **propagates in a selected diagram** (`ConvertError::CustomP
 
 [^n01-ufo]: Note 01, the UFO paper summary: module structure and the vertex data model.
 [^n04-options]: Note 04: what owning the parse buys, options A–C, the recommendation, and FeynGraph's parser gaps (read at FeynGraph `1dc4ea7`).
-[^n35-l1]: Note 35 §4 L1: `propagators.py` parsed and the hard error moved to where a custom propagator is used.
+[^n35-l1]: Note 35 §4, the loader and model-topology surface: `propagators.py` parsed and the hard error moved to where a custom propagator is used.
 [^code-ufo]: `vibegraph-lib/src/ufo/mod.rs`: `REQUIRED_SOURCE_FILES`, `ParsedModel::parse`, `UFOModel::load_with_digest`.
 [^code-topo]: `vibegraph-lib/src/ufo/topo.rs` `build_feyngraph_model`.

@@ -52,12 +52,12 @@ The hash function is a dependency, not an in-tree one. What the digest needs is
 stability across builds and platforms, which rules out `std`'s `DefaultHasher`
 (documented as unstable between releases); `digest_bytes` is pinned by a known answer
 (`digest_bytes_matches_sha256`). This is the `AGENTS.md` rule on standard primitives
-applied: a hand-written in-tree hash was tried first and replaced.
+applied.
 
 **Determinism is a standing constraint on `ParsedModel`.** Serializing must be
 reproducible, so nothing reachable from `ParsedModel` may be a `HashMap` or `HashSet`:
-their iteration order varies per instance and per process, and a digest over them made
-`generate` refuse `integrate`'s artifacts at random. Name-keyed collections are
+their iteration order varies per instance and per process, and a digest over them would
+make `generate` refuse `integrate`'s artifacts at random. Name-keyed collections are
 `IndexMap`s (their order is semantic: `ParticleId`/`CouplingId` index by it); everything
 else is a `BTreeMap`/`BTreeSet`. `the_digest_survives_a_serialization_round_trip` guards
 this, and `cli_generate` covers the cross-process case, banking a digest in one process

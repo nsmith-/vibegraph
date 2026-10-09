@@ -43,18 +43,16 @@ pruned the vertices and diagrams; reviving a zeroed parameter would evaluate cou
 the pruned vertex set no longer matches. Non-zero values stay overridable, which is
 what makes the generated card an editable card. [^n35-c]
 
-The failure this rule prevents is silent. Baking in only the zeros leaves every other
+The failure this rule prevents is silent. Baking in only the zeros would leave every other
 coefficient at `parameters.py`'s default, which for SMEFTsim is zero, so a card-less
-run of a `restrict_massless` SMEFTsim model evaluated as its **Standard-Model limit**:
-`e+ e- > mu+ mu- a NP<=1` gave amplitudes equal to the pure-SM ones, not zero and not
-SMEFT. No Standard-Model process could expose it; the falsifier is
+run of a `restrict_massless` SMEFTsim model would evaluate as its **Standard-Model
+limit**: `e+ e- > mu+ mu- a NP<=1` gives the pure-SM amplitudes, neither zero nor SMEFT. No Standard-Model process could expose it; the falsifier is
 `restricted_defaults_are_madgraphs_generated_param_card` (`vibegraph-lib/tests/smeftsim.rs`),
 which compares 421 external parameters over 13 gated rows against MadGraph's own
 generated cards at ≤ 1e-12 and fails when the fix is reverted. [^n35-close]
 
 A consequence for the SM: card-less defaults take `restrict_default.dat`'s values
-(`Gf` 1.16639e-5, `WZ` 2.441404, `WT` 1.4915, `WW` 2.0476), which moved them toward
-MadGraph's. [^n35-c]
+(`Gf` 1.16639e-5, `WZ` 2.441404, `WT` 1.4915, `WW` 2.0476), as MadGraph's do. [^n35-c]
 
 **Known divergence.** MadGraph's `RestrictModel.fix_parameter_values` takes both
 zero-valued and one-valued parameters [^mg-fix-params]: a parameter a restrict card sets
@@ -108,8 +106,8 @@ restriction: `e+ e- > t t~ NP<=1` at 500 GeV reads 2.2230 pb under `-massless`
 [^n35-c] The gated SMEFTsim rows are listed in
 [non-SM rows](../validation/non-sm-rows.md).
 
-[^n35-l1]: Note 35 §4 L1 (landed `00858a8`): MadGraph's order of operations, colour strings left unpruned.
-[^n35-c]: Note 35 §4 C (landed `412bc68`): the card-less SM-limit defect, its fix, the falsifier, the SM default shift, the unit-value divergence.
+[^n35-l1]: Note 35 §4, the loader and model-topology surface: MadGraph's order of operations, colour strings left unpruned.
+[^n35-c]: Note 35 §4, the SMEFT cross-section section: the card-less SM-limit defect, its fix, the falsifier, the SM default shift, the unit-value divergence.
 [^n35-close]: Note 35 §10.1: the restricted-defaults rule as a pinned convention and the bug only a non-SM row could show.
 [^mg-remove-interactions]: `models/import_ufo.py` `RestrictModel.remove_interactions`, L2876.
 [^mg-fix-params]: `models/import_ufo.py` `RestrictModel.fix_parameter_values(zero_parameters, one_parameters, …)`, L2980.

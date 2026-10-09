@@ -148,7 +148,7 @@ propagates is refused (`ConvertError::CustomPropagator`); see
 [^n02-ufo]: Note 02, cross-cutting notes on FeynGraph's UFO parser (read at FeynGraph `1dc4ea7`).
 [^n35-probe]: Note 35 §1.3, the measured loader probe and the diagnosis of the zero SM-limit diagrams.
 [^n35-conv]: Note 35 §1.4, the `expansion_order` hypothesis and its falsification.
-[^n35-l1]: Note 35 §4 L1, the landed loader: split counts, the sorted-key difference, SM-limit diagram counts.
+[^n35-l1]: Note 35 §4, the loader and model-topology surface: split counts, the sorted-key difference, SM-limit diagram counts.
 [^mg-add-interaction]: `models/import_ufo.py` `add_interaction`, `order_to_int` at L1816.
 [^mg-expansion-import]: `models/import_ufo.py` L662–L677.
 [^mg-check-expansion]: `madgraph/core/base_objects.py` `check_expansion_orders`, L3757; the window at L3766.

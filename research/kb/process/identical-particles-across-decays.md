@@ -80,6 +80,6 @@ unexplained; see the
 [backlog item](../backlog/validation/madevent-dummy-cuts-window-leakage.md)).
 
 [^n38-decisions]: Note 38 §5, 2026-09-26 (user): the decision and the MadGraph-only study (scripts kept outside the repository).
-[^n38-d2]: Note 38 §4 D2: MadGraph does not permute between decays; the census comparison.
-[^n38-d3]: Note 38 §4 D3: the window union over pairings and the informational σ row.
+[^n38-d2]: Note 38 §4, decay-chain enumeration by stitching: MadGraph does not permute between decays; the census comparison.
+[^n38-d3]: Note 38 §4, decay-chain phase space and σ: the window union over pairings and the informational σ row.
 [^mg-identical-factor]: `madgraph/core/helas_objects.py` `identical_decay_chain_factor`, L4581.

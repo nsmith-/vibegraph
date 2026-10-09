@@ -60,10 +60,10 @@ Pins: unit tests on `-a**2`, `(-a)**2`, `a**-b`, `-a**-b`, `2**3**2` and on thre
 expressions against Python's own arithmetic; and `coupling_oracle`
 (`vibegraph-lib/tests/coupling_oracle.rs`), which compares every coupling of every banked
 row with MadGraph's Python `model_reader` (`PYTHON_REL_TOL` 1e-13) and fails if a listed
-crate defect disappears (`KNOWN_CRATE_DEFECTS`, now empty). That oracle is what found the
-precedence rule wrong: binding unary minus tighter than `**` read `-ee**2/(2.*cw)` as
-`(-ee)**2/…`, flipping SM `GC_7`, `GC_54` and SMEFTsim's `dWT`, none of them reachable by
-a banked row. [^n36-b5] See [coupling oracle](../validation/coupling-oracle.md).
+crate defect disappears (`KNOWN_CRATE_DEFECTS`, now empty). It is the check that
+sees a precedence error: binding unary minus tighter than `**` reads `-ee**2/(2.*cw)` as
+`(-ee)**2/…`, which flips SM `GC_7`, `GC_54` and SMEFTsim's `dWT`, none of them reachable
+by a banked row, so no amplitude gate would. [^n36-b5] See [coupling oracle](../validation/coupling-oracle.md).
 
 **Powers.** `pow` keeps a negative real base off the complex branch: an integral
 exponent uses real `powf` (so `(-x)**2` has no spurious imaginary part), and a
@@ -164,8 +164,8 @@ propagator form (`FFV2P1D_1`). That defect and its consequences are in
 
 [^n16-vocab]: Note 16 §1d: the SM colour vocabulary, the `T` index convention and `treat_color`'s `Identity` rules.
 [^n16-parser]: Note 16 §2.3: the colour-string grammar, signed indices, unknown atoms as hard errors, exactness.
-[^n35-l1]: Note 35 §4 L1 (landed `00858a8`): `Gamma5`, `**` expansion with `n > 2` rejected on indexed objects, colour strings unpruned.
-[^n36-b5]: Note 36 B5 (landed `a8a19e0`): the coupling oracle and the precedence defect's reach.
-[^n36-b7]: Note 36 B7 (landed `f3425e2`): Python's grammar adopted, the `−0.0` branch fix, the unadopted `powf` change, blob regeneration.
+[^n35-l1]: Note 35 §4, the loader and model-topology surface: `Gamma5`, `**` expansion with `n > 2` rejected on indexed objects, colour strings unpruned.
+[^n36-b5]: Note 36 §4, the coupling-level oracle: the coupling oracle and the precedence defect's reach.
+[^n36-b7]: Note 36 §4, UFO expression precedence: Python's grammar adopted, the `−0.0` branch fix, the unadopted `powf` change, blob regeneration.
 [^mg-treat-color]: `models/import_ufo.py` `treat_color`, L1946.
 [^python-grammar]: Python's `power` and `factor` grammar.

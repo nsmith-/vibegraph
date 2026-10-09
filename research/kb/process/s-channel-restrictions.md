@@ -134,8 +134,9 @@ Flavour-group members must share the representative's marking (checked).
 Scope of `$` here:
 
 - **On a decay chain**, the veto marks **core** lines only (not forced lines, not lines
-  inside a decay), as MadGraph marks the core amplitude before attaching decays. Before
-  that rule, `e+ e- > mu+ mu- z $ z, z > e+ e-` zeroed its own forced Z and read σ = 0.
+  inside a decay), as MadGraph marks the core amplitude before attaching decays. Marking the
+  forced lines too would zero the chain's own resonance: `e+ e- > mu+ mu- z $ z, z > e+ e-`
+  would read σ = 0.
   [^n38-e1]
 - **`$` inside a decay** is refused (`Unsupported::DecayOnShellVeto`,
   [backlog](../backlog/feature/onshell-veto-on-decay-refused.md)). `z > e+ e- $ a` would be
@@ -199,11 +200,11 @@ integrand is in [multichannel](../phase-space/multichannel.md); forced decay-cha
 are in [decay chains](decay-chains.md); the enumeration the filters act on is in
 [diagram enumeration](diagram-enumeration.md).
 
-[^n38-sem]: Note 38 §1.2 (as corrected by S3): MadGraph's three restrictions, the `P1D` theta, `cut_bw`, the complement identity.
+[^n38-sem]: Note 38 §1.2, with its in-note correction: MadGraph's three restrictions, the `P1D` theta, `cut_bw`, the complement identity.
 [^n38-pred]: Note 38 §3.4: the s-channel predicate on `Prop.momentum`, filters inside the WEIGHTED search.
-[^n38-s2]: Note 38 §4 S2 (`c52e4f7`): orientation rule, census, σ rows, gauge-invariance warning, one-initial behaviour.
-[^n38-s3]: Note 38 §4 S3 (`fdd0f34`, `c46d268`, `7a1eb52`): |M'|², pointwise pins, σ rows, the `FFV2P1D_1` defect, the complement measurement.
-[^n38-e1]: Note 38 §4 E1: `$` on a chain's core, `$` on a decay refused.
+[^n38-s2]: Note 38 §4, `>` and `$$` as diagram filters: orientation rule, census, σ rows, gauge-invariance warning, one-initial behaviour.
+[^n38-s3]: Note 38 §4, `$` as the pointwise integrand: |M'|², pointwise pins, σ rows, the `FFV2P1D_1` defect, the complement measurement.
+[^n38-e1]: Note 38 §4, event records and `add process` completion: `$` on a chain's core, `$` on a decay refused.
 [^mg-schannel-id]: `madgraph/core/base_objects.py` `get_s_channel_id`, L2435.
 [^mg-filters]: `madgraph/core/diagram_generation.py` L715 (required), L742 and L754 (forbidden), L781 (on-shell forbidden).
 [^mg-p1d]: `madgraph/iolibs/helas_call_writers.py` L1184.

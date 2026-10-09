@@ -32,7 +32,7 @@ copy date, reference) is recorded in `validation/ufo/README.md` [^ufo-readme];
 
 The decision (user, 2026-09-05) replaced a depth-1 submodule: the submodule checked out
 about 101 MB of FeynRules sources and notebooks for a UFO under a megabyte, and CI's
-`banked` job checks submodules out on every run. No session needs a submodule step for
+`banked` job checks submodules out on every run. No workflow needs a submodule step for
 it. [^n35-decisions]
 
 - **Drift is detectable.** `vendored_copy_matches_its_manifest`
@@ -148,8 +148,8 @@ The rows gated on this model, and their tolerances, are in
 
 [^n35-census]: Note 35 §1.2–§1.3: the static census and the measured loader probe (2026-09-05).
 [^n35-conv]: Note 35 §1.4: `restrict_massless` values and the `expansion_order` rule.
-[^n35-f1]: Note 35 §3 F1 (landed `c64a939`): pairing census 15/6, 80 of 1985 interactions mix pairings.
-[^n35-decisions]: Note 35 §7 D1 (vendor, not a submodule) and D4 (squared orders kept out of the sprint).
+[^n35-f1]: Note 35 §3, four-fermion vertices: pairing census 15/6, 80 of 1985 interactions mix pairings.
+[^n35-decisions]: Note 35 §7, decisions of 2026-09-05: vendor rather than submodule; SMEFT rows compare the full |M|² at `NP<=1`.
 [^ufo-readme]: `validation/ufo/README.md`.
 [^smeftsim-upstream]: The upstream directory at the vendored commit.
 [^brivio]: The SMEFTsim 3.0 reference cited in the provenance README.

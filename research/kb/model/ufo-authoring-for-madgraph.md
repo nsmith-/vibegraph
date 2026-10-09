@@ -16,8 +16,8 @@ A hand-written UFO is the cheapest way to put one Lorentz or colour structure in
 vertex with a coupling of our choosing (the case for it is in
 [toy UFO models](../validation/toy-ufo-models.md)). The model is only useful as an oracle
 if MadGraph reads it as intended, and MadGraph's importer has conventions a model
-written for vibegraph alone would not need. Three of them cost a session each to find
-when `vibegraph_toy_UFO` and `vibegraph_toy_color_UFO` were written. [^n35-t1]
+written for vibegraph alone would not need. Three of them are easy to miss, and
+`vibegraph_toy_UFO` and `vibegraph_toy_color_UFO` work around each. [^n35-t1]
 
 ## 1. List the hermitian conjugate of every non-self-conjugate vertex
 
@@ -90,7 +90,7 @@ How the epsilon and sextet atoms then flow through crossing and the colour basis
 which of them stay refused, is in
 [colour crossing, epsilon and sextets](../amplitudes/colour-crossing-epsilon-and-sextets.md).
 
-[^n35-t1]: Note 35 §6 T1 (landed `a9d0f35`): the two MadGraph conventions recorded for model authors, and the `QCD` declaration requirement.
+[^n35-t1]: Note 35 §6, authoring the toy UFO and banking its oracle: the two MadGraph conventions recorded for model authors, and the `QCD` declaration requirement.
 [^mg-color-rep]: `models/import_ufo.py` `find_color_anti_color_rep`, L1651.
 [^ufo-readme]: `validation/ufo/README.md`, the `vibegraph_toy_UFO` section.
 [^toy-color-vertices]: `validation/ufo/vibegraph_toy_color_UFO/vertices.py` module documentation: the h.c. listing and the explicit `T(2,1)` deltas.
