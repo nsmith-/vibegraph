@@ -62,3 +62,6 @@
   test-only APIs) went to the clusters that hold them.
 * **R-E reported**: 15 findings, recorded as `sessions/R-E-report.md`. The
   manager spot-checked R-E.1, R-E.8 and R-E.11. Triage waits for all eight.
+* **R-D reported**: 17 findings, recorded as `sessions/R-D-report.md`. The
+  manager spot-checked R-D.2, R-D.4 and R-D.11. Protocol note for later reviews:
+  grep path tails (`/vegas.rs`), not bare names, in the backlog check.
