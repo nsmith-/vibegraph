@@ -6,9 +6,12 @@
 #                           from doc-include/ so LaTeX in doc comments renders
 #
 # and refresh docs/src/cli/reference.md from the built binary first, so the
-# published CLI reference is always the binary's own help text. `docs.yml` runs
-# exactly this script; locally, `pixi run docs` does too. Requires `mdbook`,
-# `mdbook-katex` and `mdbook-mermaid` on PATH, which
+# published CLI reference is always the binary's own help text. The backlog
+# page, docs/src/backlog.md, is rendered from the knowledge bundle's
+# backlog items (`pixi run backlog`) and is gitignored: committed, it would change with
+# every item and conflict between branches. `docs.yml` runs
+# exactly this script; locally, `pixi run docs` does too. Requires `pixi` on
+# PATH, and `mdbook`, `mdbook-katex` and `mdbook-mermaid`, which
 # `scripts/install-mdbook-tools.sh` provides at the pinned versions.
 set -euo pipefail
 
@@ -19,9 +22,15 @@ cd "$repo"
 for tool in mdbook mdbook-katex mdbook-mermaid; do
   command -v "$tool" >/dev/null || { echo "$tool not found on PATH (run scripts/install-mdbook-tools.sh)" >&2; exit 1; }
 done
+command -v pixi >/dev/null || { echo "pixi not found on PATH (it renders the backlog page)" >&2; exit 1; }
 
 cargo build -q -p vibegraph
 scripts/gen-cli-docs.sh target/debug/vibegraph
+claims=()
+[[ -n "${GITHUB_TOKEN:-}" ]] && claims=(--claims)
+pixi run backlog ${claims[@]+"${claims[@]}"} \
+  --link-base "https://github.com/nsmith-/vibegraph/blob/main/research/kb/" \
+  -o docs/src/backlog.md
 
 RUSTDOCFLAGS="--html-in-header $repo/doc-include/mathjax-header.html" \
   cargo doc -q --no-deps -p vibegraph-lib

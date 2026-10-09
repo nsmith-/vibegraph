@@ -56,6 +56,22 @@ jobs:
 
       - run: cargo fmt --all --check
 
+  # The research notes are an OKF knowledge bundle: every concept parses with a
+  # non-empty `type`, every backlog item carries the keys the backlog view reads,
+  # and the generated index files are current. Compiles nothing.
+  kb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          pixi-version: v0.63.2
+          environments: kb
+          cache: true
+
+      - run: pixi run kb-lint
+
   test:
     runs-on: ubuntu-latest
     steps:

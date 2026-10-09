@@ -33,3 +33,6 @@ profile.json.gz
 # mg5_aMC drops a scratch py.py into whatever directory it is invoked from
 /py.py
 .DS_Store
+
+# Rendered by `pixi run backlog` in scripts/build-docs.sh; never committed.
+docs/src/backlog.md

@@ -1,7 +1,7 @@
 # Bibliography
 
 Every paper cited in the guided tour, grouped by the stage it informs. The
-project's research notes under `research/notes/` summarise most of these in
+knowledge bundle under `research/kb/` summarises most of these in
 more detail, and `research/refs/fetch-papers.sh` fetches the arXiv ones.
 
 ## The pipeline as a whole

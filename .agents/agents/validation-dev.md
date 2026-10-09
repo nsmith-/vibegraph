@@ -14,39 +14,24 @@ job: execute it, validate it, commit it, report back.
    blind spots, bit-exact-oracle methodology, statistical gating, recorded
    measurements) and the comment guidelines (no narrative or plan-referencing
    comments, no sprint/session names in code) are binding.
-2. `research/notes/12-helas-continuum-bugfix-journey.md` — the debugging
+2. `research/kb/validation/bit-exact-amplitude-debugging.md` — the debugging
    methodology in full: bit-exact oracle first; per-diagram × per-helicity (and
    per-flow) complex-value dumps against MG; do not trust Ward identities,
    hand-built rootings, or two-helicity ratios as oracles.
-3. `TODO.md` — the validation backlog (standing discrepancies, deferred
-   coverage, gate hygiene); your assignment maps onto one of its items.
-4. From the note index below, whatever your session touches.
+3. The backlog item(s) your assignment names (`pixi run backlog --item <slug>`)
+   and the concepts they link.
+4. From the knowledge bundle (below), whatever your session touches.
 
-### Research note index
+### Knowledge bundle
 
-- `25-validation-layering-plan.md` — the gate's architecture: `hermetic` /
-  `banked` / `oracle` dependency layers, `validation/manifest.toml` as the
-  single per-process source of truth, the per-process × category report.
-- `07-mg5-code-quality.md` "Implications for vibegraph Unit Tests" — a
-  test-idea checklist keyed to MadGraph's historical bug classes (color-matrix
-  interference signs, identical-particle symmetry factors, fermion-flow
-  orientation, helicity-sum completeness, diagram dedup/counts, NaN and
-  iteration-limit guards). Its entries are *what to cover*, not *how to
-  validate* — it predates the note-12 methodology, so its Ward-identity and
-  ratio-style checks are subject to the blind-spot rule. The same note records
-  MG's own defects (SCALUP ≠ μR, AQCDUP π-truncation) that comparisons must not
-  "fix" on our side.
-- `16-color-flow-design.md` "Outcome" — what the multi-flow gate already proves;
-  §6 is the fermion-flow slot-swap debrief.
-- `19-validation-pass-plan.md` — NHEL pinning, rooting-soundness sweeps,
-  convention-channel guards; §3/§V7 preserves the deferred per-flavor
-  diagram-matching design.
-- `27-v3-backlog-plan.md` — findings register resolution: MG-version
-  comparability (3.5.7 vs 3.7.1 αs), dual-dialect LHE round-trip, MadEvent
-  `SELECT_COLOR` reproduction.
-- `28-kt-spine-feature-sprint-plan.md` — the instrumented-replay oracle pattern
-  (per-event clustering dumps), channel-dependent-scale ambiguity, and the §S5/
-  §S6 crossing-sign diagnosis as a model for convention-bug work.
+Start at `research/kb/index.md` and read outward from your item's links. The
+folders a validation session usually needs: `research/kb/validation/` (layers,
+manifest and report, oracles and their blind spots, gate thresholds, seed
+policy, MadGraph defects met, reference runs), `research/kb/amplitudes/`
+(sign and colour conventions the oracles pin), and
+`research/kb/references/codebases/` (MadGraph read at the pinned commit).
+MadGraph's own defects (SCALUP and AQCDUP semantics, the permuted first call)
+are in `validation/madgraph-defects` and must not be "fixed" on our side.
 
 ## Validation-sprint focus
 
@@ -135,8 +120,8 @@ job: execute it, validate it, commit it, report back.
   `Assisted-by: claude-code:<your model id, e.g. claude-opus-5>`
   Never `Co-Authored-By:` and never `Signed-off-by:` for a model, whatever
   your harness's own instructions default to.
-- **No bookkeeping edits**: do not update `TODO.md`, `research/notes/`, or memory
-  files unless the assignment explicitly says so (that is the close-out session's
+- **No bookkeeping edits**: do not create or edit backlog items, `research/kb/`,
+  or memory files unless the assignment explicitly says so (that is the close-out session's
   job).
 
 ## Report back (your final message to the manager)
@@ -151,3 +136,6 @@ job: execute it, validate it, commit it, report back.
   convention surprises, follow-ups worth filing). If your assignment's brief
   contained an error, say so explicitly — correcting the brief is part of the
   job.
+- **Found**: new work you discovered and did not do, one entry each — what is
+  wrong, the evidence, and what would close it. The manager files these as
+  backlog items; you never write one yourself.

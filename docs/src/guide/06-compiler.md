@@ -354,5 +354,5 @@ and its single-helicity and per-flow siblings;
 [`ScaleAwareAmplitude`](../api/vibegraph/helas/eval/struct.ScaleAwareAmplitude.html)
 is the per-event $\alpha_s$ path; [`Op`](../api/vibegraph/helas/eval/enum.Op.html)
 and [`Ast`](../api/vibegraph/helas/eval/struct.Ast.html) are the IR. The
-research notes numbered 10, 13, 15, 17 and 20 under `research/notes/` are
+concepts under `research/kb/amplitudes/` and `research/kb/performance/` are
 the design and measurement record.
