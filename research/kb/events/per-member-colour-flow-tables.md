@@ -1,7 +1,7 @@
 ---
 type: Design
 title: Each flavour-group member writes its own colour-flow table
-description: "Members of a flavour group can carry conjugate or crossed colour reps, so each carries its own ColorFlowTags, reordered into the representative's flow indexing by a fingerprint-matched permutation; ambiguity and misfitting tables are refused."
+description: "Flavour-group members can carry conjugate or crossed colour reps, so each writes its own ColorFlowTags under a fingerprint-matched flow permutation; ambiguity is refused."
 status: draft
 tags: [events, colour, icolup, flavour-groups, proton]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

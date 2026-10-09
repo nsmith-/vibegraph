@@ -1,7 +1,7 @@
 ---
 type: Physics Convention
 title: MadGraph cut conventions (cuts.f) and what vibegraph implements
-description: "Cut families and letter-class membership, rapidity not pseudorapidity, ΔR and mass thresholds as signed squares, lab-frame evaluation, decay-chain windows, and parse-and-detect refusal of every unimplemented cut."
+description: "Cut families and class membership, rapidity not pseudorapidity, ΔR and mass thresholds as signed squares, lab-frame evaluation, and parse-and-detect refusal of unimplemented cuts."
 status: draft
 tags: [run-card, cuts, conventions, madgraph-parity, kinematics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "validation/manifest.toml: the per-process source of truth"
-description: "One committed file names every reference process, its script, class and per-category tier and mode with rationale; generators, gates and the collator read it, and committed references must match its rows."
+description: "One committed file names every reference process, its script and per-category tier and mode with rationale; generators, gates and the collator read it and must match its rows."
 status: draft
 tags: [validation, manifest, layers, report, reference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

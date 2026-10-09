@@ -174,7 +174,7 @@ table; the hadronic integrand itself is described in
   direct `xᵢ = x_min^(1−uᵢ)` map an `m_ll` window is a thin diagonal band in
   the unit square, and VEGAS left the `[60,120]` card 6% (5.8σ) low. Sampling
   `(τ, y)` turns the window into a one-dimensional bound on `τ`; both cards then
-  landed near 0.1% with about 10× smaller error.[^n18-outcome] See
+  came out near 0.1% with about 10× smaller error.[^n18-outcome] See
   [hadronic (τ, y) sampling](../phase-space/hadronic-tau-y-sampling.md).
 - **Cuts are lab-frame, `|M|²` is partonic-CM.** The final state is boosted by
   the parton-system rapidity before `Cuts::pass`. For a back-to-back LO lepton

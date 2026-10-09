@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "LHEF reader and writer: records, emit, parse, build, and the source-preserving round trip"
-description: "The lhef module's layers: quick-xml owns the document, fixed-format records are read and written column by column, and each parsed block keeps its source text so both MadGraph dialects round-trip byte for byte."
+description: "The lhef module's layers: quick-xml owns the document, fixed-format records are written by hand, and parsed blocks keep their source text so both MadGraph dialects round-trip."
 status: draft
 tags: [events, lhef, io, round-trip, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

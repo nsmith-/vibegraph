@@ -145,7 +145,7 @@ seeds.[^n34-w1]
 ## A gate statistic is formed on as many seeds as calibrated it
 
 A change to the sampling stream re-rolls every one-seed or three-seed gate. When
-cut-implied floors landed, three gate cells failed one after another (cargo
+cut-implied floors were introduced, three gate cells failed one after another (cargo
 stops at the first failing binary), all the same defect: a statistic formed on
 fewer seeds than its threshold was calibrated on, sitting at the
 threshold.[^n34-floor]

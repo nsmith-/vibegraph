@@ -1,7 +1,7 @@
 ---
 type: Physics Convention
 title: LHE header and event-line field conventions
-description: "What each <init> and <event> field carries and how vibegraph fills it: SCALUP the larger record μF, AQCDUP untruncated α_s(μR), AQEDUP, PDFSUP, EBMUP, MOTHUP, VTIMUP, SPINUP, pole masses; which fields are per-event oracles."
+description: "What each <init> and <event> field holds: SCALUP the larger record μF, AQCDUP untruncated α_s(μR), AQEDUP, PDFSUP, EBMUP, MOTHUP, SPINUP, pole masses; which are per-event oracles."
 status: draft
 tags: [events, lhef, scalup, aqcdup, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

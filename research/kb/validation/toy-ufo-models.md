@@ -30,7 +30,7 @@ The public candidates each bury one wanted structure in hundreds of vertices
 (`RS` for spin-2, `sextet_diquarks` for `K6`, RPV models for baryonic `ε`), and
 none was in the pinned MadGraph checkout (its `models/` holds `sm`, `loop_sm`,
 `MSSM_SLHA2`, `hgg_plugin`, `taudecay_UFO`). A hand-written model isolates each
-primitive in one vertex with couplings we choose (user decision D3, generate not
+primitive in one vertex with couplings we choose (a user decision: generate, not
 adopt).[^n35-t1][^n35-d] Size such a model from a measured probe of the loader,
 not from reading it.[^n35-gated]
 

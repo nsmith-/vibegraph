@@ -11,6 +11,8 @@ sources:
   - {id: n27-b4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L482-L715", title: "Note 27 B4, the 3.7.1 mechanism, IDWTUP and packed CF"}
   - {id: n27-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L716-L911", title: "Note 27 B5, the re-bank and the LHE dialects"}
   - {id: n27-reg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 findings register"}
+  - {id: n29-d, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/29-v01-validation-sprint-plan.md#L3324-L3770", title: "Note 29 chain D measurements"}
+  - {id: n41-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/research/notes/41-mlm-feature-sprint-plan.md#L3076-L3402", title: "Note 41 Z1 and B1 records"}
   - {id: manifest, resource: "https://github.com/nsmith-/vibegraph/blob/787070e/validation/manifest.toml", title: "validation/manifest.toml"}
 ---
 # How MadGraph reference runs are made and read
@@ -123,6 +125,27 @@ the run card MadGraph actually ran is part of the reference:
 The LHE format strings, field by field, are in
 [madgraph-lhe-output](../references/codebases/madgraph-lhe-output.md).
 
+## Measured inconsistencies inside MadEvent
+
+Not located in MadGraph's code, but each bounds how a MadEvent number may be
+read (code-located defects are [madgraph-defects](madgraph-defects.md)):
+- **Quoted errors are not spreads.** Seeds have scattered at χ²/dof up to 93
+  (`e+ e- > e+ e-`) against their own quotes, and seeds run in one shared
+  directory, each inheriting its predecessors' grids, correlate (χ²/dof 0.3–0.8).
+  The seed policy and one freshly generated directory per seed answer
+  both[^n41-z].
+- **A `dummy_cuts`-windowed run understates its own seed spread**, by about 2× in
+  two `pt(γ)` windows of `ee_to_mumua`.
+- **A run's unweighted sample can contradict its own windowed σ.** On
+  `ee_to_mumua`, MadEvent's sample puts 8.73% of σ in `pt(γ) ∈ [10, 20)` against
+  9.40% from its own windowed runs (about 20σ), in both 3.5.7 and 3.7.1, and two
+  complete `dummy_cuts` partitions of one run's phase space (in `pt(γ)` and in
+  `m(μμ)`) disagree with each other by 16.7σ[^n29-d]. The open part is
+  [ee-mumua-radiative-return-sigma-high](../backlog/validation/ee-mumua-radiative-return-sigma-high.md);
+  the method is [windowed-partition-closure](windowed-partition-closure.md).
+- **Not bit-reproducible**: multi-group unweighting is scheduling-sensitive, and
+  the mixed MLM rows' runs differ across hosts.
+
 ## How many rows
 
 Do not quote a row count from a note: read `validation/manifest.toml` (the
@@ -133,3 +156,5 @@ committed JSON tables and the bundle, not in prose.
 [^n27-b4]: Note 27 B4: `event_norm`, the packed `CF`, and the `use_syst` file sizes.
 [^n12-roots]: Note 12, oracle defects 6′ and 7′.
 [^n27-b5]: Note 27 B5, "The LHE dialect blocker", and the findings register.
+[^n41-z]: Note 41 Z1 record (the independent-directory reference); note 38 §8.4 for Bhabha.
+[^n29-d]: Note 29 chain D, runs D.M4 and D.M7 and the `m(μμ)` axis.

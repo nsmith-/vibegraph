@@ -1,7 +1,7 @@
 ---
 type: Design
 title: "Every run-card field is classified: consumed, benign or refused"
-description: "FIELD_CLASSES assigns each of the 209 run-card names Consumed, IgnoredBenign (with a positive inertness argument) or IgnoredPhysics (refused off its default); the audit method and the blind spots of the tests that guard it."
+description: "FIELD_CLASSES gives each of the 209 run-card names Consumed, IgnoredBenign (with a positive inertness argument) or IgnoredPhysics (refused off default); audit method and blind spots."
 status: draft
 tags: [run-card, classification, hard-errors, audit, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}

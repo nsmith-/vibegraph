@@ -180,7 +180,7 @@ rows carried a nearly uniform 5.5% σ deficit, their `samples` cells passed and
 said so on the cells: a passing shape cell is not evidence about σ.[^n28-k5b5]
 Before the beam columns existed, three massive-incoming toy rows with a 6–7% σ
 error cleared the KS floor comfortably for the same reason; when the columns
-landed, seven rows (not the three expected) were found writing off-shell beams
+were added, seven rows (not the three expected) were found writing off-shell beams
 (model mass beside light-cone momenta), and every massless row read deviation
 exactly 0.[^n36-b2]
 
