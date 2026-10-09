@@ -4,6 +4,7 @@
 
 ## Design Decision
 
+* [MLM matching never applies to decays](mlm-not-on-decays.md) - Matching or xqcut on a decay process is refused permanently: MadGraph's MLM acts on the production process, so matching inside a decay has no defined meaning.
 * [One PR per backlog item, seen by every session type](pr-per-backlog-item.md) - After the knowledge-bundle migration, work runs in parallel as one PR per backlog item; a manager runs feature, validation, performance and later hygiene sessions on it in turn.
 * [Release scope is arbitrary-multiplicity LO with MLM merging](release-scope-lo-mlm.md) - The release goal is leading-order generation at arbitrary leg multiplicity with MLM merging; beam polarization and other beam configurations stay in the backlog.
 * [Release scope is MadGraph leading-order process parity](release-scope-mg-lo-parity.md) - The release goal is MadGraph LO process parity, without MLM matching and NLO; unsupported card features are refused by one check on the fully parsed proc card.

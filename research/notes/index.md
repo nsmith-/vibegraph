@@ -93,7 +93,7 @@ okf_version: "0.2"
 ## Directories
 
 * [backlog](backlog/) - one file per item; rendered by `pixi run backlog`
-* [decisions](decisions/index.md) - 5 concepts
+* [decisions](decisions/index.md) - 6 concepts
 * [facts](facts/index.md) - 4 concepts
 * [pipeline](pipeline/index.md) - 1 concepts
 * [sprints](sprints/index.md) - 27 concepts

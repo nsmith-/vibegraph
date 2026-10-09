@@ -5,7 +5,7 @@ description: With auto_ptj_mjj = F or ptj < 0, MadEvent's xqcut tau floor become
 area: feature
 state: open
 priority: low
-closes_when: A matched card with a resolved ptj < xqcut integrates with MadEvent's per-channel tau floor and matches MadEvent's sigma on a banked row, or the refusal is recorded as a permanent scope decision.
+closes_when: "A matched card with a resolved ptj < xqcut integrates with MadEvent's per-channel tau floor and matches MadEvent's sigma on a banked row."
 blocked_by: []
 opened: 2026-09-28
 tags: [mlm, cuts, madgraph-parity]
@@ -23,3 +23,7 @@ and differs between integration channels, so the card is refused
 
 MadGraph accepts this card, so this is a parity gap. Detail:
 [note 41-mlm §4 M1 "Landed (implementation)"](../../41-mlm-feature-sprint-plan.md).
+
+Kept as low-priority parity work (user, 2026-10-09). Only a non-default card
+reaches it, and the behaviour it would reproduce is a cut that depends on the
+integration channel, an artefact of MadEvent's sampling rather than physics.
