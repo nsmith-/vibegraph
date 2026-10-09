@@ -2855,7 +2855,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// uniforms. The subprocess is drawn `∝ |M_s|²` (the incoherent sum this
     /// integrand forms), then within it the helicity `∝ |M_c|²` (MadGraph's
     /// `SELECT_HEL`), and finally the colour flow through
-    /// [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
+    /// [`AmplitudeEvaluator::select_config_and_flow`] — the integration configuration
     /// from `u[2]` and the flow `∝ JAMP2(i)` within that configuration's admitted
     /// set from `u[3]` (`SELECT_COLOR`).
     ///

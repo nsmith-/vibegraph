@@ -2614,8 +2614,8 @@ impl<'a> ProtonIntegrand<'a> {
     ///   identical-particle factor — the whole of what distinguishes one member of a
     ///   group from another, since they share the matrix element exactly;
     /// * the helicity `∝ |M_c|²`, then the colour flow through
-    ///   [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
-    ///   `∝ AMP2(d)` and the flow `∝ JAMP2(i)` inside that configuration's
+    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
+    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
     ///   admitted set — all evaluated at the argument the drawn ordering implies,
     ///   as on a fixed-beam run.
     ///

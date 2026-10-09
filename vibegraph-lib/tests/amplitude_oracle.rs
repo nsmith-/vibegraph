@@ -1086,8 +1086,8 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         (true, None) => {
             return Err(format!(
                 "[{name}] MadGraph merges diagrams into one AMP2 accumulator {:?} and \
-                 this crate's configurations are one per diagram — add the row to \
-                 KNOWN_CONFIG_MERGE with what it merges",
+                 the row is not listed as merging — add it to KNOWN_CONFIG_MERGE with \
+                 what it merges",
                 table.amp2_groups
             )
             .into());
