@@ -45,7 +45,7 @@ pub struct VtxIdx(pub usize);
 pub struct PropIdx(pub usize);
 /// The position of a ray within one vertex, in UFO interaction particle-slot order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct RaySlot(pub usize);
+pub struct RaySlot(pub(crate) usize);
 
 // ── Owned diagram ───────────────────────────────────────────────────────────────
 
@@ -57,11 +57,11 @@ pub struct RaySlot(pub usize);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Leg {
     pub particle: ParticleId,
-    pub charge: Charge,
+    pub(crate) charge: Charge,
     /// UFO spin code (2S+1).
-    pub spin: i32,
-    pub leg_idx: LegIdx,
-    pub incoming: bool,
+    pub(crate) spin: i32,
+    pub(crate) leg_idx: LegIdx,
+    pub(crate) incoming: bool,
 }
 
 /// An internal propagator. Momentum flows `endpoints[0] → endpoints[1]`.
@@ -104,14 +104,14 @@ pub enum OnShell {
 /// from `1` in the order they are written, a decay's own decays straight after it
 /// (`p p > t t~, (t > w+ b, w+ > e+ ve), t~ > w- b~`: `t` 1, `w+` 2, `t~` 3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ChainNode(pub usize);
+pub(crate) struct ChainNode(pub(crate) usize);
 
 /// Where one decay of a stitched diagram hangs: the chain node whose enumeration it came
 /// from, and the propagator its decaying particle became.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct DecayOrigin {
-    pub node: ChainNode,
-    pub prop: PropIdx,
+pub(crate) struct DecayOrigin {
+    pub(crate) node: ChainNode,
+    pub(crate) prop: PropIdx,
 }
 
 /// Where a diagram came from on the proc card.
@@ -124,7 +124,7 @@ pub struct Provenance {
     pub process: u32,
     /// For a decay-chain diagram, every decay stitched into it, the core being the rest.
     /// Empty for any other diagram.
-    pub decays: Vec<DecayOrigin>,
+    pub(crate) decays: Vec<DecayOrigin>,
 }
 
 impl Prop {
@@ -151,13 +151,13 @@ pub enum Ray {
 /// An internal vertex: its UFO interaction and its rays in interaction-slot order.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Vertex {
-    pub interaction: VertexId,
+    pub(crate) interaction: VertexId,
     /// Which of the interaction's fermion-flow groups
     /// ([`topo::flow_groups`](crate::ufo::topo::flow_groups)) this occurrence uses:
     /// the index of the spinor pairing its Lorentz structures share. A vertex whose
     /// structures agree on one pairing — every vertex with fewer than four fermion
     /// legs, and every Standard-Model vertex — has only group `0`.
-    pub flow_group: usize,
+    pub(crate) flow_group: usize,
     pub rays: Vec<Ray>,
 }
 
@@ -174,9 +174,9 @@ pub struct Diagram {
     /// takes the external fermions, paired by line, to their leg order (feyngraph's
     /// `view.sign()`), times the per-line [`fermion_line_sign`](Self::fermion_line_sign).
     /// Both are properties of the graph.
-    pub sign: i8,
+    pub(crate) sign: i8,
     /// Combined vertex × propagator symmetry factor (feyngraph `view.symmetry_factor()`).
-    pub symmetry_factor: usize,
+    pub(crate) symmetry_factor: usize,
     /// Number of incoming external legs.
     pub n_in: usize,
     /// The card line and decay-chain nodes the diagram was enumerated from.
@@ -185,12 +185,12 @@ pub struct Diagram {
 
 /// One fermion line of a diagram ([`Diagram::fermion_lines`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FermionLine {
+pub(crate) struct FermionLine {
     /// The external legs the line starts and ends at, the lower index first.
-    pub legs: [LegIdx; 2],
+    pub(crate) legs: [LegIdx; 2],
     /// Every vertex the line passes through, from `legs[0]`'s to `legs[1]`'s. One more
     /// than the number of internal fermion propagators on the line.
-    pub vertices: Vec<VtxIdx>,
+    pub(crate) vertices: Vec<VtxIdx>,
 }
 
 /// A [`Diagram`] under its canonical internal numbering ([`Diagram::canonical`]).
@@ -205,11 +205,12 @@ pub struct FermionLine {
 /// same lines to a vertex's slots in different orders are different diagrams here even
 /// where the vertex is symmetric under the swap.
 #[derive(Clone, Debug)]
-pub struct CanonicalDiagram(Diagram);
+pub(crate) struct CanonicalDiagram(Diagram);
 
 impl CanonicalDiagram {
     /// The canonically numbered diagram.
-    pub fn diagram(&self) -> &Diagram {
+    #[cfg(test)]
+    pub(crate) fn diagram(&self) -> &Diagram {
         &self.0
     }
 
@@ -277,7 +278,7 @@ impl Diagram {
     /// Convert a feyngraph [`DiagramView`] into an owned diagram, resolving every particle
     /// and interaction against `model` and baking the crossing/ordering/momentum
     /// conventions. The single point where a feyngraph view is consumed.
-    pub fn from_view(view: &DiagramView, model: &UFOModel) -> Result<Diagram, ConvertError> {
+    pub(crate) fn from_view(view: &DiagramView, model: &UFOModel) -> Result<Diagram, ConvertError> {
         let n_in = view.incoming().count();
         let n_ext = view.n_ext();
 
@@ -367,28 +368,18 @@ impl Diagram {
     }
 
     /// External leg by index.
-    pub fn leg(&self, idx: LegIdx) -> &Leg {
+    pub(crate) fn leg(&self, idx: LegIdx) -> &Leg {
         &self.legs[idx.0]
     }
 
     /// Internal vertex by index.
-    pub fn vertex(&self, idx: VtxIdx) -> &Vertex {
+    pub(crate) fn vertex(&self, idx: VtxIdx) -> &Vertex {
         &self.vertices[idx.0]
     }
 
     /// Internal propagator by index.
-    pub fn prop(&self, idx: PropIdx) -> &Prop {
+    pub(crate) fn prop(&self, idx: PropIdx) -> &Prop {
         &self.props[idx.0]
-    }
-
-    /// Whether the line at `ray` carries momentum flowing *into* this vertex. For an
-    /// external leg this is its incoming flag; for a propagator, momentum flows
-    /// `endpoints[0] → endpoints[1]`, so the `end == 1` endpoint is momentum-in.
-    pub fn ray_momentum_in(&self, ray: Ray) -> bool {
-        match ray {
-            Ray::Leg(li) => self.leg(li).incoming,
-            Ray::Prop { end, .. } => end == 1,
-        }
     }
 
     /// The same diagram with its internal vertices and propagators renumbered.
@@ -399,7 +390,7 @@ impl Diagram {
     /// along the line is unchanged). Legs, rays' slot order, sign, symmetry factor and
     /// provenance are carried over, so the result is the same graph under another
     /// internal numbering.
-    pub fn renumbered(
+    pub(crate) fn renumbered(
         &self,
         vertex_order: &[usize],
         prop_order: &[usize],
@@ -486,7 +477,7 @@ impl Diagram {
     /// fermion pairing (the vertex's [`flow_group`](Vertex::flow_group) of
     /// [`flow_groups`](crate::ufo::topo::flow_groups)) until it leaves by another external
     /// leg; legs are taken in index order, so the list is a property of the graph.
-    pub fn fermion_lines(&self, model: &UFOModel) -> Vec<FermionLine> {
+    pub(crate) fn fermion_lines(&self, model: &UFOModel) -> Vec<FermionLine> {
         let pairing = |v: VtxIdx| {
             let vertex = self.vertex(v);
             crate::ufo::topo::flow_groups(model.vertex_def(vertex.interaction), &model.lorentz)
@@ -567,7 +558,7 @@ impl Diagram {
     ///
     /// Both arms read only the lines themselves — their ends and their propagator count —
     /// so this is a property of the diagram, not of how it is rooted or numbered.
-    pub fn fermion_line_sign(&self, model: &UFOModel) -> i8 {
+    pub(crate) fn fermion_line_sign(&self, model: &UFOModel) -> i8 {
         let mut sign = 1i8;
         for line in self.fermion_lines(model) {
             let crossed = line.legs.iter().all(|l| l.0 >= self.n_in);
@@ -586,7 +577,7 @@ impl Diagram {
     /// [`fermion_line_sign`](Self::fermion_line_sign) it makes up [`sign`](Self::sign);
     /// on an enumerated diagram it is feyngraph's `view.sign()`, which counts the same
     /// inversions (a tree has no closed fermion loop).
-    pub fn fermion_pairing_sign(&self, model: &UFOModel) -> i8 {
+    pub(crate) fn fermion_pairing_sign(&self, model: &UFOModel) -> i8 {
         let order: Vec<usize> = self
             .fermion_lines(model)
             .iter()
@@ -630,7 +621,7 @@ impl Diagram {
     /// the representation [`Prop::momentum`] documents: the external legs on the side
     /// without the last leg, incoming `+1` and outgoing `−1`, negated when that side is
     /// at `endpoints[1]`.
-    pub fn tree_momentum(&self, prop: PropIdx) -> Vec<i8> {
+    pub(crate) fn tree_momentum(&self, prop: PropIdx) -> Vec<i8> {
         let start = self.legs_on_start_side(prop);
         let last = self.legs.len() - 1;
         let (side, orientation) = if start[last] { (false, -1) } else { (true, 1) };
@@ -673,7 +664,7 @@ impl Diagram {
     /// leg 0. The rule reads only the labelled external legs and slot order, so every
     /// numbering of one diagram has the same anchor. The per-diagram HELAS convention
     /// signs are defined at the rooting that takes the anchor as the amplitude vertex.
-    pub fn anchor(&self) -> VtxIdx {
+    pub(crate) fn anchor(&self) -> VtxIdx {
         let (order, _, _) = self.canonical_numbering();
         let fewest = self.vertices.iter().map(|v| v.rays.len()).min();
         let first = order
@@ -692,7 +683,7 @@ impl Diagram {
     /// particle conjugated where that reverses it). The walk reads only the labelled external legs and slot order, so
     /// every numbering of one diagram has the same canonical form, and two diagrams with
     /// the same canonical form differ only in numbering.
-    pub fn canonical(&self, model: &UFOModel) -> CanonicalDiagram {
+    pub(crate) fn canonical(&self, model: &UFOModel) -> CanonicalDiagram {
         let (vertex_order, prop_order, flip) = self.canonical_numbering();
         CanonicalDiagram(self.renumbered(&vertex_order, &prop_order, &flip, model))
     }
@@ -744,7 +735,7 @@ impl Diagram {
 
     /// The `(vertex, ray-slot)` where an external leg attaches. Every leg attaches to
     /// exactly one vertex.
-    pub fn leg_attachment(&self, target: LegIdx) -> (VtxIdx, RaySlot) {
+    pub(crate) fn leg_attachment(&self, target: LegIdx) -> (VtxIdx, RaySlot) {
         for (vi, v) in self.vertices.iter().enumerate() {
             for (slot, ray) in v.rays.iter().enumerate() {
                 if let Ray::Leg(li) = ray {
@@ -759,7 +750,7 @@ impl Diagram {
 }
 
 /// The antiparticle of `particle` (itself when self-conjugate).
-pub fn antiparticle(model: &UFOModel, particle: ParticleId) -> ParticleId {
+pub(crate) fn antiparticle(model: &UFOModel, particle: ParticleId) -> ParticleId {
     let p = model.particle(particle);
     if p.name == p.antiname {
         return particle;

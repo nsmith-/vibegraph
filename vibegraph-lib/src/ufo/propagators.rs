@@ -24,9 +24,9 @@ pub enum PropagatorError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Propagator {
     /// Python variable name, e.g. `"V1"`.
-    pub python_name: String,
+    pub(crate) python_name: String,
     /// UFO `name` field.
-    pub name: String,
+    pub(crate) name: String,
     /// Verbatim `numerator` string, with module-level string variables substituted.
     pub numerator: String,
     /// Verbatim `denominator` string, same treatment.
@@ -38,7 +38,7 @@ pub struct Propagator {
 /// The shipped files build the forms by concatenating module-level string
 /// variables (`denominatorSq = denominator + "**2"`), so string assignments are
 /// tracked and `+` over strings is folded as the file goes.
-pub fn parse_propagators(src: &str) -> Result<Vec<Propagator>, PropagatorError> {
+pub(crate) fn parse_propagators(src: &str) -> Result<Vec<Propagator>, PropagatorError> {
     let stmts = parse_stmts(src).map_err(|e| PropagatorError::Parse(e.to_string()))?;
     let mut strings: HashMap<String, String> = HashMap::new();
     let mut result = Vec::new();

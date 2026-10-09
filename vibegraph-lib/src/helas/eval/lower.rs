@@ -37,7 +37,7 @@ use crate::ufo::particles::ParticleId;
 /// (`Σ_d sym·fermi·amp_d`). Retained for tests that build the amplitude without the
 /// color factorization; the production path is [`lower_flows`].
 #[cfg(test)]
-pub fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
+pub(crate) fn lower(diagrams: &[DiagramEval]) -> Ast<Sym> {
     let mut b = AstBuilder::new();
     let mut diagram_roots = Vec::with_capacity(diagrams.len());
     for d in diagrams {
@@ -77,7 +77,7 @@ const NC: i64 = 3;
 /// alongside it, so their values stay readable off the arena after a run. They are
 /// the *same* nodes the JAMPs are built from — referenced, not rebuilt — so no
 /// arithmetic is added and the sharing is unchanged.
-pub fn lower_flows(
+pub(crate) fn lower_flows(
     basis: &ColorBasis,
     evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
     configs: &[Vec<(usize, Vec<u8>)>],
@@ -155,7 +155,7 @@ pub fn lower_flows(
 /// common-subexpression elimination. The planned egglog rewrite stage will run
 /// *before* both, on the binary [`lower`] output (egglog extraction yields a
 /// minimal tree, not a minimal DAG, so CSE stays as the tree→DAG post-process).
-pub fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
+pub(crate) fn optimize(ast: Ast<Sym>) -> Ast<Sym> {
     let deduped = cse(&flatten_adds(&ast));
     tracing::debug!("lowered {} nodes → {} after CSE", ast.len(), deduped.len());
     deduped

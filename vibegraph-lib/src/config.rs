@@ -74,7 +74,8 @@ impl GlobalConfig {
     /// - Absent directive → the interned SM default (`import model sm`).
     /// - `sm` (with optional `-<variant>` suffix) → the interned SM variant.
     /// - Any other model name → loaded from `ufo_search_path/<name>/`.
-    pub fn load_ufo(&self, spec: &Option<ModelImport>) -> Result<Arc<UFOModel>, UfoError> {
+    #[cfg(test)]
+    pub(crate) fn load_ufo(&self, spec: &Option<ModelImport>) -> Result<Arc<UFOModel>, UfoError> {
         self.load_ufo_with_identity(spec).map(|(model, _)| model)
     }
 

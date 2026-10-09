@@ -37,7 +37,7 @@ pub enum AssetKind {
 
 impl AssetKind {
     /// Subdirectory of the cache root holding this kind's entries.
-    pub fn cache_subdir(self) -> &'static str {
+    pub(crate) fn cache_subdir(self) -> &'static str {
         match self {
             AssetKind::Ufo => "ufo",
             AssetKind::Pdf => "pdf",

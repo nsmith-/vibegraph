@@ -20,7 +20,7 @@ profile-diagrams = { cmd = "bash scripts/profile.sh validate_madgraph_diagrams",
 # each process is to integrate (unlike a fixed-N eval micro-benchmark)
 profile-sigma = { cmd = "bash scripts/profile.sh validate_sigma", depends-on = ["install-samply"] }
 # rustdoc alone, with the KaTeX header that renders the LaTeX in doc comments.
-docs-api = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps -p vibegraph-lib"
+docs-api = "RUSTDOCFLAGS=\"--html-in-header doc-include/mathjax-header.html\" cargo doc --no-deps --document-private-items -p vibegraph-lib"
 # The whole documentation site — the mdBook under docs/, the rustdoc reference
 # and the CLI reference generated from `vibegraph --help` — into target/site/,
 # exactly as docs.yml publishes it. Needs `mdbook` on PATH.

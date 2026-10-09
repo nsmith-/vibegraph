@@ -12,47 +12,47 @@ use std::path::Path;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct Manifest {
-    pub schema: u32,
-    pub refdata: Refdata,
+pub(crate) struct Manifest {
+    pub(crate) schema: u32,
+    pub(crate) refdata: Refdata,
     #[serde(rename = "process")]
-    pub processes: Vec<Process>,
+    pub(crate) processes: Vec<Process>,
     #[serde(default)]
-    pub standalone: Vec<Standalone>,
+    pub(crate) standalone: Vec<Standalone>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Refdata {
-    pub version: u32,
-    pub archive: String,
-    pub url: String,
-    pub sha256: String,
-    pub size_bytes: u64,
-    pub published: bool,
+pub(crate) struct Refdata {
+    pub(crate) version: u32,
+    pub(crate) archive: String,
+    pub(crate) url: String,
+    pub(crate) sha256: String,
+    pub(crate) size_bytes: u64,
+    pub(crate) published: bool,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Process {
-    pub key: String,
-    pub process: String,
-    pub class: String,
-    pub n_final: u32,
-    pub rationale: String,
+pub(crate) struct Process {
+    pub(crate) key: String,
+    pub(crate) process: String,
+    pub(crate) class: String,
+    pub(crate) n_final: u32,
+    pub(crate) rationale: String,
     /// The UFO model directory the row's reference was generated against, and
     /// the restrict card it was imported with. Absent where the row is the
     /// interned Standard Model, which is what most of the table is.
     #[serde(default)]
-    pub model: Option<String>,
+    pub(crate) model: Option<String>,
     #[serde(default)]
-    pub restrict: Option<String>,
+    pub(crate) restrict: Option<String>,
     /// A row whose reference run does not exist yet.
     #[serde(default)]
-    pub status: Option<String>,
+    pub(crate) status: Option<String>,
     /// A row whose banked artifacts are not in the pinned reference bundle, so a
     /// fetching checkout does not have them.
     #[serde(default = "yes")]
-    pub bundled: bool,
-    pub categories: Categories,
+    pub(crate) bundled: bool,
+    pub(crate) categories: Categories,
 }
 
 fn yes() -> bool {
@@ -60,15 +60,15 @@ fn yes() -> bool {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Categories {
-    pub diagrams: Cell,
-    pub amplitudes: Cell,
-    pub integrals: Cell,
-    pub samples: Cell,
+pub(crate) struct Categories {
+    pub(crate) diagrams: Cell,
+    pub(crate) amplitudes: Cell,
+    pub(crate) integrals: Cell,
+    pub(crate) samples: Cell,
 }
 
 impl Categories {
-    pub fn get(&self, category: Category) -> &Cell {
+    pub(crate) fn get(&self, category: Category) -> &Cell {
         match category {
             Category::Diagrams => &self.diagrams,
             Category::Amplitudes => &self.amplitudes,
@@ -79,23 +79,23 @@ impl Categories {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Cell {
-    pub tier: Tier,
-    pub mode: Option<Mode>,
+pub(crate) struct Cell {
+    pub(crate) tier: Tier,
+    pub(crate) mode: Option<Mode>,
     /// What a `blocked` cell waits on.
-    pub blocker: Option<String>,
+    pub(crate) blocker: Option<String>,
     /// What a `covered-by` cell points at.
     #[serde(default)]
-    pub rows: Vec<String>,
-    pub note: Option<String>,
+    pub(crate) rows: Vec<String>,
+    pub(crate) note: Option<String>,
     /// An `amplitudes` claim about how the comparison ran, checked against the
     /// gate's own measurement where both are stated.
-    pub factorized: Option<bool>,
+    pub(crate) factorized: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Tier {
+pub(crate) enum Tier {
     Hermetic,
     Banked,
     Long,
@@ -107,11 +107,11 @@ pub enum Tier {
 impl Tier {
     /// Whether a gate in this tier runs — and so writes a row file — under
     /// `pixi run validate`.
-    pub fn is_measured_here(self) -> bool {
+    pub(crate) fn is_measured_here(self) -> bool {
         matches!(self, Tier::Hermetic | Tier::Banked)
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Tier::Hermetic => "hermetic",
             Tier::Banked => "banked",
@@ -125,13 +125,13 @@ impl Tier {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Mode {
+pub(crate) enum Mode {
     Gate,
     Info,
 }
 
 impl Mode {
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Mode::Gate => "gate",
             Mode::Info => "info",
@@ -140,34 +140,34 @@ impl Mode {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Standalone {
-    pub key: String,
-    pub layer: String,
+pub(crate) struct Standalone {
+    pub(crate) key: String,
+    pub(crate) layer: String,
     #[serde(default)]
-    pub targets: Vec<String>,
-    pub rationale: String,
+    pub(crate) targets: Vec<String>,
+    pub(crate) rationale: String,
     #[serde(default)]
-    pub note: Option<String>,
+    pub(crate) note: Option<String>,
     /// A gate whose driver is not a Rust test names the pixi task that runs it,
     /// the environment that task needs, and the file it writes its verdict to.
     #[serde(default)]
-    pub task: Option<String>,
+    pub(crate) task: Option<String>,
     #[serde(default)]
-    pub environment: Option<String>,
+    pub(crate) environment: Option<String>,
     #[serde(default)]
-    pub row: Option<String>,
+    pub(crate) row: Option<String>,
 }
 
 /// The four per-process categories, in the order the table's columns run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Category {
+pub(crate) enum Category {
     Diagrams,
     Amplitudes,
     Integrals,
     Samples,
 }
 
-pub const CATEGORIES: [Category; 4] = [
+pub(crate) const CATEGORIES: [Category; 4] = [
     Category::Diagrams,
     Category::Amplitudes,
     Category::Integrals,
@@ -175,7 +175,7 @@ pub const CATEGORIES: [Category; 4] = [
 ];
 
 impl Category {
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Category::Diagrams => "diagrams",
             Category::Amplitudes => "amplitudes",
@@ -184,13 +184,13 @@ impl Category {
         }
     }
 
-    pub fn parse(name: &str) -> Option<Category> {
+    pub(crate) fn parse(name: &str) -> Option<Category> {
         CATEGORIES.into_iter().find(|c| c.as_str() == name)
     }
 }
 
 impl Manifest {
-    pub fn load(path: &Path) -> Result<Manifest, String> {
+    pub(crate) fn load(path: &Path) -> Result<Manifest, String> {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         toml::from_str(&text).map_err(|e| format!("cannot parse {}: {e}", path.display()))
@@ -199,13 +199,13 @@ impl Manifest {
     /// The rows in the order the table renders them: single-channel first, then
     /// multi-channel, each by increasing final-state multiplicity and otherwise
     /// in manifest order.
-    pub fn ordered_rows(&self) -> Vec<&Process> {
+    pub(crate) fn ordered_rows(&self) -> Vec<&Process> {
         let mut rows: Vec<(usize, &Process)> = self.processes.iter().enumerate().collect();
         rows.sort_by_key(|(i, p)| (p.class != "single-channel", p.n_final, *i));
         rows.into_iter().map(|(_, p)| p).collect()
     }
 
-    pub fn by_key(&self) -> BTreeMap<&str, &Process> {
+    pub(crate) fn by_key(&self) -> BTreeMap<&str, &Process> {
         self.processes.iter().map(|p| (p.key.as_str(), p)).collect()
     }
 }

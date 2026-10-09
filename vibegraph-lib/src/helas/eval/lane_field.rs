@@ -118,7 +118,7 @@ where
 {
     /// Every lane set to `x`.
     #[inline(always)]
-    pub fn splat(x: f64) -> Self {
+    pub(crate) fn splat(x: f64) -> Self {
         Self(LanePack::splat(x))
     }
 

@@ -16,7 +16,7 @@ use crate::manifest::Category;
 /// The row-file schema this collator understands. A file written under a
 /// different one is an error rather than a best-effort read: the fields it
 /// renders are the fields whose meaning that number depends on.
-pub const ROW_SCHEMA: u32 = 1;
+pub(crate) const ROW_SCHEMA: u32 = 1;
 
 /// The fields every row file carries, whatever its category.
 #[derive(Debug, Deserialize)]
@@ -36,18 +36,18 @@ struct Common {
 }
 
 #[derive(Debug)]
-pub struct RowFile {
-    pub path: PathBuf,
-    pub row: String,
-    pub variant: Option<String>,
-    pub category: Category,
-    pub mode: String,
-    pub status: String,
-    pub process: String,
-    pub note: Option<String>,
+pub(crate) struct RowFile {
+    pub(crate) path: PathBuf,
+    pub(crate) row: String,
+    pub(crate) variant: Option<String>,
+    pub(crate) category: Category,
+    pub(crate) mode: String,
+    pub(crate) status: String,
+    pub(crate) process: String,
+    pub(crate) note: Option<String>,
     /// Wall-clock seconds the gate spent measuring this row, where it timed
     /// itself. A measurement, not a verdict: nothing here reads it.
-    pub duration_s: Option<f64>,
+    pub(crate) duration_s: Option<f64>,
     value: Value,
 }
 
@@ -108,18 +108,18 @@ impl RowFile {
             .ok_or_else(|| format!("{}: no string '{field}'", self.path.display()))
     }
 
-    pub fn bool_at(&self, field: &str) -> Option<bool> {
+    pub(crate) fn bool_at(&self, field: &str) -> Option<bool> {
         self.value.get(field).and_then(Value::as_bool)
     }
 
     /// How this measurement labels itself in the table when a row carries more
     /// than one.
-    pub fn label(&self) -> &str {
+    pub(crate) fn label(&self) -> &str {
         self.variant.as_deref().unwrap_or("default")
     }
 
     /// The cell text: the category's metric, as the column shows it.
-    pub fn metric(&self) -> Result<String, String> {
+    pub(crate) fn metric(&self) -> Result<String, String> {
         Ok(match self.category {
             Category::Diagrams => format!("{}/{}", self.u64_at("ours")?, self.u64_at("theirs")?),
             Category::Amplitudes if self.compared_no_points()? => "no comparison".to_string(),
@@ -139,7 +139,7 @@ impl RowFile {
 
     /// The one number that distinguishes two measurements of the same row, for
     /// the cell that lists both.
-    pub fn short_metric(&self) -> Result<String, String> {
+    pub(crate) fn short_metric(&self) -> Result<String, String> {
         Ok(match self.category {
             Category::Diagrams => format!("{}/{}", self.u64_at("ours")?, self.u64_at("theirs")?),
             Category::Amplitudes if self.compared_no_points()? => "none".to_string(),
@@ -151,7 +151,7 @@ impl RowFile {
 
     /// The detail line the report's per-row breakdown carries: everything the
     /// one-line metric had to leave out.
-    pub fn detail(&self) -> Result<String, String> {
+    pub(crate) fn detail(&self) -> Result<String, String> {
         Ok(match self.category {
             Category::Diagrams => format!(
                 "{} diagrams counted MadGraph's way against {}, over {} across every concrete subprocess",
@@ -328,7 +328,7 @@ impl RowFile {
     /// How bad this measurement is, so the worse of two is the one the cell
     /// reports. A failed gate outranks every passing measurement whatever its
     /// numbers say.
-    pub fn severity(&self) -> f64 {
+    pub(crate) fn severity(&self) -> f64 {
         let own = match self.category {
             Category::Diagrams => self
                 .u64_at("ours")
@@ -351,7 +351,7 @@ impl RowFile {
 }
 
 /// Every row file under the report directory, in a stable order.
-pub fn load_all(report_dir: &Path) -> (Vec<RowFile>, Vec<String>) {
+pub(crate) fn load_all(report_dir: &Path) -> (Vec<RowFile>, Vec<String>) {
     let mut rows = Vec::new();
     let mut problems = Vec::new();
     for category in crate::manifest::CATEGORIES {
@@ -386,7 +386,7 @@ pub fn load_all(report_dir: &Path) -> (Vec<RowFile>, Vec<String>) {
 
 /// Two significant figures in scientific notation, which is the precision every
 /// deviation in the table is read at.
-pub fn exp(v: f64) -> String {
+pub(crate) fn exp(v: f64) -> String {
     format!("{v:.2e}")
 }
 
@@ -400,7 +400,7 @@ pub fn exp(v: f64) -> String {
 /// fixed notation it is a two-hundred-digit number across a table cell. The value
 /// is passed through rather than clamped, because clamping would make a broken
 /// statistic look like a merely bad one; only its width is bounded.
-pub fn chi2(v: f64) -> String {
+pub(crate) fn chi2(v: f64) -> String {
     if v.is_finite() && v.abs() < 1e4 {
         format!("{v:.2}")
     } else {
@@ -410,7 +410,7 @@ pub fn chi2(v: f64) -> String {
 
 /// A p-value plainly where it is readable, in scientific notation where it is
 /// small enough that the decimal form is a run of zeroes.
-pub fn pval(p: f64) -> String {
+pub(crate) fn pval(p: f64) -> String {
     if p >= 1e-3 {
         format!("{p:.3}")
     } else if p > 0.0 {

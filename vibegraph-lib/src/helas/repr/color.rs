@@ -22,16 +22,16 @@
 //! |-----------------|-----|-------|------|
 //! | SU3Fundamental  |   3 |   4/3 |  1/2 |
 //! | SU3Adjoint      |   8 |     3 |    3 |
-//! | ColorSinglet    |   1 |     0 |    0 |
 
+#[cfg(any(test, doc))]
 use super::{Real, C};
+#[cfg(any(test, doc))]
 use num_rational::Ratio;
 
 /// An SU(3) color representation, tagged by its UFO color charge.
 ///
 /// This is the lightweight, runtime-value counterpart of the [`ColorRepr`]
-/// marker types: colorize and the `Identity` resolution key off it, and each
-/// marker type names its rep through [`ColorRepr::REP`].
+/// marker types: colorize and the `Identity` resolution key off it.
 ///
 /// The ordering is the declaration order and carries no group-theoretic meaning:
 /// it exists so that types holding a rep can derive one, and nothing reads it as
@@ -58,7 +58,7 @@ impl ColorRep {
     /// `8 → Octet`. The self-conjugate reps also accept their negated charge,
     /// which the antiparticle constructor produces (`color: -self.color`):
     /// `-1 → Singlet`, `-8 → Octet`. Any other value returns `None`.
-    pub fn from_ufo(color: i32) -> Option<Self> {
+    pub(crate) fn from_ufo(color: i32) -> Option<Self> {
         match color {
             1 | -1 => Some(ColorRep::Singlet),
             3 => Some(ColorRep::Triplet),
@@ -72,7 +72,7 @@ impl ColorRep {
 
     /// The conjugate representation (`3 ↔ 3̄`, `6 ↔ 6̄`; self-conjugate
     /// otherwise).
-    pub fn anti(self) -> Self {
+    pub(crate) fn anti(self) -> Self {
         match self {
             ColorRep::Singlet => ColorRep::Singlet,
             ColorRep::Triplet => ColorRep::AntiTriplet,
@@ -141,13 +141,17 @@ mod color_rep_tests {
 ///
 /// The choice of library (num-rational vs. rug for arbitrary precision) is
 /// deferred; this trait boundary insulates downstream code from the decision.
-pub trait GroupScalar:
+#[cfg(any(test, doc))]
+pub(crate) trait GroupScalar:
     num_traits::Num + Copy + std::fmt::Debug + std::fmt::Display + PartialOrd + 'static
 {
 }
 
+#[cfg(any(test, doc))]
 impl GroupScalar for Ratio<i64> {}
+#[cfg(any(test, doc))]
 impl GroupScalar for i64 {}
+#[cfg(any(test, doc))]
 impl GroupScalar for i32 {}
 
 /// A colour representation of gauge group G.
@@ -156,28 +160,23 @@ impl GroupScalar for i32 {}
 /// representation of G. They do not store numerical data; the data lives in
 /// the `Color` fiber.
 ///
-/// The numeric `Color` fiber (`[C<F>; DIM]`) is the typed vocabulary of
+/// The numeric `Color` fiber (`[C<F>; d]` for a `d`-dimensional representation) is the typed vocabulary of
 /// hand-built wavefunction objects; the symbolic color pipeline (the `color`
 /// algebra engine) does not use it — the runtime carries no color vector.
 ///
 /// ## Associated items
 /// - `Color` -- the complex vector space carrying the representation
 /// - `GroupScalar` -- exact rational type for group-theoretic constants
-/// - `DIM` -- dimension of the representation
 /// - `casimir()` -- quadratic Casimir C2(R) defined by T^a T^a = C2(R) * 1
 /// - `dynkin()` -- Dynkin index T(R) defined by Tr[T^a T^b] = T(R) * delta^{ab}
-pub trait ColorRepr<F: Real>: Sized + Copy + 'static {
-    /// The fiber over each momentum point: a complex vector of dimension `DIM`.
+#[cfg(any(test, doc))]
+pub(crate) trait ColorRepr<F: Real>: Sized + Copy + 'static {
+    /// The fiber over each momentum point: a complex vector of the representation's
+    /// dimension.
     type Color: Copy;
 
     /// Exact rational type for group-theoretic constants.
     type GroupScalar: self::GroupScalar;
-
-    /// Dimension of the representation.
-    const DIM: usize;
-
-    /// The runtime-value tag for this representation.
-    const REP: ColorRep;
 
     /// Quadratic Casimir invariant C2(R).
     ///
@@ -200,17 +199,17 @@ pub trait ColorRepr<F: Real>: Sized + Copy + 'static {
 /// are 3x3 traceless Hermitian matrices normalised as Tr[T^a T^b] = (1/2) delta^{ab}.
 ///
 /// Group-theoretic values:
-/// - `DIM = 3`
+/// - dimension 3
 /// - `C2(F) = 4/3` (quadratic Casimir for the fundamental)
 /// - `T(F) = 1/2` (Dynkin index)
+#[cfg(any(test, doc))]
 #[derive(Clone, Copy, Debug)]
-pub struct SU3Fundamental;
+pub(crate) struct SU3Fundamental;
 
+#[cfg(any(test, doc))]
 impl<F: Real> ColorRepr<F> for SU3Fundamental {
     type Color = [C<F>; 3];
     type GroupScalar = Ratio<i64>;
-    const DIM: usize = 3;
-    const REP: ColorRep = ColorRep::Triplet;
 
     fn casimir() -> Ratio<i64> {
         Ratio::new(4, 3)
@@ -231,7 +230,7 @@ impl<F: Real> ColorRepr<F> for SU3Fundamental {
 /// structure constants `(T^a)_{bc} = -i f^{abc}`.
 ///
 /// Group-theoretic values:
-/// - `DIM = 8`
+/// - dimension 8
 /// - `C2(A) = 3` (quadratic Casimir for the adjoint)
 /// - `T(A) = 3` (Dynkin index)
 ///
@@ -244,14 +243,14 @@ impl<F: Real> ColorRepr<F> for SU3Fundamental {
 /// `f^{abc}` numerically — there is no structure-constant table, and none is
 /// needed. (The Mangano–Parke–Xu leading-Nc flow decomposition is likewise not
 /// used here; it returns only for LHEF color tags, a separate feature.)
+#[cfg(any(test, doc))]
 #[derive(Clone, Copy, Debug)]
-pub struct SU3Adjoint;
+pub(crate) struct SU3Adjoint;
 
+#[cfg(any(test, doc))]
 impl<F: Real> ColorRepr<F> for SU3Adjoint {
     type Color = [C<F>; 8];
     type GroupScalar = Ratio<i64>;
-    const DIM: usize = 8;
-    const REP: ColorRep = ColorRep::Octet;
 
     fn casimir() -> Ratio<i64> {
         Ratio::new(3, 1)
@@ -259,33 +258,5 @@ impl<F: Real> ColorRepr<F> for SU3Adjoint {
 
     fn dynkin() -> Ratio<i64> {
         Ratio::new(3, 1)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Color singlet (trivial representation)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Marker type for the colour-neutral (singlet) representation.
-///
-/// Leptons and photons are colour-neutral. The colour factor for any amplitude
-/// involving only singlets is simply 1; the wavefunction is `C<F> = 1 + 0i`.
-///
-/// Group-theoretic values: DIM=1, C2=0, T=0.
-#[derive(Clone, Copy, Debug)]
-pub struct ColorSinglet;
-
-impl<F: Real> ColorRepr<F> for ColorSinglet {
-    type Color = C<F>;
-    type GroupScalar = Ratio<i64>;
-    const DIM: usize = 1;
-    const REP: ColorRep = ColorRep::Singlet;
-
-    fn casimir() -> Ratio<i64> {
-        Ratio::new(0, 1)
-    }
-
-    fn dynkin() -> Ratio<i64> {
-        Ratio::new(0, 1)
     }
 }

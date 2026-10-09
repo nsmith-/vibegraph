@@ -12,17 +12,19 @@
 pub mod color;
 pub mod eval;
 pub mod repr;
-pub mod vertex;
+pub(crate) mod vertex;
 pub mod wavefn;
 
 pub use repr::lorentz::{Bispinor, LorentzVector};
-pub use vertex::{ffv2_2, ffv2_3, ffv2_4_3, ffv4_3, iovxxx, j3xxxx, jioxxx};
-pub use wavefn::{DiracWf, InDiracWf, OutDiracWf, VectorWf};
+pub use vertex::{iovxxx, jioxxx};
+pub use wavefn::{InDiracWf, OutDiracWf};
 
 #[cfg(test)]
 mod tests {
     use crate::helas::repr::lorentz::{ComplexVector, SpinorRepr};
 
+    use super::vertex::j3xxxx;
+    use super::wavefn::VectorWf;
     use super::*;
     use itertools::iproduct;
     use num_complex::Complex64;

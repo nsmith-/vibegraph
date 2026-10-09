@@ -97,7 +97,7 @@ const NODE_SCHEMA: &str = "\
 
 /// A failure encoding, running, or decoding the egglog round-trip.
 #[derive(Debug, thiserror::Error)]
-pub enum EgraphError {
+pub(crate) enum EgraphError {
     #[error("egglog: {0}")]
     Egglog(String),
     #[error("egglog produced no extracted term")]
@@ -109,7 +109,7 @@ pub enum EgraphError {
 /// Round-trip `ast` through an egglog e-graph: encode it, extract the root, and
 /// decode the result back into an `Ast<Sym>`. With no rewrite rules registered this
 /// is structurally the identity; it is the skeleton the optimization rules attach to.
-pub fn roundtrip(ast: &Ast<Sym>) -> Result<Ast<Sym>, EgraphError> {
+pub(crate) fn roundtrip(ast: &Ast<Sym>) -> Result<Ast<Sym>, EgraphError> {
     let mut egraph = EGraph::default();
     egraph
         .parse_and_run_program(None, NODE_SCHEMA)
@@ -137,13 +137,13 @@ pub fn roundtrip(ast: &Ast<Sym>) -> Result<Ast<Sym>, EgraphError> {
 /// `Node-42`, `i64-5`). Stable within one e-graph and consistent with the ids
 /// `extract`/`TermDag` operate over, since both are keyed off the same
 /// canonicalized backend value.
-pub type ClassId = String;
+pub(crate) type ClassId = String;
 
 /// The leaf value carried by an e-node whose e-class is a base (primitive) sort.
 /// Constructor e-nodes (those whose e-class sort is `Node`/`NodeVec`) carry
 /// [`Payload::None`]; their leaf data lives in child primitive e-classes.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Payload {
+pub(crate) enum Payload {
     /// An ordinary constructor e-node — no primitive value of its own.
     None,
     /// A primitive `i64` leaf (a `Coupling`/`Mass`/`External` field, `CoeffRat` term…).
@@ -158,29 +158,29 @@ pub enum Payload {
 /// as [`ClassId`]s (resolved from the serialized graph's node-id edges), the form
 /// a DAG-cost extractor consumes directly.
 #[derive(Debug, Clone)]
-pub struct ENode {
+pub(crate) struct ENode {
     /// The head symbol: an [`Op::name`] for constructor nodes, the rendered value
     /// for primitive nodes, the container tag for `NodeVec` nodes.
-    pub op: String,
+    pub(crate) op: String,
     /// The e-classes this e-node references, in argument order.
-    pub children: Vec<ClassId>,
+    pub(crate) children: Vec<ClassId>,
     /// The primitive value, when this e-node is a base-sort leaf.
-    pub payload: Payload,
+    pub(crate) payload: Payload,
     /// Extraction cost egglog assigned this node (constructor cost or 1.0 for
     /// primitives); carried through for M2 to override with slot-traffic weights.
-    pub cost: f64,
+    pub(crate) cost: f64,
 }
 
 /// One e-class: a set of equivalent e-nodes sharing an id and sort.
 #[derive(Debug, Clone)]
-pub struct EClass {
+pub(crate) struct EClass {
     /// The canonical e-class id.
-    pub id: ClassId,
+    pub(crate) id: ClassId,
     /// The egglog sort of this class (`Node`, `NodeVec`, `i64`, `f64`, …).
-    pub sort: Option<String>,
+    pub(crate) sort: Option<String>,
     /// The e-nodes in this class. With no rewrite rules registered every class
     /// holds exactly one e-node.
-    pub nodes: Vec<ENode>,
+    pub(crate) nodes: Vec<ENode>,
 }
 
 /// A whole e-graph enumerated into owned Rust structures: every e-class, its
@@ -188,27 +188,27 @@ pub struct EClass {
 /// input format for a sharing-aware (DAG-cost) extractor built outside egglog —
 /// egglog 2.0's own extraction is tree-cost only.
 #[derive(Debug, Clone)]
-pub struct DagEGraph {
+pub(crate) struct DagEGraph {
     /// Every e-class, in serialization order.
-    pub classes: Vec<EClass>,
+    pub(crate) classes: Vec<EClass>,
     /// The e-class(es) the root expression evaluates to (one, for a single AST).
-    pub roots: Vec<ClassId>,
+    pub(crate) roots: Vec<ClassId>,
     index: HashMap<ClassId, usize>,
 }
 
 impl DagEGraph {
     /// The e-class with id `id`, if present.
-    pub fn class(&self, id: &str) -> Option<&EClass> {
+    pub(crate) fn class(&self, id: &str) -> Option<&EClass> {
         self.index.get(id).map(|&i| &self.classes[i])
     }
 
     /// Whether an e-class with id `id` exists.
-    pub fn contains(&self, id: &str) -> bool {
+    pub(crate) fn contains(&self, id: &str) -> bool {
         self.index.contains_key(id)
     }
 
     /// The number of e-classes of a given egglog sort.
-    pub fn classes_of_sort(&self, sort: &str) -> usize {
+    pub(crate) fn classes_of_sort(&self, sort: &str) -> usize {
         self.classes
             .iter()
             .filter(|c| c.sort.as_deref() == Some(sort))
@@ -228,7 +228,7 @@ impl DagEGraph {
 /// through the tree-cost `Extractor` per row, so it cannot recover raw e-node
 /// child edges without re-imposing an extraction; `serialize` exposes them
 /// directly.
-pub fn enumerate(ast: &Ast<Sym>) -> Result<DagEGraph, EgraphError> {
+pub(crate) fn enumerate(ast: &Ast<Sym>) -> Result<DagEGraph, EgraphError> {
     let mut egraph = EGraph::default();
     egraph
         .parse_and_run_program(None, NODE_SCHEMA)
@@ -523,7 +523,7 @@ fn decode_err(args: std::fmt::Arguments) -> EgraphError {
 /// extractor is generic over this so a slot-traffic model and a uniform (or any
 /// future) model plug into the same greedy machinery; the tree- vs DAG-cost choice
 /// is orthogonal (see [`CostKind`]).
-pub trait CostModel {
+pub(crate) trait CostModel {
     /// Cost charged for selecting `op` in an e-class of the given `sort`.
     fn node_cost(&self, sort: Option<&str>, op: &str) -> f64;
 }
@@ -539,7 +539,7 @@ pub trait CostModel {
 /// scale or sum currents in these amplitudes, so they are charged at the current
 /// slot. A future static output-type analysis would refine the scalar-valued cases;
 /// the model is a swappable parameter precisely so that refinement is a drop-in.
-pub struct SlotTrafficCost;
+pub(crate) struct SlotTrafficCost;
 
 impl CostModel for SlotTrafficCost {
     fn node_cost(&self, sort: Option<&str>, op: &str) -> f64 {
@@ -593,7 +593,7 @@ fn op_slot_bytes(op: &str) -> f64 {
 /// Uniform unit cost (every constructor and container weighs 1, primitives 0) — the
 /// simplest model, handy as an M3 baseline for comparing a rewrite's node-count
 /// effect independent of slot weights.
-pub struct UnitCost;
+pub(crate) struct UnitCost;
 
 impl CostModel for UnitCost {
     fn node_cost(&self, sort: Option<&str>, _op: &str) -> f64 {
@@ -611,7 +611,7 @@ impl CostModel for UnitCost {
 /// is visible to `Dag` and invisible to `Tree` — the comparison the sharing-rule
 /// demos need, with no separate plumbing.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CostKind {
+pub(crate) enum CostKind {
     /// Cost of the *set* of chosen descendant e-classes (shared classes once).
     Dag,
     /// Cost summed over the chosen tree (shared classes per occurrence).
@@ -621,18 +621,18 @@ pub enum CostKind {
 /// The result of extracting a single e-node from every reachable e-class: the chosen
 /// node index per e-class, and the cost of the root's extraction under the model.
 #[derive(Debug, Clone)]
-pub struct Extraction {
+pub(crate) struct Extraction {
     /// Chosen e-node index within each costed e-class.
     choices: HashMap<ClassId, usize>,
     /// Cost of the first root's extraction under the model and [`CostKind`] used.
-    pub root_cost: f64,
+    pub(crate) root_cost: f64,
     /// Which cost interpretation produced this extraction.
-    pub kind: CostKind,
+    pub(crate) kind: CostKind,
 }
 
 impl Extraction {
     /// The e-node chosen for `cid`, if that class was reached and costed.
-    pub fn choice(&self, cid: &str) -> Option<usize> {
+    pub(crate) fn choice(&self, cid: &str) -> Option<usize> {
         self.choices.get(cid).copied()
     }
 
@@ -640,7 +640,7 @@ impl Extraction {
     /// chosen e-nodes — the size of the extracted DAG in AST nodes (`NodeVec`
     /// containers and primitive leaves are not AST nodes, so they are not counted).
     /// On the rule-free graph this equals the input AST's distinct-subterm count.
-    pub fn reachable_node_count(&self, dag: &DagEGraph) -> usize {
+    pub(crate) fn reachable_node_count(&self, dag: &DagEGraph) -> usize {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut stack: Vec<&str> = dag.roots.iter().map(|s| s.as_str()).collect();
         let mut count = 0;
@@ -689,7 +689,7 @@ struct CostSet {
 /// a candidate whose unioned descendant set already contains its own class is
 /// rejected (it would be an extraction that includes itself). Rule-free graphs here
 /// are acyclic, but rewrite rules make them cyclic, and this extractor is the point.
-pub fn extract(
+pub(crate) fn extract(
     dag: &DagEGraph,
     model: &dyn CostModel,
     kind: CostKind,
@@ -806,7 +806,7 @@ pub fn extract(
 /// shared arena nodes — the same DAG-preserving decode as [`decode`], sourced from
 /// the extractor's selection instead of a [`TermDag`]. On the rule-free graph the
 /// result is byte-identical to the enumerated AST.
-pub fn decode_extraction(dag: &DagEGraph, ex: &Extraction) -> Result<Ast<Sym>, EgraphError> {
+pub(crate) fn decode_extraction(dag: &DagEGraph, ex: &Extraction) -> Result<Ast<Sym>, EgraphError> {
     let root = dag.roots.first().ok_or(EgraphError::NoExtract)?;
     let mut b = AstBuilder::new();
     let mut memo: HashMap<ClassId, NodeId> = HashMap::new();

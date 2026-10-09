@@ -127,7 +127,7 @@ const DEFAULT_TARGET_REL: f64 = 1.0e-3;
 
 /// How the per-iteration budget is split across the phase-space channels.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum Allocation {
+pub(crate) enum Allocation {
     /// `Nⱼ ∝ αⱼ`, the split the channel weights imply.
     ByAlpha,
     /// Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures.
@@ -146,7 +146,7 @@ impl From<Allocation> for BlockAllocation {
 /// How a 2-body split of the decay tree draws its decay angle
 /// ([`SplitAngle`]); `auto` lets the rule read the process.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum SplitAngleArg {
+pub(crate) enum SplitAngleArg {
     /// `soft-emission` where some split has a gluon or photon daughter,
     /// `isotropic` otherwise.
     Auto,
@@ -164,7 +164,7 @@ pub enum SplitAngleArg {
 
 /// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is `log`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum TauMapArg {
+pub(crate) enum TauMapArg {
     Auto,
     /// Density `∝ 1/τ` above the cut-implied `τ_min`.
     Log,
@@ -176,7 +176,7 @@ pub enum TauMapArg {
 /// The order a peripheral chain draws its rungs in ([`RungOrder`]); `auto` is
 /// `derived`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
-pub enum RungOrderArg {
+pub(crate) enum RungOrderArg {
     Auto,
     /// Outward from beam 0, as the diagram's spacelike lines nest.
     Derived,
@@ -187,7 +187,7 @@ pub enum RungOrderArg {
 /// The phase-space map flags, shared by the integrator and anything that
 /// re-derives channels from a process.
 #[derive(Args, Debug, Clone, Copy)]
-pub struct MapArgs {
+pub(crate) struct MapArgs {
     /// How each 2-body split of the decay tree draws its decay angle.
     ///
     /// Every choice is a parametrisation of the same phase space — none moves the
@@ -200,7 +200,7 @@ pub struct MapArgs {
     /// no split moves and every choice is the same map. The choice is recorded in
     /// the artifact and replayed by `vibegraph generate`.
     #[arg(long = "map-split-angle", value_enum, default_value_t = SplitAngleArg::Auto)]
-    pub split_angle: SplitAngleArg,
+    pub(crate) split_angle: SplitAngleArg,
 
     /// How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
     ///
@@ -209,18 +209,18 @@ pub struct MapArgs {
     /// state, and measures better there (0.77× the evaluations on `p p > j j`,
     /// 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
-    pub tau: TauMapArg,
+    pub(crate) tau: TauMapArg,
 
     /// The order a peripheral (t-channel) chain draws its rungs in.
     ///
     /// `auto` is `derived`; `reversed` reads 1.01 ± 0.02 of it on `u u~ > g g g`.
     #[arg(long = "map-rung-order", value_enum, default_value_t = RungOrderArg::Auto)]
-    pub rung_order: RungOrderArg,
+    pub(crate) rung_order: RungOrderArg,
 }
 
 impl MapArgs {
     /// The options the flags spell, `auto` left to the rule.
-    pub fn options(&self) -> MapOptions {
+    pub(crate) fn options(&self) -> MapOptions {
         MapOptions {
             split_angle: match self.split_angle {
                 SplitAngleArg::Auto => None,
@@ -244,38 +244,38 @@ impl MapArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct IntegrateArgs {
+pub(crate) struct IntegrateArgs {
     /// Process card selecting the model and process (`import model` +
     /// `generate`); `-` reads the card from stdin.
-    pub proc_card: PathBuf,
+    pub(crate) proc_card: PathBuf,
 
     /// MadGraph `run_card.dat`; absent → MadGraph LO defaults.
     #[arg(long)]
-    pub run_card: Option<PathBuf>,
+    pub(crate) run_card: Option<PathBuf>,
 
     /// Output directory for the grid artifact (`<out>/grid.bin.zst`).
     #[arg(long, default_value = ".")]
-    pub out: PathBuf,
+    pub(crate) out: PathBuf,
 
     /// Overwrite an existing artifact.
     #[arg(long)]
-    pub force: bool,
+    pub(crate) force: bool,
 
     /// LHAPDF set name (proton beams only).
     #[arg(long, default_value = DEFAULT_PDF_SET)]
-    pub pdf_set: String,
+    pub(crate) pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
     /// the `~/.vibegraph` cache (offering to download the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
-    pub pdf_dir: Option<PathBuf>,
+    pub(crate) pdf_dir: Option<PathBuf>,
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
     /// directory. Unused for the built-in Standard Model.
     #[arg(long)]
-    pub ufo_dir: Option<PathBuf>,
+    pub(crate) ufo_dir: Option<PathBuf>,
 
     /// VEGAS evaluations per adaptation iteration.
     ///
@@ -285,13 +285,13 @@ pub struct IntegrateArgs {
     /// small this is. Also sets the α-survey's points per iteration, clamped to
     /// `[10000, 40000]`.
     #[arg(long, default_value_t = 120_000)]
-    pub neval: usize,
+    pub(crate) neval: usize,
 
     /// VEGAS adaptation iterations under `--fixed-budget`. The default
     /// convergence mode decides its own iteration count, capped by
     /// `--max-iters`.
     #[arg(long, default_value_t = 12)]
-    pub niter: usize,
+    pub(crate) niter: usize,
 
     /// Integrate until σ's relative uncertainty reaches this.
     ///
@@ -302,7 +302,7 @@ pub struct IntegrateArgs {
     /// iteration spends; how many iterations run is what the target decides,
     /// bounded by `--min-iters`, `--max-iters` and `--max-points`.
     #[arg(long, value_name = "REL", default_value_t = DEFAULT_TARGET_REL, conflicts_with = "fixed_budget")]
-    pub target_rel: f64,
+    pub(crate) target_rel: f64,
 
     /// Spend a fixed `--neval × --niter` and stop, instead of converging to
     /// `--target-rel`.
@@ -311,11 +311,11 @@ pub struct IntegrateArgs {
     /// same points from the same seed every time, where a convergence run's
     /// length depends on the variance it measures.
     #[arg(long)]
-    pub fixed_budget: bool,
+    pub(crate) fixed_budget: bool,
 
     /// Iterations that must run before the convergence target may stop a run.
     #[arg(long, default_value_t = 6)]
-    pub min_iters: usize,
+    pub(crate) min_iters: usize,
 
     /// Iteration cap for `--target-rel`.
     ///
@@ -325,11 +325,11 @@ pub struct IntegrateArgs {
     /// default `--neval` converges with headroom; `--max-points` still bounds
     /// the total spend.
     #[arg(long, default_value_t = 500)]
-    pub max_iters: usize,
+    pub(crate) max_iters: usize,
 
     /// Evaluation cap for `--target-rel`, over all channels and iterations.
     #[arg(long, default_value_t = 400_000_000)]
-    pub max_points: u64,
+    pub(crate) max_points: u64,
 
     /// How the per-iteration budget is split across channels.
     ///
@@ -340,23 +340,23 @@ pub struct IntegrateArgs {
     /// evaluations against 6.41M at a 0.179% target) and makes no measurable
     /// difference on a narrow one (`p p > e+ e-`, 4 channels).
     #[arg(long, value_enum)]
-    pub allocate: Option<Allocation>,
+    pub(crate) allocate: Option<Allocation>,
 
     /// RNG seed for the integration.
     #[arg(long, default_value_t = 20_260_719)]
-    pub seed: u64,
+    pub(crate) seed: u64,
 
     #[command(flatten)]
-    pub parallel: ParallelArgs,
+    pub(crate) parallel: ParallelArgs,
 
     #[command(flatten)]
-    pub maps: MapArgs,
+    pub(crate) maps: MapArgs,
 }
 
 /// The failure surface of the `integrate` command. Displayed to stderr by the
 /// binary's top-level handler.
 #[derive(Debug)]
-pub enum IntegrateError {
+pub(crate) enum IntegrateError {
     Message(String),
 }
 
@@ -461,7 +461,7 @@ pub(crate) fn load_run_card(
 
 /// The canonical string of the proc card's processes, for artifact metadata: the
 /// line itself on a one-line card, every line with its process number otherwise.
-pub fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
+pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
     match parsed.processes.as_slice() {
         [] => Err(err("proc card has no process")),
         [spec] => Ok(format!("{spec}")),
@@ -531,7 +531,7 @@ fn bank_channel(
     }
 }
 
-pub fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
     args.parallel.install().map_err(err)?;
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
@@ -733,8 +733,8 @@ fn integrate_proton(
 /// in increasing order ([`split_by_multiplicity`]), each with its groups'
 /// on-shell vetoes.
 pub(crate) struct MultiplicityGroups {
-    pub groups: Vec<FlavorGroups>,
-    pub vetoes: Vec<Vec<Option<OnShellVeto>>>,
+    pub(crate) groups: Vec<FlavorGroups>,
+    pub(crate) vetoes: Vec<Vec<Option<OnShellVeto>>>,
 }
 
 /// Enumerate the card and decompose each final-state multiplicity into flavour

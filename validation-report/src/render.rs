@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::manifest::{Manifest, Standalone, CATEGORIES};
 use crate::ResolvedRow;
 
-pub fn markdown(
+pub(crate) fn markdown(
     manifest: &Manifest,
     resolved: &[ResolvedRow],
     report_dir: &Path,
@@ -417,7 +417,7 @@ fn recorded_with_this_run(path: &Path, report_dir: &Path) -> bool {
     }
 }
 
-pub fn json(
+pub(crate) fn json(
     manifest: &Manifest,
     resolved: &[ResolvedRow],
     report_dir: &Path,

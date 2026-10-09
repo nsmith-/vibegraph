@@ -11,7 +11,7 @@
 //! [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind), which produces the
 //! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use num_rational::Ratio;
@@ -29,7 +29,6 @@ use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
 use crate::select::select_index;
-use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 use crate::ufo::{EvaluatedModel, UFOModel};
 
@@ -49,7 +48,7 @@ use super::run::BoundAmplitude;
 /// conjugate carry the same flows with some signs flipped. What identifies a flow
 /// across such a pair is which diagram lands on it at which power of `Nc`, and that
 /// phase does not move it.
-pub type FlowFingerprint = Vec<(usize, Vec<u8>, i32, Ratio<i64>)>;
+pub(crate) type FlowFingerprint = Vec<(usize, Vec<u8>, i32, Ratio<i64>)>;
 
 /// Compiled amplitude evaluator for a whole process (card- and `F`-independent).
 ///
@@ -416,7 +415,7 @@ impl AmplitudeEvaluator {
     /// This is MadGraph's `SELECT_HEL`: a categorical draw that fills in an event
     /// record's helicities once a phase-space point has been accepted. It has no
     /// effect on the cross section, which sums over the combinations.
-    pub fn select_helicity(&self, hel_m2: &[f64], u: f64) -> Option<&[i32]> {
+    pub(crate) fn select_helicity(&self, hel_m2: &[f64], u: f64) -> Option<&[i32]> {
         // Asserted rather than debug-asserted: a short weight vector would draw from
         // a prefix of the combinations and return a helicity that looks valid, which
         // nothing downstream can detect.
@@ -464,7 +463,13 @@ impl AmplitudeEvaluator {
     /// A process whose colour basis has one flow reduces to a no-op: every diagram
     /// reaches the single flow, so the mask admits everything and the draw returns
     /// flow 0 for any variate. `None` when no flow carries weight at all.
-    pub fn select_color_flow(&self, amp2: &[f64], jamp2: &[f64], u: [f64; 2]) -> Option<usize> {
+    #[cfg(any(test, doc))]
+    pub(crate) fn select_color_flow(
+        &self,
+        amp2: &[f64],
+        jamp2: &[f64],
+        u: [f64; 2],
+    ) -> Option<usize> {
         self.select_config_and_flow(amp2, jamp2, u, None)
             .map(|selection| selection.flow)
     }
@@ -485,7 +490,7 @@ impl AmplitudeEvaluator {
     /// `addmothers` writes from it (`super_auto_dsig_group_v4.inc`'s
     /// `select_color`, `addmothers.f`'s `lconfig`). Given, it replaces the `AMP2`
     /// draw and `u[0]` goes unread; `None` is the draw above.
-    pub fn select_config_and_flow(
+    pub(crate) fn select_config_and_flow(
         &self,
         amp2: &[f64],
         jamp2: &[f64],
@@ -541,7 +546,7 @@ impl AmplitudeEvaluator {
     /// The diagram an integration configuration is written from: the first of
     /// its members, as an index into the diagram set the evaluator was compiled
     /// from — the representative MadGraph's `configs.inc` writes.
-    pub fn config_diagram(&self, config: usize) -> Option<usize> {
+    pub(crate) fn config_diagram(&self, config: usize) -> Option<usize> {
         let start: usize = self.config_spans.get(..config)?.iter().sum();
         self.config_amp_diagrams.get(start).copied()
     }
@@ -568,7 +573,7 @@ impl AmplitudeEvaluator {
     /// These are the legs [`Self::color_flow_tags`] was derived on, so a consumer
     /// carrying that table somewhere else reads the reps it has to compare against
     /// from the compiled amplitude rather than from a PDG table of its own.
-    pub fn external_colors(&self) -> &[LegColor] {
+    pub(crate) fn external_colors(&self) -> &[LegColor] {
         &self.leg_colors
     }
 
@@ -580,7 +585,7 @@ impl AmplitudeEvaluator {
     /// that corresponds to flow `f` of the other is the one built from the same
     /// contributions. Matching on it is a statement about the colour algebra rather
     /// than about numbers that happen to agree at a probe point.
-    pub fn flow_fingerprints(&self) -> &[FlowFingerprint] {
+    pub(crate) fn flow_fingerprints(&self) -> &[FlowFingerprint] {
         &self.flow_fingerprints
     }
 
@@ -770,18 +775,9 @@ impl AmplitudeEvaluator {
     /// Helicity-expanded arena node counts `(before, after)` the zero-amplitude
     /// elimination pass, or `(0, 0)` if [`prune_zero_helicities`](Self::prune_zero_helicities)
     /// has not run. A diagnostic for the per-`(helicity, diagram)` skipping headroom.
-    pub fn zeroamp_node_reduction(&self) -> (usize, usize) {
+    #[cfg(test)]
+    pub(crate) fn zeroamp_node_reduction(&self) -> (usize, usize) {
         (self.zeroamp_nodes_before, self.zeroamp_nodes_after)
-    }
-
-    /// Return all coupling and particle ids needed to evaluate the amplitude.
-    ///
-    /// Can be used for prefetching from EvaluatedModel if desired.
-    pub fn coupling_particle_ids(&self) -> (HashSet<CouplingId>, HashSet<ParticleId>) {
-        (
-            self.folded.coupling_ids().collect(),
-            self.folded.particle_ids().collect(),
-        )
     }
 }
 
@@ -827,8 +823,8 @@ fn report_flow_tags(tags: &ColorFlowTags) {
 /// amplitude and not only colourless ones and `2 -> 2`s. A process added to the
 /// amplitude gate belongs here too; the cost is another full re-rooting sweep to
 /// re-verify.
-#[cfg(any(test, feature = "extended-validation"))]
-pub const MG_VALIDATED_PROCESSES: [&str; 19] = [
+#[cfg(test)]
+pub(crate) const MG_VALIDATED_PROCESSES: [&str; 19] = [
     "e+ e- > mu+ mu-",
     "u u~ > mu+ mu-",
     "e+ e- > e+ e-",
@@ -852,16 +848,16 @@ pub const MG_VALIDATED_PROCESSES: [&str; 19] = [
 
 /// What [`AmplitudeEvaluator::select_config_and_flow`] draws for one event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ColorSelection {
+pub(crate) struct ColorSelection {
     /// The integration configuration drawn `∝ AMP2`, `None` where no
     /// configuration carried weight and the flow was drawn unmasked.
-    pub config: Option<usize>,
+    pub(crate) config: Option<usize>,
     /// The colour flow.
-    pub flow: usize,
+    pub(crate) flow: usize,
     /// Whether the configuration reaches the flow at leading colour: MadEvent's
     /// `SELECT_COLOR` returns a negative `ICOL` otherwise, and `addmothers`
     /// then writes no intermediate record for the event.
-    pub leading: bool,
+    pub(crate) leading: bool,
 }
 
 /// The diagrams MadGraph gives an integration configuration — and therefore an
@@ -1007,7 +1003,7 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 /// the census is what says so. Reused per model rather than written once for the
 /// SM, so a second model's list carries its own allowlist.
 #[cfg(any(test, feature = "extended-validation"))]
-pub fn op_census(
+pub(crate) fn op_census(
     label: &str,
     model: &UFOModel,
     processes: &[&str],
@@ -1049,8 +1045,8 @@ pub fn op_census(
 /// Assert that the ops *missing* from `model`'s census over `processes` are
 /// exactly `known_uncovered` — two-way, so an op the list newly covers must be
 /// removed from the allowlist rather than left standing.
-#[cfg(any(test, feature = "extended-validation"))]
-pub fn assert_op_coverage(
+#[cfg(test)]
+pub(crate) fn assert_op_coverage(
     label: &str,
     model: &UFOModel,
     processes: &[&str],

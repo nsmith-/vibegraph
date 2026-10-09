@@ -71,7 +71,7 @@ pub const BMASS: f64 = 4.7;
 pub const ZMASS: f64 = 91.188;
 
 /// Newton stopping criterion on `|Δa / a|`.
-pub const TOL: f64 = 5e-4;
+pub(crate) const TOL: f64 = 5e-4;
 
 /// β-function coefficients indexed by `nf - 3`, for `nf ∈ {3, 4, 5}`.
 ///
@@ -183,7 +183,8 @@ impl RunningAlphaS {
 
     /// `αs(BMASS)` and `αs(CMASS)`, the cached threshold values the low-scale
     /// branches evolve from.
-    pub fn thresholds(&self) -> (f64, f64) {
+    #[cfg(test)]
+    pub(crate) fn thresholds(&self) -> (f64, f64) {
         (self.alpha_b, self.alpha_c)
     }
 

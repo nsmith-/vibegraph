@@ -135,7 +135,7 @@ type V = LorentzVector<f64>;
 /// the observed agreement is exact (measured: bit-for-bit over every `p p → ℓℓj`
 /// group). The bound is loose against that and still eleven orders below the
 /// closest measured separation between distinct groups.
-pub const GROUP_REL_TOL: f64 = 1e-10;
+pub(crate) const GROUP_REL_TOL: f64 = 1e-10;
 
 /// Minimum relative separation between two distinct groups at their best-separated
 /// probe point.
@@ -147,7 +147,7 @@ pub const GROUP_REL_TOL: f64 = 1e-10;
 /// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
 /// fitted on — six orders above this floor, and asserted there to stay above
 /// `0.1`.
-pub const GROUP_SEPARATION_MIN: f64 = 1e-6;
+pub(crate) const GROUP_SEPARATION_MIN: f64 = 1e-6;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
 const PROBE_POINTS_PER_ENERGY: usize = 4;
@@ -167,7 +167,7 @@ pub struct Subprocess {
     pub outgoing: Vec<i32>,
     /// The helicities each outgoing leg is polarized to, `None` where it is
     /// summed over, in the same order. Every member of a group shares them.
-    pub outgoing_polarizations: Vec<Option<Vec<i32>>>,
+    pub(crate) outgoing_polarizations: Vec<Option<Vec<i32>>>,
     /// SU(3) rep of every leg, in the group's shared leg order (incoming first),
     /// read off *this* member's own compiled amplitude.
     ///
@@ -175,7 +175,7 @@ pub struct Subprocess {
     /// a quark and an antiquark share `|M|²`, mass list, cut filter and colour-factor
     /// matrix — and the record layer needs the member's own reps to check the table
     /// it is about to write.
-    pub colors: Vec<ColorRep>,
+    pub(crate) colors: Vec<ColorRep>,
     /// This member's **own** per-flow `ICOLUP` tags, reordered into the group
     /// representative's flow indexing by [`flow_permutation`].
     ///
@@ -186,7 +186,7 @@ pub struct Subprocess {
     /// `flow_permutation[f]` is the flow of this member's own colour basis that
     /// corresponds to flow `f` of the representative's. Kept for the tests and for
     /// failure messages; production reads [`Self::flows`], which has it applied.
-    pub flow_permutation: Vec<usize>,
+    pub(crate) flow_permutation: Vec<usize>,
 }
 
 impl Subprocess {
@@ -204,7 +204,7 @@ impl Subprocess {
     /// Read from the concrete assignment rather than from the group's
     /// representative, because the outgoing multiset is what the factor counts and
     /// nothing in the grouping rule holds it fixed across members.
-    pub fn symmetry_factor(&self) -> f64 {
+    pub(crate) fn symmetry_factor(&self) -> f64 {
         let legs: Vec<_> = self
             .outgoing
             .iter()
@@ -300,7 +300,7 @@ fn rewgt_of(event: &ProtonEvent, gi: usize) -> [Option<&[f64]>; 2] {
 /// The two per-beam flavour rows one phase-space point reads: `x·f` at
 /// `(x₁, μ²_F1)` and at `(x₂, μ²_F2)`, every flavour at once. Every subprocess
 /// summed over the point reads these same two, whatever its beam flavours.
-pub fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRow; 2] {
+pub(crate) fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRow; 2] {
     let mut rows = [[0.0; FLAVOR_SLOTS]; 2];
     pdf.xfx_all(x1, mu_f[0] * mu_f[0], &mut rows[0]);
     pdf.xfx_all(x2, mu_f[1] * mu_f[1], &mut rows[1]);
@@ -346,11 +346,6 @@ impl FlavorGroup {
         &self.representative
     }
 
-    /// External legs in process order (incoming first), for the representative.
-    pub fn external_legs(&self) -> &[ExternalLeg] {
-        &self.legs
-    }
-
     /// The cut filter every member compiles to.
     pub fn cuts(&self) -> &Cuts {
         &self.cuts
@@ -362,7 +357,7 @@ impl FlavorGroup {
     }
 
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
-    pub fn spin_color_average(&self) -> f64 {
+    pub(crate) fn spin_color_average(&self) -> f64 {
         self.spin_color_avg
     }
 
@@ -372,7 +367,7 @@ impl FlavorGroup {
     }
 
     /// Number of incoming legs; two for every hadronic subprocess.
-    pub fn n_in(&self) -> usize {
+    pub(crate) fn n_in(&self) -> usize {
         self.evaluator.n_in()
     }
 
@@ -424,7 +419,7 @@ impl FlavorGroup {
     }
 
     /// [`luminosity`](Self::luminosity) off the two beam flavour rows directly.
-    pub fn luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
+    pub(crate) fn luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for i in 0..self.members.len() {
             let m = self.member_luminosity_rows(i, f1, f2);
@@ -444,7 +439,8 @@ impl FlavorGroup {
     /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
     /// group unless they happen to agree: a group is a statement about the matrix
     /// element, not about the outgoing multiset.
-    pub fn symmetry_weighted_luminosity(
+    #[cfg(any(test, doc))]
+    pub(crate) fn symmetry_weighted_luminosity(
         &self,
         pdf: &PdfMember,
         x1: f64,
@@ -457,7 +453,11 @@ impl FlavorGroup {
 
     /// [`symmetry_weighted_luminosity`](Self::symmetry_weighted_luminosity) off
     /// the two beam flavour rows directly.
-    pub fn symmetry_weighted_luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
+    pub(crate) fn symmetry_weighted_luminosity_rows(
+        &self,
+        f1: &FlavorRow,
+        f2: &FlavorRow,
+    ) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for (i, member) in self.members.iter().enumerate() {
             let s = member.symmetry_factor();
@@ -469,23 +469,10 @@ impl FlavorGroup {
     }
 
     /// One member's `[direct, mirror]` luminosity — the share that decides which
-    /// concrete flavour an accepted event of this group is labelled with.
-    pub fn member_luminosity(
-        &self,
-        member: usize,
-        pdf: &PdfMember,
-        x1: f64,
-        x2: f64,
-        mu_f: [f64; 2],
-    ) -> [f64; 2] {
-        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
-        self.member_luminosity_rows(member, &f1, &f2)
-    }
-
-    /// [`member_luminosity`](Self::member_luminosity) off the two beam flavour
-    /// rows directly: two array reads per ordering, at slots resolved when the
-    /// group was built.
-    pub fn member_luminosity_rows(
+    /// concrete flavour an accepted event of this group is labelled with — off the
+    /// two beam flavour rows: two array reads per ordering, at slots resolved when
+    /// the group was built.
+    pub(crate) fn member_luminosity_rows(
         &self,
         member: usize,
         f1: &FlavorRow,
@@ -1154,12 +1141,12 @@ pub struct ProtonEvent {
     /// reweighting factor (`rewgt`) of each member of the group, in member order;
     /// `None` without matching, where every factor is `1`, and where the term
     /// carries no weight.
-    pub group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
+    pub(crate) group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
     /// Per flavour group and beam ordering, `[direct, mirrored]`, what the event
     /// record reads of the term's matched clustering (`ptclus` and the on-shell
     /// propagators); `None` without matching and where the term carries no
     /// weight.
-    pub group_records: Vec<[Option<MatchedRecord>; 2]>,
+    pub(crate) group_records: Vec<[Option<MatchedRecord>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1458,7 +1445,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// density is the same function at the same `αⱼ` sums, so the merge can be
     /// measured and pinned against it.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_unmerged_with_maps(
+    #[cfg(test)]
+    pub(crate) fn new_unmerged_with_maps(
         groups: &'a FlavorGroups,
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
@@ -1474,7 +1462,7 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// The maps this integrand samples under, every choice settled — what an
     /// artifact banks so a generator rebuilds the same channels and `τ` draw.
-    pub fn maps(&self) -> MapChoices {
+    pub(crate) fn maps(&self) -> MapChoices {
         self.maps
     }
 
@@ -1875,7 +1863,8 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
     /// the process's own cuts.
-    pub fn spacelike_floor(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn spacelike_floor(&self) -> f64 {
         self.cuts.spacelike_floor()
     }
 
@@ -1894,7 +1883,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// Every `(group, diagram)` pair each sampling channel's map serves, in
     /// channel order: one pair unless several pairs' maps are the same function
     /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)).
-    pub fn channel_members(&self) -> &[Vec<ChannelId>] {
+    pub(crate) fn channel_members(&self) -> &[Vec<ChannelId>] {
         &self.channel_members
     }
 
@@ -1975,7 +1964,7 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// The damping exponent every channel's grid is built with.
-    pub fn vegas_alpha(&self) -> f64 {
+    pub(crate) fn vegas_alpha(&self) -> f64 {
         self.vegas_alpha
     }
 
@@ -2966,7 +2955,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// The mean of the mixture estimator `f/g` over the last α-survey
     /// ([`adapt_alphas`](Self::adapt_alphas)): that survey's estimate of the
     /// cross section in natural units, and zero before any survey.
-    pub fn survey_mean(&self) -> f64 {
+    pub(crate) fn survey_mean(&self) -> f64 {
         self.survey_mean
     }
 

@@ -23,42 +23,19 @@ use super::{param_default, ParamValue, RunCardError};
 use FieldClass::{Consumed, IgnoredBenign, IgnoredPhysics};
 
 /// Where a recognized run-card parameter goes.
-pub enum FieldClass {
+pub(crate) enum FieldClass {
     /// Read by this crate. The string names the consumer.
-    Consumed(&'static str),
+    Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(&'static str),
+    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///
     /// "Not implemented" rather than "not read": a field may be read precisely in
     /// order to decline the branch it selects, which is what the refusal then
     /// covers. `tmin_for_channel` is that case.
-    IgnoredPhysics {
-        why: &'static str,
-        when: Applicability,
-    },
-}
-
-/// When an [`FieldClass::IgnoredPhysics`] field is capable of biting at all.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Applicability {
-    Always,
-    /// Only when both beams carry a parton density (`lpp1 == lpp2 == 1`). Real
-    /// fixed-energy cards do move such a field off its default, so a flat
-    /// "must equal the default" rule would reject runs MadGraph accepted.
-    ProtonBeams,
-}
-
-impl Applicability {
-    /// Whether the field can bite on a run with this beam configuration.
-    pub fn applies(self, lpp1: i64, lpp2: i64) -> bool {
-        match self {
-            Applicability::Always => true,
-            Applicability::ProtonBeams => lpp1 != 0 && lpp2 != 0,
-        }
-    }
+    IgnoredPhysics { why: &'static str },
 }
 
 const R_NEVENTS: &str = "RunCard::nevents, the event budget the CLI generates against";
@@ -222,10 +199,10 @@ const P_FIXED_COUPLINGS: &str = "MadGraph itself aborts on False ('form factor w
 
 /// One row per name in [`super::PARAM_DEFAULTS`], in that table's order.
 #[rustfmt::skip]
-pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
+pub(crate) static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("run_tag",                 IgnoredBenign(B_JOB)),
     ("gridpack",                IgnoredBenign(B_JOB)),
-    ("time_of_flight",          IgnoredPhysics { why: P_TIME_OF_FLIGHT, when: Applicability::Always }),
+    ("time_of_flight",          IgnoredPhysics { why: P_TIME_OF_FLIGHT }),
     ("nevents",                 Consumed(R_NEVENTS)),
     ("iseed",                   IgnoredBenign(B_JOB)),
     ("bypass_check",            IgnoredBenign(B_JOB)),
@@ -234,14 +211,14 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("lpp2",                    Consumed(R_LPP)),
     ("ebeam1",                  Consumed(R_EBEAM)),
     ("ebeam2",                  Consumed(R_EBEAM)),
-    ("polbeam1",                IgnoredPhysics { why: P_POLBEAM, when: Applicability::Always }),
-    ("polbeam2",                IgnoredPhysics { why: P_POLBEAM, when: Applicability::Always }),
-    ("nb_proton1",              IgnoredPhysics { why: P_ION_COMPOSITION, when: Applicability::Always }),
-    ("nb_proton2",              IgnoredPhysics { why: P_ION_COMPOSITION, when: Applicability::Always }),
-    ("nb_neutron1",             IgnoredPhysics { why: P_ION_COMPOSITION, when: Applicability::Always }),
-    ("nb_neutron2",             IgnoredPhysics { why: P_ION_COMPOSITION, when: Applicability::Always }),
-    ("mass_ion1",               IgnoredPhysics { why: P_ION_MASS, when: Applicability::Always }),
-    ("mass_ion2",               IgnoredPhysics { why: P_ION_MASS, when: Applicability::Always }),
+    ("polbeam1",                IgnoredPhysics { why: P_POLBEAM }),
+    ("polbeam2",                IgnoredPhysics { why: P_POLBEAM }),
+    ("nb_proton1",              IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_proton2",              IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_neutron1",             IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("nb_neutron2",             IgnoredPhysics { why: P_ION_COMPOSITION }),
+    ("mass_ion1",               IgnoredPhysics { why: P_ION_MASS }),
+    ("mass_ion2",               IgnoredPhysics { why: P_ION_MASS }),
     ("pdlabel",                 Consumed(R_PDLABEL)),
     ("pdlabel1",                Consumed(R_PDLABEL_BEAM)),
     ("pdlabel2",                Consumed(R_PDLABEL_BEAM)),
@@ -260,31 +237,31 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("ievo_eva",                IgnoredBenign(B_EVA)),
     ("evaorder",                IgnoredBenign(B_EVA)),
     ("eva_xcut",                IgnoredBenign(B_EVA)),
-    ("bias_module",             IgnoredPhysics { why: P_BIAS_MODULE, when: Applicability::Always }),
+    ("bias_module",             IgnoredPhysics { why: P_BIAS_MODULE }),
     ("bias_parameters",         IgnoredBenign(B_BIAS_PARAMETERS)),
     ("scalefact",               Consumed(R_SCALES)),
     ("ickkw",                   Consumed(R_ICKKW)),
     ("highestmult",             IgnoredBenign(B_MLM)),
-    ("ktscheme",                IgnoredPhysics { why: P_KTSCHEME, when: Applicability::Always }),
+    ("ktscheme",                IgnoredPhysics { why: P_KTSCHEME }),
     ("alpsfact",                Consumed(R_ALPSFACT)),
-    ("chcluster",               IgnoredPhysics { why: P_CHCLUSTER, when: Applicability::Always }),
+    ("chcluster",               IgnoredPhysics { why: P_CHCLUSTER }),
     ("pdfwgt",                  Consumed(R_SCALES)),
     ("asrwgtflavor",            Consumed(R_ASRWGTFLAVOR)),
     ("clusinfo",                IgnoredBenign(B_MLM)),
-    ("custom_fcts",             IgnoredPhysics { why: P_CUSTOM_FCTS, when: Applicability::Always }),
-    ("lhe_version",             IgnoredPhysics { why: P_LHE_VERSION, when: Applicability::Always }),
-    ("boost_event",             IgnoredPhysics { why: P_BOOST_EVENT, when: Applicability::Always }),
+    ("custom_fcts",             IgnoredPhysics { why: P_CUSTOM_FCTS }),
+    ("lhe_version",             IgnoredPhysics { why: P_LHE_VERSION }),
+    ("boost_event",             IgnoredPhysics { why: P_BOOST_EVENT }),
     ("me_frame",                Consumed(R_FRAME)),
     ("frame_id",                IgnoredBenign(B_FRAME_ID)),
-    ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM, when: Applicability::Always }),
+    ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM }),
     ("keep_log",                IgnoredBenign(B_JOB)),
     ("auto_ptj_mjj",            Consumed(R_AUTO_PTJ_MJJ)),
     ("bwcutoff",                Consumed(R_BWCUTOFF)),
     ("cut_decays",              Consumed(R_CUT_DECAYS)),
     ("dsqrt_shat",              Consumed(R_CUT_LITERAL)),
     ("dsqrt_shatmax",           Consumed(R_CUT_LITERAL)),
-    ("nhel",                    IgnoredPhysics { why: P_NHEL, when: Applicability::Always }),
-    ("limhel",                  IgnoredPhysics { why: P_LIMHEL, when: Applicability::Always }),
+    ("nhel",                    IgnoredPhysics { why: P_NHEL }),
+    ("limhel",                  IgnoredPhysics { why: P_LIMHEL }),
     ("ptj",                     Consumed(R_CUT_SINGLE)),
     ("ptb",                     Consumed(R_CUT_SINGLE)),
     ("pta",                     Consumed(R_CUT_LITERAL)),
@@ -399,7 +376,7 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("sys_pdf",                 IgnoredBenign(B_SYST)),
     ("sys_scalecorrelation",    IgnoredBenign(B_SYST)),
     ("gridrun",                 IgnoredBenign(B_INTEGRATOR)),
-    ("fixed_couplings",         IgnoredPhysics { why: P_FIXED_COUPLINGS, when: Applicability::Always }),
+    ("fixed_couplings",         IgnoredPhysics { why: P_FIXED_COUPLINGS }),
     ("mc_grouped_subproc",      IgnoredBenign(B_INTEGRATOR)),
     ("xmtcentral",              Consumed(R_SCALES)),
     ("d",                       Consumed(R_SCALES)),
@@ -407,12 +384,12 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("issgridfile",             IgnoredBenign(B_JOB)),
     ("job_strategy",            IgnoredBenign(B_INTEGRATOR)),
     ("hard_survey",             IgnoredBenign(B_INTEGRATOR)),
-    ("tmin_for_channel",        IgnoredPhysics { why: P_TMIN_FOR_CHANNEL, when: Applicability::Always }),
+    ("tmin_for_channel",        IgnoredPhysics { why: P_TMIN_FOR_CHANNEL }),
     ("second_refine_treshold",  IgnoredBenign(B_INTEGRATOR)),
     ("survey_splitting",        IgnoredBenign(B_INTEGRATOR)),
     ("survey_nchannel_per_job", IgnoredBenign(B_INTEGRATOR)),
     ("refine_evt_by_job",       IgnoredBenign(B_INTEGRATOR)),
-    ("small_width_treatment",   IgnoredPhysics { why: P_SMALL_WIDTH, when: Applicability::Always }),
+    ("small_width_treatment",   IgnoredPhysics { why: P_SMALL_WIDTH }),
     ("hel_recycling",           IgnoredBenign(B_INTEGRATOR)),
     ("hel_filtering",           IgnoredBenign(B_INTEGRATOR)),
     ("hel_splitamp",            IgnoredBenign(B_INTEGRATOR)),
@@ -437,23 +414,14 @@ pub static FIELD_CLASSES: &[(&str, FieldClass)] = &[
 /// Refuse a card that moves an [`FieldClass::IgnoredPhysics`] field off the
 /// MadGraph default it was resolved against.
 ///
-/// The beam configuration is passed in because [`Applicability::ProtonBeams`]
-/// fields are only capable of biting on a run whose beams carry parton
-/// densities, and fixed-energy cards do set them.
-///
 /// Only a refusal is possible here. Nothing is derived and nothing is rewritten.
 pub(super) fn refuse_ignored_physics(
     values: &BTreeMap<String, ParamValue>,
-    lpp1: i64,
-    lpp2: i64,
 ) -> Result<(), RunCardError> {
     for (name, class) in FIELD_CLASSES {
-        let IgnoredPhysics { why, when } = class else {
+        let IgnoredPhysics { why } = class else {
             continue;
         };
-        if !when.applies(lpp1, lpp2) {
-            continue;
-        }
         let (Some(current), Some(default)) = (values.get(*name), param_default(name)) else {
             continue;
         };
@@ -529,9 +497,8 @@ mod tests {
     #[test]
     fn ignored_physics_fields_are_refused() {
         let mut checked = 0;
-        let mut proton_only = 0;
         for (name, class) in FIELD_CLASSES {
-            let IgnoredPhysics { when, .. } = class else {
+            let IgnoredPhysics { .. } = class else {
                 continue;
             };
             let perturbed = perturb(name);
@@ -549,19 +516,9 @@ mod tests {
                 }
             }
 
-            // A `ProtonBeams` field is inert on fixed-energy beams, and real
-            // cards set one there, so it must still parse.
-            if *when == Applicability::ProtonBeams {
-                proton_only += 1;
-                let fixed = format!("  0 = lpp1\n  0 = lpp2\n  {perturbed} = {name}\n");
-                RunCard::parse(&fixed).unwrap_or_else(|e| {
-                    panic!("'{name} = {perturbed}' on fixed-energy beams was refused: {e}")
-                });
-            }
             checked += 1;
         }
         assert_eq!(checked, 21, "the refused inventory changed size");
-        assert_eq!(proton_only, 0, "the beam-dependent inventory changed size");
     }
 
     /// A card line that moves `name` off its default, in the syntax the parser
@@ -632,8 +589,6 @@ mod tests {
 
     /// Every field the refusal covers is one no banked card moves — the property
     /// that makes the enforcement invisible to every reference cross section.
-    /// The fixed-energy cards that do set `pdlabel1`/`pdlabel2` are why
-    /// [`Applicability::ProtonBeams`] exists.
     #[test]
     fn the_default_card_is_accepted() {
         RunCard::parse("").expect("an empty card is MadGraph's own configuration");

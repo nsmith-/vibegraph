@@ -25,6 +25,7 @@ use crate::helas::repr::Real;
 
 use super::rambo::{flat_weight, rambo};
 use super::rng::SubStream;
+#[cfg(any(test, doc))]
 use super::{lips2_jacobian_u, u_to_costheta};
 
 /// A generated phase-space point: `n` on-shell momenta in the CM frame (total
@@ -227,7 +228,7 @@ impl<F: Real> SubsystemMemo<F> {
 /// does not move with the energy, so it is not restated here.
 /// Shared across threads for the same reason [`Channel`] is, and stating it the
 /// same way.
-pub trait ScaledChannel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
+pub(crate) trait ScaledChannel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// Map uniforms to a phase-space point at CM energy `sqrt_s`, with the weight
     /// `1/g` this channel alone assigns.
     fn sample_at(&self, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F>;
@@ -262,7 +263,11 @@ type ThreadMemo<F> = Box<ThreadLocal<RefCell<SubsystemMemo<F>>>>;
 /// `None` when the survey found no weight to reallocate (an identically zero
 /// integrand, or a non-finite sum), in which case the caller keeps the `alphas` it
 /// has. Shared so the rule is written once for every combiner that applies it.
-pub fn kleiss_pittau_step<F: Real>(alphas: &[F], variance: &[F], damping: F) -> Option<Vec<F>> {
+pub(crate) fn kleiss_pittau_step<F: Real>(
+    alphas: &[F],
+    variance: &[F],
+    damping: F,
+) -> Option<Vec<F>> {
     let floor_frac = F::from(1e-12).expect("floor fits the scalar field");
     let mut raw: Vec<F> = alphas
         .iter()
@@ -286,7 +291,7 @@ pub fn kleiss_pittau_step<F: Real>(alphas: &[F], variance: &[F], damping: F) -> 
 
 /// The channel `u0 ∈ [0,1)` selects from a normalised weight vector, by cumulative
 /// weight. The last channel absorbs the rounding at the top of the interval.
-pub fn select_channel<F: Real>(alphas: &[F], u0: F) -> usize {
+pub(crate) fn select_channel<F: Real>(alphas: &[F], u0: F) -> usize {
     let mut acc = F::zero();
     for (j, alpha) in alphas.iter().enumerate() {
         acc = acc + *alpha;
@@ -413,7 +418,7 @@ impl<F: Real> MultiChannel<F> {
     /// Combine `channels` under explicit selection weights `alphas` (`Σ αⱼ = 1`,
     /// each `> 0`). All channels must share one [`ndim`](PhaseSpaceMap::ndim) — they
     /// parametrise the same `n`-body final state at the same `√ŝ`.
-    pub fn new(channels: Vec<Box<dyn Channel<F>>>, alphas: Vec<F>) -> Self {
+    pub(crate) fn new(channels: Vec<Box<dyn Channel<F>>>, alphas: Vec<F>) -> Self {
         assert!(
             !channels.is_empty(),
             "a combiner needs at least one channel"
@@ -448,14 +453,14 @@ impl<F: Real> MultiChannel<F> {
     }
 
     /// The current per-channel selection weights, in channel order.
-    pub fn alphas(&self) -> &[F] {
+    pub(crate) fn alphas(&self) -> &[F] {
         &self.alphas
     }
 
     /// Replace the selection weights (`Σ αⱼ = 1`, each `> 0`), keeping the channel
     /// set. The reweighting hook a channel-weight adaptation drives; the estimator
     /// and [`density`](Self::density) pick the new `αⱼ` up unchanged.
-    pub fn set_alphas(&mut self, alphas: Vec<F>) {
+    pub(crate) fn set_alphas(&mut self, alphas: Vec<F>) {
         assert_eq!(
             alphas.len(),
             self.channels.len(),
@@ -490,7 +495,7 @@ impl<F: Real> MultiChannel<F> {
     /// function of the momenta alone: the cluster scale reads the integration
     /// channel. The survey therefore sees the same integrand the integration
     /// will.
-    pub fn adapt_alphas(
+    pub(crate) fn adapt_alphas(
         &mut self,
         integrand: impl Fn(&[LorentzVector<F>], usize) -> F,
         seed: u64,
@@ -587,7 +592,7 @@ impl<F: Real> MultiChannel<F> {
 
     /// The uniforms one channel consumes on its own — [`ndim`](PhaseSpaceMap::ndim)
     /// less the coordinate the mixture reserves for its channel draw.
-    pub fn channel_ndim(&self) -> usize {
+    pub(crate) fn channel_ndim(&self) -> usize {
         self.channel_ndim
     }
 
@@ -604,7 +609,8 @@ impl<F: Real> MultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    pub fn sample_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
+    #[cfg(any(test, doc))]
+    pub(crate) fn sample_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
         let pt = self.draw_in_channel(j, u);
         let weight = self.channel_weight(j, &pt.momenta);
         PhaseSpacePoint {
@@ -626,20 +632,20 @@ impl<F: Real> MultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    pub fn draw_in_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
+    pub(crate) fn draw_in_channel(&self, j: usize, u: &[F]) -> PhaseSpacePoint<F> {
         assert!(j < self.channels.len(), "channel index out of range");
         self.channels[j].sample(u)
     }
 
     /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in
     /// channel `j` — the second half of [`sample_channel`](Self::sample_channel).
-    pub fn channel_weight(&self, j: usize, momenta: &[LorentzVector<F>]) -> F {
+    pub(crate) fn channel_weight(&self, j: usize, momenta: &[LorentzVector<F>]) -> F {
         self.alphas[j] / self.positive_density(momenta)
     }
 
     /// The weight `1/g(p)` the mixture gives a point drawn through it — the
     /// second half of [`sample_from`](Self::sample_from).
-    pub fn mixture_weight(&self, momenta: &[LorentzVector<F>]) -> F {
+    pub(crate) fn mixture_weight(&self, momenta: &[LorentzVector<F>]) -> F {
         F::one() / self.positive_density(momenta)
     }
 
@@ -650,7 +656,7 @@ impl<F: Real> MultiChannel<F> {
     /// `g` costs a density evaluation in every channel, and a caller needing the
     /// row as well as the weight — a variance-share estimator needs both —
     /// otherwise pays for that sweep twice.
-    pub fn mixture_weight_recording(
+    pub(crate) fn mixture_weight_recording(
         &self,
         momenta: &[LorentzVector<F>],
         densities: &mut Vec<F>,
@@ -668,7 +674,7 @@ impl<F: Real> MultiChannel<F> {
     /// index adds is the channel an integrand needs when it is not a pure
     /// function of the momenta — a per-event scale prescription that reads the
     /// integration channel, for one.
-    pub fn sample_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
+    pub(crate) fn sample_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
         let (idx, pt) = self.draw_from(u);
         let weight = self.mixture_weight(&pt.momenta);
         (
@@ -684,7 +690,7 @@ impl<F: Real> MultiChannel<F> {
     /// channel's own weight; [`mixture_weight`](Self::mixture_weight) is the rest
     /// of it, and [`draw_in_channel`](Self::draw_in_channel) says why they are
     /// separable.
-    pub fn draw_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
+    pub(crate) fn draw_from(&self, u: &[F]) -> (usize, PhaseSpacePoint<F>) {
         let idx = self.select(u[0]);
         (idx, self.channels[idx].sample(&u[1..]))
     }
@@ -746,7 +752,7 @@ impl<F: Real> Combiner<F> for MultiChannel<F> {
 /// sees is not this combiner's, and the α-adaptation survey has to be driven by
 /// the integrand that owns the outer map. [`kleiss_pittau_step`] is the shared
 /// reallocation rule such a driver applies.
-pub struct ScaledMultiChannel<F: Real> {
+pub(crate) struct ScaledMultiChannel<F: Real> {
     channels: Vec<Box<dyn ScaledChannel<F>>>,
     alphas: Vec<F>,
     channel_ndim: usize,
@@ -758,7 +764,7 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// Combine `channels` with uniform selection weights `αⱼ = 1/N`. All channels
     /// must share one [`ndim`](ScaledChannel::ndim) — they parametrise the same
     /// `n`-body final state.
-    pub fn uniform(channels: Vec<Box<dyn ScaledChannel<F>>>) -> Self {
+    pub(crate) fn uniform(channels: Vec<Box<dyn ScaledChannel<F>>>) -> Self {
         assert!(
             !channels.is_empty(),
             "a combiner needs at least one channel"
@@ -779,16 +785,16 @@ impl<F: Real> ScaledMultiChannel<F> {
         }
     }
 
-    pub fn channels(&self) -> &[Box<dyn ScaledChannel<F>>] {
+    pub(crate) fn channels(&self) -> &[Box<dyn ScaledChannel<F>>] {
         &self.channels
     }
 
-    pub fn alphas(&self) -> &[F] {
+    pub(crate) fn alphas(&self) -> &[F] {
         &self.alphas
     }
 
     /// Replace the selection weights (`Σ αⱼ = 1`, each `> 0`), keeping the channels.
-    pub fn set_alphas(&mut self, alphas: Vec<F>) {
+    pub(crate) fn set_alphas(&mut self, alphas: Vec<F>) {
         assert_eq!(
             alphas.len(),
             self.channels.len(),
@@ -808,12 +814,12 @@ impl<F: Real> ScaledMultiChannel<F> {
     }
 
     /// The uniforms one channel consumes on its own.
-    pub fn channel_ndim(&self) -> usize {
+    pub(crate) fn channel_ndim(&self) -> usize {
         self.channel_ndim
     }
 
     /// The combined sampling density `g(p) = Σⱼ αⱼ gⱼ(p)` at CM energy `sqrt_s`.
-    pub fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+    pub(crate) fn density_at(&self, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
         self.density_at_recorded(sqrt_s, momenta, |_| {})
     }
 
@@ -848,7 +854,8 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    pub fn sample_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
+    #[cfg(any(test, doc))]
+    pub(crate) fn sample_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
         let pt = self.draw_in_channel_at(j, sqrt_s, u);
         let weight = self.channel_weight_at(j, sqrt_s, &pt.momenta);
         PhaseSpacePoint {
@@ -870,14 +877,14 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// # Panics
     ///
     /// If `j` is not a channel index.
-    pub fn draw_in_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
+    pub(crate) fn draw_in_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
         assert!(j < self.channels.len(), "channel index out of range");
         self.channels[j].sample_at(sqrt_s, u)
     }
 
     /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in
     /// channel `j` at CM energy `sqrt_s`.
-    pub fn channel_weight_at(&self, j: usize, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
+    pub(crate) fn channel_weight_at(&self, j: usize, sqrt_s: F, momenta: &[LorentzVector<F>]) -> F {
         self.alphas[j] / self.density_at(sqrt_s, momenta)
     }
 
@@ -888,7 +895,7 @@ impl<F: Real> ScaledMultiChannel<F> {
     /// `g` costs a density evaluation in every channel, and a caller needing the
     /// row as well as the weight — a variance-share estimator needs both —
     /// otherwise pays for that sweep twice.
-    pub fn channel_weight_at_recording(
+    pub(crate) fn channel_weight_at_recording(
         &self,
         j: usize,
         sqrt_s: F,
@@ -900,7 +907,7 @@ impl<F: Real> ScaledMultiChannel<F> {
     }
 
     /// The channel `u0 ∈ [0,1)` selects, by cumulative selection weight.
-    pub fn select(&self, u0: F) -> usize {
+    pub(crate) fn select(&self, u0: F) -> usize {
         select_channel(&self.alphas, u0)
     }
 }
@@ -922,11 +929,6 @@ impl<F: Real> RamboChannel<F> {
     /// when a point is sampled.
     pub fn new(sqrt_s: F, masses: Vec<F>) -> Self {
         RamboChannel { sqrt_s, masses }
-    }
-
-    /// The final-state masses in outgoing-leg order.
-    pub fn masses(&self) -> &[F] {
-        &self.masses
     }
 }
 
@@ -957,18 +959,21 @@ impl<F: Real> Channel<F> for RamboChannel<F> {
 /// azimuth integrated out into the weight. The weight is flat in `cosθ`, so the
 /// density is the constant reciprocal of the LIPS Jacobian. Massive endpoints and
 /// resonance-shaped invariants are a separate mapping, not this flat map.
+#[cfg(any(test, doc))]
 #[derive(Clone, Debug)]
-pub struct Lips2Channel {
+pub(crate) struct Lips2Channel {
     sqrt_s: f64,
 }
 
+#[cfg(any(test, doc))]
 impl Lips2Channel {
     /// A massless 2-body channel at CM energy `sqrt_s`.
-    pub fn new(sqrt_s: f64) -> Self {
+    pub(crate) fn new(sqrt_s: f64) -> Self {
         Lips2Channel { sqrt_s }
     }
 }
 
+#[cfg(any(test, doc))]
 impl PhaseSpaceMap<f64> for Lips2Channel {
     fn ndim(&self) -> usize {
         1
@@ -989,6 +994,7 @@ impl PhaseSpaceMap<f64> for Lips2Channel {
     }
 }
 
+#[cfg(any(test, doc))]
 impl Channel<f64> for Lips2Channel {
     fn density(&self, _momenta: &[LorentzVector<f64>]) -> f64 {
         1.0 / lips2_jacobian_u(self.sqrt_s)

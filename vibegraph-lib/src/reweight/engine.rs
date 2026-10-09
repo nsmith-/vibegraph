@@ -112,7 +112,7 @@ pub struct PolynomialSummary {
     /// Monomials of the amplitude: the number of nodes.
     pub terms: usize,
     /// Amplitude evaluations per event beyond the card's own.
-    pub evaluations: usize,
+    pub(crate) evaluations: usize,
     pub hypotheses: usize,
 }
 
@@ -123,7 +123,7 @@ pub struct SubprocessSummary {
     /// Hypotheses on the exact path.
     pub exact: usize,
     /// Their distinct parameter points other than the card's, one evaluation each.
-    pub exact_evaluations: usize,
+    pub(crate) exact_evaluations: usize,
     /// Hypotheses that do not move this subprocess's `|M|²` at all.
     pub unchanged: usize,
 }

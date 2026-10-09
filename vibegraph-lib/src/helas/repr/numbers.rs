@@ -19,7 +19,7 @@ pub enum SpinorHelicity {
 impl SpinorHelicity {
     /// Return `+1` or `−1` as an `i32`.
     #[inline(always)]
-    pub fn sign(self) -> i32 {
+    pub(crate) fn sign(self) -> i32 {
         match self {
             SpinorHelicity::Up => 1,
             SpinorHelicity::Down => -1,
@@ -27,7 +27,8 @@ impl SpinorHelicity {
     }
 
     /// Return the opposite helicity (Up ↔ Down).
-    pub fn flip(self) -> Self {
+    #[cfg(test)]
+    pub(crate) fn flip(self) -> Self {
         match self {
             SpinorHelicity::Up => SpinorHelicity::Down,
             SpinorHelicity::Down => SpinorHelicity::Up,
@@ -55,16 +56,7 @@ pub enum Chirality {
     Both,
 }
 
-impl Chirality {
-    /// Return the opposite chirality (Left ↔ Right, Both ↔ Both).
-    pub fn flip(self) -> Self {
-        match self {
-            Chirality::Left => Chirality::Right,
-            Chirality::Right => Chirality::Left,
-            Chirality::Both => Chirality::Both,
-        }
-    }
-}
+impl Chirality {}
 
 impl std::fmt::Display for Chirality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -92,7 +84,7 @@ pub enum Charge {
 impl Charge {
     /// Return `+1` or `−1` as an `i32`.
     #[inline(always)]
-    pub fn sign(self) -> i32 {
+    pub(crate) fn sign(self) -> i32 {
         match self {
             Charge::Particle => 1,
             Charge::Antiparticle => -1,
@@ -100,7 +92,7 @@ impl Charge {
     }
 
     /// Return the opposite charge (particle ↔ antiparticle).
-    pub fn anti(self) -> Self {
+    pub(crate) fn anti(self) -> Self {
         match self {
             Charge::Particle => Charge::Antiparticle,
             Charge::Antiparticle => Charge::Particle,

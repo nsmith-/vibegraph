@@ -61,7 +61,7 @@ pub enum Func {
 }
 
 /// Collect all parameter names referenced in an expression.
-pub fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
+pub(crate) fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
     match expr {
         Expr::Param(name) => {
             if !deps.contains(name) {
@@ -89,7 +89,7 @@ pub fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
 /// Evaluate an expression given a map of parameter name → complex value.
 ///
 /// Unknown parameter references panic in debug builds and return 0 in release.
-pub fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
+pub(crate) fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     use std::f64::consts::PI;
     match expr {
         Expr::Num(x) => Complex64::new(*x, 0.0),
@@ -160,10 +160,10 @@ peg::parser! {
     /// PEG grammar for UFO expression strings.
     ///
     /// Precedence (low to high): additive, multiplicative, unary, power, primary.
-    pub grammar ufo_expr() for str {
+    pub(crate) grammar ufo_expr() for str {
 
         // Entry point.
-        pub rule expression() -> Expr = additive()
+        pub(crate) rule expression() -> Expr = additive()
 
         // Additive: left-recursive via iteration.
         rule additive() -> Expr
@@ -277,7 +277,7 @@ peg::parser! {
 }
 
 /// Parse a UFO expression string into an [`Expr`].
-pub fn parse_expr(s: &str) -> Result<Expr, peg::error::ParseError<peg::str::LineCol>> {
+pub(crate) fn parse_expr(s: &str) -> Result<Expr, peg::error::ParseError<peg::str::LineCol>> {
     ufo_expr::expression(s.trim())
 }
 

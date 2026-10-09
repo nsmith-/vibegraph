@@ -75,9 +75,9 @@ fn pinned_names() -> String {
 /// A fetched archive that did not hash to its pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChecksumMismatch {
-    pub url: String,
-    pub expected: String,
-    pub actual: String,
+    pub(crate) url: String,
+    pub(crate) expected: String,
+    pub(crate) actual: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -101,14 +101,14 @@ pub enum EnsureError {
 /// a mismatched archive un-publishable: [`store::cache_pdf_set`] never sees the
 /// bytes, so its "a failed fetch writes nothing" guarantee covers a corrupted
 /// or substituted download as well as an unreachable server.
-pub struct VerifiedFetch<'a> {
+pub(crate) struct VerifiedFetch<'a> {
     inner: &'a dyn Fetch,
     expected_sha256: &'a str,
     mismatch: RefCell<Option<ChecksumMismatch>>,
 }
 
 impl<'a> VerifiedFetch<'a> {
-    pub fn new(inner: &'a dyn Fetch, expected_sha256: &'a str) -> Self {
+    pub(crate) fn new(inner: &'a dyn Fetch, expected_sha256: &'a str) -> Self {
         Self {
             inner,
             expected_sha256,
@@ -119,7 +119,7 @@ impl<'a> VerifiedFetch<'a> {
     /// The mismatch this wrapper rejected, if it rejected one. Lets a caller
     /// distinguish "the download was wrong" from "the download failed" after
     /// the error has been flattened into [`StoreError::Fetch`].
-    pub fn mismatch(&self) -> Option<ChecksumMismatch> {
+    pub(crate) fn mismatch(&self) -> Option<ChecksumMismatch> {
         self.mismatch.borrow().clone()
     }
 }
@@ -146,7 +146,7 @@ impl Fetch for VerifiedFetch<'_> {
 }
 
 /// Where a PDF set lives once cached.
-pub fn pdf_cache_dir(cache_root: &Path, name: &str) -> PathBuf {
+pub(crate) fn pdf_cache_dir(cache_root: &Path, name: &str) -> PathBuf {
     cache_root.join(AssetKind::Pdf.cache_subdir()).join(name)
 }
 
@@ -154,7 +154,7 @@ pub fn pdf_cache_dir(cache_root: &Path, name: &str) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ensured {
     pub dir: PathBuf,
-    pub checksum: String,
+    pub(crate) checksum: String,
     /// `false` if the cache already held an entry pinned to this checksum, so a
     /// caller can report (or prompt about) only the fetches that actually happen.
     pub fetched: bool,

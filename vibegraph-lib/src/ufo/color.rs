@@ -34,7 +34,7 @@ use thiserror::Error;
 /// Integer indices are either 1-based vertex-particle slots (positive) or
 /// summed indices (negative) — see the module docs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ColorAtom {
+pub(crate) enum ColorAtom {
     /// `T(a1,...,an,i,j)`: `n` adjoint (octet) indices, then the fundamental
     /// index `i`, then the antifundamental index `j`.
     T(Vec<i32>, i32, i32),
@@ -100,9 +100,9 @@ impl std::fmt::Display for ColorAtom {
 /// its exact factor of `2`; an empty atom list represents the colorless `'1'`
 /// factor.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ColorExpr {
-    pub coeff: i64,
-    pub atoms: Vec<ColorAtom>,
+pub(crate) struct ColorExpr {
+    pub(crate) coeff: i64,
+    pub(crate) atoms: Vec<ColorAtom>,
 }
 
 impl std::fmt::Display for ColorExpr {
@@ -119,7 +119,7 @@ impl std::fmt::Display for ColorExpr {
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub enum ColorError {
+pub(crate) enum ColorError {
     #[error("failed to parse color string '{string}': {message}")]
     Parse { string: String, message: String },
     #[error("Identity index {0} must be a positive (1-based) vertex-particle slot")]
@@ -147,7 +147,7 @@ enum RawAtom {
 peg::parser! {
     /// PEG grammar for UFO vertex color-factor strings.
     grammar color_grammar() for str {
-        pub rule color_string() -> Vec<RawAtom>
+        pub(crate) rule color_string() -> Vec<RawAtom>
             = terms:(term() ** "*") { terms.into_iter().flatten().collect() }
 
         rule term() -> Option<RawAtom>

@@ -7,6 +7,7 @@
 //! rules, only the first applicable rewrite fires per pass, similar strings
 //! are merged, and the whole factor is iterated to a fixed point.
 
+#[cfg(test)]
 use std::collections::HashMap;
 
 use super::coeff::ColorCoeff;
@@ -20,9 +21,9 @@ const MAX_PASSES: usize = 100_000;
 /// One term of a [`ColorFactor`]: a scalar coefficient times a product of
 /// color tensors.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ColorString {
-    pub coeff: ColorCoeff,
-    pub tensors: Vec<ColorTensor>,
+pub(crate) struct ColorString {
+    pub(crate) coeff: ColorCoeff,
+    pub(crate) tensors: Vec<ColorTensor>,
 }
 
 /// A color string in the immutable form MadGraph uses as a basis key: the
@@ -34,12 +35,13 @@ pub type ImmutableString = Vec<(TensorKind, Vec<Idx>)>;
 /// index relabelled `1, 2, 3, …` by order of first appearance, then re-sorted.
 /// Two color strings share a canonical form iff they are equal up to a
 /// relabelling of their indices.
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CanonicalString(pub Vec<(TensorKind, Vec<Idx>)>);
+pub(crate) struct CanonicalString(pub(crate) Vec<(TensorKind, Vec<Idx>)>);
 
 impl ColorString {
     /// A string of the given tensors with unit coefficient.
-    pub fn new(tensors: Vec<ColorTensor>) -> Self {
+    pub(crate) fn new(tensors: Vec<ColorTensor>) -> Self {
         ColorString {
             coeff: ColorCoeff::one(),
             tensors,
@@ -47,7 +49,7 @@ impl ColorString {
     }
 
     /// A tensor-free string carrying only a scalar coefficient.
-    pub fn scalar(coeff: ColorCoeff) -> Self {
+    pub(crate) fn scalar(coeff: ColorCoeff) -> Self {
         ColorString {
             coeff,
             tensors: Vec::new(),
@@ -68,7 +70,7 @@ impl ColorString {
     }
 
     /// Complex conjugate: conjugate the coefficient and every tensor.
-    pub fn conj(&self) -> ColorString {
+    pub(crate) fn conj(&self) -> ColorString {
         ColorString {
             coeff: self.coeff.conj(),
             tensors: self.tensors.iter().map(ColorTensor::conj).collect(),
@@ -78,7 +80,7 @@ impl ColorString {
     /// Reconstruct a unit-coefficient string from an immutable representation
     /// (the inverse of [`ColorString::to_immutable`]). A lone `ColorOne` entry
     /// yields an empty tensor product.
-    pub fn from_immutable(rep: &ImmutableString) -> ColorString {
+    pub(crate) fn from_immutable(rep: &ImmutableString) -> ColorString {
         let tensors = rep
             .iter()
             .filter(|(kind, _)| *kind != TensorKind::One)
@@ -92,7 +94,7 @@ impl ColorString {
 
     /// The immutable (basis-key) form: `(kind, indices)` pairs, sorted. An
     /// empty product folds to a single `ColorOne` entry.
-    pub fn to_immutable(&self) -> ImmutableString {
+    pub(crate) fn to_immutable(&self) -> ImmutableString {
         let mut list: ImmutableString = self
             .tensors
             .iter()
@@ -108,7 +110,8 @@ impl ColorString {
     /// The canonical form together with the index relabelling used to build it
     /// (`old_index -> new_index`). Indices are numbered `1, 2, 3, …` in order
     /// of first appearance across the sorted immutable form.
-    pub fn to_canonical(&self) -> (CanonicalString, HashMap<Idx, Idx>) {
+    #[cfg(test)]
+    pub(crate) fn to_canonical(&self) -> (CanonicalString, HashMap<Idx, Idx>) {
         let immutable = self.to_immutable();
         let mut repl: HashMap<Idx, Idx> = HashMap::new();
         let mut next: Idx = 1;
@@ -130,7 +133,8 @@ impl ColorString {
     }
 
     /// The canonical form alone.
-    pub fn canonical(&self) -> CanonicalString {
+    #[cfg(test)]
+    pub(crate) fn canonical(&self) -> CanonicalString {
         self.to_canonical().0
     }
 
@@ -143,13 +147,13 @@ impl ColorString {
     /// but are distinct color structures and must not be merged. This mirrors
     /// MadGraph's `is_similar`, whose `to_canonical()` comparison includes the
     /// index-replacement dict and so is likewise concrete.
-    pub fn is_similar(&self, other: &ColorString) -> bool {
+    pub(crate) fn is_similar(&self, other: &ColorString) -> bool {
         self.coeff.can_add(&other.coeff) && self.to_immutable() == other.to_immutable()
     }
 
     /// Full equality used for the fixpoint test: similar *and* equal rational
     /// magnitude.
-    pub fn equiv(&self, other: &ColorString) -> bool {
+    pub(crate) fn equiv(&self, other: &ColorString) -> bool {
         self.is_similar(other) && self.coeff.q == other.coeff.q
     }
 
@@ -198,11 +202,11 @@ impl ColorString {
 
 /// A sum of [`ColorString`]s.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ColorFactor(pub Vec<ColorString>);
+pub(crate) struct ColorFactor(pub(crate) Vec<ColorString>);
 
 impl ColorFactor {
     /// An empty (zero) color factor.
-    pub fn zero() -> Self {
+    pub(crate) fn zero() -> Self {
         ColorFactor(Vec::new())
     }
 
@@ -220,7 +224,7 @@ impl ColorFactor {
 
     /// One simplification pass over every string, merging similar results and
     /// dropping strings whose coefficient has become zero.
-    pub fn simplify(&self) -> ColorFactor {
+    pub(crate) fn simplify(&self) -> ColorFactor {
         let mut out = ColorFactor::zero();
         for cs in &self.0 {
             match cs.simplify() {
@@ -237,7 +241,7 @@ impl ColorFactor {
     }
 
     /// Iterate [`simplify`](ColorFactor::simplify) to a fixed point.
-    pub fn full_simplify(&self) -> ColorFactor {
+    pub(crate) fn full_simplify(&self) -> ColorFactor {
         let mut result = self.clone();
         for _ in 0..MAX_PASSES {
             let next = result.simplify();
@@ -247,11 +251,6 @@ impl ColorFactor {
             result = next;
         }
         panic!("ColorFactor::full_simplify did not converge within {MAX_PASSES} passes");
-    }
-
-    /// Complex conjugate: conjugate every string.
-    pub fn conj(&self) -> ColorFactor {
-        ColorFactor(self.0.iter().map(ColorString::conj).collect())
     }
 }
 

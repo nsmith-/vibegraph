@@ -27,7 +27,7 @@ use std::str::FromStr;
 
 /// One parameter change of a `launch` block.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Change {
+pub(crate) enum Change {
     /// `set <block> <code…> <value>`: the external parameter at that LHA address.
     Lha {
         block: String,
@@ -45,14 +45,14 @@ pub enum Change {
 
 impl Change {
     /// The card line the change was read from, 1-based.
-    pub fn line(&self) -> usize {
+    pub(crate) fn line(&self) -> usize {
         match self {
             Change::Lha { line, .. } | Change::Name { line, .. } => *line,
         }
     }
 
     /// The value the change sets.
-    pub fn value(&self) -> f64 {
+    pub(crate) fn value(&self) -> f64 {
         match self {
             Change::Lha { value, .. } | Change::Name { value, .. } => *value,
         }
@@ -78,20 +78,20 @@ impl fmt::Display for Change {
 
 /// One `launch` block: an optional name and description, and its changes.
 #[derive(Clone, Debug, PartialEq)]
-pub struct LaunchSpec {
+pub(crate) struct LaunchSpec {
     /// `--rwgt_name=…`, if given.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
     /// `--rwgt_info=…`, if given.
-    pub info: Option<String>,
+    pub(crate) info: Option<String>,
     /// The card line of the `launch` itself, 1-based.
-    pub line: usize,
-    pub changes: Vec<Change>,
+    pub(crate) line: usize,
+    pub(crate) changes: Vec<Change>,
 }
 
 /// A parsed reweight card: its `launch` blocks in card order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReweightCard {
-    pub launches: Vec<LaunchSpec>,
+    pub(crate) launches: Vec<LaunchSpec>,
 }
 
 /// Why a reweight card was refused.

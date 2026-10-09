@@ -19,7 +19,9 @@ use flate2::read::GzDecoder;
 use tar::Archive;
 
 use crate::ufo::identity::digest_bytes;
-use crate::ufo::{UFOModel, UfoError};
+#[cfg(test)]
+use crate::ufo::UFOModel;
+use crate::ufo::UfoError;
 
 use super::AssetKind;
 
@@ -61,14 +63,10 @@ fn io_err(dir: &Path, source: std::io::Error) -> StoreError {
 
 /// The LHAPDF data-server URL for a set's `.tar.gz` — exactly the pattern
 /// `validation/pdf/fetch.sh` already fetches by hand.
-pub fn lhapdf_download_url(set_name: &str) -> String {
+#[cfg(any(test, doc))]
+pub(crate) fn lhapdf_download_url(set_name: &str) -> String {
     format!("https://lhapdfsets.web.cern.ch/current/{set_name}.tar.gz")
 }
-
-/// The LHAPDF `pdfsets.index` listing all set names the data server carries —
-/// what a caller would fetch (through [`Fetch`]) to validate a set name or
-/// offer suggestions before attempting the set's own download.
-pub const LHAPDF_INDEX_URL: &str = "https://lhapdfsets.web.cern.ch/current/pdfsets.index";
 
 // There is no UFO counterpart to `lhapdf_download_url`, and it is not an
 // omission. UFO models are published on the FeynRules wiki, one page per model,
@@ -84,20 +82,20 @@ pub const LHAPDF_INDEX_URL: &str = "https://lhapdfsets.web.cern.ch/current/pdfse
 /// A cached entry after a successful fetch: its directory and the checksum
 /// pinned alongside it ([`PIN_FILENAME`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Cached {
-    pub dir: PathBuf,
-    pub checksum: String,
+pub(crate) struct Cached {
+    pub(crate) dir: PathBuf,
+    pub(crate) checksum: String,
 }
 
 /// Sidecar file inside a cached entry's directory holding its pinned
 /// checksum, hidden so it never collides with a real asset file name.
-pub const PIN_FILENAME: &str = ".vibegraph-checksum";
+pub(crate) const PIN_FILENAME: &str = ".vibegraph-checksum";
 
 /// The checksum pinned for an already-cached entry, if it was written by
 /// [`cache_pdf_set`]/[`cache_ufo_model`] (a `--flag`/env/dev-fallback entry
 /// found through [`super::resolve::locate`] was not necessarily fetched by
 /// this module and may have no pin at all).
-pub fn read_pin(dir: &Path) -> Option<String> {
+pub(crate) fn read_pin(dir: &Path) -> Option<String> {
     std::fs::read_to_string(dir.join(PIN_FILENAME))
         .ok()
         .map(|s| s.trim().to_string())
@@ -165,7 +163,7 @@ fn publish(staging: PathBuf, payload: PathBuf, final_dir: &Path) -> Result<(), S
 /// Fetch and cache a PDF set. The pinned checksum is SHA-256 of the fetched
 /// `.tar.gz` bytes, computed before extraction — the archive as retrieved,
 /// not a hash of whatever files happened to land on disk.
-pub fn cache_pdf_set(
+pub(crate) fn cache_pdf_set(
     cache_root: &Path,
     name: &str,
     url: &str,
@@ -190,7 +188,8 @@ pub fn cache_pdf_set(
 /// tarballs differing only in comments, file order, or packaging pin
 /// identically; that is the reason to reuse the model digest here rather
 /// than hash bytes as [`cache_pdf_set`] does.
-pub fn cache_ufo_model(
+#[cfg(any(test, doc))]
+pub(crate) fn cache_ufo_model(
     cache_root: &Path,
     name: &str,
     url: &str,

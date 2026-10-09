@@ -18,16 +18,16 @@ pub enum VertexError {
 
 /// Opaque index into `UFOModel::vertices`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VertexId(pub usize);
+pub(crate) struct VertexId(pub(crate) usize);
 
 /// A fully resolved interaction vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
-    pub name: String,
+    pub(crate) name: String,
     pub particles: Vec<ParticleId>,
     /// Parsed, `Identity`-resolved color factors, one per color structure
     /// (e.g. `[ColorExpr { atoms: [] }]` for `["1"]`, or a `T`/`f` product).
-    pub color: Vec<ColorExpr>,
+    pub(crate) color: Vec<ColorExpr>,
     pub lorentz: Vec<LorentzId>,
     /// `(color_idx, lorentz_idx)` → coupling id.
     pub couplings: BTreeMap<(usize, usize), CouplingId>,
@@ -35,11 +35,11 @@ pub struct Vertex {
 
 /// Intermediate form from the Python AST parse; names not yet resolved to IDs.
 pub(crate) struct RawVertex {
-    pub name: String,
-    pub particles: Vec<String>,
-    pub color: Vec<String>,
-    pub lorentz: Vec<String>,
-    pub couplings: BTreeMap<(usize, usize), String>,
+    pub(crate) name: String,
+    pub(crate) particles: Vec<String>,
+    pub(crate) color: Vec<String>,
+    pub(crate) lorentz: Vec<String>,
+    pub(crate) couplings: BTreeMap<(usize, usize), String>,
 }
 
 /// Parse `vertices.py` content into raw vertices (names, not IDs).

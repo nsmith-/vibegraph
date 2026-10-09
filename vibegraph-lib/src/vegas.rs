@@ -38,7 +38,7 @@
 //!   statistics and no integrand evaluations. What it buys is variance, not
 //!   bias: the first iterations run on a grid that has not found the peak, and
 //!   their estimates are the noisy ones.
-//! * [`VegasGrid::combination`] — how the surviving iterations are averaged.
+//! * [`VegasGrid::with_combination`] — how the surviving iterations are averaged.
 //!   [`IterationCombination::Unweighted`] takes the arithmetic mean, whose
 //!   weights are fixed in advance and therefore cannot correlate with the
 //!   estimates; [`IterationCombination::InverseVariance`] is Lepage's `1/σ²`
@@ -111,14 +111,14 @@ use crate::phasespace::rng::WORDS_PER_DRAW;
 /// discard (`0.22%`, `0.25%` at 4 and 5). Two rather than one because the
 /// minimum is flat there and the harder configurations (7 dimensions) put it at
 /// two.
-pub const DEFAULT_WARMUP_ITERS: usize = 2;
+pub(crate) const DEFAULT_WARMUP_ITERS: usize = 2;
 
 /// How an adaptation's surviving per-iteration estimates are averaged.
 ///
 /// See the module's "Combining the iterations" section for why the default is
 /// not Lepage's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum IterationCombination {
+pub(crate) enum IterationCombination {
     /// Arithmetic mean of the iteration estimates, quoting `√(Σσᵢ²)/n` for the
     /// mean's own error.
     ///
@@ -131,6 +131,7 @@ pub enum IterationCombination {
     #[default]
     Unweighted,
     /// Lepage's `1/σ²` weighted mean, quoting `1/√(Σ1/σᵢ²)`.
+    #[cfg_attr(not(test), allow(dead_code))]
     InverseVariance,
 }
 
@@ -140,13 +141,13 @@ pub enum IterationCombination {
 /// same coordinate the unbatched integrand receives), borrowed from the
 /// batch's internal buffer.
 #[derive(Debug, Clone, Copy)]
-pub struct SamplePoint<'a> {
-    pub u: &'a [f64],
+pub(crate) struct SamplePoint<'a> {
+    pub(crate) u: &'a [f64],
 }
 
 /// Errors rejected by [`VegasGrid::from_raw`] (and hence by `Deserialize`).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-pub enum VegasGridError {
+pub(crate) enum VegasGridError {
     #[error("VegasGrid: ndim must be nonzero")]
     ZeroDims,
     #[error("VegasGrid: nbins must be nonzero")]
@@ -267,7 +268,7 @@ impl VegasGrid {
     /// Used directly and by `Deserialize`. Rejects: zero `ndim`/`nbins`,
     /// `xi.len() != ndim`, any `xi[d].len() != nbins + 1`, endpoints other
     /// than `0.0`/`1.0`, and non-strictly-increasing edges.
-    pub fn from_raw(
+    pub(crate) fn from_raw(
         ndim: usize,
         nbins: usize,
         alpha: f64,
@@ -337,21 +338,24 @@ impl VegasGrid {
         self.ndim
     }
 
-    pub fn nbins(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn nbins(&self) -> usize {
         self.nbins
     }
 
-    pub fn alpha(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn alpha(&self) -> f64 {
         self.alpha
     }
 
     /// Bin edges per dimension: `xi()[d]` has length `nbins() + 1`.
-    pub fn xi(&self) -> &[Vec<f64>] {
+    #[cfg(test)]
+    pub(crate) fn xi(&self) -> &[Vec<f64>] {
         &self.xi
     }
 
     /// Leading adaptation iterations excluded from the combined estimate.
-    pub fn warmup(&self) -> usize {
+    pub(crate) fn warmup(&self) -> usize {
         self.warmup
     }
 
@@ -367,29 +371,27 @@ impl VegasGrid {
     /// An adaptation always contributes at least its last iteration: a
     /// `warmup` at or above `niter` is clamped to `niter - 1`, since an
     /// estimate from no iterations is not an estimate.
-    pub fn set_warmup(&mut self, warmup: usize) {
+    #[cfg(any(test, doc))]
+    pub(crate) fn set_warmup(&mut self, warmup: usize) {
         self.warmup = warmup;
     }
 
     /// Builder form of [`set_warmup`](Self::set_warmup).
-    pub fn with_warmup(mut self, warmup: usize) -> Self {
+    #[cfg(any(test, doc))]
+    pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
         self.warmup = warmup;
         self
     }
 
-    /// How the surviving iterations are averaged.
-    pub fn combination(&self) -> IterationCombination {
-        self.combination
-    }
-
     /// Set how the surviving iterations are averaged. See
     /// [`IterationCombination`].
-    pub fn set_combination(&mut self, combination: IterationCombination) {
+    #[cfg(any(test, doc))]
+    pub(crate) fn set_combination(&mut self, combination: IterationCombination) {
         self.combination = combination;
     }
 
     /// Builder form of [`set_combination`](Self::set_combination).
-    pub fn with_combination(mut self, combination: IterationCombination) -> Self {
+    pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.combination = combination;
         self
     }
@@ -410,7 +412,7 @@ impl VegasGrid {
     ///
     /// The returned estimate combines the iterations after the first
     /// [`warmup`](Self::warmup) of them; all `niter` still sample and refine.
-    pub fn adapt(
+    pub(crate) fn adapt(
         &mut self,
         mut f: impl FnMut(&[f64]) -> f64,
         neval: usize,
@@ -438,7 +440,7 @@ impl VegasGrid {
     /// evaluator plugs into. Draw order and accumulation order are
     /// independent of `batch_size`: the result is bit-identical to
     /// [`VegasGrid::adapt`] for any `batch_size`.
-    pub fn adapt_batched<Fb>(
+    pub(crate) fn adapt_batched<Fb>(
         &mut self,
         mut f: Fb,
         neval: usize,
@@ -471,7 +473,8 @@ impl VegasGrid {
     /// see [`substream_id`]) and reduced sequentially in chunk order — so
     /// the result is bit-identical regardless of the rayon thread-pool
     /// size. `f` must be `Sync` since chunks run concurrently.
-    pub fn adapt_parallel<Fp>(
+    #[cfg(test)]
+    pub(crate) fn adapt_parallel<Fp>(
         &mut self,
         f: Fp,
         neval: usize,
@@ -522,7 +525,8 @@ impl VegasGrid {
     /// own, positioned from the chunk's first global point index — and `f`
     /// evaluates one point against it.
     #[allow(clippy::too_many_arguments)]
-    pub fn adapt_parallel_seeded<S, Init, Fp>(
+    #[cfg(any(test, doc))]
+    pub(crate) fn adapt_parallel_seeded<S, Init, Fp>(
         &mut self,
         init: Init,
         f: Fp,
@@ -578,7 +582,7 @@ impl VegasGrid {
 
     /// Batched-integrand form of [`VegasGrid::sample_frozen`]. See
     /// [`VegasGrid::adapt_batched`] for the batching/ordering contract.
-    pub fn sample_frozen_batched<Fb>(
+    pub(crate) fn sample_frozen_batched<Fb>(
         &self,
         mut f: Fb,
         neval: usize,
@@ -594,7 +598,8 @@ impl VegasGrid {
 
     /// Deterministic-parallel form of [`VegasGrid::sample_frozen`]. See
     /// [`VegasGrid::adapt_parallel`] for the substream addressing contract.
-    pub fn sample_frozen_parallel<Fp>(
+    #[cfg(test)]
+    pub(crate) fn sample_frozen_parallel<Fp>(
         &self,
         f: Fp,
         neval: usize,
@@ -738,6 +743,7 @@ impl VegasGrid {
 
     /// Sequential accumulation of `neval` points for one chunk of the
     /// deterministic-parallel path.
+    #[cfg(test)]
     fn accumulate_points(
         &self,
         f: &(impl Fn(&[f64]) -> f64 + Sync),
@@ -767,6 +773,7 @@ impl VegasGrid {
     /// Split `neval` into fixed-size chunks, each on its own `(iter,
     /// chunk_idx)`-keyed `ChaCha8Rng` substream, evaluated in parallel and
     /// reduced sequentially in chunk order.
+    #[cfg(test)]
     fn run_iter_parallel<Fp>(
         &self,
         f: &Fp,
@@ -823,6 +830,7 @@ impl VegasGrid {
     /// the pool size: the first reproduces the sequential draw sequence, the second
     /// reproduces its summation order.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
     fn run_iter_seeded<S, Init, Fp>(
         &self,
         init: &Init,
@@ -973,29 +981,29 @@ impl VegasGrid {
 /// point, so a block's numbers depend on its own plan alone and on nothing about
 /// how the blocks were scheduled.
 #[derive(Debug, Clone, Copy)]
-pub struct BlockPlan {
+pub(crate) struct BlockPlan {
     /// Points the block draws this iteration.
-    pub neval: usize,
+    pub(crate) neval: usize,
     /// How many points the block has already drawn in this run, which is where
     /// its generator seeks to. Iterations of one block must therefore be planned
     /// with a running total, not with `iteration × neval`, once `neval` varies.
-    pub first_point: u64,
+    pub(crate) first_point: u64,
     /// The block's `ChaCha8Rng` stream id.
-    pub stream: u64,
+    pub(crate) stream: u64,
     /// Points one rayon task evaluates. Scheduling only — the result is
     /// identical at any chunk size, for the reasons
     /// [`VegasGrid::adapt_parallel_seeded`] documents.
-    pub chunk_size: usize,
+    pub(crate) chunk_size: usize,
 }
 
 /// One block's estimate from one iteration, with the refinement histogram that
 /// iteration accumulated.
 #[derive(Debug, Clone)]
-pub struct BlockIteration {
+pub(crate) struct BlockIteration {
     /// The block's integral estimate over its own coordinates.
-    pub integral: f64,
+    pub(crate) integral: f64,
     /// Variance of that estimate (not of a single point).
-    pub variance: f64,
+    pub(crate) variance: f64,
     /// Points whose integrand value was not exactly zero.
     ///
     /// For an integrand that returns a hard zero on every point its cuts reject —
@@ -1003,7 +1011,7 @@ pub struct BlockIteration {
     /// to the estimate at all, and `accepted / neval` is the block's acceptance.
     /// An integrand whose support had interior zeros would be undercounted by
     /// them, a set a continuous draw hits with probability zero.
-    pub accepted: usize,
+    pub(crate) accepted: usize,
     /// `hist[dim][bin]` accumulating `(f·w)²`, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
@@ -1013,7 +1021,7 @@ impl BlockIteration {
     /// The per-*point* variance this iteration measured, the quantity a Neyman
     /// allocation compares across blocks. The estimate's variance is this
     /// divided by the points behind it.
-    pub fn point_variance(&self, neval: usize) -> f64 {
+    pub(crate) fn point_variance(&self, neval: usize) -> f64 {
         self.variance * neval as f64
     }
 }
@@ -1039,7 +1047,7 @@ impl BlockIteration {
 /// the chunk)`; `f` evaluates one point of a block against it. Grids are **not**
 /// refined here — the caller decides whether another iteration follows and
 /// refines from [`BlockIteration::hist`].
-pub fn adapt_blocks_iteration<S, Init, Fp>(
+pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
     grids: &[VegasGrid],
     plans: &[BlockPlan],
     seed: u64,
@@ -1187,6 +1195,7 @@ pub(crate) fn combine_iterations(
 /// its own structurally independent stream with no collisions for
 /// realistic iteration/chunk counts. The same addressing scheme extends to
 /// multi-machine sharding: a shard is just a chunk-index range.
+#[cfg(test)]
 fn substream_id(iter_idx: u32, chunk_idx: u32) -> u64 {
     ((iter_idx as u64) << 32) | chunk_idx as u64
 }
@@ -1210,13 +1219,15 @@ impl Vegas {
     }
 
     /// See [`VegasGrid::set_warmup`].
-    pub fn with_warmup(mut self, warmup: usize) -> Self {
+    #[cfg(test)]
+    pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
         self.grid.set_warmup(warmup);
         self
     }
 
     /// See [`VegasGrid::set_combination`].
-    pub fn with_combination(mut self, combination: IterationCombination) -> Self {
+    #[cfg(test)]
+    pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.grid.set_combination(combination);
         self
     }

@@ -47,7 +47,7 @@
 
 pub mod card;
 pub mod engine;
-pub mod poly;
+pub(crate) mod poly;
 
 use std::collections::HashSet;
 

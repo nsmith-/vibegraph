@@ -76,9 +76,9 @@ pub struct MapOptions {
 /// artifact; a generator rebuilds its channels from these and nothing else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MapChoices {
-    pub split_angle: SplitAngle,
-    pub tau: TauMap,
-    pub rung_order: RungOrder,
+    pub(crate) split_angle: SplitAngle,
+    pub(crate) tau: TauMap,
+    pub(crate) rung_order: RungOrder,
 }
 
 /// What the rule needs to know about a process to settle the choices: read off
@@ -87,22 +87,22 @@ pub struct MapChoices {
 pub struct ProcessShape {
     /// Splits with a single massless vector daughter whose parent can move, summed
     /// over the channel set. Zero means [`SplitAngle::SoftEmission`] shapes nothing.
-    pub soft_emission_splits: usize,
+    pub(crate) soft_emission_splits: usize,
     /// Every split whose parent can move, summed over the channel set: every split
     /// but the root of an all-timelike tree. Zero means no angular map shapes
     /// anything, as on every `2 → 2` process.
-    pub moving_splits: usize,
+    pub(crate) moving_splits: usize,
     /// The longest peripheral chain any channel draws.
-    pub max_rungs: usize,
+    pub(crate) max_rungs: usize,
     /// Whether any channel's diagram carries a finite-width s-channel resonance
     /// spanning the whole final state, whose peak then sits in the `τ` draw.
-    pub whole_state_resonance: bool,
+    pub(crate) whole_state_resonance: bool,
 }
 
 impl ProcessShape {
     /// Read the shape off the channels `diagrams` decompose into, built as
     /// [`MapChoices::channel`] builds them but before any map option is applied.
-    pub fn of<'d>(
+    pub(crate) fn of<'d>(
         diagrams: impl IntoIterator<Item = &'d Diagram>,
         model: &EvaluatedModel,
         sqrt_s: f64,
@@ -140,7 +140,7 @@ impl MapChoices {
     /// on the splits it selects, and the chosen rung order. The one place a channel
     /// is built for integration, so an integrator and the generator replaying its
     /// grids cannot disagree about the map.
-    pub fn channel(
+    pub(crate) fn channel(
         &self,
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -191,7 +191,7 @@ impl MapChoices {
     }
 
     /// One line naming each choice and whether the rule or the caller made it.
-    pub fn describe(&self, asked: &MapOptions) -> String {
+    pub(crate) fn describe(&self, asked: &MapOptions) -> String {
         let how = |named: bool| if named { "" } else { " (auto)" };
         format!(
             "split-angle {}{}, tau {}{}, rung-order {}{}",
@@ -258,7 +258,7 @@ impl MapOptions {
 
 impl SplitAngle {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             SplitAngle::Isotropic => "isotropic",
             SplitAngle::Windowed => "windowed",
@@ -270,7 +270,7 @@ impl SplitAngle {
 
 impl TauMap {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             TauMap::Log => "log",
             TauMap::InverseSquare => "inverse-square",
@@ -280,7 +280,7 @@ impl TauMap {
 
 impl RungOrder {
     /// The flag spelling of the choice.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             RungOrder::Derived => "derived",
             RungOrder::Reversed => "reversed",

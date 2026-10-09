@@ -67,22 +67,22 @@ pub struct SupportedProcess {
     /// line's position among the process lines since the last `generate`.
     pub id: u32,
     pub initial: Vec<SupportedLeg>,
-    pub final_state: Vec<SupportedLeg>,
+    pub(crate) final_state: Vec<SupportedLeg>,
     /// `/ A B`, as written.
-    pub forbidden_particles: Vec<String>,
+    pub(crate) forbidden_particles: Vec<String>,
     /// `> A B | C >`, as written: alternatives, each a list of names that must
     /// all be s-channel propagators of a kept diagram.
-    pub required_s_channels: Vec<Vec<String>>,
+    pub(crate) required_s_channels: Vec<Vec<String>>,
     /// `$$ A B`, as written: names no s-channel propagator of a kept diagram
     /// may carry.
-    pub forbidden_s_channels: Vec<String>,
+    pub(crate) forbidden_s_channels: Vec<String>,
     /// `$ A B`, as written: names whose s-channel propagators every diagram
     /// keeps, but whose Breit–Wigner window is vetoed in the integration
     /// configurations that carry them.
-    pub forbidden_onshell_s_channels: Vec<String>,
+    pub(crate) forbidden_onshell_s_channels: Vec<String>,
     /// Amplitude-level coupling-order constraints, left to right. A
     /// `WEIGHTED` entry is always `<=` or `=`.
-    pub orders: Vec<AmplitudeOrder>,
+    pub(crate) orders: Vec<AmplitudeOrder>,
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
     /// The overall orders of a decay-chain line (`@1 QED=2`), as upper bounds on
@@ -99,13 +99,13 @@ pub struct SupportedProcess {
 /// One external leg of a [`SupportedProcess`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupportedLeg {
-    pub particle: LegParticle,
+    pub(crate) particle: LegParticle,
     /// The token as written (`2e+` for a leg from a repeat count).
-    pub token: String,
+    pub(crate) token: String,
     /// The text between `{` and `}` of a polarized leg (`0`, `T`, `L`, `+1`),
     /// as written. Its helicity codes need the particle's spin, so they are
     /// read where the model is.
-    pub polarization: Option<String>,
+    pub(crate) polarization: Option<String>,
 }
 
 impl Display for SupportedLeg {
@@ -122,9 +122,9 @@ impl Display for SupportedLeg {
 /// diagram, not of a product of two.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AmplitudeOrder {
-    pub name: String,
-    pub op: CouplingOp,
-    pub value: i64,
+    pub(crate) name: String,
+    pub(crate) op: CouplingOp,
+    pub(crate) value: i64,
 }
 
 impl Display for AmplitudeOrder {

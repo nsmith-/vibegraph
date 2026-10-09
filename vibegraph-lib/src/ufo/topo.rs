@@ -64,7 +64,7 @@ fn spin_to_statistic(spin: i32) -> Statistic {
 /// Build a feyngraph Model from vibegraph's parsed UFO data.
 ///
 /// Uses feyngraph's mutation API to construct the model without re-parsing the UFO.
-pub fn build_feyngraph_model(
+pub(crate) fn build_feyngraph_model(
     particles: &IndexMap<String, Particle>,
     lorentz: &IndexMap<String, LorentzStructure>,
     couplings: &IndexMap<String, Coupling>,
@@ -190,7 +190,7 @@ pub fn build_feyngraph_model(
 /// property of *that structure*, not of the vertex: 80 of SMEFTsim's interactions
 /// carry both. The pairing decides which external legs share a fermion line, so it
 /// decides the diagram's fermion-line topology and every sign read off it.
-pub type FermionFlow = Vec<(usize, usize)>;
+pub(crate) type FermionFlow = Vec<(usize, usize)>;
 
 /// The fermion flow MadGraph reads from a Lorentz structure
 /// (`aloha/aloha_fct.py::get_fermion_flow`), or `None` if the structure's spinor
@@ -203,7 +203,7 @@ pub type FermionFlow = Vec<(usize, usize)>;
 /// which end terminates on a row (the bra) and which on a column (the ket). Every term
 /// of a sum must read the same flow, which is how a structure that mixes pairings
 /// inside one expression is rejected rather than silently taking the first term's.
-pub fn fermion_flow(structure: &LorentzStructure) -> Option<FermionFlow> {
+pub(crate) fn fermion_flow(structure: &LorentzStructure) -> Option<FermionFlow> {
     let fermion_legs: Vec<isize> = structure
         .spins
         .iter()
@@ -301,7 +301,8 @@ fn term_fermion_flow(term: &LorentzTerm, fermion_legs: &[isize]) -> Option<Fermi
 /// per-diagram gate measures. The function is here as the statement of MadGraph's
 /// convention, checked structure by structure against the model in
 /// `madgraph_fermion_flow_of_smeftsims_four_fermion_structures`.
-pub fn permutation_sign(flow: &FermionFlow, fermion_legs: &[usize]) -> i8 {
+#[cfg(test)]
+pub(crate) fn permutation_sign(flow: &FermionFlow, fermion_legs: &[usize]) -> i8 {
     if fermion_legs.len() < 4 {
         return 1;
     }
@@ -326,23 +327,23 @@ pub fn permutation_sign(flow: &FermionFlow, fermion_legs: &[usize]) -> i8 {
 /// One group of a vertex's Lorentz structures: those that pair its fermion legs the
 /// same way, and therefore describe the same fermion-line topology.
 #[derive(Clone, Debug, PartialEq)]
-pub struct FlowGroup {
+pub(crate) struct FlowGroup {
     /// feyngraph's spin map for this pairing: `spin_map[i]` is the leg `i` shares a
     /// fermion line with, and `i` itself for a leg with no spinor index. This is the
     /// group's identity — two structures belong together exactly when their maps agree.
-    pub spin_map: Vec<isize>,
+    pub(crate) spin_map: Vec<isize>,
     /// The same pairing oriented as MadGraph reads it, `(ket leg, bra leg)` (see
     /// [`fermion_flow`]). Empty when the structures' spinor index graph does not
     /// resolve into oriented lines, which leaves [`spin_map`](Self::spin_map) — the
     /// unoriented pairing — as all that is known.
-    pub flow: FermionFlow,
+    pub(crate) flow: FermionFlow,
     /// Positions in the vertex's `lorentz` list carrying this pairing, ascending.
-    pub lorentz: Vec<usize>,
+    pub(crate) lorentz: Vec<usize>,
 }
 
 impl FlowGroup {
     /// The leg this group pairs `leg` with, or `leg` itself for a non-fermion leg.
-    pub fn partner(&self, leg: usize) -> usize {
+    pub(crate) fn partner(&self, leg: usize) -> usize {
         self.spin_map[leg] as usize
     }
 }
@@ -356,7 +357,7 @@ impl FlowGroup {
 /// and [`fermion_flow`] supplies the orientation MadGraph's permutation sign is defined
 /// on; the two are computed independently from the same expression, so
 /// `flow_and_spin_map_agree_on_smeftsim` can hold one against the other.
-pub fn flow_groups(
+pub(crate) fn flow_groups(
     vertex: &Vertex,
     lorentz: &IndexMap<String, LorentzStructure>,
 ) -> Vec<FlowGroup> {
@@ -381,7 +382,7 @@ pub fn flow_groups(
 /// back into the UFO vertex name and the [`flow_groups`] index.
 ///
 /// A vertex with one group keeps its bare name, so an unsuffixed name is group 0.
-pub fn split_flow_group(name: &str) -> (&str, usize) {
+pub(crate) fn split_flow_group(name: &str) -> (&str, usize) {
     match name.rsplit_once('@') {
         Some((base, group)) => match group.parse::<usize>() {
             Ok(g) => (base, g),

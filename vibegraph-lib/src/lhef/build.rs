@@ -87,7 +87,8 @@ pub struct EventHeader {
 impl EventHeader {
     /// The header of an event evaluated at `scales`, with the couplings those
     /// scales imply.
-    pub fn from_scales(
+    #[cfg(test)]
+    pub(crate) fn from_scales(
         process_id: i32,
         weight: f64,
         scales: &EventScales,
@@ -165,6 +166,7 @@ pub struct SubprocessRecord {
     n_in: usize,
     /// The colour rep and direction of every leg *this record* describes — the reps
     /// [`SubprocessRecord::flows`] is checked against.
+    #[cfg_attr(not(test), allow(dead_code))]
     legs: Vec<LegColor>,
     /// `(colour, anticolour)` line labels per leg, per flow.
     flows: ColorFlowTags,
@@ -262,12 +264,14 @@ impl SubprocessRecord {
     }
 
     /// The colour rep and direction of every leg, in this record's own order.
-    pub fn legs(&self) -> &[LegColor] {
+    #[cfg(test)]
+    pub(crate) fn legs(&self) -> &[LegColor] {
         &self.legs
     }
 
     /// This record's per-flow `(colour, anticolour)` tags.
-    pub fn flows(&self) -> &ColorFlowTags {
+    #[cfg(test)]
+    pub(crate) fn flows(&self) -> &ColorFlowTags {
         &self.flows
     }
 
@@ -282,18 +286,13 @@ impl SubprocessRecord {
         &self.pdg
     }
 
-    /// The pole mass of every external leg, in process order.
-    pub fn masses(&self) -> &[f64] {
-        &self.mass
-    }
-
     /// The number of incoming legs.
     pub fn n_in(&self) -> usize {
         self.n_in
     }
 
     /// The number of colour flows a record may select from.
-    pub fn n_flows(&self) -> usize {
+    pub(crate) fn n_flows(&self) -> usize {
         self.flows.n_flows()
     }
 

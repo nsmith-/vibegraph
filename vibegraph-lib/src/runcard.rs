@@ -26,7 +26,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub mod classes;
+pub(crate) mod classes;
 mod matching;
 
 /// A parsed parameter value. The variant also records the parameter's kind,
@@ -55,7 +55,7 @@ impl ParamValue {
 
     /// Numeric value as `f64`, accepting either float or integer parameters.
     /// Panics on a non-numeric parameter — callers pass statically-known names.
-    pub fn as_f64(&self) -> f64 {
+    pub(crate) fn as_f64(&self) -> f64 {
         match self {
             ParamValue::Float(x) => *x,
             ParamValue::Int(i) => *i as f64,
@@ -63,7 +63,7 @@ impl ParamValue {
         }
     }
 
-    pub fn as_i64(&self) -> i64 {
+    pub(crate) fn as_i64(&self) -> i64 {
         match self {
             ParamValue::Int(i) => *i,
             ParamValue::Float(x) => *x as i64,
@@ -78,7 +78,7 @@ impl ParamValue {
         }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             ParamValue::Str(s) | ParamValue::Opaque(s) => s,
             other => panic!("parameter is not a string: {other:?}"),
@@ -198,7 +198,7 @@ pub enum BeamMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunCard {
     pub nevents: i64,
-    pub iseed: i64,
+    pub(crate) iseed: i64,
     pub lpp1: i64,
     pub lpp2: i64,
     pub ebeam1: f64,
@@ -272,7 +272,7 @@ impl RunCard {
     /// centre-of-mass momenta it generates reach the matrix element unchanged
     /// (`auto_dsig_v4.inc:134`). The card's own `frame_id` is not read, since
     /// MadGraph overwrites it from `me_frame`.
-    pub fn frame_id(&self) -> Result<i64, RunCardError> {
+    pub(crate) fn frame_id(&self) -> Result<i64, RunCardError> {
         let raw = self
             .values
             .get("me_frame")
@@ -378,7 +378,7 @@ impl RunCard {
     /// `dsqrt_q2fact1`/`dsqrt_q2fact2` — so no dynamical prescription, clustering
     /// or otherwise, is ever evaluated for a decay, whatever
     /// `dynamical_scale_choice` says. Systematics are switched off.
-    pub fn for_decay(&self, mass: f64) -> Self {
+    pub(crate) fn for_decay(&self, mass: f64) -> Self {
         let mut values = self.values.clone();
         let mut set = |name: &str, value: ParamValue| {
             values.insert(name.to_string(), value);
@@ -406,7 +406,7 @@ impl RunCard {
     /// `xqcut` and `setrun.f`'s `alpsfact` under `use_syst` are the Fortran's,
     /// so the record keeps the card's `ptj`, `mmjj` and (without matching)
     /// `alpsfact`.
-    pub fn banner_values(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
+    pub(crate) fn banner_values(&self) -> impl Iterator<Item = (&str, &ParamValue)> {
         self.values.iter().map(|(k, v)| {
             (
                 k.as_str(),
@@ -432,9 +432,7 @@ impl RunCard {
         if (lpp1, lpp2) != (1, 1) && (lpp1, lpp2) != (0, 0) {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
-        // After the beam check, which is what makes a beam-dependent
-        // classification decidable.
-        classes::refuse_ignored_physics(&values, lpp1, lpp2)?;
+        classes::refuse_ignored_physics(&values)?;
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         Ok(RunCard {
@@ -849,7 +847,7 @@ const DECAY_CUT_RESETS: &[(&str, Def)] = &[
 /// The value `remove_all_cut` resets a cut parameter to, where that differs from
 /// its LO default ([`DECAY_CUT_RESETS`]). Both are values at which MadGraph's
 /// `cuts.f` leaves the cut off.
-pub fn decay_cut_reset(name: &str) -> Option<ParamValue> {
+pub(crate) fn decay_cut_reset(name: &str) -> Option<ParamValue> {
     DECAY_CUT_RESETS
         .iter()
         .find(|(n, _)| *n == name)
@@ -858,7 +856,7 @@ pub fn decay_cut_reset(name: &str) -> Option<ParamValue> {
 
 /// The MadGraph LO default value for a recognized parameter, or `None` for an
 /// unknown name.
-pub fn param_default(name: &str) -> Option<ParamValue> {
+pub(crate) fn param_default(name: &str) -> Option<ParamValue> {
     PARAM_DEFAULTS
         .iter()
         .find(|(n, _)| *n == name)

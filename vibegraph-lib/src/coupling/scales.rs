@@ -76,7 +76,7 @@ impl EventScales {
     /// Scales with one factorisation scale per beam serving both the densities
     /// and the record, and no clustered configuration: every prescription
     /// without matching.
-    pub fn unmatched(mu_r: f64, mu_f: [f64; 2]) -> Self {
+    pub(crate) fn unmatched(mu_r: f64, mu_f: [f64; 2]) -> Self {
         EventScales {
             mu_r,
             mu_f,
@@ -106,7 +106,7 @@ pub enum DynamicalChoice {
 impl DynamicalChoice {
     /// The run-card integer, or `None` for `0` (a user-edited Fortran function)
     /// and for values `setscales.f` stops on.
-    pub fn from_i64(choice: i64) -> Option<Self> {
+    pub(crate) fn from_i64(choice: i64) -> Option<Self> {
         match choice {
             -1 => Some(DynamicalChoice::Clustered),
             1 => Some(DynamicalChoice::TotalTransverseEnergy),
@@ -118,7 +118,7 @@ impl DynamicalChoice {
         }
     }
 
-    pub fn as_i64(self) -> i64 {
+    pub(crate) fn as_i64(self) -> i64 {
         match self {
             DynamicalChoice::Clustered => -1,
             DynamicalChoice::TotalTransverseEnergy => 1,
@@ -379,12 +379,14 @@ impl ScaleChoice {
     }
 
     /// `ickkw`: whether MLM matching is on.
-    pub fn ickkw(&self) -> i64 {
+    #[cfg(test)]
+    pub(crate) fn ickkw(&self) -> i64 {
         self.ickkw
     }
 
     /// `xqcut`, zero when the clustering cut is off.
-    pub fn xqcut(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn xqcut(&self) -> f64 {
         self.xqcut
     }
 
@@ -396,12 +398,6 @@ impl ScaleChoice {
     /// `asrwgtflavor`.
     pub fn asrwgtflavor(&self) -> i64 {
         self.asrwgtflavor
-    }
-
-    /// `pdfwgt`: whether matching lowers the matrix element's factorisation
-    /// scale and reweights by the ratio of densities.
-    pub fn pdfwgt(&self) -> bool {
-        self.pdfwgt
     }
 
     /// The constants `rewgt` reads, or `None` without matching, where it
@@ -418,13 +414,13 @@ impl ScaleChoice {
     /// Every event is clustered, whatever the scale prescription: matching is
     /// on, or `xqcut` is a cut. `setclscales` returns before clustering only
     /// when neither holds and every scale is already set (`reweight.f:643`).
-    pub fn clusters_every_event(&self) -> bool {
+    pub(crate) fn clusters_every_event(&self) -> bool {
         self.ickkw > 0 || self.xqcut > 0.0
     }
 
     /// The scales are the same on every event and no event is ever rejected
     /// by the prescription, so a caller may resolve them once.
-    pub fn is_constant(&self) -> bool {
+    pub(crate) fn is_constant(&self) -> bool {
         self.is_fully_fixed() && !self.clusters_every_event()
     }
 
@@ -703,7 +699,7 @@ pub struct ClusterHistory {
     /// without matching, where MadEvent never reads it.
     pub q2bck: Option<[f64; 2]>,
     /// The external momenta both calls clustered, beams first.
-    pub momenta: Vec<[f64; 4]>,
+    pub(crate) momenta: Vec<[f64; 4]>,
     fixed_fac: [Option<f64>; 2],
     pdfwgt: bool,
     sqrt_stot: f64,

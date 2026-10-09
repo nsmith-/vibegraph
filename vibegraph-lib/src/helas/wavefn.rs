@@ -29,8 +29,8 @@
 //!
 //! `nsv` and `nss` panic on any value other than $\pm 1$. The signed momentum is
 //! what lets the off-shell-current routines in [`crate::helas::vertex`] add and
-//! subtract leg momenta directly to obtain the momentum of the internal line;
-//! [`DiracWf::charge`] reads the flag back off the sign of the stored energy.
+//! subtract leg momenta directly to obtain the momentum of the internal line,
+//! and it leaves the flag readable off the sign of the stored energy.
 //!
 //! ### Spinor wavefunctions
 //!
@@ -219,7 +219,7 @@ use num_traits::Zero;
 pub struct DiracWf<F: Real, Adj: DiracAdjoint> {
     pub spinor: Bispinor<F, Adj>,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: LorentzVector<F, Contravariant>,
+    pub(crate) momentum: LorentzVector<F, Contravariant>,
 }
 
 /// Flowing-IN typed spinor wavefunction.
@@ -257,23 +257,11 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
     ///
     /// The momentum is stored verbatim, so the caller is responsible for the
     /// flow sign; off-shell currents use this to wrap their own output.
-    pub fn from_spinor(
+    pub(crate) fn from_spinor(
         spinor: Bispinor<F, Adj>,
         momentum: LorentzVector<F, Contravariant>,
     ) -> Self {
         Self { spinor, momentum }
-    }
-
-    /// Return the charge (particle vs antiparticle) based on the sign of the energy component of the momentum.
-    ///
-    /// This relies on the HELAS convention that the momentum stored in the wavefunction is `p * nsf.sign()`,
-    /// where `nsf` is the charge sign parameter used when constructing the spinor.
-    pub fn charge(&self) -> Charge {
-        if self.momentum.e().is_sign_positive() {
-            Charge::Particle
-        } else {
-            Charge::Antiparticle
-        }
     }
 
     /// Flip the adjoint (ket/bra) by taking the Dirac conjugate of the spinor (`u ↔ ū`).
@@ -281,7 +269,8 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
     /// This is the bra/ket dual of the *same* physical particle, so the stored
     /// (HELAS-signed) momentum is carried through unchanged — matching the
     /// no-flip momentum routing used throughout off-shell-current evaluation.
-    pub fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
+    #[cfg(test)]
+    pub(crate) fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
         DiracWf {
             spinor: self.spinor.dualize(),
             momentum: self.momentum,
@@ -291,7 +280,8 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
 
 impl<F: Real> InDiracWf<F> {
     /// Convert to a bra wavefunction by taking the Dirac conjugate of the spinor
-    pub fn to_outgoing(self) -> OutDiracWf<F> {
+    #[cfg(test)]
+    pub(crate) fn to_outgoing(self) -> OutDiracWf<F> {
         self.flip_adjoint()
     }
 }
@@ -300,15 +290,17 @@ impl<F: Real> OutDiracWf<F> {
     /// Convert to a ket wavefunction by taking the Dirac conjugate of the spinor
     ///
     /// This is the inverse of [`InDiracWf::to_outgoing`].
-    pub fn to_incoming(self) -> InDiracWf<F> {
+    #[cfg(test)]
+    pub(crate) fn to_incoming(self) -> InDiracWf<F> {
         self.flip_adjoint()
     }
 
-    pub fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
+    #[cfg(test)]
+    pub(crate) fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
         Bispinor::scalar_bilinear(&self.spinor, &other.spinor, chirality)
     }
 
-    pub fn vector_bilinear(
+    pub(crate) fn vector_bilinear(
         self,
         other: &InDiracWf<F>,
         chirality: Chirality,
@@ -336,30 +328,12 @@ impl<F: Real> OutDiracWf<F> {
 pub struct VectorWf<F: Real, V: Variance = Contravariant> {
     /// Polarisation / Lorentz components in HELAS convention, at variance `V`.
     pub eps: ComplexVector<F, V>,
-    pub momentum: LorentzVector<F, Contravariant>,
+    pub(crate) momentum: LorentzVector<F, Contravariant>,
 }
 
-impl<F: Real> VectorWf<F, Covariant> {
-    /// Raise the polarisation index: `ε^μ = g^{μν} ε_ν` (momentum unchanged).
-    #[inline(always)]
-    pub fn raise(self) -> VectorWf<F, Contravariant> {
-        VectorWf {
-            eps: self.eps.raise(),
-            momentum: self.momentum,
-        }
-    }
-}
+impl<F: Real> VectorWf<F, Covariant> {}
 
-impl<F: Real> VectorWf<F, Contravariant> {
-    /// Lower the polarisation index: `ε_μ = g_{μν} ε^ν` (momentum unchanged).
-    #[inline(always)]
-    pub fn lower(self) -> VectorWf<F, Covariant> {
-        VectorWf {
-            eps: self.eps.lower(),
-            momentum: self.momentum,
-        }
-    }
-}
+impl<F: Real> VectorWf<F, Contravariant> {}
 
 impl<F: Real> VectorWf<F, Contravariant> {
     /// On-shell polarization vector for a spin-1 external particle.
@@ -499,7 +473,7 @@ impl<F: Real> ScalarWf<F> {
     /// # Implementation
     /// Converted from ALOHA `sxxxxx.F` (Fortran77 HELAS).
     /// The scalar amplitude is trivial; this mainly stores momentum for routing.
-    pub fn sxxxxx(p: LorentzVector<F, Contravariant>, nss: i32) -> Self {
+    pub(crate) fn sxxxxx(p: LorentzVector<F, Contravariant>, nss: i32) -> Self {
         ScalarWf {
             value: C::new(F::one(), F::zero()),
             momentum: match nss {

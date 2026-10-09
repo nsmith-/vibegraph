@@ -30,17 +30,17 @@ use std::io::{BufRead, IsTerminal, Write};
 /// Set to any value to forbid downloads. Anything that must stay offline — a
 /// test run, a sandboxed build — sets this and cannot then reach the network,
 /// whatever the command line says.
-pub const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
+pub(crate) const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
 /// Command-line spelling of the same refusal.
-pub const NO_NETWORK_FLAG: &str = "--no-network";
+pub(crate) const NO_NETWORK_FLAG: &str = "--no-network";
 /// Command-line consent, standing in for a "yes" at the prompt. Named by its
 /// short spelling in every message (`--yes` is the long form of the same flag).
-pub const CONSENT_FLAG: &str = "-y";
+pub(crate) const CONSENT_FLAG: &str = "-y";
 
 /// What forbade a download, so a refusal can name the one thing the user has to
 /// change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Denial {
+pub(crate) enum Denial {
     Flag,
     Env,
 }
@@ -63,7 +63,7 @@ impl Denial {
 
 /// How this run answers a "may I download this?" question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NetworkPolicy {
+pub(crate) enum NetworkPolicy {
     /// Never; `Denial` says what forbade it.
     Deny(Denial),
     /// Ask, if there is a terminal to ask on.
@@ -79,7 +79,7 @@ impl NetworkPolicy {
     /// reported over the environment variable when both refuse: the remedy the
     /// message names has to be one that actually unblocks the run, and dropping
     /// the flag while the variable is still set would not.
-    pub fn resolve(no_network_flag: bool, consent_flag: bool, env_denies: bool) -> Self {
+    pub(crate) fn resolve(no_network_flag: bool, consent_flag: bool, env_denies: bool) -> Self {
         if no_network_flag {
             NetworkPolicy::Deny(Denial::Flag)
         } else if env_denies {
@@ -92,7 +92,7 @@ impl NetworkPolicy {
     }
 
     /// Resolve against the real environment.
-    pub fn from_env(no_network_flag: bool, consent_flag: bool) -> Self {
+    pub(crate) fn from_env(no_network_flag: bool, consent_flag: bool) -> Self {
         Self::resolve(
             no_network_flag,
             consent_flag,
@@ -104,15 +104,15 @@ impl NetworkPolicy {
 /// A download the user is being asked to authorise, in the terms the pin
 /// records it: where it comes from, how big it is, and what it must hash to.
 #[derive(Clone, Copy, Debug)]
-pub struct Download<'a> {
+pub(crate) struct Download<'a> {
     /// What the bytes are, phrased for a sentence: `"PDF set NNPDF23_…"`.
-    pub what: &'a str,
-    pub url: &'a str,
-    pub bytes: u64,
-    pub sha256: &'a str,
+    pub(crate) what: &'a str,
+    pub(crate) url: &'a str,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: &'a str,
     /// Where the unpacked archive would land, which is also where a user who
     /// downloads it themselves should put it.
-    pub destination: &'a str,
+    pub(crate) destination: &'a str,
 }
 
 impl Download<'_> {
@@ -123,7 +123,7 @@ impl Download<'_> {
     /// The URL, size, checksum and destination, one per line. Shown before the
     /// question and repeated in every refusal, so a user who cannot or will not
     /// let the binary fetch it has everything needed to do it themselves.
-    pub fn terms(&self) -> String {
+    pub(crate) fn terms(&self) -> String {
         format!(
             "  source:  {}\n  size:    {:.1} MB\n  sha256:  {}\n  unpacks to: {}",
             self.url,
@@ -135,13 +135,13 @@ impl Download<'_> {
 
     /// The question in one line, for a display whose answer row has no room for
     /// the terms — those go into the scrollback as [`Download::notice`].
-    pub fn question(&self) -> String {
+    pub(crate) fn question(&self) -> String {
         format!("download {} ({:.1} MB)?", self.what, self.megabytes())
     }
 
     /// What precedes the question, line by line: that the asset is missing, and
     /// the terms of fetching it.
-    pub fn notice(&self) -> Vec<String> {
+    pub(crate) fn notice(&self) -> Vec<String> {
         let mut lines = vec![format!(
             "{} is not available locally. It can be downloaded now:",
             self.what
@@ -164,7 +164,7 @@ fn declined(download: &Download<'_>) -> String {
 
 /// The answer to one download question.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Consent {
+pub(crate) enum Consent {
     Granted,
     /// Refused, carrying the message explaining why and what would change it.
     Refused(String),
@@ -187,7 +187,7 @@ fn is_yes(answer: &str) -> bool {
 ///
 /// `interactive` is whether a prompt can be both shown and answered; `input`
 /// and `out` are the streams it would use.
-pub fn decide(
+pub(crate) fn decide(
     policy: NetworkPolicy,
     download: &Download<'_>,
     interactive: bool,
@@ -245,7 +245,7 @@ pub fn decide(
 /// to count as interactive: a redirected `stdin` cannot answer, and a
 /// redirected `stderr` hides the question. The prompt goes to `stderr` so that
 /// piping the command's `stdout` never swallows it.
-pub fn confirm(policy: NetworkPolicy, download: &Download<'_>) -> Consent {
+pub(crate) fn confirm(policy: NetworkPolicy, download: &Download<'_>) -> Consent {
     if policy == NetworkPolicy::Ask {
         if let Some(granted) = crate::tui::ask_to_download(&download.question(), download.notice())
         {

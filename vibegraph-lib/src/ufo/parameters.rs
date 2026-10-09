@@ -38,7 +38,7 @@ pub enum ParamNature {
 pub struct Parameter {
     pub name: String,
     /// `true` if `type = 'complex'`
-    pub complex: bool,
+    pub(crate) complex: bool,
     pub nature: ParamNature,
 }
 
@@ -48,16 +48,16 @@ pub struct ParameterSet {
     /// External parameters (no deps on other params).
     pub externals: Vec<Parameter>,
     /// Internal parameters in topo-sorted evaluation order.
-    pub internals: Vec<Parameter>,
+    pub(crate) internals: Vec<Parameter>,
     /// Reverse dependency map: name → list of parameter names that depend on it.
-    pub rdeps: BTreeMap<String, Vec<String>>,
+    pub(crate) rdeps: BTreeMap<String, Vec<String>>,
     /// Const-zero parameters (set by restrictions)
     pub zeros: BTreeSet<String>,
 }
 
 impl ParameterSet {
     /// Evaluate all parameters using the given param_card for external inputs.
-    pub fn evaluate(&self, slha: &ParamCard) -> HashMap<String, Complex64> {
+    pub(crate) fn evaluate(&self, slha: &ParamCard) -> HashMap<String, Complex64> {
         let mut values: HashMap<String, Complex64> = HashMap::new();
 
         for p in &self.externals {
@@ -112,7 +112,7 @@ impl ParameterSet {
     /// evaluate a vertex set that no longer matches the couplings. Non-zero values
     /// are defaults and stay overridable, which is what makes the generated
     /// `param_card.dat` an editable card rather than a transcript.
-    pub fn apply_restrict(&mut self, card: &ParamCard) {
+    pub(crate) fn apply_restrict(&mut self, card: &ParamCard) {
         for p in &mut self.externals {
             if let ParamNature::External {
                 default_value,
@@ -135,7 +135,7 @@ impl ParameterSet {
     /// The set [`recompute`](Self::recompute) re-evaluates, exposed on its own so a
     /// caller can ask *which* parameters a change moves without performing it. A
     /// parameter locked to zero by a restriction moves nothing, so the set is empty.
-    pub fn dependents(&self, changed: &str) -> HashSet<String> {
+    pub(crate) fn dependents(&self, changed: &str) -> HashSet<String> {
         let mut affected: HashSet<String> = HashSet::new();
         if self.zeros.contains(changed) {
             return affected;
@@ -156,7 +156,7 @@ impl ParameterSet {
     }
 
     /// Re-evaluate only the transitive dependents of `changed` in place.
-    pub fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
+    pub(crate) fn recompute(&self, changed: &str, current: &mut HashMap<String, Complex64>) {
         if self.zeros.contains(changed) {
             // This parameter is fixed to zero by a restriction, so ignore any changes.
             return;
@@ -187,7 +187,7 @@ impl ParameterSet {
 }
 
 /// Parse `parameters.py` content into a [`ParameterSet`].
-pub fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
+pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
     let mut externals: Vec<Parameter> = Vec::new();

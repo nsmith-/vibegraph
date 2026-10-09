@@ -1,16 +1,16 @@
-pub mod ast_util;
-pub mod color;
-pub mod couplings;
-pub mod expr;
+pub(crate) mod ast_util;
+pub(crate) mod color;
+pub(crate) mod couplings;
+pub(crate) mod expr;
 pub mod identity;
 pub mod lorentz;
 pub mod parameters;
 pub mod particles;
-pub mod propagators;
+pub(crate) mod propagators;
 pub mod slha;
 pub mod sm;
-pub mod topo;
-pub mod vertices;
+pub(crate) mod topo;
+pub(crate) mod vertices;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
@@ -34,7 +34,7 @@ use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 use topo::build_feyngraph_model;
 
 /// UFO source files [`ParsedModel::parse`] requires, in read order.
-pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
+pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
     "particles.py",
     "lorentz.py",
     "couplings.py",
@@ -44,7 +44,7 @@ pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
 
 /// UFO source files [`ParsedModel::parse`] reads when present, falling back to a
 /// built-in default when absent.
-pub const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
+pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
 
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
 // Used when coupling_orders.py is absent or contains no hierarchy data.
@@ -163,7 +163,7 @@ pub struct UFOModel {
     pub vertices: IndexMap<String, Vertex>,
     pub params: ParameterSet,
     /// FeynGraph topology model — retained for diagram-level topology queries.
-    pub topo: TopoModel,
+    pub(crate) topo: TopoModel,
     /// Coupling order hierarchy from `coupling_orders.py` (e.g. QCD→1, QED→2).
     /// Used to compute the WEIGHTED coupling order for automatic order selection.
     pub order_hierarchy: BTreeMap<String, u32>,
@@ -171,9 +171,6 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
-    /// Custom propagator forms from `propagators.py`, keyed by Python variable
-    /// name — what [`Particle::propagator`] refers to.
-    pub propagators: IndexMap<String, Propagator>,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -295,7 +292,7 @@ impl ParsedModel {
     /// onto the shortened list). Colour structures are left alone, as MadGraph
     /// leaves them: an unreferenced one is never read, since every consumer
     /// enumerates colour structures through the coupling keys.
-    pub fn apply_restriction(&mut self, restrict_card: &ParamCard) {
+    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) {
         self.params.apply_restrict(restrict_card);
 
         let restrict_values =
@@ -316,7 +313,7 @@ impl ParsedModel {
     /// Apply a restrict card and build the feyngraph topology model.
     ///
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
-    pub fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
+    pub(crate) fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
         if let Some(restrict_card) = restrict {
             self.apply_restriction(restrict_card);
         }
@@ -338,7 +335,6 @@ impl ParsedModel {
             topo,
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
-            propagators: self.propagators,
         })
     }
 }
@@ -396,11 +392,6 @@ impl UFOModel {
         Ok((Arc::new(model), digest))
     }
 
-    /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
-    pub fn load_auto(path: &Path) -> Result<Arc<Self>, UfoError> {
-        Self::load(path, None)
-    }
-
     // ── Name → index lookup ───────────────────────────────────────────────────
 
     /// Get a ParticleId by its name
@@ -409,7 +400,8 @@ impl UFOModel {
     }
 
     /// Get a LorentzId by its name
-    pub fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
+    #[cfg(test)]
+    pub(crate) fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
         self.lorentz.get_index_of(name).map(LorentzId::from)
     }
 
@@ -419,7 +411,7 @@ impl UFOModel {
     }
 
     /// Get a VertexId by its name
-    pub fn vertex_id(&self, name: &str) -> Option<VertexId> {
+    pub(crate) fn vertex_id(&self, name: &str) -> Option<VertexId> {
         self.vertices.get_index_of(name).map(VertexId)
     }
 
@@ -429,15 +421,15 @@ impl UFOModel {
         &self.particles[id]
     }
 
-    pub fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
+    pub(crate) fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
         &self.lorentz[id]
     }
 
-    pub fn coupling_def(&self, id: CouplingId) -> &Coupling {
+    pub(crate) fn coupling_def(&self, id: CouplingId) -> &Coupling {
         &self.couplings[id]
     }
 
-    pub fn vertex_def(&self, id: VertexId) -> &Vertex {
+    pub(crate) fn vertex_def(&self, id: VertexId) -> &Vertex {
         &self.vertices[id.0]
     }
 }
@@ -582,7 +574,7 @@ impl EvaluatedModel {
     }
 
     /// The model these values were evaluated from.
-    pub fn model(&self) -> &Arc<UFOModel> {
+    pub(crate) fn model(&self) -> &Arc<UFOModel> {
         &self.model
     }
 
@@ -625,7 +617,7 @@ impl EvaluatedModel {
 
     /// The parameters and couplings whose value is not finite, by name, parameters
     /// first and each list sorted.
-    pub fn non_finite(&self) -> Vec<&str> {
+    pub(crate) fn non_finite(&self) -> Vec<&str> {
         let finite = |v: &Complex64| v.re.is_finite() && v.im.is_finite();
         let mut params: Vec<&str> = self
             .param_values
@@ -645,22 +637,6 @@ impl EvaluatedModel {
         couplings.sort_unstable();
         params.extend(couplings);
         params
-    }
-
-    /// Get the coupling entries for a vertex by its name.
-    ///
-    /// Returns `[(color_idx, lorentz_idx, value)]` or `None` if unknown.
-    pub fn vertex_couplings(&self, id: VertexId) -> Option<Vec<(usize, usize, Complex64)>> {
-        let vertex = self.model.vertex_def(id);
-        let entries = vertex
-            .couplings
-            .iter()
-            .map(|((c, l), &coup_id)| {
-                let val = self.coupling_values[coup_id];
-                (*c, *l, val)
-            })
-            .collect();
-        Some(entries)
     }
 
     /// Re-evaluate only the parameters transitively depending on `changed`,

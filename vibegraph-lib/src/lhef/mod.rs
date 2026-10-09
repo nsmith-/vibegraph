@@ -97,7 +97,7 @@ pub mod resonance;
 pub mod write;
 
 /// The LHE version this writer emits and the parser accepts.
-pub const LHE_VERSION: &str = "3.0";
+pub(crate) const LHE_VERSION: &str = "3.0";
 
 #[derive(Debug, Error, PartialEq)]
 pub enum LhefError {
