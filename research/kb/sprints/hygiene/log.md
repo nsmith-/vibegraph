@@ -76,3 +76,12 @@
   `sessions/R-G1-report.md`, `R-G2-report.md` and `R-F-report.md`, with the
   manager's spot checks in each. Seven of eight reviews are in; R-A is
   outstanding.
+* **R-A reported**: 21 findings, recorded as `sessions/R-A-report.md`. All
+  eight reviews are in, with 175 findings in total. Triage follows.
+* **Reference data**: zstd installed, and the pinned refdata-9 bundle fetched
+  with `fetch_refdata.sh` (consent by env), so fix sessions can run the banked
+  layer.
+* **Triage** written as `triage.md`: 176 findings, 125 fixed here across nine
+  fix sessions (F-F split into F-F and F-CLI), 50 filed as 35 new items at
+  close-out, 4 rejected or close-out only, 3 for the user. PDF set fetched
+  (`validation/pdf/fetch.sh`). Fix sessions wait on the user's three calls.

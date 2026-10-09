@@ -24,6 +24,7 @@
 
 ## Session Report
 
+* [R-A report: the evaluator (helas/eval)](R-A-report.md) - 21 findings on helas/eval: a squared-norm current gate blind to a zero Z current, per-diagram probes that bypass the production runtime, parked egraph code with non-optional dependencies, an unpinned op-kind numbering, and a disposition (keep f64) for the coefficient item.
 * [R-B report: Lorentz, colour and wavefunction layer](R-B-report.md) - 26 findings on helas/repr, helas/color and the helas root files: oracles blind to what they claim (Z-mixing, nsv, dualize, conj sign), squared-norm tolerances, dead test-only abstractions, and a hand-written rational arithmetic.
 * [R-C report: models, diagrams and reweighting](R-C-report.md) - 20 findings on ufo, diagrams, onshell and reweight: an any-refusal grammar oracle, untested refusal variants, a silently dropped Lorentz divisor, silent defaults for required UFO fields, and duplicated massless/side/WEIGHTED logic.
 * [R-D report: phase space and sampling](R-D-report.md) - 17 findings on vegas, budget, phasespace, cuts, unweight and select: production docs citing test-only APIs, a vacuous parallel-agreement test, a dead parallel scheme, an unselected combination knob, and loose σ gates.
