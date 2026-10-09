@@ -4,10 +4,20 @@
 
 ## Procedure
 
+* [Hygiene fix protocol](fix-protocol.md) - How an F-session fixes one cluster's triaged findings and claimed items: what counts as done, the stop-rule, proving a tightened test, gates, commits and the report.
 * [Hygiene review protocol](review-protocol.md) - How an R-session reviews one module cluster on four points, read-only, and the report shape triage and the lessons depend on.
 
 ## Session Brief
 
+* [F-A: evaluator fixes](F-A.md) - Fix R-A's 16 triaged findings in helas/eval and close evaluator-doc-comments-stale, without changing the emitted program or any kernel body.
+* [F-B: Lorentz, colour and wavefunction fixes](F-B.md) - Fix R-B's 24 triaged findings in helas/repr, helas/color and the helas root files: blind oracles, squared-norm tolerances, dead test-only abstractions and a hand-written rational arithmetic.
+* [F-C: model, diagram and reweight fixes](F-C.md) - Fix R-C's 12 triaged findings and two found bugs in ufo, diagrams, onshell and reweight, and close five claimed items including asin/acos and make_anti.
+* [F-CLI: CLI and validation-report fixes](F-CLI.md) - Fix R-F's 15 triaged findings in vibegraph-cli and validation-report: untested check-events complaints, exit-code-only refusal tests, loose CLI σ checks, unnamed-file errors and stringly-typed report state.
+* [F-D: phase-space and sampling fixes](F-D.md) - Fix R-D's 14 triaged findings in vegas, budget, phasespace, cuts and unweight, and close the sampler-doc and MadGraph-citation items.
+* [F-E: hadronic, PDF and scale fixes](F-E.md) - Fix R-E's 9 triaged findings in proton, hadronic, pdf and coupling, and close the SDE_strategy/tmin configuration-weights item together with R-E.1's duplicated predicate.
+* [F-F: library I/O fixes](F-F.md) - Fix R-F's 7 triaged library findings in config, cache, lhef/emit and artifact, and close the artifact version-arm and run-card Opaque-default items.
+* [F-G1: amplitude, model and diagram test fixes](F-G1.md) - Fix R-G1's 14 triaged findings in the amplitude/colour/model test targets, close config-amp-phase-and-sign-unpinned, and move the smeftsim and toy_models targets into the hermetic layer.
+* [F-G2: sampling, scale, PDF and event test fixes](F-G2.md) - Fix R-G2's 14 triaged findings in the σ, scale, PDF and event test targets and the manifest notes, and close five claimed stale-comment and probe items.
 * [L: lessons for the hygiene agent](L.md) - Turn the review reports, triage outcomes and fix-session results into a draft methodology concept on running a hygiene review, the design input for the hygiene agent.
 * [R-A: hygiene review of the evaluator (helas/eval)](R-A.md) - Review helas/eval for maintainability, test non-vacuity, visibility and reusable abstractions.
 * [R-B: hygiene review of the Lorentz, colour and wavefunction layer](R-B.md) - Review helas/repr, helas/color and the helas root files on the four hygiene points.

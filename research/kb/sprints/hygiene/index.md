@@ -13,4 +13,4 @@
 ## Directories
 
 * [decisions](decisions/index.md) - 4 concepts
-* [sessions](sessions/index.md) - 25 concepts
+* [sessions](sessions/index.md) - 35 concepts

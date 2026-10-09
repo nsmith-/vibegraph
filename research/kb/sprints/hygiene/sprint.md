@@ -126,7 +126,7 @@ sprint supplies its proposal).
 | [T1](sessions/T1.md) tooling and CI | `validation-dev` (Sonnet) | — | scripts' own checks | five tooling items |
 | [R-A](sessions/R-A.md) … [R-G2](sessions/R-G2.md) reviews (8) | `claude` (Opus), read-only | V1b | none: report only | — |
 | Triage (manager) | — | all R | — | — |
-| F-A … F-G fixes (≤ 7) | per brief, written at triage | triage, run serially | lint + hermetic + `--skip-deps validate` | the cluster's claimed items |
+| [F-A](sessions/F-A.md), [F-B](sessions/F-B.md), [F-C](sessions/F-C.md), [F-D](sessions/F-D.md), [F-E](sessions/F-E.md), [F-F](sessions/F-F.md), [F-CLI](sessions/F-CLI.md), [F-G1](sessions/F-G1.md), [F-G2](sessions/F-G2.md) fixes (9, [protocol](sessions/fix-protocol.md)) | per brief | [triage](triage.md); run serially, in that order | lint + hermetic + touched banked targets | the cluster's claimed items |
 | L lessons | `claude` (Opus) | all F | `kb-lint` | — |
 | Z close-out | manager | L | the exit criteria | hygiene-sprint |
 

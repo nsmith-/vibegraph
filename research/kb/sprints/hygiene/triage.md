@@ -158,18 +158,15 @@ Each line becomes one backlog item. Areas are in brackets.
   review.
 - **R-A.17:** no code change. Its decision is the user's call (below).
 
-## The user's call
+## The user's call (answered 2026-10-09)
 
-1. **R-A.17:** record "Lorentz coefficients stay f64", which closes
-   lorentz-coefficients-still-f64. The reasons are in the R-A report.
-2. **R-G1.5:** widen the claimed `smeftsim-vendored-checksum-not-hermetic` so
-   that F-G1 moves the whole `smeftsim` and `toy_models` targets into the
-   hermetic layer (manifest and `Cargo.toml` registration). Otherwise F-G1
-   moves only the checksum test and R-G1.5 is filed.
-3. **R-G2.1:** this side's seeds are combined by 1/σ² in the grammar gate and
-   unweighted in the MLM gates. The written seed policy says 1/σ², while
-   `combine_seeds` argues 1/σ² is biased. Which rule holds is a validation
-   policy decision. It is filed `needs-user` either way.
+1. **R-A.17: leave lorentz-coefficients-still-f64 open.** No decision is
+   recorded; R-A's reasons stay in its report for whoever takes the item.
+2. **R-G1.5: move both targets.** F-G1 moves the whole `smeftsim` and
+   `toy_models` targets into the hermetic layer, closing the widened
+   `smeftsim-vendored-checksum-not-hermetic`.
+3. **R-G2.1: file it, decide later.** It is filed `needs-user` with both
+   arguments, and no gate changes in this sprint.
 
 ## What triage learned (for L)
 

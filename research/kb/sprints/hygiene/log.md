@@ -85,3 +85,13 @@
   fix sessions (F-F split into F-F and F-CLI), 50 filed as 35 new items at
   close-out, 4 rejected or close-out only, 3 for the user. PDF set fetched
   (`validation/pdf/fetch.sh`). Fix sessions wait on the user's three calls.
+* **Decisions** (human:nsmith-, on the triage):
+  - R-A.17: leave lorentz-coefficients-still-f64 open, with no decision
+    recorded.
+  - R-G1.5: F-G1 moves the whole `smeftsim` and `toy_models` targets into the
+    hermetic layer.
+  - R-G2.1: the seed-combination contradiction is filed `needs-user`, with no
+    gate change now.
+* **Fix briefs** written: F-A, F-B, F-C, F-D, F-E, F-F, F-CLI, F-G1 and F-G2,
+  with a shared `sessions/fix-protocol.md`. They run serially in that order,
+  each from the previous one's merged head.
