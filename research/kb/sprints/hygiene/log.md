@@ -49,3 +49,10 @@
 * **V1b reported** (`hygiene-v1`, 22f1955..371f854). The report is recorded as
   `sessions/V1b-report.md`. The manager's gate re-run is in progress, and the
   merge waits on it.
+* **V1 and V1b merged** into the sprint branch. Manager gate re-run at `371f854`:
+  - `cargo fmt --all --check` passes;
+  - `cargo clippy` with `-D warnings` exits 0 in both configurations;
+  - `cargo test --workspace` exits 0 (35 suites, 1348 passed, 0 failed,
+    17 ignored), unchanged from before V1;
+  - `cargo doc --workspace --no-deps --document-private-items` exits 0, with
+    28 lib warnings and 1 bin warning. All 16 unresolved links predate V1.
