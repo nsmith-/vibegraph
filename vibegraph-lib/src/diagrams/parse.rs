@@ -225,7 +225,7 @@ pub(crate) enum LegState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Leg {
     pub(crate) state: LegState,
-    pub particle: LegParticle,
+    pub(crate) particle: LegParticle,
     /// The token as written, without polarization braces or tag marks: `2e+`
     /// for a leg that came from a repeat count, which is what lets resolution
     /// notice a model particle whose name starts with a digit.

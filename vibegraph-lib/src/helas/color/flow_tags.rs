@@ -26,7 +26,7 @@
 //! direction: a **3** index lands in the colour slot for an outgoing leg and in
 //! the anticolour slot for an incoming one, and vice versa for a **3̄** index.
 //!
-//! That crossing rule is not assumed: [`color_flow_tags`] checks, for every
+//! That crossing rule is not assumed: `color_flow_tags` checks, for every
 //! flow, that the slots the derived lines occupy are exactly the slots the leg's
 //! particle rep allows (a triplet fills only the colour slot, an antitriplet
 //! only the anticolour slot, an octet both, a singlet neither), each exactly
@@ -376,7 +376,7 @@ impl LeadingColorFlows {
 /// basis key still holds an `f`/`d` tensor (the simplified basis is trace/δ
 /// only), references a summed index, or produces a line assignment inconsistent
 /// with the legs' colour reps.
-pub fn color_flow_tags(
+pub(crate) fn color_flow_tags(
     basis: &ColorBasis,
     legs: &[LegColor],
 ) -> Result<ColorFlowTags, ColorAlgebraError> {

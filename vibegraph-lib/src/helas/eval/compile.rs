@@ -1004,7 +1004,7 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 /// the census is what says so. Reused per model rather than written once for the
 /// SM, so a second model's list carries its own allowlist.
 #[cfg(any(test, feature = "extended-validation"))]
-pub fn op_census(
+pub(crate) fn op_census(
     label: &str,
     model: &UFOModel,
     processes: &[&str],

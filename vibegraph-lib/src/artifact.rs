@@ -371,12 +371,12 @@ pub(crate) mod v3 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct ChannelGrid {
-        pub alpha: f64,
-        pub neval: usize,
-        pub grid: VegasGrid,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) alpha: f64,
+        pub(crate) neval: usize,
+        pub(crate) grid: VegasGrid,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 
     #[derive(Debug, Deserialize)]
@@ -385,21 +385,21 @@ pub(crate) mod v3 {
         /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
         /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
         /// the file's own version, not the version the in-memory struct now matches.
-        pub format_version: u32,
-        pub process: String,
-        pub model: ModelIdentity,
-        pub pdf_set: String,
-        pub pdf_member: u32,
-        pub mu_f: f64,
-        pub sqrt_s_had: f64,
-        pub neval: usize,
-        pub niter: usize,
-        pub seed: u64,
-        pub run_card: RunCard,
-        pub channels: Vec<ChannelGrid>,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) format_version: u32,
+        pub(crate) process: String,
+        pub(crate) model: ModelIdentity,
+        pub(crate) pdf_set: String,
+        pub(crate) pdf_member: u32,
+        pub(crate) mu_f: f64,
+        pub(crate) sqrt_s_had: f64,
+        pub(crate) neval: usize,
+        pub(crate) niter: usize,
+        pub(crate) seed: u64,
+        pub(crate) run_card: RunCard,
+        pub(crate) channels: Vec<ChannelGrid>,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 }
 
@@ -416,13 +416,13 @@ pub(crate) mod v4 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct ChannelGrid {
-        pub key: ChannelKey,
-        pub alpha: f64,
-        pub neval: usize,
-        pub grid: VegasGrid,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) key: ChannelKey,
+        pub(crate) alpha: f64,
+        pub(crate) neval: usize,
+        pub(crate) grid: VegasGrid,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 
     #[derive(Debug, Deserialize)]
@@ -431,21 +431,21 @@ pub(crate) mod v4 {
         /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
         /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
         /// the file's own version, not the version the in-memory struct now matches.
-        pub format_version: u32,
-        pub process: String,
-        pub model: ModelIdentity,
-        pub pdf_set: String,
-        pub pdf_member: u32,
-        pub mu_f: f64,
-        pub sqrt_s_had: f64,
-        pub neval: usize,
-        pub niter: usize,
-        pub seed: u64,
-        pub run_card: RunCard,
-        pub channels: Vec<ChannelGrid>,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) format_version: u32,
+        pub(crate) process: String,
+        pub(crate) model: ModelIdentity,
+        pub(crate) pdf_set: String,
+        pub(crate) pdf_member: u32,
+        pub(crate) mu_f: f64,
+        pub(crate) sqrt_s_had: f64,
+        pub(crate) neval: usize,
+        pub(crate) niter: usize,
+        pub(crate) seed: u64,
+        pub(crate) run_card: RunCard,
+        pub(crate) channels: Vec<ChannelGrid>,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 }
 
@@ -465,21 +465,21 @@ pub(crate) mod v7 {
         /// The version this file was actually written at, carried through the
         /// upgrade unchanged: `vibegraph generate`'s artifact-age guard reads the
         /// file's own version.
-        pub format_version: u32,
-        pub process: String,
-        pub model: ModelIdentity,
-        pub pdf_set: String,
-        pub pdf_member: u32,
-        pub mu_f: f64,
-        pub sqrt_s_had: f64,
-        pub neval: usize,
-        pub niter: usize,
-        pub seed: u64,
-        pub run_card: RunCard,
-        pub channels: Vec<ChannelGrid>,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) format_version: u32,
+        pub(crate) process: String,
+        pub(crate) model: ModelIdentity,
+        pub(crate) pdf_set: String,
+        pub(crate) pdf_member: u32,
+        pub(crate) mu_f: f64,
+        pub(crate) sqrt_s_had: f64,
+        pub(crate) neval: usize,
+        pub(crate) niter: usize,
+        pub(crate) seed: u64,
+        pub(crate) run_card: RunCard,
+        pub(crate) channels: Vec<ChannelGrid>,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 }
 
@@ -532,14 +532,14 @@ pub(crate) mod v5 {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct ChannelGrid {
-        pub key: ChannelKey,
-        pub alpha: f64,
-        pub neval: usize,
-        pub grid: VegasGrid,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
-        pub sampler: Option<ChannelSampler>,
+        pub(crate) key: ChannelKey,
+        pub(crate) alpha: f64,
+        pub(crate) neval: usize,
+        pub(crate) grid: VegasGrid,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
+        pub(crate) sampler: Option<ChannelSampler>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -548,21 +548,21 @@ pub(crate) mod v5 {
         /// upgrade unchanged rather than normalised to `FORMAT_VERSION`: a reader
         /// downstream of an upgrade (`vibegraph generate`'s artifact-age guard) needs
         /// the file's own version, not the version the in-memory struct now matches.
-        pub format_version: u32,
-        pub process: String,
-        pub model: ModelIdentity,
-        pub pdf_set: String,
-        pub pdf_member: u32,
-        pub mu_f: f64,
-        pub sqrt_s_had: f64,
-        pub neval: usize,
-        pub niter: usize,
-        pub seed: u64,
-        pub run_card: RunCard,
-        pub channels: Vec<ChannelGrid>,
-        pub sigma_pb: f64,
-        pub sigma_err_pb: f64,
-        pub chi2_per_dof: f64,
+        pub(crate) format_version: u32,
+        pub(crate) process: String,
+        pub(crate) model: ModelIdentity,
+        pub(crate) pdf_set: String,
+        pub(crate) pdf_member: u32,
+        pub(crate) mu_f: f64,
+        pub(crate) sqrt_s_had: f64,
+        pub(crate) neval: usize,
+        pub(crate) niter: usize,
+        pub(crate) seed: u64,
+        pub(crate) run_card: RunCard,
+        pub(crate) channels: Vec<ChannelGrid>,
+        pub(crate) sigma_pb: f64,
+        pub(crate) sigma_err_pb: f64,
+        pub(crate) chi2_per_dof: f64,
     }
 }
 

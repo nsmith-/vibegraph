@@ -250,7 +250,7 @@ impl Op {
 
 /// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Node<T> {
+pub(crate) struct Node<T> {
     pub(crate) op: Op,
     pub(crate) leaf: T,
 }

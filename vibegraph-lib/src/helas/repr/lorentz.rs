@@ -1611,7 +1611,7 @@ impl<F: Real> Multivector<F> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal helpers: the actual WeylBasis numerics (moved from repr.rs)
+// Internal helpers: the Weyl-basis numerics
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Incoming fermion wavefunction (column spinor).

@@ -901,7 +901,7 @@ pub(crate) fn scalar_bilinear_c<F: Real>(
 // ──────────────────────────── metric / vector currents ────────────────────────────
 
 /// `Metric`: contract two vectors → scalar.
-pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     let WaveformSlot::Vector(v1) = a else {
         panic!("Metric: expected vector input");
     };
