@@ -5,6 +5,7 @@ description: "Lepage's 1/σ² iteration weighting correlates weights with estima
 status: draft
 tags: [vegas, bias, integration, statistics, convergence]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n24-p3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1671-L1717", title: "Note 24 P3, the five-seed sweep was not sufficient: the budget scan"}
   - {id: n24-p4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L1934-L1953", title: "Note 24 P4, the sample's own σ does not inherit the integrator's bias"}

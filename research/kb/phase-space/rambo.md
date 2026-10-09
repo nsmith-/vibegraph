@@ -5,6 +5,7 @@ description: "The Kleiss–Stirling–Ellis massive RAMBO map and weight, its F-
 status: draft
 tags: [rambo, phase-space, flat-sampling, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L246-L257", title: "Note 18 §2.3, massive RAMBO over F: Real"}
   - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (RAMBO rows)"}

@@ -3,6 +3,7 @@ type: Design
 title: Each flavour-group member writes its own colour-flow table
 description: "Flavour-group members can carry conjugate or crossed colour reps, so each writes its own ColorFlowTags under a fingerprint-matched flow permutation; ambiguity is refused."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, colour, icolup, flavour-groups, proton]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -137,7 +138,11 @@ next one's failure[^n29-a2][^n29-b3].
 Measured when the design landed: 238 tables over the three classes 39/14/12,
 `check_legs` 238/238, T10 on 112 rows with 95 restricting, and the dijet
 `ICOLUP` χ² p 0.105/0.263/0.140 against p ≈ 0 before[^n29-c3]. The cell is
-gated ([validation/samples-gate](../validation/samples-gate.md)).
+gated ([validation/samples-gate](../validation/samples-gate.md)); its current
+reading is ICOLUP p
+
+0.123/0.265/0.020 over three seeds (`validation/manifest.toml`, `pp_to_jj`).
+
 
 ## What it cannot move, and what stays assumed
 

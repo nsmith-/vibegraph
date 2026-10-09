@@ -109,7 +109,8 @@ signs.
   scalar-sink −1, the crossed-pair −1, `standalone_projector_crossed`). It is
   kept on `RootedTerm::build_sign`, not folded into the term's `coeff`.
 - **`reversed_convention_sign`**: per vertex, the parity of the runtime
-  `reversed` flag at a fermion→vector sink (`GammaVout`/`FfvVout`). The runtime
+  `reversed` flag at a fermion→vector sink (`GammaVout`/`FfvVout`, and
+  `SigmaVout`, whose reversed reading takes the same −1). The runtime
   `resolve_bra_ket` still applies the **live** parity, which keeps `ffv_vout`'s
   `g_L ↔ g_R` swap; multiplying by the live parity and then by the reference
   parity leaves the reference one. In production, when live = reference, the

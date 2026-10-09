@@ -26,7 +26,10 @@ flow the event is written with. Vibegraph reproduces the array, the
 configuration set behind it, and the draw.
 
 `AMP2` enters no integrand and no cross section. It decides which colour flow
-(`ICOLUP`) and which intermediate resonance records an event carries.
+(`ICOLUP`) an event carries and, where intermediate resonance records are
+written, which ones. Vibegraph writes those status-2 records on decay-chain
+cards and under matching; a plain process does not yet
+([plain-process-onwindow-resonance-records](../backlog/feature/plain-process-onwindow-resonance-records.md)).
 
 ## Which diagrams get a configuration
 
@@ -122,7 +125,7 @@ is MadEvent's `SELECT_COLOR`[^code-compile]:
 
 A single-flow process reduces to a no-op. The selected configuration is also
 the event's `ICONFIG`, the diagram whose s-channel propagators become
-intermediate records, so colour flow and resonance structure come from one
+intermediate records where they are written, so colour flow and resonance structure come from one
 configuration. The per-event wiring is
 [events/colour-and-helicity-selection](../events/colour-and-helicity-selection.md).
 

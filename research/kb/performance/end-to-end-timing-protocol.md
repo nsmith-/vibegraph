@@ -5,6 +5,7 @@ description: "Pin RUST_TEST_THREADS and RAYON_NUM_THREADS for per-row times; dur
 status: draft
 tags: [performance, measurement-method, validation, timing, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n30-scope, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L34-L43", title: "Note 30: the comparison this note does and does not license"}
   - {id: n30-repro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/30-perf-baseline-timings.md#L179-L187", title: "Note 30 §3.3 (reproducibility)"}
@@ -15,6 +16,7 @@ sources:
   - {id: n31-mg-control, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1140-L1194", title: "Note 31 §6.6 (MadGraph's side as the host-drift control)"}
   - {id: n31-disagree, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1304-L1359", title: "Note 31 §6.9 (where this record disagrees)"}
   - {id: n32-tta, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L865-L955", title: "Note 32 §7 (time to a target accuracy; cost vs acceptance)"}
+  - {id: n31-load, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L610-L613", title: "Note 31: row timings under sibling load"}
   - {id: n34-cutfirst, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/34-draw-followup-plan.md#L29-L55", title: "Note 34 §1.1 (cut-first density draw)"}
 ---
 
@@ -162,11 +164,12 @@ reached, which puts the whole extrapolation on MadGraph's side. δ is the
 
 A point the cuts reject short-circuits before the matrix element, the scale
 clustering and the multichannel density sum, so the average point gets more
-expensive as the grids learn the fiducial region. On `pp_to_llj` acceptance goes
-from 23.8% on an untrained grid to 48.5% trained, and a two-component fit
-(`c_pre ≈ 1.0 µs`, `c_post ≈ 12.9 µs`) reproduces the observed per-iteration
-averages (70.1 → 91.5 µs/point over six iterations on a 579-channel 2→6);
-`ee_to_mumu` is flat because its acceptance barely moves. **An ns/point quoted
+expensive as the grids learn the fiducial region. The rise was first seen on the
+579-channel 2→6 (70.1 → 91.5 µs/point over six iterations at constant points per
+iteration). It was explained on `pp_to_llj`: acceptance goes from 23.8% on an
+untrained grid to 48.5% trained, and a two-component fit (`c_pre ≈ 1.0 µs`,
+`c_post ≈ 12.9 µs`) reproduces that row's per-iteration averages; `ee_to_mumu` is
+flat because its acceptance barely moves. **An ns/point quoted
 from early iterations understates a converged run's cost.**[^n32-tta]
 
 The density sum is priced only after the cut and the matrix element (the
@@ -181,7 +184,8 @@ acceptance there is ≈3%.[^n34-cutfirst]
 - A σ printed by a probe in GeV⁻² is not pb: multiply by `GEV2_TO_PB`
   (3.893793721e8) before comparing with a bank.[^n32-tta]
 - A row timing from a sitting under heavy sibling load is not bankable even when
-  the row contents are byte-identical; re-measure on a quiet host.
+  the row contents are byte-identical (one such spread reached −57%); re-measure
+  on a quiet host.[^n31-load]
 - On the M3 Max a loaded host inflates wall by tens of per cent while CPU moves
   little; see [benchmark hosts](../performance/benchmark-hosts.md).
 
@@ -195,3 +199,4 @@ acceptance there is ≈3%.[^n34-cutfirst]
 [^n31-disagree]: Note 31 §6.9.
 [^n32-tta]: Note 32 §7, protocol, the cost-versus-acceptance explanation, and the probe's unit correction.
 [^n34-cutfirst]: Note 34 §1.1.
+[^n31-load]: Note 31, an evaluator session's row timings taken under sibling load (`31-perf-sprint-3-plan.md` L610–613).

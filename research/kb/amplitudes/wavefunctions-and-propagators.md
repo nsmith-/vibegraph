@@ -5,6 +5,7 @@ description: "HELAS/ALOHA external vector/scalar wavefunctions and storage; Weyl
 status: draft
 tags: [helas, wavefunctions, propagators, conventions, aloha]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n10-prims, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L140-L236", title: "Note 10 §4.1–§4.6 (vxxxxx, sxxxxx, Dirac/massless/massive propagators, GammaV)"}
   - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11 (open questions)"}

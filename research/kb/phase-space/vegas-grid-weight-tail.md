@@ -5,6 +5,7 @@ description: "Adapting on Σ(f·w)² starves low-acceptance bins, giving Pareto 
 status: draft
 tags: [vegas, weight-tail, unweighting, mlm, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-fa, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L2005", title: "Note 41 M5 and F-A, the weight tail localised"}
   - {id: n41-m6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L2702-L2915", title: "Note 41 M6, xqcut-aware phase space, the τ floor, and the target run"}

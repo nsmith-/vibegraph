@@ -48,8 +48,8 @@ cancellation. The pipe-separated records cover:
   `dynamical_scale_choice`, …), `nqcd` per config, the `id_cl` merge map, the
   PDG and resonance tables, and every config's forest from `configs.inc`;
 - **per event**: `iproc`, `iconfig`, `ivec`, the momenta as `cluster()` received
-  them, the Breit–Wigner list, each `cluster()` call (`reweight.f:666`, `:998`,
-  `:1028`);
+  them, the Breit–Wigner list, each `cluster()` call (the one call site,
+  `reweight.f:666`, re-entered by the `goto 100` at `:998` and `:1028`);
 - **per clustering attempt and pass**: every candidate pair with admissibility,
   the arm of the measure (`IS_DJB`, `IS_PYJB`, `FS_DJ_DURHAM`, `FS_DJ_HAD`,
   `FS_DJ_MLESS_MASSIVE`, `FS_SUMDOT_BW`, `FS_PYDJ`), raw and inflated values and
@@ -134,7 +134,8 @@ MadGraph's scale is not a pure function of (momenta, process): `filmap`'s
 `nqcd(this_config)` filter, `checkbw`'s use of `this_config`, and the `njetstore`
 memo with its restricted re-cluster (`reweight.f:985-1030`) all depend on the
 channel or history. All three are live on the bank: the coupling-order filter on
-`pp_to_bb_qcd2`, `igraphs(1) ≠ iconfig` on 7 to 7877 events per run, 1857
+`pp_to_bb_qcd2`, `igraphs(1) ≠ iconfig` on seven of the eight runs (7 to 7877
+events each; never on `ee_to_ttx`), 1857
 restricted re-clusters on `pp_to_llj`[^n28-k37]. See
 [cluster-scale channel dependence](../scales-pdf/cluster-scale-channel-dependence.md).
 Also confirmed against the bank: the `uux_to_uux` tie-break (32 inflated

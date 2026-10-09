@@ -88,8 +88,11 @@ Tables and evaluation are `f64`. Because the arithmetic follows LHAPDF's
 per-point operation order, agreement with the LHAPDF oracle is at the
 `ln`-rounding level: worst `1.32e-15` relative off-knot, `1.34e-16` at seams,
 `1.95e-11` in the `x → 1` tail (inflated only by a ~`1e-19` near-zero antitop
-value), and on-knot reproduction at worst `|Δ| = 2.7e-20`. Bars and categories
-are in [lhapdf-oracle](../validation/lhapdf-oracle.md).
+value), and on-knot reproduction at worst `|Δ| = 2.7e-20`. The first three
+were measured when the port landed; the later Horner rewrite of `cubic_x` left
+every category unchanged or moved it at ulp level (worst conditioned residual
+`8.93e-16 → 1.08e-15`), and the gate's bar is `1e-9` relative on interpolated
+points. Bars and categories are in [lhapdf-oracle](../validation/lhapdf-oracle.md).
 
 **An algorithm-independent check.** Data bilinear in `(ln x, ln Q²)` is
 reproduced exactly, since a local Hermite with finite-difference slopes is exact

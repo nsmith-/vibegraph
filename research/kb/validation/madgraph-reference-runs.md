@@ -5,6 +5,7 @@ description: "Where each reference number comes from (results.dat, standalone du
 status: draft
 tags: [madgraph, reference, run-card, lhe, standalone]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n12-roots, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes and the two oracle defects"}
   - {id: n19-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L32-L76", title: "Note 19 §2, survey of the banked runs"}
@@ -52,7 +53,8 @@ the run card MadGraph actually ran is part of the reference:
 - **MadGraph chooses settings per process.** `gg_to_gg_cg` ran at
   `dynamical_scale_choice = 3` because SMEFTsim's `cG` vertex makes `banner.py`
   force H_T/2; `wpwm_to_wpwmz_cw` ran at `nhel = 1` (Monte Carlo over helicities);
-  a mixed-multiplicity card auto-enables matching. None of these was in the
+  the default card MadGraph writes for a mixed-multiplicity jet process turns on
+  `ickkw = 1`, `xqcut = 30` (`banner.py:4924-4966`). None of these was in the
   script. Read the card from `output/<row>/Cards/run_card.dat`, not from the
   script.
 - **A hand-written card gets system defaults.** A parameter absent from the card
@@ -130,8 +132,11 @@ The LHE format strings, field by field, are in
 Not located in MadGraph's code, but each bounds how a MadEvent number may be
 read (code-located defects are [madgraph-defects](madgraph-defects.md)):
 - **Quoted errors are not spreads.** Seeds have scattered at χ²/dof up to 93
-  (`e+ e- > e+ e-`) against their own quotes, and seeds run in one shared
-  directory, each inheriting its predecessors' grids, correlate (χ²/dof 0.3–0.8).
+  (`e+ e- > e+ e-`) against their own quotes. Seeds run in one shared
+  directory each inherit their predecessors' grids and are not independent
+  draws: on the MLM rows they scattered *less* than they quoted (χ²/dof
+  0.3–0.8), and against 21 independent directories the shared-directory
+  `pp_to_ll_0j2j_mlm` reference read `@1` 0.43% high.
   The seed policy and one freshly generated directory per seed answer
   both[^n41-z].
 - **A `dummy_cuts`-windowed run understates its own seed spread**, by about 2× in

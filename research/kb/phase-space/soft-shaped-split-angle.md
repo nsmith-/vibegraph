@@ -5,6 +5,7 @@ description: "Draws a split's angle from the parent's flight direction with dens
 status: draft
 tags: [phase-space-map, soft-emission, splitting-kernel, energy-floor, map-choices]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L71-L123", title: "Note 37 §2.1–2.2, the z(1−z) structure and the map"}
   - {id: n37-llj, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L124-L161", title: "Note 37 §2.3, where it can fire in p p > l+ l- j"}

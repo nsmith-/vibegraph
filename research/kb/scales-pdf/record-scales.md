@@ -13,10 +13,10 @@ sources:
   - {id: n41-m1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L547-L624", title: "Note 41 M1 (the scale split)"}
   - {id: build-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/lhef/build.rs#L21-L41", title: "lhef/build.rs scalup()"}
   - {id: hadronic-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/hadronic.rs#L2773-L2794", title: "FixedBeamIntegrand::record_scales"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L694-L695", title: "MadGraph unwgt.f (aaqcd = g*g/4d0/3.1415926d0)"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L751-L761", title: "MadGraph unwgt.f (SCALUP and aaqcd = g*g/4d0/3.1415926d0)"}
   - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L7076-L7079", title: "MadGraph export_v4.py (aS injected for a model without one)"}
 measured:
-  - {commit: 2803e17, command: "pixi run --skip-deps validate"}
+  - {commit: 2803e17}
 ---
 
 # What `SCALUP` and `AQCDUP` hold
@@ -24,8 +24,8 @@ measured:
 ## `SCALUP` is the factorisation scale
 
 `SCALUP` is the larger of the two per-beam factorisation scales, as `q2fact` holds them
-when the event is written. MadGraph's `unwgt.f:750-756` writes
-`sqrt(max(q2fact(1), q2fact(2)))`, and `lhef::build::scalup` (`vibegraph-lib/src/lhef/build.rs`)
+when the event is written. MadGraph's `unwgt.f:752` writes
+`sqrt(max(q2fact(1), q2fact(2)))` (the one positive scale if only one is set, `:751-758`), and `lhef::build::scalup` (`vibegraph-lib/src/lhef/build.rs`)
 is[^build-rs]
 
 ```rust
@@ -67,7 +67,7 @@ second call's `q2fact` otherwise, because `rewgt` restores `q2bck` only under `p
 
 ## `AQCDUP` is `αs(μR)`; MadGraph's carries a truncated π
 
-`unwgt.f:694-695` fills the coupling fields as[^mg-unwgt]
+`unwgt.f:760-761` fills the coupling fields as[^mg-unwgt]
 
 ```fortran
       aaqcd = g*g/4d0/3.1415926d0
@@ -80,7 +80,7 @@ baked in before printing, systematic and one-directional. At the field's precisi
 about a sixth of the last printed digit, enough to move the rounding of roughly one event
 in twenty.[^n07-aqcdup]
 
-`rw_events.f:182` writes the event line as `(i2,i5,e16.7e3,3e15.7)`, so `SCALUP`, `AQEDUP`
+`Source/rw_events.f:183` writes the event line as `(i2,i5,e16.7e3,3e15.7)`, so `SCALUP`, `AQEDUP`
 and `AQCDUP` carry seven significant digits (digits 9–10 are `0` on every banked event).
 
 - vibegraph writes the **untruncated** `αs(μR)` (`EventHeader::alpha_qcd`); the defect is
@@ -155,5 +155,5 @@ The `AQCDUP` there is evaluated by the run's `αs` source, the PDF set's own tab
 [^n41-m1]: Note 41 M1, the density and record factorisation scales.
 [^build-rs]: `lhef::build::scalup` and its documentation.
 [^hadronic-rs]: `FixedBeamIntegrand::record_scales`, `vibegraph-lib/src/hadronic.rs`.
-[^mg-unwgt]: MadGraph `unwgt.f:694-695`.
+[^mg-unwgt]: MadGraph `unwgt.f:752` (`SCALUP`) and `:760-761` (`AQCDUP`, `AQEDUP`).
 [^mg-export]: MadGraph `export_v4.py:7076-7079`, the `aS` injection.

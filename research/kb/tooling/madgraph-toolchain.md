@@ -19,10 +19,12 @@ sources:
 ---
 # Running MadGraph here: the pixi env and the pinned submodule
 
-Every MadGraph run in the work area and the reference bundle is made by the
-**pinned submodule**,
+Every MadGraph reference run is made by the **pinned submodule**,
 `research/refs/mg5amcnlo` at `b7687064` (MadGraph 3.7.1, 2026-04-29), run
-through `validation/madgraph/mg5_pinned.sh`. The `madgraph` pixi environment
+through `validation/madgraph/mg5_pinned.sh`. The one exception is six runs in
+the bundle that measure a 3.5.7 defect (`ee_to_mumu_tata_qcd0`'s window,
+anti-window and three control runs, and `var_sde1`), kept at the version they
+measure (`validation/manifest.toml`, the `[refdata]` comment). The `madgraph` pixi environment
 supplies everything around it. Why 3.7.1 and not the packaged 3.5.x is
 [validation/madgraph-oracle-pinning](../validation/madgraph-oracle-pinning.md);
 the codebase itself is [MadGraph5_aMC@NLO](../references/codebases/madgraph5-amcnlo.md).
@@ -41,8 +43,8 @@ than any copy of it).
 Run everything with `pixi run -e madgraph <task>`; `pixi install -e madgraph`
 creates it.[^n05]
 
-The packaged `mg5amcnlo` 3.5.7 is not the generator for the work area or the
-bundle. Two generators still reach it, as `mg5_aMC` on PATH:
+The packaged `mg5amcnlo` 3.5.7 is not the generator for any reference. Two
+generators still reach it, as `mg5_aMC` on PATH:
 `gen_pta_windows.sh` runs a deliberate 3.5.7-versus-3.7.1 comparison (it
 selects by version and checks `MGMEVersion.txt`), and `gen_higgs_window.sh`
 calls `mg5_aMC` unconditionally; its committed

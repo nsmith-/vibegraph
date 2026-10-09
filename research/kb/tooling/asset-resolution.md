@@ -3,6 +3,7 @@ type: Design
 title: ~/.vibegraph asset resolution and pinned fetch
 description: "PDF sets and UFO models resolve flag → env → ~/.vibegraph → dev fallback; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [cli, cache, pdf, ufo, distribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

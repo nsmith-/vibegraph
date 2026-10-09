@@ -20,8 +20,9 @@ adaptive stratified sampling on top[^n01-vegasplus]:
   variance, and adapts that allocation as it goes.
 
 This targets what a separable grid cannot follow: integrands with several
-peaks, or peaks along diagonals. The paper reports 2–19× improvement over
-classic VEGAS on such problems.
+peaks, or peaks along diagonals. The paper gives examples where VEGAS+ is
+2–19 times more accurate than classic VEGAS (J. Comput. Phys. 439 (2021)
+110386).
 
 ## Relevance to vibegraph
 
@@ -29,8 +30,10 @@ vibegraph's integrator is classic VEGAS with no stratification
 ([VEGAS integrator](../../phase-space/vegas-integrator.md)). Two things already
 cover part of what VEGAS+ addresses: the multichannel decomposition gives each
 propagator structure its own map and grid, which handles most diagonal
-structure, and the evaluation budget is already allocated across channels by
-variance ([channel budget allocation](../../phase-space/channel-budget-allocation.md)).
+structure, and each channel's share of the evaluation budget follows its
+multichannel weight `αⱼ`, which the Kleiss–Pittau survey adapts to minimise
+the variance (a Neyman split by per-channel spread is optional;
+[channel budget allocation](../../phase-space/channel-budget-allocation.md)).
 Whether within-channel stratification still pays is unmeasured; it is open as
 [vegas-plus-stratification-unmeasured](../../backlog/feature/vegas-plus-stratification-unmeasured.md),
 to be decided statistically (seed sweep and `χ²/dof` at matched points), since

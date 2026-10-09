@@ -5,6 +5,7 @@ description: "Each channel gets its own frozen grid in its own map coordinates a
 status: draft
 tags: [vegas, multichannel, unweighting, madevent-parity, grid-coordinates]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L382-L511", title: "Note 21, one VEGAS grid vs MadGraph's grid-per-channel (design and outcome)"}
   - {id: n23-grid, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L898-L943", title: "Note 23, per-channel VEGAS grids: what event output inherits"}

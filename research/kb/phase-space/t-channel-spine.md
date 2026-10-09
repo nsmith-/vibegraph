@@ -5,6 +5,7 @@ description: "Spacelike lines nest into an ordered rung chain of peripheral 2-bo
 status: draft
 tags: [t-channel, spine, phase-space-map, firing-test, ladder]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-spine, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L168-L230", title: "Note 21, t-channel spine (single spacelike line)"}
   - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, close-out: t-map firing tests"}

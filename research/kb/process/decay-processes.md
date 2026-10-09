@@ -69,8 +69,11 @@ Two decay-card refusals are stricter than MadEvent:
 - a proton-beam-only physics field off its default, refused at parse although a decay
   ignores it ([backlog](../backlog/feature/decay-card-proton-only-field-refused.md)).
 
-MLM matching on a decay is refused too
-([backlog](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md)).
+MLM matching on a decay (`ickkw = 1` or `xqcut > 0`) is refused permanently: a decay has
+no incoming partons to match against ([decision](../decisions/mlm-not-on-decays.md)).
+Today it shares the `FixedBeamMatching` refusal with fixed-beam cards, whose matching is
+a separate, open low-priority
+[backlog item](../backlog/feature/mlm-at-fixed-beams-or-decays-refused.md).
 
 ## The event file
 

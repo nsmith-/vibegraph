@@ -14,7 +14,7 @@ sources:
   - {id: n28-k37, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2220-L2244", title: "Note 28 §K3.7 (confirmed against the bank)"}
   - {id: n28-k42, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2452-L2478", title: "Note 28 §K4.2 (what replaced the closed forms)"}
   - {id: mg-reweight, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/reweight.f#L555-L1284", title: "MadGraph reweight.f setclscales (3.7.1)"}
-  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L750-L756", title: "MadGraph unwgt.f (SCALUP)"}
+  - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L751-L758", title: "MadGraph unwgt.f (SCALUP)"}
   - {id: setcl-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/coupling/cluster/setclscales.rs#L1-L40", title: "vibegraph setclscales.rs module documentation"}
   - {id: vs-scalefact, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/validate_scales.rs#L322", title: "validate_scales.rs SCALEFACT_RUNS"}
 ---
@@ -53,6 +53,7 @@ jlast(i)      = 0              last IS vertex at which side i was still a *parto
 jcentral(i)   = 0              last IS vertex at which side i was still *QCD*
 qcdline(i)    = isqcd(pdg(beam i))          |colour| > 1
 partonline(i) = qcdline(i)
+goodjet(beam i) = partonline(i)
 goodjet(leg)  = isjet(pdg(leg))             legs 3..nexternal
 ```
 
@@ -145,8 +146,9 @@ There is one factorisation scale per beam, `q2fact(1)` and `q2fact(2)`, each wit
 
 `-1` with exactly one fixed factorisation scale is refused
 (`ScaleError::MixedFixedFactorisationScales`): the guard at `:1138` reads
-`.not.fixed_fac_scale1.or.fixed_fac_scale2`, which skips the dynamic beam's
-`scalefact²`, and no reference run exercises it.
+`.not.fixed_fac_scale1.or.fixed_fac_scale2`, which is false when beam 1 is fixed and
+beam 2 dynamic, so beam 2 then misses its `scalefact²` and its `q2bck` back-up; no
+reference run exercises either mixed case.
 
 ## Where `scalefact` lands on 3.7.1
 
@@ -175,7 +177,7 @@ that MadGraph applies it twice in one place; both halves are stale
 
 ## What the record carries
 
-`SCALUP` is not `μR`. `unwgt.f:750-756` writes `√max(q2fact(1), q2fact(2))`, the larger
+`SCALUP` is not `μR`. `unwgt.f:752` writes `√max(q2fact(1), q2fact(2))`, the larger
 per-beam factorisation scale; `<rscale>` carries `μR` and `<pdfrwt beam="j">` carries
 `√q2fact(j)`.[^mg-unwgt] The record conventions, including AQCDUP, are
 [scales-pdf/record-scales](record-scales.md).

@@ -5,6 +5,7 @@ description: "The split of a +1.94 pb @2 excess into reference, H1, composite an
 status: draft
 tags: [mlm, sigma, madevent-reference, diagnosis, 2to4]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 measured:
   - {command: "vibegraph integrate per subprocess directory against fresh and patched MadEvent directories (note 41 D2)"}
   - {commit: 590f87a, host: "Apple M3 Max (16 cores), macOS 15.7", command: "pixi run -e madgraph --skip-deps validate-mlm-sigma"}
@@ -92,7 +93,8 @@ It survives every piece of MLM switched off:
   against 0.52743 ± 0.00040, +0.29%, 3.2σ, with no PDFs, no running scales and
   |M|² identical point by point. This is the cheapest reproducer.
 
-The surplus sits in the high-ŝ tail. Which side is right is not settled;
+On `qq_llgg` the unweighted samples put vibegraph's surplus in the high-ŝ tail
+(m_ll > 150 +14%, ŝ > 600 GeV +9.5%). Which side is right is not settled;
 MadEvent's dedicated tail slice recovering most of the tail, and its runs
 scattering beyond their quotes, point at MadEvent's tail coverage. An acceptance
 difference in regions MadEvent never populates is the one class the per-event

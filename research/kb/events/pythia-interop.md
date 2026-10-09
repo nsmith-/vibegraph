@@ -3,6 +3,7 @@ type: Validation Gate
 title: "Pythia 8 as the consumer: read-back gate and MadGraph's matching settings"
 description: "Pythia must consume every event of our samples, with a colour-mutation negative control; and the settings MadGraph 3.7.1 drives main164 with for MLM (setMad off, qCut 1.5·xqcut)."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [events, pythia, lhef, mlm, shower]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

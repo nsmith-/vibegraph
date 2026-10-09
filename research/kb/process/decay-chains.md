@@ -158,7 +158,10 @@ at the default 15. The forced windows and maps are in
 [resonance and pole maps](../phase-space/resonance-and-pole-maps.md), the cost ladder in
 [decay chains without MadSpin](../performance/decay-chains-without-madspin.md), and the
 event record in [resonance records](../events/resonance-records.md). `cut_decays` is
-consumed. A decay chain's dynamic scale is the core process's.
+consumed. A decay chain's dynamic scale is the core process's, as MadEvent's: the
+clustering tags a forced line on-BW inside its window whatever its width
+(`ForestLine::forced`, `coupling/cluster/kt.rs`, after `myamp.f`'s `gForceBW = 1`
+branch), so the resonance reaches the scale setting as one core leg.
 
 [^n38-decays]: Note 38 §1.3: MadGraph's decay-chain syntax, `DecayChainAmplitude`, `gForceBW = 1`, the dropped decay.
 [^n38-g1]: Note 38 §4, grammar, AST and the one check: decay assignment measured with MadGraph's generation.

@@ -5,6 +5,7 @@ description: "Channels combined by 1/Σα_j g_j, Kleiss–Pittau α refinement d
 status: draft
 tags: [multichannel, kleiss-pittau, alpha-adaptation, madevent-parity, phase-space]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-loopind, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L535-L553", title: "Note 01, loop-induced MG5 paper: phase-space appendix and multichannel"}
   - {id: n21-program, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L11-L51", title: "Note 21, resonance-aware sampling program and reference implementations"}

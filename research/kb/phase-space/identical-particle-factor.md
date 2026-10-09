@@ -5,6 +5,7 @@ description: "1/∏ n_s! over outgoing species keyed on (id, polarization), from
 status: draft
 tags: [phase-space, symmetry-factor, identical-particles, polarization, cross-section]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n22-found, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L339-L369", title: "Note 22 close-out (gg → gg exactly twice MadGraph)"}
   - {id: n28-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L1299-L1363", title: "Note 28 S1 (channel-enumeration decision for identical particles)"}
@@ -95,8 +96,9 @@ The closure is pinned, not assumed:
 (`hadronic.rs:3272`) checks that the combined density of `g g → g g`'s channel
 set is invariant under exchanging the two outgoing momenta, and refuses to pass
 unless dropping a single channel breaks the invariance. The control matters:
-built *unregulated* (spacelike floor zero), all four channels collapse to a
-common all-timelike map whose density is symmetric one channel at a time, and
+built *unregulated* (spacelike floor zero), every channel of `g g → g g`
+(the test builds one per enumerated diagram, contact diagrams included)
+collapses to a common all-timelike map whose density is symmetric one channel at a time, and
 the invariance check alone would see nothing. The test therefore builds the
 channels at the floor a hadronic run gives them
 ([phase-space/spacelike-floor](spacelike-floor.md)).

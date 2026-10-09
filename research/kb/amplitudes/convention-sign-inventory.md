@@ -12,6 +12,7 @@ sources:
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L755", title: "Note 24 P1: rows enforced per channel; c_i·AMP(i) is the comparable object"}
   - {id: n28-s5s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2346-L2756", title: "Note 28 S5–S6: falsified candidates and the crossing sign rule"}
   - {id: n29-f, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L1152", title: "Note 29 chain F: the pinned-convention inventory and what the dumps pin"}
+  - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L276-L300", title: "Note 19 V5: the bbx 2→6 counter-example, scalar-sink −1 per vertex role"}
   - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: signs to the diagrams stage, the anchor, the tensor-path line rule"}
   - {id: pr13, resource: "https://github.com/nsmith-/vibegraph/commit/7f523ad", title: "7f523ad (PR #13): SSS1/SSSS1 scalar-sink −1, Yukawa standalone JAMP rows"}
 ---
@@ -120,17 +121,22 @@ process. As of the chain-F measurement (note 29, 2026-08-03):
 
 - `e+ e- > ta+ ta- H` exercises the *standalone-projector-crossed* arm, not the
   scalar-sink arm: its `−1` sits on the `ta ta H` (`FFS4`) vertex rooted at a
-  fermion output, and its `ZZH` vertex is never a scalar-sink root at that
-  rooting. The scalar-sink bilinear arm then had **no varying instance** in the
-  banked set, so it was unchecked.
+  fermion output, and its `ZZH` (`VVS1`) vertex, rooted at a `Z` output, does not
+  reach the pure-metric arm either. Chain F found **no varying instance** of the
+  scalar-sink bilinear arm among the per-diagram rows it probed and recorded it
+  as unchecked; it did not probe the two flows-only 2→6 rows (note 29 §F.15).
 - The crossed-pair arm and the reversed-bilinear parity were reproduced but
   unchecked: neither produced a varying `φ` pattern in any probed process.
 
-Since then the standalone JAMP rows `tata_to_ttxh`, `tata_to_ttxhh` and
-`bbx_to_hh` gate Yukawa processes per helicity. Whether any of them puts a
-*varying* scalar-sink bilinear sign in front of an oracle has not been
-re-measured; until it is, treat that arm as possibly unchecked. Read from the code,
-not measured: in `bbx_to_hh` the arm fires exactly once in every diagram (the
+Chain F's "unchecked" is too strong for the scalar-sink arm. Note 19 §V5 had
+already measured a varying instance in a gated row: in `bbx_to_ccx_emmm_qcd0`
+the same VVS-produced `H` propagator is consumed as a fermion current in one
+diagram (72) and by the `bbH` Yukawa at the amplitude root, which fires the
+scalar-sink `−1`, in another (121). Replacing the role signs with one `−1` per
+scalar propagator broke that row at `1.99e0`, so its per-helicity coherent
+amplitude sees the arm.[^n19-v5] That was at feyngraph's `VtxIdx(0)` rooting and has not
+been re-measured at the anchor. Read from the code, not measured: in the
+standalone row `bbx_to_hh` the arm fires exactly once in every diagram (the
 `b b~ H` vertex at the anchor is the amplitude sink; the other is rooted at its
 fermion output), so that row sees it only as a global sign. The production
 comment on the fourth assertion of `mg_guard_processes_exercise_every_convention_channel`
@@ -174,6 +180,7 @@ do not reduce to one principle).
 [^code-compile]: `vibegraph-lib/src/helas/eval/root_diagram.rs`.
 [^code-build]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`, `build_at_leg` and `RootedTerm::build_sign`.
 [^code-guard]: `root_diagram.rs` tests.
+[^n19-v5]: Note 19 §V5, the `bbx→ccx eemm` counter-example (diagrams 72 and 121).
 [^n24-p1]: Note 24 §P1 outcome.
 [^n28-s5s6]: Note 28 §S5–S6.
 [^n29-f]: Note 29 §F.1, §F.8, §F.10, §F.13.

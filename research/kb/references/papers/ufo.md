@@ -11,6 +11,7 @@ sources:
   - {id: n00-refs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L57-L69", title: "Note 00, references"}
   - {id: n01-feynrules2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L217-L220", title: "Note 01, FeynRules entry (FeynRules 2.0 adds full UFO output)"}
   - {id: feynrules2, resource: "https://arxiv.org/abs/1310.1921", title: "Alloul et al., FeynRules 2.0 (full UFO output)"}
+  - {id: sm-ufo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/sm/vertices.py#L594-L598", title: "SM UFO vertices.py, V_98"}
   - {id: cargo, resource: "vibegraph-lib/Cargo.toml#L38-L39", title: "peg and rustpython-parser dependencies"}
 ---
 
@@ -26,20 +27,24 @@ read by MadGraph5, GoSam, Sherpa and others[^n01-ufo], and written by
 | `particles.py` | `Particle` objects: PDG code, spin, colour, mass, width, antiparticle |
 | `parameters.py` | external (input) and internal (derived) parameters |
 | `vertices.py` | `Vertex` objects: particles, Lorentz structure references, coupling references |
-| `lorentz.py` | Lorentz structures as expression strings (`Gamma(mu,1,2)`) |
+| `lorentz.py` | Lorentz structures as expression strings (`FFV1` is `'Gamma(3,2,1)'`) |
 | `couplings.py` | coupling values as expression strings, with coupling orders |
 | `coupling_orders.py` | order bookkeeping (QCD, QED, …) |
 | `object_library.py` | the base classes |
 
-A vertex:
+A vertex, as the SM UFO MadGraph ships writes the `e⁺e⁻γ` coupling[^sm-ufo]:
 
 ```python
-V_1 = Vertex(name='V_1',
-             particles=[P.e__minus__, P.e__plus__, P.a],   # e- e+ γ
-             color=['1'],
-             lorentz=['FFV1'],
-             couplings={(0,0): C.GC_3})                   # -i e γ^μ
+V_98 = Vertex(name = 'V_98',
+              particles = [ P.e__plus__, P.e__minus__, P.a ],
+              color = [ '1' ],
+              lorentz = [ L.FFV1 ],
+              couplings = {(0,0):C.GC_3})
 ```
+
+with `GC_3 = -(ee*complex(0,1))` of order `QED: 1` in `couplings.py`. The
+particle order fixes which fermion index of the Lorentz structure each leg
+takes, so it is not interchangeable.
 
 `couplings` is keyed by `(colour index, Lorentz index)`. A real model's files
 can go beyond this (decay tables from [MadWidth](madwidth.md), loop
@@ -64,3 +69,4 @@ routines generated from these Lorentz structures in MadGraph are
 [^n01-ufo]: Note 01, UFO summary.
 [^feynrules2]: arXiv:1310.1921.
 [^cargo]: `vibegraph-lib/Cargo.toml:38–39`.
+[^sm-ufo]: `models/sm/vertices.py:594–598` and `couplings.py` (`GC_3`) at `b7687064`.

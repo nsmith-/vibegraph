@@ -5,6 +5,7 @@ description: "Why some rows report rather than assert a statistic (ee_to_mumua's
 status: draft
 tags: [validation, gating, cross-section, samples, exceptions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-prod, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L511", title: "Note 21 addenda (sampler in production; grid per channel)"}
   - {id: n23-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/23-event-output-lhef-plan.md#L281-L343", title: "Note 23 E2 outcome (ee_to_mumua overweight tail)"}
@@ -90,14 +91,21 @@ column measures the reference's sample.[^manifest] The row also carries the
 heaviest unweighting overweight tail of the early rows (an event at 8.4× its
 channel's scanned maximum), the same photon-pole region.[^n23-e2]
 
-**The 2→6 rows.** The matrix element is not the obstacle (tens of µs per
-point). The channel floor is: 579/615 channels at `MIN_CHANNEL_NEVAL = 512`
-means about 300 000 evaluations an iteration whatever budget is asked. Flat
-RAMBO misses these cross sections by 11 or more orders of magnitude because six
-outgoing legs put the poles on a set of vanishing flat measure. Under the
-multichannel the five-seed means agree with the 0.30%-precision bank to about
-1%, but single seeds swing +4.8% / −4.5% / +3.5% and do not shrink with
-budget: a heavy-tailed estimator, so no `rel_tol` is licensed.[^n32-s7][^manifest]
+**The 2→6 rows.** The evaluator is not the obstacle (the manifest records
+5.8 µs per integration point at uniform α on `uux_to_ccx_emmm_qcd0`, since
+rejected points no longer walk the channels). The channel floor is: 579/615
+channels at `MIN_CHANNEL_NEVAL = 512` put about 300 000 evaluations under the
+first iteration whatever budget is asked, and the acceptance-corrected floor
+(capped at 4×) raises later iterations to about 1.2 million on
+`uux_to_ccx_emmm_qcd0`. The flat map is no alternative: six outgoing legs put
+the poles on a set of vanishing flat measure, and it returns σ 15–18 orders of
+magnitude low (note 32 first measured eleven and fifteen) even though 46% of its
+draws pass the cuts. Under the multichannel the five-seed means agree with the
+0.30%-precision bank to about 1%, but single seeds swung +4.8% / −4.5% / +3.5%
+at every rung of a 300k–1.2M ladder without shrinking: a heavy-tailed
+estimator, so no `rel_tol` is licensed. The accepted-point floor since brought
+the worst single seed under 1% at one budget, which does not yet show the
+swings shrinking with budget.[^n32-s7][^manifest]
 A fix must make the single-seed swings shrink with budget; reducing them at
 fixed budget is a variance win, not a resolution.[^n32-follow] Their per-iteration
 χ²/dof overflows (above 1e250) on wide splits and is passed through as "not a

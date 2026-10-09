@@ -3,6 +3,7 @@ type: Design
 title: Release binaries
 description: "release.yml builds static musl Linux (baseline and x86-64-v3) and native macOS binaries on tag push, publishes bare executables with SHA256SUMS, and dispatches acceptance."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [release, ci, distribution, musl]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -58,10 +59,13 @@ notice is owed is [licensing](licensing.md).
 
 ## Linux: musl, not a glibc floor
 
-The only C dependency in `Cargo.lock` is `zstd-sys`, which compiles its
-bundled zstd via `cc` rather than linking a system `libzstd` (`pkg-config` is
-only an optional probe); there is no `openssl`, `native-tls` or other system
-library.[^n24-u1] So `x86_64-unknown-linux-musl` costs only `musl-tools`
+The crates in the binary's graph that compile C are `zstd-sys`, which builds
+its bundled zstd via `cc` rather than linking a system `libzstd` (`pkg-config`
+is only an optional probe),[^n24-u1] and `ring`, the `rustls` crypto backend
+that `ureq` (the PDF fetch, `vibegraph-cli/src/fetch.rs`) pulls in, which
+builds its own C and assembly via `cc`. Neither links a system library, and
+there is no `openssl` or `native-tls`. (`release.yml`'s comment still names
+`zstd-sys` as the only C dependency.) So `x86_64-unknown-linux-musl` costs only `musl-tools`
 (`musl-gcc`) on the runner and yields one fully static binary that runs on any
 x86_64 Linux kernel, with no "which glibc does this distro ship" matrix. A
 glibc floor would need an old runner or a manylinux-style container for no

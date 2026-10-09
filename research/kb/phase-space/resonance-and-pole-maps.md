@@ -5,6 +5,7 @@ description: "BW tan substitution, the logarithmic map for zero-width poles with
 status: draft
 tags: [breit-wigner, resonance, decay-chains, phase-space-map, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n21-closeout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L231-L299", title: "Note 21, resonance-sampling close-out (BW map, firing-test inventory)"}
   - {id: n21-production, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L300-L381", title: "Note 21, putting the sampler into production (massless pole, log map)"}

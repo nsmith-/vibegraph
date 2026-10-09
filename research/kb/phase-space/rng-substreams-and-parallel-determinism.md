@@ -5,6 +5,7 @@ description: "ChaCha8 addressed by (stream, position) replaces RANMAR; each chun
 status: draft
 tags: [rng, determinism, parallelism, vegas, reproducibility]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-rng, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L133-L162", title: "Note 18 §1.4, RNG: splittable and modern, not RANMAR"}
   - {id: n18-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H3 (SubStream, bits→uniform) and H5 (parallel VEGAS)"}

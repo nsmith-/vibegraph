@@ -89,7 +89,8 @@ continuations are built from this crate's edge readings, and LHAPDF's number mus
 be the one its endpoint values select (184 NNPDF23 and 124 NNPDF31 probes sit where
 the candidates visibly differ). `the_only_difference_from_madgraphs_own_value_is_the_positivity_clamp`
 and `the_clamp_level_is_the_one_lhapdf_resolved` pin the clamp. Out-of-grid
-evaluation continues through `ContinuationExtrapolator` (`pdf/extrap.rs`); a
+evaluation continues through `pdf::extrap::Continuation`, this crate's port of
+LHAPDF's `ContinuationExtrapolator`; a
 typed `OutOfRange` is the interpolator's own error, and only points LHAPDF itself
 has no reading for are refused. See
 [out-of-grid PDFs and ForcePositive](../scales-pdf/pdf-extrapolation-and-force-positive.md)

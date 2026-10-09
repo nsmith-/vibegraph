@@ -3,6 +3,7 @@ type: Validation Gate
 title: "Release acceptance: released binary, cards in, events out"
 description: "scripts/acceptance.sh on a published release: refusal without consent, consented pinned PDF fetch, llj integrate, offline generate from cache, check-events; run by acceptance.yml."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 tags: [acceptance, release, ci, pdf, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -30,7 +31,8 @@ itself is exercised locally through `--binary`.
 
 `scripts/acceptance.sh` depends on nothing in the repository beyond being
 stored there: it writes its own cards and, without `--binary`, downloads its
-own binary. `curl`, `tar` and a POSIX shell are the whole dependency list, so
+own binary. `curl` and a POSIX shell are the whole dependency list
+(`sha256sum` or `shasum` is used when present to verify the asset), so
 the same script is the CI job and the documented clean-VM reproduction.
 
 Setup:

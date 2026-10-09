@@ -5,6 +5,7 @@ description: "VegasGrid's Lepage importance grid, the damping exponent (1.5 raw,
 status: draft
 tags: [vegas, integration, importance-sampling, grid, serialisation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L159-L182", title: "Note 01, VEGAS and VEGAS+ summaries"}
   - {id: n18-phases, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L258-L282", title: "Note 18 §2.4, VEGAS phases and serialisation"}
@@ -61,8 +62,8 @@ The exponent `α` in step 2 is set per integrand, from code:
 
 | constant | value | used on |
 |---|---|---|
-| `VEGAS_ALPHA` | 1.5 | a raw integrand: flat RAMBO, the single-grid Drell–Yan path |
-| `VEGAS_ALPHA_MAPPED` | 0.5 | any integrand behind a resonance-aware multichannel map (`use_multichannel` and `use_multichannel_with_alphas` set it) |
+| `VEGAS_ALPHA` | 1.5 | a raw integrand: `FixedBeamIntegrand` on its flat-RAMBO sampler, before a multichannel map is installed |
+| `VEGAS_ALPHA_MAPPED` | 0.5 | any integrand behind a resonance-aware multichannel map: a fixed-beam one once `use_multichannel` or `use_multichannel_with_alphas` installs it, and every hadronic `ProtonIntegrand` (Drell–Yan included) from construction (`proton.rs:1636`) |
 
 Lepage's 1.5 assumes the grid has to discover the integrand's structure. A
 converged multichannel map has already flattened the peaks it knows about, so
@@ -80,8 +81,8 @@ seeds:
 
 The tell was in the iteration path (`probe_vegas_iteration_path`,
 `validate_sigma.rs`): iterations 1–3 agree, iteration 4 drops and stays
-there. `probe_grid_adaptation_is_the_residue` is the damping sweep. The 1.5
-paths keep 1.5 so their banked numbers do not move.
+there. `probe_grid_adaptation_is_the_residue` is the damping sweep. The flat
+fixed-beam path keeps 1.5.
 
 These numbers were measured while iterations were still combined by `1/σ²`,
 which is what turned a collapsed iteration into a confident wrong answer. The
@@ -150,8 +151,9 @@ bit equality on `f64` payloads through JSON needs it[^n18-h5].
 
 VEGAS+[^vegasplus] adds adaptive stratification inside the importance grid:
 the hypercube is cut into stratification cells and evaluations are moved to
-the cells with the largest variance. The paper reports 2–19× on integrands
-with several peaks or diagonal structure[^n01-vegas]. It is not implemented.
+the cells with the largest variance. It targets integrands with several peaks
+or diagonal structure, and the paper reports 2–19× over classic VEGAS on its
+test problems[^n01-vegas]. It is not implemented.
 Here the channel decomposition already takes the diagonal structure out of
 each grid and the budget is already stratified across channels, so the gain
 inside a channel is open: [VEGAS+ unmeasured](../backlog/feature/vegas-plus-stratification-unmeasured.md).

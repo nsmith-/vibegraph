@@ -5,6 +5,7 @@ description: "A mass window is a thin diagonal band in (x₁,x₂) that VEGAS mi
 status: draft
 tags: [phase-space, hadronic, vegas, change-of-variables, multichannel]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n18-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L283-L311", title: "Note 18 §2.5 (hadronic assembly, direct x-map)"}
   - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7: the (τ, y) remap)"}
@@ -12,6 +13,7 @@ sources:
   - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L879-L899", title: "Note 24 P2 (ScaledChannel / ScaledMultiChannel)"}
   - {id: n27-b2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L212-L297", title: "Note 27 B2 (hadronic ŝ floor)"}
   - {id: mg-setcuts, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/setcuts.f#L527-L707", title: "MadGraph setcuts.f (smin derivation)"}
+  - {id: mg-myamp, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/myamp.f#L540-L588", title: "MadGraph myamp.f set_peaks (the ŝ map's lower limit)"}
 ---
 
 # Sample hadronic collisions in (τ, y)
@@ -67,19 +69,27 @@ it.
 ## τ_min: the cut-implied ŝ floor
 
 `τ_min = Cuts::shat_min() / s` (`proton.rs:1614`). `shat_min` is a provable lower
-bound on the `ŝ` of any point that survives the cuts (`cuts.rs:1142`):
+bound on the `ŝ` of any point that survives the cuts (`shat_min_hint`,
+`cuts.rs:1142`):
 
 ```
 ŝ_min = max( dsqrt_shat²,  mmll²  (if a same-flavour opposite-sign lepton pair exists),
              (Σ_i pT_i^min)²,  (Σ_i m_i)² )
 ```
 
-The last two come from the partonic centre of mass, where `√ŝ = Σ E_i`: a boost
+On a decay-chain card it is further raised by `forced_shat_floor`
+(`cuts.rs:916`): each forced line at least `M − bwcutoff·Γ`, the other legs at
+their pole masses, least over the forced sets.
+
+The last two terms come from the partonic centre of mass, where `√ŝ = Σ E_i`: a boost
 along the beam leaves each leg's `pT` unchanged, and `E_i ≥ max(m_i, pT_i)`. Both
 hold for any multiplicity, without a back-to-back argument. They are the bounds
-MadGraph's `setcuts.f` derives (`smin_p²` per letter class, `:527-676`, and
-`max(smin, (Σ pmass)², dsqrt_shat²)`, `:702-707`; `genps.f:274` passes
-`smin/stot` as τ_min).[^mg-setcuts] Two deliberate departures, both in the
+MadGraph's `setcuts.f` derives (`smin_p²` per letter class, `:527-690`, and
+`max(smin, (Σ pmass)², dsqrt_shat²)`, `:702-707`). On a proton run MadEvent
+applies it in `set_peaks` as the lower limit of the `1/ŝ` map, raising its
+`xo` to at least `smin/stot` (`myamp.f:540-588`, `:570`, `:576`); where a
+Breit–Wigner on ŝ is kept instead, `smin` does not bound the map, and `GENCMS`
+itself starts τ at 0 (`genps.f:1659`).[^mg-setcuts] Two deliberate departures, both in the
 direction of the derivation:[^n27-b2]
 
 - MadGraph sums the transverse term per letter class and *adds* the classes;

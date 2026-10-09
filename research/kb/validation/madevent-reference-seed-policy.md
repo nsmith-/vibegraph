@@ -1,7 +1,7 @@
 ---
 type: Validation Methodology
 title: Seed policy for MadEvent references
-description: "At least five seeds (ten under a gate tighter than 0.3%), one fresh directory per seed, read as an inverse-variance mean with error max(quoted, spread/sqrt n)."
+description: "At least five seeds (ten under a gate tighter than 0.3%), stored per seed, read as an inverse-variance mean with error max(quoted, spread/sqrt n); fresh directories per seed where shared-directory seeds are not independent enough."
 status: draft
 tags: [madgraph, references, seeds, statistics, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -51,9 +51,11 @@ independent draws: later seeds inherit their predecessors' grids. On the MLM row
 nine seeds in a shared directory scattered *less* than they quoted (χ²/dof
 0.4–0.7), which was the sign; against 21 independently generated directories the
 shared-directory reference read `@1` 0.43 % high (−1.8σ combined) and `@2` 0.34 %
-low[^n41-z]. A reference whose gate needs more than its quoted precision is
-therefore generated in **one freshly generated directory per seed**, its error the
-spread over those directories. At `787070e` that holds for
+low[^n41-z]. The remedy is **one freshly generated directory per seed**, its error
+the spread over those directories. It is not part of the written policy in the
+manifest header: the user decision of 2026-09-29 (note 41 D2) applied it to the
+`@2` reference only, and whether every MadEvent reference must follow it is
+undecided. At `787070e` it holds only for
 `pp_to_ll_0j2j_mlm` (`mlm_sigma_reference.json`, `independent_directories: true`:
 the samples-grade `run_01` plus twenty fresh directories `run_s20261101`–`run_s20261120`,
 each banked and its directory dropped); the other MLM rows still read nine

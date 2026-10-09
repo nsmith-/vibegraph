@@ -50,7 +50,7 @@ on a hadronic run. No integrand carries a table keyed by process name.
 s-channel lines (subtree carrying neither beam) ahead of the spacelike chain
 (subtree carrying beam 1) ordered from beam 1 inward, writes the closing vertex
 only for a channel that reaches the beams through a spacelike line
-(`export_v4.py:2229`, `if len(tchannels) > 1`), and drops every diagram whose
+(`export_v4.py:2231`, `if len(tchannels) > 1`), and drops every diagram whose
 largest vertex exceeds the set's minimum arity
 ([`export_v4.py:2193-2197`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L2193-L2197)).
 On a timelike line `configs.inc` writes the particle that *decays into* the

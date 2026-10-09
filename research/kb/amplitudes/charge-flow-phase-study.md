@@ -80,7 +80,7 @@ Two structural findings came before any dump:
 | fermion-line sign, both arms | yes | yes: `g g > t t~` uniform over 0/1/1 propagators; `u d` 11 vs 24 split |
 | reversed-bilinear parity | yes | no — `revC·revL ≡ +1` at the reference rooting, unobservable in principle at the `fermi_sign` level |
 | crossed-pair −1 | yes | no — no varying instance |
-| scalar-sink bilinear −1 | no arrow | no — no varying instance (then) |
+| scalar-sink bilinear −1 | no arrow | no — none among the per-diagram rows probed; the flows-only `bbx_to_ccx_emmm_qcd0` (not probed) does vary it, per note 19 §V5 |
 | pure-metric / contact −1 | no arrow | yes (then: `g g > g g` contact vs exchange) |
 | VVV source (then every VVV off vertex 0, gluon ones included) | no arrow | yes (`g g > g g`; `e+ e- > W+ W-`, pattern `−,−,+`) |
 | standalone projector on crossed line | yes | yes (`e+ e- > ta+ ta- H`, 4:1) |
