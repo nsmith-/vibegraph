@@ -82,21 +82,21 @@ the session that closes each:
 | ufo-asin-acos-evaluate-as-acsc-asec | F-C |
 | make-anti-negates-singlet-octet-colour | F-C |
 | process-model-and-artifact-doc-comments-stale | F-C |
-| reweight-forbidden-onshell-guard-is-dead | F-C |
+| reweight-forbidden-onshell-guard-is-dead | F-C2 |
 | feyngraph-submodule-pin-differs-from-build | F-C |
 | sampler-and-phase-space-doc-comments-stale | F-D |
 | madgraph-line-citations-predate-pin | F-D |
 | configuration-weights-wrong-at-sde1-with-tmin | F-E |
 | artifact-reader-arm-names-format-version | F-F |
 | runcard-opaque-defaults-unverified | F-F |
-| no-network-variable-read-two-ways | F-F |
-| validation-test-comments-stale | F-G |
-| validate-scales-module-doc-stale | F-G |
-| validate-hadronic-calibration-comments-superseded | F-G |
-| manifest-notes-describe-superseded-state | F-G |
-| jj-banked-orderings-eta-uses-wrong-components (validation) | F-G |
-| config-amp-phase-and-sign-unpinned (validation) | F-G |
-| smeftsim-vendored-checksum-not-hermetic (validation) | F-G |
+| no-network-variable-read-two-ways | F-CLI |
+| validation-test-comments-stale | F-G2 |
+| validate-scales-module-doc-stale | F-G2 |
+| validate-hadronic-calibration-comments-superseded | F-G2 |
+| manifest-notes-describe-superseded-state | F-G2 |
+| jj-banked-orderings-eta-uses-wrong-components (validation) | F-G2 |
+| config-amp-phase-and-sign-unpinned (validation) | F-G1 |
+| smeftsim-vendored-checksum-not-hermetic (validation) | F-G1 |
 | host-info-null-cpu-block-on-linux | T1 |
 | profile-script-forwards-one-filter | T1 |
 | madgraph-generators-hardcode-lcxx-and-bypass-pin | T1 |
@@ -126,7 +126,7 @@ sprint supplies its proposal).
 | [T1](sessions/T1.md) tooling and CI | `validation-dev` (Sonnet) | — | scripts' own checks | five tooling items |
 | [R-A](sessions/R-A.md) … [R-G2](sessions/R-G2.md) reviews (8) | `claude` (Opus), read-only | V1b | none: report only | — |
 | Triage (manager) | — | all R | — | — |
-| [F-A](sessions/F-A.md), [F-B](sessions/F-B.md), [F-C](sessions/F-C.md), [F-D](sessions/F-D.md), [F-E](sessions/F-E.md), [F-F](sessions/F-F.md), [F-CLI](sessions/F-CLI.md), [F-G1](sessions/F-G1.md), [F-G2](sessions/F-G2.md) fixes (9, [protocol](sessions/fix-protocol.md)) | per brief | [triage](triage.md); run serially, in that order | lint + hermetic + touched banked targets | the cluster's claimed items |
+| [F-A](sessions/F-A.md), [F-B](sessions/F-B.md), [F-C](sessions/F-C.md), [F-D](sessions/F-D.md), [F-E](sessions/F-E.md), [F-F](sessions/F-F.md), [F-CLI](sessions/F-CLI.md), [F-G1](sessions/F-G1.md), [F-G2](sessions/F-G2.md) fixes (9, plus [F-C2](sessions/F-C2.md) by the user's decision; [protocol](sessions/fix-protocol.md)) | per brief | [triage](triage.md); run serially, in that order | lint + hermetic + touched banked targets | the cluster's claimed items |
 | L lessons | `claude` (Opus) | all F | `kb-lint` | — |
 | Z close-out | manager | L | the exit criteria | hygiene-sprint |
 

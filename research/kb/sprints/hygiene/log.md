@@ -110,6 +110,8 @@
   tests. The disk was down to 2 GB free because of the debug incremental cache,
   which the manager cleared again (9.8 GB free). The agent was resumed to fix
   the lint and re-run the gate with `CARGO_INCREMENTAL=0`.
+
+## 2026-10-10
 * **F-A reported** (`hygiene-fa`, 9bb2849..5c92658, 7 commits). The report is
   recorded as `sessions/F-A-report.md`. The manager's gate re-run (program
   probe, clippy, hermetic suite) is in progress, and the merge waits on it.
@@ -218,3 +220,15 @@
   - 54 new backlog items were filed (`190c13e`): every triaged *file* finding
     and every Found entry.
   - The kb stale-site updates (24 sites) were dispatched on `hygiene-zkb`.
+* **L merged** (`2e860d4`): the draft `workflow/hygiene-review.md`. L also
+  found nine inconsistencies in the sprint record. The manager fixed those in
+  files it owns:
+  - this log's missing 2026-10-10 heading;
+  - `sprint.md`'s session table, which omitted F-C2;
+  - the Scope table's "F-G" entries (now F-G1 and F-G2);
+  - L's `depends_on`;
+  - two triage claims: all eight reviewers hit the protocol defects, not
+    seven, and the spot-check tally mixed one *suspected* finding with
+    *checked* ones.
+
+  The rest stand as L recorded them in the concept.

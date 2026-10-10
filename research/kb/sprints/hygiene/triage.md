@@ -170,7 +170,7 @@ Each line becomes one backlog item. Areas are in brackets.
 
 ## What triage learned (for L)
 
-- **Seven of eight reviewers hit the same protocol defects:** a `git branch`
+- **All eight reviewers hit the same protocol defects** (corrected after L counted the reports): a `git branch`
   check that fails on detached worktrees, the absent `pixi`, the empty
   `mg5amcnlo` submodule, and a noisy bare-name backlog grep.
 - **The `dead-types` rediscovery was the only re-report of filed or done work.**
@@ -184,4 +184,6 @@ Each line becomes one backlog item. Areas are in brackets.
   Two reviewers on different clusters finding the same defect class is the
   strongest signal for a lint or an agent checklist line.
 - **Confidence held up on every spot check:** 26 claims checked by the manager
-  across eight reports, 26 reproduced (one line number off by 20).
+  across eight reports, 26 reproduced (one line number off by 20). One of them,
+  R-C.1, was a *suspected* finding whose code shape was reproduced, not its
+  consequence; the other 25 were *checked* claims.

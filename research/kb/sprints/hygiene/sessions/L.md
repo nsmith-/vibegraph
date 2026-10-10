@@ -4,7 +4,7 @@ title: "L: lessons for the hygiene agent"
 description: "Turn the review reports, triage outcomes and fix-session results into a draft methodology concept on running a hygiene review, the design input for the hygiene agent."
 status: draft
 agent: claude (Opus)
-depends_on: [F-A, F-B, F-C, F-D, F-E, F-F, F-G]
+depends_on: [F-A, F-B, F-C, F-C2, F-D, F-E, F-F, F-CLI, F-G1, F-G2]
 closes: []
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 ---
