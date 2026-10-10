@@ -156,16 +156,24 @@ const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// Largest relative distance from the banked MadGraph σ a Drell–Yan row may show.
 ///
-/// The rows sit far inside it: `+0.02%` on the default card and `−0.10%` on the
-/// m_ll window, over three seeds, against per-seed spreads of `0.17%` and
-/// `0.22%`. The bound is disjoined with a three-standard-deviation pull because
-/// the Monte-Carlo errors here are small enough (`~0.06%` on the mean) that a
-/// pull alone would be the tighter of the two and would be reading floating-point
-/// reproducibility across machines rather than an agreement.
-const DY_MAX_REL: f64 = 0.01;
+/// Asserted together with `|pull| < 3`, not instead of it. MadGraph's own error
+/// is `0.051%` on the default card and `0.044%` on the m_ll window, and this
+/// side's three-seed mean carries about `0.06%`, so the pull's denominator is
+/// near `0.08%` and the pull is the binding bound, at about `0.24%`. This one
+/// bounds what the pull cannot: a run whose quoted error is inflated — a seed
+/// that caught a weight tail — shrinks the pull without moving σ any closer.
+///
+/// `0.005` is the census reading with headroom: over the gate's three seeds
+/// `+7.2e-4` and `−2.0e-4`, over five `+5.9e-4` and `−1.3e-4`
+/// (`probe_hadronic_seed_headroom`), so the bound clears the worst by `6.9x`,
+/// and it is the value every other σ row in this file is held to.
+const DY_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
 /// errors — the guard the scalar pull cannot be: a run that missed a region
-/// reports a small integral *and* a small error. Measured `0.74` and `1.19`.
+/// reports a small integral *and* a small error. The census reads `1.06` and
+/// `1.43` over the gate's three seeds, `0.80` and `0.97` over five
+/// (`probe_hadronic_seed_headroom`); like the other rows' `χ²/dof < 4` it is a
+/// false-positive rate, `1.8%` on the two degrees of freedom three seeds give.
 const DY_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 fn validation_dir() -> PathBuf {
@@ -504,7 +512,7 @@ fn check_dy_run(run: &str, card: &str) {
         runs.len()
     );
 
-    let ok = pull.abs() < 3.0 || rel.abs() < DY_MAX_REL;
+    let ok = pull.abs() < 3.0 && rel.abs() < DY_MAX_REL;
     let mut row = IntegralsRow::new("pp_to_ll", DY_PROCESS, "gate").with_variant(run);
     row.status = if ok && chi2 < DY_MAX_CHI2_PER_DOF {
         "pass"
