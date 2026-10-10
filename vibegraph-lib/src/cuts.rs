@@ -15,11 +15,11 @@
 //!   already applied to the momenta passed to [`Cuts::pass`].
 //! - **ΔR² = Δφ² + Δy²** (`kin_functions.f:42` `R2`), with
 //!   `Δφ = acos(clamp((px₁px₂+py₁py₂)/(|pt₁||pt₂|), ±0.99999999))`
-//!   (`kin_functions.f:180` `DELTA_PHI`) — the azimuthal opening angle in
-//!   `[0, π]`, so wrap-around is intrinsic. `setcuts.f:345` stores the raw `dr`
+//!   (`kin_functions.f:164` `DELTA_PHI`, the clamp at `:181-182`) — the azimuthal opening angle in
+//!   `[0, π]`, so wrap-around is intrinsic. `setcuts.f:346` stores the raw `dr`
 //!   value, but the `cuts.f` FIRSTTIME block squares it once
-//!   (`r2min = r2min·|r2min|`, `cuts.f:219-221`, "Since r2 returns distance
-//!   squared") before the `r2(...) < r2min` comparison (`cuts.f:429`), so the
+//!   (`r2min = r2min·|r2min|`, `cuts.f:225` in `passcuts`, "Since r2 returns distance
+//!   squared") before the `r2(...) < r2min` comparison (`cuts.f:443`), so the
 //!   effective bound is the standard `ΔR ≥ dr`. Stored here as a signed square
 //!   `dr·|dr|`, exactly like the mass/ptll thresholds.
 //! - **Invariant-mass / ptll thresholds are signed squares.** `mm{...}` is
@@ -27,7 +27,7 @@
 //!   (`setcuts.f:399`, `cuts.f:485`); `ptll` as `ptll·|ptll|` against
 //!   `(Σpx)²+(Σpy)²` (`setcuts.f:479`, `cuts.f:462`).
 //! - **ŝ window** compares `(p₁+p₂)²` against `dsqrt_shat²` /
-//!   `dsqrt_shatmax²` (`cuts.f:312`), on a process with two incoming legs only:
+//!   `dsqrt_shatmax²` (`cuts.f:310`), on a process with two incoming legs only:
 //!   `cuts.f` guards it with `nincoming.eq.2`, so a decay, whose `ŝ` is its pole
 //!   mass squared, never reads it.
 //! - **Class membership** (`setcuts.f:217`): a final leg is a jet if
@@ -427,6 +427,115 @@ fn min_separation_gap(dr2_min: f64) -> f64 {
     }
 }
 
+/// The decay-chain window cuts, one list per pattern of `forced` lines: each line
+/// of non-zero window width becomes a cut over the final legs (indexed by
+/// `finals`) it decays to, `bwcutoff` widths either side of its pole.
+fn decay_windows(
+    forced: &ForcedResonances,
+    finals: &[usize],
+    bwcutoff: f64,
+) -> Vec<Vec<WindowCut>> {
+    forced
+        .patterns()
+        .iter()
+        .map(|lines| {
+            lines
+                .iter()
+                .filter_map(|line| {
+                    let width = line.window_width();
+                    (width > 0.0).then(|| WindowCut {
+                        members: finals
+                            .iter()
+                            .enumerate()
+                            .filter(|(k, _)| *k < 64 && line.slots & (1u64 << k) != 0)
+                            .map(|(_, &idx)| idx)
+                            .collect(),
+                        mass: line.mass,
+                        half_width: bwcutoff * width,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Single-leg pT / E / η cuts for the j/b/a/l classes, on every final leg whose
+/// `do_cuts` is set.
+fn single_leg_cuts(rc: &RunCard, infos: &[LegInfo]) -> Vec<SingleLegCut> {
+    let mut single = Vec::new();
+    for info in infos {
+        if !info.do_cuts {
+            continue;
+        }
+        let Some(letter) = info.letter else { continue };
+        let c = letter_char(letter);
+        let pt_min = if letter == Letter::Photon {
+            rc.float("pta").max(rc.float("ptgmin"))
+        } else {
+            rc.float(&format!("pt{c}"))
+        };
+        single.push(SingleLegCut {
+            idx: info.idx,
+            pt_min,
+            pt_max: rc.float(&format!("pt{c}max")),
+            e_min: rc.float(&format!("e{c}")),
+            e_max: rc.float(&format!("e{c}max")),
+            eta_min: rc.float(&format!("eta{c}min")),
+            eta_max: rc.float(&format!("eta{c}")),
+        });
+    }
+    single
+}
+
+/// Pairwise ΔR / invariant-mass / ptll cuts over every unordered pair of final
+/// legs, keeping the pairs with at least one active threshold.
+fn pair_cuts(rc: &RunCard, infos: &[LegInfo]) -> Vec<PairCut> {
+    let mut pairs = Vec::new();
+    for a in 0..infos.len() {
+        for b in (a + 1)..infos.len() {
+            let li = infos[a];
+            let lj = infos[b];
+            let (dr2_min, dr2_max) = pair_dr(rc, li, lj);
+            let (m2_min, m2_max) = pair_mass(rc, li, lj);
+            let (ptll2_min, ptll2_max) = pair_ptll(rc, li, lj);
+            let pc = PairCut {
+                i: li.idx,
+                j: lj.idx,
+                dr2_min,
+                dr2_max,
+                m2_min,
+                m2_max,
+                ptll2_min,
+                ptll2_max,
+            };
+            if pc.is_active() {
+                pairs.push(pc);
+            }
+        }
+    }
+    pairs
+}
+
+/// The `mmnl` cut on the invariant mass of the summed lepton + neutrino system,
+/// or `None` when it is inactive or the process has no such leg.
+fn mmnl_cut(rc: &RunCard, infos: &[LegInfo]) -> Option<MmnlCut> {
+    let mmnl = rc.float("mmnl");
+    let mmnlmax = rc.float("mmnlmax");
+    if !(mmnl > 0.0 || mmnlmax >= 0.0) {
+        return None;
+    }
+    let members: Vec<usize> = infos
+        .iter()
+        .filter(|i| i.letter == Some(Letter::Lepton) || i.is_neutrino)
+        .map(|i| i.idx)
+        .collect();
+    (!members.is_empty()).then_some(MmnlCut {
+        min: mmnl,
+        max: mmnlmax,
+        members,
+    })
+}
+
 impl Cuts {
     /// Compile the run card's cuts for a specific external-leg assignment of a
     /// process without decay chains.
@@ -472,95 +581,11 @@ impl Cuts {
             .collect();
         let finals: Vec<usize> = infos.iter().map(|i| i.idx).collect();
         let bwcutoff = rc.float("bwcutoff");
-        let windows: Vec<Vec<WindowCut>> = forced
-            .patterns()
-            .iter()
-            .map(|lines| {
-                lines
-                    .iter()
-                    .filter_map(|line| {
-                        let width = line.window_width();
-                        (width > 0.0).then(|| WindowCut {
-                            members: finals
-                                .iter()
-                                .enumerate()
-                                .filter(|(k, _)| *k < 64 && line.slots & (1u64 << k) != 0)
-                                .map(|(_, &idx)| idx)
-                                .collect(),
-                            mass: line.mass,
-                            half_width: bwcutoff * width,
-                        })
-                    })
-                    .collect()
-            })
-            .collect();
+        let windows = decay_windows(forced, &finals, bwcutoff);
 
-        // Single-leg pT / E / η for classes j/b/a/l.
-        let mut single = Vec::new();
-        for info in &infos {
-            if !info.do_cuts {
-                continue;
-            }
-            let Some(letter) = info.letter else { continue };
-            let c = letter_char(letter);
-            let pt_min = if letter == Letter::Photon {
-                rc.float("pta").max(rc.float("ptgmin"))
-            } else {
-                rc.float(&format!("pt{c}"))
-            };
-            single.push(SingleLegCut {
-                idx: info.idx,
-                pt_min,
-                pt_max: rc.float(&format!("pt{c}max")),
-                e_min: rc.float(&format!("e{c}")),
-                e_max: rc.float(&format!("e{c}max")),
-                eta_min: rc.float(&format!("eta{c}min")),
-                eta_max: rc.float(&format!("eta{c}")),
-            });
-        }
-
-        // Pairwise ΔR / invariant mass / ptll.
-        let mut pairs = Vec::new();
-        for a in 0..infos.len() {
-            for b in (a + 1)..infos.len() {
-                let li = infos[a];
-                let lj = infos[b];
-                let (dr2_min, dr2_max) = pair_dr(rc, li, lj);
-                let (m2_min, m2_max) = pair_mass(rc, li, lj);
-                let (ptll2_min, ptll2_max) = pair_ptll(rc, li, lj);
-                let pc = PairCut {
-                    i: li.idx,
-                    j: lj.idx,
-                    dr2_min,
-                    dr2_max,
-                    m2_min,
-                    m2_max,
-                    ptll2_min,
-                    ptll2_max,
-                };
-                if pc.is_active() {
-                    pairs.push(pc);
-                }
-            }
-        }
-
-        // mmnl: invariant mass of the summed lepton + neutrino system.
-        let mmnl = rc.float("mmnl");
-        let mmnlmax = rc.float("mmnlmax");
-        let mmnl_cut = if mmnl > 0.0 || mmnlmax >= 0.0 {
-            let members: Vec<usize> = infos
-                .iter()
-                .filter(|i| i.letter == Some(Letter::Lepton) || i.is_neutrino)
-                .map(|i| i.idx)
-                .collect();
-            (!members.is_empty()).then_some(MmnlCut {
-                min: mmnl,
-                max: mmnlmax,
-                members,
-            })
-        } else {
-            None
-        };
+        let single = single_leg_cuts(rc, &infos);
+        let pairs = pair_cuts(rc, &infos);
+        let mmnl_cut = mmnl_cut(rc, &infos);
 
         let dsqrt_shat = rc.float("dsqrt_shat");
         let dsqrt_shatmax = rc.float("dsqrt_shatmax");
@@ -632,14 +657,19 @@ impl Cuts {
     /// carries the jet's own `pT`. Past three outgoing legs a partition can balance
     /// internally, so this stops being a bound and stays a scale.
     ///
-    /// That is enough, because the floor is a *density regulator*, not a kinematic
-    /// limit. It enters the channel's `t` draw and its `t` measure alike
-    /// ([`DiagramChannel::from_diagram_regulated`]), so any non-negative value
-    /// leaves the estimator unbiased and only its efficiency — and the
-    /// well-posedness of a draw whose pole would otherwise sit on the transfer's own
-    /// rounding noise — depends on the size. A run with no active single-leg `pT`
-    /// cut therefore gets `0`, which leaves peripheral channels unbuilt beyond two
-    /// outgoing legs rather than building an ill-posed one.
+    /// The floor does two things in a channel built by
+    /// [`DiagramChannel::from_diagram_regulated`]. As a *density regulator* it
+    /// sets each rung's propagator pole, entering the `t` draw and the `t` measure
+    /// alike, so its size moves only the efficiency — and the well-posedness of a
+    /// draw whose pole would otherwise sit on the transfer's own rounding noise.
+    /// As a *support bound* it also caps each rung's transfer at `t ≤ −floor`,
+    /// above which the channel's density is exactly zero. The estimator is then
+    /// unbiased only while the channel set as a whole covers every point the cuts
+    /// accept: past three outgoing legs, where the floor is a scale rather than a
+    /// bound, that is what the coverage gates check, not something the floor
+    /// guarantees. A run with no active single-leg `pT` cut gets `0`, which leaves
+    /// peripheral channels unbounded, and unbuilt beyond two outgoing legs rather
+    /// than built ill-posed.
     ///
     /// [`DiagramChannel::from_diagram_regulated`]:
     ///     crate::phasespace::diagram_channel::DiagramChannel::from_diagram_regulated
@@ -1058,8 +1088,8 @@ fn pair_dr(rc: &RunCard, li: LegInfo, lj: LegInfo) -> (f64, f64) {
     let Some(tag) = pair_tag(la, lb) else {
         return (0.0, -1.0);
     };
-    // MG stores the raw `dr` value (setcuts.f:345) then squares it once in the
-    // cuts.f FIRSTTIME block (`r2min = r2min*dabs(r2min)`, cuts.f:219-221) before
+    // MG stores the raw `dr` value (setcuts.f:346) then squares it once in the
+    // cuts.f FIRSTTIME block (`r2min = r2min*dabs(r2min)`, cuts.f:225) before
     // comparing against the distance-squared `r2`. Mirror that as a signed square,
     // which also preserves the -1 disabled sentinel for the `max` threshold.
     (

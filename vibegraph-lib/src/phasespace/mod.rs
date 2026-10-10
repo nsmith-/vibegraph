@@ -1,15 +1,21 @@
-//! Phase-space utilities for LO cross-section calculations.
+//! Phase space for LO cross sections: the maps from the unit hypercube a VEGAS
+//! grid refines to on-shell final states, and the weights that make a flat
+//! average over that hypercube an integral over `dΦ_n`.
 //!
-//! Implements the Lorentz-invariant phase space (LIPS) measure for 2-body
-//! final states in the CM frame, and provides the unit-hypercube mapping used
-//! by the VEGAS integrator. The [`rambo`] submodule generalizes to `n`-body
-//! flat sampling over an arbitrary scalar field, and [`rng`] supplies the
-//! counter-based uniform substreams that feed it. The [`channel`] submodule is
-//! the abstraction seam — [`PhaseSpaceMap`]/[`Channel`]/[`Combiner`] — that lets
-//! the sampler, channel map, and integrator be swapped independently; flat RAMBO
-//! and the 2-body LIPS map sit behind it as [`RamboChannel`] and
-//! [`Lips2Channel`](channel::Lips2Channel), and [`MultiChannel`] combines
-//! per-diagram channels into one variance-minimising [`Combiner`].
+//! The production map is [`DiagramChannel`] (in [`diagram_channel`]): one channel
+//! per Feynman diagram, a chain of 2-body decays and peripheral emissions read
+//! off the diagram's propagators, its invariants drawn against the propagator
+//! poles that shape them. [`maps`] holds the parametrisation choices such a
+//! channel leaves open and the rule a run settles them by. [`channel`] is the
+//! seam the integrator sees — [`PhaseSpaceMap`], [`Channel`] and [`Combiner`] —
+//! and the combiners: [`MultiChannel`] at a fixed `√ŝ`, and its per-event-energy
+//! counterpart for hadronic runs, which combine the diagram channels into one
+//! variance-minimising estimator. [`beams`] derives the initial state, [`rambo`](mod@rambo)
+//! is flat `n`-body sampling (also behind the seam, as [`RamboChannel`]), and
+//! [`rng`] supplies the counter-based substreams every draw comes from.
+//!
+//! The rest of this page is the closed-form massless `2 → 2` measure, behind
+//! [`prefactor2`] and the test-side flat 2-body map.
 //!
 //! # 2-body phase space
 //!
@@ -129,14 +135,14 @@ pub(crate) fn lips2_dcostheta(sqrt_s: f64) -> f64 {
 /// `cosθ = 2u − 1` (the mapping used by the VEGAS driver).
 ///
 /// `J = dΦ₂/d(cosθ) × d(cosθ)/du = 2 × lips2_dcostheta(sqrt_s)`.
-#[cfg(any(test, doc))]
+#[cfg(test)]
 #[inline]
 pub(crate) fn lips2_jacobian_u(sqrt_s: f64) -> f64 {
     2.0 * lips2_dcostheta(sqrt_s)
 }
 
 /// Map a unit-interval sample `u ∈ [0, 1)` to `cosθ ∈ (−1, 1)`.
-#[cfg(any(test, doc))]
+#[cfg(test)]
 #[inline]
 pub(crate) fn u_to_costheta(u: f64) -> f64 {
     2.0 * u - 1.0

@@ -27,10 +27,12 @@
 //!
 //! Leaving that zero-width rise on a flat draw is not a mere inefficiency: the
 //! estimator acquires a tail heavy enough that a run either misses the region
-//! (collapsing `σ̂`) or catches it (inflating `σ̂`), and because VEGAS combines its
-//! iterations by `1/σ²`, the iterations that miss report a small integral *and* a
-//! small variance and go on to dominate the result. The failure is therefore
-//! silent — a confidently wrong cross section, not a visibly noisy one.
+//! (collapsing `σ̂`) or catches it (inflating `σ̂`). An iteration that misses it
+//! reports a small integral *and* a small variance, so a run that misses it in
+//! every iteration quotes an error bar as small as its answer is wrong, and under
+//! a `1/σ²` combination of iterations the ones that miss dominate even a run that
+//! caught it. The failure is therefore silent — a confidently wrong cross section,
+//! not a visibly noisy one.
 //!
 //! A spacelike (t-channel) line is peripheral, not a subsystem mass: it carries a
 //! momentum transfer `t = (p_beam − p_emitted)² ≤ 0`. A diagram with a single
@@ -386,8 +388,8 @@ impl<F: Real> DiagramChannel<F> {
     /// diagram with more spacelike lines than that.
     ///
     /// Nothing derives a cap this way — production admits every rung. It exists so
-    /// the chain can be measured against the truncated map it replaces, which for
-    /// `max_rungs = 1` is the all-timelike tree every ladder used to fall back to.
+    /// the chain can be measured against a truncated map; at `max_rungs = 1` every
+    /// ladder falls back to the all-timelike tree.
     pub fn from_diagram_capped(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -993,8 +995,10 @@ impl<F: Real> DiagramChannel<F> {
     /// channel is a valid map over the same phase space — a *different* map, whose
     /// draws concentrate on a different set of running transfers.
     ///
-    /// Nothing derives an ordering this way; it exists so a deliberately wrong
-    /// ordering can be built and measured against the derived one.
+    /// The derived order is the diagram's own nesting; this is how a run asks for
+    /// another one — [`RungOrder::Reversed`](super::maps::RungOrder::Reversed)
+    /// applies it — and how a deliberately wrong ordering is built and measured
+    /// against the derived one.
     pub fn with_rung_order(mut self, order: &[usize]) -> Self {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             assert_eq!(order.len(), spine.rungs.len(), "order must name every rung");

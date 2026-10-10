@@ -88,10 +88,6 @@ pub struct ProcessShape {
     /// Splits with a single massless vector daughter whose parent can move, summed
     /// over the channel set. Zero means [`SplitAngle::SoftEmission`] shapes nothing.
     pub(crate) soft_emission_splits: usize,
-    /// Every split whose parent can move, summed over the channel set: every split
-    /// but the root of an all-timelike tree. Zero means no angular map shapes
-    /// anything, as on every `2 → 2` process.
-    pub(crate) moving_splits: usize,
     /// The longest peripheral chain any channel draws.
     pub(crate) max_rungs: usize,
     /// Whether any channel's diagram carries a finite-width s-channel resonance
@@ -115,7 +111,6 @@ impl ProcessShape {
             let emitters = DiagramChannel::<f64>::massless_vector_slots(d, model);
             shape.soft_emission_splits +=
                 channel.splits_selected(&DiagramChannel::<f64>::soft_emission_rule(emitters));
-            shape.moving_splits += channel.splits_selected(&|_, _| true);
             shape.max_rungs = shape.max_rungs.max(channel.rung_count());
             shape.whole_state_resonance |=
                 DiagramChannel::<f64>::has_whole_state_resonance(d, model);
@@ -304,16 +299,10 @@ mod tests {
         assert_eq!(auto.resolve(&resonant), MapChoices::LEGACY);
         let with = ProcessShape {
             soft_emission_splits: 2,
-            moving_splits: 4,
             max_rungs: 1,
             whole_state_resonance: false,
         };
         assert_eq!(auto.resolve(&with).split_angle, SplitAngle::SoftEmission);
-        let pair_only = ProcessShape {
-            moving_splits: 2,
-            ..ProcessShape::default()
-        };
-        assert_eq!(auto.resolve(&pair_only).split_angle, SplitAngle::Isotropic);
         assert_eq!(auto.resolve(&with).rung_order, RungOrder::Derived);
     }
 
@@ -389,7 +378,6 @@ mod tests {
     fn a_named_choice_overrides_the_rule_and_fixed_names_every_choice() {
         let shape = ProcessShape {
             soft_emission_splits: 2,
-            moving_splits: 4,
             max_rungs: 2,
             whole_state_resonance: false,
         };

@@ -81,7 +81,6 @@ pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessSha
         .into_iter()
         .fold(ProcessShape::default(), |acc, s| ProcessShape {
             soft_emission_splits: acc.soft_emission_splits + s.soft_emission_splits,
-            moving_splits: acc.moving_splits + s.moving_splits,
             max_rungs: acc.max_rungs.max(s.max_rungs),
             whole_state_resonance: acc.whole_state_resonance || s.whole_state_resonance,
         })

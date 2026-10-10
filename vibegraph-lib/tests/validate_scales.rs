@@ -268,7 +268,8 @@ const FIXED_SCALE_RUNS: &[&str] = &["pp_to_bb_fixed", "pp_to_llj_fixed", "ud_to_
 
 /// The clustered runs whose `SCALUP` is `μF` and *not* `μR`.
 ///
-/// `unwgt.f:686` fills `SCALUP` with `sqrt(max(q2fact(1), q2fact(2)))` — the
+/// `unwgt.f:752` (`write_leshouche`) fills `SCALUP` with
+/// `sqrt(max(q2fact(1), q2fact(2)))` — the
 /// larger **factorisation** scale. It doubles as `μR` only where the clustering
 /// reads both off the same vertex, which every other banked run does. These two
 /// are the suite's first `2 → 2` reaching the general `q2fact(1) != q2fact(2)`
@@ -1314,7 +1315,7 @@ fn probe_first_channel_cost_in_alpha_s() {
     }
 }
 
-/// `unwgt.f:694` fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
+/// `unwgt.f:760` (`write_leshouche`) fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
 /// eight digits while `g` was built from the full one — a systematic `1.7e-8`
 /// relative that is a sixth of the field's last printed digit.
 fn aqcdup_from_alpha_s(alpha_s: f64) -> f64 {

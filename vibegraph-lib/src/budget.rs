@@ -193,10 +193,13 @@ pub enum BlockAllocation {
     /// evaluations against 6.41M, and the seed-to-seed spread of that spend
     /// narrows from 2.75M–12.4M to 1.97M–4.26M.
     ///
-    /// The mechanism is the scale factor, not the split: a starved channel's
-    /// χ²/dof is what widens the error the stopping rule reads, so feeding it
-    /// relaxes the test by more than its own variance share ever could. Both
-    /// arms agree on σ (0.14σ and 0.32σ from MadGraph's banked value).
+    /// The mechanism is the consistency factor, not the split: a starved
+    /// channel's [`ChannelHistory::stop_scale`] is what widens the error the
+    /// stopping rule reads, so feeding it relaxes the test by more than its own
+    /// variance share ever could. Both arms agree on σ (0.14σ and 0.32σ from
+    /// MadGraph's banked value). These figures were measured with the stopping
+    /// test widening each channel by its per-iteration χ²/dof rather than by the
+    /// pooled factor it reads, and have not been re-measured under it.
     Neyman,
 }
 
@@ -395,6 +398,31 @@ struct ChannelHistory {
 }
 
 impl ChannelHistory {
+    /// A channel of selection weight `alpha` that has drawn nothing yet.
+    fn new(alpha: f64) -> Self {
+        ChannelHistory {
+            alpha,
+            drawn: 0,
+            kept: Vec::new(),
+            point_var_sum: 0.0,
+            point_var_n: 0,
+            accepted: 0,
+        }
+    }
+
+    /// Fold in one iteration of `neval` points: always into the generator
+    /// position, the acceptance and the Neyman input, and into the combined term
+    /// when `keep` (the iteration is past the warm-up).
+    fn record(&mut self, out: &BlockIteration, neval: usize, keep: bool) {
+        self.drawn += neval as u64;
+        self.accepted += out.accepted as u64;
+        self.point_var_sum += out.point_variance(neval);
+        self.point_var_n += 1;
+        if keep {
+            self.kept.push((out.integral, out.variance, neval));
+        }
+    }
+
     /// The fraction of this channel's drawn points the cuts kept, over every
     /// iteration it has run, or `None` before it has drawn anything.
     fn acceptance(&self) -> Option<f64> {
@@ -410,9 +438,9 @@ impl ChannelHistory {
     /// This channel's term, combined over its kept iterations.
     ///
     /// Iterations that drew the same number of points combine under `rule` —
-    /// the same arithmetic, in the same order, that a run of
-    /// [`VegasGrid::adapt_parallel_seeded`] would have performed, so a fixed
-    /// budget's numbers do not move.
+    /// [`combine_iterations`], the arithmetic and the order
+    /// [`VegasGrid::adapt`] combines its own iterations in, so a fixed budget's
+    /// channel terms are those of independent per-channel adaptations.
     ///
     /// Iterations that drew *different* numbers are averaged weighted by their
     /// point counts. Those weights are what Lepage's are not: an iteration's
@@ -643,14 +671,7 @@ where
         .collect();
     let mut channels: Vec<ChannelHistory> = alphas
         .iter()
-        .map(|&alpha| ChannelHistory {
-            alpha,
-            drawn: 0,
-            kept: Vec::new(),
-            point_var_sum: 0.0,
-            point_var_n: 0,
-            accepted: 0,
-        })
+        .map(|&alpha| ChannelHistory::new(alpha))
         .collect();
 
     if let Budget::Target { .. } = budget {
@@ -685,37 +706,7 @@ where
     };
     let alpha_total: usize = by_alpha.iter().sum();
 
-    let lowest = ndims.iter().copied().min().unwrap_or(0);
-    let widest = ndims.iter().copied().max().unwrap_or(0);
-    let coordinates = if lowest == widest {
-        format!("{widest}")
-    } else {
-        format!("{lowest} to {widest}")
-    };
-    info!(
-        "{} channels over {coordinates} coordinates, {alpha_total} points per iteration, \
-         allocated {}",
-        alphas.len(),
-        match allocation {
-            BlockAllocation::ByAlpha => "by α",
-            BlockAllocation::Neyman => "by αⱼsⱼ (Neyman)",
-        }
-    );
-    // Coverage outranks the budget, so a request under the floor is raised, not
-    // honoured. Say so: the spend is then set by the channel count and is not a
-    // knob `neval` can turn until it clears the floor. The acceptance correction
-    // raises it further once the first iteration has measured one, and warns
-    // again there with the number it reaches.
-    if alpha_total > neval {
-        let floored = by_alpha.iter().filter(|&&n| n == MIN_CHANNEL_NEVAL).count();
-        warn!(
-            "neval {neval} is below what {} channels can cover: {floored} of them sit at the \
-             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total} before the \
-             acceptance correction, and at most {} after it",
-            alphas.len(),
-            alpha_total.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE),
-        );
-    }
+    report_split(&ndims, &by_alpha, neval, allocation);
 
     let warmup = grids
         .first()
@@ -735,9 +726,8 @@ where
     let mut capped_reported = false;
     let mut raised_reported = false;
     let mut iteration = 0_usize;
-    let mut reason = StopReason::Budget;
 
-    loop {
+    let reason = loop {
         // The floors are denominated in accepted points, so each channel's own
         // acceptance sets its own floor and they are re-read every iteration.
         // Before the first iteration none has been measured and every floor is
@@ -745,37 +735,11 @@ where
         // was; a floor thereafter is decided by iterations already complete, and
         // never by the draws it is about to size.
         if !single {
-            let floors: Vec<usize> = channels
-                .iter()
-                .map(|c| floor_for_acceptance(c.acceptance()))
-                .collect();
-            floor_capped_channels = channels
-                .iter()
-                .filter(|c| floor_is_capped(c.acceptance()))
-                .count();
-            floor_bound_channels = shares.iter().zip(&floors).filter(|(&s, &f)| s <= f).count();
-            let previous = std::mem::take(&mut current);
-            let floored: Vec<usize> = shares
-                .iter()
-                .zip(&floors)
-                .map(|(&s, &f)| s.max(f))
-                .collect();
-            // The acceptance correction is a coverage cost both rules pay alike:
-            // a Neyman re-split is handed what the α split spends this
-            // iteration, floors included, and moves only the points above the
-            // floors. Handed the uncorrected total instead, the raised floors of
-            // a wide, low-acceptance channel set would absorb the budget and
-            // leave every other channel at its own floor.
-            current = if allocation == BlockAllocation::Neyman && iteration > 0 {
-                let sd: Vec<f64> = channels
-                    .iter()
-                    .map(|c| c.point_sd().unwrap_or(0.0))
-                    .collect();
-                neyman_allocation(&sd, floored.iter().sum(), &floors)
-            } else {
-                floored
-            };
-            report_reallocation(&previous, &current);
+            let split = allocate_iteration(&channels, &shares, allocation, iteration);
+            floor_capped_channels = split.capped;
+            floor_bound_channels = split.floor_bound;
+            report_reallocation(&current, &split.points);
+            current = split.points;
             report_floor_correction(
                 alphas.len(),
                 alpha_total,
@@ -801,52 +765,10 @@ where
         min_channel_neval = min_channel_neval.min(plans.iter().map(|p| p.neval).min().unwrap_or(0));
         iteration_points = plans.iter().map(|p| p.neval).sum();
 
-        // The most iterations this run can still be, in points it will really
-        // spend: what an iteration costs is set by the channel count and the
-        // accepted-point floor as much as by `neval`, so the point cap buys
-        // fewer iterations than dividing by the requested budget would suggest,
-        // and it is priced against the iteration about to be drawn rather than
-        // against the request. For a fixed budget this is the plan itself; for a
-        // convergence target it is where the run gives up, and only caps the
-        // projected total a display divides by. One iteration is the floor,
-        // since a bound of zero describes no run.
-        let iteration_bound = match budget {
-            Budget::Fixed { niter, .. } => niter as u64,
-            Budget::Target {
-                max_iters,
-                max_points,
-                ..
-            } => (max_iters as u64)
-                .min(max_points / iteration_points.max(1) as u64)
-                .max(1),
-        };
+        let iteration_bound = budget.iteration_bound(iteration_points);
         let started = Instant::now();
 
-        let outcomes = adapt_blocks_iteration(
-            &grids,
-            &plans,
-            seed,
-            // The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`;
-            // the scale draw's trailing uniforms come off a stream of its own, so
-            // the grid's sequence is what it would be with no draw installed.
-            // Both are addressed by the point's index in the channel's own run, so
-            // a chunk reproduces the points it would have drawn in sequence.
-            |j, first| {
-                (
-                    SubStream::new(
-                        seed,
-                        SCALE_DRAW_STREAM_BASE + j as u64,
-                        first * scale_ndim as u64,
-                    ),
-                    vec![0.0; ndims[j] + scale_ndim],
-                )
-            },
-            |j, (scale_draw, point), u| {
-                point[..ndims[j]].copy_from_slice(u);
-                scale_draw.fill_uniforms(&mut point[ndims[j]..]);
-                integrand.value_in_channel(j, point)
-            },
-        );
+        let outcomes = draw_iteration(integrand, &grids, &plans, seed, &ndims, scale_ndim);
 
         // The coverage the iteration realised, which is what the floor is
         // denominated in. The first iteration is allocated before any acceptance
@@ -859,14 +781,8 @@ where
         }
 
         for ((c, out), plan) in channels.iter_mut().zip(&outcomes).zip(&plans) {
-            c.drawn += plan.neval as u64;
             points += plan.neval as u64;
-            c.accepted += out.accepted as u64;
-            c.point_var_sum += out.point_variance(plan.neval);
-            c.point_var_n += 1;
-            if iteration >= warmup {
-                c.kept.push((out.integral, out.variance, plan.neval));
-            }
+            c.record(out, plan.neval, iteration >= warmup);
         }
 
         let ns_per_eval = started.elapsed().as_nanos() as f64 / iteration_points.max(1) as f64;
@@ -896,30 +812,7 @@ where
             std_dev: 0.0,
             chi2_per_dof: 0.0,
         });
-        // The iteration count a display divides by: the run's *destination*,
-        // not where it gives up. A fixed budget's destination is its plan. A
-        // convergence run is chasing δ ≤ target, and the error of a
-        // fixed-size iteration contracts as 1/√n, so `iteration × (δ/target)²`
-        // is where the stop fires if the estimate keeps behaving — re-projected
-        // each iteration as δ moves. It is floored at the earliest iteration
-        // the stopping test may fire at, so a bar cannot read full while the
-        // run is still obliged to continue, and capped at the give-up bound;
-        // at the stop itself δ ≤ target puts the projection at `iteration`
-        // exactly, so a converged run ends on a full bar. Until the warm-up
-        // ends there is no δ and the extent is honestly unknown.
-        let progress_total = match budget {
-            Budget::Fixed { .. } => Some(iteration_bound),
-            Budget::Target {
-                target_rel,
-                min_iters,
-                ..
-            } => scaled.map(|rel| {
-                let projected = (iteration as f64 * (rel / target_rel).powi(2)).ceil() as u64;
-                projected
-                    .max(min_iters.max(warmup + 2) as u64)
-                    .clamp(iteration as u64, iteration_bound.max(iteration as u64))
-            }),
-        };
+        let progress_total = budget.progress_total(iteration, warmup, scaled, iteration_bound);
         progress::vegas_iteration(
             iteration as u64,
             progress_total,
@@ -935,68 +828,21 @@ where
         );
         report_channels(&plans, &outcomes);
 
-        let done = match budget {
-            Budget::Fixed { niter, .. } => {
-                reason = StopReason::Budget;
-                iteration >= niter
-            }
-            Budget::Target {
-                target_rel,
-                min_iters,
-                max_iters,
-                max_points,
-                ..
-            } => {
-                let met = iteration >= min_iters.max(warmup + 2)
-                    && scaled.is_some_and(|rel| rel <= target_rel);
-                if met {
-                    reason = StopReason::TargetMet;
-                    true
-                } else if iteration >= max_iters {
-                    reason = StopReason::MaxIters;
-                    true
-                } else if points + iteration_points as u64 > max_points {
-                    // Prospective, and against what an iteration really costs:
-                    // the per-channel floor can put that several times above
-                    // `neval`, so a cap tested only after the fact is overshot
-                    // by an iteration whose size the caller never asked for.
-                    // The forecast is the iteration just drawn, which is the
-                    // size the next one is allocated to as well.
-                    reason = StopReason::MaxPoints;
-                    true
-                } else {
-                    false
-                }
-            }
-        };
-
         // A budget that has run out on this very iteration keeps its own reason:
         // the run reached the end it was given, and was not cut short of it.
-        if done {
-            break;
+        if let Some(end) = budget.stop(iteration, warmup, scaled, points, iteration_points) {
+            break end;
         }
         if stop.requested() {
-            reason = StopReason::Aborted;
-            if iteration > warmup {
-                warn!(
-                    "stopping at the operator's request after {iteration} iterations \
-                     and {points} evaluations"
-                );
-            } else {
-                warn!(
-                    "stopping at the operator's request after {iteration} iterations \
-                     and {points} evaluations, with the warm-up unfinished: no iteration \
-                     was kept, so this run measured nothing"
-                );
-            }
-            break;
+            report_abort(iteration, warmup, points);
+            break StopReason::Aborted;
         }
         // Only a run that will draw again refines: the banked grid is the one the
         // last iteration sampled against.
         for ((g, out), plan) in grids.iter_mut().zip(&outcomes).zip(&plans) {
             g.refine_grid(&out.hist, plan.neval);
         }
-    }
+    };
 
     let per_channel: Vec<ChannelIntegration> = channels
         .iter()
@@ -1041,6 +887,207 @@ where
     (per_channel, total, report)
 }
 
+/// The split a run starts from, said once: the channel count, their coordinate
+/// range, the points an iteration spends before any acceptance is measured, and
+/// how they are allocated — with a warning when the floor alone outspends the
+/// request.
+fn report_split(ndims: &[usize], by_alpha: &[usize], neval: usize, allocation: BlockAllocation) {
+    let alpha_total: usize = by_alpha.iter().sum();
+    let lowest = ndims.iter().copied().min().unwrap_or(0);
+    let widest = ndims.iter().copied().max().unwrap_or(0);
+    let coordinates = if lowest == widest {
+        format!("{widest}")
+    } else {
+        format!("{lowest} to {widest}")
+    };
+    info!(
+        "{} channels over {coordinates} coordinates, {alpha_total} points per iteration, \
+         allocated {}",
+        ndims.len(),
+        match allocation {
+            BlockAllocation::ByAlpha => "by α",
+            BlockAllocation::Neyman => "by αⱼsⱼ (Neyman)",
+        }
+    );
+    // Coverage outranks the budget, so a request under the floor is raised, not
+    // honoured. Say so: the spend is then set by the channel count and is not a
+    // knob `neval` can turn until it clears the floor. The acceptance correction
+    // raises it further once the first iteration has measured one, and warns
+    // again there with the number it reaches.
+    if alpha_total > neval {
+        let floored = by_alpha.iter().filter(|&&n| n == MIN_CHANNEL_NEVAL).count();
+        warn!(
+            "neval {neval} is below what {} channels can cover: {floored} of them sit at the \
+             {MIN_CHANNEL_NEVAL}-point floor, so an iteration spends {alpha_total} before the \
+             acceptance correction, and at most {} after it",
+            ndims.len(),
+            alpha_total.saturating_mul(MAX_FLOOR_ACCEPTANCE_SCALE),
+        );
+    }
+}
+
+/// One iteration's per-channel allocation, with the floor counts the report
+/// carries.
+struct IterationSplit {
+    /// Points each channel draws this iteration.
+    points: Vec<usize>,
+    /// Channels whose floor is held at [`floor_for_acceptance`]'s cap.
+    capped: usize,
+    /// Channels whose α share is at or under their floor.
+    floor_bound: usize,
+}
+
+/// Allocate one iteration of a multichannel run: every channel's α share,
+/// floored at the accepted-point floor its own measured acceptance sets, and
+/// under [`BlockAllocation::Neyman`] past the first iteration re-split by the
+/// channels' measured per-point standard deviations.
+///
+/// The floors are re-read every iteration from iterations already complete,
+/// never from the draws they are about to size. Before the first iteration
+/// none has been measured and every floor is the uncorrected one.
+fn allocate_iteration(
+    channels: &[ChannelHistory],
+    shares: &[usize],
+    allocation: BlockAllocation,
+    iteration: usize,
+) -> IterationSplit {
+    let floors: Vec<usize> = channels
+        .iter()
+        .map(|c| floor_for_acceptance(c.acceptance()))
+        .collect();
+    let capped = channels
+        .iter()
+        .filter(|c| floor_is_capped(c.acceptance()))
+        .count();
+    let floor_bound = shares.iter().zip(&floors).filter(|(&s, &f)| s <= f).count();
+    let floored: Vec<usize> = shares
+        .iter()
+        .zip(&floors)
+        .map(|(&s, &f)| s.max(f))
+        .collect();
+    // The acceptance correction is a coverage cost both rules pay alike: a
+    // Neyman re-split is handed what the α split spends this iteration, floors
+    // included, and moves only the points above the floors. Handed the
+    // uncorrected total instead, the raised floors of a wide, low-acceptance
+    // channel set would absorb the budget and leave every other channel at its
+    // own floor.
+    let points = if allocation == BlockAllocation::Neyman && iteration > 0 {
+        let sd: Vec<f64> = channels
+            .iter()
+            .map(|c| c.point_sd().unwrap_or(0.0))
+            .collect();
+        neyman_allocation(&sd, floored.iter().sum(), &floors)
+    } else {
+        floored
+    };
+    IterationSplit {
+        points,
+        capped,
+        floor_bound,
+    }
+}
+
+impl Budget {
+    /// The most iterations a run can be, in points it will really spend.
+    ///
+    /// What an iteration costs is set by the channel count and the
+    /// accepted-point floor as much as by `neval`, so the point cap buys fewer
+    /// iterations than dividing by the requested budget would suggest, and it is
+    /// priced against `iteration_points`, the iteration about to be drawn,
+    /// rather than against the request. For a fixed budget this is the plan
+    /// itself; for a convergence target it is where the run gives up, and only
+    /// caps the projected total a display divides by. One iteration is the
+    /// floor, since a bound of zero describes no run.
+    fn iteration_bound(&self, iteration_points: usize) -> u64 {
+        match *self {
+            Budget::Fixed { niter, .. } => niter as u64,
+            Budget::Target {
+                max_iters,
+                max_points,
+                ..
+            } => (max_iters as u64)
+                .min(max_points / iteration_points.max(1) as u64)
+                .max(1),
+        }
+    }
+
+    /// The iteration count a display divides by after `iteration` iterations:
+    /// the run's *destination*, not where it gives up.
+    ///
+    /// A fixed budget's destination is its plan. A convergence run is chasing
+    /// `δ ≤ target`, and the error of a fixed-size iteration contracts as `1/√n`,
+    /// so `iteration × (δ/target)²` is where the stop fires if the estimate keeps
+    /// behaving — re-projected each iteration as `δ` (`scaled`) moves. It is
+    /// floored at the earliest iteration the stopping test may fire at, so a bar
+    /// cannot read full while the run is still obliged to continue, and capped at
+    /// `iteration_bound`; at the stop itself `δ ≤ target` puts the projection at
+    /// `iteration` exactly, so a converged run ends on a full bar. Until the
+    /// warm-up ends there is no `δ` and the extent is honestly unknown.
+    fn progress_total(
+        &self,
+        iteration: usize,
+        warmup: usize,
+        scaled: Option<f64>,
+        iteration_bound: u64,
+    ) -> Option<u64> {
+        match *self {
+            Budget::Fixed { .. } => Some(iteration_bound),
+            Budget::Target {
+                target_rel,
+                min_iters,
+                ..
+            } => scaled.map(|rel| {
+                let projected = (iteration as f64 * (rel / target_rel).powi(2)).ceil() as u64;
+                projected
+                    .max(min_iters.max(warmup + 2) as u64)
+                    .clamp(iteration as u64, iteration_bound.max(iteration as u64))
+            }),
+        }
+    }
+
+    /// Why the run ends after `iteration` iterations, or `None` if it draws
+    /// another: `scaled` is the widened relative error the stopping test reads,
+    /// `points` the evaluations spent so far and `iteration_points` the size of
+    /// the iteration just drawn.
+    fn stop(
+        &self,
+        iteration: usize,
+        warmup: usize,
+        scaled: Option<f64>,
+        points: u64,
+        iteration_points: usize,
+    ) -> Option<StopReason> {
+        match *self {
+            Budget::Fixed { niter, .. } => (iteration >= niter).then_some(StopReason::Budget),
+            Budget::Target {
+                target_rel,
+                min_iters,
+                max_iters,
+                max_points,
+                ..
+            } => {
+                let met = iteration >= min_iters.max(warmup + 2)
+                    && scaled.is_some_and(|rel| rel <= target_rel);
+                if met {
+                    Some(StopReason::TargetMet)
+                } else if iteration >= max_iters {
+                    Some(StopReason::MaxIters)
+                } else if points + iteration_points as u64 > max_points {
+                    // Prospective, and against what an iteration really costs:
+                    // the per-channel floor can put that several times above
+                    // `neval`, so a cap tested only after the fact is overshot
+                    // by an iteration whose size the caller never asked for.
+                    // The forecast is the iteration just drawn, which is the
+                    // size the next one is allocated to as well.
+                    Some(StopReason::MaxPoints)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 /// The combined estimate over every channel's kept iterations, as it stands.
 ///
 /// The same sum the run's own result is formed from: terms add, their variances
@@ -1058,6 +1105,64 @@ fn running_estimate(channels: &[ChannelHistory], combination: IterationCombinati
         integral,
         std_dev: variance.sqrt(),
         chi2_per_dof,
+    }
+}
+
+/// Draw one iteration of every channel under `plans`, each point's trailing
+/// scale-draw uniforms appended to its grid coordinates.
+///
+/// The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`; the scale
+/// draw's trailing uniforms come off a stream of its own, so the grid's sequence
+/// is what it would be with no draw installed. Both are addressed by the point's
+/// index in the channel's own run, so a chunk reproduces the points it would have
+/// drawn in sequence.
+fn draw_iteration<I>(
+    integrand: &I,
+    grids: &[VegasGrid],
+    plans: &[BlockPlan],
+    seed: u64,
+    ndims: &[usize],
+    scale_ndim: usize,
+) -> Vec<BlockIteration>
+where
+    I: ChannelIntegrand + Sync,
+{
+    adapt_blocks_iteration(
+        grids,
+        plans,
+        seed,
+        |j, first| {
+            (
+                SubStream::new(
+                    seed,
+                    SCALE_DRAW_STREAM_BASE + j as u64,
+                    first * scale_ndim as u64,
+                ),
+                vec![0.0; ndims[j] + scale_ndim],
+            )
+        },
+        |j, (scale_draw, point), u| {
+            point[..ndims[j]].copy_from_slice(u);
+            scale_draw.fill_uniforms(&mut point[ndims[j]..]);
+            integrand.value_in_channel(j, point)
+        },
+    )
+}
+
+/// A run stopped at the operator's request, said with what it had spent and
+/// whether its warm-up was over.
+fn report_abort(iteration: usize, warmup: usize, points: u64) {
+    if iteration > warmup {
+        warn!(
+            "stopping at the operator's request after {iteration} iterations \
+             and {points} evaluations"
+        );
+    } else {
+        warn!(
+            "stopping at the operator's request after {iteration} iterations \
+             and {points} evaluations, with the warm-up unfinished: no iteration \
+             was kept, so this run measured nothing"
+        );
     }
 }
 
@@ -1424,10 +1529,9 @@ mod tests {
         );
     }
 
-    /// The per-iteration χ² factor this rule replaces, kept here as the
-    /// comparison the spike test below is read against: χ²/dof over the
-    /// iterations that measured a variance, each residual over that iteration's
-    /// own σᵢ².
+    /// A per-iteration χ² factor, the comparison the spike test below is read
+    /// against: χ²/dof over the iterations that measured a variance, each
+    /// residual over that iteration's own σᵢ².
     fn chi2_scale(h: &ChannelHistory) -> f64 {
         let informative: Vec<(f64, f64, usize)> = h
             .kept
@@ -1564,6 +1668,89 @@ mod tests {
         assert!(report.achieved_rel <= report.scaled_rel);
         let pull = (total.integral - 1.5).abs() / total.std_dev;
         assert!(pull < 5.0, "σ = {} ± {}", total.integral, total.std_dev);
+    }
+
+    /// The stop reads the error widened by the iterations' own scatter, not the
+    /// one the mean quotes: on a channel whose iterations disagree far beyond
+    /// their quoted errors, a run whose quoted error met the target from the
+    /// start never stops on it.
+    ///
+    /// The integrand is constant within an iteration and alternates between
+    /// `1.5·(1 ± 0.05)` from one iteration to the next, so every iteration
+    /// quotes only the small variance the grid's own Jacobian gives a constant,
+    /// while the iterations scatter by 5% about their mean. The quoted error is
+    /// therefore far under the target and the widened one far over it for every
+    /// iteration the budget allows.
+    #[test]
+    fn the_stop_reads_the_widened_error_and_not_the_quoted_one() {
+        use std::sync::atomic::AtomicUsize;
+
+        struct Alternating {
+            calls: AtomicUsize,
+            per_iteration: usize,
+        }
+        impl ChannelIntegrand for Alternating {
+            fn channel_count(&self) -> usize {
+                1
+            }
+            fn channel_grid_ndim(&self, _channel: usize) -> usize {
+                1
+            }
+            fn value_in_channel(&self, _channel: usize, _u: &[f64]) -> f64 {
+                // Every point of iteration `k` is drawn before any of `k + 1`, so
+                // the call count names the iteration whatever the scheduling.
+                let k = self.calls.fetch_add(1, Ordering::Relaxed) / self.per_iteration;
+                if k.is_multiple_of(2) {
+                    1.5 * 1.05
+                } else {
+                    1.5 * 0.95
+                }
+            }
+        }
+
+        let neval = 4_000;
+        let integ = Alternating {
+            calls: AtomicUsize::new(0),
+            per_iteration: neval,
+        };
+        let target_rel = 2.0e-3;
+        let max_iters = 12;
+        let (_, total, report) = integrate_channels(
+            &integ,
+            &[1.0],
+            1.5,
+            IterationCombination::Unweighted,
+            Budget::Target {
+                target_rel,
+                neval,
+                min_iters: 4,
+                max_iters,
+                max_points: u64::MAX,
+            },
+            BlockAllocation::ByAlpha,
+            0x5CA1E,
+            &StopSignal::default(),
+        );
+        assert_eq!(report.iterations, max_iters);
+        assert_eq!(
+            report.stop,
+            StopReason::MaxIters,
+            "stopped on {:.3e} quoted, {:.3e} widened",
+            report.achieved_rel,
+            report.scaled_rel
+        );
+        // The premise: the quoted error alone would have stopped the run.
+        assert!(
+            report.achieved_rel <= target_rel,
+            "quoted rel {:.3e} is not under the target",
+            report.achieved_rel
+        );
+        assert!(
+            report.scaled_rel > target_rel,
+            "widened rel {:.3e} is under the target",
+            report.scaled_rel
+        );
+        assert!((total.integral / 1.5 - 1.0).abs() < 0.05, "{total:?}");
     }
 
     /// The VEGAS totals a display divides by, on a run under a convergence

@@ -230,7 +230,9 @@ impl<'de> Deserialize<'de> for VegasGrid {
 /// Result returned by a VEGAS integration pass (adapt or frozen).
 #[derive(Debug, Clone, Copy)]
 pub struct VegasResult {
-    /// Best estimate of the integral (weighted combination of all iterations).
+    /// Best estimate of the integral: the iterations past the warm-up, combined
+    /// under the grid's [`IterationCombination`] (by default their arithmetic
+    /// mean).
     pub integral: f64,
     /// Standard deviation of the estimate.
     pub std_dev: f64,
@@ -247,8 +249,9 @@ impl VegasGrid {
     /// * `nbins` – bins per dimension (50–100 is typical)
     /// * `alpha` – grid-damping exponent (Lepage: 1.5)
     ///
-    /// Starts at [`DEFAULT_WARMUP_ITERS`] warm-up iterations; use
-    /// [`with_warmup`](Self::with_warmup) to change or disable the discard.
+    /// Starts at [`DEFAULT_WARMUP_ITERS`] warm-up iterations (see
+    /// [`warmup`](Self::warmup)); a grid rebuilt from trained edges by
+    /// [`from_raw`](Self::from_raw) starts at none.
     pub fn new(ndim: usize, nbins: usize, alpha: f64) -> Self {
         let xi = (0..ndim)
             .map(|_| (0..=nbins).map(|i| i as f64 / nbins as f64).collect())
@@ -355,12 +358,6 @@ impl VegasGrid {
     }
 
     /// Leading adaptation iterations excluded from the combined estimate.
-    pub(crate) fn warmup(&self) -> usize {
-        self.warmup
-    }
-
-    /// Exclude the first `warmup` adaptation iterations from the combined
-    /// estimate.
     ///
     /// Those iterations still draw their points and still refine the grid; only
     /// their `(integral, variance)` pairs are kept out of the combination. What
@@ -371,26 +368,19 @@ impl VegasGrid {
     /// An adaptation always contributes at least its last iteration: a
     /// `warmup` at or above `niter` is clamped to `niter - 1`, since an
     /// estimate from no iterations is not an estimate.
-    #[cfg(any(test, doc))]
-    pub(crate) fn set_warmup(&mut self, warmup: usize) {
-        self.warmup = warmup;
+    pub(crate) fn warmup(&self) -> usize {
+        self.warmup
     }
 
-    /// Builder form of [`set_warmup`](Self::set_warmup).
-    #[cfg(any(test, doc))]
+    /// Builder that replaces the [`warmup`](Self::warmup) count.
+    #[cfg(test)]
     pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
         self.warmup = warmup;
         self
     }
 
-    /// Set how the surviving iterations are averaged. See
+    /// Builder that sets how the surviving iterations are averaged. See
     /// [`IterationCombination`].
-    #[cfg(any(test, doc))]
-    pub(crate) fn set_combination(&mut self, combination: IterationCombination) {
-        self.combination = combination;
-    }
-
-    /// Builder form of [`set_combination`](Self::set_combination).
     pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.combination = combination;
         self
@@ -465,67 +455,17 @@ impl VegasGrid {
         combine_iterations(&iter_results, self.combination)
     }
 
-    /// Deterministic-parallel form of [`VegasGrid::adapt`].
+    /// One grid's adaptation driven through [`adapt_blocks_iteration`] as a
+    /// single block, `niter` iterations of `neval` points on generator stream
+    /// `stream` of `seed`.
     ///
-    /// `neval` samples per iteration are split into fixed-size chunks of
-    /// `chunk_size`, each evaluated on its own [`ChaCha8Rng`] substream
-    /// (stream id keyed by `(iteration, chunk_index)`, word position `0`;
-    /// see [`substream_id`]) and reduced sequentially in chunk order — so
-    /// the result is bit-identical regardless of the rayon thread-pool
-    /// size. `f` must be `Sync` since chunks run concurrently.
-    #[cfg(test)]
-    pub(crate) fn adapt_parallel<Fp>(
-        &mut self,
-        f: Fp,
-        neval: usize,
-        niter: usize,
-        seed: u64,
-        chunk_size: usize,
-    ) -> VegasResult
-    where
-        Fp: Fn(&[f64]) -> f64 + Sync,
-    {
-        let warmup = self.effective_warmup(niter);
-        let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter - warmup);
-        for iter_idx in 0..niter {
-            let (integral, var, d) =
-                self.run_iter_parallel(&f, neval, chunk_size, iter_idx as u32, seed);
-            if iter_idx >= warmup {
-                iter_results.push((integral, var.max(f64::MIN_POSITIVE)));
-            }
-            if iter_idx + 1 < niter {
-                self.refine_grid(&d, neval);
-            }
-        }
-        combine_iterations(&iter_results, self.combination)
-    }
-
-    /// Parallel form of [`VegasGrid::adapt`] over a **seekable** substream, whose
-    /// result is bit-for-bit that of the sequential `adapt` driven by
-    /// `SubStream::new(seed, stream, 0)`.
-    ///
-    /// Two properties make that identity hold rather than merely hold usually:
-    ///
-    /// * **Draw addressing.** One point consumes exactly `ndim` 64-bit draws, so
-    ///   the point at global index `p` (counting across iterations, as the
-    ///   sequential form's single generator does) starts at draw `p · ndim`.
-    ///   A chunk seeks straight to its own first point instead of inheriting a
-    ///   predecessor's generator state, which is what lets chunks run out of
-    ///   order without moving a single point.
-    /// * **Accumulation order.** Chunks return their per-point weighted values and
-    ///   bin indices; the sums and the refinement histogram are then formed in
-    ///   global point order on one thread. Floating-point addition is not
-    ///   associative, so a per-chunk partial sum would give a different — equally
-    ///   valid, but different — grid at the next refinement, and from there a
-    ///   different point sequence entirely.
-    ///
-    /// Consequently `chunk_size` and the rayon pool size are pure scheduling
-    /// knobs: neither changes the answer. `init` builds whatever per-chunk state
-    /// the integrand needs alongside the grid coordinates — a substream of its
-    /// own, positioned from the chunk's first global point index — and `f`
+    /// The result is bit-for-bit that of the sequential `adapt` driven by
+    /// `SubStream::new(seed, stream, 0)`, at any `chunk_size` and pool size, for
+    /// the reasons [`adapt_blocks_iteration`] documents. `init` builds the
+    /// per-chunk state from the chunk's first global point index, and `f`
     /// evaluates one point against it.
     #[allow(clippy::too_many_arguments)]
-    #[cfg(any(test, doc))]
+    #[cfg(test)]
     pub(crate) fn adapt_parallel_seeded<S, Init, Fp>(
         &mut self,
         init: Init,
@@ -544,14 +484,26 @@ impl VegasGrid {
         let warmup = self.effective_warmup(niter);
         let mut iter_results: Vec<(f64, f64)> = Vec::with_capacity(niter - warmup);
         for iter_idx in 0..niter {
-            let first_point = (iter_idx * neval) as u64;
-            let (integral, var, d) =
-                self.run_iter_seeded(&init, &f, neval, chunk_size, first_point, seed, stream);
+            let plan = BlockPlan {
+                neval,
+                first_point: (iter_idx * neval) as u64,
+                stream,
+                chunk_size,
+            };
+            let out = adapt_blocks_iteration(
+                std::slice::from_ref(self),
+                &[plan],
+                seed,
+                |_, first| init(first),
+                |_, state, x| f(state, x),
+            )
+            .pop()
+            .expect("one block in, one block out");
             if iter_idx >= warmup {
-                iter_results.push((integral, var.max(f64::MIN_POSITIVE)));
+                iter_results.push((out.integral, out.variance.max(f64::MIN_POSITIVE)));
             }
             if iter_idx + 1 < niter {
-                self.refine_grid(&d, neval);
+                self.refine_grid(&out.hist, neval);
             }
         }
         combine_iterations(&iter_results, self.combination)
@@ -593,23 +545,6 @@ impl VegasGrid {
         Fb: FnMut(&[SamplePoint], &mut [f64]),
     {
         let (integral, var, _d) = self.run_iter_batched(&mut f, neval, batch_size, rng);
-        combine_iterations(&[(integral, var.max(f64::MIN_POSITIVE))], self.combination)
-    }
-
-    /// Deterministic-parallel form of [`VegasGrid::sample_frozen`]. See
-    /// [`VegasGrid::adapt_parallel`] for the substream addressing contract.
-    #[cfg(test)]
-    pub(crate) fn sample_frozen_parallel<Fp>(
-        &self,
-        f: Fp,
-        neval: usize,
-        seed: u64,
-        chunk_size: usize,
-    ) -> VegasResult
-    where
-        Fp: Fn(&[f64]) -> f64 + Sync,
-    {
-        let (integral, var, _d) = self.run_iter_parallel(&f, neval, chunk_size, 0, seed);
         combine_iterations(&[(integral, var.max(f64::MIN_POSITIVE))], self.combination)
     }
 
@@ -735,172 +670,7 @@ impl VegasGrid {
             remaining -= this_batch;
         }
 
-        let n = neval as f64;
-        let mean = sum / n;
-        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
-        (mean, variance, d)
-    }
-
-    /// Sequential accumulation of `neval` points for one chunk of the
-    /// deterministic-parallel path.
-    #[cfg(test)]
-    fn accumulate_points(
-        &self,
-        f: &(impl Fn(&[f64]) -> f64 + Sync),
-        neval: usize,
-        rng: &mut impl Rng,
-    ) -> (f64, f64, Vec<Vec<f64>>) {
-        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
-        let mut x = vec![0.0_f64; self.ndim];
-        let mut ks = vec![0_usize; self.ndim];
-        let mut sum = 0.0_f64;
-        let mut sum2 = 0.0_f64;
-
-        for _ in 0..neval {
-            let wgt = self.draw_point(rng, &mut x, &mut ks);
-            let fval = f(&x) * wgt;
-            let fval2 = fval * fval;
-            sum += fval;
-            sum2 += fval2;
-            for dim in 0..self.ndim {
-                d[dim][ks[dim]] += fval2;
-            }
-        }
-
-        (sum, sum2, d)
-    }
-
-    /// Split `neval` into fixed-size chunks, each on its own `(iter,
-    /// chunk_idx)`-keyed `ChaCha8Rng` substream, evaluated in parallel and
-    /// reduced sequentially in chunk order.
-    #[cfg(test)]
-    fn run_iter_parallel<Fp>(
-        &self,
-        f: &Fp,
-        neval: usize,
-        chunk_size: usize,
-        iter_idx: u32,
-        seed: u64,
-    ) -> (f64, f64, Vec<Vec<f64>>)
-    where
-        Fp: Fn(&[f64]) -> f64 + Sync,
-    {
-        let chunk_size = chunk_size.max(1);
-        let nchunks = neval.div_ceil(chunk_size);
-
-        let chunk_results: Vec<(f64, f64, Vec<Vec<f64>>)> = (0..nchunks)
-            .into_par_iter()
-            .map(|chunk_idx| {
-                let this_chunk = if chunk_idx + 1 == nchunks {
-                    neval - chunk_idx * chunk_size
-                } else {
-                    chunk_size
-                };
-                let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                rng.set_stream(substream_id(iter_idx, chunk_idx as u32));
-                rng.set_word_pos(0);
-                self.accumulate_points(f, this_chunk, &mut rng)
-            })
-            .collect();
-
-        let mut sum = 0.0_f64;
-        let mut sum2 = 0.0_f64;
-        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
-        for (chunk_sum, chunk_sum2, chunk_d) in &chunk_results {
-            sum += chunk_sum;
-            sum2 += chunk_sum2;
-            for (d_dim, chunk_d_dim) in d.iter_mut().zip(chunk_d) {
-                for (v, cv) in d_dim.iter_mut().zip(chunk_d_dim) {
-                    *v += cv;
-                }
-            }
-        }
-
-        let n = neval as f64;
-        let mean = sum / n;
-        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
-        (mean, variance, d)
-    }
-
-    /// One iteration of [`adapt_parallel_seeded`](Self::adapt_parallel_seeded):
-    /// chunks evaluate concurrently from seeked generator positions, then a single
-    /// pass accumulates their per-point values in global point order.
-    ///
-    /// The two halves are what make the result independent of `chunk_size` and of
-    /// the pool size: the first reproduces the sequential draw sequence, the second
-    /// reproduces its summation order.
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(test)]
-    fn run_iter_seeded<S, Init, Fp>(
-        &self,
-        init: &Init,
-        f: &Fp,
-        neval: usize,
-        chunk_size: usize,
-        first_point: u64,
-        seed: u64,
-        stream: u64,
-    ) -> (f64, f64, Vec<Vec<f64>>)
-    where
-        Init: Fn(u64) -> S + Sync,
-        Fp: Fn(&mut S, &[f64]) -> f64 + Sync,
-        S: Send,
-    {
-        assert!(
-            self.nbins <= usize::from(u16::MAX) + 1,
-            "a chunk carries its bin indices out as u16, so {} bins do not fit",
-            self.nbins
-        );
-        let chunk_size = chunk_size.max(1);
-        let nchunks = neval.div_ceil(chunk_size);
-        let ndim = self.ndim;
-
-        // Per chunk: the weighted integrand value at each of its points, and the
-        // bin each point landed in per dimension (flattened, `ndim` per point).
-        let chunks: Vec<(Vec<f64>, Vec<u16>)> = (0..nchunks)
-            .into_par_iter()
-            .map(|chunk_idx| {
-                let this_chunk = if chunk_idx + 1 == nchunks {
-                    neval - chunk_idx * chunk_size
-                } else {
-                    chunk_size
-                };
-                let chunk_first = first_point + (chunk_idx * chunk_size) as u64;
-                let mut rng = ChaCha8Rng::seed_from_u64(seed);
-                rng.set_stream(stream);
-                rng.set_word_pos(u128::from(chunk_first) * ndim as u128 * WORDS_PER_DRAW);
-
-                let mut state = init(chunk_first);
-                let mut x = vec![0.0_f64; ndim];
-                let mut ks = vec![0_usize; ndim];
-                let mut fvals = Vec::with_capacity(this_chunk);
-                let mut bins = Vec::with_capacity(this_chunk * ndim);
-                for _ in 0..this_chunk {
-                    let wgt = self.draw_point(&mut rng, &mut x, &mut ks);
-                    fvals.push(f(&mut state, &x) * wgt);
-                    bins.extend(ks.iter().map(|&k| k as u16));
-                }
-                (fvals, bins)
-            })
-            .collect();
-
-        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
-        let mut sum = 0.0_f64;
-        let mut sum2 = 0.0_f64;
-        for (fvals, bins) in &chunks {
-            for (i, &fval) in fvals.iter().enumerate() {
-                let fval2 = fval * fval;
-                sum += fval;
-                sum2 += fval2;
-                for (dim, &k) in bins[i * ndim..(i + 1) * ndim].iter().enumerate() {
-                    d[dim][usize::from(k)] += fval2;
-                }
-            }
-        }
-
-        let n = neval as f64;
-        let mean = sum / n;
-        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
+        let (mean, variance) = moments(sum, sum2, neval);
         (mean, variance, d)
     }
 
@@ -991,8 +761,8 @@ pub(crate) struct BlockPlan {
     /// The block's `ChaCha8Rng` stream id.
     pub(crate) stream: u64,
     /// Points one rayon task evaluates. Scheduling only — the result is
-    /// identical at any chunk size, for the reasons
-    /// [`VegasGrid::adapt_parallel_seeded`] documents.
+    /// identical at any chunk size, for the reasons [`adapt_blocks_iteration`]
+    /// documents.
     pub(crate) chunk_size: usize,
 }
 
@@ -1029,24 +799,33 @@ impl BlockIteration {
 /// Run one iteration of every block in a **single** rayon region, scheduled by
 /// `(block, chunk)`.
 ///
-/// This is [`VegasGrid::adapt_parallel_seeded`]'s iteration body lifted over a set
-/// of grids. Both contracts that make that function bit-for-bit the sequential
-/// `adapt` are kept per block and are what make the scheduling inert:
+/// Each block's result is bit-for-bit one iteration of the sequential
+/// [`VegasGrid::adapt`] on that block's grid, its single generator standing at
+/// draw `plan.first_point · ndim` of stream `plan.stream` of `seed`, whatever
+/// the chunk size and the rayon pool size. Two properties make that identity hold
+/// rather than merely hold usually:
 ///
-/// * each chunk seeks its own generator to `first_point + offset` draws rather
-///   than inheriting a predecessor's state, and
-/// * a block's points are reduced in global point order on one thread, so the
-///   sums and the histogram do not depend on where the chunk boundaries fell.
+/// * **Draw addressing.** One point consumes exactly `ndim` 64-bit draws, so the
+///   point at index `p` of the block's run (counting across iterations, as a
+///   sequential generator does) starts at draw `p · ndim`. A chunk seeks straight
+///   to its own first point instead of inheriting a predecessor's generator
+///   state, which is what lets chunks run out of order without moving a point.
+/// * **Accumulation order.** Chunks return their per-point weighted values and
+///   bin indices; each block's sums and refinement histogram are then formed in
+///   point order on one thread. Floating-point addition is not associative, so a
+///   per-chunk partial sum would give a different — equally valid, but
+///   different — grid at the next refinement, and from there a different point
+///   sequence entirely.
 ///
-/// What changes is only *when* the work runs: one block per parallel region
-/// leaves a narrow block unable to fill the pool, while all blocks' chunks in one
-/// region schedule against each other. Nothing about a block's arithmetic can see
-/// the difference.
+/// Scheduling every block's chunks in one region, rather than one region per
+/// block, changes only *when* the work runs: a narrow block alone could not fill
+/// the pool. Nothing about a block's arithmetic can see the difference.
 ///
 /// `init` builds a block's per-chunk state from `(block, first global point of
-/// the chunk)`; `f` evaluates one point of a block against it. Grids are **not**
-/// refined here — the caller decides whether another iteration follows and
-/// refines from [`BlockIteration::hist`].
+/// the chunk)` — a substream of its own for any coordinates the integrand draws
+/// beyond the grid's, positioned from that index — and `f` evaluates one point of
+/// a block against it. Grids are **not** refined here: the caller decides whether
+/// another iteration follows and refines from [`BlockIteration::hist`].
 pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
     grids: &[VegasGrid],
     plans: &[BlockPlan],
@@ -1134,9 +913,7 @@ where
         }
         next += nchunks;
 
-        let n = plan.neval as f64;
-        let mean = sum / n;
-        let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
+        let (mean, variance) = moments(sum, sum2, plan.neval);
         out.push(BlockIteration {
             integral: mean,
             variance,
@@ -1145,6 +922,16 @@ where
         });
     }
     out
+}
+
+/// One iteration's estimate and its variance from the sums of its `neval`
+/// weighted values `wᵢ`: the mean `Σwᵢ/n`, and `(Σwᵢ²/n − mean²)/(n − 1)`, the
+/// variance of that mean, floored at zero against the cancellation.
+fn moments(sum: f64, sum2: f64, neval: usize) -> (f64, f64) {
+    let n = neval as f64;
+    let mean = sum / n;
+    let variance = ((sum2 / n - mean * mean) / (n - 1.0)).max(0.0);
+    (mean, variance)
 }
 
 /// Combine per-iteration `(integral, variance)` pairs under `rule`.
@@ -1188,20 +975,8 @@ pub(crate) fn combine_iterations(
     }
 }
 
-/// Substream id for `ChaCha8Rng::set_stream`, keyed by `(iteration,
-/// chunk_index)`. `ChaCha8Rng` exposes 2⁶⁴ independent streams selectable
-/// by a `u64` id, so packing `iter_idx` into the high 32 bits and
-/// `chunk_idx` into the low 32 bits gives every `(iteration, chunk)` pair
-/// its own structurally independent stream with no collisions for
-/// realistic iteration/chunk counts. The same addressing scheme extends to
-/// multi-machine sharding: a shard is just a chunk-index range.
-#[cfg(test)]
-fn substream_id(iter_idx: u32, chunk_idx: u32) -> u64 {
-    ((iter_idx as u64) << 32) | chunk_idx as u64
-}
-
-/// Compatibility shim preserving the pre-split `Vegas::new` / `integrate`
-/// API as a thin wrapper over [`VegasGrid::adapt`].
+/// A one-grid integrator: [`VegasGrid::new`] and [`VegasGrid::adapt`] behind a
+/// single owner, for callers that never serialize or reuse the grid.
 pub struct Vegas {
     grid: VegasGrid,
 }
@@ -1216,20 +991,6 @@ impl Vegas {
         Vegas {
             grid: VegasGrid::new(ndim, nbins, alpha),
         }
-    }
-
-    /// See [`VegasGrid::set_warmup`].
-    #[cfg(test)]
-    pub(crate) fn with_warmup(mut self, warmup: usize) -> Self {
-        self.grid.set_warmup(warmup);
-        self
-    }
-
-    /// See [`VegasGrid::set_combination`].
-    #[cfg(test)]
-    pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
-        self.grid.set_combination(combination);
-        self
     }
 
     /// Integrate `f` over `[0, 1]^ndim`. See [`VegasGrid::adapt`].
@@ -1256,17 +1017,31 @@ mod tests {
         rand::rngs::StdRng::seed_from_u64(12345)
     }
 
+    /// Asserts an adaptation recovered a known integral: within five of its own
+    /// quoted standard deviations of `exact`, and quoting a relative error no
+    /// larger than `max_rel`, so a gate cannot pass by quoting a wide one.
+    fn assert_recovers(r: VegasResult, exact: f64, max_rel: f64, what: &str) {
+        let pull = (r.integral - exact) / r.std_dev;
+        assert!(
+            pull.abs() < 5.0,
+            "{what}: {:.6} ± {:.2e} vs exact {exact:.6} ({pull:.2}σ)",
+            r.integral,
+            r.std_dev
+        );
+        assert!(
+            r.std_dev / exact.abs() < max_rel,
+            "{what}: quoted relative error {:.2e}",
+            r.std_dev / exact.abs()
+        );
+    }
+
     /// Constant integrand: ∫₀¹ 1 du = 1.
     #[test]
     fn test_constant() {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|_| 1.0, 10_000, 5, &mut rng);
-        assert!(
-            (r.integral - 1.0).abs() < 0.01,
-            "constant: {:.6}",
-            r.integral
-        );
+        assert_recovers(r, 1.0, 0.01, "constant");
     }
 
     /// Linear: ∫₀¹ 2u du = 1.
@@ -1275,7 +1050,7 @@ mod tests {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| 2.0 * u[0], 10_000, 5, &mut rng);
-        assert!((r.integral - 1.0).abs() < 0.01, "linear: {:.6}", r.integral);
+        assert_recovers(r, 1.0, 0.01, "linear");
     }
 
     /// Quadratic: ∫₀¹ 3u² du = 1.
@@ -1284,11 +1059,7 @@ mod tests {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| 3.0 * u[0] * u[0], 10_000, 5, &mut rng);
-        assert!(
-            (r.integral - 1.0).abs() < 0.02,
-            "quadratic: {:.6}",
-            r.integral
-        );
+        assert_recovers(r, 1.0, 0.01, "quadratic");
     }
 
     /// Gaussian peak: ∫₀¹ exp(−(u−0.3)²/0.01) du = 0.1·(√π/2)·(erf(7)+erf(3)).
@@ -1299,12 +1070,8 @@ mod tests {
     /// VEGAS should adapt to the peak and converge quickly.
     #[test]
     fn test_peaked() {
-        let exact = {
-            // Exact analytic result via erf substitution t = (u−0.3)/0.1.
-            // ∫₀¹ exp(−(u−0.3)²/0.01) du = 0.1·(√π/2)·(erf(7)+erf(3))
-            let half_sqrt_pi = std::f64::consts::PI.sqrt() / 2.0;
-            0.1 * half_sqrt_pi * (libm::erf(7.0) + libm::erf(3.0))
-        };
+        let half_sqrt_pi = std::f64::consts::PI.sqrt() / 2.0;
+        let exact = 0.1 * half_sqrt_pi * (libm::erf(7.0) + libm::erf(3.0));
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(
@@ -1313,12 +1080,7 @@ mod tests {
             10,
             &mut rng,
         );
-        let rel = (r.integral - exact).abs() / exact;
-        assert!(
-            rel < 0.01,
-            "peaked: got {:.6}, exact {exact:.6}, rel {rel:.4}",
-            r.integral
-        );
+        assert_recovers(r, exact, 0.01, "peaked");
     }
 
     /// 2D: ∫₀¹∫₀¹ (u + v) du dv = 1.
@@ -1327,7 +1089,7 @@ mod tests {
         let mut v = Vegas::new(2, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| u[0] + u[1], 20_000, 5, &mut rng);
-        assert!((r.integral - 1.0).abs() < 0.02, "2d: {:.6}", r.integral);
+        assert_recovers(r, 1.0, 0.01, "2d");
     }
 
     /// Asserts a value sits within `1e-12` relative of a pinned golden.
@@ -1351,29 +1113,14 @@ mod tests {
         );
     }
 
-    /// Pinned-seed regression golden, captured from the pre-split
-    /// monolithic `Vegas::integrate` implementation. Guards the refactor:
-    /// any change to draw order, accumulation order, or the refinement
-    /// algorithm would move these values far beyond the golden tolerance.
+    /// Pinned-seed regression golden for [`VegasGrid::adapt`]: any change to
+    /// draw order, accumulation order or the refinement algorithm moves these
+    /// values far beyond the golden tolerance. [`Vegas::integrate`] is the same
+    /// call behind a wrapper.
     ///
-    /// Driven at `warmup = 0`, the unfiltered `1/σ²` combination the goldens
-    /// were captured under, so they keep guarding exactly what they were
-    /// captured for. The discard's own effect on the same seed is pinned by
-    /// [`test_warmup_discards_leading_iterations`].
-    #[test]
-    fn test_pinned_seed_regression_shim() {
-        let mut v = Vegas::new(2, 50, 1.5)
-            .with_warmup(0)
-            .with_combination(IterationCombination::InverseVariance);
-        let mut rng = rand::rngs::StdRng::seed_from_u64(999);
-        let r = v.integrate(|u| u[0] * u[0] + u[1], 5000, 4, &mut rng);
-        assert_matches_golden(r.integral, 4605706486304428084, "integral");
-        assert_matches_golden(r.std_dev, 4564401184564159150, "std_dev");
-        assert_matches_golden(r.chi2_per_dof, 4605496727683902589, "chi2_per_dof");
-    }
-
-    /// Same golden, driven directly through `VegasGrid::adapt` (bypassing
-    /// the `Vegas` shim) to pin the new entry point independently.
+    /// Driven at `warmup = 0` under the `1/σ²` combination, the configuration the
+    /// bit patterns were captured in. The discard's own effect on a seed is
+    /// pinned by [`test_warmup_discards_leading_iterations`].
     #[test]
     fn test_pinned_seed_regression_grid_adapt() {
         let mut grid = VegasGrid::new(2, 50, 1.5)
@@ -1760,54 +1507,6 @@ mod tests {
         assert_eq!((sum / n as f64).to_bits(), frozen.integral.to_bits());
     }
 
-    #[test]
-    fn test_adapt_parallel_thread_count_invariant() {
-        let f = |u: &[f64]| u[0] * u[0] + 2.0 * u[1] * u[1];
-        let seed = 2026;
-
-        let r1 = run_with_threads(1, || {
-            let mut grid = VegasGrid::new(2, 25, 1.5);
-            grid.adapt_parallel(f, 5000, 3, seed, 128)
-        });
-        let r4 = run_with_threads(4, || {
-            let mut grid = VegasGrid::new(2, 25, 1.5);
-            grid.adapt_parallel(f, 5000, 3, seed, 128)
-        });
-
-        assert_eq!(r1.integral.to_bits(), r4.integral.to_bits());
-        assert_eq!(r1.std_dev.to_bits(), r4.std_dev.to_bits());
-        assert_eq!(r1.chi2_per_dof.to_bits(), r4.chi2_per_dof.to_bits());
-    }
-
-    #[test]
-    fn test_sample_frozen_parallel_thread_count_invariant() {
-        let f = |u: &[f64]| (u[0] - 0.3).abs() + u[1];
-        let seed = 777;
-        let grid = VegasGrid::new(2, 25, 1.5);
-
-        let r1 = run_with_threads(1, || grid.sample_frozen_parallel(f, 6000, seed, 97));
-        let r8 = run_with_threads(8, || grid.sample_frozen_parallel(f, 6000, seed, 97));
-
-        assert_eq!(r1.integral.to_bits(), r8.integral.to_bits());
-        assert_eq!(r1.std_dev.to_bits(), r8.std_dev.to_bits());
-    }
-
-    #[test]
-    fn test_parallel_agrees_with_sequential_statistically() {
-        let f = |u: &[f64]| 3.0 * u[0] * u[0];
-        let seed = 55;
-
-        let mut grid_seq = VegasGrid::new(1, 50, 1.5);
-        let mut rng_seq = rand::rngs::StdRng::seed_from_u64(seed);
-        let r_seq = grid_seq.adapt(f, 20_000, 5, &mut rng_seq);
-
-        let mut grid_par = VegasGrid::new(1, 50, 1.5);
-        let r_par = grid_par.adapt_parallel(f, 20_000, 5, seed, 500);
-
-        assert!((r_seq.integral - 1.0).abs() < 0.02);
-        assert!((r_par.integral - 1.0).abs() < 0.02);
-    }
-
     // ── Seeked-substream parallelism: identical to the sequential form ───
 
     /// A point consumes exactly `ndim` 64-bit draws — the arithmetic the seeked
@@ -1909,13 +1608,13 @@ mod tests {
         }
     }
 
-    /// The `(block, chunk)` scheduler is the per-block `adapt_parallel_seeded`,
+    /// The `(block, chunk)` scheduler is the per-block sequential adaptation,
     /// bit for bit, at any chunk size and pool size.
     ///
     /// Three blocks of deliberately unequal width — one of them narrow enough
     /// that on its own it could not fill a pool — driven iteration-major through
-    /// one parallel region per iteration, against the same three blocks driven
-    /// block-major with a parallel region each. Both the estimates and the
+    /// one parallel region per iteration, against each block adapted on its own
+    /// by the sequential `adapt` over one generator. Both the estimates and the
     /// trained grids must agree exactly: a histogram summed in a different order
     /// would still match on the first iteration and diverge from the second.
     #[test]
@@ -1929,28 +1628,23 @@ mod tests {
         let niter = 5;
         let ndim = 3;
 
-        // Block-major: each block gets its own adaptation, as the per-channel
-        // loop this replaces did.
         let mut want_results = Vec::new();
         let mut want_grids = Vec::new();
         for b in 0..3 {
             let mut grid = VegasGrid::new(ndim, 64, 1.5);
-            let r = grid.adapt_parallel_seeded(
-                |first| {
-                    (
-                        SubStream::new(seed, 0x5CA1_0000 + b as u64, first * 2),
-                        [0.0_f64; 2],
-                    )
-                },
-                |(extra, tail), u| {
-                    extra.fill_uniforms(tail);
+            let mut extra = SubStream::from_stream(seed, 0x5CA1_0000 + b as u64);
+            let mut tail = [0.0_f64; 2];
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(streams[b]);
+            rng.set_word_pos(0);
+            let r = grid.adapt(
+                |u| {
+                    extra.fill_uniforms(&mut tail);
                     f(b, u) * (1.0 + tail[0] + tail[1])
                 },
                 nevals[b],
                 niter,
-                seed,
-                streams[b],
-                256,
+                &mut rng,
             );
             want_results.push(r);
             want_grids.push(grid);
