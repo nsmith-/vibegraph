@@ -35,6 +35,7 @@
 ## Session Report
 
 * [F-A report: evaluator fixes](F-A-report.md) - All 16 R-A findings and evaluator-doc-comments-stale fixed in helas/eval over 7 commits, with the emitted Program proven identical on 45 subprocesses; the R-A.13 arena bound turned out false at the base.
+* [F-B report: Lorentz, colour and wavefunction fixes](F-B-report.md) - All 24 R-B findings plus three extra items fixed in three commits: oracles given teeth with 13 run mutations, the (j_L,j_R) table corrected, dead test-only abstractions deleted, and checked rational arithmetic from num-rational.
 * [R-A report: the evaluator (helas/eval)](R-A-report.md) - 21 findings on helas/eval: a squared-norm current gate blind to a zero Z current, per-diagram probes that bypass the production runtime, parked egraph code with non-optional dependencies, an unpinned op-kind numbering, and a disposition (keep f64) for the coefficient item.
 * [R-B report: Lorentz, colour and wavefunction layer](R-B-report.md) - 26 findings on helas/repr, helas/color and the helas root files: oracles blind to what they claim (Z-mixing, nsv, dualize, conj sign), squared-norm tolerances, dead test-only abstractions, and a hand-written rational arithmetic.
 * [R-C report: models, diagrams and reweighting](R-C-report.md) - 20 findings on ufo, diagrams, onshell and reweight: an any-refusal grammar oracle, untested refusal variants, a silently dropped Lorentz divisor, silent defaults for required UFO fields, and duplicated massless/side/WEIGHTED logic.

@@ -121,3 +121,6 @@
     deleted tests net of those added.
 * **F-B dispatched** (`validation-dev`, Opus) on `hygiene-fb` from `17d6e84`,
   with F-A's `GammaJout` Found item added to its scope.
+* **F-B reported** (`hygiene-fb`, 7d33250..2127cfe, 3 commits). The report is
+  recorded as `sessions/F-B-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
