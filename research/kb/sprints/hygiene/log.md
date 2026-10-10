@@ -148,3 +148,11 @@
 * **F-D reported** (`hygiene-fd`, 9c5336f..2187c59, 6 commits). The report is
   recorded as `sessions/F-D-report.md`. The manager's gate re-run is in
   progress, and the merge waits on it.
+* **F-D merged.** Manager gate re-run at `2187c59`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1350 passed, 0 failed, 16 ignored,
+    with the bit-identical `test_pinned_seed_regression_grid_adapt`,
+    `test_adapt_parallel_seeded_is_the_sequential_adapt` and
+    `adapt_grids_reproduces_a_sequential_integration` passing;
+  - the banked `validate_vegas` passes 3.
+* **F-E dispatched** (`feature-dev`, Opus) on `hygiene-fe` from this merge.
