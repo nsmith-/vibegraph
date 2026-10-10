@@ -132,6 +132,8 @@ pub enum UfoError {
         particle: String,
         propagator: String,
     },
+    #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
+    UnknownSmRestrict { variant: String, known: String },
 }
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
