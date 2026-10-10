@@ -6,7 +6,8 @@
 //! arbitrary MG-validated process with no PDF convolution over any final-state
 //! multiplicity, sampled with flat RAMBO or — once
 //! [`FixedBeamIntegrand::use_multichannel`] has run — a resonance-aware
-//! per-diagram multichannel map that resolves Breit–Wigner peaks. Proton beams
+//! multichannel map, one channel per MadGraph configuration, that resolves
+//! Breit–Wigner peaks. Proton beams
 //! (`lpp = 1`) are [`crate::proton`]'s flavour-group path, which shares this
 //! module's subprocess compilation, scale prescription and averaging factors.
 //!
@@ -1576,7 +1577,8 @@ pub(crate) fn constant_scale_report(
 /// boost separates from that one unless they carry equal energy and mass.
 ///
 /// The map is flat [`RamboChannel`] by default. [`use_multichannel`] swaps in a
-/// resonance-aware per-diagram [`MultiChannel`] combiner, α-adapted to this very
+/// resonance-aware [`MultiChannel`] combiner with one channel per configuration
+/// ([`channel_diagrams`]), α-adapted to this very
 /// integrand, so a narrow Breit–Wigner peak (which flat RAMBO under-samples) is
 /// importance-mapped and the integral converges at far lower variance. Both maps
 /// carry the *same* invariant-volume weight normalisation (`R_n`, no `2π`), so the
@@ -1809,8 +1811,8 @@ pub struct ChannelIntegration {
 /// fill in an event record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSelection {
-    /// Index into the integrand's subprocesses
-    /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
+    /// Index into the integrand's subprocesses, in the order of the amplitudes
+    /// it was built from.
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
@@ -2253,9 +2255,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// off the same run card and hoping the two agree. `None` only where no
     /// prescription was installed at all, which is a caller that never asked for
     /// one.
-    /// `channel` is the sampling channel the point came from, which the
-    /// clustering prescription reads: an event record's scale is the one its own
-    /// draw implied, not the one some other channel would have given.
+    ///
+    /// `channel` is the configuration the clustering prescription reads the point
+    /// in. With the configuration draw live that is not the sampling channel the
+    /// point came from but the one drawn from the point's trailing uniform;
+    /// [`event_scales_at`](Self::event_scales_at) makes that draw, and is what an
+    /// event record reads.
     pub fn event_scales(
         &self,
         momenta: &[V],
@@ -2407,10 +2412,11 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.inverse_flux * self.spin_color_avg * self.lips_2pi
     }
 
-    /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
-    /// from `diagrams` (one [`DiagramChannel`] each, its propagator poles read from
-    /// `model`), then α-adapt the channel mixture to *this* integrand and install
-    /// the adapted combiner as the sampler.
+    /// Replace flat RAMBO with a resonance-aware [`MultiChannel`] built from
+    /// `diagrams` (one [`DiagramChannel`] per MadGraph configuration, written from
+    /// its representative diagram by [`channel_diagrams`], its propagator poles
+    /// read from `model`), then α-adapt the channel mixture to *this* integrand and
+    /// install the adapted combiner as the sampler.
     ///
     /// The α-adaptation surveys the combiner under the process's own `Σ|M|²` (the
     /// [`matrix_element`](Self::matrix_element) shape, cut included), so weight
@@ -2475,7 +2481,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         Some(report)
     }
 
-    /// Install the same per-diagram [`MultiChannel`] with selection weights taken
+    /// Install the same per-configuration [`MultiChannel`] with selection weights taken
     /// from a completed integration instead of re-surveyed.
     ///
     /// A sampling phase that replays trained grids has to reproduce the *exact*
@@ -2542,8 +2548,8 @@ impl<'a> FixedBeamIntegrand<'a> {
         );
     }
 
-    /// The channels the integral is split across: one per diagram once a
-    /// multichannel combiner is installed, and `1` under the flat map.
+    /// The channels the integral is split across: one per MadGraph configuration
+    /// once a multichannel combiner is installed, and `1` under the flat map.
     pub fn channel_count(&self) -> usize {
         match &self.sampler {
             Sampler::Flat(_) => 1,
@@ -2864,14 +2870,6 @@ impl<'a> FixedBeamIntegrand<'a> {
         ext.extend_from_slice(&self.incoming);
         ext.extend_from_slice(momenta);
         ext
-    }
-
-    /// The compiled evaluator of one subprocess — the source of the external
-    /// particle ids, the helicity combinations and the colour-flow tag table an
-    /// event record is written from.
-    #[cfg(any(test, doc))]
-    pub(crate) fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
-        self.subs[subprocess].evaluator()
     }
 
     /// Fill in an accepted event's discrete labels: which subprocess produced it,
@@ -3342,11 +3340,34 @@ mod tests {
         );
     }
 
+    /// The flat-RAMBO fixed-energy path reproduces the closed-form tree-level
+    /// `σ(e⁺e⁻ → μ⁺μ⁻)` at `√s = 500` GeV, `γ` and `Z` exchange with their
+    /// interference, inside the default card's lepton cuts.
+    ///
+    /// The photon couples a fermion of charge `Q` as `e Q γ^μ` and the `Z` a
+    /// chirality `i` as `(e / s_W c_W) g_i γ^μ`, with `g_L = T₃ − Q s_W²` and
+    /// `g_R = −Q s_W²`: for a charged lepton `g_L = −1/2 + s_W²`, `g_R = s_W²`.
+    /// Massless fermions keep their chirality along each line, so the two
+    /// s-channel propagators add per chirality pair into
+    /// `A_ij = Q_e Q_μ + g_i g_j χ`, `χ = s / ((s − M_Z²) + i M_Z Γ_Z) / (s_W² c_W²)`,
+    /// times QED's helicity amplitude, whose square averaged over the four
+    /// incoming helicities gives
+    /// `dσ/dΩ = α²/(16 s) · Σ_ij |A_ij|² (1 ± cos θ)²`, `+` for equal chiralities.
+    /// At `χ → 0` that is QED's `α²/(4s)(1 + cos²θ)`. `|η| < etal` is
+    /// `|cos θ| < tanh(etal)` for back-to-back massless legs, stricter here than
+    /// the `p_T` cut and making `ΔR = √(Δη² + π²)` pass `drll` everywhere, and
+    /// each `(1 ± c)²` integrates to `2c₀ + 2c₀³/3` over `|c| < c₀`. The
+    /// parameters are the model's own (`aEW`, `MZ`, `WZ`, `sw2`), so the
+    /// comparison is of the integrand's normalisation and kinematics, not of a
+    /// parameter scheme.
+    ///
+    /// The bound is five times the run's own quoted error, which is required to
+    /// be below 1% so the bound cannot go vacuous. The pruned evaluator also
+    /// asserts its ±z-beam frame contract on every point.
     #[test]
-    fn fixed_beam_integrand_finite_positive_2to2() {
-        // The flat-RAMBO fixed-energy path on a clean s-channel 2→2 process:
-        // a finite, positive σ, with the CM kinematics satisfying the pruned
-        // evaluator's ±z-beam frame contract (it would assert otherwise).
+    fn fixed_beam_integrand_matches_the_closed_form_2to2() {
+        use num_complex::Complex64;
+
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let opts = ParsingOptions::default();
@@ -3358,20 +3379,60 @@ mod tests {
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
 
+        let run_card = RunCard::default();
         let legs = process_external_legs(&evals[0], &m, &evaluated);
-        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let cuts = Cuts::compile(&run_card, &legs).unwrap();
+        assert!(
+            evals[0]
+                .external_particles()
+                .iter()
+                .all(|&id| evaluated.mass(id) == 0.0),
+            "the closed form is for massless leptons"
+        );
         let masses: Vec<f64> = evals[0].external_particles()[evals[0].n_in()..]
             .iter()
             .map(|&id| evaluated.mass(id))
             .collect();
         let avg = initial_spin_color_average(&evals[0], &m, &evaluated);
 
+        let sqrt_s = 500.0;
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(500.0), masses, avg);
+        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(sqrt_s), masses, avg);
         assert_eq!(integ.vegas_ndim(), 8);
         let (sigma, err) = integ.integrate(20_000, 4, 0x5EED);
-        assert!(sigma.is_finite() && sigma > 0.0, "sigma = {sigma}");
-        assert!(err.is_finite() && err >= 0.0, "err = {err}");
+
+        let param = |name: &str| evaluated.param_values[name].re;
+        let (alpha, mz, wz, sw2) = (param("aEW"), param("MZ"), param("WZ"), param("sw2"));
+        let s = sqrt_s * sqrt_s;
+        let chi =
+            Complex64::new(s, 0.0) / Complex64::new(s - mz * mz, mz * wz) / (sw2 * (1.0 - sw2));
+        let (g_l, g_r) = (-0.5 + sw2, sw2);
+        let squared = |a: f64, b: f64| (1.0 + a * b * chi).norm_sqr();
+        let helicity_sum =
+            squared(g_l, g_l) + squared(g_r, g_r) + squared(g_l, g_r) + squared(g_r, g_l);
+        let c0 = run_card.float("etal").tanh();
+        assert!(
+            2.0 * run_card.float("ptl") / sqrt_s < (1.0 - c0 * c0).sqrt(),
+            "the pT cut is looser than the rapidity cut"
+        );
+        assert!(
+            run_card.float("drll") < PI,
+            "back-to-back leptons pass drll"
+        );
+        let closed_form = 2.0 * PI * alpha * alpha / (16.0 * s)
+            * helicity_sum
+            * (2.0 * c0 + 2.0 * c0.powi(3) / 3.0);
+
+        assert!(
+            err.is_finite() && err > 0.0 && err < 0.01 * sigma,
+            "sigma = {sigma} ± {err}"
+        );
+        assert!(
+            (sigma - closed_form).abs() < 5.0 * err,
+            "sigma = {sigma} ± {err} GeV^-2 against the closed form {closed_form} \
+             ({:+.2} sigma)",
+            (sigma - closed_form) / err
+        );
     }
 
     /// Build the fixed-energy integrand builder + diagram list for a fixed-energy
@@ -3465,7 +3526,7 @@ mod tests {
 
     /// The production wiring's efficiency win: on a genuinely resonant fixed-energy
     /// process (`e+ e- > ta+ ta- h` at √s = 500 GeV, a Z → τ⁺τ⁻ pole in the τ-pair
-    /// invariant) the per-diagram α-adapted [`MultiChannel`] sampler converges to a
+    /// invariant) the per-configuration α-adapted [`MultiChannel`] sampler converges to a
     /// sharp σ̂ at a budget where flat RAMBO cannot resolve the pole at all.
     ///
     /// Flat RAMBO is the known-wrong baseline kept running alongside: because it
@@ -3512,7 +3573,7 @@ mod tests {
         let flat = build();
         let (sigma_flat, err_flat) = flat.integrate(60_000, 8, 0x5EED_1);
 
-        // Per-diagram multichannel, α-adapted to this integrand, at the same budget.
+        // Per-configuration multichannel, α-adapted to this integrand, at the same budget.
         let mut multi = build();
         let report = multi
             .use_multichannel(&diagrams, &evaluated, 20_000, 6, 0x5EED_2)
@@ -3558,7 +3619,7 @@ mod tests {
 
     /// The production wiring's unbiasedness: on a fixed-energy process where flat
     /// RAMBO *does* converge (`e+ e- > mu+ mu-` at √s = 200 GeV, smooth and
-    /// off-resonance), the per-diagram multichannel sampler integrates to the same
+    /// off-resonance), the per-configuration multichannel sampler integrates to the same
     /// σ̂ within the combined Monte-Carlo error. Swapping the flat map for the
     /// resonance-aware combiner must not move the cross section.
     #[test]
@@ -4321,7 +4382,7 @@ mod tests {
         assert!(value > 0.0, "the probe point must pass the cuts");
 
         // The diagonals the draws are supposed to follow, taken directly.
-        let eval = integ.subprocess_evaluator(0);
+        let eval = bounds[0].evaluator();
         let mut scratch = bounds[0].scratch_space();
         let mut ext = integ.incoming().to_vec();
         ext.extend_from_slice(&momenta);

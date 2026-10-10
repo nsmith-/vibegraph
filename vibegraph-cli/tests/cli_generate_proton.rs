@@ -762,7 +762,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
     let set = PdfSet::load(&pdf_dir().join(PDF_SET), PDF_SET).expect("the fetched set");
     let member = set.member(0).expect("member 0");
     let q2_max = *member
-        .subgrids
+        .subgrids()
         .last()
         .and_then(|sg| sg.q2.last())
         .expect("a tabulated Q² ceiling");
