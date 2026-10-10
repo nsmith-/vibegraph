@@ -185,3 +185,6 @@
   0 in both configurations, `cargo test --workspace` gives 35 suites with 1373
   passed, 0 failed and 16 ignored, and the banked `cli_integrate` passes 4.
 * **F-G1 dispatched** (`validation-dev`, Opus) on `hygiene-fg1` from this merge.
+* **F-G1 reported** (`hygiene-fg1`, 2f94cbc..0401a9a, 11 commits). The report
+  is recorded as `sessions/F-G1-report.md`. The manager's gate re-run,
+  including a collator pass over the new manifest, is in progress.
