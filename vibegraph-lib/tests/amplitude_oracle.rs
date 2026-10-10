@@ -887,55 +887,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let table = parse_table(&json);
     let name = table.key.as_str();
 
-    // The table's process string is what this side enumerates from, and the
-    // manifest's is what generated the table; a row whose two statements have
-    // drifted apart compares one process against another's numbers.
-    let declared = common::manifest::mg_amplitude_processes()
-        .get(name)
-        .cloned();
-    if let Some(declared) = &declared {
-        if declared != &table.process {
-            return Err(format!(
-                "[{name}] the banked table was generated for '{}' and the manifest \
-                 declares mg_amplitude.process = '{declared}'",
-                table.process
-            )
-            .into());
-        }
-    }
-
-    // And the coupling-order bounds must be the row's script's own. The particle
-    // content legitimately differs — `pp_to_ll_qcd0` gates a hadronic process at
-    // the diagram level and one partonic subprocess of it here — but a bound
-    // MadGraph generated under and this side does not enumerate under makes the two
-    // sides different processes of the same model, with no other symptom than a
-    // diagram MadGraph has and we do not.
-    let script = common::script_for_row(name)?;
-    let script_process = common::script_process(&script)
-        .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
-    // A borrowed table has no declaration to be held to, so it is held to the
-    // process its own row's script generates, which is what it was banked for.
-    if declared.is_none() && table.process != script_process {
-        return Err(format!(
-            "[{name}] the banked table was generated for '{}' and the row's script \
-             generates '{script_process}'",
-            table.process
-        )
-        .into());
-    }
-    let (theirs, ours) = (
-        common::order_constraints(&script_process),
-        common::order_constraints(&table.process),
-    );
-    if theirs != ours {
-        return Err(format!(
-            "[{name}] the script generates '{script_process}' and the amplitude table \
-             was banked for '{}': the coupling-order bounds differ ({theirs:?} against \
-             {ours:?})",
-            table.process
-        )
-        .into());
-    }
+    check_declarations(&table)?;
 
     let model = common::model_for_row(name)?;
     let card = table
@@ -1027,6 +979,163 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         }
     }
 
+    let configs = check_configurations(&table, set, &model, &evaluator, &order, banks_amps)?;
+
+    let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
+    if per_diagram_fit {
+        // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
+        // same rooted tree the full set gives that diagram — the rooting and its
+        // fermion sign are properties of the diagram — so its amplitude root is
+        // the diagram's contribution up to the process-wide constant fitted below.
+        per_diagram = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                AmplitudeEvaluator::compile(
+                    &DiagramSet {
+                        particles_in: set.particles_in.clone(),
+                        particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
+                        diagrams: vec![d.clone()],
+                    },
+                    model.as_ref(),
+                )
+            })
+            .collect::<Result<_, _>>()?;
+    }
+
+    let linear = collect_linear(&table, &bound, &evaluated, &order, &configs, &per_diagram);
+    let Verdict {
+        violations,
+        worst_diagram,
+        worst_flow,
+        worst_jamp2,
+        worst_config,
+        worst_amp2,
+    } = judge(
+        &table,
+        informational,
+        linear,
+        &m2,
+        n_dropped,
+        per_diagram_fit,
+        configs.merges,
+    )?;
+
+    let mut row = AmplitudesRow::new(
+        name,
+        &table.process,
+        if informational { "info" } else { "gate" },
+    );
+    if let Some(first) = violations.first() {
+        // The row's numeric fields already carry every deviation; the note says how many
+        // checks the disagreement reached and names the first, rather than pasting a
+        // per-point dump into the report.
+        let head: String = first.chars().take(220).collect();
+        row.note = Some(format!(
+            "{} of the linear-level checks failed; first: {head}",
+            violations.len()
+        ));
+    }
+    row.n_graphs = table.n_graphs;
+    row.n_flows = table.n_flows;
+    row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();
+    row.points_event = table.points.len() - row.points_grid;
+    row.max_rel_grid = m2.grid;
+    row.max_rel_event = m2.event;
+    row.per_diagram = per_diagram_fit.then_some(worst_diagram);
+    row.per_flow = worst_flow;
+    row.jamp2 = worst_jamp2;
+    row.n_configs = table.amp2_groups.len();
+    row.per_config = worst_config;
+    row.amp2 = (!table.amp2_groups.is_empty()).then_some(worst_amp2);
+    row.amp2_pruned = m2.amp2_pruned;
+    // Every row is compared as the full per-helicity × per-flow outer product;
+    // nothing here weakens it to the two projections of it.
+    row.factorized = false;
+    Ok(row)
+}
+
+/// The table's declarations against the manifest and the row's script: the
+/// process it was banked for, and the coupling-order bounds it was generated under.
+fn check_declarations(table: &Table) -> Result<(), Failed> {
+    let name = table.key.as_str();
+    // The table's process string is what this side enumerates from, and the
+    // manifest's is what generated the table; a row whose two statements have
+    // drifted apart compares one process against another's numbers.
+    let declared = common::manifest::mg_amplitude_processes()
+        .get(name)
+        .cloned();
+    if let Some(declared) = &declared {
+        if declared != &table.process {
+            return Err(format!(
+                "[{name}] the banked table was generated for '{}' and the manifest \
+                 declares mg_amplitude.process = '{declared}'",
+                table.process
+            )
+            .into());
+        }
+    }
+
+    // And the coupling-order bounds must be the row's script's own. The particle
+    // content legitimately differs — `pp_to_ll_qcd0` gates a hadronic process at
+    // the diagram level and one partonic subprocess of it here — but a bound
+    // MadGraph generated under and this side does not enumerate under makes the two
+    // sides different processes of the same model, with no other symptom than a
+    // diagram MadGraph has and we do not.
+    let script = common::script_for_row(name)?;
+    let script_process = common::script_process(&script)
+        .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
+    // A borrowed table has no declaration to be held to, so it is held to the
+    // process its own row's script generates, which is what it was banked for.
+    if declared.is_none() && table.process != script_process {
+        return Err(format!(
+            "[{name}] the banked table was generated for '{}' and the row's script \
+             generates '{script_process}'",
+            table.process
+        )
+        .into());
+    }
+    let (theirs, ours) = (
+        common::order_constraints(&script_process),
+        common::order_constraints(&table.process),
+    );
+    if theirs != ours {
+        return Err(format!(
+            "[{name}] the script generates '{script_process}' and the amplitude table \
+             was banked for '{}': the coupling-order bounds differ ({theirs:?} against \
+             {ours:?})",
+            table.process
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+/// What [`check_configurations`] establishes about a row's integration
+/// configurations, for the per-point comparison to read.
+struct Configurations {
+    /// The configuration partition `config_groups` derives, in our diagram indices.
+    derived: Vec<Vec<usize>>,
+    /// Whether any configuration holds more than one diagram.
+    merges: bool,
+    /// The MadGraph `AMP()` index of each configuration amplitude, in the order
+    /// `run_config_amps` returns them.
+    mg_amp_index: Vec<usize>,
+}
+
+/// The configuration partition, its `ICOLAMP` columns and the exemption lists that
+/// describe it, checked before any value is compared.
+fn check_configurations(
+    table: &Table,
+    set: &DiagramSet,
+    model: &std::sync::Arc<vibegraph::ufo::UFOModel>,
+    evaluator: &AmplitudeEvaluator,
+    order: &[usize],
+    banks_amps: bool,
+) -> Result<Configurations, Failed> {
+    let name = table.key.as_str();
     // ── the integration configurations ───────────────────────────────────────
     // MadGraph's own AMP2 accumulators, against the partition
     // `helas::eval::compile::config_groups` derives from the diagrams by MadGraph's
@@ -1143,29 +1252,47 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .into());
     }
 
-    let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
-    if per_diagram_fit {
-        // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
-        // same rooted tree the full set gives that diagram — the rooting and its
-        // fermion sign are properties of the diagram — so its amplitude root is
-        // the diagram's contribution up to the process-wide constant fitted below.
-        per_diagram = set
-            .diagrams
-            .iter()
-            .map(|d| {
-                AmplitudeEvaluator::compile(
-                    &DiagramSet {
-                        particles_in: set.particles_in.clone(),
-                        particles_out: set.particles_out.clone(),
-                        polarizations: set.polarizations.clone(),
-                        diagrams: vec![d.clone()],
-                    },
-                    model.as_ref(),
-                )
-            })
-            .collect::<Result<_, _>>()?;
-    }
+    Ok(Configurations {
+        derived,
+        merges,
+        mg_amp_index,
+    })
+}
 
+/// Every linear-level entry of one table, paired with ours, and the worst of the
+/// checks read off MadGraph's tables directly rather than through a fitted constant.
+struct Linear {
+    diagram_entries: Vec<Entry>,
+    flow_entries: Vec<Entry>,
+    vg_rows: Vec<Vec<C<f64>>>,
+    mg_rows: Vec<Vec<C<f64>>>,
+    worst_zero: f64,
+    worst_zero_where: String,
+    worst_jamp2: f64,
+    worst_jamp2_where: String,
+    worst_amp2: f64,
+    worst_amp2_where: String,
+    /// One entry table per configuration amplitude.
+    config_entries: Vec<Vec<Entry>>,
+}
+
+/// Evaluate every banked per-helicity point: the flows, the configuration
+/// amplitudes, the per-diagram contributions where they are banked, and the
+/// `JAMP2` and `AMP2` weights against MadGraph's own.
+fn collect_linear(
+    table: &Table,
+    bound: &BoundAmplitude<f64>,
+    evaluated: &EvaluatedModel,
+    order: &[usize],
+    configs: &Configurations,
+    per_diagram: &[AmplitudeEvaluator],
+) -> Linear {
+    let Configurations {
+        derived,
+        mg_amp_index,
+        ..
+    } = configs;
+    let n_config_amps = mg_amp_index.len();
     let mut scratch = bound.scratch_space();
     let mut diagram_entries: Vec<Entry> = Vec::new();
     let mut flow_entries: Vec<Entry> = Vec::new();
@@ -1318,7 +1445,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         if let (Some(amps), false) = (detail.amps.as_ref(), table.amp2_groups.is_empty()) {
             let mut mg_amp2 = vec![0.0f64; derived.len()];
             for row in amps {
-                for (acc, group) in mg_amp2.iter_mut().zip(&derived) {
+                for (acc, group) in mg_amp2.iter_mut().zip(derived) {
                     let coherent = group
                         .iter()
                         .fold(C::new(0.0, 0.0), |sum, &d| sum + row[order[d]]);
@@ -1340,6 +1467,57 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         }
     }
 
+    Linear {
+        diagram_entries,
+        flow_entries,
+        vg_rows,
+        mg_rows,
+        worst_zero,
+        worst_zero_where,
+        worst_jamp2,
+        worst_jamp2_where,
+        worst_amp2,
+        worst_amp2_where,
+        config_entries,
+    }
+}
+
+/// The worst deviation of each linear-level check, and every check that failed.
+struct Verdict {
+    violations: Vec<String>,
+    worst_diagram: f64,
+    worst_flow: f64,
+    worst_jamp2: f64,
+    worst_config: f64,
+    worst_amp2: f64,
+}
+
+/// Fit the process constant and judge every linear-level check and the `|M|²`
+/// comparison. A failed check returns the error, or for an `informational` row is
+/// recorded in [`Verdict::violations`] while the rest still runs.
+fn judge(
+    table: &Table,
+    informational: bool,
+    linear: Linear,
+    m2: &M2Result,
+    n_dropped: usize,
+    per_diagram_fit: bool,
+    merges: bool,
+) -> Result<Verdict, Failed> {
+    let name = table.key.as_str();
+    let Linear {
+        diagram_entries,
+        flow_entries,
+        vg_rows,
+        mg_rows,
+        worst_zero,
+        worst_zero_where,
+        worst_jamp2,
+        worst_jamp2_where,
+        worst_amp2,
+        worst_amp2_where,
+        config_entries,
+    } = linear;
     // One constant for the whole process, least squares over every entry it has.
     // Fitting it globally rather than per diagram, per flow or per point is what
     // makes the residual sensitive to relative structure: the fit has nowhere to
@@ -1498,38 +1676,14 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         );
     }
 
-    let mut row = AmplitudesRow::new(
-        name,
-        &table.process,
-        if informational { "info" } else { "gate" },
-    );
-    if let Some(first) = violations.first() {
-        // The row's numeric fields already carry every deviation; the note says how many
-        // checks the disagreement reached and names the first, rather than pasting a
-        // per-point dump into the report.
-        let head: String = first.chars().take(220).collect();
-        row.note = Some(format!(
-            "{} of the linear-level checks failed; first: {head}",
-            violations.len()
-        ));
-    }
-    row.n_graphs = table.n_graphs;
-    row.n_flows = table.n_flows;
-    row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();
-    row.points_event = table.points.len() - row.points_grid;
-    row.max_rel_grid = m2.grid;
-    row.max_rel_event = m2.event;
-    row.per_diagram = per_diagram_fit.then_some(worst_diagram);
-    row.per_flow = worst_flow;
-    row.jamp2 = worst_jamp2;
-    row.n_configs = table.amp2_groups.len();
-    row.per_config = worst_config;
-    row.amp2 = (!table.amp2_groups.is_empty()).then_some(worst_amp2);
-    row.amp2_pruned = m2.amp2_pruned;
-    // Every row is compared as the full per-helicity × per-flow outer product;
-    // nothing here weakens it to the two projections of it.
-    row.factorized = false;
-    Ok(row)
+    Ok(Verdict {
+        violations,
+        worst_diagram,
+        worst_flow,
+        worst_jamp2,
+        worst_config,
+        worst_amp2,
+    })
 }
 
 /// The committed tables, sorted.
