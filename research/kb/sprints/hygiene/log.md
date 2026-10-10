@@ -110,3 +110,6 @@
   tests. The disk was down to 2 GB free because of the debug incremental cache,
   which the manager cleared again (9.8 GB free). The agent was resumed to fix
   the lint and re-run the gate with `CARGO_INCREMENTAL=0`.
+* **F-A reported** (`hygiene-fa`, 9bb2849..5c92658, 7 commits). The report is
+  recorded as `sessions/F-A-report.md`. The manager's gate re-run (program
+  probe, clippy, hermetic suite) is in progress, and the merge waits on it.
