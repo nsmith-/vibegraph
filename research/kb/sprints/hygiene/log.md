@@ -113,3 +113,9 @@
 * **F-A reported** (`hygiene-fa`, 9bb2849..5c92658, 7 commits). The report is
   recorded as `sessions/F-A-report.md`. The manager's gate re-run (program
   probe, clippy, hermetic suite) is in progress, and the merge waits on it.
+* **F-A merged.** Manager gate re-run at `5c92658`:
+  - the program probe gives `PROGRAMS IDENTICAL TO BASELINE (45 sets)`;
+  - clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1343 passed, 0 failed,
+    16 ignored. That is 5 fewer passing than V1b's 1348, matching the
+    deleted tests net of those added.
