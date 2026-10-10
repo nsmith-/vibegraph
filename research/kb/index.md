@@ -25,4 +25,4 @@ okf_version: "0.2"
 * [sprints](sprints/index.md) - 80 concepts
 * [tooling](tooling/index.md) - 15 concepts
 * [validation](validation/index.md) - 43 concepts
-* [workflow](workflow/index.md) - 8 concepts
+* [workflow](workflow/index.md) - 9 concepts
