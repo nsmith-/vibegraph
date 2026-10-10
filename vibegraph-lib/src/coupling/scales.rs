@@ -39,7 +39,7 @@
 use thiserror::Error;
 
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
-use crate::coupling::cluster::kt::{Channel, ClusterSettings};
+use crate::coupling::cluster::kt::{mg_dot, Channel, ClusterSettings};
 use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtMerge, RewgtSettings};
 use crate::coupling::cluster::setclscales::{
     ptclus, setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
@@ -845,22 +845,6 @@ fn add(a: &[f64; 4], b: &[f64; 4]) -> [f64; 4] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]]
 }
 
-/// `dot` (`Source/kin_functions.f:588`), including the clamp it applies when the
-/// Minkowski product is small against the Euclidean one: a would-be massless leg
-/// whose components leave a `1e-7` relative residue is returned as exactly
-/// massless rather than as that residue.
-fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
-    let dot = p1[0] * p2[0] - p1[1] * p2[1] - p1[2] * p2[2] - p1[3] * p2[3];
-    if dot.abs() < 1e-6 {
-        let euclidean = (p1[0] * p2[0] + p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3])
-            .max(f64::from(1e-99f32));
-        if dot / euclidean < 1e-6 {
-            return 0.0;
-        }
-    }
-    dot
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1043,8 +1027,9 @@ mod tests {
     /// A prescription with no reference run behind it produces a plausible,
     /// smooth, wrong cross section with nothing to notice it by, so it is named
     /// rather than approximated — which is what hadron beams get, no banked run
-    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead,
-    /// because `gg_to_gg_cg`'s banked run measures the transcription per event.
+    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead:
+    /// `gg_to_gg_cg`'s banked run measures choice 3 per event, and the other four
+    /// rest on this module's value tests alone.
     ///
     /// The `fully_fixed` half is the accuracy of the gate, not leniency: both
     /// scale entry points short-circuit on `is_fully_fixed` before the choice is
@@ -1097,6 +1082,70 @@ mod tests {
                 .choice(),
             DynamicalChoice::Clustered
         );
+    }
+
+    /// Two outgoing legs whose transverse energy, transverse mass and transverse
+    /// momentum all differ: `[14, 3, 4, 12]` (`m² = 27`, `p_T = 5`) and
+    /// `[13, −3, −4, 0]` (`m² = 144`), so a closed form reading the wrong one of
+    /// the three moves its value.
+    const CLOSED_FORM_LEGS: [[f64; 4]; 2] = [[14.0, 3.0, 4.0, 12.0], [13.0, -3.0, -4.0, 0.0]];
+
+    fn honoured(choice: i64) -> ScaleChoice {
+        ScaleChoice::from_run_card_for(
+            &partonic_card(&format!("{choice} = dynamical_scale_choice")),
+            ClosedForms::Honour,
+        )
+        .unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"))
+    }
+
+    fn assert_dynamic(scales: EventScales, expected: f64, what: &str) {
+        assert!(
+            (scales.mu_r / expected - 1.0).abs() < 1e-14,
+            "{what}: mu_r = {}, expected {expected}",
+            scales.mu_r
+        );
+        assert_eq!(scales.mu_f, [scales.mu_r, scales.mu_r], "{what}: mu_f");
+    }
+
+    /// Choice 1, `setscales.f`'s total transverse energy `Σ et(p)`, with
+    /// `kin_functions.f`'s `et = E·p_T/|p|`: `14·5/13 + 13`.
+    #[test]
+    fn choice_1_is_the_summed_transverse_energy() {
+        let scales = honoured(1)
+            .scales(&event(&CLOSED_FORM_LEGS))
+            .expect("scales");
+        assert_dynamic(scales, 70.0 / 13.0 + 13.0, "choice 1");
+    }
+
+    /// Choice 2, the summed transverse mass `Σ √((E + p_z)(E − p_z))`, not halved:
+    /// `√52 + 13`.
+    #[test]
+    fn choice_2_is_the_summed_transverse_mass() {
+        let scales = honoured(2)
+            .scales(&event(&CLOSED_FORM_LEGS))
+            .expect("scales");
+        assert_dynamic(scales, 52f64.sqrt() + 13.0, "choice 2");
+    }
+
+    /// Choice 5, the invariant mass of the first incoming leg, read off a moving
+    /// one: `[√(175² + 100²), 0, 0, 100]` is `175`, while the second incoming
+    /// slot holds a different mass the choice must not read.
+    #[test]
+    fn choice_5_is_the_first_incoming_legs_mass() {
+        let event = ScaleEvent {
+            incoming: [
+                [(175f64.powi(2) + 100f64.powi(2)).sqrt(), 0.0, 0.0, 100.0],
+                [50.0, 0.0, 0.0, 0.0],
+            ],
+            outgoing: &CLOSED_FORM_LEGS,
+        };
+        let scales = honoured(5).scales(&event).expect("scales");
+        assert!(
+            (scales.mu_r / 175.0 - 1.0).abs() < 1e-12,
+            "choice 5: mu_r = {}",
+            scales.mu_r
+        );
+        assert_eq!(scales.mu_f, [scales.mu_r, scales.mu_r], "choice 5: mu_f");
     }
 
     /// The unimplemented choices are named, not approximated.
@@ -1388,7 +1437,8 @@ mod tests {
     /// directions by `1 + 1e-6`, so that a leg following the beam it came from
     /// wins an otherwise exact tie. It reaches the scale only when a colour line
     /// runs from beam to beam and every allowed candidate is crossed — which is
-    /// what `u ū → u ū` does, and what note 22 measured as its `250.0001` row.
+    /// what `u ū → u ū` does: there the scale is `250·√(1 + 1e-6) ≈ 250.0001`
+    /// rather than the beams' `250`.
     #[test]
     fn the_cluster_tie_break_moves_the_scale() {
         let choice = ScaleChoice::from_run_card(&partonic_card("")).expect("compiled");

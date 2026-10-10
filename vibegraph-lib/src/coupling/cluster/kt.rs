@@ -204,8 +204,12 @@ impl Channel<'_> {
     }
 }
 
-/// `dot` (`kin_functions.f:593`), with the clamp that returns an exactly massless
-/// leg as massless rather than as the residue eleven printed digits leave.
+/// `dot` (`Source/kin_functions.f:593`), with the clamp that returns an exactly
+/// massless leg as massless rather than as the residue eleven printed digits
+/// leave: a product under `1e-6` in magnitude whose ratio to the Euclidean product
+/// is under `1e-6` is returned as zero.
+///
+/// The clustering and `setscales.f`'s closed-form scale choices both read it.
 pub(crate) fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
     let dot = p1[0] * p2[0] - p1[1] * p2[1] - p1[2] * p2[2] - p1[3] * p2[3];
     if dot.abs() < 1e-6 {
