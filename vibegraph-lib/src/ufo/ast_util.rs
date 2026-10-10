@@ -9,6 +9,36 @@ pub(crate) fn parse_stmts(src: &str) -> Result<Vec<ast::Stmt>, ParseError> {
     }
 }
 
+/// The module-level `NAME = value` assignments of a UFO file, in file order, as
+/// `(NAME, value)`. An assignment to anything but a bare name (loop_sm's
+/// `b.counterterm = ...`) is skipped.
+pub(crate) fn named_assignments(stmts: &[ast::Stmt]) -> impl Iterator<Item = (&str, &ast::Expr)> {
+    stmts.iter().filter_map(|stmt| {
+        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
+            return None;
+        };
+        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first()? else {
+            return None;
+        };
+        Some((id.as_str(), value.as_ref()))
+    })
+}
+
+/// The module-level `NAME = Ctor(...)` assignments of a UFO file for one
+/// constructor name `ctor` (bare or `module.Ctor`), in file order, as
+/// `(NAME, keyword arguments)`.
+pub(crate) fn constructor_calls<'a>(
+    stmts: &'a [ast::Stmt],
+    ctor: &'a str,
+) -> impl Iterator<Item = (&'a str, &'a [ast::Keyword])> + 'a {
+    named_assignments(stmts).filter_map(move |(name, value)| {
+        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value else {
+            return None;
+        };
+        (call_func_name(func) == Some(ctor)).then_some((name, keywords.as_slice()))
+    })
+}
+
 /// Extract a string constant from an expression.
 pub(crate) fn extract_str(expr: &ast::Expr) -> Option<&str> {
     if let ast::Expr::Constant(ast::ExprConstant {

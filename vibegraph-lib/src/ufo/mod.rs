@@ -65,8 +65,7 @@ fn default_sm_hierarchy() -> BTreeMap<String, u32> {
 /// empty here too. Returns empty maps on parse failure (the caller falls back to
 /// defaults).
 fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, i64>) {
-    use ast_util::{call_func_name, kwarg_int, kwarg_str, parse_stmts};
-    use rustpython_parser::ast;
+    use ast_util::{constructor_calls, kwarg_int, kwarg_str, parse_stmts};
 
     let Ok(stmts) = parse_stmts(src) else {
         return (BTreeMap::new(), BTreeMap::new());
@@ -75,22 +74,7 @@ fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, 
     let mut hierarchy = BTreeMap::new();
     let mut expansion = BTreeMap::new();
     let mut expansion_complete = true;
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id: lhs_id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = lhs_id.as_str();
-
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("CouplingOrder") {
-            continue;
-        }
-
+    for (python_name, keywords) in constructor_calls(&stmts, "CouplingOrder") {
         // Use the `name` keyword if present, otherwise fall back to the Python variable name.
         let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.to_owned());
         hierarchy.insert(
@@ -639,19 +623,25 @@ impl EvaluatedModel {
         params
     }
 
-    /// Re-evaluate only the parameters transitively depending on `changed`,
-    /// then re-evaluate all coupling values that depend on any changed parameter.
+    /// Set `changed` to `new_value`, then re-evaluate the parameters
+    /// transitively depending on it and every coupling that reads any of them.
+    ///
+    /// A parameter a restriction locked to zero keeps its value, and nothing
+    /// moves: the restriction pruned the vertices it would revive. Panics on a
+    /// parameter the model does not have.
     pub fn recompute(&mut self, changed: &str, new_value: Complex64) {
-        // Update the changed parameter value, allowing error if it doesn't exist (caller should only call with known parameters)
-        self.param_values
+        let slot = self
+            .param_values
             .get_mut(changed)
-            .map(|v| *v = new_value)
             .unwrap_or_else(|| panic!("attempted to recompute unknown parameter '{changed}'"));
-        self.model.params.recompute(changed, &mut self.param_values);
+        if self.model.params.zeros.contains(changed) {
+            return;
+        }
+        *slot = new_value;
 
         // Every parameter the change reaches, however many internal parameters
         // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.
-        let mut changed_params = self.model.params.dependents(changed);
+        let mut changed_params = self.model.params.recompute(changed, &mut self.param_values);
         changed_params.insert(changed.to_owned());
 
         for (i, c) in self.model.couplings.values().enumerate() {
@@ -969,6 +959,24 @@ mod tests {
             checked += 1;
         }
         assert!(checked >= 10, "only {checked} externals checked");
+    }
+
+    /// Moving a parameter the restriction locked to zero changes nothing: not the
+    /// parameter, not an internal reading it, not a coupling.
+    #[test]
+    fn recompute_leaves_a_restriction_locked_parameter_alone() {
+        let model = sm::sm_model(sm::SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        assert!(!model.params.zeros.is_empty());
+        for name in &model.params.zeros {
+            let mut moved = base.clone();
+            moved.recompute(name, Complex64::new(1.5, 0.0));
+            assert_eq!(moved.param_values, base.param_values, "after moving {name}");
+            assert_eq!(
+                moved.coupling_values, base.coupling_values,
+                "after moving {name}"
+            );
+        }
     }
 
     /// MadGraph's `0 < v < 99` window: an order declared `expansion_order = 0`
