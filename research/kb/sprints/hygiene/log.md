@@ -156,3 +156,10 @@
     `adapt_grids_reproduces_a_sequential_integration` passing;
   - the banked `validate_vegas` passes 3.
 * **F-E dispatched** (`feature-dev`, Opus) on `hygiene-fe` from this merge.
+* **F-E reported** (`hygiene-fe`, fd76a96..4cbaa72, 4 commits). The report is
+  recorded as `sessions/F-E-report.md`. configuration-weights-wrong-at-sde1-with-tmin
+  is closed by a refusal rather than its prescribed `AMP2 × channel_cuts`: the
+  manager confirmed at the pinned `genps.f` that this weight is not MadGraph's,
+  whose `sde_strat = 1` path reads an unassigned `t`. The multigrid set
+  `NNPDF31_lo_as_0130` was fetched for the worktree, and `validate_pdf_grid`
+  passes 20. The merge waits on the hermetic re-run.
