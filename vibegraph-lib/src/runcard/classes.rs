@@ -129,8 +129,7 @@ const B_MLM: &str = "an MLM input MadEvent reads only on branches this crate nev
 const B_ISOLATION: &str = "Frixione photon isolation, read by cuts.f only inside its ptgmin \
                            block; an active ptgmin is already a hard error";
 const B_MXX: &str = "qualifies the mxx_min_pdg cut alone, and an active mxx_min_pdg is already \
-                     a hard error. Its stored default is an empty payload where MadGraph's is \
-                     {'default': False}, which is a second reason not to compare it";
+                     a hard error";
 const B_BIAS_PARAMETERS: &str = "the bias module's payload; a bias module is itself refused, \
                                  so nothing ever reads it";
 const B_FRAME_ID: &str = "a system parameter: MadGraph recomputes it from me_frame as the sum of \
@@ -453,7 +452,7 @@ fn describe(v: &ParamValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runcard::{RunCard, PARAM_DEFAULTS};
+    use crate::runcard::{card_spelling, parse_value, Kind, RunCard, PARAM_DEFAULTS};
 
     /// Every recognized name is classified exactly once, and every
     /// classification names a recognized parameter.
@@ -535,18 +534,14 @@ mod tests {
         }
     }
 
-    /// The `Opaque` payload defaults this crate stores that are *not* MadGraph's.
-    ///
-    /// `defaults_match_banner_py_dump` compares every scalar default against the
-    /// `banner.py` dump but skips opaque payloads, so these three have never been
-    /// checked. They are pinned rather than fixed: each is classified
-    /// [`FieldClass::IgnoredBenign`] for a reason independent of its default, so
-    /// the mismatch changes nothing today — but a card writing MadGraph's own
-    /// default for one of them reads here as an override, which is exactly the
-    /// trap an enforcement over these names would spring. If a MadGraph bump
-    /// moves this set, that has to be seen.
+    /// Every `Opaque` payload default against `banner.py`'s, all of them at
+    /// once: the value MadGraph writes into a card for its own default must parse
+    /// to the stored default, so a card that spells out MadGraph's default for a
+    /// list or dict field reads as no override. `defaults_match_banner_py_dump`
+    /// checks the same per parameter and stops at the first; this names every
+    /// one that disagrees.
     #[test]
-    fn opaque_defaults_known_to_differ_from_banner_py() {
+    fn opaque_defaults_match_banner_py() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../validation/madgraph/runcard_defaults.json"
@@ -560,32 +555,43 @@ mod tests {
         let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
         let obj = dump.as_object().expect("oracle is a JSON object");
 
-        let mut mismatched: Vec<&str> = Vec::new();
+        let mut opaque = 0;
+        let mut mismatched: Vec<String> = Vec::new();
         for (name, _) in PARAM_DEFAULTS {
-            let ParamValue::Opaque(stored) = param_default(name).expect("recognized") else {
+            let stored = param_default(name).expect("recognized");
+            if !matches!(stored, ParamValue::Opaque(_)) {
                 continue;
-            };
+            }
+            opaque += 1;
             let actual = obj
                 .get(*name)
                 .unwrap_or_else(|| panic!("'{name}' absent from the banner.py dump"));
-            // The dump is Python's repr; `{}` and `[]` are what the parser
-            // normalizes to the stored empty payload.
-            let empty = matches!(actual.as_object(), Some(m) if m.is_empty())
-                || matches!(actual.as_array(), Some(a) if a.is_empty());
-            if stored.is_empty() && !empty {
-                mismatched.push(name);
+            let spelled = card_spelling(actual);
+            if parse_value(&spelled, Kind::Opaque).as_ref() != Some(&stored) {
+                mismatched.push(format!("{name}: stored {stored:?}, written {spelled:?}"));
             }
         }
-        mismatched.sort_unstable();
-        assert_eq!(
-            mismatched,
-            [
-                "mxx_only_part_antipart",
-                "pdgs_for_merging_cut",
-                "systematics_arguments",
-            ],
-            "the set of opaque defaults that disagree with banner.py moved"
+        assert_eq!(opaque, 14, "the opaque inventory changed size");
+        assert!(
+            mismatched.is_empty(),
+            "opaque defaults that disagree with banner.py:\n{}",
+            mismatched.join("\n")
         );
+    }
+
+    /// A card line spelling MadGraph's own non-empty list or dict default reads
+    /// as that default, not as an override: `{'default': False}` is the
+    /// `mxx_only_part_antipart` line every banked card writes.
+    #[test]
+    fn madgraphs_own_list_and_dict_defaults_read_as_defaults() {
+        let card = RunCard::parse(concat!(
+            "  {'default': False}\t= mxx_only_part_antipart ! if True the invariant mass\n",
+            "  21, 1, 2, 3, 4, 5, 6 = pdgs_for_merging_cut\n",
+        ))
+        .expect("MadGraph's own defaults parse");
+        for name in ["mxx_only_part_antipart", "pdgs_for_merging_cut"] {
+            assert_eq!(card.get(name), param_default(name).as_ref(), "{name}");
+        }
     }
 
     /// Every field the refusal covers is one no banked card moves — the property

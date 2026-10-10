@@ -1,4 +1,4 @@
-//! Fetching and checksum-pinning a named asset into `<cache_root>/<kind>/<name>/`.
+//! Fetching and checksum-pinning a named PDF set into `<cache_root>/pdf/<name>/`.
 //!
 //! Network I/O is not performed here — [`Fetch::fetch`] is the seam a caller
 //! implements to actually retrieve archive bytes (HTTP, a staged local copy,
@@ -6,9 +6,8 @@
 //! `.tar.gz` extraction, checksumming, and atomically publishing the result —
 //! is this module's job.
 //!
-//! Both asset kinds are fetched as a `.tar.gz`, matching
-//! `validation/pdf/fetch.sh`'s existing LHAPDF pattern and the shape UFO
-//! models are normally distributed in. A tarball whose only top-level entry
+//! A set is fetched as a `.tar.gz`, the LHAPDF pattern
+//! `validation/pdf/fetch.sh` also fetches. A tarball whose only top-level entry
 //! is a directory (the common "wraps everything in `<name>/`" packaging, e.g.
 //! LHAPDF's own sets) is unwrapped, so the cached entry is always
 //! `<name>/<payload>`, never `<name>/<name>/<payload>`.
@@ -19,9 +18,6 @@ use flate2::read::GzDecoder;
 use tar::Archive;
 
 use crate::ufo::identity::digest_bytes;
-#[cfg(test)]
-use crate::ufo::UFOModel;
-use crate::ufo::UfoError;
 
 use super::AssetKind;
 
@@ -48,8 +44,6 @@ pub enum StoreError {
     Fetch(#[from] FetchError),
     #[error("failed to extract archive into {dir}: {source}")]
     Extract { dir: String, source: std::io::Error },
-    #[error("fetched UFO archive did not parse as a model: {0}")]
-    UfoParse(#[from] UfoError),
     #[error("cache directory error at {dir}: {source}")]
     Io { dir: String, source: std::io::Error },
 }
@@ -68,17 +62,6 @@ pub(crate) fn lhapdf_download_url(set_name: &str) -> String {
     format!("https://lhapdfsets.web.cern.ch/current/{set_name}.tar.gz")
 }
 
-// There is no UFO counterpart to `lhapdf_download_url`, and it is not an
-// omission. UFO models are published on the FeynRules wiki, one page per model,
-// with hand-attached files: `/raw-attachment/wiki/<page>/<file>`, where the page
-// is not the model name and the file follows no rule — the 2HDM page alone
-// carries `2HDM.tar.gz`, `2HDM_UFO.tar.gz` and `2HDM_UFO.tar.2.gz`, of which
-// only the middle one is a UFO directory and the first is FeynRules Mathematica
-// source. A URL derived from a model name is therefore not merely unverified: it
-// 404s for most names, and for some it succeeds and returns the wrong kind of
-// archive. [`cache_ufo_model`] below takes a URL from its caller and is ready
-// for a real one; deriving that URL from a name is what nothing can do today.
-
 /// A cached entry after a successful fetch: its directory and the checksum
 /// pinned alongside it ([`PIN_FILENAME`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +75,7 @@ pub(crate) struct Cached {
 pub(crate) const PIN_FILENAME: &str = ".vibegraph-checksum";
 
 /// The checksum pinned for an already-cached entry, if it was written by
-/// [`cache_pdf_set`]/[`cache_ufo_model`] (a `--flag`/env/dev-fallback entry
+/// [`cache_pdf_set`] (a `--flag`/env/dev-fallback entry
 /// found through [`super::resolve::locate`] was not necessarily fetched by
 /// this module and may have no pin at all).
 pub(crate) fn read_pin(dir: &Path) -> Option<String> {
@@ -105,34 +88,34 @@ fn write_pin(dir: &Path, checksum: &str) -> Result<(), StoreError> {
     std::fs::write(dir.join(PIN_FILENAME), checksum).map_err(|e| io_err(dir, e))
 }
 
-/// Extract `bytes` (a `.tar.gz`) into a fresh staging directory under
-/// `<cache_root>/<kind>/`, and return the directory actually holding the
-/// payload — the staging directory itself, or its sole top-level
-/// subdirectory if the archive wrapped everything in one.
-fn extract_to_staging(
-    cache_root: &Path,
-    kind: AssetKind,
-    name: &str,
-    bytes: &[u8],
-) -> Result<PathBuf, StoreError> {
-    let kind_dir = cache_root.join(kind.cache_subdir());
-    std::fs::create_dir_all(&kind_dir).map_err(|e| io_err(&kind_dir, e))?;
+/// The staging directory an entry of `kind` named `name` is extracted into
+/// before it is published: a hidden sibling of the final entry, private to this
+/// process.
+fn staging_dir(cache_root: &Path, kind: AssetKind, name: &str) -> PathBuf {
+    kind.entry_dir(
+        cache_root,
+        &format!(".staging-{name}-{}", std::process::id()),
+    )
+}
 
-    let staging = kind_dir.join(format!(".staging-{name}-{}", std::process::id()));
+/// Extract `bytes` (a `.tar.gz`) into a fresh `staging` directory, and return
+/// the directory actually holding the payload — `staging` itself, or its sole
+/// top-level subdirectory if the archive wrapped everything in one.
+fn extract_to_staging(staging: &Path, bytes: &[u8]) -> Result<PathBuf, StoreError> {
     if staging.exists() {
-        std::fs::remove_dir_all(&staging).map_err(|e| io_err(&staging, e))?;
+        std::fs::remove_dir_all(staging).map_err(|e| io_err(staging, e))?;
     }
-    std::fs::create_dir_all(&staging).map_err(|e| io_err(&staging, e))?;
+    std::fs::create_dir_all(staging).map_err(|e| io_err(staging, e))?;
 
     let decoder = GzDecoder::new(bytes);
     let mut archive = Archive::new(decoder);
-    archive.unpack(&staging).map_err(|e| StoreError::Extract {
+    archive.unpack(staging).map_err(|e| StoreError::Extract {
         dir: staging.display().to_string(),
         source: e,
     })?;
 
-    let entries: Vec<_> = std::fs::read_dir(&staging)
-        .map_err(|e| io_err(&staging, e))?
+    let entries: Vec<_> = std::fs::read_dir(staging)
+        .map_err(|e| io_err(staging, e))?
         .filter_map(|e| e.ok())
         .collect();
     if let [only] = entries.as_slice() {
@@ -140,7 +123,7 @@ fn extract_to_staging(
             return Ok(only.path());
         }
     }
-    Ok(staging)
+    Ok(staging.to_path_buf())
 }
 
 /// Publish `payload` (produced by [`extract_to_staging`]) as `<final_dir>`,
@@ -171,38 +154,10 @@ pub(crate) fn cache_pdf_set(
 ) -> Result<Cached, StoreError> {
     let bytes = fetch.fetch(url)?;
     let checksum = digest_bytes(&bytes);
-    let staging = cache_root
-        .join(AssetKind::Pdf.cache_subdir())
-        .join(format!(".staging-{name}-{}", std::process::id()));
-    let payload = extract_to_staging(cache_root, AssetKind::Pdf, name, &bytes)?;
+    let staging = staging_dir(cache_root, AssetKind::Pdf, name);
+    let payload = extract_to_staging(&staging, &bytes)?;
     write_pin(&payload, &checksum)?;
-    let dir = cache_root.join(AssetKind::Pdf.cache_subdir()).join(name);
-    publish(staging, payload, &dir)?;
-    Ok(Cached { dir, checksum })
-}
-
-/// Fetch and cache a UFO model. The pinned checksum is the existing
-/// [`model_digest`](crate::ufo::identity::model_digest) of the model the
-/// archive parses to under its default restriction (the one a bare `import
-/// model <name>` resolves to) — not a hash of the archive bytes. Two UFO
-/// tarballs differing only in comments, file order, or packaging pin
-/// identically; that is the reason to reuse the model digest here rather
-/// than hash bytes as [`cache_pdf_set`] does.
-#[cfg(any(test, doc))]
-pub(crate) fn cache_ufo_model(
-    cache_root: &Path,
-    name: &str,
-    url: &str,
-    fetch: &dyn Fetch,
-) -> Result<Cached, StoreError> {
-    let bytes = fetch.fetch(url)?;
-    let staging = cache_root
-        .join(AssetKind::Ufo.cache_subdir())
-        .join(format!(".staging-{name}-{}", std::process::id()));
-    let payload = extract_to_staging(cache_root, AssetKind::Ufo, name, &bytes)?;
-    let (_, checksum) = UFOModel::load_with_digest(&payload, None)?;
-    write_pin(&payload, &checksum)?;
-    let dir = cache_root.join(AssetKind::Ufo.cache_subdir()).join(name);
+    let dir = AssetKind::Pdf.entry_dir(cache_root, name);
     publish(staging, payload, &dir)?;
     Ok(Cached { dir, checksum })
 }
@@ -350,66 +305,5 @@ mod tests {
 
         assert!(!cached.dir.join("only_in_v1.dat").exists());
         assert!(cached.dir.join("only_in_v2.dat").is_file());
-    }
-
-    /// The UFO path pins the existing model digest, not a hash of the
-    /// archive bytes — two archives that parse to the same restricted model
-    /// pin identically even though their bytes (and even file layout) differ.
-    /// Uses a minimal but syntactically valid empty UFO model (no particles,
-    /// no vertices) purely to exercise the parse → digest → pin pipeline;
-    /// nothing about a real physics model is asserted here (that is
-    /// `vibegraph-lib/src/ufo`'s own test surface).
-    #[test]
-    fn ufo_checksum_is_the_model_digest_and_survives_repackaging() {
-        let empty_ufo_files: &[(&str, &[u8])] = &[
-            ("particles.py", b"# no particles\n" as &[u8]),
-            ("lorentz.py", b"# no lorentz structures\n" as &[u8]),
-            ("couplings.py", b"# no couplings\n" as &[u8]),
-            ("parameters.py", b"# no parameters\n" as &[u8]),
-            ("vertices.py", b"# no vertices\n" as &[u8]),
-        ];
-
-        let cache_root_a = scratch("ufo-digest-root-a");
-        let wrapped = build_tar_gz_wrapped("toy_model", empty_ufo_files);
-        let cached_a = cache_ufo_model(&cache_root_a, "toy_model", "u", &FixedFetch(wrapped))
-            .expect("cache_ufo_model (wrapped archive)");
-
-        let cache_root_b = scratch("ufo-digest-root-b");
-        let flat = build_tar_gz_flat(empty_ufo_files);
-        let cached_b = cache_ufo_model(&cache_root_b, "toy_model", "u", &FixedFetch(flat))
-            .expect("cache_ufo_model (flat archive)");
-
-        assert_eq!(
-            cached_a.checksum, cached_b.checksum,
-            "same model content through different packaging must pin identically"
-        );
-
-        let (_, recomputed) = UFOModel::load_with_digest(&cached_a.dir, None)
-            .expect("cached directory reloads as a valid UFO model");
-        assert_eq!(
-            recomputed, cached_a.checksum,
-            "the pinned checksum must be exactly what GlobalConfig would recompute on load"
-        );
-        assert_eq!(
-            read_pin(&cached_a.dir).as_deref(),
-            Some(cached_a.checksum.as_str())
-        );
-    }
-
-    /// A UFO archive that fails to parse is never published under its final
-    /// name — the staging directory absorbs the failure.
-    #[test]
-    fn unparseable_ufo_archive_is_not_published() {
-        let cache_root = scratch("ufo-bad-root");
-        let archive = build_tar_gz_wrapped(
-            "broken_model",
-            &[("particles.py", b"not even close to python(((" as &[u8])],
-        );
-        let err = cache_ufo_model(&cache_root, "broken_model", "u", &FixedFetch(archive));
-        // Missing required source files (lorentz.py etc.) is itself an error
-        // even before the malformed particles.py would be — either way this
-        // must not produce a cached entry.
-        assert!(err.is_err(), "{err:?}");
-        assert!(!cache_root.join("ufo").join("broken_model").exists());
     }
 }
