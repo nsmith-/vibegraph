@@ -3146,7 +3146,7 @@ fn probe_sampled_channel_cost_in_alpha_s() {
     use std::io::Read;
     use vibegraph::lhef::parse::LheFile;
 
-    // `unwgt.f:694` fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
+    // `unwgt.f:760` (`write_leshouche`) fills `AQCDUP` as `g*g/4d0/3.1415926d0`, with π truncated at
     // eight digits while `g` was built from the full one. Applying the same
     // truncation here keeps the two means comparable at the 1.7e-8 the field
     // carries; nothing at this probe's scale turns on it.

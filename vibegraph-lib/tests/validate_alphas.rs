@@ -246,8 +246,8 @@ fn event_scales(run: &Path) -> Vec<(f64, f64)> {
 /// Runs whose per-event `SCALUP` *is* the renormalisation scale, so that
 /// `AQCDUP = αs(SCALUP)` event by event.
 ///
-/// `SCALUP` is not the renormalisation scale by construction: `unwgt.f:686`
-/// fills it with `sqrt(max(q2fact(1), q2fact(2)))`, the larger
+/// `SCALUP` is not the renormalisation scale by construction: `unwgt.f:752`
+/// (`write_leshouche`) fills it with `sqrt(max(q2fact(1), q2fact(2)))`, the larger
 /// **factorisation** scale. It doubles as `μR` only where MadGraph's
 /// clustering reads both off the same vertex, which is what the runs listed
 /// here have in common.
@@ -376,7 +376,7 @@ fn printed_half_ulp(v: f64) -> f64 {
 
 /// The `AQCDUP` field is not quite `αs`.
 ///
-/// `unwgt.f:694` fills it as `g*g/4d0/3.1415926d0`, with π truncated at eight
+/// `unwgt.f:760` (`write_leshouche`) fills it as `g*g/4d0/3.1415926d0`, with π truncated at eight
 /// digits, while `g = √(4π·αs)` was built from the full one. The field is
 /// therefore `αs · π/3.1415926`, larger by a systematic `1.7e-8` relative —
 /// a sixth of the last printed digit, and enough to move the rounding of one
