@@ -163,6 +163,22 @@ DECAY 6 1.49
    1.0  2  5 24    # t -> b W+
 ";
 
+    /// A block header with no name and a block entry whose value is not a
+    /// number are errors at their own line.
+    #[test]
+    fn malformed_lines_are_parse_errors_at_their_line() {
+        for (text, want_line) in [
+            ("Block MASS\n  6 173.0\nBlock\n", 3),
+            ("Block MASS\n  6 173.0\n  23 heavy # MZ\n", 3),
+        ] {
+            let result = text.parse::<ParamCard>();
+            assert!(
+                matches!(result, Err(SlhaError::Parse { line, .. }) if line == want_line),
+                "{text:?}: {result:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_parse_sminputs() {
         let card = SAMPLE.parse::<ParamCard>().unwrap();

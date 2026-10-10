@@ -6,7 +6,7 @@
 //! (see [`crate::diagrams`]), so the strings exist to identify and report the
 //! form, not to compute with it.
 
-use super::ast_util::{call_func_name, kwarg_str, parse_stmts};
+use super::ast_util::{call_func_name, kwarg_str, named_assignments, parse_stmts};
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,16 +43,9 @@ pub(crate) fn parse_propagators(src: &str) -> Result<Vec<Propagator>, Propagator
     let mut strings: HashMap<String, String> = HashMap::new();
     let mut result = Vec::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = id.as_str().to_owned();
-
-        match value.as_ref() {
+    for (python_name, value) in named_assignments(&stmts) {
+        let python_name = python_name.to_owned();
+        match value {
             ast::Expr::Call(ast::ExprCall { func, keywords, .. })
                 if call_func_name(func) == Some("Propagator") =>
             {

@@ -51,10 +51,9 @@ use crate::vegas::VegasGrid;
 /// this version, it is drawn per point from the per-configuration `AMP2`, so a
 /// version-6 `sigma_pb` is a different run's answer, not a stale copy of this
 /// one's. Because the schema did not move, [`read_from_path`](IntegrateArtifact::read_from_path)
-/// decodes a version-6 file directly rather than through an `upgrade`, and — unlike
-/// versions 3 through 5, whose upgrades normalise to `FORMAT_VERSION` because
-/// nothing downstream read the field — it leaves the file's own recorded version in
-/// place, so a caller can tell a pre-draw artifact from a post-draw one by
+/// decodes a version-6 file directly rather than through an `upgrade`, and, as
+/// every upgrade does, it leaves the file's own recorded version in place, so a
+/// caller can tell a pre-draw artifact from a post-draw one by
 /// [`IntegrateArtifact::format_version`] alone. `vibegraph generate` is that
 /// caller: it refuses to replay a `format_version < 7` artifact's `sigma_pb` as
 /// `XSECUP` when the run card selects the clustering scale
@@ -341,7 +340,7 @@ pub struct IntegrateArtifact {
     pub sigma_err_pb: f64,
     pub chi2_per_dof: f64,
     /// The phase-space maps the run integrated under, every choice settled. A
-    /// generator rebuilds its channels from these; a file older than version 8
+    /// generator rebuilds its channels from these; a file older than version 9
     /// reads back [`MapChoices::LEGACY`], the maps every such run used.
     pub maps: MapChoices,
 }

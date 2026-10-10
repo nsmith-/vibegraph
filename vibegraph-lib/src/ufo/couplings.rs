@@ -1,4 +1,4 @@
-use super::ast_util::{call_func_name, extract_int, extract_str, kwarg_str, parse_stmts};
+use super::ast_util::{constructor_calls, extract_int, extract_str, kwarg_str, parse_stmts};
 use super::expr::{collect_deps, parse_expr, Expr};
 use indexmap::IndexMap;
 use num_complex::Complex64;
@@ -75,22 +75,8 @@ pub(crate) fn parse_couplings(src: &str) -> Result<Vec<Coupling>, CouplingError>
     let stmts = parse_stmts(src).map_err(|e| CouplingError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = id.as_str().to_owned();
-
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("Coupling") {
-            continue;
-        }
-
+    for (python_name, keywords) in constructor_calls(&stmts, "Coupling") {
+        let python_name = python_name.to_owned();
         let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
         let expr_str = kwarg_str(keywords, "value").unwrap_or_else(|| "0.0".to_owned());
         let expr = parse_expr(&expr_str).map_err(|e| CouplingError::ExprParse {

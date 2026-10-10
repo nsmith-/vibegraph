@@ -3,9 +3,10 @@
 //! A vertex's `color` list holds one string per color structure, e.g. `'1'`,
 //! `'T(3,2,1)'`, `'f(-1,1,2)*f(3,4,-1)'`. Each string is a product (`*`) of
 //! atoms with signed integer indices: positive indices are 1-based positions
-//! in the vertex's particle list; negative indices are "summed" (only ever
-//! introduced later, during diagram colorization — never present in a raw
-//! UFO model file).
+//! in the vertex's particle list; negative indices are summed dummies, which a
+//! model file writes for a contraction inside one vertex (the SM four-gluon
+//! vertex's `f(-1,1,2)*f(3,4,-1)`, SMEFTsim's `T(-1,2,1)*T(-1,4,3)`) and
+//! diagram colorization introduces again between vertices.
 //!
 //! `Epsilon(i,j,k)` and `EpsilonBar(i,j,k)` — the baryonic invariants of three
 //! fundamental and three antifundamental indices — parse as atoms of their own

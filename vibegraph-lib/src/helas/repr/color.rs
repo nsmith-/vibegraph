@@ -29,17 +29,16 @@ pub enum ColorRep {
 impl ColorRep {
     /// Map a UFO `color` charge to a representation: `1 → Singlet`,
     /// `3 → Triplet`, `-3 → AntiTriplet`, `6 → Sextet`, `-6 → AntiSextet`,
-    /// `8 → Octet`. The self-conjugate reps also accept their negated charge,
-    /// which the antiparticle constructor produces (`color: -self.color`):
-    /// `-1 → Singlet`, `-8 → Octet`. Any other value returns `None`.
+    /// `8 → Octet`. Any other value returns `None`: a self-conjugate rep
+    /// carries no sign, on a particle or its antiparticle.
     pub(crate) fn from_ufo(color: i32) -> Option<Self> {
         match color {
-            1 | -1 => Some(ColorRep::Singlet),
+            1 => Some(ColorRep::Singlet),
             3 => Some(ColorRep::Triplet),
             -3 => Some(ColorRep::AntiTriplet),
             6 => Some(ColorRep::Sextet),
             -6 => Some(ColorRep::AntiSextet),
-            8 | -8 => Some(ColorRep::Octet),
+            8 => Some(ColorRep::Octet),
             _ => None,
         }
     }
@@ -62,14 +61,10 @@ impl ColorRep {
 mod color_rep_tests {
     use super::ColorRep;
 
-    /// The antiparticle constructor negates the UFO `color` charge, so the
-    /// self-conjugate reps arrive as `-1` (singlet) and `-8` (octet) on internal
-    /// lines; both must resolve to the same rep as their positive charge.
+    /// The self-conjugate reps are unsigned.
     #[test]
-    fn from_ufo_self_conjugate_negated() {
-        assert_eq!(ColorRep::from_ufo(-1), Some(ColorRep::Singlet));
+    fn from_ufo_self_conjugate() {
         assert_eq!(ColorRep::from_ufo(1), Some(ColorRep::Singlet));
-        assert_eq!(ColorRep::from_ufo(-8), Some(ColorRep::Octet));
         assert_eq!(ColorRep::from_ufo(8), Some(ColorRep::Octet));
     }
 
@@ -97,11 +92,11 @@ mod color_rep_tests {
         );
     }
 
-    /// Any charge outside `1`, `3`, `6`, `8` and their negations is refused
-    /// rather than folded into a nearby rep.
+    /// Any charge outside `1`, `±3`, `±6`, `8` is refused rather than folded
+    /// into a nearby rep.
     #[test]
     fn from_ufo_unknown_charge_is_refused() {
-        for charge in [0, 2, 4, 5, 7, 9, 10, -2, -4, -10] {
+        for charge in [0, 2, 4, 5, 7, 9, 10, -1, -2, -4, -8, -10] {
             assert_eq!(ColorRep::from_ufo(charge), None, "colour charge {charge}");
         }
     }

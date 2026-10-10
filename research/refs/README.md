@@ -8,7 +8,7 @@ Git submodules for upstream code we study or adapt from. Fetched papers live in 
 
 | Submodule | URL | Purpose |
 |---|---|---|
-| `refs/feyngraph` | https://github.com/Jens-Braun/FeynGraph | Rust Feynman diagram generator |
+| `refs/feyngraph` | https://github.com/Jens-Braun/FeynGraph | Rust Feynman diagram generator. Pinned at `fd5aa8306746b432e098c40dcd96d7cb7ef20125`, the `rev` `vibegraph-lib/Cargo.toml` builds against; bump the two together |
 | `refs/mg5amcnlo` | https://github.com/mg5amcnlo/mg5amcnlo | MadGraph5: HELAS routines, ALOHA code generation, SM UFO model |
 | `refs/sherpa` | https://gitlab.com/sherpa-team/sherpa | Sherpa MC: COMIX Berends-Giele ME generator + UFO loader |
 | `refs/powheg-box-v2` | https://gitlab.com/POWHEG-BOX/V2/POWHEG-BOX-V2 | POWHEG-BOX-V2: NLO+PS Fortran framework (MINT, B-tilde, LHE output) |

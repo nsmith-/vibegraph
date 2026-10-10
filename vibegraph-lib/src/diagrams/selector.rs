@@ -23,10 +23,11 @@ pub(crate) struct ConcreteProcess {
 
 /// Translate a `ConcreteProcess` into a feyngraph `DiagramSelector`.
 ///
-/// The s-channel restrictions (`>`, `$$`, `$`) never reach this point: they
-/// are refused before enumeration. When they are supported they filter
-/// converted [`super::Diagram`]s, whose propagators carry the signed
-/// external-momentum combination that decides whether a line is an s-channel.
+/// The s-channel restrictions are not selector constraints. `>` and `$$`
+/// filter the converted [`super::Diagram`]s ([`super::schannel`]), whose
+/// propagators carry the signed external-momentum combination that decides
+/// whether a line is an s-channel; `$` keeps every diagram and vetoes a window
+/// of the integration ([`crate::onshell`]).
 pub(crate) fn build_selector(proc: &ConcreteProcess) -> DiagramSelector {
     let mut sel = DiagramSelector::new();
 

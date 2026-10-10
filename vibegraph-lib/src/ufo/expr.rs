@@ -40,6 +40,17 @@ pub enum BinOp {
     Pow,
 }
 
+/// A function a UFO value string may call: a `cmath` function or a name the
+/// model's `function_library.py` defines.
+///
+/// The library functions are evaluated as the SM UFO's `function_library.py`
+/// writes them, on the complex argument (`sec(z) = 1/cos(z)`, `asec(z) =
+/// acos(1/z)`). SMEFTsim's library takes `z.real` in `sec`, `csc`, `asec` and
+/// `acsc` instead; the two agree on a real argument. Library functions with no
+/// variant here (`cot`, `theta_function`, `cond`, `reglog`) are refused when
+/// the value string is parsed.
+///
+/// New variants go at the end: the interned SM model stores these by index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Func {
     Sqrt,
@@ -47,17 +58,24 @@ pub enum Func {
     Exp,
     Abs,
     Arg,
-    Conj, // complexconjugate
+    /// `complexconjugate`, `conj`
+    Conj,
     Re,
     Im,
-    Sec, // 1/cos
-    Csc, // 1/sin
+    /// `1/cos(z)`
+    Sec,
+    /// `1/sin(z)`
+    Csc,
+    /// `acos(1/z)`
     ASec,
+    /// `asin(1/z)`
     ACsc,
     Sin,
     Cos,
     Tan,
     ATan,
+    ASin,
+    ACos,
 }
 
 /// Collect all parameter names referenced in an expression.
@@ -88,7 +106,7 @@ pub(crate) fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
 
 /// Evaluate an expression given a map of parameter name → complex value.
 ///
-/// Unknown parameter references panic in debug builds and return 0 in release.
+/// A reference to a parameter missing from `params` panics.
 pub(crate) fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     use std::f64::consts::PI;
     match expr {
@@ -128,6 +146,8 @@ pub(crate) fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex6
                 Func::Cos => a(0).cos(),
                 Func::Tan => a(0).tan(),
                 Func::ATan => a(0).atan(),
+                Func::ASin => a(0).asin(),
+                Func::ACos => a(0).acos(),
             }
         }
         Expr::Complex(re, im) => Complex64::new(eval(re, params).re, eval(im, params).re),
@@ -233,8 +253,8 @@ peg::parser! {
             / "log"   { Func::Log }
             / "exp"   { Func::Exp }
             / "atan"  { Func::ATan }
-            / "asin"  { Func::ACsc }  // asin not used directly, but consistent
-            / "acos"  { Func::ASec }
+            / "asin"  { Func::ASin }
+            / "acos"  { Func::ACos }
             / "sin"   { Func::Sin }
             / "cos"   { Func::Cos }
             / "tan"   { Func::Tan }
@@ -254,8 +274,8 @@ peg::parser! {
             / "re"               { Func::Re }
             / "im"               { Func::Im }
             / "atan"             { Func::ATan }
-            / "asin"             { Func::ACsc }
-            / "acos"             { Func::ASec }
+            / "asin"             { Func::ASin }
+            / "acos"             { Func::ACos }
             / "asec"             { Func::ASec }
             / "acsc"             { Func::ACsc }
             / "sin"              { Func::Sin }
@@ -302,6 +322,70 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), Complex64::new(*v, 0.0)))
             .collect()
+    }
+
+    /// Every function spelling, bare and `cmath.`, against the value of the
+    /// function it names, at arguments where swapping any two of them changes
+    /// the value: `x` inside `[-1, 1]` for `asin`/`acos`, `y` outside it for
+    /// `asec`/`acsc`, and a complex `z` for the functions that read only part
+    /// of it.
+    #[test]
+    fn every_function_spelling_evaluates_the_function_it_names() {
+        let (x, y) = (0.3_f64, 2.5_f64);
+        let z = Complex64::new(0.4, -0.7);
+        let mut values = params(&[("x", x), ("y", y)]);
+        values.insert("z".to_owned(), z);
+        let one = Complex64::new(1.0, 0.0);
+        let r = |v: f64| Complex64::new(v, 0.0);
+        let table: &[(&str, Complex64)] = &[
+            ("cmath.sqrt(y)", r(y.sqrt())),
+            ("sqrt(y)", r(y.sqrt())),
+            ("cmath.log(y)", r(y.ln())),
+            ("cmath.exp(x)", r(x.exp())),
+            ("cmath.sin(x)", r(x.sin())),
+            ("sin(x)", r(x.sin())),
+            ("cmath.cos(x)", r(x.cos())),
+            ("cos(x)", r(x.cos())),
+            ("cmath.tan(x)", r(x.tan())),
+            ("tan(x)", r(x.tan())),
+            ("cmath.atan(y)", r(y.atan())),
+            ("atan(y)", r(y.atan())),
+            ("cmath.asin(x)", r(x.asin())),
+            ("asin(x)", r(x.asin())),
+            ("cmath.acos(x)", r(x.acos())),
+            ("acos(x)", r(x.acos())),
+            ("sec(x)", r(1.0 / x.cos())),
+            ("csc(x)", r(1.0 / x.sin())),
+            ("asec(y)", r((1.0 / y).acos())),
+            ("acsc(y)", r((1.0 / y).asin())),
+            ("sec(z)", one / z.cos()),
+            ("abs(z)", r(z.norm())),
+            ("arg(z)", r(z.arg())),
+            ("re(z)", r(z.re)),
+            ("im(z)", r(z.im)),
+            ("conj(z)", z.conj()),
+            ("complexconjugate(z)", z.conj()),
+        ];
+        for (text, want) in table {
+            let e = parse_expr(text).unwrap_or_else(|err| panic!("{text}: {err}"));
+            let got = eval(&e, &values);
+            let tol = 8.0 * f64::EPSILON * want.norm().max(1.0);
+            assert!((got - want).norm() <= tol, "{text} = {got}, not {want}");
+        }
+    }
+
+    /// `function_library.py` names with no evaluation here are refused, not read
+    /// as a parameter.
+    #[test]
+    fn library_functions_without_an_evaluation_are_refused() {
+        for text in [
+            "cot(x)",
+            "theta_function(x, y, z)",
+            "cond(x, y, z)",
+            "reglog(x)",
+        ] {
+            assert!(parse_expr(text).is_err(), "{text} parsed");
+        }
     }
 
     #[test]

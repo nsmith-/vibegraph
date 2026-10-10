@@ -802,7 +802,10 @@ mod tests {
         assert_eq!(r[0].required_s_channels, [vec![23, 25], vec![22, 25]]);
         let r = resolve("generate e+ e- > l+ > e+ e-").unwrap();
         assert_eq!(r[0].required_s_channels, [vec![-11, -13]]);
-        assert!(resolve("generate e+ e- > z z > mu+ mu-").is_err());
+        assert!(matches!(
+            resolve("generate e+ e- > z z > mu+ mu-"),
+            Err(ResolveError::DuplicateRequired)
+        ));
     }
 
     #[test]
@@ -833,6 +836,72 @@ mod tests {
         let r = resolve("generate e+ e- > w+{0} w-{T}").unwrap();
         assert_eq!(r[0].legs[2].polarization, [0]);
         assert_eq!(r[0].legs[3].polarization, [1, -1]);
-        assert!(resolve("generate e+ e- > mu+{0} mu-").is_err());
+        assert!(matches!(
+            resolve("generate e+ e- > mu+{0} mu-"),
+            Err(ResolveError::Polarization { .. })
+        ));
+    }
+
+    /// Each refusal the model makes possible, reached by the card that names it.
+    #[test]
+    fn each_model_level_refusal_is_reached_by_its_card() {
+        type Case = (&'static str, fn(&ResolveError) -> bool);
+        let cases: &[Case] = &[
+            (
+                "define z = e+ e-\ngenerate e+ e- > z",
+                |e| matches!(e, ResolveError::LabelIsParticle(l) if l == "z"),
+            ),
+            (
+                "define v = l | a\ndefine l = e+ mu+\ngenerate e+ e- > v > e+ e-",
+                |e| matches!(e, ResolveError::NestedOrMultiparticle(l) if l == "v"),
+            ),
+            ("generate e+ e- > mu+ mu- QED=-1 QCD=-1", |e| {
+                matches!(e, ResolveError::NegativeOrders)
+            }),
+            ("generate e+ e- > mu+ mu- QED==2 [real=QCD]", |e| {
+                matches!(e, ResolveError::ConstrainedOrdersBeyondTree)
+            }),
+            (
+                "generate e+ e- > mu+ mu- [QCD]",
+                |e| matches!(e, ResolveError::NotALoopModel(o) if o == "QCD"),
+            ),
+            ("generate e+ e- > z{T} z", |e| {
+                matches!(e, ResolveError::AmbiguousPolarization(_))
+            }),
+            (
+                "generate e+ e- > t t~, t > w+ b QCD^2<=2",
+                |e| matches!(e, ResolveError::DecayConstraint(c) if c.contains("squared")),
+            ),
+            (
+                "generate e+ e- > t t~, t > w+ b QED=-1",
+                |e| matches!(e, ResolveError::DecayConstraint(c) if c.contains("negative")),
+            ),
+            ("generate e+ e- > mu+ mu-\nadd process t > w+ b", |e| {
+                matches!(e, ResolveError::MixedInitialStates)
+            }),
+        ];
+        for (card, is_expected) in cases {
+            match resolve(card) {
+                Err(e) if is_expected(&e) => {}
+                other => panic!("{card:?}: {other:?}"),
+            }
+        }
+    }
+
+    /// `2a` is a repeat count before a particle name, unless the model has a
+    /// particle of that name; then the leg is ambiguous.
+    #[test]
+    fn a_repeat_token_that_names_a_particle_is_ambiguous() {
+        let mut model = sm_model(SMRestrict::Default).as_ref().clone();
+        let card = parse_proc_card_ast("generate e+ e- > 2a").unwrap();
+        assert_eq!(resolve_card(&card, &model).unwrap()[0].legs.len(), 4);
+        let mut twin = model.particles["a"].clone();
+        twin.name = "2a".to_owned();
+        twin.antiname = "2a".to_owned();
+        model.particles.insert("2a".to_owned(), twin);
+        assert!(matches!(
+            resolve_card(&card, &model),
+            Err(ResolveError::AmbiguousRepeat(t)) if t == "2a"
+        ));
     }
 }
