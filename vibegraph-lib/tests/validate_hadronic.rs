@@ -912,8 +912,9 @@ fn sigma_llj_fixed_scale_vs_mg() {
     row.niter = LLJ_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "three seeds at 150k in this layer; the full seed sweep and the budget \
-         ladder are oracle-layer"
+        "five seeds at 150k in this layer, the same five the oracle-layer budget \
+         ladder sweeps, so the chi2/dof formed here is the statistic its bound was \
+         calibrated on; the ladder itself is oracle-layer"
             .to_string(),
     );
     row.duration_s = Some(clock.seconds());
@@ -1399,14 +1400,12 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     row.subsampler = summary;
     row.note = Some(
         "each point clustered in the integration configuration drawn from its own \
-         AMP2, inside the flavour group that produced it. Three seeds at 150k here; \
-         the five-seed budget ladder that says this is converged rather than \
-         under-sampled is oracle-layer, and gives 416.23, 416.27, 416.26, 416.13 pb \
-         at 75k, 150k, 300k and 600k against MadGraph's 415.42 +- 1.36 -- flat to 0.04% \
-         across an eightfold budget, at chi2/dof 2.59, 0.66, 0.75, 0.29, the 75k rung's \
-         scatter being why the gate does not run there. rel_tol 0.005 is the \
-         reference's own 0.33% with headroom; the pull is asserted, the channel-partition systematic that made it \
-         the wrong statistic having been retired with the draw"
+         AMP2, inside the flavour group that produced it. Five seeds at 150k here; \
+         twenty seeds at the same budget read +0.005% (pull +0.01, chi2/dof 1.25), \
+         the row's recorded reading, and the budget ladder is oracle-layer. \
+         rel_tol 0.005 is the reference's own 0.33% with headroom; the pull is \
+         asserted, because MadGraph's error dominates the combination and no budget \
+         spent here can drive it up"
             .to_string(),
     );
     row.duration_s = Some(clock.seconds());
@@ -1729,9 +1728,9 @@ fn sigma_bb_fixed_scale_vs_mg() {
 /// The budget ladder behind [`BB_NEVAL`], five seeds a rung.
 ///
 /// The gate reads three seeds at one budget, and that pair of numbers cannot
-/// separate an agreement from an estimator still moving: VEGAS's inverse-variance
-/// iteration combination reports an under-sampled region as a confident value,
-/// error bar included. What tells the two apart is whether σ moves with the
+/// separate an agreement from an estimator still moving: a VEGAS run reports an
+/// under-sampled region as a confident value, error bar included, because the
+/// region's absence lowers the integral and its quoted error together. What tells the two apart is whether σ moves with the
 /// budget, so the rungs are printed rather than summarised, and five seeds a rung
 /// makes each rung's χ²/dof a statement about the estimator rather than about one
 /// seed.
@@ -1804,12 +1803,11 @@ const JJ_RUN: &str = "pp_to_jj";
 /// ℓℓj sweep gives.
 ///
 /// Five rather than three, and the same five [`probe_jj_budget_ladder`] walks its
-/// rungs with, because this is the arm whose measured distance from
-/// [`JJ_MAX_REL`] is smallest: a three-seed mean carries the estimator's own
-/// scatter into a bound that only has room for the disagreement. The two extra
-/// seeds move the reading from `+3.659e-3` to `+3.329e-3` and χ²/dof from `0.80`
-/// on two degrees of freedom to `1.40` on four, which is the same statistic
-/// measured rather than a different one.
+/// rungs with, so the χ²/dof the gate forms carries the four degrees of freedom
+/// [`JJ_MAX_CHI2_PER_DOF`] was calibrated on: `χ²/dof < 4` is a `0.30 %`
+/// false-positive rate on four and `1.8 %` on the two three seeds give. The
+/// residual here is a converged offset rather than a spread, so the extra seeds
+/// sharpen the mean the bound is read against rather than move it.
 const JJ_SEEDS: &[u64] = &[20260810, 20260811, 20260812, 20260813, 20260814];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const JJ_ADAPT_SURVEY: usize = 8_000;
@@ -1821,15 +1819,19 @@ const JJ_ADAPT_ITERS: usize = 5;
 /// nothing it can see.
 ///
 /// Over five seeds at 75 000, 150 000, 300 000 and 600 000 points an iteration
-/// (`probe_jj_budget_ladder`) this row reads `+0.33 %`, `+0.26 %`, `+0.25 %`,
+/// (`probe_jj_budget_ladder`) this row read `+0.33 %`, `+0.26 %`, `+0.25 %`,
 /// `+0.30 %` at χ²/dof `1.40`, `0.44`, `0.82`, `1.21` — an `0.08 %` span with no
-/// direction to it, a third of the reference's own Monte-Carlo error, and no rung
-/// whose seeds scatter by more than they claim. A `2 → 2` final state gives every
-/// channel far more points per iteration than the 24-channel ℓℓj rows get, which
-/// is why this row is flat at budgets where those are still climbing.
+/// direction to it and no rung whose seeds scatter by more than they claim. That
+/// ladder was walked before the vector-vertex sign fix, which leaves
+/// `g g → g g`'s `|M|²` alone and moves the other channels; at the gate rung the
+/// fix took the row to `+0.18 %` (pull `+0.80`, χ²/dof `1.58`, the manifest's
+/// recorded reading), and the ladder has not been re-walked since. A `2 → 2`
+/// final state gives every channel far more points per iteration than the
+/// 24-channel ℓℓj rows get, which is why this row is flat at budgets where those
+/// need more.
 ///
-/// `75 000` is the ladder's lowest rung. Three seeds there leave this side's error
-/// at `0.081 %` against the reference's `0.217 %`, so the combined error is still
+/// `75 000` is the ladder's lowest rung. Five seeds there leave this side's error
+/// at `0.065 %` against the reference's `0.217 %`, so the combined error is still
 /// the reference's and the row is compared at the precision the bank was written
 /// with.
 const JJ_NEVAL: usize = 75_000;
@@ -1841,26 +1843,22 @@ const JJ_NITER: usize = 10;
 /// `2 → 2` final state gives the clustering no merge to choose, so σ here is a
 /// function of the momenta alone and `probe_jj_channel_partition` measures the
 /// partition gap at `1.0e-3` against its own `9.6e-4` Monte Carlo. What is left
-/// is Monte Carlo, so the pull is asserted too. Measured `+0.33 %` / `+0.26 %` /
-/// `+0.25 %` / `+0.30 %` over a `75 000`–`600 000` ladder at five seeds a rung.
+/// is Monte Carlo, so the pull is asserted too.
 ///
-/// This is the tightest measured cell in the file, and named as such rather than
-/// left to be rediscovered: over [`JJ_SEEDS`] at the gate budget the row reads
-/// `+3.329e-3`, so `0.005` clears it by `1.5x`. The residual is a converged
-/// offset the seeds resolve, not a spread they scatter over — per-seed `rel` runs
-/// `+9.6e-4` to `+5.1e-3` about a mean the budget ladder holds flat to `0.08 %` —
-/// so the margin is what the reference's own `0.22 %` error leaves after the
-/// offset, and no budget on either side shrinks it. A change that moves this row
-/// by another `0.15 %` fails the gate, which is the reading intended: the
-/// threshold does not move.
+/// Over [`JJ_SEEDS`] at the gate budget the row reads `+0.18 %` (the manifest's
+/// recorded reading), so `0.005` clears it by `2.8x`. The residual is a converged
+/// offset the seeds resolve, not a spread they scatter over, so the margin is
+/// what the reference's own `0.22 %` error leaves after the offset, and no budget
+/// on either side shrinks it.
 const JJ_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
-/// errors — the guard the scalar pull cannot be. The gate budget is the ladder's
-/// worst rung and measures `1.40` over five seeds there, against `0.44`, `0.82`
-/// and `1.21` at the three rungs above it. The gate forms it over the same five,
-/// so the bound and the statistic it bounds carry the same four degrees of
-/// freedom; at three it had two, wide enough for a converged row to post an
-/// alarming value and a scattered one an unremarkable one.
+/// errors — the guard the scalar pull cannot be. The gate budget was the ladder's
+/// worst rung at `1.40` over five seeds, against `0.44`, `0.82` and `1.21` at the
+/// three rungs above it, and reads `1.58` at the recorded reading. The gate forms
+/// it over the same five, so the bound and the statistic it bounds carry the same
+/// four degrees of freedom; three seeds would give two, wide enough for a
+/// converged row to post an alarming value and a scattered one an unremarkable
+/// one.
 const JJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// MadGraph's own concrete subprocesses for a banked run, one entry per
@@ -1961,10 +1959,11 @@ fn banked_outgoing_orderings(run: &str) -> (usize, usize, (usize, usize)) {
         if codes[2] == codes[3] {
             continue;
         }
+        // `momentum` is `[E, px, py, pz]`.
         let eta = |p: &vibegraph::lhef::record::LheParticle| {
-            let pt = p.momentum[0].hypot(p.momentum[1]);
+            let pt = p.momentum[1].hypot(p.momentum[2]);
             if pt > 0.0 {
-                (p.momentum[2] / pt).asinh()
+                (p.momentum[3] / pt).asinh()
             } else {
                 0.0
             }
@@ -2469,18 +2468,19 @@ fn sigma_jj_dynamical_scale_vs_mg() {
     row.subsampler = summary;
     row.note = Some(
         "the canonical leading-order QCD row: a per-event kT cluster scale read in the \
-         channel each point was drawn in, over a flavour decomposition whose members \
+         integration configuration drawn from each point's own AMP2, over a flavour \
+         decomposition whose members \
          carry unequal identical-particle symmetry factors. Its 65 concrete \
          subprocesses are MadGraph's own, asserted entry for entry against the run's \
          leshouche.inc by jj_subprocesses_are_madgraphs_own. rel_tol is the reference's \
          own 0.22% Monte-Carlo error with headroom, and the pull is asserted: the \
          partition ambiguity that sets the llj tolerances is 1.0e-3 here, at its own \
          Monte Carlo, because a 2 -> 2 final state gives the clustering no merge to \
-         choose. Three seeds at 75k, the lowest rung of the oracle-layer five-seed \
-         ladder, which reads +0.33% / +0.26% / +0.25% / +0.30% at chi2/dof \
-         1.40 / 0.44 / 0.82 / 1.21 over 75k to 600k -- flat, and with this side's \
-         three-seed error at 0.081% against the reference's 0.217% the comparison is \
-         still made at the bank's own precision"
+         choose. Five seeds at 75k, the lowest rung of the oracle-layer five-seed \
+         ladder; the row's recorded reading there is +0.18% (pull +0.80, chi2/dof \
+         1.58), 2.8x inside rel_tol, and with this side's five-seed error at 0.065% \
+         against the reference's 0.217% the comparison is made at the bank's own \
+         precision"
             .to_string(),
     );
     row.duration_s = Some(clock.seconds());
@@ -3009,23 +3009,21 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
         "the rung this row's budget ladder is flat at",
     ),
     // `mmll = 0` opens the low lepton-pair-mass region, the hardest budget on
-    // any row here, and the only ladder that still moves in one direction: five
-    // seeds a rung read `+0.04%`, `+0.07%`, `+0.11%`, `+0.21%` at 75k, 150k,
-    // 300k and 600k, with χ²/dof 1.49, 0.65, 0.33, 0.46. The rise is monotone
-    // over the whole eightfold range and is not a `75k` artefact, so no cut is
-    // licensed here; `150k` is kept because the `75k` rung's error is inflated
-    // to `0.29%` by a single seed (χ²/dof 1.49 against ≤0.65 above it), which is
-    // the rung a three-seed gate would be reading.
+    // any row here. Its five-seed ladder read `+0.04%`, `+0.07%`, `+0.11%`,
+    // `+0.21%` at 75k, 150k, 300k and 600k, which looks like a climb and is not
+    // one: forty seeds a rung (`probe_llj_seed_ensemble`) put the estimator's
+    // expectation flat from 150k up, rejecting a drift at 7.3σ, and show five
+    // seeds understating this row's per-seed spread by 2x at 150k and 5x at
+    // 600k. `150k` is where the estimator already is; the `75k` rung's error is
+    // inflated to `0.29%` by a single seed (χ²/dof 1.49 against ≤0.65 above it).
     (
         "pp_to_llj",
         "p p > l+ l- j",
         150_000,
-        "not a rung this row's budget ladder is flat at -- it still climbs \
-         monotonically over the whole 75k-600k range (span 0.17%), and this \
-         is the lowest rung whose 75k-inflated single-seed error does not \
-         dominate a three-seed read; the 0.17% span is unresolvable against \
-         the reference's own 0.33% error, which is why the climb is a \
-         recorded residual rather than a reason to cut further",
+        "the lowest rung of a ladder flat from 150k up, measured over forty seeds \
+         a rung (a five-seed read of the same ladder looks like a climb, because \
+         five seeds understate this row's per-seed spread by 2-5x); the 75k \
+         rung's error is inflated by a single seed",
     ),
     // Flat: `−0.03%`, `+0.05%`, `−0.02%`, `−0.04%` at χ²/dof 0.82, 0.65, 0.65,
     // 0.21, with this side's three-seed error `0.084%` against the reference's
@@ -3211,8 +3209,8 @@ fn sigma_ll_scalefact2_recarded_vs_mg() {
 /// The budget ladder behind the four re-carded rows' tolerances.
 ///
 /// A seed sweep alone cannot separate agreement from this crate's convergence:
-/// VEGAS's inverse-variance combination turns a region it under-samples into a
-/// confidently wrong σ, and mutually consistent seeds have been collectively
+/// a region VEGAS under-samples lowers the integral and its quoted error together,
+/// so it reads as a confidently wrong σ, and mutually consistent seeds have been collectively
 /// low before. What tells the two apart is whether the estimator moves with the
 /// budget. Five seeds a rung over an eightfold range, printed per rung so a
 /// residual that shrinks and one that does not are distinguishable.
@@ -3283,12 +3281,13 @@ fn probe_recarded_budget_ladder() {
     }
 }
 
-/// The three-seed σ gates of this file, each with the two further seeds that
-/// bring it to AGENTS.md's five.
+/// The Drell–Yan, `b b̄`, `j j` and re-carded σ gates of this file, each with five
+/// seeds.
 ///
-/// The first three of every entry are the gate's own seed list, so the five-seed
-/// reading below contains the three-seed one and the difference between them is
-/// exactly what the extra seeds buy. The extensions follow the budget ladders'
+/// Every entry starts with its gate's own seed list. The `j j` gate reads all five
+/// ([`JJ_SEEDS`]); the others read the first three, so their five-seed reading
+/// contains the three-seed one and the difference between them is exactly what
+/// the extra seeds buy. The extensions follow the budget ladders'
 /// convention of continuing each family's run of consecutive seeds.
 const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
     (
@@ -3341,21 +3340,21 @@ const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
     ),
 ];
 
-/// Every three-seed σ bound in this file read against five seeds at its own gate
-/// budget — the headroom census behind the seed counts.
+/// Every [`HEADROOM_ARMS`] σ bound read on the first three of its seeds and on all
+/// five, at its own gate budget — the headroom census behind the seed counts.
 ///
 /// [`combine_seeds`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
 /// gate forms it on two: wide enough that a converged row can post an alarming
-/// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` is
-/// five. The bounds those three-seed rows are held to were calibrated on
-/// five-seed budget ladders, so bound and statistic do not have the same degrees
-/// of freedom behind them. This prints both readings — the gate's three seeds and
-/// the same three plus two — with each bound's ratio to the five-seed value, so
-/// how much of each row's margin is the comparison and how much is the seed count
-/// is a measurement rather than an inference.
+/// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` and
+/// `JJ_SEEDS` are five. The bounds the three-seed rows are held to were
+/// calibrated on five-seed budget ladders, so bound and statistic do not have the
+/// same degrees of freedom behind them. This prints both readings with each
+/// bound's ratio to the five-seed value, so how much of each row's margin is the
+/// comparison and how much is the seed count is a measurement rather than an
+/// inference.
 ///
-/// One rung, every three-seed arm; the budget ladders above are where the other
-/// axis lives. Run with `--ignored --nocapture`.
+/// One rung, every arm; the budget ladders above are where the other axis lives.
+/// Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_hadronic_seed_headroom() {
@@ -4035,10 +4034,11 @@ fn probe_llj_dyn_scatter_guard_calibration() {
 
 /// Where `p p > l+ l- j`'s sampling variance actually lives.
 ///
-/// The row costs several times MadGraph's evaluations for the same accuracy and
-/// its σ ladder climbs monotonically with budget, and both are one statement:
-/// the weight distribution has a tail heavy enough that the sample mean and the
-/// empirical variance both converge slowly and from below. Knowing the tail
+/// The row costs several times MadGraph's evaluations for the same accuracy, and
+/// its per-seed spread is two to five times what five seeds' scatter suggests
+/// (`probe_llj_seed_ensemble`); both are one statement: the weight distribution
+/// has a tail heavy enough that the sample mean and the empirical variance both
+/// converge slowly. Knowing the tail
 /// index is not knowing where it comes from, and the fix — if there is one — is
 /// a map, so this decomposes the variance by channel and by the kinematics of
 /// the points that carry it.
@@ -4602,8 +4602,10 @@ fn sigma_llj_mlm_alps2_vs_madevent() {
     mlm_sigma_row("pp_to_llj_mlm_alps2", MLM_ALPS2_SEEDS, "gate");
 }
 
-/// Ten seeds: five read χ²/dof 2.9 about their mean, more scatter than the
-/// quoted errors, so the row takes twice the pure-cut row's.
+/// Ten seeds, twice the pure-cut row's. The row's recorded reading over them is
+/// χ²/dof `0.86`, inside its `0.13`–`3.10` band; a five-seed read of this row has
+/// measured `2.9`, more scatter than the quoted errors, and no five-seed reading
+/// since says five would now suffice.
 const MLM_SEEDS: &[u64] = &[
     20260951, 20260952, 20260953, 20260954, 20260955, 20260956, 20260957, 20260958, 20260959,
     20260960,

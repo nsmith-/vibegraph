@@ -6,18 +6,20 @@
 //! Every banked run writes 10k events with the scales MadGraph chose for them.
 //! Three fields carry them, at two different precisions:
 //!
-//! * `SCALUP` on the `<event>` line. `unwgt.f:686` fills it as
+//! * `SCALUP` on the `<event>` line. `unwgt.f:752` fills it as
 //!   `sqrt(max(q2fact(1), q2fact(2)))` — the **factorisation** scale, not the
 //!   renormalisation scale. The two coincide wherever the clustering reads both
 //!   off the same vertex, which is every run below and is why the field passes for
 //!   `μR` at all; [`scalup_is_not_the_renormalisation_scale`] shows where it stops.
-//! * `<rscale>` inside `<mgrwt>`: `s_scale`, which `reweight.f:1250` sets to
-//!   `scale` — `μR` itself, at one more printed digit than `SCALUP`.
+//! * `<rscale>` inside `<mgrwt>`: `s_scale`, which `reweight.f:1275` sets to
+//!   `scale` (`:645` on the fixed-scale return) — `μR` itself, at one more
+//!   printed digit than `SCALUP`.
 //! * `<pdfrwt beam="i">`: `sqrt(q2fact(i))`, so `μF` **per beam**.
 //!
-//! The `<mgrwt>` block only appears with `use_syst`, which is 6 of the 20 banked
-//! runs. The other 14 are pinned by `SCALUP` alone — plus, independently of any
-//! scale field, by `AQCDUP`: `αs` at `μR`, which
+//! The `<mgrwt>` block only appears with `use_syst`, which the ten proton-beam
+//! runs replayed here carry and the fixed-energy runs do not. The fixed-energy
+//! runs are pinned by `SCALUP` alone — plus, independently of any scale field,
+//! by `AQCDUP`: `αs` at `μR`, which
 //! [`banked_events_reproduce_aqcdup_from_the_computed_scale`] recomputes from the
 //! scale this crate derives from the momenta rather than from a printed field.
 //!
@@ -43,18 +45,21 @@
 //!   told apart from either leg's own `√djb`. Every banked run with a coloured
 //!   final state has equal-mass legs, so the *form* of the mean is unpinned; what
 //!   is pinned is that the scale is that common transverse mass.
-//! * **`scalefact`.** Every banked run has `scalefact = 1`, so where MadGraph
-//!   applies it — and the one place it applies it twice — is pinned only by the
-//!   unit tests in the module, against a reading of the Fortran.
-//! * **Whether a fixed scale is right for the *reason* it is right.** One banked
-//!   run (`pp_to_llj_fixed`) pins all three scales at `m_Z`, so its replay
+//! * **`scalefact` beyond one run.** One banked run carries `scalefact ≠ 1`
+//!   ([`SCALEFACT_RUNS`]: `pp_to_ll_scalefact2`, at 2), and it pins MadGraph
+//!   3.7.1's placement — one power on `μR` and one on each beam's `μF`. It is one
+//!   process (Drell–Yan) at one value; every other run leaves the factor at 1,
+//!   where any placement reads the same.
+//! * **Whether a fixed scale is right for the *reason* it is right.** Three
+//!   banked runs ([`FIXED_SCALE_RUNS`]) fix their scales, so their replay
 //!   confirms that the fixed branch reaches every printed field and that the
 //!   run-card constant is the one that lands there — but a constant cannot
 //!   distinguish `μR` from `μF`, and no perturbation of the momenta can move it,
-//!   so the run says nothing about the kinematic dependence the other runs pin.
-//!   Its value is the complementary one: it is the same `p p → l+ l- j` process
-//!   its dynamical siblings run, differing in the three `fixed_*_scale` booleans
-//!   alone, so it separates the prescription from the process. The
+//!   so they say nothing about the kinematic dependence the other runs pin.
+//!   `pp_to_llj_fixed`'s value is the complementary one: it is the same
+//!   `p p → l+ l- j` process its dynamical siblings run, differing in the three
+//!   `fixed_*_scale` booleans alone, so it separates the prescription from the
+//!   process. The
 //!   `dy13_*_run_card.dat` cards the hadronic cross-section
 //!   reference was generated with are asserted to still compile to the constants
 //!   that reference assumed. That assertion, and the rest of what the committed

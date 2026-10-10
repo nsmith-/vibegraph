@@ -105,8 +105,10 @@
 //! exception, for a reason recorded there: a pull cannot bound a residual that is
 //! a systematic rather than a fluctuation.
 //!
-//! Runs only when the gitignored MadGraph `output/` tree is present (same
-//! contract as `amplitude_oracle`); otherwise every process is skipped.
+//! A banked layer takes no runtime skip: a run the reference bundle carries and
+//! this machine lacks fails the gate through `vibegraph::validation::require`,
+//! naming it. Only a row the manifest declares outside the bundle is reported as
+//! awaiting it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -205,8 +207,8 @@ const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
 /// `gg_to_ttx_smlimit_qcd2` is here because SMEFTsim's effective `g g h` vertex,
 /// which an explicit `QCD<=2` keeps and the default order bound drops, carries a
 /// coupling that is not a monomial in `G`; the rescaling path needs one. The
-/// cost lands almost entirely on the α survey, so the row runs in 17 s at its
-/// gate budget against 16 s at a twentieth of it.
+/// cost lands almost entirely on the α survey, so the row runs in 17.3 s at its
+/// gate budget (40 000 × 6) against 15.6 s at a thirtieth of it (4 000 × 2).
 ///
 /// `gg_to_gg_cg` is here for the same reason on a different operator: `O_G`'s
 /// higher-derivative four-gluon vertex carries `cG` alongside the strong
@@ -1948,8 +1950,9 @@ fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
 /// both samplers.
 ///
 /// A single seed at a single budget cannot separate an agreement from an
-/// estimator still moving: VEGAS's inverse-variance iteration combination reports
-/// an under-sampled region as a confident value, error bar included. What tells
+/// estimator still moving: a VEGAS run reports an under-sampled region as a
+/// confident value, error bar included, because the region's absence lowers the
+/// integral and its quoted error together. What tells
 /// the two apart is whether σ moves with the budget and whether the seeds scatter
 /// by more than they claim, so the rungs are printed rather than summarised and
 /// each carries five independent seeds.

@@ -3700,19 +3700,19 @@ mod tests {
         (evals, cuts, masses, avg)
     }
 
-    /// The sampler's channels and the scale prescription's integration channels
-    /// are one numbering apart, and this is where the two meet.
+    /// Diagrams and integration configurations are one numbering apart, and this
+    /// is where the sampler and the scale prescription meet.
     ///
-    /// `g g → g g` is the process where they provably differ: four diagrams, four
-    /// sampling channels, three integration channels, because MadGraph's
-    /// generator drops the four-gluon diagram. So the map cannot be the identity
-    /// and cannot be assumed — a point drawn in the sampler's channel 2 is
-    /// clustered in integration channel 2, not 3, and the channel with no config
-    /// of its own falls back rather than indexing past the end.
+    /// `g g → g g` is the process where they provably differ: four diagrams and
+    /// three integration configurations, one per MadGraph configuration, because
+    /// the four-gluon contact has no propagator to enhance and gets none. So
+    /// a diagram's index is not its configuration's: the contact maps to no
+    /// configuration and the other three number theirs from one.
     ///
     /// What this pins that `configs`' own test cannot is the *wiring*: that the
     /// integrand hands the scale source the same diagram slice its sampler is
-    /// built from, so the two indices mean the same thing.
+    /// built from, and that the sampler builds one channel per configuration, so
+    /// a sampling channel and an integration configuration share one index.
     #[test]
     fn a_sampled_channel_names_the_integration_channel_of_its_own_diagram() {
         let m = model();

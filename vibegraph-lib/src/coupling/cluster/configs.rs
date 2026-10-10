@@ -561,15 +561,15 @@ mod tests {
         }
     }
 
-    /// The map from a sampler's channels to integration channels, on the one
-    /// process where the two numberings provably differ.
+    /// The map from diagrams to integration configurations, on the one process
+    /// where the two numberings provably differ.
     ///
-    /// A per-diagram sampler has one channel per *diagram*; `configs.inc` has one
-    /// per surviving diagram. `g g → g g` is where that gap is visible without a
-    /// MadGraph run: the four-gluon diagram has no channel, so the sampler's
-    /// fourth channel maps to nothing and the other three do not map to
-    /// themselves. Anything that reorders either side — the diagram enumeration
-    /// or the forest derivation — moves this table.
+    /// `configs.inc` has one configuration per diagram with a propagator to
+    /// enhance. `g g → g g` is where that gap is visible without a MadGraph run:
+    /// the four-gluon diagram has none, so it maps to no configuration and the
+    /// other three number their configurations among themselves, so a
+    /// configuration's index is not its diagram's. Anything that reorders either side — the diagram enumeration or the
+    /// forest derivation — moves this table.
     #[test]
     fn the_channel_to_config_map_is_not_the_identity() {
         let model = sm_model(SMRestrict::Default);

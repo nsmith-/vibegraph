@@ -3,8 +3,9 @@
 //!
 //! Each rung is integrated to a fixed relative accuracy, its channel maxima are
 //! scanned on the trained grids, and unweighted events are drawn by the same
-//! accept/reject pass `vibegraph generate` runs (no file is written: a decay-chain
-//! event file waits on its status-2 resonance records). For every rung it prints
+//! accept/reject pass `vibegraph generate` runs. The events are counted, not
+//! written: the event file, status-2 resonance records included, is
+//! `cli_decay_chain_events`' subject. For every rung it prints
 //!
 //! - the final-state leg count, channels and subprocesses;
 //! - the cost of one integrand point and of the squared matrix element alone at
