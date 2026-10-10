@@ -139,3 +139,9 @@
   by option (b), a required `forbidden_onshell` argument to `ReweightPlan::new`
   with `OnShell::Forbidden` deleted. It runs in this sprint as **F-C2**, before
   F-D.
+* **F-C2 reported and merged** (`ed5b166`). The report is recorded as
+  `sessions/F-C2-report.md`. Manager check: all-features clippy exits 0, the
+  reweight lib tests (33) and CLI unit tests (95) pass, and no
+  `OnShell::Forbidden` remains. The agent's full suite gave 1353 passed, and
+  the banked `reweight_mg_oracle` and `cli_reweight_proton` pass.
+* **F-D dispatched** (`performance-dev`, Opus) on `hygiene-fd` from this merge.
