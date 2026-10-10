@@ -188,3 +188,13 @@
 * **F-G1 reported** (`hygiene-fg1`, 2f94cbc..0401a9a, 11 commits). The report
   is recorded as `sessions/F-G1-report.md`. The manager's gate re-run,
   including a collator pass over the new manifest, is in progress.
+* **F-G1 merged.** Manager gate re-run at `0401a9a`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 37 suites (two moved in), 1391 passed,
+    0 failed, 16 ignored;
+  - the banked `color_cf_oracle` passes 97;
+  - the collator renders the two new hermetic standalone rows. It exits 1
+    only on banked cells this worktree's partial report directory never
+    wrote, a pre-existing state; the full `validate.sh` run is close-out's.
+* **F-G2 dispatched** (`validation-dev`, Opus) on `hygiene-fg2` from this
+  merge, after clearing `target/debug` (6 GB free before).
