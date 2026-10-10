@@ -3,7 +3,7 @@ type: Sprint
 title: "Hygiene sprint"
 description: "One pass over the existing codebase for maintainability, test non-vacuity, minimal visibility and reusable abstractions, closing the localised hygiene items, whose lessons design the hygiene agent."
 status: draft
-active: true
+active: false
 tags: [hygiene, sprint, visibility, non-vacuity, maintainability]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:

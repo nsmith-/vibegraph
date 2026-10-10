@@ -35,12 +35,9 @@ Ghosts and Goldstone bosons never enter diagram generation: `build_feyngraph_mod
 (`ufo/topo.rs`) skips the particles and every vertex touching one, as MadGraph does at
 tree level. feyngraph counts spin as 2s, so the loader passes `spin − 1`.
 
-UFO colour codes on particles are `1`, `3`/`−3`, `6`/`−6` and `8`. One quirk of this
-loader: an antiparticle created from `.anti()` gets `color = −self.color` for every
-representation, so singlet and octet antiparticles carry `−1`/`−8` where UFO's own
-`anti()` leaves self-conjugate representations unchanged
-([backlog](../backlog/hygiene/make-anti-negates-singlet-octet-colour.md)). A reader of
-`Particle::color` on an antiparticle has to allow for it.
+UFO colour codes on particles are `1`, `3`/`−3`, `6`/`−6` and `8`. An antiparticle
+created from `.anti()` gets UFO's own `anti()` colour: `3` and `6` are negated, while
+the self-conjugate `1` and `8` are unchanged (`ufo/particles.rs` `make_anti`).
 
 ## ALOHA value families
 

@@ -239,3 +239,18 @@
   - The 162 188 live-slot reading was reproduced at `190c13e`.
   - Two more stale code comments were added to
     comment-leftovers-after-hygiene-sprint.
+* **Close-out (Z):**
+  - The full banked `validation/validate.sh` at `4ac6cd4` (final code) exits
+    0: 62 suites with 1776 passed, 0 failed, 84 ignored. The collator reports
+    the measured cells are exactly the declared ones, and every gate cell
+    passed.
+  - 25 closed item files were deleted.
+  - acceptance-yml-fails-on-refdata-releases was released.
+  - hygiene-agent-type was unblocked.
+  - The eight concepts that cited deleted items were rewritten to state the
+    current fact, and `ufo-aloha-type-matrix.md`'s stale `make_anti` quirk
+    was corrected.
+  - `closeout.md` was finalised, `sprint.md` set `active: false`, and the
+    root log entry added.
+  - Awaiting the user's review: the review and fix protocols, and the
+    `hygiene-review` concept, all still `draft`.

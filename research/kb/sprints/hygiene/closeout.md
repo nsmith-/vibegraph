@@ -83,9 +83,9 @@ Per-session reports: [F-A](sessions/F-A-report.md), [F-B](sessions/F-B-report.md
 
 ## Backlog
 
-**Closed (files deleted):** 25 items. They are hygiene-sprint, the four
-`dead-types…`/`evaluator…`/`ufo-asin…`/`make-anti…` items, and every other
-claimed item except one; the list is in `sprint.md`, "Scope".
+**Closed (files deleted):** 25 items, every claimed item except the one
+released below; the list is in `sprint.md`, "Scope". hygiene-agent-type, blocked
+on this sprint, is now open.
 configuration-weights-wrong-at-sde1-with-tmin closed by a refusal, not by its
 prescribed weight; [F-E's report](sessions/F-E-report.md) gives MadGraph's
 source.
@@ -108,4 +108,10 @@ the sprint.
 - **fmt and clippy, both configurations:** clean.
 - **Hermetic suite:** 37 suites, 1391 passed, 0 failed, 16 ignored (manager
   re-run at F-G2's head).
-- **Full banked `validation/validate.sh`:** see the log entry that records it.
+- **Full banked `validation/validate.sh`** on the final code (`4ac6cd4`; every
+  later commit touches only `research/kb/`). The manager ran it detached on
+  this 4-core host:
+  - exit 0, with 62 test suites: 1776 passed, 0 failed, 84 ignored;
+  - collator: 256 cells, 203 measured (196 ✅, 7 ⚠️), 13 ⏳, 40 uncovered;
+  - "the measured cells are exactly the cells the manifest declares, every
+    gate cell passed".

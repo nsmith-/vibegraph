@@ -109,8 +109,9 @@ sign, so no rule of this form can win that clause.
 **By-product.** `|G| = 1, Re G = 0` follows from i-counting (see
 [global-phase-i-counting](global-phase-i-counting.md)), and every
 per-configuration phase measured exactly `k/G ∈ {±1}` (113 configurations, worst
-residual 1.19e-13): the fitted quantities are bits, mostly MadGraph's `c_j`. Not
-yet asserted: [config-amp-phase-and-sign-unpinned](../backlog/validation/config-amp-phase-and-sign-unpinned.md).
+residual 1.19e-13): the fitted quantities are bits, mostly MadGraph's `c_j`.
+`amplitude_oracle` now asserts `|Im(k/G)| < LINEAR_REL_TOL` per configuration
+and banks the per-process sign patterns (`CONFIG_AMP_SIGNS`); see the [F-G1 report](../sprints/hygiene/sessions/F-G1-report.md).
 
 ## What the study cannot decide
 

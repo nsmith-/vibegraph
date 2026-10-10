@@ -28,8 +28,9 @@ sessions on it in turn, and later hygiene sessions as well. The same pieces
 then apply **per PR**: a draft-PR claim, short session briefs, reports with a
 Found section, and a close-out that deletes the item. The first work after the
 knowledge-bundle migration is one dedicated
-[hygiene sprint](../backlog/hygiene/hygiene-sprint.md). It runs in the full
-sprint shape below and is that shape's test on live work.[^n42-trial]
+[hygiene sprint](../sprints/hygiene/closeout.md). It ran in the full
+sprint shape below and was that shape's test on live work; its lessons are in
+[hygiene review](hygiene-review.md).[^n42-trial]
 
 ## The folder
 

@@ -202,14 +202,14 @@ asserted. Pruning itself is
 
 Known gaps:
 
-- **The phase of `k` is free, and the per-process sign pattern is not banked.**
-  Only `|k| = 1` is asserted. Measured over every banked configuration,
-  `k/G ∈ {±1}` exactly (`G` the process-wide `±i`), and
-  `run_config_amps()[i]` differs from the single-diagram compile by ±1 in a
-  per-process pattern that is non-uniform on three rows (`ee_to_tatah`,
-  `ee_to_mumua`, `ee_to_mumu_tata_qcd0`). Neither is pinned. This is inert today:
-  `eval_amp2` is sign-blind and `run_config_amps` has no production consumer.
-  Open as [config-amp-phase-and-sign-unpinned](../backlog/validation/config-amp-phase-and-sign-unpinned.md).
+- **The phase of `k` and the per-process sign pattern are pinned.**
+  `amplitude_oracle` asserts `|Im(k/G)| < LINEAR_REL_TOL` per configuration
+  (`G` the process-wide `±i`) and checks `run_config_amps()` against the
+  single-diagram compile through the banked `CONFIG_AMP_SIGNS` patterns
+  (±1/|c|, the colour coefficient entering), non-uniform on five rows. Rows
+  with no per-diagram comparison, every multi-flow row among them, are not
+  covered: [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md);
+  see the [F-G1 report](../sprints/hygiene/sessions/F-G1-report.md).
 - **`wpwm_to_wpwmz_cw`** has no banked diagram pairing, so its 21-group
   partition matches MadGraph's only in group sizes
   (`KNOWN_CONFIG_PAIRING_UNAVAILABLE`); see

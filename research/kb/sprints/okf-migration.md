@@ -206,7 +206,7 @@ one useful part as a backlog item without the OKF machinery:
 ## After the migration
 
 The first sprint is the dedicated
-[hygiene sprint](../backlog/hygiene/hygiene-sprint.md), run in the full
+[hygiene sprint](hygiene/closeout.md), run in the full
 [sprint lifecycle](../workflow/sprint-lifecycle.md) shape, including the
 draft-PR claim. It is the lifecycle's test on live work. Then work moves to
 [one PR per backlog item](../decisions/pr-per-backlog-item.md), and the
