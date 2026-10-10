@@ -7,9 +7,10 @@
 //!    substreams are structurally independent: a `(stream, position)` pair
 //!    names an exact location in the output, with 2⁶⁴ selectable streams per
 //!    seed and a settable draw position within each. This maps directly onto
-//!    parallel/distributed accumulation — `stream ← (iteration, chunk index)`,
-//!    `position ← draw counter` — with no reliance on hash-mixing for
-//!    independence.
+//!    parallel/distributed accumulation — `stream ←` one per channel or
+//!    survey iteration, `position ←` the point's index in that stream's run
+//!    times its draws per point, so a chunk of points seeks to its own start —
+//!    with no reliance on hash-mixing for independence.
 //!
 //! 2. A documented **bits→uniform** conversion ([`u64_to_uniform`]) that turns
 //!    each 64-bit draw into a `[0, 1)` value in the scalar field `F`. The
