@@ -3432,7 +3432,7 @@ mod tests {
     /// How much is enough is a function of `s-hat`, not a constant, and it is not
     /// a statement about the *weakest* point: the visibility vanishes wherever
     /// the two orderings happen to agree, so a minimum over random draws is a
-    /// property of the sample size — it falls by a decade from 36 draws to 512 at
+    /// property of the sample size — it falls by a decade from 32 draws to 512 at
     /// every energy. The control is therefore stated on the tenth percentile,
     /// against `mirror_visibility_floor`, over a ladder that reaches well below
     /// the electroweak scale.
@@ -3608,9 +3608,10 @@ mod tests {
         0.076 * s / (s + M_Z2)
     }
 
-    /// The ladder `mirror_visibility_floor` is fitted to, at sample sizes and
-    /// stream seeds the gate does not use, so the floor stands on a measurement
-    /// rather than on the one draw it is asserted against. Tenth percentiles:
+    /// The ladder `mirror_visibility_floor` is fitted to: two sample sizes and
+    /// three stream seeds, of which only the first row (32 points, `0x0ff5e7ed`)
+    /// is the gate's own draw, so the floor stands on five measurements besides
+    /// the one it is asserted against. Tenth percentiles:
     ///
     /// ```text
     /// npts stream          25       65      150      400     1200     4000

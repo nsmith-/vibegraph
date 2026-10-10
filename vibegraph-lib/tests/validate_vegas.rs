@@ -11,7 +11,6 @@ mod common;
 use common::{generate, sm_model};
 
 const ALPHA_QED_MZ: f64 = 1.0 / 132.507;
-const MDL_MZ: f64 = 91.188;
 use std::f64::consts::PI;
 use std::sync::Arc;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
@@ -78,10 +77,20 @@ fn build_evaluator() -> (AmplitudeEvaluator, Arc<UFOModel>) {
     (evaluator, model)
 }
 
+/// How many of its own quoted Monte-Carlo errors a fixed-seed estimate may sit
+/// from its target, on top of any stated systematic. A fixed seed makes the run
+/// reproducible, not exact: four standard errors is a 6e-5 chance per test of a
+/// sampling-order change tripping it.
+const MC_ERRORS: f64 = 4.0;
+
 /// Validate `sigma_ee_mumu` (evaluator) vs the QED analytic formula σ = 4πα²/3s.
 ///
-/// At √s = 10 GeV (well below the Z pole) the Z-exchange contribution is small
-/// (~0.5%), so we allow 3% tolerance to cover both MC noise and the Z interference.
+/// At √s = 10 GeV the Standard Model's Z exchange moves the cross section by at
+/// most [`common::ee_to_mumu_z_bound`] (about `1.2e-4`), so that is the
+/// systematic allowed for, plus [`MC_ERRORS`] of the run's own quoted error. The
+/// result pins the evaluator's normalisation — couplings, spin average, the
+/// two-body phase space — at that scale: a weight off by 2% misses by a hundred
+/// times the bound.
 #[test]
 fn sigma_qed_limit() {
     let sqrt_s = 10.0_f64;
@@ -90,76 +99,68 @@ fn sigma_qed_limit() {
 
     let (evaluator, model) = build_evaluator();
     let evaluated = EvaluatedModel::from_model(model.clone());
+    let z_bound = common::ee_to_mumu_z_bound(&evaluated, s);
 
     let (sigma, err) = sigma_ee_mumu(&evaluator, &evaluated, sqrt_s, (-1.0, 1.0), 50_000, 10);
     let sigma_pb = sigma * GEV2_TO_PB;
     let analytic_pb = sigma_analytic * GEV2_TO_PB;
 
     let rel = (sigma - sigma_analytic).abs() / sigma_analytic;
+    let bound = z_bound + MC_ERRORS * err / sigma_analytic;
+    println!(
+        "σ(e+e-→μ+μ-) at √s={sqrt_s} GeV: MC = {sigma_pb:.6} ± {:.6} pb, QED = \
+         {analytic_pb:.6} pb, |rel| = {rel:.3e} against {bound:.3e} (Z bound {z_bound:.3e})",
+        err * GEV2_TO_PB
+    );
     assert!(
-        rel < 0.03,
-        "σ(e+e-→μ+μ-) at √s={sqrt_s} GeV: \
-         MC = {sigma_pb:.4} pb ± {:.4} pb, \
-         QED = {analytic_pb:.4} pb, \
-         rel_diff = {rel:.4}",
+        rel < bound,
+        "σ(e+e-→μ+μ-) at √s={sqrt_s} GeV: MC = {sigma_pb:.6} pb ± {:.6} pb, \
+         QED = {analytic_pb:.6} pb, |rel| = {rel:.3e} > {bound:.3e}",
         err * GEV2_TO_PB
     );
 }
 
-/// Validate `sigma_ee_mumu` (evaluator) at the Z pole against the MadGraph5 reference.
+/// The banked MadGraph cross section of `e+ e- > mu+ mu-`, read from the
+/// committed reference with the beam energies it was run at.
+fn banked_ee_to_mumu() -> (f64, f64, f64) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/sigma_reference.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let reference: serde_json::Value = serde_json::from_str(&text).expect("reference parses");
+    let row = &reference["ee_to_mumu"];
+    let field = |name: &str| {
+        row[name]
+            .as_f64()
+            .unwrap_or_else(|| panic!("ee_to_mumu has no numeric {name}"))
+    };
+    (
+        field("sigma_pb"),
+        field("sigma_err_pb"),
+        field("ebeam1") + field("ebeam2"),
+    )
+}
+
+/// Validate `sigma_ee_mumu` (evaluator) at the Z pole against the banked MadGraph
+/// cross section, at the run's own `√s` (`ebeam1 + ebeam2`, 91.2 GeV, not
+/// `M_Z`) and acceptance: the run card's `ptl > 10 GeV` and `etal < 2.5`, which
+/// for a back-to-back massless pair are one cut on `|cos θ|`.
 ///
-/// MadGraph5 (SM, tree-level, ebeam = 45.6 GeV) gives σ ≈ 2025 pb with default cuts
-/// `ptl > 10 GeV`, `etal < 2.5`.  We apply the same acceptance window.
+/// The bound is a pull of three on the combined error, MadGraph's `0.042%`
+/// dominating it. The `12 MeV` between `M_Z` and the run's `√s` moves σ by about
+/// `2e-4`, half the reference's own error: small, and the reason the reference's
+/// own energy is read rather than assumed.
 #[test]
 fn sigma_z_pole() {
-    const MG5_SIGMA_PB: f64 = 2025.0;
     const PTL_CUT: f64 = 10.0;
     const ETAL_CUT: f64 = 2.5;
+    const PULL_LIMIT: f64 = 3.0;
 
-    let sqrt_s = MDL_MZ;
+    let (mg_pb, mg_err_pb, sqrt_s) = banked_ee_to_mumu();
     let p_cm = sqrt_s / 2.0;
     let cos_max_ptl = (1.0 - (PTL_CUT / p_cm).powi(2)).sqrt();
     let cos_max_eta = ETAL_CUT.tanh();
     let cos_max = cos_max_ptl.min(cos_max_eta);
-
-    let (evaluator, model) = build_evaluator();
-    let evaluated = EvaluatedModel::from_model(model.clone());
-
-    let (sigma, _err) = sigma_ee_mumu(
-        &evaluator,
-        &evaluated,
-        sqrt_s,
-        (-cos_max, cos_max),
-        100_000,
-        10,
-    );
-    let sigma_pb = sigma * GEV2_TO_PB;
-
-    let rel = (sigma_pb - MG5_SIGMA_PB).abs() / MG5_SIGMA_PB;
-    assert!(
-        rel < 1e-3,
-        "Z-pole σ (AmplitudeEvaluator, MG5 cuts): {sigma_pb:.1} pb vs MadGraph {MG5_SIGMA_PB:.1} pb, \
-         cos_max = {cos_max:.4}, rel_diff = {rel:.4}"
-    );
-}
-
-/// `validate_vegas`: AmplitudeEvaluator + VEGAS gives the same Z-pole σ as the
-/// previously validated hardcoded amplitude.  Passing this test confirms that
-/// replacing `compute_m2_ee_mumu` with `AmplitudeEvaluator::eval_m2` in the
-/// phase-space loop does not change the cross section.
-///
-/// Uses the same MadGraph reference (2025 pb) as `sigma_z_pole`; any regression in
-/// the evaluator path that shifts σ by more than 0.1% would be caught here.
-#[test]
-fn validate_vegas() {
-    const MG5_SIGMA_PB: f64 = 2025.0;
-    const PTL_CUT: f64 = 10.0;
-    const ETAL_CUT: f64 = 2.5;
-    const REL_TOL: f64 = 1e-3;
-
-    let sqrt_s = MDL_MZ;
-    let p_cm = sqrt_s / 2.0;
-    let cos_max = (1.0 - (PTL_CUT / p_cm).powi(2)).sqrt().min(ETAL_CUT.tanh());
 
     let (evaluator, model) = build_evaluator();
     let evaluated = EvaluatedModel::from_model(model.clone());
@@ -175,10 +176,16 @@ fn validate_vegas() {
     let sigma_pb = sigma * GEV2_TO_PB;
     let err_pb = err * GEV2_TO_PB;
 
-    let rel = (sigma_pb - MG5_SIGMA_PB).abs() / MG5_SIGMA_PB;
+    let pull = (sigma_pb - mg_pb) / (err_pb * err_pb + mg_err_pb * mg_err_pb).sqrt();
+    println!(
+        "Z-pole σ at √s = {sqrt_s} GeV: {sigma_pb:.3} ± {err_pb:.3} pb vs MadGraph \
+         {mg_pb:.3} ± {mg_err_pb:.3} pb, pull {pull:+.2}, rel {:+.3e}",
+        sigma_pb / mg_pb - 1.0
+    );
     assert!(
-        rel < REL_TOL,
-        "validate_vegas: AmplitudeEvaluator σ = {sigma_pb:.2} ± {err_pb:.2} pb, \
-         hardcoded ref = {MG5_SIGMA_PB:.1} pb, rel_diff = {rel:.4} > {REL_TOL}"
+        pull.abs() < PULL_LIMIT,
+        "Z-pole σ (AmplitudeEvaluator, MadGraph's cuts) at √s = {sqrt_s} GeV: \
+         {sigma_pb:.3} ± {err_pb:.3} pb vs MadGraph {mg_pb:.3} ± {mg_err_pb:.3} pb, \
+         cos_max = {cos_max:.4}, pull = {pull:+.2}"
     );
 }

@@ -401,11 +401,11 @@ fn only_the_points_lhapdf_has_no_reading_for_are_refused() {
     assert!(member.try_xfx_q2(2, 0.1, f64::INFINITY).is_err());
 }
 
-// ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────
+// ── Multi-Q²-subgrid coverage (NNPDF31_lo_as_0130) ─────────────────────
 //
 // A single-subgrid set never exercises the subgrid walk or the one-sided
 // Q²-derivative each band takes at an internal seam. These gates pin both
-// against real LHAPDF values on a three-band set.
+// against real LHAPDF values on a set of two Q² subgrids joined at one seam.
 
 #[test]
 fn multigrid_subgrid_structure_matches_oracle() {

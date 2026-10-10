@@ -5,8 +5,9 @@
 //! `R_n` and `(2pi)^(4-3n)` factors integrate to the right number. These do,
 //! against the QED analytic sigma at a smooth 2-body point and — for the 2 -> 6
 //! continuum, where the integrand is heavy-tailed — against the banked MadGraph
-//! value. Banked for cost: about 10^5 to 10^6 integrand evaluations, no external
-//! inputs beyond the committed sigma reference.
+//! value, to within an order of magnitude. Banked for cost: about 10^5
+//! integrand evaluations. The 2 -> 6 check is `#[ignore]`d and also reads the
+//! banked run's parameter card; run it with
 //!
 //!     cargo test -p vibegraph-lib --features extended-validation \
 //!         --test rambo_flat_mc -- --ignored --nocapture
@@ -20,8 +21,11 @@ use vibegraph::phasespace::rambo;
 /// Decisive, low-variance check of the RAMBO weight normalization: σ(e⁺e⁻→μ⁺μ⁻)
 /// at √s = 10 GeV via a flat `rambo` n=2 Monte-Carlo, against the QED analytic
 /// σ = 4πα²/(3s). Because ee→μμ is angularly smooth (no soft/collinear peak),
-/// flat sampling converges fast, so this pins the weight's `R_n` and `(2π)^{4-3n}`
-/// factors at the ~1% level — the precision the heavy-tailed 2→6 check cannot reach.
+/// flat sampling converges fast: the run's own error is about `5e-4` relative.
+/// The bound is four of those plus the Z exchange's whole possible effect at
+/// this energy ([`common::ee_to_mumu_z_bound`], about `1.2e-4`), so it pins the
+/// weight's `R_n` and `(2π)^{4-3n}` factors at about `0.2%` — the precision the
+/// heavy-tailed 2→6 check cannot reach.
 #[test]
 fn flat_mc_two_body_normalization() {
     use std::f64::consts::PI;
@@ -79,10 +83,13 @@ fn flat_mc_two_body_normalization() {
         "flat-MC σ(e+e-→μ+μ-, √s=10) = {sigma:.5} ± {sigma_err:.5} pb  \
          (QED 4πα²/3s = {sigma_analytic:.5} pb, rel {rel:.4}, N={n_points})"
     );
-    // MC noise + the ~0.5% Z-interference at √s = 10 GeV.
+    // Four of the run's own errors: a 6e-5 chance per run of a sampling-order
+    // change tripping it, and a weight off by 2% misses by ten times the bound.
+    let bound = common::ee_to_mumu_z_bound(&evaluated, s) + 4.0 * sigma_err / sigma_analytic;
     assert!(
-        rel < 0.03,
-        "flat-MC σ(ee→μμ) {sigma:.5} pb vs QED {sigma_analytic:.5} pb, rel {rel:.4}"
+        rel < bound,
+        "flat-MC σ(ee→μμ) {sigma:.5} ± {sigma_err:.5} pb vs QED {sigma_analytic:.5} pb, \
+         |rel| {rel:.3e} > {bound:.3e}"
     );
 }
 
@@ -96,28 +103,52 @@ fn flat_mc_partonic_sigma() {
     use vibegraph::ufo::slha::ParamCard;
     use vibegraph::ufo::EvaluatedModel;
 
-    let process = "u u~ > c c~ e+ e- mu+ mu- QCD=0";
-    let sqrt_s = 500.0f64;
+    const ROW: &str = "uux_to_ccx_emmm_qcd0";
+    // The banked MadGraph partonic σ̂, its process and its beams, from the
+    // committed reference.
+    let reference_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json");
+    let reference: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&reference_path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", reference_path.display())),
+    )
+    .expect("reference parses");
+    let field = |name: &str| {
+        reference[ROW][name]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{ROW} has no numeric {name}"))
+    };
+    let banked_sigma_pb = field("sigma_pb");
+    let sqrt_s = field("ebeam1") + field("ebeam2");
+    let process = reference[ROW]["process"]
+        .as_str()
+        .expect("the reference names its process")
+        .to_string();
+    let process = process.as_str();
     let s = sqrt_s * sqrt_s;
     let n_out = 6usize;
-    // Banked MadGraph partonic σ̂ for this process at √ŝ = 500 GeV.
-    const BANKED_SIGMA_PB: f64 = 6.556e-7;
 
     let sets = common::generate(process);
     assert!(!sets.is_empty(), "no diagrams for {process}");
     let model = common::sm_model();
 
-    // Use MadGraph's param card when the reference output is present so the EW
-    // couplings match the banked run; fall back to the baked SM defaults.
+    // MadGraph's own param card for the run, so the electroweak couplings are the
+    // ones the banked σ̂ was computed with.
     let card_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../validation/madgraph/output/uux_to_ccx_emmm_qcd0/Cards/param_card.dat");
-    let card = std::fs::read_to_string(&card_path)
-        .ok()
-        .and_then(|s| s.parse::<ParamCard>().ok());
-    let evaluated = match card {
-        Some(c) => EvaluatedModel::from_model_card(model.clone(), &c),
-        None => EvaluatedModel::from_model(model.clone()),
+        .join("../validation/madgraph/output")
+        .join(ROW)
+        .join("Cards/param_card.dat");
+    let Ok(card_text) = std::fs::read_to_string(&card_path) else {
+        vibegraph::validation::require(
+            "flat_mc_partonic_sigma",
+            "a banked run's parameter card",
+            card_path.display(),
+        )
     };
+    let card = card_text
+        .parse::<ParamCard>()
+        .unwrap_or_else(|e| panic!("{}: {e:?}", card_path.display()));
+    let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
     let evaluator = AmplitudeEvaluator::compile(&sets[0], &model).expect("compile");
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
@@ -166,24 +197,26 @@ fn flat_mc_partonic_sigma() {
 
     let sigma = prefactor * mean;
     let sigma_err = prefactor * mean_err;
-    let pull = (sigma - BANKED_SIGMA_PB) / sigma_err;
+    let pull = (sigma - banked_sigma_pb) / sigma_err;
 
     eprintln!(
-        "flat-MC σ̂(u u~ > c c~ e+ e- mu+ mu-, √ŝ=500) = {sigma:.4e} ± {sigma_err:.2e} pb  \
-         (banked {BANKED_SIGMA_PB:.4e} pb, pull {pull:.2}σ, N={n_points})"
+        "flat-MC σ̂({process}, √ŝ={sqrt_s}) = {sigma:.4e} ± {sigma_err:.2e} pb  \
+         (banked {banked_sigma_pb:.4e} pb, pull {pull:.2}σ, N={n_points})"
     );
 
     // Flat RAMBO of this collinear-peaked EW 6-body amplitude is heavy-tailed:
     // the naive σ/√N understates the true uncertainty, and the estimate scatters
-    // over a factor of several between seeds. This end-to-end check therefore only
-    // confirms the weight machinery reproduces the banked value to the right order
-    // of magnitude — a wrong (2π)^{4-3n} power would miss by many orders. The exact
-    // normalization is pinned to 0.06% by `flat_mc_two_body_normalization` on the
-    // low-variance ee→μμ oracle.
-    let ratio = sigma / BANKED_SIGMA_PB;
+    // over a factor of several between seeds. It also applies none of the banked
+    // run's cuts, so the two numbers are not the same integral. This end-to-end
+    // check therefore only confirms the weight machinery reproduces the banked
+    // value to within the window below: a wrong (2π)^{4-3n} by many powers fails
+    // it, one power (a factor 2π) does not. The normalization is pinned at about
+    // 0.2% by `flat_mc_two_body_normalization` on the low-variance ee→μμ oracle,
+    // and the n-body weight by `rambo_oracle`'s replay fixture.
+    let ratio = sigma / banked_sigma_pb;
     assert!(
         sigma > 0.0 && (0.02..50.0).contains(&ratio),
-        "flat-MC σ̂ {sigma:.4e} pb is not the same order as banked {BANKED_SIGMA_PB:.4e} pb \
+        "flat-MC σ̂ {sigma:.4e} pb is not the same order as banked {banked_sigma_pb:.4e} pb \
          (ratio {ratio:.2}) — suspect a normalization/prefactor error"
     );
 }

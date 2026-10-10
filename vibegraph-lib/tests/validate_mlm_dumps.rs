@@ -111,7 +111,7 @@ fn madgraph_dir() -> PathBuf {
 
 /// One tagged record, as the extraction driver's JSON array.
 #[derive(Clone, Copy)]
-pub struct Rec<'a>(&'a [Value]);
+struct Rec<'a>(&'a [Value]);
 
 impl<'a> Rec<'a> {
     fn tag(&self) -> &'a str {
@@ -134,7 +134,7 @@ impl<'a> Rec<'a> {
     }
 }
 
-pub struct Event {
+struct Event {
     index: usize,
     /// `<subprocess dir>/<channel dir>` of the job that wrote the event.
     directory: String,
@@ -182,7 +182,7 @@ impl Event {
 }
 
 /// One `setclscales` call's records, and what the comparison reads of them.
-pub struct CallRecords<'a> {
+struct CallRecords<'a> {
     records: Vec<Rec<'a>>,
 }
 
@@ -274,7 +274,7 @@ impl<I> Drop for Decompressed<I> {
 }
 
 /// Stream a run's dump: the header, then the events in the banked file's order.
-pub fn read_dump(path: &Path) -> (Value, impl Iterator<Item = Event>) {
+fn read_dump(path: &Path) -> (Value, impl Iterator<Item = Event>) {
     let mut child = Command::new("gzip")
         .arg("-dc")
         .arg(path)
@@ -309,7 +309,7 @@ pub fn read_dump(path: &Path) -> (Value, impl Iterator<Item = Event>) {
 // ── one row: its card, its directories ───────────────────────────────────────
 
 /// A process directory's channel forests, read from its own `configs.inc`.
-pub struct Directory {
+struct Directory {
     n_external: usize,
     n_proc: usize,
     configs: Vec<ConfigForest>,
@@ -490,7 +490,7 @@ impl Directory {
 }
 
 /// Everything one row's events are replayed against.
-pub struct Row {
+struct Row {
     name: String,
     card: RunCard,
     choice: ScaleChoice,
