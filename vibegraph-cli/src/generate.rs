@@ -61,10 +61,11 @@ use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAUL
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+use crate::error::{err, CliError};
 use crate::integrate::{
     forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, multiplicity_groups,
-    multiplicity_maps, process_string, refuse_mixed_multiplicity, IntegrateError,
-    MultiplicityGroups, NO_PDF, PDF_MEMBER,
+    multiplicity_maps, process_string, refuse_mixed_multiplicity, MultiplicityGroups, NO_PDF,
+    PDF_MEMBER,
 };
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
@@ -241,10 +242,6 @@ fn max_rule(args: &GenerateArgs) -> MaxRule {
     MaxRule::truncated(args.max_truncation).expect("--max-truncation is a share below one")
 }
 
-fn err(msg: impl Into<String>) -> IntegrateError {
-    IntegrateError::Message(msg.into())
-}
-
 /// One way the cards handed to a generation run differ from the ones that trained
 /// the grid.
 #[derive(Debug, PartialEq)]
@@ -360,7 +357,7 @@ pub(crate) fn pdf_mismatches(
     out
 }
 
-fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError> {
+fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), CliError> {
     if mismatches.is_empty() {
         return Ok(());
     }
@@ -389,7 +386,7 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
 fn refuse_stale_artifact_on_clustering_scale(
     artifact: &IntegrateArtifact,
     run_card: &RunCard,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     if artifact.format_version >= SCALE_DRAW_VERSION {
         return Ok(());
     }
@@ -417,7 +414,7 @@ fn refuse_stale_artifact_on_clustering_scale(
 fn refuse_stale_artifact_on_mixed_multiplicity(
     artifact: &IntegrateArtifact,
     parts: usize,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     if parts <= 1 || artifact.format_version >= MULTIPLICITY_VERSION {
         return Ok(());
     }
@@ -433,10 +430,7 @@ fn refuse_stale_artifact_on_mixed_multiplicity(
 /// multiplicities each part's share of the file would be the sample's own rather
 /// than its integration's. The emitter refuses it too; refusing here does so
 /// before the scan and the draw.
-fn refuse_rounding_on_mixed_multiplicity(
-    strategy: Strategy,
-    parts: usize,
-) -> Result<(), IntegrateError> {
+fn refuse_rounding_on_mixed_multiplicity(strategy: Strategy, parts: usize) -> Result<(), CliError> {
     if parts <= 1 || !matches!(strategy, Strategy::StochasticRounding) {
         return Ok(());
     }
@@ -760,7 +754,7 @@ fn report_resonances(tally: ResonanceTally, written: usize) {
     }
 }
 
-pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     args.parallel.install().map_err(err)?;
     if !args.force && args.out.exists() {
         return Err(err(format!(
@@ -850,7 +844,7 @@ fn generate_sample(
     rc: &RunCard,
     nevents: usize,
     launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets)?;
@@ -1052,7 +1046,7 @@ fn reweight_launches(
     args: &GenerateArgs,
     parsed: &SupportedCard,
     model: &UFOModel,
-) -> Result<Option<(Vec<Launch>, ReweightOptions)>, IntegrateError> {
+) -> Result<Option<(Vec<Launch>, ReweightOptions)>, CliError> {
     let Some(path) = &args.reweight_card else {
         return Ok(None);
     };
@@ -1091,7 +1085,7 @@ fn reweight_plan(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     (launches, options): (Vec<Launch>, ReweightOptions),
-) -> Result<ReweightPlan, IntegrateError> {
+) -> Result<ReweightPlan, CliError> {
     let n = launches.len();
     let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
@@ -1250,7 +1244,7 @@ impl ReweightAudit {
     /// Report what was checked, and refuse a file whose weights were taken against
     /// another subprocess than the one each event was drawn in, or are not finite.
     /// A refused file is removed rather than left beside the error.
-    fn finish(&self, out: &std::path::Path) -> Result<(), IntegrateError> {
+    fn finish(&self, out: &std::path::Path) -> Result<(), CliError> {
         let events: usize = self.terms.iter().map(|(_, n)| n).sum();
         let mut terms = self.terms.clone();
         terms.sort_by_key(|((part, ordering), _)| (*part, *ordering == BeamOrdering::Exchanged));
@@ -1411,7 +1405,7 @@ fn emit_to(
     source: &mut dyn EventSource,
     plan: &EmitPlan,
     strategy: &dyn UnweightStrategy,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let file = std::fs::File::create(&args.out)
         .map_err(|e| err(format!("cannot create {}: {e}", args.out.display())))?;
     let mut sink = std::io::BufWriter::new(file);
@@ -1442,7 +1436,7 @@ fn flavor_records(
     groups: &FlavorGroups,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
-) -> Result<FlavorRecords, IntegrateError> {
+) -> Result<FlavorRecords, CliError> {
     let mut out = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
         let base = SubprocessRecord::new(group.evaluator(), model, evaluated)
@@ -1479,7 +1473,7 @@ fn flavor_records(
 fn check_channel_keys(
     artifact: &IntegrateArtifact,
     integ: &MultiplicitySum<'_>,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     let derived = integ.channel_keys();
     if artifact.channels.len() != derived.len() {
         return Err(err(format!(
@@ -1708,7 +1702,7 @@ fn generate_proton_sample(
     set: &PdfSet,
     pdf: &PdfMember,
     launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     let MultiplicityGroups { groups, vetoes } =
@@ -1919,7 +1913,7 @@ fn group_resonances(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), IntegrateError> {
+) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), CliError> {
     let mut tables = Vec::with_capacity(groups.groups().len());
     let mut pdgs = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
@@ -1963,7 +1957,7 @@ fn group_resonances(
 }
 
 /// `IDBMUP` for a hadron-collider run, from the run card's beam labels.
-fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], IntegrateError> {
+fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], CliError> {
     let mut out = [0i32; 2];
     for (slot, lpp) in out.iter_mut().zip([rc.lpp1, rc.lpp2]) {
         *slot = match lpp {
@@ -1982,7 +1976,7 @@ fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], IntegrateError> {
 
 /// `IDBMUP` for a fixed-beam run: the incoming legs' PDG codes, which every
 /// subprocess sharing one `<init>` block has to agree on.
-fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
+fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
     let first = &records[0];
     if first.n_in() != 2 {
         return Err(err(format!(
@@ -2005,7 +1999,7 @@ fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
 /// `IDBMUP` for a decay run: the decaying particle's PDG code and `0`, as MadEvent
 /// writes it — the second beam slot is empty, since there is no second incoming
 /// particle.
-fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
+fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
     let mother = records[0].pdg()[0];
     if records
         .iter()
@@ -2021,7 +2015,7 @@ fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
 
 /// The banked channel weights have to be a usable selection distribution before
 /// they are installed, since the combiner asserts rather than reports.
-fn check_alphas(alphas: &[f64]) -> Result<(), IntegrateError> {
+fn check_alphas(alphas: &[f64]) -> Result<(), CliError> {
     if alphas.is_empty() {
         return Err(err("the artifact banks no channel grids"));
     }

@@ -11,6 +11,7 @@ use vibegraph::diagrams::{
 
 mod assets;
 mod check;
+mod error;
 mod fetch;
 mod generate;
 mod integrate;

@@ -27,7 +27,7 @@ use vibegraph::lhef::record::{
     LheEvent, LheInit, WeightStrategy, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING,
 };
 
-use crate::integrate::IntegrateError;
+use crate::error::{err, CliError};
 
 /// Relative tolerance for the momentum and mass-shell identities.
 ///
@@ -52,10 +52,6 @@ pub(crate) struct CheckArgs {
     pub(crate) min_events: Option<usize>,
 }
 
-fn err(msg: impl Into<String>) -> IntegrateError {
-    IntegrateError::Message(msg.into())
-}
-
 /// One thing wrong with one event, or with the file as a whole.
 struct Complaint {
     event: Option<usize>,
@@ -71,7 +67,7 @@ impl std::fmt::Display for Complaint {
     }
 }
 
-pub(crate) fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &CheckArgs) -> Result<(), CliError> {
     let text = std::fs::read_to_string(&args.events)
         .map_err(|e| err(format!("cannot read {}: {e}", args.events.display())))?;
     let file = LheFile::parse(&text)
