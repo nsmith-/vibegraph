@@ -42,8 +42,9 @@
 //!   cargo test -p vibegraph-lib --features extended-validation \
 //!              --test color_flow_tags_oracle
 //!
-//! Prerequisites (regenerates the gitignored MG output):
-//!   pixi run -e madgraph build-diagrams
+//! Its input is the frozen MadGraph runs under `validation/madgraph/output/`,
+//! which `pixi run validate` fetches with the reference bundle; a checkout
+//! without them fails naming them.
 
 mod common;
 
@@ -263,11 +264,20 @@ fn main() {
     let args = Arguments::from_args();
 
     let output_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
+    if !output_dir.is_dir() {
+        vibegraph::validation::require(
+            "color_flow_tags_oracle",
+            "the frozen MadGraph runs",
+            output_dir.display(),
+        );
+    }
     let files = leshouche::files_under(&output_dir);
     if files.is_empty() {
-        eprintln!("No SubProcesses/P*/leshouche.inc found in validation/madgraph/output/");
-        eprintln!("Run: pixi run -e madgraph build-diagrams");
-        libtest_mimic::run(&args, vec![]).exit();
+        vibegraph::validation::require(
+            "color_flow_tags_oracle",
+            "a SubProcesses/P*/leshouche.inc in the frozen MadGraph runs",
+            output_dir.display(),
+        );
     }
 
     let mut trials: Vec<Trial> = Vec::new();
