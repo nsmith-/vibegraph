@@ -1017,17 +1017,31 @@ mod tests {
         rand::rngs::StdRng::seed_from_u64(12345)
     }
 
+    /// Asserts an adaptation recovered a known integral: within five of its own
+    /// quoted standard deviations of `exact`, and quoting a relative error no
+    /// larger than `max_rel`, so a gate cannot pass by quoting a wide one.
+    fn assert_recovers(r: VegasResult, exact: f64, max_rel: f64, what: &str) {
+        let pull = (r.integral - exact) / r.std_dev;
+        assert!(
+            pull.abs() < 5.0,
+            "{what}: {:.6} ± {:.2e} vs exact {exact:.6} ({pull:.2}σ)",
+            r.integral,
+            r.std_dev
+        );
+        assert!(
+            r.std_dev / exact.abs() < max_rel,
+            "{what}: quoted relative error {:.2e}",
+            r.std_dev / exact.abs()
+        );
+    }
+
     /// Constant integrand: ∫₀¹ 1 du = 1.
     #[test]
     fn test_constant() {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|_| 1.0, 10_000, 5, &mut rng);
-        assert!(
-            (r.integral - 1.0).abs() < 0.01,
-            "constant: {:.6}",
-            r.integral
-        );
+        assert_recovers(r, 1.0, 0.01, "constant");
     }
 
     /// Linear: ∫₀¹ 2u du = 1.
@@ -1036,7 +1050,7 @@ mod tests {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| 2.0 * u[0], 10_000, 5, &mut rng);
-        assert!((r.integral - 1.0).abs() < 0.01, "linear: {:.6}", r.integral);
+        assert_recovers(r, 1.0, 0.01, "linear");
     }
 
     /// Quadratic: ∫₀¹ 3u² du = 1.
@@ -1045,11 +1059,7 @@ mod tests {
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| 3.0 * u[0] * u[0], 10_000, 5, &mut rng);
-        assert!(
-            (r.integral - 1.0).abs() < 0.02,
-            "quadratic: {:.6}",
-            r.integral
-        );
+        assert_recovers(r, 1.0, 0.01, "quadratic");
     }
 
     /// Gaussian peak: ∫₀¹ exp(−(u−0.3)²/0.01) du = 0.1·(√π/2)·(erf(7)+erf(3)).
@@ -1060,12 +1070,8 @@ mod tests {
     /// VEGAS should adapt to the peak and converge quickly.
     #[test]
     fn test_peaked() {
-        let exact = {
-            // Exact analytic result via erf substitution t = (u−0.3)/0.1.
-            // ∫₀¹ exp(−(u−0.3)²/0.01) du = 0.1·(√π/2)·(erf(7)+erf(3))
-            let half_sqrt_pi = std::f64::consts::PI.sqrt() / 2.0;
-            0.1 * half_sqrt_pi * (libm::erf(7.0) + libm::erf(3.0))
-        };
+        let half_sqrt_pi = std::f64::consts::PI.sqrt() / 2.0;
+        let exact = 0.1 * half_sqrt_pi * (libm::erf(7.0) + libm::erf(3.0));
         let mut v = Vegas::new(1, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(
@@ -1074,12 +1080,7 @@ mod tests {
             10,
             &mut rng,
         );
-        let rel = (r.integral - exact).abs() / exact;
-        assert!(
-            rel < 0.01,
-            "peaked: got {:.6}, exact {exact:.6}, rel {rel:.4}",
-            r.integral
-        );
+        assert_recovers(r, exact, 0.01, "peaked");
     }
 
     /// 2D: ∫₀¹∫₀¹ (u + v) du dv = 1.
@@ -1088,7 +1089,7 @@ mod tests {
         let mut v = Vegas::new(2, 50, 1.5);
         let mut rng = seeded_rng();
         let r = v.integrate(|u| u[0] + u[1], 20_000, 5, &mut rng);
-        assert!((r.integral - 1.0).abs() < 0.02, "2d: {:.6}", r.integral);
+        assert_recovers(r, 1.0, 0.01, "2d");
     }
 
     /// Asserts a value sits within `1e-12` relative of a pinned golden.

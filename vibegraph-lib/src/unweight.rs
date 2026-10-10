@@ -567,7 +567,7 @@ impl Unweighter {
 
     /// The cross section estimated from every trial, accepted or not — the plain
     /// weighted estimator over the same draws, in the integrand's own units.
-    #[cfg(any(test, doc))]
+    #[cfg(test)]
     pub(crate) fn sigma_from_trials(&self) -> f64 {
         self.total_w_max * ratio(self.stats.ratio_sum, self.stats.trials as f64)
     }
@@ -577,9 +577,10 @@ impl Unweighter {
     ///
     /// This is what an unweighted sample is worth, and comparing it against the
     /// integration's own `σ` is the check that accept/reject preserved the
-    /// normalisation. It has the same expectation as
-    /// [`sigma_from_trials`](Self::sigma_from_trials) but a larger variance — the
-    /// rejected trials are exactly the information unweighting throws away.
+    /// normalisation. It has the same expectation as the plain weighted estimator
+    /// over every trial, `Σⱼ w_maxⱼ` times the mean of `r = w/w_maxⱼ`, but a
+    /// larger variance — the rejected trials are exactly the information
+    /// unweighting throws away.
     pub fn sigma_from_events(&self) -> f64 {
         self.total_w_max * ratio(self.stats.event_weight_sum, self.stats.trials as f64)
     }
@@ -697,6 +698,43 @@ mod tests {
         (grids, uw)
     }
 
+    /// Run `n` trials and return the standard error of
+    /// [`sigma_from_events`](Unweighter::sigma_from_events) over them, measured
+    /// from the kept events' own weights.
+    ///
+    /// It also bounds the error of
+    /// [`sigma_from_trials`](Unweighter::sigma_from_trials) on the same trials:
+    /// a trial's `r = w/w_maxⱼ` is the expectation of its event weight given its
+    /// point (accepted with probability `min(r, 1)` at weight `max(r, 1)`), so
+    /// its variance cannot exceed the event weight's.
+    fn trials_with_error<I: ChannelIntegrand>(
+        uw: &mut Unweighter,
+        integ: &I,
+        rng: &mut impl Rng,
+        n: usize,
+    ) -> f64 {
+        let (mut sum, mut sum2) = (0.0, 0.0);
+        for _ in 0..n {
+            if let Some(ev) = uw.trial(integ, rng) {
+                sum += ev.weight;
+                sum2 += ev.weight * ev.weight;
+            }
+        }
+        let n = n as f64;
+        let mean = sum / n;
+        uw.total_w_max() * ((sum2 / n - mean * mean) / (n - 1.0)).sqrt()
+    }
+
+    /// Asserts an estimate is within five of the run's own standard errors of the
+    /// exact cross section.
+    fn assert_within_error(got: f64, sigma: f64, err: f64, what: &str) {
+        let pull = (got - sigma) / err;
+        assert!(
+            pull.abs() < 5.0,
+            "{what}: {got:.6} vs {sigma:.6}, error {err:.2e} ({pull:.2}σ)"
+        );
+    }
+
     /// MadGraph's ladder, on weights small enough to walk by hand
     /// (`Template/LO/SubProcesses/unwgt.f`, the `trunc_max` loop).
     ///
@@ -761,13 +799,11 @@ mod tests {
         let run = |rule: MaxRule| {
             let (_g, mut uw) = scan_of_with(&integ, 50_000, 3, rule);
             let mut rng = ChaCha8Rng::seed_from_u64(9);
-            for _ in 0..1_000_000 {
-                uw.trial(&integ, &mut rng);
-            }
-            uw
+            let err = trials_with_error(&mut uw, &integ, &mut rng, 1_000_000);
+            (uw, err)
         };
-        let extremum = run(MaxRule::Extremum);
-        let truncated = run(MaxRule::Truncated { excess_share: 0.01 });
+        let (extremum, extremum_err) = run(MaxRule::Extremum);
+        let (truncated, truncated_err) = run(MaxRule::Truncated { excess_share: 0.01 });
 
         assert!(
             truncated.total_w_max() < extremum.total_w_max(),
@@ -793,13 +829,11 @@ mod tests {
             truncated.stats().excess_share(),
             extremum.stats().excess_share()
         );
-        for (label, uw) in [("extremum", &extremum), ("truncated", &truncated)] {
-            let rel = uw.sigma_from_events() / sigma - 1.0;
-            assert!(
-                rel.abs() < 0.02,
-                "{label} sigma from events {:.5} vs {sigma:.5}",
-                uw.sigma_from_events()
-            );
+        for (label, uw, err) in [
+            ("extremum", &extremum, extremum_err),
+            ("truncated", &truncated, truncated_err),
+        ] {
+            assert_within_error(uw.sigma_from_events(), sigma, err, label);
         }
     }
 
@@ -983,25 +1017,20 @@ mod tests {
         let sigma: f64 = integ.sigma.iter().sum();
         let (_g, mut uw) = scan_of(&integ, 100_000, 3);
         let mut rng = ChaCha8Rng::seed_from_u64(9);
-        for _ in 0..2_000_000 {
-            uw.trial(&integ, &mut rng);
-        }
-        let from_events = uw.sigma_from_events();
-        let from_trials = uw.sigma_from_trials();
+        let n = 2_000_000;
+        let err = trials_with_error(&mut uw, &integ, &mut rng, n);
+        assert_within_error(uw.sigma_from_events(), sigma, err, "sigma from events");
+        assert_within_error(uw.sigma_from_trials(), sigma, err, "sigma from trials");
+        // The predicted acceptance is the integral over the summed maxima, less
+        // the share above them: a trial is kept with probability `min(r, 1)`.
+        let s = uw.stats();
+        let predicted = sigma / uw.total_w_max() * (1.0 - s.excess_share());
+        let observed = s.efficiency();
+        let binomial = (observed * (1.0 - observed) / n as f64).sqrt();
         assert!(
-            (from_events / sigma - 1.0).abs() < 0.02,
-            "sigma from events {from_events:.5} vs {sigma:.5}"
-        );
-        assert!(
-            (from_trials / sigma - 1.0).abs() < 0.02,
-            "sigma from trials {from_trials:.5} vs {sigma:.5}"
-        );
-        // The predicted acceptance is the integral over the summed maxima.
-        let predicted = sigma / uw.total_w_max();
-        let observed = uw.stats().efficiency();
-        assert!(
-            (observed / predicted - 1.0).abs() < 0.05,
-            "efficiency {observed:.4e} vs predicted {predicted:.4e}"
+            (observed - predicted).abs() < 5.0 * binomial,
+            "efficiency {observed:.5e} vs predicted {predicted:.5e} (5σ = {:.1e})",
+            5.0 * binomial
         );
     }
 
@@ -1023,9 +1052,7 @@ mod tests {
             "a finite scan cannot reach the supremum"
         );
         let mut rng = ChaCha8Rng::seed_from_u64(17);
-        for _ in 0..400_000 {
-            uw.trial(&integ, &mut rng);
-        }
+        let err = trials_with_error(&mut uw, &integ, &mut rng, 400_000);
         let s = uw.stats();
         assert!(s.overweight > 0, "the undershoot must produce overweights");
         assert!(
@@ -1037,10 +1064,11 @@ mod tests {
         assert!(s.excess_share() > 0.0 && s.excess_share() < s.overweight_weight_share());
         assert!(s.ratio_max > 1.0);
         assert!(s.mean_event_weight() > 1.0);
-        assert!(
-            (uw.sigma_from_events() - 1.0).abs() < 0.02,
-            "overweight events keep the integral unbiased: {}",
-            uw.sigma_from_events()
+        assert_within_error(
+            uw.sigma_from_events(),
+            1.0,
+            err,
+            "overweight events keep the integral unbiased",
         );
     }
 
