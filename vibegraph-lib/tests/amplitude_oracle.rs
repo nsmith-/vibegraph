@@ -1391,7 +1391,7 @@ fn collect_linear(
             if listed.contains(&hi) {
                 continue;
             }
-            let ours = flows(&bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            let ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
             for (fi, value) in ours.iter().enumerate() {
                 let dev = value.norm() / scale_here.max(1e-300);
                 if dev > worst_zero {
@@ -1422,7 +1422,7 @@ fn collect_linear(
 
         for (row, &hi) in detail.helicities.iter().enumerate() {
             let hel = &table.helicities[hi];
-            let ours = flows(&bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            let ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
             for (fi, mg) in detail.jamps[row].iter().enumerate() {
                 let structure = table
                     .flow_structures
@@ -1459,7 +1459,7 @@ fn collect_linear(
             let mut vg_row = Vec::with_capacity(table.n_graphs);
             let mut mg_row = Vec::with_capacity(table.n_graphs);
             for (di, &j) in order.iter().enumerate() {
-                let ours = BoundAmplitude::<f64>::bind(&per_diagram[di], &evaluated);
+                let ours = BoundAmplitude::<f64>::bind(&per_diagram[di], evaluated);
                 let mut own_scratch = ours.scratch_space();
                 let value = ours.eval_amplitude(&pt.momenta, hel, &mut own_scratch);
                 // MadGraph's per-diagram *contribution* to the amplitude: it puts
