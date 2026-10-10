@@ -178,3 +178,6 @@
   fetch-by-URL user interface can restore it from 7a69498's parent, pinning by
   `model_digest`.
 * **F-CLI dispatched** (`feature-dev`, Opus) on `hygiene-fcli` from this merge.
+* **F-CLI reported** (`hygiene-fcli`, 658d465..296875c, 9 commits). The report
+  is recorded as `sessions/F-CLI-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
