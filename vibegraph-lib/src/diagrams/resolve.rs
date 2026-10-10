@@ -845,7 +845,8 @@ mod tests {
     /// Each refusal the model makes possible, reached by the card that names it.
     #[test]
     fn each_model_level_refusal_is_reached_by_its_card() {
-        let cases: &[(&str, fn(&ResolveError) -> bool)] = &[
+        type Case = (&'static str, fn(&ResolveError) -> bool);
+        let cases: &[Case] = &[
             (
                 "define z = e+ e-\ngenerate e+ e- > z",
                 |e| matches!(e, ResolveError::LabelIsParticle(l) if l == "z"),
