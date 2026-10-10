@@ -270,6 +270,7 @@ fn measure_fixed(
     });
 
     let (stats, accepted, scan_s, generation_s) = unweight(&integ, &per_channel, events);
+    assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), rung.name);
     Measured {
         n_final: legs.iter().filter(|l| l.is_final).count(),
         subprocesses: evals.len(),
@@ -348,6 +349,7 @@ fn measure_proton(
     });
 
     let (stats, accepted, scan_s, generation_s) = unweight(&integ, &per_channel, events);
+    assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), rung.name);
     Measured {
         n_final: final_masses.len(),
         subprocesses: groups.groups().len(),
@@ -363,6 +365,17 @@ fn measure_proton(
         generation_s,
         scan_s,
     }
+}
+
+/// Fail when the per-point configuration draw fell back to the sampling channel:
+/// its squared amplitudes gave it nothing to normalise, which the integrand
+/// reports only through this counter.
+fn assert_no_scale_draw_fallbacks(fallbacks: u64, rung: &str) {
+    assert_eq!(
+        fallbacks, 0,
+        "[{rung}] the scale-configuration draw fell back to the sampling channel on \
+         {fallbacks} points"
+    );
 }
 
 #[test]

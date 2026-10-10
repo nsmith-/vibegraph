@@ -250,7 +250,9 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
         MULTICHANNEL_ITERS,
         SEED,
     );
-    f(&integ)
+    let out = f(&integ);
+    common::assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), row.dir);
+    out
 }
 
 /// One binned observable: what it is called and the range it is histogrammed over.
