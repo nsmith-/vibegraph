@@ -57,7 +57,7 @@ use crate::phasespace::{
     PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::progress;
-use crate::runcard::RunCard;
+use crate::runcard::{RunCard, RunCardError};
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
@@ -137,7 +137,7 @@ pub enum HadronicError {
         frame_id: i64,
     },
     #[error("run card: {0}")]
-    RunCard(#[from] crate::runcard::RunCardError),
+    RunCard(#[from] RunCardError),
     #[error("run card scale prescription: {0}")]
     Scale(#[from] ScaleError),
     #[error("running strong coupling: {0}")]
@@ -172,16 +172,9 @@ pub struct EventScaleSource {
     kind: ScaleSourceKind,
     alpha_s: Option<AlphaSSource>,
     /// Whether the card's single-diagram enhancement weights an integration
-    /// configuration by its squared amplitude alone.
-    ///
-    /// `matrix1.f`'s `MULTI_CHANNEL` block weights configuration `c` by
-    /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` returns `CC_c = 1`
-    /// only when `sde_strat == 1` and `tmin_for_channel == -1`. Off that
-    /// conjunction the weight is a product of propagator denominators — at
-    /// `sde_strat == 2` the squared amplitude is discarded outright — and this
-    /// crate has no implementation of it, so the scale keeps the sampler's
-    /// channel there instead of drawing a configuration this rule does not
-    /// describe.
+    /// configuration by its squared amplitude alone: the
+    /// [`configurations_weighted_by_amp2`] rule, which
+    /// [`compile_configuration_weights`] applies to the draw itself.
     amp2_configuration_weights: bool,
 }
 
@@ -348,8 +341,7 @@ impl EventScaleSource {
         Ok(EventScaleSource {
             kind,
             alpha_s,
-            amp2_configuration_weights: card.int("SDE_strategy") == 1
-                && card.float("tmin_for_channel") == -1.0,
+            amp2_configuration_weights: configurations_weighted_by_amp2(card)?,
         })
     }
 
@@ -376,13 +368,10 @@ impl EventScaleSource {
     /// amplitude alone, which is the run card's own condition rather than anything
     /// about the prescription.
     ///
-    /// `matrix1.f`'s multi-channel block weights configuration `c` by
-    /// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone at `2`, where
-    /// `CC_c` is `genps.f`'s `get_channel_cut` — a product of inverse propagator
-    /// denominators that short-circuits to `1` exactly when `SDE_strategy = 1` and
-    /// `tmin_for_channel = -1`. Both the configuration a point's cluster scale is
-    /// taken in and the one its colour flow is drawn in follow that weight, so
-    /// they read this one condition.
+    /// This reports [`configurations_weighted_by_amp2`] for the card the source
+    /// was compiled from: the rule [`compile_configuration_weights`] installs on
+    /// an integrand, which both the configuration a point's cluster scale is
+    /// taken in and the one its colour flow is drawn in follow.
     pub fn weights_configurations_by_amp2(&self) -> bool {
         self.amp2_configuration_weights
     }
@@ -426,19 +415,7 @@ impl EventScaleSource {
             ScaleSourceKind::PerEvent { choice, channels } => {
                 let event = ScaleEvent { incoming, outgoing };
                 match channels {
-                    Some(sets) => {
-                        let set = sets.get(channel.group).unwrap_or_else(|| {
-                            panic!(
-                                "a point was drawn in channel group {} of {}",
-                                channel.group,
-                                sets.len()
-                            )
-                        });
-                        choice.cluster_scales(
-                            &event,
-                            &set.input(set.config_of_channel(channel.channel)),
-                        )
-                    }
+                    Some(sets) => choice.cluster_scales(&event, &channel_input(sets, channel)),
                     None => choice.scales(&event),
                 }
             }
@@ -463,9 +440,7 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(ScaleError::Clustering(
-                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
-            )) => Ok(PointScales::Vetoed),
+            Err(e) if vetoes_point(&e) => Ok(PointScales::Vetoed),
             Err(other) => Err(other),
         }
     }
@@ -508,26 +483,44 @@ impl EventScaleSource {
                 PointScales::Vetoed => PointHistory::Vetoed,
             });
         };
-        let set = sets.get(channel.group).unwrap_or_else(|| {
-            panic!(
-                "a point was drawn in channel group {} of {}",
-                channel.group,
-                sets.len()
-            )
-        });
         let event = ScaleEvent { incoming, outgoing };
-        match choice.cluster_history(&event, &set.input(set.config_of_channel(channel.channel))) {
+        match choice.cluster_history(&event, &channel_input(sets, channel)) {
             Ok(history) => Ok(PointHistory::Scales {
                 scales: history.event_scales(),
                 rewgt: history.rewgt_history(),
-                record: history.matched_record(set.colors()),
+                record: history.matched_record(sets[channel.group].colors()),
             }),
-            Err(ScaleError::Clustering(
-                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
-            )) => Ok(PointHistory::Vetoed),
+            Err(e) if vetoes_point(&e) => Ok(PointHistory::Vetoed),
             Err(other) => Err(other),
         }
     }
+}
+
+/// The clustering input of the configuration `channel` names, in its group's
+/// channel set.
+///
+/// # Panics
+///
+/// If `channel` names a group `sets` has no entry for.
+fn channel_input(sets: &[Channels], channel: SampledChannel) -> ClusterInput<'_> {
+    let set = sets.get(channel.group).unwrap_or_else(|| {
+        panic!(
+            "a point was drawn in channel group {} of {}",
+            channel.group,
+            sets.len()
+        )
+    });
+    set.input(set.config_of_channel(channel.channel))
+}
+
+/// Whether a scale error is one of the refusals `reweight.f` answers by zeroing
+/// the point's weight — the factorisation floor, or a jet vertex below `xqcut` —
+/// rather than one meaning the prescription does not apply.
+fn vetoes_point(error: &ScaleError) -> bool {
+    matches!(
+        error,
+        ScaleError::Clustering(ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut)
+    )
 }
 
 /// What resolving one point's scales produced, with the clustering the matched
@@ -1472,9 +1465,40 @@ pub(crate) fn compile_scale_source(
     )
 }
 
+/// Whether MadEvent's per-configuration enhancement weight is the squared
+/// amplitude alone (`true`) or `get_channel_cut`'s product of inverse propagator
+/// denominators alone (`false`), as the run card selects it.
+///
+/// `matrix1.f`'s `MULTI_CHANNEL` block weights configuration `c` by
+/// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone otherwise, where
+/// `CC_c` is `genps.f`'s `get_channel_cut`. That returns `1` at
+/// `SDE_strategy = 1` with `tmin_for_channel = -1`, and at `SDE_strategy = 2`
+/// the denominator product [`ChannelSet::channel_cuts`] forms.
+///
+/// A `tmin_for_channel` off `-1` is refused here as well as by the run-card
+/// parser (which a deserialised card has not been through), because neither
+/// weight describes it: it multiplies `CC_c` by an
+/// exponential suppression of the spacelike lines below `t/s_tot = tmin`, which
+/// `channel_cuts` does not form, and at `SDE_strategy = 1` that factor reads a
+/// `t` `get_channel_cut` never assigns, so there is no definite weight to
+/// reproduce.
+pub(crate) fn configurations_weighted_by_amp2(card: &RunCard) -> Result<bool, HadronicError> {
+    let tmin = card.float("tmin_for_channel");
+    if tmin != -1.0 {
+        return Err(HadronicError::RunCard(RunCardError::UnsupportedField {
+            name: "tmin_for_channel".to_string(),
+            value: tmin.to_string(),
+            default: "-1".to_string(),
+            why: "no configuration weight here applies get_channel_cut's tmin \
+                      suppression of spacelike lines",
+        }));
+    }
+    Ok(card.int("SDE_strategy") == 1)
+}
+
 /// The channel forests MadEvent's enhancement weight is a product over, one set
 /// per subprocess — or `None` where the run card leaves that weight the squared
-/// amplitude and no forest is read at all.
+/// amplitude and no forest is read at all ([`configurations_weighted_by_amp2`]).
 ///
 /// This is derived beside the scale prescription rather than out of it: a run
 /// whose matrix element carries no strong coupling compiles no prescription, and
@@ -1485,7 +1509,7 @@ pub(crate) fn compile_configuration_weights(
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Result<Option<Vec<ChannelSet>>, HadronicError> {
-    if card.int("SDE_strategy") == 1 && card.float("tmin_for_channel") == -1.0 {
+    if configurations_weighted_by_amp2(card)? {
         return Ok(None);
     }
     let mut sets = Vec::with_capacity(subprocesses.len());
@@ -3866,20 +3890,22 @@ mod tests {
         }
     }
 
-    /// MadEvent's configuration weight is the squared amplitude alone only under a
-    /// run-card conjunction, and the prescription reports which side of it a card
-    /// falls on.
+    /// MadEvent's configuration weight is the squared amplitude alone only at
+    /// `SDE_strategy = 1`, and only with `tmin_for_channel` at its default.
     ///
     /// `matrix1.f`'s enhancement block weights configuration `c` by
-    /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` short-circuits to
-    /// `CC_c = 1` only for `sde_strat == 1` *and* `tmin_for_channel == -1`. At
-    /// `sde_strategy = 2` the squared amplitude is discarded outright and the
-    /// weight is the propagator-denominator product alone; with
-    /// `tmin_for_channel` set, the same product multiplies it.
+    /// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone at `2`;
+    /// `genps.f`'s `get_channel_cut` makes `CC_c = 1` at `1` only when
+    /// `tmin_for_channel == -1`, and off that default its tmin factor is formed by
+    /// neither weight here, so such a card is refused.
     ///
-    /// Without this the condition is an unexercised branch: every banked run whose
-    /// scale clusters *and* whose matrix element carries the strong coupling sits
-    /// on the squared-amplitude side of it, so no gate reaches the other.
+    /// The assertions read [`compile_configuration_weights`], the function the
+    /// integrands install their draw from, and check that the scale source
+    /// reports the same rule. Every banked run whose scale clusters *and* whose
+    /// matrix element carries the strong coupling sits at `SDE_strategy = 1`, so
+    /// no gate reaches the other side of the rule. The `tmin_for_channel` card is
+    /// built by deserialisation, the one route to a [`RunCard`] that bypasses the
+    /// parser's own refusal of the field.
     #[test]
     fn the_configuration_draw_needs_both_run_card_fields() {
         let m = model();
@@ -3892,9 +3918,10 @@ mod tests {
             .iter()
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
+        let subprocesses = [(&evals[0], diagrams.as_slice())];
 
-        let source_for = |extra: &str| {
-            let card = RunCard::parse(&format!(
+        let card_for = |extra: &str| {
+            RunCard::parse(&format!(
                 "  0 = lpp1
   0 = lpp2
   250.0 = ebeam1
@@ -3906,39 +3933,55 @@ mod tests {
   4 = maxjetflavor
 {extra}"
             ))
-            .expect("run card");
+            .expect("run card")
+        };
+        let source_for = |card: &RunCard| {
             compile_scale_source(
-                &[(&evals[0], &diagrams)],
+                &subprocesses,
                 &m,
                 &evaluated,
-                &card,
+                card,
                 None,
                 true,
                 ClosedForms::Honour,
             )
-            .expect("the clustering scale compiles")
         };
+        let weights_for =
+            |card: &RunCard| compile_configuration_weights(&subprocesses, &m, &evaluated, card);
 
-        assert!(
-            source_for("  1 = sde_strategy\n").weights_configurations_by_amp2(),
-            "the default conjunction is what MadEvent's simple rule holds under"
-        );
-        assert!(
-            source_for("").weights_configurations_by_amp2(),
-            "both fields absent is the default conjunction"
-        );
-        assert!(
-            !source_for("  2 = sde_strategy\n").weights_configurations_by_amp2(),
-            "at sde_strategy = 2 the configuration weight is not the squared amplitude"
-        );
-        // The draw itself runs either way — what the conjunction decides is only
-        // which weight it follows.
-        assert!(source_for("  2 = sde_strategy\n").draws_configuration());
-        // The other half of the conjunction is refused a step earlier: a card that
-        // sets `tmin_for_channel` at all does not parse, so the scale source's own
-        // test of it can never be the thing that fires. Both guards are kept —
-        // this is what says the refusal is what stands between such a card and a
-        // cross section taken under a rule that does not describe it.
+        for (extra, by_amp2) in [
+            ("  1 = sde_strategy\n", true),
+            ("", true),
+            ("  2 = sde_strategy\n", false),
+        ] {
+            let card = card_for(extra);
+            let weights = weights_for(&card).expect("the configuration weights compile");
+            assert_eq!(
+                weights.is_none(),
+                by_amp2,
+                "card {extra:?}: the draw follows AMP2 exactly at sde_strategy = 1"
+            );
+            if let Some(sets) = &weights {
+                assert_eq!(sets.len(), 1, "one channel set per subprocess");
+                assert!(
+                    !sets[0].configs.is_empty(),
+                    "the channel set has configurations"
+                );
+            }
+            let source = source_for(&card).expect("the clustering scale compiles");
+            assert_eq!(
+                source.weights_configurations_by_amp2(),
+                by_amp2,
+                "card {extra:?}: the scale source reports the rule the draw follows"
+            );
+            // The draw itself runs either way: the rule decides only which weight
+            // it follows.
+            assert!(source.draws_configuration(), "card {extra:?}");
+        }
+
+        // The parser refuses `tmin_for_channel` off its default; a deserialised
+        // card has not been through it, and the weight rule refuses it again at
+        // either `SDE_strategy`.
         assert!(RunCard::parse(
             "  0 = lpp1
   0 = lpp2
@@ -3948,6 +3991,27 @@ mod tests {
 "
         )
         .is_err());
+        for sde in ["1", "2"] {
+            let mut json = serde_json::to_value(card_for(&format!("  {sde} = sde_strategy\n")))
+                .expect("a run card serialises");
+            json["values"]["tmin_for_channel"] = serde_json::json!({ "Float": 0.1 });
+            let card: RunCard = serde_json::from_value(json).expect("the card deserialises");
+            assert_eq!(card.float("tmin_for_channel"), 0.1);
+            assert!(
+                matches!(
+                    weights_for(&card),
+                    Err(HadronicError::RunCard(
+                        RunCardError::UnsupportedField { .. }
+                    ))
+                ),
+                "sde_strategy = {sde} with tmin_for_channel set has no weight to draw by"
+            );
+            assert!(
+                source_for(&card).is_err(),
+                "sde_strategy = {sde}: the scale source refuses the same card"
+            );
+        }
+
         // A card that fixes every scale resolves to a constant before any event is
         // seen, so there is no configuration to draw whatever the two fields say.
         let fixed = RunCard::parse(
@@ -3963,17 +4027,9 @@ mod tests {
 ",
         )
         .expect("run card");
-        assert!(!compile_scale_source(
-            &[(&evals[0], &diagrams)],
-            &m,
-            &evaluated,
-            &fixed,
-            None,
-            true,
-            ClosedForms::Honour,
-        )
-        .expect("a fixed prescription compiles")
-        .draws_configuration());
+        assert!(!source_for(&fixed)
+            .expect("a fixed prescription compiles")
+            .draws_configuration());
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,
