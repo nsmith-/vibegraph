@@ -1700,7 +1700,7 @@ mod tests {
                 // Every point of iteration `k` is drawn before any of `k + 1`, so
                 // the call count names the iteration whatever the scheduling.
                 let k = self.calls.fetch_add(1, Ordering::Relaxed) / self.per_iteration;
-                if k % 2 == 0 {
+                if k.is_multiple_of(2) {
                     1.5 * 1.05
                 } else {
                     1.5 * 0.95

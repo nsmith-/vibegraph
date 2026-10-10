@@ -732,7 +732,6 @@ impl<F: Real> MultiChannel<F> {
     fn select(&self, u0: F) -> usize {
         select_channel(&self.alphas, u0)
     }
-
 }
 
 impl<F: Real> PhaseSpaceMap<F> for MultiChannel<F> {

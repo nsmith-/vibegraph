@@ -1052,7 +1052,7 @@ mod tests {
             "a finite scan cannot reach the supremum"
         );
         let mut rng = ChaCha8Rng::seed_from_u64(17);
-        let err = trials_with_error(&mut uw, &integ, &mut rng, 400_000);
+        let err = trials_with_error(&mut uw, &integ, &mut rng, 2_000_000);
         let s = uw.stats();
         assert!(s.overweight > 0, "the undershoot must produce overweights");
         assert!(
