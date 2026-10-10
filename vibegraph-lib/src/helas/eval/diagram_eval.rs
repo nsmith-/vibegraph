@@ -4,7 +4,7 @@
 //! These `*Info` types ([`ExtLegInfo`], [`PropInfo`], [`VertexInfo`]/[`VertexTerm`]) are
 //! the payloads of [`EvalNode`](super::root_diagram::EvalNode): vertices still carry
 //! model ids (`CouplingId`/`ParticleId`) and rooted Lorentz contraction trees. The
-//! per-diagram artifact that assembles them ([`DiagramEval`](super::compile::DiagramEval))
+//! per-diagram artifact that assembles them ([`DiagramEval`](super::root_diagram::DiagramEval))
 //! lives in [`super::compile`]; [`super::lower`] inlines them into the unified
 //! [`Ast`](super::ast::Ast), which the runtime evaluates.
 

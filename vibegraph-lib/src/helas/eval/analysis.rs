@@ -26,7 +26,9 @@ use num_traits::Zero;
 
 use super::ast::Ast;
 use super::fold::ExtLeg;
-use super::op::{Const, ConstKind, NodeId, Op, Sym};
+#[cfg(test)]
+use super::op::Sym;
+use super::op::{Const, ConstKind, NodeId, Op};
 use super::tree::Tree;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::numbers::Charge;
@@ -81,14 +83,6 @@ impl NodeType {
         matches!(self, NodeType::RealConst | NodeType::ScalarConst)
     }
 
-    /// A scalar-family output (real or complex scalar).
-    pub(crate) fn is_scalar(self) -> bool {
-        matches!(
-            self,
-            NodeType::RealConst | NodeType::ScalarConst | NodeType::ScalarWf
-        )
-    }
-
     /// A non-scalar current (vector or fermion) — the operand a `Mul` scales and routes
     /// momentum into.
     pub(crate) fn is_current(self) -> bool {
@@ -119,7 +113,6 @@ impl NodeType {
 /// read-offs). A per-point momentum pool resolves each id once via [`resolve`](Self::resolve).
 #[derive(Clone, Debug)]
 pub(crate) struct MomTable {
-    n_legs: usize,
     entries: Vec<Box<[i8]>>,
     intern: HashMap<Box<[i8]>, u32>,
 }
@@ -127,7 +120,6 @@ pub(crate) struct MomTable {
 impl MomTable {
     fn new(n_legs: usize) -> Self {
         let mut t = MomTable {
-            n_legs,
             entries: Vec::new(),
             intern: HashMap::new(),
         };
@@ -150,18 +142,9 @@ impl MomTable {
         id
     }
 
-    /// Number of external legs the coefficient vectors are indexed by.
-    pub(crate) fn n_legs(&self) -> usize {
-        self.n_legs
-    }
-
     /// Number of distinct interned momentum combinations.
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 
     /// The signed per-leg coefficients of an interned combination.
@@ -228,15 +211,6 @@ impl NodeAnalysis {
         momenta: &[LorentzVector<F>],
     ) -> LorentzVector<F> {
         self.moms.resolve(self.mom_id[id as usize], momenta)
-    }
-
-    /// Number of analyzed nodes.
-    pub(crate) fn len(&self) -> usize {
-        self.out_type.len()
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.out_type.is_empty()
     }
 }
 
@@ -332,8 +306,10 @@ pub(crate) fn analyze(ast: &Ast<Const>, ext_legs: &[ExtLeg]) -> NodeAnalysis {
     })
 }
 
-/// Analyze a symbolic [`Ast<Sym>`] (the pre-fold graph the constant-folding and egraph
-/// passes operate on). Produces the same annotations as [`analyze`].
+/// Analyze a symbolic [`Ast<Sym>`] (the pre-fold graph). Produces the same annotations
+/// as [`analyze`]; the tests use it to exercise the transfer function on hand-built
+/// symbolic arenas.
+#[cfg(test)]
 pub(crate) fn analyze_sym(ast: &Ast<Sym>) -> NodeAnalysis {
     let n_legs = ast
         .iter()

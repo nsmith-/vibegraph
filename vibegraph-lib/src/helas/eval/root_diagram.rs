@@ -363,13 +363,36 @@ impl DiagramEvalTree {
         uncross: &HashSet<LegIdx>,
         chain: &[u8],
     ) -> Result<Self, RootLorentzError> {
-        let mut nodes = Vec::with_capacity(raw.nodes.len());
-        let (root, _) = Self::bake_node(
-            raw, raw.root, diagram, model, n_in, uncross, chain, &mut nodes,
-        )?;
-        Ok(DiagramEvalTree { nodes, root })
+        let mut baker = Baker {
+            raw,
+            diagram,
+            model,
+            n_in,
+            uncross,
+            chain,
+            nodes: Vec::with_capacity(raw.nodes.len()),
+        };
+        let (root, _) = baker.bake_node(raw.root)?;
+        Ok(DiagramEvalTree {
+            nodes: baker.nodes,
+            root,
+        })
     }
+}
 
+/// The per-diagram inputs [`DiagramEvalTree::bake`] threads through its recursion, and
+/// the node list it fills.
+struct Baker<'a> {
+    raw: &'a RawDiagramTree,
+    diagram: &'a Diagram,
+    model: &'a UFOModel,
+    n_in: usize,
+    uncross: &'a HashSet<LegIdx>,
+    chain: &'a [u8],
+    nodes: Vec<EvalNode>,
+}
+
+impl Baker<'_> {
     /// Bake one node, returning its id and the spinor binding of the wavefunction it
     /// produces (`None` for bosonic / scalar-amplitude outputs). The binding is resolved
     /// bottom-up: external legs from their charge/direction (with `crossed = !incoming`,
@@ -379,17 +402,11 @@ impl DiagramEvalTree {
     /// propagator on it) inherits the binding of its continuing fermion input. Each leg's
     /// `incoming` flag and each propagator's t-channel classification are read off the
     /// baked momentum (`Leg.incoming`, `Prop::is_spacelike`).
-    #[allow(clippy::too_many_arguments)]
     fn bake_node(
-        raw: &RawDiagramTree,
+        &mut self,
         id: RawNodeId,
-        diagram: &Diagram,
-        model: &UFOModel,
-        n_in: usize,
-        uncross: &HashSet<LegIdx>,
-        chain: &[u8],
-        nodes: &mut Vec<EvalNode>,
     ) -> Result<(EvalNodeId, Option<LegAdjoint>), RootLorentzError> {
+        let (raw, diagram, model, n_in) = (self.raw, self.diagram, self.model, self.n_in);
         match raw.value(id) {
             RawNode::Leg {
                 particle,
@@ -398,7 +415,7 @@ impl DiagramEvalTree {
                 spin,
                 incoming,
             } => {
-                let uncrossed = uncross.contains(leg_idx);
+                let uncrossed = self.uncross.contains(leg_idx);
                 let (id, charge) = if uncrossed {
                     let anti = model
                         .particle_id(&model.particle(*particle).antiname)
@@ -418,7 +435,10 @@ impl DiagramEvalTree {
                     adjoint,
                     crossed: !info.incoming && !uncrossed,
                 });
-                Ok((Self::add(nodes, EvalNode::External(info)), bind))
+                Ok((
+                    DiagramEvalTree::add(&mut self.nodes, EvalNode::External(info)),
+                    bind,
+                ))
             }
             RawNode::Vertex {
                 vertex,
@@ -428,10 +448,10 @@ impl DiagramEvalTree {
             } => {
                 let baked: Vec<(EvalNodeId, Option<LegAdjoint>)> = children
                     .iter()
-                    .map(|&c| Self::bake_node(raw, c, diagram, model, n_in, uncross, chain, nodes))
+                    .map(|&c| self.bake_node(c))
                     .collect::<Result<Vec<_>, _>>()?;
                 let child_ids: Vec<EvalNodeId> = baked.iter().map(|(id, _)| *id).collect();
-                let color_idx = chain[vtx.0] as usize;
+                let color_idx = self.chain[vtx.0] as usize;
                 let flow_group = diagram.vertex(*vtx).flow_group;
                 let group = vertex_flow_group(model, *vertex, flow_group);
                 match result {
@@ -469,8 +489,8 @@ impl DiagramEvalTree {
                             &flows,
                         )?;
                         let adjoint = bind.map(|lf| lf.adjoint);
-                        let current = Self::add(
-                            nodes,
+                        let current = DiagramEvalTree::add(
+                            &mut self.nodes,
                             EvalNode::OffShellCurrent {
                                 info,
                                 adjoint,
@@ -479,8 +499,8 @@ impl DiagramEvalTree {
                             },
                         );
                         Ok((
-                            Self::add(
-                                nodes,
+                            DiagramEvalTree::add(
+                                &mut self.nodes,
                                 EvalNode::Propagate {
                                     info: PropInfo {
                                         id: prop_id,
@@ -505,8 +525,8 @@ impl DiagramEvalTree {
                             model, *vertex, color_idx, flow_group, None, &flows,
                         )?;
                         Ok((
-                            Self::add(
-                                nodes,
+                            DiagramEvalTree::add(
+                                &mut self.nodes,
                                 EvalNode::ContractAmplitude {
                                     info,
                                     children: child_ids,
@@ -520,7 +540,9 @@ impl DiagramEvalTree {
             }
         }
     }
+}
 
+impl DiagramEvalTree {
     fn render_expression(&self) -> String {
         self.fold_recursive(
             &|node, acc| node.render(acc),
@@ -993,7 +1015,7 @@ impl DiagramEval {
     /// The last node is the root; children reference earlier nodes by index (see
     /// [`EvalNodeId::new`]). Symmetry factor and Fermi sign are trivial (1, +1), so the
     /// reconstructed amplitude is exactly the rooted contraction of the given nodes —
-    /// used to drive single-vertex primitives through the production `run_forward` path.
+    /// used to drive single-vertex primitives through the generic `run_forward_slot` pass.
     #[cfg(test)]
     pub(crate) fn from_nodes(n_ext: usize, nodes: Vec<EvalNode>) -> Self {
         let root = EvalNodeId(nodes.len() - 1);
@@ -1302,7 +1324,7 @@ mod tests {
     /// Run: cargo test -p vibegraph-lib --lib \
     ///        helas::eval::root_diagram::tests::probe_vertex_leg_binding -- --ignored --nocapture
     #[test]
-    #[ignore]
+    #[ignore = "diagnostic dump; run with --nocapture"]
     fn probe_vertex_leg_binding() {
         let model = sm_model(SMRestrict::Default);
         let sets = generate("e+ e- > mu+ mu- ta+ ta- QCD=0");
@@ -1421,8 +1443,8 @@ mod tests {
     /// This is the non-vacuity half of the map; the deeper per-channel properties live in
     /// dedicated tests — [`yang_mills_vvv_sign_fires_only_for_source_vvv`] (VVV `σ_V`,
     /// with the +1-uniform and VVVV-not-counted arms),
-    /// [`spine_sign_from_flow_matches_heuristic`] (spine sign vs the `spin_map` oracle)
-    /// and [`spine_sign_separates_mixed_line_and_crossed_line_propagators`] (the spine
+    /// [`fermion_line_sign_matches_the_rooted_tree_derivation`] (the diagram's line sign
+    /// against the one derived from a rooted tree, at every rooting) and [`spine_sign_separates_mixed_line_and_crossed_line_propagators`] (the spine
     /// sign's two arms, mixed-line-per-propagator vs crossed-line-once).
     /// The one sub-branch no default-suite process reaches — the VVS pure-metric −1 with
     /// the *scalar* leg as output (H produced from two vectors, only in the 2→6 H
@@ -1450,9 +1472,9 @@ mod tests {
             channel_counts(&model, "g g > g g").2 > 0,
             "g g > g g must exercise the VVVV pure-metric build sign"
         );
-        // Build-convention −1, FFS/crossed scalar-sink arm: e+ e- > ta+ ta- H has no
+        // Build-convention −1, scalar-bilinear arm: e+ e- > ta+ ta- H has no
         // pure-vector vertex, so its build sign comes only from the τ-Yukawa scalar
-        // bilinear (ProjM/ProjP scalar-sink + the crossed-τ standalone projector).
+        // bilinear.
         assert!(
             channel_counts(&model, "e+ e- > ta+ ta- H").2 > 0,
             "e+ e- > ta+ ta- H must exercise the scalar-bilinear build sign"

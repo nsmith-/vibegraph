@@ -292,9 +292,11 @@ pub(crate) fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
 /// `JAMP2` over the flows its `ICOLAMP` row admits, and re-accumulates over every
 /// flow when that cumulant ends at zero.
 ///
-/// The caller supplies the diagram; the event path picks it the way MadEvent
-/// does, by drawing the integration configuration `∝ AMP2` (see
-/// [`AmplitudeEvaluator::select_color_flow`](crate::helas::eval::AmplitudeEvaluator::select_color_flow),
+/// The caller supplies the reached flows; the event path picks them the way
+/// MadEvent does, by drawing the integration configuration `∝` its channel weight —
+/// the amplitude share `AMP2`, or at `sde_strategy = 2` the propagator product
+/// `GET_CHANNEL_CUT` — and taking that configuration's row (see
+/// [`AmplitudeEvaluator::select_config_and_flow`](crate::helas::eval::AmplitudeEvaluator::select_config_and_flow),
 /// which composes the two steps).
 pub(crate) fn select_flow_reached_by(jamp2: &[f64], reached: &[bool], u: f64) -> Option<usize> {
     if reached.len() != jamp2.len() {

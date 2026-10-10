@@ -7,9 +7,12 @@
 //! fields (`Coupling`/`Mass`/`Width` → `i64`, `Coeff` → `f64`, `CoeffRat` → three
 //! leading `i64` fields `num den imag`, `External` → the
 //! `leg spin sign incoming` quadruple); arena children become `Node` arguments. Every
-//! op has fixed arity except [`Op::PMomOut`] (a vertex's whole input list) and
-//! [`Op::Flows`] (the per-color-flow JAMP list), which take a `(Vec Node)` and so are
-//! declared as separate `constructor`s after the vector sort.
+//! op has fixed arity except the variadic ones — [`Op::PMomOut`] (a vertex's whole
+//! input list), [`Op::Flows`] (the per-color-flow JAMP list), [`Op::Hels`] (the
+//! per-helicity roots), [`Op::Configs`] (the configuration-amplitude bundle) and
+//! [`Op::AddScaled`] (the weighted sum's `weight, term` pairs) — which
+//! take a `(Vec Node)` and so are declared as separate `constructor`s after the vector
+//! sort.
 //!
 //! [`roundtrip`] declares the schema, then encodes the whole AST as a single `let`
 //! binding whose value is the root constructor call with every child nested inline,
@@ -326,7 +329,7 @@ const ROOT_VAR: &str = "$root";
 /// rewrite stage inserts its `run` schedule between insertion and extraction. Assumes the
 /// schema ([`NODE_SCHEMA`]) has already been declared on the e-graph.
 ///
-/// The lowered arena is a tree (each node has one parent; see [`super::lower::lower`]),
+/// The lowered arena is a tree (each node has one parent; see [`super::lower::lower_flows`]),
 /// so inlining expands nothing. Were a shared subtree present, egglog would hash-cons
 /// it back together on insert, so the extracted result is unaffected either way.
 fn encode_commands(ast: &Ast<Sym>) -> Vec<Command> {

@@ -1064,10 +1064,11 @@ fn epsilon_cofactors<F: Real>(
 /// therefore `+1` on `(e₀, e₁, e₂, e₃)`, i.e. the determinant of the matrix whose
 /// rows are the arguments in the `[E, px, py, pz]` layout.
 ///
-/// The sign is a hypothesis about MadGraph until an MG comparison exercises it;
-/// what is *not* a hypothesis is that everything in this module — the Hodge dual
-/// and the `σ^{μν} γ^5` identity included — is derived from the value stated here,
-/// so a single flip propagates consistently.
+/// The sign is gated against MadGraph per helicity amplitude by the
+/// `gg_to_h_cpodd` and `gg_to_gg_cg` rows, whose `Epsilon` structures interfere
+/// with CP-even diagrams inside one amplitude. Everything in this module — the
+/// Hodge dual and the `σ^{μν} γ^5` identity included — is derived from the value
+/// stated here, so a single flip propagates consistently.
 pub fn epsilon4<F: Real>(
     a: &ComplexVector<F, Contravariant>,
     b: &ComplexVector<F, Contravariant>,

@@ -722,7 +722,9 @@ pub(crate) fn gamma_vout_c<F: Real>(
 // couplings arrive as scalar operands and the kernel forms `g_L·(left term) +
 // g_R·(right term)` directly. Relative to the generic composition this reorders
 // floating-point operations (couplings scale per-chirality before the sum), so
-// agreement is approximate (≲1e-15 per kernel), certified by the `fused_*` tests.
+// agreement is to rounding, not bit-exact: `ffv_vout_matches_generic_chiral_pair` and
+// `ffv_fermion_out_matches_generic_chiral_pair` hold it at `FUSED_TOL = 1e-14`, and
+// `outer_projector_equals_flipped_inner_bit_exactly` pins the projector-tag swap.
 
 /// `FfvVout`: fused chiral [`gamma_vout`] — `g_L·GammaVout(a, ProjM(b)) +
 /// g_R·GammaVout(a, ProjP(b))` in one step.
@@ -1434,7 +1436,7 @@ mod tests {
         check_agree(
             256,
             0x11AA02,
-            1e-12,
+            CLIFFORD_TOL,
             |rng| vec![rand_bra(rng), rand_ket(rng)],
             |c| identity_amp(&c[0], &c[1]),
             |c| {

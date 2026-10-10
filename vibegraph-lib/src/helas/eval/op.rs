@@ -44,9 +44,8 @@ pub enum Op {
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
     External,
     /// Propagator. Children: `[current, Mass, Width]`. Dispatches on the input
-    /// current's variance at runtime (a covariant `MetricVout` current
-    /// forms its longitudinal term differently and is raised back), so no separate
-    /// lowered-storage opcode is needed.
+    /// current's class (scalar, vector, or either fermion flow); every vector current
+    /// is contravariant, so the vector arm needs no index raise.
     Propagate,
     /// Product: ≤1 non-scalar child sets the output type, the rest are scalar
     /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
@@ -241,9 +240,15 @@ impl Op {
     /// Whether this op carries a leaf payload token in the s-expression (a single
     /// id/coeff for the constant leaves, the `leg spin charge` triple for `External`).
     pub(crate) fn has_leaf_token(self) -> bool {
+        self == Op::External || self.is_pool_leaf()
+    }
+
+    /// Whether this op is a bare constant-pool leaf: a single read of the complex or
+    /// the real pool, as opposed to a constant composite (a `Mul`/`Add` of constants).
+    pub(crate) fn is_pool_leaf(self) -> bool {
         matches!(
             self,
-            Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
+            Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
         )
     }
 }

@@ -1,9 +1,9 @@
 //! The eval-pass error tree.
 //!
-//! A leaf module so the rooting/compile passes can depend on it one-way: the two
-//! rooting passes ([`RootDiagramError`] from walking the topology, [`RootLorentzError`]
-//! from rooting a vertex's Lorentz structure) aggregate into [`CompileError`], and the
-//! process-level [`EvalError`] wraps that plus the model lookups done while compiling.
+//! The two rooting passes ([`RootDiagramError`] from walking the topology,
+//! [`RootLorentzError`] from rooting a vertex's Lorentz structure) aggregate into
+//! [`CompileError`], and the process-level [`EvalError`] wraps that plus the model
+//! lookups done while compiling.
 
 use super::root_lorentz::RootLorentzError;
 

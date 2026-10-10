@@ -16,7 +16,7 @@ bench-internals = []
 # Compiles the alternative execution orders in helas::eval::schedule and lets
 # VIBEGRAPH_EVAL_SCHEDULE pick one at program-build time, so one prebuilt binary can be
 # swept over the orders without a rebuild. A study hook: without it the module is not
-# compiled and the evaluator emits arena order. Never enable in normal builds.
+# compiled and the evaluator emits its op-blocked order. Never enable in normal builds.
 eval-schedule-study = []
 # Reads and writes the forward pass's arenas through `get_unchecked`, to measure what
 # the bounds checks cost. A study hook: the only `unsafe` in the evaluator, compiled out

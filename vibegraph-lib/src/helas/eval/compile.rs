@@ -9,7 +9,7 @@
 //! The result is independent of both the parameter card and the scalar field `F`.
 //! Resolving a card (and choosing `F`) happens in
 //! [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind), which produces the
-//! runtime [`BoundAmplitude`](super::run::BoundAmplitude).
+//! runtime [`BoundAmplitude`].
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -20,11 +20,11 @@ use rand::SeedableRng;
 use tracing::{debug, info, info_span, trace};
 
 use crate::diagrams::{Diagram, DiagramSet};
-use crate::helas::color::colorize_process;
 use crate::helas::color::flow_tags::{
     color_flow_tags, select_flow, select_flow_reached_by, ColorFlowTags, LeadingColorFlows,
     LegColor,
 };
+use crate::helas::color::{colorize_process, ColorBasis};
 use crate::helas::repr::color::ColorRep;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::phasespace::rambo_massive;
@@ -55,7 +55,7 @@ pub(crate) type FlowFingerprint = Vec<(usize, Vec<u8>, i32, Ratio<i64>)>;
 /// Built once into a [`Folded`] skeleton (pass 1+2 rooting → `lower` → `fold`).
 /// [`BoundAmplitude::bind`](super::run::BoundAmplitude::bind) resolves a
 /// `&EvaluatedModel` at a chosen scalar precision `F` into a runtime
-/// [`BoundAmplitude`](super::run::BoundAmplitude), so the same evaluator works with any
+/// [`BoundAmplitude`], so the same evaluator works with any
 /// parameter card and any precision.
 #[derive(Debug)]
 pub struct AmplitudeEvaluator {
@@ -132,21 +132,7 @@ impl AmplitudeEvaluator {
         );
         let _span = info_span!("compile", process = %subprocess).entered();
         let started = std::time::Instant::now();
-        let ext_particle_names = set
-            .particles_in
-            .iter()
-            .chain(set.particles_out.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let ext_particle_ids = ext_particle_names
-            .iter()
-            .map(|name| {
-                model
-                    .particle_id(name)
-                    .ok_or_else(|| EvalError::ParticleNotFound(name.clone()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let ext_particle_ids = external_particle_ids(set, model)?;
 
         // Pass C: factorize color into a basis of flows + the exact CF matrix. Each
         // contribution names an amplitude by `(diagram, color-index chain)`.
@@ -155,23 +141,7 @@ impl AmplitudeEvaluator {
         info!("{n_flows} colour flows, CF matrix {n_flows}×{n_flows}");
         report_cf_matrix(n_flows, &basis.cf_matrix);
 
-        // Root each distinct `(diagram, chain)` amplitude the flows reference. A chain
-        // selects one color structure per vertex; for single-structure vertices this
-        // is the all-zero chain and matches the color-free rooting exactly.
-        let mut evals: HashMap<(usize, Vec<u8>), DiagramEval> = HashMap::new();
-        for elem in &basis.elements {
-            for contrib in &elem.contributions {
-                let key = (contrib.diagram, contrib.chain.clone());
-                if let std::collections::hash_map::Entry::Vacant(slot) = evals.entry(key) {
-                    let eval = compile_single_diagram(
-                        &set.diagrams[contrib.diagram],
-                        model,
-                        &contrib.chain,
-                    )?;
-                    slot.insert(eval);
-                }
-            }
-        }
+        let evals = root_amplitudes(&basis, set, model)?;
         let n_ext = ext_particle_ids.len();
 
         // Compile phase should preserve process external-leg count consistency.
@@ -184,40 +154,8 @@ impl AmplitudeEvaluator {
             }
         }
 
-        // A polarized leg sums over its listed helicities only, in the order the
-        // card listed them; every other leg over all of its states.
         let polarizations = set.polarizations.clone();
-        if polarizations.len() != ext_particle_ids.len() {
-            return Err(EvalError::TopologyError(format!(
-                "{} polarizations for {} external legs",
-                polarizations.len(),
-                ext_particle_ids.len()
-            )));
-        }
-        let helicity_states = ext_particle_ids
-            .iter()
-            .zip(&polarizations)
-            .enumerate()
-            .map(|(leg, (&pid, pol))| {
-                let particle = model.particle(pid);
-                let states = particle
-                    .helicity_states()
-                    .ok_or(EvalError::UnsupportedSpin(particle.spin.abs()))?;
-                match pol {
-                    None => Ok(states),
-                    Some(listed)
-                        if !listed.is_empty() && listed.iter().all(|h| states.contains(h)) =>
-                    {
-                        Ok(listed.clone())
-                    }
-                    Some(listed) => Err(EvalError::Polarization {
-                        leg: leg + 1,
-                        particle: particle.name.clone(),
-                        listed: listed.clone(),
-                    }),
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let helicity_states = helicity_states(model, &ext_particle_ids, &polarizations)?;
         let helicities = cartesian_helicity_product(&helicity_states);
 
         // Pass 3: inline the color-factorized diagrams into one whole-amplitude AST
@@ -225,34 +163,11 @@ impl AmplitudeEvaluator {
         // `NCOLOR = 1`), then intern the constants into the folded skeleton. The
         // configuration amplitudes ride under the same root.
         let n_diagrams = set.diagrams.len();
-        let mut config_members: Vec<Vec<usize>> = Vec::new();
-        let mut config_amp_diagrams: Vec<usize> = Vec::new();
-        let mut configs: Vec<Vec<(usize, Vec<u8>)>> = Vec::new();
-        for group in config_groups(&set.diagrams, model) {
-            let mut amps: Vec<(usize, Vec<u8>)> = Vec::new();
-            let mut members: Vec<usize> = Vec::new();
-            for &d in &group {
-                let mut chains: Vec<Vec<u8>> = evals
-                    .keys()
-                    .filter(|(diagram, _)| *diagram == d)
-                    .map(|(_, chain)| chain.clone())
-                    .collect();
-                chains.sort();
-                // A diagram the color basis never references contributes nothing to
-                // any flow, so it has no amplitude in the group's coherent sum.
-                if chains.is_empty() {
-                    continue;
-                }
-                members.push(d);
-                amps.extend(chains.into_iter().map(|chain| (d, chain)));
-            }
-            if amps.is_empty() {
-                continue;
-            }
-            config_amp_diagrams.extend(amps.iter().map(|(d, _)| *d));
-            config_members.push(members);
-            configs.push(amps);
-        }
+        let Configurations {
+            members: config_members,
+            amp_diagrams: config_amp_diagrams,
+            amps: configs,
+        } = Configurations::group(set, model, &evals);
         let config_spans: Vec<usize> = configs.iter().map(Vec::len).collect();
         let symbolic = lower::optimize(lower::lower_flows(&basis, &evals, &configs));
         let folded = Folded::build(&symbolic);
@@ -270,63 +185,12 @@ impl AmplitudeEvaluator {
         // Read each flow's basis key back as color lines, giving the Les Houches
         // `(color, anticolor)` labels an event record carries per leg.
         let n_in = set.particles_in.len();
-        let leg_colors = ext_particle_ids
-            .iter()
-            .enumerate()
-            .map(|(leg, &pid)| {
-                let charge = model.particle(pid).color;
-                ColorRep::from_ufo(charge)
-                    .map(|rep| LegColor {
-                        rep,
-                        incoming: leg < n_in,
-                    })
-                    .ok_or_else(|| {
-                        EvalError::TopologyError(format!(
-                            "external leg {} has unsupported color charge {charge}",
-                            leg + 1
-                        ))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let leg_colors = leg_colors(model, &ext_particle_ids, n_in)?;
         let color_flow_tags = color_flow_tags(&basis, &leg_colors)?;
         report_flow_tags(&color_flow_tags);
         let leading_color_flows = LeadingColorFlows::of(&basis, n_diagrams);
-        let n_flows = basis.ncolor();
-        let mut config_flows = vec![false; config_members.len() * n_flows];
-        for (c, members) in config_members.iter().enumerate() {
-            for &d in members {
-                for (slot, &reached) in config_flows[c * n_flows..][..n_flows]
-                    .iter_mut()
-                    .zip(leading_color_flows.reached_by(d))
-                {
-                    *slot |= reached;
-                }
-            }
-        }
-        let flow_fingerprints: Vec<FlowFingerprint> = basis
-            .elements
-            .iter()
-            .map(|elem| {
-                let mut key: FlowFingerprint = elem
-                    .contributions
-                    .iter()
-                    .map(|c| {
-                        (
-                            c.diagram,
-                            c.chain.clone(),
-                            c.coeff.nc_power,
-                            if c.coeff.q < Ratio::from_integer(0) {
-                                -c.coeff.q
-                            } else {
-                                c.coeff.q
-                            },
-                        )
-                    })
-                    .collect();
-                key.sort();
-                key
-            })
-            .collect();
+        let config_flows = config_flow_masks(&config_members, &leading_color_flows, n_flows);
+        let flow_fingerprints = flow_fingerprints(&basis);
 
         debug!("compiled in {:.3} s", started.elapsed().as_secs_f64());
 
@@ -427,69 +291,50 @@ impl AmplitudeEvaluator {
         select_index(hel_m2, u).map(|c| self.helicities[c].as_slice())
     }
 
-    /// The colour flow an accepted event is written with, drawn from two uniform
-    /// variates — MadEvent's `SELECT_COLOR`.
+    /// The colour flow an accepted event is written with, and the configuration it
+    /// was drawn in, from two uniform variates — MadEvent's `SELECT_COLOR`.
     ///
-    /// `u[0]` draws the integration configuration `∝ AMP2(d)`
-    /// ([`BoundAmplitude::eval_amp2`](super::run::BoundAmplitude::eval_amp2)), and
-    /// `u[1]` then draws the flow `∝ JAMP2(i)` over the flows *that configuration's
-    /// diagram reaches at leading colour* — its `ICOLAMP` row. Both steps are
+    /// `u[0]` draws the integration configuration `∝ amp2[c]`, and `u[1]` then
+    /// draws the flow `∝ JAMP2(i)` over the flows *that configuration reaches at
+    /// leading colour* — the union of its members' `ICOLAMP` rows. Both steps are
     /// selections: the cross section sums over configurations and over flows, and
     /// this reads accumulators that decomposition already contains.
     ///
     /// The configuration is drawn rather than taken from the sampler's channel
     /// because MadEvent's is not a sampling label either: under single-diagram
     /// enhancement configuration `j`'s integrand carries `AMP2_j / Σ_i AMP2_i`, so
-    /// the configurations of the events a run writes follow that amplitude share
-    /// whatever the sampler did. Conditioning on our own sampled channel instead is
-    /// measurably not the same thing: for a process whose propagators are all
-    /// massless the per-diagram channel maps degenerate onto one another, so the
-    /// channel index carries no information about which diagram produced the point.
+    /// the configurations of the events a run writes follow that share whatever the
+    /// sampler did. Conditioning on our own sampled channel instead is measurably
+    /// not the same thing: for a process whose propagators are all massless the
+    /// per-diagram channel maps degenerate onto one another, so the channel index
+    /// carries no information about which diagram produced the point.
     ///
-    /// **The amplitude share is MadEvent's channel weight only under its default
-    /// integration strategy, and the configurations here are finer than its.** Two
-    /// differences bound how far this reproduces a MadGraph run's own colour
-    /// column. First, `SMATRIX` rescales every `AMP2(j)` by `GET_CHANNEL_CUT` — the
-    /// product of the configuration's inverse squared propagator denominators — and
-    /// under the run card's `sde_strategy = 2` it *replaces* the amplitude by that
-    /// product outright, so the channel weight then carries no coupling and no
-    /// amplitude at all. Second, MadGraph sums diagrams its channel mapping calls
-    /// one topology into a single accumulator, coherently, where these
-    /// configurations stay one per diagram. Neither difference reaches `|M|²` or the
-    /// cross section, and neither is visible at all where every configuration
-    /// reaches the same flows; both move the written colour flow of a process whose
-    /// `ICOLAMP` rows separate the flows configuration by configuration.
-    ///
-    /// A process whose colour basis has one flow reduces to a no-op: every diagram
-    /// reaches the single flow, so the mask admits everything and the draw returns
-    /// flow 0 for any variate. `None` when no flow carries weight at all.
-    #[cfg(any(test, doc))]
-    pub(crate) fn select_color_flow(
-        &self,
-        amp2: &[f64],
-        jamp2: &[f64],
-        u: [f64; 2],
-    ) -> Option<usize> {
-        self.select_config_and_flow(amp2, jamp2, u, None)
-            .map(|selection| selection.flow)
-    }
-
-    /// [`select_color_flow`](Self::select_color_flow), keeping the configuration
-    /// the flow was drawn in.
+    /// The configurations are MadGraph's own: [`config_groups`] merges the diagrams
+    /// its channel mapping calls one topology, and each group's amplitudes are summed
+    /// coherently into one accumulator
+    /// ([`BoundAmplitude::eval_amp2`](super::run::BoundAmplitude::eval_amp2)). What
+    /// `amp2` carries is the caller's choice of MadEvent's channel weight: the
+    /// amplitude share under the default integration strategy, or, at the run card's
+    /// `sde_strategy = 2`, the configuration's propagator product `GET_CHANNEL_CUT`
+    /// in its place, which carries no coupling and no amplitude at all.
     ///
     /// The configuration is MadEvent's `ICONFIG` for the record: besides masking
     /// the flow draw, it is the diagram whose s-channel propagators `addmothers`
     /// writes as intermediate records, so an event's colour flow and its
-    /// resonance structure come from the same configuration. The draw consumes
-    /// exactly the variates `select_color_flow` does, so the flow is the same
-    /// either way.
+    /// resonance structure come from the same configuration.
     ///
     /// `clustered` is the configuration a matched run's clustering chose
     /// (`igraphs(1)`): under `ickkw > 0` `SELECT_COLOR` masks the flows with that
     /// configuration's column instead of the integration channel's, and
     /// `addmothers` writes from it (`super_auto_dsig_group_v4.inc`'s
-    /// `select_color`, `addmothers.f`'s `lconfig`). Given, it replaces the `AMP2`
+    /// `select_color`, `addmothers.f`'s `lconfig`). Given, it replaces the `amp2`
     /// draw and `u[0]` goes unread; `None` is the draw above.
+    ///
+    /// A process whose colour basis has one flow reduces to a no-op: every diagram
+    /// reaches the single flow, so the mask admits everything and the draw returns
+    /// flow 0 for any variate. When no configuration carries weight the flow is
+    /// drawn over every flow, with no configuration; `None` when no flow carries
+    /// weight at all.
     pub(crate) fn select_config_and_flow(
         &self,
         amp2: &[f64],
@@ -781,6 +626,206 @@ impl AmplitudeEvaluator {
     }
 }
 
+/// The external legs' particle ids, incoming then outgoing.
+fn external_particle_ids(set: &DiagramSet, model: &UFOModel) -> Result<Vec<ParticleId>, EvalError> {
+    set.particles_in
+        .iter()
+        .chain(set.particles_out.iter())
+        .map(|name| {
+            model
+                .particle_id(name)
+                .ok_or_else(|| EvalError::ParticleNotFound(name.clone()))
+        })
+        .collect()
+}
+
+/// Root each distinct `(diagram, chain)` amplitude the colour flows reference. A chain
+/// selects one colour structure per vertex; for single-structure vertices this is the
+/// all-zero chain and matches the colour-free rooting exactly.
+pub(super) fn root_amplitudes(
+    basis: &ColorBasis,
+    set: &DiagramSet,
+    model: &UFOModel,
+) -> Result<HashMap<(usize, Vec<u8>), DiagramEval>, EvalError> {
+    let mut evals: HashMap<(usize, Vec<u8>), DiagramEval> = HashMap::new();
+    for elem in &basis.elements {
+        for contrib in &elem.contributions {
+            let key = (contrib.diagram, contrib.chain.clone());
+            if let std::collections::hash_map::Entry::Vacant(slot) = evals.entry(key) {
+                let eval =
+                    compile_single_diagram(&set.diagrams[contrib.diagram], model, &contrib.chain)?;
+                slot.insert(eval);
+            }
+        }
+    }
+    Ok(evals)
+}
+
+/// The helicity states each external leg sums over. A polarized leg sums over its
+/// listed helicities only, in the order the card listed them; every other leg over
+/// all of its states.
+fn helicity_states(
+    model: &UFOModel,
+    ext_particle_ids: &[ParticleId],
+    polarizations: &[Option<Vec<i32>>],
+) -> Result<Vec<Vec<i32>>, EvalError> {
+    if polarizations.len() != ext_particle_ids.len() {
+        return Err(EvalError::TopologyError(format!(
+            "{} polarizations for {} external legs",
+            polarizations.len(),
+            ext_particle_ids.len()
+        )));
+    }
+    ext_particle_ids
+        .iter()
+        .zip(polarizations)
+        .enumerate()
+        .map(|(leg, (&pid, pol))| {
+            let particle = model.particle(pid);
+            let states = particle
+                .helicity_states()
+                .ok_or(EvalError::UnsupportedSpin(particle.spin.abs()))?;
+            match pol {
+                None => Ok(states),
+                Some(listed) if !listed.is_empty() && listed.iter().all(|h| states.contains(h)) => {
+                    Ok(listed.clone())
+                }
+                Some(listed) => Err(EvalError::Polarization {
+                    leg: leg + 1,
+                    particle: particle.name.clone(),
+                    listed: listed.clone(),
+                }),
+            }
+        })
+        .collect()
+}
+
+/// The integration configurations, one per [`config_groups`] group that carries an
+/// amplitude the colour basis references.
+pub(super) struct Configurations {
+    /// Each configuration's member diagrams.
+    pub(super) members: Vec<Vec<usize>>,
+    /// The diagram of every configuration amplitude, configurations concatenated.
+    pub(super) amp_diagrams: Vec<usize>,
+    /// Each configuration's `(diagram, chain)` amplitudes, summed coherently.
+    pub(super) amps: Vec<Vec<(usize, Vec<u8>)>>,
+}
+
+impl Configurations {
+    pub(super) fn group(
+        set: &DiagramSet,
+        model: &UFOModel,
+        evals: &HashMap<(usize, Vec<u8>), DiagramEval>,
+    ) -> Configurations {
+        let mut out = Configurations {
+            members: Vec::new(),
+            amp_diagrams: Vec::new(),
+            amps: Vec::new(),
+        };
+        for group in config_groups(&set.diagrams, model) {
+            let mut amps: Vec<(usize, Vec<u8>)> = Vec::new();
+            let mut members: Vec<usize> = Vec::new();
+            for &d in &group {
+                let mut chains: Vec<Vec<u8>> = evals
+                    .keys()
+                    .filter(|(diagram, _)| *diagram == d)
+                    .map(|(_, chain)| chain.clone())
+                    .collect();
+                chains.sort();
+                // A diagram the color basis never references contributes nothing to
+                // any flow, so it has no amplitude in the group's coherent sum.
+                if chains.is_empty() {
+                    continue;
+                }
+                members.push(d);
+                amps.extend(chains.into_iter().map(|chain| (d, chain)));
+            }
+            if amps.is_empty() {
+                continue;
+            }
+            out.amp_diagrams.extend(amps.iter().map(|(d, _)| *d));
+            out.members.push(members);
+            out.amps.push(amps);
+        }
+        out
+    }
+}
+
+/// Each external leg's colour representation and direction.
+fn leg_colors(
+    model: &UFOModel,
+    ext_particle_ids: &[ParticleId],
+    n_in: usize,
+) -> Result<Vec<LegColor>, EvalError> {
+    ext_particle_ids
+        .iter()
+        .enumerate()
+        .map(|(leg, &pid)| {
+            let charge = model.particle(pid).color;
+            ColorRep::from_ufo(charge)
+                .map(|rep| LegColor {
+                    rep,
+                    incoming: leg < n_in,
+                })
+                .ok_or_else(|| {
+                    EvalError::TopologyError(format!(
+                        "external leg {} has unsupported color charge {charge}",
+                        leg + 1
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// The flows each configuration reaches at leading colour, row-major
+/// (`masks[c * n_flows + i]`): the union of its member diagrams' `ICOLAMP` rows.
+fn config_flow_masks(
+    members: &[Vec<usize>],
+    leading: &LeadingColorFlows,
+    n_flows: usize,
+) -> Vec<bool> {
+    let mut masks = vec![false; members.len() * n_flows];
+    for (c, members) in members.iter().enumerate() {
+        for &d in members {
+            for (slot, &reached) in masks[c * n_flows..][..n_flows]
+                .iter_mut()
+                .zip(leading.reached_by(d))
+            {
+                *slot |= reached;
+            }
+        }
+    }
+    masks
+}
+
+/// Every flow's [`FlowFingerprint`], in basis order.
+fn flow_fingerprints(basis: &ColorBasis) -> Vec<FlowFingerprint> {
+    basis
+        .elements
+        .iter()
+        .map(|elem| {
+            let mut key: FlowFingerprint = elem
+                .contributions
+                .iter()
+                .map(|c| {
+                    (
+                        c.diagram,
+                        c.chain.clone(),
+                        c.coeff.nc_power,
+                        if c.coeff.q < Ratio::from_integer(0) {
+                            -c.coeff.q
+                        } else {
+                            c.coeff.q
+                        },
+                    )
+                })
+                .collect();
+            key.sort();
+            key
+        })
+        .collect()
+}
+
 /// The colour-factor matrix, one row per line.
 ///
 /// The entries are exact rationals at `Nc = 3`, so this is the whole colour
@@ -903,15 +948,10 @@ fn config_carrying_diagrams(diagrams: &[Diagram]) -> Vec<usize> {
 /// external-momentum combination *is* its position, and the sorted multiset over the
 /// internal lines settles both the topology and the propagators on it.
 ///
-/// **This is not the partition [`AmplitudeEvaluator`] integrates over.** Its
-/// configurations are one per entry of [`config_carrying_diagrams`], which is finer
-/// wherever this function merges: a merged accumulator is MadGraph's coherent
-/// `|Σ AMP|²` over the group, and squaring each member separately is a different
-/// number and a different channel decomposition. What this function is for is
-/// aligning the two — `amplitude_oracle` folds our per-diagram configuration
-/// amplitudes through it to compare against MadGraph's own accumulators, and asserts
-/// the partition it derives here against the `AMP2` grouping in MadGraph's generated
-/// `matrix1.f`.
+/// This is the partition [`AmplitudeEvaluator`] integrates over: each group is one
+/// configuration, and its accumulator is the coherent `|Σ AMP|²` over the group's
+/// amplitudes, as MadGraph's is. `amplitude_oracle` asserts the partition derived
+/// here against the `AMP2` grouping in MadGraph's generated `matrix1.f`.
 pub fn config_groups(diagrams: &[Diagram], model: &UFOModel) -> Vec<Vec<usize>> {
     let mut tags: Vec<ConfigTag> = Vec::new();
     let mut groups: Vec<Vec<usize>> = Vec::new();
@@ -1090,9 +1130,9 @@ pub fn assert_op_coverage_across(
 #[cfg(test)]
 mod tests {
     use super::super::lower;
-    use super::super::root_diagram::compile_diagram_ast;
-    use super::{AmplitudeEvaluator, MG_VALIDATED_PROCESSES};
+    use super::{root_amplitudes, AmplitudeEvaluator, Configurations, MG_VALIDATED_PROCESSES};
     use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
+    use crate::helas::color::colorize_process;
     use crate::helas::eval::op::Op;
     use crate::helas::eval::tree::Tree;
     use crate::ufo::sm::{sm_model, SMRestrict};
@@ -1154,11 +1194,12 @@ mod tests {
         );
     }
 
-    /// Every `Add`/`Mul` node in the symbolic [`lower`](crate::helas::eval::lower::lower)
-    /// output has exactly two children — the static-arity form an egg rewrite stage
-    /// requires. Checked across the full MG-validated suite. (`optimize` then
-    /// re-n-aryfies the sums for evaluation, so the folded arena is intentionally
-    /// *not* binary.)
+    /// Every `Add`/`Mul` node in the symbolic
+    /// [`lower_flows`](crate::helas::eval::lower::lower_flows) output — the lowering
+    /// [`AmplitudeEvaluator::compile`] runs — has exactly two children: the
+    /// static-arity form an egg rewrite stage requires. Checked across the full
+    /// MG-validated suite. (`optimize` then re-n-aryfies the sums for evaluation, so
+    /// the folded arena is intentionally *not* binary.)
     #[test]
     fn lowered_add_mul_are_binary() {
         let model = sm_model(SMRestrict::Default);
@@ -1168,8 +1209,10 @@ mod tests {
             let sets = generate_from_proc_card(&pc, &model).unwrap();
             assert!(!sets.is_empty(), "no diagrams for '{process}'");
             for set in &sets {
-                let diagrams = compile_diagram_ast(set, &model).unwrap();
-                let ast = lower::lower(&diagrams);
+                let basis = colorize_process(&model, &set.diagrams).unwrap();
+                let evals = root_amplitudes(&basis, set, &model).unwrap();
+                let configs = Configurations::group(set, &model, &evals);
+                let ast = lower::lower_flows(&basis, &evals, &configs.amps);
                 for id in ast.iter() {
                     let op = ast.value(id).op;
                     if matches!(op, Op::Add | Op::Mul) {
@@ -1308,7 +1351,8 @@ mod tests {
         ] {
             for u1 in [0.0, 0.5, 0.99] {
                 assert_eq!(
-                    eval.select_color_flow(&amp2, &jamp2, [u0, u1]),
+                    eval.select_config_and_flow(&amp2, &jamp2, [u0, u1], None)
+                        .map(|selection| selection.flow),
                     Some(want),
                     "amp2 {amp2:?} at u = [{u0}, {u1}]"
                 );
@@ -1390,14 +1434,16 @@ mod tests {
         for u0 in [0.0, 0.3, 0.999] {
             for u1 in [0.0, 0.3, 0.999] {
                 assert_eq!(
-                    eval.select_color_flow(&[1.0, 3.0], &[7.0], [u0, u1]),
+                    eval.select_config_and_flow(&[1.0, 3.0], &[7.0], [u0, u1], None)
+                        .map(|selection| selection.flow),
                     Some(0)
                 );
             }
         }
         // Even with no configuration carrying weight, the event still gets its flow.
         assert_eq!(
-            eval.select_color_flow(&[0.0, 0.0], &[7.0], [0.5, 0.5]),
+            eval.select_config_and_flow(&[0.0, 0.0], &[7.0], [0.5, 0.5], None)
+                .map(|selection| selection.flow),
             Some(0)
         );
     }
@@ -1405,7 +1451,7 @@ mod tests {
     /// Diagnostic (run with `--ignored --nocapture`): per-process helicity-expanded node
     /// count before and after the zero-amplitude elimination pass.
     #[test]
-    #[ignore]
+    #[ignore = "diagnostic table; run with --nocapture"]
     fn zeroamp_node_reduction_table() {
         use crate::ufo::EvaluatedModel;
 

@@ -24,7 +24,7 @@ pub struct MultivectorWf<F: Real> {
 /// Fermion slots carry their flow direction in the type: a column (ket, `u`/`v`)
 /// current is [`WaveformSlot::FermionIn`] and a row (bra, `ū`/`v̄`) current is
 /// [`WaveformSlot::FermionOut`]. An off-shell current produced by a `GammaIout`-style
-/// node is flow-in; a `GammaJout`-style node is flow-out. A fermion line carries one
+/// node is flow-in; a `GammaOout`-style node is flow-out. A fermion line carries one
 /// flow throughout, so a consumer always finds the flow it needs: a slot of the other
 /// flow would mean a mis-assigned flow, not a call for a mid-line Dirac adjoint.
 #[derive(Clone, Debug, Copy)]
