@@ -59,9 +59,15 @@
 //!   Per-diagram rather than global on purpose: MadGraph puts the relative sign
 //!   between an annihilation and an exchange diagram into the colour coefficient
 //!   `c_i` while vibegraph puts it into the diagram root, so the bare amplitudes
-//!   differ by a sign that is a convention rather than an error. `|k| = 1` is the
-//!   part with teeth — it is exactly what makes `AMP2` (the modulus) agree, and it
-//!   would fail for a diagram carrying a stray symmetry factor or coupling.
+//!   differ by a sign that is a convention rather than an error. `|k| = 1` is
+//!   exactly what makes `AMP2` (the modulus) agree, and it would fail for a
+//!   diagram carrying a stray symmetry factor or coupling. `k / G` real is the
+//!   rest: the per-diagram freedom is a sign and not a phase, so a configuration
+//!   amplitude rotated against the process — which `AMP2` cannot see — fails.
+//! - Each configuration amplitude against its diagram compiled on its own: the two
+//!   differ by a sign, and the per-process sign pattern is banked in
+//!   [`CONFIG_AMP_SIGNS`], so a change to either evaluator's sign conventions
+//!   fails here although nothing downstream reads the sign.
 //! - `eval_amp2` reproduces `Σ_hel |AMP_d^mg|²` configuration by configuration —
 //!   the weight the per-event configuration draw uses, and through that
 //!   configuration's `ICOLAMP` mask the colour flow an event is written with.
@@ -413,6 +419,54 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
 /// one. Two-way, in [`coverage`]: every committed table without a declaration is
 /// listed, and every listed row has a table and no declaration.
 const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
+
+/// The sign each configuration amplitude carries against its diagram compiled on its
+/// own, `+` or `-` per configuration amplitude in the order `run_config_amps`
+/// returns them, for every row whose per-diagram amplitudes are compared.
+///
+/// The single-diagram compile carries MadGraph's colour coefficient `c` for the
+/// diagram and the configuration amplitude does not, so the second is `±1/|c|`
+/// times the first — `±1` wherever `|c| = 1`, `±1/2` on the `g g > h` rows.
+/// Measured, not derived: the ratio is exactly that at every banked point and
+/// helicity, and its sign is uniform on most rows and not on all. Nothing reads
+/// it downstream — `eval_amp2` is a modulus — so it is pinned as data, and a change
+/// to either evaluator's sign conventions shows up here first. Two-way: a compared
+/// row must be listed, and a listed row must be compared.
+const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
+    ("bbx_to_h_identity", "--"),
+    ("ddx_to_epemg", "++++"),
+    ("ee_to_ee", "----"),
+    ("ee_to_mumu", "--"),
+    ("ee_to_mumu_4f", "--------"),
+    ("ee_to_mumu_eml", "--"),
+    ("ee_to_mumu_smlimit", "--"),
+    ("ee_to_mumu_tata_qcd0", "+++++++++++++++++--------"),
+    ("ee_to_mumua", "----++++"),
+    ("ee_to_tatah", "++++-"),
+    ("ee_to_tlt", "--"),
+    ("ee_to_ttx", "--"),
+    ("ee_to_ttx_dipole", "----------"),
+    ("ee_to_ttx_smeft", "-------------------------------"),
+    ("ee_to_ttx_smlimit", "--"),
+    ("ee_to_wp0wm", "---"),
+    ("ee_to_wp0wmt", "---"),
+    ("ee_to_wpwm", "---"),
+    ("ee_to_z0h", "+"),
+    ("ee_to_zh", "+"),
+    ("ee_to_zh_smeft", "++++++++++++++"),
+    ("gg_to_h_cpeven", "++"),
+    ("gg_to_h_cpodd", "+++"),
+    ("gu_to_epemu", "++++"),
+    ("gux_to_epemux", "++++"),
+    ("ll_to_qqx_toy_dipole", "--"),
+    ("ll_to_qqx_toy_tensor", "-"),
+    ("ll_to_qqx_toy_yukawa", "-++++"),
+    ("pp_to_ll_qcd0", "--"),
+    ("tata_to_ttx_tensor4f", "--+"),
+    ("uux_to_epemg", "++++"),
+    ("uux_to_mumu", "--"),
+    ("uux_to_ztg", "--"),
+];
 
 fn tables_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/amplitudes")
@@ -1123,6 +1177,8 @@ struct Configurations {
     /// The MadGraph `AMP()` index of each configuration amplitude, in the order
     /// `run_config_amps` returns them.
     mg_amp_index: Vec<usize>,
+    /// Our diagram behind each configuration amplitude, in the same order.
+    amp_diagrams: Vec<usize>,
 }
 
 /// The configuration partition, its `ICOLAMP` columns and the exemption lists that
@@ -1256,6 +1312,7 @@ fn check_configurations(
         derived,
         merges,
         mg_amp_index,
+        amp_diagrams: evaluator.config_amp_diagrams().to_vec(),
     })
 }
 
@@ -1274,6 +1331,11 @@ struct Linear {
     worst_amp2_where: String,
     /// One entry table per configuration amplitude.
     config_entries: Vec<Vec<Entry>>,
+    /// One entry table per configuration amplitude, against the single-diagram
+    /// compile of its diagram (`mg` holds the single-diagram value over the modulus
+    /// of MadGraph's colour coefficient for it). Empty where the per-diagram
+    /// amplitudes are not compared.
+    config_sign_entries: Vec<Vec<Entry>>,
 }
 
 /// Evaluate every banked per-helicity point: the flows, the configuration
@@ -1290,6 +1352,7 @@ fn collect_linear(
     let Configurations {
         derived,
         mg_amp_index,
+        amp_diagrams,
         ..
     } = configs;
     let n_config_amps = mg_amp_index.len();
@@ -1308,6 +1371,7 @@ fn collect_linear(
     // One entry table per configuration amplitude: the fit is per configuration,
     // not global (see the module header on why the phase is per diagram).
     let mut config_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
+    let mut config_sign_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
     let mut our_amp2 = vec![0.0f64; derived.len()];
 
     for (pi, pt) in table.points.iter().enumerate() {
@@ -1414,6 +1478,19 @@ fn collect_linear(
                 vg_row.push(value);
                 mg_row.push(term);
             }
+            // The single-diagram value carries MadGraph's colour coefficient and
+            // the configuration amplitude does not, so the second is ±1/|c| times
+            // the first; dividing by |c| leaves the sign alone to be read.
+            for (ci, &d) in amp_diagrams.iter().enumerate() {
+                config_sign_entries[ci].push(Entry {
+                    mg: vg_row[d] / coefficients[mg_amp_index[ci]].norm(),
+                    vg: ours_cfg[ci],
+                    what: format!(
+                        "point {pi}, hel {hel:?}, configuration amplitude {ci} against \
+                         diagram {d} compiled alone"
+                    ),
+                });
+            }
             vg_rows.push(vg_row);
             mg_rows.push(mg_row);
         }
@@ -1479,6 +1556,7 @@ fn collect_linear(
         worst_amp2,
         worst_amp2_where,
         config_entries,
+        config_sign_entries,
     }
 }
 
@@ -1517,6 +1595,7 @@ fn judge(
         worst_amp2,
         worst_amp2_where,
         config_entries,
+        config_sign_entries,
     } = linear;
     // One constant for the whole process, least squares over every entry it has.
     // Fitting it globally rather than per diagram, per flow or per point is what
@@ -1601,10 +1680,13 @@ fn judge(
 
     // One constant per configuration amplitude. The residual under it says the
     // amplitude is MadGraph's; its modulus being 1 says `AMP2` — which is blind to
-    // the phase — is MadGraph's too.
+    // the phase — is MadGraph's too; and its ratio to the process constant being
+    // real says the configuration amplitude carries no phase of its own beyond a
+    // sign, which `AMP2` cannot see either.
     let mut worst_config = 0.0f64;
     let mut worst_config_where = String::new();
     let mut worst_config_phase = 0.0f64;
+    let mut worst_config_rotation = 0.0f64;
     for (ci, entries) in config_entries.iter().enumerate() {
         if entries.is_empty() {
             continue;
@@ -1619,6 +1701,8 @@ fn judge(
         if dev > worst_config_phase {
             worst_config_phase = dev;
         }
+        let rotation = (k / g).im.abs();
+        worst_config_rotation = worst_config_rotation.max(rotation);
         if worst > LINEAR_REL_TOL {
             violation!(
                 "[{name}] configuration amplitude {ci} is not MadGraph's AMP() up to one \
@@ -1633,6 +1717,58 @@ fn judge(
                 k.norm()
             );
         }
+        if rotation > LINEAR_REL_TOL {
+            violation!(
+                "[{name}] configuration amplitude {ci} is rotated against the process: \
+                 k/G = {:?}, |Im(k/G)| = {rotation:.3e}, where every configuration \
+                 amplitude is MadGraph's AMP() times ±G",
+                k / g
+            );
+        }
+    }
+
+    // Each configuration amplitude against its diagram compiled alone, over the
+    // modulus of the diagram's colour coefficient: the two differ by exactly ±1, a
+    // sign pattern per process that is banked in [`CONFIG_AMP_SIGNS`] rather than
+    // derived, because nothing downstream reads it and `AMP2` is blind to it.
+    let measured_signs: Option<String> = if config_sign_entries.iter().any(|e| !e.is_empty()) {
+        let mut signs = String::new();
+        for (ci, entries) in config_sign_entries.iter().enumerate() {
+            let (s, scale) = fit_constant(entries);
+            let sign = if s.re >= 0.0 { 1.0 } else { -1.0 };
+            let (worst, what) = worst_deviation(entries, C::new(sign, 0.0), scale);
+            if worst > LINEAR_REL_TOL {
+                violation!(
+                    "[{name}] configuration amplitude {ci} is not ±1/|c| times its \
+                     diagram compiled alone (fitted {s:?}, max element-wise deviation \
+                     {worst:.3e}) at {what}"
+                );
+            }
+            signs.push(if sign > 0.0 { '+' } else { '-' });
+        }
+        Some(signs)
+    } else {
+        None
+    };
+    let banked_signs = CONFIG_AMP_SIGNS
+        .iter()
+        .find(|(k, _)| *k == name)
+        .map(|(_, s)| *s);
+    match (measured_signs.as_deref(), banked_signs) {
+        (Some(ours), Some(banked)) if ours == banked => {}
+        (Some(ours), Some(banked)) => violation!(
+            "[{name}] the configuration amplitudes' signs against their diagrams compiled \
+             alone read {ours}, and CONFIG_AMP_SIGNS banks {banked}"
+        ),
+        (Some(ours), None) => violation!(
+            "[{name}] the configuration amplitudes' signs against their diagrams compiled \
+             alone read {ours} and CONFIG_AMP_SIGNS banks none for this row"
+        ),
+        (None, Some(banked)) => violation!(
+            "[{name}] CONFIG_AMP_SIGNS banks {banked}, but the row compares no \
+             per-diagram amplitudes to measure it against"
+        ),
+        (None, None) => {}
     }
     if worst_amp2 > AMP2_REL_TOL {
         violation!(
@@ -1646,7 +1782,7 @@ fn judge(
          per-diagram {worst_diagram:.2e}{}, per-flow {worst_flow:.2e}, JAMP2 {worst_jamp2:.2e} \
          (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
          {} configurations{}: amplitude {worst_config:.2e}, |k|-1 {worst_config_phase:.1e}, \
-         AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
+         |Im(k/G)| {worst_config_rotation:.1e}, AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
         table.process,
         table.n_graphs,
         table.n_flows,
@@ -1741,6 +1877,16 @@ fn coverage() -> Result<(), Failed> {
         problems.push(format!(
             "committed tables without an `mg_amplitude` declaration are {borrowed:?}, \
              and BORROWED_TABLES lists {listed:?}"
+        ));
+    }
+    let unbanked_signs: Vec<&str> = CONFIG_AMP_SIGNS
+        .iter()
+        .map(|(key, _)| *key)
+        .filter(|key| !banked.contains(*key))
+        .collect();
+    if !unbanked_signs.is_empty() {
+        problems.push(format!(
+            "CONFIG_AMP_SIGNS lists rows with no committed table: {unbanked_signs:?}"
         ));
     }
     for (_, lender) in BORROWED_TABLES {
