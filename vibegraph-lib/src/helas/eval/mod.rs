@@ -108,9 +108,8 @@ pub mod bench_internals {
 
 /// Per-model op-coverage census: which evaluator primitives a model's gated
 /// process list actually compiles to, and the two-way assertion over its
-/// allowlist. Feature-gated because the banked non-SM instance lives in an
-/// integration test; not a public API surface.
-#[cfg(feature = "extended-validation")]
+/// allowlist. Exported for the non-SM instances in the hermetic integration tests
+/// (`tests/smeftsim.rs`, `tests/toy_models.rs`); not a public API surface.
 #[doc(hidden)]
 pub mod op_census {
     pub use super::compile::assert_op_coverage_across;
