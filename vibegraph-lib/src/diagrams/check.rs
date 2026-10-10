@@ -4,24 +4,24 @@
 //! [`check_supported`] decides, in one pass over the whole card, which of them
 //! this generator can honour, and reports *every* one it cannot rather than the
 //! first. What it hands on is a [`SupportedCard`], a narrower type with no field
-//! for a refused feature: code downstream cannot read a `$` restriction or a
-//! decay chain, because the type it is given has nowhere to hold one.
+//! for a refused feature: code downstream cannot read a loop specification or a
+//! propagator projection, because the type it is given has nowhere to hold one.
 //! Supporting a feature means giving it a field here, and removing its
 //! [`Unsupported`] variant, in the same change as the code that honours it.
 //!
-//! # The backlog against MadGraph
+//! # MadGraph features this generator refuses
 //!
 //! [`Unsupported`] is the list of MadGraph leading-order process features this
 //! generator does not implement yet, each with the work that would lift it.
 //!
 //! | Variant | MadGraph feature | Lifted by |
 //! |---|---|---|
-//! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C QED>0, B > D E @1 QED=2` | a meaning for an overall order a part also constrains other than from above (not planned) |
+//! | [`ChainOrders`](Unsupported::ChainOrders) | `A > B C QED>0, B > D E @1 QED=2` | a meaning for an overall order a part also constrains other than from above |
 //! | [`DecayedPolarization`](Unsupported::DecayedPolarization) | `p p > w+{0} w-, w+ > e+ ve` | a helicity-projected propagator at the resonance |
 //! | [`DecayOnShellVeto`](Unsupported::DecayOnShellVeto) | `e+ e- > z h, h > e+ e- mu+ mu- $ z` | marking a decay's own propagators, per decay |
-//! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators (not planned) |
-//! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order (not planned) |
-//! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order (not planned) |
+//! | [`PropagatorPolarization`](Unsupported::PropagatorPolarization) | `{A}`, `{G}`, `{H}`, `{Q}`, `{W}`, `{S}` | helicity-projected propagators |
+//! | [`SquaredOrder`](Unsupported::SquaredOrder) | `QCD^2<=4`, `aEW`, `aS` | amplitudes split by coupling order |
+//! | [`WeightedOrder`](Unsupported::WeightedOrder) | `WEIGHTED==4`, `WEIGHTED>4` | amplitudes split by coupling order |
 //! | [`LoopSpec`](Unsupported::LoopSpec) | `[QCD]`, `[real=QCD]` | NLO |
 //! | [`PhotonTag`](Unsupported::PhotonTag) | `!a!` | NLO |
 //! | [`ProcessOption`](Unsupported::ProcessOption) | `--diagram_filter`, `--optimize`, `--standalone` | not planned |
@@ -30,7 +30,7 @@
 //! | [`ModelOption`](Unsupported::ModelOption) | `import model X -modelname`, `add model` | not planned |
 //! | [`Command`](Unsupported::Command) | any other command that could change the card | not planned |
 //!
-//! Two variants are not backlog but MadGraph errors this check is the natural
+//! Two variants are not missing features but MadGraph errors this check is the natural
 //! place to report: [`MixedInitialStates`](Unsupported::MixedInitialStates) and
 //! [`InitialState`](Unsupported::InitialState).
 //!
@@ -183,7 +183,7 @@ impl Display for SupportedProcess {
     }
 }
 
-// ── The backlog ───────────────────────────────────────────────────────────────
+// ── The refusals ──────────────────────────────────────────────────────────────
 
 /// A feature of a card that this generator does not honour. See the module
 /// documentation for the table of variants and what lifts each.

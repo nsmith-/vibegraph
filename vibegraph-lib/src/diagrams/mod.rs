@@ -35,8 +35,8 @@ pub mod schannel;
 pub(crate) mod selector;
 
 pub use check::{check_supported, SupportedCard, Unsupported};
-pub(crate) use check::{AmplitudeOrder, SupportedLeg, SupportedProcess, UnsupportedCard};
-pub(crate) use diagram::ConvertError;
+use check::{AmplitudeOrder, SupportedLeg, SupportedProcess, UnsupportedCard};
+use diagram::ConvertError;
 pub use diagram::Diagram;
 pub(crate) use parse::CouplingOp;
 pub use parse::{parse_proc_card_ast, ModelImport};

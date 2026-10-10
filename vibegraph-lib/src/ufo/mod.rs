@@ -706,6 +706,12 @@ fn prune_unreferenced_lorentz(vertex: &mut Vertex) {
         .collect();
 }
 
+/// One coupling-order tuple and the vertex coupling entries carrying it.
+type OrderGroup<'a> = (
+    &'a BTreeMap<String, usize>,
+    BTreeMap<(usize, usize), CouplingId>,
+);
+
 /// Split each UFO vertex into one [`Vertex`] per distinct coupling-order tuple,
 /// each carrying only that tuple's `(color, lorentz)` couplings.
 ///
@@ -725,12 +731,6 @@ fn prune_unreferenced_lorentz(vertex: &mut Vertex) {
 /// where MadGraph keys on the UFO file's dict insertion order, so two couplings
 /// writing the same orders in a different sequence would split apart there and
 /// merge here. No model read by this loader contains such a pair.
-/// One coupling-order tuple and the vertex coupling entries carrying it.
-type OrderGroup<'a> = (
-    &'a BTreeMap<String, usize>,
-    BTreeMap<(usize, usize), CouplingId>,
-);
-
 fn split_vertices_by_coupling_order(
     vertices: IndexMap<String, Vertex>,
     couplings: &IndexMap<String, Coupling>,

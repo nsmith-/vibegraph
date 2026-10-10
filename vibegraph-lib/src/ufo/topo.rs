@@ -417,9 +417,9 @@ mod tests {
     /// couplings, which is what turns `GC_4` into `-GC_3` a few lines further down the
     /// same file.)
     ///
-    /// The pairing count corrects §1.2 of the sprint note, which read 14 / 7 off the
-    /// index labels: by MadGraph's walk it is fifteen `(1,2)(3,4)` structures and six
-    /// `(1,4)(2,3)`, because `FFFF13` and `FFFF16` write their gamma chains crossed
+    /// Reading the pairing off the index labels gives 14 / 7; by MadGraph's walk it
+    /// is fifteen `(1,2)(3,4)` structures and six `(1,4)(2,3)`, because `FFFF13`
+    /// and `FFFF16` write their gamma chains crossed
     /// (`Gamma(-1,2,-3)*Gamma(-1,4,-2)`) and the pairing only appears once the chain
     /// through the projectors is followed.
     #[test]
