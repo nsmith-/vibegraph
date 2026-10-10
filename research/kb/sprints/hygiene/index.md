@@ -10,6 +10,10 @@
 
 * [Hygiene sprint](sprint.md) - One pass over the existing codebase for maintainability, test non-vacuity, minimal visibility and reusable abstractions, closing the localised hygiene items, whose lessons design the hygiene agent.
 
+## Sprint Record
+
+* [Hygiene sprint](closeout.md) - The first sprint in the folder shape: eight cluster reviews (176 findings), ten fix sessions (125 fixed, at least 112 mutations run), 25 items closed, 54 filed, the pub surface cut from 2601 to 1359 lines, and the lessons that design the hygiene agent.
+
 ## Directories
 
 * [decisions](decisions/index.md) - 4 concepts
