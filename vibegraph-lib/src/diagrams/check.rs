@@ -959,6 +959,25 @@ mod tests {
         ));
     }
 
+    /// A tagged photon and the model commands MadGraph's import options drive
+    /// are refused by name.
+    #[test]
+    fn photon_tags_and_model_options_are_refused() {
+        assert!(matches!(
+            refused("generate !a! e- > e- a")[..],
+            [Unsupported::PhotonTag { .. }]
+        ));
+        for card in [
+            "import model sm --modelname\ngenerate e+ e- > mu+ mu-",
+            "add model taudecay_UFO\ngenerate e+ e- > mu+ mu-",
+        ] {
+            assert!(
+                matches!(refused(card)[..], [Unsupported::ModelOption { .. }]),
+                "{card}"
+            );
+        }
+    }
+
     #[test]
     fn benign_and_unknown_commands() {
         assert!(
