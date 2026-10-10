@@ -27,9 +27,12 @@
 
 use std::io::{BufRead, IsTerminal, Write};
 
-/// Set to any value to forbid downloads. Anything that must stay offline — a
-/// test run, a sandboxed build — sets this and cannot then reach the network,
-/// whatever the command line says.
+/// Set to any value to forbid downloads — `0` and the empty string included,
+/// since a refusal that a plausible-looking value switches off is not one.
+/// Anything that must stay offline — a test run, a sandboxed build — sets this
+/// and cannot then reach the network, whatever the command line says. The
+/// validation fetch scripts (`validation/fetch_common.sh`) read it by the same
+/// rule.
 pub(crate) const NO_NETWORK_VAR: &str = "VIBEGRAPH_NO_NETWORK";
 /// Command-line spelling of the same refusal.
 pub(crate) const NO_NETWORK_FLAG: &str = "--no-network";
@@ -96,9 +99,15 @@ impl NetworkPolicy {
         Self::resolve(
             no_network_flag,
             consent_flag,
-            std::env::var_os(NO_NETWORK_VAR).is_some(),
+            env_denies(std::env::var_os(NO_NETWORK_VAR).as_deref()),
         )
     }
+}
+
+/// Whether [`NO_NETWORK_VAR`]'s value, `None` when unset, forbids downloads:
+/// whenever it is set at all.
+fn env_denies(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some()
 }
 
 /// A download the user is being asked to authorise, in the terms the pin
@@ -212,12 +221,7 @@ pub(crate) fn decide(
             download.terms(),
         )),
         NetworkPolicy::Ask => {
-            let _ = writeln!(
-                out,
-                "{} is not available locally. It can be downloaded now:\n{}",
-                download.what,
-                download.terms()
-            );
+            let _ = writeln!(out, "{}", download.notice().join("\n"));
             let _ = write!(out, "Download it? [y/N] ");
             let _ = out.flush();
 
@@ -299,6 +303,30 @@ mod tests {
         assert_eq!(
             NetworkPolicy::resolve(false, false, true),
             NetworkPolicy::Deny(Denial::Env)
+        );
+    }
+
+    /// The variable refuses by being set, whatever it is set to: a value that
+    /// reads as "allow" to a user is still a refusal.
+    #[test]
+    fn the_variable_refuses_whatever_its_value() {
+        assert!(!env_denies(None));
+        for value in ["1", "0", "", "true", "false", "no"] {
+            assert!(
+                env_denies(Some(std::ffi::OsStr::new(value))),
+                "{NO_NETWORK_VAR}={value:?} allowed downloads"
+            );
+        }
+    }
+
+    /// The stream prompt shows the notice the display shows, line for line,
+    /// before its question.
+    #[test]
+    fn the_stream_prompt_is_the_notice_and_the_question() {
+        let (_, shown) = run(NetworkPolicy::Ask, true, "n\n");
+        assert_eq!(
+            shown,
+            format!("{}\nDownload it? [y/N] ", PIN.notice().join("\n"))
         );
     }
 

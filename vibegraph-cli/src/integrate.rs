@@ -55,6 +55,7 @@ use vibegraph::vegas::VegasResult;
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
 use crate::assets;
+use crate::error::{err, CliError};
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
@@ -353,33 +354,12 @@ pub(crate) struct IntegrateArgs {
     pub(crate) maps: MapArgs,
 }
 
-/// The failure surface of the `integrate` command. Displayed to stderr by the
-/// binary's top-level handler.
-#[derive(Debug)]
-pub(crate) enum IntegrateError {
-    Message(String),
-}
-
-impl std::fmt::Display for IntegrateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            IntegrateError::Message(m) => write!(f, "{m}"),
-        }
-    }
-}
-
-impl std::error::Error for IntegrateError {}
-
-fn err(msg: impl Into<String>) -> IntegrateError {
-    IntegrateError::Message(msg.into())
-}
-
 /// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
 /// without them.
 pub(crate) fn forbidden_onshell(
     parsed: &SupportedCard,
     model: &UFOModel,
-) -> Result<Vec<i64>, IntegrateError> {
+) -> Result<Vec<i64>, CliError> {
     forbidden_onshell_ids(parsed, model).map_err(|e| err(e.to_string()))
 }
 
@@ -396,7 +376,7 @@ impl IntegrateArgs {
     /// What this invocation asks the integrator to spend: however many
     /// iterations it takes to reach `--target-rel`, or the fixed
     /// `--neval × --niter` of `--fixed-budget`.
-    fn budget(&self) -> Result<Budget, IntegrateError> {
+    fn budget(&self) -> Result<Budget, CliError> {
         if self.fixed_budget {
             return Ok(Budget::Fixed {
                 neval: self.neval,
@@ -424,7 +404,7 @@ pub(crate) fn load_pdf_set(
     name: &str,
     pdf_dir: Option<&PathBuf>,
     network: NetworkPolicy,
-) -> Result<PdfSet, IntegrateError> {
+) -> Result<PdfSet, CliError> {
     let set_dir =
         assets::resolve_pdf_set_dir(name, pdf_dir.map(|p| p.as_path()), network).map_err(err)?;
     PdfSet::load(&set_dir, name).map_err(|e| {
@@ -450,18 +430,21 @@ pub(crate) fn is_decay(parsed: &SupportedCard) -> bool {
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
-) -> Result<RunCard, IntegrateError> {
+) -> Result<RunCard, CliError> {
     let card = if is_decay(parsed) {
         config.load_decay_run_card()
     } else {
         config.load_run_card()
     };
-    card.map_err(|e| err(format!("failed to load run card: {e}")))
+    card.map_err(|e| match &config.run_card_path {
+        Some(path) => err(format!("cannot load the run card {}: {e}", path.display())),
+        None => err(format!("cannot build the default run card: {e}")),
+    })
 }
 
 /// The canonical string of the proc card's processes, for artifact metadata: the
 /// line itself on a one-line card, every line with its process number otherwise.
-pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, IntegrateError> {
+pub(crate) fn process_string(parsed: &SupportedCard) -> Result<String, CliError> {
     match parsed.processes.as_slice() {
         [] => Err(err("proc card has no process")),
         [spec] => Ok(format!("{spec}")),
@@ -531,7 +514,7 @@ fn bank_channel(
     }
 }
 
-pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     args.parallel.install().map_err(err)?;
     // Refuse to clobber an existing artifact before spending the integration.
     let out_path = args.out.join(GRID_FILENAME);
@@ -543,8 +526,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), In
     }
 
     let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)
-        .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {
@@ -720,7 +702,7 @@ fn integrate_proton(
     rc: &RunCard,
     process: String,
     network: NetworkPolicy,
-) -> Result<RunOutput, IntegrateError> {
+) -> Result<RunOutput, CliError> {
     let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
     let pdf = set
         .member(PDF_MEMBER)
@@ -745,7 +727,7 @@ pub(crate) fn multiplicity_groups(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     enumeration: EnumerationPool,
-) -> Result<MultiplicityGroups, IntegrateError> {
+) -> Result<MultiplicityGroups, CliError> {
     let sets = generate_from_proc_card_in(parsed, model, enumeration)
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     let forbidden = forbidden_onshell(parsed, model)?;
@@ -801,7 +783,7 @@ pub(crate) fn part_process_ids(groups: &FlavorGroups) -> Vec<u32> {
 /// Refuse a card of several final-state multiplicities on a path that has one
 /// phase space: fixed-energy beams and decays. Only proton beams sum
 /// multiplicities ([`MultiplicitySum`]).
-pub(crate) fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), IntegrateError> {
+pub(crate) fn refuse_mixed_multiplicity(sets: &[DiagramSet]) -> Result<(), CliError> {
     let mut counts: Vec<usize> = sets
         .iter()
         .filter(|s| !s.diagrams.is_empty())
@@ -847,7 +829,7 @@ fn integrate_hadronic(
     set: &PdfSet,
     pdf: &PdfMember,
     process: String,
-) -> Result<RunOutput, IntegrateError> {
+) -> Result<RunOutput, CliError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     let MultiplicityGroups { groups, vetoes } =
@@ -962,7 +944,7 @@ fn integrate_fixed_energy(
     evaluated: &EvaluatedModel,
     rc: &RunCard,
     process: String,
-) -> Result<RunOutput, IntegrateError> {
+) -> Result<RunOutput, CliError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets)?;
@@ -1052,7 +1034,7 @@ fn integrate_fixed_energy(
 pub(crate) fn initial_state(
     rc: &RunCard,
     legs: &[vibegraph::cuts::ExternalLeg],
-) -> Result<InitialState, IntegrateError> {
+) -> Result<InitialState, CliError> {
     if legs.iter().filter(|l| !l.is_final).count() == 1 {
         let decay = DecayAtRest::from_legs(legs).map_err(|e| err(e.to_string()))?;
         Ok(decay.into())

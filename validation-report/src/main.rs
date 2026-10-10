@@ -70,8 +70,8 @@ mod render;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::cells::RowFile;
-use crate::manifest::{Category, Manifest, Mode, Process, Tier, CATEGORIES};
+use crate::cells::{RowFile, Status};
+use crate::manifest::{Category, Layer, Manifest, Mode, Process, Tier, CATEGORIES};
 
 /// One cell of the rendered table.
 pub(crate) struct ResolvedCell {
@@ -119,7 +119,7 @@ fn main() {
     let report_dir = report_dir(&repo_root);
 
     let (rows, mut problems) = cells::load_all(&report_dir);
-    check_standalone_layers(&manifest, &mut problems);
+    check_standalone_tasks(&manifest, &mut problems);
     let mut resolved = resolve(&manifest, &rows, &mut problems);
     number_notes(&mut resolved);
 
@@ -161,21 +161,11 @@ fn report_dir(repo_root: &std::path::Path) -> PathBuf {
     .join("validation-report")
 }
 
-/// `Standalone::layer` is a free `String`, so a typo would otherwise render
-/// silently as "ran with the {typo} layer's suite" instead of failing. The
-/// layer set is a declaration like any other in this manifest and is enforced
-/// the same way: every standalone row's layer must be one the report
-/// understands, and a row declaring `oracle` (which has no row file of its
-/// own) must carry a `task` or `standalone_verdict` has nothing to name.
-fn check_standalone_layers(manifest: &Manifest, problems: &mut Vec<String>) {
+/// A standalone row declaring `oracle` has no row file of its own, so it must
+/// carry a `task` or `standalone_verdict` has nothing to name.
+fn check_standalone_tasks(manifest: &Manifest, problems: &mut Vec<String>) {
     for standalone in &manifest.standalone {
-        if !matches!(standalone.layer.as_str(), "hermetic" | "banked" | "oracle") {
-            problems.push(format!(
-                "standalone '{}' declares layer '{}', which is none of hermetic/banked/oracle",
-                standalone.key, standalone.layer
-            ));
-        }
-        if standalone.layer == "oracle" && standalone.task.is_none() {
+        if standalone.layer == Layer::Oracle && standalone.task.is_none() {
             problems.push(format!(
                 "standalone '{}' declares layer 'oracle' but names no task",
                 standalone.key
@@ -257,7 +247,7 @@ fn resolve_cell(
     // A `long` cell's driver is a task of its own, so whether it has a row file
     // says whether that task ran in this cycle — not whether the cell was declared
     // wrongly. With one, it is rendered from the measurement below like any other
-    // gate cell; without one it waits, the way it did before its driver existed.
+    // gate cell; without one it waits as ⏳.
     let driven = declared.tier == Tier::Long && !measured.is_empty();
     if !declared.tier.is_measured_here() && !driven {
         if !measured.is_empty() {
@@ -343,29 +333,28 @@ fn resolve_cell(
     }
 
     for m in measured {
-        if m.mode != mode.as_str() {
+        if m.mode != mode {
             problems.push(format!(
                 "{where_}: the manifest declares mode '{}' and {} was written as '{}'",
                 mode.as_str(),
                 m.path.display(),
-                m.mode
+                m.mode.as_str()
             ));
         }
-        let consistent = match m.status.as_str() {
-            "pass" => mode == Mode::Gate,
-            "info" => mode == Mode::Info,
-            "fail" => true,
-            _ => false,
+        let consistent = match m.status {
+            Status::Pass => mode == Mode::Gate,
+            Status::Info => mode == Mode::Info,
+            Status::Fail => true,
         };
         if !consistent {
             problems.push(format!(
                 "{where_}: {} reports status '{}' under mode '{}'",
                 m.path.display(),
-                m.status,
+                m.status.as_str(),
                 mode.as_str()
             ));
         }
-        if m.status == "fail" {
+        if m.status == Status::Fail {
             problems.push(format!(
                 "{where_}: the gate failed{}",
                 m.note
@@ -396,8 +385,8 @@ fn resolve_cell(
     }
 
     let worst = measured[0];
-    cell.mark = match worst.status.as_str() {
-        "fail" => "❌",
+    cell.mark = match worst.status {
+        Status::Fail => "❌",
         _ if mode == Mode::Info => "⚠️",
         _ => "✅",
     };
@@ -425,7 +414,7 @@ fn resolve_cell(
     }
     // The manifest's account of a discrepancy is the curated one and wins; a
     // measurement's own note stands in only where the manifest says nothing.
-    if mode == Mode::Info || worst.status == "fail" {
+    if mode == Mode::Info || worst.status == Status::Fail {
         if cell.note.is_none() {
             cell.note = worst.note.clone();
         }

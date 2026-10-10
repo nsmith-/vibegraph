@@ -27,7 +27,7 @@ use vibegraph::lhef::record::{
     LheEvent, LheInit, WeightStrategy, STATUS_INCOMING, STATUS_INTERMEDIATE, STATUS_OUTGOING,
 };
 
-use crate::integrate::IntegrateError;
+use crate::error::{err, CliError};
 
 /// Relative tolerance for the momentum and mass-shell identities.
 ///
@@ -52,10 +52,6 @@ pub(crate) struct CheckArgs {
     pub(crate) min_events: Option<usize>,
 }
 
-fn err(msg: impl Into<String>) -> IntegrateError {
-    IntegrateError::Message(msg.into())
-}
-
 /// One thing wrong with one event, or with the file as a whole.
 struct Complaint {
     event: Option<usize>,
@@ -71,35 +67,13 @@ impl std::fmt::Display for Complaint {
     }
 }
 
-pub(crate) fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &CheckArgs) -> Result<(), CliError> {
     let text = std::fs::read_to_string(&args.events)
         .map_err(|e| err(format!("cannot read {}: {e}", args.events.display())))?;
     let file = LheFile::parse(&text)
         .map_err(|e| err(format!("cannot parse {}: {e}", args.events.display())))?;
 
-    let mut complaints = Vec::new();
-    check_init(&file.init, &mut complaints);
-    for (index, event) in file.events.iter().enumerate() {
-        check_event(
-            index + 1,
-            event,
-            &file.init,
-            args.tolerance,
-            &mut complaints,
-        );
-    }
-    if let Some(minimum) = args.min_events {
-        if file.events.len() < minimum {
-            complaints.push(Complaint {
-                event: None,
-                what: format!(
-                    "file holds {} events, fewer than the {minimum} required",
-                    file.events.len()
-                ),
-            });
-        }
-    }
-
+    let complaints = complaints(&file, args.tolerance, args.min_events);
     if !complaints.is_empty() {
         let shown: Vec<String> = complaints.iter().take(20).map(|c| c.to_string()).collect();
         let more = complaints.len().saturating_sub(shown.len());
@@ -118,6 +92,28 @@ pub(crate) fn run(args: &CheckArgs) -> Result<(), IntegrateError> {
 
     report(&file);
     Ok(())
+}
+
+/// Everything wrong with `file`, in file order: `<init>` first, then each event,
+/// then the file as a whole.
+fn complaints(file: &LheFile, tolerance: f64, min_events: Option<usize>) -> Vec<Complaint> {
+    let mut complaints = Vec::new();
+    check_init(&file.init, &mut complaints);
+    for (index, event) in file.events.iter().enumerate() {
+        check_event(index + 1, event, &file.init, tolerance, &mut complaints);
+    }
+    if let Some(minimum) = min_events {
+        if file.events.len() < minimum {
+            complaints.push(Complaint {
+                event: None,
+                what: format!(
+                    "file holds {} events, fewer than the {minimum} required",
+                    file.events.len()
+                ),
+            });
+        }
+    }
+    complaints
 }
 
 /// Whether `<init>` describes a decay run: MadEvent's convention names the
@@ -311,5 +307,249 @@ fn report(file: &LheFile) {
         _ => {
             println!("mean XWGTUP   {mean:.6}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use vibegraph::lhef::record::{LheParticle, LheProcess};
+
+    use super::*;
+
+    const TOLERANCE: f64 = DEFAULT_TOLERANCE;
+
+    fn leg(pdg: i32, status: i32, momentum: [f64; 4]) -> LheParticle {
+        LheParticle {
+            pdg,
+            status,
+            mothers: if status == STATUS_INCOMING {
+                [0, 0]
+            } else {
+                [1, 2]
+            },
+            color: [0, 0],
+            momentum,
+            mass: 0.0,
+            lifetime: 0.0,
+            spin: 9.0,
+        }
+    }
+
+    /// A well-formed one-event file: `e+ e- > mu+ mu-` at 91.2 GeV under
+    /// `IDWTUP = -4`, with every identity the checks read holding exactly.
+    fn good() -> LheFile {
+        let e = 45.6;
+        let init = LheInit {
+            beam_pdg: [-11, 11],
+            beam_energy: [e, e],
+            pdf_group: [0, 0],
+            pdf_set: [0, 0],
+            weight_strategy: WeightStrategy::MeanCrossSectionPb,
+            processes: vec![LheProcess {
+                xsec_pb: 2000.0,
+                xerr_pb: 1.0,
+                xmax: 2000.0,
+                id: 1,
+            }],
+            trailer: Vec::new(),
+            source: None,
+        };
+        let event = LheEvent {
+            process_id: 1,
+            weight: 2000.0,
+            scale: 2.0 * e,
+            alpha_qed: 1.0 / 132.5,
+            alpha_qcd: 0.118,
+            particles: vec![
+                leg(-11, STATUS_INCOMING, [e, 0.0, 0.0, e]),
+                leg(11, STATUS_INCOMING, [e, 0.0, 0.0, -e]),
+                leg(-13, STATUS_OUTGOING, [e, 0.0, e, 0.0]),
+                leg(13, STATUS_OUTGOING, [e, 0.0, -e, 0.0]),
+            ],
+            trailer: Vec::new(),
+            source: None,
+        };
+        LheFile {
+            init,
+            events: vec![event],
+        }
+    }
+
+    fn said(file: &LheFile, min_events: Option<usize>) -> Vec<String> {
+        complaints(file, TOLERANCE, min_events)
+            .iter()
+            .map(Complaint::to_string)
+            .collect()
+    }
+
+    /// `file` draws exactly one complaint, and it contains `expected`.
+    #[track_caller]
+    fn complains_once(file: &LheFile, min_events: Option<usize>, expected: &str) {
+        let said = said(file, min_events);
+        assert!(
+            said.len() == 1 && said[0].contains(expected),
+            "expected one complaint containing {expected:?}, got {said:?}"
+        );
+    }
+
+    /// The fixture every other test damages passes as it stands, so a complaint
+    /// below is the damage's and not the fixture's.
+    #[test]
+    fn a_well_formed_file_draws_no_complaint() {
+        assert_eq!(said(&good(), Some(1)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn init_complaints() {
+        let mut f = good();
+        f.init.processes.clear();
+        f.events.clear();
+        complains_once(&f, None, "<init> declares no processes");
+
+        let mut f = good();
+        f.init.beam_energy[1] = -1.0;
+        complains_once(&f, None, "<init> beam 2 energy is -1");
+
+        let mut f = good();
+        f.init.processes[0].xsec_pb = f64::NAN;
+        complains_once(&f, None, "process 1 has cross section NaN");
+
+        let mut f = good();
+        f.init.processes[0].xmax = 0.0;
+        f.events[0].weight = 0.0;
+        complains_once(&f, None, "process 1 has XMAXUP 0");
+    }
+
+    /// A decay run leaves beam 2 empty, which is not a bad beam energy.
+    #[test]
+    fn a_decay_run_checks_one_beam_and_one_incoming_leg() {
+        let mut f = good();
+        f.init.beam_pdg = [23, 0];
+        f.init.beam_energy = [91.2, 0.0];
+        let z = leg(23, STATUS_INCOMING, [91.2, 0.0, 0.0, 0.0]);
+        f.events[0].particles = vec![
+            LheParticle { mass: 91.2, ..z },
+            leg(-13, STATUS_OUTGOING, [45.6, 0.0, 45.6, 0.0]),
+            leg(13, STATUS_OUTGOING, [45.6, 0.0, -45.6, 0.0]),
+        ];
+        assert_eq!(said(&f, None), Vec::<String>::new());
+        let mother = f.events[0].particles[0];
+        f.events[0].particles.insert(0, mother);
+        assert!(
+            said(&f, None)
+                .iter()
+                .any(|c| c.contains("has 2 incoming legs, not 1")),
+            "{:?}",
+            said(&f, None)
+        );
+    }
+
+    #[test]
+    fn an_event_of_an_undeclared_process_is_named() {
+        let mut f = good();
+        f.events[0].process_id = 7;
+        complains_once(
+            &f,
+            None,
+            "event 1: refers to process 7, which <init> does not declare",
+        );
+    }
+
+    #[test]
+    fn weight_and_scale_complaints() {
+        let mut f = good();
+        f.events[0].weight = f64::INFINITY;
+        let said_inf = said(&f, None);
+        assert!(
+            said_inf.iter().any(|c| c.contains("weight is inf")),
+            "{said_inf:?}"
+        );
+
+        let mut f = good();
+        f.events[0].weight = 2000.0 * (1.0 + 10.0 * TOLERANCE);
+        complains_once(&f, None, "exceeds the process's XMAXUP 2000");
+
+        let mut f = good();
+        f.events[0].scale = 0.0;
+        complains_once(&f, None, "SCALUP is 0");
+
+        let mut f = good();
+        f.init.weight_strategy = WeightStrategy::UnitWeight;
+        f.init.processes[0].xmax = 1.0;
+        f.events[0].weight = 0.5;
+        complains_once(
+            &f,
+            None,
+            "IDWTUP = +3 promises unit weights, but this one is 0.5",
+        );
+    }
+
+    #[test]
+    fn leg_bookkeeping_complaints() {
+        let mut f = good();
+        f.events[0].particles[1].status = STATUS_OUTGOING;
+        f.events[0].particles[1].momentum[3] = 45.6;
+        let all = said(&f, None);
+        assert!(
+            all.iter().any(|c| c.contains("has 1 incoming legs, not 2")),
+            "{all:?}"
+        );
+
+        let mut f = good();
+        f.events[0].particles.truncate(2);
+        f.events[0].particles[1].status = STATUS_INCOMING;
+        let all = said(&f, None);
+        assert!(
+            all.iter().any(|c| c.contains("has no outgoing legs")),
+            "{all:?}"
+        );
+
+        let mut f = good();
+        f.events[0].particles[2].status = 3;
+        let all = said(&f, None);
+        assert!(
+            all.iter().any(|c| c.contains("leg has unknown ISTUP 3")),
+            "{all:?}"
+        );
+
+        let mut f = good();
+        f.events[0].particles[3].mothers = [1, 5];
+        complains_once(&f, None, "leg names mother 5, outside 0..=4");
+    }
+
+    #[test]
+    fn kinematic_complaints() {
+        let mut f = good();
+        f.events[0].particles[2].momentum[1] = 1e-3;
+        f.events[0].particles[3].momentum[1] = 1e-3;
+        let all = said(&f, None);
+        assert!(
+            all.iter()
+                .any(|c| c.contains("momentum component 1 does not balance")),
+            "{all:?}"
+        );
+
+        let mut f = good();
+        f.events[0].particles[2].mass = 0.105_658;
+        complains_once(&f, None, "leg -13 is off its mass shell");
+
+        let mut f = good();
+        f.events.push(f.events[0].clone());
+        complains_once(
+            &f,
+            Some(3),
+            "file holds 2 events, fewer than the 3 required",
+        );
+    }
+
+    /// An intermediate is a listed resonance whose products are already counted,
+    /// so it enters neither the balance nor the mass-shell check.
+    #[test]
+    fn an_intermediate_leg_is_left_out_of_the_kinematics() {
+        let mut f = good();
+        let mut z = leg(23, STATUS_INTERMEDIATE, [91.2, 0.0, 0.0, 1.0]);
+        z.mass = 50.0;
+        f.events[0].particles.push(z);
+        assert_eq!(said(&f, None), Vec::<String>::new());
     }
 }

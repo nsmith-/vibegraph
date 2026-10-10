@@ -13,7 +13,8 @@
 #
 # Consent, in the order it is decided:
 #
-#   VIBEGRAPH_NO_NETWORK=1        refuse, whatever else is set
+#   VIBEGRAPH_NO_NETWORK set      refuse, whatever else is set — to any value,
+#                                 0 and empty included, as the CLI reads it
 #   VIBEGRAPH_FETCH_CONSENT=1     granted without asking (what CI sets)
 #   an interactive terminal       ask, default no
 #   otherwise                     refuse, naming the variable that would allow it
@@ -71,7 +72,7 @@ vg_verify_sha() {
 # vg_consent WHAT URL — 0 if this run may download, 1 if it may not.
 vg_consent() {
   local what="$1" url="$2"
-  if [ "${VIBEGRAPH_NO_NETWORK:-}" = "1" ]; then
+  if [ -n "${VIBEGRAPH_NO_NETWORK+set}" ]; then
     vg_say "⊘ \$VIBEGRAPH_NO_NETWORK is set; not downloading $what"
     return 1
   fi
