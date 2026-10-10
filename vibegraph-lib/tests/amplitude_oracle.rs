@@ -65,13 +65,15 @@
 //! - `eval_amp2` reproduces `Σ_hel |AMP_d^mg|²` configuration by configuration —
 //!   the weight the per-event configuration draw uses, and through that
 //!   configuration's `ICOLAMP` mask the colour flow an event is written with.
-//! - The helicity-pruned evaluator's `AMP2` against the unpruned one. Unlike the
-//!   `|M|²` sum this is *not* automatic: a combination is dropped when the
-//!   coherent amplitude cancels, which does not make the individual diagram
-//!   amplitudes vanish, so the two sums can differ and the size of the difference
-//!   is measured rather than assumed.
 //! - The helicity-pruned evaluator (the production `eval_m2` configuration) is
 //!   bit-for-bit against the unpruned one at every point.
+//!
+//! What is measured and reported, not asserted: the helicity-pruned evaluator's
+//! `AMP2` against the unpruned one. Unlike the `|M|²` sum the two need not agree:
+//! a combination is dropped when the coherent amplitude cancels, which does not
+//! make the individual diagram amplitudes vanish, so the two sums can differ. The
+//! difference is printed and written to the report row; only the unpruned `AMP2`
+//! is compared with MadGraph's.
 //!
 //! # Known blind spots
 //!
@@ -319,9 +321,9 @@ const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[];
 ///
 /// [`KNOWN_LINEAR_DISAGREEMENT`] and this answer different questions: that list
 /// names a row whose comparison runs and disagrees at a level this gate
-/// understands, while a manifest `info` cell may be a row whose comparison
-/// cannot start — the SMEFTsim ladder is banked before the loader that would
-/// evaluate it, so those cells are measured as the failure they are.
+/// understands, while a manifest `info` cell is any row the manifest declares
+/// reported rather than enforced, whatever the measurement finds — including a
+/// row whose comparison cannot start, which is measured as the failure it is.
 fn declared_mode(key: &str) -> &'static str {
     static MODES: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
         std::sync::OnceLock::new();
@@ -401,6 +403,16 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
         ],
     ),
 ];
+
+/// Rows whose table is generated from another row's compiled MadGraph module, so
+/// the manifest gives them no `mg_amplitude` declaration of their own: the row key,
+/// and the row that generates its table.
+///
+/// Such a table is banked for the process the row's own `.mg5` script generates,
+/// and [`measure`] holds it to that string exactly in place of the `mg_amplitude`
+/// one. Two-way, in [`coverage`]: every committed table without a declaration is
+/// listed, and every listed row has a table and no declaration.
+const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
 
 fn tables_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/amplitudes")
@@ -786,12 +798,12 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         .find(|(k, _)| *k == key)
         .map(|(_, why)| *why);
     // A row the manifest declares informational is measured and reported, never
-    // enforced — including when the measurement cannot start at all, which is
-    // what a SMEFTsim row looks like until the primitives its structures need
-    // exist. "Cannot start" arrives as an `Err` from a loader or as a panic from
-    // deeper in — the rooting refusing a structure it has no rule for — with equal
-    // legitimacy, so an informational row runs under the panic-catching path and a
-    // gated one does not.
+    // enforced — including when the measurement cannot start at all, as for a row
+    // whose model writes a structure this crate has no primitive for. "Cannot
+    // start" arrives as an `Err` from a loader or as a panic from deeper in — the
+    // rooting refusing a structure it has no rule for — with equal legitimacy, so
+    // an informational row runs under the panic-catching path and a gated one does
+    // not.
     let informational = known.is_some() || declared_mode(&key) == "info";
     let manifest_info = declared_mode(&key) == "info";
     let outcome = if informational {
@@ -878,7 +890,10 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     // The table's process string is what this side enumerates from, and the
     // manifest's is what generated the table; a row whose two statements have
     // drifted apart compares one process against another's numbers.
-    if let Some(declared) = common::manifest::mg_amplitude_processes().get(name) {
+    let declared = common::manifest::mg_amplitude_processes()
+        .get(name)
+        .cloned();
+    if let Some(declared) = &declared {
         if declared != &table.process {
             return Err(format!(
                 "[{name}] the banked table was generated for '{}' and the manifest \
@@ -898,6 +913,16 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let script = common::script_for_row(name)?;
     let script_process = common::script_process(&script)
         .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
+    // A borrowed table has no declaration to be held to, so it is held to the
+    // process its own row's script generates, which is what it was banked for.
+    if declared.is_none() && table.process != script_process {
+        return Err(format!(
+            "[{name}] the banked table was generated for '{}' and the row's script \
+             generates '{script_process}'",
+            table.process
+        )
+        .into());
+    }
     let (theirs, ours) = (
         common::order_constraints(&script_process),
         common::order_constraints(&table.process),
@@ -1507,30 +1532,104 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     Ok(row)
 }
 
+/// The committed tables, sorted.
+fn table_paths() -> Vec<PathBuf> {
+    let dir = tables_dir();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .map(|e| {
+            e.unwrap_or_else(|e| panic!("cannot read an entry of {}: {e}", dir.display()))
+                .path()
+        })
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// The committed tables against the manifest, both ways: one table for every row
+/// whose `amplitudes` cell is hermetic and none for any other row, every
+/// `mg_amplitude` declaration among them, and the tables without one exactly
+/// [`BORROWED_TABLES`]. A table deleted, or a row promoted without its table, fails
+/// here rather than leaving the gate one trial short.
+fn coverage() -> Result<(), Failed> {
+    let banked: BTreeSet<String> = table_paths()
+        .iter()
+        .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
+        .collect();
+    let mut problems = Vec::new();
+    let hermetic = common::manifest::hermetic_amplitude_rows();
+    if hermetic != banked {
+        problems.push(format!(
+            "the manifest declares {} hermetic amplitudes cells and {} tables are \
+             committed; only in the manifest: {:?}; only on disk: {:?}",
+            hermetic.len(),
+            banked.len(),
+            hermetic.difference(&banked).collect::<Vec<_>>(),
+            banked.difference(&hermetic).collect::<Vec<_>>(),
+        ));
+    }
+    let declared: BTreeSet<String> = common::manifest::mg_amplitude_processes()
+        .into_keys()
+        .collect();
+    let untabled: Vec<&String> = declared.difference(&banked).collect();
+    if !untabled.is_empty() {
+        problems.push(format!(
+            "`mg_amplitude` rows with no committed table: {untabled:?}"
+        ));
+    }
+    let borrowed: BTreeSet<String> = banked.difference(&declared).cloned().collect();
+    let listed: BTreeSet<String> = BORROWED_TABLES
+        .iter()
+        .map(|(key, _)| (*key).to_owned())
+        .collect();
+    if borrowed != listed {
+        problems.push(format!(
+            "committed tables without an `mg_amplitude` declaration are {borrowed:?}, \
+             and BORROWED_TABLES lists {listed:?}"
+        ));
+    }
+    for (_, lender) in BORROWED_TABLES {
+        if !declared.contains(*lender) {
+            problems.push(format!(
+                "BORROWED_TABLES names '{lender}' as a generating row, and it has no \
+                 `mg_amplitude` declaration"
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        return Err(problems.join("\n").into());
+    }
+    println!(
+        "  {} tables cover the hermetic amplitudes cells, {} of them borrowed",
+        banked.len(),
+        borrowed.len()
+    );
+    Ok(())
+}
+
 fn main() {
     let args = Arguments::from_args();
 
     let dir = tables_dir();
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "json"))
-        .collect();
-    paths.sort();
+    let paths = table_paths();
     assert!(
         !paths.is_empty(),
         "no amplitude tables in {} — the committed references are the gate's only input",
         dir.display()
     );
 
-    let trials: Vec<Trial> = paths
+    let mut trials: Vec<Trial> = paths
         .into_iter()
         .map(|p| {
             let name = p.file_stem().unwrap().to_string_lossy().into_owned();
             Trial::test(name, move || run_trial(p))
         })
         .collect();
+    trials.push(Trial::test(
+        "every_hermetic_amplitudes_row_is_covered",
+        coverage,
+    ));
 
     libtest_mimic::run(&args, trials).exit();
 }
