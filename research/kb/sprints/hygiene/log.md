@@ -181,3 +181,7 @@
 * **F-CLI reported** (`hygiene-fcli`, 658d465..296875c, 9 commits). The report
   is recorded as `sessions/F-CLI-report.md`. The manager's gate re-run is in
   progress, and the merge waits on it.
+* **F-CLI merged.** Manager gate re-run at `296875c`: fmt passes, clippy exits
+  0 in both configurations, `cargo test --workspace` gives 35 suites with 1373
+  passed, 0 failed and 16 ignored, and the banked `cli_integrate` passes 4.
+* **F-G1 dispatched** (`validation-dev`, Opus) on `hygiene-fg1` from this merge.
