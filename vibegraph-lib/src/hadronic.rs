@@ -3419,7 +3419,7 @@ mod tests {
             run_card.float("drll") < PI,
             "back-to-back leptons pass drll"
         );
-        let closed_form = 2.0 * PI * alpha * alpha / (16.0 * s)
+        let closed_form = GEV2_TO_PB * 2.0 * PI * alpha * alpha / (16.0 * s)
             * helicity_sum
             * (2.0 * c0 + 2.0 * c0.powi(3) / 3.0);
 
@@ -3429,7 +3429,7 @@ mod tests {
         );
         assert!(
             (sigma - closed_form).abs() < 5.0 * err,
-            "sigma = {sigma} ± {err} GeV^-2 against the closed form {closed_form} \
+            "sigma = {sigma} ± {err} pb against the closed form {closed_form} pb \
              ({:+.2} sigma)",
             (sigma - closed_form) / err
         );
