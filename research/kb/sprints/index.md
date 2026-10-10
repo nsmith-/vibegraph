@@ -19,7 +19,7 @@
 * [eval-performance-program](eval-performance-program/index.md) - 1 concepts
 * [event-output-lhef](event-output-lhef/index.md) - 1 concepts
 * [hadronic-xsec](hadronic-xsec/index.md) - 1 concepts
-* [hygiene](hygiene/index.md) - 46 concepts
+* [hygiene](hygiene/index.md) - 47 concepts
 * [kt-spine](kt-spine/index.md) - 1 concepts
 * [logging-tui](logging-tui/index.md) - 1 concepts
 * [mlm](mlm/index.md) - 1 concepts

@@ -145,3 +145,6 @@
   `OnShell::Forbidden` remains. The agent's full suite gave 1353 passed, and
   the banked `reweight_mg_oracle` and `cli_reweight_proton` pass.
 * **F-D dispatched** (`performance-dev`, Opus) on `hygiene-fd` from this merge.
+* **F-D reported** (`hygiene-fd`, 9c5336f..2187c59, 6 commits). The report is
+  recorded as `sessions/F-D-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
