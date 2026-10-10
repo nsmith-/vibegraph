@@ -232,3 +232,10 @@
     *checked* ones.
 
   The rest stand as L recorded them in the concept.
+* **kb stale-site updates merged** (`d0bc15c`): 24 sites plus
+  `amplitudes/colour-flow-evaluator.md`, each checked against the code.
+  - `madgraph-defects.md` already had the `get_channel_cut` entry; it was
+    updated in place.
+  - The 162 188 live-slot reading was reproduced at `190c13e`.
+  - Two more stale code comments were added to
+    comment-leftovers-after-hygiene-sprint.
