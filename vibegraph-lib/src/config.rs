@@ -3,10 +3,9 @@
 //!
 //! For the Standard Model this returns the interned [`sm_model`] (no filesystem
 //! access); for other models it falls back to reading a UFO directory under
-//! [`GlobalConfig::ufo_search_path`].
-//!
-//! TODO: future work will support more sophisticated model resolution, including handling
-//! downloading and caching in a user local directory.
+//! [`GlobalConfig::ufo_search_path`]. Choosing that directory (`--ufo-dir`, the
+//! environment, the `~/.vibegraph` cache) is the caller's job; a UFO model is
+//! never downloaded.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -74,7 +73,8 @@ impl GlobalConfig {
     /// - Absent directive → the interned SM default (`import model sm`).
     /// - `sm` (with optional `-<variant>` suffix) → the interned SM variant.
     /// - Any other model name → loaded from `ufo_search_path/<name>/`.
-    pub fn load_ufo(&self, spec: &Option<ModelImport>) -> Result<Arc<UFOModel>, UfoError> {
+    #[cfg(test)]
+    pub(crate) fn load_ufo(&self, spec: &Option<ModelImport>) -> Result<Arc<UFOModel>, UfoError> {
         self.load_ufo_with_identity(spec).map(|(model, _)| model)
     }
 
@@ -99,15 +99,13 @@ impl GlobalConfig {
         if import.name == "sm" {
             let restrict =
                 SMRestrict::from_suffix(import.restrict_variant.as_deref()).ok_or_else(|| {
-                    UfoError::Io {
-                        file: format!("sm-{}", import.restrict_variant.as_deref().unwrap_or("")),
-                        cause: std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!(
-                                "unknown SM restrict variant '{}'",
-                                import.restrict_variant.as_deref().unwrap_or("")
-                            ),
-                        ),
+                    UfoError::UnknownSmRestrict {
+                        variant: import.restrict_variant.clone().unwrap_or_default(),
+                        known: SMRestrict::ALL
+                            .iter()
+                            .map(|v| v.suffix())
+                            .collect::<Vec<_>>()
+                            .join(", "),
                     }
                 })?;
             return Ok(describe(
@@ -219,13 +217,26 @@ mod tests {
         assert_eq!(rc.float("ptl"), 10.0);
     }
 
+    /// An unknown variant is refused as such, naming the variant asked for and
+    /// every variant the built-in Standard Model has.
     #[test]
-    fn unknown_sm_variant_errors() {
+    fn unknown_sm_variant_names_the_known_ones() {
         let cfg = config();
-        let r = cfg.load_ufo(&Some(ModelImport {
-            name: "sm".into(),
-            restrict_variant: Some("bogus".into()),
-        }));
-        assert!(r.is_err());
+        let err = cfg
+            .load_ufo(&Some(ModelImport {
+                name: "sm".into(),
+                restrict_variant: Some("bogus".into()),
+            }))
+            .err()
+            .expect("an unknown variant is refused");
+        assert!(
+            matches!(&err, UfoError::UnknownSmRestrict { variant, .. } if variant == "bogus"),
+            "{err:?}"
+        );
+        let message = err.to_string();
+        assert!(message.contains("'bogus'"), "{message}");
+        for variant in SMRestrict::ALL {
+            assert!(message.contains(variant.suffix()), "{message}");
+        }
     }
 }

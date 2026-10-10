@@ -18,7 +18,7 @@ use crate::ufo::couplings::CouplingId;
 use crate::ufo::particles::ParticleId;
 
 /// Index of a node within an [`Ast`](super::ast::Ast) arena.
-pub type NodeId = u32;
+pub(crate) type NodeId = u32;
 
 /// Opcode tag — carries no data of its own (operands are arena children, constants are
 /// the node's leaf payload).
@@ -44,9 +44,8 @@ pub enum Op {
     /// External wavefunction input. Leaf: `{leg_idx, spin, charge}`; child: `[Mass]`.
     External,
     /// Propagator. Children: `[current, Mass, Width]`. Dispatches on the input
-    /// current's variance at runtime (a covariant `MetricVout` current
-    /// forms its longitudinal term differently and is raised back), so no separate
-    /// lowered-storage opcode is needed.
+    /// current's class (scalar, vector, or either fermion flow); every vector current
+    /// is contravariant, so the vector arm needs no index raise.
     Propagate,
     /// Product: ≤1 non-scalar child sets the output type, the rest are scalar
     /// factors. Subsumes scalar×wf scaling (coupling·coeff·current) and the Lorentz
@@ -228,42 +227,48 @@ pub enum Op {
 
 impl Op {
     /// The s-expression head token for this op (the `snake_case` variant name).
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         self.into()
     }
 
     /// Parse an op from its s-expression head token.
-    pub fn from_name(s: &str) -> Option<Op> {
+    pub(crate) fn from_name(s: &str) -> Option<Op> {
         use std::str::FromStr;
         Op::from_str(s).ok()
     }
 
     /// Whether this op carries a leaf payload token in the s-expression (a single
     /// id/coeff for the constant leaves, the `leg spin charge` triple for `External`).
-    pub fn has_leaf_token(self) -> bool {
+    pub(crate) fn has_leaf_token(self) -> bool {
+        self == Op::External || self.is_pool_leaf()
+    }
+
+    /// Whether this op is a bare constant-pool leaf: a single read of the complex or
+    /// the real pool, as opposed to a constant composite (a `Mul`/`Add` of constants).
+    pub(crate) fn is_pool_leaf(self) -> bool {
         matches!(
             self,
-            Op::External | Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
+            Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
         )
     }
 }
 
 /// A node: opcode tag + typed leaf payload. Children live in the arena's CSR table.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Node<T> {
-    pub op: Op,
-    pub leaf: T,
+pub(crate) struct Node<T> {
+    pub(crate) op: Op,
+    pub(crate) leaf: T,
 }
 
 impl<T> Node<T> {
-    pub fn new(op: Op, leaf: T) -> Self {
+    pub(crate) fn new(op: Op, leaf: T) -> Self {
         Node { op, leaf }
     }
 }
 
 /// Symbolic leaf payload: model ids, kept independent of any parameter card.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Sym {
+pub(crate) enum Sym {
     /// `Op::Coupling` payload.
     Coupling(CouplingId),
     /// `Op::Mass` / `Op::Width` payload.
@@ -288,7 +293,7 @@ pub enum Sym {
 
 /// Which constant pool a [`Const`] leaf indexes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConstKind {
+pub(crate) enum ConstKind {
     /// index into `consts_c` (complex pool) — `Op::Coupling`.
     Complex,
     /// index into `consts_f` (real pool) — `Op::Mass` / `Op::Width` / `Op::Coeff`.
@@ -306,14 +311,14 @@ pub enum ConstKind {
 /// index. The `External` leg details live in the folded leg table (see
 /// [`super::fold::ExtLeg`]).
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Const(u32);
+pub(crate) struct Const(u32);
 
 impl Const {
     const KIND_SHIFT: u32 = 30;
     const INDEX_MASK: u32 = (1 << Self::KIND_SHIFT) - 1;
 
     /// Non-leaf op: no payload.
-    pub const NONE: Const = Const(0);
+    pub(crate) const NONE: Const = Const(0);
 
     fn packed(kind_bits: u32, index: u32) -> Const {
         assert!(
@@ -324,22 +329,22 @@ impl Const {
     }
 
     /// A complex-pool (`consts_c`) index.
-    pub fn complex(index: u32) -> Const {
+    pub(crate) fn complex(index: u32) -> Const {
         Const::packed(1, index)
     }
 
     /// A real-pool (`consts_f`) index.
-    pub fn real(index: u32) -> Const {
+    pub(crate) fn real(index: u32) -> Const {
         Const::packed(2, index)
     }
 
     /// A folded external-leg-table index.
-    pub fn ext(index: u32) -> Const {
+    pub(crate) fn ext(index: u32) -> Const {
         Const::packed(3, index)
     }
 
     /// Which pool this leaf indexes.
-    pub fn kind(self) -> ConstKind {
+    pub(crate) fn kind(self) -> ConstKind {
         match self.0 >> Self::KIND_SHIFT {
             1 => ConstKind::Complex,
             2 => ConstKind::Real,
@@ -349,7 +354,7 @@ impl Const {
     }
 
     /// The pool index (meaningless for [`ConstKind::None`]).
-    pub fn index(self) -> u32 {
+    pub(crate) fn index(self) -> u32 {
         self.0 & Self::INDEX_MASK
     }
 }

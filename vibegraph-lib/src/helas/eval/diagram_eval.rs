@@ -4,7 +4,7 @@
 //! These `*Info` types ([`ExtLegInfo`], [`PropInfo`], [`VertexInfo`]/[`VertexTerm`]) are
 //! the payloads of [`EvalNode`](super::root_diagram::EvalNode): vertices still carry
 //! model ids (`CouplingId`/`ParticleId`) and rooted Lorentz contraction trees. The
-//! per-diagram artifact that assembles them ([`DiagramEval`](super::compile::DiagramEval))
+//! per-diagram artifact that assembles them ([`DiagramEval`](super::root_diagram::DiagramEval))
 //! lives in [`super::compile`]; [`super::lower`] inlines them into the unified
 //! [`Ast`](super::ast::Ast), which the runtime evaluates.
 
@@ -21,18 +21,18 @@ use crate::ufo::UFOModel;
 
 /// Description of an external leg baked in at compile time.
 #[derive(Clone, Debug)]
-pub struct ExtLegInfo {
+pub(crate) struct ExtLegInfo {
     /// Particle information
-    pub id: ParticleId,
+    pub(crate) id: ParticleId,
     /// Index into external leg array (0..n_in are incoming; n_in.. are outgoing)
-    pub leg_idx: usize,
+    pub(crate) leg_idx: usize,
     /// Spin code (UFOModel convention: 2s+1)
-    pub spin: i32,
+    pub(crate) spin: i32,
     /// Charge
-    pub charge: Charge,
+    pub(crate) charge: Charge,
     /// Whether this leg is incoming (`leg_idx < n_in`); selects ket/bra adjoint and the
     /// HELAS `nsf` sign of the external wavefunction.
-    pub incoming: bool,
+    pub(crate) incoming: bool,
 }
 
 impl ExtLegInfo {
@@ -41,7 +41,7 @@ impl ExtLegInfo {
     /// Mirrors the HELAS external-adjoint rule applied at eval time in
     /// `build_external_core`: a Dirac leg is a ket (ket) iff it is an incoming
     /// particle or an outgoing antiparticle, i.e. `incoming == is_particle`.
-    pub fn adjoint(&self) -> Option<Adjoint> {
+    pub(crate) fn adjoint(&self) -> Option<Adjoint> {
         if self.spin != 2 {
             return None;
         }
@@ -66,15 +66,15 @@ impl std::fmt::Display for ExtLegInfo {
 
 /// Description of an internal propagator.
 #[derive(Clone, Debug)]
-pub struct PropInfo {
+pub(crate) struct PropInfo {
     /// Particle information
-    pub id: ParticleId,
+    pub(crate) id: ParticleId,
     /// True iff the line is t-channel — it separates the two initial-state legs
     /// (exactly one incoming external in its subtree), so its momentum is
     /// spacelike and can never resonate. MadGraph passes ZERO width for such
     /// propagators (cf. the Bhabha t-channel Z, `FFV2_4_3(..., MDL_MZ, ZERO, ...)`)
     /// and the width is dropped at lowering accordingly.
-    pub t_channel: bool,
+    pub(crate) t_channel: bool,
 }
 
 /// One (lorentz_structure, coupling_constant) pair at a vertex.
@@ -83,11 +83,11 @@ pub struct PropInfo {
 /// At compile time the `LorentzExpr` is pattern-matched into `RootedTerm`
 /// At eval time, `coupling_id` is resolved via `EvaluatedModel::coupling(id)`.
 #[derive(Clone, Debug)]
-pub struct VertexTerm {
+pub(crate) struct VertexTerm {
     /// Pre-compiled rooted dispatch (from LorentzTerm pattern match, rooted at output leg)
-    pub terms: Vec<RootedTerm>,
+    pub(crate) terms: Vec<RootedTerm>,
     /// Model's coupling ID (resolved via EvaluatedModel at eval time)
-    pub coupling_id: CouplingId,
+    pub(crate) coupling_id: CouplingId,
 }
 
 impl VertexTerm {
@@ -95,7 +95,7 @@ impl VertexTerm {
     ///
     /// result_leg_idx is 0-indexed here
     #[allow(clippy::too_many_arguments)]
-    pub fn from_ufo(
+    pub(crate) fn from_ufo(
         model: &UFOModel,
         lorentz_id: LorentzId,
         _color: &crate::ufo::color::ColorExpr, // TODO: handle color structures if needed
@@ -190,9 +190,9 @@ impl std::fmt::Display for VertexTerm {
 
 /// Descriptor for one vertex with all its terms (sum over Lorentz × color).
 #[derive(Clone, Debug)]
-pub struct VertexInfo {
+pub(crate) struct VertexInfo {
     /// Sum over Lorentz + color terms
-    pub terms: Vec<VertexTerm>,
+    pub(crate) terms: Vec<VertexTerm>,
 }
 
 /// The fermion-flow group `group` of `id`'s Lorentz structures: which of the
@@ -228,7 +228,7 @@ impl VertexInfo {
     /// whose structures contract its legs two different ways describes two fermion-line
     /// topologies, which the enumeration has already separated into two vertices, so
     /// only the structures of the named group belong to this occurrence.
-    pub fn from_ufo(
+    pub(crate) fn from_ufo(
         model: &UFOModel,
         id: VertexId,
         color_idx: usize,

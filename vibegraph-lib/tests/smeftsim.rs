@@ -3,10 +3,11 @@
 //! The first non-Standard-Model UFO this project reads end to end: 21 particle
 //! definitions, 260 Lorentz structures, 904 vertices carrying couplings of many
 //! different orders in one vertex, a `propagators.py`, and an input scheme
-//! (`{m_W, m_Z, G_F}`) the SM UFO does not use. Everything here reads the committed copy under
-//! `validation/ufo/` — no MadGraph run, no submodule — but it is registered in the
-//! banked layer because the numbers it pins are reconciled against MadGraph's own,
-//! not derived here.
+//! (`{m_W, m_Z, G_F}`) the SM UFO does not use. Everything here reads committed
+//! files — the vendored copy under `validation/ufo/` and MadGraph's own banked
+//! counts, cards and amplitude tables under `validation/madgraph/` — and no
+//! MadGraph run or submodule, so the target is in the hermetic layer. The numbers
+//! it pins are reconciled against MadGraph's own, not derived here.
 //!
 //! What each measurement is a falsifier for is written at the test, because most
 //! of them exist to catch a *silent* change: a loader that stopped splitting
@@ -217,9 +218,9 @@ fn interaction_splitting_matches_madgraph() {
 }
 
 /// Every one of the 260 Lorentz structures parses, with the operator mix the
-/// model actually writes. `Gamma5` and the `**` powers are the two the parser
-/// gained for this model: `Gamma5` used to fail the whole load as an
-/// `UnknownOperator`, and `P(-1,a)**2` used to fail as a syntax error. The `P`
+/// model actually writes. `Gamma5` and the `**` powers are the two this model
+/// writes and the Standard Model does not: a parser without them fails the whole
+/// load, as an `UnknownOperator` and as a syntax error on `P(-1,a)**2`. The `P`
 /// count is *after* power expansion, so it exceeds the 3189 textual `P(` uses by
 /// the 123 squared momenta, each of which becomes two contracted copies.
 #[test]
@@ -261,7 +262,7 @@ fn every_lorentz_structure_parses() {
 
 /// `propagators.py` is read rather than refused: the four width-corrected
 /// auxiliary fields keep their propagator forms verbatim, and only they carry
-/// one. The refusal now lives where such a particle actually propagates
+/// one. The refusal is where such a particle actually propagates
 /// (`diagrams::diagram::ConvertError::CustomPropagator`).
 #[test]
 fn custom_propagators_are_read_and_attached() {
@@ -410,8 +411,8 @@ fn both_restrict_cards_prune_to_a_workable_model() {
     );
 
     // Pruning is exactly the removal of vanishing couplings: nothing survives
-    // holding a Lorentz structure no coupling of its own refers to, which is what
-    // used to send the evaluator into a zero-coupling dipole chain.
+    // holding a Lorentz structure no coupling of its own refers to. Such a
+    // structure would send the evaluator into a zero-coupling dipole chain.
     for model in [&sm_limit, &all_on] {
         for (name, vertex) in &model.vertices {
             let used: std::collections::BTreeSet<usize> =
@@ -600,13 +601,12 @@ fn gated_rows_are_the_manifest_s_gated_smeftsim_rows() {
 /// Every gated row's diagram count against MadGraph's own, from the committed
 /// `validation/madgraph/diagrams.json`.
 ///
-/// This is what the interaction splitting exists for. Before it, `e+ e- > mu+ mu-`
-/// enumerated **0** — every SMEFTsim `FFV` vertex bundles the SM current with
-/// dipole and current-shift couplings, so the union of their orders made the
-/// photon vertex read as `NP = 1` and two of them exceeded any bound. And
-/// `g g > t t~` enumerated **4**, the extra one being the `g g > H > t t~`
-/// s-channel through SMEFTsim's effective `SMHLOOP` `ggH` vertex; the WEIGHTED
-/// default costs that diagram 99 per `SMHLOOP` power and drops it, leaving
+/// This is what the interaction splitting exists for. Without it,
+/// `e+ e- > mu+ mu-` enumerates **0** — every SMEFTsim `FFV` vertex bundles the SM
+/// current with dipole and current-shift couplings, so the union of their orders
+/// makes the photon vertex read as `NP = 1` and two of them exceed any bound. And
+/// `g g > t t~` has a fourth diagram, the `g g > H > t t~` s-channel through
+/// SMEFTsim's effective `SMHLOOP` `ggH` vertex; the WEIGHTED default costs that diagram 99 per `SMHLOOP` power and drops it, leaving
 /// MadGraph's 3. It is a real diagram of this model, not a spurious one, which is
 /// what the `QCD<=2` row is here to show: bounding `QCD` while leaving `SMHLOOP`
 /// free brings it back, on both sides.
@@ -680,9 +680,9 @@ fn no_coverage_row_propagates_an_auxiliary_field() {
 /// (`helas::eval::op_census`), instantiated on a second model and over more than
 /// one restrict card: the ops the gated rows compile to are the ops MadGraph's
 /// reference actually exercises here, everything else is listed, and an op the
-/// list starts covering must be struck from the allowlist. The list is short
-/// because only these rows compile today; it grows as the primitives the full
-/// SMEFT rows need arrive, and the allowlist shrinks with it.
+/// list starts covering must be struck from the allowlist. The rows are the
+/// manifest's gated SMEFTsim rows, so a row promoted to a gate widens what the
+/// census reaches and an op it covers has to leave the allowlist.
 #[test]
 fn gated_rows_op_census() {
     use vibegraph::helas::eval::op_census::{assert_op_coverage_across, Op};

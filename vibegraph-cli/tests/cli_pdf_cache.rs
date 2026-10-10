@@ -82,6 +82,65 @@ fn a_missing_pinned_set_reports_what_it_would_download() {
     );
 }
 
+/// `$VIBEGRAPH_NO_NETWORK` refuses by being set, whatever its value, and the
+/// binary and the validation fetch scripts (`validation/fetch_common.sh`) read
+/// it by that one rule: `0` and the empty string refuse on both, so no value
+/// stops one of them and lets the other download.
+#[test]
+fn the_no_network_variable_refuses_at_any_value_in_the_binary_and_the_fetch_scripts() {
+    let fetch_common = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/fetch_common.sh");
+    // `vg_consent` answers without asking: consent is granted up front, so only
+    // the refusal can make it say no.
+    let script_consents = |value: Option<&str>| {
+        let mut cmd = Command::new("bash");
+        cmd.arg("-c")
+            .arg(r#". "$1" && vg_consent "a test asset" "https://example.invalid/x""#)
+            .arg("bash")
+            .arg(&fetch_common)
+            .env("VIBEGRAPH_FETCH_CONSENT", "1");
+        match value {
+            Some(v) => cmd.env("VIBEGRAPH_NO_NETWORK", v),
+            None => cmd.env_remove("VIBEGRAPH_NO_NETWORK"),
+        };
+        cmd.output().expect("run bash").status.success()
+    };
+    assert!(
+        script_consents(None),
+        "with the variable unset and consent given, the fetch scripts must download"
+    );
+
+    for value in ["1", "0", ""] {
+        assert!(
+            !script_consents(Some(value)),
+            "fetch_common.sh downloads under VIBEGRAPH_NO_NETWORK={value:?}"
+        );
+
+        let home = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .current_dir(cwd.path())
+            .arg("integrate")
+            .arg(validation_dir().join("dy13_proc_card.dat"))
+            .arg("--run-card")
+            .arg(validation_dir().join("dy13_default_run_card.dat"))
+            .arg("--out")
+            .arg(out.path())
+            .arg("-y")
+            .env("VIBEGRAPH_HOME", home.path())
+            .env("VIBEGRAPH_NO_NETWORK", value)
+            .env_remove("VIBEGRAPH_PDF_DIR")
+            .output()
+            .expect("spawn vibegraph");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success()
+                && stderr.contains("downloads are disabled by VIBEGRAPH_NO_NETWORK"),
+            "the binary did not refuse under VIBEGRAPH_NO_NETWORK={value:?}:\n{stderr}"
+        );
+    }
+}
+
 /// A set name this build has no pin for, with nothing on disk to satisfy it,
 /// fails with an actionable message instead of guessing at a URL.
 #[test]

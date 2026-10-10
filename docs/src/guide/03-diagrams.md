@@ -71,10 +71,9 @@ A process with one initial particle (`generate t > b e+ ve`) is a `1 → n`
 decay, integrated to a [partial width](07-phase-space.md#decays-at-rest).
 It is enumerated like any other process — every diagram with the decaying
 particle as its one incoming leg, every internal line then an s-channel —
-and the same enumeration is available for a single decay on its own
-(`enumerate_decay`), which is what joining decays onto a core process
-builds on. Mixing processes with different numbers of initial particles is
-a MadGraph error and stays one.
+and the same enumeration, run on each decay alone, is what joining decays
+onto a core process builds on. Mixing processes with different numbers of
+initial particles is a MadGraph error and stays one.
 
 **Decay chains** are enumerated by stitching, as MadGraph generates them: the
 core (`p p > t t~`) and each decay (`t > w+ b`, recursively for a decay with

@@ -54,10 +54,43 @@ fn complex(v: &serde_json::Value) -> C<f64> {
 struct Measured {
     g: C<f64>,
     worst_flow: f64,
+    worst_flow_where: String,
     worst_m2: f64,
+    worst_m2_where: String,
     n_entries: usize,
 }
 
+impl Measured {
+    /// Every way the comparison can disagree with MadGraph, empty when it agrees.
+    fn disagreements(&self, key: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.worst_flow >= REL_TOL {
+            out.push(format!(
+                "{key}: {} ({:.3e} of the largest amplitude)",
+                self.worst_flow_where, self.worst_flow
+            ));
+        }
+        if self.worst_m2 >= REL_TOL {
+            out.push(format!(
+                "{key}: {} ({:.3e})",
+                self.worst_m2_where, self.worst_m2
+            ));
+        }
+        if (self.g.norm() - 1.0).abs() >= REL_TOL {
+            out.push(format!(
+                "{key}: the flows agree only up to |G| = {}",
+                self.g.norm()
+            ));
+        }
+        out
+    }
+}
+
+/// Reads the table, binds its card and evaluates every listed entry. A table that
+/// cannot be read, or a process whose colour or helicity structure is not the
+/// table's, panics: those are not disagreements with MadGraph, and a row listed in
+/// [`KNOWN_DISAGREEMENT`] must not absorb them. The deviations themselves are
+/// returned for [`check`] to judge.
 fn measure(key: &str) -> Measured {
     let path = table_path(key);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -160,39 +193,44 @@ fn measure(key: &str) -> Measured {
         scale = scale.max(mg.norm());
     }
     let g = num / den;
-    let mut worst_flow = 0.0f64;
+    let (mut worst_flow, mut worst_flow_where) = (0.0f64, String::new());
     for (mg, vg, what) in &flows {
         let dev = (vg - g * mg).norm() / scale;
-        worst_flow = worst_flow.max(dev);
-        assert!(
-            dev < REL_TOL,
-            "{key}: {what}: vibegraph {vg:?} against G·MadGraph {:?} ({dev:.3e} of the \
-             largest amplitude, G = {g:?})",
-            g * mg
-        );
+        if dev > worst_flow {
+            worst_flow = dev;
+            worst_flow_where = format!(
+                "{what}: vibegraph {vg:?} against G·MadGraph {:?} (G = {g:?})",
+                g * mg
+            );
+        }
     }
     let m2_scale = m2.iter().map(|e| e.0.abs()).fold(0.0, f64::max);
-    let mut worst_m2 = 0.0f64;
+    let (mut worst_m2, mut worst_m2_where) = (0.0f64, String::new());
     for (mg, vg, what) in &m2 {
         let dev = (vg - g.norm_sqr() * mg).abs() / m2_scale;
-        worst_m2 = worst_m2.max(dev);
-        assert!(
-            dev < REL_TOL,
-            "{key}: {what}: |M|² {vg:e} against |G|²·MadGraph {:e} ({dev:.3e})",
-            g.norm_sqr() * mg
-        );
+        if dev > worst_m2 {
+            worst_m2 = dev;
+            worst_m2_where = format!(
+                "{what}: |M|² {vg:e} against |G|²·MadGraph {:e}",
+                g.norm_sqr() * mg
+            );
+        }
     }
     Measured {
         g,
         worst_flow,
+        worst_flow_where,
         worst_m2,
+        worst_m2_where,
         n_entries: flows.len(),
     }
 }
 
 /// Rows whose comparison is known to disagree with MadGraph, with the finding. A listed
 /// row is measured in full and reported; the test fails if it starts agreeing, so the
-/// exemption cannot outlive the defect.
+/// exemption cannot outlive the defect. The exemption covers the measured deviations
+/// only: a listed row whose table is missing or whose process stops matching the
+/// table's colour and helicity structure fails like any other.
 const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
     "wpwm_to_epem",
     "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
@@ -202,26 +240,24 @@ const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
-    let outcome = std::panic::catch_unwind(|| measure(key));
-    match (outcome, known) {
-        (Ok(m), None) => {
-            println!(
-                "{key}: {} flow entries, G = {:?}, worst flow {:.3e}, worst |M|² {:.3e}",
-                m.n_entries, m.g, m.worst_flow, m.worst_m2
-            );
-            assert!(
-                (m.g.norm() - 1.0).abs() < REL_TOL,
-                "{key}: the flows agree only up to |G| = {}",
-                m.g.norm()
-            );
-        }
-        (Err(e), None) => std::panic::resume_unwind(e),
-        (Ok(m), Some((_, why))) => panic!(
+    let m = measure(key);
+    println!(
+        "{key}: {} flow entries, G = {:?}, worst flow {:.3e}, worst |M|² {:.3e}",
+        m.n_entries, m.g, m.worst_flow, m.worst_m2
+    );
+    let disagreements = m.disagreements(key);
+    match (disagreements.is_empty(), known) {
+        (true, None) => {}
+        (false, None) => panic!("{}", disagreements.join("\n")),
+        (true, Some((_, why))) => panic!(
             "{key} is listed as disagreeing ({why}) but now agrees: G = {:?}, worst flow \
              {:.3e}; remove it from KNOWN_DISAGREEMENT",
             m.g, m.worst_flow
         ),
-        (Err(_), Some((_, why))) => println!("{key}: informational, disagrees as listed: {why}"),
+        (false, Some((_, why))) => println!(
+            "{key}: informational, disagrees as listed: {why}\n  {}",
+            disagreements.join("\n  ")
+        ),
     }
 }
 

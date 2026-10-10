@@ -47,7 +47,7 @@
 
 pub mod card;
 pub mod engine;
-pub mod poly;
+pub(crate) mod poly;
 
 use std::collections::HashSet;
 
@@ -104,10 +104,11 @@ pub enum ReweightError {
         particle: String,
     },
     #[error(
-        "the process forbids an s-channel on shell (`$`), whose amplitude depends on where \
-         each event sits relative to the veto windows; it cannot be reweighted"
+        "the process forbids an s-channel on shell (`$`, PDG {ids:?}), whose amplitude \
+         depends on where each event sits relative to the veto windows; it cannot be \
+         reweighted"
     )]
-    ForbiddenSChannel,
+    ForbiddenSChannel { ids: Vec<i64> },
     #[error(
         "launch `{launch}` makes `{name}` non-finite ({value}), which the card's own \
          parameters keep finite; no weight can be taken there"

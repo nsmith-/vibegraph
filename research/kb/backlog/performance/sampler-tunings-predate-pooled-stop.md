@@ -30,9 +30,8 @@ Three settings rest on measurements made under rules the sampler no longer uses:
   The default combination is now `IterationCombination::Unweighted`.
 
 None of these changes a cross section beyond its error: they set cost and stop
-behaviour. Re-measure before the next tuning decision rests on them. The stale
-comments are listed in
-[sampler-and-phase-space-doc-comments-stale](../hygiene/sampler-and-phase-space-doc-comments-stale.md);
-the stop-rule item is
+behaviour. Re-measure before the next tuning decision rests on them. The
+comments citing these tunings now say they predate the pooled stop
+([F-D report](../../sprints/hygiene/sessions/F-D-report.md)); the stop-rule item is
 [stop-scale-inflated-by-few-accepted-iterations](stop-scale-inflated-by-few-accepted-iterations.md).
 Found by drafter D7 and verifier V6.

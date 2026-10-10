@@ -28,7 +28,7 @@ use crate::helas::repr::{ri, Real, C};
 use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 
 /// Extract a bare real constant from a [`WaveformSlot::Real`] child.
-pub fn expect_real<F: Real>(slot: &WaveformSlot<F>) -> F {
+pub(crate) fn expect_real<F: Real>(slot: &WaveformSlot<F>) -> F {
     match slot {
         WaveformSlot::Real(r) => *r,
         other => panic!("expected a real-constant slot, got {other:?}"),
@@ -57,7 +57,7 @@ fn expect_scalar<F: Real>(slot: &WaveformSlot<F>) -> C<F> {
 
 /// Dirac propagator on a bare ket spinor with routed momentum `q`.
 #[inline]
-pub fn propagate_fin_bare<F: Real>(
+pub(crate) fn propagate_fin_bare<F: Real>(
     spinor: &Bispinor<F, Ket>,
     q: &LorentzVector<F>,
     mass: F,
@@ -72,7 +72,7 @@ pub fn propagate_fin_bare<F: Real>(
 
 /// Dirac propagator on a bare bra spinor with routed momentum `q`.
 #[inline]
-pub fn propagate_fout_bare<F: Real>(
+pub(crate) fn propagate_fout_bare<F: Real>(
     spinor: &Bispinor<F, Bra>,
     q: &LorentzVector<F>,
     mass: F,
@@ -87,7 +87,7 @@ pub fn propagate_fout_bare<F: Real>(
 
 /// Vector propagator on a bare contravariant polarisation with routed momentum `q`.
 #[inline]
-pub fn propagate_vector_bare<F: Real>(
+pub(crate) fn propagate_vector_bare<F: Real>(
     eps: &ComplexVector<F>,
     q: &LorentzVector<F>,
     mass: F,
@@ -104,7 +104,7 @@ pub fn propagate_vector_bare<F: Real>(
 }
 
 /// Scalar propagator on a bare scalar value with routed momentum `q`.
-pub fn propagate_scalar_bare<F: Real>(
+pub(crate) fn propagate_scalar_bare<F: Real>(
     value: C<F>,
     q: &LorentzVector<F>,
     mass: F,
@@ -115,14 +115,14 @@ pub fn propagate_scalar_bare<F: Real>(
 }
 
 /// A structure momentum promoted to a bare contravariant vector current.
-pub fn pmom_bare<F: Real>(q: &LorentzVector<F>) -> ComplexVector<F> {
+pub(crate) fn pmom_bare<F: Real>(q: &LorentzVector<F>) -> ComplexVector<F> {
     ComplexVector::from(*q)
 }
 
 /// `GammaVout` on bare spinors: two fermions → off-shell vector `ψ̄ γ^μ ψ`; a line read
 /// against the vertex's defined adjoint picks up the `C γ^{μT} C⁻¹ = −γ^μ` sign.
 #[inline]
-pub fn gamma_vout_bare<F: Real>(
+pub(crate) fn gamma_vout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     reversed: bool,
@@ -137,7 +137,7 @@ pub fn gamma_vout_bare<F: Real>(
 
 /// `FfvVout` on bare spinors and effective couplings (see [`ffv_vout_c`]).
 #[inline]
-pub fn ffv_vout_bare<F: Real>(
+pub(crate) fn ffv_vout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     gl: C<F>,
@@ -154,7 +154,7 @@ pub fn ffv_vout_bare<F: Real>(
 }
 
 /// Continue a bare ket line by slashing with the vector polarisation, `ε̸ψ`.
-pub fn off_shell_fin_bare<F: Real>(
+pub(crate) fn off_shell_fin_bare<F: Real>(
     eps: &ComplexVector<F>,
     fi: &Bispinor<F, Ket>,
 ) -> Bispinor<F, Ket> {
@@ -162,7 +162,7 @@ pub fn off_shell_fin_bare<F: Real>(
 }
 
 /// Continue a bare bra line by slashing with the vector polarisation, `ψ̄ε̸`.
-pub fn off_shell_fout_bare<F: Real>(
+pub(crate) fn off_shell_fout_bare<F: Real>(
     eps: &ComplexVector<F>,
     fo: &Bispinor<F, Bra>,
 ) -> Bispinor<F, Bra> {
@@ -171,7 +171,7 @@ pub fn off_shell_fout_bare<F: Real>(
 
 /// Fused chiral off-shell current on a bare ket line (see [`ffv_fin`]).
 #[inline]
-pub fn ffv_fin_bare<F: Real>(
+pub(crate) fn ffv_fin_bare<F: Real>(
     eps: &ComplexVector<F>,
     fi: &Bispinor<F, Ket>,
     gl: C<F>,
@@ -182,7 +182,7 @@ pub fn ffv_fin_bare<F: Real>(
 
 /// Fused chiral off-shell current on a bare bra line (see [`ffv_fout`]).
 #[inline]
-pub fn ffv_fout_bare<F: Real>(
+pub(crate) fn ffv_fout_bare<F: Real>(
     eps: &ComplexVector<F>,
     fo: &Bispinor<F, Bra>,
     gl: C<F>,
@@ -192,27 +192,33 @@ pub fn ffv_fout_bare<F: Real>(
 }
 
 /// Chiral projection of a bare ket line.
-pub fn proj_fin_bare<F: Real>(fi: &Bispinor<F, Ket>, chirality: Chirality) -> Bispinor<F, Ket> {
+pub(crate) fn proj_fin_bare<F: Real>(
+    fi: &Bispinor<F, Ket>,
+    chirality: Chirality,
+) -> Bispinor<F, Ket> {
     project_spinor(fi, chirality)
 }
 
 /// Chiral projection of a bare bra line.
-pub fn proj_fout_bare<F: Real>(fo: &Bispinor<F, Bra>, chirality: Chirality) -> Bispinor<F, Bra> {
+pub(crate) fn proj_fout_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    chirality: Chirality,
+) -> Bispinor<F, Bra> {
     project_spinor(fo, chirality)
 }
 
 /// `Gamma5` on a bare ket line, `γ⁵ψ`.
-pub fn gamma5_fin_bare<F: Real>(fi: &Bispinor<F, Ket>) -> Bispinor<F, Ket> {
+pub(crate) fn gamma5_fin_bare<F: Real>(fi: &Bispinor<F, Ket>) -> Bispinor<F, Ket> {
     gamma5_spinor(fi)
 }
 
 /// `Gamma5` on a bare bra line, `ψ̄γ⁵`.
-pub fn gamma5_fout_bare<F: Real>(fo: &Bispinor<F, Bra>) -> Bispinor<F, Bra> {
+pub(crate) fn gamma5_fout_bare<F: Real>(fo: &Bispinor<F, Bra>) -> Bispinor<F, Bra> {
     gamma5_spinor(fo)
 }
 
 /// Scalar bilinear `ψ̄ Γ ψ` on bare spinors.
-pub fn scalar_bilinear_bare<F: Real>(
+pub(crate) fn scalar_bilinear_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     chirality: Chirality,
@@ -221,21 +227,24 @@ pub fn scalar_bilinear_bare<F: Real>(
 }
 
 /// Pseudoscalar bilinear `ψ̄ γ⁵ ψ` on bare spinors.
-pub fn pseudoscalar_bilinear_bare<F: Real>(fo: &Bispinor<F, Bra>, fi: &Bispinor<F, Ket>) -> C<F> {
+pub(crate) fn pseudoscalar_bilinear_bare<F: Real>(
+    fo: &Bispinor<F, Bra>,
+    fi: &Bispinor<F, Ket>,
+) -> C<F> {
     Bispinor::pseudoscalar_bilinear(fo, fi, Chirality::Both)
 }
 
 /// One real-weighted term of an [`Op::AddScaled`](super::op::Op::AddScaled) sum:
 /// `acc + r·x`, a multiply-add per component.
 #[inline(always)]
-pub fn scaled_add_real_bare<F: Real>(acc: C<F>, r: F, x: C<F>) -> C<F> {
+pub(crate) fn scaled_add_real_bare<F: Real>(acc: C<F>, r: F, x: C<F>) -> C<F> {
     C::new(r.mul_add_fast(x.re, acc.re), r.mul_add_fast(x.im, acc.im))
 }
 
 /// One complex-weighted term of an [`Op::AddScaled`](super::op::Op::AddScaled) sum:
 /// `acc + k·x`, two multiply-adds per component.
 #[inline(always)]
-pub fn scaled_add_complex_bare<F: Real>(acc: C<F>, k: C<F>, x: C<F>) -> C<F> {
+pub(crate) fn scaled_add_complex_bare<F: Real>(acc: C<F>, k: C<F>, x: C<F>) -> C<F> {
     C::new(
         k.re.mul_add_fast(x.re, (-k.im).mul_add_fast(x.im, acc.re)),
         k.re.mul_add_fast(x.im, k.im.mul_add_fast(x.re, acc.im)),
@@ -243,12 +252,12 @@ pub fn scaled_add_complex_bare<F: Real>(acc: C<F>, k: C<F>, x: C<F>) -> C<F> {
 }
 
 /// `Metric`: contract two bare contravariant vectors → scalar.
-pub fn metric_bare<F: Real>(v1: &ComplexVector<F>, v2: &ComplexVector<F>) -> C<F> {
+pub(crate) fn metric_bare<F: Real>(v1: &ComplexVector<F>, v2: &ComplexVector<F>) -> C<F> {
     v1.dot(&v2.lower())
 }
 
 /// `MetricVout`: the contravariant current `g^{μν}V_ν = V^μ` — identity on bare storage.
-pub fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
+pub(crate) fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
     *vin
 }
 
@@ -256,7 +265,7 @@ pub fn metric_vout_bare<F: Real>(vin: &ComplexVector<F>) -> ComplexVector<F> {
 /// three-vectors-in current characterised by `E·d = epsilon_amp_bare(a, b, c, d)`
 /// under the Minkowski contraction. Output is contravariant, like every other
 /// vector current here.
-pub fn epsilon_vout_bare<F: Real>(
+pub(crate) fn epsilon_vout_bare<F: Real>(
     a: &ComplexVector<F>,
     b: &ComplexVector<F>,
     c: &ComplexVector<F>,
@@ -266,7 +275,7 @@ pub fn epsilon_vout_bare<F: Real>(
 
 /// `EpsilonAmp` on bare contravariant vectors: the fully contracted
 /// `ε^{μνρσ} a_μ b_ν c_ρ d_σ` (ALOHA's `ε^{0123} = −1`; see [`epsilon4`]).
-pub fn epsilon_amp_bare<F: Real>(
+pub(crate) fn epsilon_amp_bare<F: Real>(
     a: &ComplexVector<F>,
     b: &ComplexVector<F>,
     c: &ComplexVector<F>,
@@ -291,7 +300,7 @@ pub fn epsilon_amp_bare<F: Real>(
 /// two gammas transpose and nothing else changes, so that case is one more flip of
 /// `reversed_order` and is decided at rooting time rather than here.
 #[inline]
-pub fn fierz_out_bare<F: Real>(
+pub(crate) fn fierz_out_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     reversed_order: bool,
@@ -309,7 +318,7 @@ pub fn fierz_out_bare<F: Real>(
 
 /// `MultivectorIout` on a bare ket line: `M ψ`.
 #[inline]
-pub fn multivector_fin_bare<F: Real>(
+pub(crate) fn multivector_fin_bare<F: Real>(
     m: &Multivector<F>,
     fi: &Bispinor<F, Ket>,
 ) -> Bispinor<F, Ket> {
@@ -318,7 +327,7 @@ pub fn multivector_fin_bare<F: Real>(
 
 /// `MultivectorOout` on a bare bra line: `ψ̄ M`.
 #[inline]
-pub fn multivector_fout_bare<F: Real>(
+pub(crate) fn multivector_fout_bare<F: Real>(
     m: &Multivector<F>,
     fo: &Bispinor<F, Bra>,
 ) -> Bispinor<F, Bra> {
@@ -350,7 +359,7 @@ fn sigma_half<F: Real>() -> F {
 /// and putting the free index on the *second* slot instead is a transposition of an
 /// antisymmetric tensor.
 #[inline]
-pub fn sigma_vout_bare<F: Real>(
+pub(crate) fn sigma_vout_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     v: &ComplexVector<F>,
@@ -373,7 +382,7 @@ pub fn sigma_vout_bare<F: Real>(
 /// contravariant vectors, so in [`Multivector`]'s grade-2 normalisation
 /// (`½ T^{μν} σ_{μν}`) the coefficient is `½ (a ∧ b)` — the ½ being [`sigma_half`].
 #[inline]
-pub fn sigma_mv_bare<F: Real>(a: &ComplexVector<F>, b: &ComplexVector<F>) -> Multivector<F> {
+pub(crate) fn sigma_mv_bare<F: Real>(a: &ComplexVector<F>, b: &ComplexVector<F>) -> Multivector<F> {
     Multivector::from_bivector(&(AsymRank2Tensor::wedge(a, b) * sigma_half::<F>()))
 }
 
@@ -390,7 +399,7 @@ pub fn sigma_mv_bare<F: Real>(a: &ComplexVector<F>, b: &ComplexVector<F>) -> Mul
 /// `C σ^{αβT} C⁻¹ = −σ^{αβ}` and `σ^{βα} = −σ^{αβ}` are the same sign — also carries a
 /// line read against the vertex's own adjoint.
 #[inline]
-pub fn sigma_out_bare<F: Real>(
+pub(crate) fn sigma_out_bare<F: Real>(
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
     reversed_order: bool,
@@ -402,7 +411,7 @@ pub fn sigma_out_bare<F: Real>(
 /// `FierzPair` on bare spinors: `ψ̄ M ψ`, as the grade-diagonal pairing of the element
 /// with the pair's own sixteen bilinears.
 #[inline]
-pub fn fierz_pair_bare<F: Real>(
+pub(crate) fn fierz_pair_bare<F: Real>(
     m: &Multivector<F>,
     fo: &Bispinor<F, Bra>,
     fi: &Bispinor<F, Ket>,
@@ -414,7 +423,7 @@ pub fn fierz_pair_bare<F: Real>(
 
 /// `Propagate`: apply a propagator (interned mass/width from the two real operands) to
 /// the off-shell current. The propagator outputs a contravariant current.
-pub fn propagate<F: Real>(
+pub(crate) fn propagate<F: Real>(
     current: &WaveformSlot<F>,
     mass: &WaveformSlot<F>,
     width: &WaveformSlot<F>,
@@ -426,7 +435,11 @@ pub fn propagate<F: Real>(
 /// already carries the conserved routed momentum (matching reference HELAS, where the
 /// off-shell current routines output it: `fvixxx` q=fi−vc, `fvoxxx` q=fo+vc,
 /// `jioxxx` jmom=fo−fi).
-pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> WaveformSlot<F> {
+pub(crate) fn propagate_core<F: Real>(
+    input: &WaveformSlot<F>,
+    mass: F,
+    width: F,
+) -> WaveformSlot<F> {
     match input {
         WaveformSlot::FermionIn(wf) => WaveformSlot::FermionIn(propagate_fin(wf, mass, width)),
         WaveformSlot::FermionOut(wf) => WaveformSlot::FermionOut(propagate_fout(wf, mass, width)),
@@ -448,7 +461,7 @@ pub fn propagate_core<F: Real>(input: &WaveformSlot<F>, mass: F, width: F) -> Wa
 // propagators) meet H diagrams (one scalar propagator).
 
 /// Dirac propagator on a flow-in (ket) off-shell current.
-pub fn propagate_fin<F: Real>(wf: &InDiracWf<F>, mass: F, width: F) -> InDiracWf<F> {
+pub(crate) fn propagate_fin<F: Real>(wf: &InDiracWf<F>, mass: F, width: F) -> InDiracWf<F> {
     InDiracWf::from_spinor(
         propagate_fin_bare(&wf.spinor, &wf.momentum, mass, width),
         wf.momentum,
@@ -456,7 +469,7 @@ pub fn propagate_fin<F: Real>(wf: &InDiracWf<F>, mass: F, width: F) -> InDiracWf
 }
 
 /// Dirac propagator on a flow-out (bra) off-shell current.
-pub fn propagate_fout<F: Real>(wf: &OutDiracWf<F>, mass: F, width: F) -> OutDiracWf<F> {
+pub(crate) fn propagate_fout<F: Real>(wf: &OutDiracWf<F>, mass: F, width: F) -> OutDiracWf<F> {
     OutDiracWf::from_spinor(
         propagate_fout_bare(&wf.spinor, &wf.momentum, mass, width),
         wf.momentum,
@@ -465,7 +478,7 @@ pub fn propagate_fout<F: Real>(wf: &OutDiracWf<F>, mass: F, width: F) -> OutDira
 
 /// Vector propagator on an off-shell vector current. The numerator is
 /// `-i (g - q q / m²)` (massive) or `-i g / q²` (massless); see [`propagate_vector_bare`].
-pub fn propagate_vector<F: Real>(wf: &VectorWf<F>, mass: F, width: F) -> VectorWf<F> {
+pub(crate) fn propagate_vector<F: Real>(wf: &VectorWf<F>, mass: F, width: F) -> VectorWf<F> {
     VectorWf {
         eps: propagate_vector_bare(&wf.eps, &wf.momentum, mass, width),
         momentum: wf.momentum,
@@ -478,7 +491,7 @@ pub fn propagate_vector<F: Real>(wf: &VectorWf<F>, mass: F, width: F) -> VectorW
 /// `build_at_leg`'s scalar-root arms); the combination is pinned per-diagram by the
 /// internal-H chains (ee→μμττ, uux 2→6, and the b b̄ 2→6 spine-Yukawa diagrams) and the
 /// external-H chains (e+e-→τ+τ-H) against MadGraph AMP().
-pub fn propagate_scalar<F: Real>(wf: &ScalarWf<F>, mass: F, width: F) -> ScalarWf<F> {
+pub(crate) fn propagate_scalar<F: Real>(wf: &ScalarWf<F>, mass: F, width: F) -> ScalarWf<F> {
     ScalarWf {
         value: propagate_scalar_bare(wf.value, &wf.momentum, mass, width),
         momentum: wf.momentum,
@@ -495,14 +508,14 @@ pub fn propagate_scalar<F: Real>(wf: &ScalarWf<F>, mass: F, width: F) -> ScalarW
 // would double-count it in the `Mul`/`Metric` bookkeeping.
 
 /// `PMom`: the 4-momentum of the single input, as a vector current.
-pub fn pmom<F: Real>(input: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn pmom<F: Real>(input: &WaveformSlot<F>) -> WaveformSlot<F> {
     let momentum = input.momentum().expect("PMom: empty slot");
     WaveformSlot::Vector(pmom_from_mom(momentum))
 }
 
 /// A structure momentum promoted to a vector current with zero routing momentum (see the
 /// `PMom`/`PMomOut` note above): the `P` slots carry no routing momentum of their own.
-pub fn pmom_from_mom<F: Real>(momentum: LorentzVector<F>) -> VectorWf<F> {
+pub(crate) fn pmom_from_mom<F: Real>(momentum: LorentzVector<F>) -> VectorWf<F> {
     VectorWf {
         eps: ComplexVector::from(momentum),
         momentum: LorentzVector::zero(),
@@ -522,7 +535,7 @@ pub fn pmom_from_mom<F: Real>(momentum: LorentzVector<F>) -> VectorWf<F> {
 /// ([`gamma_vout_c`]). Summing a fermion pair with two plus signs instead reads the
 /// wrong momentum into every `P` that names the output leg of an `FFV` vertex,
 /// which is invisible until a structure puts one there (SMEFTsim's dipoles do).
-pub fn pmom_out<'a, F: Real + 'a>(
+pub(crate) fn pmom_out<'a, F: Real + 'a>(
     children: impl IntoIterator<Item = &'a WaveformSlot<F>>,
 ) -> WaveformSlot<F> {
     let momentum = -children.into_iter().fold(LorentzVector::zero(), |acc, c| {
@@ -566,7 +579,7 @@ pub fn gamma_iout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> Waveform
 
 /// `GammaOout`: continue a flow-out (bra) fermion line by slashing it with the vector
 /// current, `ψ̄ε̸`, q = f.p + v.p (Fortran `fvoxxx`). See [`gamma_iout`].
-pub fn gamma_oout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn gamma_oout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
     off_shell_fermion_current(v, f)
 }
 
@@ -578,7 +591,7 @@ pub fn gamma_oout<F: Real>(v: &WaveformSlot<F>, f: &WaveformSlot<F>) -> Waveform
 ///
 /// `Bispinor::slash` is adjoint-dependent, so the left/right action is automatic.
 /// The propagator `(q̸+m)/D` is applied in a separate `Propagate` step.
-pub fn off_shell_fermion_current<F: Real>(
+pub(crate) fn off_shell_fermion_current<F: Real>(
     v: &WaveformSlot<F>,
     fermion: &WaveformSlot<F>,
 ) -> WaveformSlot<F> {
@@ -594,7 +607,7 @@ pub fn off_shell_fermion_current<F: Real>(
 
 /// Continue a flow-in (ket) fermion line by slashing it with the vector current, `ε̸ψ`,
 /// q = f.p − v.p (Fortran `fvixxx`).
-pub fn off_shell_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>) -> InDiracWf<F> {
+pub(crate) fn off_shell_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>) -> InDiracWf<F> {
     InDiracWf::from_spinor(
         off_shell_fin_bare(&v.eps, &fi.spinor),
         fi.momentum - v.momentum,
@@ -603,7 +616,7 @@ pub fn off_shell_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>) -> InDiracWf<F
 
 /// Continue a flow-out (bra) fermion line by slashing it with the vector current, `ψ̄ε̸`,
 /// q = f.p + v.p (Fortran `fvoxxx`).
-pub fn off_shell_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>) -> OutDiracWf<F> {
+pub(crate) fn off_shell_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>) -> OutDiracWf<F> {
     OutDiracWf::from_spinor(
         off_shell_fout_bare(&v.eps, &fo.spinor),
         fo.momentum + v.momentum,
@@ -623,7 +636,10 @@ pub fn proj_p<F: Real>(f: &WaveformSlot<F>) -> WaveformSlot<F> {
 /// `ProjM`/`ProjP`: chiral projection on a continuing fermion current, preserving the
 /// input adjoint. `project_left`/`project_right` are adjoint-dependent (a bra projects
 /// different components than a ket), so the same call is correct for both flows.
-pub fn chiral_project<F: Real>(child: &WaveformSlot<F>, chirality: Chirality) -> WaveformSlot<F> {
+pub(crate) fn chiral_project<F: Real>(
+    child: &WaveformSlot<F>,
+    chirality: Chirality,
+) -> WaveformSlot<F> {
     match child {
         WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(proj_fin(f, chirality)),
         WaveformSlot::FermionOut(f) => WaveformSlot::FermionOut(proj_fout(f, chirality)),
@@ -649,7 +665,7 @@ fn project_spinor<F: Real, Fl: DiracAdjoint>(
 /// `γ⁵ = P_R − P_L` is diagonal in the Weyl basis, so the left action on a ket and
 /// the right action on a bra are the same weighting of the stored blocks — which is
 /// what lets one kernel serve both flows, as [`chiral_project`] does.
-pub fn gamma5<F: Real>(child: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn gamma5<F: Real>(child: &WaveformSlot<F>) -> WaveformSlot<F> {
     match child {
         WaveformSlot::FermionIn(f) => WaveformSlot::FermionIn(InDiracWf::from_spinor(
             gamma5_fin_bare(&f.spinor),
@@ -669,12 +685,12 @@ fn gamma5_spinor<F: Real, Fl: DiracAdjoint>(s: &Bispinor<F, Fl>) -> Bispinor<F, 
 }
 
 /// Chiral projection of a flow-in fermion current, preserving the flow.
-pub fn proj_fin<F: Real>(f: &InDiracWf<F>, chirality: Chirality) -> InDiracWf<F> {
+pub(crate) fn proj_fin<F: Real>(f: &InDiracWf<F>, chirality: Chirality) -> InDiracWf<F> {
     InDiracWf::from_spinor(proj_fin_bare(&f.spinor, chirality), f.momentum)
 }
 
 /// Chiral projection of a flow-out fermion current, preserving the flow.
-pub fn proj_fout<F: Real>(f: &OutDiracWf<F>, chirality: Chirality) -> OutDiracWf<F> {
+pub(crate) fn proj_fout<F: Real>(f: &OutDiracWf<F>, chirality: Chirality) -> OutDiracWf<F> {
     OutDiracWf::from_spinor(proj_fout_bare(&f.spinor, chirality), f.momentum)
 }
 
@@ -688,7 +704,11 @@ pub fn gamma_vout<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> Waveform
 /// `ψ̄ γ^μ ψ`. Reading the fermion line against the vertex's defined adjoint conjugates
 /// the structure as C γ^{μT} C⁻¹ = −γ^μ, so a `reversed` line picks up a relative −1.
 /// (Scalar/pseudoscalar structures have +1 and need no flip.)
-pub fn gamma_vout_c<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, reversed: bool) -> VectorWf<F> {
+pub(crate) fn gamma_vout_c<F: Real>(
+    fo: &OutDiracWf<F>,
+    fi: &InDiracWf<F>,
+    reversed: bool,
+) -> VectorWf<F> {
     VectorWf {
         eps: gamma_vout_bare(&fo.spinor, &fi.spinor, reversed),
         momentum: fo.momentum - fi.momentum,
@@ -702,7 +722,9 @@ pub fn gamma_vout_c<F: Real>(fo: &OutDiracWf<F>, fi: &InDiracWf<F>, reversed: bo
 // couplings arrive as scalar operands and the kernel forms `g_L·(left term) +
 // g_R·(right term)` directly. Relative to the generic composition this reorders
 // floating-point operations (couplings scale per-chirality before the sum), so
-// agreement is approximate (≲1e-15 per kernel), certified by the `fused_*` tests.
+// agreement is to rounding, not bit-exact: `ffv_vout_matches_generic_chiral_pair` and
+// `ffv_fermion_out_matches_generic_chiral_pair` hold it at `FUSED_TOL = 1e-14`, and
+// `outer_projector_equals_flipped_inner_bit_exactly` pins the projector-tag swap.
 
 /// `FfvVout`: fused chiral [`gamma_vout`] — `g_L·GammaVout(a, ProjM(b)) +
 /// g_R·GammaVout(a, ProjP(b))` in one step.
@@ -724,7 +746,7 @@ pub fn ffv_vout<F: Real>(
 }
 
 /// `FfvVout` on resolved bra/ket currents and effective couplings.
-pub fn ffv_vout_c<F: Real>(
+pub(crate) fn ffv_vout_c<F: Real>(
     fo: &OutDiracWf<F>,
     fi: &InDiracWf<F>,
     gl: C<F>,
@@ -750,7 +772,7 @@ pub fn ffv_iout<F: Real>(
 
 /// `FfvOout`: fused chiral [`gamma_oout`] — continue a flow-out fermion line through a
 /// chiral-pair FFV vertex. See [`fused_chiral_fermion_current`].
-pub fn ffv_oout<F: Real>(
+pub(crate) fn ffv_oout<F: Real>(
     v: &WaveformSlot<F>,
     f: &WaveformSlot<F>,
     gl: &WaveformSlot<F>,
@@ -802,7 +824,12 @@ fn chiral_weighted<F: Real, Adj: DiracAdjoint>(
 }
 
 /// Fused chiral off-shell current for a flow-in fermion (ket routing `f − v`).
-pub fn ffv_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>, gl: C<F>, gr: C<F>) -> InDiracWf<F> {
+pub(crate) fn ffv_fin<F: Real>(
+    v: &VectorWf<F>,
+    fi: &InDiracWf<F>,
+    gl: C<F>,
+    gr: C<F>,
+) -> InDiracWf<F> {
     InDiracWf::from_spinor(
         ffv_fin_bare(&v.eps, &fi.spinor, gl, gr),
         fi.momentum - v.momentum,
@@ -810,7 +837,12 @@ pub fn ffv_fin<F: Real>(v: &VectorWf<F>, fi: &InDiracWf<F>, gl: C<F>, gr: C<F>) 
 }
 
 /// Fused chiral off-shell current for a flow-out fermion (bra routing `f + v`).
-pub fn ffv_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>, gl: C<F>, gr: C<F>) -> OutDiracWf<F> {
+pub(crate) fn ffv_fout<F: Real>(
+    v: &VectorWf<F>,
+    fo: &OutDiracWf<F>,
+    gl: C<F>,
+    gr: C<F>,
+) -> OutDiracWf<F> {
     OutDiracWf::from_spinor(
         ffv_fout_bare(&v.eps, &fo.spinor, gl, gr),
         fo.momentum + v.momentum,
@@ -818,17 +850,17 @@ pub fn ffv_fout<F: Real>(v: &VectorWf<F>, fo: &OutDiracWf<F>, gl: C<F>, gr: C<F>
 }
 
 /// `ProjMAmp`: left chiral scalar bilinear `ψ̄ P_L ψ`. See [`scalar_bilinear_current`].
-pub fn proj_m_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn proj_m_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     scalar_bilinear_current(a, b, Chirality::Left)
 }
 
 /// `ProjPAmp`: right chiral scalar bilinear `ψ̄ P_R ψ`. See [`scalar_bilinear_current`].
-pub fn proj_p_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn proj_p_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     scalar_bilinear_current(a, b, Chirality::Right)
 }
 
 /// `IdentityAmp`: full scalar bilinear `ψ̄ δ ψ`. See [`scalar_bilinear_current`].
-pub fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     scalar_bilinear_current(a, b, Chirality::Both)
 }
 
@@ -837,7 +869,7 @@ pub fn identity_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> Wavefo
 /// = γ⁵`, so reading the pair against the vertex's defined adjoint leaves the
 /// structure unchanged (the −1 a crossed pair needs is a rooting sign, applied in
 /// [`super::root_lorentz`] alongside the `ProjM`/`Identity` case).
-pub fn gamma5_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn gamma5_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     let (fo, fi, _) = resolve_bra_ket(a, b);
     WaveformSlot::Scalar(ScalarWf {
         value: pseudoscalar_bilinear_bare(&fo.spinor, &fi.spinor),
@@ -847,7 +879,7 @@ pub fn gamma5_amp<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> Waveform
 
 /// `ProjMAmp`/`ProjPAmp`/`IdentityAmp`: scalar bilinear `ψ̄ Γ ψ` (`Γ = P_L`, `P_R`, or
 /// `1`); the bra/ket are picked by the legs' actual adjoint.
-pub fn scalar_bilinear_current<F: Real>(
+pub(crate) fn scalar_bilinear_current<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     chirality: Chirality,
@@ -857,7 +889,7 @@ pub fn scalar_bilinear_current<F: Real>(
 }
 
 /// Scalar bilinear `ψ̄ Γ ψ` on resolved bra/ket currents (`Γ = P_L`, `P_R`, or `1`).
-pub fn scalar_bilinear_c<F: Real>(
+pub(crate) fn scalar_bilinear_c<F: Real>(
     fo: &OutDiracWf<F>,
     fi: &InDiracWf<F>,
     chirality: Chirality,
@@ -871,7 +903,7 @@ pub fn scalar_bilinear_c<F: Real>(
 // ──────────────────────────── metric / vector currents ────────────────────────────
 
 /// `Metric`: contract two vectors → scalar.
-pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     let WaveformSlot::Vector(v1) = a else {
         panic!("Metric: expected vector input");
     };
@@ -882,7 +914,7 @@ pub fn metric<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot
 }
 
 /// `Metric`: contract two vectors → scalar.
-pub fn metric_c<F: Real>(v1: &VectorWf<F>, v2: &VectorWf<F>) -> ScalarWf<F> {
+pub(crate) fn metric_c<F: Real>(v1: &VectorWf<F>, v2: &VectorWf<F>) -> ScalarWf<F> {
     ScalarWf {
         value: metric_bare(&v1.eps, &v2.eps),
         momentum: v1.momentum + v2.momentum,
@@ -896,7 +928,7 @@ pub fn metric_c<F: Real>(v1: &VectorWf<F>, v2: &VectorWf<F>) -> ScalarWf<F> {
 /// so no phase lives here (ALOHA's `VVS1P1N_1` = `−i·g·V` folds the propagator's −i
 /// into the vertex routine instead). A trailing scalar leg (the Higgs) multiplies in
 /// at the enclosing `Mul`.
-pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
     let WaveformSlot::Vector(vin) = v else {
         panic!("MetricVout: expected vector input");
     };
@@ -905,12 +937,12 @@ pub fn metric_vout<F: Real>(v: &WaveformSlot<F>) -> WaveformSlot<F> {
 
 /// `MetricVout`: the contravariant current `g^{μν}V_ν = V^μ` — an identity on
 /// contravariant storage.
-pub fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
+pub(crate) fn metric_vout_c<F: Real>(vin: &VectorWf<F>) -> VectorWf<F> {
     *vin
 }
 
 /// `EpsilonVout`: three vector currents → the off-shell vector `ε^{μνρσ} a_μ b_ν c_ρ`.
-pub fn epsilon_vout<F: Real>(
+pub(crate) fn epsilon_vout<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     c: &WaveformSlot<F>,
@@ -923,7 +955,7 @@ pub fn epsilon_vout<F: Real>(
 }
 
 /// `EpsilonAmp`: four vector currents → the scalar `ε^{μνρσ} a_μ b_ν c_ρ d_σ`.
-pub fn epsilon_amp<F: Real>(
+pub(crate) fn epsilon_amp<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     c: &WaveformSlot<F>,
@@ -939,18 +971,18 @@ pub fn epsilon_amp<F: Real>(
 // ──────────────────── tensor-tensor (cyclic four-fermion) kernels ────────────────────
 
 /// `FierzOut`: the cut fermion line as a Clifford element (see [`fierz_out_bare`]).
-pub fn fierz_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn fierz_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     fierz_out_current(a, b, false)
 }
 
 /// `FierzOutRev`: [`fierz_out`] with the two lines' shared indices in opposite orders.
-pub fn fierz_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn fierz_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     fierz_out_current(a, b, true)
 }
 
 /// The cut line's Clifford element, carrying the momentum a fermion pair routes
 /// (`p_bra − p_ket`, as for [`gamma_vout`]).
-pub fn fierz_out_current<F: Real>(
+pub(crate) fn fierz_out_current<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     reversed_order: bool,
@@ -965,13 +997,19 @@ pub fn fierz_out_current<F: Real>(
 /// `MultivectorIout`: continue a flow-in (ket) fermion line by applying the Clifford
 /// element the cut line handed over, `M ψ`. Same kernel as [`multivector_oout`] because
 /// [`multivector_current`] follows the input fermion's adjoint.
-pub fn multivector_iout<F: Real>(m: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn multivector_iout<F: Real>(
+    m: &WaveformSlot<F>,
+    f: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
     multivector_current(m, f)
 }
 
 /// `MultivectorOout`: continue a flow-out (bra) fermion line, `ψ̄ M`. See
 /// [`multivector_iout`].
-pub fn multivector_oout<F: Real>(m: &WaveformSlot<F>, f: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn multivector_oout<F: Real>(
+    m: &WaveformSlot<F>,
+    f: &WaveformSlot<F>,
+) -> WaveformSlot<F> {
     multivector_current(m, f)
 }
 
@@ -979,7 +1017,7 @@ pub fn multivector_oout<F: Real>(m: &WaveformSlot<F>, f: &WaveformSlot<F>) -> Wa
 /// cut line applied to the continuing fermion. The current follows the input's adjoint
 /// (`M ψ` on a ket, `ψ̄ M` on a bra) and routes the element's momentum with the sign that
 /// adjoint dictates, exactly as [`off_shell_fermion_current`] does for a vector leg.
-pub fn multivector_current<F: Real>(
+pub(crate) fn multivector_current<F: Real>(
     m: &WaveformSlot<F>,
     fermion: &WaveformSlot<F>,
 ) -> WaveformSlot<F> {
@@ -1001,7 +1039,7 @@ pub fn multivector_current<F: Real>(
 
 /// `FierzPair`: close the surviving fermion line into the amplitude against the Clifford
 /// element the cut line produced, `ψ̄ M ψ` (see [`fierz_pair_bare`]).
-pub fn fierz_pair<F: Real>(
+pub(crate) fn fierz_pair<F: Real>(
     m: &WaveformSlot<F>,
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
@@ -1018,7 +1056,7 @@ pub fn fierz_pair<F: Real>(
 
 /// `SigmaVout`: two fermions and a vector → the off-shell vector current
 /// `(ψ̄ Σ^{μν} ψ) v_ν` (see [`sigma_vout_bare`]).
-pub fn sigma_vout<F: Real>(
+pub(crate) fn sigma_vout<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     v: &WaveformSlot<F>,
@@ -1028,7 +1066,7 @@ pub fn sigma_vout<F: Real>(
 
 /// `SigmaVoutRev`: [`sigma_vout`] with the free index on `Sigma`'s second Lorentz
 /// slot, `(ψ̄ Σ^{νμ} ψ) v_ν` — the negative of it.
-pub fn sigma_vout_rev<F: Real>(
+pub(crate) fn sigma_vout_rev<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     v: &WaveformSlot<F>,
@@ -1039,7 +1077,7 @@ pub fn sigma_vout_rev<F: Real>(
 /// The `Sigma` vector current on slots. The pair's momentum enters as a fermion
 /// bilinear's (`p_bra − p_ket`) and the contracted vector adds its own, as it does at
 /// any other vertex that reads a vector input.
-pub fn sigma_vout_current<F: Real>(
+pub(crate) fn sigma_vout_current<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     v: &WaveformSlot<F>,
@@ -1057,7 +1095,7 @@ pub fn sigma_vout_current<F: Real>(
 
 /// `SigmaMv`: two vectors → the Clifford element `Σ^{μν} a_μ b_ν`
 /// (see [`sigma_mv_bare`]).
-pub fn sigma_mv<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn sigma_mv<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     let [a, b] = expect_vectors([a, b]);
     WaveformSlot::Multivector(MultivectorWf {
         m: sigma_mv_bare(&a.eps, &b.eps),
@@ -1067,17 +1105,17 @@ pub fn sigma_mv<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSl
 
 /// `SigmaOut`: the cut line of a `Sigma ⊗ Sigma` contact as a Clifford element
 /// (see [`sigma_out_bare`]), carrying the momentum a fermion pair routes.
-pub fn sigma_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn sigma_out<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     sigma_out_current(a, b, false)
 }
 
 /// `SigmaOutRev`: [`sigma_out`] with the two lines' shared indices in opposite orders.
-pub fn sigma_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
+pub(crate) fn sigma_out_rev<F: Real>(a: &WaveformSlot<F>, b: &WaveformSlot<F>) -> WaveformSlot<F> {
     sigma_out_current(a, b, true)
 }
 
 /// The cut `Sigma` line's Clifford element on slots.
-pub fn sigma_out_current<F: Real>(
+pub(crate) fn sigma_out_current<F: Real>(
     a: &WaveformSlot<F>,
     b: &WaveformSlot<F>,
     reversed_order: bool,
@@ -1398,7 +1436,7 @@ mod tests {
         check_agree(
             256,
             0x11AA02,
-            1e-12,
+            CLIFFORD_TOL,
             |rng| vec![rand_bra(rng), rand_ket(rng)],
             |c| identity_amp(&c[0], &c[1]),
             |c| {

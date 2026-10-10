@@ -72,7 +72,8 @@ pub(super) fn resolve(values: &mut BTreeMap<String, ParamValue>) -> Result<(), R
     }
 
     // MadEvent's lower limit on τ is `(Σ xe)²/s`, where a jet's energy floor is
-    // `max(ptj, sqrt(xqcut² − m²))` (`myamp.f:343-351`, `setxqcuts`), and pairs of
+    // `max(ptj, sqrt(xqcut² − m²))` (`set_peaks`, `myamp.f:343-351`, reading the
+    // `xqcuti` that `setxqcuts` sets at `setcuts.f:951`), and pairs of
     // outgoing legs meeting in an s-channel take a further floor of `xqcut` on
     // their energy in the channels where they meet. With the jet threshold at
     // `xqcut` every such floor is already implied by the jet cut (a leg's energy

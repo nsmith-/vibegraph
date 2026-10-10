@@ -23,9 +23,9 @@
 //! two agree bit for bit.
 
 pub mod alphas;
-pub mod extrap;
+pub(crate) mod extrap;
 pub mod grid;
-pub mod interp;
+pub(crate) mod interp;
 
 use std::path::{Path, PathBuf};
 
@@ -34,7 +34,7 @@ use grid::{GridError, SetInfo, SubGrid};
 use interp::{Bicubic2D, LogBicubic};
 
 /// LHAPDF's flavor alias: PDG code 0 means the gluon (21) in `.dat` flavor lists.
-pub fn normalize_flavor_pdg(pdg: i32) -> i32 {
+pub(crate) fn normalize_flavor_pdg(pdg: i32) -> i32 {
     if pdg == 0 {
         21
     } else {
@@ -49,7 +49,7 @@ pub const FLAVOR_SLOTS: usize = 16;
 
 /// Every tabulated flavor's `x·f` at one `(x, Q²)`, indexed by [`flavor_slot`].
 /// A slot the member does not carry holds exactly zero.
-pub type FlavorRow = [f64; FLAVOR_SLOTS];
+pub(crate) type FlavorRow = [f64; FLAVOR_SLOTS];
 
 /// The slot PDG code `pdg` occupies in a [`FlavorRow`] (0 aliases the gluon 21),
 /// or `None` for a code no parton density is tabulated for.
@@ -59,7 +59,7 @@ pub type FlavorRow = [f64; FLAVOR_SLOTS];
 /// can resolve its own beam flavors to slots once at setup and index the rows
 /// directly from then on.
 #[inline]
-pub fn flavor_slot(pdg: i32) -> Option<usize> {
+pub(crate) fn flavor_slot(pdg: i32) -> Option<usize> {
     match normalize_flavor_pdg(pdg) {
         p @ -6..=-1 => Some((p + 6) as usize),
         p @ 1..=6 => Some((p + 5) as usize),
@@ -138,7 +138,8 @@ impl PdfSet {
 /// interpolator, and the continuation that reads points past the grid.
 #[derive(Debug)]
 pub struct PdfMember {
-    pub subgrids: Vec<SubGrid>,
+    /// Read-only: `interp` is precomputed from these.
+    subgrids: Vec<SubGrid>,
     interp: LogBicubic,
     extrap: Continuation,
     force_positive: i32,
@@ -159,16 +160,16 @@ impl PdfMember {
         }
     }
 
+    /// The parsed subgrids, in file order.
+    pub fn subgrids(&self) -> &[SubGrid] {
+        &self.subgrids
+    }
+
     /// Set the `ForcePositive` level (`0`, `1` or `2`) applied to every value
     /// this member hands out.
     pub fn with_force_positive(mut self, level: i32) -> Self {
         self.force_positive = level;
         self
-    }
-
-    /// The `ForcePositive` level this member applies.
-    pub fn force_positive(&self) -> i32 {
-        self.force_positive
     }
 
     /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21).
@@ -215,7 +216,12 @@ impl PdfMember {
     /// continuation: that is assembled from readings at the grid's own edge, so
     /// it has no all-flavor form to share, and production factorisation scales
     /// sit inside the grid at all but the hardest points.
-    pub fn try_xfx_all(&self, x: f64, q2: f64, out: &mut FlavorRow) -> Result<(), PdfPointError> {
+    pub(crate) fn try_xfx_all(
+        &self,
+        x: f64,
+        q2: f64,
+        out: &mut FlavorRow,
+    ) -> Result<(), PdfPointError> {
         if !(x > 0.0) || !x.is_finite() || !(q2 >= 0.0) || !q2.is_finite() {
             return Err(PdfPointError::Unphysical { x, q2 });
         }

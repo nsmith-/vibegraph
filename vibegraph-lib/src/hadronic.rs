@@ -6,7 +6,8 @@
 //! arbitrary MG-validated process with no PDF convolution over any final-state
 //! multiplicity, sampled with flat RAMBO or — once
 //! [`FixedBeamIntegrand::use_multichannel`] has run — a resonance-aware
-//! per-diagram multichannel map that resolves Breit–Wigner peaks. Proton beams
+//! multichannel map, one channel per MadGraph configuration, that resolves
+//! Breit–Wigner peaks. Proton beams
 //! (`lpp = 1`) are [`crate::proton`]'s flavour-group path, which shares this
 //! module's subprocess compilation, scale prescription and averaging factors.
 //!
@@ -57,7 +58,7 @@ use crate::phasespace::{
     PhaseSpaceMap, PhaseSpacePoint, RamboChannel, GEV2_TO_PB,
 };
 use crate::progress;
-use crate::runcard::RunCard;
+use crate::runcard::{RunCard, RunCardError};
 use crate::select::select_index;
 use crate::ufo::{EvaluatedModel, UFOModel};
 use crate::unweight::ChannelIntegrand;
@@ -65,8 +66,8 @@ use crate::vegas::{IterationCombination, VegasGrid, VegasResult};
 
 type V = LorentzVector<f64>;
 
-pub const VEGAS_NBINS: usize = 64;
-pub const VEGAS_ALPHA: f64 = 1.5;
+pub(crate) const VEGAS_NBINS: usize = 64;
+pub(crate) const VEGAS_ALPHA: f64 = 1.5;
 
 /// Grid-damping exponent used once a resonance-aware multichannel map is
 /// installed, in place of the [`VEGAS_ALPHA`] Lepage recommends for a raw
@@ -78,13 +79,15 @@ pub const VEGAS_ALPHA: f64 = 1.5;
 /// statistics are dominated by sampling noise. At `1.5` the refinement amplifies
 /// that noise: the grid concentrates into a spurious bin, later iterations sample
 /// a narrow region where the integrand is smooth and so report a small integral
-/// with a small variance, and — since iterations are combined by `1/σ²` — those
-/// confident, wrong iterations dominate the result. Measured on
-/// `e+ e- > mu+ mu- ta+ ta-` (25 channels), `1.5` collapses one seed in five to 36%
-/// of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable across every
-/// seed *and* halves the error — the grid still absorbing the residual structure
-/// the channel maps do not cover.
-pub const VEGAS_ALPHA_MAPPED: f64 = 0.5;
+/// with a small variance, and under a `1/σ²` combination those confident, wrong
+/// iterations dominate the result. Measured on `e+ e- > mu+ mu- ta+ ta-`
+/// (25 channels) with iterations combined by `1/σ²`, `1.5` collapses one seed in
+/// five to 36% of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable
+/// across every seed *and* halves the error — the grid still absorbing the
+/// residual structure the channel maps do not cover. Under the default unweighted
+/// combination ([`crate::vegas::IterationCombination`]) the
+/// value has not been re-measured.
+pub(crate) const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 
 /// RNG substream index the multichannel α-adaptation survey draws on, kept distinct
 /// from the VEGAS integration substreams so the survey and the integral neither
@@ -135,7 +138,7 @@ pub enum HadronicError {
         frame_id: i64,
     },
     #[error("run card: {0}")]
-    RunCard(#[from] crate::runcard::RunCardError),
+    RunCard(#[from] RunCardError),
     #[error("run card scale prescription: {0}")]
     Scale(#[from] ScaleError),
     #[error("running strong coupling: {0}")]
@@ -170,16 +173,9 @@ pub struct EventScaleSource {
     kind: ScaleSourceKind,
     alpha_s: Option<AlphaSSource>,
     /// Whether the card's single-diagram enhancement weights an integration
-    /// configuration by its squared amplitude alone.
-    ///
-    /// `matrix1.f`'s `MULTI_CHANNEL` block weights configuration `c` by
-    /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` returns `CC_c = 1`
-    /// only when `sde_strat == 1` and `tmin_for_channel == -1`. Off that
-    /// conjunction the weight is a product of propagator denominators — at
-    /// `sde_strat == 2` the squared amplitude is discarded outright — and this
-    /// crate has no implementation of it, so the scale keeps the sampler's
-    /// channel there instead of drawing a configuration this rule does not
-    /// describe.
+    /// configuration by its squared amplitude alone: the
+    /// [`configurations_weighted_by_amp2`] rule, which
+    /// [`compile_configuration_weights`] applies to the draw itself.
     amp2_configuration_weights: bool,
 }
 
@@ -218,7 +214,7 @@ pub struct SampledChannel {
 impl SampledChannel {
     /// The `channel`-th channel of the only channel set — a fixed-beam run,
     /// where one subprocess supplies every channel.
-    pub fn sole(channel: usize) -> Self {
+    pub(crate) fn sole(channel: usize) -> Self {
         SampledChannel { group: 0, channel }
     }
 }
@@ -235,7 +231,7 @@ pub struct Channels {
 }
 
 impl Channels {
-    pub fn input(&self, this_config: usize) -> ClusterInput<'_> {
+    pub(crate) fn input(&self, this_config: usize) -> ClusterInput<'_> {
         ClusterInput {
             set: &self.derived.set,
             colors: &self.colors,
@@ -247,7 +243,7 @@ impl Channels {
 
     /// The colour table the clustering and the matched reweighting read codes
     /// through.
-    pub fn colors(&self) -> &ColorTable {
+    pub(crate) fn colors(&self) -> &ColorTable {
         &self.colors
     }
 
@@ -257,7 +253,7 @@ impl Channels {
     /// The sampling channels and the channel forests are one per configuration of
     /// MadGraph's channel mapping and are built from the same diagram slice, so
     /// the two numberings are the same one shifted by the Fortran origin.
-    pub fn config_of_channel(&self, channel: usize) -> usize {
+    pub(crate) fn config_of_channel(&self, channel: usize) -> usize {
         assert!(
             channel < self.len(),
             "a point was drawn in channel {channel} of {}",
@@ -269,7 +265,8 @@ impl Channels {
     /// The integration channel diagram `d` belongs to, or `None` where the vertex
     /// filter dropped it. Several diagrams share a channel wherever the
     /// configuration mapping merges them.
-    pub fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
+    #[cfg(test)]
+    pub(crate) fn config_of_diagram(&self, diagram: usize) -> Option<usize> {
         self.derived
             .config_of_diagram
             .get(diagram)
@@ -292,7 +289,7 @@ impl Channels {
 impl EventScaleSource {
     /// One constant scale on both beams and no running coupling — the prescription
     /// a caller that supplies `μF` directly is asking for.
-    pub fn constant(mu: f64) -> Self {
+    pub(crate) fn constant(mu: f64) -> Self {
         EventScaleSource {
             kind: ScaleSourceKind::Constant(EventScales::unmatched(mu, [mu, mu])),
             alpha_s: None,
@@ -306,7 +303,7 @@ impl EventScaleSource {
     /// is built at all, and `param_card_as` is the `αs(M_Z)` it would run from —
     /// `None` where the model declares no strong coupling, which is a refusal
     /// rather than a default when one was asked for.
-    pub fn from_run_card(
+    pub(crate) fn from_run_card(
         card: &RunCard,
         param_card_as: Option<f64>,
         grid: Option<&AlphaSInfo>,
@@ -345,8 +342,7 @@ impl EventScaleSource {
         Ok(EventScaleSource {
             kind,
             alpha_s,
-            amp2_configuration_weights: card.int("SDE_strategy") == 1
-                && card.float("tmin_for_channel") == -1.0,
+            amp2_configuration_weights: configurations_weighted_by_amp2(card)?,
         })
     }
 
@@ -359,7 +355,7 @@ impl EventScaleSource {
     /// colour flow's configuration is drawn under.
     ///
     /// [`weights_configurations_by_amp2`]: Self::weights_configurations_by_amp2
-    pub fn draws_configuration(&self) -> bool {
+    pub(crate) fn draws_configuration(&self) -> bool {
         matches!(
             &self.kind,
             ScaleSourceKind::PerEvent {
@@ -373,19 +369,16 @@ impl EventScaleSource {
     /// amplitude alone, which is the run card's own condition rather than anything
     /// about the prescription.
     ///
-    /// `matrix1.f`'s multi-channel block weights configuration `c` by
-    /// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone at `2`, where
-    /// `CC_c` is `genps.f`'s `get_channel_cut` — a product of inverse propagator
-    /// denominators that short-circuits to `1` exactly when `SDE_strategy = 1` and
-    /// `tmin_for_channel = -1`. Both the configuration a point's cluster scale is
-    /// taken in and the one its colour flow is drawn in follow that weight, so
-    /// they read this one condition.
+    /// This reports [`configurations_weighted_by_amp2`] for the card the source
+    /// was compiled from: the rule [`compile_configuration_weights`] installs on
+    /// an integrand, which both the configuration a point's cluster scale is
+    /// taken in and the one its colour flow is drawn in follow.
     pub fn weights_configurations_by_amp2(&self) -> bool {
         self.amp2_configuration_weights
     }
 
     /// The scales, when they are the same on every event.
-    pub fn constant_scales(&self) -> Option<EventScales> {
+    pub(crate) fn constant_scales(&self) -> Option<EventScales> {
         match self.kind {
             ScaleSourceKind::Constant(scales) => Some(scales),
             ScaleSourceKind::PerEvent { .. } => None,
@@ -423,19 +416,7 @@ impl EventScaleSource {
             ScaleSourceKind::PerEvent { choice, channels } => {
                 let event = ScaleEvent { incoming, outgoing };
                 match channels {
-                    Some(sets) => {
-                        let set = sets.get(channel.group).unwrap_or_else(|| {
-                            panic!(
-                                "a point was drawn in channel group {} of {}",
-                                channel.group,
-                                sets.len()
-                            )
-                        });
-                        choice.cluster_scales(
-                            &event,
-                            &set.input(set.config_of_channel(channel.channel)),
-                        )
-                    }
+                    Some(sets) => choice.cluster_scales(&event, &channel_input(sets, channel)),
                     None => choice.scales(&event),
                 }
             }
@@ -452,7 +433,7 @@ impl EventScaleSource {
     /// that evaluates points has to be able to say "no weight" without saying
     /// "this run cannot proceed" — and every other error means exactly the
     /// latter, so it stays an `Err` and stays fatal at the call site.
-    pub fn point_scales(
+    pub(crate) fn point_scales(
         &self,
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
@@ -460,15 +441,13 @@ impl EventScaleSource {
     ) -> Result<PointScales, ScaleError> {
         match self.scales(incoming, outgoing, channel) {
             Ok(scales) => Ok(PointScales::Scales(scales)),
-            Err(ScaleError::Clustering(
-                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
-            )) => Ok(PointScales::Vetoed),
+            Err(e) if vetoes_point(&e) => Ok(PointScales::Vetoed),
             Err(other) => Err(other),
         }
     }
 
     /// The constants the matched reweighting reads, or `None` without matching.
-    pub fn rewgt_settings(&self) -> Option<RewgtSettings> {
+    pub(crate) fn rewgt_settings(&self) -> Option<RewgtSettings> {
         match &self.kind {
             ScaleSourceKind::Constant(_) => None,
             ScaleSourceKind::PerEvent { choice, .. } => choice.rewgt_settings(),
@@ -482,7 +461,7 @@ impl EventScaleSource {
     /// # Panics
     ///
     /// If `channel` names a group this prescription has no channel set for.
-    pub fn point_history(
+    pub(crate) fn point_history(
         &self,
         incoming: [[f64; 4]; 2],
         outgoing: &[[f64; 4]],
@@ -505,26 +484,44 @@ impl EventScaleSource {
                 PointScales::Vetoed => PointHistory::Vetoed,
             });
         };
-        let set = sets.get(channel.group).unwrap_or_else(|| {
-            panic!(
-                "a point was drawn in channel group {} of {}",
-                channel.group,
-                sets.len()
-            )
-        });
         let event = ScaleEvent { incoming, outgoing };
-        match choice.cluster_history(&event, &set.input(set.config_of_channel(channel.channel))) {
+        match choice.cluster_history(&event, &channel_input(sets, channel)) {
             Ok(history) => Ok(PointHistory::Scales {
                 scales: history.event_scales(),
                 rewgt: history.rewgt_history(),
-                record: history.matched_record(set.colors()),
+                record: history.matched_record(sets[channel.group].colors()),
             }),
-            Err(ScaleError::Clustering(
-                ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut,
-            )) => Ok(PointHistory::Vetoed),
+            Err(e) if vetoes_point(&e) => Ok(PointHistory::Vetoed),
             Err(other) => Err(other),
         }
     }
+}
+
+/// The clustering input of the configuration `channel` names, in its group's
+/// channel set.
+///
+/// # Panics
+///
+/// If `channel` names a group `sets` has no entry for.
+fn channel_input(sets: &[Channels], channel: SampledChannel) -> ClusterInput<'_> {
+    let set = sets.get(channel.group).unwrap_or_else(|| {
+        panic!(
+            "a point was drawn in channel group {} of {}",
+            channel.group,
+            sets.len()
+        )
+    });
+    set.input(set.config_of_channel(channel.channel))
+}
+
+/// Whether a scale error is one of the refusals `reweight.f` answers by zeroing
+/// the point's weight — the factorisation floor, or a jet vertex below `xqcut` —
+/// rather than one meaning the prescription does not apply.
+fn vetoes_point(error: &ScaleError) -> bool {
+    matches!(
+        error,
+        ScaleError::Clustering(ScaleRefusal::FactorisationFloor | ScaleRefusal::JetCut)
+    )
 }
 
 /// What resolving one point's scales produced, with the clustering the matched
@@ -534,7 +531,7 @@ impl EventScaleSource {
 // history would add an allocation per term for no saving.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum PointHistory {
+pub(crate) enum PointHistory {
     /// The scales to evaluate this point at; under matching, also what `rewgt`
     /// and the event record read of the event's clustering, `None` otherwise.
     Scales {
@@ -548,7 +545,7 @@ pub enum PointHistory {
 
 /// What resolving one point's scales produced.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PointScales {
+pub(crate) enum PointScales {
     /// The scales to evaluate this point at.
     Scales(EventScales),
     /// The point carries no weight: a beam carrying a parton density ended below
@@ -573,9 +570,10 @@ pub struct RunningCouplingReport {
     /// kinematics are read and the coupling is applied once rather than per point.
     pub constant_scales: Option<EventScales>,
     /// The coupling at that constant renormalisation scale.
-    pub constant_alpha_s: Option<f64>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) constant_alpha_s: Option<f64>,
     /// The coupling the amplitudes were bound at.
-    pub alpha_s_ref: Option<f64>,
+    pub(crate) alpha_s_ref: Option<f64>,
     /// Why a subprocess must re-evaluate the whole model on each scale change
     /// instead of scaling its constant pools — roughly two orders of magnitude
     /// slower per event, so it is reported rather than absorbed.
@@ -597,7 +595,7 @@ pub(crate) fn boost_z(p: V, beta: f64) -> V {
 
 /// Compile and helicity-prune a class amplitude from its representative
 /// subprocess `DiagramSet`.
-pub fn compile_class(
+pub(crate) fn compile_class(
     set: &DiagramSet,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
@@ -735,7 +733,7 @@ impl FixedBeams {
     }
 
     /// Two beams of the given laboratory energies and pole masses.
-    pub fn new(energies: [f64; 2], masses: [f64; 2]) -> Self {
+    pub(crate) fn new(energies: [f64; 2], masses: [f64; 2]) -> Self {
         FixedBeams {
             energies,
             masses,
@@ -745,18 +743,14 @@ impl FixedBeams {
 
     /// Two massless beams sharing `sqrt_s` evenly, the head-on light-cone
     /// configuration.
-    pub fn massless(sqrt_s: f64) -> Self {
+    #[cfg(test)]
+    pub(crate) fn massless(sqrt_s: f64) -> Self {
         Self::new([sqrt_s / 2.0, sqrt_s / 2.0], [0.0, 0.0])
     }
 
     /// The partonic invariant mass `√ŝ`.
     pub fn sqrt_s(&self) -> f64 {
         self.sqrt_s
-    }
-
-    /// The beams' pole masses, in beam order.
-    pub fn masses(&self) -> [f64; 2] {
-        self.masses
     }
 
     /// The two incoming momenta in the partonic centre of mass, beam `0` along
@@ -767,7 +761,7 @@ impl FixedBeams {
     }
 
     /// The `1/F` the master formula multiplies, `1 / (2 λ^{1/2}(ŝ, m_a², m_b²))`.
-    pub fn inverse_flux(&self) -> f64 {
+    pub(crate) fn inverse_flux(&self) -> f64 {
         let s = self.sqrt_s * self.sqrt_s;
         let lambda = beams::kallen(
             s,
@@ -780,7 +774,7 @@ impl FixedBeams {
     /// The `z` velocity carrying a centre-of-mass momentum into the laboratory.
     /// Exactly zero for beams of equal energy and mass, where the two frames
     /// coincide.
-    pub fn lab_beta(&self) -> f64 {
+    pub(crate) fn lab_beta(&self) -> f64 {
         beams::lab_beta_z(self.energies, self.masses)
     }
 }
@@ -810,7 +804,7 @@ impl DecayAtRest {
     ///
     /// If `mass` is not positive: a massless or zero-mass particle has no rest
     /// frame and decays to nothing.
-    pub fn new(mass: f64) -> Self {
+    pub(crate) fn new(mass: f64) -> Self {
         assert!(
             mass > 0.0,
             "a decaying particle needs a positive pole mass, got {mass}"
@@ -920,7 +914,7 @@ impl InitialState {
 
     /// The incoming momenta in the frame the integrand works in: the partonic
     /// centre of mass for two beams, the rest frame for a decay.
-    pub fn momenta(&self) -> Vec<V> {
+    pub(crate) fn momenta(&self) -> Vec<V> {
         match self {
             InitialState::Beams(b) => b.momenta().to_vec(),
             InitialState::Decay(d) => vec![LorentzVector::new(d.mass, 0.0, 0.0, 0.0)],
@@ -929,7 +923,7 @@ impl InitialState {
 
     /// The `1/F` the master formula multiplies: the Møller flux for two beams,
     /// `1/(2M)` for a decay.
-    pub fn inverse_flux(&self) -> f64 {
+    pub(crate) fn inverse_flux(&self) -> f64 {
         match self {
             InitialState::Beams(b) => b.inverse_flux(),
             InitialState::Decay(d) => 1.0 / (2.0 * d.mass),
@@ -939,7 +933,7 @@ impl InitialState {
     /// The `z` velocity from the frame the momenta are built in to the one the
     /// cuts read. A decay's cuts read its rest frame, as `cuts.f` does for one
     /// incoming particle (no boost is applied there when `nincoming = 1`).
-    pub fn lab_beta(&self) -> f64 {
+    pub(crate) fn lab_beta(&self) -> f64 {
         match self {
             InitialState::Beams(b) => b.lab_beta(),
             InitialState::Decay(_) => 0.0,
@@ -1472,9 +1466,40 @@ pub(crate) fn compile_scale_source(
     )
 }
 
+/// Whether MadEvent's per-configuration enhancement weight is the squared
+/// amplitude alone (`true`) or `get_channel_cut`'s product of inverse propagator
+/// denominators alone (`false`), as the run card selects it.
+///
+/// `matrix1.f`'s `MULTI_CHANNEL` block weights configuration `c` by
+/// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone otherwise, where
+/// `CC_c` is `genps.f`'s `get_channel_cut`. That returns `1` at
+/// `SDE_strategy = 1` with `tmin_for_channel = -1`, and at `SDE_strategy = 2`
+/// the denominator product [`ChannelSet::channel_cuts`] forms.
+///
+/// A `tmin_for_channel` off `-1` is refused here as well as by the run-card
+/// parser (which a deserialised card has not been through), because neither
+/// weight describes it: it multiplies `CC_c` by an
+/// exponential suppression of the spacelike lines below `t/s_tot = tmin`, which
+/// `channel_cuts` does not form, and at `SDE_strategy = 1` that factor reads a
+/// `t` `get_channel_cut` never assigns, so there is no definite weight to
+/// reproduce.
+pub(crate) fn configurations_weighted_by_amp2(card: &RunCard) -> Result<bool, HadronicError> {
+    let tmin = card.float("tmin_for_channel");
+    if tmin != -1.0 {
+        return Err(HadronicError::RunCard(RunCardError::UnsupportedField {
+            name: "tmin_for_channel".to_string(),
+            value: tmin.to_string(),
+            default: "-1".to_string(),
+            why: "no configuration weight here applies get_channel_cut's tmin \
+                      suppression of spacelike lines",
+        }));
+    }
+    Ok(card.int("SDE_strategy") == 1)
+}
+
 /// The channel forests MadEvent's enhancement weight is a product over, one set
 /// per subprocess — or `None` where the run card leaves that weight the squared
-/// amplitude and no forest is read at all.
+/// amplitude and no forest is read at all ([`configurations_weighted_by_amp2`]).
 ///
 /// This is derived beside the scale prescription rather than out of it: a run
 /// whose matrix element carries no strong coupling compiles no prescription, and
@@ -1485,7 +1510,7 @@ pub(crate) fn compile_configuration_weights(
     evaluated: &EvaluatedModel,
     card: &RunCard,
 ) -> Result<Option<Vec<ChannelSet>>, HadronicError> {
-    if card.int("SDE_strategy") == 1 && card.float("tmin_for_channel") == -1.0 {
+    if configurations_weighted_by_amp2(card)? {
         return Ok(None);
     }
     let mut sets = Vec::with_capacity(subprocesses.len());
@@ -1552,7 +1577,8 @@ pub(crate) fn constant_scale_report(
 /// boost separates from that one unless they carry equal energy and mass.
 ///
 /// The map is flat [`RamboChannel`] by default. [`use_multichannel`] swaps in a
-/// resonance-aware per-diagram [`MultiChannel`] combiner, α-adapted to this very
+/// resonance-aware [`MultiChannel`] combiner with one channel per configuration
+/// ([`channel_diagrams`]), α-adapted to this very
 /// integrand, so a narrow Breit–Wigner peak (which flat RAMBO under-samples) is
 /// importance-mapped and the integral converges at far lower variance. Both maps
 /// carry the *same* invariant-volume weight normalisation (`R_n`, no `2π`), so the
@@ -1785,8 +1811,8 @@ pub struct ChannelIntegration {
 /// fill in an event record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSelection {
-    /// Index into the integrand's subprocesses
-    /// ([`FixedBeamIntegrand::subprocess_evaluator`]).
+    /// Index into the integrand's subprocesses, in the order of the amplitudes
+    /// it was built from.
     pub subprocess: usize,
     /// The helicity of each external leg, in process order.
     pub helicity: Vec<i32>,
@@ -2229,9 +2255,12 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// off the same run card and hoping the two agree. `None` only where no
     /// prescription was installed at all, which is a caller that never asked for
     /// one.
-    /// `channel` is the sampling channel the point came from, which the
-    /// clustering prescription reads: an event record's scale is the one its own
-    /// draw implied, not the one some other channel would have given.
+    ///
+    /// `channel` is the configuration the clustering prescription reads the point
+    /// in. With the configuration draw live that is not the sampling channel the
+    /// point came from but the one drawn from the point's trailing uniform;
+    /// [`event_scales_at`](Self::event_scales_at) makes that draw, and is what an
+    /// event record reads.
     pub fn event_scales(
         &self,
         momenta: &[V],
@@ -2383,10 +2412,11 @@ impl<'a> FixedBeamIntegrand<'a> {
         self.inverse_flux * self.spin_color_avg * self.lips_2pi
     }
 
-    /// Replace flat RAMBO with a resonance-aware per-diagram [`MultiChannel`] built
-    /// from `diagrams` (one [`DiagramChannel`] each, its propagator poles read from
-    /// `model`), then α-adapt the channel mixture to *this* integrand and install
-    /// the adapted combiner as the sampler.
+    /// Replace flat RAMBO with a resonance-aware [`MultiChannel`] built from
+    /// `diagrams` (one [`DiagramChannel`] per MadGraph configuration, written from
+    /// its representative diagram by [`channel_diagrams`], its propagator poles
+    /// read from `model`), then α-adapt the channel mixture to *this* integrand and
+    /// install the adapted combiner as the sampler.
     ///
     /// The α-adaptation surveys the combiner under the process's own `Σ|M|²` (the
     /// [`matrix_element`](Self::matrix_element) shape, cut included), so weight
@@ -2451,7 +2481,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         Some(report)
     }
 
-    /// Install the same per-diagram [`MultiChannel`] with selection weights taken
+    /// Install the same per-configuration [`MultiChannel`] with selection weights taken
     /// from a completed integration instead of re-surveyed.
     ///
     /// A sampling phase that replays trained grids has to reproduce the *exact*
@@ -2518,8 +2548,8 @@ impl<'a> FixedBeamIntegrand<'a> {
         );
     }
 
-    /// The channels the integral is split across: one per diagram once a
-    /// multichannel combiner is installed, and `1` under the flat map.
+    /// The channels the integral is split across: one per MadGraph configuration
+    /// once a multichannel combiner is installed, and `1` under the flat map.
     pub fn channel_count(&self) -> usize {
         match &self.sampler {
             Sampler::Flat(_) => 1,
@@ -2811,11 +2841,6 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self.incoming
     }
 
-    /// The initial state the integrand was built on.
-    pub fn initial_state(&self) -> InitialState {
-        self.initial
-    }
-
     /// What the integral measures, and so the unit it is reported in.
     pub fn observable(&self) -> Observable {
         self.initial.observable()
@@ -2847,18 +2872,6 @@ impl<'a> FixedBeamIntegrand<'a> {
         ext
     }
 
-    /// The subprocesses whose `|M|²` this integrand adds.
-    pub fn subprocess_count(&self) -> usize {
-        self.subs.len()
-    }
-
-    /// The compiled evaluator of one subprocess — the source of the external
-    /// particle ids, the helicity combinations and the colour-flow tag table an
-    /// event record is written from.
-    pub fn subprocess_evaluator(&self, subprocess: usize) -> &'a AmplitudeEvaluator {
-        self.subs[subprocess].evaluator()
-    }
-
     /// Fill in an accepted event's discrete labels: which subprocess produced it,
     /// which helicity combination, and which colour flow.
     ///
@@ -2866,7 +2879,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// uniforms. The subprocess is drawn `∝ |M_s|²` (the incoherent sum this
     /// integrand forms), then within it the helicity `∝ |M_c|²` (MadGraph's
     /// `SELECT_HEL`), and finally the colour flow through
-    /// [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
+    /// [`AmplitudeEvaluator::select_config_and_flow`] — the integration configuration
     /// from `u[2]` and the flow `∝ JAMP2(i)` within that configuration's admitted
     /// set from `u[3]` (`SELECT_COLOR`).
     ///
@@ -2951,7 +2964,8 @@ impl<'a> FixedBeamIntegrand<'a> {
 
     /// Integrate with VEGAS, returning `(σ, Δσ)` in picobarns — or, on a decay,
     /// `(Γ, ΔΓ)` in GeV ([`Observable::per_natural_unit`]).
-    pub fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
+    #[cfg(test)]
+    pub(crate) fn integrate(&self, neval: usize, niter: usize, seed: u64) -> (f64, f64) {
         let result = self.adapt_grids(neval, niter, seed).1;
         let unit = self.observable().per_natural_unit();
         (result.integral * unit, result.std_dev * unit)
@@ -3326,11 +3340,34 @@ mod tests {
         );
     }
 
+    /// The flat-RAMBO fixed-energy path reproduces the closed-form tree-level
+    /// `σ(e⁺e⁻ → μ⁺μ⁻)` at `√s = 500` GeV, `γ` and `Z` exchange with their
+    /// interference, inside the default card's lepton cuts.
+    ///
+    /// The photon couples a fermion of charge `Q` as `e Q γ^μ` and the `Z` a
+    /// chirality `i` as `(e / s_W c_W) g_i γ^μ`, with `g_L = T₃ − Q s_W²` and
+    /// `g_R = −Q s_W²`: for a charged lepton `g_L = −1/2 + s_W²`, `g_R = s_W²`.
+    /// Massless fermions keep their chirality along each line, so the two
+    /// s-channel propagators add per chirality pair into
+    /// `A_ij = Q_e Q_μ + g_i g_j χ`, `χ = s / ((s − M_Z²) + i M_Z Γ_Z) / (s_W² c_W²)`,
+    /// times QED's helicity amplitude, whose square averaged over the four
+    /// incoming helicities gives
+    /// `dσ/dΩ = α²/(16 s) · Σ_ij |A_ij|² (1 ± cos θ)²`, `+` for equal chiralities.
+    /// At `χ → 0` that is QED's `α²/(4s)(1 + cos²θ)`. `|η| < etal` is
+    /// `|cos θ| < tanh(etal)` for back-to-back massless legs, stricter here than
+    /// the `p_T` cut and making `ΔR = √(Δη² + π²)` pass `drll` everywhere, and
+    /// each `(1 ± c)²` integrates to `2c₀ + 2c₀³/3` over `|c| < c₀`. The
+    /// parameters are the model's own (`aEW`, `MZ`, `WZ`, `sw2`), so the
+    /// comparison is of the integrand's normalisation and kinematics, not of a
+    /// parameter scheme.
+    ///
+    /// The bound is five times the run's own quoted error, which is required to
+    /// be below 1% so the bound cannot go vacuous. The pruned evaluator also
+    /// asserts its ±z-beam frame contract on every point.
     #[test]
-    fn fixed_beam_integrand_finite_positive_2to2() {
-        // The flat-RAMBO fixed-energy path on a clean s-channel 2→2 process:
-        // a finite, positive σ, with the CM kinematics satisfying the pruned
-        // evaluator's ±z-beam frame contract (it would assert otherwise).
+    fn fixed_beam_integrand_matches_the_closed_form_2to2() {
+        use num_complex::Complex64;
+
         let m = model();
         let evaluated = EvaluatedModel::from_model(m.clone());
         let opts = ParsingOptions::default();
@@ -3342,20 +3379,60 @@ mod tests {
             .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
             .collect();
 
+        let run_card = RunCard::default();
         let legs = process_external_legs(&evals[0], &m, &evaluated);
-        let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
+        let cuts = Cuts::compile(&run_card, &legs).unwrap();
+        assert!(
+            evals[0]
+                .external_particles()
+                .iter()
+                .all(|&id| evaluated.mass(id) == 0.0),
+            "the closed form is for massless leptons"
+        );
         let masses: Vec<f64> = evals[0].external_particles()[evals[0].n_in()..]
             .iter()
             .map(|&id| evaluated.mass(id))
             .collect();
         let avg = initial_spin_color_average(&evals[0], &m, &evaluated);
 
+        let sqrt_s = 500.0;
         let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(500.0), masses, avg);
+        let integ = FixedBeamIntegrand::new(amps, &cuts, FixedBeams::massless(sqrt_s), masses, avg);
         assert_eq!(integ.vegas_ndim(), 8);
         let (sigma, err) = integ.integrate(20_000, 4, 0x5EED);
-        assert!(sigma.is_finite() && sigma > 0.0, "sigma = {sigma}");
-        assert!(err.is_finite() && err >= 0.0, "err = {err}");
+
+        let param = |name: &str| evaluated.param_values[name].re;
+        let (alpha, mz, wz, sw2) = (param("aEW"), param("MZ"), param("WZ"), param("sw2"));
+        let s = sqrt_s * sqrt_s;
+        let chi =
+            Complex64::new(s, 0.0) / Complex64::new(s - mz * mz, mz * wz) / (sw2 * (1.0 - sw2));
+        let (g_l, g_r) = (-0.5 + sw2, sw2);
+        let squared = |a: f64, b: f64| (1.0 + a * b * chi).norm_sqr();
+        let helicity_sum =
+            squared(g_l, g_l) + squared(g_r, g_r) + squared(g_l, g_r) + squared(g_r, g_l);
+        let c0 = run_card.float("etal").tanh();
+        assert!(
+            2.0 * run_card.float("ptl") / sqrt_s < (1.0 - c0 * c0).sqrt(),
+            "the pT cut is looser than the rapidity cut"
+        );
+        assert!(
+            run_card.float("drll") < PI,
+            "back-to-back leptons pass drll"
+        );
+        let closed_form = GEV2_TO_PB * 2.0 * PI * alpha * alpha / (16.0 * s)
+            * helicity_sum
+            * (2.0 * c0 + 2.0 * c0.powi(3) / 3.0);
+
+        assert!(
+            err.is_finite() && err > 0.0 && err < 0.01 * sigma,
+            "sigma = {sigma} ± {err}"
+        );
+        assert!(
+            (sigma - closed_form).abs() < 5.0 * err,
+            "sigma = {sigma} ± {err} pb against the closed form {closed_form} pb \
+             ({:+.2} sigma)",
+            (sigma - closed_form) / err
+        );
     }
 
     /// Build the fixed-energy integrand builder + diagram list for a fixed-energy
@@ -3449,7 +3526,7 @@ mod tests {
 
     /// The production wiring's efficiency win: on a genuinely resonant fixed-energy
     /// process (`e+ e- > ta+ ta- h` at √s = 500 GeV, a Z → τ⁺τ⁻ pole in the τ-pair
-    /// invariant) the per-diagram α-adapted [`MultiChannel`] sampler converges to a
+    /// invariant) the per-configuration α-adapted [`MultiChannel`] sampler converges to a
     /// sharp σ̂ at a budget where flat RAMBO cannot resolve the pole at all.
     ///
     /// Flat RAMBO is the known-wrong baseline kept running alongside: because it
@@ -3496,7 +3573,7 @@ mod tests {
         let flat = build();
         let (sigma_flat, err_flat) = flat.integrate(60_000, 8, 0x5EED_1);
 
-        // Per-diagram multichannel, α-adapted to this integrand, at the same budget.
+        // Per-configuration multichannel, α-adapted to this integrand, at the same budget.
         let mut multi = build();
         let report = multi
             .use_multichannel(&diagrams, &evaluated, 20_000, 6, 0x5EED_2)
@@ -3542,7 +3619,7 @@ mod tests {
 
     /// The production wiring's unbiasedness: on a fixed-energy process where flat
     /// RAMBO *does* converge (`e+ e- > mu+ mu-` at √s = 200 GeV, smooth and
-    /// off-resonance), the per-diagram multichannel sampler integrates to the same
+    /// off-resonance), the per-configuration multichannel sampler integrates to the same
     /// σ̂ within the combined Monte-Carlo error. Swapping the flat map for the
     /// resonance-aware combiner must not move the cross section.
     #[test]
@@ -3623,19 +3700,19 @@ mod tests {
         (evals, cuts, masses, avg)
     }
 
-    /// The sampler's channels and the scale prescription's integration channels
-    /// are one numbering apart, and this is where the two meet.
+    /// Diagrams and integration configurations are one numbering apart, and this
+    /// is where the sampler and the scale prescription meet.
     ///
-    /// `g g → g g` is the process where they provably differ: four diagrams, four
-    /// sampling channels, three integration channels, because MadGraph's
-    /// generator drops the four-gluon diagram. So the map cannot be the identity
-    /// and cannot be assumed — a point drawn in the sampler's channel 2 is
-    /// clustered in integration channel 2, not 3, and the channel with no config
-    /// of its own falls back rather than indexing past the end.
+    /// `g g → g g` is the process where they provably differ: four diagrams and
+    /// three integration configurations, one per MadGraph configuration, because
+    /// the four-gluon contact has no propagator to enhance and gets none. So
+    /// a diagram's index is not its configuration's: the contact maps to no
+    /// configuration and the other three number theirs from one.
     ///
     /// What this pins that `configs`' own test cannot is the *wiring*: that the
     /// integrand hands the scale source the same diagram slice its sampler is
-    /// built from, so the two indices mean the same thing.
+    /// built from, and that the sampler builds one channel per configuration, so
+    /// a sampling channel and an integration configuration share one index.
     #[test]
     fn a_sampled_channel_names_the_integration_channel_of_its_own_diagram() {
         let m = model();
@@ -3874,20 +3951,22 @@ mod tests {
         }
     }
 
-    /// MadEvent's configuration weight is the squared amplitude alone only under a
-    /// run-card conjunction, and the prescription reports which side of it a card
-    /// falls on.
+    /// MadEvent's configuration weight is the squared amplitude alone only at
+    /// `SDE_strategy = 1`, and only with `tmin_for_channel` at its default.
     ///
     /// `matrix1.f`'s enhancement block weights configuration `c` by
-    /// `AMP2_c · CC_c`, and `genps.f`'s `get_channel_cut` short-circuits to
-    /// `CC_c = 1` only for `sde_strat == 1` *and* `tmin_for_channel == -1`. At
-    /// `sde_strategy = 2` the squared amplitude is discarded outright and the
-    /// weight is the propagator-denominator product alone; with
-    /// `tmin_for_channel` set, the same product multiplies it.
+    /// `AMP2_c · CC_c` at `SDE_strategy = 1` and by `CC_c` alone at `2`;
+    /// `genps.f`'s `get_channel_cut` makes `CC_c = 1` at `1` only when
+    /// `tmin_for_channel == -1`, and off that default its tmin factor is formed by
+    /// neither weight here, so such a card is refused.
     ///
-    /// Without this the condition is an unexercised branch: every banked run whose
-    /// scale clusters *and* whose matrix element carries the strong coupling sits
-    /// on the squared-amplitude side of it, so no gate reaches the other.
+    /// The assertions read [`compile_configuration_weights`], the function the
+    /// integrands install their draw from, and check that the scale source
+    /// reports the same rule. Every banked run whose scale clusters *and* whose
+    /// matrix element carries the strong coupling sits at `SDE_strategy = 1`, so
+    /// no gate reaches the other side of the rule. The `tmin_for_channel` card is
+    /// built by deserialisation, the one route to a [`RunCard`] that bypasses the
+    /// parser's own refusal of the field.
     #[test]
     fn the_configuration_draw_needs_both_run_card_fields() {
         let m = model();
@@ -3900,9 +3979,10 @@ mod tests {
             .iter()
             .flat_map(|s| s.diagrams.iter().cloned())
             .collect();
+        let subprocesses = [(&evals[0], diagrams.as_slice())];
 
-        let source_for = |extra: &str| {
-            let card = RunCard::parse(&format!(
+        let card_for = |extra: &str| {
+            RunCard::parse(&format!(
                 "  0 = lpp1
   0 = lpp2
   250.0 = ebeam1
@@ -3914,39 +3994,55 @@ mod tests {
   4 = maxjetflavor
 {extra}"
             ))
-            .expect("run card");
+            .expect("run card")
+        };
+        let source_for = |card: &RunCard| {
             compile_scale_source(
-                &[(&evals[0], &diagrams)],
+                &subprocesses,
                 &m,
                 &evaluated,
-                &card,
+                card,
                 None,
                 true,
                 ClosedForms::Honour,
             )
-            .expect("the clustering scale compiles")
         };
+        let weights_for =
+            |card: &RunCard| compile_configuration_weights(&subprocesses, &m, &evaluated, card);
 
-        assert!(
-            source_for("  1 = sde_strategy\n").weights_configurations_by_amp2(),
-            "the default conjunction is what MadEvent's simple rule holds under"
-        );
-        assert!(
-            source_for("").weights_configurations_by_amp2(),
-            "both fields absent is the default conjunction"
-        );
-        assert!(
-            !source_for("  2 = sde_strategy\n").weights_configurations_by_amp2(),
-            "at sde_strategy = 2 the configuration weight is not the squared amplitude"
-        );
-        // The draw itself runs either way — what the conjunction decides is only
-        // which weight it follows.
-        assert!(source_for("  2 = sde_strategy\n").draws_configuration());
-        // The other half of the conjunction is refused a step earlier: a card that
-        // sets `tmin_for_channel` at all does not parse, so the scale source's own
-        // test of it can never be the thing that fires. Both guards are kept —
-        // this is what says the refusal is what stands between such a card and a
-        // cross section taken under a rule that does not describe it.
+        for (extra, by_amp2) in [
+            ("  1 = sde_strategy\n", true),
+            ("", true),
+            ("  2 = sde_strategy\n", false),
+        ] {
+            let card = card_for(extra);
+            let weights = weights_for(&card).expect("the configuration weights compile");
+            assert_eq!(
+                weights.is_none(),
+                by_amp2,
+                "card {extra:?}: the draw follows AMP2 exactly at sde_strategy = 1"
+            );
+            if let Some(sets) = &weights {
+                assert_eq!(sets.len(), 1, "one channel set per subprocess");
+                assert!(
+                    !sets[0].configs.is_empty(),
+                    "the channel set has configurations"
+                );
+            }
+            let source = source_for(&card).expect("the clustering scale compiles");
+            assert_eq!(
+                source.weights_configurations_by_amp2(),
+                by_amp2,
+                "card {extra:?}: the scale source reports the rule the draw follows"
+            );
+            // The draw itself runs either way: the rule decides only which weight
+            // it follows.
+            assert!(source.draws_configuration(), "card {extra:?}");
+        }
+
+        // The parser refuses `tmin_for_channel` off its default; a deserialised
+        // card has not been through it, and the weight rule refuses it again at
+        // either `SDE_strategy`.
         assert!(RunCard::parse(
             "  0 = lpp1
   0 = lpp2
@@ -3956,6 +4052,27 @@ mod tests {
 "
         )
         .is_err());
+        for sde in ["1", "2"] {
+            let mut json = serde_json::to_value(card_for(&format!("  {sde} = sde_strategy\n")))
+                .expect("a run card serialises");
+            json["values"]["tmin_for_channel"] = serde_json::json!({ "Float": 0.1 });
+            let card: RunCard = serde_json::from_value(json).expect("the card deserialises");
+            assert_eq!(card.float("tmin_for_channel"), 0.1);
+            assert!(
+                matches!(
+                    weights_for(&card),
+                    Err(HadronicError::RunCard(
+                        RunCardError::UnsupportedField { .. }
+                    ))
+                ),
+                "sde_strategy = {sde} with tmin_for_channel set has no weight to draw by"
+            );
+            assert!(
+                source_for(&card).is_err(),
+                "sde_strategy = {sde}: the scale source refuses the same card"
+            );
+        }
+
         // A card that fixes every scale resolves to a constant before any event is
         // seen, so there is no configuration to draw whatever the two fields say.
         let fixed = RunCard::parse(
@@ -3971,17 +4088,9 @@ mod tests {
 ",
         )
         .expect("run card");
-        assert!(!compile_scale_source(
-            &[(&evals[0], &diagrams)],
-            &m,
-            &evaluated,
-            &fixed,
-            None,
-            true,
-            ClosedForms::Honour,
-        )
-        .expect("a fixed prescription compiles")
-        .draws_configuration());
+        assert!(!source_for(&fixed)
+            .expect("a fixed prescription compiles")
+            .draws_configuration());
     }
 
     /// The parallel channel integration reproduces the sequential one it replaced,
@@ -4273,7 +4382,7 @@ mod tests {
         assert!(value > 0.0, "the probe point must pass the cuts");
 
         // The diagonals the draws are supposed to follow, taken directly.
-        let eval = integ.subprocess_evaluator(0);
+        let eval = bounds[0].evaluator();
         let mut scratch = bounds[0].scratch_space();
         let mut ext = integ.incoming().to_vec();
         ext.extend_from_slice(&momenta);

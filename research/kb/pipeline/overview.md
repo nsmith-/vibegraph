@@ -5,7 +5,7 @@ description: "The chain from a UFO model and two cards to unweighted LHE events:
 status: draft
 tags: [pipeline, overview, cross-section, architecture]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n00-steps, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/00-overview.md#L12-L56", title: "Note 00: goal, pipeline steps and toy process"}
   - {id: n01-lo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L128-L135", title: "Note 01: MadGraph5_aMC@NLO LO pipeline"}
@@ -84,12 +84,16 @@ both the photon and the Z. The analytic `σ = 4πα²/(3s)` the tests use is the
 far below the Z pole:[^ee-tests]
 
 - `validate_vegas::sigma_qed_limit` and `rambo_flat_mc::flat_mc_two_body_normalization`
-  run at √s = 10 GeV with α = 1/132.507. There the Z interference is about
-  0.5%, so both allow 3%. The flat-RAMBO test pins the map's `R_n` and
-  `(2π)^{4−3n}` normalisation.
-- `validate_vegas::sigma_z_pole` checks the full γ+Z cross section at
-  √s = M_Z against MadGraph's 2025 pb, with `ptl > 10 GeV` and `etal < 2.5`
-  applied as a cos θ window. The tolerance is 1e-3.
+  run at √s = 10 GeV with α = 1/132.507. Each allows the Z exchange's whole
+  possible effect there, computed from the model's `MZ`, `WZ` and `sw2`
+  (`common::ee_to_mumu_z_bound`, about 1.2e-4), plus four of the run's own
+  quoted Monte Carlo errors. The flat-RAMBO test pins the map's `R_n` and
+  `(2π)^{4−3n}` normalisation at about 0.2%.
+- `validate_vegas::sigma_z_pole` checks the full γ+Z cross section against
+  MadGraph's banked σ, read from `validation/madgraph/sigma_reference.json`
+  with the run's own √s (`ebeam1 + ebeam2` = 91.2 GeV, not `M_Z`), and with
+  `ptl > 10 GeV` and `etal < 2.5` applied as a cos θ window. It asserts a pull
+  below 3 on the combined error, which MadGraph's 0.042% dominates.
 
 Both test files are in the banked layer (`required-features = ["extended-validation"]`).
 

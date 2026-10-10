@@ -25,27 +25,29 @@
 
 use crate::ufo::UFOModel;
 
-use super::diagram::{Diagram, LegIdx, Prop, PropIdx};
+use super::diagram::{Diagram, Prop};
+#[cfg(test)]
+use super::diagram::{LegIdx, PropIdx};
 
 /// Required and forbidden s-channels of one process, as PDG codes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct SChannelFilter {
+pub(crate) struct SChannelFilter {
     /// Alternatives (or), each a list of ids that must all be s-channels (and).
-    pub required: Vec<Vec<i64>>,
+    pub(crate) required: Vec<Vec<i64>>,
     /// Ids no s-channel may carry.
-    pub forbidden: Vec<i64>,
+    pub(crate) forbidden: Vec<i64>,
 }
 
 impl SChannelFilter {
     /// Whether the filter keeps every diagram.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.required.iter().all(Vec::is_empty) && self.forbidden.is_empty()
     }
 
     /// Whether `diagram` passes: some alternative of the required list has every
     /// one of its ids among the diagram's s-channels, and no s-channel is
     /// forbidden. A required id is a membership test, not a count.
-    pub fn keeps(&self, diagram: &Diagram, model: &UFOModel) -> bool {
+    pub(crate) fn keeps(&self, diagram: &Diagram, model: &UFOModel) -> bool {
         if self.is_empty() {
             return true;
         }
@@ -72,7 +74,11 @@ pub fn s_channel_ids(diagram: &Diagram, model: &UFOModel) -> Vec<i64> {
 
 /// The PDG code of `prop`'s particle as it flows towards the final state, or
 /// `None` for a spacelike (t-channel) line.
-pub fn oriented_s_channel_id(prop: &Prop, diagram: &Diagram, model: &UFOModel) -> Option<i64> {
+pub(crate) fn oriented_s_channel_id(
+    prop: &Prop,
+    diagram: &Diagram,
+    model: &UFOModel,
+) -> Option<i64> {
     let n_in = diagram.n_in;
     if prop.is_spacelike(n_in) {
         return None;
@@ -109,16 +115,18 @@ fn towards_final_state(prop: &Prop, n_in: usize, n_ext: usize) -> bool {
 ///
 /// It generalises [`SChannelFilter`]'s membership test to what the line leads to, and
 /// is what a stitched decay chain is compared against.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Resonance {
+pub(crate) struct Resonance {
     /// PDG code, oriented towards the final state.
-    pub particle: i64,
+    pub(crate) particle: i64,
     /// The final-state particles the resonance decays to directly, by name.
-    pub daughters: Vec<String>,
+    pub(crate) daughters: Vec<String>,
     /// Resonances among its products, each with its own products.
-    pub decays: Vec<Resonance>,
+    pub(crate) decays: Vec<Resonance>,
 }
 
+#[cfg(test)]
 impl Resonance {
     /// The final-state particles the resonance ends in, its decays' included, sorted.
     fn content(&self) -> Vec<String> {
@@ -136,7 +144,8 @@ impl Resonance {
 /// `names` are the external particles' names, incoming first. With identical particles
 /// a diagram may hold the chain in more than one way; the first assignment found is
 /// returned.
-pub fn match_resonances(
+#[cfg(test)]
+pub(crate) fn match_resonances(
     diagram: &Diagram,
     model: &UFOModel,
     names: &[String],
@@ -157,6 +166,7 @@ pub fn match_resonances(
 /// Place `resonances`, siblings inside the final-state legs `within`, onto propagators
 /// not yet in `chosen`, disjoint from each other; on success `chosen` holds them and
 /// their decays in walk order.
+#[cfg(test)]
 fn assign(
     resonances: &[Resonance],
     within: &[LegIdx],
@@ -203,6 +213,7 @@ fn assign(
 /// Whether the legs of `legs` outside the lines of the resonance's decays (the first
 /// `decays.len()` top-level entries of `inner`, which lists them in walk order) are its
 /// stated direct daughters.
+#[cfg(test)]
 fn direct_daughters_match(
     resonance: &Resonance,
     legs: &[LegIdx],

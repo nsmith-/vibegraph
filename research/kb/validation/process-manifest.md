@@ -5,7 +5,7 @@ description: "One committed file names every reference process, its script and p
 status: draft
 tags: [validation, manifest, layers, report, reference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n25-41, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L198-L235", title: "Note 25 §4.1, the scripts and their rationale headers"}
   - {id: n25-43, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/25-validation-layering-plan.md#L243-L253", title: "Note 25 §4.3, gating mechanisms"}
@@ -43,7 +43,10 @@ what the file is for and what holds it honest.
   and an `amplitudes` cell may record `factorized`.
 - **`[[standalone]]` entries** for gates that are not per-process cells: `key`,
   `layer`, `targets`, `inputs`, `rationale`, and for a non-Rust driver the pixi
-  `task`, its `environment` and the `row` it writes.
+  `task`, its `environment` and the `row` it writes. Two are hermetic:
+  `smeftsim-model` (`tests/smeftsim.rs`) and `toy-models` (`tests/toy_models.rs`)
+  run the vendored SMEFTsim and the authored toy UFO models against committed
+  inputs only, so a drifted model fails the default `cargo test`.
 - **The seed policy** for MadEvent references, in the header
   ([madevent-reference-seed-policy](madevent-reference-seed-policy.md)).
 
@@ -72,9 +75,11 @@ what the file is for and what holds it honest.
 | reader | what it asserts against the manifest |
 |---|---|
 | reference generators (`build.sh`, `gen_amplitude.py`, the extractors) | which processes to build and which tables to write |
-| `vibegraph-lib/tests/common/manifest.rs` | sets the gates draw from: `unbundled_rows()`, `hermetic_diagram_rows()` (which `diagrams.json` must cover exactly), each row's model and restrict card |
+| `vibegraph-lib/tests/common/manifest.rs` | sets the gates draw from: `unbundled_rows()`, `hermetic_diagram_rows()` (which `diagrams.json` must cover exactly), `hermetic_amplitude_rows()`, each row's model and restrict card |
+| `tests/amplitude_oracle.rs` | the `every_hermetic_amplitudes_row_is_covered` trial: one committed amplitude table for every row whose `amplitudes` cell is hermetic and none for any other, a table for every `mg_amplitude` declaration, and the tables without a declaration exactly `BORROWED_TABLES` (`uux_to_mumu`, read from `pp_to_ll_qcd0`'s module), so a deleted table or a row promoted without one fails |
 | per-file inventories | each sweeping gate declares every banked run it meets (`validate_scales`' classes, `validate_alphas`' `SCALUP_IS_THE_RENORMALISATION_SCALE` and `GRID_ALPHA_S_RUNS`), so a new row appears as a failure until classified ([scale-replay-gate](scale-replay-gate.md)) |
 | `tests/smeftsim.rs` | `GATED_ROWS` equal to the manifest's gated SMEFTsim rows; each table's `process` equal to `mg_amplitude.process` |
+| `tests/toy_models.rs` | `GATED_ROWS` equal to the manifest's gated toy-model rows; each row's process equal to its banked table's |
 | the collator | the rendered row set and cell set: "the measured cells are exactly the cells the manifest declares" ([validation-report](validation-report.md)) |
 | `validation/madgraph/README.md` | an index over the manifest, not a hand-kept process list |
 

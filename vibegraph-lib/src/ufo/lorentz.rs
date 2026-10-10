@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use std::{collections::HashSet, ops::Index};
 
-use super::ast_util::{call_func_name, get_kwarg, kwarg_str, parse_stmts};
+use super::ast_util::{constructor_calls, get_kwarg, kwarg_str, parse_stmts};
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -69,7 +69,7 @@ impl LorentzOp {
     // TODO: involves_scalar (is this possible? momentum insertion?)
 
     /// Returns true if this operator involves a spinor index contraction with the given leg index.
-    pub fn involves_spinor(&self, idx: isize) -> bool {
+    pub(crate) fn involves_spinor(&self, idx: isize) -> bool {
         match self {
             LorentzOp::Gamma { i, j, .. }
             | LorentzOp::Sigma { i, j, .. }
@@ -83,7 +83,7 @@ impl LorentzOp {
     }
 
     /// Returns true if this operator involves a Lorentz index contraction with the given leg index.
-    pub fn involves_vector(&self, idx: isize) -> bool {
+    pub(crate) fn involves_vector(&self, idx: isize) -> bool {
         match self {
             LorentzOp::Gamma { mu, .. } => *mu == idx,
             LorentzOp::P { mu, .. } => *mu == idx,
@@ -105,12 +105,12 @@ impl LorentzOp {
 /// over all connected operators is assumed, with the given coefficient.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LorentzTerm {
-    pub coeff: f64,
+    pub(crate) coeff: f64,
     pub ops: Vec<LorentzOp>,
 }
 
 /// A Lorentz structure expression: sum of `LorentzTerm`s.
-pub type LorentzExpr = Vec<LorentzTerm>;
+pub(crate) type LorentzExpr = Vec<LorentzTerm>;
 
 /// Strongly-typed index for [`LorentzStructure`] lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -134,20 +134,20 @@ impl Index<LorentzId> for IndexMap<String, LorentzStructure> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LorentzStructure {
     /// Python variable name, e.g. `"FFV1"`.
-    pub python_name: String,
+    pub(crate) python_name: String,
     /// UFO `name` field.
-    pub name: String,
+    pub(crate) name: String,
     /// External leg spins (2s+1 per leg).
-    pub spins: Vec<i32>,
+    pub(crate) spins: Vec<i32>,
     /// Verbatim `structure` string from the UFO file.
-    pub structure: String,
+    pub(crate) structure: String,
     /// Parsed symbolic expression (0-indexed legs, negative for internal contractions).
     pub expr: LorentzExpr,
     /// Spinor index mapping for feyngraph: `spin_map[i]` is the external leg
     /// The i-th entry of the spin_map must be the leg j to which leg i is spin-connected
     /// (so i=j for any leg with no spinor contractions)
     /// Built from the Lorentz expression by tracing spinor index chains.
-    pub spin_map: Vec<isize>,
+    pub(crate) spin_map: Vec<isize>,
 }
 
 fn find_connections(expr: &LorentzExpr, idx: isize) -> HashSet<isize> {
@@ -185,7 +185,7 @@ fn find_connections(expr: &LorentzExpr, idx: isize) -> HashSet<isize> {
 ///
 /// Returns a vector of length `n_legs` where `spin_map[i]` (0-indexed) is the 0-indexed
 /// external leg that leg `i` contracts with.
-pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>, String> {
+pub(crate) fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>, String> {
     // Trace from each external leg to find its partner.
     // External legs are indices 0..n_legs
     // Follow the chain of dummies (negative indices) to the other external endpoint.
@@ -233,26 +233,12 @@ pub fn compute_spin_map(expr: &LorentzExpr, n_legs: usize) -> Result<Vec<isize>,
 }
 
 /// Parse `lorentz.py` content into a list of [`LorentzStructure`]s.
-pub fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzError> {
+pub(crate) fn parse_lorentz(src: &str) -> Result<Vec<LorentzStructure>, LorentzError> {
     let stmts = parse_stmts(src).map_err(|e| LorentzError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = id.as_str().to_owned();
-
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("Lorentz") {
-            continue;
-        }
-
+    for (python_name, keywords) in constructor_calls(&stmts, "Lorentz") {
+        let python_name = python_name.to_owned();
         let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.clone());
         let spins = extract_spins(keywords)?;
         let structure = kwarg_str(keywords, "structure").unwrap_or_default();
@@ -455,18 +441,24 @@ fn mul_terms(lhs: RawExpr, rhs: Atom) -> RawExpr {
     }
 }
 
-/// Divide all terms in `lhs` by one `rhs` atom (only numbers make physical sense).
-fn div_terms(lhs: RawExpr, rhs: Atom) -> RawExpr {
-    match rhs {
-        Atom::Num(n) => lhs
-            .into_iter()
-            .map(|mut t| {
-                t.coeff /= n;
-                t
-            })
-            .collect(),
-        _ => lhs, // division by operator/group is not a valid UFO construct
-    }
+/// Divide all terms in `lhs` by one `rhs` atom: a number, or a parenthesised
+/// group of numbers (`/(2.)`, `/(1+1)`), which divides by its sum. A divisor
+/// carrying a Lorentz object has no reading as a structure and is rejected.
+fn div_terms(lhs: RawExpr, rhs: Atom) -> Result<RawExpr, &'static str> {
+    let n = match rhs {
+        Atom::Num(n) => n,
+        Atom::Group(terms) if terms.iter().all(|t| t.ops.is_empty()) => {
+            terms.iter().map(|t| t.coeff).sum()
+        }
+        Atom::Op(_) | Atom::Group(_) => return Err("division by an indexed Lorentz object"),
+    };
+    Ok(lhs
+        .into_iter()
+        .map(|mut t| {
+            t.coeff /= n;
+            t
+        })
+        .collect())
 }
 
 // ── PEG grammar ───────────────────────────────────────────────────────────────
@@ -474,7 +466,7 @@ fn div_terms(lhs: RawExpr, rhs: Atom) -> RawExpr {
 peg::parser! {
     grammar lorentz_structure() for str {
         /// Top-level: a sum of signed products.
-        pub rule structure() -> RawExpr
+        pub(crate) rule structure() -> RawExpr
             = _ first:signed_product() rest:( _ t:addend() { t } )* _ {
                 let mut out = first;
                 for t in rest { out.extend(t); }
@@ -498,16 +490,16 @@ peg::parser! {
         /// Returns `Vec<RawTerm>` because a parenthesized factor may expand into
         /// multiple terms (e.g. `2*(A + B)` → `[2A, 2B]`).
         rule product() -> RawExpr
-            = head:factor() tail:( _ op:['*' | '/'] _ a:factor() { (op, a) } )* {
+            = head:factor() tail:( _ op:['*' | '/'] _ a:factor() { (op, a) } )* {?
                 let mut terms = atom_to_terms(head);
                 for (op, a) in tail {
                     terms = match op {
                         '*' => mul_terms(terms, a),
-                        '/' => div_terms(terms, a),
+                        '/' => div_terms(terms, a)?,
                         _   => terms,
                     };
                 }
-                terms
+                Ok(terms)
             }
 
         /// An atom, optionally raised to a non-negative integer power.
@@ -759,6 +751,28 @@ mod tests {
         assert_eq!(expr.len(), 1);
         assert!((expr[0].coeff - 8.0).abs() < 1e-12);
         assert_eq!(expr[0].ops, vec![LorentzOp::Metric { mu: 0, nu: 1 }]);
+    }
+
+    /// A parenthesised numeric divisor divides; one carrying a Lorentz object is
+    /// refused rather than dropped.
+    #[test]
+    fn a_grouped_divisor_divides_or_is_refused() {
+        for s in ["Metric(1,2)/(2.)", "Metric(1,2)/(1+1)", "Metric(1,2)/2."] {
+            let expr = parse_structure(s).unwrap();
+            assert_eq!(expr.len(), 1, "{s}");
+            assert!(
+                (expr[0].coeff - 0.5).abs() < 1e-15,
+                "{s}: {}",
+                expr[0].coeff
+            );
+        }
+        for s in ["Metric(1,2)/P(1,2)", "Metric(1,2)/(P(-1,1)*P(-1,2))"] {
+            let result = parse_structure(s);
+            assert!(
+                matches!(result, Err(LorentzError::StructureParse { .. })),
+                "{s}: expected a structure parse error, got {result:?}"
+            );
+        }
     }
 
     #[test]

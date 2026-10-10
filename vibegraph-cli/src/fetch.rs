@@ -17,7 +17,7 @@ use vibegraph::cache::store::{Fetch, FetchError};
 const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Fetches archives over HTTPS.
-pub struct HttpFetch {
+pub(crate) struct HttpFetch {
     max_bytes: u64,
 }
 

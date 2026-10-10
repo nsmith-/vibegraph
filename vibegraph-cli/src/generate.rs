@@ -61,10 +61,11 @@ use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAUL
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
+use crate::error::{err, CliError};
 use crate::integrate::{
     forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, multiplicity_groups,
-    multiplicity_maps, process_string, refuse_mixed_multiplicity, IntegrateError,
-    MultiplicityGroups, NO_PDF, PDF_MEMBER,
+    multiplicity_maps, process_string, refuse_mixed_multiplicity, MultiplicityGroups, NO_PDF,
+    PDF_MEMBER,
 };
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
@@ -93,7 +94,7 @@ const MAX_TRIALS_PER_EVENT: usize = 5_000_000;
 
 /// How the accept/reject weights become the file's events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum Strategy {
+pub(crate) enum Strategy {
     /// Hold the sample, write the weights (`IDWTUP = -4`).
     Buffer,
     /// Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit
@@ -102,55 +103,55 @@ pub enum Strategy {
 }
 
 #[derive(Args, Debug)]
-pub struct GenerateArgs {
+pub(crate) struct GenerateArgs {
     /// Grid artifact from a completed `vibegraph integrate` run.
-    pub artifact: PathBuf,
+    pub(crate) artifact: PathBuf,
 
     /// The same process card the artifact was integrated from; `-` reads the
     /// card from stdin.
-    pub proc_card: PathBuf,
+    pub(crate) proc_card: PathBuf,
 
     /// The same run card the artifact was integrated with; absent → MadGraph LO
     /// defaults. A card that differs from the banked one is refused.
     #[arg(long)]
-    pub run_card: Option<PathBuf>,
+    pub(crate) run_card: Option<PathBuf>,
 
     /// Directory containing the proc card's UFO model directory; defaults to
     /// `$VIBEGRAPH_UFO_DIR`, then the `~/.vibegraph` cache, then the current
     /// directory. Unused for the built-in Standard Model.
     #[arg(long)]
-    pub ufo_dir: Option<PathBuf>,
+    pub(crate) ufo_dir: Option<PathBuf>,
 
     /// Events to write; defaults to the run card's `nevents`.
     #[arg(long)]
-    pub nevents: Option<usize>,
+    pub(crate) nevents: Option<usize>,
 
     /// Output Les Houches file.
     #[arg(short, long, default_value = DEFAULT_OUTPUT)]
-    pub out: PathBuf,
+    pub(crate) out: PathBuf,
 
     /// Overwrite an existing event file.
     #[arg(long)]
-    pub force: bool,
+    pub(crate) force: bool,
 
     /// Weight strategy.
     #[arg(long, value_enum, default_value_t = Strategy::Buffer)]
-    pub strategy: Strategy,
+    pub(crate) strategy: Strategy,
 
     /// RNG seed for the generation. Same seed, same sample.
     #[arg(long, default_value_t = 20_260_728)]
-    pub seed: u64,
+    pub(crate) seed: u64,
 
     /// LHAPDF set name (proton beams only). A set other than the one the artifact
     /// was integrated with is refused.
     #[arg(long, default_value = DEFAULT_PDF_SET)]
-    pub pdf_set: String,
+    pub(crate) pdf_set: String,
 
     /// Directory containing `<pdf-set>/`; defaults to `$VIBEGRAPH_PDF_DIR`, then
     /// the `~/.vibegraph` cache (offering to download the set if absent), then
     /// `validation/pdf` under the current directory.
     #[arg(long)]
-    pub pdf_dir: Option<PathBuf>,
+    pub(crate) pdf_dir: Option<PathBuf>,
 
     /// Points the frozen `w_max` scan spends on *each* channel, or `share` to give
     /// every channel the integration's own per-channel budget instead. What the
@@ -163,7 +164,7 @@ pub struct GenerateArgs {
         default_value = DEFAULT_SCAN_POINTS,
         value_parser = parse_scan_budget
     )]
-    pub scan_points: ScanBudget,
+    pub(crate) scan_points: ScanBudget,
 
     /// Share of each channel's scanned cross section its maximum may leave above
     /// itself. `0` takes the largest weight the scan saw instead; a larger share
@@ -175,12 +176,12 @@ pub struct GenerateArgs {
         default_value_t = DEFAULT_EXCESS_SHARE,
         value_parser = parse_excess_share
     )]
-    pub max_truncation: f64,
+    pub(crate) max_truncation: f64,
 
     /// MadGraph reweight card: every event also carries its weight under each
     /// `launch` block's parameters, as an LHEF `<rwgt>` block.
     #[arg(long)]
-    pub reweight_card: Option<PathBuf>,
+    pub(crate) reweight_card: Option<PathBuf>,
 
     /// Evaluate every reweighting hypothesis directly, never through a
     /// polynomial in the couplings. Slower; for cross-checking.
@@ -189,7 +190,7 @@ pub struct GenerateArgs {
         requires = "reweight_card",
         conflicts_with = "reweight_couplings"
     )]
-    pub reweight_exact: bool,
+    pub(crate) reweight_exact: bool,
 
     /// Track the amplitude as a polynomial jointly in these external parameters
     /// (comma-separated names), so every hypothesis costs a quadratic form rather
@@ -203,10 +204,10 @@ pub struct GenerateArgs {
         value_name = "NAME,...",
         requires = "reweight_card"
     )]
-    pub reweight_couplings: Option<Vec<String>>,
+    pub(crate) reweight_couplings: Option<Vec<String>>,
 
     #[command(flatten)]
-    pub parallel: ParallelArgs,
+    pub(crate) parallel: ParallelArgs,
 }
 
 /// `--scan-points` accepts a per-channel count or the word that ties the scan to
@@ -241,17 +242,13 @@ fn max_rule(args: &GenerateArgs) -> MaxRule {
     MaxRule::truncated(args.max_truncation).expect("--max-truncation is a share below one")
 }
 
-fn err(msg: impl Into<String>) -> IntegrateError {
-    IntegrateError::Message(msg.into())
-}
-
 /// One way the cards handed to a generation run differ from the ones that trained
 /// the grid.
 #[derive(Debug, PartialEq)]
-pub struct CardMismatch {
-    pub what: String,
-    pub banked: String,
-    pub given: String,
+pub(crate) struct CardMismatch {
+    pub(crate) what: String,
+    pub(crate) banked: String,
+    pub(crate) given: String,
 }
 
 /// Every difference between the inputs this run was given and the ones banked in
@@ -271,7 +268,7 @@ pub struct CardMismatch {
 /// the case no label can see, a model whose assets changed underneath an unchanged
 /// name. A differing label already implies a differing digest, so only the label is
 /// reported then — the digest check is what has teeth when the labels agree.
-pub fn card_mismatches(
+pub(crate) fn card_mismatches(
     artifact: &IntegrateArtifact,
     model: &ModelIdentity,
     process: &str,
@@ -337,7 +334,7 @@ pub fn card_mismatches(
 /// disagree about which tabulation the luminosities came from. Nothing downstream
 /// notices: the grids replay, the events come out, and every weight is taken
 /// against a different parton distribution than the one that trained them.
-pub fn pdf_mismatches(
+pub(crate) fn pdf_mismatches(
     artifact: &IntegrateArtifact,
     pdf_set: &str,
     pdf_member: u32,
@@ -360,7 +357,7 @@ pub fn pdf_mismatches(
     out
 }
 
-fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError> {
+fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), CliError> {
     if mismatches.is_empty() {
         return Ok(());
     }
@@ -389,7 +386,7 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), IntegrateError>
 fn refuse_stale_artifact_on_clustering_scale(
     artifact: &IntegrateArtifact,
     run_card: &RunCard,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     if artifact.format_version >= SCALE_DRAW_VERSION {
         return Ok(());
     }
@@ -417,7 +414,7 @@ fn refuse_stale_artifact_on_clustering_scale(
 fn refuse_stale_artifact_on_mixed_multiplicity(
     artifact: &IntegrateArtifact,
     parts: usize,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     if parts <= 1 || artifact.format_version >= MULTIPLICITY_VERSION {
         return Ok(());
     }
@@ -433,10 +430,7 @@ fn refuse_stale_artifact_on_mixed_multiplicity(
 /// multiplicities each part's share of the file would be the sample's own rather
 /// than its integration's. The emitter refuses it too; refusing here does so
 /// before the scan and the draw.
-fn refuse_rounding_on_mixed_multiplicity(
-    strategy: Strategy,
-    parts: usize,
-) -> Result<(), IntegrateError> {
+fn refuse_rounding_on_mixed_multiplicity(strategy: Strategy, parts: usize) -> Result<(), CliError> {
     if parts <= 1 || !matches!(strategy, Strategy::StochasticRounding) {
         return Ok(());
     }
@@ -760,7 +754,7 @@ fn report_resonances(tally: ResonanceTally, written: usize) {
     }
 }
 
-pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateError> {
+pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
     args.parallel.install().map_err(err)?;
     if !args.force && args.out.exists() {
         return Err(err(format!(
@@ -770,8 +764,7 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
     }
 
     let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)
-        .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
     let artifact = IntegrateArtifact::read_from_path(&args.artifact)
@@ -816,7 +809,15 @@ pub fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), IntegrateE
         .nevents
         .unwrap_or(artifact.run_card.nevents.max(0) as usize);
     if nevents == 0 {
-        return Err(err("no events requested"));
+        return Err(err(match args.nevents {
+            Some(_) => "no events requested: --nevents is 0".to_string(),
+            None => format!(
+                "no events requested: --nevents is absent and the run card recorded in {} \
+                 asks for nevents = {}",
+                args.artifact.display(),
+                artifact.run_card.nevents
+            ),
+        }));
     }
 
     if hadronic {
@@ -850,7 +851,7 @@ fn generate_sample(
     rc: &RunCard,
     nevents: usize,
     launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
         .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
     refuse_mixed_multiplicity(&sets)?;
@@ -892,7 +893,15 @@ fn generate_sample(
         .map(|s| s.diagrams[0].provenance.process as i32)
         .collect();
     let reweight_plan = launches
-        .map(|l| reweight_plan(&compiled_sets, model, evaluated, l))
+        .map(|l| {
+            reweight_plan(
+                &compiled_sets,
+                &forbidden_onshell(parsed, model)?,
+                model,
+                evaluated,
+                l,
+            )
+        })
         .transpose()?;
     let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
         compiled_sets
@@ -1044,7 +1053,7 @@ fn reweight_launches(
     args: &GenerateArgs,
     parsed: &SupportedCard,
     model: &UFOModel,
-) -> Result<Option<(Vec<Launch>, ReweightOptions)>, IntegrateError> {
+) -> Result<Option<(Vec<Launch>, ReweightOptions)>, CliError> {
     let Some(path) = &args.reweight_card else {
         return Ok(None);
     };
@@ -1053,11 +1062,12 @@ fn reweight_launches(
     let card: ReweightCard = text
         .parse()
         .map_err(|e| err(format!("{}: {e}", path.display())))?;
-    if !forbidden_onshell(parsed, model)?.is_empty() {
+    let forbidden = forbidden_onshell(parsed, model)?;
+    if !forbidden.is_empty() {
         return Err(err(format!(
             "{}: {}",
             path.display(),
-            vibegraph::reweight::ReweightError::ForbiddenSChannel
+            vibegraph::reweight::ReweightError::ForbiddenSChannel { ids: forbidden }
         )));
     }
     let launches = resolve(&card, model).map_err(|e| err(format!("{}: {e}", path.display())))?;
@@ -1078,12 +1088,13 @@ fn reweight_launches(
 /// the indexing its event source reports, and say what each event will cost.
 fn reweight_plan(
     sets: &[&DiagramSet],
+    forbidden_onshell: &[i64],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     (launches, options): (Vec<Launch>, ReweightOptions),
-) -> Result<ReweightPlan, IntegrateError> {
+) -> Result<ReweightPlan, CliError> {
     let n = launches.len();
-    let plan = ReweightPlan::new(sets, model, evaluated, launches, options)
+    let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
     report_reweighting(n, &plan.summary());
     Ok(plan)
@@ -1240,7 +1251,7 @@ impl ReweightAudit {
     /// Report what was checked, and refuse a file whose weights were taken against
     /// another subprocess than the one each event was drawn in, or are not finite.
     /// A refused file is removed rather than left beside the error.
-    fn finish(&self, out: &std::path::Path) -> Result<(), IntegrateError> {
+    fn finish(&self, out: &std::path::Path) -> Result<(), CliError> {
         let events: usize = self.terms.iter().map(|(_, n)| n).sum();
         let mut terms = self.terms.clone();
         terms.sort_by_key(|((part, ordering), _)| (*part, *ordering == BeamOrdering::Exchanged));
@@ -1401,7 +1412,7 @@ fn emit_to(
     source: &mut dyn EventSource,
     plan: &EmitPlan,
     strategy: &dyn UnweightStrategy,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let file = std::fs::File::create(&args.out)
         .map_err(|e| err(format!("cannot create {}: {e}", args.out.display())))?;
     let mut sink = std::io::BufWriter::new(file);
@@ -1432,7 +1443,7 @@ fn flavor_records(
     groups: &FlavorGroups,
     model: &UFOModel,
     evaluated: &EvaluatedModel,
-) -> Result<FlavorRecords, IntegrateError> {
+) -> Result<FlavorRecords, CliError> {
     let mut out = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
         let base = SubprocessRecord::new(group.evaluator(), model, evaluated)
@@ -1469,7 +1480,7 @@ fn flavor_records(
 fn check_channel_keys(
     artifact: &IntegrateArtifact,
     integ: &MultiplicitySum<'_>,
-) -> Result<(), IntegrateError> {
+) -> Result<(), CliError> {
     let derived = integ.channel_keys();
     if artifact.channels.len() != derived.len() {
         return Err(err(format!(
@@ -1698,7 +1709,7 @@ fn generate_proton_sample(
     set: &PdfSet,
     pdf: &PdfMember,
     launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, IntegrateError> {
+) -> Result<EmitSummary, CliError> {
     let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
 
     let MultiplicityGroups { groups, vetoes } =
@@ -1782,10 +1793,16 @@ fn generate_proton_sample(
                 .flat_map(FlavorGroups::groups)
                 .flat_map(|g| (0..g.members().len()).map(|i| g.member_diagram_set(i)))
                 .collect();
-            reweight_plan(&members, model, evaluated, l)
+            reweight_plan(
+                &members,
+                &forbidden_onshell(parsed, model)?,
+                model,
+                evaluated,
+                l,
+            )
         })
         .transpose()?;
-    let beam_pdg = hadron_beam_pdg(rc)?;
+    let beam_pdg = PROTON_BEAM_PDG;
 
     let rule = max_rule(args);
     let scan = Unweighter::scan_with(
@@ -1903,7 +1920,7 @@ fn group_resonances(
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), IntegrateError> {
+) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), CliError> {
     let mut tables = Vec::with_capacity(groups.groups().len());
     let mut pdgs = Vec::with_capacity(groups.groups().len());
     for group in groups.groups() {
@@ -1946,27 +1963,14 @@ fn group_resonances(
     Ok((tables, pdgs))
 }
 
-/// `IDBMUP` for a hadron-collider run, from the run card's beam labels.
-fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], IntegrateError> {
-    let mut out = [0i32; 2];
-    for (slot, lpp) in out.iter_mut().zip([rc.lpp1, rc.lpp2]) {
-        *slot = match lpp {
-            1 => 2212,
-            -1 => -2212,
-            other => {
-                return Err(err(format!(
-                    "beam label lpp = {other} is not a proton beam; event generation covers \
-                     lpp = 0 (fixed-energy partons) and lpp = ±1 (protons)"
-                )))
-            }
-        };
-    }
-    Ok(out)
-}
+/// `IDBMUP` for a hadron-collider run: a proton on each side, the one hadron
+/// beam pair [`BeamMode::Proton`] stands for (the run card admits it only as
+/// `lpp1 = lpp2 = 1`).
+const PROTON_BEAM_PDG: [i32; 2] = [2212, 2212];
 
 /// `IDBMUP` for a fixed-beam run: the incoming legs' PDG codes, which every
 /// subprocess sharing one `<init>` block has to agree on.
-fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
+fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
     let first = &records[0];
     if first.n_in() != 2 {
         return Err(err(format!(
@@ -1989,7 +1993,7 @@ fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
 /// `IDBMUP` for a decay run: the decaying particle's PDG code and `0`, as MadEvent
 /// writes it — the second beam slot is empty, since there is no second incoming
 /// particle.
-fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
+fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
     let mother = records[0].pdg()[0];
     if records
         .iter()
@@ -2005,7 +2009,7 @@ fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], IntegrateError> {
 
 /// The banked channel weights have to be a usable selection distribution before
 /// they are installed, since the combiner asserts rather than reports.
-fn check_alphas(alphas: &[f64]) -> Result<(), IntegrateError> {
+fn check_alphas(alphas: &[f64]) -> Result<(), CliError> {
     if alphas.is_empty() {
         return Err(err("the artifact banks no channel grids"));
     }
@@ -2334,6 +2338,7 @@ mod tests {
         let compiled: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
         let plan = ReweightPlan::new(
             &compiled,
+            &[],
             &model,
             &evaluated,
             launches,

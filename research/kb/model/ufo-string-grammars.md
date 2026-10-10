@@ -5,7 +5,7 @@ description: "Python-precedence expression grammar; the Lorentz-structure gramma
 status: draft
 tags: [ufo, grammar, peg, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n16-vocab, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L208-L228", title: "Note 16 §1d, SM tree-level colour vocabulary"}
   - {id: n16-parser, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L300-L317", title: "Note 16 §2.3, UFO parser changes for colour"}
@@ -52,10 +52,11 @@ primary        = "(" additive ")" / number / complex(re, im) / cmath.f(x) / f(x)
 - Functions: `cmath.` `sqrt`, `log`, `exp`, `sin`, `cos`, `tan`, `atan`, `asin`, `acos`;
   bare `complexconjugate`/`conj`, `sqrt`, `abs`, `arg`, `re`, `im`, `sin`, `cos`, `tan`,
   `atan`, `asin`, `acos`, `sec`, `csc`, `asec`, `acsc`. These stand in for `function_library.py`, which
-  is not read. Any other function name (`cot`, which SMEFTsim's library defines) is a
-  parse error.
-- Evaluation is in `Complex64`. An unknown parameter reference panics in every build
-  (the doc comment on `eval` still says release builds return 0; the code does not).
+  is not read. The library functions with no evaluation here (`cot`, `theta_function`,
+  `cond`, `reglog`) are refused when the value string is parsed, not read as a
+  parameter (`library_functions_without_an_evaluation_are_refused`); so is any other
+  unknown function name.
+- Evaluation is in `Complex64`. An unknown parameter reference panics in every build.
 
 Pins: unit tests on `-a**2`, `(-a)**2`, `a**-b`, `-a**-b`, `2**3**2` and on three model
 expressions against Python's own arithmetic; and `coupling_oracle`
@@ -74,12 +75,6 @@ real base still goes through `powc`, `exp(e·log b)`: `3**2` evaluates to
 `9.000000000000002`. Switching that path to `powf` moves 335 of 3254 model values by
 about one ulp; it is measured and not adopted, since it needs a before/after oracle of
 its own. [^n36-b7]
-
-**Known latent defect.** `asin` and `acos` (bare or `cmath.`) map to the `ACsc`/`ASec`
-functions, which evaluate `asin(1/x)` and `acos(1/x)` (`expr.rs`, the
-`cmath_func_name` and `bare_func_name` rules). No value string in any model the
-repository loads calls them; SMEFTsim's library defines `asec`/`acsc` in terms of them,
-but the grammar implements `asec`/`acsc` directly.
 
 ## Lorentz structures (`ufo/lorentz.rs`)
 
@@ -103,6 +98,11 @@ atom      = number / Operator(arg, …) / "(" structure ")"
   are unrestricted. SMEFTsim uses only `**2`.
 - **Coefficients** are real `f64`; parenthesised sums distribute (`2*(A + B)` → `2A + 2B`).
   Numbers are `digits[.digits]`, with no exponent notation.
+- **Division.** A numeric divisor, or a parenthesised group of numbers (`/(2.)`,
+  `/(1+1)`, which divides by the group's sum), divides every term's coefficient. A
+  divisor carrying a Lorentz object (`/P(1,2)`, `/(P(-1,1)*P(-1,2))`) has no reading as
+  a structure and is refused with `LorentzError::StructureParse`
+  (`a_grouped_divisor_divides_or_is_refused`).
 
 What each operator means numerically (ALOHA's half-size `Sigma`, `Gamma5 = ProjP −
 ProjM`, the `Epsilon` sign) is in

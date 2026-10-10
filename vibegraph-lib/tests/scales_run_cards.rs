@@ -14,10 +14,11 @@ fn validation_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation")
 }
 
-/// The cross-section reference in `validation/madgraph/` was produced with cards
-/// that fix both scales at `M_Z`. That is what makes those numbers reproducible
+/// The two Drell–Yan cards behind `validation/madgraph/hadronic_sigma_reference.json`
+/// fix both scales at `M_Z`. That is what makes those two numbers reproducible
 /// without any of the dynamic machinery — and what makes any movement in them a
-/// bug in the fixed branch rather than a re-derivation.
+/// bug in the fixed branch rather than a re-derivation. The other banked runs'
+/// cards live with their runs and are `validate_scales.rs`'s subject.
 #[test]
 fn the_banked_cross_section_cards_are_fixed_scale() {
     let mut checked = 0;
@@ -65,23 +66,61 @@ fn the_parser_fixture_compiles_to_the_free_scale_branch() {
     assert!(choice.needs_channels());
 }
 
-/// Every run card committed to this repository is accepted by the parser's
-/// field enforcement.
+/// Every run card committed under `validation/madgraph/` and `tests/data/` is
+/// accepted by the parser's field enforcement.
 ///
 /// The enforcement refuses a card that moves a recognized-but-unread parameter
 /// off MadGraph's default where that would change what this generator produces,
-/// so it can only be sound if it rejects nothing a real card carries. This is
-/// the bare-clone half of that check; the banked references it was measured
-/// against are in `validate_scales.rs`, which needs the reference data.
+/// so it can only be sound if it rejects nothing a real card carries. The cards
+/// are found by name (`*run_card*.dat`) in those directories and in
+/// `validation/madgraph/repro/*/`, so a card committed there is read without
+/// being listed here. This is the bare-clone half of that check; the banked
+/// runs' own cards are read by `validate_scales.rs`, which needs the reference
+/// data.
 #[test]
 fn the_committed_run_cards_are_accepted() {
-    let committed = [
-        validation_dir().join("madgraph/dy13_default_run_card.dat"),
-        validation_dir().join("madgraph/dy13_mmll_run_card.dat"),
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/run_card_parser_fixture.dat"),
+    let madgraph = validation_dir().join("madgraph");
+    let mut dirs = vec![
+        madgraph.clone(),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"),
     ];
-    for path in &committed {
-        RunCard::parse_file(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let mut repro: Vec<PathBuf> = std::fs::read_dir(madgraph.join("repro"))
+        .expect("validation/madgraph/repro is committed")
+        .map(|e| e.expect("directory entry").path())
+        .filter(|p| p.is_dir())
+        .collect();
+    repro.sort();
+    dirs.extend(repro);
+
+    let mut committed: Vec<PathBuf> = Vec::new();
+    for dir in &dirs {
+        let mut cards: Vec<PathBuf> = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+            .map(|e| e.expect("directory entry").path())
+            .filter(|p| {
+                p.is_file()
+                    && p.extension().is_some_and(|x| x == "dat")
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.contains("run_card"))
+            })
+            .collect();
+        assert!(!cards.is_empty(), "{} holds no run card", dir.display());
+        cards.sort();
+        committed.extend(cards);
     }
+    let mut refused = Vec::new();
+    for path in &committed {
+        if let Err(e) = RunCard::parse_file(path) {
+            refused.push(format!("{}: {e}", path.display()));
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "{} of {} committed run cards refused:\n{}",
+        refused.len(),
+        committed.len(),
+        refused.join("\n")
+    );
     println!("{} committed run cards accepted", committed.len());
 }

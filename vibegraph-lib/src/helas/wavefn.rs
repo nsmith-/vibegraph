@@ -29,8 +29,8 @@
 //!
 //! `nsv` and `nss` panic on any value other than $\pm 1$. The signed momentum is
 //! what lets the off-shell-current routines in [`crate::helas::vertex`] add and
-//! subtract leg momenta directly to obtain the momentum of the internal line;
-//! [`DiracWf::charge`] reads the flag back off the sign of the stored energy.
+//! subtract leg momenta directly to obtain the momentum of the internal line,
+//! and it leaves the flag readable off the sign of the stored energy.
 //!
 //! ### Spinor wavefunctions
 //!
@@ -73,7 +73,7 @@
 //! $$
 //!
 //! where $\omega_\pm(p) = \sqrt{E \pm |\vec{p}|}$ are the energy-dependent factors that appear in the construction of the spinors.
-//! The $u$ spinor will be used for [`Charge::Particle`] and the $v$ spinor for [`Charge::Antiparticle`] in the HELAS convention.
+//! The $u$ spinor is used for [`Charge::Particle`] and the $v$ spinor for [`Charge::Antiparticle`] in the HELAS convention.
 //!
 //! Two limits of that construction are computed by their own branches.
 //!
@@ -195,8 +195,7 @@
 //! and carries the flow-signed momentum $n_{ss}\\,p$ that downstream vertex routines
 //! need for routing. It has no helicity argument.
 use crate::helas::repr::lorentz::{
-    Bispinor, Bra, ComplexVector, Contravariant, Covariant, DiracAdjoint, Ket, LorentzVector,
-    SpinorRepr, Variance,
+    Bispinor, Bra, ComplexVector, Contravariant, DiracAdjoint, Ket, LorentzVector, SpinorRepr,
 };
 use crate::helas::repr::numbers::{Charge, Chirality, SpinorHelicity};
 use crate::helas::repr::{Real, C};
@@ -212,14 +211,14 @@ use num_traits::Zero;
 /// antiparticles.  This matches the HELAS convention used when building
 /// currents and computing the s-channel propagator momentum.
 ///
-/// `spinor` has type `B::Fiber` (= `[C<F>; 4]` for any `B: SpinorRepr<F>`),
-/// since [`SpinorRepr<F>`] is a subtrait of [`crate::helas::repr::lorentz::LorentzRepr<F>`]
-/// with `Fiber = [C<F>; 4]`.
+/// `spinor` is a Weyl-basis [`Bispinor`] whose adjoint `Adj` ([`Ket`] or
+/// [`Bra`]) is the flow direction: a flowing-in leg is a ket column `ψ`, a
+/// flowing-out leg the bra row `ψ̄ = ψ†γ⁰`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiracWf<F: Real, Adj: DiracAdjoint> {
     pub spinor: Bispinor<F, Adj>,
     /// Signed momentum: particle → +p, antiparticle → −p
-    pub momentum: LorentzVector<F, Contravariant>,
+    pub(crate) momentum: LorentzVector<F, Contravariant>,
 }
 
 /// Flowing-IN typed spinor wavefunction.
@@ -257,23 +256,11 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
     ///
     /// The momentum is stored verbatim, so the caller is responsible for the
     /// flow sign; off-shell currents use this to wrap their own output.
-    pub fn from_spinor(
+    pub(crate) fn from_spinor(
         spinor: Bispinor<F, Adj>,
         momentum: LorentzVector<F, Contravariant>,
     ) -> Self {
         Self { spinor, momentum }
-    }
-
-    /// Return the charge (particle vs antiparticle) based on the sign of the energy component of the momentum.
-    ///
-    /// This relies on the HELAS convention that the momentum stored in the wavefunction is `p * nsf.sign()`,
-    /// where `nsf` is the charge sign parameter used when constructing the spinor.
-    pub fn charge(&self) -> Charge {
-        if self.momentum.e().is_sign_positive() {
-            Charge::Particle
-        } else {
-            Charge::Antiparticle
-        }
     }
 
     /// Flip the adjoint (ket/bra) by taking the Dirac conjugate of the spinor (`u ↔ ū`).
@@ -281,7 +268,8 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
     /// This is the bra/ket dual of the *same* physical particle, so the stored
     /// (HELAS-signed) momentum is carried through unchanged — matching the
     /// no-flip momentum routing used throughout off-shell-current evaluation.
-    pub fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
+    #[cfg(test)]
+    pub(crate) fn flip_adjoint(self) -> DiracWf<F, Adj::Dual> {
         DiracWf {
             spinor: self.spinor.dualize(),
             momentum: self.momentum,
@@ -291,7 +279,8 @@ impl<F: Real, Adj: DiracAdjoint> DiracWf<F, Adj> {
 
 impl<F: Real> InDiracWf<F> {
     /// Convert to a bra wavefunction by taking the Dirac conjugate of the spinor
-    pub fn to_outgoing(self) -> OutDiracWf<F> {
+    #[cfg(test)]
+    pub(crate) fn to_outgoing(self) -> OutDiracWf<F> {
         self.flip_adjoint()
     }
 }
@@ -300,15 +289,17 @@ impl<F: Real> OutDiracWf<F> {
     /// Convert to a ket wavefunction by taking the Dirac conjugate of the spinor
     ///
     /// This is the inverse of [`InDiracWf::to_outgoing`].
-    pub fn to_incoming(self) -> InDiracWf<F> {
+    #[cfg(test)]
+    pub(crate) fn to_incoming(self) -> InDiracWf<F> {
         self.flip_adjoint()
     }
 
-    pub fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
+    #[cfg(test)]
+    pub(crate) fn scalar_bilinear(self, other: &InDiracWf<F>, chirality: Chirality) -> C<F> {
         Bispinor::scalar_bilinear(&self.spinor, &other.spinor, chirality)
     }
 
-    pub fn vector_bilinear(
+    pub(crate) fn vector_bilinear(
         self,
         other: &InDiracWf<F>,
         chirality: Chirality,
@@ -321,47 +312,24 @@ impl<F: Real> OutDiracWf<F> {
 // Vector (gauge boson) wavefunction
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// An off-shell vector wavefunction: 4 complex polarisation components plus
-/// the associated 4-momentum.
+/// A vector wavefunction: 4 complex polarisation components plus the associated
+/// 4-momentum.
 ///
-/// Used as both the result of `j3xxxx` and the input to `iovxxx`.
+/// Used as both the result of [`jioxxx`](crate::helas::vertex::jioxxx) and the
+/// input to [`iovxxx`](crate::helas::vertex::iovxxx).
 ///
-/// The polarisation carries its [`Variance`] in the type (`V`, default
-/// [`Contravariant`]). External legs and the P-less off-shell currents are
-/// contravariant `ε^μ`; index-lowering vertex/propagator kernels produce the
-/// covariant `ε_μ`, so the raise/lower at the propagator seam is type-checked
-/// rather than hand-coded. The `momentum` is always the physical contravariant
-/// 4-momentum `p^μ`.
+/// Every vector the evaluator builds — external legs, off-shell currents and
+/// propagated currents alike — is contravariant `ε^μ`; a kernel that contracts an
+/// index applies the metric itself. The `momentum` is always the physical
+/// contravariant 4-momentum `p^μ`.
 #[derive(Clone, Copy, Debug)]
-pub struct VectorWf<F: Real, V: Variance = Contravariant> {
-    /// Polarisation / Lorentz components in HELAS convention, at variance `V`.
-    pub eps: ComplexVector<F, V>,
-    pub momentum: LorentzVector<F, Contravariant>,
+pub struct VectorWf<F: Real> {
+    /// Contravariant polarisation / Lorentz components `ε^μ` in HELAS convention.
+    pub eps: ComplexVector<F, Contravariant>,
+    pub(crate) momentum: LorentzVector<F, Contravariant>,
 }
 
-impl<F: Real> VectorWf<F, Covariant> {
-    /// Raise the polarisation index: `ε^μ = g^{μν} ε_ν` (momentum unchanged).
-    #[inline(always)]
-    pub fn raise(self) -> VectorWf<F, Contravariant> {
-        VectorWf {
-            eps: self.eps.raise(),
-            momentum: self.momentum,
-        }
-    }
-}
-
-impl<F: Real> VectorWf<F, Contravariant> {
-    /// Lower the polarisation index: `ε_μ = g_{μν} ε^ν` (momentum unchanged).
-    #[inline(always)]
-    pub fn lower(self) -> VectorWf<F, Covariant> {
-        VectorWf {
-            eps: self.eps.lower(),
-            momentum: self.momentum,
-        }
-    }
-}
-
-impl<F: Real> VectorWf<F, Contravariant> {
+impl<F: Real> VectorWf<F> {
     /// On-shell polarization vector for a spin-1 external particle.
     ///
     /// # Arguments
@@ -483,7 +451,8 @@ impl<F: Real> VectorWf<F, Contravariant> {
 pub struct ScalarWf<F: Real> {
     /// Scalar amplitude (always 1+0i for external scalars).
     pub value: C<F>,
-    /// Signed momentum: particle → +p, antiparticle → −p
+    /// Flow-signed momentum: outgoing → +p, incoming → −p (the `nss` flag, not the
+    /// charge)
     pub momentum: LorentzVector<F, Contravariant>,
 }
 
@@ -499,7 +468,7 @@ impl<F: Real> ScalarWf<F> {
     /// # Implementation
     /// Converted from ALOHA `sxxxxx.F` (Fortran77 HELAS).
     /// The scalar amplitude is trivial; this mainly stores momentum for routing.
-    pub fn sxxxxx(p: LorentzVector<F, Contravariant>, nss: i32) -> Self {
+    pub(crate) fn sxxxxx(p: LorentzVector<F, Contravariant>, nss: i32) -> Self {
         ScalarWf {
             value: C::new(F::one(), F::zero()),
             momentum: match nss {
@@ -545,15 +514,60 @@ mod tests {
         assert!((wf.eps.component(1).re + sqh).abs() < 1e-10);
     }
 
+    /// `nsv` flips the stored momentum and conjugates the polarisation vector,
+    /// component by component, for every transverse helicity in every branch.
+    ///
+    /// The cases cover a general direction (massive and massless), the z axis and
+    /// a massive vector at rest, so each branch's imaginary part is non-zero and
+    /// a conjugation that is skipped or applied twice shows up. The longitudinal
+    /// state is real, and is checked to be identical for both flows.
     #[test]
     fn test_vxxxxx_incoming_vs_outgoing() {
-        let p = LorentzVector::new(2.0, 1.0, 0.5, 0.2);
-        let wf_out = VectorWf::vxxxxx(p, 0.5, 0, 1); // outgoing (nsv=+1)
-        let wf_in = VectorWf::vxxxxx(p, 0.5, 0, -1); // incoming (nsv=-1)
+        let m: f64 = 0.5;
+        let massive = LorentzVector::from_pxpypzmass(1.0, 0.5, 0.2, m);
+        let cases = [
+            (massive, m, vec![-1, 0, 1]),
+            (
+                LorentzVector::from_pxpypzmass(0.0, 0.0, -0.7, m),
+                m,
+                vec![-1, 0, 1],
+            ),
+            (LorentzVector::new(m, 0.0, 0.0, 0.0), m, vec![-1, 0, 1]),
+            (
+                LorentzVector::from_pxpypzmass(1.0, 0.5, 0.2, 0.0),
+                0.0,
+                vec![-1, 1],
+            ),
+            (LorentzVector::new(0.7, 0.0, 0.0, -0.7), 0.0, vec![-1, 1]),
+        ];
+        for (p, vmass, helicities) in cases {
+            for nhel in helicities {
+                let wf_out = VectorWf::vxxxxx(p, vmass, nhel, 1);
+                let wf_in = VectorWf::vxxxxx(p, vmass, nhel, -1);
 
-        // Momenta should have opposite signs
-        assert_eq!(wf_out.momentum.component(0), 2.0);
-        assert_eq!(wf_in.momentum.component(0), -2.0);
+                assert_eq!(wf_out.momentum, p);
+                assert_eq!(wf_in.momentum, -p);
+
+                let mut max_im: f64 = 0.0;
+                for mu in 0..4 {
+                    let (o, i) = (wf_out.eps.component(mu), wf_in.eps.component(mu));
+                    assert_eq!(
+                        o,
+                        i.conj(),
+                        "ε^{mu} (p={p}, m={vmass}, nhel={nhel}): outgoing is not the \
+                         conjugate of incoming"
+                    );
+                    max_im = max_im.max(o.im.abs());
+                }
+                if nhel != 0 {
+                    assert!(
+                        max_im > 0.1,
+                        "p={p}, m={vmass}, nhel={nhel}: the transverse vector is real, \
+                         so this case cannot see the conjugation"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -644,18 +658,38 @@ mod tests {
         }
     }
 
-    /// Test the to_outgoing and to_incoming conversions between InDiracWf and OutDiracWf.
+    /// The bra wavefunction is the Dirac conjugate `ψ̄ = ψ†γ⁰` of the ket, written
+    /// out here with an explicit Weyl-basis `γ⁰ = [[0, 1], [1, 0]]` rather than
+    /// through `dualize`, which both `to_outgoing` and the bra constructor call;
+    /// `to_incoming` inverts it.
     #[test]
     fn test_in_out_conversion() {
+        let one = C::new(1.0, 0.0);
+        let zero = C::new(0.0, 0.0);
+        let gamma0 = [
+            [zero, zero, one, zero],
+            [zero, zero, zero, one],
+            [one, zero, zero, zero],
+            [zero, one, zero, zero],
+        ];
         for ((p, mass), nhel, nsf) in generate_spinor_test_cases(false) {
             let in_wf = InDiracWf::from_momentum(p, mass, nhel, nsf);
             let out_wf = OutDiracWf::from_momentum(p, mass, nhel, nsf);
-            let in_wf_converted = out_wf.to_incoming();
-            let out_wf_converted = in_wf.to_outgoing();
 
-            // The converted wavefunction should match the original
-            assert_eq!(in_wf, in_wf_converted);
-            assert_eq!(out_wf, out_wf_converted);
+            // (ψ†γ⁰)_j = Σ_i ψ_i* γ⁰_{ij}
+            let psi = std::array::from_fn::<_, 4, _>(|i| in_wf.spinor.component(i));
+            let expected: [C<f64>; 4] =
+                std::array::from_fn(|j| (0..4).map(|i| psi[i].conj() * gamma0[i][j]).sum());
+            for (j, want) in expected.iter().enumerate() {
+                assert_eq!(
+                    out_wf.spinor.component(j),
+                    *want,
+                    "bra component {j} is not (ψ†γ⁰)_{j} (p={p:?}, m={mass}, {nhel}, {nsf})"
+                );
+                assert_eq!(in_wf.to_outgoing().spinor.component(j), *want);
+            }
+            assert_eq!(out_wf.momentum, in_wf.momentum);
+            assert_eq!(out_wf.to_incoming(), in_wf);
         }
     }
 }

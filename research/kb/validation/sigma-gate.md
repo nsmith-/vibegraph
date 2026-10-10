@@ -5,7 +5,7 @@ description: "validate_sigma and validate_hadronic compare sigma through the pro
 status: draft
 tags: [validation, cross-section, madgraph, vegas, hadronic]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3 (hadronic validation regime)"}
   - {id: n18-h7, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5 decision records (H7 hadronic-sigma, H8 cli-integrate)"}
@@ -93,10 +93,11 @@ The hadronic gates measure each row over several seeds and combine them with
 χ²/dof about the mean. Weighting by `1/σ²` would double-count a seed whose
 variance came out low by chance, the same bias Lepage's theorem forbids for
 VEGAS's own iterations. Each asserts a relative bound (`*_MAX_REL`, 0.005 on
-the llj, bb, jj and re-carded rows, 0.01 on Drell-Yan) and a scatter bound
-(`*_MAX_CHI2_PER_DOF = 4.0`); on Drell-Yan the relative bound is disjoined with
-a 3σ pull, because the errors are small enough that a pull alone would be
-reading cross-machine floating-point reproducibility.[^vhad] The scatter, not
+every row) and a scatter bound (`*_MAX_CHI2_PER_DOF = 4.0`). On Drell-Yan the
+relative bound is asserted together with a 3σ pull, `pull < 3 && rel < 0.005`:
+with MadGraph's error near 0.05% the pull binds, at about 0.24%, and the
+relative bound catches what the pull cannot, a seed whose quoted error a weight
+tail inflated, which shrinks the pull without moving σ any closer.[^vhad] The scatter, not
 the error, is what shows a missed region.[^vhad] Seed and budget discipline is
 [seed sweeps and budget ladders](seed-sweeps-and-budget-ladders.md).
 

@@ -86,27 +86,21 @@ fn test_eval_m2_ee_mumu_vs_hardcoded() {
     // param card cannot revive them; use the `lepton_masses` restriction, which
     // keeps the lepton masses settable, then supply the physical values here.
     let model = sm_lepton_masses_model();
-    let sets = generate_with("e+ e- > mu+ mu-", &model);
-    assert!(!sets.is_empty(), "no diagram sets generated for e⁺e⁻→μ⁺μ⁻");
-
-    // The `lepton_masses` restriction also keeps the lepton Yukawas non-zero,
-    // so e⁺e⁻→μ⁺μ⁻ gains an s-channel Higgs diagram (γ, Z, H); the Goldstone
-    // (G0) diagram is excluded in unitary gauge like MadGraph. The Higgs
-    // coupling is ∝ the lepton Yukawa. The hardcoded reference is γ+Z only, so
-    // we decouple the scalar by zeroing the lepton Yukawas (YUKAWA 11/13) in
-    // the param card while keeping the physical masses (MASS 11/13). The H
-    // diagram is still built but evaluates to zero. TODO: once
-    // forbidden-propagator filtering (`/ H`) is implemented this is a good
-    // test of that syntax — drop the scalar there and the Yukawa override here.
+    // The `lepton_masses` restriction also keeps the lepton Yukawas non-zero, so
+    // e⁺e⁻→μ⁺μ⁻ has an s-channel Higgs diagram beside the γ and Z ones (the G0
+    // diagram is excluded in unitary gauge, as in MadGraph). The hardcoded
+    // reference is γ+Z only, so the Higgs is forbidden as a propagator.
+    let sets = generate_with("e+ e- > mu+ mu- / h", &model);
+    assert!(
+        !sets.is_empty(),
+        "no diagram sets generated for e⁺e⁻→μ⁺μ⁻ / h"
+    );
     let set = &sets[0];
-    assert_eq!(set.diagrams.len(), 3, "expected 3 diagrams (γ, Z, H)");
+    assert_eq!(set.diagrams.len(), 2, "expected 2 diagrams (γ, Z)");
 
-    let card = format!(
-        "Block MASS\n 11 {}\n 13 {}\nBlock YUKAWA\n 11 0.0\n 13 0.0\n",
-        MDL_ME, MDL_MMU
-    )
-    .parse::<ParamCard>()
-    .unwrap();
+    let card = format!("Block MASS\n 11 {}\n 13 {}\n", MDL_ME, MDL_MMU)
+        .parse::<ParamCard>()
+        .unwrap();
     let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
 
     let evaluator =

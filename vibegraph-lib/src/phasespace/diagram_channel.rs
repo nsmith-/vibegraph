@@ -27,10 +27,12 @@
 //!
 //! Leaving that zero-width rise on a flat draw is not a mere inefficiency: the
 //! estimator acquires a tail heavy enough that a run either misses the region
-//! (collapsing `σ̂`) or catches it (inflating `σ̂`), and because VEGAS combines its
-//! iterations by `1/σ²`, the iterations that miss report a small integral *and* a
-//! small variance and go on to dominate the result. The failure is therefore
-//! silent — a confidently wrong cross section, not a visibly noisy one.
+//! (collapsing `σ̂`) or catches it (inflating `σ̂`). An iteration that misses it
+//! reports a small integral *and* a small variance, so a run that misses it in
+//! every iteration quotes an error bar as small as its answer is wrong, and under
+//! a `1/σ²` combination of iterations the ones that miss dominate even a run that
+//! caught it. The failure is therefore silent — a confidently wrong cross section,
+//! not a visibly noisy one.
 //!
 //! A spacelike (t-channel) line is peripheral, not a subsystem mass: it carries a
 //! momentum transfer `t = (p_beam − p_emitted)² ≤ 0`. A diagram with a single
@@ -118,7 +120,7 @@ use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel, Sub
 #[derive(Clone, Copy, Debug)]
 pub struct Resonance<F: Real> {
     pub mass: F,
-    pub width: F,
+    pub(crate) width: F,
 }
 
 /// One rung of a hand-specified peripheral chain: the outgoing-leg slots the rung
@@ -131,8 +133,8 @@ pub type RungSpec<F> = (Vec<usize>, Option<Resonance<F>>, F);
 /// subsystem mass, so it drives no node in the flat decay tree here.
 #[derive(Clone, Copy, Debug)]
 pub struct TChannel<F: Real> {
-    pub mass: F,
-    pub width: F,
+    pub(crate) mass: F,
+    pub(crate) width: F,
 }
 
 /// A node of the decay tree: either a single outgoing particle of fixed mass, or
@@ -190,7 +192,7 @@ impl<F: Real> Node<F> {
 /// collision CM and confine it to the window in which each daughter clears its
 /// cut-implied energy floor; they differ in the density over that window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AngleShape {
+pub(crate) enum AngleShape {
     /// Uniform in `cos θ*` over the window — the isotropic map with the region the
     /// cuts reject taken out of it.
     Windowed,
@@ -386,8 +388,8 @@ impl<F: Real> DiagramChannel<F> {
     /// diagram with more spacelike lines than that.
     ///
     /// Nothing derives a cap this way — production admits every rung. It exists so
-    /// the chain can be measured against the truncated map it replaces, which for
-    /// `max_rungs = 1` is the all-timelike tree every ladder used to fall back to.
+    /// the chain can be measured against a truncated map; at `max_rungs = 1` every
+    /// ladder falls back to the all-timelike tree.
     pub fn from_diagram_capped(
         diagram: &Diagram,
         model: &EvaluatedModel,
@@ -501,7 +503,7 @@ impl<F: Real> DiagramChannel<F> {
     /// The outgoing-leg slots of `diagram` carrying a massless vector boson — a
     /// gluon or a photon, the emissions whose splitting kernels are singular in the
     /// soft limit — as a bitmask over `0..n_out`.
-    pub fn massless_vector_slots(diagram: &Diagram, model: &EvaluatedModel) -> u64 {
+    pub(crate) fn massless_vector_slots(diagram: &Diagram, model: &EvaluatedModel) -> u64 {
         let n_in = diagram.n_in;
         diagram.legs[n_in..]
             .iter()
@@ -516,7 +518,7 @@ impl<F: Real> DiagramChannel<F> {
     /// Whether `diagram` has a finite-width timelike propagator whose final-state
     /// side is the whole final state — an s-channel resonance every outgoing leg
     /// comes from, whose Breit–Wigner then shapes the distribution of `ŝ` itself.
-    pub fn has_whole_state_resonance(diagram: &Diagram, model: &EvaluatedModel) -> bool {
+    pub(crate) fn has_whole_state_resonance(diagram: &Diagram, model: &EvaluatedModel) -> bool {
         let n_in = diagram.n_in;
         let n_ext = diagram.n_ext();
         diagram.props.iter().any(|prop| {
@@ -538,7 +540,7 @@ impl<F: Real> DiagramChannel<F> {
     /// The rule that selects a split when one of its daughters *is* a leg in
     /// `emitters` — a single massless vector, not a subsystem containing one —
     /// which is where a splitting kernel's soft singularity sits.
-    pub fn soft_emission_rule(emitters: u64) -> impl Fn(u64, u64) -> bool {
+    pub(crate) fn soft_emission_rule(emitters: u64) -> impl Fn(u64, u64) -> bool {
         move |left, right| {
             (left.count_ones() == 1 && left & emitters != 0)
                 || (right.count_ones() == 1 && right & emitters != 0)
@@ -548,7 +550,7 @@ impl<F: Real> DiagramChannel<F> {
     /// How many 2-body splits of this channel `rule` selects, not counting the root
     /// of an all-timelike tree: that split's parent is at rest in the collision
     /// CM, so no angular map can shape it and selecting it changes nothing.
-    pub fn splits_selected(&self, rule: &dyn Fn(u64, u64) -> bool) -> usize {
+    pub(crate) fn splits_selected(&self, rule: &dyn Fn(u64, u64) -> bool) -> usize {
         fn count<F: Real>(node: &Node<F>, rule: &dyn Fn(u64, u64) -> bool) -> usize {
             match node {
                 Node::Leaf { .. } => 0,
@@ -575,7 +577,7 @@ impl<F: Real> DiagramChannel<F> {
 
     /// The number of peripheral rungs — spacelike lines the chain draws a transfer
     /// for. Zero for an all-timelike tree.
-    pub fn rung_count(&self) -> usize {
+    pub(crate) fn rung_count(&self) -> usize {
         match &self.topology {
             ChannelTopology::Timelike(_) => 0,
             ChannelTopology::Spine(spine) => spine.rungs.len(),
@@ -586,7 +588,8 @@ impl<F: Real> DiagramChannel<F> {
     /// construction as [`from_diagram`](Self::from_diagram) without a diagram, for
     /// exercising a controlled topology. Each entry of `subsystems` is a set of
     /// outgoing-leg slots (`0..masses.len()`) that share an s-channel line.
-    pub fn from_topology(sqrt_s: F, masses: Vec<F>, subsystems: &[Vec<usize>]) -> Self {
+    #[cfg(test)]
+    pub(crate) fn from_topology(sqrt_s: F, masses: Vec<F>, subsystems: &[Vec<usize>]) -> Self {
         let n_out = masses.len();
         assert!(n_out >= 2, "a 2-body decomposition needs at least two legs");
         let masks: Vec<u64> = subsystems
@@ -607,7 +610,8 @@ impl<F: Real> DiagramChannel<F> {
     /// [`Resonance`] to each subsystem so its invariant is Breit–Wigner-mapped — the
     /// same tree as [`from_topology`](Self::from_topology) but with resonance-aware
     /// invariant draws, for exercising the pole map on a controlled topology.
-    pub fn from_topology_resonant(
+    #[cfg(test)]
+    pub(crate) fn from_topology_resonant(
         sqrt_s: F,
         masses: Vec<F>,
         subsystems: &[(Vec<usize>, Option<Resonance<F>>)],
@@ -756,11 +760,6 @@ impl<F: Real> DiagramChannel<F> {
             topology: ChannelTopology::Spine(spine),
             t_channels: Vec::new(),
         }
-    }
-
-    /// Number of outgoing momenta the channel produces.
-    pub fn n_out(&self) -> usize {
-        self.n_out
     }
 
     /// A canonical encoding of everything the map is a function of: the outgoing
@@ -935,7 +934,7 @@ impl<F: Real> DiagramChannel<F> {
     /// reach the window at all, the draw keeps the full range, and the density
     /// reads the same range at that configuration, so sampler and density agree
     /// there too.
-    pub fn with_forced_windows(mut self, window: &dyn Fn(u64) -> Option<(F, F)>) -> Self {
+    pub(crate) fn with_forced_windows(mut self, window: &dyn Fn(u64) -> Option<(F, F)>) -> Self {
         match &mut self.topology {
             ChannelTopology::Timelike(root) => {
                 window_branch(root, window);
@@ -974,7 +973,7 @@ impl<F: Real> DiagramChannel<F> {
     /// The soft shape applied to a split whose integrand carries no soft
     /// enhancement is a *worse* map, because the weight then varies as `E₁E₂`
     /// where the integrand does not.
-    pub fn with_split_angles(
+    pub(crate) fn with_split_angles(
         mut self,
         rule: &dyn Fn(u64, u64) -> Option<AngleShape>,
         energy_floor: &dyn Fn(u64) -> F,
@@ -996,8 +995,10 @@ impl<F: Real> DiagramChannel<F> {
     /// channel is a valid map over the same phase space — a *different* map, whose
     /// draws concentrate on a different set of running transfers.
     ///
-    /// Nothing derives an ordering this way; it exists so a deliberately wrong
-    /// ordering can be built and measured against the derived one.
+    /// The derived order is the diagram's own nesting; this is how a run asks for
+    /// another one — [`RungOrder::Reversed`](super::maps::RungOrder::Reversed)
+    /// applies it — and how a deliberately wrong ordering is built and measured
+    /// against the derived one.
     pub fn with_rung_order(mut self, order: &[usize]) -> Self {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             assert_eq!(order.len(), spine.rungs.len(), "order must name every rung");
@@ -1030,7 +1031,7 @@ impl<F: Real> DiagramChannel<F> {
     /// Production always bounds where a fiducial scale exists. This exists so the
     /// bound's effect can be measured against the same channels without it, on the
     /// same seeds, rather than against a differently-poled map.
-    pub fn without_transfer_bound(mut self) -> Self {
+    pub(crate) fn without_transfer_bound(mut self) -> Self {
         if let ChannelTopology::Spine(spine) = &mut self.topology {
             for rung in &mut spine.rungs {
                 rung.t_max_cap = None;
@@ -1050,7 +1051,7 @@ impl<F: Real> DiagramChannel<F> {
     ///
     /// Each struct is destructured whole, so a field added to the map without
     /// being added here does not compile.
-    pub fn map_identity(&self) -> MapIdentity {
+    pub(crate) fn map_identity(&self) -> MapIdentity {
         let DiagramChannel {
             sqrt_s,
             n_out,
@@ -1098,7 +1099,7 @@ impl<F: Real> DiagramChannel<F> {
 /// A channel's [`DiagramChannel::map_identity`]: equal exactly when two channels
 /// sample and weigh every point alike.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MapIdentity(Vec<u64>);
+pub(crate) struct MapIdentity(Vec<u64>);
 
 /// The word stream a [`MapIdentity`] is built from. Every variant writes a tag
 /// and every sequence its length, so no two structures share a stream.

@@ -58,11 +58,11 @@ use super::setclscales::ipartupdate;
 
 /// Below this `pt2ijcl`, in GeV², a vertex that would be reweighted by `αs`
 /// kills the event instead (`reweight.f:1597`).
-pub const ALPHA_S_KILL_Q2: f64 = 4.0;
+pub(crate) const ALPHA_S_KILL_Q2: f64 = 4.0;
 
 /// Below this density at the previous scale, a density ratio kills the event
 /// instead (`reweight.f:1692`). It is a threshold on `f`, not on `x·f`.
-pub const PDF_DENOMINATOR_FLOOR: f64 = 1e-10;
+pub(crate) const PDF_DENOMINATOR_FLOOR: f64 = 1e-10;
 
 /// The run-card constants the reweighting branches on.
 ///
@@ -70,46 +70,46 @@ pub const PDF_DENOMINATOR_FLOOR: f64 = 1e-10;
 /// the scale walk too.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RewgtSettings {
-    pub ickkw: i64,
-    pub alpsfact: f64,
-    pub asrwgtflavor: i64,
-    pub pdfwgt: bool,
+    pub(crate) ickkw: i64,
+    pub(crate) alpsfact: f64,
+    pub(crate) asrwgtflavor: i64,
+    pub(crate) pdfwgt: bool,
 }
 
 /// One merge of the clustering, as the reweighting reads it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RewgtMerge {
+pub(crate) struct RewgtMerge {
     /// `idacl(n, 1:2)`, in the clustering's order.
-    pub daughters: [u32; 2],
+    pub(crate) daughters: [u32; 2],
     /// `imocl(n)`.
-    pub mother: u32,
+    pub(crate) mother: u32,
     /// `zcl(n)`.
-    pub z: f64,
+    pub(crate) z: f64,
 }
 
 /// What `rewgt` reads of one event's clustering: the state MadEvent's second
 /// `setclscales` call leaves in its common blocks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RewgtHistory {
-    pub n_external: usize,
+    pub(crate) n_external: usize,
     /// `nexternal − 2` merges; the last is the core.
-    pub merges: Vec<RewgtMerge>,
+    pub(crate) merges: Vec<RewgtMerge>,
     /// `pt2ijcl`, after every rewrite of the second call.
-    pub pt2: Vec<f64>,
+    pub(crate) pt2: Vec<f64>,
     /// `jlast` per beam, from `1`, `0` where the beam never split.
     pub jlast: [usize; 2],
     /// `iqjets` per external leg, leg `1` first.
-    pub iqjets: Vec<i64>,
+    pub(crate) iqjets: Vec<i64>,
     /// `ipdgcl` by leg set (`2^nexternal` entries): every line's code as the
     /// scale walk left it.
-    pub pdg: Vec<i64>,
+    pub(crate) pdg: Vec<i64>,
     /// `q2bck`: the central factorisation scale per beam, GeV².
-    pub q2bck: [f64; 2],
+    pub(crate) q2bck: [f64; 2],
     /// `μR`, whose `αs` the matrix element was evaluated at (`asref`).
     pub mu_r: f64,
     /// The external momenta the clustering read, beams first, which
     /// `ipartupdate` compares transverse momenta of.
-    pub momenta: Vec<[f64; 4]>,
+    pub(crate) momenta: Vec<[f64; 4]>,
 }
 
 /// How a clustering vertex fared in the `αs` reweighting.
@@ -131,7 +131,7 @@ pub enum VertexClass {
 
 impl VertexClass {
     /// Whether the vertex carries an `αs` ratio.
-    pub fn reweighted(self) -> bool {
+    pub(crate) fn reweighted(self) -> bool {
         matches!(self, VertexClass::Isr | VertexClass::Fsr)
     }
 }
@@ -144,7 +144,7 @@ pub struct AlphaSRatio {
     /// `αs(alpsfact·√q2)`.
     pub numerator: f64,
     /// `αs(μR)`.
-    pub denominator: f64,
+    pub(crate) denominator: f64,
     pub ratio: f64,
 }
 
@@ -190,7 +190,7 @@ pub struct PdfStep {
     /// The merge index, from `1`.
     pub n: usize,
     /// The beam line entering the vertex.
-    pub line: u32,
+    pub(crate) line: u32,
     /// Its code, the flavour the density is read for.
     pub flavour: i64,
     /// The momentum fraction after this vertex's `z`.
@@ -232,7 +232,7 @@ pub struct Rewgt {
 
 impl Rewgt {
     /// No reweighting: `ickkw ≤ 0`.
-    pub fn unit() -> Self {
+    pub(crate) fn unit() -> Self {
         Rewgt {
             weight: 1.0,
             vertices: Vec::new(),
@@ -294,7 +294,7 @@ pub enum RewgtError {
 /// `isparton`: a gluon, or a quark up to `max(asrwgtflavor, maxjetflavor)`.
 /// Like `isjet` it asks nothing about colour, so an unassigned line (`0`) is a
 /// parton.
-pub fn is_parton(colors: &ColorTable, asrwgtflavor: i64, pdg: i64) -> bool {
+pub(crate) fn is_parton(colors: &ColorTable, asrwgtflavor: i64, pdg: i64) -> bool {
     let magnitude = pdg.abs();
     magnitude <= asrwgtflavor.max(colors.maxjetflavor()) || magnitude == 21
 }

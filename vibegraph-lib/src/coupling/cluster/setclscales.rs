@@ -36,11 +36,11 @@ use super::kt::{cluster, Channel, ClusterFailure, ClusterSettings, Clustering};
 
 /// `reweight.f`'s floor on the geometric mean of transverse masses, below which
 /// the last-merge override does not fire.
-pub const MT2LAST_FLOOR: f64 = 4.0;
+pub(crate) const MT2LAST_FLOOR: f64 = 4.0;
 
 /// The floor a beam carrying a parton density puts under its own factorisation
 /// scale, in GeV². An event below it is dropped.
-pub const MUF_FLOOR: f64 = 4.0;
+pub(crate) const MUF_FLOOR: f64 = 4.0;
 
 /// Which `μR` formula the beam indices selected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,15 +221,13 @@ pub struct ClusterScales {
     /// rewrite per beam.
     pub overrides: [bool; 3],
     pub jcode: i64,
-    pub njets: usize,
     pub iqjets: Vec<i64>,
     /// `pt2ijcl` after every rewrite.
     pub pt2: Vec<f64>,
-    pub mt2: Vec<f64>,
     pub lines: Vec<LineState>,
     pub attempts: Vec<Attempt>,
     /// The accepted clustering.
-    pub clustering: Clustering,
+    pub(crate) clustering: Clustering,
     /// Every attempt's clustering, in order, when tracing; the last is the
     /// accepted one.
     pub traces: Vec<Clustering>,
@@ -526,10 +524,8 @@ pub fn setclscales(
         muf_branch,
         overrides,
         jcode: walk.jcode,
-        njets: walk.jets_counted,
         iqjets: walk.iqjets,
         pt2,
-        mt2,
         lines: walk.lines,
         attempts,
         clustering,
@@ -573,7 +569,7 @@ fn fs_leg(ipart: &[[usize; 2]], mask: u32) -> usize {
 ///
 /// It reads `pt2ijcl` after every rewrite `setclscales` made, so under
 /// matching the second call's value is the one `unwgt.f` writes.
-pub fn ptclus(scales: &ClusterScales, colors: &ColorTable, etot: f64) -> Vec<f64> {
+pub(crate) fn ptclus(scales: &ClusterScales, colors: &ColorTable, etot: f64) -> Vec<f64> {
     let merges = &scales.clustering.merges;
     let n = merges.len() + 2;
     let n_masks = 1usize << n;

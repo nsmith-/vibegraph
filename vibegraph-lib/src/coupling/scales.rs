@@ -39,7 +39,7 @@
 use thiserror::Error;
 
 use crate::coupling::cluster::graph::{ChannelSet, ColorTable, MergeTable};
-use crate::coupling::cluster::kt::{Channel, ClusterSettings};
+use crate::coupling::cluster::kt::{mg_dot, Channel, ClusterSettings};
 use crate::coupling::cluster::rewgt::{RewgtHistory, RewgtMerge, RewgtSettings};
 use crate::coupling::cluster::setclscales::{
     ptclus, setclscales, ClusterScales, JetMemo, ScaleRefusal, ScaleSettings,
@@ -76,7 +76,7 @@ impl EventScales {
     /// Scales with one factorisation scale per beam serving both the densities
     /// and the record, and no clustered configuration: every prescription
     /// without matching.
-    pub fn unmatched(mu_r: f64, mu_f: [f64; 2]) -> Self {
+    pub(crate) fn unmatched(mu_r: f64, mu_f: [f64; 2]) -> Self {
         EventScales {
             mu_r,
             mu_f,
@@ -106,7 +106,7 @@ pub enum DynamicalChoice {
 impl DynamicalChoice {
     /// The run-card integer, or `None` for `0` (a user-edited Fortran function)
     /// and for values `setscales.f` stops on.
-    pub fn from_i64(choice: i64) -> Option<Self> {
+    pub(crate) fn from_i64(choice: i64) -> Option<Self> {
         match choice {
             -1 => Some(DynamicalChoice::Clustered),
             1 => Some(DynamicalChoice::TotalTransverseEnergy),
@@ -118,7 +118,7 @@ impl DynamicalChoice {
         }
     }
 
-    pub fn as_i64(self) -> i64 {
+    pub(crate) fn as_i64(self) -> i64 {
         match self {
             DynamicalChoice::Clustered => -1,
             DynamicalChoice::TotalTransverseEnergy => 1,
@@ -379,12 +379,14 @@ impl ScaleChoice {
     }
 
     /// `ickkw`: whether MLM matching is on.
-    pub fn ickkw(&self) -> i64 {
+    #[cfg(test)]
+    pub(crate) fn ickkw(&self) -> i64 {
         self.ickkw
     }
 
     /// `xqcut`, zero when the clustering cut is off.
-    pub fn xqcut(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn xqcut(&self) -> f64 {
         self.xqcut
     }
 
@@ -396,12 +398,6 @@ impl ScaleChoice {
     /// `asrwgtflavor`.
     pub fn asrwgtflavor(&self) -> i64 {
         self.asrwgtflavor
-    }
-
-    /// `pdfwgt`: whether matching lowers the matrix element's factorisation
-    /// scale and reweights by the ratio of densities.
-    pub fn pdfwgt(&self) -> bool {
-        self.pdfwgt
     }
 
     /// The constants `rewgt` reads, or `None` without matching, where it
@@ -418,13 +414,13 @@ impl ScaleChoice {
     /// Every event is clustered, whatever the scale prescription: matching is
     /// on, or `xqcut` is a cut. `setclscales` returns before clustering only
     /// when neither holds and every scale is already set (`reweight.f:643`).
-    pub fn clusters_every_event(&self) -> bool {
+    pub(crate) fn clusters_every_event(&self) -> bool {
         self.ickkw > 0 || self.xqcut > 0.0
     }
 
     /// The scales are the same on every event and no event is ever rejected
     /// by the prescription, so a caller may resolve them once.
-    pub fn is_constant(&self) -> bool {
+    pub(crate) fn is_constant(&self) -> bool {
         self.is_fully_fixed() && !self.clusters_every_event()
     }
 
@@ -703,7 +699,7 @@ pub struct ClusterHistory {
     /// without matching, where MadEvent never reads it.
     pub q2bck: Option<[f64; 2]>,
     /// The external momenta both calls clustered, beams first.
-    pub momenta: Vec<[f64; 4]>,
+    pub(crate) momenta: Vec<[f64; 4]>,
     fixed_fac: [Option<f64>; 2],
     pdfwgt: bool,
     sqrt_stot: f64,
@@ -847,22 +843,6 @@ fn transverse_mass(p: &[f64; 4]) -> f64 {
 
 fn add(a: &[f64; 4], b: &[f64; 4]) -> [f64; 4] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]]
-}
-
-/// `dot` (`Source/kin_functions.f:588`), including the clamp it applies when the
-/// Minkowski product is small against the Euclidean one: a would-be massless leg
-/// whose components leave a `1e-7` relative residue is returned as exactly
-/// massless rather than as that residue.
-fn mg_dot(p1: &[f64; 4], p2: &[f64; 4]) -> f64 {
-    let dot = p1[0] * p2[0] - p1[1] * p2[1] - p1[2] * p2[2] - p1[3] * p2[3];
-    if dot.abs() < 1e-6 {
-        let euclidean = (p1[0] * p2[0] + p1[1] * p2[1] + p1[2] * p2[2] + p1[3] * p2[3])
-            .max(f64::from(1e-99f32));
-        if dot / euclidean < 1e-6 {
-            return 0.0;
-        }
-    }
-    dot
 }
 
 #[cfg(test)]
@@ -1047,8 +1027,9 @@ mod tests {
     /// A prescription with no reference run behind it produces a plausible,
     /// smooth, wrong cross section with nothing to notice it by, so it is named
     /// rather than approximated — which is what hadron beams get, no banked run
-    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead,
-    /// because `gg_to_gg_cg`'s banked run measures the transcription per event.
+    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead:
+    /// `gg_to_gg_cg`'s banked run measures choice 3 per event, and the other four
+    /// rest on this module's value tests alone.
     ///
     /// The `fully_fixed` half is the accuracy of the gate, not leniency: both
     /// scale entry points short-circuit on `is_fully_fixed` before the choice is
@@ -1101,6 +1082,70 @@ mod tests {
                 .choice(),
             DynamicalChoice::Clustered
         );
+    }
+
+    /// Two outgoing legs whose transverse energy, transverse mass and transverse
+    /// momentum all differ: `[14, 3, 4, 12]` (`m² = 27`, `p_T = 5`) and
+    /// `[13, −3, −4, 0]` (`m² = 144`), so a closed form reading the wrong one of
+    /// the three moves its value.
+    const CLOSED_FORM_LEGS: [[f64; 4]; 2] = [[14.0, 3.0, 4.0, 12.0], [13.0, -3.0, -4.0, 0.0]];
+
+    fn honoured(choice: i64) -> ScaleChoice {
+        ScaleChoice::from_run_card_for(
+            &partonic_card(&format!("{choice} = dynamical_scale_choice")),
+            ClosedForms::Honour,
+        )
+        .unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"))
+    }
+
+    fn assert_dynamic(scales: EventScales, expected: f64, what: &str) {
+        assert!(
+            (scales.mu_r / expected - 1.0).abs() < 1e-14,
+            "{what}: mu_r = {}, expected {expected}",
+            scales.mu_r
+        );
+        assert_eq!(scales.mu_f, [scales.mu_r, scales.mu_r], "{what}: mu_f");
+    }
+
+    /// Choice 1, `setscales.f`'s total transverse energy `Σ et(p)`, with
+    /// `kin_functions.f`'s `et = E·p_T/|p|`: `14·5/13 + 13`.
+    #[test]
+    fn choice_1_is_the_summed_transverse_energy() {
+        let scales = honoured(1)
+            .scales(&event(&CLOSED_FORM_LEGS))
+            .expect("scales");
+        assert_dynamic(scales, 70.0 / 13.0 + 13.0, "choice 1");
+    }
+
+    /// Choice 2, the summed transverse mass `Σ √((E + p_z)(E − p_z))`, not halved:
+    /// `√52 + 13`.
+    #[test]
+    fn choice_2_is_the_summed_transverse_mass() {
+        let scales = honoured(2)
+            .scales(&event(&CLOSED_FORM_LEGS))
+            .expect("scales");
+        assert_dynamic(scales, 52f64.sqrt() + 13.0, "choice 2");
+    }
+
+    /// Choice 5, the invariant mass of the first incoming leg, read off a moving
+    /// one: `[√(175² + 100²), 0, 0, 100]` is `175`, while the second incoming
+    /// slot holds a different mass the choice must not read.
+    #[test]
+    fn choice_5_is_the_first_incoming_legs_mass() {
+        let event = ScaleEvent {
+            incoming: [
+                [(175f64.powi(2) + 100f64.powi(2)).sqrt(), 0.0, 0.0, 100.0],
+                [50.0, 0.0, 0.0, 0.0],
+            ],
+            outgoing: &CLOSED_FORM_LEGS,
+        };
+        let scales = honoured(5).scales(&event).expect("scales");
+        assert!(
+            (scales.mu_r / 175.0 - 1.0).abs() < 1e-12,
+            "choice 5: mu_r = {}",
+            scales.mu_r
+        );
+        assert_eq!(scales.mu_f, [scales.mu_r, scales.mu_r], "choice 5: mu_f");
     }
 
     /// The unimplemented choices are named, not approximated.
@@ -1392,7 +1437,8 @@ mod tests {
     /// directions by `1 + 1e-6`, so that a leg following the beam it came from
     /// wins an otherwise exact tie. It reaches the scale only when a colour line
     /// runs from beam to beam and every allowed candidate is crossed — which is
-    /// what `u ū → u ū` does, and what note 22 measured as its `250.0001` row.
+    /// what `u ū → u ū` does: there the scale is `250·√(1 + 1e-6) ≈ 250.0001`
+    /// rather than the beams' `250`.
     #[test]
     fn the_cluster_tie_break_moves_the_scale() {
         let choice = ScaleChoice::from_run_card(&partonic_card("")).expect("compiled");

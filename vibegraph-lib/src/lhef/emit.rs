@@ -145,7 +145,7 @@ pub struct PartSigma {
 impl EmitPlan {
     /// The parts the sample is normalised over: [`EmitPlan::parts`], or the
     /// whole integration as the one part when that is empty.
-    pub fn part_sigmas(&self) -> Vec<PartSigma> {
+    pub(crate) fn part_sigmas(&self) -> Vec<PartSigma> {
         if self.parts.is_empty() {
             vec![PartSigma {
                 sigma_pb: self.sigma_pb,
@@ -170,19 +170,16 @@ pub struct EmitSummary {
     /// The cross section the accept/reject sample itself estimated
     /// ([`EventSource::sigma_pb`]) before any normalisation, and that estimate's
     /// statistical error (see [`sample_estimate_error`]).
-    pub sample_sigma_pb: f64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) sample_sigma_pb: f64,
     pub sample_sigma_err_pb: f64,
     /// The `XMAXUP` the file declares.
     pub xmax: f64,
-    /// The sum of the emitted `XWGTUP` values. Under `IDWTUP = -4` this over
-    /// [`written`](Self::written) is the cross section the file declares.
-    pub weight_sum: f64,
     /// The mean generator weight over the events drawn — `1` when nothing went
     /// overweight, and the mean multiplicity a stochastic-rounding pass has to
     /// reproduce.
-    pub mean_source_weight: f64,
-    /// The largest generator weight drawn.
-    pub max_source_weight: f64,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) mean_source_weight: f64,
 }
 
 #[derive(Debug)]
@@ -316,14 +313,9 @@ fn shared_processes(
             } else {
                 0.0
             };
-            let sampling = if events > 0 {
-                xsec_pb * xsec_pb * f * (1.0 - f) / events as f64
-            } else {
-                0.0
-            };
             LheProcess {
                 xsec_pb: xsec_pb * f,
-                xerr_pb: ((f * plan.sigma_err_pb).powi(2) + sampling).sqrt(),
+                xerr_pb: share_variance(xsec_pb, plan.sigma_err_pb, f, events).sqrt(),
                 xmax: xmax(share.max_weight),
                 id,
             }
@@ -331,9 +323,22 @@ fn shared_processes(
         .collect()
 }
 
+/// The variance of the cross section `σ·f` a process takes as its share `f` of
+/// `n` events integrated to `σ ± Δσ`: the integration's relative error on that
+/// share and the share's own binomial sampling error, `(f·Δσ)² + σ²·f(1 − f)/n`.
+/// A share of a sample of no events carries the integration's error alone.
+fn share_variance(sigma: f64, sigma_err: f64, f: f64, events: usize) -> f64 {
+    let sampling = if events > 0 {
+        sigma * sigma * f * (1.0 - f) / events as f64
+    } else {
+        0.0
+    };
+    (f * sigma_err).powi(2) + sampling
+}
+
 /// The words [`Buffer`]'s header line opens with, before the sample's own
 /// estimate and its error: `sample estimate before normalisation <σ̂> +- <err>`.
-pub const SAMPLE_ESTIMATE_LINE: &str = "sample estimate before normalisation";
+pub(crate) const SAMPLE_ESTIMATE_LINE: &str = "sample estimate before normalisation";
 
 /// The sample's own estimate and its error, read back from the first header
 /// line [`Buffer`] wrote them on, or `None` in a file without one.
@@ -357,10 +362,16 @@ pub fn sample_estimate_in(text: &str) -> Option<(f64, f64)> {
 /// and leaves an expression of the accepted weights alone:
 /// `σ̂·√(Σwᵢ²)/Σwᵢ`. The same holds for any subset of the events, a part's or a
 /// process's, with `σ̂` that subset's share.
-pub fn sample_estimate_error(sigma: f64, weights: impl IntoIterator<Item = f64>) -> f64 {
+pub(crate) fn sample_estimate_error(sigma: f64, weights: impl IntoIterator<Item = f64>) -> f64 {
     let (sum, sum_sq) = weights
         .into_iter()
         .fold((0.0f64, 0.0f64), |(s, q), w| (s + w, q + w * w));
+    estimate_error_from_sums(sigma, sum, sum_sq)
+}
+
+/// [`sample_estimate_error`] from the weights' sum `Σwᵢ` and sum of squares
+/// `Σwᵢ²`, already accumulated: `σ̂·√(Σwᵢ²)/Σwᵢ`, and `0` with no weight.
+fn estimate_error_from_sums(sigma: f64, sum: f64, sum_sq: f64) -> f64 {
     if sum > 0.0 {
         sigma.abs() * sum_sq.sqrt() / sum
     } else {
@@ -368,24 +379,10 @@ pub fn sample_estimate_error(sigma: f64, weights: impl IntoIterator<Item = f64>)
     }
 }
 
-/// Add one event of generator weight `weight` to its process's share. An event
-/// whose `IDPRUP` the plan does not list is refused: the file would name a
-/// process its `<init>` block does not declare.
-fn add_share(
-    plan: &EmitPlan,
-    shares: &mut [ProcessShare],
-    process_id: i32,
-    weight: f64,
-) -> Result<(), EmitError> {
-    let slot = process_slot(plan, process_id)?;
-    shares[slot].weight += weight;
-    shares[slot].max_weight = shares[slot].max_weight.max(weight);
-    Ok(())
-}
-
 /// The `<init>` entry an event of `process_id` belongs to: the only one when the
-/// plan declares a single process, else the position of its id, and refused
-/// when the plan does not list it.
+/// plan declares a single process, else the position of its id. An id the plan
+/// does not list is refused: the file would name a process its `<init>` block
+/// does not declare.
 fn process_slot(plan: &EmitPlan, process_id: i32) -> Result<usize, EmitError> {
     if plan.process_ids.len() <= 1 {
         return Ok(0);
@@ -540,113 +537,22 @@ impl UnweightStrategy for Buffer {
         let events = draw_all(source, plan.nevents)?;
         let n = events.len();
         let parts = plan.part_sigmas();
-        let slots = plan.process_ids.len().max(1);
-
-        let mut tally = vec![PartTally::default(); parts.len()];
-        // Generator weight per (process slot, part).
-        let mut by_process = vec![vec![0.0f64; parts.len()]; slots];
-        for event in &events {
-            let t = tally
-                .get_mut(event.part)
-                .ok_or(EmitError::UndeclaredPart(event.part))?;
-            t.weight += event.weight;
-            t.weight_sq += event.weight * event.weight;
-            t.events += 1;
-            by_process[process_slot(plan, event.record.process_id)?][event.part] += event.weight;
-        }
-        for (t, part) in tally.iter_mut().zip(&parts) {
-            t.scale = if t.weight > 0.0 {
-                part.sigma_pb * n as f64 / t.weight
-            } else {
-                0.0
-            };
-        }
+        let (tally, by_process) = tally_parts(plan, &events, &parts)?;
 
         let sample_sigma_pb = source.sigma_pb();
         let total_weight: f64 = tally.iter().map(|t| t.weight).sum();
         let sample_sigma_err_pb =
             sample_estimate_error(sample_sigma_pb, events.iter().map(|e| e.weight));
-        let mut header = plan.header.clone().map(|h| h + "\n").unwrap_or_default();
-        header +=
-            &format!("{SAMPLE_ESTIMATE_LINE} {sample_sigma_pb:.6e} +- {sample_sigma_err_pb:.6e}");
-        for (k, (t, part)) in tally.iter().zip(&parts).enumerate() {
-            let own = if total_weight > 0.0 {
-                sample_sigma_pb * t.weight / total_weight
-            } else {
-                0.0
-            };
-            let own_err = if t.weight > 0.0 {
-                own * t.weight_sq.sqrt() / t.weight
-            } else {
-                0.0
-            };
-            if parts.len() > 1 {
-                header += &format!(
-                    "\npart {k}: {} events, sample estimate before normalisation {own:.6e} +- \
-                     {own_err:.6e}, normalised to {:.6e} +- {:.6e}",
-                    t.events, part.sigma_pb, part.sigma_err_pb
-                );
-            }
-            tracing::info!(
-                "part {k}: {} events, sample estimate {own:.6e} ± {own_err:.6e} against the \
-                 integration's {:.6e} ± {:.6e} ({:+.3}%)",
-                t.events,
-                part.sigma_pb,
-                part.sigma_err_pb,
-                if part.sigma_pb != 0.0 {
-                    100.0 * (own / part.sigma_pb - 1.0)
-                } else {
-                    0.0
-                }
-            );
-            if t.events == 0 && part.sigma_pb != 0.0 {
-                tracing::warn!(
-                    "part {k} drew no event, so its integrated {:.6e} is missing from the file",
-                    part.sigma_pb
-                );
-            }
-        }
+        let header = buffered_header(plan, &tally, &parts, sample_sigma_pb, sample_sigma_err_pb);
 
-        let mut max_written = vec![0.0f64; slots];
-        for event in &events {
-            let slot = process_slot(plan, event.record.process_id)?;
-            let w = tally[event.part].scale * event.weight;
-            max_written[slot] = max_written[slot].max(w);
-        }
-        let processes: Vec<LheProcess> = (0..slots)
-            .map(|p| {
-                let (mut xsec, mut var) = (0.0f64, 0.0f64);
-                for (k, (t, part)) in tally.iter().zip(&parts).enumerate() {
-                    if t.weight <= 0.0 {
-                        continue;
-                    }
-                    let f = by_process[p][k] / t.weight;
-                    if f == 1.0 {
-                        xsec += part.sigma_pb;
-                        var += part.sigma_err_pb * part.sigma_err_pb;
-                    } else if f > 0.0 {
-                        xsec += part.sigma_pb * f;
-                        var += (f * part.sigma_err_pb).powi(2)
-                            + part.sigma_pb * part.sigma_pb * f * (1.0 - f) / t.events as f64;
-                    }
-                }
-                LheProcess {
-                    xsec_pb: xsec,
-                    xerr_pb: var.sqrt(),
-                    xmax: max_written[p],
-                    id: plan.process_ids.get(p).copied().unwrap_or(1),
-                }
-            })
-            .collect();
+        let processes = buffered_processes(plan, &events, &tally, &parts, &by_process)?;
         let xsec_pb: f64 = processes.iter().map(|p| p.xsec_pb).sum();
-        let xmax = max_written.iter().copied().fold(0.0f64, f64::max);
+        let xmax = processes.iter().map(|p| p.xmax).fold(0.0f64, f64::max);
 
         let init = init_block(plan, self.weight_strategy(), processes);
         let mut writer = begin(sink, &init, Some(&header), plan)?;
-        let mut weight_sum = 0.0;
         for event in &events {
             let record = finished_record(event, tally[event.part].scale * event.weight, plan);
-            weight_sum += record.weight;
             writer.write_event(&record)?;
         }
         let written = writer.events_written();
@@ -659,11 +565,133 @@ impl UnweightStrategy for Buffer {
             sample_sigma_pb,
             sample_sigma_err_pb,
             xmax,
-            weight_sum,
             mean_source_weight: if n > 0 { total_weight / n as f64 } else { 0.0 },
-            max_source_weight: events.iter().map(|e| e.weight).fold(0.0f64, f64::max),
         })
     }
+}
+
+/// Each part's tally of `events`, its normalising scale set, and the generator
+/// weight per `(process slot, part)`. An event naming a part or a process the
+/// plan does not declare is refused.
+fn tally_parts(
+    plan: &EmitPlan,
+    events: &[WeightedEvent],
+    parts: &[PartSigma],
+) -> Result<(Vec<PartTally>, Vec<Vec<f64>>), EmitError> {
+    let slots = plan.process_ids.len().max(1);
+    let mut tally = vec![PartTally::default(); parts.len()];
+    let mut by_process = vec![vec![0.0f64; parts.len()]; slots];
+    for event in events {
+        let t = tally
+            .get_mut(event.part)
+            .ok_or(EmitError::UndeclaredPart(event.part))?;
+        t.weight += event.weight;
+        t.weight_sq += event.weight * event.weight;
+        t.events += 1;
+        by_process[process_slot(plan, event.record.process_id)?][event.part] += event.weight;
+    }
+    let n = events.len();
+    for (t, part) in tally.iter_mut().zip(parts) {
+        t.scale = if t.weight > 0.0 {
+            part.sigma_pb * n as f64 / t.weight
+        } else {
+            0.0
+        };
+    }
+    Ok((tally, by_process))
+}
+
+/// [`Buffer`]'s `<header>` text: the plan's own header, the sample's estimate
+/// before normalisation, and with several parts each part's estimate against
+/// the integration it is normalised to. Each part's comparison is also logged,
+/// with a warning for a part that drew no event and so is missing from the
+/// file's total.
+fn buffered_header(
+    plan: &EmitPlan,
+    tally: &[PartTally],
+    parts: &[PartSigma],
+    sample_sigma_pb: f64,
+    sample_sigma_err_pb: f64,
+) -> String {
+    let total_weight: f64 = tally.iter().map(|t| t.weight).sum();
+    let mut header = plan.header.clone().map(|h| h + "\n").unwrap_or_default();
+    header += &format!("{SAMPLE_ESTIMATE_LINE} {sample_sigma_pb:.6e} +- {sample_sigma_err_pb:.6e}");
+    for (k, (t, part)) in tally.iter().zip(parts).enumerate() {
+        let own = if total_weight > 0.0 {
+            sample_sigma_pb * t.weight / total_weight
+        } else {
+            0.0
+        };
+        let own_err = estimate_error_from_sums(own, t.weight, t.weight_sq);
+        if parts.len() > 1 {
+            header += &format!(
+                "\npart {k}: {} events, sample estimate before normalisation {own:.6e} +- \
+                 {own_err:.6e}, normalised to {:.6e} +- {:.6e}",
+                t.events, part.sigma_pb, part.sigma_err_pb
+            );
+        }
+        tracing::info!(
+            "part {k}: {} events, sample estimate {own:.6e} ± {own_err:.6e} against the \
+             integration's {:.6e} ± {:.6e} ({:+.3}%)",
+            t.events,
+            part.sigma_pb,
+            part.sigma_err_pb,
+            if part.sigma_pb != 0.0 {
+                100.0 * (own / part.sigma_pb - 1.0)
+            } else {
+                0.0
+            }
+        );
+        if t.events == 0 && part.sigma_pb != 0.0 {
+            tracing::warn!(
+                "part {k} drew no event, so its integrated {:.6e} is missing from the file",
+                part.sigma_pb
+            );
+        }
+    }
+    header
+}
+
+/// [`Buffer`]'s process entries (see its "Process entries" section): each
+/// process's share of every part's integrated cross section and error, and as
+/// its `XMAXUP` the largest weight it writes.
+fn buffered_processes(
+    plan: &EmitPlan,
+    events: &[WeightedEvent],
+    tally: &[PartTally],
+    parts: &[PartSigma],
+    by_process: &[Vec<f64>],
+) -> Result<Vec<LheProcess>, EmitError> {
+    let mut max_written = vec![0.0f64; by_process.len()];
+    for event in events {
+        let slot = process_slot(plan, event.record.process_id)?;
+        let w = tally[event.part].scale * event.weight;
+        max_written[slot] = max_written[slot].max(w);
+    }
+    Ok(by_process
+        .iter()
+        .zip(max_written)
+        .enumerate()
+        .map(|(p, (weights, xmax))| {
+            let (mut xsec, mut var) = (0.0f64, 0.0f64);
+            for ((t, part), &w) in tally.iter().zip(parts).zip(weights) {
+                if t.weight <= 0.0 {
+                    continue;
+                }
+                let f = w / t.weight;
+                if f > 0.0 {
+                    xsec += part.sigma_pb * f;
+                    var += share_variance(part.sigma_pb, part.sigma_err_pb, f, t.events);
+                }
+            }
+            LheProcess {
+                xsec_pb: xsec,
+                xerr_pb: var.sqrt(),
+                xmax,
+                id: plan.process_ids.get(p).copied().unwrap_or(1),
+            }
+        })
+        .collect())
 }
 
 /// How many copies of an event of weight `w` a stochastic-rounding pass writes:
@@ -675,7 +703,7 @@ impl UnweightStrategy for Buffer {
 /// mean, and exactly zero on the integer weights that make up almost the whole
 /// sample. For `w ≤ 1` it degenerates to plain accept/reject, so it changes only
 /// the overweight tail.
-pub fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
+pub(crate) fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
     if !(weight > 0.0) {
         return 0;
     }
@@ -701,7 +729,7 @@ pub fn stochastic_multiplicity(weight: f64, rng: &mut impl Rng) -> u64 {
 /// own stream.
 #[derive(Clone, Copy, Debug)]
 pub struct StochasticRounding {
-    pub seed: u64,
+    pub(crate) seed: u64,
 }
 
 impl StochasticRounding {
@@ -734,12 +762,8 @@ impl StochasticRounding {
             if copies > 0 {
                 // Every written copy carries unit weight, so a process's largest
                 // written weight is one.
-                add_share(plan, &mut shares, event.record.process_id, copies as f64)?;
-                let slot = plan
-                    .process_ids
-                    .iter()
-                    .position(|&id| id == event.record.process_id)
-                    .unwrap_or(0);
+                let slot = process_slot(plan, event.record.process_id)?;
+                shares[slot].weight += copies as f64;
                 shares[slot].max_weight = 1.0;
             }
         }
@@ -798,7 +822,6 @@ impl UnweightStrategy for StochasticRounding {
         let mut drawn = 0usize;
         let mut weight_total = 0.0f64;
         let mut weight_sq = 0.0f64;
-        let mut max_source_weight = 0.0f64;
         progress::unweighting(0, plan.nevents as u64);
         while writer.events_written() < plan.nevents as u64 {
             let Some(event) = source.next_event() else {
@@ -810,7 +833,6 @@ impl UnweightStrategy for StochasticRounding {
             drawn += 1;
             weight_total += event.weight;
             weight_sq += event.weight * event.weight;
-            max_source_weight = max_source_weight.max(event.weight);
             // Every copy of an event is written before the loop re-checks the
             // budget: truncating an event's copies mid-way would bias exactly the
             // overweight tail this strategy exists to represent.
@@ -830,19 +852,13 @@ impl UnweightStrategy for StochasticRounding {
             written,
             xsec_pb: plan.sigma_pb,
             sample_sigma_pb,
-            sample_sigma_err_pb: if weight_total > 0.0 {
-                sample_sigma_pb.abs() * weight_sq.sqrt() / weight_total
-            } else {
-                0.0
-            },
+            sample_sigma_err_pb: estimate_error_from_sums(sample_sigma_pb, weight_total, weight_sq),
             xmax: 1.0,
-            weight_sum: written as f64,
             mean_source_weight: if drawn > 0 {
                 weight_total / drawn as f64
             } else {
                 0.0
             },
-            max_source_weight,
         })
     }
 }

@@ -97,17 +97,17 @@ pub struct MergeTable {
     /// ascending. `findmt` intersects these lists, which requires the order.
     pub id_cl: BTreeMap<u32, Vec<usize>>,
     /// `ipdgcl`: (leg set, channel) → the PDG code on the line.
-    pub ipdgcl: BTreeMap<(u32, usize), i64>,
+    pub(crate) ipdgcl: BTreeMap<(u32, usize), i64>,
     /// `resmap`: (leg set, channel) pairs whose line carries a width, so an
     /// on-shell Breit-Wigner can constrain the clustering to them.
-    pub resmap: BTreeSet<(u32, usize)>,
+    pub(crate) resmap: BTreeSet<(u32, usize)>,
 }
 
 impl MergeTable {
     /// The channels that allow `mask`, filtered the way `findmt` filters them on
     /// its first call of a clustering: to the integration channel alone when
     /// `chcluster` is set, and to channels carrying every tagged resonance.
-    pub fn seed(
+    pub(crate) fn seed(
         &self,
         mask: u32,
         chcluster: bool,
@@ -132,7 +132,7 @@ impl MergeTable {
     /// How many channels [`seed`](Self::seed) would return. The clustering's
     /// first pass over the external pairs reads only that count and whether it
     /// is zero, so it asks here and builds no list.
-    pub fn seed_count(
+    pub(crate) fn seed_count(
         &self,
         mask: u32,
         chcluster: bool,
@@ -156,7 +156,7 @@ impl MergeTable {
     /// The intersection `findmt` takes on every later call: the running list
     /// against the channels allowing `mask`. Both lists are ascending, so this
     /// is a merge join.
-    pub fn narrow(&self, mask: u32, running: &[usize]) -> Option<Vec<usize>> {
+    pub(crate) fn narrow(&self, mask: u32, running: &[usize]) -> Option<Vec<usize>> {
         let allowed = self.id_cl.get(&mask)?;
         let mut graphs: Vec<usize> = Vec::new();
         let mut next = 0;
@@ -189,12 +189,12 @@ pub struct ChannelSet {
 }
 
 impl ChannelSet {
-    pub fn n_proc(&self) -> usize {
+    pub(crate) fn n_proc(&self) -> usize {
         self.external_pdg.len()
     }
 
     /// The full leg set, `2^nexternal - 1`.
-    pub fn full_mask(&self) -> u32 {
+    pub(crate) fn full_mask(&self) -> u32 {
         (1u32 << self.n_external) - 1
     }
 
@@ -218,7 +218,7 @@ impl ChannelSet {
     /// # Panics
     ///
     /// If `out` is not one entry per channel.
-    pub fn channel_cuts(&self, momenta: &[[f64; 4]], s_tot: f64, out: &mut [f64]) {
+    pub(crate) fn channel_cuts(&self, momenta: &[[f64; 4]], s_tot: f64, out: &mut [f64]) {
         assert_eq!(
             out.len(),
             self.configs.len(),
@@ -342,7 +342,7 @@ impl ChannelSet {
 /// of one order shares one set of tables. The clustering asks for them on each
 /// event, which is what makes building them there worth hoisting.
 #[derive(Clone, Debug)]
-pub struct MergeTablesByOrder {
+pub(crate) struct MergeTablesByOrder {
     /// One table set per distinct coupling order, in first-appearance order.
     tables: Vec<Vec<MergeTable>>,
     /// `order_of[config - 1]`: the entry of `tables` that channel reads.
@@ -350,7 +350,7 @@ pub struct MergeTablesByOrder {
 }
 
 impl MergeTablesByOrder {
-    pub fn build(set: &ChannelSet) -> Self {
+    pub(crate) fn build(set: &ChannelSet) -> Self {
         let mut orders: Vec<i64> = Vec::new();
         let mut first_config: Vec<usize> = Vec::new();
         let mut order_of = Vec::with_capacity(set.configs.len());
@@ -374,7 +374,7 @@ impl MergeTablesByOrder {
 
     /// The tables `this_config` clusters against, numbered as `mapconfig`
     /// numbers channels.
-    pub fn of(&self, this_config: usize) -> &[MergeTable] {
+    pub(crate) fn of(&self, this_config: usize) -> &[MergeTable] {
         &self.tables[self.order_of[this_config - 1]]
     }
 }
@@ -400,7 +400,7 @@ impl ColorTable {
         }
     }
 
-    pub fn color(&self, pdg: i64) -> i32 {
+    pub(crate) fn color(&self, pdg: i64) -> i32 {
         self.colors.get(&pdg).copied().unwrap_or(0)
     }
 
@@ -410,19 +410,19 @@ impl ColorTable {
     }
 
     /// `is_octet`: an adjoint line.
-    pub fn is_octet(&self, pdg: i64) -> bool {
+    pub(crate) fn is_octet(&self, pdg: i64) -> bool {
         self.color(pdg).abs() == 8
     }
 
     /// `isjet`: a gluon, or a quark light enough for the run card's
     /// `maxjetflavor`. Note that this asks nothing about colour, so a code the
     /// table does not carry is a jet if its magnitude is small enough.
-    pub fn is_jet(&self, pdg: i64) -> bool {
+    pub(crate) fn is_jet(&self, pdg: i64) -> bool {
         let magnitude = pdg.abs();
         magnitude <= self.maxjetflavor || magnitude == 21
     }
 
-    pub fn maxjetflavor(&self) -> i64 {
+    pub(crate) fn maxjetflavor(&self) -> i64 {
         self.maxjetflavor
     }
 }

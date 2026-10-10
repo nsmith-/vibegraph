@@ -184,11 +184,11 @@ fn subgrid_structure_matches_oracle() {
         .expect("failed to load reference member");
 
     assert_eq!(
-        member.subgrids.len(),
+        member.subgrids().len(),
         oracle.subgrids.len(),
         "subgrid count mismatch"
     );
-    for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
+    for (i, (sg, osg)) in member.subgrids().iter().zip(&oracle.subgrids).enumerate() {
         assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
         assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
         assert_eq!(sg.flavors, osg.flavors, "subgrid {i}: flavor list mismatch");
@@ -213,7 +213,7 @@ fn on_knot_values_match_oracle_exactly() {
     let mut checked = 0usize;
     for p in &knot_points {
         let sg = member
-            .subgrids
+            .subgrids()
             .iter()
             .find(|sg| {
                 sg.x.iter().any(|&xv| rel_close(xv, p.x))
@@ -401,11 +401,11 @@ fn only_the_points_lhapdf_has_no_reading_for_are_refused() {
     assert!(member.try_xfx_q2(2, 0.1, f64::INFINITY).is_err());
 }
 
-// ── Multi-Q²-subgrid coverage (MSHT20lo_as130) ─────────────────────────
+// ── Multi-Q²-subgrid coverage (NNPDF31_lo_as_0130) ─────────────────────
 //
 // A single-subgrid set never exercises the subgrid walk or the one-sided
 // Q²-derivative each band takes at an internal seam. These gates pin both
-// against real LHAPDF values on a three-band set.
+// against real LHAPDF values on a set of two Q² subgrids joined at one seam.
 
 #[test]
 fn multigrid_subgrid_structure_matches_oracle() {
@@ -421,11 +421,11 @@ fn multigrid_subgrid_structure_matches_oracle() {
         .expect("failed to load reference member");
 
     assert_eq!(
-        member.subgrids.len(),
+        member.subgrids().len(),
         oracle.subgrids.len(),
         "subgrid count mismatch"
     );
-    for (i, (sg, osg)) in member.subgrids.iter().zip(&oracle.subgrids).enumerate() {
+    for (i, (sg, osg)) in member.subgrids().iter().zip(&oracle.subgrids).enumerate() {
         assert_eq!(sg.nx(), osg.nx, "subgrid {i}: x-knot count mismatch");
         assert_eq!(sg.nq(), osg.nq, "subgrid {i}: Q-knot count mismatch");
         // Compare flavors as a set, not a sequence: LHAPDF canonicalizes the
@@ -448,7 +448,7 @@ fn multigrid_subgrid_structure_matches_oracle() {
     );
     for &seam in &oracle.seams {
         let bordering = member
-            .subgrids
+            .subgrids()
             .iter()
             .filter(|sg| {
                 rel_close(*sg.q2.first().unwrap(), seam) || rel_close(*sg.q2.last().unwrap(), seam)
@@ -472,7 +472,7 @@ fn multigrid_on_knot_values_match_oracle_exactly() {
     let mut checked = 0usize;
     for p in oracle.points.iter().filter(|p| p.category == "knot") {
         let sg = member
-            .subgrids
+            .subgrids()
             .iter()
             .find(|sg| {
                 sg.x.iter().any(|&xv| rel_close(xv, p.x))
@@ -883,7 +883,7 @@ fn the_branch_of_the_upper_continuation_is_the_one_the_endpoint_values_select() 
     for name in ["oracle.json", "oracle_multigrid.json"] {
         let oracle = load_oracle_named(name);
         let member = load_unclamped_member(&oracle);
-        let top = member.subgrids.last().expect("at least one subgrid");
+        let top = member.subgrids().last().expect("at least one subgrid");
         let q2_max = *top.q2.last().unwrap();
         let q2_max1 = top.q2[top.q2.len() - 2];
 
@@ -1125,7 +1125,7 @@ fn the_upper_continuation_misses_lhapdf_by_one_ulp_of_its_own_conditioning() {
     for name in ["oracle.json", "oracle_multigrid.json"] {
         let oracle = load_oracle_named(name);
         let member = load_unclamped_member(&oracle);
-        let top = member.subgrids.last().expect("at least one subgrid");
+        let top = member.subgrids().last().expect("at least one subgrid");
         let q2_max = *top.q2.last().unwrap();
         let q2_max1 = top.q2[top.q2.len() - 2];
 

@@ -1,5 +1,6 @@
 use super::ast_util::{
-    call_func_name, extract_attr, kwarg_bool, kwarg_float, kwarg_int, kwarg_str, parse_stmts,
+    call_func_name, extract_attr, kwarg_bool, kwarg_float, kwarg_int, kwarg_str, named_assignments,
+    parse_stmts,
 };
 use indexmap::IndexMap;
 use rustpython_parser::ast;
@@ -25,7 +26,7 @@ impl From<usize> for ParticleId {
 
 impl ParticleId {
     /// The raw index this id wraps.
-    pub const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0
     }
 }
@@ -48,31 +49,31 @@ impl Index<ParticleId> for IndexMap<String, Particle> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Particle {
     /// Python variable name, e.g. `"e__minus__"` or `"W__plus__"`.
-    pub python_name: String,
+    pub(crate) python_name: String,
     /// UFO `name` field, e.g. `"e-"`.
     pub name: String,
     /// UFO `antiname` field, e.g. `"e+"`.
-    pub antiname: String,
+    pub(crate) antiname: String,
     pub pdg_code: i64,
     /// 2s+1; negative values denote ghost fields.
     pub spin: i32,
     /// SU(3) representation: 1 = singlet, 3 = fundamental, 8 = adjoint.
     pub color: i32,
     /// Name of the mass `Parameter`, e.g. `"MZ"` or `"ZERO"`.
-    pub mass_param: String,
+    pub(crate) mass_param: String,
     /// Name of the width `Parameter`, e.g. `"WZ"` or `"ZERO"`.
-    pub width_param: String,
-    pub charge: f64,
-    pub texname: String,
-    pub antitexname: String,
-    pub ghost_number: i32,
+    pub(crate) width_param: String,
+    pub(crate) charge: f64,
+    pub(crate) texname: String,
+    pub(crate) antitexname: String,
+    pub(crate) ghost_number: i32,
     /// UFO `goldstoneboson`/`goldstone` flag: a Goldstone mode of a massive gauge
     /// boson. Excluded from diagram enumeration (unitary gauge, like MadGraph).
-    pub is_goldstone: bool,
+    pub(crate) is_goldstone: bool,
     /// True when `name == antiname` (self-conjugate, e.g. photon, Z).
-    pub is_self_conjugate: bool,
+    pub(crate) is_self_conjugate: bool,
     /// Optional line style override, e.g. `line = 'dashed'`.
-    pub line_style: Option<String>,
+    pub(crate) line_style: Option<String>,
     /// Python variable name of the `propagators.py` entry this particle
     /// propagates with (`propagator = Prop.Z1`), when the model overrides the
     /// default form. Rejected — see [`crate::ufo::propagators`] — only when such
@@ -88,7 +89,7 @@ impl Particle {
     /// branch defines only ±1). The values are MadGraph's
     /// `Particle.get_helicity_states` (`base_objects.py:469`) as a set; the
     /// order it reverses for an antiparticle is not kept.
-    pub fn helicity_states(&self) -> Option<Vec<i32>> {
+    pub(crate) fn helicity_states(&self) -> Option<Vec<i32>> {
         let massless = self.mass_param == "ZERO";
         match (self.spin.abs(), massless) {
             (1, _) => Some(vec![0]),
@@ -101,14 +102,21 @@ impl Particle {
     }
 
     /// Return the antiparticle, assigning `python_name` as its variable name.
-    pub fn make_anti(&self, python_name: impl Into<String>) -> Particle {
+    ///
+    /// The colour follows UFO's `Particle.anti()`: a singlet or an octet is its
+    /// own conjugate and keeps its `color`, a triplet or sextet negates it.
+    pub(crate) fn make_anti(&self, python_name: impl Into<String>) -> Particle {
         Particle {
             python_name: python_name.into(),
             name: self.antiname.clone(),
             antiname: self.name.clone(),
             pdg_code: -self.pdg_code,
             spin: self.spin,
-            color: -self.color,
+            color: if matches!(self.color, 1 | 8) {
+                self.color
+            } else {
+                -self.color
+            },
             mass_param: self.mass_param.clone(),
             width_param: self.width_param.clone(),
             charge: -self.charge,
@@ -131,7 +139,7 @@ impl Particle {
 ///
 /// Anti-particle entries are created so vertex resolution can look up all
 /// particle python-names, including those defined via `.anti()`.
-pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
+pub(crate) fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
     use std::collections::HashMap;
 
     let stmts = parse_stmts(src).map_err(|e| ParticleError::Parse(e.to_string()))?;
@@ -139,18 +147,9 @@ pub fn parse_particles(src: &str) -> Result<Vec<Particle>, ParticleError> {
     // Index base python_name → position in particles, for resolving .anti() calls.
     let mut by_python_name: HashMap<String, usize> = HashMap::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-
-        // Skip attribute assignments like `b.counterterm = ...`
-        let ast::Expr::Name(ast::ExprName { id: lhs_id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = lhs_id.as_str().to_owned();
-
-        match value.as_ref() {
+    for (python_name, value) in named_assignments(&stmts) {
+        let python_name = python_name.to_owned();
+        match value {
             // Direct constructor: `x = Particle(...)`
             ast::Expr::Call(ast::ExprCall { func, keywords, .. })
                 if call_func_name(func) == Some("Particle") =>
@@ -325,6 +324,40 @@ W__minus__ = W__plus__.anti()
         assert_eq!(wm.name, "W-");
         assert_eq!(wm.antiname, "W+");
         assert_eq!(wm.pdg_code, -24);
+    }
+
+    /// The antiparticle's colour is UFO's `anti()`: 1 and 8 unchanged, 3 and 6
+    /// negated.
+    #[test]
+    fn an_antiparticle_conjugates_only_complex_colour() {
+        let base = parse_particles(SAMPLE).unwrap().remove(0);
+        for (color, anti) in [(1, 1), (8, 8), (3, -3), (-3, 3), (6, -6), (-6, 6)] {
+            let p = Particle {
+                color,
+                ..base.clone()
+            };
+            assert_eq!(p.make_anti("x").color, anti, "colour {color}");
+        }
+    }
+
+    /// Across the SM, a particle and its antiparticle carry the same singlet or
+    /// octet colour and opposite triplet colour.
+    #[test]
+    fn sm_antiparticles_carry_ufos_anti_colour() {
+        let model = crate::ufo::sm::sm_model(crate::ufo::sm::SMRestrict::Default);
+        let mut pairs = 0;
+        for p in model.particles.values().filter(|p| !p.is_self_conjugate) {
+            let anti = &model.particles[p.antiname.as_str()];
+            let want = if matches!(p.color.abs(), 1 | 8) {
+                p.color
+            } else {
+                -p.color
+            };
+            assert_eq!(anti.color, want, "{} / {}", p.name, anti.name);
+            assert!(matches!(p.color, 1 | 8 | 3 | -3), "{}: {}", p.name, p.color);
+            pairs += 1;
+        }
+        assert!(pairs >= 20, "only {pairs} non-self-conjugate particles");
     }
 
     const LOOP_SM_FRAGMENT: &str = r#"

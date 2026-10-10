@@ -3,7 +3,7 @@ type: Design
 title: Network consent policy
 description: "NetworkPolicy Deny/Ask/Allow from --no-network, $VIBEGRAPH_NO_NETWORK and --yes; refusal outranks consent; no terminal means refusal; HttpFetch is built in one place."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [cli, network, consent, pdf]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -111,12 +111,11 @@ milliseconds instead of downloading, and the assertion fails either way.
 
 `validation/fetch_common.sh` (`vg_download`) applies the same shape to the
 validation layer's own downloads (submodule, LHAPDF sets, refdata bundle):
-`VIBEGRAPH_NO_NETWORK=1` refuses; `VIBEGRAPH_FETCH_CONSENT=1` grants (CI's
-`banked` job sets it); an interactive terminal is asked, default no; otherwise
-refuse, naming the variable. Two differences matter. The script tests for the
-literal value `1`, while the binary refuses on any value, so
-`VIBEGRAPH_NO_NETWORK=true` stops the binary but not the fetch scripts. And the
-script's consent variable is `VIBEGRAPH_FETCH_CONSENT`, not a flag; the binary
-does not read it.
+`VIBEGRAPH_NO_NETWORK` set to any value (`0` and empty included) refuses, by
+the same rule the binary reads it with; `VIBEGRAPH_FETCH_CONSENT=1` grants
+(CI's `banked` job sets it); an interactive terminal is asked, default no;
+otherwise refuse, naming the variable. One difference matters: the script's
+consent variable is `VIBEGRAPH_FETCH_CONSENT`, not a flag, and the binary does
+not read it.
 
 [^n24-u4-policy]: Note 24 §U4, "The interaction policy, as implemented".

@@ -143,10 +143,10 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
 /// where the row names none, and the vendored UFO directory under its restrict
 /// card where it does.
 ///
-/// The `Err` is the message the informational cell carries. A row whose model
-/// this crate cannot read yet is exactly why the SMEFTsim cells are registered
-/// informational, so the failure is a measurement to report rather than a
-/// condition to hide: it is returned, never unwrapped.
+/// The `Err` is the message an informational cell carries: a row whose model
+/// this crate cannot read is reported with the refusal as its measurement rather
+/// than hidden, so the failure is returned, never unwrapped. A gated row's caller
+/// fails on it.
 pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
     // Reading a UFO directory is not cheap and a sweep asks for the same row's
     // model once per subprocess, so the outcome -- the failure as much as the
@@ -297,4 +297,48 @@ pub fn catching_panics<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, St
             .unwrap_or_else(|| "panic payload of an unprintable type".to_string());
         Err(format!("panicked: {message}"))
     })
+}
+
+/// An upper bound on how far the Standard Model's tree-level `σ(e⁺e⁻ → μ⁺μ⁻)`
+/// sits from the QED `4πα²/3s` at `s`, relative to the latter, from the model's
+/// own `MZ`, `WZ` and `sw2`.
+///
+/// With massless leptons the total cross section is
+/// `σ_QED [1 ± 2 v² Re χ + (v² + a²)² |χ|²]`, where `v = −½ + 2 sin²θ_W`,
+/// `a = −½` and `χ = s / (4 sin²θ_W cos²θ_W (s − M_Z² + i M_Z Γ_Z))`. The bound is
+/// the sum of the two terms' magnitudes, so it holds whichever relative sign the
+/// interference carries; at `√s = 10 GeV` it is about `1.2e-4`.
+pub fn ee_to_mumu_z_bound(evaluated: &vibegraph::ufo::EvaluatedModel, s: f64) -> f64 {
+    let param = |name: &str| {
+        evaluated
+            .param_values
+            .get(name)
+            .unwrap_or_else(|| panic!("the model has no parameter {name}"))
+            .re
+    };
+    let (mz, wz, sw2) = (param("MZ"), param("WZ"), param("sw2"));
+    let kappa = 1.0 / (4.0 * sw2 * (1.0 - sw2));
+    let den = (s - mz * mz).powi(2) + (mz * wz).powi(2);
+    let chi_re = kappa * s * (s - mz * mz) / den;
+    let chi_abs2 = kappa * kappa * s * s / den;
+    let v = -0.5 + 2.0 * sw2;
+    let a = -0.5f64;
+    2.0 * v * v * chi_re.abs() + (v * v + a * a).powi(2) * chi_abs2
+}
+
+/// Fail when an integrand's per-point configuration draw fell back to the
+/// sampling channel on any point.
+///
+/// The draw falls back when the squared amplitudes it draws from give it no
+/// probability to normalise — a NaN or an all-zero `AMP2` — and it says so only
+/// through the integrand's counter. A builder that runs points through the
+/// production integrand and never reads the counter leaves that path silent.
+/// `what` names the run in the message.
+pub fn assert_no_scale_draw_fallbacks(fallbacks: u64, what: &str) {
+    assert_eq!(
+        fallbacks, 0,
+        "[{what}] the scale-configuration draw fell back to the sampling channel on \
+         {fallbacks} points: their squared amplitudes summed to something the draw could \
+         not normalise"
+    );
 }

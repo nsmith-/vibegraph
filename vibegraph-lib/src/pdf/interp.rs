@@ -51,12 +51,12 @@ use crate::helas::repr::Real;
 /// continued by [`super::extrap`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutOfRange {
-    pub x: f64,
-    pub q2: f64,
-    pub x_min: f64,
-    pub x_max: f64,
-    pub q2_min: f64,
-    pub q2_max: f64,
+    pub(crate) x: f64,
+    pub(crate) q2: f64,
+    pub(crate) x_min: f64,
+    pub(crate) x_max: f64,
+    pub(crate) q2_min: f64,
+    pub(crate) q2_max: f64,
 }
 
 impl std::fmt::Display for OutOfRange {
@@ -78,22 +78,22 @@ impl std::error::Error for OutOfRange {}
 /// second-to-last entry of that concatenation — the *last* band's penultimate
 /// knot — and not a per-band quantity.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GridEdges {
-    pub x_min: f64,
+pub(crate) struct GridEdges {
+    pub(crate) x_min: f64,
     /// The second x knot: the continuation below `x_min` is the line through
     /// the first two.
-    pub x_min1: f64,
-    pub x_max: f64,
-    pub q2_min: f64,
+    pub(crate) x_min1: f64,
+    pub(crate) x_max: f64,
+    pub(crate) q2_min: f64,
     /// The second-to-last knot of the flattened Q² axis.
-    pub q2_max1: f64,
-    pub q2_max: f64,
+    pub(crate) q2_max1: f64,
+    pub(crate) q2_max: f64,
 }
 
 /// A minimal seam over the 2D interpolation backend, so the evaluation
 /// algorithm can be swapped without touching the [`super::PdfMember`] API.
 /// The single implementation is the LHAPDF-matching [`LogBicubic`].
-pub trait Bicubic2D {
+pub(crate) trait Bicubic2D {
     /// `x·f(x, Q²)` for PDG code `pdg` (0 aliases the gluon 21). Callers pass
     /// in-range points; a point in no subgrid is an [`OutOfRange`].
     fn xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> Result<f64, OutOfRange>;
@@ -118,7 +118,7 @@ pub trait Bicubic2D {
 /// The precomputed log-bicubic coefficient tables for one member, one subgrid
 /// per Q² band.
 #[derive(Debug, Clone)]
-pub struct LogBicubic {
+pub(crate) struct LogBicubic {
     subgrids: Vec<LogBicubicSubgrid>,
     edges: GridEdges,
     /// `(slot, pdg)` for every flavor some band carries, ascending in slot.
@@ -203,7 +203,7 @@ struct LogBicubicSubgrid {
 
 impl LogBicubic {
     /// Precompute the log-bicubic coefficients for every subgrid of a member.
-    pub fn build(subgrids: &[SubGrid]) -> Self {
+    pub(crate) fn build(subgrids: &[SubGrid]) -> Self {
         let bands: Vec<LogBicubicSubgrid> = subgrids.iter().map(LogBicubicSubgrid::build).collect();
 
         let mut has_slot = [false; FLAVOR_SLOTS];

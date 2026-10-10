@@ -8,37 +8,37 @@
 //!
 //! ## Vocabulary
 //!
-//! - [`ColorCoeff`] — the scalar prefactor `q · i^imag · Nc^nc_power`, exact
-//!   rational, checked arithmetic.
-//! - [`ColorTensor`] — a generalized color object: `T`, `Tr`, `f`, `d`, `One`.
-//! - [`ColorString`] — a coefficient times a product of tensors.
-//! - [`ColorFactor`] — a sum of color strings; [`ColorFactor::full_simplify`]
-//!   reduces it to canonical form.
+//! - [`ColorCoeff`](coeff::ColorCoeff) — the scalar prefactor
+//!   `q · i^imag · Nc^nc_power`, exact rational, checked arithmetic.
+//! - [`ColorTensor`](tensor::ColorTensor) — a generalized color object: `T`,
+//!   `Tr`, `f`, `d`, `One`.
+//! - [`ColorString`](factor::ColorString) — a coefficient times a product of
+//!   tensors.
+//! - [`ColorFactor`](factor::ColorFactor) — a sum of color strings;
+//!   [`ColorFactor::full_simplify`](factor::ColorFactor::full_simplify) reduces
+//!   it to canonical form.
 //!
 //! The reduction is a fixed-point iteration of the SU(3) rewrite rules (`f`/`d`
 //! to traces, `T`-chain merge, `T` closing to a trace, the three Fierz
-//! variants, trace values, and conjugation). [`ColorString::to_immutable`] and
-//! [`ColorString::to_canonical`] give the basis-key and index-canonical forms
-//! used downstream to assemble the color basis and the color matrix.
+//! variants, trace values, and conjugation).
+//! [`ColorString::to_immutable`](factor::ColorString::to_immutable) gives the
+//! basis key used downstream to assemble the color basis and the color matrix.
 //!
 //! [`flow_tags`] reads the resulting basis keys back as color *lines*, giving the
 //! `(color, anticolor)` label pair per external leg that a Les Houches event
 //! record carries.
 
-pub mod coeff;
-pub mod colorize;
-pub mod factor;
+pub(crate) mod coeff;
+pub(crate) mod colorize;
+pub(crate) mod factor;
 pub mod flow_tags;
-pub mod tensor;
+pub(crate) mod tensor;
 
-pub use coeff::ColorCoeff;
-pub use colorize::{colorize_process, BasisElement, ColorBasis, Contribution};
-pub use factor::{CanonicalString, ColorFactor, ColorString, ImmutableString};
-pub use flow_tags::{
-    color_flow_tags, select_flow, select_flow_reached_by, ColorFlowTags, LeadingColorFlows,
-    LegColor,
-};
-pub use tensor::{ColorAlgebraError, ColorTensor, Idx, TensorKind};
+pub use colorize::{colorize_process, ColorBasis};
+pub use factor::ImmutableString;
+pub use flow_tags::LeadingColorFlows;
+pub(crate) use tensor::ColorAlgebraError;
+pub use tensor::TensorKind;
 
 #[cfg(test)]
 mod tests;

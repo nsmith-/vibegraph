@@ -56,31 +56,31 @@ enum ComplexReq {
 /// needs to build its wavefunction, resolved from the symbolic leaf and its `Mass`
 /// child so the folded node is a bare `Const::Ext(u32)` with no children.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ExtLeg {
+pub(crate) struct ExtLeg {
     /// Index into the process's external momenta/helicities.
-    pub leg_idx: u32,
+    pub(crate) leg_idx: u32,
     /// UFO spin code (2s+1).
-    pub spin: i32,
-    pub charge: Charge,
+    pub(crate) spin: i32,
+    pub(crate) charge: Charge,
     /// Whether this leg is an incoming external (see [`Sym::Ext`]).
-    pub incoming: bool,
+    pub(crate) incoming: bool,
     /// The leg's mass: index into `consts_f`.
-    pub mass: u32,
+    pub(crate) mass: u32,
     /// Baked helicity of this entry, or `None` to read the per-evaluation helicity
     /// assignment. `Some` entries are produced only by [`Folded::expand_helicities`],
     /// which specializes each `External` leaf to one `(leg, helicity)` pair.
-    pub hel: Option<i8>,
+    pub(crate) hel: Option<i8>,
 }
 
 /// The folded, card-independent skeleton plus the pool specifications that resolve it.
 #[derive(Debug, Clone)]
-pub struct Folded {
+pub(crate) struct Folded {
     /// Same structure as the symbolic AST, with leaves rewritten to pool indices. The
     /// canonical folded arena the analysis and typed instruction stream are derived from;
     /// the runtime executes the derived [`Program`], so this is otherwise read only by the
     /// structural tests and op-coverage checks.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub ast: Ast<Const>,
+    pub(crate) ast: Ast<Const>,
     /// `consts_c[i] = resolve(pool_c[i])`.
     pool_c: Vec<ComplexReq>,
     /// `consts_f[j] = resolve(pool_f[j])`.
@@ -115,7 +115,7 @@ impl Folded {
     /// entry (as a `consts_f` index), so the folded node is a childless leaf; the
     /// rebuild keeps only nodes still reachable from the root, dropping the orphaned
     /// `Mass` nodes from the arena.
-    pub fn build(sym: &Ast<Sym>) -> Folded {
+    pub(crate) fn build(sym: &Ast<Sym>) -> Folded {
         let mut pool_c: Vec<ComplexReq> = Vec::new();
         let mut c_index: HashMap<ComplexReq, u32> = HashMap::new();
         let mut pool_f: Vec<RealReq> = Vec::new();
@@ -540,7 +540,7 @@ impl Folded {
     }
 
     /// Resolve the two numeric pools for a parameter card at scalar precision `F`.
-    pub fn pools<F: Real + FromPrimitive>(
+    pub(crate) fn pools<F: Real + FromPrimitive>(
         &self,
         evaluated: &EvaluatedModel,
     ) -> (Box<[C<F>]>, Box<[F]>) {
@@ -587,24 +587,8 @@ impl Folded {
     }
 
     /// The external-leg table resolving `Const::Ext` indices.
-    pub fn ext_legs(&self) -> &[ExtLeg] {
+    pub(crate) fn ext_legs(&self) -> &[ExtLeg] {
         &self.pool_ext
-    }
-
-    /// Coupling ids referenced by the amplitude (from the complex pool spec).
-    pub fn coupling_ids(&self) -> impl Iterator<Item = CouplingId> + '_ {
-        self.pool_c.iter().filter_map(|req| match req {
-            ComplexReq::Coupling(id) => Some(*id),
-            ComplexReq::Rat(..) => None,
-        })
-    }
-
-    /// Particle ids referenced by the amplitude (mass/width entries of the real pool).
-    pub fn particle_ids(&self) -> impl Iterator<Item = ParticleId> + '_ {
-        self.pool_f.iter().filter_map(|req| match req {
-            RealReq::Mass(id) | RealReq::Width(id) => Some(*id),
-            RealReq::Coeff(_) | RealReq::Rat(..) => None,
-        })
     }
 
     /// The power of `G` every constant-pool entry carries, in the layout
@@ -665,9 +649,7 @@ impl Folded {
             let n = self.const_ast.value(id);
             let kids = self.const_ast.children_ids(id);
             let power = match n.op {
-                Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat => {
-                    leaf_power(n.leaf)
-                }
+                op if op.is_pool_leaf() => leaf_power(n.leaf),
                 // A product of monomials is a monomial of the summed power.
                 Op::Mul => kids.iter().try_fold(0i32, |acc, &k| {
                     node[k as usize].map(|p: i32| acc.saturating_add(p))
@@ -703,8 +685,8 @@ pub(super) type GPower = Option<i32>;
 /// [`GPower`] per constant-pool entry, parallel to the pools
 /// [`Folded::pools`] resolves.
 pub(super) struct GPowers {
-    pub complex: Vec<GPower>,
-    pub real: Vec<GPower>,
+    pub(crate) complex: Vec<GPower>,
+    pub(crate) real: Vec<GPower>,
 }
 
 /// The power of `G` a UFO value expression carries, or `None` if it is not a monomial
@@ -763,15 +745,6 @@ struct FoldRewrite {
     fold_real: Box<[NodeId]>,
 }
 
-/// Whether an op is a bare constant-pool leaf (already a single pool read), as opposed
-/// to a constant *composite* (`Mul`/`Add` of constants) worth collapsing.
-fn is_const_leaf_op(op: Op) -> bool {
-    matches!(
-        op,
-        Op::Coupling | Op::Mass | Op::Width | Op::Coeff | Op::CoeffRat
-    )
-}
-
 /// Rewrite `ast0` so every maximal constant composite becomes one pool-read leaf
 /// (`Op::CoeffRat` over a `Const::Complex`/`Const::Real` index past the base pool).
 ///
@@ -811,7 +784,7 @@ fn fold_constant_subgraphs(
             kept[c as usize] = true;
             if an0.is_const(c) {
                 // A bare constant leaf stays a pool read; a constant composite folds.
-                if !is_const_leaf_op(ast0.value(c).op) {
+                if !ast0.value(c).op.is_pool_leaf() {
                     fold_root[c as usize] = true;
                 }
             } else {
@@ -864,7 +837,7 @@ fn fold_constant_subgraphs(
     let mut real_product = vec![false; n];
     for id in ast0.iter() {
         let node = ast0.value(id);
-        real_product[id as usize] = if is_const_leaf_op(node.op) {
+        real_product[id as usize] = if node.op.is_pool_leaf() {
             an0.out_type(id) == NodeType::RealConst
         } else {
             node.op == Op::Mul
@@ -1025,7 +998,7 @@ fn collect_constant_factors(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
         }
         let new_kids = kids.iter().map(|&k| remap[k as usize]).collect();
         let new = b.add(node.op, node.leaf, new_kids);
-        if is_const_leaf_op(node.op) {
+        if node.op.is_pool_leaf() {
             leaf_node.entry((node.op, node.leaf)).or_insert(new);
         }
         remap[id as usize] = new;
@@ -1047,7 +1020,7 @@ fn constant_factors(
         for &c in ast.children_ids(k) {
             constant_factors(ast, c, remap, leaf_node, out);
         }
-    } else if is_const_leaf_op(node.op) {
+    } else if node.op.is_pool_leaf() {
         out.push(leaf_node[&(node.op, node.leaf)]);
     } else {
         out.push(remap[k as usize]);
@@ -1138,7 +1111,7 @@ fn fuse_scaled_sums(ast: &Ast<Const>, an: &NodeAnalysis) -> Ast<Const> {
         let &[a, b] = ast.children_ids(k) else {
             return None;
         };
-        let is_weight = |c: NodeId| is_const_leaf_op(ast.value(c).op) && an.is_const(c);
+        let is_weight = |c: NodeId| ast.value(c).op.is_pool_leaf() && an.is_const(c);
         let (w, x) = if is_weight(a) {
             (a, b)
         } else if is_weight(b) {

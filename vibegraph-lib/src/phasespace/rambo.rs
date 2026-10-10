@@ -8,7 +8,7 @@
 //! `R_n = ∫ Πᵢ d³pᵢ/(2Eᵢ) · δ⁴(P − Σpᵢ)` (the `(2π)` factors of the full
 //! `dΦ_n` measure live in the cross-section prefactor, not here).
 //!
-//! Construction (Kleiss–Stirling–van der Bij 1986):
+//! Construction (Kleiss, Stirling and Ellis, Comput. Phys. Commun. 40 (1986) 359):
 //!
 //! 1. `n` isotropic massless vectors `qᵢ` with `q⁰ ∼ Γ(2)` are drawn from the
 //!    uniforms — four per momentum: `cosθ`, `φ`, and two for the energy

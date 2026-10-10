@@ -16,9 +16,8 @@
 //! looking at an incomplete environment, and [`require`] says so rather than
 //! passing.
 //!
-//! There is no tolerated-skip list. There was one while the reference runs could
-//! only be produced locally, machine by machine; the bundle pins every run every
-//! gate reads, so a missing one became a failure instead of an exception.
+//! There is no tolerated-skip list: the bundle pins every run every gate reads,
+//! so a missing one is a failure, never an exception.
 //!
 //! `validation/manifest.toml` describes the layers and the per-process coverage.
 
