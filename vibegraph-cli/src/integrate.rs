@@ -436,7 +436,10 @@ pub(crate) fn load_run_card(
     } else {
         config.load_run_card()
     };
-    card.map_err(|e| err(format!("failed to load run card: {e}")))
+    card.map_err(|e| match &config.run_card_path {
+        Some(path) => err(format!("cannot load the run card {}: {e}", path.display())),
+        None => err(format!("cannot build the default run card: {e}")),
+    })
 }
 
 /// The canonical string of the proc card's processes, for artifact metadata: the
@@ -523,8 +526,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
 
     let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)
-        .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
     let config = GlobalConfig {

@@ -764,8 +764,7 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     }
 
     let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)
-        .map_err(|e| err(format!("failed to parse proc card: {e}")))?;
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
     let artifact = IntegrateArtifact::read_from_path(&args.artifact)
@@ -810,7 +809,15 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
         .nevents
         .unwrap_or(artifact.run_card.nevents.max(0) as usize);
     if nevents == 0 {
-        return Err(err("no events requested"));
+        return Err(err(match args.nevents {
+            Some(_) => "no events requested: --nevents is 0".to_string(),
+            None => format!(
+                "no events requested: --nevents is absent and the run card recorded in {} \
+                 asks for nevents = {}",
+                args.artifact.display(),
+                artifact.run_card.nevents
+            ),
+        }));
     }
 
     if hadronic {
