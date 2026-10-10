@@ -198,3 +198,8 @@
     wrote, a pre-existing state; the full `validate.sh` run is close-out's.
 * **F-G2 dispatched** (`validation-dev`, Opus) on `hygiene-fg2` from this
   merge, after clearing `target/debug` (6 GB free before).
+* **F-G2 reported** (`hygiene-fg2`, 1139b39..5a0d378, 8 commits). The report is
+  recorded as `sessions/F-G2-report.md`. F-G2 found the σ seed calibrations
+  drifted at `3f401f0` against the 2026-09 census. Before merging, the manager
+  re-runs the gate and runs the same headroom probe at the pre-sprint commit
+  `669f3fa`, to tell whether the sprint moved σ.
