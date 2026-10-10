@@ -106,8 +106,8 @@ fn flat_mc_partonic_sigma() {
     const ROW: &str = "uux_to_ccx_emmm_qcd0";
     // The banked MadGraph partonic σ̂, its process and its beams, from the
     // committed reference.
-    let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../validation/madgraph/sigma_reference.json");
+    let reference_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json");
     let reference: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&reference_path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", reference_path.display())),
