@@ -78,8 +78,9 @@ struct Cli {
     command: Command,
 
     /// Never download anything; a missing asset becomes a refusal stating the
-    /// URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`
-    /// does the same for a whole environment, and either one outranks `--yes`.
+    /// URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`,
+    /// set to any value, does the same for a whole environment, and either one
+    /// outranks `--yes`.
     #[arg(long, global = true)]
     no_network: bool,
 
