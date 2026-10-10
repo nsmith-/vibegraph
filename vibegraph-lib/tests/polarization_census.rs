@@ -22,7 +22,9 @@
 //! What the comparison cannot see: the helicity combinations are compared as
 //! sets of `(pdg, final, helicity)` multisets, so which of two identical legs
 //! carries which helicity is invisible, and nothing here evaluates an
-//! amplitude — that is the amplitude gate's business.
+//! amplitude — that is the amplitude gate's business. Nor *why* a card is refused:
+//! where MadGraph refuses, a refusal here for any reason passes, so a card refused
+//! for the wrong reason is indistinguishable from one refused for MadGraph's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
