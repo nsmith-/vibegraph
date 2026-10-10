@@ -892,7 +892,15 @@ fn generate_sample(
         .map(|s| s.diagrams[0].provenance.process as i32)
         .collect();
     let reweight_plan = launches
-        .map(|l| reweight_plan(&compiled_sets, model, evaluated, l))
+        .map(|l| {
+            reweight_plan(
+                &compiled_sets,
+                &forbidden_onshell(parsed, model)?,
+                model,
+                evaluated,
+                l,
+            )
+        })
         .transpose()?;
     let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
         compiled_sets
@@ -1053,11 +1061,12 @@ fn reweight_launches(
     let card: ReweightCard = text
         .parse()
         .map_err(|e| err(format!("{}: {e}", path.display())))?;
-    if !forbidden_onshell(parsed, model)?.is_empty() {
+    let forbidden = forbidden_onshell(parsed, model)?;
+    if !forbidden.is_empty() {
         return Err(err(format!(
             "{}: {}",
             path.display(),
-            vibegraph::reweight::ReweightError::ForbiddenSChannel
+            vibegraph::reweight::ReweightError::ForbiddenSChannel { ids: forbidden }
         )));
     }
     let launches = resolve(&card, model).map_err(|e| err(format!("{}: {e}", path.display())))?;
@@ -1078,12 +1087,13 @@ fn reweight_launches(
 /// the indexing its event source reports, and say what each event will cost.
 fn reweight_plan(
     sets: &[&DiagramSet],
+    forbidden_onshell: &[i64],
     model: &UFOModel,
     evaluated: &EvaluatedModel,
     (launches, options): (Vec<Launch>, ReweightOptions),
 ) -> Result<ReweightPlan, IntegrateError> {
     let n = launches.len();
-    let plan = ReweightPlan::new(sets, model, evaluated, launches, options)
+    let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
         .map_err(|e| err(format!("reweighting: {e}")))?;
     report_reweighting(n, &plan.summary());
     Ok(plan)
@@ -1782,7 +1792,13 @@ fn generate_proton_sample(
                 .flat_map(FlavorGroups::groups)
                 .flat_map(|g| (0..g.members().len()).map(|i| g.member_diagram_set(i)))
                 .collect();
-            reweight_plan(&members, model, evaluated, l)
+            reweight_plan(
+                &members,
+                &forbidden_onshell(parsed, model)?,
+                model,
+                evaluated,
+                l,
+            )
         })
         .transpose()?;
     let beam_pdg = hadron_beam_pdg(rc)?;
@@ -2334,6 +2350,7 @@ mod tests {
         let compiled: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
         let plan = ReweightPlan::new(
             &compiled,
+            &[],
             &model,
             &evaluated,
             launches,

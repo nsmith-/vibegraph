@@ -87,6 +87,10 @@ pub struct Prop {
 ///
 /// It changes nothing about the amplitude; it tells phase space what to do with the
 /// line's invariant mass.
+///
+/// MadGraph's third value, forbidden on shell (`False`, `gForceBW = 2`, an `$ A` line), is
+/// not recorded per propagator: the `$` veto is kept per subprocess by
+/// [`crate::onshell`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum OnShell {
     /// No constraint (`None`): the line is whatever the amplitude makes it.
@@ -95,9 +99,6 @@ pub enum OnShell {
     /// Forced on shell (`True`, `gForceBW = 1`): a decay-chain resonance, whose invariant
     /// mass is kept within `bwcutoff` widths of its mass.
     Forced,
-    /// Forbidden on shell (`False`, `gForceBW = 2`): an `$ A` line, whose window is vetoed
-    /// in the integration channels that contain it.
-    Forbidden,
 }
 
 /// A node of a process line's decay chain: `0` is the core, and the decays are numbered

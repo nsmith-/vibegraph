@@ -47,7 +47,6 @@ use num_complex::Complex64;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
-use crate::diagrams::diagram::OnShell;
 use crate::diagrams::DiagramSet;
 use crate::helas::eval::{AmplitudeEvaluator, ScaleAwareAmplitude, ScratchSpace};
 use crate::helas::repr::lorentz::LorentzVector;
@@ -145,13 +144,25 @@ impl ReweightPlan {
     /// Plan the reweighting of each subprocess in `sets` (in the caller's
     /// subprocess indexing) to each of `launches`, relative to `base`, the
     /// parameters the events were generated under.
+    ///
+    /// `forbidden_onshell` is the process's `$` veto, the PDG codes
+    /// [`forbidden_onshell_ids`](crate::diagrams::forbidden_onshell_ids) reads
+    /// off its card. The sets do not record it, and a vetoed process is
+    /// refused: its weight depends on where each event sits relative to the
+    /// veto windows.
     pub fn new(
         sets: &[&DiagramSet],
+        forbidden_onshell: &[i64],
         model: &UFOModel,
         base: &EvaluatedModel,
         launches: Vec<Launch>,
         options: ReweightOptions,
     ) -> Result<Self, ReweightError> {
+        if !forbidden_onshell.is_empty() {
+            return Err(ReweightError::ForbiddenSChannel {
+                ids: forbidden_onshell.to_vec(),
+            });
+        }
         if let Some(couplings) = &options.couplings {
             for launch in &launches {
                 if let Some((param, _)) = launch.values.iter().find(|(p, _)| !couplings.contains(p))
@@ -167,13 +178,6 @@ impl ReweightPlan {
         let generic = generic_point(base, &launches);
         let mut subs = Vec::with_capacity(sets.len());
         for set in sets {
-            if set
-                .diagrams
-                .iter()
-                .any(|d| d.props.iter().any(|p| p.onshell == OnShell::Forbidden))
-            {
-                return Err(ReweightError::ForbiddenSChannel);
-            }
             let mut evaluator = AmplitudeEvaluator::compile(set, model)
                 .map_err(|e| ReweightError::Compile(e.to_string()))?;
             check_external_masses(&evaluator, model, &launches)?;
@@ -977,7 +981,7 @@ mod tests {
         let card: ReweightCard = card.parse().unwrap();
         let launches = resolve(&card, &model).unwrap();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
-        let plan = ReweightPlan::new(&refs, &model, &base, launches, options).unwrap();
+        let plan = ReweightPlan::new(&refs, &[], &model, &base, launches, options).unwrap();
         (model, base, sets, plan)
     }
 
@@ -1260,7 +1264,7 @@ launch --rwgt_name=y4
             couplings: Some(resolve_couplings(&model, &names).unwrap()),
         };
         let refs: Vec<&DiagramSet> = sets.iter().collect();
-        let plan = ReweightPlan::new(&refs, &model, &base, launches, options).unwrap();
+        let plan = ReweightPlan::new(&refs, &[], &model, &base, launches, options).unwrap();
         let g = &plan.summary()[0].polynomial[0];
         assert_eq!((g.terms, g.evaluations, g.hypotheses), (4, 3, 11), "{g:?}");
 
@@ -1380,7 +1384,7 @@ launch --rwgt_name=y4
             exact: true,
             couplings: None,
         };
-        match ReweightPlan::new(&refs, &model, &base, launches, options) {
+        match ReweightPlan::new(&refs, &[], &model, &base, launches, options) {
             Err(ReweightError::NonFinite { launch, .. }) => assert_eq!(launch, "zero"),
             other => panic!("expected a refusal, got {:?}", other.err()),
         }
@@ -1410,8 +1414,15 @@ launch --rwgt_name=y4
         );
         let sets = sets("e+ e- > t t~ h", &model);
         let refs: Vec<&DiagramSet> = sets.iter().collect();
-        let plan =
-            ReweightPlan::new(&refs, &model, &base, launches, ReweightOptions::default()).unwrap();
+        let plan = ReweightPlan::new(
+            &refs,
+            &[],
+            &model,
+            &base,
+            launches,
+            ReweightOptions::default(),
+        )
+        .unwrap();
         check_against_direct("e+ e- > t t~ h", 1000.0, &base, &plan, None, 1e-9);
     }
 
@@ -1539,6 +1550,7 @@ launch --rwgt_name=aew
         assert!(matches!(
             ReweightPlan::new(
                 &refs,
+                &[],
                 &model,
                 &base,
                 launches("launch\n set ymt 1\n set ymtau 2\n"),
@@ -1550,6 +1562,7 @@ launch --rwgt_name=aew
         assert!(matches!(
             ReweightPlan::new(
                 &refs,
+                &[],
                 &model,
                 &base,
                 launches("launch\n set MZ 90\n"),
@@ -1580,8 +1593,15 @@ launch --rwgt_name=aew
         let sets = sets("e+ e- > t t~ h", &model);
         let launches = resolve(&YMT_SCAN.parse().unwrap(), &model).unwrap();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
-        let plan =
-            ReweightPlan::new(&refs, &model, &base, launches, ReweightOptions::default()).unwrap();
+        let plan = ReweightPlan::new(
+            &refs,
+            &[],
+            &model,
+            &base,
+            launches,
+            ReweightOptions::default(),
+        )
+        .unwrap();
         check_against_direct("e+ e- > t t~ h", 1000.0, &base, &plan, None, 1e-10);
 
         // The check is load-bearing: pruned at the card, the amplitude has lost the
@@ -1604,6 +1624,46 @@ launch --rwgt_name=aew
         );
     }
 
+    /// A `$` veto reaches the plan only through `forbidden_onshell`, and a
+    /// vetoed process is refused; the same sets with no veto plan as usual.
+    #[test]
+    fn a_process_with_an_onshell_veto_is_refused() {
+        let model = sm_model(SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        let card =
+            parse_proc_card("generate e+ e- > mu+ mu- $ z", &ParsingOptions::default()).unwrap();
+        let forbidden = crate::diagrams::forbidden_onshell_ids(&card, &model).unwrap();
+        assert_eq!(forbidden, [23]);
+        let sets: Vec<DiagramSet> = generate_from_proc_card(&card, &model)
+            .unwrap()
+            .into_iter()
+            .filter(|s| !s.diagrams.is_empty())
+            .collect();
+        let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let launches = || resolve(&"launch\n set MZ 90\n".parse().unwrap(), &model).unwrap();
+
+        match ReweightPlan::new(
+            &refs,
+            &forbidden,
+            &model,
+            &base,
+            launches(),
+            ReweightOptions::default(),
+        ) {
+            Err(ReweightError::ForbiddenSChannel { ids }) => assert_eq!(ids, [23]),
+            other => panic!("expected the veto to be refused, got {:?}", other.err()),
+        }
+        assert!(ReweightPlan::new(
+            &refs,
+            &[],
+            &model,
+            &base,
+            launches(),
+            ReweightOptions::default()
+        )
+        .is_ok());
+    }
+
     #[test]
     fn a_hypothesis_moving_an_external_mass_is_refused() {
         let model = sm_model(SMRestrict::Default);
@@ -1612,7 +1672,14 @@ launch --rwgt_name=aew
         let launches = resolve(&"launch\n set MT 170\n".parse().unwrap(), &model).unwrap();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
         assert!(matches!(
-            ReweightPlan::new(&refs, &model, &base, launches, ReweightOptions::default()),
+            ReweightPlan::new(
+                &refs,
+                &[],
+                &model,
+                &base,
+                launches,
+                ReweightOptions::default()
+            ),
             Err(ReweightError::ExternalMass { .. })
         ));
     }

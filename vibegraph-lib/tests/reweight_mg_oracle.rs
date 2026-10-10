@@ -39,7 +39,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
-use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+use vibegraph::diagrams::{
+    forbidden_onshell_ids, generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions,
+};
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::reweight::card::ReweightCard;
 use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan};
@@ -300,6 +302,7 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
             .filter(|s| !s.diagrams.is_empty())
             .collect();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
+        let forbidden = forbidden_onshell_ids(&card, &model).unwrap();
 
         let mut rw_card = String::new();
         let ids: Vec<String> = row["hypotheses"]
@@ -344,7 +347,9 @@ fn reweighting_matches_madgraphs_reweight_module_event_by_event() {
         let events = row["events"].as_array().unwrap();
         assert!(!events.is_empty(), "{key}: no banked events");
         for (name, options) in paths {
-            let plan = ReweightPlan::new(&refs, &model, &base, launches.clone(), options).unwrap();
+            let plan =
+                ReweightPlan::new(&refs, &forbidden, &model, &base, launches.clone(), options)
+                    .unwrap();
             let mut rw = plan.bind();
             let pdgs: Vec<Vec<i32>> = (0..sets.len()).map(|s| rw.pdgs(s).to_vec()).collect();
             let mut stats: Vec<Comparison> = ids
