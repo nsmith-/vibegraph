@@ -145,11 +145,6 @@ impl Fetch for VerifiedFetch<'_> {
     }
 }
 
-/// Where a PDF set lives once cached.
-pub(crate) fn pdf_cache_dir(cache_root: &Path, name: &str) -> PathBuf {
-    cache_root.join(AssetKind::Pdf.cache_subdir()).join(name)
-}
-
 /// A PDF set that is now present in the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ensured {
@@ -166,7 +161,7 @@ pub struct Ensured {
 /// either left by an interrupted write or fetched by a build pinning different
 /// data, and in both cases the compiled-in pin is the authority.
 fn is_current(cache_root: &Path, name: &str, expected_sha256: &str) -> bool {
-    let dir = pdf_cache_dir(cache_root, name);
+    let dir = AssetKind::Pdf.entry_dir(cache_root, name);
     dir.is_dir() && store::read_pin(&dir).as_deref() == Some(expected_sha256)
 }
 
@@ -200,7 +195,7 @@ pub fn ensure_pdf_set_pinned(
 ) -> Result<Ensured, EnsureError> {
     if is_current(cache_root, name, sha256) {
         return Ok(Ensured {
-            dir: pdf_cache_dir(cache_root, name),
+            dir: AssetKind::Pdf.entry_dir(cache_root, name),
             checksum: sha256.to_string(),
             fetched: false,
         });
@@ -384,7 +379,7 @@ mod tests {
             other => panic!("expected a checksum mismatch, got {other:?}"),
         }
         assert!(
-            !pdf_cache_dir(&cache_root, "TestSet").exists(),
+            !AssetKind::Pdf.entry_dir(&cache_root, "TestSet").exists(),
             "a mismatched archive must never be published"
         );
     }
@@ -464,7 +459,7 @@ mod tests {
     #[test]
     fn an_unpinned_directory_in_the_cache_is_not_treated_as_cached() {
         let cache_root = scratch("nopin");
-        let dir = pdf_cache_dir(&cache_root, "TestSet");
+        let dir = AssetKind::Pdf.entry_dir(&cache_root, "TestSet");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("TestSet.info"), b"hand-placed").unwrap();
 
