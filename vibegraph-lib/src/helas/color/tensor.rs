@@ -27,8 +27,10 @@ pub(crate) type Idx = i32;
 /// A color structure the algebra engine cannot handle.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ColorAlgebraError {
-    /// A colour structure the engine does not represent — a sextet tensor
-    /// (`K6`, `K6Bar`, `T6`) or a rep it cannot label — was encountered.
+    /// A colour structure the engine does not represent was encountered: a UFO
+    /// colour charge outside `1`, `3`, `6`, `8` and their negations, a sextet
+    /// generator (a `T6` carrying adjoint indices), or a tensor whose slots do
+    /// not carry the representations its indices require.
     #[error("unsupported color structure '{0}'")]
     Unsupported(String),
     /// A color basis key did not read as a consistent set of color lines over the
@@ -182,6 +184,13 @@ impl ColorTensor {
     /// back, **keeping the index order** — conjugation exchanges the two
     /// representations rather than reordering one; every other tensor
     /// conjugates by reversing its index list.
+    ///
+    /// For `f` that reversal gives `f(c,b,a) = −f(a,b,c)`, the negative of the
+    /// conjugate of a real structure constant. It is `color_algebra.py`'s default
+    /// `complex_conjugate`, kept as written there, and no caller reaches it: the
+    /// colour matrix conjugates basis keys, which are fully simplified, and
+    /// simplification rewrites every `f` and `d` into traces first. (`d` is
+    /// symmetric, so its reversal is harmless either way.)
     pub(crate) fn conj(&self) -> ColorTensor {
         match self {
             ColorTensor::T(adj, i, j) => {

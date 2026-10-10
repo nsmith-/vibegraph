@@ -7,9 +7,6 @@
 //! rules, only the first applicable rewrite fires per pass, similar strings
 //! are merged, and the whole factor is iterated to a fixed point.
 
-#[cfg(test)]
-use std::collections::HashMap;
-
 use super::coeff::ColorCoeff;
 use super::tensor::{ColorTensor, Idx, TensorKind};
 
@@ -30,14 +27,6 @@ pub(crate) struct ColorString {
 /// tensors as `(kind, indices)` pairs, sorted. The scalar coefficient is *not*
 /// part of the key.
 pub type ImmutableString = Vec<(TensorKind, Vec<Idx>)>;
-
-/// A color string reduced to canonical form: the immutable form with every
-/// index relabelled `1, 2, 3, …` by order of first appearance, then re-sorted.
-/// Two color strings share a canonical form iff they are equal up to a
-/// relabelling of their indices.
-#[cfg(test)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct CanonicalString(pub(crate) Vec<(TensorKind, Vec<Idx>)>);
 
 impl ColorString {
     /// A string of the given tensors with unit coefficient.
@@ -107,44 +96,13 @@ impl ColorString {
         list
     }
 
-    /// The canonical form together with the index relabelling used to build it
-    /// (`old_index -> new_index`). Indices are numbered `1, 2, 3, …` in order
-    /// of first appearance across the sorted immutable form.
-    #[cfg(test)]
-    pub(crate) fn to_canonical(&self) -> (CanonicalString, HashMap<Idx, Idx>) {
-        let immutable = self.to_immutable();
-        let mut repl: HashMap<Idx, Idx> = HashMap::new();
-        let mut next: Idx = 1;
-        let mut out: Vec<(TensorKind, Vec<Idx>)> = Vec::with_capacity(immutable.len());
-        for (kind, idxs) in &immutable {
-            let mut renamed = Vec::with_capacity(idxs.len());
-            for &idx in idxs {
-                let ni = *repl.entry(idx).or_insert_with(|| {
-                    let v = next;
-                    next += 1;
-                    v
-                });
-                renamed.push(ni);
-            }
-            out.push((*kind, renamed));
-        }
-        out.sort();
-        (CanonicalString(out), repl)
-    }
-
-    /// The canonical form alone.
-    #[cfg(test)]
-    pub(crate) fn canonical(&self) -> CanonicalString {
-        self.to_canonical().0
-    }
-
     /// Whether two strings may be added: identical concrete tensor structure
     /// (same [`to_immutable`](ColorString::to_immutable) form), same `i` flag,
     /// same `Nc` power (the rational magnitudes need not match).
     ///
-    /// The comparison is over the concrete indices, not the index-relabelled
-    /// canonical form: `Tr(1,2,3,4)` and `Tr(1,2,4,3)` share a canonical form
-    /// but are distinct color structures and must not be merged. This mirrors
+    /// The comparison is over the concrete indices, not an index-relabelled
+    /// form: `Tr(1,2,3,4)` and `Tr(1,2,4,3)` are equal up to a relabelling but
+    /// are distinct color structures and must not be merged. This mirrors
     /// MadGraph's `is_similar`, whose `to_canonical()` comparison includes the
     /// index-replacement dict and so is likewise concrete.
     pub(crate) fn is_similar(&self, other: &ColorString) -> bool {

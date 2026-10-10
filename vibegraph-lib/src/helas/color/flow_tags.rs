@@ -56,6 +56,15 @@ const COLOR_SLOT: usize = 0;
 /// `ICOLUP` slot index of the physical anticolour line.
 const ANTICOLOR_SLOT: usize = 1;
 
+/// Whether `order` lists each of `0..n` exactly once.
+fn is_permutation(order: &[usize], n: usize) -> bool {
+    let mut seen = vec![false; n];
+    order.len() == n
+        && order
+            .iter()
+            .all(|&i| i < n && !std::mem::replace(&mut seen[i], true))
+}
+
 /// One external leg as the flow table sees it: the colour rep its *particle*
 /// carries, and whether the leg is incoming.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,14 +148,8 @@ impl ColorFlowTags {
     /// had — this relabels which leg an endpoint sits on, it does not recolour
     /// anything. `None` unless `order` is a permutation of the legs.
     pub(crate) fn permuted(&self, order: &[usize]) -> Option<ColorFlowTags> {
-        if order.len() != self.n_ext {
+        if !is_permutation(order, self.n_ext) {
             return None;
-        }
-        let mut seen = vec![false; self.n_ext];
-        for &leg in order {
-            if std::mem::replace(seen.get_mut(leg)?, true) {
-                return None;
-            }
         }
         let mut tags = Vec::with_capacity(self.tags.len());
         for f in 0..self.n_flows() {
@@ -168,14 +171,8 @@ impl ColorFlowTags {
     /// once the two bases have been paired up. `None` unless `order` is a permutation
     /// of the flows.
     pub(crate) fn reindexed(&self, order: &[usize]) -> Option<ColorFlowTags> {
-        if order.len() != self.n_flows() {
+        if !is_permutation(order, self.n_flows()) {
             return None;
-        }
-        let mut seen = vec![false; self.n_flows()];
-        for &f in order {
-            if std::mem::replace(seen.get_mut(f)?, true) {
-                return None;
-            }
         }
         let mut tags = Vec::with_capacity(self.tags.len());
         for &f in order {
@@ -333,6 +330,10 @@ pub struct LeadingColorFlows {
 impl LeadingColorFlows {
     /// Read the table off a colour basis. `n_diagrams` is the subprocess's
     /// diagram count, so a diagram no flow references still gets a row.
+    ///
+    /// # Panics
+    /// If a contribution names a diagram at or beyond `n_diagrams`: the count
+    /// and the basis then describe different subprocesses.
     pub fn of(basis: &ColorBasis, n_diagrams: usize) -> Self {
         let n_flows = basis.ncolor();
         let max_nc = basis
@@ -345,7 +346,13 @@ impl LeadingColorFlows {
         if let Some(max_nc) = max_nc {
             for (f, elem) in basis.elements.iter().enumerate() {
                 for contrib in &elem.contributions {
-                    if contrib.coeff.nc_power == max_nc && contrib.diagram < n_diagrams {
+                    assert!(
+                        contrib.diagram < n_diagrams,
+                        "colour flow {f} has a contribution from diagram {}, outside the \
+                         subprocess's {n_diagrams} diagrams",
+                        contrib.diagram
+                    );
+                    if contrib.coeff.nc_power == max_nc {
                         reached[contrib.diagram * n_flows + f] = true;
                     }
                 }
@@ -747,6 +754,46 @@ mod tests {
         assert_eq!(select_flow(&w, 0.999), Some(2));
         assert_eq!(select_flow(&[0.0, 0.0], 0.5), None);
         assert_eq!(select_flow(&[f64::NAN], 0.5), None);
+    }
+}
+
+#[cfg(test)]
+mod leading_flow_tests {
+    use super::*;
+    use crate::helas::color::coeff::ColorCoeff;
+    use crate::helas::color::colorize::{BasisElement, Contribution};
+    use num_rational::Ratio;
+
+    /// A one-flow basis whose single contribution comes from `diagram`.
+    fn basis_with_contribution_from(diagram: usize) -> ColorBasis {
+        ColorBasis {
+            elements: vec![BasisElement {
+                structure: vec![(TensorKind::One, Vec::new())],
+                contributions: vec![Contribution {
+                    diagram,
+                    chain: Vec::new(),
+                    coeff: ColorCoeff::one(),
+                }],
+            }],
+            cf_matrix: vec![Ratio::from_integer(1)],
+        }
+    }
+
+    /// A contribution from the last diagram in range lands in that diagram's row.
+    #[test]
+    fn a_contribution_inside_the_diagram_count_reaches_its_flow() {
+        let table = LeadingColorFlows::of(&basis_with_contribution_from(2), 3);
+        assert_eq!(table.n_diagrams(), 3);
+        assert_eq!(table.reached_by(2), &[true]);
+        assert_eq!(table.reached_by(0), &[false]);
+    }
+
+    /// A contribution naming a diagram outside the count is refused, not dropped:
+    /// dropping it would leave that diagram's leading flow out of every mask.
+    #[test]
+    #[should_panic(expected = "outside the subprocess's 2 diagrams")]
+    fn a_contribution_outside_the_diagram_count_is_refused() {
+        let _ = LeadingColorFlows::of(&basis_with_contribution_from(2), 2);
     }
 }
 
