@@ -128,3 +128,4 @@
   in both configurations, `cargo test --workspace` gives 35 suites with 1340
   passed, 0 failed and 16 ignored (matching the agent's account), and the
   banked `color_cf_oracle` passes 97.
+* **F-C dispatched** (`feature-dev`, Opus) on `hygiene-fc` from `abb1a16`.
