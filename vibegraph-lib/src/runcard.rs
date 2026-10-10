@@ -103,11 +103,11 @@ enum Def {
     I(i64),
     B(bool),
     S(&'static str),
-    /// Opaque list/dict-valued parameter; default is an empty payload.
-    O,
-    /// Opaque list-valued parameter whose MadGraph default is not empty, stored
-    /// as the payload MadGraph writes into a card.
-    L(&'static str),
+    /// Opaque list/dict-valued parameter, its default stored as the payload
+    /// MadGraph writes into a card (`banner.py`'s `RunCard.write`), as
+    /// [`parse_value`] reads it back: an empty list or dict is the empty
+    /// payload.
+    O(&'static str),
 }
 
 impl Def {
@@ -117,8 +117,7 @@ impl Def {
             Def::I(i) => ParamValue::Int(i),
             Def::B(b) => ParamValue::Bool(b),
             Def::S(s) => ParamValue::Str(s.to_string()),
-            Def::O => ParamValue::Opaque(String::new()),
-            Def::L(s) => ParamValue::Opaque(s.to_string()),
+            Def::O(s) => ParamValue::Opaque(s.to_string()),
         }
     }
 }
@@ -587,7 +586,8 @@ fn strip_quotes(tok: &str) -> &str {
 /// values and the set of recognized parameter names (typo protection).
 ///
 /// List/dict-valued parameters are represented as [`ParamValue::Opaque`] so the
-/// name is recognized while the payload is not modeled.
+/// name is recognized while the payload is not modeled; each default payload is
+/// MadGraph's own default as its card writer spells it.
 #[rustfmt::skip]
 static PARAM_DEFAULTS: &[(&str, Def)] = &[
     // ── run / seeding ────────────────────────────────────────────────────
@@ -596,7 +596,7 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("time_of_flight", Def::F(-1.0)),
     ("nevents", Def::I(10000)),
     ("iseed", Def::I(0)),
-    ("bypass_check", Def::O),
+    ("bypass_check", Def::O("")),
     ("python_seed", Def::I(-2)),
     // ── beams ────────────────────────────────────────────────────────────
     ("lpp1", Def::I(1)),
@@ -633,7 +633,7 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("eva_xcut", Def::I(1)),
     // ── bias ─────────────────────────────────────────────────────────────
     ("bias_module", Def::S("None")),
-    ("bias_parameters", Def::O),
+    ("bias_parameters", Def::O("")),
     // ── matching ─────────────────────────────────────────────────────────
     ("scalefact", Def::F(1.0)),
     ("ickkw", Def::I(0)),
@@ -644,11 +644,11 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("pdfwgt", Def::B(true)),
     ("asrwgtflavor", Def::I(5)),
     ("clusinfo", Def::B(true)),
-    ("custom_fcts", Def::O),
+    ("custom_fcts", Def::O("")),
     // ── output / frame ───────────────────────────────────────────────────
     ("lhe_version", Def::F(3.0)),
     ("boost_event", Def::S("False")),
-    ("me_frame", Def::L("1, 2")),
+    ("me_frame", Def::O("1, 2")),
     ("frame_id", Def::I(6)),
     ("event_norm", Def::S("average")),
     ("keep_log", Def::S("normal")),
@@ -771,13 +771,13 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("ktdurham", Def::F(-1.0)),
     ("dparameter", Def::F(0.4)),
     ("ptlund", Def::F(-1.0)),
-    ("pdgs_for_merging_cut", Def::O),
+    ("pdgs_for_merging_cut", Def::O("21, 1, 2, 3, 4, 5, 6")),
     ("maxjetflavor", Def::I(4)),
     ("xqcut", Def::F(0.0)),
     // ── systematics ──────────────────────────────────────────────────────
     ("use_syst", Def::B(true)),
     ("systematics_program", Def::S("systematics")),
-    ("systematics_arguments", Def::O),
+    ("systematics_arguments", Def::O("['--mur=0.5,1,2', '--muf=0.5,1,2', '--pdf=errorset']")),
     ("sys_scalefact", Def::S("0.5 1 2")),
     ("sys_alpsfact", Def::S("None")),
     ("sys_matchscale", Def::S("auto")),
@@ -811,14 +811,14 @@ static PARAM_DEFAULTS: &[(&str, Def)] = &[
     ("nb_warp", Def::I(1)),
     ("vecsize_memmax", Def::I(0)),
     // ── per-PDG dict cuts (opaque; parse-and-detect in cuts.rs) ───────────
-    ("pt_min_pdg", Def::O),
-    ("pt_max_pdg", Def::O),
-    ("E_min_pdg", Def::O),
-    ("E_max_pdg", Def::O),
-    ("eta_min_pdg", Def::O),
-    ("eta_max_pdg", Def::O),
-    ("mxx_min_pdg", Def::O),
-    ("mxx_only_part_antipart", Def::O),
+    ("pt_min_pdg", Def::O("")),
+    ("pt_max_pdg", Def::O("")),
+    ("E_min_pdg", Def::O("")),
+    ("E_max_pdg", Def::O("")),
+    ("eta_min_pdg", Def::O("")),
+    ("eta_max_pdg", Def::O("")),
+    ("mxx_min_pdg", Def::O("")),
+    ("mxx_only_part_antipart", Def::O("{'default': False}")),
 ];
 
 /// The cut parameters whose LO default `remove_all_cut` moves, with the value it
@@ -872,6 +872,54 @@ fn canonical_name(name: &str) -> Option<&'static str> {
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(name))
         .map(|(n, _)| *n)
+}
+
+/// The card text `banner.py`'s `RunCard.write` writes for a list or dict
+/// value, from its JSON dump: a list of strings as `['a', 'b']`, any other
+/// list as `1, 2`, and a dict as Python's repr, `{'key': False}`. An empty
+/// list is written `[]`, which the parser reads as the empty payload whatever
+/// the element type.
+#[cfg(test)]
+pub(crate) fn card_spelling(value: &serde_json::Value) -> String {
+    use serde_json::Value;
+    fn scalar(v: &Value) -> String {
+        match v {
+            Value::Bool(true) => "True".to_string(),
+            Value::Bool(false) => "False".to_string(),
+            Value::String(s) => format!("'{s}'"),
+            other => other.to_string(),
+        }
+    }
+    match value {
+        Value::Array(items) if items.is_empty() => "[]".to_string(),
+        Value::Array(items) if items.iter().all(Value::is_string) => {
+            let quoted: Vec<String> = items.iter().map(scalar).collect();
+            format!("[{}]", quoted.join(", "))
+        }
+        Value::Array(items) => items
+            .iter()
+            .map(|v| match v {
+                Value::String(s) => s.clone(),
+                other => scalar(other),
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+        Value::Object(entries) => {
+            let pairs: Vec<String> = entries
+                .iter()
+                .map(|(k, v)| {
+                    let key = if k.parse::<i64>().is_ok() {
+                        k.clone()
+                    } else {
+                        format!("'{k}'")
+                    };
+                    format!("{key}: {}", scalar(v))
+                })
+                .collect();
+            format!("{{{}}}", pairs.join(", "))
+        }
+        other => panic!("{other} is not a list or a dict"),
+    }
 }
 
 #[cfg(test)]
@@ -1066,7 +1114,7 @@ mod tests {
         assert_eq!(rc.float("dsqrt_shatmax"), -1.0);
     }
 
-    /// Transcription oracle: every scalar default in [`PARAM_DEFAULTS`] must
+    /// Transcription oracle: every default in [`PARAM_DEFAULTS`] must
     /// match `RunCardLO.default_setup` as dumped by
     /// `validation/madgraph/dump_runcard_defaults.py`. Regenerate the JSON with
     /// `pixi run -e madgraph dump-runcard-defaults` after a MadGraph bump.
@@ -1117,21 +1165,20 @@ mod tests {
                         "'{name}': table {s:?} vs dump {actual}"
                     );
                 }
-                // Opaque list/dict params: name recognized, payload not compared.
-                Def::O => {}
-                // A list with a non-empty default: the same integers.
-                Def::L(s) => {
-                    let ours: Vec<i64> = s
-                        .split(',')
-                        .map(|t| t.trim().parse().expect("an integer list"))
-                        .collect();
-                    let theirs: Vec<i64> = actual
-                        .as_array()
-                        .unwrap_or_else(|| panic!("'{name}': dump {actual} is not a list"))
-                        .iter()
-                        .map(|v| v.as_i64().expect("an integer"))
-                        .collect();
-                    assert_eq!(ours, theirs, "'{name}': table {s:?} vs dump {actual}");
+                // A list or dict: the table's payload is what the parser reads
+                // from the card line MadGraph writes for its own default.
+                Def::O(s) => {
+                    assert_eq!(
+                        parse_value(s, Kind::Opaque),
+                        Some(def.to_value()),
+                        "'{name}': table payload {s:?} is not the parser's own spelling"
+                    );
+                    let spelled = card_spelling(actual);
+                    assert_eq!(
+                        parse_value(&spelled, Kind::Opaque),
+                        Some(def.to_value()),
+                        "'{name}': table {s:?} vs dump {actual}, written as {spelled:?}"
+                    );
                 }
             }
         }
