@@ -211,3 +211,10 @@
   0 in both configurations, and the hermetic suite gives 37 suites with 1391
   passed, 0 failed and 16 ignored. **All fix sessions are done.** L (lessons)
   is next.
+* **Close-out under way** (Z):
+  - L (lessons) dispatched on `hygiene-l`.
+  - The full banked `validation/validate.sh` was started detached on the
+    sprint head in `/home/user/wt/hygiene-v1`.
+  - 54 new backlog items were filed (`190c13e`): every triaged *file* finding
+    and every Found entry.
+  - The kb stale-site updates (24 sites) were dispatched on `hygiene-zkb`.
