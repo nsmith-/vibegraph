@@ -1396,8 +1396,8 @@ rationale = "The renormalisation and factorisation scales replayed per event aga
 key = "scale-couplings"
 layer = "banked"
 targets = ["vibegraph-lib/tests/validate_scale_couplings.rs"]
-inputs = ["MadGraph process directories"]
-rationale = "The constant-pool scaling path against a full model re-evaluation, entry by entry at 100 random alpha_s values, for every amplitude-gate process."
+inputs = ["validation/madgraph/amplitudes/<process>.json"]
+rationale = "The constant-pool scaling path against a full model re-evaluation, entry by entry at 100 random alpha_s values, for every Standard Model amplitude-gate process, under the param card banked in its amplitude table."
 
 [[standalone]]
 key = "sm-interned-blob"
