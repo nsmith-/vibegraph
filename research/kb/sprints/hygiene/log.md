@@ -203,3 +203,11 @@
   drifted at `3f401f0` against the 2026-09 census. Before merging, the manager
   re-runs the gate and runs the same headroom probe at the pre-sprint commit
   `669f3fa`, to tell whether the sprint moved σ.
+* **σ-drift attribution:** the seed-headroom probe at the pre-sprint
+  `669f3fa` is identical, line for line over 68 rows, to F-G2's run at
+  `3f401f0`. The sprint moved no σ; the census drift predates it and is filed
+  at close-out.
+* **F-G2 merged.** Manager gate re-run at `5a0d378`: fmt passes, clippy exits
+  0 in both configurations, and the hermetic suite gives 37 suites with 1391
+  passed, 0 failed and 16 ignored. **All fix sessions are done.** L (lessons)
+  is next.

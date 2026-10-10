@@ -64,8 +64,8 @@ passes the same mutation.
    `ee_to_ee` worst \|rel\| 1.44e-3 → 3.24e-3 (χ²/dof 2.31);
    `gg_to_gg` 1.97e-3 → 2.66e-3; `ll_to_qqx_toy_tensor` 1.40e-3 → 2.23e-3;
    `ee_to_mumu_4f` 1.33e-3 → 6.4e-4. Re-record `plan_for` and the census page.
-   **The manager is checking whether the sprint caused this** (see the check
-   below).
+   **The sprint did not cause this** (see the manager check below): the drift
+   predates the sprint.
 2. **Hadronic manifest gate readings no longer reproduce:** `pp_to_jj`,
    `pp_to_llj` and `llj_dyn`.
 3. **The `pp_to_jj` integrals note's "tightest cell" claim is stale.**
@@ -96,6 +96,13 @@ passes the same mutation.
 
 ## Manager check (2026-10-10)
 
-- **Gate re-run** on the final commit, **and the σ-drift attribution:**
-  `probe_gate_row_seed_headroom` run at the pre-sprint commit `669f3fa` and
-  compared line by line with F-G2's tip run. The results are in `log.md`.
+- **Gate re-run at 5a0d378:** fmt passes; clippy exits 0 in both
+  configurations; `cargo test --workspace` gives 37 suites, 1391 passed,
+  0 failed, 16 ignored.
+- **σ-drift attribution:** `probe_gate_row_seed_headroom` was run at the
+  pre-sprint commit `669f3fa`
+  (`cargo test -p vibegraph-lib --profile release-debug --features extended-validation --test validate_sigma probe_gate_row_seed_headroom -- --ignored --nocapture`).
+  Its 68 `HEADROOM` lines are identical, digit for digit, to F-G2's run at
+  the sprint head `3f401f0`: every worst \|rel\|, pull, mean and χ²/dof
+  matches. The sprint moved no σ on any gated row. The drift from the 2026-09
+  census predates the sprint, and is filed for re-calibration.
