@@ -95,6 +95,11 @@ use crate::vegas::VegasGrid;
 /// pair.
 pub const FORMAT_VERSION: u32 = 11;
 
+/// The first version that records the phase-space map choices
+/// ([`IntegrateArtifact::maps`]), and the oldest whose schema is the current
+/// one (see the version-9 entry in [`FORMAT_VERSION`]'s doc).
+pub(crate) const MAP_CHOICES_VERSION: u32 = 9;
+
 /// The first version whose artifacts can hold a sum over final-state
 /// multiplicities (see the version-10 entry in [`FORMAT_VERSION`]'s doc).
 pub const MULTIPLICITY_VERSION: u32 = 10;
@@ -128,6 +133,15 @@ pub enum ArtifactError {
          (regenerate it with `vibegraph integrate`)"
     )]
     UnsupportedVersion {
+        found: u32,
+        oldest: u32,
+        expected: u32,
+    },
+    #[error(
+        "refusing to write artifact format version {found}: this build reads versions \
+         {oldest}..={expected}"
+    )]
+    UnwritableVersion {
         found: u32,
         oldest: u32,
         expected: u32,
@@ -688,17 +702,17 @@ impl IntegrateArtifact {
     /// The version an artifact banking `channels` records: the oldest whose
     /// schema holds every key among them. A [`ChannelKey::MergedChannel`] needs
     /// [`MERGED_CHANNEL_VERSION`], a [`ChannelKey::MultiplicityChannel`]
-    /// [`MULTIPLICITY_VERSION`]; every other key is version 9's.
+    /// [`MULTIPLICITY_VERSION`]; every other key is [`MAP_CHOICES_VERSION`]'s.
     pub fn version_for(channels: &[ChannelGrid]) -> u32 {
         channels
             .iter()
             .map(|c| match c.key {
                 ChannelKey::MergedChannel { .. } => MERGED_CHANNEL_VERSION,
                 ChannelKey::MultiplicityChannel { .. } => MULTIPLICITY_VERSION,
-                _ => 9,
+                _ => MAP_CHOICES_VERSION,
             })
             .max()
-            .unwrap_or(9)
+            .unwrap_or(MAP_CHOICES_VERSION)
     }
 
     /// Refuse to replay this artifact on a process whose derived channel keys
@@ -736,8 +750,17 @@ impl IntegrateArtifact {
     }
 
     /// Serialize and write to `path`, refusing to overwrite an existing file
-    /// unless `force` is set.
+    /// unless `force` is set, and refusing a
+    /// [`format_version`](Self::format_version) that
+    /// [`read_from_path`](Self::read_from_path) would refuse.
     pub fn write_to_path(&self, path: &Path, force: bool) -> Result<(), ArtifactError> {
+        if !(OLDEST_READABLE_VERSION..=FORMAT_VERSION).contains(&self.format_version) {
+            return Err(ArtifactError::UnwritableVersion {
+                found: self.format_version,
+                oldest: OLDEST_READABLE_VERSION,
+                expected: FORMAT_VERSION,
+            });
+        }
         if !force && path.exists() {
             return Err(ArtifactError::AlreadyExists {
                 path: path.display().to_string(),
@@ -767,7 +790,7 @@ impl IntegrateArtifact {
         let header: VersionHeader = bincode::deserialize(&raw).map_err(ArtifactError::Decode)?;
         match header.format_version {
             // 9 through 11 share one schema; each later version only adds a key.
-            9 | MULTIPLICITY_VERSION | FORMAT_VERSION => {
+            MAP_CHOICES_VERSION | MULTIPLICITY_VERSION | MERGED_CHANNEL_VERSION => {
                 bincode::deserialize(&raw).map_err(ArtifactError::Decode)
             }
             // 6 through 8 share one schema (see `FORMAT_VERSION`'s doc); the upgrade
@@ -1507,6 +1530,62 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
         std::fs::remove_dir(&dir).ok();
+    }
+
+    /// Every version from [`OLDEST_READABLE_VERSION`] through [`FORMAT_VERSION`]
+    /// has a reader, and every one from [`MAP_CHOICES_VERSION`] on decodes the
+    /// current schema back field for field. Bumping [`FORMAT_VERSION`] without
+    /// a reader arm for the new version, or replacing an arm's constant so that
+    /// a version still written drops out, fails here for the version it drops.
+    #[test]
+    fn every_version_this_build_writes_or_upgrades_has_a_reader() {
+        let dir = scratch_dir("every-version");
+        for version in OLDEST_READABLE_VERSION..=FORMAT_VERSION {
+            let mut artifact = sample_artifact();
+            artifact.format_version = version;
+            let path = dir.join(format!("v{version}.bin.zst"));
+            artifact.write_to_path(&path, true).expect("write");
+            let read = IntegrateArtifact::read_from_path(&path);
+            assert!(
+                !matches!(read, Err(ArtifactError::UnsupportedVersion { .. })),
+                "version {version} has no reader"
+            );
+            if version >= MAP_CHOICES_VERSION {
+                let back = read.unwrap_or_else(|e| panic!("version {version}: {e}"));
+                assert_eq!(back.format_version, version);
+                assert_eq!(back.maps, artifact.maps, "version {version}");
+                assert_eq!(back.sigma_pb.to_bits(), artifact.sigma_pb.to_bits());
+            }
+            std::fs::remove_file(&path).ok();
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The writer refuses a version its own reader would refuse, and leaves no
+    /// file behind.
+    #[test]
+    fn write_refuses_a_version_this_build_cannot_read() {
+        let dir = scratch_dir("unwritable");
+        for version in [OLDEST_READABLE_VERSION - 1, FORMAT_VERSION + 1] {
+            let mut artifact = sample_artifact();
+            artifact.format_version = version;
+            let path = dir.join(format!("v{version}.bin.zst"));
+            let err = artifact
+                .write_to_path(&path, true)
+                .expect_err("an unreadable version is not written");
+            assert!(
+                matches!(
+                    err,
+                    ArtifactError::UnwritableVersion { found, oldest, expected }
+                        if found == version
+                            && oldest == OLDEST_READABLE_VERSION
+                            && expected == FORMAT_VERSION
+                ),
+                "{err}"
+            );
+            assert!(!path.exists(), "version {version} left a file");
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// An artifact written under a schema version with no reader is refused by
