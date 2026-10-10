@@ -138,7 +138,8 @@ impl PdfSet {
 /// interpolator, and the continuation that reads points past the grid.
 #[derive(Debug)]
 pub struct PdfMember {
-    pub subgrids: Vec<SubGrid>,
+    /// Read-only: `interp` is precomputed from these.
+    subgrids: Vec<SubGrid>,
     interp: LogBicubic,
     extrap: Continuation,
     force_positive: i32,
@@ -157,6 +158,11 @@ impl PdfMember {
             extrap: Continuation,
             force_positive: 0,
         }
+    }
+
+    /// The parsed subgrids, in file order.
+    pub fn subgrids(&self) -> &[SubGrid] {
+        &self.subgrids
     }
 
     /// Set the `ForcePositive` level (`0`, `1` or `2`) applied to every value

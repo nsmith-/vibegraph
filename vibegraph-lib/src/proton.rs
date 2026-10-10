@@ -63,13 +63,14 @@
 //! *masses*, and `p p → j j` puts `g g → g g` (`1/2`) and `q q̄ → q q̄` (`1`) in
 //! different groups with the same mass list `[0, 0]`. Every member therefore
 //! carries its own factor ([`Subprocess::symmetry_factor`]) into the luminosity
-//! sum ([`FlavorGroup::symmetry_weighted_luminosity`]), which is where the sum over
+//! sum ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), which is where the sum over
 //! subprocesses can still tell them apart.
 //!
 //! # The integrand
 //!
 //! [`ProtonIntegrand`] convolves the decomposition with parton distributions over
-//! a `(τ, y)` outer map and a per-diagram multichannel inner map, and presents the
+//! a `(τ, y)` outer map and a multichannel inner map with one channel per MadGraph
+//! configuration, and presents the
 //! result as a [`ChannelIntegrand`] so per-channel VEGAS banking, frozen-grid scans
 //! and accept/reject need no hadronic special case. Its master formula, frames and
 //! change of variables are documented on the type.
@@ -329,7 +330,7 @@ impl FlavorGroup {
         &self.evaluator
     }
 
-    /// The representative subprocess's diagrams — the input the per-diagram
+    /// The representative subprocess's diagrams — the input the per-configuration
     /// phase-space channels are derived from.
     pub fn diagrams(&self) -> &[Diagram] {
         &self.representative.diagrams
@@ -429,17 +430,9 @@ impl FlavorGroup {
         sums
     }
 
-    /// [`luminosity`](Self::luminosity) with each member weighted by its own
-    /// identical-particle symmetry factor — the combination the cross section takes.
-    ///
-    /// ```text
-    /// Σ_members S_i · xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// ```
-    ///
-    /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
-    /// group unless they happen to agree: a group is a statement about the matrix
-    /// element, not about the outgoing multiset.
-    #[cfg(any(test, doc))]
+    /// [`symmetry_weighted_luminosity_rows`](Self::symmetry_weighted_luminosity_rows),
+    /// reading the two beam rows itself.
+    #[cfg(test)]
     pub(crate) fn symmetry_weighted_luminosity(
         &self,
         pdf: &PdfMember,
@@ -451,8 +444,17 @@ impl FlavorGroup {
         self.symmetry_weighted_luminosity_rows(&f1, &f2)
     }
 
-    /// [`symmetry_weighted_luminosity`](Self::symmetry_weighted_luminosity) off
-    /// the two beam flavour rows directly.
+    /// [`luminosity_rows`](Self::luminosity_rows) with each member weighted by its
+    /// own identical-particle symmetry factor — the combination the cross section
+    /// takes.
+    ///
+    /// ```text
+    /// Σ_members S_i · xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
+    /// ```
+    ///
+    /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
+    /// group unless they happen to agree: a group is a statement about the matrix
+    /// element, not about the outgoing multiset.
     pub(crate) fn symmetry_weighted_luminosity_rows(
         &self,
         f1: &FlavorRow,
@@ -1218,8 +1220,8 @@ pub struct OuterPoint {
 }
 
 /// A ready-to-integrate hadronic cross section for an arbitrary flavour-decomposed
-/// process at proton beams (`lpp = 1`), sampled by a per-diagram multichannel map at
-/// each event's own partonic energy.
+/// process at proton beams (`lpp = 1`), sampled by a multichannel map with one
+/// channel per MadGraph configuration at each event's own partonic energy.
 ///
 /// # Master formula
 ///
@@ -1231,7 +1233,7 @@ pub struct OuterPoint {
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
-/// ([`FlavorGroup::symmetry_weighted_luminosity`]), and `R` the mirror map
+/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R` the mirror map
 /// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
 /// unreflected final state: the mirror is an argument to the matrix element, not a
 /// second event.
@@ -5253,7 +5255,7 @@ mod tests {
     /// Zero rapidity is what makes the comparison exact: the lab frame then coincides
     /// with the partonic CM, so the two sides apply one cut filter to the same
     /// configuration. The partonic side is [`FixedBeamIntegrand`], sampled through its
-    /// *own* map (all-timelike per-diagram channels at fixed `√ŝ`) rather than this
+    /// *own* map (all-timelike per-configuration channels at fixed `√ŝ`) rather than this
     /// integrand's floored spines, so the flux, the `2π` measure, the spin/colour
     /// average and the identical-particle factor are compared across two independent
     /// phase-space maps.

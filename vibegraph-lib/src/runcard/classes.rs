@@ -67,8 +67,9 @@ const R_UNIMPL: &str = "cuts::detect_unimplemented — parsed and detected rathe
                         so a value off the default is already a hard error";
 const R_PTGMIN: &str = "cuts::detect_unimplemented, and cuts::Cuts::compile, which raises the \
                         photon pT threshold to it";
-const R_SDE_STRATEGY: &str = "hadronic::EventScaleSource::weights_configurations_by_amp2, which \
-                              reads it together with tmin_for_channel: matrix1.f weights \
+const R_SDE_STRATEGY: &str = "hadronic::configurations_weighted_by_amp2, which \
+                              compile_configuration_weights and the scale source both call, \
+                              and which reads it together with tmin_for_channel: matrix1.f weights \
                               integration configuration c by AMP2_c * CC_c, and genps.f's \
                               get_channel_cut collapses CC_c to 1 exactly at 1 with \
                               tmin_for_channel = -1. At 2 the squared amplitude is discarded \
@@ -174,11 +175,11 @@ const P_TMIN_FOR_CHANNEL: &str = "limits the non-singular reach of a t-channel i
                                   denominator product without the tmin factor, and at \
                                   SDE_strategy = 1 genps.f reads an uninitialised t in that \
                                   factor anyway. The field is read -- \
-                                  EventScaleSource::weights_configurations_by_amp2 tests it \
-                                  beside SDE_strategy -- but reading is not implementing it, so \
-                                  the refusal here is what stands between such a card and a \
-                                  configuration weight taken under a rule that does not \
-                                  describe it";
+                                  hadronic::configurations_weighted_by_amp2 refuses it beside \
+                                  SDE_strategy -- but reading is not implementing it, so \
+                                  it is refused here, at the parse, and again where the \
+                                  weight is chosen, rather than taking a configuration weight \
+                                  under a rule that does not describe it";
 const P_NHEL: &str = "Monte-Carlo over helicities in place of the explicit sum, which changes \
                       both the estimator and the per-event weight";
 const P_LIMHEL: &str = "the threshold below which MadGraph drops a helicity configuration; \
