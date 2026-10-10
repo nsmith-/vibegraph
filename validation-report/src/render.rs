@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use serde_json::{json, Value};
 
-use crate::manifest::{Manifest, Standalone, CATEGORIES};
+use crate::manifest::{Class, Layer, Manifest, ProcessStatus, Standalone, CATEGORIES};
 use crate::ResolvedRow;
 
 pub(crate) fn markdown(
@@ -47,7 +47,7 @@ pub(crate) fn markdown(
     out.push_str("|---|---|---|---|---|---|\n");
     let mut multi_channel_started = false;
     for row in resolved {
-        if row.process.class != "single-channel" && !multi_channel_started {
+        if row.process.class != Class::SingleChannel && !multi_channel_started {
             multi_channel_started = true;
             out.push_str("| **multi-channel** | | | | | |\n");
         }
@@ -115,7 +115,7 @@ pub(crate) fn markdown(
         out.push_str(&format!(
             "| `{}` | {} | {} |\n",
             standalone.key,
-            standalone.layer,
+            standalone.layer.as_str(),
             standalone_verdict(standalone, report_dir),
         ));
     }
@@ -151,7 +151,7 @@ pub(crate) fn markdown(
     let planned: Vec<&str> = manifest
         .processes
         .iter()
-        .filter(|p| p.status.as_deref() == Some("planned"))
+        .filter(|p| p.status == Some(ProcessStatus::Planned))
         .map(|p| p.key.as_str())
         .collect();
     out.push_str("## Coverage bookkeeping\n\n");
@@ -316,7 +316,7 @@ fn tally(resolved: &[ResolvedRow]) -> (usize, String) {
 /// What the list under the table says about one standalone gate.
 fn standalone_verdict(standalone: &Standalone, report_dir: &Path) -> String {
     let Some(row) = standalone.row.as_deref() else {
-        if standalone.layer == "oracle" {
+        if standalone.layer == Layer::Oracle {
             return format!(
                 "the oracle layer runs it — `pixi run{} {}` ({})",
                 standalone
@@ -330,7 +330,7 @@ fn standalone_verdict(standalone: &Standalone, report_dir: &Path) -> String {
         }
         return format!(
             "ran with the {} layer's suite ({})",
-            standalone.layer,
+            standalone.layer.as_str(),
             standalone.targets.join(", ")
         );
     };
@@ -452,7 +452,7 @@ pub(crate) fn json(
             json!({
                 "key": row.process.key,
                 "process": row.process.process,
-                "class": row.process.class,
+                "class": row.process.class.as_str(),
                 "n_final": row.process.n_final,
                 "rationale": row.process.rationale,
                 "model": row.process.model,
@@ -468,7 +468,7 @@ pub(crate) fn json(
         .map(|s| {
             json!({
                 "key": s.key,
-                "layer": s.layer,
+                "layer": s.layer.as_str(),
                 "targets": s.targets,
                 "task": s.task,
                 "environment": s.environment,

@@ -11,12 +11,32 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::manifest::Category;
+use crate::manifest::{Category, Mode};
 
 /// The row-file schema this collator understands. A file written under a
 /// different one is an error rather than a best-effort read: the fields it
 /// renders are the fields whose meaning that number depends on.
 pub(crate) const ROW_SCHEMA: u32 = 1;
+
+/// What one run of a gate observed for its row, as the row file's `status`
+/// spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Status {
+    Pass,
+    Fail,
+    Info,
+}
+
+impl Status {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Status::Pass => "pass",
+            Status::Fail => "fail",
+            Status::Info => "info",
+        }
+    }
+}
 
 /// The fields every row file carries, whatever its category.
 #[derive(Debug, Deserialize)]
@@ -25,8 +45,8 @@ struct Common {
     row: String,
     variant: Option<String>,
     category: String,
-    mode: String,
-    status: String,
+    mode: Mode,
+    status: Status,
     #[serde(default)]
     process: String,
     #[serde(default)]
@@ -41,8 +61,8 @@ pub(crate) struct RowFile {
     pub(crate) row: String,
     pub(crate) variant: Option<String>,
     pub(crate) category: Category,
-    pub(crate) mode: String,
-    pub(crate) status: String,
+    pub(crate) mode: Mode,
+    pub(crate) status: Status,
     pub(crate) process: String,
     pub(crate) note: Option<String>,
     /// Wall-clock seconds the gate spent measuring this row, where it timed
@@ -342,7 +362,7 @@ impl RowFile {
                 -ks.min(chi2)
             }
         };
-        if self.status == "fail" {
+        if self.status == Status::Fail {
             own + 1e12
         } else {
             own
@@ -419,5 +439,31 @@ pub(crate) fn pval(p: f64) -> String {
         // The chi-squared tail underflows to zero long before the statistic
         // stops growing, so the cell says that rather than printing a p of 0.
         "<1e-300".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `status` and `mode` read exactly the strings the row writers emit
+    /// (`vibegraph-lib/tests/common/report.rs`: `"pass"`, `"fail"`, `"info"`;
+    /// `"gate"`, `"info"`) and nothing else.
+    #[test]
+    fn status_and_mode_read_the_writers_vocabulary() {
+        let parse = |s: &str| serde_json::from_value::<Status>(Value::from(s));
+        for status in [Status::Pass, Status::Fail, Status::Info] {
+            assert_eq!(parse(status.as_str()).unwrap(), status);
+        }
+        for bad in ["Pass", "ok", "gate", ""] {
+            assert!(parse(bad).is_err(), "status {bad:?} was accepted");
+        }
+        let parse = |s: &str| serde_json::from_value::<Mode>(Value::from(s));
+        for mode in [Mode::Gate, Mode::Info] {
+            assert_eq!(parse(mode.as_str()).unwrap(), mode);
+        }
+        for bad in ["Gate", "pass", "informational"] {
+            assert!(parse(bad).is_err(), "mode {bad:?} was accepted");
+        }
     }
 }
