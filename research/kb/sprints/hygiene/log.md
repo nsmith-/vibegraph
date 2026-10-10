@@ -124,3 +124,7 @@
 * **F-B reported** (`hygiene-fb`, 7d33250..2127cfe, 3 commits). The report is
   recorded as `sessions/F-B-report.md`. The manager's gate re-run is in
   progress, and the merge waits on it.
+* **F-B merged.** Manager gate re-run at `2127cfe`: fmt passes, clippy exits 0
+  in both configurations, `cargo test --workspace` gives 35 suites with 1340
+  passed, 0 failed and 16 ignored (matching the agent's account), and the
+  banked `color_cf_oracle` passes 97.
