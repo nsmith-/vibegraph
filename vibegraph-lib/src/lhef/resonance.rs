@@ -312,12 +312,9 @@ fn timelike_lines(
         })?;
         // The representation of the particle as oriented: the conjugate of the
         // propagator's own slot particle's when the orientation flipped it. A
-        // singlet or an octet is its own conjugate, whatever sign the model's
-        // antiparticle entry carries.
+        // singlet or an octet is its own conjugate.
         let particle = model.particle(prop.particle);
-        let color = if matches!(particle.color.abs(), 1 | 8) {
-            particle.color.abs()
-        } else if code == particle.pdg_code {
+        let color = if matches!(particle.color, 1 | 8) || code == particle.pdg_code {
             particle.color
         } else {
             -particle.color
