@@ -119,3 +119,5 @@
   - `cargo test --workspace` gives 35 suites, 1343 passed, 0 failed,
     16 ignored. That is 5 fewer passing than V1b's 1348, matching the
     deleted tests net of those added.
+* **F-B dispatched** (`validation-dev`, Opus) on `hygiene-fb` from `17d6e84`,
+  with F-A's `GammaJout` Found item added to its scope.
