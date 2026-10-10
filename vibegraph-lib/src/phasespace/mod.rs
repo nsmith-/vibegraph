@@ -10,7 +10,7 @@
 //! seam the integrator sees — [`PhaseSpaceMap`], [`Channel`] and [`Combiner`] —
 //! and the combiners: [`MultiChannel`] at a fixed `√ŝ`, and its per-event-energy
 //! counterpart for hadronic runs, which combine the diagram channels into one
-//! variance-minimising estimator. [`beams`] derives the initial state, [`rambo`]
+//! variance-minimising estimator. [`beams`] derives the initial state, [`rambo`](mod@rambo)
 //! is flat `n`-body sampling (also behind the seam, as [`RamboChannel`]), and
 //! [`rng`] supplies the counter-based substreams every draw comes from.
 //!

@@ -84,7 +84,7 @@ pub(crate) const VEGAS_ALPHA: f64 = 1.5;
 /// five to 36% of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable
 /// across every seed *and* halves the error — the grid still absorbing the
 /// residual structure the channel maps do not cover. Under the default unweighted
-/// combination ([`IterationCombination`](crate::vegas::IterationCombination)) the
+/// combination ([`crate::vegas::IterationCombination`]) the
 /// value has not been re-measured.
 pub(crate) const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 
