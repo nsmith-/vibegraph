@@ -193,10 +193,13 @@ pub enum BlockAllocation {
     /// evaluations against 6.41M, and the seed-to-seed spread of that spend
     /// narrows from 2.75M–12.4M to 1.97M–4.26M.
     ///
-    /// The mechanism is the scale factor, not the split: a starved channel's
-    /// χ²/dof is what widens the error the stopping rule reads, so feeding it
-    /// relaxes the test by more than its own variance share ever could. Both
-    /// arms agree on σ (0.14σ and 0.32σ from MadGraph's banked value).
+    /// The mechanism is the consistency factor, not the split: a starved
+    /// channel's [`ChannelHistory::stop_scale`] is what widens the error the
+    /// stopping rule reads, so feeding it relaxes the test by more than its own
+    /// variance share ever could. Both arms agree on σ (0.14σ and 0.32σ from
+    /// MadGraph's banked value). These figures were measured with the stopping
+    /// test widening each channel by its per-iteration χ²/dof rather than by the
+    /// pooled factor it reads, and have not been re-measured under it.
     Neyman,
 }
 
@@ -410,9 +413,9 @@ impl ChannelHistory {
     /// This channel's term, combined over its kept iterations.
     ///
     /// Iterations that drew the same number of points combine under `rule` —
-    /// the same arithmetic, in the same order, that a run of
-    /// [`VegasGrid::adapt_parallel_seeded`] would have performed, so a fixed
-    /// budget's numbers do not move.
+    /// [`combine_iterations`], the arithmetic and the order
+    /// [`VegasGrid::adapt`] combines its own iterations in, so a fixed budget's
+    /// channel terms are those of independent per-channel adaptations.
     ///
     /// Iterations that drew *different* numbers are averaged weighted by their
     /// point counts. Those weights are what Lepage's are not: an iteration's
@@ -1424,10 +1427,9 @@ mod tests {
         );
     }
 
-    /// The per-iteration χ² factor this rule replaces, kept here as the
-    /// comparison the spike test below is read against: χ²/dof over the
-    /// iterations that measured a variance, each residual over that iteration's
-    /// own σᵢ².
+    /// A per-iteration χ² factor, the comparison the spike test below is read
+    /// against: χ²/dof over the iterations that measured a variance, each
+    /// residual over that iteration's own σᵢ².
     fn chi2_scale(h: &ChannelHistory) -> f64 {
         let informative: Vec<(f64, f64, usize)> = h
             .kept

@@ -2356,9 +2356,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// history. `fallback` names the group and the channel kept where no
     /// configuration carries probability.
     ///
-    /// The momenta are the direct ordering's. A group's mirrored term is evaluated
-    /// at the same scale as its direct one, so there is one draw per group per
-    /// point and not one per ordering.
+    /// `cm` is the ordering being evaluated. A group with a mirror is asked twice
+    /// per point, at the direct momenta and at the mirrored ones, with the same
+    /// `v`: each ordering's scale is clustered in a configuration drawn from that
+    /// ordering's own amplitudes.
     fn scale_channel(
         &self,
         sc: &ProtonScratch<'a>,
@@ -2865,7 +2866,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// have drawn in sequence; what the split changes is the summation, which is
     /// reduced from per-chunk partials in chunk order. Carrying every point's whole
     /// `n_channels` density row out to a single sequential reduction — the stronger
-    /// contract [`crate::vegas::VegasGrid::adapt_parallel_seeded`] holds — would cost
+    /// contract [`crate::vegas::adapt_blocks_iteration`] holds — would cost
     /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
     /// hundreds of megabytes, so the partials are summed per chunk instead. That
     /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.

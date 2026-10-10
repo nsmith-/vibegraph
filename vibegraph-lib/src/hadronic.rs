@@ -78,12 +78,14 @@ pub(crate) const VEGAS_ALPHA: f64 = 1.5;
 /// statistics are dominated by sampling noise. At `1.5` the refinement amplifies
 /// that noise: the grid concentrates into a spurious bin, later iterations sample
 /// a narrow region where the integrand is smooth and so report a small integral
-/// with a small variance, and — since iterations are combined by `1/σ²` — those
-/// confident, wrong iterations dominate the result. Measured on
-/// `e+ e- > mu+ mu- ta+ ta-` (25 channels), `1.5` collapses one seed in five to 36%
-/// of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable across every
-/// seed *and* halves the error — the grid still absorbing the residual structure
-/// the channel maps do not cover.
+/// with a small variance, and under a `1/σ²` combination those confident, wrong
+/// iterations dominate the result. Measured on `e+ e- > mu+ mu- ta+ ta-`
+/// (25 channels) with iterations combined by `1/σ²`, `1.5` collapses one seed in
+/// five to 36% of the banked sigma with `chi2/dof ≈ 580`, while `0.5` is stable
+/// across every seed *and* halves the error — the grid still absorbing the
+/// residual structure the channel maps do not cover. Under the default unweighted
+/// combination ([`IterationCombination`](crate::vegas::IterationCombination)) the
+/// value has not been re-measured.
 pub(crate) const VEGAS_ALPHA_MAPPED: f64 = 0.5;
 
 /// RNG substream index the multichannel α-adaptation survey draws on, kept distinct
