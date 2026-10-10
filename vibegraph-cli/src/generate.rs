@@ -1802,7 +1802,7 @@ fn generate_proton_sample(
             )
         })
         .transpose()?;
-    let beam_pdg = hadron_beam_pdg(rc)?;
+    let beam_pdg = PROTON_BEAM_PDG;
 
     let rule = max_rule(args);
     let scan = Unweighter::scan_with(
@@ -1963,23 +1963,10 @@ fn group_resonances(
     Ok((tables, pdgs))
 }
 
-/// `IDBMUP` for a hadron-collider run, from the run card's beam labels.
-fn hadron_beam_pdg(rc: &RunCard) -> Result<[i32; 2], CliError> {
-    let mut out = [0i32; 2];
-    for (slot, lpp) in out.iter_mut().zip([rc.lpp1, rc.lpp2]) {
-        *slot = match lpp {
-            1 => 2212,
-            -1 => -2212,
-            other => {
-                return Err(err(format!(
-                    "beam label lpp = {other} is not a proton beam; event generation covers \
-                     lpp = 0 (fixed-energy partons) and lpp = ±1 (protons)"
-                )))
-            }
-        };
-    }
-    Ok(out)
-}
+/// `IDBMUP` for a hadron-collider run: a proton on each side, the one hadron
+/// beam pair [`BeamMode::Proton`] stands for (the run card admits it only as
+/// `lpp1 = lpp2 = 1`).
+const PROTON_BEAM_PDG: [i32; 2] = [2212, 2212];
 
 /// `IDBMUP` for a fixed-beam run: the incoming legs' PDG codes, which every
 /// subprocess sharing one `<init>` block has to agree on.
