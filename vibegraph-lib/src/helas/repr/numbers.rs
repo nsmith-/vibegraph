@@ -1,7 +1,5 @@
-//! Quantum numbers and related utilities.
-//!
-//! This module will hold types and utilities related to quantum numbers, such
-//! as helicity, color, and charge.
+//! Quantum-number labels of an external fermion: helicity, chirality and
+//! particle-vs-antiparticle.
 
 /// Spinor helicity label: the sign of the projection of spin onto momentum.
 ///
@@ -55,8 +53,6 @@ pub enum Chirality {
     /// Both: identity projector — includes both chiralities.
     Both,
 }
-
-impl Chirality {}
 
 impl std::fmt::Display for Chirality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

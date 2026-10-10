@@ -29,9 +29,38 @@
 //! Each vertex intertwiner has multiple *orientations* depending on which legs
 //! are incoming vs. outgoing: the same coupling constant appears in all
 //! orientations, but the map between fibers changes because each orientation
-//! contracts different leg bundles. The vertex factors are methods on the
-//! [`lorentz`] representation types, which is where each has a concrete basis
-//! to be written in.
+//! contracts different leg bundles.
+//!
+//! ## Where the vertex factors live
+//!
+//! The vertex factors are methods on the [`lorentz`] representation types,
+//! which is where each has a concrete basis to be written in.
+//!
+//! The `(j_L,j_R)` column reads a fermion bilinear `χ̄ Γ ψ` as a tensor product
+//! of the chiral blocks it pairs: the bra factor first, then the ket factor,
+//! each written as the representation it transforms in, and after the arrow the
+//! irreducible piece of that product the vertex factor projects out. With the
+//! left-chiral block `ψ_L` (components 0, 1) in `(½,0)` and the right-chiral
+//! block `ψ_R` (components 2, 3) in `(0,½)`, conjugation exchanges the two, so
+//! `χ_L†` is in `(0,½)` and `χ_R†` in `(½,0)`; `χ̄ = χ†γ⁰` holds `χ_R†` in its
+//! components 0, 1 and `χ_L†` in 2, 3. An odd grade (`γ^μ`, `γ^μγ⁵`) pairs
+//! blocks of the same chirality, an even grade (`1`, `σ^{μν}`, `γ⁵`) blocks of
+//! opposite chirality.
+//!
+//! | Vertex factor | Map | `(j_L,j_R)` chain | Where |
+//! |---------------|-----|-------------------|-------|
+//! | `χ̄ P_L ψ`, `χ̄ P_R ψ` | S\* ⊗ S → ℂ | `(½,0)⊗(½,0)→(0,0)`, `(0,½)⊗(0,½)→(0,0)` | [`SpinorRepr::scalar_bilinear`](lorentz::SpinorRepr::scalar_bilinear) |
+//! | `χ̄ γ^μ P_L ψ = χ_L† σ̄^μ ψ_L` | S\* ⊗ S → T\*M | `(0,½)⊗(½,0)→(½,½)` | [`SpinorRepr::left_current`](lorentz::SpinorRepr::left_current) |
+//! | `χ̄ γ^μ P_R ψ = χ_R† σ^μ ψ_R` | S\* ⊗ S → T\*M | `(½,0)⊗(0,½)→(½,½)` | [`SpinorRepr::right_current`](lorentz::SpinorRepr::right_current) |
+//! | `χ̄ γ^μ ψ` | S\* ⊗ S → T\*M | the two rows above, summed | [`SpinorRepr::vector_bilinear`](lorentz::SpinorRepr::vector_bilinear) |
+//! | `χ̄ σ^{μν} ψ` | S\* ⊗ S → Λ²T\*M | `(½,0)⊗(½,0)→(1,0)` ⊕ `(0,½)⊗(0,½)→(0,1)` | [`SpinorRepr::tensor_bilinear`](lorentz::SpinorRepr::tensor_bilinear) |
+//! | all sixteen `χ̄ Γ_A ψ` | S\* ⊗ S → Cl(1,3)⊗ℂ | every pairing above | [`SpinorRepr::fierz_coefficients`](lorentz::SpinorRepr::fierz_coefficients) |
+//! | `ε^{μνρσ}` | (T\*M)³ → T\*M | `(½,½)⊗(½,½)⊗(½,½)→(½,½)` | [`epsilon_vector`](lorentz::epsilon_vector), [`epsilon4`](lorentz::epsilon4) |
+//!
+//! An arbitrary Clifford element — a γ-chain of any length, held as a
+//! [`Multivector`](lorentz::Multivector) — acts on a spinor through
+//! [`SpinorRepr::apply`](lorentz::SpinorRepr::apply), so a chain needs no
+//! vertex factor of its own.
 //!
 //! ## Scalar primitives
 //!
@@ -40,7 +69,6 @@
 //! submodules can import them from `super`.
 
 pub mod color;
-pub(crate) mod intertwiner;
 pub mod lorentz;
 pub mod numbers;
 pub(crate) mod vectorspace;

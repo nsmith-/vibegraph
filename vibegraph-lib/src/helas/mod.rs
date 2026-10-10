@@ -3,12 +3,10 @@
 //! This module provides a Rust implementation of the HELAS formalism for computing helicity amplitudes in quantum field theory.
 //! The main components include:
 //! - `repr`: Data structures for Lorentz representations (vectors, spinors, antisymmetric tensors) and related utilities.
+//! - `color`: The symbolic SU(3) colour algebra that factors colour out of the amplitude.
 //! - `wavefn`: Wavefunction constructors for external legs
 //! - `vertex`: Vertex functions (mirroring HELAS vertex subroutines)
 //! - `eval`: Evaluation engine for executing compiled HELAS ASTs.
-//!
-//!
-//!
 pub mod color;
 pub mod eval;
 pub mod repr;
@@ -23,7 +21,6 @@ pub use wavefn::{InDiracWf, OutDiracWf};
 mod tests {
     use crate::helas::repr::lorentz::{ComplexVector, SpinorRepr};
 
-    use super::vertex::j3xxxx;
     use super::wavefn::VectorWf;
     use super::*;
     use itertools::iproduct;
@@ -31,7 +28,7 @@ mod tests {
     use repr::numbers::Charge::{Antiparticle, Particle};
     use repr::numbers::SpinorHelicity::{Down, Up};
 
-    /// e⁺e⁻ → μ⁺μ⁻ via s-channel photon/Z.
+    /// e⁺e⁻ → μ⁺μ⁻ via s-channel photon exchange.
     ///
     /// Kinematics (CoM frame, √s = 2, θ = 90°, all massless):
     ///   e⁻: p = (1, 0, 0,  1)
@@ -39,39 +36,21 @@ mod tests {
     ///   μ⁻: p = (1, 1, 0,  0)
     ///   μ⁺: p = (1,-1, 0,  0)
     ///
-    /// Coupling choice:
-    ///   gaf = [√2, √2],  gzf = [0, √2],  mZ = 1000,  wZ = 0
+    /// The electron current is `jioxxx` with unit vector coupling `[1, 1]` and a
+    /// massless propagator `1/q²`; the muon current is contracted with it by
+    /// `iovxxx` at the same coupling.
     ///
-    /// This gives Weinberg angle cw = sw = 1/√2, gz3l = 0, ga3l = 1, gn = 1,
-    /// so j3xxxx reduces to a pure photon propagator with unit effective coupling.
-    ///
-    /// The combined photon+Z propagator in the W³ basis is:
-    ///
-    ///   P^μν(q) = gz3l·dz·(g^μν − q^μq^ν/mZ²)  +  ga3l·da·g^μν
-    ///           + gn·(ddif·g^μν + dz·q^μq^ν/mZ²)
-    ///
-    /// where da = 1/q², dz = 1/(q²−mZ²+imZΓZ), ddif = (−mZ²+imZΓZ)·da·dz.
-    /// In the limit mZ → ∞, dz → 0 and ddif → da, so the Z contribution
-    /// decouples and P^μν → (gz3l·0 + ga3l·da + gn·da)·g^μν = da·g^μν.
-    ///
-    /// Expected: Σ|M|² ≈ 4  (analytic: 4·e⁴·(1+cos²θ) = 4 at θ = 90°).
-    /// The four non-zero helicity combinations each give |M|² ≈ 1.
+    /// Expected: Σ|M|² = 4  (analytic: 4·e⁴·(1+cos²θ) = 4 at θ = 90°, e = 1).
+    /// The four non-zero helicity combinations each give |M|² = 1.
     #[test]
     fn test_ee_to_mumu_spin_sum() {
-        let s2 = 2.0_f64.sqrt();
-
         // 4-momenta [E, px, py, pz]
         let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0); // e⁻
         let p_ep = LorentzVector::new(1.0, 0.0, 0.0, -1.0); // e⁺
         let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0); // μ⁻
         let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0); // μ⁺
 
-        // Couplings that reduce j3xxxx to a pure vector photon
-        let gaf = [s2, s2];
-        let gzf = [0.0, s2];
-        let zmass = 1000.0_f64;
-        let zwidth = 0.0_f64;
-        let gc = [1.0_f64, 1.0_f64]; // unit vector coupling in iovxxx
+        let gc = [1.0_f64, 1.0_f64]; // unit vector coupling, both chiralities
 
         let mut amp_sq_sum = 0.0;
 
@@ -85,7 +64,7 @@ mod tests {
             let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
             // Off-shell photon from the electron current
-            let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, zmass, zwidth);
+            let v = jioxxx(&fo_ep, &fi_em, gc, 0.0, 0.0);
 
             // Amplitude: contract muon current with photon
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
@@ -102,15 +81,11 @@ mod tests {
     /// Check the 4 individually non-zero helicity amplitudes.
     #[test]
     fn test_ee_to_mumu_individual_helicities() {
-        let s2 = 2.0_f64.sqrt();
-
         let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0);
         let p_ep = LorentzVector::new(1.0, 0.0, 0.0, -1.0);
         let p_mm = LorentzVector::new(1.0, 1.0, 0.0, 0.0);
         let p_mp = LorentzVector::new(1.0, -1.0, 0.0, 0.0);
 
-        let gaf = [s2, s2];
-        let gzf = [0.0, s2];
         let gc = [1.0_f64, 1.0_f64];
 
         // The four non-zero combinations: helicity conservation in massless QED
@@ -128,7 +103,7 @@ mod tests {
             let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
             let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
-            let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
+            let v = jioxxx(&fo_ep, &fi_em, gc, 0.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
             let m2 = amp.norm_sqr();
 
@@ -152,7 +127,7 @@ mod tests {
             let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
             let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
-            let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
+            let v = jioxxx(&fo_ep, &fi_em, gc, 0.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
             let m2 = amp.norm_sqr();
 
@@ -166,13 +141,13 @@ mod tests {
     /// Ward identity: replacing the photon polarisation vector ε^μ with its
     /// 4-momentum q^μ must give a zero amplitude (U(1) gauge invariance).
     ///
-    /// This directly tests for the sign errors in wavefunction normalisation
-    /// flagged in T1's physics-correctness category (ALOHA sign bug, v1.4.3).
+    /// This pins that the muon vector current `ψ̄γ^μψ` built from on-shell
+    /// `ixxxxx`/`oxxxxx` spinors is conserved, which needs each spinor to satisfy
+    /// its Dirac equation. `q·J` is linear and homogeneous in each spinor, so the
+    /// check is blind to every normalisation and phase of the external
+    /// wavefunctions: the magnitudes are pinned by the spin-sum and `2E`-norm tests.
     #[test]
     fn test_ward_identity() {
-        let s2 = 2.0_f64.sqrt();
-        let gaf = [s2, s2];
-        let gzf = [0.0, s2];
         let gc = [1.0_f64, 1.0_f64];
 
         let p_em = LorentzVector::new(1.0, 0.0, 0.0, 1.0);
@@ -188,9 +163,9 @@ mod tests {
             let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
             let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
-            let v_phys = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
+            let v_phys = jioxxx(&fo_ep, &fi_em, gc, 0.0, 0.0);
 
-            // Replace ε^μ with the off-shell momentum q^μ = p_e- - p_e+.
+            // Replace ε^μ with the off-shell momentum of the current.
             // For a conserved current (Ward identity) the amplitude must vanish.
             let q = v_phys.momentum; // [E, px, py, pz] of the virtual photon
             let v_ward = VectorWf {
@@ -200,10 +175,10 @@ mod tests {
 
             let amp = iovxxx(&fo_mp, &fi_mm, &v_ward, gc);
             assert!(
-                amp.norm_sqr() < 1e-20,
+                amp.norm() < 1e-12,
                 "Ward identity violated for helicities \
-                 ({nhel_em},{nhel_ep},{nhel_mm},{nhel_mp}): |M|²={:.2e}",
-                amp.norm_sqr()
+                 ({nhel_em},{nhel_ep},{nhel_mm},{nhel_mp}): |M|={:.2e}",
+                amp.norm()
             );
         }
     }
@@ -218,11 +193,11 @@ mod tests {
     /// convention is wrong, `q̸` fails to telescope, the propagator does NOT cancel,
     /// and the result is enhanced by `1/(q²−m²)` and not proportional to the spinor.
     ///
-    /// This exercises `fvixxx` (≡ the GammaIout dispatch path), which 2→2 ee→μμ
+    /// This exercises `fvixxx` (≡ the `GammaIout` dispatch path), which 2→2 ee→μμ
     /// never tests — there the boson is consumed at the amplitude (`iovxxx`, a dot),
-    /// not slashed onto a fermion. (Originally this caught the σ̄·v sign-swap bug in
-    /// `SpinorRepr::slash`: with ε→q the propagator failed to cancel, rel diff ~0.65;
-    /// fixing σ̄ restored `p̸ψ=mψ` to machine precision.)
+    /// not slashed onto a fermion. A sign swap between `σ·v` and `σ̄·v` in
+    /// `SpinorRepr::slash` breaks `p̸ψ = mψ`, and the propagator then survives at
+    /// O(1) relative size.
     #[test]
     fn test_ward_identity_offshell_fermion() {
         let g = repr::C::new(0.0, -1.4); // arbitrary nonzero coupling
@@ -242,8 +217,8 @@ mod tests {
                     let fi = InDiracWf::from_momentum(p_f, mass, nhel, charge);
                     let out = vertex::fvixxx(&fi, &v, [g.im, g.im], mass, 0.0);
                     let expect = fi.spinor * (-Complex64::I * g);
-                    let diff: f64 = (out.spinor - expect).bare_norm_sq();
-                    let scale: f64 = expect.bare_norm_sq().max(1e-30);
+                    let diff: f64 = (out.spinor - expect).bare_norm_sq().sqrt();
+                    let scale: f64 = expect.bare_norm_sq().sqrt().max(1e-30);
                     assert!(
                         diff / scale < 1e-12,
                         "fvixxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
@@ -258,15 +233,15 @@ mod tests {
     }
 
     /// Bra counterpart of [`test_ward_identity_offshell_fermion`], exercising
-    /// `fvoxxx` (≡ the `GammaJout` dispatch path).
+    /// `fvoxxx` (≡ the `GammaOout` dispatch path).
     ///
     /// A flow-out fermion is a bra, so the vertex/propagator slash acts to the
-    /// *right* (`ψ̄·γ^μ`), not the left (`γ^μ·ψ`). The slash is now flow-dependent
-    /// (`DiracAdjoint::slash_bispinor`): flow-out uses the chiral-block-transposed
+    /// *right* (`ψ̄·γ^μ`), not the left (`γ^μ·ψ`): the slash is flow-dependent
+    /// (`DiracAdjoint::slash_bispinor`), and flow-out uses the chiral-block-transposed
     /// right action. With ε→q_γ the bra Dirac equation `ψ̄(p̸−m)=0` makes `q̸`
     /// telescope, the propagator `1/(q²−m²)` cancels, and the current collapses to
-    /// `+g·ψ̄` (with `q = fo.p + v.p`). The earlier left-slash on the dualized
-    /// column did not satisfy the bra Dirac equation, so the propagator survived.
+    /// `+g·ψ̄` (with `q = fo.p + v.p`). A left slash on the bra row does not satisfy
+    /// the bra Dirac equation, so the propagator would survive.
     #[test]
     fn test_ward_identity_offshell_fermion_out() {
         let g = repr::C::new(0.0, -0.4);
@@ -283,8 +258,8 @@ mod tests {
                     let fo = OutDiracWf::from_momentum(p_f, mass, nhel, charge);
                     let out_o = vertex::fvoxxx(&fo, &v, [g.im, g.im], mass, 0.0);
                     let expect_o = fo.spinor * (Complex64::I * g); // q = fo.p + v.p → +g·ψ̄
-                    let diff_o: f64 = (out_o.spinor - expect_o).bare_norm_sq();
-                    let scale_o: f64 = expect_o.bare_norm_sq().max(1e-30);
+                    let diff_o: f64 = (out_o.spinor - expect_o).bare_norm_sq().sqrt();
+                    let scale_o: f64 = expect_o.bare_norm_sq().sqrt().max(1e-30);
                     assert!(
                         diff_o / scale_o < 1e-12,
                         "fvoxxx off-shell Ward (m={mass}, {nhel}, {charge:?}): \
@@ -297,17 +272,16 @@ mod tests {
         }
     }
 
-    /// Backward-going massless particle: the `sqp0p3 = 0` branch in
-    /// `weyl_ixxxxx` / `weyl_oxxxxx` is reached when p = [E, 0, 0, −E].
+    /// Backward-going massless particle: the `sqp0p3 = 0` branch of
+    /// `weyl_ixxxxx` (which builds the ket, and through its Dirac conjugate the
+    /// bra) is reached when p = [E, 0, 0, −E].
     ///
-    /// Verify that the amplitude is finite and that the helicity selection rule
-    /// still holds (the non-zero combinations are the same as forward-going).
-    /// This guards against the collinear-limit divergence class of bugs.
+    /// Verify that every helicity amplitude is finite and that the spin sum keeps
+    /// its value. The spin sum is blind to the phase convention of that branch
+    /// (the `p_x → 0⁻` side of the limit); the per-helicity MadGraph comparison
+    /// is what pins it.
     #[test]
     fn test_backward_direction_massless() {
-        let s2 = 2.0_f64.sqrt();
-        let gaf = [s2, s2];
-        let gzf = [0.0, s2];
         let gc = [1.0_f64, 1.0_f64];
 
         // e⁻ and e⁺ coming in head-on from the *opposite* direction.
@@ -325,7 +299,7 @@ mod tests {
             let fi_mm = InDiracWf::from_momentum(p_mm, 0.0, nhel_mm, Particle);
             let fo_mp = OutDiracWf::from_momentum(p_mp, 0.0, nhel_mp, Antiparticle);
 
-            let v = j3xxxx(&fo_ep, &fi_em, gaf, gzf, 1000.0, 0.0);
+            let v = jioxxx(&fo_ep, &fi_em, gc, 0.0, 0.0);
             let amp = iovxxx(&fo_mp, &fi_mm, &v, gc);
             let m2 = amp.norm_sqr();
 
@@ -342,10 +316,10 @@ mod tests {
 
     /// Massive fermion wavefunction — moving particle (the `pp > 0` branch).
     ///
-    /// Test with a 1 GeV electron at 45° in the xz-plane.  Verifies that the
-    /// wavefunction components are finite and that the on-shell condition
-    /// fi†·fi = 2E holds for each helicity.  This guards against the
-    /// normalization sign errors flagged in T1's numerical-stability category.
+    /// A 1 GeV fermion with E = 3 GeV at 45° in the xz-plane: the HELAS
+    /// normalisation fi†·fi = 2E holds for each helicity, for the ket and the bra.
+    /// The norm pins the magnitude of the spinor only; it is blind to its phase and
+    /// to a sign between its chiral blocks.
     #[test]
     fn test_massive_wavefunction_moving() {
         let mass = 1.0_f64; // 1 GeV test mass
@@ -375,9 +349,9 @@ mod tests {
 
     /// Massive fermion wavefunction — particle at rest (the `pp == 0` branch).
     ///
-    /// Tests both helicities of a particle at rest (p = [m, 0, 0, 0]).
-    /// At rest the spin component should satisfy fi†·fi = 2m, and the
-    /// particle/antiparticle spin-sum should span the full Dirac projector.
+    /// Tests both helicities of a particle at rest (p = [m, 0, 0, 0]): the ket
+    /// and the bra each satisfy fi†·fi = 2m. Like the moving case, this pins the
+    /// magnitude only.
     #[test]
     fn test_massive_wavefunction_at_rest() {
         let mass = 0.511e-3_f64; // electron mass in GeV

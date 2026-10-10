@@ -2,56 +2,13 @@
 //!
 //! A [`ColorCoeff`] is `q · i^imag · Nc^nc_power`, mirroring MadGraph's
 //! `(fractions.Fraction, is_imaginary, Nc_power)` triple. All arithmetic is
-//! exact rational over `i64`; every operation is *checked* and panics on
-//! overflow. Tree-level SU(3) factors are tiny, so an overflow signals a bug
-//! rather than a legitimately large number — the panic is a deliberate
-//! tripwire. `Ratio<i128>` behind the `GroupScalar` boundary is the escape
-//! hatch if that ever changes.
+//! exact rational over `i64`; every operation goes through num-rational's
+//! checked arithmetic and panics on overflow. Tree-level SU(3) factors are
+//! tiny, so an overflow signals a bug rather than a legitimately large
+//! number — the panic is a deliberate tripwire.
 
 use num_rational::Ratio;
-
-/// Greatest common divisor of two `i64` magnitudes.
-fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
-    a = a.abs();
-    b = b.abs();
-    while b != 0 {
-        let t = b;
-        b = a % b;
-        a = t;
-    }
-    a
-}
-
-/// Checked rational multiply: cross-reduces before multiplying to avoid
-/// spurious overflow, then panics if the genuine product does not fit `i64`.
-fn checked_mul_ratio(a: Ratio<i64>, b: Ratio<i64>) -> Ratio<i64> {
-    let (an, ad) = (*a.numer(), *a.denom());
-    let (bn, bd) = (*b.numer(), *b.denom());
-    let g1 = gcd_i64(an, bd).max(1);
-    let g2 = gcd_i64(bn, ad).max(1);
-    let num = (an / g1)
-        .checked_mul(bn / g2)
-        .expect("ColorCoeff multiply: i64 numerator overflow");
-    let den = (ad / g2)
-        .checked_mul(bd / g1)
-        .expect("ColorCoeff multiply: i64 denominator overflow");
-    Ratio::new(num, den)
-}
-
-/// Checked rational add over a common denominator; panics on overflow.
-fn checked_add_ratio(a: Ratio<i64>, b: Ratio<i64>) -> Ratio<i64> {
-    let (an, ad) = (*a.numer(), *a.denom());
-    let (bn, bd) = (*b.numer(), *b.denom());
-    let g = gcd_i64(ad, bd).max(1);
-    let lcm = (ad / g)
-        .checked_mul(bd)
-        .expect("ColorCoeff add: i64 denominator overflow");
-    let num = an
-        .checked_mul(lcm / ad)
-        .and_then(|x| x.checked_add(bn.checked_mul(lcm / bd).expect("ColorCoeff add: overflow")))
-        .expect("ColorCoeff add: i64 numerator overflow");
-    Ratio::new(num, lcm)
-}
+use num_traits::{CheckedAdd, CheckedMul};
 
 /// The exact scalar prefactor of a color string: `q · i^imag · Nc^nc_power`.
 ///
@@ -106,7 +63,10 @@ impl ColorCoeff {
     /// Product of two coefficients, following complex algebra on the `i` flag:
     /// `i·i = −1` flips the sign and clears the flag; a single `i` sets it.
     pub(crate) fn mul(&self, other: &ColorCoeff) -> ColorCoeff {
-        let mut q = checked_mul_ratio(self.q, other.q);
+        let mut q = self
+            .q
+            .checked_mul(&other.q)
+            .expect("ColorCoeff multiply: i64 overflow");
         let nc_power = self
             .nc_power
             .checked_add(other.nc_power)
@@ -137,7 +97,10 @@ impl ColorCoeff {
             "ColorCoeff::add on incompatible coefficients"
         );
         ColorCoeff {
-            q: checked_add_ratio(self.q, other.q),
+            q: self
+                .q
+                .checked_add(&other.q)
+                .expect("ColorCoeff add: i64 overflow"),
             imag: self.imag,
             nc_power: self.nc_power,
         }
@@ -160,12 +123,16 @@ impl ColorCoeff {
             let p = nc
                 .checked_pow(self.nc_power as u32)
                 .expect("ColorCoeff::eval_nc: Nc power overflow");
-            checked_mul_ratio(self.q, Ratio::from_integer(p))
+            self.q
+                .checked_mul(&Ratio::from_integer(p))
+                .expect("ColorCoeff::eval_nc: i64 overflow")
         } else {
             let p = nc
                 .checked_pow((-self.nc_power) as u32)
                 .expect("ColorCoeff::eval_nc: Nc power overflow");
-            checked_mul_ratio(self.q, Ratio::new(1, p))
+            self.q
+                .checked_mul(&Ratio::new(1, p))
+                .expect("ColorCoeff::eval_nc: i64 overflow")
         }
     }
 }
