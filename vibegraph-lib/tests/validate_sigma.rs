@@ -291,71 +291,89 @@ impl Plan {
 fn plan_for(dir: &str) -> Plan {
     match dir {
         // ── smooth electroweak, asserted ────────────────────────────────────
-        // Colored initial state, purely electroweak (alpha_s-independent) s-channel.
+        // `rel_tol` on these six is the measured five-seed spread with headroom,
+        // never the achieved central value. The seeds are `[SEED, 11, 22, 33, 44]`
+        // at each row's own budget (`probe_gate_row_seed_headroom`); the census
+        // reading is the one recorded at `0538e2d`, and the worst |rel| below is
+        // the larger of it and the same probe's reading at `3f401f0`.
+        //
+        // Colored initial state, purely electroweak (alpha_s-independent)
+        // s-channel. Worst |rel| 2.03e-3, so 0.005 clears it by 2.5x.
         "uux_to_mumu" => Plan::Gate {
             neval: 30_000,
             niter: 6,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
+        // Worst |rel| 1.25e-3: 4.0x.
         "ee_to_mumu" => Plan::Gate {
             neval: 30_000,
             niter: 6,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
+        // Worst |rel| 9.2e-4: 5.4x.
         "ee_to_ttx" => Plan::Gate {
             neval: 30_000,
             niter: 6,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
+        // Worst |rel| 1.06e-3: 4.7x.
         "ee_to_zh" => Plan::Gate {
             neval: 30_000,
             niter: 6,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
+        // A converged offset rather than a spread, the one `ee_to_wpwm_cw` shares:
+        // five-seed mean rel -2.22e-3 against the reference's own 0.15% error,
+        // worst |rel| 2.80e-3. The bound covers offset plus spread, so it is the
+        // twin's 0.008, which clears the worst seed by 2.9x.
         "ee_to_wpwm" => Plan::Gate {
             neval: 40_000,
             niter: 8,
-            rel_tol: 0.03,
+            rel_tol: 0.008,
         },
+        // The t-channel photon pole puts the widest spread of the six here: worst
+        // |rel| 1.44e-3 in the census, 3.24e-3 at `3f401f0` (seed 22), with the
+        // five seeds at χ²/dof 2.31 about their mean. 0.01 clears the larger by
+        // 3.1x.
         "ee_to_ee" => Plan::Gate {
             neval: 80_000,
             niter: 10,
-            rel_tol: 0.04,
+            rel_tol: 0.01,
         },
         // ── QCD, asserted at the run card's own renormalisation scale ───────
         // These three read alpha_s at the scale MadGraph's clustering picks for
         // them, which for a fixed-beam 2 -> 2 is sqrt(s-hat)/2 on every event.
         //
         // Their tolerances are set by the t-channel-peaked integrand, not by the
-        // coupling. Over five seeds at these budgets (`probe_qcd_seed_stability`)
-        // `gg_to_ttx` holds |pull| <= 0.68 and |rel| <= 8.6e-4, `gg_to_gg` |pull| <=
-        // 1.24 and |rel| <= 1.4e-3, and `uux_to_uux` |pull| <= 0.93 and |rel| <=
-        // 1.1e-3. Quadrupling the budget shrinks the sweep means (`gg_to_gg` +7.7e-4
-        // -> +4.1e-4, `uux_to_uux` +1.9e-4 -> +1.5e-4), which is what says the
-        // residual is sampling and not a defect: a bug makes the failure migrate
-        // between seeds rather than shrink.
+        // coupling, and are the measured five-seed spread with headroom, read as
+        // the six electroweak rows above are: `gg_to_ttx` worst |rel| 6.7e-4
+        // (|pull| <= 0.51), `gg_to_gg` 1.97e-3 in the census and 2.66e-3 at
+        // `3f401f0` (|pull| <= 2.09), `uux_to_uux` 1.04e-3 (|pull| <= 0.87).
+        // `gg_to_ttx` and `uux_to_uux` take 0.005 (7.5x and 4.8x); `gg_to_gg`
+        // takes 0.008, which clears its larger reading by 3.0x where 0.005 would
+        // leave 1.9x.
         //
         // The two coloured 2 -> 2 rows carry a jet cut, so their peripheral channels
         // draw the momentum transfer over the fiducial window rather than flat to the
         // collinear edge. That is what removed `uux_to_uux`'s standing negative mean
-        // (-0.30% over the same five seeds when every transfer was drawn flat, and
-        // not shrinking with budget) and cut the per-point variance with it: the
+        // (-0.30% over five seeds when every transfer was drawn flat, and not
+        // shrinking with budget) and cut the per-point variance with it: the
         // quoted error at the gate budget fell 2.4x on `uux_to_uux` and 2.6x on
         // `gg_to_gg`.
         "gg_to_ttx" => Plan::Gate {
             neval: 60_000,
             niter: 8,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
         "gg_to_gg" => Plan::Gate {
             neval: 40_000,
             niter: 6,
-            rel_tol: 0.03,
+            rel_tol: 0.008,
         },
         "uux_to_uux" => Plan::Gate {
             neval: 40_000,
             niter: 6,
-            rel_tol: 0.02,
+            rel_tol: 0.005,
         },
         // ── sharply resonant electroweak, asserted via the multichannel sampler ──
         // The per-diagram Breit–Wigner combiner resolves the Z/γ* peaks flat RAMBO
@@ -2768,41 +2786,54 @@ const LLJ_PARTON_ROWS: [&str; 4] = [
     "gux_to_epemux",
 ];
 
-/// The sampling channel a point was drawn in reaches the scale prescription, and
-/// changes it — asserted on the rows where it must and reported on the rows where
-/// it need not.
+/// The integration configuration drawn for a point reaches the scale prescription,
+/// and changes it — asserted on the rows where it must and reported on the rows
+/// where it need not.
+///
+/// Two readings per row, at a few dozen cut-passing points. The *configuration
+/// spread* is how far `μR` moves over every integration configuration at fixed
+/// momenta: the precondition, a property of the forests. The *draw spread* is how
+/// far it moves when only the point's trailing uniform is swept, through
+/// [`FixedBeamIntegrand::event_scales_at`], the call the integrand and the event
+/// record make: it is what says the production draw selects among those
+/// configurations at all. A draw pinned to one configuration, or one that
+/// stopped reading the uniform, leaves the first reading where it is and the
+/// second at zero.
 ///
 /// Everything downstream of this — two enforced cross sections, four `samples`
-/// rows, and the proton row's own — would look exactly the same if the channel
-/// were silently dropped again and every point clustered in channel 1: the
-/// numbers would move, but nothing would *say* that the channel was what moved
-/// them. This is the assertion that would fail.
+/// rows, and the proton row's own — would look the same if every point were
+/// clustered in one configuration: the numbers would move, but nothing would
+/// *say* that the configuration was what moved them. This is the assertion that
+/// would fail.
 ///
-/// On the two gluon-beam rows `μR` genuinely depends on which channel is named,
-/// and 7204 / 7231 of their 10 000 banked events land somewhere other than the
-/// first. Those two must show a spread over channels at a sampled point. What
-/// produces the spread is the *forests*: the four configurations of
-/// `g u → ℓ⁺ℓ⁻ u` cluster the same momenta differently. It is not the merge
+/// On the two gluon-beam rows `μR` genuinely depends on which configuration is
+/// named, and 7204 / 7231 of their 10 000 banked events land somewhere other than
+/// the first. What produces the spread is the *forests*: the four configurations
+/// of `g u → ℓ⁺ℓ⁻ u` cluster the same momenta differently. It is not the merge
 /// graph's coupling-order filter, which is inert here — that run's
 /// `config_nqcd.inc` reads `NQCD = 1` on all four configurations, so the filter
 /// admits the same channel set for every one of them.
 ///
 /// The two annihilation rows are the control and are only reported: no banked
-/// event of theirs needs another channel, and their cross sections are
-/// numerically identical to what they were before the channel was threaded at
-/// all.
+/// event of theirs needs another configuration.
+///
+/// What it does not check: that the draw's frequencies follow
+/// `AMP2_c / Σ AMP2`, or that the sampling channel stays out of it —
+/// [`probe_the_scale_draw_reads_the_point_and_not_the_sampler`] covers the second.
 #[test]
-fn the_sampled_channel_reaches_the_cluster_scale() {
+fn the_configuration_draw_reaches_the_cluster_scale() {
     let ref_path = reference_path();
     let text = std::fs::read_to_string(&ref_path).unwrap();
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
-    // The rows whose scale must move with the channel, and the rows where it is
-    // measured but not required to.
+    // The rows whose scale must move with the configuration, and the rows where it
+    // is measured but not required to.
     const MUST_SPREAD: [&str; 2] = ["gu_to_epemu", "gux_to_epemux"];
+    /// Trailing-uniform values swept at each point.
+    const DRAW_SWEEP: usize = 16;
     let mut asserted = 0usize;
     for dir in LLJ_PARTON_ROWS {
         let e = &banked[dir];
-        let spread = with_integrand(
+        let (config_spread, draw_spread, draw_ndim) = with_integrand(
             dir,
             &e.process,
             SEED,
@@ -2810,20 +2841,26 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
             MULTICHANNEL_ITERS,
             None,
             |integ, _| {
-                let ndim = integ.point_ndim();
+                let ndim = integ.channel_grid_ndim();
+                let draw_ndim = integ.scale_draw_ndim();
                 let mut momenta = Vec::new();
                 let mut rng = ChaCha8Rng::seed_from_u64(0x5CA1_E5_C4);
-                let mut worst = 0.0f64;
+                let spread = |mu: &[f64]| {
+                    let lo = mu.iter().cloned().fold(f64::INFINITY, f64::min);
+                    let hi = mu.iter().cloned().fold(0.0f64, f64::max);
+                    hi / lo - 1.0
+                };
+                let (mut config_worst, mut draw_worst) = (0.0f64, 0.0f64);
                 // A handful of cut-passing points is enough: the claim is that
-                // the channel is read at all, not how often it matters.
+                // the configuration is read at all, not how often it matters.
                 for _ in 0..64 {
-                    let u: Vec<f64> = (0..ndim)
+                    let mut u: Vec<f64> = (0..integ.point_ndim())
                         .map(|_| rand::Rng::random::<f64>(&mut rng))
                         .collect();
                     if integ.event_in_channel(0, &u, &mut momenta) == 0.0 {
                         continue;
                     }
-                    let mu: Vec<f64> = (0..integ.channel_count())
+                    let by_config: Vec<f64> = (0..integ.channel_count())
                         .map(|j| {
                             integ
                                 .event_scales(&momenta, j)
@@ -2832,19 +2869,45 @@ fn the_sampled_channel_reaches_the_cluster_scale() {
                                 .mu_r
                         })
                         .collect();
-                    let lo = mu.iter().cloned().fold(f64::INFINITY, f64::min);
-                    let hi = mu.iter().cloned().fold(0.0f64, f64::max);
-                    worst = worst.max(hi / lo - 1.0);
+                    config_worst = config_worst.max(spread(&by_config));
+                    if draw_ndim == 0 {
+                        continue;
+                    }
+                    let by_draw: Vec<f64> = (0..DRAW_SWEEP)
+                        .map(|k| {
+                            u[ndim] = (k as f64 + 0.5) / DRAW_SWEEP as f64;
+                            integ
+                                .event_scales_at(&momenta, 0, &u)
+                                .expect("a clustered row carries a prescription")
+                                .expect("the prescription accepts a sampled point")
+                                .mu_r
+                        })
+                        .collect();
+                    draw_worst = draw_worst.max(spread(&by_draw));
                 }
-                worst
+                (config_worst, draw_worst, draw_ndim)
             },
         );
-        println!("{dir}: mu_R spreads by {spread:.3e} over its sampling channels at one point");
+        println!(
+            "{dir}: mu_R spreads by {config_spread:.3e} over its integration configurations \
+             and by {draw_spread:.3e} over the configuration draw at one point \
+             ({draw_ndim} draw uniform)"
+        );
         if MUST_SPREAD.contains(&dir) {
+            assert_eq!(
+                draw_ndim, 1,
+                "{dir}: no configuration draw is live, so every point is clustered in the \
+                 configuration its sampling channel names"
+            );
             assert!(
-                spread > 1e-6,
-                "{dir}: the cluster scale is the same in every sampling channel, so the \
-                 channel the point was drawn in is not reaching the prescription"
+                config_spread > 1e-6,
+                "{dir}: the cluster scale is the same in every integration configuration, \
+                 so nothing below can say whether the draw reaches it"
+            );
+            assert!(
+                draw_spread > 1e-6,
+                "{dir}: sweeping the configuration draw never moves the cluster scale, so the \
+                 drawn configuration is not reaching the prescription"
             );
             asserted += 1;
         }
@@ -3014,7 +3077,7 @@ const CLUSTERED_FIXED_BEAM_ROWS: [&str; 16] = [
 /// clustered in changes — the whole of what a different rule for choosing that
 /// configuration could do to its cross section.
 ///
-/// `the_sampled_channel_reaches_the_cluster_scale` measures this on the four
+/// `the_configuration_draw_reaches_the_cluster_scale` measures this on the four
 /// `ℓ⁺ℓ⁻ j` rows and asserts it on two. This is the same measurement over every
 /// clustered row, reported per row as the worst relative spread of `μR` and of
 /// each `μF` over *all* integration configurations at one cut-passing point,
