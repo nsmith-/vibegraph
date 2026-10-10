@@ -53,8 +53,8 @@ fn cmul_add<F: Real>(a: C<F>, b: C<F>, c: C<F>) -> C<F> {
     C::new(re, im)
 }
 
-/// We will have some marker traits that are sealed in this module
-/// (i.e. no external code can implement them)
+/// Supertrait that seals the marker traits of this module: no code outside it
+/// can implement them.
 mod sealed {
     pub trait Sealed {}
 }
@@ -139,7 +139,7 @@ pub trait VectorRepr<F: Real, V: Variance = Contravariant>: LorentzRepr<F> {
 
     /// The `i`-th component in the underlying cartesian basis.
     ///
-    /// Like [`bare_norm_sq`](Self::bare_norm_sq), this exposes the raw basis
+    /// Like the test-only `bare_norm_sq`, this exposes the raw basis
     /// coordinates rather than a Lorentz-invariant quantity; it is mainly useful
     /// for testing and serialization.
     fn component(&self, i: usize) -> Self::Scalar;
@@ -193,8 +193,6 @@ impl<F: Real, V: Variance> VectorRepr<F, V> for LorentzVector<F, V> {
         self.0[i]
     }
 }
-
-impl<F: Real> LorentzVector<F, Covariant> {}
 
 impl<F: Real> LorentzVector<F, Contravariant> {
     /// Active Lorentz boost by velocity `beta = [βx, βy, βz]` (|β| < 1):
@@ -361,8 +359,6 @@ impl<F: Real, V: Variance> VectorRepr<F, V> for ComplexVector<F, V> {
     }
 }
 
-impl<F: Real> ComplexVector<F, Covariant> {}
-
 impl<F: Real> ComplexVector<F, Contravariant> {
     /// Lower the index to get a covariant vector: `ε_μ = g_μν ε^ν`.
     #[inline(always)]
@@ -434,7 +430,6 @@ impl<F: Real + std::fmt::Display> std::fmt::Display for ComplexVector<F, Covaria
 /// Sealed trait for the spinor Dirac-adjoint side (bra/ket), implemented by `Ket` and `Bra`.
 pub trait DiracAdjoint: sealed::Sealed + Copy + PartialEq + Eq + 'static {
     type Dual: DiracAdjoint;
-    const KET: bool;
 
     /// Assemble a (massive) bispinor with this adjoint (bra/ket)
     fn build_bispinor<F: Real>(
@@ -482,7 +477,6 @@ pub struct Ket;
 impl sealed::Sealed for Ket {}
 impl DiracAdjoint for Ket {
     type Dual = Bra;
-    const KET: bool = true;
 
     fn build_bispinor<F: Real>(
         p: LorentzVector<F, Contravariant>,
@@ -529,7 +523,6 @@ pub struct Bra;
 impl sealed::Sealed for Bra {}
 impl DiracAdjoint for Bra {
     type Dual = Ket;
-    const KET: bool = false;
 
     fn build_bispinor<F: Real>(
         p: LorentzVector<F, Contravariant>,
@@ -1110,8 +1103,8 @@ pub(crate) fn epsilon_vector<F: Real>(
 /// |------|---|---|---|---|---|---|
 /// | `(μ,ν)` | (0,1) | (0,2) | (0,3) | (1,2) | (1,3) | (2,3) |
 ///
-/// [`get`](Self::get) reads any `(μ,ν)` with the antisymmetry applied. Read as a
-/// Clifford element the tensor is `Σ_{μ<ν} T^{μν} σ_{μν} = ½ T^{μν} σ_{μν}`, so
+/// A pair `μ > ν` is read off the slot of `(ν,μ)` with a minus sign, and
+/// `T^{μμ} = 0`. Read as a Clifford element the tensor is `Σ_{μ<ν} T^{μν} σ_{μν} = ½ T^{μν} σ_{μν}`, so
 /// `σ^{μν}` for one index pair is the tensor with a single unit slot.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AsymRank2Tensor<F: Real>([C<F>; 6]);
@@ -1153,7 +1146,7 @@ impl<F: Real> AsymRank2Tensor<F> {
     }
 
     /// Slot holding `T^{μν}` for `μ < ν`.
-    #[cfg(any(test, doc))]
+    #[cfg(test)]
     #[inline(always)]
     fn slot(mu: usize, nu: usize) -> usize {
         mu * (5 - mu) / 2 + nu - 1
@@ -1161,7 +1154,7 @@ impl<F: Real> AsymRank2Tensor<F> {
 
     /// `T^{μν}` for any index pair, with the antisymmetry applied:
     /// `T^{νμ} = −T^{μν}` and `T^{μμ} = 0`.
-    #[cfg(any(test, doc))]
+    #[cfg(test)]
     #[inline]
     pub(crate) fn get(&self, mu: usize, nu: usize) -> C<F> {
         match mu.cmp(&nu) {
@@ -1581,7 +1574,7 @@ impl<F: Real> Multivector<F> {
     /// Computed through the faithful 4×4 Weyl-basis representation rather than a
     /// table of 256 structure constants; the products of the basis elements are
     /// pinned against explicitly built gamma matrices in this module's tests.
-    #[cfg(any(test, doc))]
+    #[cfg(test)]
     pub(crate) fn clifford_product(&self, rhs: &Self) -> Self {
         let a = self.to_weyl_matrix();
         let b = rhs.to_weyl_matrix();
@@ -1845,13 +1838,13 @@ mod tests {
                 + vm.bar().vector_bilinear(&vm, Chirality::Both);
             let expected = ComplexVector::from(p * 4.0);
             assert!(
-                (u_vector - expected).bare_norm_sq() < EPS_ABS,
+                (u_vector - expected).bare_norm_sq().sqrt() < EPS_ABS,
                 "Fermion vector bilinear does not match: u_vector = {}, 4p = {}",
                 u_vector,
                 expected
             );
             assert!(
-                (v_vector - expected).bare_norm_sq() < EPS_ABS,
+                (v_vector - expected).bare_norm_sq().sqrt() < EPS_ABS,
                 "Antifermion vector bilinear does not match: v_vector = {}, 4p = {}",
                 v_vector,
                 expected
@@ -1912,12 +1905,12 @@ mod tests {
             let v_axial_vector = vp.bar().axial_vector_bilinear(&vp, Chirality::Both)
                 + vm.bar().axial_vector_bilinear(&vm, Chirality::Both);
             assert!(
-                u_axial_vector.bare_norm_sq() < EPS_ABS,
+                u_axial_vector.bare_norm_sq().sqrt() < EPS_ABS,
                 "Fermion axial vector bilinear nonzero for helicity-summed spinors: u_axial_vector = {}",
                 u_axial_vector
             );
             assert!(
-                v_axial_vector.bare_norm_sq() < EPS_ABS,
+                v_axial_vector.bare_norm_sq().sqrt() < EPS_ABS,
                 "Antifermion axial vector bilinear nonzero for helicity-summed spinors: v_axial_vector = {}",
                 v_axial_vector
             );
@@ -2260,7 +2253,7 @@ mod tests {
             );
             // Antisymmetry in the three contracted slots.
             assert!(
-                (epsilon_vector(&b, &a, &c) + ev).bare_norm_sq() < EPS_ABS,
+                (epsilon_vector(&b, &a, &c) + ev).bare_norm_sq().sqrt() < EPS_ABS,
                 "epsilon_vector not antisymmetric in its first two arguments"
             );
         }
@@ -2508,8 +2501,8 @@ mod tests {
                 "a̸b̸ from the Clifford product disagrees with the grade-0/2 closed form"
             );
             // Odd grades are empty and the scalar grade is the Minkowski dot.
-            assert!(chained.vector().bare_norm_sq() < EPS_ABS);
-            assert!(chained.axial().bare_norm_sq() < EPS_ABS);
+            assert!(chained.vector().bare_norm_sq().sqrt() < EPS_ABS);
+            assert!(chained.axial().bare_norm_sq().sqrt() < EPS_ABS);
             assert!(chained.pseudoscalar().norm() < EPS_ABS);
             assert!((chained.scalar() - a.dualize().dot(&b)).norm() < EPS_ABS);
 
@@ -2607,11 +2600,11 @@ mod tests {
                 let v = rand_cvec(&mut rng);
                 let slash = Multivector::from_gamma(&v);
                 assert!(
-                    (ket.apply(&slash) - ket.slash(&v)).bare_norm_sq() < EPS_ABS,
+                    (ket.apply(&slash) - ket.slash(&v)).bare_norm_sq().sqrt() < EPS_ABS,
                     "ket apply(γ) does not reproduce slash"
                 );
                 assert!(
-                    (bra.apply(&slash) - bra.slash(&v)).bare_norm_sq() < EPS_ABS,
+                    (bra.apply(&slash) - bra.slash(&v)).bare_norm_sq().sqrt() < EPS_ABS,
                     "bra apply(γ) does not reproduce slash"
                 );
                 let m = rand_multivector(&mut rng);
