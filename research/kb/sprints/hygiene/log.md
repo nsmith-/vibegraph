@@ -129,3 +129,13 @@
   passed, 0 failed and 16 ignored (matching the agent's account), and the
   banked `color_cf_oracle` passes 97.
 * **F-C dispatched** (`feature-dev`, Opus) on `hygiene-fc` from `abb1a16`.
+* **F-C reported and merged** (`hygiene-fc`, 4c6d9cb..52f6f99, 6 commits).
+  The report is recorded as `sessions/F-C-report.md`. Manager gate re-run:
+  fmt passes, clippy exits 0 in both configurations, and the hermetic suite
+  gives 1352 passed. The banked `sm_interned_blob` (2), `color_cf_oracle` (97)
+  and `validate_madgraph_diagrams` (57) pass. The feyngraph gitlink and the
+  regenerated SM blob were checked.
+* **Decision** (human:nsmith-): close reweight-forbidden-onshell-guard-is-dead
+  by option (b), a required `forbidden_onshell` argument to `ReweightPlan::new`
+  with `OnShell::Forbidden` deleted. It runs in this sprint as **F-C2**, before
+  F-D.

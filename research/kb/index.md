@@ -22,7 +22,7 @@ okf_version: "0.2"
 * [references](references/index.md) - 27 concepts
 * [run-card](run-card/index.md) - 4 concepts
 * [scales-pdf](scales-pdf/index.md) - 18 concepts
-* [sprints](sprints/index.md) - 71 concepts
+* [sprints](sprints/index.md) - 73 concepts
 * [tooling](tooling/index.md) - 15 concepts
 * [validation](validation/index.md) - 43 concepts
 * [workflow](workflow/index.md) - 8 concepts
