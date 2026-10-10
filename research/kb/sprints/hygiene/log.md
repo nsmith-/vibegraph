@@ -163,3 +163,9 @@
   whose `sde_strat = 1` path reads an unassigned `t`. The multigrid set
   `NNPDF31_lo_as_0130` was fetched for the worktree, and `validate_pdf_grid`
   passes 20. The merge waits on the hermetic re-run.
+* **F-E merged.** Manager gate re-run at `4cbaa72`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1353 passed, 0 failed, 16 ignored,
+    with the five new and rewritten F-E tests named and passing;
+  - the banked `validate_pdf_grid` passes 20, with NNPDF31 present.
+* **F-F dispatched** (`feature-dev`, Opus) on `hygiene-ff` from this merge.
