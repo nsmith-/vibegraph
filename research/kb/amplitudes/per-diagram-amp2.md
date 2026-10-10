@@ -5,7 +5,7 @@ description: "Op::Configs roots and eval_amp2; MadGraph's get_amp2_lines configu
 status: draft
 tags: [amp2, configurations, colour-selection, amplitude-oracle, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 §B6 (the per-diagram AMP2 accumulator)"}
   - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register (pruning moves AMP2; config merge)"}
@@ -221,7 +221,7 @@ Known gaps:
 [^n27-b6]: Note 27 §B6: the `Op::Configs` design, the oracle, and the selection rule. The colour draw is configuration ∝ `AMP2`, then flow ∝ `JAMP2` inside that configuration's `ICOLAMP` row.
 [^n27-findings]: Note 27 §B6 and §7, findings 4 and 5. Its "MadGraph's merge is not derivable from the diagram list" is superseded: `config_groups` derives it with `IdentifyConfigTag`, and the evaluator's configurations follow it.
 [^zen4-s7]: Top-down Zen 4 results §7; measured on an Emerald Rapids VM, the instruction counts per row in its table.
-[^code-compile]: `vibegraph-lib/src/helas/eval/compile.rs`: `config_carrying_diagrams`, `config_groups`, `config_tag`, the configuration loop in `compile`, and `select_config_and_flow`. The doc comments on `config_groups` ("not the partition `AmplitudeEvaluator` integrates over") and `select_color_flow` ("these configurations stay one per diagram") contradict the compile loop, which uses `config_groups`; the code holds.
+[^code-compile]: `vibegraph-lib/src/helas/eval/compile.rs`: `config_carrying_diagrams`, `config_groups`, `config_tag`, the configuration loop in `compile`, and `select_config_and_flow`. The doc comment on `config_groups` states that its partition is the one `AmplitudeEvaluator` integrates over, as the compile loop uses it.
 [^code-run]: `vibegraph-lib/src/helas/eval/run.rs`, `eval_amp2`.
 [^code-oracle]: `vibegraph-lib/tests/amplitude_oracle.rs`: `KNOWN_CONFIG_MERGE`, `AMP2_REL_TOL`, `MG_DIAGRAM_ORDER`, the per-configuration fit, and `amp2_pruned`.
 [^mg-amp2]: `get_amp2_lines` and `get_icolamp_lines` in `madgraph/iolibs/export_v4.py`.

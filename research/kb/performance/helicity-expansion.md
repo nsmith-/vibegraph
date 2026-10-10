@@ -5,7 +5,7 @@ description: "Every helicity combination baked into one hash-consed program so e
 status: draft
 tags: [performance, helicity, evaluator, cse, pruning]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n15-mg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L31-L62", title: "Note 15 §1.1 (what MadGraph does before emitting Fortran)"}
   - {id: n15-expansion, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L365-L465", title: "Note 15 §2.2 (helicity-expansion session, CF-factoring analysis)"}
@@ -13,6 +13,7 @@ sources:
   - {id: n20-zeroamp, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L186-L218", title: "Note 20 S3 zeroamp-skip"}
   - {id: n31-e1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L560-L575", title: "Note 31 §E1 (working-set correction)"}
   - {id: compile-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs#L60-L370", title: "compile.rs (folded_hel OnceLock, prune_zero_helicities)"}
+  - {id: fa-report, resource: "../sprints/hygiene/sessions/F-A-report.md", title: "Hygiene sprint F-A report (the 162 188 live-slot reading)"}
   - {id: fold-prune, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/fold.rs#L289-L400", title: "fold.rs expand_helicities and prune_zero_scalar_operands"}
 measured:
   - {commit: c9f826d, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies"}
@@ -74,8 +75,12 @@ Companion pieces:
   over its own operands) sizes the arenas by peak live width, not node count. The
   pruned 2→6's arenas are ~288 KiB at `f64` in production order today (see
   [constant collection and fused sums](../performance/constant-collection-and-fused-sums.md)
-  and [execution order](../performance/execution-order.md)); the unpruned program
-  peaks at 149k live slots.[^n31-e1]
+  and [execution order](../performance/execution-order.md)). The unpruned
+  program peaks at 162 188 live slots for 194 371 nodes, measured in the
+  hygiene sprint (F-A) and reproduced at `190c13e` by
+  `hel_expand_stats::expansion_bounds_arenas`, which
+  sums `arena_sizes` over `folded_hel()` of `u u~ > c c~ e+ e- mu+ mu- QCD=0`
+  compiled without helicity pruning[^fa-report]; note 31 §E1 recorded 149k.[^n31-e1]
 - **Lazy expansion.** `AmplitudeEvaluator::folded_hel` is a `OnceLock`, forced by
   the first helicity-summed read-out (one-time cost ~150 ms on the 2→6, µs–ms
   elsewhere). `eval_amplitude`, Ward checks and probes keep the unexpanded
@@ -161,5 +166,6 @@ accepted event's helicity is chosen from the expanded per-helicity diagonals is 
 [^n15-filter]: Note 15 §2.3, helicity filtering.
 [^n20-zeroamp]: Note 20 S3 `zeroamp-skip` outcome.
 [^n31-e1]: Note 31 §E1, the corrected 2→6 working set.
+[^fa-report]: Hygiene sprint F-A report, Stopped and Found 2: the asserted bound of half the nodes fails because the read-out scalars are pinned live ([expansion-arena-bound-false](../backlog/performance/expansion-arena-bound-false.md)).
 [^compile-rs]: `AmplitudeEvaluator::folded_hel`, `prune_zero_helicities`, `HEL_PRUNE_REL`, `zeroamp_node_reduction` in `compile.rs`.
 [^fold-prune]: `Folded::expand_helicities` and `prune_zero_scalar_operands` in `fold.rs`.
