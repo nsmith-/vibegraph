@@ -143,10 +143,10 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
 /// where the row names none, and the vendored UFO directory under its restrict
 /// card where it does.
 ///
-/// The `Err` is the message the informational cell carries. A row whose model
-/// this crate cannot read yet is exactly why the SMEFTsim cells are registered
-/// informational, so the failure is a measurement to report rather than a
-/// condition to hide: it is returned, never unwrapped.
+/// The `Err` is the message an informational cell carries: a row whose model
+/// this crate cannot read is reported with the refusal as its measurement rather
+/// than hidden, so the failure is returned, never unwrapped. A gated row's caller
+/// fails on it.
 pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
     // Reading a UFO directory is not cheap and a sweep asks for the same row's
     // model once per subprocess, so the outcome -- the failure as much as the

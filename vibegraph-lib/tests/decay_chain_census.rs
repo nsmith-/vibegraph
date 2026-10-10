@@ -18,7 +18,10 @@
 //!
 //! What it cannot see: which diagram is which beyond the forced lines' final states, and
 //! anything past the diagram list. The stitched diagrams themselves are checked against
-//! the undecayed final state in the library's stitching tests.
+//! the undecayed final state in the library's stitching tests. Nor *why* a card is
+//! refused: where MadGraph refuses or drops a decay, a refusal here for any reason
+//! passes, so a card refused for the wrong reason is indistinguishable from one refused
+//! for MadGraph's.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -162,6 +165,7 @@ fn decay_chain_census_matches_madgraph() {
     let pdg = |name: &str| model.particles[name].pdg_code;
     let doc = reference();
     let cases = doc["cases"].as_array().expect("cases");
+    assert!(!cases.is_empty(), "the census banks no cards");
     let mut failures = Vec::new();
     let (mut matched, mut refused, mut subprocesses) = (0, 0, 0);
     for case in cases {

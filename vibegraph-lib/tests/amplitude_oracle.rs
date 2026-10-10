@@ -59,19 +59,27 @@
 //!   Per-diagram rather than global on purpose: MadGraph puts the relative sign
 //!   between an annihilation and an exchange diagram into the colour coefficient
 //!   `c_i` while vibegraph puts it into the diagram root, so the bare amplitudes
-//!   differ by a sign that is a convention rather than an error. `|k| = 1` is the
-//!   part with teeth — it is exactly what makes `AMP2` (the modulus) agree, and it
-//!   would fail for a diagram carrying a stray symmetry factor or coupling.
+//!   differ by a sign that is a convention rather than an error. `|k| = 1` is
+//!   exactly what makes `AMP2` (the modulus) agree, and it would fail for a
+//!   diagram carrying a stray symmetry factor or coupling. `k / G` real is the
+//!   rest: the per-diagram freedom is a sign and not a phase, so a configuration
+//!   amplitude rotated against the process — which `AMP2` cannot see — fails.
+//! - Each configuration amplitude against its diagram compiled on its own: the two
+//!   differ by a sign, and the per-process sign pattern is banked in
+//!   [`CONFIG_AMP_SIGNS`], so a change to either evaluator's sign conventions
+//!   fails here although nothing downstream reads the sign.
 //! - `eval_amp2` reproduces `Σ_hel |AMP_d^mg|²` configuration by configuration —
 //!   the weight the per-event configuration draw uses, and through that
 //!   configuration's `ICOLAMP` mask the colour flow an event is written with.
-//! - The helicity-pruned evaluator's `AMP2` against the unpruned one. Unlike the
-//!   `|M|²` sum this is *not* automatic: a combination is dropped when the
-//!   coherent amplitude cancels, which does not make the individual diagram
-//!   amplitudes vanish, so the two sums can differ and the size of the difference
-//!   is measured rather than assumed.
 //! - The helicity-pruned evaluator (the production `eval_m2` configuration) is
 //!   bit-for-bit against the unpruned one at every point.
+//!
+//! What is measured and reported, not asserted: the helicity-pruned evaluator's
+//! `AMP2` against the unpruned one. Unlike the `|M|²` sum the two need not agree:
+//! a combination is dropped when the coherent amplitude cancels, which does not
+//! make the individual diagram amplitudes vanish, so the two sums can differ. The
+//! difference is printed and written to the report row; only the unpruned `AMP2`
+//! is compared with MadGraph's.
 //!
 //! # Known blind spots
 //!
@@ -319,9 +327,9 @@ const KNOWN_LINEAR_DISAGREEMENT: &[(&str, &str)] = &[];
 ///
 /// [`KNOWN_LINEAR_DISAGREEMENT`] and this answer different questions: that list
 /// names a row whose comparison runs and disagrees at a level this gate
-/// understands, while a manifest `info` cell may be a row whose comparison
-/// cannot start — the SMEFTsim ladder is banked before the loader that would
-/// evaluate it, so those cells are measured as the failure they are.
+/// understands, while a manifest `info` cell is any row the manifest declares
+/// reported rather than enforced, whatever the measurement finds — including a
+/// row whose comparison cannot start, which is measured as the failure it is.
 fn declared_mode(key: &str) -> &'static str {
     static MODES: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
         std::sync::OnceLock::new();
@@ -400,6 +408,64 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
             25, 27, 29, 31, 33, 28, 32, 30, 34, 24, 26,
         ],
     ),
+];
+
+/// Rows whose table is generated from another row's compiled MadGraph module, so
+/// the manifest gives them no `mg_amplitude` declaration of their own: the row key,
+/// and the row that generates its table.
+///
+/// Such a table is banked for the process the row's own `.mg5` script generates,
+/// and [`measure`] holds it to that string exactly in place of the `mg_amplitude`
+/// one. Two-way, in [`coverage`]: every committed table without a declaration is
+/// listed, and every listed row has a table and no declaration.
+const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
+
+/// The sign each configuration amplitude carries against its diagram compiled on its
+/// own, `+` or `-` per configuration amplitude in the order `run_config_amps`
+/// returns them, for every row whose per-diagram amplitudes are compared.
+///
+/// The single-diagram compile carries MadGraph's colour coefficient `c` for the
+/// diagram and the configuration amplitude does not, so the second is `±1/|c|`
+/// times the first — `±1` wherever `|c| = 1`, `±1/2` on the `g g > h` rows.
+/// Measured, not derived: the ratio is exactly that at every banked point and
+/// helicity, and its sign is uniform on most rows and not on all. Nothing reads
+/// it downstream — `eval_amp2` is a modulus — so it is pinned as data, and a change
+/// to either evaluator's sign conventions shows up here first. Two-way: a compared
+/// row must be listed, and a listed row must be compared.
+const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
+    ("bbx_to_h_identity", "--"),
+    ("ddx_to_epemg", "++++"),
+    ("ee_to_ee", "----"),
+    ("ee_to_mumu", "--"),
+    ("ee_to_mumu_4f", "--------"),
+    ("ee_to_mumu_eml", "--"),
+    ("ee_to_mumu_smlimit", "--"),
+    ("ee_to_mumu_tata_qcd0", "+++++++++++++++++--------"),
+    ("ee_to_mumua", "----++++"),
+    ("ee_to_tatah", "++++-"),
+    ("ee_to_tlt", "--"),
+    ("ee_to_ttx", "--"),
+    ("ee_to_ttx_dipole", "----------"),
+    ("ee_to_ttx_smeft", "-------------------------------"),
+    ("ee_to_ttx_smlimit", "--"),
+    ("ee_to_wp0wm", "---"),
+    ("ee_to_wp0wmt", "---"),
+    ("ee_to_wpwm", "---"),
+    ("ee_to_z0h", "+"),
+    ("ee_to_zh", "+"),
+    ("ee_to_zh_smeft", "++++++++++++++"),
+    ("gg_to_h_cpeven", "++"),
+    ("gg_to_h_cpodd", "+++"),
+    ("gu_to_epemu", "++++"),
+    ("gux_to_epemux", "++++"),
+    ("ll_to_qqx_toy_dipole", "--"),
+    ("ll_to_qqx_toy_tensor", "-"),
+    ("ll_to_qqx_toy_yukawa", "-++++"),
+    ("pp_to_ll_qcd0", "--"),
+    ("tata_to_ttx_tensor4f", "--+"),
+    ("uux_to_epemg", "++++"),
+    ("uux_to_mumu", "--"),
+    ("uux_to_ztg", "--"),
 ];
 
 fn tables_dir() -> PathBuf {
@@ -786,12 +852,12 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
         .find(|(k, _)| *k == key)
         .map(|(_, why)| *why);
     // A row the manifest declares informational is measured and reported, never
-    // enforced — including when the measurement cannot start at all, which is
-    // what a SMEFTsim row looks like until the primitives its structures need
-    // exist. "Cannot start" arrives as an `Err` from a loader or as a panic from
-    // deeper in — the rooting refusing a structure it has no rule for — with equal
-    // legitimacy, so an informational row runs under the panic-catching path and a
-    // gated one does not.
+    // enforced — including when the measurement cannot start at all, as for a row
+    // whose model writes a structure this crate has no primitive for. "Cannot
+    // start" arrives as an `Err` from a loader or as a panic from deeper in — the
+    // rooting refusing a structure it has no rule for — with equal legitimacy, so
+    // an informational row runs under the panic-catching path and a gated one does
+    // not.
     let informational = known.is_some() || declared_mode(&key) == "info";
     let manifest_info = declared_mode(&key) == "info";
     let outcome = if informational {
@@ -875,42 +941,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let table = parse_table(&json);
     let name = table.key.as_str();
 
-    // The table's process string is what this side enumerates from, and the
-    // manifest's is what generated the table; a row whose two statements have
-    // drifted apart compares one process against another's numbers.
-    if let Some(declared) = common::manifest::mg_amplitude_processes().get(name) {
-        if declared != &table.process {
-            return Err(format!(
-                "[{name}] the banked table was generated for '{}' and the manifest \
-                 declares mg_amplitude.process = '{declared}'",
-                table.process
-            )
-            .into());
-        }
-    }
-
-    // And the coupling-order bounds must be the row's script's own. The particle
-    // content legitimately differs — `pp_to_ll_qcd0` gates a hadronic process at
-    // the diagram level and one partonic subprocess of it here — but a bound
-    // MadGraph generated under and this side does not enumerate under makes the two
-    // sides different processes of the same model, with no other symptom than a
-    // diagram MadGraph has and we do not.
-    let script = common::script_for_row(name)?;
-    let script_process = common::script_process(&script)
-        .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
-    let (theirs, ours) = (
-        common::order_constraints(&script_process),
-        common::order_constraints(&table.process),
-    );
-    if theirs != ours {
-        return Err(format!(
-            "[{name}] the script generates '{script_process}' and the amplitude table \
-             was banked for '{}': the coupling-order bounds differ ({theirs:?} against \
-             {ours:?})",
-            table.process
-        )
-        .into());
-    }
+    check_declarations(&table)?;
 
     let model = common::model_for_row(name)?;
     let card = table
@@ -1002,6 +1033,165 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         }
     }
 
+    let configs = check_configurations(&table, set, &model, &evaluator, &order, banks_amps)?;
+
+    let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
+    if per_diagram_fit {
+        // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
+        // same rooted tree the full set gives that diagram — the rooting and its
+        // fermion sign are properties of the diagram — so its amplitude root is
+        // the diagram's contribution up to the process-wide constant fitted below.
+        per_diagram = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                AmplitudeEvaluator::compile(
+                    &DiagramSet {
+                        particles_in: set.particles_in.clone(),
+                        particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
+                        diagrams: vec![d.clone()],
+                    },
+                    model.as_ref(),
+                )
+            })
+            .collect::<Result<_, _>>()?;
+    }
+
+    let linear = collect_linear(&table, &bound, &evaluated, &order, &configs, &per_diagram);
+    let Verdict {
+        violations,
+        worst_diagram,
+        worst_flow,
+        worst_jamp2,
+        worst_config,
+        worst_amp2,
+    } = judge(
+        &table,
+        informational,
+        linear,
+        &m2,
+        n_dropped,
+        per_diagram_fit,
+        configs.merges,
+    )?;
+
+    let mut row = AmplitudesRow::new(
+        name,
+        &table.process,
+        if informational { "info" } else { "gate" },
+    );
+    if let Some(first) = violations.first() {
+        // The row's numeric fields already carry every deviation; the note says how many
+        // checks the disagreement reached and names the first, rather than pasting a
+        // per-point dump into the report.
+        let head: String = first.chars().take(220).collect();
+        row.note = Some(format!(
+            "{} of the linear-level checks failed; first: {head}",
+            violations.len()
+        ));
+    }
+    row.n_graphs = table.n_graphs;
+    row.n_flows = table.n_flows;
+    row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();
+    row.points_event = table.points.len() - row.points_grid;
+    row.max_rel_grid = m2.grid;
+    row.max_rel_event = m2.event;
+    row.per_diagram = per_diagram_fit.then_some(worst_diagram);
+    row.per_flow = worst_flow;
+    row.jamp2 = worst_jamp2;
+    row.n_configs = table.amp2_groups.len();
+    row.per_config = worst_config;
+    row.amp2 = (!table.amp2_groups.is_empty()).then_some(worst_amp2);
+    row.amp2_pruned = m2.amp2_pruned;
+    // Every row is compared as the full per-helicity × per-flow outer product;
+    // nothing here weakens it to the two projections of it.
+    row.factorized = false;
+    Ok(row)
+}
+
+/// The table's declarations against the manifest and the row's script: the
+/// process it was banked for, and the coupling-order bounds it was generated under.
+fn check_declarations(table: &Table) -> Result<(), Failed> {
+    let name = table.key.as_str();
+    // The table's process string is what this side enumerates from, and the
+    // manifest's is what generated the table; a row whose two statements have
+    // drifted apart compares one process against another's numbers.
+    let declared = common::manifest::mg_amplitude_processes()
+        .get(name)
+        .cloned();
+    if let Some(declared) = &declared {
+        if declared != &table.process {
+            return Err(format!(
+                "[{name}] the banked table was generated for '{}' and the manifest \
+                 declares mg_amplitude.process = '{declared}'",
+                table.process
+            )
+            .into());
+        }
+    }
+
+    // And the coupling-order bounds must be the row's script's own. The particle
+    // content legitimately differs — `pp_to_ll_qcd0` gates a hadronic process at
+    // the diagram level and one partonic subprocess of it here — but a bound
+    // MadGraph generated under and this side does not enumerate under makes the two
+    // sides different processes of the same model, with no other symptom than a
+    // diagram MadGraph has and we do not.
+    let script = common::script_for_row(name)?;
+    let script_process = common::script_process(&script)
+        .ok_or_else(|| format!("[{name}] no `generate` line in the row's .mg5 script"))?;
+    // A borrowed table has no declaration to be held to, so it is held to the
+    // process its own row's script generates, which is what it was banked for.
+    if declared.is_none() && table.process != script_process {
+        return Err(format!(
+            "[{name}] the banked table was generated for '{}' and the row's script \
+             generates '{script_process}'",
+            table.process
+        )
+        .into());
+    }
+    let (theirs, ours) = (
+        common::order_constraints(&script_process),
+        common::order_constraints(&table.process),
+    );
+    if theirs != ours {
+        return Err(format!(
+            "[{name}] the script generates '{script_process}' and the amplitude table \
+             was banked for '{}': the coupling-order bounds differ ({theirs:?} against \
+             {ours:?})",
+            table.process
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+/// What [`check_configurations`] establishes about a row's integration
+/// configurations, for the per-point comparison to read.
+struct Configurations {
+    /// The configuration partition `config_groups` derives, in our diagram indices.
+    derived: Vec<Vec<usize>>,
+    /// Whether any configuration holds more than one diagram.
+    merges: bool,
+    /// The MadGraph `AMP()` index of each configuration amplitude, in the order
+    /// `run_config_amps` returns them.
+    mg_amp_index: Vec<usize>,
+    /// Our diagram behind each configuration amplitude, in the same order.
+    amp_diagrams: Vec<usize>,
+}
+
+/// The configuration partition, its `ICOLAMP` columns and the exemption lists that
+/// describe it, checked before any value is compared.
+fn check_configurations(
+    table: &Table,
+    set: &DiagramSet,
+    model: &std::sync::Arc<vibegraph::ufo::UFOModel>,
+    evaluator: &AmplitudeEvaluator,
+    order: &[usize],
+    banks_amps: bool,
+) -> Result<Configurations, Failed> {
+    let name = table.key.as_str();
     // ── the integration configurations ───────────────────────────────────────
     // MadGraph's own AMP2 accumulators, against the partition
     // `helas::eval::compile::config_groups` derives from the diagrams by MadGraph's
@@ -1118,29 +1308,54 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         .into());
     }
 
-    let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
-    if per_diagram_fit {
-        // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
-        // same rooted tree the full set gives that diagram — the rooting and its
-        // fermion sign are properties of the diagram — so its amplitude root is
-        // the diagram's contribution up to the process-wide constant fitted below.
-        per_diagram = set
-            .diagrams
-            .iter()
-            .map(|d| {
-                AmplitudeEvaluator::compile(
-                    &DiagramSet {
-                        particles_in: set.particles_in.clone(),
-                        particles_out: set.particles_out.clone(),
-                        polarizations: set.polarizations.clone(),
-                        diagrams: vec![d.clone()],
-                    },
-                    model.as_ref(),
-                )
-            })
-            .collect::<Result<_, _>>()?;
-    }
+    Ok(Configurations {
+        derived,
+        merges,
+        mg_amp_index,
+        amp_diagrams: evaluator.config_amp_diagrams().to_vec(),
+    })
+}
 
+/// Every linear-level entry of one table, paired with ours, and the worst of the
+/// checks read off MadGraph's tables directly rather than through a fitted constant.
+struct Linear {
+    diagram_entries: Vec<Entry>,
+    flow_entries: Vec<Entry>,
+    vg_rows: Vec<Vec<C<f64>>>,
+    mg_rows: Vec<Vec<C<f64>>>,
+    worst_zero: f64,
+    worst_zero_where: String,
+    worst_jamp2: f64,
+    worst_jamp2_where: String,
+    worst_amp2: f64,
+    worst_amp2_where: String,
+    /// One entry table per configuration amplitude.
+    config_entries: Vec<Vec<Entry>>,
+    /// One entry table per configuration amplitude, against the single-diagram
+    /// compile of its diagram (`mg` holds the single-diagram value over the modulus
+    /// of MadGraph's colour coefficient for it). Empty where the per-diagram
+    /// amplitudes are not compared.
+    config_sign_entries: Vec<Vec<Entry>>,
+}
+
+/// Evaluate every banked per-helicity point: the flows, the configuration
+/// amplitudes, the per-diagram contributions where they are banked, and the
+/// `JAMP2` and `AMP2` weights against MadGraph's own.
+fn collect_linear(
+    table: &Table,
+    bound: &BoundAmplitude<f64>,
+    evaluated: &EvaluatedModel,
+    order: &[usize],
+    configs: &Configurations,
+    per_diagram: &[AmplitudeEvaluator],
+) -> Linear {
+    let Configurations {
+        derived,
+        mg_amp_index,
+        amp_diagrams,
+        ..
+    } = configs;
+    let n_config_amps = mg_amp_index.len();
     let mut scratch = bound.scratch_space();
     let mut diagram_entries: Vec<Entry> = Vec::new();
     let mut flow_entries: Vec<Entry> = Vec::new();
@@ -1156,6 +1371,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     // One entry table per configuration amplitude: the fit is per configuration,
     // not global (see the module header on why the phase is per diagram).
     let mut config_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
+    let mut config_sign_entries: Vec<Vec<Entry>> = (0..n_config_amps).map(|_| Vec::new()).collect();
     let mut our_amp2 = vec![0.0f64; derived.len()];
 
     for (pi, pt) in table.points.iter().enumerate() {
@@ -1175,7 +1391,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
             if listed.contains(&hi) {
                 continue;
             }
-            let ours = flows(&bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            let ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
             for (fi, value) in ours.iter().enumerate() {
                 let dev = value.norm() / scale_here.max(1e-300);
                 if dev > worst_zero {
@@ -1206,7 +1422,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
 
         for (row, &hi) in detail.helicities.iter().enumerate() {
             let hel = &table.helicities[hi];
-            let ours = flows(&bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            let ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
             for (fi, mg) in detail.jamps[row].iter().enumerate() {
                 let structure = table
                     .flow_structures
@@ -1243,7 +1459,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
             let mut vg_row = Vec::with_capacity(table.n_graphs);
             let mut mg_row = Vec::with_capacity(table.n_graphs);
             for (di, &j) in order.iter().enumerate() {
-                let ours = BoundAmplitude::<f64>::bind(&per_diagram[di], &evaluated);
+                let ours = BoundAmplitude::<f64>::bind(&per_diagram[di], evaluated);
                 let mut own_scratch = ours.scratch_space();
                 let value = ours.eval_amplitude(&pt.momenta, hel, &mut own_scratch);
                 // MadGraph's per-diagram *contribution* to the amplitude: it puts
@@ -1261,6 +1477,19 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                 });
                 vg_row.push(value);
                 mg_row.push(term);
+            }
+            // The single-diagram value carries MadGraph's colour coefficient and
+            // the configuration amplitude does not, so the second is ±1/|c| times
+            // the first; dividing by |c| leaves the sign alone to be read.
+            for (ci, &d) in amp_diagrams.iter().enumerate() {
+                config_sign_entries[ci].push(Entry {
+                    mg: vg_row[d] / coefficients[mg_amp_index[ci]].norm(),
+                    vg: ours_cfg[ci],
+                    what: format!(
+                        "point {pi}, hel {hel:?}, configuration amplitude {ci} against \
+                         diagram {d} compiled alone"
+                    ),
+                });
             }
             vg_rows.push(vg_row);
             mg_rows.push(mg_row);
@@ -1293,7 +1522,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         if let (Some(amps), false) = (detail.amps.as_ref(), table.amp2_groups.is_empty()) {
             let mut mg_amp2 = vec![0.0f64; derived.len()];
             for row in amps {
-                for (acc, group) in mg_amp2.iter_mut().zip(&derived) {
+                for (acc, group) in mg_amp2.iter_mut().zip(derived) {
                     let coherent = group
                         .iter()
                         .fold(C::new(0.0, 0.0), |sum, &d| sum + row[order[d]]);
@@ -1315,6 +1544,59 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         }
     }
 
+    Linear {
+        diagram_entries,
+        flow_entries,
+        vg_rows,
+        mg_rows,
+        worst_zero,
+        worst_zero_where,
+        worst_jamp2,
+        worst_jamp2_where,
+        worst_amp2,
+        worst_amp2_where,
+        config_entries,
+        config_sign_entries,
+    }
+}
+
+/// The worst deviation of each linear-level check, and every check that failed.
+struct Verdict {
+    violations: Vec<String>,
+    worst_diagram: f64,
+    worst_flow: f64,
+    worst_jamp2: f64,
+    worst_config: f64,
+    worst_amp2: f64,
+}
+
+/// Fit the process constant and judge every linear-level check and the `|M|²`
+/// comparison. A failed check returns the error, or for an `informational` row is
+/// recorded in [`Verdict::violations`] while the rest still runs.
+fn judge(
+    table: &Table,
+    informational: bool,
+    linear: Linear,
+    m2: &M2Result,
+    n_dropped: usize,
+    per_diagram_fit: bool,
+    merges: bool,
+) -> Result<Verdict, Failed> {
+    let name = table.key.as_str();
+    let Linear {
+        diagram_entries,
+        flow_entries,
+        vg_rows,
+        mg_rows,
+        worst_zero,
+        worst_zero_where,
+        worst_jamp2,
+        worst_jamp2_where,
+        worst_amp2,
+        worst_amp2_where,
+        config_entries,
+        config_sign_entries,
+    } = linear;
     // One constant for the whole process, least squares over every entry it has.
     // Fitting it globally rather than per diagram, per flow or per point is what
     // makes the residual sensitive to relative structure: the fit has nowhere to
@@ -1398,10 +1680,13 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
 
     // One constant per configuration amplitude. The residual under it says the
     // amplitude is MadGraph's; its modulus being 1 says `AMP2` — which is blind to
-    // the phase — is MadGraph's too.
+    // the phase — is MadGraph's too; and its ratio to the process constant being
+    // real says the configuration amplitude carries no phase of its own beyond a
+    // sign, which `AMP2` cannot see either.
     let mut worst_config = 0.0f64;
     let mut worst_config_where = String::new();
     let mut worst_config_phase = 0.0f64;
+    let mut worst_config_rotation = 0.0f64;
     for (ci, entries) in config_entries.iter().enumerate() {
         if entries.is_empty() {
             continue;
@@ -1416,6 +1701,8 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         if dev > worst_config_phase {
             worst_config_phase = dev;
         }
+        let rotation = (k / g).im.abs();
+        worst_config_rotation = worst_config_rotation.max(rotation);
         if worst > LINEAR_REL_TOL {
             violation!(
                 "[{name}] configuration amplitude {ci} is not MadGraph's AMP() up to one \
@@ -1430,6 +1717,58 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
                 k.norm()
             );
         }
+        if rotation > LINEAR_REL_TOL {
+            violation!(
+                "[{name}] configuration amplitude {ci} is rotated against the process: \
+                 k/G = {:?}, |Im(k/G)| = {rotation:.3e}, where every configuration \
+                 amplitude is MadGraph's AMP() times ±G",
+                k / g
+            );
+        }
+    }
+
+    // Each configuration amplitude against its diagram compiled alone, over the
+    // modulus of the diagram's colour coefficient: the two differ by exactly ±1, a
+    // sign pattern per process that is banked in [`CONFIG_AMP_SIGNS`] rather than
+    // derived, because nothing downstream reads it and `AMP2` is blind to it.
+    let measured_signs: Option<String> = if config_sign_entries.iter().any(|e| !e.is_empty()) {
+        let mut signs = String::new();
+        for (ci, entries) in config_sign_entries.iter().enumerate() {
+            let (s, scale) = fit_constant(entries);
+            let sign = if s.re >= 0.0 { 1.0 } else { -1.0 };
+            let (worst, what) = worst_deviation(entries, C::new(sign, 0.0), scale);
+            if worst > LINEAR_REL_TOL {
+                violation!(
+                    "[{name}] configuration amplitude {ci} is not ±1/|c| times its \
+                     diagram compiled alone (fitted {s:?}, max element-wise deviation \
+                     {worst:.3e}) at {what}"
+                );
+            }
+            signs.push(if sign > 0.0 { '+' } else { '-' });
+        }
+        Some(signs)
+    } else {
+        None
+    };
+    let banked_signs = CONFIG_AMP_SIGNS
+        .iter()
+        .find(|(k, _)| *k == name)
+        .map(|(_, s)| *s);
+    match (measured_signs.as_deref(), banked_signs) {
+        (Some(ours), Some(banked)) if ours == banked => {}
+        (Some(ours), Some(banked)) => violation!(
+            "[{name}] the configuration amplitudes' signs against their diagrams compiled \
+             alone read {ours}, and CONFIG_AMP_SIGNS banks {banked}"
+        ),
+        (Some(ours), None) => violation!(
+            "[{name}] the configuration amplitudes' signs against their diagrams compiled \
+             alone read {ours} and CONFIG_AMP_SIGNS banks none for this row"
+        ),
+        (None, Some(banked)) => violation!(
+            "[{name}] CONFIG_AMP_SIGNS banks {banked}, but the row compares no \
+             per-diagram amplitudes to measure it against"
+        ),
+        (None, None) => {}
     }
     if worst_amp2 > AMP2_REL_TOL {
         violation!(
@@ -1443,7 +1782,7 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
          per-diagram {worst_diagram:.2e}{}, per-flow {worst_flow:.2e}, JAMP2 {worst_jamp2:.2e} \
          (G = {:+.0}i, |G|-1 = {mag_dev:.1e}, {n_dropped} helicity combinations pruned); \
          {} configurations{}: amplitude {worst_config:.2e}, |k|-1 {worst_config_phase:.1e}, \
-         AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
+         |Im(k/G)| {worst_config_rotation:.1e}, AMP2 {worst_amp2:.2e}, pruning moves AMP2 by {:.2e}",
         table.process,
         table.n_graphs,
         table.n_flows,
@@ -1473,64 +1812,124 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
         );
     }
 
-    let mut row = AmplitudesRow::new(
-        name,
-        &table.process,
-        if informational { "info" } else { "gate" },
-    );
-    if let Some(first) = violations.first() {
-        // The row's numeric fields already carry every deviation; the note says how many
-        // checks the disagreement reached and names the first, rather than pasting a
-        // per-point dump into the report.
-        let head: String = first.chars().take(220).collect();
-        row.note = Some(format!(
-            "{} of the linear-level checks failed; first: {head}",
-            violations.len()
+    Ok(Verdict {
+        violations,
+        worst_diagram,
+        worst_flow,
+        worst_jamp2,
+        worst_config,
+        worst_amp2,
+    })
+}
+
+/// The committed tables, sorted.
+fn table_paths() -> Vec<PathBuf> {
+    let dir = tables_dir();
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .map(|e| {
+            e.unwrap_or_else(|e| panic!("cannot read an entry of {}: {e}", dir.display()))
+                .path()
+        })
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// The committed tables against the manifest, both ways: one table for every row
+/// whose `amplitudes` cell is hermetic and none for any other row, every
+/// `mg_amplitude` declaration among them, and the tables without one exactly
+/// [`BORROWED_TABLES`]. A table deleted, or a row promoted without its table, fails
+/// here rather than leaving the gate one trial short.
+fn coverage() -> Result<(), Failed> {
+    let banked: BTreeSet<String> = table_paths()
+        .iter()
+        .map(|p| p.file_stem().unwrap().to_string_lossy().into_owned())
+        .collect();
+    let mut problems = Vec::new();
+    let hermetic = common::manifest::hermetic_amplitude_rows();
+    if hermetic != banked {
+        problems.push(format!(
+            "the manifest declares {} hermetic amplitudes cells and {} tables are \
+             committed; only in the manifest: {:?}; only on disk: {:?}",
+            hermetic.len(),
+            banked.len(),
+            hermetic.difference(&banked).collect::<Vec<_>>(),
+            banked.difference(&hermetic).collect::<Vec<_>>(),
         ));
     }
-    row.n_graphs = table.n_graphs;
-    row.n_flows = table.n_flows;
-    row.points_grid = table.points.iter().filter(|p| p.set == "grid").count();
-    row.points_event = table.points.len() - row.points_grid;
-    row.max_rel_grid = m2.grid;
-    row.max_rel_event = m2.event;
-    row.per_diagram = per_diagram_fit.then_some(worst_diagram);
-    row.per_flow = worst_flow;
-    row.jamp2 = worst_jamp2;
-    row.n_configs = table.amp2_groups.len();
-    row.per_config = worst_config;
-    row.amp2 = (!table.amp2_groups.is_empty()).then_some(worst_amp2);
-    row.amp2_pruned = m2.amp2_pruned;
-    // Every row is compared as the full per-helicity × per-flow outer product;
-    // nothing here weakens it to the two projections of it.
-    row.factorized = false;
-    Ok(row)
+    let declared: BTreeSet<String> = common::manifest::mg_amplitude_processes()
+        .into_keys()
+        .collect();
+    let untabled: Vec<&String> = declared.difference(&banked).collect();
+    if !untabled.is_empty() {
+        problems.push(format!(
+            "`mg_amplitude` rows with no committed table: {untabled:?}"
+        ));
+    }
+    let borrowed: BTreeSet<String> = banked.difference(&declared).cloned().collect();
+    let listed: BTreeSet<String> = BORROWED_TABLES
+        .iter()
+        .map(|(key, _)| (*key).to_owned())
+        .collect();
+    if borrowed != listed {
+        problems.push(format!(
+            "committed tables without an `mg_amplitude` declaration are {borrowed:?}, \
+             and BORROWED_TABLES lists {listed:?}"
+        ));
+    }
+    let unbanked_signs: Vec<&str> = CONFIG_AMP_SIGNS
+        .iter()
+        .map(|(key, _)| *key)
+        .filter(|key| !banked.contains(*key))
+        .collect();
+    if !unbanked_signs.is_empty() {
+        problems.push(format!(
+            "CONFIG_AMP_SIGNS lists rows with no committed table: {unbanked_signs:?}"
+        ));
+    }
+    for (_, lender) in BORROWED_TABLES {
+        if !declared.contains(*lender) {
+            problems.push(format!(
+                "BORROWED_TABLES names '{lender}' as a generating row, and it has no \
+                 `mg_amplitude` declaration"
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        return Err(problems.join("\n").into());
+    }
+    println!(
+        "  {} tables cover the hermetic amplitudes cells, {} of them borrowed",
+        banked.len(),
+        borrowed.len()
+    );
+    Ok(())
 }
 
 fn main() {
     let args = Arguments::from_args();
 
     let dir = tables_dir();
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|e| e == "json"))
-        .collect();
-    paths.sort();
+    let paths = table_paths();
     assert!(
         !paths.is_empty(),
         "no amplitude tables in {} — the committed references are the gate's only input",
         dir.display()
     );
 
-    let trials: Vec<Trial> = paths
+    let mut trials: Vec<Trial> = paths
         .into_iter()
         .map(|p| {
             let name = p.file_stem().unwrap().to_string_lossy().into_owned();
             Trial::test(name, move || run_trial(p))
         })
         .collect();
+    trials.push(Trial::test(
+        "every_hermetic_amplitudes_row_is_covered",
+        coverage,
+    ));
 
     libtest_mimic::run(&args, trials).exit();
 }

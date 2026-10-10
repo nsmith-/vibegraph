@@ -1042,7 +1042,6 @@ fn cartesian_helicity_product(states: &[Vec<i32>]) -> Vec<Vec<i32>> {
 /// primitive no gated process compiles to is unexercised by the reference, and
 /// the census is what says so. Reused per model rather than written once for the
 /// SM, so a second model's list carries its own allowlist.
-#[cfg(any(test, feature = "extended-validation"))]
 pub(crate) fn op_census(
     label: &str,
     model: &UFOModel,
@@ -1101,7 +1100,6 @@ pub(crate) fn assert_op_coverage(
 /// one coverage instrument spread over several loaded models — the cards prune
 /// different vertices out of the same UFO — so what it leaves unreached is what
 /// none of them reaches.
-#[cfg(any(test, feature = "extended-validation"))]
 pub fn assert_op_coverage_across(
     instances: &[(&str, &UFOModel, &[&str])],
     known_uncovered: &[super::op::Op],

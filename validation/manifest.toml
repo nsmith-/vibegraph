@@ -1396,8 +1396,8 @@ rationale = "The renormalisation and factorisation scales replayed per event aga
 key = "scale-couplings"
 layer = "banked"
 targets = ["vibegraph-lib/tests/validate_scale_couplings.rs"]
-inputs = ["MadGraph process directories"]
-rationale = "The constant-pool scaling path against a full model re-evaluation, entry by entry at 100 random alpha_s values, for every amplitude-gate process."
+inputs = ["validation/madgraph/amplitudes/<process>.json"]
+rationale = "The constant-pool scaling path against a full model re-evaluation, entry by entry at 100 random alpha_s values, for every Standard Model amplitude-gate process, under the param card banked in its amplitude table."
 
 [[standalone]]
 key = "sm-interned-blob"
@@ -1412,6 +1412,20 @@ layer = "banked"
 targets = ["vibegraph-lib/tests/ufo.rs"]
 inputs = ["research/refs/mg5amcnlo submodule"]
 rationale = "Loading UFO models the interned SM blob cannot stand in for (loop_sm, MSSM_SLHA2, the SM source tree itself), which is the only check that the parser handles a model it was not tuned on."
+
+[[standalone]]
+key = "smeftsim-model"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/smeftsim.rs"]
+inputs = ["validation/ufo/SMEFTsim_topU3l_MwScheme_UFO (with its SHA256SUMS)", "validation/madgraph/interactions.json", "validation/madgraph/diagrams.json", "validation/madgraph/amplitudes/<process>.json"]
+rationale = "The vendored SMEFTsim UFO through the loader: the copy against its own SHA256SUMS both ways, interaction splitting and restriction pruning against MadGraph's banked interaction counts, the M_W-scheme derived parameters against MadGraph's generated param cards, the gated rows' diagram counts, and the op census over the gated SMEFTsim rows. Every input is committed, so a drifted vendored copy fails the default cargo test."
+
+[[standalone]]
+key = "toy-models"
+layer = "hermetic"
+targets = ["vibegraph-lib/tests/toy_models.rs"]
+inputs = ["validation/ufo/vibegraph_toy_UFO", "validation/ufo/vibegraph_toy_color_UFO", "validation/madgraph/diagrams.json", "validation/madgraph/amplitudes/<process>.json"]
+rationale = "The two authored toy UFO models as a coverage instrument: the gated toy rows against the manifest's own gated set, each row's process string against its banked amplitude table, the rows' diagram counts against MadGraph's, and the op census over them."
 
 [[standalone]]
 key = "diagram-counts"
