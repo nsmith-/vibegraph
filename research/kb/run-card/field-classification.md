@@ -3,7 +3,7 @@ type: Design
 title: "Every run-card field is classified: consumed, benign or refused"
 description: "FIELD_CLASSES gives each of the 209 run-card names Consumed, IgnoredBenign (with a positive inertness argument) or IgnoredPhysics (refused off default); audit method and blind spots."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [run-card, classification, hard-errors, audit, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -65,10 +65,6 @@ its reason in the code; a few that are easy to get wrong:
 | `fixed_couplings` | MadGraph itself stops on `False` ("form factor with fixed_couplings not supported anymore") |
 | `polbeam1/2` | polarised beams and the `SPINUP` they imply are not implemented; refused by the generic loop, there is no dedicated error variant |
 
-`Applicability` has a `ProtonBeams` variant for a field that can only bite when
-both beams carry a PDF; no row uses it today (the per-beam PDF labels it was
-written for are consumed, resolved as `banner.py`'s `PDLabelBlock` does).
-
 ## Two rulings worth their reasons
 
 **`SDE_strategy` is Consumed.** It looks like a directive for MadEvent's own
@@ -129,7 +125,7 @@ keeps every banked card parsing.
 ## Enforcement
 
 `refuse_ignored_physics` runs in `RunCard::from_values` **after** the beam
-check (which is what makes `ProtonBeams` decidable), returning
+check and the per-beam PDF-label resolution, returning
 `RunCardError::UnsupportedField { name, value, default, why }`. It only rejects;
 it never derives or rewrites a value, so it cannot move any σ row, and
 `RunCard` gained no field, so no artifact format changed[^n29-c22][^n29-c29].
@@ -141,7 +137,7 @@ it never derives or rewrites a value, so it cannot move any σ row, and
 | `every_run_card_field_is_classified` (`classes.rs`) | a name without a row, a stale row, a duplicate, an empty reason | a **wrong** classification — a physics field parked as benign passes this and every other test here; the reason strings are the oracle, read by a human |
 | `ignored_physics_fields_are_refused` | an `IgnoredPhysics` row without enforcement | interactions unsafe only jointly (one field perturbed at a time) |
 | `banked_run_cards_are_accepted` (`validate_scales.rs`; hermetic sibling `the_committed_run_cards_are_accepted` in `scales_run_cards.rs`) | an enforcement rejecting a card a banked reference ran with — the most likely defect | an enforcement that is too weak |
-| `opaque_defaults_known_to_differ_from_banner_py` | a MadGraph bump that changes which opaque defaults differ | whether those fields are individually harmless (that rests on their benign reasons) |
+| `opaque_defaults_match_banner_py` | any of the 14 opaque defaults that does not parse to what `banner.py` writes for it, all named at once; a change in the size of the opaque inventory | a card spelling a default differently from MadGraph's own writer (the opaque payload compares as text) |
 
 The failure and blind-spot statements are the design's own[^n29-c27].
 
@@ -153,11 +149,13 @@ card setting both `pdlabel` and `pdlabel1 = pdlabel2 = nn23lo1` (the default)
 resolves to `pdlabel`, where MadGraph would take `nn23lo1`; MadGraph's own
 writer never emits both[^n29-c29].
 
-**Opaque defaults.** Benign classification is also what keeps the three
-opaque fields whose stored default differs from MadGraph's from being
-enforced; 35 banked cards write MadGraph's own `mxx_only_part_antipart`, which
-reads here as an override. The fix belongs before any enforcement covers them:
-[hygiene/runcard-opaque-defaults-unverified](../backlog/hygiene/runcard-opaque-defaults-unverified.md)[^n29-c25].
+**Opaque defaults.** Every opaque field stores the default `banner.py`
+writes, so a card spelling out MadGraph's own default for a list or dict field
+reads as no override. The 35 banked cards that write `mxx_only_part_antipart`'s
+`{'default': False}` are the case that matters.
+`opaque_defaults_match_banner_py` holds the mismatch set empty, and
+`defaults_match_banner_py_dump` compares the opaque payloads per
+parameter[^n29-c25].
 
 [^n29-c20]: Note 29 C2.0, the trigger measured on the banked corpus.
 [^n29-c23]: Note 29 C2.3, the per-field audit table (its counts predate the matching and SDE_strategy reclassifications).

@@ -5,7 +5,7 @@ description: "Exact Ratio<i64> colour coefficients through colorize, basis and C
 status: draft
 tags: [colour, evaluator, exact-arithmetic, cf-matrix, jamp]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n16-21, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L231-L263", title: "Note 16 §2.1: shape of the change"}
   - {id: n16-22, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/16-color-flow-design.md#L264-L299", title: "Note 16 §2.2: repr/color.rs as a working algebra"}
@@ -55,9 +55,9 @@ of MadGraph's `color_algebra.py`: `ColorTensor` atoms `T(a…, i, j)`, `Tr(a…)
 `simplify`/`pair_simplify`/`full_simplify` to a fixpoint; an immutable sorted form
 as basis key. Indices are `i32`, external legs positive, summed indices negative
 (MadGraph's convention). There are no numeric `f^{abc}` contractions and no
-leading-colour approximation.[^n16-22] The `ColorRepr` marker types' Casimir and
-Dynkin constants are oracles for the engine's unit tests
-(`T(a,i,j)T(a,j,k) → C_F δ_ik`).
+leading-colour approximation.[^n16-22] The engine's unit tests take the group
+constants `C_F = 4/3`, `T_F = 1/2` and `C_A = 3`, written as literals, as their
+oracles (`helas/color/tests.rs`; `T(a,i,j)T(a,j,k) → C_F δ_ik`).
 
 ## Colorize
 
