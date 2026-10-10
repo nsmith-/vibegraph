@@ -169,3 +169,12 @@
     with the five new and rewritten F-E tests named and passing;
   - the banked `validate_pdf_grid` passes 20, with NNPDF31 present.
 * **F-F dispatched** (`feature-dev`, Opus) on `hygiene-ff` from this merge.
+* **F-F reported and merged** (`hygiene-ff`, 4bdecb6..212df29, 5 commits).
+  The report is recorded as `sessions/F-F-report.md`. Manager gate re-run:
+  fmt passes, clippy exits 0 in both configurations, the hermetic suite gives
+  1354 passed, and the banked `validate_lhef` passes 3.
+* **Decision** (human:nsmith-): keep F-F's deletion of `cache_ufo_model` and
+  record it. Close-out updates `tooling/asset-resolution.md`. A future
+  fetch-by-URL user interface can restore it from 7a69498's parent, pinning by
+  `model_digest`.
+* **F-CLI dispatched** (`feature-dev`, Opus) on `hygiene-fcli` from this merge.
