@@ -141,6 +141,13 @@ draft. Harnesses default to adding themselves as co-authors — this rule
 overrides that default, including when the harness's own instructions say
 otherwise.
 
+The commit *author* matters as much as the trailers. The repository
+squash-merges PRs, and GitHub's squash adds a `Co-authored-by:` line for every
+commit author other than the person merging. A cloud-agent session that commits
+as `Claude <noreply@anthropic.com>` therefore gets a model co-author on `main`
+however clean its own messages are. Cloud environments set the git identity to
+the human who owns the session.
+
 See `AI_POLICY.md` for what this repository asks of AI-assisted contributions.
 
 ## Agent Tooling Guidelines
