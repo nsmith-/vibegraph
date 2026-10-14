@@ -28,7 +28,7 @@ use crate::helas::wavefn::{InDiracWf, OutDiracWf, ScalarWf, VectorWf};
 
 /// Concrete scalar field for the harness. The identities under test are algebraic and
 /// hold for any field, so we fix `f64` rather than staying generic over [`Real`](crate::helas::repr::Real).
-pub type F = f64;
+pub(crate) type F = f64;
 
 /// A seeded RNG so any failure reproduces from the reported seed.
 pub fn seeded_rng(seed: u64) -> StdRng {
@@ -37,7 +37,7 @@ pub fn seeded_rng(seed: u64) -> StdRng {
 
 /// A random real in `(-2, 2)` — bounded away from zero-dominated and overflow regimes so
 /// tolerances stay meaningful, but otherwise unconstrained.
-pub fn rand_re(rng: &mut StdRng) -> F {
+pub(crate) fn rand_re(rng: &mut StdRng) -> F {
     rng.random::<F>() * 4.0 - 2.0
 }
 
@@ -47,7 +47,7 @@ pub fn rand_c(rng: &mut StdRng) -> C<F> {
 }
 
 /// A random (real) contravariant 4-momentum `p^μ`. Not constrained on-shell.
-pub fn rand_momentum(rng: &mut StdRng) -> LorentzVector<F, Contravariant> {
+pub(crate) fn rand_momentum(rng: &mut StdRng) -> LorentzVector<F, Contravariant> {
     LorentzVector::new(rand_re(rng), rand_re(rng), rand_re(rng), rand_re(rng))
 }
 
@@ -91,7 +91,7 @@ pub fn rand_vector(rng: &mut StdRng) -> WaveformSlot<F> {
 /// is deliberately more general than any single fermion line produces (a `γγ` chain
 /// fills grades 0 and 2 only) so an identity that quietly assumed the other grades were
 /// zero fails here.
-pub fn rand_multivector(rng: &mut StdRng) -> WaveformSlot<F> {
+pub(crate) fn rand_multivector(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Multivector(MultivectorWf {
         m: Multivector::new(
             rand_c(rng),
@@ -105,7 +105,7 @@ pub fn rand_multivector(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random scalar current slot (arbitrary complex amplitude + momentum).
-pub fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
+pub(crate) fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Scalar(ScalarWf {
         value: rand_c(rng),
         momentum: rand_momentum(rng),
@@ -113,7 +113,7 @@ pub fn rand_scalar(rng: &mut StdRng) -> WaveformSlot<F> {
 }
 
 /// A random bare real-constant slot (mass/width/coefficient register).
-pub fn rand_real(rng: &mut StdRng) -> WaveformSlot<F> {
+pub(crate) fn rand_real(rng: &mut StdRng) -> WaveformSlot<F> {
     WaveformSlot::Real(rand_re(rng))
 }
 
@@ -275,7 +275,7 @@ fn cmp_spinor(
 /// `lhs`/`rhs` are the two kernels/subtrees under comparison; both receive the *same* input
 /// slice per sample. On the first disagreement this panics with the sample index, seed, the
 /// inputs, and both outputs — everything needed to reproduce and localise the failure.
-pub fn check_agree<G, L, R>(n: usize, seed: u64, tol: F, mut gen: G, lhs: L, rhs: R)
+pub(crate) fn check_agree<G, L, R>(n: usize, seed: u64, tol: F, mut gen: G, lhs: L, rhs: R)
 where
     G: FnMut(&mut StdRng) -> Vec<WaveformSlot<F>>,
     L: Fn(&[WaveformSlot<F>]) -> WaveformSlot<F>,

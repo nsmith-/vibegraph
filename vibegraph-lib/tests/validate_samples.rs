@@ -741,7 +741,9 @@ fn with_integrand<R>(
         MULTICHANNEL_ITERS,
         SEED,
     );
-    f(&integ, &records, &run_card)
+    let out = f(&integ, &records, &run_card);
+    common::assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), row.key);
+    out
 }
 
 /// Generate one seed's worth of events off frozen grids.
@@ -1945,7 +1947,9 @@ fn with_mumua_integrand<R>(
         MULTICHANNEL_ITERS,
         seed,
     );
-    f(&integ)
+    let out = f(&integ);
+    common::assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), KEY);
+    out
 }
 
 /// A cross section and its Monte-Carlo error, in pb.

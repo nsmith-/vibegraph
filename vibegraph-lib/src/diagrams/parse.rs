@@ -146,18 +146,18 @@ pub struct ModelImport {
 /// A `define` command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiparticleDef {
-    pub alias: String,
+    pub(crate) alias: String,
     /// The members as written. One group is an ordinary multiparticle; several
     /// (`define v = z | a`) make an or-multiparticle, whose groups are
     /// alternatives.
-    pub groups: Vec<Vec<String>>,
+    pub(crate) groups: Vec<Vec<String>>,
     /// Particles subtracted via the optional `/ except` clause.
-    pub except: Vec<String>,
+    pub(crate) except: Vec<String>,
 }
 
 impl MultiparticleDef {
     /// Whether the label was defined with `|`.
-    pub fn is_or(&self) -> bool {
+    pub(crate) fn is_or(&self) -> bool {
         self.groups.len() > 1
     }
 }
@@ -166,10 +166,10 @@ impl MultiparticleDef {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessLine {
     /// The process text as MadGraph reads it: whitespace-normalized, flags removed.
-    pub text: String,
+    pub(crate) text: String,
     /// `--` options on the line (`--no_warning=duplicate`, `--optimize`, ...).
-    pub flags: Vec<String>,
-    pub definition: ProcessDefinition,
+    pub(crate) flags: Vec<String>,
+    pub(crate) definition: ProcessDefinition,
 }
 
 /// MadGraph's `ProcessDefinition`, with names as written.
@@ -177,68 +177,68 @@ pub struct ProcessLine {
 /// Names are resolved to PDG codes against a model by [`super::resolve`];
 /// label membership is already decided here, since `define` is part of the card.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ProcessDefinition {
+pub(crate) struct ProcessDefinition {
     /// Initial legs first, then final legs, each repeat count already expanded.
-    pub legs: Vec<Leg>,
+    pub(crate) legs: Vec<Leg>,
     /// Required s-channels (`> A B >`): alternatives (split at `|`), each a list of
     /// names that must all appear.
-    pub required_s_channels: Vec<Vec<String>>,
+    pub(crate) required_s_channels: Vec<Vec<String>>,
     /// `/ A B`: particles that may not appear as a propagator.
-    pub forbidden_particles: Vec<String>,
+    pub(crate) forbidden_particles: Vec<String>,
     /// `$$ A B`: particles that may not appear as an s-channel propagator.
-    pub forbidden_s_channels: Vec<String>,
+    pub(crate) forbidden_s_channels: Vec<String>,
     /// `$ A B`: particles that may not go on shell in an s-channel.
-    pub forbidden_onsh_s_channels: Vec<String>,
+    pub(crate) forbidden_onsh_s_channels: Vec<String>,
     /// Coupling-order constraints, left to right as written.
-    pub orders: Vec<CouplingConstraint>,
+    pub(crate) orders: Vec<CouplingConstraint>,
     /// `[option = orders]`.
-    pub loop_spec: Option<LoopSpec>,
+    pub(crate) loop_spec: Option<LoopSpec>,
     /// `@N`.
-    pub tag: Option<u32>,
+    pub(crate) tag: Option<u32>,
     /// `ORDER=n` after the `@N` of a decay-chain line: bounds on the whole chain.
-    pub overall_orders: Vec<(String, i64)>,
+    pub(crate) overall_orders: Vec<(String, i64)>,
     /// Whether this is the core of a decay chain, which MadGraph reads without
     /// turning `==` / `>` amplitude constraints into squared-order ones.
-    pub chain_core: bool,
+    pub(crate) chain_core: bool,
     /// `, (A > B C, ...)`: one entry per decay, each possibly with its own chains.
-    pub decay_chains: Vec<ProcessDefinition>,
+    pub(crate) decay_chains: Vec<ProcessDefinition>,
 }
 
 impl ProcessDefinition {
-    pub fn initial(&self) -> impl Iterator<Item = &Leg> {
+    pub(crate) fn initial(&self) -> impl Iterator<Item = &Leg> {
         self.legs.iter().filter(|l| l.state == LegState::Initial)
     }
 
-    pub fn final_state(&self) -> impl Iterator<Item = &Leg> {
+    pub(crate) fn final_state(&self) -> impl Iterator<Item = &Leg> {
         self.legs.iter().filter(|l| l.state == LegState::Final)
     }
 }
 
 /// Initial or final state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LegState {
+pub(crate) enum LegState {
     Initial,
     Final,
 }
 
 /// One external leg.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Leg {
-    pub state: LegState,
-    pub particle: LegParticle,
+pub(crate) struct Leg {
+    pub(crate) state: LegState,
+    pub(crate) particle: LegParticle,
     /// The token as written, without polarization braces or tag marks: `2e+`
     /// for a leg that came from a repeat count, which is what lets resolution
     /// notice a model particle whose name starts with a digit.
-    pub token: String,
+    pub(crate) token: String,
     /// The text between `{` and `}`, as written.
-    pub polarization: Option<String>,
+    pub(crate) polarization: Option<String>,
     /// `!a!`: a tagged photon.
-    pub tagged: bool,
+    pub(crate) tagged: bool,
 }
 
 /// What a leg names, in the order MadGraph tries the readings.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LegParticle {
+pub(crate) enum LegParticle {
     /// A multiparticle label (`p`, `j`, or one from `define`).
     Label(String),
     /// An integer: a PDG code (`11`, `-11`, `21`).
@@ -258,7 +258,7 @@ impl Display for LegParticle {
 
 /// Coupling order comparison operator — MadGraph's accepted set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CouplingOp {
+pub(crate) enum CouplingOp {
     /// `=` — an upper bound, as `<=`.
     Eq,
     /// `<=`
@@ -282,13 +282,13 @@ impl Display for CouplingOp {
 
 /// One coupling-order constraint as written.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CouplingConstraint {
+pub(crate) struct CouplingConstraint {
     /// The order name as written (`QCD`, `WEIGHTED`, `aEW`), without `^2`.
-    pub name: String,
+    pub(crate) name: String,
     /// `NAME^2`: a bound on the squared amplitude's order.
-    pub squared: bool,
-    pub op: CouplingOp,
-    pub value: i64,
+    pub(crate) squared: bool,
+    pub(crate) op: CouplingOp,
+    pub(crate) value: i64,
 }
 
 impl Display for CouplingConstraint {
@@ -303,11 +303,11 @@ impl Display for CouplingConstraint {
 
 /// `[option = orders]`, the loop / perturbation specification.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopSpec {
+pub(crate) struct LoopSpec {
     /// `real`, `virt`, `tree`, ...; `None` for a bare `[QCD]`.
-    pub option: Option<String>,
+    pub(crate) option: Option<String>,
     /// The perturbed orders as written (`QCD`, `all`, ...).
-    pub orders: Vec<String>,
+    pub(crate) orders: Vec<String>,
 }
 
 // ── MadGraph's expressions ───────────────────────────────────────────────────
@@ -504,7 +504,7 @@ fn parse_model_import(spec: &str) -> ModelImport {
 }
 
 /// Parse a `define` line body: `alias [=] members... [| members...] [/ except...]`.
-pub fn parse_define_line(s: &str) -> Result<MultiparticleDef, ParseError> {
+pub(crate) fn parse_define_line(s: &str) -> Result<MultiparticleDef, ParseError> {
     let spaced = s
         .replace('=', " = ")
         .replace('|', " | ")
@@ -615,7 +615,8 @@ fn check_process_format(text: &str) -> Result<(), ParseError> {
 
 /// Parse a single process string against the default labels, as the argument
 /// of a `generate` line.
-pub fn parse_process_string(s: &str) -> Result<ProcessDefinition, ParseError> {
+#[cfg(test)]
+pub(crate) fn parse_process_string(s: &str) -> Result<ProcessDefinition, ParseError> {
     parse_definition(&split_arg(s).join(" "), &AliasTable::default_sm())
 }
 
@@ -976,10 +977,10 @@ fn classify_leg(name: &str, aliases: &AliasTable) -> Result<(LegParticle, u32), 
 /// One process of the card's effective list.
 #[derive(Debug, Clone)]
 pub struct CardProcess<'a> {
-    pub line: &'a ProcessLine,
+    pub(crate) line: &'a ProcessLine,
     /// MadGraph's process number: the `@N` if given, otherwise the line's
     /// position among the `generate` / `add process` lines since the last reset.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The labels as defined when the line was read.
     pub aliases: AliasTable,
 }
@@ -1018,7 +1019,7 @@ impl ProcCardAst {
     }
 
     /// The last `import model`, if any.
-    pub fn model(&self) -> Option<&ModelImport> {
+    pub(crate) fn model(&self) -> Option<&ModelImport> {
         self.commands.iter().rev().find_map(|c| match c {
             Command::ImportModel { import, .. } => Some(import),
             _ => None,

@@ -10,8 +10,13 @@
 //! accumulator that already exists, enters no integrand, and moves no cross
 //! section.
 //!
-//! Both draws are the same categorical step over non-negative weights, defined
-//! once here.
+//! All three selections are one categorical step over non-negative weights,
+//! [`select_index`], and the unweighting pass draws its channel `∝ w_maxⱼ`
+//! through it too. It is not the crate's only categorical draw: a phase-space
+//! combiner picks its channel from selection weights already normalised to one
+//! (`phasespace::channel::select_channel`), and lets the last channel absorb the
+//! rounding at the top of the interval, where this one refuses a vector that
+//! carries no probability and gives that rounding to the last positive entry.
 
 /// Draw an index with probability `weights[i] / Σⱼ weights[j]` from a uniform
 /// variate `u ∈ [0, 1)`.

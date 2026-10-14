@@ -33,7 +33,7 @@ cycle](sprint-rhythm.md) once the knowledge-bundle migration lands.
   maintainability, test non-vacuity, visibility (`pub` only where something
   needs it) and reusable abstractions. It does not exist yet. The first work
   after the migration is one dedicated hygiene sprint over the existing
-  codebase ([hygiene-sprint](../backlog/hygiene/hygiene-sprint.md)), and its
+  codebase ([hygiene sprint](../sprints/hygiene/closeout.md)), and its
   lessons design the hygiene agent
   ([hygiene-agent-type](../backlog/hygiene/hygiene-agent-type.md)). From then
   on the PR sequence has four session types.

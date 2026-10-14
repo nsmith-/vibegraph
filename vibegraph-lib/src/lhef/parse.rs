@@ -220,12 +220,12 @@ impl<'a> Body<'a> {
 /// The `<init>` beam line's fields, `NPRUP` included.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct InitHead {
-    pub beam_pdg: [i32; 2],
-    pub beam_energy: [f64; 2],
-    pub pdf_group: [i32; 2],
-    pub pdf_set: [i32; 2],
-    pub weight_strategy: WeightStrategy,
-    pub n_processes: usize,
+    pub(crate) beam_pdg: [i32; 2],
+    pub(crate) beam_energy: [f64; 2],
+    pub(crate) pdf_group: [i32; 2],
+    pub(crate) pdf_set: [i32; 2],
+    pub(crate) weight_strategy: WeightStrategy,
+    pub(crate) n_processes: usize,
 }
 
 impl InitHead {
@@ -245,12 +245,12 @@ impl InitHead {
 /// The `<event>` info line's fields, `NUP` included.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct EventInfo {
-    pub nup: usize,
-    pub process_id: i32,
-    pub weight: f64,
-    pub scale: f64,
-    pub alpha_qed: f64,
-    pub alpha_qcd: f64,
+    pub(crate) nup: usize,
+    pub(crate) process_id: i32,
+    pub(crate) weight: f64,
+    pub(crate) scale: f64,
+    pub(crate) alpha_qed: f64,
+    pub(crate) alpha_qcd: f64,
 }
 
 impl EventInfo {

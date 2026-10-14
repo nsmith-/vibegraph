@@ -46,24 +46,33 @@ use crate::helas::repr::color::ColorRep;
 use crate::select::select_index;
 
 /// The label given to the first colour line of a flow, matching MadGraph's pool.
-pub const FIRST_COLOR_LINE: u32 = 501;
+pub(crate) const FIRST_COLOR_LINE: u32 = 501;
 
 /// The `ICOLUP` entry for "this leg has no line in this slot".
-pub const NO_COLOR_LINE: u32 = 0;
+pub(crate) const NO_COLOR_LINE: u32 = 0;
 
 /// `ICOLUP` slot index of the physical colour line.
 const COLOR_SLOT: usize = 0;
 /// `ICOLUP` slot index of the physical anticolour line.
 const ANTICOLOR_SLOT: usize = 1;
 
+/// Whether `order` lists each of `0..n` exactly once.
+fn is_permutation(order: &[usize], n: usize) -> bool {
+    let mut seen = vec![false; n];
+    order.len() == n
+        && order
+            .iter()
+            .all(|&i| i < n && !std::mem::replace(&mut seen[i], true))
+}
+
 /// One external leg as the flow table sees it: the colour rep its *particle*
 /// carries, and whether the leg is incoming.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LegColor {
     /// The particle's own SU(3) rep (not the crossed, all-outgoing one).
-    pub rep: ColorRep,
+    pub(crate) rep: ColorRep,
     /// Whether the leg is in the initial state.
-    pub incoming: bool,
+    pub(crate) incoming: bool,
 }
 
 /// Which `ICOLUP` slots a leg of this colour rep occupies: `[colour, anticolour]`.
@@ -123,7 +132,7 @@ impl ColorFlowTags {
     }
 
     /// The number of external legs.
-    pub fn n_ext(&self) -> usize {
+    pub(crate) fn n_ext(&self) -> usize {
         self.n_ext
     }
 
@@ -138,15 +147,9 @@ impl ColorFlowTags {
     /// Line labels travel with their legs, so every flow keeps the connectivity it
     /// had — this relabels which leg an endpoint sits on, it does not recolour
     /// anything. `None` unless `order` is a permutation of the legs.
-    pub fn permuted(&self, order: &[usize]) -> Option<ColorFlowTags> {
-        if order.len() != self.n_ext {
+    pub(crate) fn permuted(&self, order: &[usize]) -> Option<ColorFlowTags> {
+        if !is_permutation(order, self.n_ext) {
             return None;
-        }
-        let mut seen = vec![false; self.n_ext];
-        for &leg in order {
-            if std::mem::replace(seen.get_mut(leg)?, true) {
-                return None;
-            }
         }
         let mut tags = Vec::with_capacity(self.tags.len());
         for f in 0..self.n_flows() {
@@ -167,15 +170,9 @@ impl ColorFlowTags {
     /// the legs. It is what puts one subprocess's table into another's flow indexing,
     /// once the two bases have been paired up. `None` unless `order` is a permutation
     /// of the flows.
-    pub fn reindexed(&self, order: &[usize]) -> Option<ColorFlowTags> {
-        if order.len() != self.n_flows() {
+    pub(crate) fn reindexed(&self, order: &[usize]) -> Option<ColorFlowTags> {
+        if !is_permutation(order, self.n_flows()) {
             return None;
-        }
-        let mut seen = vec![false; self.n_flows()];
-        for &f in order {
-            if std::mem::replace(seen.get_mut(f)?, true) {
-                return None;
-            }
         }
         let mut tags = Vec::with_capacity(self.tags.len());
         for &f in order {
@@ -215,7 +212,8 @@ impl ColorFlowTags {
     /// legs, and exchanging slots can only move an endpoint between the two slots of
     /// the leg it already sits on. Such a subprocess's table has to come from its own
     /// colour basis.
-    pub fn conjugated(&self) -> ColorFlowTags {
+    #[cfg(test)]
+    pub(crate) fn conjugated(&self) -> ColorFlowTags {
         ColorFlowTags {
             n_ext: self.n_ext,
             tags: self
@@ -232,7 +230,7 @@ impl ColorFlowTags {
     /// again against a *different* leg list — the one an event record is about to
     /// be written on. A table carried from one subprocess to another passes only if
     /// the lines land in the slots the destination's own reps allow.
-    pub fn check_legs(&self, legs: &[LegColor]) -> Result<(), ColorAlgebraError> {
+    pub(crate) fn check_legs(&self, legs: &[LegColor]) -> Result<(), ColorAlgebraError> {
         if legs.len() != self.n_ext {
             return Err(ColorAlgebraError::InconsistentColorFlow(format!(
                 "{} colour-flow legs against {} reps",
@@ -260,15 +258,6 @@ impl ColorFlowTags {
         }
         Ok(())
     }
-
-    /// The flow tags of a colour flow drawn with probability
-    /// `JAMP2(i) / Σⱼ JAMP2(j)`; `None` when the weights carry no probability
-    /// (all zero, negative, or non-finite).
-    ///
-    /// `u` is a uniform variate on `[0, 1)`.
-    pub fn select(&self, jamp2: &[f64], u: f64) -> Option<&[[u32; 2]]> {
-        select_flow(jamp2, u).map(|f| self.flow(f))
-    }
 }
 
 /// Draw a colour-flow index with probability `JAMP2(i) / Σⱼ JAMP2(j)` from a
@@ -282,7 +271,7 @@ impl ColorFlowTags {
 /// The unrestricted form. MadEvent's `SELECT_COLOR` runs it over the flows one
 /// integration configuration admits ([`select_flow_reached_by`]) and falls back
 /// to this when that mask carries no probability.
-pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
+pub(crate) fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
     select_index(jamp2, u)
 }
 
@@ -300,11 +289,13 @@ pub fn select_flow(jamp2: &[f64], u: f64) -> Option<usize> {
 /// `JAMP2` over the flows its `ICOLAMP` row admits, and re-accumulates over every
 /// flow when that cumulant ends at zero.
 ///
-/// The caller supplies the diagram; the event path picks it the way MadEvent
-/// does, by drawing the integration configuration `∝ AMP2` (see
-/// [`AmplitudeEvaluator::select_color_flow`](crate::helas::eval::AmplitudeEvaluator::select_color_flow),
+/// The caller supplies the reached flows; the event path picks them the way
+/// MadEvent does, by drawing the integration configuration `∝` its channel weight —
+/// the amplitude share `AMP2`, or at `sde_strategy = 2` the propagator product
+/// `GET_CHANNEL_CUT` — and taking that configuration's row (see
+/// [`AmplitudeEvaluator::select_config_and_flow`](crate::helas::eval::AmplitudeEvaluator::select_config_and_flow),
 /// which composes the two steps).
-pub fn select_flow_reached_by(jamp2: &[f64], reached: &[bool], u: f64) -> Option<usize> {
+pub(crate) fn select_flow_reached_by(jamp2: &[f64], reached: &[bool], u: f64) -> Option<usize> {
     if reached.len() != jamp2.len() {
         return select_flow(jamp2, u);
     }
@@ -339,6 +330,10 @@ pub struct LeadingColorFlows {
 impl LeadingColorFlows {
     /// Read the table off a colour basis. `n_diagrams` is the subprocess's
     /// diagram count, so a diagram no flow references still gets a row.
+    ///
+    /// # Panics
+    /// If a contribution names a diagram at or beyond `n_diagrams`: the count
+    /// and the basis then describe different subprocesses.
     pub fn of(basis: &ColorBasis, n_diagrams: usize) -> Self {
         let n_flows = basis.ncolor();
         let max_nc = basis
@@ -351,7 +346,13 @@ impl LeadingColorFlows {
         if let Some(max_nc) = max_nc {
             for (f, elem) in basis.elements.iter().enumerate() {
                 for contrib in &elem.contributions {
-                    if contrib.coeff.nc_power == max_nc && contrib.diagram < n_diagrams {
+                    assert!(
+                        contrib.diagram < n_diagrams,
+                        "colour flow {f} has a contribution from diagram {}, outside the \
+                         subprocess's {n_diagrams} diagrams",
+                        contrib.diagram
+                    );
+                    if contrib.coeff.nc_power == max_nc {
                         reached[contrib.diagram * n_flows + f] = true;
                     }
                 }
@@ -384,7 +385,7 @@ impl LeadingColorFlows {
 /// basis key still holds an `f`/`d` tensor (the simplified basis is trace/δ
 /// only), references a summed index, or produces a line assignment inconsistent
 /// with the legs' colour reps.
-pub fn color_flow_tags(
+pub(crate) fn color_flow_tags(
     basis: &ColorBasis,
     legs: &[LegColor],
 ) -> Result<ColorFlowTags, ColorAlgebraError> {
@@ -753,6 +754,46 @@ mod tests {
         assert_eq!(select_flow(&w, 0.999), Some(2));
         assert_eq!(select_flow(&[0.0, 0.0], 0.5), None);
         assert_eq!(select_flow(&[f64::NAN], 0.5), None);
+    }
+}
+
+#[cfg(test)]
+mod leading_flow_tests {
+    use super::*;
+    use crate::helas::color::coeff::ColorCoeff;
+    use crate::helas::color::colorize::{BasisElement, Contribution};
+    use num_rational::Ratio;
+
+    /// A one-flow basis whose single contribution comes from `diagram`.
+    fn basis_with_contribution_from(diagram: usize) -> ColorBasis {
+        ColorBasis {
+            elements: vec![BasisElement {
+                structure: vec![(TensorKind::One, Vec::new())],
+                contributions: vec![Contribution {
+                    diagram,
+                    chain: Vec::new(),
+                    coeff: ColorCoeff::one(),
+                }],
+            }],
+            cf_matrix: vec![Ratio::from_integer(1)],
+        }
+    }
+
+    /// A contribution from the last diagram in range lands in that diagram's row.
+    #[test]
+    fn a_contribution_inside_the_diagram_count_reaches_its_flow() {
+        let table = LeadingColorFlows::of(&basis_with_contribution_from(2), 3);
+        assert_eq!(table.n_diagrams(), 3);
+        assert_eq!(table.reached_by(2), &[true]);
+        assert_eq!(table.reached_by(0), &[false]);
+    }
+
+    /// A contribution naming a diagram outside the count is refused, not dropped:
+    /// dropping it would leave that diagram's leading flow out of every mask.
+    #[test]
+    #[should_panic(expected = "outside the subprocess's 2 diagrams")]
+    fn a_contribution_outside_the_diagram_count_is_refused() {
+        let _ = LeadingColorFlows::of(&basis_with_contribution_from(2), 2);
     }
 }
 

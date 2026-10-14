@@ -102,8 +102,8 @@ the data a set name resolves to cannot drift from what the build was
 validated against. Nothing is downloaded without consent: without a terminal
 to ask on, the answer is no, and the run fails naming the URL, the checksum
 and the `-y` that would consent on a rerun. `--no-network` (or
-`$VIBEGRAPH_NO_NETWORK`) forbids downloads outright and outranks `-y`.
-`$VIBEGRAPH_HOME` moves the cache.
+`$VIBEGRAPH_NO_NETWORK`, set to any value) forbids downloads outright and
+outranks `-y`. `$VIBEGRAPH_HOME` moves the cache.
 
 UFO models are never downloaded, because FeynRules publishes no per-model
 index a name could be pinned against. Unpack the model directory under the

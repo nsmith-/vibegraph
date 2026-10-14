@@ -30,19 +30,19 @@ use num_traits::{Float, FloatConst, FromPrimitive, Num, NumCast, One, ToPrimitiv
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct OpCounts {
     /// Additions and subtractions.
-    pub add: u64,
-    pub mul: u64,
-    pub div: u64,
+    pub(crate) add: u64,
+    pub(crate) mul: u64,
+    pub(crate) div: u64,
     /// Fused multiply-adds (`Float::mul_add`). Where the target has no hardware FMA,
     /// [`Real::mul_add_fast`](crate::helas::repr::Real::mul_add_fast) issues a product
     /// and a sum instead, which count under `mul` and `add`.
-    pub fma: u64,
-    pub sqrt: u64,
+    pub(crate) fma: u64,
+    pub(crate) sqrt: u64,
     /// Sign flips: an XOR or a sign-folded FMA variant in machine code, not a flop.
-    pub neg: u64,
+    pub(crate) neg: u64,
     /// Every other `Float` method that computes a value (`recip`, `powi`, `min`/`max`,
     /// transcendental functions, …), and `%`.
-    pub other: u64,
+    pub(crate) other: u64,
 }
 
 impl OpCounts {
@@ -85,7 +85,7 @@ pub(super) fn snapshot() -> OpCounts {
 
 /// An `f64` that counts the floating-point operations performed on it.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub(super) struct Counted(pub f64);
+pub(super) struct Counted(pub(crate) f64);
 
 macro_rules! counted_binop {
     ($($op:ident::$f:ident => $field:ident),*) => {$(
@@ -299,13 +299,13 @@ impl FloatConst for Counted {
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Traffic {
     /// Instructions that compute a value (the variadic read-out roots excluded).
-    pub instrs: u64,
+    pub(crate) instrs: u64,
     /// Result-arena operand reads.
-    pub arena_read: u64,
+    pub(crate) arena_read: u64,
     /// Constant-pool and momentum-pool reads.
-    pub pool_read: u64,
+    pub(crate) pool_read: u64,
     /// Result-arena writes, one element per instruction.
-    pub write: u64,
+    pub(crate) write: u64,
 }
 
 impl Traffic {

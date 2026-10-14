@@ -4,7 +4,7 @@
 //! constant pools. The compiled skeleton, the helicity expansion and the color-factor
 //! matrix are all independent of it. [`ScaleAwareAmplitude`] therefore owns a private
 //! copy of the pools and rewrites them per event, leaving the shared
-//! [`AmplitudeEvaluator`](super::compile::AmplitudeEvaluator) untouched.
+//! [`AmplitudeEvaluator`] untouched.
 //!
 //! Two ways to rewrite them:
 //!
@@ -171,7 +171,7 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
     }
 
     /// An independent copy for another thread: same shared plan, its own pools.
-    pub fn fork(&self) -> Self {
+    pub(crate) fn fork(&self) -> Self {
         ScaleAwareAmplitude {
             amp: self.amp.clone(),
             base_c: self.base_c.clone(),
@@ -246,19 +246,19 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
     }
 
     /// The strong coupling the pools currently hold.
-    pub fn alpha_s(&self) -> f64 {
+    pub(crate) fn alpha_s(&self) -> f64 {
         self.alpha_s
     }
 
     /// The parameter card's own strong coupling — the value the pools are exact at.
-    pub fn alpha_s_ref(&self) -> f64 {
+    pub(crate) fn alpha_s_ref(&self) -> f64 {
         self.plan.alpha_s_ref
     }
 
     /// Whether any constant of this amplitude moves with the strong coupling. `false`
     /// for a matrix element with no QCD coupling in it, whose caller then needs no
     /// running coupling at all.
-    pub fn depends_on_alpha_s(&self) -> bool {
+    pub(crate) fn depends_on_alpha_s(&self) -> bool {
         self.plan.scale_dependent
     }
 

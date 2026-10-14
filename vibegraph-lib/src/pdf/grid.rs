@@ -64,33 +64,33 @@ pub enum GridError {
 /// from the param card, not a running α_s from the PDF set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlphaSInfo {
-    pub mz: f64,
-    pub order_qcd: i32,
+    pub(crate) mz: f64,
+    pub(crate) order_qcd: i32,
     /// `AlphaS_Type`, e.g. `"ipol"`.
-    pub kind: String,
-    pub qs: Vec<f64>,
+    pub(crate) kind: String,
+    pub(crate) qs: Vec<f64>,
     pub vals: Vec<f64>,
-    pub lambda4: f64,
-    pub lambda5: f64,
+    pub(crate) lambda4: f64,
+    pub(crate) lambda5: f64,
 }
 
 /// Parsed `<set>.info` metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetInfo {
-    pub set_desc: String,
-    pub format: String,
-    pub num_members: u32,
+    pub(crate) set_desc: String,
+    pub(crate) format: String,
+    pub(crate) num_members: u32,
     /// Beam particle PDG code the set is defined for (2212 = proton).
-    pub particle: i32,
+    pub(crate) particle: i32,
     /// Flavors present somewhere in the set (union across subgrids); gluon is
     /// listed as 21 here even though `.dat` flavor lists may use either 0 or 21.
     pub flavors: Vec<i32>,
-    pub order_qcd: i32,
-    pub error_type: String,
-    pub x_min: f64,
-    pub x_max: f64,
-    pub q_min: f64,
-    pub q_max: f64,
+    pub(crate) order_qcd: i32,
+    pub(crate) error_type: String,
+    pub(crate) x_min: f64,
+    pub(crate) x_max: f64,
+    pub(crate) q_min: f64,
+    pub(crate) q_max: f64,
     pub alpha_s: AlphaSInfo,
     /// `ForcePositive` (LHAPDF's positivity-clamp level: `0` none, `1` clamp
     /// negatives to zero, `2` clamp below `1e-10`). Absent in a `.info` file
@@ -122,7 +122,7 @@ impl SubGrid {
         self.q2.len()
     }
 
-    pub fn nf(&self) -> usize {
+    pub(crate) fn nf(&self) -> usize {
         self.flavors.len()
     }
 
@@ -229,7 +229,7 @@ where
 
 /// Parse a `.info` file's content (the caller supplies `path` only for error
 /// messages).
-pub fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError> {
+pub(crate) fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError> {
     let map = parse_raw_map(content);
 
     let force_positive = match map.get("ForcePositive") {
@@ -325,7 +325,7 @@ pub fn parse_info(content: &str, path: &str) -> Result<SetInfo, GridError> {
     })
 }
 
-pub fn parse_info_file(path: &Path) -> Result<SetInfo, GridError> {
+pub(crate) fn parse_info_file(path: &Path) -> Result<SetInfo, GridError> {
     let path_str = path.display().to_string();
     let content = std::fs::read_to_string(path).map_err(|e| GridError::Io {
         path: path_str.clone(),
@@ -481,7 +481,7 @@ fn parse_member_dat_str(content: &str, path: &str) -> Result<Vec<SubGrid>, GridE
         .collect()
 }
 
-pub fn parse_member_dat(path: &Path) -> Result<Vec<SubGrid>, GridError> {
+pub(crate) fn parse_member_dat(path: &Path) -> Result<Vec<SubGrid>, GridError> {
     let path_str = path.display().to_string();
     let content = std::fs::read_to_string(path).map_err(|e| GridError::Io {
         path: path_str.clone(),

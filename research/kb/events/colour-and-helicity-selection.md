@@ -3,7 +3,7 @@ type: Algorithm
 title: Per-event helicity and colour-flow selection
 description: "Helicities summed and colours contracted while integrating; each accepted event draws a helicity, then a configuration (AMP2 or channel-cut weight), then a flow ∝ JAMP2 in its ICOLAMP row."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [events, colour, helicity, icolup, madevent-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -56,10 +56,10 @@ ordering are drawn first ([events/generate](generate.md)); then, on both paths:
 3. **Flow** `i ∝ JAMP2(i)` restricted to the flows configuration `c` reaches at
    leading colour (its `ICOLAMP` row), with a fallback to every flow when the
    restricted weights vanish (`select_flow_reached_by`,
-   `helas/color/flow_tags.rs:307`).
+   `helas/color/flow_tags.rs:298`).
 
 Steps 2 and 3 are `AmplitudeEvaluator::select_config_and_flow`
-(`helas/eval/compile.rs:467` is `select_color_flow`, which wraps it). It
+(`helas/eval/compile.rs:338`), whose doc comment carries the contract. It
 returns the flow, the configuration, and whether the flow is leading in that
 configuration; the last two decide the event's resonance records
 ([events/resonance-records](resonance-records.md)).

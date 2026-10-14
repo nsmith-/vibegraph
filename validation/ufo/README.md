@@ -38,9 +38,10 @@ a corner of a 900-vertex model.
 Not compiled into any binary, so it is outside `THIRD-PARTY-NOTICES`; the
 licence file travels with the copy as MIT requires.
 
-The other nine SMEFTsim variants (`alphaScheme`, `U35`, `MFV`, `general`,
-`top`) are not vendored; fetch them from upstream at the same tag if a gate
-ever needs one.
+The other nine SMEFTsim variants (the `general`, `U35`, `MFV`, `top` and
+`topU3l` flavour assumptions, each in the `alphaScheme` and `MwScheme` input
+schemes, less this one) are not vendored; fetch them from upstream at the same
+tag if a gate ever needs one.
 
 ## `vibegraph_toy_UFO`
 

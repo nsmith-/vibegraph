@@ -5,7 +5,7 @@ description: "The Kleiss–Stirling–Ellis massive RAMBO map and weight, its F-
 status: draft
 tags: [rambo, phase-space, flat-sampling, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n18-rambo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L246-L257", title: "Note 18 §2.3, massive RAMBO over F: Real"}
   - {id: n18-regime, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L352-L378", title: "Note 18 §3, validation regime (RAMBO rows)"}
@@ -82,16 +82,18 @@ stream, which is also why no MadGraph-compatible RNG is needed
 | `rambo_oracle.rs::replay_matches_python`: `(u[4n], momenta, ξ, weight)` dumped by the pure-stdlib `validation/rambo/dump_rambo_fixture.py`, 8 cases | the deterministic map | momenta and `ξ` rel ≤ 1e-13, weight ≤ 1e-12; observed 1.3e-15 and 3.4e-16 | which uniform feeds which draw |
 | bits→uniform conversion goldens and one seeded end-to-end momenta golden | stream addressing and draw order | exact | — |
 | conservation and on-shell fuzz over random `(n, masses, √ŝ)`, threshold-adjacent included | numerics | — | any exactly-conserving wrong map |
-| `flat_mc_two_body_normalization`: σ(e⁺e⁻ → μ⁺μ⁻) at √s = 10 GeV against the QED-only `4πα²/(3s)` | the `R_n` volume and the `(2π)` measure factor | asserts rel < 0.03 (MC noise plus the Z interference the formula omits); observed 929.4 ± 0.5 pb against 928.9 pb, rel 6e-4 at N = 2e5 | per-point errors that integrate away |
+| `flat_mc_two_body_normalization`: σ(e⁺e⁻ → μ⁺μ⁻) at √s = 10 GeV against the QED-only `4πα²/(3s)` | the `R_n` volume and the `(2π)` measure factor | asserts rel below the Z exchange's possible effect (`common::ee_to_mumu_z_bound`, about 1.2e-4) plus four of the run's own errors, about 0.2% in all; observed 929.4 ± 0.5 pb against 928.9 pb, rel 6e-4 at N = 2e5 | per-point errors that integrate away |
 
 `flat_mc_partonic_sigma` (`#[ignore]`) integrates
-`u u~ > c c~ e+ e- mu+ mu- QCD=0` at √ŝ = 500 GeV, uncut, against MadGraph's
-banked 6.556e-7 pb. Four seeds at N = 2e4 read 1.13–5.30e-6 pb, a factor of
-several apart and all above the bank: flat sampling on a collinear-peaked
-integrand has a heavy tail and its naive `σ/√N` understates the error, and the
-banked run likely carries default lepton cuts this estimate omits. Its
-assertion is a same-order band, an order-of-magnitude end-to-end check only;
-the two-body analytic comparison is the normalisation gate[^n18-h3].
+`u u~ > c c~ e+ e- mu+ mu- QCD=0` uncut, reading the process, √ŝ (500 GeV) and
+MadGraph's σ̂ from the bank (`sigma_reference.json`, row `uux_to_ccx_emmm_qcd0`)
+and the couplings from that run's own param card. Four seeds at N = 2e4 read
+1.13–5.30e-6 pb, a factor of several apart and all above the bank: flat
+sampling on a collinear-peaked integrand has a heavy tail and its naive
+`σ/√N` understates the error, and the estimate applies none of the banked
+run's cuts. Its assertion is a ratio window, `0.02 < σ/σ_bank < 50`, an
+order-of-magnitude end-to-end check only; the two-body analytic comparison is
+the normalisation gate[^n18-h3].
 
 ## MadGraph's copy
 

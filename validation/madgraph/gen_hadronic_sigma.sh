@@ -21,6 +21,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=madevent_seeds.sh
+source "$HERE/madevent_seeds.sh"
 OUT="$HERE/output"
 mkdir -p "$OUT"
 REF_JSON="$HERE/hadronic_sigma_reference.json"
@@ -88,8 +90,8 @@ EOF
     # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
     # LDFLAGS as already-set), so the LHAPDF C++ runtime symbols (__cxa_throw,
     # __gxx_personality_v0) go unresolved when madevent links libpdf.a. Append
-    # -lc++ so the gensym/madevent link finds them.
-    LDFLAGS="${LDFLAGS:-} -lc++" "$procdir/bin/generate_events" -f "run_$name" >"$log" 2>&1
+    # the platform C++ runtime (mes_ldflags) so the gensym/madevent link finds them.
+    LDFLAGS="$(mes_ldflags)" "$procdir/bin/generate_events" -f "run_$name" >"$log" 2>&1
   fi
 
   # MadGraph writes the combined result to SubProcesses/results.dat: field 1 is

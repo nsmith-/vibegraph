@@ -6,7 +6,7 @@ resource: "https://github.com/Jens-Braun/FeynGraph/tree/fd5aa8306746b432e098c40d
 status: draft
 tags: [feyngraph, diagrams, ufo, rust, external-code]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L17-L294", title: "Note 02, FeynGraph survey (read at 1dc4ea7)"}
   - {id: n02-cross, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L555", title: "Note 02, cross-cutting notes: UFO parsing, MadGraph vs FeynGraph"}
@@ -33,9 +33,9 @@ concept describes FeynGraph itself.
 `vibegraph-lib/Cargo.toml` pins the git dependency at
 `fd5aa8306746b432e098c40dcd96d7cb7ef20125` (2026-08-06) with
 `default-features = false`[^cargo]. The `research/refs/feyngraph` submodule is
-pinned at `1dc4ea7` (2026-05-08), which is what note 02 read[^n02-fg].
-`fd5aa83` is eight commits later and this concept is read at `fd5aa83`. Between
-the two:
+pinned at the same `fd5aa83`, so the checked-out source is the one the build
+uses. Note 02 read `1dc4ea7` (2026-05-08)[^n02-fg]; `fd5aa83` is eight commits
+later and this concept is read at `fd5aa83`. Between the two:
 
 - the drawing system was rewritten (SVG, TikZ and Typst backends);
 - `Model::add_particle` was reworked to check existing names and keep
@@ -46,8 +46,8 @@ the two:
 - leg ids can be queried from the Rust interface.
 
 The parser rules, structs and generator entry points below sit at the same or
-nearby lines in both revisions. A reader of the submodule should expect
-`model/mod.rs` and `diagram/mod.rs` line numbers to differ by 10–80 lines.
+nearby lines in both revisions; note 02's `model/mod.rs` and `diagram/mod.rs`
+line numbers differ from `fd5aa83`'s by 10–80 lines.
 
 ## Source layout
 
@@ -213,7 +213,7 @@ MadGraph's own counts. MadGraph's side is in
 [the MadGraph survey](madgraph5-amcnlo.md).
 
 [^cargo]: `vibegraph-lib/Cargo.toml:34`.
-[^n02-fg]: Note 02, FeynGraph survey, read at the submodule pin `1dc4ea7`.
+[^n02-fg]: Note 02, FeynGraph survey, read at `1dc4ea7`.
 [^n04-limits]: Note 04, "Known FeynGraph limitations" and "What FeynGraph drops that ALOHA needs".
 [^fg-parser]: `src/model/ufo_parser.rs` at `fd5aa83`: rules `particle` (157), `coupling` (253), `lorentz_atom` (299), `particles` (355); `parse_vertex` (424–585).
 [^fg-model]: `src/model/mod.rs` at `fd5aa83`: `Model` (307), `empty` (357), `add_particle` (370), `add_vertex` (485), `from_ufo` (612).

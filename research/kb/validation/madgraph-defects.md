@@ -5,7 +5,7 @@ description: "Register of MadGraph defects met while validating: where each sits
 status: draft
 tags: [madgraph, defects, reference, upstream-report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n07-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L43-L227", title: "Note 07, weaknesses and bug tables (rows marked found here)"}
   - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L415", title: "Note 07, AQCDUP truncated pi and rambo.py"}
@@ -26,7 +26,7 @@ sources:
   - {id: mg-unwgt, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/unwgt.f#L752-L761", title: "MadGraph unwgt.f, SCALUP and the truncated pi"}
   - {id: mg-aloha, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/create_aloha.py#L527-L530", title: "MadGraph create_aloha.py, the 1D numerator (flip at L262-L263)"}
   - {id: mg-export, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/iolibs/export_v4.py#L7076", title: "MadGraph export_v4.py, aS injection"}
-  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1817", title: "MadGraph genps.f, get_channel_cut"}
+  - {id: mg-genps, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/SubProcesses/genps.f#L1878-L1960", title: "MadGraph genps.f, get_channel_cut"}
   - {id: mg-286feb8, resource: "https://github.com/mg5amcnlo/mg5amcnlo/commit/286feb8e606a4e55951f6ea10ea0e3d145213b13", title: "mg5amcnlo commit 286feb8e, change sde_strategy2 to avoid negative weights"}
   - {id: mg-rambo, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/rambo.py#L218", title: "MadGraph rambo.py overflow check"}
 ---
@@ -62,7 +62,7 @@ kind is treated.
 | grouped first `setclscales` on the unpermuted point (H1) | `super_auto_dsig_group_v4.inc:842`, `update_scale_coupling(pp, wgt)` | process-dependent | registered deviation, [own concept](madgraph-permuted-first-call.md) |
 | `aS` injected into a model with none, inconsistent with `G` | `export_v4.py:7076` | `AQCDUP` on six toy rows | measured, not enforced |
 | UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8 | Python `model_reader` is the arbiter |
-| `t` read uninitialised in `get_channel_cut` | `genps.f`, branch at `:1938` | unreachable here | `tmin_for_channel ≠ -1` refused |
+| `t` read unassigned in `get_channel_cut` at `sde_strat = 1`, `tmin_for_channel ≠ -1` | `genps.f:1878-1960`, read at `:1937-1938` | unreachable here | such a card refused (run-card parser, `hadronic::configurations_weighted_by_amp2`) |
 | 3.5.x `get_channel_cut` dimensionally wrong | 3.5.x `genps.f` | yes, at narrow poles | references come from 3.7.1 |
 | 3.5.7 applied a PDF set's `αs(M_Z)` at `lpp = 0` | 3.5.7 parameter card | partonic σ by `0.920ⁿ` | cuts across it not comparable |
 | six MLM-path defects | note 41 §1.5 | at most one, refused | table below |
@@ -120,11 +120,17 @@ lists the Fortran deviation by name; an unlisted Fortran/Python disagreement
 fails ([coupling-oracle](coupling-oracle.md))[^n36-b5]. `ee_to_zh_smeft`'s
 amplitude cell stays `info` rather than matching a rounded reference.
 
-**`get_channel_cut` reads an uninitialised `t`** under `sde_strat = 1` with
-`tmin_for_channel ≠ -1`: its only assignment is inside `if (sde_strat.eq.2)`
-[^mg-genps]. Every banked run has `tmin_for_channel = -1`; this crate refuses any
-other value (`IgnoredPhysics`), since a row using it would have no defined
-reference behaviour[^n36-b3].
+**`get_channel_cut` reads an unassigned `t`** under `sde_strat = 1` with
+`tmin_for_channel ≠ -1` (`genps.f:1878-1960`). The early returns cover
+`sde_strat = 1` only with `tmin_for_channel = -1` (`:1878`) or fewer than two
+t-channel lines (`:1910`). Past them, every t-channel propagator reaches
+`t = t/stot` and the `tmin_for_channel` test (`:1937-1938`), but both
+assignments of `t` (`:1932`, `:1946`) sit inside `if(sde_strat.eq.2)`, so the
+weight reads whatever `t` holds[^mg-genps]. Every banked run has
+`tmin_for_channel = -1`. vibegraph refuses any other value, since a row using it
+would have no defined reference behaviour: the run-card parser
+(`IgnoredPhysics`) and `hadronic::configurations_weighted_by_amp2`, which also
+covers a deserialised card that has not been through the parser[^n36-b3].
 
 **The 3.5.x channel weight at narrow resonances.** 3.5.7's `sde_strategy = 2`
 weight computes `tmp = (t-Mass)*(t+Mass)` with `t` already `p²`, so it never

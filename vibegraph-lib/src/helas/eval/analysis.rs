@@ -26,7 +26,9 @@ use num_traits::Zero;
 
 use super::ast::Ast;
 use super::fold::ExtLeg;
-use super::op::{Const, ConstKind, NodeId, Op, Sym};
+#[cfg(test)]
+use super::op::Sym;
+use super::op::{Const, ConstKind, NodeId, Op};
 use super::tree::Tree;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::numbers::Charge;
@@ -40,7 +42,7 @@ use crate::helas::repr::Real;
 /// into a momentum-free constant and a momentum-carrying wavefunction — the
 /// `ScalarConst`/`ScalarWf` split that keeps momentum-motion rewrites well-typed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NodeType {
+pub(crate) enum NodeType {
     /// Bare real constant — `WaveformSlot::Real`.
     RealConst,
     /// Momentum-free complex scalar (a card-time constant) — `WaveformSlot::Scalar`
@@ -66,7 +68,7 @@ pub enum NodeType {
 /// The slot-storage class a [`NodeType`] maps to, collapsing the const/wf refinement —
 /// the per-type result arena a typed instruction stream stores the node in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Storage {
+pub(crate) enum Storage {
     Real,
     Scalar,
     Vector,
@@ -77,21 +79,13 @@ pub enum Storage {
 
 impl NodeType {
     /// A card-time constant output (`RealConst`/`ScalarConst`).
-    pub fn is_const(self) -> bool {
+    pub(crate) fn is_const(self) -> bool {
         matches!(self, NodeType::RealConst | NodeType::ScalarConst)
-    }
-
-    /// A scalar-family output (real or complex scalar).
-    pub fn is_scalar(self) -> bool {
-        matches!(
-            self,
-            NodeType::RealConst | NodeType::ScalarConst | NodeType::ScalarWf
-        )
     }
 
     /// A non-scalar current (vector or fermion) — the operand a `Mul` scales and routes
     /// momentum into.
-    pub fn is_current(self) -> bool {
+    pub(crate) fn is_current(self) -> bool {
         matches!(
             self,
             NodeType::Vector | NodeType::Multivector | NodeType::FermionIn | NodeType::FermionOut
@@ -99,7 +93,7 @@ impl NodeType {
     }
 
     /// The result-arena class for this output, or `None` for the [`Sink`](NodeType::Sink).
-    pub fn storage(self) -> Option<Storage> {
+    pub(crate) fn storage(self) -> Option<Storage> {
         Some(match self {
             NodeType::RealConst => Storage::Real,
             NodeType::ScalarConst | NodeType::ScalarWf => Storage::Scalar,
@@ -118,8 +112,7 @@ impl NodeType {
 /// `Σ_leg c[leg]·p_leg`. Id `0` is always the all-zero combination (constants, `P`
 /// read-offs). A per-point momentum pool resolves each id once via [`resolve`](Self::resolve).
 #[derive(Clone, Debug)]
-pub struct MomTable {
-    n_legs: usize,
+pub(crate) struct MomTable {
     entries: Vec<Box<[i8]>>,
     intern: HashMap<Box<[i8]>, u32>,
 }
@@ -127,7 +120,6 @@ pub struct MomTable {
 impl MomTable {
     fn new(n_legs: usize) -> Self {
         let mut t = MomTable {
-            n_legs,
             entries: Vec::new(),
             intern: HashMap::new(),
         };
@@ -137,7 +129,7 @@ impl MomTable {
     }
 
     /// The zero-momentum id (always `0`).
-    pub const ZERO: u32 = 0;
+    pub(crate) const ZERO: u32 = 0;
 
     fn intern_slice(&mut self, coeffs: &[i8]) -> u32 {
         if let Some(&id) = self.intern.get(coeffs) {
@@ -150,27 +142,22 @@ impl MomTable {
         id
     }
 
-    /// Number of external legs the coefficient vectors are indexed by.
-    pub fn n_legs(&self) -> usize {
-        self.n_legs
-    }
-
     /// Number of distinct interned momentum combinations.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     /// The signed per-leg coefficients of an interned combination.
-    pub fn coeffs(&self, id: u32) -> &[i8] {
+    pub(crate) fn coeffs(&self, id: u32) -> &[i8] {
         &self.entries[id as usize]
     }
 
     /// Resolve a combination against a point's external momenta, `Σ_leg c[leg]·p_leg`.
-    pub fn resolve<F: Real>(&self, id: u32, momenta: &[LorentzVector<F>]) -> LorentzVector<F> {
+    pub(crate) fn resolve<F: Real>(
+        &self,
+        id: u32,
+        momenta: &[LorentzVector<F>],
+    ) -> LorentzVector<F> {
         let mut acc = LorentzVector::zero();
         for (leg, &c) in self.coeffs(id).iter().enumerate() {
             let mut k = c;
@@ -189,7 +176,7 @@ impl MomTable {
 
 /// Per-node static analysis of a lowered arena. Indexed by [`NodeId`].
 #[derive(Clone, Debug)]
-pub struct NodeAnalysis {
+pub(crate) struct NodeAnalysis {
     out_type: Box<[NodeType]>,
     is_const: Box<[bool]>,
     mom_id: Box<[u32]>,
@@ -198,41 +185,32 @@ pub struct NodeAnalysis {
 
 impl NodeAnalysis {
     /// Output type of node `id`.
-    pub fn out_type(&self, id: NodeId) -> NodeType {
+    pub(crate) fn out_type(&self, id: NodeId) -> NodeType {
         self.out_type[id as usize]
     }
 
     /// Whether node `id` is a card-time constant (all descendants are constant leaves).
-    pub fn is_const(&self, id: NodeId) -> bool {
+    pub(crate) fn is_const(&self, id: NodeId) -> bool {
         self.is_const[id as usize]
     }
 
     /// The interned momentum id of node `id`'s slot (index into [`mom_table`](Self::mom_table)).
-    pub fn mom_id(&self, id: NodeId) -> u32 {
+    pub(crate) fn mom_id(&self, id: NodeId) -> u32 {
         self.mom_id[id as usize]
     }
 
     /// The interned momentum table shared by all nodes.
-    pub fn mom_table(&self) -> &MomTable {
+    pub(crate) fn mom_table(&self) -> &MomTable {
         &self.moms
     }
 
     /// Resolve node `id`'s momentum against a point's external momenta.
-    pub fn resolve_mom<F: Real>(
+    pub(crate) fn resolve_mom<F: Real>(
         &self,
         id: NodeId,
         momenta: &[LorentzVector<F>],
     ) -> LorentzVector<F> {
         self.moms.resolve(self.mom_id[id as usize], momenta)
-    }
-
-    /// Number of analyzed nodes.
-    pub fn len(&self) -> usize {
-        self.out_type.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.out_type.is_empty()
     }
 }
 
@@ -296,7 +274,7 @@ fn external_mom_sign(spin: i32, charge: Charge, incoming: bool) -> i8 {
 }
 
 /// Analyze a folded [`Ast<Const>`] against its external-leg table.
-pub fn analyze(ast: &Ast<Const>, ext_legs: &[ExtLeg]) -> NodeAnalysis {
+pub(crate) fn analyze(ast: &Ast<Const>, ext_legs: &[ExtLeg]) -> NodeAnalysis {
     let n_legs = ext_legs
         .iter()
         .map(|l| l.leg_idx as usize + 1)
@@ -328,9 +306,11 @@ pub fn analyze(ast: &Ast<Const>, ext_legs: &[ExtLeg]) -> NodeAnalysis {
     })
 }
 
-/// Analyze a symbolic [`Ast<Sym>`] (the pre-fold graph the constant-folding and egraph
-/// passes operate on). Produces the same annotations as [`analyze`].
-pub fn analyze_sym(ast: &Ast<Sym>) -> NodeAnalysis {
+/// Analyze a symbolic [`Ast<Sym>`] (the pre-fold graph). Produces the same annotations
+/// as [`analyze`]; the tests use it to exercise the transfer function on hand-built
+/// symbolic arenas.
+#[cfg(test)]
+pub(crate) fn analyze_sym(ast: &Ast<Sym>) -> NodeAnalysis {
     let n_legs = ast
         .iter()
         .filter_map(|id| match ast.value(id).leaf {

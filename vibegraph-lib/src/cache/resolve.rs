@@ -7,9 +7,8 @@
 //! for a checked-out dev tree that already has data fetched). The first two
 //! steps are trusted unconditionally — a wrong explicit path surfaces as a
 //! normal "asset not found" error one level up, not a silent fallthrough to
-//! the next step, matching the pre-cache `--pdf-dir`/`VIBEGRAPH_PDF_DIR`
-//! behavior this generalizes. The last two steps are existence-probed so the
-//! order can actually choose between them.
+//! the next step. The last two steps are existence-probed so the order can
+//! actually choose between them.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -41,7 +40,7 @@ pub struct Located {
 
 /// Resolve `name`'s directory under `kind`, walking the precedence order
 /// above. `flag` and `env` are base directories containing `<name>/` (the
-/// same shape as today's `--pdf-dir`/`VIBEGRAPH_PDF_DIR`); `cache_root` is
+/// shape of `--pdf-dir` and `VIBEGRAPH_PDF_DIR`); `cache_root` is
 /// the `~/.vibegraph` directory itself (its `<kind>/` subdirectory is
 /// appended here); `dev_fallback`, when given, is also a base directory.
 ///
@@ -74,7 +73,7 @@ pub fn locate(
             found,
         };
     }
-    let cache_dir = cache_root.join(kind.cache_subdir()).join(name);
+    let cache_dir = kind.entry_dir(cache_root, name);
     if cache_dir.is_dir() {
         return Located {
             dir: cache_dir,

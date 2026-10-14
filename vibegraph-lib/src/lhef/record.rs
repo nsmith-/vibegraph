@@ -50,7 +50,7 @@ impl WeightStrategy {
     }
 
     /// The strategy an `IDWTUP` names, normalising the values that have one.
-    pub fn from_i32(value: i32) -> Self {
+    pub(crate) fn from_i32(value: i32) -> Self {
         match value {
             3 => WeightStrategy::UnitWeight,
             -3 => WeightStrategy::SumCrossSectionPb,
@@ -82,7 +82,7 @@ impl BlockSource {
     }
 
     /// The record lines, newline-separated as they were read.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -149,9 +149,9 @@ pub const STATUS_OUTGOING: i32 = 1;
 /// `ISTUP` for an intermediate resonance the record lists explicitly.
 pub const STATUS_INTERMEDIATE: i32 = 2;
 /// `ICOLUP` for "this leg carries no line in this slot".
-pub const NO_COLOR_LINE: i32 = 0;
+pub(crate) const NO_COLOR_LINE: i32 = 0;
 /// `SPINUP` for a leg whose helicity was summed over rather than selected.
-pub const SPIN_UNKNOWN: f64 = 9.0;
+pub(crate) const SPIN_UNKNOWN: f64 = 9.0;
 
 /// One line of an `<event>` block.
 #[derive(Clone, Copy, Debug, PartialEq)]

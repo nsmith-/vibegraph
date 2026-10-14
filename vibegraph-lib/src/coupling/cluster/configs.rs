@@ -67,11 +67,13 @@ pub struct DerivedChannels {
     /// `diagram_of[c - 1]` indexes the diagram the forest of channel `c` was
     /// written from — the lowest-numbered member of the channel's configuration,
     /// which is the representative MadGraph's `configs.inc` writes.
-    pub diagram_of: Vec<usize>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) diagram_of: Vec<usize>,
     /// `config_of_diagram[d]` is the channel (from `1`) diagram `d` belongs to, or
     /// `None` where the vertex filter dropped it. Several diagrams share a channel
     /// wherever the configuration mapping merges them.
-    pub config_of_diagram: Vec<Option<usize>>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) config_of_diagram: Vec<Option<usize>>,
 }
 
 /// One vertex of the re-rooted tree, in the shape `configs.inc` writes.
@@ -559,15 +561,15 @@ mod tests {
         }
     }
 
-    /// The map from a sampler's channels to integration channels, on the one
-    /// process where the two numberings provably differ.
+    /// The map from diagrams to integration configurations, on the one process
+    /// where the two numberings provably differ.
     ///
-    /// A per-diagram sampler has one channel per *diagram*; `configs.inc` has one
-    /// per surviving diagram. `g g → g g` is where that gap is visible without a
-    /// MadGraph run: the four-gluon diagram has no channel, so the sampler's
-    /// fourth channel maps to nothing and the other three do not map to
-    /// themselves. Anything that reorders either side — the diagram enumeration
-    /// or the forest derivation — moves this table.
+    /// `configs.inc` has one configuration per diagram with a propagator to
+    /// enhance. `g g → g g` is where that gap is visible without a MadGraph run:
+    /// the four-gluon diagram has none, so it maps to no configuration and the
+    /// other three number their configurations among themselves, so a
+    /// configuration's index is not its diagram's. Anything that reorders either side — the diagram enumeration or the
+    /// forest derivation — moves this table.
     #[test]
     fn the_channel_to_config_map_is_not_the_identity() {
         let model = sm_model(SMRestrict::Default);

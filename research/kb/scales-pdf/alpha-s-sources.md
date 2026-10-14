@@ -5,7 +5,7 @@ description: "MadGraph's own ALPHAS/NEWTON1 running with asmz from the PDF label
 status: draft
 tags: [alpha-s, pdf, lhapdf, coupling, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n22-11, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L36-L59", title: "Note 22 §1.1 (αs is MadGraph's own RGE)"}
   - {id: n22-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/22-dynamical-scales-plan.md#L127-L156", title: "Note 22 §1.4 (AQCDUP as an oracle; α_EW constant)"}
@@ -48,9 +48,11 @@ The result is a specific iterate, not the exact root, so reproducing MadGraph
 means reproducing the iteration. Thresholds are fixed constants, not the
 model's masses: `CMASS = 1.42`, `BMASS = 4.7`, `ZMASS = 91.188`
 (`:98-103`), with `nf = 5 → 4 → 3`. The β coefficients are the Fortran `DATA`
-literals, not recomputed. `coupling/alphas.rs` ports it bit-exactly against
-MadGraph's own Fortran on a 792-point grid at `nloop` 1–3
-(`alphas_reference_grid.rs`).[^n22-close]
+literals, not recomputed. `coupling/alphas.rs` ports it iterate for iterate,
+checked against MadGraph's own Fortran on a 792-point grid at `nloop` 1–3 to a
+relative 1e-12 (`alphas_reference_grid.rs`): a wrong branch, iteration count
+or coefficient moves the result far more than that, and the bound tolerates
+the host libm's last-ulp differences.[^n22-close]
 
 **Where `asmz` and `nloop` come from**
 ([`setrun.f:130-145`](https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/setrun.f#L130-L145)):

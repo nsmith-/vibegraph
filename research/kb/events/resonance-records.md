@@ -3,7 +3,7 @@ type: Physics Convention
 title: Status-2 resonance records
 description: "MadEvent's addmothers/cut_bw rules for status-2 lines (flag, same-flavour daughters, order, mothers, colour, mass), written for decay chains and for matched events."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [events, lhef, resonances, decay-chains, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -73,10 +73,11 @@ wrong value: the event is written without intermediates and counted as
 refused[^n38-e1].
 
 At proton beams a flavour-group member takes the representative's line or its
-antiparticle by the charge of the legs below it (`member_line_pdg`). UFO
-antiparticle entries carry `color = -1/-8` for singlets and octets (the model's
-`make_anti` negates every colour, where UFO's `anti()` does not), which is
-handled locally ([hygiene/make-anti-negates-singlet-octet-colour](../backlog/hygiene/make-anti-negates-singlet-octet-colour.md)).
+antiparticle by the charge of the legs below it (`member_line_pdg`). The
+model's antiparticle entries carry UFO's `anti()` colour (`Particle::make_anti`):
+a singlet or an octet keeps `1` or `8`, a triplet or sextet is negated, so a
+line's representation as oriented is the entry's own colour for 1 and 8 and the
+conjugate of the slot particle's otherwise (`timelike_lines`, `lhef/resonance.rs`).
 
 ## When vibegraph writes them
 

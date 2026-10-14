@@ -1,7 +1,8 @@
 //! End-to-end test of `vibegraph integrate` on the Drell–Yan pp→e⁺e⁻ proc card
 //! and reference run cards: a cold-start run must reproduce the banked MadGraph
 //! reference σ, and the persisted per-channel grids must reload and drive a
-//! frozen sampling pass that reproduces the adapted estimate.
+//! frozen sampling pass, under the maps the artifact banks, that reproduces the
+//! adapted estimate channel by channel.
 //!
 //! Gated behind `extended-validation`; needs the fetched PDF set and the banked
 //! reference JSON:
@@ -19,6 +20,7 @@ use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::pdf::PdfSet;
+use vibegraph::phasespace::maps::MapOptions;
 use vibegraph::phasespace::GEV2_TO_PB;
 use vibegraph::proton::{derive_flavor_groups, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
@@ -81,7 +83,10 @@ fn check_run(test: &str, run: &str, run_card: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let artifact = run_cli(tmp.path(), run_card);
 
-    // (1) Cold-start σ from the artifact reproduces the banked MadGraph σ.
+    // (1) Cold-start σ from the artifact reproduces the banked MadGraph σ within
+    // three combined standard errors. The two errors are each about a tenth of a
+    // percent here, so a percent-level relative allowance would admit a σ several
+    // combined errors off.
     let combined = (artifact.sigma_err_pb.powi(2) + mg_err * mg_err).sqrt();
     let delta = (artifact.sigma_pb - mg).abs();
     let rel = delta / mg;
@@ -93,7 +98,7 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         delta / combined
     );
     assert!(
-        delta < 3.0 * combined || rel < 0.01,
+        delta < 3.0 * combined,
         "[{run}] CLI σ {:.3} disagrees with MG {mg:.3} pb ({:.1}σ)",
         artifact.sigma_pb,
         delta / combined
@@ -107,7 +112,8 @@ fn check_run(test: &str, run: &str, run_card: &str) {
 
     // (3) The reloaded per-channel grids drive a frozen sampling pass that
     // reproduces the adapted estimate within the single-pass MC error (the
-    // distributed-phase primitive against the persisted grids).
+    // distributed-phase primitive against the persisted grids). The integrand is
+    // rebuilt under the artifact's own maps, as `generate` rebuilds it.
     let rc = RunCard::parse_file(&validation_dir().join(run_card)).unwrap();
     let model = sm_model(SMRestrict::Default);
     let evaluated = EvaluatedModel::from_model(model.clone());
@@ -122,13 +128,14 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         .iter()
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
-    let mut integ = ProtonIntegrand::new(
+    let mut integ = ProtonIntegrand::new_with_maps(
         &groups,
         &amps,
         &evaluated,
         &pdf,
         artifact.sqrt_s_had,
         artifact.mu_f,
+        MapOptions::fixed(artifact.maps),
     )
     .expect("hadronic integrand");
     integ
@@ -145,17 +152,59 @@ fn check_run(test: &str, run: &str, run_card: &str) {
         integ.channel_count()
     );
 
-    // Each channel's term is replayed on its own grid and its own RNG stream, and
-    // the terms are summed the way the integration summed them.
+    // Each channel's term is replayed on its own grid and its own RNG stream and
+    // compared with the term the artifact banks, then the terms are summed the way
+    // the integration summed them.
+    //
+    // A term's value cannot tell whether the replay rebuilt the maps the grid was
+    // trained under: the integral is the same under any maps (and on a
+    // single-channel process the term is the integral). Its error can. A grid
+    // replayed on its own integrand samples at least about as well as the
+    // integration's iterations did on average, so the replay's error is bounded by
+    // twice the banked error rescaled to the replay's point count; a grid replayed
+    // under maps it was not trained on is no longer adapted to the integrand, and
+    // its error is an order of magnitude past that.
+    const FROZEN_POINTS: usize = 100_000;
     let mut sigma_frozen = 0.0;
     let mut var_frozen = 0.0;
     for (j, ch) in artifact.channels.iter().enumerate() {
         let mut rng = ChaCha8Rng::seed_from_u64(0xF202E0 + j as u64);
-        let frozen = ch
-            .grid
-            .sample_frozen(|u| integ.value_in_channel(j, u), 100_000, &mut rng);
-        sigma_frozen += frozen.integral * GEV2_TO_PB;
-        var_frozen += (frozen.std_dev * GEV2_TO_PB).powi(2);
+        let frozen =
+            ch.grid
+                .sample_frozen(|u| integ.value_in_channel(j, u), FROZEN_POINTS, &mut rng);
+        let (term, term_err) = (frozen.integral * GEV2_TO_PB, frozen.std_dev * GEV2_TO_PB);
+        let d = (term - ch.sigma_pb).abs();
+        let comb = (term_err * term_err + ch.sigma_err_pb.powi(2)).sqrt();
+        eprintln!(
+            "[{run}] channel {j}: frozen {term:.3} ± {term_err:.3} pb vs banked {:.3} ± {:.3} pb \
+             ({:.1}σ)",
+            ch.sigma_pb,
+            ch.sigma_err_pb,
+            d / comb
+        );
+        assert!(
+            d < 4.0 * comb,
+            "[{run}] channel {j}: frozen-grid term {term:.3} disagrees with the banked {:.3} pb \
+             ({:.1}σ)",
+            ch.sigma_pb,
+            d / comb
+        );
+        let trained_points = ch.neval as f64 * artifact.niter as f64;
+        let expected_err = ch.sigma_err_pb * (trained_points / FROZEN_POINTS as f64).sqrt();
+        eprintln!(
+            "[{run}] channel {j}: frozen error {term_err:.3} pb against {expected_err:.3} pb \
+             expected from the banked error ({:.2}x)",
+            term_err / expected_err
+        );
+        assert!(
+            term_err < 2.0 * expected_err,
+            "[{run}] channel {j}: the frozen grid samples {:.1}x worse than its own integration \
+             did ({term_err:.3} pb against {expected_err:.3} pb): the replay is not the \
+             integrand the grid was trained on",
+            term_err / expected_err
+        );
+        sigma_frozen += term;
+        var_frozen += term_err * term_err;
     }
     let err_frozen = var_frozen.sqrt();
     let d = (sigma_frozen - artifact.sigma_pb).abs();

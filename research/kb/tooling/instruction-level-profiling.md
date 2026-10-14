@@ -3,7 +3,7 @@ type: Procedure
 title: Per-address profile attribution on macOS (samply, atos, objdump)
 description: "Map unsymbolicated samply samples to instructions and inlined frames with nm, a dSYM, atos -i and llvm-objdump; why cargo-show-asm cannot stand in for the linked test binary."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [profiling, assembly, macos, samply, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -48,12 +48,16 @@ All from the repository root, with `OD=$(xcrun -f llvm-objdump)`.
    monomorphization. On arm64 every instruction is 4 bytes, so the range length
    divided by 4 is the instruction count (8164 B = 2041 instructions in the
    study).
-3. **Record.** `scripts/profile.sh` forwards only one filter argument and
-   cannot pass `--test-threads=1`, so call samply directly:
+3. **Record.** `scripts/profile.sh` takes the test name and a filter, passes
+   the arguments after `--` to the test binary and those after `--samply` to
+   `samply record`:
    ```
-   samply record --save-only -o target/<study>/integrate.json.gz \
-       --unstable-presymbolicate <bin> sigma_gate_matches_madgraph --test-threads=1
+   scripts/profile.sh validate_sigma sigma_gate_matches_madgraph -- --test-threads=1 \
+       --samply --save-only -o target/<study>/integrate.json.gz --unstable-presymbolicate
    ```
+   The script rebuilds the test (`--profile release-debug --features
+   extended-validation --no-run`) before recording, which is one more reason
+   for the closing hash check.
 4. **Disassemble**, plain and source-interleaved. There was no
    `llvm-symbolizer` on the host (`xcrun -f llvm-symbolizer` fails), so build a
    dSYM and point objdump at its DWARF:

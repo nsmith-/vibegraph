@@ -1089,8 +1089,10 @@ const OWN_REPLAY_EVENTS: usize = 2_000;
 ///
 /// What it cannot see: which configuration inside the group was used, so a
 /// configuration draw with the wrong weights passes (the `samples` columns and
-/// the σ rows are what see that); the mirrored ordering, whose term takes the
-/// same scale as the direct one by construction on both sides; and an event
+/// the σ rows are what see that); the mirrored ordering, whose term draws its
+/// configuration at the mirrored event (`per_group_sum`) and which this replay
+/// does not separate from the direct one, since it clusters the record's
+/// momenta as written; and an event
 /// where two groups cluster to the same scale, which is most of `p p > t t~`
 /// near threshold.
 #[test]

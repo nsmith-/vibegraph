@@ -5,10 +5,12 @@
 //! reference data — only the interned SM model — so they run in the default test
 //! suite. They demonstrate the two generalizations of the CLI: `lpp = 0` beams
 //! (no PDF convolution, √ŝ = ebeam1 + ebeam2) and n-body final states through the
-//! per-diagram multichannel combiner. The σ checks are smoke-level (finite,
-//! positive); pinning σ statistically against banked MadGraph values is left to a
-//! dedicated σ gate.
+//! per-diagram multichannel combiner. The 2→2 run's σ is pinned against the
+//! committed MadGraph reference for the same point; the 2→3 run's σ is checked
+//! only to be finite and positive, since the reference holds no point at its
+//! beam energy.
 
+use std::path::Path;
 use std::process::Command;
 
 use vibegraph::artifact::IntegrateArtifact;
@@ -95,17 +97,41 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
     artifact
 }
 
+/// MadGraph's σ ± Δσ for one row of the committed fixed-energy reference.
+fn mg_sigma(row: &str) -> (f64, f64) {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/sigma_reference.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let v: serde_json::Value = serde_json::from_str(&text).expect("sigma_reference.json parses");
+    let field = |name: &str| {
+        v[row][name]
+            .as_f64()
+            .unwrap_or_else(|| panic!("{}: no numeric {row}.{name}", path.display()))
+    };
+    (field("sigma_pb"), field("sigma_err_pb"))
+}
+
 /// 2→2 fixed-energy final state (n = 2 → 2 dims per channel grid). At
-/// √ŝ = 500 GeV this is the MG-validated `ee_to_ttx` point (σ_MG ≈ 0.549 pb); the
-/// multichannel sampler on this smooth 2→2 tracks it closely.
+/// √ŝ = 500 GeV this is the MG-validated `ee_to_ttx` point. MadGraph ran it on
+/// its default card for the process, which differs from the one written here in
+/// nothing a σ of `e+ e- > t t~` reads, so the two σ agree within three combined
+/// standard errors.
 #[test]
-fn fixed_energy_2to2_finite_sigma() {
+fn fixed_energy_2to2_reproduces_madgraphs_sigma() {
     let a = run_fixed_energy("e+ e- > t t~", 250.0, 2);
-    // A smooth 2→2: the integral lands in the ballpark of the banked MG σ.
+    let (mg, mg_err) = mg_sigma("ee_to_ttx");
+    let combined = (a.sigma_err_pb.powi(2) + mg_err * mg_err).sqrt();
+    let pull = (a.sigma_pb - mg) / combined;
+    eprintln!(
+        "[e+ e- > t t~] CLI σ = {:.6} ± {:.6} pb | MG σ = {mg:.6} ± {mg_err:.6} pb | pull {pull:+.2}",
+        a.sigma_pb, a.sigma_err_pb
+    );
     assert!(
-        (0.3..0.9).contains(&a.sigma_pb),
-        "e+e- > t t~ σ = {} pb outside the plausible band",
-        a.sigma_pb
+        pull.abs() < 3.0,
+        "e+e- > t t~ σ = {} ± {} pb disagrees with MadGraph's {mg} ± {mg_err} pb ({pull:+.1}σ)",
+        a.sigma_pb,
+        a.sigma_err_pb
     );
 }
 

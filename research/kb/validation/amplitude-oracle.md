@@ -178,10 +178,12 @@ and fermion lines yet read `G = −i` and `+i`, with MadGraph's `c = (−1,−1)
 against `(+1,+1)`[^n29-f12]. A `G` sign is therefore never evidence about this
 crate.
 
-The gate asserts only `|k| = 1`. Asserting `|Im(k/G)| < LINEAR_REL_TOL` and
-banking the per-process `run_config_amps` sign patterns (non-uniform on
-`ee_to_tatah`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`) are open as
-[config-amp-phase-and-sign-unpinned](../backlog/validation/config-amp-phase-and-sign-unpinned.md).
+The gate asserts `|k| = 1` and `|Im(k/G)| < LINEAR_REL_TOL` per configuration,
+and checks the per-process `run_config_amps` sign patterns against the banked
+`CONFIG_AMP_SIGNS` (non-uniform on `ee_to_tatah`, `ee_to_mumua`,
+`ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa` and `tata_to_ttx_tensor4f`; see
+the [F-G1 report](../sprints/hygiene/sessions/F-G1-report.md)). Rows without a per-diagram comparison are open as
+[config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md).
 Asserting that `run_config_amps` *equals* the per-diagram amplitudes would fail
 on those three rows, and asserting uniformity would be false[^n29-f14].
 

@@ -1,16 +1,16 @@
-pub mod ast_util;
-pub mod color;
-pub mod couplings;
-pub mod expr;
+pub(crate) mod ast_util;
+pub(crate) mod color;
+pub(crate) mod couplings;
+pub(crate) mod expr;
 pub mod identity;
 pub mod lorentz;
 pub mod parameters;
 pub mod particles;
-pub mod propagators;
+pub(crate) mod propagators;
 pub mod slha;
 pub mod sm;
-pub mod topo;
-pub mod vertices;
+pub(crate) mod topo;
+pub(crate) mod vertices;
 
 use couplings::{parse_couplings, Coupling, CouplingError, CouplingId};
 use feyngraph::model::Model as TopoModel;
@@ -34,7 +34,7 @@ use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 use topo::build_feyngraph_model;
 
 /// UFO source files [`ParsedModel::parse`] requires, in read order.
-pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
+pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
     "particles.py",
     "lorentz.py",
     "couplings.py",
@@ -44,7 +44,7 @@ pub const REQUIRED_SOURCE_FILES: [&str; 5] = [
 
 /// UFO source files [`ParsedModel::parse`] reads when present, falling back to a
 /// built-in default when absent.
-pub const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
+pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
 
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
 // Used when coupling_orders.py is absent or contains no hierarchy data.
@@ -65,8 +65,7 @@ fn default_sm_hierarchy() -> BTreeMap<String, u32> {
 /// empty here too. Returns empty maps on parse failure (the caller falls back to
 /// defaults).
 fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, i64>) {
-    use ast_util::{call_func_name, kwarg_int, kwarg_str, parse_stmts};
-    use rustpython_parser::ast;
+    use ast_util::{constructor_calls, kwarg_int, kwarg_str, parse_stmts};
 
     let Ok(stmts) = parse_stmts(src) else {
         return (BTreeMap::new(), BTreeMap::new());
@@ -75,22 +74,7 @@ fn parse_coupling_orders(src: &str) -> (BTreeMap<String, u32>, BTreeMap<String, 
     let mut hierarchy = BTreeMap::new();
     let mut expansion = BTreeMap::new();
     let mut expansion_complete = true;
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id: lhs_id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = lhs_id.as_str();
-
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("CouplingOrder") {
-            continue;
-        }
-
+    for (python_name, keywords) in constructor_calls(&stmts, "CouplingOrder") {
         // Use the `name` keyword if present, otherwise fall back to the Python variable name.
         let name = kwarg_str(keywords, "name").unwrap_or_else(|| python_name.to_owned());
         hierarchy.insert(
@@ -148,6 +132,8 @@ pub enum UfoError {
         particle: String,
         propagator: String,
     },
+    #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
+    UnknownSmRestrict { variant: String, known: String },
 }
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
@@ -163,7 +149,7 @@ pub struct UFOModel {
     pub vertices: IndexMap<String, Vertex>,
     pub params: ParameterSet,
     /// FeynGraph topology model — retained for diagram-level topology queries.
-    pub topo: TopoModel,
+    pub(crate) topo: TopoModel,
     /// Coupling order hierarchy from `coupling_orders.py` (e.g. QCD→1, QED→2).
     /// Used to compute the WEIGHTED coupling order for automatic order selection.
     pub order_hierarchy: BTreeMap<String, u32>,
@@ -171,9 +157,6 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
-    /// Custom propagator forms from `propagators.py`, keyed by Python variable
-    /// name — what [`Particle::propagator`] refers to.
-    pub propagators: IndexMap<String, Propagator>,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -295,7 +278,7 @@ impl ParsedModel {
     /// onto the shortened list). Colour structures are left alone, as MadGraph
     /// leaves them: an unreferenced one is never read, since every consumer
     /// enumerates colour structures through the coupling keys.
-    pub fn apply_restriction(&mut self, restrict_card: &ParamCard) {
+    pub(crate) fn apply_restriction(&mut self, restrict_card: &ParamCard) {
         self.params.apply_restrict(restrict_card);
 
         let restrict_values =
@@ -316,7 +299,7 @@ impl ParsedModel {
     /// Apply a restrict card and build the feyngraph topology model.
     ///
     /// With `restrict = None`, no pruning happens — the full vertex set is kept.
-    pub fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
+    pub(crate) fn into_model(mut self, restrict: Option<&ParamCard>) -> Result<UFOModel, UfoError> {
         if let Some(restrict_card) = restrict {
             self.apply_restriction(restrict_card);
         }
@@ -338,7 +321,6 @@ impl ParsedModel {
             topo,
             order_hierarchy: self.order_hierarchy,
             expansion_order: self.expansion_order,
-            propagators: self.propagators,
         })
     }
 }
@@ -396,11 +378,6 @@ impl UFOModel {
         Ok((Arc::new(model), digest))
     }
 
-    /// Load with automatic restrict card discovery (equivalent to `load(path, None)`).
-    pub fn load_auto(path: &Path) -> Result<Arc<Self>, UfoError> {
-        Self::load(path, None)
-    }
-
     // ── Name → index lookup ───────────────────────────────────────────────────
 
     /// Get a ParticleId by its name
@@ -409,7 +386,8 @@ impl UFOModel {
     }
 
     /// Get a LorentzId by its name
-    pub fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
+    #[cfg(test)]
+    pub(crate) fn lorentz_id(&self, name: &str) -> Option<LorentzId> {
         self.lorentz.get_index_of(name).map(LorentzId::from)
     }
 
@@ -419,7 +397,7 @@ impl UFOModel {
     }
 
     /// Get a VertexId by its name
-    pub fn vertex_id(&self, name: &str) -> Option<VertexId> {
+    pub(crate) fn vertex_id(&self, name: &str) -> Option<VertexId> {
         self.vertices.get_index_of(name).map(VertexId)
     }
 
@@ -429,15 +407,15 @@ impl UFOModel {
         &self.particles[id]
     }
 
-    pub fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
+    pub(crate) fn lorentz_struct(&self, id: LorentzId) -> &LorentzStructure {
         &self.lorentz[id]
     }
 
-    pub fn coupling_def(&self, id: CouplingId) -> &Coupling {
+    pub(crate) fn coupling_def(&self, id: CouplingId) -> &Coupling {
         &self.couplings[id]
     }
 
-    pub fn vertex_def(&self, id: VertexId) -> &Vertex {
+    pub(crate) fn vertex_def(&self, id: VertexId) -> &Vertex {
         &self.vertices[id.0]
     }
 }
@@ -582,7 +560,7 @@ impl EvaluatedModel {
     }
 
     /// The model these values were evaluated from.
-    pub fn model(&self) -> &Arc<UFOModel> {
+    pub(crate) fn model(&self) -> &Arc<UFOModel> {
         &self.model
     }
 
@@ -625,7 +603,7 @@ impl EvaluatedModel {
 
     /// The parameters and couplings whose value is not finite, by name, parameters
     /// first and each list sorted.
-    pub fn non_finite(&self) -> Vec<&str> {
+    pub(crate) fn non_finite(&self) -> Vec<&str> {
         let finite = |v: &Complex64| v.re.is_finite() && v.im.is_finite();
         let mut params: Vec<&str> = self
             .param_values
@@ -647,35 +625,25 @@ impl EvaluatedModel {
         params
     }
 
-    /// Get the coupling entries for a vertex by its name.
+    /// Set `changed` to `new_value`, then re-evaluate the parameters
+    /// transitively depending on it and every coupling that reads any of them.
     ///
-    /// Returns `[(color_idx, lorentz_idx, value)]` or `None` if unknown.
-    pub fn vertex_couplings(&self, id: VertexId) -> Option<Vec<(usize, usize, Complex64)>> {
-        let vertex = self.model.vertex_def(id);
-        let entries = vertex
-            .couplings
-            .iter()
-            .map(|((c, l), &coup_id)| {
-                let val = self.coupling_values[coup_id];
-                (*c, *l, val)
-            })
-            .collect();
-        Some(entries)
-    }
-
-    /// Re-evaluate only the parameters transitively depending on `changed`,
-    /// then re-evaluate all coupling values that depend on any changed parameter.
+    /// A parameter a restriction locked to zero keeps its value, and nothing
+    /// moves: the restriction pruned the vertices it would revive. Panics on a
+    /// parameter the model does not have.
     pub fn recompute(&mut self, changed: &str, new_value: Complex64) {
-        // Update the changed parameter value, allowing error if it doesn't exist (caller should only call with known parameters)
-        self.param_values
+        let slot = self
+            .param_values
             .get_mut(changed)
-            .map(|v| *v = new_value)
             .unwrap_or_else(|| panic!("attempted to recompute unknown parameter '{changed}'"));
-        self.model.params.recompute(changed, &mut self.param_values);
+        if self.model.params.zeros.contains(changed) {
+            return;
+        }
+        *slot = new_value;
 
         // Every parameter the change reaches, however many internal parameters
         // deep: a coupling written in `ee` moves with `aEWM1` through `aEW`.
-        let mut changed_params = self.model.params.dependents(changed);
+        let mut changed_params = self.model.params.recompute(changed, &mut self.param_values);
         changed_params.insert(changed.to_owned());
 
         for (i, c) in self.model.couplings.values().enumerate() {
@@ -730,6 +698,12 @@ fn prune_unreferenced_lorentz(vertex: &mut Vertex) {
         .collect();
 }
 
+/// One coupling-order tuple and the vertex coupling entries carrying it.
+type OrderGroup<'a> = (
+    &'a BTreeMap<String, usize>,
+    BTreeMap<(usize, usize), CouplingId>,
+);
+
 /// Split each UFO vertex into one [`Vertex`] per distinct coupling-order tuple,
 /// each carrying only that tuple's `(color, lorentz)` couplings.
 ///
@@ -749,12 +723,6 @@ fn prune_unreferenced_lorentz(vertex: &mut Vertex) {
 /// where MadGraph keys on the UFO file's dict insertion order, so two couplings
 /// writing the same orders in a different sequence would split apart there and
 /// merge here. No model read by this loader contains such a pair.
-/// One coupling-order tuple and the vertex coupling entries carrying it.
-type OrderGroup<'a> = (
-    &'a BTreeMap<String, usize>,
-    BTreeMap<(usize, usize), CouplingId>,
-);
-
 fn split_vertices_by_coupling_order(
     vertices: IndexMap<String, Vertex>,
     couplings: &IndexMap<String, Coupling>,
@@ -993,6 +961,24 @@ mod tests {
             checked += 1;
         }
         assert!(checked >= 10, "only {checked} externals checked");
+    }
+
+    /// Moving a parameter the restriction locked to zero changes nothing: not the
+    /// parameter, not an internal reading it, not a coupling.
+    #[test]
+    fn recompute_leaves_a_restriction_locked_parameter_alone() {
+        let model = sm::sm_model(sm::SMRestrict::Default);
+        let base = EvaluatedModel::from_model(model.clone());
+        assert!(!model.params.zeros.is_empty());
+        for name in &model.params.zeros {
+            let mut moved = base.clone();
+            moved.recompute(name, Complex64::new(1.5, 0.0));
+            assert_eq!(moved.param_values, base.param_values, "after moving {name}");
+            assert_eq!(
+                moved.coupling_values, base.coupling_values,
+                "after moving {name}"
+            );
+        }
     }
 
     /// MadGraph's `0 < v < 99` window: an order declared `expansion_order = 0`

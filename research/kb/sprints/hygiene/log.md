@@ -1,0 +1,256 @@
+# Hygiene sprint log
+
+## 2026-10-09
+* **Creation**: Sprint folder created with `pixi run new-sprint hygiene`.
+* **Approval** (human:nsmith-, in the planning session): the four shape
+  decisions. Scope is the localised hygiene items ([D1](decisions/D1-scope-localised-items.md)).
+  Visibility is mechanical demotion only ([D2](decisions/D2-visibility-mechanical-demotion.md)).
+  Findings are fixed when small and filed when large ([D3](decisions/D3-fix-small-file-large.md)).
+  The sprint is one PR, with sessions by module cluster ([D4](decisions/D4-module-clusters-one-pr.md)).
+  The decision concepts' wording awaits the user's review before they are stamped
+  `verified` and moved to `stable`.
+* **Claims check**: no open PRs on nsmith-/vibegraph, so no claimed item conflicts
+  and no other PR is touching `helas/eval`.
+* **Amendment** (D1, at the user's request): the first scope read only
+  `backlog/hygiene/`. A filename grep over `backlog/validation/` found one item,
+  and the other 45 went unread. D1 now states a rule that applies to every area:
+  the fix is local, it needs no MadGraph or Pythia run and no seed
+  re-measurement, and it settles no open physics question. Re-reading
+  `validation/` against that rule added three items, all fixed in F-G:
+  jj-banked-orderings-eta-uses-wrong-components, config-amp-phase-and-sign-unpinned
+  and smeftsim-vendored-checksum-not-hermetic. It kept
+  jioxxx-reference-port-comparison-has-no-teeth (rule 3) and
+  pythia-gate-momenta-unchecked (rule 2) out.
+* **Amendment** (review protocol): each review starts by listing the filed items,
+  in any area, that name its cluster's paths, so it does not report filed work
+  as new findings. Rediscovered findings would inflate the hit rates the lessons
+  measure.
+* **Approval** (human:nsmith-): D1–D4 reviewed and signed off, D1 including the
+  amendment above. All four are stamped `verified` and moved to `stable`.
+* **T1 landed** (fast-forward of `hygiene-t1`, commits f578bde..a4db76f): four
+  items meet `closes_when`. `acceptance-yml-fails-on-refdata-releases` waits for
+  the next `refdata-*` release. The report is recorded as `sessions/T1-report.md`,
+  machine-confirmed by the manager's re-run of the lints and demonstrations.
+  Three Found entries, to be filed at close-out.
+* **V1 reported** (`hygiene-v1`, 827e098..34f92ea). The manager re-ran fmt,
+  both clippy configurations and the hermetic suite (35 suites, 1348 passed,
+  0 failed, 17 ignored) and reproduced the `pub` counts. The report is recorded
+  as `sessions/V1-report.md`, machine-confirmed. It is not yet merged.
+* **Decision** (human:nsmith-, on V1's results), amending
+  [D2](decisions/D2-visibility-mechanical-demotion.md):
+  - V1's 144 `#[allow(dead_code)]` are replaced by `cfg(test)` or
+    feature gating, or by deletion.
+  - The ~120 intra-doc links V1 turned into code spans are restored, and
+    every rustdoc build documents private items.
+  - This work runs as **V1b**, in V1's worktree, by a fresh agent seeded with
+    V1's report rather than a resumed V1. Its transcript was about 333k
+    tokens, and the user asked for it compacted.
+  - The reviews now depend on V1b.
+* **V1b reported** (`hygiene-v1`, 22f1955..371f854). The report is recorded as
+  `sessions/V1b-report.md`. The manager's gate re-run is in progress, and the
+  merge waits on it.
+* **V1 and V1b merged** into the sprint branch. Manager gate re-run at `371f854`:
+  - `cargo fmt --all --check` passes;
+  - `cargo clippy` with `-D warnings` exits 0 in both configurations;
+  - `cargo test --workspace` exits 0 (35 suites, 1348 passed, 0 failed,
+    17 ignored), unchanged from before V1;
+  - `cargo doc --workspace --no-deps --document-private-items` exits 0, with
+    28 lib warnings and 1 bin warning. All 16 unresolved links predate V1.
+* **Reviews dispatched**: R-A to R-G2, each a `claude` (Opus) agent in its own
+  detached, read-only worktree at `f7efda6` (`/home/user/wt/hygiene-r-<x>`).
+  The leads from V1b's Found item 4 (production contracts documented on
+  test-only APIs) went to the clusters that hold them.
+* **R-E reported**: 15 findings, recorded as `sessions/R-E-report.md`. The
+  manager spot-checked R-E.1, R-E.8 and R-E.11. Triage waits for all eight.
+* **R-D reported**: 17 findings, recorded as `sessions/R-D-report.md`. The
+  manager spot-checked R-D.2, R-D.4 and R-D.11. Protocol note for later reviews:
+  grep path tails (`/vegas.rs`), not bare names, in the backlog check.
+* **R-B reported**: 25 findings plus one rediscovery (R-B.0), recorded as
+  `sessions/R-B-report.md`. The manager spot-checked R-B.1, R-B.5, R-B.10 and
+  R-B.14.
+* **R-C reported**: 20 findings, recorded as `sessions/R-C-report.md`. The
+  manager spot-checked R-C.1, R-C.5 and Found 1–2. Three reviewers have now
+  hit the empty `mg5amcnlo` submodule. Fix sessions get it copied in, and the
+  dispatch procedure should say review worktrees need it too.
+* **R-G1, R-G2 and R-F reported**: 27, 22 and 28 findings, recorded as
+  `sessions/R-G1-report.md`, `R-G2-report.md` and `R-F-report.md`, with the
+  manager's spot checks in each. Seven of eight reviews are in; R-A is
+  outstanding.
+* **R-A reported**: 21 findings, recorded as `sessions/R-A-report.md`. All
+  eight reviews are in, with 175 findings in total. Triage follows.
+* **Reference data**: zstd installed, and the pinned refdata-9 bundle fetched
+  with `fetch_refdata.sh` (consent by env), so fix sessions can run the banked
+  layer.
+* **Triage** written as `triage.md`: 176 findings, 125 fixed here across nine
+  fix sessions (F-F split into F-F and F-CLI), 50 filed as 35 new items at
+  close-out, 4 rejected or close-out only, 3 for the user. PDF set fetched
+  (`validation/pdf/fetch.sh`). Fix sessions wait on the user's three calls.
+* **Decisions** (human:nsmith-, on the triage):
+  - R-A.17: leave lorentz-coefficients-still-f64 open, with no decision
+    recorded.
+  - R-G1.5: F-G1 moves the whole `smeftsim` and `toy_models` targets into the
+    hermetic layer.
+  - R-G2.1: the seed-combination contradiction is filed `needs-user`, with no
+    gate change now.
+* **Fix briefs** written: F-A, F-B, F-C, F-D, F-E, F-F, F-CLI, F-G1 and F-G2,
+  with a shared `sessions/fix-protocol.md`. They run serially in that order,
+  each from the previous one's merged head.
+* **F-A dispatched** (`performance-dev`, Opus) on branch `hygiene-fa` from
+  `ea3fd20`, in the warm worktree `/home/user/wt/hygiene-v1`. The refdata
+  bundle, PDF set and `mg5amcnlo` content were copied in. The review and T1
+  worktrees were removed and the debug incremental cache cleared, which freed
+  about 9 GB.
+* **Container restart during F-A.** F-A's process was lost with no commits,
+  but 24 files of uncommitted work (+760/−1029) and its program-dump
+  baselines survived on disk. The manager saved a backup patch and resumed
+  the agent from its transcript with a reconciliation step: verify, commit in
+  checkpoints, re-run what was in flight (session scoping rule 7).
+* **Second container restart during F-A**, after 5 commits (9bb2849..c01b93a),
+  with its gate run in flight. Clippy had found one `useless_vec` in the lib
+  tests. The disk was down to 2 GB free because of the debug incremental cache,
+  which the manager cleared again (9.8 GB free). The agent was resumed to fix
+  the lint and re-run the gate with `CARGO_INCREMENTAL=0`.
+
+## 2026-10-10
+* **F-A reported** (`hygiene-fa`, 9bb2849..5c92658, 7 commits). The report is
+  recorded as `sessions/F-A-report.md`. The manager's gate re-run (program
+  probe, clippy, hermetic suite) is in progress, and the merge waits on it.
+* **F-A merged.** Manager gate re-run at `5c92658`:
+  - the program probe gives `PROGRAMS IDENTICAL TO BASELINE (45 sets)`;
+  - clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1343 passed, 0 failed,
+    16 ignored. That is 5 fewer passing than V1b's 1348, matching the
+    deleted tests net of those added.
+* **F-B dispatched** (`validation-dev`, Opus) on `hygiene-fb` from `17d6e84`,
+  with F-A's `GammaJout` Found item added to its scope.
+* **F-B reported** (`hygiene-fb`, 7d33250..2127cfe, 3 commits). The report is
+  recorded as `sessions/F-B-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
+* **F-B merged.** Manager gate re-run at `2127cfe`: fmt passes, clippy exits 0
+  in both configurations, `cargo test --workspace` gives 35 suites with 1340
+  passed, 0 failed and 16 ignored (matching the agent's account), and the
+  banked `color_cf_oracle` passes 97.
+* **F-C dispatched** (`feature-dev`, Opus) on `hygiene-fc` from `abb1a16`.
+* **F-C reported and merged** (`hygiene-fc`, 4c6d9cb..52f6f99, 6 commits).
+  The report is recorded as `sessions/F-C-report.md`. Manager gate re-run:
+  fmt passes, clippy exits 0 in both configurations, and the hermetic suite
+  gives 1352 passed. The banked `sm_interned_blob` (2), `color_cf_oracle` (97)
+  and `validate_madgraph_diagrams` (57) pass. The feyngraph gitlink and the
+  regenerated SM blob were checked.
+* **Decision** (human:nsmith-): close reweight-forbidden-onshell-guard-is-dead
+  by option (b), a required `forbidden_onshell` argument to `ReweightPlan::new`
+  with `OnShell::Forbidden` deleted. It runs in this sprint as **F-C2**, before
+  F-D.
+* **F-C2 reported and merged** (`ed5b166`). The report is recorded as
+  `sessions/F-C2-report.md`. Manager check: all-features clippy exits 0, the
+  reweight lib tests (33) and CLI unit tests (95) pass, and no
+  `OnShell::Forbidden` remains. The agent's full suite gave 1353 passed, and
+  the banked `reweight_mg_oracle` and `cli_reweight_proton` pass.
+* **F-D dispatched** (`performance-dev`, Opus) on `hygiene-fd` from this merge.
+* **F-D reported** (`hygiene-fd`, 9c5336f..2187c59, 6 commits). The report is
+  recorded as `sessions/F-D-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
+* **F-D merged.** Manager gate re-run at `2187c59`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1350 passed, 0 failed, 16 ignored,
+    with the bit-identical `test_pinned_seed_regression_grid_adapt`,
+    `test_adapt_parallel_seeded_is_the_sequential_adapt` and
+    `adapt_grids_reproduces_a_sequential_integration` passing;
+  - the banked `validate_vegas` passes 3.
+* **F-E dispatched** (`feature-dev`, Opus) on `hygiene-fe` from this merge.
+* **F-E reported** (`hygiene-fe`, fd76a96..4cbaa72, 4 commits). The report is
+  recorded as `sessions/F-E-report.md`. configuration-weights-wrong-at-sde1-with-tmin
+  is closed by a refusal rather than its prescribed `AMP2 × channel_cuts`: the
+  manager confirmed at the pinned `genps.f` that this weight is not MadGraph's,
+  whose `sde_strat = 1` path reads an unassigned `t`. The multigrid set
+  `NNPDF31_lo_as_0130` was fetched for the worktree, and `validate_pdf_grid`
+  passes 20. The merge waits on the hermetic re-run.
+* **F-E merged.** Manager gate re-run at `4cbaa72`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 35 suites, 1353 passed, 0 failed, 16 ignored,
+    with the five new and rewritten F-E tests named and passing;
+  - the banked `validate_pdf_grid` passes 20, with NNPDF31 present.
+* **F-F dispatched** (`feature-dev`, Opus) on `hygiene-ff` from this merge.
+* **F-F reported and merged** (`hygiene-ff`, 4bdecb6..212df29, 5 commits).
+  The report is recorded as `sessions/F-F-report.md`. Manager gate re-run:
+  fmt passes, clippy exits 0 in both configurations, the hermetic suite gives
+  1354 passed, and the banked `validate_lhef` passes 3.
+* **Decision** (human:nsmith-): keep F-F's deletion of `cache_ufo_model` and
+  record it. Close-out updates `tooling/asset-resolution.md`. A future
+  fetch-by-URL user interface can restore it from 7a69498's parent, pinning by
+  `model_digest`.
+* **F-CLI dispatched** (`feature-dev`, Opus) on `hygiene-fcli` from this merge.
+* **F-CLI reported** (`hygiene-fcli`, 658d465..296875c, 9 commits). The report
+  is recorded as `sessions/F-CLI-report.md`. The manager's gate re-run is in
+  progress, and the merge waits on it.
+* **F-CLI merged.** Manager gate re-run at `296875c`: fmt passes, clippy exits
+  0 in both configurations, `cargo test --workspace` gives 35 suites with 1373
+  passed, 0 failed and 16 ignored, and the banked `cli_integrate` passes 4.
+* **F-G1 dispatched** (`validation-dev`, Opus) on `hygiene-fg1` from this merge.
+* **F-G1 reported** (`hygiene-fg1`, 2f94cbc..0401a9a, 11 commits). The report
+  is recorded as `sessions/F-G1-report.md`. The manager's gate re-run,
+  including a collator pass over the new manifest, is in progress.
+* **F-G1 merged.** Manager gate re-run at `0401a9a`:
+  - fmt passes and clippy exits 0 in both configurations;
+  - `cargo test --workspace` gives 37 suites (two moved in), 1391 passed,
+    0 failed, 16 ignored;
+  - the banked `color_cf_oracle` passes 97;
+  - the collator renders the two new hermetic standalone rows. It exits 1
+    only on banked cells this worktree's partial report directory never
+    wrote, a pre-existing state; the full `validate.sh` run is close-out's.
+* **F-G2 dispatched** (`validation-dev`, Opus) on `hygiene-fg2` from this
+  merge, after clearing `target/debug` (6 GB free before).
+* **F-G2 reported** (`hygiene-fg2`, 1139b39..5a0d378, 8 commits). The report is
+  recorded as `sessions/F-G2-report.md`. F-G2 found the σ seed calibrations
+  drifted at `3f401f0` against the 2026-09 census. Before merging, the manager
+  re-runs the gate and runs the same headroom probe at the pre-sprint commit
+  `669f3fa`, to tell whether the sprint moved σ.
+* **σ-drift attribution:** the seed-headroom probe at the pre-sprint
+  `669f3fa` is identical, line for line over 68 rows, to F-G2's run at
+  `3f401f0`. The sprint moved no σ; the census drift predates it and is filed
+  at close-out.
+* **F-G2 merged.** Manager gate re-run at `5a0d378`: fmt passes, clippy exits
+  0 in both configurations, and the hermetic suite gives 37 suites with 1391
+  passed, 0 failed and 16 ignored. **All fix sessions are done.** L (lessons)
+  is next.
+* **Close-out under way** (Z):
+  - L (lessons) dispatched on `hygiene-l`.
+  - The full banked `validation/validate.sh` was started detached on the
+    sprint head in `/home/user/wt/hygiene-v1`.
+  - 54 new backlog items were filed (`190c13e`): every triaged *file* finding
+    and every Found entry.
+  - The kb stale-site updates (24 sites) were dispatched on `hygiene-zkb`.
+* **L merged** (`2e860d4`): the draft `workflow/hygiene-review.md`. L also
+  found nine inconsistencies in the sprint record. The manager fixed those in
+  files it owns:
+  - this log's missing 2026-10-10 heading;
+  - `sprint.md`'s session table, which omitted F-C2;
+  - the Scope table's "F-G" entries (now F-G1 and F-G2);
+  - L's `depends_on`;
+  - two triage claims: all eight reviewers hit the protocol defects, not
+    seven, and the spot-check tally mixed one *suspected* finding with
+    *checked* ones.
+
+  The rest stand as L recorded them in the concept.
+* **kb stale-site updates merged** (`d0bc15c`): 24 sites plus
+  `amplitudes/colour-flow-evaluator.md`, each checked against the code.
+  - `madgraph-defects.md` already had the `get_channel_cut` entry; it was
+    updated in place.
+  - The 162 188 live-slot reading was reproduced at `190c13e`.
+  - Two more stale code comments were added to
+    comment-leftovers-after-hygiene-sprint.
+* **Close-out (Z):**
+  - The full banked `validation/validate.sh` at `4ac6cd4` (final code) exits
+    0: 62 suites with 1776 passed, 0 failed, 84 ignored. The collator reports
+    the measured cells are exactly the declared ones, and every gate cell
+    passed.
+  - 25 closed item files were deleted.
+  - acceptance-yml-fails-on-refdata-releases was released.
+  - hygiene-agent-type was unblocked.
+  - The eight concepts that cited deleted items were rewritten to state the
+    current fact, and `ufo-aloha-type-matrix.md`'s stale `make_anti` quirk
+    was corrected.
+  - `closeout.md` was finalised, `sprint.md` set `active: false`, and the
+    root log entry added.
+  - Awaiting the user's review: the review and fix protocols, and the
+    `hygiene-review` concept, all still `draft`.

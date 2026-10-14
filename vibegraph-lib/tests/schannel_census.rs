@@ -23,7 +23,10 @@
 //!
 //! What the comparison cannot see: which diagram is which beyond its
 //! s-channel content (two diagrams with the same s-channels are
-//! interchangeable here), and anything past the diagram list.
+//! interchangeable here), and anything past the diagram list. Nor *why* a card
+//! is refused: where MadGraph refuses, a refusal here for any reason passes, so a
+//! card refused for the wrong reason is indistinguishable from one refused for
+//! MadGraph's.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -178,6 +181,7 @@ fn describe(census: &Census) -> String {
 fn schannel_census_matches_madgraph() {
     let doc = reference();
     let cases = doc["cases"].as_array().expect("cases");
+    assert!(!cases.is_empty(), "the census banks no cards");
     let mut failures = Vec::new();
     let (mut generated, mut refused, mut decays) = (0, 0, 0);
     for case in cases {

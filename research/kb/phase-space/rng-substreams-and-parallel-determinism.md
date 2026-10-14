@@ -5,7 +5,7 @@ description: "ChaCha8 addressed by (stream, position) replaces RANMAR; each chun
 status: draft
 tags: [rng, determinism, parallelism, vegas, reproducibility]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n18-rng, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L133-L162", title: "Note 18 §1.4, RNG: splittable and modern, not RANMAR"}
   - {id: n18-dec, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L479-L911", title: "Note 18 §5, decision records H3 (SubStream, bits→uniform) and H5 (parallel VEGAS)"}
@@ -13,9 +13,10 @@ sources:
   - {id: n31-jcol, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/31-perf-sprint-3-plan.md#L1195-L1241", title: "Note 31 §6.7, the -j column at the CLI"}
   - {id: n32-s3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/32-perf-addendum-plan.md#L478-L597", title: "Note 32 §5.1, survey_variance parallelised (S3)"}
   - {id: rng-rs, resource: "vibegraph-lib/src/phasespace/rng.rs", title: "SubStream, u64_to_uniform, SCALE_DRAW_STREAM_BASE"}
-  - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs#L474-L560", title: "adapt_parallel, adapt_parallel_seeded, adapt_blocks_iteration"}
+  - {id: vegas-rs, resource: "vibegraph-lib/src/vegas.rs#L799-L925", title: "adapt_blocks_iteration and its bit-for-bit contract"}
+  - {id: vegas-seeded, resource: "vibegraph-lib/src/vegas.rs#L458-L510", title: "adapt_parallel_seeded, the test-only single-block loop"}
   - {id: parallel-rs, resource: "vibegraph-cli/src/parallel.rs", title: "The -j/--parallel flag"}
-  - {id: proton-survey, resource: "vibegraph-lib/src/proton.rs#L2870-L2960", title: "ProtonIntegrand::survey_variance, chunked parallel survey"}
+  - {id: proton-survey, resource: "vibegraph-lib/src/proton.rs#L2861-L2956", title: "ProtonIntegrand::survey_variance, chunked parallel survey"}
   - {id: lanes-rs, resource: "vibegraph-lib/src/helas/eval/lanes.rs", title: "Lane-uniformity contract"}
 measured:
   - {commit: b612253, landed_in: 17fd612, command: "vibegraph integrate on partonic, dy13_default and pp_to_llj cards at -j 1/4/8/16, artifact md5 compared, 1× and 4× budget"}
@@ -57,10 +58,10 @@ sequence by a bit:
 
 | constant | where | what draws on it |
 |---|---|---|
-| `MULTICHANNEL_ADAPT_STREAM = 0xA1FA_5EED` | `hadronic.rs:92` | fixed-beam α survey |
-| `ADAPT_STREAM = 0xA1FA_9110` (+ iteration) | `proton.rs:1107` | hadronic α survey |
-| `CHANNEL_STREAM_BASE = 0xC7A0_0000` (+ channel) | `hadronic.rs:98` | per-channel VEGAS integration |
-| `SCALE_DRAW_STREAM_BASE = 0x5CA1_0000` (+ offset) | `rng.rs:38` | per-point scale-configuration draw |
+| `MULTICHANNEL_ADAPT_STREAM = 0xA1FA_5EED` | `hadronic.rs:95` | fixed-beam α survey |
+| `ADAPT_STREAM = 0xA1FA_9110` (+ iteration) | `proton.rs:1096` | hadronic α survey |
+| `CHANNEL_STREAM_BASE = 0xC7A0_0000` (+ channel) | `hadronic.rs:101` | per-channel VEGAS integration |
+| `SCALE_DRAW_STREAM_BASE = 0x5CA1_0000` (+ offset) | `rng.rs:39` | per-point scale-configuration draw |
 | `SCAN_STREAM_BASE = 0x0057_4D41` (+ channel) | `unweight.rs:56` | per-channel `w_max` scans |
 | `ROUNDING_STREAM = 0x0052_4E44` | `lhef/emit.rs:49` | stochastic-rounding coin flips of a weight strategy |
 
@@ -85,13 +86,12 @@ than usually hold:[^vegas-rs]
    would give a different, equally valid grid at the next refinement and from
    there a different point sequence.
 
-`VegasGrid::adapt_parallel_seeded` holds both and is bit-for-bit the
-sequential `adapt` driven by `SubStream::new(seed, stream, 0)`;
 `adapt_blocks_iteration` holds both per block while scheduling every
-channel's chunks in one rayon region. The older `adapt_parallel` /
-`sample_frozen_parallel` key substreams by `(iteration, chunk)` at position 0
-and reduce per chunk: thread-count invariant, but not equal to `adapt`, and
-unused in production[^n31-i3].
+channel's chunks in one rayon region: each block's result is bit-for-bit one
+iteration of the sequential `adapt` on that block's grid, at any chunk and pool
+size. Its doc comment carries the contract. The test-only
+`VegasGrid::adapt_parallel_seeded` loops it over iterations as a single block,
+and so reproduces `adapt` driven by `SubStream::new(seed, stream, 0)`[^vegas-seeded][^n31-i3].
 
 The hadronic α survey (`ProtonIntegrand::survey_variance`) takes a weaker
 form of the contract. Both its substreams are addressed by the point's index
@@ -125,10 +125,9 @@ enumerates slower on sixteen threads than on one[^parallel-rs].
   `pp_to_llj`, repeated at 4× budget; the full validation layer was unchanged
   to the census character[^n31-i3]. At the CLI, four rounds × two thread
   counts gave one digest per card[^n31-jcol].
-- Code pins: `test_adapt_parallel_thread_count_invariant` and
-  `test_adapt_parallel_seeded_is_the_sequential_adapt` (`vegas.rs`),
-  `adapt_grids_reproduces_a_sequential_integration` (`hadronic.rs:4004`) and
-  `the_parallel_integration_reproduces_a_sequential_one` (`proton.rs:4660`).
+- Code pins: `test_adapt_parallel_seeded_is_the_sequential_adapt` (`vegas.rs`),
+  `adapt_grids_reproduces_a_sequential_integration` (`hadronic.rs:4113`) and
+  `the_parallel_integration_reproduces_a_sequential_one` (`proton.rs:4653`).
 - One check written for this contract was vacuous and caught by its own
   negative control: a fixed-beam trailing uniform turned out inert (40 of 40
   probes unmoved), and was replaced by a live-draw reference on the proton
@@ -156,7 +155,8 @@ See also [VEGAS integrator](vegas-integrator.md).
 [^rng-rs]: `vibegraph-lib/src/phasespace/rng.rs`, module and item docs.
 [^n18-rng]: Note 18 §1.4.
 [^n18-dec]: Note 18 §5, H3 records.
-[^vegas-rs]: `vibegraph-lib/src/vegas.rs`, `adapt_parallel_seeded` and `adapt_blocks_iteration` docs.
+[^vegas-rs]: `vibegraph-lib/src/vegas.rs`, `adapt_blocks_iteration` doc.
+[^vegas-seeded]: `vibegraph-lib/src/vegas.rs`, `adapt_parallel_seeded` doc (`#[cfg(test)]`).
 [^n31-i3]: Note 31 I3, plan, brief corrections and measured result.
 [^proton-survey]: `vibegraph-lib/src/proton.rs`, `survey_variance` doc.
 [^parallel-rs]: `vibegraph-cli/src/parallel.rs`, module doc.

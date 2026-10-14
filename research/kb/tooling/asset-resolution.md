@@ -3,7 +3,7 @@ type: Design
 title: ~/.vibegraph asset resolution and pinned fetch
 description: "PDF sets and UFO models resolve flag → env → ~/.vibegraph → dev fallback; only a pinned PDF set can be fetched, SHA-256-verified before an atomic publish. UFO models are never downloaded."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [cli, cache, pdf, ufo, distribution]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -138,10 +138,17 @@ ways: it returns 404 for `SM`, `HAHM_variableMW_v5`, `EWdim6` and
 `DMsimp_s_spin0`, and where it succeeds (`2HDM`) it returns FeynRules
 Mathematica sources (`2HDM.fr`, `Lag.fr`, …), not a UFO directory; the UFO on
 that page is `2HDM_UFO.tar.gz`, beside a second revision `2HDM_UFO.tar.2.gz`.
-[^n24-u4-ufo] So there is no `PINNED_UFO_MODELS` table and no URL builder; a
-comment in `store.rs` records the finding where the next person will look.
-`store::cache_ufo_model` is kept: fetch → extract → load-and-digest → atomic
-publish is sound, and it takes its URL from the caller. Nothing calls it today.
+[^n24-u4-ufo] So there is no `PINNED_UFO_MODELS` table and no URL builder; the
+`cache/mod.rs` module doc records the finding where the next person will look.
+
+`store::cache_ufo_model` took its URL from the caller, fetched through `Fetch`
+and extracted to a staging directory. It pinned the model's `model_digest`
+under the default restriction rather than a hash of the archive, so a
+repackaged model pins identically, and it loaded the model before writing the
+pin, so an archive that does not parse is never published. Then it published
+atomically. It was removed as dead code (commit `7a69498`, by the user's
+decision on 2026-10-10): nothing outside its own tests called it. A future
+fetch-by-URL interface can restore it from `7a69498`'s parent.
 
 What does exist is resolution (`assets::resolve_ufo_search_path`):
 

@@ -172,9 +172,8 @@ follows 3.7.1: `scalefact_reaches_every_scale_exactly_once` (`coupling/scales.rs
 asserts one power on that branch.[^n28-k42] The placement is pinned by reference data:
 `pp_to_ll_scalefact2` is a banked MadGraph run at `scalefact = 2.0`, replayed by
 `validate_scales` (`SCALEFACT_RUNS`).[^vs-scalefact] The module doc of
-`validate_scales.rs` (lines 46-48) still says every banked run has `scalefact = 1` and
-that MadGraph applies it twice in one place; both halves are stale
-([backlog: validate-scales-module-doc-stale](../backlog/hygiene/validate-scales-module-doc-stale.md)).
+`validate_scales.rs`'s module doc says `pp_to_ll_scalefact2` pins the placement
+([F-G2 report](../sprints/hygiene/sessions/F-G2-report.md)).
 
 ## What the record carries
 

@@ -41,21 +41,75 @@ def as_int(v):
         return None
 
 
+def proc_cpuinfo():
+    """CPU identity from /proc/cpuinfo (Linux); an empty dict where it is absent."""
+    try:
+        text = Path("/proc/cpuinfo").read_text()
+    except OSError:
+        return {}
+    first = {}
+    logical = 0
+    cores = set()
+    for block in text.split("\n\n"):
+        fields = {}
+        for line in block.splitlines():
+            key, sep, value = line.partition(":")
+            if sep:
+                fields[key.strip()] = value.strip()
+        if "processor" not in fields:
+            continue
+        logical += 1
+        for key in ("model name", "cpu family", "model", "stepping"):
+            first.setdefault(key, fields.get(key))
+        if "physical id" in fields and "core id" in fields:
+            cores.add((fields["physical id"], fields["core id"]))
+    return {
+        "model": first.get("model name"),
+        "family": as_int(first.get("cpu family")),
+        "model_id": as_int(first.get("model")),
+        "stepping": as_int(first.get("stepping")),
+        "logical_cpus": logical or None,
+        "physical_cpus": len(cores) or None,
+    }
+
+
+def proc_meminfo_bytes():
+    """MemTotal from /proc/meminfo in bytes (Linux), else None."""
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                kib = as_int(line.split()[1])
+                return kib * 1024 if kib is not None else None
+    except OSError:
+        pass
+    return None
+
+
+def cpu_block():
+    cpu = {
+        "arch": os.uname().machine,
+        "model": sysctl("machdep.cpu.brand_string"),
+        "logical_cpus": as_int(sysctl("hw.logicalcpu")),
+        "physical_cpus": as_int(sysctl("hw.physicalcpu")),
+        "performance_logical_cpus": as_int(sysctl("hw.perflevel0.logicalcpu")),
+        "efficiency_logical_cpus": as_int(sysctl("hw.perflevel1.logicalcpu")),
+        "frequency_hz": as_int(sysctl("hw.cpufrequency_max")),
+        "frequency_note": "null where the OS exposes no clock (Apple Silicon: "
+        "`hw.cpufrequency`/`hw.cpufrequency_max` are empty)",
+        "memory_bytes": as_int(sysctl("hw.memsize")),
+    }
+    if cpu["model"] is None:
+        for key, value in proc_cpuinfo().items():
+            if cpu.get(key) is None:
+                cpu[key] = value
+        cpu["memory_bytes"] = cpu["memory_bytes"] or proc_meminfo_bytes()
+    return cpu
+
+
 def host_block():
     return {
         "captured": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "cpu": {
-            "arch": os.uname().machine,
-            "model": sysctl("machdep.cpu.brand_string"),
-            "logical_cpus": as_int(sysctl("hw.logicalcpu")),
-            "physical_cpus": as_int(sysctl("hw.physicalcpu")),
-            "performance_logical_cpus": as_int(sysctl("hw.perflevel0.logicalcpu")),
-            "efficiency_logical_cpus": as_int(sysctl("hw.perflevel1.logicalcpu")),
-            "frequency_hz": as_int(sysctl("hw.cpufrequency_max")),
-            "frequency_note": "null where the OS exposes no clock (Apple Silicon: "
-            "`hw.cpufrequency`/`hw.cpufrequency_max` are empty)",
-            "memory_bytes": as_int(sysctl("hw.memsize")),
-        },
+        "cpu": cpu_block(),
         "scheduling": {
             "affinity": "none — MadGraph is run as it is in production, with no core "
             "pinning; madevent forks its own subprocess jobs and the OS places them",

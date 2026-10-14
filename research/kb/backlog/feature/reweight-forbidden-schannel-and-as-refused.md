@@ -15,10 +15,12 @@ sources:
 ---
 Two refusals in `vibegraph::reweight`:
 
-- `ReweightError::ForbiddenSChannel` (`vibegraph-lib/src/reweight/engine.rs:175`):
-  a `$` pattern amplitude depends on where each event sits relative to the
-  veto windows, so the reweighter would need the per-event window state.
-- `ReweightError::StrongCoupling` (`vibegraph-lib/src/reweight/mod.rs:179`):
+- `ReweightError::ForbiddenSChannel { ids }` (`vibegraph-lib/src/reweight/engine.rs:162`),
+  checked first in `ReweightPlan::new`, which takes the process's `$` veto as
+  a required `forbidden_onshell` argument: a `$` pattern amplitude depends on
+  where each event sits relative to the veto windows, so the reweighter would
+  need the per-event window state.
+- `ReweightError::StrongCoupling` (`vibegraph-lib/src/reweight/mod.rs:181`):
   a hypothesis moving `aS` or anything depending on it. The refusal message
   treats this as a scale variation rather than a parameter reweight; whether
   MadGraph's semantics for an `aS` launch should be matched is the open

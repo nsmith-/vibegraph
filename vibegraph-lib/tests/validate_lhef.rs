@@ -566,6 +566,7 @@ fn generate_and_check(row: &Row) {
         row.dir,
         generated.len()
     );
+    common::assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), row.dir);
 
     let stats = uw.stats().clone();
     let sigma_events = uw.total_w_max() * GEV2_TO_PB * stats.event_weight_sum / TRIALS as f64;

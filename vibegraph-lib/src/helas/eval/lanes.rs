@@ -6,7 +6,7 @@
 //! floating-point op (`+ - * /`, `sqrt`, `min`, `max`, `abs`, `signum`) executes
 //! the identical scalar operation independently per lane, so each extracted lane
 //! is bit-identical to the scalar `eval_m2` at the same point. Multiply-adds go
-//! through [`Real::mul_add_fast`](crate::helas::repr::Real::mul_add_fast) on both
+//! through [`Real::mul_add_fast`] on both
 //! sides, so fused or not, scalar and lanes round alike.
 //!
 //! # Lane-uniformity contract

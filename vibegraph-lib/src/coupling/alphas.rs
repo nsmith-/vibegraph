@@ -71,7 +71,7 @@ pub const BMASS: f64 = 4.7;
 pub const ZMASS: f64 = 91.188;
 
 /// Newton stopping criterion on `|Δa / a|`.
-pub const TOL: f64 = 5e-4;
+pub(crate) const TOL: f64 = 5e-4;
 
 /// β-function coefficients indexed by `nf - 3`, for `nf ∈ {3, 4, 5}`.
 ///
@@ -183,7 +183,8 @@ impl RunningAlphaS {
 
     /// `αs(BMASS)` and `αs(CMASS)`, the cached threshold values the low-scale
     /// branches evolve from.
-    pub fn thresholds(&self) -> (f64, f64) {
+    #[cfg(test)]
+    pub(crate) fn thresholds(&self) -> (f64, f64) {
         (self.alpha_b, self.alpha_c)
     }
 
@@ -554,9 +555,10 @@ mod tests {
         assert_eq!(asmz_from_param_card(0.118), 0.118);
     }
 
-    /// The PDF override is the sprint's named trap, and every banked MadGraph run
-    /// has a parameter card already holding the PDF's value — so no banked event
-    /// can see it. This is the test that would fail if the override were dropped.
+    /// At PDF beams the running coupling starts from the PDF set's `αs(M_Z)`, not
+    /// the parameter card's. Every banked MadGraph run has a parameter card already
+    /// holding the PDF's value, so no banked event can see the override; this is
+    /// the test that would fail if it were dropped.
     #[test]
     fn a_pdf_beam_overrides_the_param_card_alpha_s() {
         let hadronic = card("1 = lpp1\n1 = lpp2\nnn23lo1 = pdlabel\n");

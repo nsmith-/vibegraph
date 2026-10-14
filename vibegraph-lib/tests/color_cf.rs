@@ -23,6 +23,11 @@ fn r(n: i64, d: i64) -> Ratio<i64> {
 /// Enumerate `process` on the interned SM model and colorize its first (only)
 /// concrete subprocess.
 fn colorize(process: &str) -> ColorBasis {
+    colorize_counted(process).0
+}
+
+/// [`colorize`], together with the number of diagrams the subprocess enumerates.
+fn colorize_counted(process: &str) -> (ColorBasis, usize) {
     let model: &UFOModel = &common::sm_model();
     let sets = common::generate_with(process, model);
     let with_diagrams: Vec<&Vec<Diagram>> = sets
@@ -36,7 +41,8 @@ fn colorize(process: &str) -> ColorBasis {
         "expected exactly one non-empty subprocess for '{process}', got {}",
         with_diagrams.len()
     );
-    colorize_process(model, with_diagrams[0]).expect("colorize failed")
+    let basis = colorize_process(model, with_diagrams[0]).expect("colorize failed");
+    (basis, with_diagrams[0].len())
 }
 
 fn assert_cf(cb: &ColorBasis, expected: &[&[Ratio<i64>]]) {
@@ -223,13 +229,10 @@ fn leading_color_flows_match_madgraphs_coloramps() {
     ];
 
     for (process, expected) in cases {
-        let cb = colorize(process);
-        let table = LeadingColorFlows::of(&cb, expected.len());
-        assert_eq!(
-            table.n_diagrams(),
-            expected.len(),
-            "[{process}] diagram count"
-        );
+        let (cb, n_diagrams) = colorize_counted(process);
+        assert_eq!(n_diagrams, expected.len(), "[{process}] diagram count");
+        let table = LeadingColorFlows::of(&cb, n_diagrams);
+        assert_eq!(table.n_diagrams(), n_diagrams, "[{process}] table rows");
         assert_eq!(table.n_flows(), cb.ncolor(), "[{process}] flow count");
         for (d, want) in expected.iter().enumerate() {
             let got: String = table
@@ -247,9 +250,10 @@ fn leading_color_flows_match_madgraphs_coloramps() {
 /// the rule a no-op on Drell-Yan rather than a special case in the caller.
 #[test]
 fn a_colorless_process_reaches_its_single_flow_from_every_diagram() {
-    let cb = colorize("e+ e- > mu+ mu-");
+    let (cb, n_diagrams) = colorize_counted("e+ e- > mu+ mu-");
     assert_eq!(cb.ncolor(), 1);
-    let table = LeadingColorFlows::of(&cb, 2);
+    assert_eq!(n_diagrams, 2, "photon and Z exchange");
+    let table = LeadingColorFlows::of(&cb, n_diagrams);
     assert_eq!(table.n_diagrams(), 2);
     for d in 0..2 {
         assert_eq!(table.reached_by(d), &[true]);

@@ -11,7 +11,7 @@
 //! Each lane is bit-identical to the scalar `f64` computation: the packed
 //! operations are the IEEE-exact ones (correctly rounded `+ − × ÷ sqrt`, sign-bit
 //! `abs`/`neg`), and everything else is literally the `f64` method. The
-//! multiply-add the evaluator uses, [`Real::mul_add_fast`], is a packed hardware
+//! multiply-add the evaluator uses, [`Real::mul_add_fast`](crate::helas::repr::Real::mul_add_fast), is a packed hardware
 //! FMA where [`HARDWARE_FMA`] holds and a packed product and sum otherwise, the
 //! same operations scalar `f64` performs under that method. `Float::mul_add`
 //! keeps its single-rounding contract on every target (a software FMA per lane
@@ -118,7 +118,7 @@ where
 {
     /// Every lane set to `x`.
     #[inline(always)]
-    pub fn splat(x: f64) -> Self {
+    pub(crate) fn splat(x: f64) -> Self {
         Self(LanePack::splat(x))
     }
 

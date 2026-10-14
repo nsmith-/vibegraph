@@ -98,7 +98,7 @@ static SM_PARSED_BLOB: &[u8] = include_bytes!("sm_assets/sm_parsed.bin.zst");
 /// Over the variant's *restricted* parsed model, so it separates two builds whose
 /// restrict cards were regenerated with different contents under the same name —
 /// while ignoring anything that does not survive parsing.
-pub fn sm_digest(restrict: SMRestrict) -> &'static str {
+pub(crate) fn sm_digest(restrict: SMRestrict) -> &'static str {
     static CACHE: [OnceLock<String>; SMRestrict::ALL.len()] =
         [const { OnceLock::new() }; SMRestrict::ALL.len()];
 

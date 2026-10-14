@@ -1,21 +1,27 @@
-//! `~/.vibegraph` asset cache: resolving and storing named UFO models and PDF
-//! sets on the machine of a user with no dev checkout.
+//! `~/.vibegraph` asset cache: resolving named UFO models and PDF sets, and
+//! fetching PDF sets, on the machine of a user with no dev checkout.
 //!
-//! Two kinds of asset share one layout, `<cache_root>/{ufo,pdf}/<name>/`, and
-//! one resolution order ([`resolve::locate`]): an explicit path, an
-//! environment variable, the cache, then a repo-local dev fallback. What
-//! differs between the two kinds is how an entry is checksum-pinned once
-//! fetched — a UFO model by the existing [`crate::ufo::identity::model_digest`]
-//! computed over its parsed form, a PDF set by the SHA-256 of the archive it
-//! was fetched as ([`store`]) — because a UFO model's digest is already the
-//! project's identity for "this is the same model", and pinning archive bytes
-//! for it would flag a re-packaged but semantically identical tarball as a
-//! different model.
+//! Both asset kinds share one layout, `<cache_root>/{ufo,pdf}/<name>/`
+//! ([`AssetKind::entry_dir`]), and one resolution order ([`resolve::locate`]):
+//! an explicit path, an environment variable, the cache, then a repo-local dev
+//! fallback.
 //!
-//! Network I/O is deliberately absent from this module: [`store::Fetch`] is
-//! the seam a caller supplies bytes through, so the interaction policy around
-//! *when* to fetch (prompting, a `--no-network` refusal) lives with the
-//! caller, not here.
+//! Only PDF sets are fetched ([`store`]), each pinned by the SHA-256 of the
+//! archive it was fetched as. A UFO model is resolved and never fetched, so one
+//! in the cache was placed there by hand. No download URL can be derived from a
+//! model name: UFO models are published on the FeynRules wiki as files attached
+//! by hand, `/raw-attachment/wiki/<page>/<file>`, where the page is not the
+//! model name and the file follows no rule. The 2HDM page alone carries
+//! `2HDM.tar.gz`, `2HDM_UFO.tar.gz` and `2HDM_UFO.tar.2.gz`, of which only the
+//! middle one is a UFO directory and the first is FeynRules Mathematica source.
+//! Fetching UFO models would need a pinned URL per model, and should pin each by
+//! its [`model_digest`](crate::ufo::identity::model_digest) over the parsed
+//! model rather than by its archive bytes, so that a re-packaged but
+//! semantically identical tarball is not taken for a different model.
+//!
+//! Network I/O is absent from this module: [`store::Fetch`] is the seam a
+//! caller supplies bytes through, so the interaction policy around *when* to
+//! fetch (prompting, a `--no-network` refusal) lives with the caller, not here.
 //!
 //! [`pinned`] adds the other half of that seam: which URL a known set name
 //! downloads from and what its archive must hash to, compiled in rather than
@@ -25,7 +31,7 @@ pub mod pinned;
 pub mod resolve;
 pub mod store;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The two asset kinds the cache stores, each under its own subdirectory and
 /// resolved through its own environment variable.
@@ -37,16 +43,21 @@ pub enum AssetKind {
 
 impl AssetKind {
     /// Subdirectory of the cache root holding this kind's entries.
-    pub fn cache_subdir(self) -> &'static str {
+    pub(crate) fn cache_subdir(self) -> &'static str {
         match self {
             AssetKind::Ufo => "ufo",
             AssetKind::Pdf => "pdf",
         }
     }
 
+    /// `<cache_root>/<kind>/<name>/`: where an entry of this kind named `name`
+    /// is cached.
+    pub(crate) fn entry_dir(self, cache_root: &Path, name: &str) -> PathBuf {
+        cache_root.join(self.cache_subdir()).join(name)
+    }
+
     /// Environment variable naming this kind's resolution-order override
-    /// directory. `VIBEGRAPH_PDF_DIR` predates this cache; `VIBEGRAPH_UFO_DIR`
-    /// is its UFO counterpart, introduced alongside it.
+    /// directory.
     pub fn env_var(self) -> &'static str {
         match self {
             AssetKind::Ufo => "VIBEGRAPH_UFO_DIR",

@@ -46,6 +46,11 @@ on:
 
 jobs:
   acceptance:
+    # Only `v*` releases carry the binary under test. The `refdata-*` releases
+    # publish a reference-data bundle and nothing else, so running on them
+    # downloads a binary that does not exist and fails. A manual dispatch is
+    # always allowed.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
     # One platform, not three. `release.yml` already builds and smoke-tests each
     # platform's binary natively on that platform; what this job adds is the
     # data path — PDF resolution, the download, the cache, cards to events —

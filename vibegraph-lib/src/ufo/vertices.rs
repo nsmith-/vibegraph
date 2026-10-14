@@ -1,5 +1,5 @@
 use super::ast_util::{
-    call_func_name, extract_attr, extract_int, extract_str, kwarg_str, parse_stmts,
+    constructor_calls, extract_attr, extract_int, extract_str, kwarg_str, parse_stmts,
 };
 use super::color::ColorExpr;
 use super::couplings::CouplingId;
@@ -18,16 +18,16 @@ pub enum VertexError {
 
 /// Opaque index into `UFOModel::vertices`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VertexId(pub usize);
+pub(crate) struct VertexId(pub(crate) usize);
 
 /// A fully resolved interaction vertex.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
-    pub name: String,
+    pub(crate) name: String,
     pub particles: Vec<ParticleId>,
     /// Parsed, `Identity`-resolved color factors, one per color structure
     /// (e.g. `[ColorExpr { atoms: [] }]` for `["1"]`, or a `T`/`f` product).
-    pub color: Vec<ColorExpr>,
+    pub(crate) color: Vec<ColorExpr>,
     pub lorentz: Vec<LorentzId>,
     /// `(color_idx, lorentz_idx)` → coupling id.
     pub couplings: BTreeMap<(usize, usize), CouplingId>,
@@ -35,11 +35,11 @@ pub struct Vertex {
 
 /// Intermediate form from the Python AST parse; names not yet resolved to IDs.
 pub(crate) struct RawVertex {
-    pub name: String,
-    pub particles: Vec<String>,
-    pub color: Vec<String>,
-    pub lorentz: Vec<String>,
-    pub couplings: BTreeMap<(usize, usize), String>,
+    pub(crate) name: String,
+    pub(crate) particles: Vec<String>,
+    pub(crate) color: Vec<String>,
+    pub(crate) lorentz: Vec<String>,
+    pub(crate) couplings: BTreeMap<(usize, usize), String>,
 }
 
 /// Parse `vertices.py` content into raw vertices (names, not IDs).
@@ -47,25 +47,11 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
     let stmts = parse_stmts(src).map_err(|e| VertexError::Parse(e.to_string()))?;
     let mut result = Vec::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { .. }) = targets.first().unwrap() else {
-            continue;
-        };
-
-        let ast::Expr::Call(ast::ExprCall { func, keywords, .. }) = value.as_ref() else {
-            continue;
-        };
-        if call_func_name(func) != Some("Vertex") {
-            continue;
-        }
-
+    for (_, keywords) in constructor_calls(&stmts, "Vertex") {
         let name = kwarg_str(keywords, "name").unwrap_or_default();
-        let particles = extract_name_list(keywords, "particles", "P");
+        let particles = extract_name_list(keywords, "particles", "P", &name)?;
         let color = extract_str_list(keywords, "color");
-        let lorentz = extract_name_list(keywords, "lorentz", "L");
+        let lorentz = extract_name_list(keywords, "lorentz", "L", &name)?;
         let couplings = extract_couplings_dict(keywords);
 
         // Validation: check all coupling indices are in range of lorentz/color lists
@@ -100,17 +86,29 @@ pub(crate) fn parse_vertices(src: &str) -> Result<Vec<RawVertex>, VertexError> {
     Ok(result)
 }
 
-/// Extract a list of `Prefix.Name` references, returning just the `Name` part.
-fn extract_name_list(keywords: &[ast::Keyword], kw: &str, _expected_prefix: &str) -> Vec<String> {
+/// Extract a list of `prefix.Name` references (`P.e__minus__` under
+/// `particles`, `L.FFV1` under `lorentz`), returning just the `Name` part. An
+/// entry that is not an attribute of `prefix` is an error naming `vertex`.
+fn extract_name_list(
+    keywords: &[ast::Keyword],
+    kw: &str,
+    prefix: &str,
+    vertex: &str,
+) -> Result<Vec<String>, VertexError> {
     use super::ast_util::get_kwarg;
     let Some(val) = get_kwarg(keywords, kw) else {
-        return vec![];
+        return Ok(vec![]);
     };
     let ast::Expr::List(ast::ExprList { elts, .. }) = val else {
-        return vec![];
+        return Ok(vec![]);
     };
     elts.iter()
-        .filter_map(|e| extract_attr(e).map(|(_, attr)| attr.to_owned()))
+        .map(|e| match extract_attr(e) {
+            Some((module, attr)) if module == prefix => Ok(attr.to_owned()),
+            _ => Err(VertexError::Parse(format!(
+                "vertex '{vertex}': a `{kw}` entry is not a `{prefix}.<name>` reference"
+            ))),
+        })
         .collect()
 }
 
@@ -202,5 +200,31 @@ V_73 = Vertex(name = 'V_73',
         let vs = parse_vertices(SAMPLE).unwrap();
         let v73 = vs.iter().find(|v| v.name == "V_73").unwrap();
         assert_eq!(v73.color, vec!["1"]);
+    }
+
+    /// A `particles` or `lorentz` entry that is not a reference into its own
+    /// module is an error, not a dropped or misfiled entry.
+    #[test]
+    fn a_name_list_entry_outside_its_module_is_refused() {
+        let vertex = |particles: &str, lorentz: &str| {
+            format!(
+                "V_1 = Vertex(name = 'V_1', particles = [ {particles} ], color = [ '1' ], \
+                 lorentz = [ {lorentz} ], couplings = {{(0,0):C.GC_33}})\n"
+            )
+        };
+        assert!(parse_vertices(&vertex("P.G0, P.G0", "L.SSS1")).is_ok());
+        for (particles, lorentz) in [
+            ("P.G0, L.G0", "L.SSS1"),
+            ("P.G0, G0", "L.SSS1"),
+            ("P.G0, P.G0", "P.SSS1"),
+            ("P.G0, P.G0", "'SSS1'"),
+        ] {
+            let result = parse_vertices(&vertex(particles, lorentz));
+            assert!(
+                matches!(result, Err(VertexError::Parse(_))),
+                "particles [{particles}], lorentz [{lorentz}]: {:?}",
+                result.map(|v| v.len())
+            );
+        }
     }
 }

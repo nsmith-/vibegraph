@@ -276,16 +276,23 @@ fn run_trial(path: PathBuf) -> Result<(), Failed> {
     // The card is the whole comparison's common input, and the amplitude gate's
     // table carries its own copy of the same file. Tying them together is what
     // makes this gate a statement about the couplings the amplitude gate ran on.
+    // Every coupling table belongs to an `mg_amplitude` row, and every such row has
+    // an amplitude table, so a missing one is a broken pair rather than a row to skip.
     let amplitude_table = amplitude_tables_dir().join(format!("{name}.json"));
-    if amplitude_table.exists() {
-        let theirs = card_text(&read_json(&amplitude_table));
-        if theirs != table.param_card {
-            return Err(format!(
-                "[{name}] the amplitude table and the coupling table carry different \
-                 param cards"
-            )
-            .into());
-        }
+    if !amplitude_table.is_file() {
+        return Err(format!(
+            "[{name}] no amplitude table at {} to tie the coupling table's card to",
+            amplitude_table.display()
+        )
+        .into());
+    }
+    let theirs = card_text(&read_json(&amplitude_table));
+    if theirs != table.param_card {
+        return Err(format!(
+            "[{name}] the amplitude table and the coupling table carry different \
+             param cards"
+        )
+        .into());
     }
 
     let model = common::model_for_row(name)?;

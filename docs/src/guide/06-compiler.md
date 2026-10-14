@@ -352,7 +352,7 @@ the runtime after
 [`eval_m2`](../api/vibegraph/helas/eval/struct.BoundAmplitude.html#method.eval_m2)
 and its single-helicity and per-flow siblings;
 [`ScaleAwareAmplitude`](../api/vibegraph/helas/eval/struct.ScaleAwareAmplitude.html)
-is the per-event $\alpha_s$ path; [`Op`](../api/vibegraph/helas/eval/enum.Op.html)
-and [`Ast`](../api/vibegraph/helas/eval/struct.Ast.html) are the IR. The
+is the per-event $\alpha_s$ path; [`Op`](../api/vibegraph/helas/eval/op/enum.Op.html)
+and [`Ast`](../api/vibegraph/helas/eval/ast/struct.Ast.html) are the IR. The
 concepts under `research/kb/amplitudes/` and `research/kb/performance/` are
 the design and measurement record.

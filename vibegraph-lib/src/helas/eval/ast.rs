@@ -19,7 +19,7 @@ use crate::ufo::particles::ParticleId;
 
 /// A unified evaluation AST over leaf payload `T`.
 #[derive(Clone, Debug)]
-pub struct Ast<T> {
+pub(crate) struct Ast<T> {
     nodes: Box<[Node<T>]>,
     /// CSR offsets, length `nodes.len() + 1`: node `i`'s children are
     /// `children_content[children_offsets[i]..children_offsets[i + 1]]`.
@@ -30,18 +30,14 @@ pub struct Ast<T> {
 
 impl<T> Ast<T> {
     /// Number of nodes in the arena.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.nodes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
     }
 
     /// A node's children as the contiguous CSR row, without an iterator adapter —
     /// the forward-pass runtime indexes results directly off this slice.
     #[inline]
-    pub fn children_ids(&self, node: NodeId) -> &[NodeId] {
+    pub(crate) fn children_ids(&self, node: NodeId) -> &[NodeId] {
         let i = node as usize;
         let lo = self.children_offsets[i] as usize;
         let hi = self.children_offsets[i + 1] as usize;
@@ -51,8 +47,7 @@ impl<T> Ast<T> {
 
 /// The arena exposes its shape through [`Tree`]: `value`/`children`/`root` give a node,
 /// its operands, and the whole-amplitude root; `iter` scans every id in storage
-/// (topological) order. The default `linearize`/`fold_recursive` then come for free —
-/// kept so the forward-scan runtime can be benchmarked against a linearized stack walk.
+/// (topological) order.
 impl<T> Tree for Ast<T> {
     type Item = Node<T>;
     type NodeId = NodeId;
@@ -77,7 +72,7 @@ impl<T> Tree for Ast<T> {
 /// Incremental builder. Add children before their parent so the finished arena keeps
 /// the children-before-parents invariant.
 #[derive(Debug)]
-pub struct AstBuilder<T> {
+pub(crate) struct AstBuilder<T> {
     nodes: Vec<Node<T>>,
     children: Vec<Vec<NodeId>>,
 }
@@ -92,12 +87,12 @@ impl<T> Default for AstBuilder<T> {
 }
 
 impl<T> AstBuilder<T> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Push a node and return its id. `children` must already be in the builder.
-    pub fn add(&mut self, op: Op, leaf: T, children: Vec<NodeId>) -> NodeId {
+    pub(crate) fn add(&mut self, op: Op, leaf: T, children: Vec<NodeId>) -> NodeId {
         let id = self.nodes.len() as NodeId;
         self.nodes.push(Node::new(op, leaf));
         self.children.push(children);
@@ -105,7 +100,7 @@ impl<T> AstBuilder<T> {
     }
 
     /// Finalize into a CSR-backed [`Ast`] rooted at `root`.
-    pub fn finish(self, root: NodeId) -> Ast<T> {
+    pub(crate) fn finish(self, root: NodeId) -> Ast<T> {
         let mut offsets = Vec::with_capacity(self.nodes.len() + 1);
         let mut content = Vec::new();
         offsets.push(0u32);
@@ -155,7 +150,7 @@ impl<T: fmt::Display> fmt::Display for Ast<T> {
 
 /// Error parsing an s-expression into an [`Ast<Sym>`].
 #[derive(Debug, Clone, thiserror::Error)]
-pub enum ParseAstError {
+pub(crate) enum ParseAstError {
     #[error("unexpected end of input")]
     UnexpectedEof,
     #[error("expected `(`, found `{0}`")]

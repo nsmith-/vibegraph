@@ -15,7 +15,10 @@
 //! What the comparison cannot see: the *order* of a multiparticle's members
 //! (MadGraph sorts them by spin, colour and mass in `optimize_order`; they are
 //! compared as sets), and anything downstream of the process definition —
-//! which diagrams a restriction keeps is the diagram census's business.
+//! which diagrams a restriction keeps is the diagram census's business. Nor
+//! *why* a card is refused: where MadGraph refuses, a refusal here at any stage
+//! and for any reason passes, so a card refused for the wrong reason is
+//! indistinguishable from one refused for MadGraph's.
 
 use std::path::Path;
 

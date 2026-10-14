@@ -69,6 +69,14 @@ editing a run card, changing the process list, or touching anything under
 work to do, and skipping it compares against a stale reference that will agree
 with the wrong thing.
 
+What triggers the regeneration: `validation/madgraph/build.sh` regenerates every
+missing `validation/madgraph/output/<proc>/` directory and skips the present
+ones. A task that depends on `build-diagrams` therefore starts a MadGraph build
+in any work area that lacks the reference bundle (a fresh worktree, a clean
+checkout), whereas `pixi run validate` only fetches the bundle. Without
+`--skip-deps`, check that `validation/madgraph/output` is populated before
+running such a task.
+
 ## Change → gate map
 
 Run the hermetic suite for everything. On top of it:

@@ -5,7 +5,7 @@ description: "Subprocesses are grouped by pointwise |M|² agreement at shared pr
 status: draft
 tags: [hadronic, flavour-groups, proton, probe, colour]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 outcome (what P2 must take from it)"}
   - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L943-L1010", title: "Note 24 P2 (group by measured |M|²)"}
@@ -136,9 +136,10 @@ own diagram set (`member_diagram_set`).[^n24-sym]
 ## What the decomposition hands the integrand
 
 Per group: `evaluator()`, `diagrams()` (the channel derivation's input),
-`external_legs()`, `cuts()`, `final_masses()`, `spin_color_average()`, `members()`,
-`has_mirror()`, `mirror_into`, `luminosity` / `member_luminosity` (and their `_rows`
-forms over the two per-beam flavour rows, read once per point by `beam_rows`),
+`cuts()`, `final_masses()`, `spin_color_average()`, `members()`,
+`has_mirror()`, `mirror_into`, `luminosity`, the `_rows` forms `luminosity_rows` /
+`member_luminosity_rows` over the two per-beam flavour rows (read once per point by
+`beam_rows`),
 `event_legs` and `event_leg_colors` for the record.[^n24-api] The mirror identity and
 `BeamOrdering` are [hadronic/beam-mirror-identity](beam-mirror-identity.md).
 

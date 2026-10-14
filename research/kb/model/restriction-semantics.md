@@ -5,7 +5,7 @@ description: "Restriction drops zero couplings, then empty vertices, then unrefe
 status: draft
 tags: [ufo, restrict-card, parameters, madgraph-parity, smeftsim]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n35-l1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L604-L675", title: "Note 35 §4 L1, loader and model-topology surface"}
   - {id: n35-c, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L788-L841", title: "Note 35 §4 C, SMEFT cross section and the restricted-defaults fix"}
@@ -14,7 +14,7 @@ sources:
   - {id: mg-fix-params, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L2980", title: "MadGraph import_ufo.py RestrictModel.fix_parameter_values"}
   - {id: code-params, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/parameters.rs#L97-L131", title: "vibegraph-lib/src/ufo/parameters.rs apply_restrict"}
 measured:
-  - {commit: 412bc68, pr: 5, landed_in: e73b158, command: "cargo test -p vibegraph-lib --features extended-validation --test smeftsim restricted_defaults_are_madgraphs_generated_param_card"}
+  - {commit: 412bc68, pr: 5, landed_in: e73b158, command: "cargo test -p vibegraph-lib --test smeftsim restricted_defaults_are_madgraphs_generated_param_card"}
 ---
 
 A restrict card is an SLHA parameter card (`ufo/slha.rs`, `ParamCard`) that MadGraph
