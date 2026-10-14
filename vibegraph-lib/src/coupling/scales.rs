@@ -128,6 +128,22 @@ impl DynamicalChoice {
             DynamicalChoice::DecayingMass => 5,
         }
     }
+
+    /// Whether a fixed-beam cross section may be taken under this choice.
+    ///
+    /// Choice 3 is measured per event by `gg_to_gg_cg`'s banked run, and choice
+    /// 4 is `√ŝ`, which at fixed beams is the collider energy: a constant of the
+    /// run, checkable by inspection. Choices 1, 2 and 5 have value tests and no
+    /// reference run, so a cross section under one has nothing on the other side
+    /// of it.
+    fn has_fixed_beam_oracle(self) -> bool {
+        matches!(
+            self,
+            DynamicalChoice::Clustered
+                | DynamicalChoice::HalfSumTransverseMass
+                | DynamicalChoice::PartonicEnergy
+        )
+    }
 }
 
 /// One event's kinematics, in the frame the scale is defined in.
@@ -216,9 +232,9 @@ pub enum ScaleError {
     #[error("scale choice {choice} gives a non-positive scale {value} on these momenta")]
     DegenerateKinematics { choice: i64, value: f64 },
     #[error(
-        "run card selects dynamical_scale_choice = {choice}: the closed forms for 1-5 are \
-         evaluated on the fixed-beam path, where a banked run measures them, and refused at \
-         hadron beams, where no reference run selects one"
+        "run card selects dynamical_scale_choice = {choice}: of the closed forms 1-5, only 3 \
+         (measured by a banked run) and 4 (the collider energy) are evaluated, and only at \
+         fixed beams; no reference run selects the others, or any closed form at hadron beams"
     )]
     UnhonouredScaleChoice { choice: i64 },
 }
@@ -227,14 +243,16 @@ pub enum ScaleError {
 /// `1`–`5`.
 ///
 /// The formulas are transcribed and unit-tested either way; what this decides is
-/// whether a *cross section* may be computed under one. Fixed beams honour them:
-/// `gg_to_gg_cg`'s banked run picks `dynamical_scale_choice = 3` for itself and
-/// ships a cross section, an event sample and a per-event `SCALUP` on every one
-/// of those events, which is the oracle that says whether the transcription is
-/// right. Hadron beams refuse them: no banked run selects a closed form there,
-/// so a scale taken under one would feed the parton densities with nothing on
-/// the other side of it, and [`ScaleError::UnhonouredScaleChoice`] is returned
-/// rather than a plausible number.
+/// whether a *cross section* may be computed under one. Fixed beams honour the
+/// choices something checks: `gg_to_gg_cg`'s banked run picks
+/// `dynamical_scale_choice = 3` for itself and ships a cross section, an event
+/// sample and a per-event `SCALUP` on every one of those events, which is the
+/// oracle that says whether the transcription is right, and choice 4 is the
+/// collider energy there. Choices 1, 2 and 5 are refused at fixed beams too, and
+/// hadron beams refuse every closed form: no banked run selects one, so a scale
+/// taken under it would produce a plausible cross section with nothing on the
+/// other side of it, and [`ScaleError::UnhonouredScaleChoice`] is returned
+/// rather than a number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClosedForms {
     Honour,
@@ -303,7 +321,8 @@ impl ScaleChoice {
         let compiled = Self::compile(card)?;
         let closed_form =
             !compiled.is_fully_fixed() && compiled.choice != DynamicalChoice::Clustered;
-        if closed_form && closed == ClosedForms::Refuse {
+        let honoured = closed == ClosedForms::Honour && compiled.choice.has_fixed_beam_oracle();
+        if closed_form && !honoured {
             return Err(ScaleError::UnhonouredScaleChoice {
                 choice: compiled.choice.as_i64(),
             });
@@ -1027,8 +1046,9 @@ mod tests {
     /// A prescription with no reference run behind it produces a plausible,
     /// smooth, wrong cross section with nothing to notice it by, so it is named
     /// rather than approximated — which is what hadron beams get, no banked run
-    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead:
-    /// `gg_to_gg_cg`'s banked run measures choice 3 per event, and the other four
+    /// there selecting one. Fixed beams pass [`ClosedForms::Honour`] instead, which
+    /// compiles choice 3 (`gg_to_gg_cg`'s banked run measures it per event) and
+    /// choice 4 (the collider energy there) and still refuses 1, 2 and 5, which
     /// rest on this module's value tests alone.
     ///
     /// The `fully_fixed` half is the accuracy of the gate, not leniency: both
@@ -1044,15 +1064,24 @@ mod tests {
                 Err(ScaleError::UnhonouredScaleChoice { choice }),
                 "choice {choice} on a dynamical card"
             );
-            // The same card, for a caller that has an oracle: compiled, and the
-            // choice it compiled to is the card's own.
-            let honoured = ScaleChoice::from_run_card_for(&card(&text), ClosedForms::Honour)
-                .unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"));
-            assert_eq!(honoured.choice().as_i64(), choice);
-            assert!(
-                !honoured.needs_channels(),
-                "a closed form reads no channels"
-            );
+            // The same card at fixed beams: compiled to the card's own choice
+            // where an oracle stands behind it, refused where none does.
+            let at_fixed_beams = ScaleChoice::from_run_card_for(&card(&text), ClosedForms::Honour);
+            if matches!(choice, 3 | 4) {
+                let honoured =
+                    at_fixed_beams.unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"));
+                assert_eq!(honoured.choice().as_i64(), choice);
+                assert!(
+                    !honoured.needs_channels(),
+                    "a closed form reads no channels"
+                );
+            } else {
+                assert_eq!(
+                    at_fixed_beams,
+                    Err(ScaleError::UnhonouredScaleChoice { choice }),
+                    "choice {choice} at fixed beams"
+                );
+            }
 
             // The same choice where every scale is a run-card constant is
             // accepted, and yields those constants.
@@ -1090,12 +1119,14 @@ mod tests {
     /// the three moves its value.
     const CLOSED_FORM_LEGS: [[f64; 4]; 2] = [[14.0, 3.0, 4.0, 12.0], [13.0, -3.0, -4.0, 0.0]];
 
-    fn honoured(choice: i64) -> ScaleChoice {
-        ScaleChoice::from_run_card_for(
-            &partonic_card(&format!("{choice} = dynamical_scale_choice")),
-            ClosedForms::Honour,
-        )
-        .unwrap_or_else(|e| panic!("choice {choice} honoured: {e}"))
+    /// The prescription a fixed-beam card compiles to, before the decision on
+    /// which closed forms are honoured: the value tests pin every transcription,
+    /// the refused ones included.
+    fn compiled(choice: i64) -> ScaleChoice {
+        ScaleChoice::compile(&partonic_card(&format!(
+            "{choice} = dynamical_scale_choice"
+        )))
+        .unwrap_or_else(|e| panic!("choice {choice} compiled: {e}"))
     }
 
     fn assert_dynamic(scales: EventScales, expected: f64, what: &str) {
@@ -1111,7 +1142,7 @@ mod tests {
     /// `kin_functions.f`'s `et = E·p_T/|p|`: `14·5/13 + 13`.
     #[test]
     fn choice_1_is_the_summed_transverse_energy() {
-        let scales = honoured(1)
+        let scales = compiled(1)
             .scales(&event(&CLOSED_FORM_LEGS))
             .expect("scales");
         assert_dynamic(scales, 70.0 / 13.0 + 13.0, "choice 1");
@@ -1121,7 +1152,7 @@ mod tests {
     /// `√52 + 13`.
     #[test]
     fn choice_2_is_the_summed_transverse_mass() {
-        let scales = honoured(2)
+        let scales = compiled(2)
             .scales(&event(&CLOSED_FORM_LEGS))
             .expect("scales");
         assert_dynamic(scales, 52f64.sqrt() + 13.0, "choice 2");
@@ -1139,7 +1170,7 @@ mod tests {
             ],
             outgoing: &CLOSED_FORM_LEGS,
         };
-        let scales = honoured(5).scales(&event).expect("scales");
+        let scales = compiled(5).scales(&event).expect("scales");
         assert!(
             (scales.mu_r / 175.0 - 1.0).abs() < 1e-12,
             "choice 5: mu_r = {}",

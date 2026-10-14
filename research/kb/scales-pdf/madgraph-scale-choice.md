@@ -125,19 +125,23 @@ more than two final-state legs (`pp_to_llj*`, `ee_to_mumua`,
 |---|---|---|
 | fully fixed | honoured | honoured |
 | `-1` | honoured (kT engine) | honoured (kT engine) |
-| `1`–`5` | honoured (`ClosedForms::Honour`, `hadronic.rs`) | refused: `ScaleError::UnhonouredScaleChoice` (`ClosedForms::Refuse`, `proton.rs`) |
+| `3`, `4` | honoured (`ClosedForms::Honour`, `hadronic.rs`) | refused: `ScaleError::UnhonouredScaleChoice` (`ClosedForms::Refuse`, `proton.rs`) |
+| `1`, `2`, `5` | refused: `ScaleError::UnhonouredScaleChoice` | refused |
 | `-1` with exactly one `μF` fixed | refused (`MixedFixedFactorisationScales`) | refused |
 
 The closed forms are refused at hadron beams because no banked hadronic run
 selects one: a scale taken under it would feed the parton densities with nothing
-on the other side, giving a plausible, smooth, wrong σ. Fixed beams honour them
-because `gg_to_gg_cg`'s banked run selects choice 3 and replays 10 000 events
+on the other side, giving a plausible, smooth, wrong σ. Fixed beams honour
+choice 4 because `√ŝ` is the collider energy there, a constant of the run, and
+choice 3 because `gg_to_gg_cg`'s banked run selects it and replays 10 000 events
 (20 000 scale comparisons) at worst 0.999 of the printing budget in
 `validate_scales`, with its `samples` cell gated; its σ cell is informational at
 a converged `−0.22 %` offset that neither the scale formula nor the process
 explains ([gg-to-gg-cg-sigma-offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md)).[^n36-b6]
-**The hadron-beam refusal should be revisited when a banked hadronic run selects
-a closed form.** The refusal is on the *value*, applied in
+Choices 1, 2 and 5 are refused at fixed beams for the hadron-beam reason: their
+transcriptions have value tests (`coupling/scales.rs`) and no reference run
+([fixed-beam-closed-form-scales-1-2-5](../backlog/feature/fixed-beam-closed-form-scales-1-2-5.md)).
+**Each refusal should be revisited when a banked run selects that closed form.** The refusal is on the *value*, applied in
 `ScaleChoice::from_run_card_for` only where the choice is read: a fully fixed
 card accepts any choice, because both scale entry points short-circuit before
 reading it. The field itself stays `Consumed`
