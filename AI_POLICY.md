@@ -37,6 +37,12 @@ Most harnesses will try to add themselves as a co-author unprompted. Turn it
 off. (The instruction lives in `AGENTS.md`, which every harness reading this
 repo should pick up; if yours does not, fix it in your own config.)
 
+Watch the commit author too, not just the message. PRs here are
+squash-merged, and GitHub's squash credits every other commit author as a
+`Co-authored-by:`. If a cloud agent commits under its own name, the model ends
+up a co-author on `main` anyway. Give the agent's environment your git
+identity.
+
 If you are working through an agent harness, `AGENTS.md` is also where the
 project's conventions live — point your tool at it and most of this comes for
 free.
