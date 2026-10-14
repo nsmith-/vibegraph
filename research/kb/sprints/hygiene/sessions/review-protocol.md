@@ -2,10 +2,14 @@
 type: Procedure
 title: "Hygiene review protocol"
 description: "How an R-session reviews one module cluster on four points, read-only, and the report shape triage and the lessons depend on."
-status: draft
+status: stable
 tags: [hygiene, review, protocol]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: "human:nsmith-", at: 2026-10-14}]
 ---
+The per-PR [`hygiene-dev`](../../../../../.agents/agents/hygiene-dev.md) agent
+synthesises this protocol and its [fix](fix-protocol.md) counterpart into one session.
+
 Every R-session brief links here. The brief names the cluster; this page
 says how to review it.
 

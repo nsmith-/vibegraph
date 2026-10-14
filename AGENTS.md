@@ -167,7 +167,7 @@ Key flags: `grep -n` (line numbers), `grep -r` (recursive), `grep -C N` (context
 ### Sprint & Subagent Operations (manager side)
 
 Sprints are run by a manager session dispatching one dev agent per session
-(`feature-dev` / `validation-dev` / `performance-dev`; for miscellaneous tasks
+(`feature-dev` / `validation-dev` / `performance-dev` / `hygiene-dev`; for miscellaneous tasks
 use the `claude` agent type with an explicit model override — never
 `general-purpose`, which ignores model overrides).
 

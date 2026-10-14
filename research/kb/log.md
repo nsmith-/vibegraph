@@ -17,3 +17,7 @@
   - The draft [hygiene review](workflow/hygiene-review.md) procedure records the lessons for the hygiene agent.
   - The kb concepts the code changes made stale were updated.
   - The full banked validation is green on the final code.
+
+## 2026-10-14
+* **Decision**: The user reviewed the hygiene sprint's lessons, protocols and record. The hygiene agent, [`hygiene-dev`](../../.agents/agents/hygiene-dev.md), synthesises the review and fix protocols: it runs last in the PR sequence, fixes what it finds, routes physics findings to `validation-dev` and performance findings to `performance-dev`, and is dispatched on Opus or Sonnet by the change's scope ([hygiene review](workflow/hygiene-review.md#decided), [pr-per-backlog-item](decisions/pr-per-backlog-item.md)).
+* **Decision**: Fixed beams refuse closed-form scale choices 1, 2 and 5, which have no reference run; supporting them is [fixed-beam-closed-form-scales-1-2-5](backlog/feature/fixed-beam-closed-form-scales-1-2-5.md) ([scale choices](scales-pdf/madgraph-scale-choice.md)).

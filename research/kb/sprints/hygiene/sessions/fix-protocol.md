@@ -2,10 +2,14 @@
 type: Procedure
 title: "Hygiene fix protocol"
 description: "How an F-session fixes one cluster's triaged findings and claimed items: what counts as done, the stop-rule, proving a tightened test, gates, commits and the report."
-status: draft
+status: stable
 tags: [hygiene, fix, protocol]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+verified: [{by: "human:nsmith-", at: 2026-10-14}]
 ---
+The per-PR [`hygiene-dev`](../../../../../.agents/agents/hygiene-dev.md) agent
+synthesises this protocol and its [review](review-protocol.md) counterpart into one session.
+
 Every F-session brief links here. The brief names the findings (ids into the
 `R-<x>-report.md` reports) and the claimed backlog items; this page says how
 to fix them.

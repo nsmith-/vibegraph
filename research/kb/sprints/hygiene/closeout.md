@@ -3,9 +3,10 @@ type: Sprint Record
 title: "Hygiene sprint"
 description: "The first sprint in the folder shape: eight cluster reviews (176 findings), ten fix sessions (125 fixed, at least 112 mutations run), 25 items closed, 54 filed, the pub surface cut from 2601 to 1359 lines, and the lessons that design the hygiene agent."
 closed: 2026-10-10
-status: draft
+status: stable
 tags: [hygiene, sprint, sprint-record]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-10}
+verified: [{by: "human:nsmith-", at: 2026-10-14}]
 sources:
   - {id: sprint, resource: "sprint.md", title: "Sprint overview"}
   - {id: log, resource: "log.md", title: "Sprint log"}
