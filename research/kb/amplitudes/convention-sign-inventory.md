@@ -169,8 +169,9 @@ showed every diagram root-invariant, so the defect was not in the currents.
 
 - [wpwm-to-epem-neutrino-exchange-sign](../backlog/validation/wpwm-to-epem-neutrino-exchange-sign.md):
   `w+ w- > e+ e-` has the wrong t-channel sign against the s-channel.
-- [config-amp-phase-and-sign-unpinned](../backlog/validation/config-amp-phase-and-sign-unpinned.md):
-  per-configuration phases are measured `±1` but asserted only in modulus.
+- [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md):
+  per-configuration phases and sign patterns are asserted on the rows with a
+  per-diagram comparison (`CONFIG_AMP_SIGNS`), not yet on the multi-flow rows.
 - [mixed-dirac-and-matrix-free-vertex-terms](../backlog/feature/mixed-dirac-and-matrix-free-vertex-terms.md):
   a vertex mixing a `Gamma` term with an `Identity` term has no defined build sign.
 

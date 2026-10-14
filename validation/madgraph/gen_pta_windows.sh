@@ -56,6 +56,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=madevent_seeds.sh
+source "$HERE/madevent_seeds.sh"
 OUT="$HERE/output"
 BANKED="$OUT/ee_to_mumua"
 # Committed: a few dozen scalars, expensive to produce and stable, so they
@@ -140,7 +142,7 @@ output $dir -nojpeg
 EOF
     case "$version" in
       3.7.1) bash "$HERE/mg5_pinned.sh" "$tmp_mg5" >&2 ;;
-      3.5.7) LDFLAGS="${LDFLAGS:-} -lc++" mg5_aMC "$tmp_mg5" >&2 ;;
+      3.5.7) LDFLAGS="$(mes_ldflags)" mg5_aMC "$tmp_mg5" >&2 ;;
       *) echo "!!! unknown MadGraph version $version" >&2; exit 1 ;;
     esac
     rm -f "$tmp_mg5"
@@ -284,8 +286,9 @@ run_one() {
   local log="$OUT/pta_window_$tag.log"
   echo ">>> [$tag] running madevent in $dir ..." >&2
   # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
-  # make_opts STDLIB=-lc++, so the link needs it appended explicitly.
-  LDFLAGS="${LDFLAGS:-} -lc++" "$dir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
+  # make_opts STDLIB line, so the link needs the platform C++ runtime
+  # (mes_ldflags) appended explicitly.
+  LDFLAGS="$(mes_ldflags)" "$dir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
     echo "!!! [$tag] generate_events returned non-zero; see $log" >&2
     tail -30 "$log" >&2
   }

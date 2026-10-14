@@ -5,7 +5,7 @@ description: "VegasGrid's Lepage importance grid, the damping exponent (1.5 raw,
 status: draft
 tags: [vegas, integration, importance-sampling, grid, serialisation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n01-vegas, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L159-L182", title: "Note 01, VEGAS and VEGAS+ summaries"}
   - {id: n18-phases, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/18-hadronic-xsec-design.md#L258-L282", title: "Note 18 §2.4, VEGAS phases and serialisation"}
@@ -30,11 +30,11 @@ edges `xi[d][k]` with `xi[d][0] = 0` and `xi[d][nbins] = 1`. Every bin is
 drawn with equal probability, so narrow bins concentrate points and the
 Jacobian of a draw is `nbins · Δx` per dimension: this is importance sampling,
 not stratification[^n01-vegas]. Production grids use `VEGAS_NBINS = 64`
-(`hadronic.rs:68`).
+(`hadronic.rs:69`).
 
 An iteration draws `neval` points, accumulates the integral estimate and, per
 dimension and bin, the histogram of `(f·w)²`, then `refine_grid`
-(`vegas.rs:906`) reshapes the edges:
+(`vegas.rs:684`) reshapes the edges:
 
 1. normalise each bin's sum by the expected hits per bin;
 2. damp with Lepage's rule `m_k → avg · ((r_k − 1)/ln r_k)^α`, `r_k = m_k/avg`;
@@ -109,19 +109,18 @@ The API splits adaptation from use:[^n18-phases][^vegas-rs]
 The parallel forms keep the result independent of the thread count
 ([RNG substreams](rng-substreams-and-parallel-determinism.md)):
 
-- `adapt_parallel` / `sample_frozen_parallel` key each chunk's `ChaCha8`
-  substream by `(iteration, chunk)` and reduce chunk partials in chunk order.
-  They are thread-count invariant but do **not** reproduce `adapt`'s numbers;
-  production does not call them.
-- `adapt_parallel_seeded` (`vegas.rs:525`) is bit-for-bit the sequential
-  `adapt` over a seekable substream: each chunk seeks to global point `p · ndim`
-  draws, and per-point values and bin indices are reduced in global point
-  order on one thread. `test_adapt_parallel_seeded_is_the_sequential_adapt`
-  pins it.
-- `adapt_blocks_iteration` lifts that iteration body over many grids at once,
-  one block per channel, scheduled by `(block, chunk)` in one rayon region.
-  The per-channel integration in `budget.rs` runs on it
+- `adapt_blocks_iteration` (`vegas.rs:799`) runs one iteration of many grids
+  at once, one block per channel, scheduled by `(block, chunk)` in one rayon
+  region. Each block's result is bit-for-bit one iteration of the sequential
+  `adapt` over a seekable substream: each chunk seeks to global point
+  `p · ndim` draws, and per-point values and bin indices are reduced in global
+  point order on one thread. Its doc comment carries the contract. The
+  per-channel integration in `budget.rs` runs on it
   ([budget allocation](channel-budget-allocation.md)).
+- `adapt_parallel_seeded` (`vegas.rs:458`, `#[cfg(test)]`) loops
+  `adapt_blocks_iteration` over iterations as a single block;
+  `test_adapt_parallel_seeded_is_the_sequential_adapt` pins it against
+  `adapt`.
 
 ## Serialisation
 

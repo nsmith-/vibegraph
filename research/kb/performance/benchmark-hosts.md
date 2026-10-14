@@ -121,10 +121,10 @@ cost", and it too mixes load with recompilation.[^fact-noise][^n32-closeout]
 
 ## Tooling gap
 
-`validation/madgraph/host_info.py` reads only macOS `sysctl`. On Linux its CPU
-block is null, so the Cascade Lake run's `mg_timings.json` CPU identity was
-filled in by hand from `/proc/cpuinfo`.[^cl-uncovered][^host-info] Open as
-[host-info-null-cpu-block-on-linux](../backlog/hygiene/host-info-null-cpu-block-on-linux.md).
+The Cascade Lake run's `mg_timings.json` CPU identity was filled in by hand from
+`/proc/cpuinfo`, because `validation/madgraph/host_info.py` then read only macOS
+`sysctl`.[^cl-uncovered][^host-info] It now reads `/proc/cpuinfo` and
+`/proc/meminfo` on Linux ([T1 report](../sprints/hygiene/sessions/T1-report.md)).
 
 [^n30-host]: Note 30 §1, written from `target/validation-report/host.json` and the MadGraph pass's `timings.json` host block.
 [^n30-repro]: Note 30 §3.3.

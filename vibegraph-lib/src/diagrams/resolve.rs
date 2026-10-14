@@ -82,7 +82,7 @@ pub fn particle_by_name<'m>(model: &'m UFOModel, name: &str) -> Option<&'m Parti
 }
 
 /// The model particle with a PDG code.
-pub fn particle_by_pdg(model: &UFOModel, code: i64) -> Option<&Particle> {
+pub(crate) fn particle_by_pdg(model: &UFOModel, code: i64) -> Option<&Particle> {
     model.particles.values().find(|p| p.pdg_code == code)
 }
 
@@ -131,7 +131,7 @@ fn leg_particles<'m>(
 }
 
 /// The model particle names a leg may be, in the label's member order.
-pub fn leg_names(
+pub(crate) fn leg_names(
     model: &UFOModel,
     particle: &LegParticle,
     token: &str,
@@ -146,7 +146,7 @@ pub fn leg_names(
 /// A `/` list as the model particle names no propagator may carry: labels
 /// expanded, and each particle's antiparticle added, since MadGraph forbids a
 /// propagator by |PDG code| — in either orientation.
-pub fn forbidden_propagator_names(
+pub(crate) fn forbidden_propagator_names(
     model: &UFOModel,
     names: &[String],
     aliases: &AliasTable,
@@ -232,7 +232,7 @@ fn rewrite_default_multiparticles(table: &mut AliasTable, model: &UFOModel) {
 
 /// The required s-channels of a definition as MadGraph's or-list of and-lists
 /// of PDG codes.
-pub fn required_s_channel_ids(
+pub(crate) fn required_s_channel_ids(
     groups: &[Vec<String>],
     aliases: &AliasTable,
     model: &UFOModel,
@@ -242,7 +242,7 @@ pub fn required_s_channel_ids(
 
 /// A `$$` list as PDG codes, as written: MadGraph compares them with the
 /// oriented s-channel id, so `$$ t` does not forbid an s-channel `t~`.
-pub fn forbidden_s_channel_ids(
+pub(crate) fn forbidden_s_channel_ids(
     names: &[String],
     aliases: &AliasTable,
     model: &UFOModel,
@@ -257,7 +257,7 @@ pub fn forbidden_s_channel_ids(
 }
 
 /// The model's coupling-order names.
-pub fn check_order_name(model: &UFOModel, name: &str) -> Result<(), ResolveError> {
+pub(crate) fn check_order_name(model: &UFOModel, name: &str) -> Result<(), ResolveError> {
     if model.order_hierarchy.contains_key(name) {
         return Ok(());
     }
@@ -372,7 +372,7 @@ fn check_decay_constraints(p: &ResolvedProcess, core: bool) -> Result<(), Resolv
 
 /// One definition, recursively. `id` is the process number of a top-level
 /// definition; a decay without its own `@N` is number 0, as in MadGraph.
-pub fn resolve_definition(
+pub(crate) fn resolve_definition(
     def: &ProcessDefinition,
     id: Option<u32>,
     aliases: &AliasTable,
@@ -504,7 +504,7 @@ fn required_ids(
 /// whose polarizations are not either identical lists or disjoint, an
 /// unpolarized leg counting as every helicity. Initial-state legs are not
 /// looked at.
-pub fn polarizations_unambiguous(legs: &[(bool, Vec<i64>, Vec<i64>)]) -> bool {
+pub(crate) fn polarizations_unambiguous(legs: &[(bool, Vec<i64>, Vec<i64>)]) -> bool {
     let all: Vec<i64> = (-3..=3).collect();
     let mut seen: BTreeMap<i64, Vec<Vec<i64>>> = BTreeMap::new();
     for (state, ids, pol) in legs {
@@ -543,7 +543,7 @@ pub fn polarizations_unambiguous(legs: &[(bool, Vec<i64>, Vec<i64>)]) -> bool {
 
 /// A polarized leg's helicity codes, read against the particles the leg may
 /// be.
-pub fn leg_polarization_codes(
+pub(crate) fn leg_polarization_codes(
     model: &UFOModel,
     particle: &LegParticle,
     token: &str,
@@ -802,7 +802,10 @@ mod tests {
         assert_eq!(r[0].required_s_channels, [vec![23, 25], vec![22, 25]]);
         let r = resolve("generate e+ e- > l+ > e+ e-").unwrap();
         assert_eq!(r[0].required_s_channels, [vec![-11, -13]]);
-        assert!(resolve("generate e+ e- > z z > mu+ mu-").is_err());
+        assert!(matches!(
+            resolve("generate e+ e- > z z > mu+ mu-"),
+            Err(ResolveError::DuplicateRequired)
+        ));
     }
 
     #[test]
@@ -833,6 +836,72 @@ mod tests {
         let r = resolve("generate e+ e- > w+{0} w-{T}").unwrap();
         assert_eq!(r[0].legs[2].polarization, [0]);
         assert_eq!(r[0].legs[3].polarization, [1, -1]);
-        assert!(resolve("generate e+ e- > mu+{0} mu-").is_err());
+        assert!(matches!(
+            resolve("generate e+ e- > mu+{0} mu-"),
+            Err(ResolveError::Polarization { .. })
+        ));
+    }
+
+    /// Each refusal the model makes possible, reached by the card that names it.
+    #[test]
+    fn each_model_level_refusal_is_reached_by_its_card() {
+        type Case = (&'static str, fn(&ResolveError) -> bool);
+        let cases: &[Case] = &[
+            (
+                "define z = e+ e-\ngenerate e+ e- > z",
+                |e| matches!(e, ResolveError::LabelIsParticle(l) if l == "z"),
+            ),
+            (
+                "define v = l | a\ndefine l = e+ mu+\ngenerate e+ e- > v > e+ e-",
+                |e| matches!(e, ResolveError::NestedOrMultiparticle(l) if l == "v"),
+            ),
+            ("generate e+ e- > mu+ mu- QED=-1 QCD=-1", |e| {
+                matches!(e, ResolveError::NegativeOrders)
+            }),
+            ("generate e+ e- > mu+ mu- QED==2 [real=QCD]", |e| {
+                matches!(e, ResolveError::ConstrainedOrdersBeyondTree)
+            }),
+            (
+                "generate e+ e- > mu+ mu- [QCD]",
+                |e| matches!(e, ResolveError::NotALoopModel(o) if o == "QCD"),
+            ),
+            ("generate e+ e- > z{T} z", |e| {
+                matches!(e, ResolveError::AmbiguousPolarization(_))
+            }),
+            (
+                "generate e+ e- > t t~, t > w+ b QCD^2<=2",
+                |e| matches!(e, ResolveError::DecayConstraint(c) if c.contains("squared")),
+            ),
+            (
+                "generate e+ e- > t t~, t > w+ b QED=-1",
+                |e| matches!(e, ResolveError::DecayConstraint(c) if c.contains("negative")),
+            ),
+            ("generate e+ e- > mu+ mu-\nadd process t > w+ b", |e| {
+                matches!(e, ResolveError::MixedInitialStates)
+            }),
+        ];
+        for (card, is_expected) in cases {
+            match resolve(card) {
+                Err(e) if is_expected(&e) => {}
+                other => panic!("{card:?}: {other:?}"),
+            }
+        }
+    }
+
+    /// `2a` is a repeat count before a particle name, unless the model has a
+    /// particle of that name; then the leg is ambiguous.
+    #[test]
+    fn a_repeat_token_that_names_a_particle_is_ambiguous() {
+        let mut model = sm_model(SMRestrict::Default).as_ref().clone();
+        let card = parse_proc_card_ast("generate e+ e- > 2a").unwrap();
+        assert_eq!(resolve_card(&card, &model).unwrap()[0].legs.len(), 4);
+        let mut twin = model.particles["a"].clone();
+        twin.name = "2a".to_owned();
+        twin.antiname = "2a".to_owned();
+        model.particles.insert("2a".to_owned(), twin);
+        assert!(matches!(
+            resolve_card(&card, &model),
+            Err(ResolveError::AmbiguousRepeat(t)) if t == "2a"
+        ));
     }
 }

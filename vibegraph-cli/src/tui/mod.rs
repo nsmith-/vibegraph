@@ -45,7 +45,7 @@ use ratatui::crossterm::cursor::Show;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use ratatui::layout::Position;
+use ratatui::layout::{Position, Size};
 use ratatui::text::{Line, Span};
 use ratatui::{Terminal, TerminalOptions, Viewport};
 use unicode_width::UnicodeWidthChar;
@@ -494,39 +494,10 @@ fn draw_loop(
     let mut pending: Option<Sender<bool>> = None;
     let mut size = terminal.size().ok();
     loop {
-        // Take a resize before anything is written, for two reasons.
-        //
-        // The pane has to be wiped where it stands first. Reserving the viewport
-        // again anchors it to the cursor, so it can land below the rows it used
-        // to occupy, and those rows are cleared from the *new* origin down —
-        // whatever sits above it survives, and the next line pushed into the
-        // history scrolls that leftover pane up into the scrollback for good.
-        //
-        // And the width the history is wrapped to comes from the viewport, which
-        // learns a new size only inside `draw`. Draining first would lay a line
-        // out for the terminal that no longer exists and hand `insert_before` a
-        // row count the terminal does not agree with.
-        let current = terminal.size().ok();
-        if current != size {
-            let _ = terminal.clear();
-            size = current;
-        }
-        let _ = terminal.autoresize();
+        follow_resize(&mut terminal, &mut size);
         drain(&mut terminal, incoming);
         if pending.is_none() {
-            if let Some(request) = take_prompt() {
-                for line in &request.details {
-                    insert_line(&mut terminal, line);
-                }
-                if keys {
-                    set(state, |ui| ui.prompt = Some(request.question.clone()));
-                    pending = Some(request.reply);
-                } else {
-                    // No keys means no way to say yes; the asker is unblocked
-                    // with a no rather than left waiting forever.
-                    let _ = request.reply.send(false);
-                }
-            }
+            pending = put_question(&mut terminal, state, keys);
         }
         advance_clock(state, started.elapsed(), &mut last_stage);
         redraw(&mut terminal, state);
@@ -544,50 +515,13 @@ fn draw_loop(
         match event::poll(TICK) {
             Ok(true) => match event::read() {
                 Ok(event) if pending.is_some() => {
-                    if let Some(granted) = answer_of(&event) {
-                        if let Some(reply) = pending.take() {
-                            let _ = reply.send(granted);
-                        }
-                        set(state, |ui| ui.prompt = None);
-                        insert_line(
-                            &mut terminal,
-                            &marker(if granted {
-                                "download allowed"
-                            } else {
-                                "download declined"
-                            }),
-                        );
+                    answer_question(&mut terminal, state, &event, &mut pending);
+                }
+                Ok(event) => {
+                    if let Some(key) = key_of(&event) {
+                        press(&mut terminal, state, &mut controls, key, log, abort);
                     }
                 }
-                Ok(event) => match key_of(&event) {
-                    Some(Key::Stop) if controls.stopping => {
-                        take_down(&mut terminal);
-                        let _ = writeln!(std::io::stderr(), "vibegraph: aborted");
-                        std::process::exit(ABORT_EXIT);
-                    }
-                    Some(Key::Stop) => {
-                        controls.stopping = true;
-                        abort.request();
-                        set(state, |ui| ui.stopping = true);
-                        insert_line(
-                            &mut terminal,
-                            &marker(
-                                "stopping: the run is finishing what it holds; \
-                                 press again to quit now",
-                            ),
-                        );
-                    }
-                    Some(key) => {
-                        if let Some(change) = retune(&mut controls, key, log) {
-                            set(state, |ui| {
-                                ui.level = controls.level;
-                                ui.scope = controls.scope;
-                            });
-                            insert_line(&mut terminal, &marker(&change));
-                        }
-                    }
-                    None => {}
-                },
                 Err(_) => keys = false,
             },
             Ok(false) => {}
@@ -603,6 +537,112 @@ fn draw_loop(
     // history too: the sender saw the stop set only after its send returned.
     drain(&mut terminal, incoming);
     take_down(&mut terminal);
+}
+
+/// Take a resize before anything is written, for two reasons.
+///
+/// The pane has to be wiped where it stands first. Reserving the viewport
+/// again anchors it to the cursor, so it can land below the rows it used to
+/// occupy, and those rows are cleared from the *new* origin down — whatever
+/// sits above it survives, and the next line pushed into the history scrolls
+/// that leftover pane up into the scrollback for good.
+///
+/// And the width the history is wrapped to comes from the viewport, which
+/// learns a new size only inside `draw`. Draining first would lay a line out
+/// for the terminal that no longer exists and hand `insert_before` a row count
+/// the terminal does not agree with.
+fn follow_resize(terminal: &mut Screen, size: &mut Option<Size>) {
+    let current = terminal.size().ok();
+    if current != *size {
+        let _ = terminal.clear();
+        *size = current;
+    }
+    let _ = terminal.autoresize();
+}
+
+/// Put up the next download question, if one is waiting: its details go into
+/// the history and its question into the footer, and the reply channel is
+/// returned to be answered by a key.
+///
+/// Without keys there is no way to say yes, so the asker is unblocked with a no
+/// rather than left waiting forever.
+fn put_question(terminal: &mut Screen, state: &Mutex<UiState>, keys: bool) -> Option<Sender<bool>> {
+    let request = take_prompt()?;
+    for line in &request.details {
+        insert_line(terminal, line);
+    }
+    if keys {
+        set(state, |ui| ui.prompt = Some(request.question.clone()));
+        Some(request.reply)
+    } else {
+        let _ = request.reply.send(false);
+        None
+    }
+}
+
+/// Answer the question on screen with `event`, if it is an answer; while a
+/// question is up no other key does anything.
+fn answer_question(
+    terminal: &mut Screen,
+    state: &Mutex<UiState>,
+    event: &Event,
+    pending: &mut Option<Sender<bool>>,
+) {
+    let Some(granted) = answer_of(event) else {
+        return;
+    };
+    if let Some(reply) = pending.take() {
+        let _ = reply.send(granted);
+    }
+    set(state, |ui| ui.prompt = None);
+    insert_line(
+        terminal,
+        &marker(if granted {
+            "download allowed"
+        } else {
+            "download declined"
+        }),
+    );
+}
+
+/// Act on a control key: the first stop asks the run to finish what it holds,
+/// a second quits at once, and the level and scope keys retune the filter.
+fn press(
+    terminal: &mut Screen,
+    state: &Mutex<UiState>,
+    controls: &mut Controls,
+    key: Key,
+    log: &OnceLock<LogHandle>,
+    abort: &StopSignal,
+) {
+    match key {
+        Key::Stop if controls.stopping => {
+            take_down(terminal);
+            let _ = writeln!(std::io::stderr(), "vibegraph: aborted");
+            std::process::exit(ABORT_EXIT);
+        }
+        Key::Stop => {
+            controls.stopping = true;
+            abort.request();
+            set(state, |ui| ui.stopping = true);
+            insert_line(
+                terminal,
+                &marker(
+                    "stopping: the run is finishing what it holds; \
+                     press again to quit now",
+                ),
+            );
+        }
+        key => {
+            if let Some(change) = retune(controls, key, log) {
+                set(state, |ui| {
+                    ui.level = controls.level;
+                    ui.scope = controls.scope;
+                });
+                insert_line(terminal, &marker(&change));
+            }
+        }
+    }
 }
 
 /// Where a key moves the display's controls.

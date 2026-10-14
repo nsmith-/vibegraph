@@ -3,8 +3,9 @@
 //!
 //! Each rung is integrated to a fixed relative accuracy, its channel maxima are
 //! scanned on the trained grids, and unweighted events are drawn by the same
-//! accept/reject pass `vibegraph generate` runs (no file is written: a decay-chain
-//! event file waits on its status-2 resonance records). For every rung it prints
+//! accept/reject pass `vibegraph generate` runs. The events are counted, not
+//! written: the event file, status-2 resonance records included, is
+//! `cli_decay_chain_events`' subject. For every rung it prints
 //!
 //! - the final-state leg count, channels and subprocesses;
 //! - the cost of one integrand point and of the squared matrix element alone at
@@ -269,6 +270,7 @@ fn measure_fixed(
     });
 
     let (stats, accepted, scan_s, generation_s) = unweight(&integ, &per_channel, events);
+    assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), rung.name);
     Measured {
         n_final: legs.iter().filter(|l| l.is_final).count(),
         subprocesses: evals.len(),
@@ -347,6 +349,7 @@ fn measure_proton(
     });
 
     let (stats, accepted, scan_s, generation_s) = unweight(&integ, &per_channel, events);
+    assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), rung.name);
     Measured {
         n_final: final_masses.len(),
         subprocesses: groups.groups().len(),
@@ -362,6 +365,17 @@ fn measure_proton(
         generation_s,
         scan_s,
     }
+}
+
+/// Fail when the per-point configuration draw fell back to the sampling channel:
+/// its squared amplitudes gave it nothing to normalise, which the integrand
+/// reports only through this counter.
+fn assert_no_scale_draw_fallbacks(fallbacks: u64, rung: &str) {
+    assert_eq!(
+        fallbacks, 0,
+        "[{rung}] the scale-configuration draw fell back to the sampling channel on \
+         {fallbacks} points"
+    );
 }
 
 #[test]

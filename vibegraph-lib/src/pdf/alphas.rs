@@ -97,8 +97,8 @@ pub enum GridAlphaSError {
 /// this is not about the range: it is a scale that is not a scale.
 #[derive(Debug, Error, PartialEq)]
 #[error("alpha_s requested at Q = {q}, which is not a positive finite scale")]
-pub struct UnusableScale {
-    pub q: f64,
+pub(crate) struct UnusableScale {
+    pub(crate) q: f64,
 }
 
 /// One contiguous run of knots between flavour thresholds, with the cubic's
@@ -251,15 +251,9 @@ impl GridAlphaS {
 
     /// Lowest and highest tabulated scale — the range inside which the reading
     /// interpolates rather than continues.
-    pub fn q_range(&self) -> (f64, f64) {
+    #[cfg(test)]
+    pub(crate) fn q_range(&self) -> (f64, f64) {
         (self.qs[0], self.qs[self.qs.len() - 1])
-    }
-
-    /// The set's declared `AlphaS_MZ`. Six printed digits in the sets seen so far,
-    /// so it is metadata about the table rather than a value to evaluate at `M_Z`:
-    /// [`eval`](Self::eval) is the accurate route to `αs(M_Z)`.
-    pub fn declared_mz_value(&self) -> f64 {
-        self.mz
     }
 
     /// Number of tabulated knots.
@@ -268,7 +262,7 @@ impl GridAlphaS {
     }
 
     /// `αs(q)`, for any positive finite scale.
-    pub fn try_eval(&self, q: f64) -> Result<f64, UnusableScale> {
+    pub(crate) fn try_eval(&self, q: f64) -> Result<f64, UnusableScale> {
         // Written so a NaN scale fails rather than reaching a comparison that
         // would silently take the interpolating branch.
         if !(q > 0.0) || !q.is_finite() {

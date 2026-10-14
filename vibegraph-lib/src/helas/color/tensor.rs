@@ -22,13 +22,15 @@ use super::factor::{ColorFactor, ColorString};
 
 /// A color index. Negative values are summed (contracted) indices, positive
 /// values label external legs.
-pub type Idx = i32;
+pub(crate) type Idx = i32;
 
 /// A color structure the algebra engine cannot handle.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ColorAlgebraError {
-    /// A colour structure the engine does not represent — a sextet tensor
-    /// (`K6`, `K6Bar`, `T6`) or a rep it cannot label — was encountered.
+    /// A colour structure the engine does not represent was encountered: a UFO
+    /// colour charge outside `1`, `3`, `6`, `8` and their negations, a sextet
+    /// generator (a `T6` carrying adjoint indices), or a tensor whose slots do
+    /// not carry the representations its indices require.
     #[error("unsupported color structure '{0}'")]
     Unsupported(String),
     /// A color basis key did not read as a consistent set of color lines over the
@@ -62,7 +64,7 @@ pub enum TensorKind {
 
 /// A single generalized color tensor.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ColorTensor {
+pub(crate) enum ColorTensor {
     /// `T(a1..an, i, j)`: a chain of fundamental generators, adjoint indices
     /// first, then the fundamental index `i` and antifundamental index `j`.
     /// With an empty adjoint list this is the Kronecker delta `δ_{ij}`.
@@ -90,7 +92,7 @@ pub enum ColorTensor {
 
 impl ColorTensor {
     /// The class tag, for immutable/canonical ordering.
-    pub fn kind(&self) -> TensorKind {
+    pub(crate) fn kind(&self) -> TensorKind {
         match self {
             ColorTensor::T(..) => TensorKind::T,
             ColorTensor::Tr(_) => TensorKind::Tr,
@@ -108,7 +110,7 @@ impl ColorTensor {
     /// The tensor's index array, flattened in storage order. This is the sort
     /// key used to keep tensors in a deterministic order inside a color string
     /// (mirroring MadGraph's sort of the underlying integer arrays).
-    pub fn indices(&self) -> Vec<Idx> {
+    pub(crate) fn indices(&self) -> Vec<Idx> {
         match self {
             ColorTensor::T(adj, i, j) => {
                 let mut v = adj.clone();
@@ -135,7 +137,7 @@ impl ColorTensor {
     ///
     /// # Panics
     /// If `indices` is too short for `kind` (`T` needs ≥ 2, `F`/`D` need 3).
-    pub fn from_immutable(kind: TensorKind, indices: &[Idx]) -> ColorTensor {
+    pub(crate) fn from_immutable(kind: TensorKind, indices: &[Idx]) -> ColorTensor {
         match kind {
             TensorKind::One => ColorTensor::One,
             TensorKind::T => {
@@ -182,7 +184,14 @@ impl ColorTensor {
     /// back, **keeping the index order** — conjugation exchanges the two
     /// representations rather than reordering one; every other tensor
     /// conjugates by reversing its index list.
-    pub fn conj(&self) -> ColorTensor {
+    ///
+    /// For `f` that reversal gives `f(c,b,a) = −f(a,b,c)`, the negative of the
+    /// conjugate of a real structure constant. It is `color_algebra.py`'s default
+    /// `complex_conjugate`, kept as written there, and no caller reaches it: the
+    /// colour matrix conjugates basis keys, which are fully simplified, and
+    /// simplification rewrites every `f` and `d` into traces first. (`d` is
+    /// symmetric, so its reversal is harmless either way.)
+    pub(crate) fn conj(&self) -> ColorTensor {
         match self {
             ColorTensor::T(adj, i, j) => {
                 let mut r = adj.clone();
@@ -207,7 +216,7 @@ impl ColorTensor {
 
     /// Single-object simplification rules. Returns the replacement sum, or
     /// `None` if the tensor is already irreducible on its own.
-    pub fn simplify(&self) -> Option<ColorFactor> {
+    pub(crate) fn simplify(&self) -> Option<ColorFactor> {
         match self {
             ColorTensor::One => Some(ColorFactor(vec![ColorString::scalar(ColorCoeff::one())])),
             ColorTensor::F(a, b, c) => Some(f_to_traces(*a, *b, *c)),
@@ -231,7 +240,7 @@ impl ColorTensor {
     /// Two-object contraction rules. `self.pair_simplify(other)` is tried
     /// first, then `other.pair_simplify(self)`, so each ordered rule only
     /// needs to appear once.
-    pub fn pair_simplify(&self, other: &ColorTensor) -> Option<ColorFactor> {
+    pub(crate) fn pair_simplify(&self, other: &ColorTensor) -> Option<ColorFactor> {
         match (self, other) {
             (ColorTensor::One, _) => Some(ColorFactor(vec![ColorString::new(vec![other.clone()])])),
             (ColorTensor::Tr(a), ColorTensor::Tr(b)) => tr_tr_pair(a, b),

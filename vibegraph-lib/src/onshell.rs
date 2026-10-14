@@ -51,7 +51,7 @@ type V = LorentzVector<f64>;
 
 /// The most distinct marked lines one subprocess may carry: every subset of them
 /// is compiled into an amplitude of its own.
-pub const MAX_MARKED_LINES: usize = 6;
+pub(crate) const MAX_MARKED_LINES: usize = 6;
 
 #[derive(Debug, Error)]
 pub enum OnShellVetoError {
@@ -81,15 +81,15 @@ pub enum OnShellVetoError {
 
 /// The run card's window for the marked propagators.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BwWindow {
+pub(crate) struct BwWindow {
     /// `bwcutoff`: the window's half-width in units of the width.
-    pub bwcutoff: f64,
+    pub(crate) bwcutoff: f64,
     /// `small_width_treatment`: the floor on `|Γ/M|`.
-    pub small_width_treatment: f64,
+    pub(crate) small_width_treatment: f64,
 }
 
 impl BwWindow {
-    pub fn from_run_card(card: &RunCard) -> Self {
+    pub(crate) fn from_run_card(card: &RunCard) -> Self {
         BwWindow {
             bwcutoff: card.float("bwcutoff"),
             small_width_treatment: card.float("small_width_treatment"),
@@ -98,7 +98,7 @@ impl BwWindow {
 
     /// `fk_W`: the width a propagator is evaluated with, floored at
     /// `|M · small_width_treatment|` unless it is zero.
-    pub fn fake_width(&self, mass: f64, width: f64) -> f64 {
+    pub(crate) fn fake_width(&self, mass: f64, width: f64) -> f64 {
         if width == 0.0 {
             return 0.0;
         }
@@ -107,7 +107,7 @@ impl BwWindow {
 
     /// Whether a marked line of pole mass `mass` and width `width` is zeroed at
     /// virtuality `p2`: where the `P1D` propagator's theta function reads `0`.
-    pub fn zeroes(&self, p2: f64, mass: f64, width: f64) -> bool {
+    pub(crate) fn zeroes(&self, p2: f64, mass: f64, width: f64) -> bool {
         let half = self.bwcutoff * self.fake_width(mass, width);
         (p2 - (mass - half).powi(2)) * (p2 - (mass + half).powi(2)) < 0.0
     }
@@ -199,7 +199,7 @@ impl std::fmt::Debug for OnShellVeto {
 impl OnShellVeto {
     /// The veto `forbidden` puts on `eval`, compiled from `set`, or `None` when
     /// no diagram carries a marked line.
-    pub fn new(
+    pub(crate) fn new(
         set: &DiagramSet,
         eval: &AmplitudeEvaluator,
         forbidden: &[i64],
@@ -298,18 +298,19 @@ impl OnShellVeto {
     }
 
     /// The number of configurations of the whole amplitude.
-    pub fn n_configs(&self) -> usize {
+    pub(crate) fn n_configs(&self) -> usize {
         self.config_lines.len()
     }
 
     /// The number of distinct marked lines.
-    pub fn n_lines(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn n_lines(&self) -> usize {
         self.lines.len()
     }
 
     /// The marked lines zeroed at the external momenta `momenta` (incoming first,
     /// any frame), as a bit set; `0` where every marked line is off its window.
-    pub fn pattern(&self, momenta: &[V]) -> u32 {
+    pub(crate) fn pattern(&self, momenta: &[V]) -> u32 {
         let mut pattern = 0;
         for (i, line) in self.lines.iter().enumerate() {
             let mut p = [0.0; 4];
@@ -334,7 +335,7 @@ impl OnShellVeto {
     /// # Panics
     ///
     /// If `pattern` is zero or not a pattern of this veto.
-    pub fn amplitude(&self, pattern: u32) -> Option<(&AmplitudeEvaluator, &[usize])> {
+    pub(crate) fn amplitude(&self, pattern: u32) -> Option<(&AmplitudeEvaluator, &[usize])> {
         assert!(pattern != 0, "pattern 0 is the whole amplitude");
         self.patterns[pattern as usize]
             .as_ref()
@@ -343,7 +344,7 @@ impl OnShellVeto {
 
     /// Every pattern's amplitude, `None` where no diagram survives; index `0` is
     /// the whole amplitude, which this veto does not hold, and is `None`.
-    pub fn amplitudes(&self) -> impl Iterator<Item = Option<&AmplitudeEvaluator>> {
+    pub(crate) fn amplitudes(&self) -> impl Iterator<Item = Option<&AmplitudeEvaluator>> {
         self.patterns
             .iter()
             .map(|p| p.as_ref().map(|(eval, _)| eval))
@@ -352,7 +353,7 @@ impl OnShellVeto {
     /// Zero the entries of `weights` (one per configuration of the whole
     /// amplitude) whose configuration carries a line of `pattern`: their `AMP2`
     /// in `|M'|²` is zero.
-    pub fn mask(&self, pattern: u32, weights: &mut [f64]) {
+    pub(crate) fn mask(&self, pattern: u32, weights: &mut [f64]) {
         for (w, &bits) in weights.iter_mut().zip(&self.config_lines) {
             if bits & pattern != 0 {
                 *w = 0.0;
@@ -448,7 +449,7 @@ pub fn subprocess_markings(
 /// That fails only where the `$` list is not closed under the relabelling the
 /// group makes — a member whose propagator is the antiparticle of the
 /// representative's, say, under `$ w+` alone.
-pub fn check_group_members(
+pub(crate) fn check_group_members(
     groups: &FlavorGroups,
     markings: &BTreeMap<SubprocessKey, (String, Marking)>,
     forbidden: &[i64],

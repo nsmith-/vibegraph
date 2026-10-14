@@ -198,9 +198,8 @@ fn an_unresolvable_model_explains_that_models_are_never_downloaded() {
 /// The acceptance path's last step, on the binary rather than through the
 /// library: an emitted sample re-read and checked by the shipped `check-events`.
 ///
-/// A fixed-energy process stands in for the hadronic one because event
-/// generation for proton beams is not wired yet; the checks `check-events`
-/// applies do not depend on which.
+/// A fixed-energy process keeps the test hermetic, needing no PDF set; the
+/// checks `check-events` applies do not depend on the beams.
 #[test]
 fn a_generated_sample_passes_check_events_and_a_damaged_one_does_not() {
     let home = tempfile::tempdir().unwrap();

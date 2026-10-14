@@ -7,9 +7,10 @@
 //!    substreams are structurally independent: a `(stream, position)` pair
 //!    names an exact location in the output, with 2⁶⁴ selectable streams per
 //!    seed and a settable draw position within each. This maps directly onto
-//!    parallel/distributed accumulation — `stream ← (iteration, chunk index)`,
-//!    `position ← draw counter` — with no reliance on hash-mixing for
-//!    independence.
+//!    parallel/distributed accumulation — `stream ←` one per channel or
+//!    survey iteration, `position ←` the point's index in that stream's run
+//!    times its draws per point, so a chunk of points seeks to its own start —
+//!    with no reliance on hash-mixing for independence.
 //!
 //! 2. A documented **bits→uniform** conversion ([`u64_to_uniform`]) that turns
 //!    each 64-bit draw into a `[0, 1)` value in the scalar field `F`. The
@@ -47,7 +48,7 @@ pub const SCALE_DRAW_STREAM_BASE: u64 = 0x5CA1_0000;
 /// `bits`, a `LaneField` lane pack fed the same draw yields the same value
 /// per lane as scalar `f64`.
 #[inline]
-pub fn u64_to_uniform<F: Real>(bits: u64) -> F {
+pub(crate) fn u64_to_uniform<F: Real>(bits: u64) -> F {
     // 2^53 as f64 is exact; the quotient is in [0, 1).
     let mantissa = (bits >> 11) as f64;
     let scale = (1u64 << 53) as f64;
@@ -68,7 +69,7 @@ pub struct SubStream {
 
 impl SubStream {
     /// Open the substream `stream` of `seed`, positioned at draw `position`.
-    pub fn new(seed: u64, stream: u64, position: u64) -> Self {
+    pub(crate) fn new(seed: u64, stream: u64, position: u64) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         rng.set_stream(stream);
         rng.set_word_pos(u128::from(position) * WORDS_PER_DRAW);
@@ -82,26 +83,21 @@ impl SubStream {
     }
 
     /// The index of the next 64-bit draw within this substream.
+    #[cfg(test)]
     #[inline]
-    pub fn position(&self) -> u64 {
+    pub(crate) fn position(&self) -> u64 {
         (self.rng.get_word_pos() / WORDS_PER_DRAW) as u64
-    }
-
-    /// The stream number this substream draws from.
-    #[inline]
-    pub fn stream(&self) -> u64 {
-        self.rng.get_stream()
     }
 
     /// Draw the next 64 raw bits.
     #[inline]
-    pub fn next_u64(&mut self) -> u64 {
+    pub(crate) fn next_u64(&mut self) -> u64 {
         self.rng.next_u64()
     }
 
     /// Draw the next uniform in `[0, 1)` in the scalar field `F`.
     #[inline]
-    pub fn next_uniform<F: Real>(&mut self) -> F {
+    pub(crate) fn next_uniform<F: Real>(&mut self) -> F {
         u64_to_uniform::<F>(self.next_u64())
     }
 

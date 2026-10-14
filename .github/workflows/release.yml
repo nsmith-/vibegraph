@@ -36,9 +36,10 @@ jobs:
           - target: x86_64-unknown-linux-musl
             asset: vibegraph-x86_64-unknown-linux-musl
             os: ubuntu-latest
-            # musl over a glibc floor: the crate's only C dependency is
-            # zstd-sys's bundled (not system) libzstd, so nothing else needs a
-            # dynamic-linked system library. A musl binary is fully static and
+            # musl over a glibc floor: the C dependencies (zstd-sys's bundled
+            # libzstd, ring's C and assembly, libmimalloc-sys's mimalloc) all
+            # compile their sources through `cc` rather than link a system
+            # library, so nothing needs a dynamic-linked system library. A musl binary is fully static and
             # runs unmodified on any x86_64 Linux kernel a user has, with no
             # "which glibc does this distro ship" support matrix to maintain -
             # exactly the "no dev toolchain" bar this sprint is aiming for.

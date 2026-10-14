@@ -9,3 +9,11 @@
 ## 2026-10-06
 * **Initialization**: Frontmatter added in place to every research note (note 42 Phase 0). `generated.by` on the pre-existing notes is `claude-code` without a model version, which their history no longer records, and `generated.at` is the note's own date or, where it gives none, an upper bound from git.
 * **Creation**: `TODO.md` split into one-file backlog items (note 42 Phase B), with Sprint Record stubs, scope decisions, standing facts and the pipeline status table.
+
+## 2026-10-10
+* **Hygiene sprint closed** ([record](sprints/hygiene/closeout.md), [nsmith-/vibegraph#19](https://github.com/nsmith-/vibegraph/pull/19)).
+  - Eight cluster reviews produced 176 findings, and ten fix sessions fixed 125 of them.
+  - 25 backlog items closed, one released, and 54 filed.
+  - The draft [hygiene review](workflow/hygiene-review.md) procedure records the lessons for the hygiene agent.
+  - The kb concepts the code changes made stale were updated.
+  - The full banked validation is green on the final code.

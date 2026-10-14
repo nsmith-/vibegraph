@@ -44,7 +44,7 @@ const DEFAULT_LEVEL: LevelFilter = LevelFilter::INFO;
 /// Verbosity levels, spelled out for `--log-level` and cycled by the display's
 /// own level keys.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub enum LogLevel {
+pub(crate) enum LogLevel {
     Off,
     Error,
     Warn,
@@ -169,7 +169,7 @@ impl Scope {
 
 /// How loud the run is and where its diagnostics are recorded.
 #[derive(Args, Debug, Clone)]
-pub struct LogArgs {
+pub(crate) struct LogArgs {
     /// Raise the level: `-v` run notices, `-vv` pipeline internals, `-vvv` all.
     #[arg(
         long,
@@ -178,30 +178,30 @@ pub struct LogArgs {
         global = true,
         conflicts_with_all = ["quiet", "log_level"],
     )]
-    pub verbose: u8,
+    pub(crate) verbose: u8,
 
     /// Report only warnings and errors.
     #[arg(long, short = 'q', global = true, conflicts_with = "log_level")]
-    pub quiet: bool,
+    pub(crate) quiet: bool,
 
     /// Report at this level, instead of counting `-v`s.
     #[arg(long, value_enum, value_name = "LEVEL", global = true)]
-    pub log_level: Option<LogLevel>,
+    pub(crate) log_level: Option<LogLevel>,
 
     /// Also record every event, at `trace`, to this file.
     ///
     /// The file is written whatever the terminal is showing, which is what makes
     /// a run reviewable afterwards at a level nobody chose to watch it at.
     #[arg(long, value_name = "PATH", global = true)]
-    pub log_file: Option<PathBuf>,
+    pub(crate) log_file: Option<PathBuf>,
 
     /// Draw the live status pane even where one would not be drawn by default.
     #[arg(long, global = true, conflicts_with = "no_tui")]
-    pub tui: bool,
+    pub(crate) tui: bool,
 
     /// Never draw the live status pane; report in plain lines.
     #[arg(long, global = true)]
-    pub no_tui: bool,
+    pub(crate) no_tui: bool,
 }
 
 impl LogArgs {

@@ -29,14 +29,14 @@ const MAX_TERMS: usize = 4096;
 /// A set of monomials `Π Pᵢ^eᵢ` over a fixed list of parameters, each an exponent
 /// vector `e` in parameter order.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Support {
+pub(crate) struct Support {
     arity: usize,
     terms: BTreeSet<Box<[u8]>>,
 }
 
 impl Support {
     /// The empty set: the zero polynomial.
-    pub fn empty(arity: usize) -> Support {
+    pub(crate) fn empty(arity: usize) -> Support {
         Support {
             arity,
             terms: BTreeSet::new(),
@@ -44,14 +44,14 @@ impl Support {
     }
 
     /// `{1}`: independent of every parameter.
-    pub fn constant(arity: usize) -> Support {
+    pub(crate) fn constant(arity: usize) -> Support {
         let mut s = Support::empty(arity);
         s.terms.insert(vec![0; arity].into_boxed_slice());
         s
     }
 
     /// `{Pᵢ}`.
-    pub fn variable(arity: usize, i: usize) -> Support {
+    pub(crate) fn variable(arity: usize, i: usize) -> Support {
         let mut e = vec![0; arity];
         e[i] = 1;
         let mut s = Support::empty(arity);
@@ -59,31 +59,19 @@ impl Support {
         s
     }
 
-    /// The number of parameters the exponent vectors run over.
-    pub fn arity(&self) -> usize {
-        self.arity
-    }
-
     /// The monomials' exponent vectors, in lexicographic order.
-    pub fn terms(&self) -> impl Iterator<Item = &[u8]> {
+    pub(crate) fn terms(&self) -> impl Iterator<Item = &[u8]> {
         self.terms.iter().map(|t| &t[..])
     }
 
-    pub fn len(&self) -> usize {
-        self.terms.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.terms.is_empty()
-    }
-
     /// Whether the set is `{1}`.
-    pub fn is_constant(&self) -> bool {
+    pub(crate) fn is_constant(&self) -> bool {
         self.terms.len() == 1 && self.terms.iter().all(|t| t.iter().all(|&e| e == 0))
     }
 
     /// The largest total degree, or `None` for the empty set.
-    pub fn degree(&self) -> Option<u32> {
+    #[cfg(test)]
+    pub(crate) fn degree(&self) -> Option<u32> {
         self.terms
             .iter()
             .map(|t| t.iter().map(|&e| u32::from(e)).sum())
@@ -91,12 +79,12 @@ impl Support {
     }
 
     /// The largest power of parameter `i` in any monomial.
-    pub fn max_exponent(&self, i: usize) -> u8 {
+    pub(crate) fn max_exponent(&self, i: usize) -> u8 {
         self.terms.iter().map(|t| t[i]).max().unwrap_or(0)
     }
 
     /// The monomials a sum of two such polynomials can carry.
-    pub fn union(&self, other: &Support) -> Support {
+    pub(crate) fn union(&self, other: &Support) -> Support {
         Support {
             arity: self.arity,
             terms: self.terms.union(&other.terms).cloned().collect(),
@@ -105,7 +93,7 @@ impl Support {
 
     /// The monomials a product of two such polynomials can carry: every pairwise
     /// product. `None` past [`MAX_TERMS`] monomials or an exponent above 255.
-    pub fn product(&self, other: &Support) -> Option<Support> {
+    pub(crate) fn product(&self, other: &Support) -> Option<Support> {
         let mut terms = BTreeSet::new();
         for a in &self.terms {
             for b in &other.terms {
@@ -129,7 +117,7 @@ impl Support {
 
 /// The symbolic analysis of UFO expressions as polynomials in a list of external
 /// parameters.
-pub struct PolyAnalysis<'m> {
+pub(crate) struct PolyAnalysis<'m> {
     model: &'m UFOModel,
     params: Vec<String>,
     /// Every internal parameter that transitively depends on one of `params`.
@@ -139,7 +127,7 @@ pub struct PolyAnalysis<'m> {
 }
 
 impl<'m> PolyAnalysis<'m> {
-    pub fn new(model: &'m UFOModel, params: &[&str]) -> Self {
+    pub(crate) fn new(model: &'m UFOModel, params: &[&str]) -> Self {
         let internal = model
             .params
             .internals
@@ -167,12 +155,12 @@ impl<'m> PolyAnalysis<'m> {
 
     /// Whether `name` moves when any of the parameters does, the parameters
     /// themselves included.
-    pub fn moves(&self, name: &str) -> bool {
+    pub(crate) fn moves(&self, name: &str) -> bool {
         self.params.iter().any(|p| p == name) || self.driven.contains(name)
     }
 
     /// The monomials a model parameter carries.
-    pub fn param_support(&mut self, name: &str) -> Option<Support> {
+    pub(crate) fn param_support(&mut self, name: &str) -> Option<Support> {
         if let Some(i) = self.params.iter().position(|p| p == name) {
             return Some(Support::variable(self.arity(), i));
         }
@@ -192,7 +180,7 @@ impl<'m> PolyAnalysis<'m> {
 
     /// The monomials an expression carries, or `None` if it is not provably a
     /// polynomial in the parameters.
-    pub fn expr_support(&mut self, expr: &Expr) -> Option<Support> {
+    pub(crate) fn expr_support(&mut self, expr: &Expr) -> Option<Support> {
         let n = self.arity();
         match expr {
             Expr::Num(_) | Expr::Pi => Some(Support::constant(n)),
@@ -243,7 +231,7 @@ impl<'m> PolyAnalysis<'m> {
     /// The monomials a set of diagrams' amplitude carries, or `None` when it is not
     /// a polynomial in the parameters: a coupling that is not, or a mass or width
     /// of any particle in the diagrams that moves with them.
-    pub fn amplitude_support(&mut self, diagrams: &[Diagram]) -> Option<Support> {
+    pub(crate) fn amplitude_support(&mut self, diagrams: &[Diagram]) -> Option<Support> {
         let model = self.model;
         let n = self.arity();
         let mut total = Support::empty(n);

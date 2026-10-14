@@ -5,7 +5,7 @@ description: "A decay is a one-initial process at rest with flux 1/2M, integrate
 status: draft
 tags: [decays, partial-width, process-grammar, run-card, madevent]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
   - {id: n38-d1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L497-L598", title: "Note 38 §4 D1, 1→n decay processes"}
@@ -21,13 +21,14 @@ it to a **partial width** rather than a cross section, and vibegraph does the sa
 
 ## What a decay is here
 
-- **Enumeration.** `diagrams::enumerate_decay` runs one decay's enumeration, the automatic
-  lowest-`WEIGHTED` search included, as a unit, and refuses a process without exactly one
-  initial particle (`DiagramError::NotADecay`). It returns a `Vec<DiagramSet>`, because a
-  decay written with labels (`w+ > j j`) has several concrete assignments. With one initial
+- **Enumeration.** A decay is enumerated like any other process:
+  `diagrams::generate_from_process` runs the enumeration, the automatic
+  lowest-`WEIGHTED` search included, and returns a `Vec<DiagramSet>`, because a decay
+  written with labels (`w+ > j j`) has several concrete assignments. With one initial
   particle every propagator is an s-channel line oriented away from the decaying particle,
   which is what `>` and `$$` filter on ([s-channel restrictions](s-channel-restrictions.md)).
-  The same function enumerates each decay of a [decay chain](decay-chains.md).
+  The same enumeration runs on each decay of a [decay chain](decay-chains.md), where a
+  decay without exactly one initial particle is refused (`DiagramError::NotADecay`).
 - **Kinematics.** `hadronic::InitialState` is `Beams(FixedBeams)` or `Decay(DecayAtRest)`.
   A decay supplies √s = M, the incoming momentum `(M, 0, 0, 0)`, flux **1/(2M)**, no
   boost, and `Observable::PartialWidth` in GeV. The fixed-beam integrand and its

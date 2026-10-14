@@ -3,9 +3,10 @@
 //! A vertex's `color` list holds one string per color structure, e.g. `'1'`,
 //! `'T(3,2,1)'`, `'f(-1,1,2)*f(3,4,-1)'`. Each string is a product (`*`) of
 //! atoms with signed integer indices: positive indices are 1-based positions
-//! in the vertex's particle list; negative indices are "summed" (only ever
-//! introduced later, during diagram colorization — never present in a raw
-//! UFO model file).
+//! in the vertex's particle list; negative indices are summed dummies, which a
+//! model file writes for a contraction inside one vertex (the SM four-gluon
+//! vertex's `f(-1,1,2)*f(3,4,-1)`, SMEFTsim's `T(-1,2,1)*T(-1,4,3)`) and
+//! diagram colorization introduces again between vertices.
 //!
 //! `Epsilon(i,j,k)` and `EpsilonBar(i,j,k)` — the baryonic invariants of three
 //! fundamental and three antifundamental indices — parse as atoms of their own
@@ -34,7 +35,7 @@ use thiserror::Error;
 /// Integer indices are either 1-based vertex-particle slots (positive) or
 /// summed indices (negative) — see the module docs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ColorAtom {
+pub(crate) enum ColorAtom {
     /// `T(a1,...,an,i,j)`: `n` adjoint (octet) indices, then the fundamental
     /// index `i`, then the antifundamental index `j`.
     T(Vec<i32>, i32, i32),
@@ -100,9 +101,9 @@ impl std::fmt::Display for ColorAtom {
 /// its exact factor of `2`; an empty atom list represents the colorless `'1'`
 /// factor.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ColorExpr {
-    pub coeff: i64,
-    pub atoms: Vec<ColorAtom>,
+pub(crate) struct ColorExpr {
+    pub(crate) coeff: i64,
+    pub(crate) atoms: Vec<ColorAtom>,
 }
 
 impl std::fmt::Display for ColorExpr {
@@ -119,7 +120,7 @@ impl std::fmt::Display for ColorExpr {
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub enum ColorError {
+pub(crate) enum ColorError {
     #[error("failed to parse color string '{string}': {message}")]
     Parse { string: String, message: String },
     #[error("Identity index {0} must be a positive (1-based) vertex-particle slot")]
@@ -147,7 +148,7 @@ enum RawAtom {
 peg::parser! {
     /// PEG grammar for UFO vertex color-factor strings.
     grammar color_grammar() for str {
-        pub rule color_string() -> Vec<RawAtom>
+        pub(crate) rule color_string() -> Vec<RawAtom>
             = terms:(term() ** "*") { terms.into_iter().flatten().collect() }
 
         rule term() -> Option<RawAtom>

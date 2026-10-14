@@ -3,30 +3,42 @@
 //! `AmplitudeEvaluator` compiles a `DiagramSet` once and then evaluates amplitudes
 //! rapidly for any phase-space point and helicity configuration.
 //!
-//! Pipeline (a one-way DAG — every module below depends only on earlier ones):
-//! - `error.rs` — the eval-pass error tree (`RootDiagramError`/`RootLorentzError` →
-//!   `CompileError` → `EvalError`); a leaf so the passes depend on it one-way.
-//! - `root_diagram.rs` / `root_lorentz.rs` — pass 1+2: `DiagramView` → rooted
-//!   `DiagramEvalTree` (symbolic, model-bound; node payloads in `diagram_eval.rs`).
-//!   `root_diagram.rs` also owns the per-diagram `DiagramEval` + `compile_diagram_ast`.
-//! - `op.rs` — the unified node language (`Op` + `Sym`/`Const` leaves).
-//! - `ast.rs` — the unified `Ast<T>` arena (CSR children, s-expr I/O).
-//! - `lower.rs` — pass 3a: inline all `DiagramEval`s into one binary-arity `Ast<Sym>`
-//!   (+ `optimize`: sum re-flattening and hash-cons CSE, with the egglog stage to
-//!   slot in before them).
-//! - `fold.rs` — pass 3b: intern couplings/masses/widths/coeffs into deduped pool specs
-//!   → card-independent `Ast<Const>`.
-//! - `compile.rs` — orchestrates passes 1–3 into a card-independent `AmplitudeEvaluator`.
+//! Compile time, in pipeline order:
+//! - `root_diagram.rs` / `root_lorentz.rs` — passes 1 and 2: a [`Diagram`](crate::diagrams::Diagram)
+//!   → rooted `DiagramEvalTree` (symbolic, model-bound; node payloads in
+//!   `diagram_eval.rs`). `root_diagram.rs` also owns the per-diagram `DiagramEval`.
+//! - `lower.rs` — pass 3a: `lower_flows` inlines every colour-flow JAMP and
+//!   configuration amplitude into one `Ast<Sym>` with binary `Add`/`Mul`, and
+//!   `optimize` re-flattens the sums and hash-conses common subexpressions.
+//! - `fold.rs` — pass 3b: intern couplings, masses, widths and coefficients into deduped
+//!   pool specs and fold constant composites, giving the card-independent
+//!   `Ast<Const>`; `Folded::expand_helicities` specializes it per helicity combination.
+//! - `analysis.rs` — static per-node annotations of a folded arena (output class,
+//!   constness, momentum id, helicity support).
+//! - `layout.rs` — lowers a folded arena and its analysis to the typed instruction
+//!   stream (`Program`), in op-blocked execution order, with liveness-recycled arena
+//!   slots.
+//! - `compile.rs` — orchestrates these into a card-independent `AmplitudeEvaluator`.
+//!
+//! Run time:
 //! - `run.rs` — `BoundAmplitude`: `BoundAmplitude::bind` resolves an `EvaluatedModel`
-//!   into the pools; a single forward pass evaluates the folded arena.
-//! - `kernel.rs` — the Lorentz-primitive eval kernels `run::apply` dispatches to
-//!   (one `pub(crate)` fn per Lorentz `Op`, named for it).
+//!   into the constant pools, and `fill_arenas` runs a `Program`'s instructions over
+//!   per-class result arenas. The generic `apply` reduces one node over
+//!   [`WaveformSlot`](waveform_slot::WaveformSlot)s; constant folding and the test-only
+//!   reference pass use it.
+//! - `kernel.rs` — the Lorentz-primitive kernels: the slot-level fns `apply`
+//!   dispatches to, and the `*_bare` fns on momentum-stripped values that
+//!   `fill_arenas` calls.
+//! - `lane_field.rs` / `lanes.rs` — SIMD lane batching over phase-space points.
+//! - `rescale.rs` — moves a bound amplitude's pools to another `alpha_s`.
+//!
+//! Shared vocabulary: `op.rs` (the node language, `Op` with `Sym`/`Const` leaves),
+//! `ast.rs` (the CSR arena `Ast<T>` and its s-expression I/O), `tree.rs` (the `Tree`
+//! trait), `waveform_slot.rs` and `error.rs` (the eval-pass error tree).
+//!
+//! The modules reference each other in both directions; the list above is the
+//! pipeline's order, not an import order.
 
-// Static per-node analysis (output type, constness, momentum id, helicity support)
-// over a lowered arena. The runtime cross-checks its predictions against every computed
-// slot; the full annotation surface is consumed by the not-yet-landed layout/recycling
-// passes and the egraph schema encoder.
-#[allow(dead_code)]
 mod analysis;
 mod ast;
 mod compile;
@@ -38,8 +50,6 @@ mod diagram_eval;
 mod egraph;
 mod error;
 mod fold;
-// Lorentz-primitive eval kernels (one `pub(crate)` fn per Lorentz `Op`, named for it);
-// the `run::apply` dispatch is `kernel::<op>(children)`.
 mod kernel;
 // SIMD lane batching: `F = LaneField<N>` runs one `eval_m2` pass over N
 // phase-space points. See the module doc for the lane-uniformity contract.
@@ -79,9 +89,6 @@ mod stitching;
 #[cfg(any(test, feature = "eval-schedule-study"))]
 #[cfg_attr(not(test), allow(dead_code))]
 mod schedule;
-// `Tree` is used by every arena; `Linearized`/`linearize`/`max_depth` are generic
-// traversal utilities no current pass needs.
-#[allow(dead_code)]
 mod tree;
 mod waveform_slot;
 
@@ -91,10 +98,7 @@ mod waveform_slot;
 #[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub mod bench_internals {
-    pub use super::kernel::{
-        ffv_iout, ffv_oout, ffv_vout, gamma_iout, gamma_oout, gamma_vout, metric, proj_m, proj_p,
-        propagate_core,
-    };
+    pub use super::kernel::{ffv_iout, ffv_vout, gamma_iout, gamma_vout, proj_m, proj_p};
     pub use super::prop_harness::{
         rand_bra, rand_c, rand_ket, rand_vector, seeded_rng, slots_approx_eq,
     };
@@ -104,25 +108,17 @@ pub mod bench_internals {
 
 /// Per-model op-coverage census: which evaluator primitives a model's gated
 /// process list actually compiles to, and the two-way assertion over its
-/// allowlist. Feature-gated because the banked non-SM instance lives in an
-/// integration test; not a public API surface.
-#[cfg(feature = "extended-validation")]
+/// allowlist. Exported for the non-SM instances in the hermetic integration tests
+/// (`tests/smeftsim.rs`, `tests/toy_models.rs`); not a public API surface.
 #[doc(hidden)]
 pub mod op_census {
-    pub use super::compile::{
-        assert_op_coverage, assert_op_coverage_across, op_census, MG_VALIDATED_PROCESSES,
-    };
+    pub use super::compile::assert_op_coverage_across;
     pub use super::op::Op;
 }
 
-pub use ast::{Ast, ParseAstError};
-pub use compile::{config_groups, AmplitudeEvaluator, ColorSelection};
-pub use error::{CompileError, EvalError, RootDiagramError};
+pub use compile::{config_groups, AmplitudeEvaluator};
 pub use lane_field::{LaneField, Lanes, SupportedLanes};
-pub use op::{Const, ConstKind, Node, Op, Sym};
-pub use rescale::{PoolTagCensus, RescaleFallback, ScaleAwareAmplitude};
-pub use root_diagram::compile_diagram_ast;
-pub use root_lorentz::RootLorentzError;
+pub use rescale::ScaleAwareAmplitude;
 pub use run::{
     eval_m2_lanes, eval_m2_lanes_packed, pack_lane_points, BoundAmplitude, ScratchSpace,
 };

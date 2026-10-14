@@ -126,6 +126,8 @@ pub fn parse(path: &Path) -> Result<Vec<Subprocess>, String> {
 }
 
 /// Every `SubProcesses/P*/leshouche.inc` under one MadGraph run directory, sorted.
+/// Panics naming the directory when `run_dir`, or any directory beneath it, cannot
+/// be read.
 pub fn files_under(run_dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     collect(run_dir, &mut out);
@@ -133,12 +135,15 @@ pub fn files_under(run_dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// A directory the walk cannot read is an error rather than an empty subtree:
+/// treating it as empty would drop every subprocess beneath it.
 fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| panic!("cannot read an entry of {}: {e}", dir.display()))
+            .path();
         if path.is_dir() {
             collect(&path, out);
         } else if path.file_name().and_then(|n| n.to_str()) == Some("leshouche.inc")

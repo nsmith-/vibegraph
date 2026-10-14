@@ -3,7 +3,7 @@ type: Design
 title: MadGraph run_card parsing, defaults and beam modes
 description: "run_card.dat syntax, MadGraph's LO defaults transcribed and checked against a banner.py dump, unknown names as hard errors, the edits applied on resolution, and the two accepted beam modes."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [run-card, parser, defaults, beams, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -57,20 +57,19 @@ The oracle is committed reference data: `validation/madgraph/runcard_defaults.js
 a dump of `banner.py`'s defaults (pixi task `dump-runcard-defaults` in the
 `madgraph` environment; 218 parameters, the extra 9 being `system=True`
 internals such as `pdg_cut` and `ptmin4pdg` that are never written to a user
-card). `defaults_match_banner_py_dump` compares every scalar default; take
+card). `defaults_match_banner_py_dump` compares every default, an opaque
+list or dict payload through the card line MadGraph writes for it; take
 counts from the files, not from this page[^n18-records].
 
 Its blind spots:
 
 - it checks transcribed **values**, not what a cut does to momenta — that is
   the per-cut boundary tests and the σ gates[^n18-regime];
-- it does not compare **opaque** payloads. Three stored empty defaults differ
-  from MadGraph's (`mxx_only_part_antipart`, `pdgs_for_merging_cut`,
-  `systematics_arguments`), pinned by `opaque_defaults_known_to_differ_from_banner_py`
-  so a MadGraph bump that moves the set fails; they are harmless only because
-  each is classified benign for a reason independent of its default
-  ([hygiene/runcard-opaque-defaults-unverified](../backlog/hygiene/runcard-opaque-defaults-unverified.md)).
-  `me_frame` stores MadGraph's `[1, 2]`.
+- it compares an **opaque** payload as text after `parse_value`, so a card
+  spelling a list or dict default differently from MadGraph's own writer reads
+  as an override. Every opaque default matches MadGraph's spelling;
+  `opaque_defaults_match_banner_py` names every disagreeing field at once and
+  holds that set empty. `me_frame` stores MadGraph's `[1, 2]`.
 
 ## Resolution: what happens after parsing
 

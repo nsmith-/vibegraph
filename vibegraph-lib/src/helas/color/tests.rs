@@ -1,7 +1,7 @@
 //! Unit tests for the symbolic color algebra.
 //!
-//! Group-theoretic closures are checked against the exact Casimir/Dynkin
-//! constants carried by the `repr::color` representation types, so the algebra
+//! Group-theoretic closures are checked against the textbook SU(3) constants
+//! `C_F = 4/3`, `T_F = 1/2` and `C_A = 3`, written as literals, so the algebra
 //! is validated against an independent oracle rather than itself.
 
 use num_rational::Ratio;
@@ -9,7 +9,6 @@ use num_rational::Ratio;
 use super::coeff::ColorCoeff;
 use super::factor::{ColorFactor, ColorString};
 use super::tensor::ColorTensor;
-use crate::helas::repr::color::{ColorRepr, SU3Adjoint, SU3Fundamental};
 
 /// Convenience: a `T` with the given adjoint chain and fundamental indices.
 fn t(adj: &[i32], i: i32, j: i32) -> ColorTensor {
@@ -41,7 +40,7 @@ fn eval_scalar(cf: &ColorFactor) -> (Ratio<i64>, Ratio<i64>) {
     (re, im)
 }
 
-// ── Casimir / Dynkin closures against repr::color oracles ─────────────────
+// ── Casimir / Dynkin closures against the SU(3) constants ─────────────────
 
 /// `T(a,i,j)·T(a,j,k) = C_F·δ_{ik}` — the fundamental Casimir. The surviving
 /// structure is a single delta on the free indices, and its coefficient sums
@@ -58,8 +57,7 @@ fn casimir_fundamental_closure() {
     }
     // Coefficients sum to the fundamental Casimir.
     let sum: Ratio<i64> = result.0.iter().map(|s| s.coeff.eval_nc(3)).sum();
-    assert_eq!(sum, <SU3Fundamental as ColorRepr<f64>>::casimir());
-    assert_eq!(sum, Ratio::new(4, 3));
+    assert_eq!(sum, Ratio::new(4, 3)); // C_F
 }
 
 /// `T(a,i,j)·T(a,j,i)` fully summed traces `T^a T^a` over the fundamental line:
@@ -71,11 +69,8 @@ fn casimir_trace_closure() {
     let (re, im) = eval_scalar(&result);
     assert_eq!(im, Ratio::from_integer(0));
 
-    let cf = <SU3Fundamental as ColorRepr<f64>>::casimir();
-    assert_eq!(re, cf * Ratio::from_integer(3)); // C_F · Nc
-    let tf = <SU3Fundamental as ColorRepr<f64>>::dynkin();
-    assert_eq!(re, tf * Ratio::from_integer(8)); // T(F) · (Nc²−1)
-    assert_eq!(re, Ratio::from_integer(4));
+    assert_eq!(re, Ratio::new(4, 3) * Ratio::from_integer(3)); // C_F · Nc
+    assert_eq!(re, Ratio::new(1, 2) * Ratio::from_integer(8)); // T_F · (Nc²−1)
 }
 
 // ── f-contraction identities ──────────────────────────────────────────────
@@ -103,9 +98,7 @@ fn ff_fully_contracted_scalar() {
     let result = ColorFactor(vec![s]).full_simplify();
     let (re, im) = eval_scalar(&result);
     assert_eq!(im, Ratio::from_integer(0));
-    assert_eq!(re, Ratio::from_integer(24));
-    let ca = <SU3Adjoint as ColorRepr<f64>>::casimir();
-    assert_eq!(re, ca * Ratio::from_integer(8)); // C_A · (Nc²−1)
+    assert_eq!(re, Ratio::from_integer(3) * Ratio::from_integer(8)); // C_A · (Nc²−1)
 }
 
 // ── Trace values ──────────────────────────────────────────────────────────
@@ -167,46 +160,13 @@ fn fierz_completeness_identity() {
     assert!(!trace.coeff.imag);
 }
 
-// ── Canonicalization ──────────────────────────────────────────────────────
-
-/// Canonicalization renames *all* indices by position, so two strings with the
-/// same index-sharing pattern share a canonical form even when their concrete
-/// labels (summed or external) differ; a string with a different sharing
-/// pattern does not. (This is why C3 keys the basis off `to_immutable`, which
-/// keeps concrete indices, not `to_canonical`.)
-#[test]
-fn canonicalization_relabels_indices() {
-    // Same pattern (shared −2 links j of the first T to i of the second),
-    // different labels throughout.
-    let a = ColorString::new(vec![t(&[-1], 5, -2), t(&[-1], -2, 7)]);
-    let b = ColorString::new(vec![t(&[-9], 6, -8), t(&[-9], -8, 4)]);
-    assert_eq!(a.canonical(), b.canonical());
-
-    // Different pattern: the shared −2 is now the j index of *both* T's.
-    let c = ColorString::new(vec![t(&[-1], 5, -2), t(&[-1], 7, -2)]);
-    assert_ne!(a.canonical(), c.canonical());
-}
-
-/// Canonicalization is idempotent: re-canonicalizing a string built from a
-/// canonical form yields the same canonical form.
-#[test]
-fn canonicalization_is_idempotent() {
-    let s = ColorString::new(vec![ColorTensor::Tr(vec![-7, 3, -7]), t(&[-2], 1, -2)]);
-    let (canon1, _) = s.to_canonical();
-    // Rebuild a string directly from the canonical (kind, indices) form.
-    let rebuilt = ColorString::new(
-        canon1
-            .0
-            .iter()
-            .map(|(kind, idx)| ColorTensor::from_immutable(*kind, idx))
-            .collect(),
-    );
-    assert_eq!(rebuilt.canonical(), canon1);
-}
-
 // ── Conjugation involution ────────────────────────────────────────────────
 
 /// Complex conjugation is an involution on coefficients, tensors, and strings.
+///
+/// The identity map is an involution too, so this cannot see a conjugation
+/// that does nothing; `coeff_conjugate_negates_the_imaginary_part` pins the
+/// sign.
 #[test]
 fn conjugation_is_involution() {
     let coeff = ColorCoeff {
@@ -234,6 +194,27 @@ fn conjugation_is_involution() {
     let ss = s.conj().conj();
     assert_eq!(ss.coeff, s.coeff);
     assert_eq!(ss.tensors, s.tensors);
+}
+
+/// `z* = −z` for an imaginary coefficient and `z* = z` for a real one, so that
+/// `z·z*` is the non-negative real `|z|²`.
+#[test]
+fn coeff_conjugate_negates_the_imaginary_part() {
+    let imaginary = ColorCoeff {
+        q: Ratio::new(-3, 7),
+        imag: true,
+        nc_power: 2,
+    };
+    let conj = imaginary.conj();
+    assert_eq!(conj.q, Ratio::new(3, 7));
+    assert!(conj.imag);
+    assert_eq!(conj.nc_power, 2);
+    let modulus = imaginary.mul(&conj);
+    assert!(!modulus.imag);
+    assert_eq!(modulus.q, Ratio::new(9, 49));
+
+    let real = ColorCoeff::rational(-3, 7);
+    assert_eq!(real.conj(), real);
 }
 
 /// `T(a,b,c,i,j)* = T(c,b,a,j,i)`.
@@ -367,9 +348,12 @@ fn four_quark_basis_colour_matrix() {
 
 // ── Overflow tripwire ─────────────────────────────────────────────────────
 
-/// Coefficient multiplication panics rather than wrapping on `i64` overflow.
+/// Coefficient multiplication panics through its checked path rather than
+/// wrapping on `i64` overflow. The expected message is the checked path's own,
+/// so a plain `*` (which panics with a different message under overflow checks
+/// and wraps without them) fails this test.
 #[test]
-#[should_panic(expected = "overflow")]
+#[should_panic(expected = "ColorCoeff multiply: i64 overflow")]
 fn coeff_multiply_overflow_panics() {
     let big = ColorCoeff {
         q: Ratio::from_integer(i64::MAX),
@@ -377,6 +361,14 @@ fn coeff_multiply_overflow_panics() {
         nc_power: 0,
     };
     let _ = big.mul(&big);
+}
+
+/// Coefficient addition panics through its checked path on `i64` overflow.
+#[test]
+#[should_panic(expected = "ColorCoeff add: i64 overflow")]
+fn coeff_add_overflow_panics() {
+    let big = ColorCoeff::rational(i64::MAX, 1);
+    let _ = big.add(&big);
 }
 
 // ── Baryonic invariants ───────────────────────────────────────────────────

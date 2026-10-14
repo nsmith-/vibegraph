@@ -12,7 +12,7 @@
 mod common;
 
 use std::f64::consts::PI;
-use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 /// Panics naming the model and the command that would produce it, so an
 /// uninitialised submodule reads as the setup error it is.
@@ -65,15 +65,7 @@ fn test_load_taudecay() {
     let card = vibegraph::ufo::slha::ParamCard::from_file(&param_card_path)
         .expect("failed to load taudecay param_card.dat");
 
-    let result = UFOModel::load(&path, None);
-    match &result {
-        Err(UfoError::Lorentz(e)) if e.to_string().contains("UnknownOperator") => {
-            eprintln!("taudecay_UFO: uses unsupported Lorentz operator — skipping");
-            return;
-        }
-        _ => {}
-    }
-    let model = result.expect("failed to load taudecay UFO");
+    let model = UFOModel::load(&path, None).expect("failed to load taudecay UFO");
     let ev = EvaluatedModel::from_model_card(model.clone(), &card);
 
     let mta = ev.mass(model.particle_id("ta__minus__").expect("no tau"));

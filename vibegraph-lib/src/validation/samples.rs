@@ -85,7 +85,7 @@ const DEGENERATE_SPAN: f64 = 1e-9;
 
 /// Categorical columns with at most this many distinct keys carry their per-key
 /// counts into the comparison, so a χ² that fails says which category moved.
-pub const MAX_CATEGORY_DETAIL: usize = 32;
+pub(crate) const MAX_CATEGORY_DETAIL: usize = 32;
 
 /// A sample of events with the weight each carries and the cross section the
 /// whole sample represents.
@@ -266,7 +266,7 @@ impl FieldColumn {
     /// A constant field's deviation as a multiple of its tolerance, which is how
     /// two constant columns are ranked against each other. `0` where the two
     /// records agree exactly, whatever the tolerance is.
-    pub fn deviation_ratio(&self) -> f64 {
+    pub(crate) fn deviation_ratio(&self) -> f64 {
         match self.kind {
             FieldKind::Constant { max_dev, tol, .. } if max_dev > 0.0 => {
                 max_dev / tol.max(f64::MIN_POSITIVE)
@@ -297,31 +297,10 @@ impl Comparison {
         self.ks.iter().min_by(|a, b| a.p.total_cmp(&b.p))
     }
 
-    /// The smallest χ² p-value and the column it came from.
-    pub fn worst_chi2(&self) -> Option<&Chi2Column> {
-        self.chi2.iter().min_by(|a, b| a.p.total_cmp(&b.p))
-    }
-
     /// The constant incoming-leg field sitting furthest outside the reference's
     /// printed precision.
     pub fn worst_beam_constant(&self) -> Option<&FieldColumn> {
         worst_constant(&self.beams)
-    }
-
-    /// The smallest KS p-value over the incoming-leg fields that vary.
-    pub fn worst_beam_distribution(&self) -> Option<&FieldColumn> {
-        worst_distribution(&self.beams)
-    }
-
-    /// The constant scale field sitting furthest outside the reference's printed
-    /// precision.
-    pub fn worst_scale_constant(&self) -> Option<&FieldColumn> {
-        worst_constant(&self.scales)
-    }
-
-    /// The smallest KS p-value over the scale fields that vary.
-    pub fn worst_scale_distribution(&self) -> Option<&FieldColumn> {
-        worst_distribution(&self.scales)
     }
 }
 
@@ -332,18 +311,6 @@ fn worst_constant(columns: &[FieldColumn]) -> Option<&FieldColumn> {
         .iter()
         .filter(|c| matches!(c.kind, FieldKind::Constant { .. }))
         .max_by(|a, b| a.deviation_ratio().total_cmp(&b.deviation_ratio()))
-}
-
-/// The column with the smallest KS p-value among those that vary.
-fn worst_distribution(columns: &[FieldColumn]) -> Option<&FieldColumn> {
-    columns
-        .iter()
-        .filter_map(|c| match c.kind {
-            FieldKind::Distribution { p, .. } => Some((p, c)),
-            FieldKind::Constant { .. } => None,
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, c)| c)
 }
 
 /// One sample's differential cross section in a named observable, binned.
@@ -560,7 +527,7 @@ const PRINTED_SIGNIFICANT_DIGITS: i32 = 11;
 /// This is what makes the tolerance a property of the *file* rather than of a
 /// dialect this code knows about: a third spelling with a different width is
 /// read correctly without being enumerated anywhere.
-pub fn printed_place(text: &str) -> Option<f64> {
+pub(crate) fn printed_place(text: &str) -> Option<f64> {
     let (mantissa, exponent) = text.split_once(['e', 'E'])?;
     let exponent: i32 = exponent.parse().ok()?;
     let fraction = mantissa.split_once('.')?.1;
@@ -576,7 +543,7 @@ pub fn printed_place(text: &str) -> Option<f64> {
 /// The mantissa's leading zeros are not significant, which is what makes the two
 /// dialects — a leading `0.` and a leading digit — give the same answer for the
 /// same number.
-pub fn printed_digits(text: &str) -> Option<u32> {
+pub(crate) fn printed_digits(text: &str) -> Option<u32> {
     let mantissa = text.split_once(['e', 'E'])?.0;
     let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
     if digits.is_empty() {
@@ -718,7 +685,7 @@ fn incoming(event: &LheEvent) -> Vec<usize> {
 /// If the two samples list different numbers of incoming legs, or an event of
 /// either lists a different number from its own sample's first — neither is a
 /// disagreement a statistic can express.
-pub fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
+pub(crate) fn beam_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
     if ours.is_empty() || theirs.is_empty() {
         return Vec::new();
     }
@@ -809,7 +776,7 @@ const SCALE_FIELDS: [ScaleField; 2] = [
 /// the same weighted KS the outgoing observables take. Which one applies is read
 /// off the samples rather than declared, so a prescription that silently
 /// collapsed to a constant reports as one.
-pub fn scale_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
+pub(crate) fn scale_columns(ours: &EventSample, theirs: &EventSample) -> Vec<FieldColumn> {
     if ours.is_empty() || theirs.is_empty() {
         return Vec::new();
     }

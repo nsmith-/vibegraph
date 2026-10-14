@@ -5,7 +5,7 @@ description: "Channels combined by 1/Σα_j g_j, Kleiss–Pittau α refinement d
 status: draft
 tags: [multichannel, kleiss-pittau, alpha-adaptation, madevent-parity, phase-space]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n01-loopind, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L535-L553", title: "Note 01, loop-induced MG5 paper: phase-space appendix and multichannel"}
   - {id: n21-program, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/21-resonance-sampling-and-events-plan.md#L11-L51", title: "Note 21, resonance-aware sampling program and reference implementations"}
@@ -179,7 +179,7 @@ label events differently:[^n27-b3]
 So our sampled channel is **not** the analogue of MadEvent's `ICONFIG`, and
 nothing that must match MadEvent per event reads it. The event path draws a
 configuration ∝ `AMP2` at the point, independent of the sampler, and
-conditions the colour-flow draw on it (`AmplitudeEvaluator::select_color_flow`,
+conditions the colour-flow draw on it (`AmplitudeEvaluator::select_config_and_flow`,
 `helas/eval/compile.rs`; [colour and helicity selection](../events/colour-and-helicity-selection.md));
 the clustering scale's configuration is drawn the same way
 ([configuration draw](../scales-pdf/clustering-configuration-draw.md)).

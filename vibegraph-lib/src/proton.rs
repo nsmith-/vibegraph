@@ -63,13 +63,14 @@
 //! *masses*, and `p p → j j` puts `g g → g g` (`1/2`) and `q q̄ → q q̄` (`1`) in
 //! different groups with the same mass list `[0, 0]`. Every member therefore
 //! carries its own factor ([`Subprocess::symmetry_factor`]) into the luminosity
-//! sum ([`FlavorGroup::symmetry_weighted_luminosity`]), which is where the sum over
+//! sum ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), which is where the sum over
 //! subprocesses can still tell them apart.
 //!
 //! # The integrand
 //!
 //! [`ProtonIntegrand`] convolves the decomposition with parton distributions over
-//! a `(τ, y)` outer map and a per-diagram multichannel inner map, and presents the
+//! a `(τ, y)` outer map and a multichannel inner map with one channel per MadGraph
+//! configuration, and presents the
 //! result as a [`ChannelIntegrand`] so per-channel VEGAS banking, frozen-grid scans
 //! and accept/reject need no hadronic special case. Its master formula, frames and
 //! change of variables are documented on the type.
@@ -135,7 +136,7 @@ type V = LorentzVector<f64>;
 /// the observed agreement is exact (measured: bit-for-bit over every `p p → ℓℓj`
 /// group). The bound is loose against that and still eleven orders below the
 /// closest measured separation between distinct groups.
-pub const GROUP_REL_TOL: f64 = 1e-10;
+pub(crate) const GROUP_REL_TOL: f64 = 1e-10;
 
 /// Minimum relative separation between two distinct groups at their best-separated
 /// probe point.
@@ -147,7 +148,7 @@ pub const GROUP_REL_TOL: f64 = 1e-10;
 /// pair of `p p → ℓℓj` groups separates by `0.74` at points the partition was not
 /// fitted on — six orders above this floor, and asserted there to stay above
 /// `0.1`.
-pub const GROUP_SEPARATION_MIN: f64 = 1e-6;
+pub(crate) const GROUP_SEPARATION_MIN: f64 = 1e-6;
 
 /// Probe points drawn at each of [`probe_energies`]' three energies.
 const PROBE_POINTS_PER_ENERGY: usize = 4;
@@ -167,7 +168,7 @@ pub struct Subprocess {
     pub outgoing: Vec<i32>,
     /// The helicities each outgoing leg is polarized to, `None` where it is
     /// summed over, in the same order. Every member of a group shares them.
-    pub outgoing_polarizations: Vec<Option<Vec<i32>>>,
+    pub(crate) outgoing_polarizations: Vec<Option<Vec<i32>>>,
     /// SU(3) rep of every leg, in the group's shared leg order (incoming first),
     /// read off *this* member's own compiled amplitude.
     ///
@@ -175,7 +176,7 @@ pub struct Subprocess {
     /// a quark and an antiquark share `|M|²`, mass list, cut filter and colour-factor
     /// matrix — and the record layer needs the member's own reps to check the table
     /// it is about to write.
-    pub colors: Vec<ColorRep>,
+    pub(crate) colors: Vec<ColorRep>,
     /// This member's **own** per-flow `ICOLUP` tags, reordered into the group
     /// representative's flow indexing by [`flow_permutation`].
     ///
@@ -186,7 +187,7 @@ pub struct Subprocess {
     /// `flow_permutation[f]` is the flow of this member's own colour basis that
     /// corresponds to flow `f` of the representative's. Kept for the tests and for
     /// failure messages; production reads [`Self::flows`], which has it applied.
-    pub flow_permutation: Vec<usize>,
+    pub(crate) flow_permutation: Vec<usize>,
 }
 
 impl Subprocess {
@@ -204,7 +205,7 @@ impl Subprocess {
     /// Read from the concrete assignment rather than from the group's
     /// representative, because the outgoing multiset is what the factor counts and
     /// nothing in the grouping rule holds it fixed across members.
-    pub fn symmetry_factor(&self) -> f64 {
+    pub(crate) fn symmetry_factor(&self) -> f64 {
         let legs: Vec<_> = self
             .outgoing
             .iter()
@@ -300,7 +301,7 @@ fn rewgt_of(event: &ProtonEvent, gi: usize) -> [Option<&[f64]>; 2] {
 /// The two per-beam flavour rows one phase-space point reads: `x·f` at
 /// `(x₁, μ²_F1)` and at `(x₂, μ²_F2)`, every flavour at once. Every subprocess
 /// summed over the point reads these same two, whatever its beam flavours.
-pub fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRow; 2] {
+pub(crate) fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [FlavorRow; 2] {
     let mut rows = [[0.0; FLAVOR_SLOTS]; 2];
     pdf.xfx_all(x1, mu_f[0] * mu_f[0], &mut rows[0]);
     pdf.xfx_all(x2, mu_f[1] * mu_f[1], &mut rows[1]);
@@ -329,7 +330,7 @@ impl FlavorGroup {
         &self.evaluator
     }
 
-    /// The representative subprocess's diagrams — the input the per-diagram
+    /// The representative subprocess's diagrams — the input the per-configuration
     /// phase-space channels are derived from.
     pub fn diagrams(&self) -> &[Diagram] {
         &self.representative.diagrams
@@ -346,11 +347,6 @@ impl FlavorGroup {
         &self.representative
     }
 
-    /// External legs in process order (incoming first), for the representative.
-    pub fn external_legs(&self) -> &[ExternalLeg] {
-        &self.legs
-    }
-
     /// The cut filter every member compiles to.
     pub fn cuts(&self) -> &Cuts {
         &self.cuts
@@ -362,7 +358,7 @@ impl FlavorGroup {
     }
 
     /// `1 / Π_a (n_spin · n_colour)` over the incoming legs.
-    pub fn spin_color_average(&self) -> f64 {
+    pub(crate) fn spin_color_average(&self) -> f64 {
         self.spin_color_avg
     }
 
@@ -372,7 +368,7 @@ impl FlavorGroup {
     }
 
     /// Number of incoming legs; two for every hadronic subprocess.
-    pub fn n_in(&self) -> usize {
+    pub(crate) fn n_in(&self) -> usize {
         self.evaluator.n_in()
     }
 
@@ -424,7 +420,7 @@ impl FlavorGroup {
     }
 
     /// [`luminosity`](Self::luminosity) off the two beam flavour rows directly.
-    pub fn luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
+    pub(crate) fn luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for i in 0..self.members.len() {
             let m = self.member_luminosity_rows(i, f1, f2);
@@ -434,17 +430,10 @@ impl FlavorGroup {
         sums
     }
 
-    /// [`luminosity`](Self::luminosity) with each member weighted by its own
-    /// identical-particle symmetry factor — the combination the cross section takes.
-    ///
-    /// ```text
-    /// Σ_members S_i · xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
-    /// ```
-    ///
-    /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
-    /// group unless they happen to agree: a group is a statement about the matrix
-    /// element, not about the outgoing multiset.
-    pub fn symmetry_weighted_luminosity(
+    /// [`symmetry_weighted_luminosity_rows`](Self::symmetry_weighted_luminosity_rows),
+    /// reading the two beam rows itself.
+    #[cfg(test)]
+    pub(crate) fn symmetry_weighted_luminosity(
         &self,
         pdf: &PdfMember,
         x1: f64,
@@ -455,9 +444,22 @@ impl FlavorGroup {
         self.symmetry_weighted_luminosity_rows(&f1, &f2)
     }
 
-    /// [`symmetry_weighted_luminosity`](Self::symmetry_weighted_luminosity) off
-    /// the two beam flavour rows directly.
-    pub fn symmetry_weighted_luminosity_rows(&self, f1: &FlavorRow, f2: &FlavorRow) -> [f64; 2] {
+    /// [`luminosity_rows`](Self::luminosity_rows) with each member weighted by its
+    /// own identical-particle symmetry factor — the combination the cross section
+    /// takes.
+    ///
+    /// ```text
+    /// Σ_members S_i · xf_a(x₁, μ_F1) · xf_b(x₂, μ_F2)
+    /// ```
+    ///
+    /// The members share `|M|²`, so their `S_i` cannot be pulled out in front of the
+    /// group unless they happen to agree: a group is a statement about the matrix
+    /// element, not about the outgoing multiset.
+    pub(crate) fn symmetry_weighted_luminosity_rows(
+        &self,
+        f1: &FlavorRow,
+        f2: &FlavorRow,
+    ) -> [f64; 2] {
         let mut sums = [0.0; 2];
         for (i, member) in self.members.iter().enumerate() {
             let s = member.symmetry_factor();
@@ -469,23 +471,10 @@ impl FlavorGroup {
     }
 
     /// One member's `[direct, mirror]` luminosity — the share that decides which
-    /// concrete flavour an accepted event of this group is labelled with.
-    pub fn member_luminosity(
-        &self,
-        member: usize,
-        pdf: &PdfMember,
-        x1: f64,
-        x2: f64,
-        mu_f: [f64; 2],
-    ) -> [f64; 2] {
-        let [f1, f2] = beam_rows(pdf, x1, x2, mu_f);
-        self.member_luminosity_rows(member, &f1, &f2)
-    }
-
-    /// [`member_luminosity`](Self::member_luminosity) off the two beam flavour
-    /// rows directly: two array reads per ordering, at slots resolved when the
-    /// group was built.
-    pub fn member_luminosity_rows(
+    /// concrete flavour an accepted event of this group is labelled with — off the
+    /// two beam flavour rows: two array reads per ordering, at slots resolved when
+    /// the group was built.
+    pub(crate) fn member_luminosity_rows(
         &self,
         member: usize,
         f1: &FlavorRow,
@@ -1154,12 +1143,12 @@ pub struct ProtonEvent {
     /// reweighting factor (`rewgt`) of each member of the group, in member order;
     /// `None` without matching, where every factor is `1`, and where the term
     /// carries no weight.
-    pub group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
+    pub(crate) group_rewgt: Vec<[Option<Vec<f64>>; 2]>,
     /// Per flavour group and beam ordering, `[direct, mirrored]`, what the event
     /// record reads of the term's matched clustering (`ptclus` and the on-shell
     /// propagators); `None` without matching and where the term carries no
     /// weight.
-    pub group_records: Vec<[Option<MatchedRecord>; 2]>,
+    pub(crate) group_records: Vec<[Option<MatchedRecord>; 2]>,
     /// Lab-frame external momenta, beams first — what the event record reports.
     pub lab: Vec<V>,
     /// Partonic-CM external momenta, beams first — the frame `|M|²` is taken in.
@@ -1231,8 +1220,8 @@ pub struct OuterPoint {
 }
 
 /// A ready-to-integrate hadronic cross section for an arbitrary flavour-decomposed
-/// process at proton beams (`lpp = 1`), sampled by a per-diagram multichannel map at
-/// each event's own partonic energy.
+/// process at proton beams (`lpp = 1`), sampled by a multichannel map with one
+/// channel per MadGraph configuration at each event's own partonic energy.
 ///
 /// # Master formula
 ///
@@ -1244,7 +1233,7 @@ pub struct OuterPoint {
 /// summed over the [`FlavorGroup`]s of the process, with `L^direct`/`L^mirror` the
 /// group's two beam orderings summed over its members, each member weighted by its
 /// own identical-particle symmetry factor
-/// ([`FlavorGroup::symmetry_weighted_luminosity`]), and `R` the mirror map
+/// ([`FlavorGroup::symmetry_weighted_luminosity_rows`]), and `R` the mirror map
 /// ([`FlavorGroup::mirror_into`]). There is **one** cut indicator, on the
 /// unreflected final state: the mirror is an argument to the matrix element, not a
 /// second event.
@@ -1458,7 +1447,8 @@ impl<'a> ProtonIntegrand<'a> {
     /// density is the same function at the same `αⱼ` sums, so the merge can be
     /// measured and pinned against it.
     #[allow(clippy::too_many_arguments)]
-    pub fn new_unmerged_with_maps(
+    #[cfg(test)]
+    pub(crate) fn new_unmerged_with_maps(
         groups: &'a FlavorGroups,
         amps: &'a [BoundAmplitude<'a, f64>],
         model: &EvaluatedModel,
@@ -1474,7 +1464,7 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// The maps this integrand samples under, every choice settled — what an
     /// artifact banks so a generator rebuilds the same channels and `τ` draw.
-    pub fn maps(&self) -> MapChoices {
+    pub(crate) fn maps(&self) -> MapChoices {
         self.maps
     }
 
@@ -1875,7 +1865,8 @@ impl<'a> ProtonIntegrand<'a> {
 
     /// The spacelike-pole floor (GeV²) the peripheral channels were built with, from
     /// the process's own cuts.
-    pub fn spacelike_floor(&self) -> f64 {
+    #[cfg(test)]
+    pub(crate) fn spacelike_floor(&self) -> f64 {
         self.cuts.spacelike_floor()
     }
 
@@ -1894,7 +1885,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// Every `(group, diagram)` pair each sampling channel's map serves, in
     /// channel order: one pair unless several pairs' maps are the same function
     /// ([`DiagramChannel::map_identity`](crate::phasespace::DiagramChannel::map_identity)).
-    pub fn channel_members(&self) -> &[Vec<ChannelId>] {
+    pub(crate) fn channel_members(&self) -> &[Vec<ChannelId>] {
         &self.channel_members
     }
 
@@ -1975,7 +1966,7 @@ impl<'a> ProtonIntegrand<'a> {
     }
 
     /// The damping exponent every channel's grid is built with.
-    pub fn vegas_alpha(&self) -> f64 {
+    pub(crate) fn vegas_alpha(&self) -> f64 {
         self.vegas_alpha
     }
 
@@ -2367,9 +2358,10 @@ impl<'a> ProtonIntegrand<'a> {
     /// history. `fallback` names the group and the channel kept where no
     /// configuration carries probability.
     ///
-    /// The momenta are the direct ordering's. A group's mirrored term is evaluated
-    /// at the same scale as its direct one, so there is one draw per group per
-    /// point and not one per ordering.
+    /// `cm` is the ordering being evaluated. A group with a mirror is asked twice
+    /// per point, at the direct momenta and at the mirrored ones, with the same
+    /// `v`: each ordering's scale is clustered in a configuration drawn from that
+    /// ordering's own amplitudes.
     fn scale_channel(
         &self,
         sc: &ProtonScratch<'a>,
@@ -2625,8 +2617,8 @@ impl<'a> ProtonIntegrand<'a> {
     ///   identical-particle factor — the whole of what distinguishes one member of a
     ///   group from another, since they share the matrix element exactly;
     /// * the helicity `∝ |M_c|²`, then the colour flow through
-    ///   [`AmplitudeEvaluator::select_color_flow`] — the integration configuration
-    ///   `∝ AMP2(d)` and the flow `∝ JAMP2(i)` inside that configuration's
+    ///   [`AmplitudeEvaluator::select_config_and_flow`] — the integration
+    ///   configuration `∝` its channel weight and the flow `∝ JAMP2(i)` inside that configuration's
     ///   admitted set — all evaluated at the argument the drawn ordering implies,
     ///   as on a fixed-beam run.
     ///
@@ -2876,7 +2868,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// have drawn in sequence; what the split changes is the summation, which is
     /// reduced from per-chunk partials in chunk order. Carrying every point's whole
     /// `n_channels` density row out to a single sequential reduction — the stronger
-    /// contract [`crate::vegas::VegasGrid::adapt_parallel_seeded`] holds — would cost
+    /// contract [`crate::vegas::adapt_blocks_iteration`] holds — would cost
     /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
     /// hundreds of megabytes, so the partials are summed per chunk instead. That
     /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.
@@ -2966,7 +2958,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// The mean of the mixture estimator `f/g` over the last α-survey
     /// ([`adapt_alphas`](Self::adapt_alphas)): that survey's estimate of the
     /// cross section in natural units, and zero before any survey.
-    pub fn survey_mean(&self) -> f64 {
+    pub(crate) fn survey_mean(&self) -> f64 {
         self.survey_mean
     }
 
@@ -3440,7 +3432,7 @@ mod tests {
     /// How much is enough is a function of `s-hat`, not a constant, and it is not
     /// a statement about the *weakest* point: the visibility vanishes wherever
     /// the two orderings happen to agree, so a minimum over random draws is a
-    /// property of the sample size — it falls by a decade from 36 draws to 512 at
+    /// property of the sample size — it falls by a decade from 32 draws to 512 at
     /// every energy. The control is therefore stated on the tenth percentile,
     /// against `mirror_visibility_floor`, over a ladder that reaches well below
     /// the electroweak scale.
@@ -3616,9 +3608,10 @@ mod tests {
         0.076 * s / (s + M_Z2)
     }
 
-    /// The ladder `mirror_visibility_floor` is fitted to, at sample sizes and
-    /// stream seeds the gate does not use, so the floor stands on a measurement
-    /// rather than on the one draw it is asserted against. Tenth percentiles:
+    /// The ladder `mirror_visibility_floor` is fitted to: two sample sizes and
+    /// three stream seeds, of which only the first row (32 points, `0x0ff5e7ed`)
+    /// is the gate's own draw, so the floor stands on five measurements besides
+    /// the one it is asserted against. Tenth percentiles:
     ///
     /// ```text
     /// npts stream          25       65      150      400     1200     4000
@@ -5263,7 +5256,7 @@ mod tests {
     /// Zero rapidity is what makes the comparison exact: the lab frame then coincides
     /// with the partonic CM, so the two sides apply one cut filter to the same
     /// configuration. The partonic side is [`FixedBeamIntegrand`], sampled through its
-    /// *own* map (all-timelike per-diagram channels at fixed `√ŝ`) rather than this
+    /// *own* map (all-timelike per-configuration channels at fixed `√ŝ`) rather than this
     /// integrand's floored spines, so the flux, the `2π` measure, the spin/colour
     /// average and the identical-particle factor are compared across two independent
     /// phase-space maps.

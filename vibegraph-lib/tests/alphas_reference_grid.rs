@@ -6,13 +6,12 @@
 //! `Source/alfas_functions.f` against a driver
 //! (`pixi run -e madgraph generate-alphas-reference`). Both sides run the same
 //! Newton iteration to the same `TOL = 5e-4`, and the comparison is at the
-//! *iterate* level: a wrong branch, iteration count, or coefficient shows up at
-//! the Newton tolerance scale (~1e-4 relative), which the few-ulp bound here
-//! sits eleven orders of magnitude below. What the bound tolerates is only the
-//! transcendentals' last-ulp dependence on the host libm — the committed grid
-//! was generated on one platform, and pinning its exact bits would make this a
-//! test of the machine, not of the coupling. The grid is committed, so this
-//! runs on a bare clone.
+//! *iterate* level: a wrong branch, iteration count, or coefficient moves the
+//! result by far more than the `1e-12` relative bound here.
+//! What the bound tolerates is the transcendentals' last-ulp dependence on the
+//! host libm — the committed grid was generated on one platform, and pinning its
+//! exact bits would make this a test of the machine, not of the coupling. The
+//! grid is committed, so this runs on a bare clone.
 //!
 //! **What this cannot see.** Nothing about where `asmz` and `nloop` come from —
 //! the grid supplies them directly. That is the job of the per-event oracles in
@@ -98,45 +97,56 @@ fn reference_grid_straddles_every_branch() {
     }
 }
 
-/// Same Newton iterate as MadGraph's own `ALPHAS`, modulo host-libm ulps.
+/// Same Newton iterate as MadGraph's own `ALPHAS`, modulo host-libm rounding.
 ///
-/// Measured cross-platform drift on the committed grid: 2 of 792 points at
-/// 1 ulp. The bound leaves headroom over that while staying ~11 orders below
-/// the ~1e-4-relative signature of a different iterate.
+/// The bound is relative, at `MAX_REL`, and is set by what a different iterate
+/// looks like rather than by how many ulps one host's libm happens to differ by.
+/// The smallest such difference is an extra Newton step, which moves `αs` by
+/// about the square of the last relative step the `5e-4` tolerance let through:
+/// with that tolerance tightened tenfold, 275 of the 792 grid points move, by up
+/// to `3.9e-7`, the first ten reported by `3.5e-9` to `1.1e-7`. The bound sits
+/// three orders under the smallest of those and four over
+/// the transcendentals' last-ulp dependence on the host (measured drift on the
+/// committed grid: 2 of 792 points at 1 ulp, `2.2e-16`).
 #[test]
 fn fortran_reference_matches_the_iterate() {
-    const MAX_ULPS: i64 = 4;
+    const MAX_REL: f64 = 1e-12;
 
     let rows = load_reference();
     let mut mismatches = Vec::new();
-    let mut worst_ulps = 0i64;
+    let mut n_mismatched = 0usize;
+    let mut worst_rel = 0.0f64;
 
     for row in &rows {
         let running = RunningAlphaS::new(row.asmz, row.nloop).expect("positive asmz");
         let got = running.eval(row.q);
-        let ulps = (got.to_bits() as i64 - row.alphas.to_bits() as i64).abs();
-        worst_ulps = worst_ulps.max(ulps);
-        if ulps > MAX_ULPS && mismatches.len() < 10 {
-            mismatches.push(format!(
-                "asmz={} nloop={} q={}: fortran {:.17e}, rust {:.17e} ({ulps} ulp)",
-                row.asmz,
-                row.nloop.as_i64(),
-                row.q,
-                row.alphas,
-                got
-            ));
+        let rel = (got / row.alphas - 1.0).abs();
+        worst_rel = worst_rel.max(rel);
+        if rel > MAX_REL {
+            n_mismatched += 1;
+            if mismatches.len() < 10 {
+                mismatches.push(format!(
+                    "asmz={} nloop={} q={}: fortran {:.17e}, rust {:.17e} (rel {rel:.2e})",
+                    row.asmz,
+                    row.nloop.as_i64(),
+                    row.q,
+                    row.alphas,
+                    got
+                ));
+            }
         }
     }
 
     assert!(
-        mismatches.is_empty(),
-        "{} of {} grid points differ beyond {MAX_ULPS} ulp (worst {worst_ulps}):\n{}",
-        mismatches.len(),
+        n_mismatched == 0,
+        "{n_mismatched} of {} grid points differ beyond {MAX_REL:e} relative (worst \
+         {worst_rel:.2e}); the first {}:\n{}",
         rows.len(),
+        mismatches.len(),
         mismatches.join("\n")
     );
     println!(
-        "alpha_s grid: {} points within {worst_ulps} ulp of the Fortran iterate",
+        "alpha_s grid: {} points within {worst_rel:.2e} relative of the Fortran iterate",
         rows.len()
     );
 }

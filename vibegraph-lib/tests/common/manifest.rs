@@ -117,6 +117,22 @@ pub fn hermetic_diagram_rows() -> BTreeSet<String> {
         .collect()
 }
 
+/// The keys of every row the manifest declares `amplitudes` hermetic — the set
+/// the committed tables under `validation/madgraph/amplitudes/` must cover exactly.
+pub fn hermetic_amplitude_rows() -> BTreeSet<String> {
+    load_manifest()
+        .processes
+        .into_iter()
+        .filter(|p| {
+            p.categories
+                .amplitudes
+                .as_ref()
+                .is_some_and(|c| c.tier == "hermetic")
+        })
+        .map(|p| p.key)
+        .collect()
+}
+
 /// The UFO model a row's reference was generated against, where it is not the
 /// interned Standard Model.
 #[derive(Debug, Clone)]

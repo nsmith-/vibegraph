@@ -6,7 +6,7 @@
 //! (see [`crate::diagrams`]), so the strings exist to identify and report the
 //! form, not to compute with it.
 
-use super::ast_util::{call_func_name, kwarg_str, parse_stmts};
+use super::ast_util::{call_func_name, kwarg_str, named_assignments, parse_stmts};
 use rustpython_parser::ast;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,9 +24,9 @@ pub enum PropagatorError {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Propagator {
     /// Python variable name, e.g. `"V1"`.
-    pub python_name: String,
+    pub(crate) python_name: String,
     /// UFO `name` field.
-    pub name: String,
+    pub(crate) name: String,
     /// Verbatim `numerator` string, with module-level string variables substituted.
     pub numerator: String,
     /// Verbatim `denominator` string, same treatment.
@@ -38,21 +38,14 @@ pub struct Propagator {
 /// The shipped files build the forms by concatenating module-level string
 /// variables (`denominatorSq = denominator + "**2"`), so string assignments are
 /// tracked and `+` over strings is folded as the file goes.
-pub fn parse_propagators(src: &str) -> Result<Vec<Propagator>, PropagatorError> {
+pub(crate) fn parse_propagators(src: &str) -> Result<Vec<Propagator>, PropagatorError> {
     let stmts = parse_stmts(src).map_err(|e| PropagatorError::Parse(e.to_string()))?;
     let mut strings: HashMap<String, String> = HashMap::new();
     let mut result = Vec::new();
 
-    for stmt in &stmts {
-        let ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) = stmt else {
-            continue;
-        };
-        let ast::Expr::Name(ast::ExprName { id, .. }) = targets.first().unwrap() else {
-            continue;
-        };
-        let python_name = id.as_str().to_owned();
-
-        match value.as_ref() {
+    for (python_name, value) in named_assignments(&stmts) {
+        let python_name = python_name.to_owned();
+        match value {
             ast::Expr::Call(ast::ExprCall { func, keywords, .. })
                 if call_func_name(func) == Some("Propagator") =>
             {

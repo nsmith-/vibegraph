@@ -1220,8 +1220,7 @@ fn probe_fiducial_t_max_against_the_floored_pole_on_llj_cuts() {
 /// The banked `p p > l+ l- j` card holds every jet above `ptj = 20`, and a
 /// peripheral rung that produces a leg at transverse momentum `pT` transfers at
 /// least `pT²`, so `|t| ≳ 400 GeV²` — ten orders above the `4e-8` cancellation
-/// noise the unregulated edge sits on
-/// ([`a_massless_spacelike_pole_puts_the_transfer_edge_on_rounding_noise`]).
+/// noise the unregulated edge sits on.
 #[test]
 fn the_llj_run_card_supplies_the_scale_the_spacelike_pole_is_floored_at() {
     let legs = vec![

@@ -5,7 +5,7 @@ description: "What SMEFTsim_topU3l_MwScheme_UFO contains and what its restrict c
 status: draft
 tags: [smeftsim, ufo, non-sm-ufo, vendoring, census]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n35-census, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L111-L143", title: "Note 35 §1.2, SMEFTsim static census"}
   - {id: n35-conv, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4, conventions read from the pinned MadGraph source"}
@@ -38,10 +38,10 @@ it. [^n35-decisions]
 
 - **Drift is detectable.** `vendored_copy_matches_its_manifest`
   (`vibegraph-lib/tests/smeftsim.rs`) checks the manifest both ways: every listed file
-  has its digest and every file in the directory is listed. The test file requires
-  `extended-validation`, so the default hermetic `cargo test` does not run it;
+  has its digest and every file in the directory is listed. The test target is
+  hermetic, so plain `cargo test` runs it;
   `(cd validation/ufo/SMEFTsim_topU3l_MwScheme_UFO && sha256sum -c SHA256SUMS)` is the
-  manual check.
+  same check by hand.
 - **Nothing authored goes inside.** Per-class restrict cards written for the validation
   rows live under `validation/madgraph/cards/smeft/restrict_vg_*.dat`, because a file in
   the vendored directory would break its manifest.

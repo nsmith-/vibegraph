@@ -1,6 +1,7 @@
-//! Three card surfaces that are out of the v0.1 restricted scope must refuse
-//! at the CLI boundary with the same message the underlying parser raises,
-//! not just from a unit test that never goes through `main`.
+//! Refusals at the CLI boundary, through `main` rather than a unit test that
+//! never reaches it: card surfaces out of the v0.1 restricted scope refuse with
+//! the message the underlying parser raises, and an unreadable card or an empty
+//! request names the file or flag it came from.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -131,9 +132,134 @@ fn cli_reads_the_proc_card_from_stdin_for_a_dash() {
     );
     let stderr = stderr_of(&output);
     assert!(
-        stderr.contains("asks for NLO (or split-order) output"),
+        stderr.contains("cannot parse the proc card on stdin")
+            && stderr.contains("asks for NLO (or split-order) output"),
         "got:\n{stderr}"
     );
+}
+
+/// A proc card that is not there is reported by its path, not as a bare
+/// operating-system error.
+#[test]
+fn cli_a_missing_proc_card_is_named() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let missing = cwd.path().join("no_such_proc_card.dat");
+
+    let output = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&missing)
+        .arg("--out")
+        .arg(cwd.path().join("out"))
+        .output()
+        .expect("spawn vibegraph");
+
+    assert!(!output.status.success(), "a missing proc card must fail");
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains(&format!("cannot read the proc card {}", missing.display())),
+        "got:\n{stderr}"
+    );
+}
+
+/// A run card that does not parse is reported by its path as well as by the
+/// line the parser stopped on.
+#[test]
+fn cli_a_run_card_that_does_not_parse_is_named() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let run_card = cwd.path().join("typo_run_card.dat");
+    std::fs::write(&run_card, "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam\n").unwrap();
+
+    let output = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(cwd.path().join("out"))
+        .output()
+        .expect("spawn vibegraph");
+
+    assert!(!output.status.success(), "a malformed run card must fail");
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains(&format!("cannot load the run card {}", run_card.display()))
+            && stderr.contains("'ebeam'"),
+        "got:\n{stderr}"
+    );
+}
+
+/// A generation run asked for no events says where the zero came from: the
+/// flag, or the run card the artifact recorded when the flag is absent.
+#[test]
+fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(
+        &run_card,
+        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n  0 = nevents\n",
+    )
+    .unwrap();
+    let out = cwd.path().join("run");
+    let integrated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrated.status.success(),
+        "integrate failed:\n{}",
+        stderr_of(&integrated)
+    );
+    let artifact = out.join("grid.bin.zst");
+
+    let generate = |extra: &[&str]| {
+        vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(&artifact)
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(&run_card)
+            .arg("-o")
+            .arg(cwd.path().join("never.lhe"))
+            .args(extra)
+            .output()
+            .expect("spawn vibegraph")
+    };
+    for (extra, expected) in [
+        (
+            &["--nevents", "0"][..],
+            "no events requested: --nevents is 0".to_string(),
+        ),
+        (
+            &[][..],
+            format!(
+                "no events requested: --nevents is absent and the run card recorded in {} \
+                 asks for nevents = 0",
+                artifact.display()
+            ),
+        ),
+    ] {
+        let output = generate(extra);
+        assert!(!output.status.success(), "{extra:?}: no events must fail");
+        let stderr = stderr_of(&output);
+        assert!(stderr.contains(&expected), "{extra:?}: got:\n{stderr}");
+    }
 }
 
 /// A UFO model may define its own propagator forms; what this build cannot do is

@@ -188,9 +188,9 @@ no events and runs hermetically.[^vscales]
 - **The integration configuration** that MadGraph actually used, which the
   record does not carry (above).
 
-The module doc of `validate_scales.rs` is partly out of date (it still says no
-banked run pins `scalefact`); see
-[validate_scales module doc stale](../backlog/hygiene/validate-scales-module-doc-stale.md).
+The module doc of `validate_scales.rs` describes the run lists, the `scalefact`
+run and the MadGraph lines at the pin
+([F-G2 report](../sprints/hygiene/sessions/F-G2-report.md)).
 
 [^n24-p0]: Note 24 P0, "Gate wiring".
 [^n24-p1]: Note 24 P1, "The q̄ g gap, closed".

@@ -128,8 +128,9 @@ const MIN_BIN_EVENTS: f64 = 25.0;
 /// `validate_sigma`'s `PULL_REPORTED_NOT_ASSERTED` exists to refuse. What the
 /// rows show at five seeds is `rel` against VEGAS of `−0.141`, `+0.039`,
 /// `−0.110`, `−0.358` and `−0.325 %`, four of five negative: a single pass over
-/// the frozen grids does not inherit VEGAS's inverse-variance combination of
-/// iterations, so the two estimators are not expected to agree exactly. The
+/// the frozen grids is not the estimator VEGAS quotes, which averages its
+/// iterations, each drawn on the grid as it stood at that iteration, so the two
+/// are not expected to agree exactly. The
 /// spread is well inside both bounds and the sign pattern is not yet a
 /// measurement of anything — it is recorded here so that a run in which it
 /// sharpens is visible as a change rather than as a first observation.
@@ -249,7 +250,9 @@ fn with_integrand<R>(row: &Row, f: impl FnOnce(&FixedBeamIntegrand) -> R) -> R {
         MULTICHANNEL_ITERS,
         SEED,
     );
-    f(&integ)
+    let out = f(&integ);
+    common::assert_no_scale_draw_fallbacks(integ.scale_draw_fallbacks(), row.dir);
+    out
 }
 
 /// One binned observable: what it is called and the range it is histogrammed over.

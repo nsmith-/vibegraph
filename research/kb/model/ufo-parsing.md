@@ -5,7 +5,7 @@ description: "UFO files are parsed with rustpython-parser into our own UFOModel;
 status: draft
 tags: [ufo, parser, feyngraph, model, propagators]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n01-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L57-L77", title: "Note 01, UFO module structure and data model"}
   - {id: n04-options, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/04-ufo-parsing-future.md#L30-L97", title: "Note 04, full UFO parsing: options, recommendation, FeynGraph's parser gaps"}
@@ -92,8 +92,10 @@ an environment variable, or the asset cache; see
 
 **Data model.** `UFOModel` holds `particles`, `lorentz`, `couplings` and `vertices` as
 name-keyed `IndexMap`s (their order is what `ParticleId`, `CouplingId` and friends
-index), the `ParameterSet`, the feyngraph `topo` model, `order_hierarchy`,
-`expansion_order` and `propagators`. `EvaluatedModel` binds numeric values:
+index), the `ParameterSet`, the feyngraph `topo` model, `order_hierarchy` and
+`expansion_order`. `ParsedModel`, the serialized pre-restriction form, holds the same
+collections without `topo`, plus the parsed `propagators` forms, which `UFOModel` does
+not carry. `EvaluatedModel` binds numeric values:
 `from_model` at the restriction's defaults, `from_model_card` at a separate param card.
 Nothing reachable from `ParsedModel` may be a `HashMap`, so that its serialization (and
 the model digest) is deterministic.
@@ -121,7 +123,8 @@ that parser. How diagrams are then enumerated is in
 
 ## Custom propagators
 
-`propagators.py` is parsed (`ufo/propagators.rs`): each `Propagator(...)` keeps its
+`propagators.py` is parsed (`ufo/propagators.rs`) into `ParsedModel::propagators`:
+each `Propagator(...)` keeps its
 `name`, `numerator` and `denominator` as verbatim strings, with the module-level string
 variables the shipped files concatenate (`denominatorSq = denominator + "**2"`) folded
 in. `Particle::propagator` records which form a particle uses. Nothing evaluates the

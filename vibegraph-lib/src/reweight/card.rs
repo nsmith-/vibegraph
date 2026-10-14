@@ -27,7 +27,7 @@ use std::str::FromStr;
 
 /// One parameter change of a `launch` block.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Change {
+pub(crate) enum Change {
     /// `set <block> <code…> <value>`: the external parameter at that LHA address.
     Lha {
         block: String,
@@ -45,14 +45,14 @@ pub enum Change {
 
 impl Change {
     /// The card line the change was read from, 1-based.
-    pub fn line(&self) -> usize {
+    pub(crate) fn line(&self) -> usize {
         match self {
             Change::Lha { line, .. } | Change::Name { line, .. } => *line,
         }
     }
 
     /// The value the change sets.
-    pub fn value(&self) -> f64 {
+    pub(crate) fn value(&self) -> f64 {
         match self {
             Change::Lha { value, .. } | Change::Name { value, .. } => *value,
         }
@@ -78,20 +78,20 @@ impl fmt::Display for Change {
 
 /// One `launch` block: an optional name and description, and its changes.
 #[derive(Clone, Debug, PartialEq)]
-pub struct LaunchSpec {
+pub(crate) struct LaunchSpec {
     /// `--rwgt_name=…`, if given.
-    pub name: Option<String>,
+    pub(crate) name: Option<String>,
     /// `--rwgt_info=…`, if given.
-    pub info: Option<String>,
+    pub(crate) info: Option<String>,
     /// The card line of the `launch` itself, 1-based.
-    pub line: usize,
-    pub changes: Vec<Change>,
+    pub(crate) line: usize,
+    pub(crate) changes: Vec<Change>,
 }
 
 /// A parsed reweight card: its `launch` blocks in card order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReweightCard {
-    pub launches: Vec<LaunchSpec>,
+    pub(crate) launches: Vec<LaunchSpec>,
 }
 
 /// Why a reweight card was refused.
@@ -143,7 +143,7 @@ impl FromStr for ReweightCard {
                     let launch = launches
                         .last_mut()
                         .ok_or(CardError::SetBeforeLaunch { line })?;
-                    if content.contains("scan") {
+                    if tokens[1..].iter().any(|t| is_scan_value(t)) {
                         return Err(unsupported(
                             "scan values; write one `launch` block per value",
                         ));
@@ -253,6 +253,16 @@ fn parse_set(args: &[&str], line: usize) -> Result<Change, String> {
     })
 }
 
+/// MadGraph's scan value, `scan:[...]` or `scanN:[...]` (any case): the
+/// prefix `reweight_interface.py` looks for at the start of a card value.
+fn is_scan_value(token: &str) -> bool {
+    let lower = token.to_ascii_lowercase();
+    lower
+        .strip_prefix("scan")
+        .map(|rest| rest.trim_start_matches(|c: char| c.is_ascii_digit()))
+        .is_some_and(|rest| rest.starts_with(':'))
+}
+
 /// A number as a param card spells it, Fortran's `d` exponent included.
 fn parse_value(token: &str) -> Option<f64> {
     token
@@ -328,6 +338,7 @@ set ignored 1
             ("change model sm-full\nlaunch\n", 1),
             ("launch\n change process p p > e+ e-\n", 2),
             ("launch\n set ymt scan:[1,2]\n", 2),
+            ("launch\n set mass 6 SCAN1:[170, 175]\n", 2),
             ("launch\n ./param_card.dat\n", 2),
         ] {
             match text.parse::<ReweightCard>() {
@@ -335,6 +346,31 @@ set ignored 1
                 other => panic!("{text}: {other:?}"),
             }
         }
+    }
+
+    /// Only a `scan:` value is a scan; a parameter whose name contains `scan`
+    /// is set like any other.
+    #[test]
+    fn a_name_containing_scan_is_not_a_scan() {
+        let card: ReweightCard = "launch\n set mscan 1\n set scanblock 3 2\n"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            card.launches[0].changes,
+            vec![
+                Change::Name {
+                    name: "mscan".into(),
+                    value: 1.0,
+                    line: 2
+                },
+                Change::Lha {
+                    block: "scanblock".into(),
+                    code: vec![3],
+                    value: 2.0,
+                    line: 3
+                },
+            ]
+        );
     }
 
     #[test]

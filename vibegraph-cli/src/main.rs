@@ -5,12 +5,11 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use vibegraph::diagrams::{
-    parse_proc_card, parse_proc_card_file, DiagramError, ParsingOptions, SupportedCard,
-};
+use vibegraph::diagrams::{parse_proc_card, ParsingOptions, SupportedCard};
 
 mod assets;
 mod check;
+mod error;
 mod fetch;
 mod generate;
 mod integrate;
@@ -20,23 +19,28 @@ mod parallel;
 mod si;
 mod tui;
 
+use error::{err, CliError};
 use network::NetworkPolicy;
 
 /// The proc-card argument as every command reads it: the card in the file at
 /// `path`, or, when `path` is `-`, the card on stdin — so a one-process card
 /// can be piped straight in (`echo "generate p p > e+ e-" | vibegraph
-/// integrate -`) rather than written to a file first.
+/// integrate -`) rather than written to a file first. A failure names the card
+/// it could not read or parse.
 pub(crate) fn read_proc_card(
     path: &Path,
     opts: &ParsingOptions,
-) -> Result<SupportedCard, DiagramError> {
-    if path == Path::new("-") {
+) -> Result<SupportedCard, CliError> {
+    let (card, origin) = if path == Path::new("-") {
         let mut card = String::new();
-        std::io::stdin().read_to_string(&mut card)?;
-        parse_proc_card(&card, opts)
+        let read = std::io::stdin().read_to_string(&mut card).map(|_| card);
+        (read, "on stdin".to_string())
     } else {
-        parse_proc_card_file(path, opts)
-    }
+        (std::fs::read_to_string(path), path.display().to_string())
+    };
+    let card = card.map_err(|e| err(format!("cannot read the proc card {origin}: {e}")))?;
+    parse_proc_card(&card, opts)
+        .map_err(|e| err(format!("cannot parse the proc card {origin}: {e}")))
 }
 
 /// `--version` output: version line, then every license notice the binary is
@@ -74,8 +78,9 @@ struct Cli {
     command: Command,
 
     /// Never download anything; a missing asset becomes a refusal stating the
-    /// URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`
-    /// does the same for a whole environment, and either one outranks `--yes`.
+    /// URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`,
+    /// set to any value, does the same for a whole environment, and either one
+    /// outranks `--yes`.
     #[arg(long, global = true)]
     no_network: bool,
 

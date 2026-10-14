@@ -71,11 +71,10 @@ struct DiagramTopologies {
 ///
 /// Read from `validation/manifest.toml`'s own `categories.diagrams.mode` rather
 /// than from a list here, so the cell's declared enforcement and the gate's
-/// behaviour cannot drift apart. Two rows are informational today and each for
-/// its own reason, both recorded in the manifest beside the declaration: `g g >
-/// g g`, where MadGraph writes the four-gluon contact term once per colour
-/// structure and this side writes one diagram carrying all three, and the
-/// SMEFTsim ladder, where the model does not load at all yet.
+/// behaviour cannot drift apart. Each informational row carries its reason in
+/// the manifest beside the declaration — `g g > g g`, for one, where MadGraph
+/// writes the four-gluon contact term once per colour structure and this side
+/// writes one diagram carrying all three.
 fn declared_mode(key: &str) -> &'static str {
     static MODES: std::sync::OnceLock<std::collections::BTreeMap<String, String>> =
         std::sync::OnceLock::new();

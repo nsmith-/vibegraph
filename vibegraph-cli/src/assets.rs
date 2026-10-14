@@ -19,7 +19,7 @@
 use std::path::{Path, PathBuf};
 
 use vibegraph::cache::pinned::{ensure_pdf_set, pdf_set_is_cached, pinned_pdf_set, PinnedPdfSet};
-use vibegraph::cache::resolve::{locate, locate_from_env, Source};
+use vibegraph::cache::resolve::{locate, locate_from_env, Located, Source};
 use vibegraph::cache::store::{Fetch, RefusingFetch};
 use vibegraph::cache::AssetKind;
 use vibegraph::diagrams::ModelImport;
@@ -28,22 +28,39 @@ use crate::fetch::HttpFetch;
 use crate::network::{self, Consent, Download, NetworkPolicy};
 
 /// Environment override for the asset cache root, otherwise `~/.vibegraph`.
-pub const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
+pub(crate) const CACHE_ROOT_VAR: &str = "VIBEGRAPH_HOME";
 
 /// Repo-local PDF data, tried last. Relative to the working directory, so it
 /// only ever resolves inside a dev checkout and is simply absent for a user
 /// running an installed binary.
 const DEV_PDF_FALLBACK: &str = "validation/pdf";
 
-/// UFO models have historically been read from `<cwd>/<name>/`, which stays the
-/// last resort so a checkout with a model unpacked beside it keeps working.
+/// The last resort for a UFO model is `<cwd>/<name>/`, so a checkout with a model
+/// unpacked beside it needs no flag.
 const DEV_UFO_FALLBACK: &str = ".";
 
 /// The cache root: `$VIBEGRAPH_HOME` if set, else `~/.vibegraph`.
-pub fn cache_root() -> Option<PathBuf> {
+pub(crate) fn cache_root() -> Option<PathBuf> {
     std::env::var_os(CACHE_ROOT_VAR)
         .map(PathBuf::from)
         .or_else(vibegraph::cache::default_cache_root)
+}
+
+/// An asset missing from the directory the user named, saying which of the two
+/// ways of naming one did it — so the fix is to the flag or the variable that is
+/// actually in force, not to the one the user is looking at.
+fn not_found_where_named(what: &str, kind: AssetKind, flag: &str, located: &Located) -> String {
+    let named_by = match located.source {
+        Source::Flag => flag.to_string(),
+        Source::Env => format!("${}", kind.env_var()),
+        Source::Cache | Source::DevFallback => {
+            unreachable!("only an explicit path is reported as one the user named")
+        }
+    };
+    format!(
+        "{what} not found at {}, the directory {named_by} names",
+        located.dir.display()
+    )
 }
 
 fn no_home(flag: &str) -> String {
@@ -62,7 +79,7 @@ fn no_home(flag: &str) -> String {
 /// for usable. The cache step is the one that decides on the user's behalf what
 /// a bare set name means, so there the compiled-in pin is authoritative — an
 /// entry pinned to anything else is refetched rather than trusted.
-pub fn resolve_pdf_set_dir(
+pub(crate) fn resolve_pdf_set_dir(
     pdf_set: &str,
     pdf_dir: Option<&Path>,
     policy: NetworkPolicy,
@@ -80,9 +97,11 @@ pub fn resolve_pdf_set_dir(
     match located.source {
         Source::Flag | Source::Env if located.found => return Ok(located.dir),
         Source::Flag | Source::Env => {
-            return Err(format!(
-                "PDF set {pdf_set} not found at {}",
-                located.dir.display()
+            return Err(not_found_where_named(
+                &format!("PDF set {pdf_set}"),
+                AssetKind::Pdf,
+                "--pdf-dir",
+                &located,
             ))
         }
         Source::DevFallback => return Ok(located.dir),
@@ -153,7 +172,7 @@ fn ask_for(pin: &PinnedPdfSet, destination: &Path, policy: NetworkPolicy) -> Con
 /// wrong in two ways at once: it 404s for most models, and for some it succeeds
 /// and hands back FeynRules Mathematica sources instead of a UFO. So a model
 /// that is not on disk is an error naming where to put one, not a download.
-pub fn resolve_ufo_search_path(
+pub(crate) fn resolve_ufo_search_path(
     import: Option<&ModelImport>,
     ufo_dir: Option<&Path>,
 ) -> Result<PathBuf, String> {
@@ -190,9 +209,11 @@ fn ufo_search_path(
     }
 
     match located.source {
-        Source::Flag | Source::Env => Err(format!(
-            "model `{name}` not found at {}",
-            located.dir.display()
+        Source::Flag | Source::Env => Err(not_found_where_named(
+            &format!("model `{name}`"),
+            AssetKind::Ufo,
+            "--ufo-dir",
+            &located,
         )),
         _ => Err(format!(
             "model `{name}` was not found, and vibegraph does not download UFO models \
@@ -298,6 +319,42 @@ mod tests {
             "{err}"
         );
         assert!(!err.contains("does not download"), "{err}");
+    }
+
+    /// A miss under the flag and a miss under the environment variable name
+    /// different things to change, so their messages differ in exactly that.
+    #[test]
+    fn a_miss_names_the_flag_or_the_variable_that_chose_the_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("nowhere");
+        let env = std::ffi::OsString::from(&base);
+        let by_flag = ufo_search_path("MyModel", Some(&base), None, tmp.path()).unwrap_err();
+        let by_env = ufo_search_path("MyModel", None, Some(&env), tmp.path()).unwrap_err();
+        let var = format!("${}", AssetKind::Ufo.env_var());
+        assert!(
+            by_flag.ends_with("the directory --ufo-dir names"),
+            "{by_flag}"
+        );
+        assert!(!by_flag.contains(&var), "{by_flag}");
+        assert!(
+            by_env.ends_with(&format!("the directory {var} names")),
+            "{by_env}"
+        );
+        assert!(!by_env.contains("--ufo-dir"), "{by_env}");
+
+        let pdf = Located {
+            dir: base.join("SomeSet"),
+            source: Source::Env,
+            found: false,
+        };
+        let msg = not_found_where_named("PDF set SomeSet", AssetKind::Pdf, "--pdf-dir", &pdf);
+        assert!(
+            msg.ends_with(&format!(
+                "the directory ${} names",
+                AssetKind::Pdf.env_var()
+            )),
+            "{msg}"
+        );
     }
 
     /// The environment variable is honoured, and the flag outranks it.

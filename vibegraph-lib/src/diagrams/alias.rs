@@ -39,7 +39,7 @@ impl AliasTable {
     /// as they stand after MadGraph's start-up `import model sm`: the table
     /// begins with a model import, so a model given to [`replay`](Self::replay)
     /// rewrites `p` and `j` even for a card that imports none.
-    pub fn default_sm() -> Self {
+    pub(crate) fn default_sm() -> Self {
         let proton: Vec<String> = ["g", "u", "c", "d", "s", "u~", "c~", "d~", "s~"]
             .map(String::from)
             .to_vec();
@@ -58,7 +58,8 @@ impl AliasTable {
     }
 
     /// Build from `default_sm()` plus a list of `define` commands (applied in order).
-    pub fn from_defines(defines: &[MultiparticleDef]) -> Self {
+    #[cfg(test)]
+    pub(crate) fn from_defines(defines: &[MultiparticleDef]) -> Self {
         let mut table = Self::default_sm();
         for def in defines {
             table.apply(def);
@@ -69,7 +70,7 @@ impl AliasTable {
     /// Apply one `define`: its members are expanded through the labels defined
     /// so far, and the `/` exclusions removed. A later `define` of the same label
     /// replaces the earlier one.
-    pub fn apply(&mut self, def: &MultiparticleDef) {
+    pub(crate) fn apply(&mut self, def: &MultiparticleDef) {
         self.history.push(AliasEvent::Define(def.clone()));
         self.apply_define(def);
     }
@@ -95,7 +96,7 @@ impl AliasTable {
     }
 
     /// Insert or overwrite a plain label.
-    pub fn insert(&mut self, alias: String, particles: Vec<String>) {
+    pub(crate) fn insert(&mut self, alias: String, particles: Vec<String>) {
         self.history
             .push(AliasEvent::Insert(alias.clone(), particles.clone()));
         self.set_plain(&alias, particles);
@@ -110,14 +111,14 @@ impl AliasTable {
     /// Record an `import model`. The table itself is unchanged: what an import
     /// does to the labels depends on the model, and is applied by
     /// [`replay`](Self::replay).
-    pub fn model_import(&mut self) {
+    pub(crate) fn model_import(&mut self) {
         self.history.push(AliasEvent::ModelImport);
     }
 
     /// The table rebuilt from the defaults, with `on_import` applied to it at
     /// every recorded model import (the first one being MadGraph's start-up
     /// import) and every later `define` expanded through the result.
-    pub fn replay(&self, on_import: &mut dyn FnMut(&mut AliasTable)) -> AliasTable {
+    pub(crate) fn replay(&self, on_import: &mut dyn FnMut(&mut AliasTable)) -> AliasTable {
         let mut table = AliasTable::default_sm();
         table.history.clear();
         for event in &self.history {
@@ -141,31 +142,26 @@ impl AliasTable {
     /// Replace the members of an existing plain label without recording the
     /// change: the rewrite a model import makes, which [`replay`](Self::replay)
     /// re-derives from the model rather than from the history.
-    pub fn rewrite_plain(&mut self, name: &str, members: Vec<String>) {
+    pub(crate) fn rewrite_plain(&mut self, name: &str, members: Vec<String>) {
         if self.plain.contains_key(&name.to_lowercase()) {
             self.set_plain(name, members);
         }
     }
 
     /// Whether `name` is a label of either kind.
-    pub fn is_label(&self, name: &str) -> bool {
+    pub(crate) fn is_label(&self, name: &str) -> bool {
         let key = name.to_lowercase();
         self.plain.contains_key(&key) || self.or.contains_key(&key)
     }
 
     /// Whether `name` is an or-multiparticle label.
-    pub fn is_or_label(&self, name: &str) -> bool {
+    pub(crate) fn is_or_label(&self, name: &str) -> bool {
         self.or.contains_key(&name.to_lowercase())
     }
 
     /// The alternatives of an or-multiparticle label.
-    pub fn or_groups(&self, name: &str) -> Option<&[Vec<String>]> {
+    pub(crate) fn or_groups(&self, name: &str) -> Option<&[Vec<String>]> {
         self.or.get(&name.to_lowercase()).map(Vec::as_slice)
-    }
-
-    /// Every label, plain and or.
-    pub fn labels(&self) -> impl Iterator<Item = &str> {
-        self.plain.keys().chain(self.or.keys()).map(String::as_str)
     }
 
     /// Expand a single name: the members of a plain label, or the name itself.

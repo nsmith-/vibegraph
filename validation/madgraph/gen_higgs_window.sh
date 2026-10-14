@@ -35,6 +35,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=madevent_seeds.sh
+source "$HERE/madevent_seeds.sh"
 OUT="$HERE/output"
 BANKED="$OUT/ee_to_mumu_tata_qcd0"
 # Committed: a handful of scalars, expensive to produce and stable, so they
@@ -54,6 +56,20 @@ if [ ! -f "$BANKED/Cards/run_card.dat" ]; then
   exit 1
 fi
 
+# The reference this script writes is a MadGraph 3.5.7 measurement: the study
+# is of that line's behaviour at the Higgs pole, and the mg_version recorded in
+# the JSON must be true. The generator is the packaged mg5_aMC on PATH, so a
+# process directory from any other version is refused rather than banked as 3.5.7.
+require_packaged_version() {
+  local got
+  got="$(cat "$1/MGMEVersion.txt" 2>/dev/null || true)"
+  if [ "$got" != "3.5.7" ]; then
+    echo "!!! $1 reports MadGraph '${got:-unknown}'; this script banks a 3.5.7 reference" >&2
+    echo "    and does not run the pinned 3.7.1 checkout (use the packaged mg5_aMC)" >&2
+    exit 1
+  fi
+}
+
 # Generate one process directory (idempotent) and install the banked cards.
 generate_dir() {
   local procdir="$1" seed="$2"
@@ -65,9 +81,10 @@ generate_dir() {
 generate e+ e- > mu+ mu- ta+ ta- QCD=0
 output $procdir -nojpeg
 EOF
-    LDFLAGS="${LDFLAGS:-} -lc++" mg5_aMC "$tmp_mg5" >&2
+    LDFLAGS="$(mes_ldflags)" mg5_aMC "$tmp_mg5" >&2
     rm -f "$tmp_mg5"
   fi
+  require_packaged_version "$procdir"
   cp "$BANKED/Cards/run_card.dat" "$procdir/Cards/run_card.dat"
   cp "$BANKED/Cards/param_card.dat" "$procdir/Cards/param_card.dat"
   # nevents sets the refine target; the cross section comes from results.dat.
@@ -121,7 +138,7 @@ run_one() {
   local procdir="$1" tag="$2"
   echo ">>> [$tag] running madevent in $procdir ..." >&2
   local log="$OUT/higgs_window_$tag.log"
-  LDFLAGS="${LDFLAGS:-} -lc++" "$procdir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
+  LDFLAGS="$(mes_ldflags)" "$procdir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
     echo "!!! [$tag] generate_events failed; see $log" >&2
     tail -40 "$log" >&2
   }

@@ -102,5 +102,5 @@ from diagrams to a basis and matrix, and
 [`flow_tags`](../api/vibegraph/helas/color/flow_tags/index.html) for the
 Les Houches labels. The evaluator's
 [`cf_matrix`](../api/vibegraph/helas/eval/struct.AmplitudeEvaluator.html#method.cf_matrix)
-and [`select_color_flow`](../api/vibegraph/helas/eval/struct.AmplitudeEvaluator.html#method.select_color_flow)
+and [`select_config_and_flow`](../api/vibegraph/helas/eval/struct.AmplitudeEvaluator.html#method.select_config_and_flow)
 expose the results.

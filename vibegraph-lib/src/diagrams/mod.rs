@@ -3,7 +3,7 @@
 //! A `proc_card.dat` goes through three stages before feyngraph sees it:
 //!
 //! 1. [`parse::parse_proc_card_ast`] reads the whole of MadGraph's process
-//!    language into a [`ProcCardAst`], dropping nothing;
+//!    language into a [`ProcCardAst`](parse::ProcCardAst), dropping nothing;
 //! 2. [`check::check_supported`] refuses, all at once, every feature this
 //!    generator does not honour, and narrows the card to a [`SupportedCard`];
 //! 3. enumeration resolves the names against the model (case-insensitively, as
@@ -25,25 +25,21 @@
 //! println!("{} diagram sets generated", sets.len());
 //! ```
 
-pub mod alias;
+pub(crate) mod alias;
 mod chain;
 pub mod check;
 pub mod diagram;
 pub mod parse;
 pub mod resolve;
 pub mod schannel;
-pub mod selector;
+pub(crate) mod selector;
 
-pub use alias::AliasTable;
-pub use check::{
-    check_supported, AmplitudeOrder, SupportedCard, SupportedLeg, SupportedProcess, Unsupported,
-    UnsupportedCard,
-};
-pub use diagram::{ConvertError, Diagram};
-pub use parse::{
-    parse_proc_card_ast, CouplingConstraint, CouplingOp, LegParticle, ModelImport,
-    MultiparticleDef, ProcCardAst,
-};
+pub use check::{check_supported, SupportedCard, Unsupported};
+use check::{AmplitudeOrder, SupportedLeg, SupportedProcess, UnsupportedCard};
+use diagram::ConvertError;
+pub use diagram::Diagram;
+pub(crate) use parse::CouplingOp;
+pub use parse::{parse_proc_card_ast, ModelImport};
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -129,18 +125,13 @@ pub struct DiagramSet {
 }
 
 impl DiagramSet {
-    /// Whether any leg is polarized.
-    pub fn is_polarized(&self) -> bool {
-        self.polarizations.iter().any(Option::is_some)
-    }
-
     /// The same subprocess with its outgoing legs in another order: outgoing leg
     /// `order[i]` of `self` becomes outgoing leg `i`. Every diagram is relabelled
     /// with it, its momenta and fermion sign rebuilt from the graph, so the result
     /// is the enumeration the reordered process line would have produced.
     ///
     /// `None` when `order` is not a permutation of the outgoing legs.
-    pub fn with_final_order(&self, order: &[usize], model: &UFOModel) -> Option<DiagramSet> {
+    pub(crate) fn with_final_order(&self, order: &[usize], model: &UFOModel) -> Option<DiagramSet> {
         let n_in = self.particles_in.len();
         let n_out = self.particles_out.len();
         let mut seen = vec![false; n_out];
@@ -329,27 +320,6 @@ pub fn forbidden_onshell_ids(
         }
     }
     Ok(common.map(|(_, ids)| ids).unwrap_or_default())
-}
-
-/// Enumerate one `1 → n` decay on its own: one [`DiagramSet`] per concrete
-/// assignment of its legs (`w+ > j j` has one per quark pair), every diagram with
-/// the decaying particle as external leg `0` and `n_in = 1`.
-///
-/// This is the enumeration a `1 → n` process line runs, exposed as a unit so a
-/// decay can be enumerated apart from any process it attaches to. The automatic
-/// lowest-`WEIGHTED` search runs over the decay alone, as MadGraph's
-/// `DecayChainAmplitude` generates each decay as a separate amplitude.
-pub fn enumerate_decay(
-    decay: &SupportedProcess,
-    model: &UFOModel,
-) -> Result<Vec<DiagramSet>, DiagramError> {
-    if decay.initial.len() != 1 {
-        return Err(DiagramError::NotADecay {
-            process: decay.to_string(),
-            n_in: decay.initial.len(),
-        });
-    }
-    generate_from_process(decay, model)
 }
 
 /// A leg as a subprocess's identity sees it: the particle and, for a

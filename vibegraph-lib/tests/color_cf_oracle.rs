@@ -38,8 +38,10 @@
 //!   cargo test -p vibegraph-lib --features extended-validation \
 //!              --test color_cf_oracle
 //!
-//! Prerequisites (regenerates the gitignored MG output):
-//!   pixi run -e madgraph build-diagrams
+//! Its input is the frozen MadGraph runs under `validation/madgraph/output/`,
+//! which `pixi run validate` fetches with the reference bundle; a checkout
+//! without them fails the `reference-bundle` trial. The two controls that need
+//! no run are trials of their own and run either way.
 
 mod common;
 
@@ -73,21 +75,27 @@ struct MgReference {
     jamp: Vec<Vec<Cx>>,
 }
 
+fn output_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output")
+}
+
 /// Find every `SubProcesses/P*/matrix1_orig.f` under the MG output tree.
-fn find_matrix_files() -> Vec<PathBuf> {
-    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph/output");
+fn find_matrix_files(output_dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    collect_matrix_files(&output_dir, &mut out);
+    collect_matrix_files(output_dir, &mut out);
     out.sort();
     out
 }
 
+/// A directory the walk cannot read is an error rather than an empty subtree:
+/// treating it as empty would drop every subprocess beneath it from the gate.
 fn collect_matrix_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let path = entry.path();
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| panic!("cannot read an entry of {}: {e}", dir.display()))
+            .path();
         if path.is_dir() {
             collect_matrix_files(&path, out);
         } else if path.file_name().and_then(|n| n.to_str()) == Some("matrix1_orig.f") {
@@ -417,24 +425,6 @@ fn colorize(process: &str, model: &UFOModel) -> Result<ColorBasis, String> {
     colorize_process(model, with_diagrams[0]).map_err(|e| format!("colorize: {e}"))
 }
 
-/// Rows whose `amplitudes` cell is informational but whose **colour**
-/// comparison is enforced anyway, each with the measurement that earned it.
-///
-/// The default rule below reads enforcement off the row's `amplitudes` cell,
-/// because a colour basis is a factor of an amplitude rather than a category of
-/// its own. That is the right default for a row nothing yet evaluates, and the
-/// wrong one for a row whose colour layer has been measured exact while its
-/// amplitude is still under construction — leaving it reported would let the
-/// colour result regress silently while the amplitude cell explains why nobody
-/// noticed. A row listed here must pass; the list is not an exemption from
-/// anything, it is a promotion.
-const COLOUR_ENFORCED_INFO_ROWS: &[(&str, &str)] = &[(
-    "gg_to_gg_cg",
-    "CF max_rel = 0 at NCOLOR 9 and all 27 JAMP colour columns exact with no rephasing, \
-     including the nine four-gluon contact structures; the row's residual against \
-     MadGraph is in the amplitudes, not in the colour decomposition",
-)];
-
 /// A row's cell is asserted or only reported, and the comparison itself is the
 /// same either way, so it is run first and its outcome decided on after.
 fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
@@ -442,8 +432,7 @@ fn run_trial(matrix_path: PathBuf) -> Result<(), Failed> {
     let name = trial_name(&matrix_path);
     // An enforced row's panic stays a panic; a reported one is part of what is
     // being reported.
-    let enforced = common::amplitudes_enforced(&key)
-        || COLOUR_ENFORCED_INFO_ROWS.iter().any(|(k, _)| *k == key);
+    let enforced = common::amplitudes_enforced(&key);
     let outcome = if enforced {
         compare(&matrix_path)
     } else {
@@ -614,23 +603,36 @@ fn packed_cf_form_matches_the_square_form() -> Result<(), Failed> {
     Ok(())
 }
 
-fn main() {
-    let args = Arguments::from_args();
-
-    let matrix_files = find_matrix_files();
-    if matrix_files.is_empty() {
-        eprintln!("No matrix1_orig.f files found in validation/madgraph/output/");
-        eprintln!("Run: pixi run -e madgraph build-diagrams");
-        libtest_mimic::run(&args, vec![]).exit();
+/// The banked runs this gate iterates over, or the one failing trial that says
+/// they are missing. Either way the hermetic controls run beside it.
+fn matrix_trials() -> Vec<Trial> {
+    let output_dir = output_dir();
+    let missing = |what: &'static str| {
+        let dir = output_dir.display().to_string();
+        vec![Trial::test("reference-bundle", move || {
+            vibegraph::validation::require("color_cf_oracle", what, dir)
+        })]
+    };
+    if !output_dir.is_dir() {
+        return missing("the frozen MadGraph runs");
     }
-
-    let mut trials: Vec<Trial> = matrix_files
+    let matrix_files = find_matrix_files(&output_dir);
+    if matrix_files.is_empty() {
+        return missing("a SubProcesses/P*/matrix1_orig.f in the frozen MadGraph runs");
+    }
+    matrix_files
         .into_iter()
         .map(|p| {
             let name = trial_name(&p);
             Trial::test(name, move || run_trial(p))
         })
-        .collect();
+        .collect()
+}
+
+fn main() {
+    let args = Arguments::from_args();
+
+    let mut trials = matrix_trials();
     trials.push(Trial::test(
         "packed-cf-form/gg_ttx",
         packed_cf_form_matches_the_square_form,
@@ -841,6 +843,11 @@ fn our_jamp(cb: &ColorBasis) -> Vec<(AmpKey, Vec<Cx>)> {
     keys.into_iter().zip(columns).collect()
 }
 
+/// One graph's colour block after [`normalise_group`]: its rounded columns (the
+/// sort key, so the two sides are ordered by content rather than by enumeration),
+/// the unit that normalised it, and the normalised columns themselves.
+type NormalisedGraph = (Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>);
+
 /// The unit factor a *graph's* colour-coefficient columns are collectively defined
 /// up to: MadGraph folds the diagram's fermion factor into the coefficient where
 /// vibegraph carries it in the diagram root, so a graph is fixed only up to one
@@ -856,11 +863,6 @@ fn our_jamp(cb: &ColorBasis) -> Vec<(AmpKey, Vec<Cx>)> {
 /// they share whatever convention factor separates the two sides. Normalising each
 /// column on its own would absorb an independent sign per structure — the freedom a
 /// per-structure sign error hides in.
-/// One graph's colour block after [`normalise_group`]: its rounded columns (the
-/// sort key, so the two sides are ordered by content rather than by enumeration),
-/// the unit that normalised it, and the normalised columns themselves.
-type NormalisedGraph = (Vec<Vec<(i64, i64)>>, Cx, Vec<Vec<Cx>>);
-
 fn normalise_group(cols: &[Vec<Cx>]) -> Option<(Cx, Vec<Vec<Cx>>)> {
     let scale = cols
         .iter()

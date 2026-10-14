@@ -508,10 +508,13 @@ fn a_truncation_share_outside_the_unit_interval_is_refused() {
     let run = run();
     for bad in ["1", "1.5", "-0.01", "most"] {
         let mut cmd = run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("never.lhe"));
-        cmd.args(["--max-truncation", bad]);
+        // `=` keeps a negative share a value, so clap hands it to the share's
+        // own parser rather than reading it as an unknown flag.
+        cmd.arg(format!("--max-truncation={bad}"));
         expect_refusal(
             cmd.output().expect("spawn vibegraph"),
             &format!("--max-truncation {bad}"),
+            &format!("invalid value '{bad}' for '--max-truncation"),
         );
     }
 }
@@ -537,22 +540,34 @@ fn a_scan_budget_that_is_not_a_positive_count_is_refused() {
     let run = run();
     for bad in ["0", "half", "-5"] {
         let mut cmd = run.generate_cmd("buffer", SEED_A, 10, &run.dir.join("never.lhe"));
-        cmd.args(["--scan-points", bad]);
+        cmd.arg(format!("--scan-points={bad}"));
         expect_refusal(
             cmd.output().expect("spawn vibegraph"),
             &format!("--scan-points {bad}"),
+            &format!("invalid value '{bad}' for '--scan-points"),
         );
     }
 }
 
-fn expect_refusal(out: Output, because: &str) {
+/// `out` is a refusal of `because` that says so: a non-zero exit whose stderr
+/// carries `names` — the flag, the field or the condition refused — and no
+/// panic, which would also exit non-zero without refusing anything.
+#[track_caller]
+fn expect_refusal(out: Output, because: &str, names: &str) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         !out.status.success(),
         "generate accepted {because}; it must refuse\nstdout: {}",
         String::from_utf8_lossy(&out.stdout)
     );
-    eprintln!("refused {because}: {}", stderr.lines().next().unwrap_or(""));
+    assert!(
+        !stderr.contains("panicked"),
+        "generate panicked on {because} instead of refusing it:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(names),
+        "the refusal of {because} does not say {names:?}:\n{stderr}"
+    );
 }
 
 /// The refusal is the feature, so the refusal is what is tested. A matching pair
@@ -572,6 +587,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     expect_refusal(
         run.refuse(&run.proc_card, Some(&moved), "never.lhe"),
         "a run card with a different beam energy",
+        "run card `ebeam1`: artifact has",
     );
 
     // A cut threshold moves no beam and no scale but changes which points the grid
@@ -581,6 +597,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     expect_refusal(
         run.refuse(&run.proc_card, Some(&recut), "never.lhe"),
         "a run card with a different lepton pT cut",
+        "run card `ptl`: artifact has",
     );
 
     // A different process entirely.
@@ -589,6 +606,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     expect_refusal(
         run.refuse(&other_proc, Some(&run.run_card), "never.lhe"),
         "a proc card for a different process",
+        "process: artifact has",
     );
 
     // The same `generate` line under a different model: nothing the process string
@@ -604,6 +622,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     expect_refusal(
         run.refuse(&other_model, Some(&run.run_card), "never.lhe"),
         "a proc card importing a different restrict variant",
+        "model: artifact has",
     );
 
     // An omitted run card resolves to the MadGraph LO defaults — proton beams —
@@ -611,6 +630,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     expect_refusal(
         run.refuse(&run.proc_card, None, "never.lhe"),
         "an omitted run card",
+        "run card `lpp1`: artifact has",
     );
 
     // And an existing output file is not clobbered.
@@ -619,6 +639,7 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
             .output()
             .expect("spawn"),
         "an existing output file without --force",
+        "already exists (pass --force to overwrite)",
     );
     let untouched = std::fs::read_to_string(run.dir.join("matching.lhe")).expect("read back");
     assert_eq!(

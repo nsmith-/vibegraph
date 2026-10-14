@@ -1,9 +1,9 @@
 //! The eval-pass error tree.
 //!
-//! A leaf module so the rooting/compile passes can depend on it one-way: the two
-//! rooting passes ([`RootDiagramError`] from walking the topology, [`RootLorentzError`]
-//! from rooting a vertex's Lorentz structure) aggregate into [`CompileError`], and the
-//! process-level [`EvalError`] wraps that plus the model lookups done while compiling.
+//! The two rooting passes ([`RootDiagramError`] from walking the topology,
+//! [`RootLorentzError`] from rooting a vertex's Lorentz structure) aggregate into
+//! [`CompileError`], and the process-level [`EvalError`] wraps that plus the model
+//! lookups done while compiling.
 
 use super::root_lorentz::RootLorentzError;
 
@@ -11,7 +11,7 @@ use super::root_lorentz::RootLorentzError;
 ///
 /// Particle/interaction resolution and the antiparticle-consistency check happen earlier,
 /// at the module boundary ([`Diagram::from_view`](crate::diagrams::diagram::Diagram::from_view),
-/// reported via [`ConvertError`](crate::diagrams::ConvertError)), so the only failure left
+/// reported via [`ConvertError`](crate::diagrams::diagram::ConvertError)), so the only failure left
 /// here is a structural one from the walk itself.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum RootDiagramError {

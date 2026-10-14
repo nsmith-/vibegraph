@@ -5,7 +5,7 @@ description: "Wavefunctions as sections of Spin(1,3)×gauge bundles, vertices as
 status: draft
 tags: [representations, intertwiners, variance, dirac-adjoint, type-design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n08-picture, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L10-L60", title: "Note 08 (geometric picture; the bundle picture)"}
   - {id: n08-traits, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/08-repr-geometry.md#L63-L123", title: "Note 08 §1–§4 (representation-trait strategy)"}
@@ -14,7 +14,7 @@ sources:
   - {id: n13-axes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L244-L271", title: "Note 13 §5 (form/adjoint discipline, three-axis terminology)"}
   - {id: n13-impl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/13-typed-repr-conventions-design.md#L289-L354", title: "Note 13 §7 (implementation: rename, typed seam, contravariant-only vectors)"}
   - {id: code-lorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/lorentz.rs", title: "Variance, DiracAdjoint, VectorRepr, SpinorRepr, Bispinor"}
-  - {id: code-intertwiner, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/repr/intertwiner.rs", title: "Intertwiner2Leg/3Leg/4Leg"}
+  - {id: code-repr-mod, resource: "vibegraph-lib/src/helas/repr/mod.rs", title: "repr module doc: the bundle table and the vertex-factor table with (j_L,j_R) chains"}
   - {id: code-wavefn, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/wavefn.rs", title: "DiracWf, VectorWf, ScalarWf and the momentum-flow signs"}
   - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "Adjoint, LegAdjoint (runtime adjoint and the crossed bit)"}
 ---
@@ -46,37 +46,34 @@ linear maps between the fibres at each leg. `γ^μ : S_L → T*M ⊗ S_R` exists
 because (½,0) ⊗ (½,½) ⊃ (0,½). A UFO vertex is then an element of
 `Hom(R₁ ⊗ R₂ ⊗ R₃, ℂ)`, a colour tensor times a Lorentz tensor times a coupling,
 which is also MadGraph's internal decomposition. The module doc of
-`helas/repr/mod.rs` carries this table.
+`helas/repr/mod.rs` carries this table, and a second one listing each vertex
+factor with its map, its `(j_L,j_R)` chain and the method that implements
+it[^code-repr-mod].
 
 The Weyl (chiral) basis is the natural one here: S = S_L ⊕ S_R is manifest
 (components 0,1 left-chiral, 2,3 right-chiral; `γ⁵ = diag(−1, 1)`), so the
 chiral projectors are block selections. Basis independence is kept at the
 trait level (`SpinorRepr`), but only the Weyl numerics exist; there is no
-`WeylBasis` type any more, the name survives in doc comments only.
+`WeylBasis` type.
 
 ## Which layer uses which form
 
 The picture is realised differently in two layers. Do not read note 08's
 blanket intertwiner trait as the evaluator's design[^n08-traits].
 
-- **`helas/repr` (the representation layer).** Lorentz and colour are separate
-  traits: `LorentzRepr`, `VectorRepr<F, V: Variance>`,
-  `SpinorRepr<F, Adj: DiracAdjoint>` in `repr/lorentz.rs`; `ColorRepr` with
-  `SU3Fundamental`, `SU3Adjoint`, `ColorSinglet` in `repr/color.rs`. The vertex
-  factors are methods on the representation types (`left_current`,
-  `right_current`, `vector_bilinear`, `tensor_bilinear`,
-  `fierz_coefficients`, `apply`, `epsilon_vector`, `epsilon4`). The leg-count
-  traits `Intertwiner2Leg`/`3Leg`/`4Leg` in `repr/intertwiner.rs` name an
-  orientation per implementor, but **nothing implements them**. The same goes
-  for `Vertex3` and `GaugeVertex` in `repr/coupling.rs`: they are defined and
-  have no users outside that file[^code-intertwiner].
+- **`helas/repr` (the representation layer).** The Lorentz representations
+  are traits in `repr/lorentz.rs`: `LorentzRepr`, `VectorRepr<F, V: Variance>`
+  and `SpinorRepr<F, Adj: DiracAdjoint>`. The vertex factors are methods on the
+  representation types (`scalar_bilinear`, `left_current`, `right_current`,
+  `vector_bilinear`, `tensor_bilinear`, `fierz_coefficients`, `apply`,
+  `epsilon_vector`, `epsilon4`); there is no separate intertwiner or vertex
+  trait[^code-repr-mod]. Colour in `repr/color.rs` is only `ColorRep`, the
+  runtime label for the SU(3) representation a UFO colour charge selects.
 - **`helas/eval` (the evaluator).** A flat, byte-sized `Op` set with one kernel
   per op; see [flat-op-ir](../amplitudes/flat-op-ir.md) and
   [intertwiner-basis-and-peephole](../amplitudes/intertwiner-basis-and-peephole.md).
-  Colour does not appear in it at all. The runtime carries no colour vector,
-  and `ColorRepr`'s numeric `Color` fibre is documented as the vocabulary of
-  hand-built wavefunction objects; its one reader, `GaugeVertex::apply`, has no
-  users; colour is factored symbolically (see
+  Colour does not appear in it at all. The runtime carries no colour vector;
+  colour is factored symbolically (see
   [madgraph-colour-factorization](../amplitudes/madgraph-colour-factorization.md)).
 
 ## Three axes, one gadget for two of them
@@ -113,8 +110,8 @@ apply or drop `g` twice.
 
 Only the invariants are adopted. There is no unified `Paired`/`Side`/`FormKind`
 trait in the code; `Variance` and `DiracAdjoint` are separate sealed marker
-traits with the same shape (an involutive `Dual` associated type and a
-`const` orientation bit: `COVARIANT`, `KET`)[^code-lorentz].
+traits, each with an involutive `Dual` associated type, and `Variance` also
+carries the `const` orientation bit `COVARIANT`[^code-lorentz].
 
 ## Cautions that still bind
 
@@ -151,8 +148,7 @@ get an internal line's momentum[^code-wavefn]:
 | `ScalarWf::sxxxxx` | `nss: i32` | outgoing leg | incoming leg | `nss · p` |
 
 `nsv` and `nss` panic on anything but ±1. The spinor flag is the charge, not
-the in/out direction; `DiracWf::charge` reads it back off the sign of the
-stored energy. The wavefunctions themselves are in
+the in/out direction, and the sign of the stored energy carries it. The wavefunctions themselves are in
 [wavefunctions-and-propagators](../amplitudes/wavefunctions-and-propagators.md).
 
 ## Variance on the register
@@ -177,12 +173,12 @@ The sign each vector producer carries, and why, is in
 [vector-vertex-signs](../amplitudes/vector-vertex-signs.md).
 
 [^n08-picture]: Note 08, the bundle table and the intertwiner reading of `γ^μ`.
-[^n08-traits]: Note 08 §1–§4 proposed separate Lorentz/gauge traits, an `Intertwiner<In, Out>` trait, `Vertex3<R1,R2,R3>` and a `Propagator<R>` trait. The repr layer kept the first and defines the leg-count intertwiner and `Vertex3` types without using them; the evaluator took none of them (note 13 §1b).
+[^n08-traits]: Note 08 §1–§4 proposed separate Lorentz/gauge traits, an `Intertwiner<In, Out>` trait, `Vertex3<R1,R2,R3>` and a `Propagator<R>` trait. The repr layer kept Lorentz traits only, with the vertex factors as their methods, and has no intertwiner, vertex or propagator trait; the evaluator took none of them (note 13 §1b).
 [^n11-idea]: Note 11, the form-induced-duality thesis and the form-kind taxonomy. Its "Flow" means the Dirac adjoint throughout.
 [^n11-cautions]: Note 11, cautions 1 and 2.
 [^n13-axes]: Note 13 §5, the three-axis terminology.
 [^n13-impl]: Note 13 §7: the rename `SpinorFlow`/`FlowIn`/`FlowOut` → `DiracAdjoint`/`Ket`/`Bra` and runtime `Flow`/`LegFlow` → `Adjoint`/`LegAdjoint`; the typed propagator seam; the single contravariant vector convention.
 [^code-lorentz]: `vibegraph-lib/src/helas/repr/lorentz.rs`: `Variance`, `DiracAdjoint`, `Bispinor::bar`, `ComplexVector::dualize`.
-[^code-intertwiner]: `vibegraph-lib/src/helas/repr/intertwiner.rs` module doc: "nothing implements them yet". `Vertex3`/`GaugeVertex` in `repr/coupling.rs`.
+[^code-repr-mod]: `vibegraph-lib/src/helas/repr/mod.rs` module doc: the bundle table, and the vertex-factor table giving each factor's map, `(j_L,j_R)` chain and implementing method.
 [^code-wavefn]: `vibegraph-lib/src/helas/wavefn.rs` module doc, "Momentum-flow signs".
 [^code-rootl]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`, `Adjoint` and `LegAdjoint`.

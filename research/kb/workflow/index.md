@@ -16,5 +16,6 @@
 
 * [Dispatching agents: worktrees, host load and checking reports](agent-dispatch-and-worktrees.md) - Pre-created worktrees with reference data and the submodule copied in; one heavy suite per host; session-scoped kills; why a claimed transcript is re-run from committed code before it is trusted.
 * [Design, implement, review: three sessions per work item](design-implement-review-chains.md) - A work item run as a design session (a pre-registered written section), an implementation session and a fresh-context review session; what it cost and caught, and when it is worth using.
+* [Running a hygiene review](hygiene-review.md) - How to review code for maintainability, test non-vacuity, visibility and reusable abstractions: measured yield per point, the techniques that found real defects, reviewer calibration, mutation evidence, and a proposed checklist and report shape for a per-PR hygiene agent.
 * [Scoping a sprint session](session-scoping-rules.md) - One deliverable per session; oracle before engine; inert plumbing first; new cells informational first; stop-rules for others' bugs; hand-off notes that carry watch items.
 * [Sprint lifecycle](sprint-lifecycle.md) - A sprint as a folder of linked concepts: open with a draft-PR claim, survey, design and approval, sessions with reports, validation, and a close-out that promotes, records and deletes closed items.

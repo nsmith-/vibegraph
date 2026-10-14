@@ -3,7 +3,7 @@ type: Design
 title: "generate: from an integrate artifact to an event file"
 description: "generate refuses card, model or PDF mismatch, installs the banked grids and channel weights, draws labels per accepted event and writes LHE; check-events checks a file's structure, not its physics."
 status: draft
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 tags: [events, generate, cli, artifact, lhef]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
@@ -113,7 +113,7 @@ mirror orientation on those cards[^n40].
 (`proton.rs`) sweeps the uniform rather than sampling it, so the measured shares
 carry no Monte Carlo error: deviation 0.18 sweep resolutions, against ≥ 6.3 for
 a uniform draw and up to 72.3 for an exchanged-beam assignment. Its oracle forms
-the `x·f` products independently of `FlavorGroup::member_luminosity`, at an
+the `x·f` products independently of `FlavorGroup::member_luminosity_rows`, at an
 off-central point (`x₁ > 5x₂`) and with a probe PDF whose `x` shape differs by
 flavour; without both, the beam orientation would be unpinned.
 

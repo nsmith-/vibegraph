@@ -21,5 +21,13 @@ pass before any backwards-compatibility promise:
 2. demote what only the CLI and validation crates use;
 3. decide what the supported library surface actually is.
 
+The hygiene sprint demoted every `pub` item that no target outside its crate
+uses (sessions V1 and V1b): `vibegraph-lib`'s `pub` lines went from 2601 to 1359,
+and both binary crates, `vibegraph-cli` and `validation-report`, are
+crate-private ([V1 report](../../sprints/hygiene/sessions/V1-report.md)). For the
+step 3 decision, the remaining surface is to be re-derived item by item, grouped
+by the target that uses it. Public fields beside derived state they can
+desynchronise are [their own item](pub-fields-beside-derived-state.md).
+
 Step 3 is the user's call, so this item is `needs-user`. Until it is done, releases
 stay on the 0.x line.

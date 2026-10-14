@@ -91,7 +91,7 @@ pub struct ColorBasis {
     pub elements: Vec<BasisElement>,
     /// `NCOLOR² = elements.len()²` exact color factors, row-major:
     /// `cf_matrix[i * ncolor + j] = CF_{ij}`.
-    pub cf_matrix: Vec<Ratio<i64>>,
+    pub(crate) cf_matrix: Vec<Ratio<i64>>,
 }
 
 impl ColorBasis {

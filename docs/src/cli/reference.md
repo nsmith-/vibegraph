@@ -20,7 +20,7 @@ Commands:
 
 Options:
       --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK` does the same for a whole environment, and either one outranks `--yes`
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse
@@ -78,7 +78,7 @@ Options:
           Overwrite an existing artifact
 
       --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK` does the same for a whole environment, and either one outranks `--yes`
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
       --pdf-set <PDF_SET>
           LHAPDF set name (proton beams only)
@@ -244,7 +244,7 @@ Options:
           Events to write; defaults to the run card's `nevents`
 
       --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK` does the same for a whole environment, and either one outranks `--yes`
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
   -o, --out <OUT>
           Output Les Houches file
@@ -351,7 +351,7 @@ Options:
           Fail unless the file holds at least this many events
 
       --no-network
-          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK` does the same for a whole environment, and either one outranks `--yes`
+          Never download anything; a missing asset becomes a refusal stating the URL, size and checksum it would have fetched. `$VIBEGRAPH_NO_NETWORK`, set to any value, does the same for a whole environment, and either one outranks `--yes`
 
   -y, --yes
           Answer yes to any "may I download this?" question instead of asking. Needed to fetch an asset from a script, a CI job, or anything else with no terminal, where the default is to refuse

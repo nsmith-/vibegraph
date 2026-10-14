@@ -5,7 +5,7 @@ description: "One interaction per coupling-order tuple, as MadGraph's add_intera
 status: draft
 tags: [ufo, coupling-orders, weighted, smeftsim, madgraph-parity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
 sources:
   - {id: n02-ufo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L519-L527", title: "Note 02, UFO parsing: FeynGraph vs vibegraph"}
   - {id: n35-probe, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L144-L174", title: "Note 35 §1.3, the measured SMEFTsim loader probe"}
@@ -16,7 +16,7 @@ sources:
   - {id: mg-check-expansion, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/base_objects.py#L3757-L3770", title: "MadGraph base_objects.py Process.check_expansion_orders"}
   - {id: mg-optimal-orders, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/core/diagram_generation.py#L1685-L1688", title: "MadGraph diagram_generation.py, expansion caps after find_optimal_process_orders"}
 measured:
-  - {commit: 00858a8, pr: 5, landed_in: e73b158, command: "cargo test -p vibegraph-lib --features extended-validation --test smeftsim"}
+  - {commit: 00858a8, pr: 5, landed_in: e73b158, command: "cargo test -p vibegraph-lib --test smeftsim"}
 ---
 
 A UFO coupling carries an `order` dictionary (`{'QED': 1}`, `{'NP': 1, 'QED': 1}`, …).
@@ -83,7 +83,7 @@ pair in `validation/madgraph/interactions.json` and asserted by
 so the 1985 (from 904 UFO `Vertex` entries, 2737 coupling entries) is a constant in
 `interaction_splitting_matches_madgraph`. The arity histograms are vibegraph's own
 measurement, since MadGraph's log does not report them (`vibegraph-lib/tests/smeftsim.rs`,
-behind `extended-validation`). Smaller counts (60 and 540 vertices) that appear in
+a hermetic target). Smaller counts (60 and 540 vertices) that appear in
 older notes are pre-split. For the Standard Model,
 `splitting_is_the_identity_on_the_standard_model` (`ufo/mod.rs`) pins that splitting
 changes nothing, with the bit-for-bit `amplitude_oracle` as the end-to-end check.
