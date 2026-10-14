@@ -134,6 +134,7 @@ use vibegraph::ufo::EvaluatedModel;
 mod common;
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
+use common::seeds::{combine, SeedMean};
 
 /// A pull magnitude above this fails the gate. The banked runs and the vibegraph
 /// integral are independent Monte-Carlo estimates, so a few-sigma spread is
@@ -427,11 +428,11 @@ fn plan_for(dir: &str) -> Plan {
         //
         // `rel_tol` is the measured seed spread with headroom, not the reference's
         // error and not the achieved central value. Over seven seeds at this budget
-        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 1.22 and
-        // |rel| <= 4.7e-4 with per-seed χ²/dof in 0.91–1.22; their inverse-variance
-        // mean is +1.6e-4 of the bank at χ²/dof 0.75 over the seeds, inside the
-        // reference's own error. The ladder is flat: rel +8.2e-4 / +2.9e-4 / +3.1e-4
-        // / +4.3e-4 / +1.2e-4 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points
+        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 1.44 and
+        // |rel| <= 5.5e-4 with per-seed χ²/dof in 0.62–1.96; their seed-policy mean
+        // is +2.5e-4 of the bank at χ²/dof 0.40 over the seeds, at the reference's
+        // own 2.4e-4 error. The ladder is flat: rel +8.9e-4 / +7.1e-4 / +4.3e-4
+        // / +6.5e-4 / +9.8e-5 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points
         // an iteration, scattering inside the same band over a sixteenfold budget
         // rather than drifting, which is what says the residual is sampling — a
         // defect migrates between seeds at fixed size instead.
@@ -562,13 +563,13 @@ fn plan_for(dir: &str) -> Plan {
         // those run at 160 000 x 8. `rel_tol` is the measured five-seed spread with
         // headroom (`probe_non_sm_seed_stability`), never the achieved central value:
         // over five seeds at these budgets the worst |rel| is 6.0e-4
-        // (`ee_to_mumu_smlimit`), 2.1e-3 (`gg_to_ttx_smlimit`), 1.7e-3
-        // (`gg_to_ttx_smlimit_qcd2`), 1.1e-3 (`ee_to_ttx_smlimit`), 1.6e-3
-        // (`ee_to_ttx_dipole`), 4.4e-4 (`ee_to_zh_smeft`), 1.3e-3 (`ee_to_mumu_4f`),
-        // 6.7e-4 (`uux_to_ttx_4f`), 1.4e-3 (`tata_to_ttx_tensor4f`), 1.0e-3 and
-        // 1.4e-3 (`ll_to_qqx_toy_dipole`, `_tensor`) and 3.1e-4
+        // (`ee_to_mumu_smlimit`), 2.1e-3 (`gg_to_ttx_smlimit`), 1.4e-3
+        // (`gg_to_ttx_smlimit_qcd2`), 1.1e-3 (`ee_to_ttx_smlimit`), 1.2e-3
+        // (`ee_to_ttx_dipole`), 3.7e-4 (`ee_to_zh_smeft`), 6.4e-4 (`ee_to_mumu_4f`),
+        // 7.5e-4 (`uux_to_ttx_4f`), 7.7e-4 (`tata_to_ttx_tensor4f`), 9.1e-4 and
+        // 2.2e-3 (`ll_to_qqx_toy_dipole`, `_tensor`) and 4.2e-4
         // (`ll_to_qqx_toy_yukawa`), with per-row chi2/dof over the seeds in
-        // 0.27-1.99. Every ladder is flat: quadrupling and quartering the budget
+        // 0.46-2.77. Every ladder is flat: quadrupling and quartering the budget
         // moves each row inside its own seed band rather than in a direction.
         "ee_to_mumu_smlimit"
         | "gg_to_ttx_smlimit"
@@ -640,7 +641,7 @@ fn plan_for(dir: &str) -> Plan {
         // `rel_tol` is the toy-row convention, set from the measured five-seed
         // spread (`probe_non_sm_seed_stability`) and not from the achieved central
         // value: worst |rel| 1.9e-3, 1.0e-3 and 1.1e-3 over the seeds at chi2/dof
-        // 0.98, 0.99 and 0.68, inverse-variance means -9.1e-4, +6.9e-5 and -2.4e-4.
+        // 0.98, 0.99 and 0.68, seed-policy means -9.1e-4, +7.1e-5 and -2.4e-4.
         // The ladders converge rather than drift -- `p3 r3` epsilon reads +3.6e-3 /
         // +1.3e-3 / +8.0e-4 / +6.2e-4 / +2.2e-4 from a quarter of the budget to four
         // times it -- which is what says the residual is sampling.
@@ -659,10 +660,10 @@ fn plan_for(dir: &str) -> Plan {
         //
         // Measured and reported rather than asserted, because the residual is a
         // converged offset with no attribution yet. The five seeds are mutually
-        // consistent at chi2/dof 1.01 and their inverse-variance mean sits at
-        // rel -2.21e-3, which is 2.6x the reference's own 8.5e-4 relative error,
-        // and the budget ladder settles rather than shrinks (rel +4.9e-4 /
-        // -1.2e-3 / -1.2e-3 / -2.9e-3 / -2.9e-3 across a sixteenfold budget). So
+        // consistent at chi2/dof 0.88 and their seed-policy mean sits at
+        // rel -1.58e-3, which is 1.9x the reference's own 8.5e-4 relative error,
+        // and the budget ladder settles rather than shrinks (rel +1.2e-6 /
+        // -1.3e-4 / -2.0e-3 / -3.5e-3 / -2.5e-3 across a sixteenfold budget). So
         // it is not sampling. What it is not, either, is the scale formula: the
         // per-event replay reproduces both printed scales on all 10 000 banked
         // events inside their own printing budget, worst 0.999 of it, with
@@ -675,8 +676,8 @@ fn plan_for(dir: &str) -> Plan {
         "gg_to_gg_cg" => Plan::Info {
             neval: 40_000,
             niter: 6,
-            reason: "sigma is a converged -0.22% below the bank, seed-consistent at chi2/dof \
-                     1.01, while the per-event scale replay reproduces every banked event's \
+            reason: "sigma is a converged -0.16% below the bank, seed-consistent at chi2/dof \
+                     0.88, while the per-event scale replay reproduces every banked event's \
                      SCALUP and AQCDUP: measured and reported until the offset is attributed",
         },
         // ── the row whose banked run card this crate refuses ────────────────
@@ -1168,15 +1169,18 @@ fn probe_smeft_capstone_seed_stability() {
         );
         sigmas.push((s, err));
     }
-    let w: f64 = sigmas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let mean: f64 = sigmas.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / w;
-    let chi2: f64 = sigmas.iter().map(|(s, e)| ((s - mean) / e).powi(2)).sum();
+    let read = combine(&sigmas);
     eprintln!(
-        "  {} seeds: mean {mean:.6e} ± {:.3e} | rel {:+.2e} | chi2/dof {:.2}",
-        sigmas.len(),
-        w.sqrt().recip(),
-        mean / e.sigma_pb - 1.0,
-        chi2 / (sigmas.len() - 1) as f64
+        "  {} seeds: mean {:.6e} ± {:.3e} (quoted {:.3e}, spread {:.3e}) | rel {:+.2e} | \
+         pull {:+.2} | chi2/dof {:.2}",
+        read.n,
+        read.mean,
+        read.err,
+        read.quoted,
+        read.spread,
+        read.mean / e.sigma_pb - 1.0,
+        read.pull(e.sigma_pb, e.sigma_err_pb),
+        read.chi2_per_dof,
     );
 }
 
@@ -1192,8 +1196,8 @@ const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
 /// The gate spends one seed, so what it asserts is one draw from a distribution
 /// it never sees. That is sound only while the bound sits well outside the whole
 /// distribution, and "well outside" is a measurement: this prints, per row, the
-/// worst `|rel|` and `|pull|` over the five seeds, the χ²/dof of the seeds about
-/// their own inverse-variance mean, and the ratio of each bound to the worst
+/// worst `|rel|` and `|pull|` over the five seeds, the seeds' mean and χ²/dof
+/// under the seed policy ([`combine`]), and the ratio of each bound to the worst
 /// value under it. A ratio near one is a row whose next sampling-stream change
 /// fails the gate on the draw rather than on the physics.
 ///
@@ -1239,17 +1243,13 @@ fn probe_gate_row_seed_headroom() {
             );
             runs.push((s, err, pull, rel));
         }
-        let w: f64 = runs.iter().map(|(_, err, _, _)| 1.0 / (err * err)).sum();
-        let mean: f64 = runs
-            .iter()
-            .map(|(s, err, _, _)| s / (err * err))
-            .sum::<f64>()
-            / w;
-        let chi2: f64 = runs
-            .iter()
-            .map(|(s, err, _, _)| ((s - mean) / err).powi(2))
-            .sum::<f64>()
-            / (runs.len() - 1) as f64;
+        let read = combine(
+            &runs
+                .iter()
+                .map(|&(s, err, _, _)| (s, err))
+                .collect::<Vec<_>>(),
+        );
+        let (mean, chi2) = (read.mean, read.chi2_per_dof);
         let worst_rel = runs.iter().fold(0.0f64, |a, (_, _, _, r)| a.max(r.abs()));
         let worst_pull = runs.iter().fold(0.0f64, |a, (_, _, p, _)| a.max(p.abs()));
         let line = format!(
@@ -1349,20 +1349,19 @@ fn probe_non_sm_seed_stability() {
             );
             sigmas.push((s, err));
         }
-        let w: f64 = sigmas.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-        let mean: f64 = sigmas.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / w;
-        let chi2: f64 = sigmas.iter().map(|(s, e)| ((s - mean) / e).powi(2)).sum();
+        let read = combine(&sigmas);
         let worst = sigmas
             .iter()
             .map(|(s, _)| (s / e.sigma_pb - 1.0).abs())
             .fold(0.0, f64::max);
         eprintln!(
-            "  SWEEP {dir}: {} seeds, mean {mean:.6e} ± {:.3e} | rel {:+.3e} | \
+            "  SWEEP {dir}: {} seeds, mean {:.6e} ± {:.3e} | rel {:+.3e} | \
              chi2/dof {:.2} | worst |rel| {worst:.3e}",
-            sigmas.len(),
-            w.sqrt().recip(),
-            mean / e.sigma_pb - 1.0,
-            chi2 / (sigmas.len() - 1) as f64
+            read.n,
+            read.mean,
+            read.err,
+            read.mean / e.sigma_pb - 1.0,
+            read.chi2_per_dof,
         );
     }
 }
@@ -1634,13 +1633,14 @@ fn probe_accepted_point_floor() {
                 }
             },
         );
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
-        let sd = (runs
-            .iter()
-            .map(|r| (r.sigma_pb - mean).powi(2))
-            .sum::<f64>()
-            / (runs.len() - 1) as f64)
-            .sqrt();
+        let SeedMean {
+            mean,
+            err: mean_err,
+            spread,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
+        let sd = spread * (runs.len() as f64).sqrt();
         let points: u64 = neval as u64 * niter as u64;
         eprintln!(
             "  -> 5-seed sigma {mean:.6e} +- {mean_err:.3e} pb (chi2/dof {chi2:.2}) \
@@ -1940,30 +1940,6 @@ fn probe_2to6_density_decomposition() {
     }
 }
 
-/// Combine independent seeds of the same integral: the plain mean, its error, and
-/// the χ²/dof that says whether the seeds scatter by more than they claim.
-///
-/// The mean is unweighted. Weighting by `1/err²` is what makes an under-sampled
-/// seed dominate — it reports a small integral *and* a small error — and this
-/// statistic exists to expose exactly that.
-fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let n = runs.len() as f64;
-    let mean: f64 = runs.iter().map(|r| r.sigma_pb).sum::<f64>() / n;
-    let mean_err = runs
-        .iter()
-        .map(|r| r.sigma_err_pb * r.sigma_err_pb)
-        .sum::<f64>()
-        .sqrt()
-        / n;
-    let dof = runs.len().saturating_sub(1).max(1) as f64;
-    let chi2 = runs
-        .iter()
-        .map(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).powi(2))
-        .sum::<f64>()
-        / dof;
-    (mean, mean_err, chi2)
-}
-
 /// The budget ladder and seed sweep the `2 -> 6` rows' σ gate is sized from, on
 /// both samplers.
 ///
@@ -2039,7 +2015,12 @@ fn probe_2to6_budget_ladder() {
                         }
                     })
                     .collect();
-                let (mean, mean_err, chi2) = combine_seeds(&runs);
+                let SeedMean {
+                    mean,
+                    err: mean_err,
+                    chi2_per_dof: chi2,
+                    ..
+                } = combine(&runs);
                 let pull = (mean - entry.sigma_pb)
                     / (mean_err * mean_err + entry.sigma_err_pb * entry.sigma_err_pb).sqrt();
                 eprintln!(
@@ -2149,7 +2130,12 @@ fn probe_alpha_survey_budget() {
                             sigma_err_pb,
                         });
                     }
-                    let (mean, mean_err, chi2) = combine_seeds(&runs);
+                    let SeedMean {
+                        mean,
+                        err: mean_err,
+                        chi2_per_dof: chi2,
+                        ..
+                    } = combine(&runs);
                     let lo = runs.iter().map(|r| r.sigma_pb).fold(f64::MAX, f64::min);
                     let hi = runs.iter().map(|r| r.sigma_pb).fold(f64::MIN, f64::max);
                     let sd = (runs
@@ -2285,13 +2271,14 @@ fn probe_alpha_survey_seed_sensitivity() {
                             spend.scaled_rel,
                         );
                     }
-                    let (mean, mean_err, chi2) = combine_seeds(&runs);
-                    let sd = (runs
-                        .iter()
-                        .map(|r| (r.sigma_pb - mean).powi(2))
-                        .sum::<f64>()
-                        / (runs.len() - 1) as f64)
-                        .sqrt();
+                    let SeedMean {
+                        mean,
+                        err: mean_err,
+                        spread,
+                        chi2_per_dof: chi2,
+                        ..
+                    } = combine(&runs);
+                    let sd = spread * (runs.len() as f64).sqrt();
                     eprintln!(
                         "  n_survey {n_survey:>7}, survey seed {survey_seed:>10}: \
                          5-seed σ {mean:.6e} ± {mean_err:.3e} (χ²/dof {chi2:.2}) \
@@ -4565,36 +4552,11 @@ fn grammar_reference() -> SeededReference {
     serde_json::from_str(&text).expect("grammar_sigma_reference.json parses")
 }
 
-/// Inverse-variance mean of `(value, error)` pairs and its error.
-fn inverse_variance_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let w: f64 = values.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let m = values.iter().map(|(v, e)| v / (e * e)).sum::<f64>() / w;
-    (m, 1.0 / w.sqrt())
-}
-
-/// The seeds' sample standard deviation.
-fn seed_spread(values: &[(f64, f64)]) -> f64 {
-    let n = values.len() as f64;
-    let m = values.iter().map(|(v, _)| v).sum::<f64>() / n;
-    (values.iter().map(|(v, _)| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
-}
-
-/// A seeded estimate as the manifest's seed policy reads it: the inverse-variance
-/// mean, with an error no smaller than the seeds' own spread allows.
+/// A seeded estimate as the manifest's seed policy reads it ([`combine`]): the
+/// seeds' unweighted mean, with an error no smaller than their spread allows.
 fn policy_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let (m, quoted) = inverse_variance_mean(values);
-    (
-        m,
-        quoted.max(seed_spread(values) / (values.len() as f64).sqrt()),
-    )
-}
-
-/// χ²/dof of `values` about their inverse-variance mean: how well the errors the
-/// seeds quote describe their scatter.
-fn seed_chi2_per_dof(values: &[(f64, f64)]) -> f64 {
-    let (m, _) = inverse_variance_mean(values);
-    let chi2: f64 = values.iter().map(|(v, e)| ((v - m) / e).powi(2)).sum();
-    chi2 / (values.len() - 1) as f64
+    let read = combine(values);
+    (read.mean, read.err)
 }
 
 /// Integration seeds per grammar entry on this side.
@@ -4603,15 +4565,16 @@ const GRAMMAR_SEEDS: [u64; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 /// Points per iteration and iterations for every grammar entry.
 ///
 /// Set from a twenty-seed sweep per entry at a quarter, one, four and sixteen
-/// times 40 000 × 6 (`probe_grammar_seed_sweep`). Every entry but one scatters
-/// about a mean that does not move with budget. The exception is
-/// `e+ e- > e+ e- $$ z`, whose twenty-seed mean climbs with budget and then holds:
-/// 156.71 ± 0.17, 157.25 ± 0.09, 157.55 ± 0.05 and 157.54 ± 0.02 pb, with seed
-/// χ²/dof 2.23 and 1.80 on the two lower rungs against 1.22 and 1.53 above. That
-/// is an under-sampled region losing weight at low budget and recovering it, the
-/// same way MadEvent's own seeds of this process do (one of its five reads
-/// 156.48 where the other four read 157.26–157.53). Four times the base budget
-/// is the lowest rung on the plateau, and it costs a fraction of a second per
+/// times 40 000 × 6 (`probe_grammar_seed_sweep`), each rung read under the seed
+/// policy. No entry's mean moves with budget. What does is
+/// `e+ e- > e+ e- $$ z`'s scatter: 157.63 ± 0.23, 157.43 ± 0.12, 157.58 ± 0.05
+/// and 157.55 ± 0.03 pb, with seed χ²/dof 3.84 and 2.01 on the two lower rungs
+/// against 1.23 and 1.53 above. That is an under-sampled region at low budget —
+/// a seed that misses it reads low *and* quotes a small error, which is what the
+/// scatter sees and an unweighted mean does not reward — the same way MadEvent's
+/// own seeds of this process miss it (one of its five reads 156.48 where the
+/// other four read 157.26–157.53). Four times the base budget is the lowest rung
+/// whose seeds scatter as they quote, and it costs a fraction of a second per
 /// seed on these 2 → 2 rows.
 const GRAMMAR_NEVAL: usize = 160_000;
 const GRAMMAR_NITER: usize = 6;
@@ -4674,8 +4637,8 @@ const GRAMMAR_ENTRIES: [GrammarEntry; 7] = [
 const GRAMMAR_MEAN_PULL_LIMIT: f64 = 3.0;
 /// Any one seed against MadEvent's mean.
 const GRAMMAR_SEED_PULL_LIMIT: f64 = 4.0;
-/// This side's seeds about their own inverse-variance mean. Nine degrees of
-/// freedom put the 0.1% and 99.9% points of χ²/dof at 0.13 and 3.10.
+/// This side's seeds about their own unweighted mean. Nine degrees of freedom
+/// put the 0.1% and 99.9% points of χ²/dof at 0.13 and 3.10.
 const GRAMMAR_SEED_CHI2_RANGE: (f64, f64) = (0.13, 3.1);
 
 /// Assert the bundled row's run card is the one the reference names: MadGraph's
@@ -4761,13 +4724,13 @@ fn separation((a, ea): (f64, f64), (b, eb): (f64, f64)) -> f64 {
 /// each beside the unrestricted process it is a subset of.
 ///
 /// Every entry is read the way the manifest's seed policy reads a MadEvent
-/// reference — the seeds' inverse-variance mean with an error no smaller than
-/// their spread allows — on both sides: MadEvent's five seeds from
+/// reference — the seeds' unweighted mean with an error no smaller than their
+/// spread allows ([`combine`]) — on both sides: MadEvent's five seeds from
 /// `grammar_sigma_reference.json`, and [`GRAMMAR_SEEDS`] here. The gate asserts
 /// the pull of the two means, each of this side's seeds against MadEvent's mean,
 /// and that this side's seeds scatter the way their own errors say. The quoted
 /// errors are not what MadEvent's references are read by: on Bhabha scattering
-/// its seeds sit at χ²/dof 93 (`e+ e- > e+ e-`) and 20 (`$$ z`) about their
+/// its seeds sit at χ²/dof 93 (`e+ e- > e+ e-`) and 15 (`$$ z`) about their
 /// mean, one or two seeds per row landing 1% low.
 ///
 /// # The controls
@@ -4811,9 +4774,16 @@ fn the_grammar_rows_match_madevents_seeds() {
         let row = &reference.rows[entry.reference];
         check_grammar_card(entry, row);
         let mg = madevent_seeds(row);
+        let mg_chi2 = combine(
+            &row.runs
+                .iter()
+                .map(|r| (r.sigma_pb, r.err_pb))
+                .collect::<Vec<_>>(),
+        )
+        .chi2_per_dof;
         let measured = GrammarMeasurement::take(entry, &row.process);
         let here = measured.mean();
-        let chi2 = seed_chi2_per_dof(&measured.per_seed);
+        let chi2 = combine(&measured.per_seed).chi2_per_dof;
         let pull = separation(here, mg);
         let rel = here.0 / mg.0 - 1.0;
         let worst_seed = measured
@@ -4824,7 +4794,7 @@ fn the_grammar_rows_match_madevents_seeds() {
         eprintln!(
             "[{} / {}] {} (MadGraph {}): here {:.6e} ± {:.1e} over {} seeds at {}x{}, \
              χ²/dof {chi2:.2}, worst seed pull {worst_seed:+.2} | MadEvent {:.6e} ± {:.1e} \
-             over {} seeds | rel {rel:+.3e}, pull {pull:+.2}",
+             over {} seeds, χ²/dof {mg_chi2:.2} | rel {rel:+.3e}, pull {pull:+.2}",
             entry.row,
             entry.variant.unwrap_or("default"),
             row.process,
@@ -4885,8 +4855,8 @@ fn the_grammar_rows_match_madevents_seeds() {
         cell.niter = GRAMMAR_NITER;
         cell.subsampler = measured.subsampler;
         cell.note = Some(format!(
-            "against MadEvent's {} seeds (grammar_sigma_reference.json), read as their \
-             inverse-variance mean with an error no smaller than their spread allows",
+            "against MadEvent's {} seeds (grammar_sigma_reference.json), both sides read \
+             under the seed policy (unweighted mean +- max(quoted, spread/sqrt(n)))",
             row.runs.len()
         ));
         cell.duration_s = Some(clock.seconds());
@@ -4962,8 +4932,9 @@ fn probe_grammar_seed_sweep() {
                     (s, e)
                 })
                 .collect();
-            let (mean, err) = inverse_variance_mean(&ours);
-            let spread = seed_spread(&ours);
+            let read = combine(&ours);
+            let (mean, err) = (read.mean, read.err);
+            let spread = read.spread * (read.n as f64).sqrt();
             let worst = ours
                 .iter()
                 .map(|&s| separation(s, mg).abs())
@@ -4976,7 +4947,7 @@ fn probe_grammar_seed_sweep() {
                 t.elapsed().as_secs_f64(),
                 spread / mean,
                 ours.iter().map(|(_, e)| e).sum::<f64>() / ours.len() as f64,
-                seed_chi2_per_dof(&ours),
+                read.chi2_per_dof,
                 mg.0,
                 mg.1,
                 mean / mg.0 - 1.0,
@@ -5010,17 +4981,12 @@ fn probe_polarized_single_runs() {
                 (s, err)
             })
             .collect();
-        let here = policy_mean(&ours);
-        let (pull, rel) = compare(here.0, here.1, e);
+        let read = combine(&ours);
+        let (pull, rel) = compare(read.mean, read.err, e);
         eprintln!(
             "POLARIZED {dir:<15} {}: here {:.6e} ± {:.1e} (χ²/dof {:.2}) | one MadEvent run \
              {:.6e} ± {:.1e} | rel {rel:+.3e}, pull {pull:+.2}",
-            e.process,
-            here.0,
-            here.1,
-            seed_chi2_per_dof(&ours),
-            e.sigma_pb,
-            e.sigma_err_pb,
+            e.process, read.mean, read.err, read.chi2_per_dof, e.sigma_pb, e.sigma_err_pb,
         );
     }
 }

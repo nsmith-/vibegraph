@@ -101,7 +101,7 @@ out = {
                 "grids; they are kept as a record and are not the reference. On a row with "
                 "independent_directories = false every seed after the samples run is such a "
                 "shared-directory seed, in runs. Gates read runs under the seed policy of "
-                "validation/manifest.toml: the inverse-variance mean with an error of "
+                "validation/manifest.toml: the unweighted mean with an error of "
                 "max(quoted, spread/sqrt(n)). wall_s is the whole generate_events call on %s "
                 "cores, generation of the directory excluded, survey, refine and compilation "
                 "included. by_lprup is the run's own <init> block per process (LPRUP = the @N "

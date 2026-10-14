@@ -31,6 +31,9 @@
 //! interference and the final state's own identical-particle factor. The row is
 //! printed, not gated.
 
+#[path = "../../vibegraph-lib/tests/common/seeds.rs"]
+mod seeds;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -115,32 +118,16 @@ fn integrate(dir: &Path, card: &Path, run_card: &Path, seed: u64) -> (f64, f64) 
     (artifact.sigma_pb, artifact.sigma_err_pb)
 }
 
-/// Inverse-variance mean and its error.
-fn weighted_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let w: f64 = values.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let m = values.iter().map(|(v, e)| v / (e * e)).sum::<f64>() / w;
-    (m, 1.0 / w.sqrt())
-}
-
-/// The seeds' sample standard deviation.
-fn spread(values: &[(f64, f64)]) -> f64 {
-    let n = values.len() as f64;
-    let m = values.iter().map(|(v, _)| v).sum::<f64>() / n;
-    (values.iter().map(|(v, _)| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
-}
-
-/// The inverse-variance mean, with an error no smaller than the seed spread
-/// allows.
+/// The seed policy's reading of equal-budget seeds ([`seeds::combine`]): the
+/// unweighted mean, with an error no smaller than the seeds' spread allows.
 fn seed_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let (m, quoted) = weighted_mean(values);
-    (m, quoted.max(spread(values) / (values.len() as f64).sqrt()))
+    let read = seeds::combine(values);
+    (read.mean, read.err)
 }
 
-/// χ²/dof of `values` about their inverse-variance mean.
+/// χ²/dof of `values` about their unweighted mean.
 fn chi2_per_dof(values: &[(f64, f64)]) -> f64 {
-    let (m, _) = weighted_mean(values);
-    let chi2: f64 = values.iter().map(|(v, e)| ((v - m) / e).powi(2)).sum();
-    chi2 / (values.len() - 1) as f64
+    seeds::combine(values).chi2_per_dof
 }
 
 #[test]

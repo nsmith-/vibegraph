@@ -47,6 +47,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
+use common::seeds::{combine, SeedMean};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -417,31 +418,6 @@ fn run_seed_shaped(
     result
 }
 
-/// The unweighted mean of independent seeds, its error, and the scatter of the
-/// seeds about that mean in units of their own quoted errors.
-///
-/// Seeds run equal budgets, so weighting by `1/σ²` here is the same bias Lepage's
-/// theorem forbids for VEGAS's own iteration combination: a seed whose variance
-/// estimate came out low by chance is double-counted, both in the mean and in
-/// its own weight. The unweighted mean and `err = √(Σᵢ σᵢ²)/n` carry no such bias.
-///
-/// The scatter and not the error is what shows a missed region: a run that misses
-/// one reports a small integral *and* a small variance, which the mean alone
-/// cannot distinguish from convergence.
-fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let n = runs.len() as f64;
-    let mean: f64 = runs.iter().map(|r| r.sigma_pb).sum::<f64>() / n;
-    let var_sum: f64 = runs.iter().map(|r| r.sigma_err_pb * r.sigma_err_pb).sum();
-    let mean_err = var_sum.sqrt() / n;
-    let dof = runs.len().saturating_sub(1).max(1) as f64;
-    let chi2: f64 = runs
-        .iter()
-        .map(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).powi(2))
-        .sum::<f64>()
-        / dof;
-    (mean, mean_err, chi2)
-}
-
 /// σ(p p → e⁺e⁻) through the general hadronic path against a banked MadGraph run.
 ///
 /// What it proves: the whole assembled chain — the `(τ, y)` map and its Jacobian,
@@ -501,7 +477,12 @@ fn check_dy_run(run: &str, card: &str) {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -760,7 +741,8 @@ fn pointwise_integrand_oracle() {
 /// confidently wrong integral with a small error rather than a large one — the
 /// missed region is missing from the variance as much as from the integral — so
 /// a single seed agreeing is not evidence. The runs are compared individually
-/// and through their inverse-variance mean, and it is the mean the gate is on.
+/// and through their mean under the seed policy ([`combine`]), and it is the
+/// mean the gate is on.
 ///
 /// What it cannot see: anything the cross section integrates over. A per-diagram
 /// phase, a colour-flow relabelling and a helicity-by-helicity error all leave
@@ -823,7 +805,12 @@ fn probe_fiducial_bound_on_llj_fixed() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  bound {:>3}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | rel {:+.4} | \
@@ -893,7 +880,12 @@ fn sigma_llj_fixed_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -995,7 +987,12 @@ fn probe_llj_fixed_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | \
@@ -1070,13 +1067,14 @@ fn probe_accepted_point_floor_hadronic() {
             sigma_err_pb,
         });
     }
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
-    let sd = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (runs.len() - 1) as f64)
-        .sqrt();
+    let SeedMean {
+        mean,
+        err: mean_err,
+        spread,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
+    let sd = spread * (runs.len() as f64).sqrt();
     eprintln!(
         "  -> 5-seed sigma {mean:.4} +- {mean_err:.4} pb (chi2/dof {chi2:.2}) | rel {:+.4} \
          | seed sd/sigma {:.4}",
@@ -1189,13 +1187,14 @@ fn probe_alpha_survey_budget_hadronic() {
                         sigma_err_pb,
                     });
                 }
-                let (mean, mean_err, chi2) = combine_seeds(&runs);
-                let sd = (runs
-                    .iter()
-                    .map(|r| (r.sigma_pb - mean).powi(2))
-                    .sum::<f64>()
-                    / (runs.len() - 1) as f64)
-                    .sqrt();
+                let SeedMean {
+                    mean,
+                    err: mean_err,
+                    spread,
+                    chi2_per_dof: chi2,
+                    ..
+                } = combine(&runs);
+                let sd = spread * (runs.len() as f64).sqrt();
                 let lo = runs.iter().map(|r| r.sigma_pb).fold(f64::MAX, f64::min);
                 let hi = runs.iter().map(|r| r.sigma_pb).fold(f64::MIN, f64::max);
                 eprintln!(
@@ -1380,7 +1379,12 @@ fn sigma_llj_dynamical_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -1493,7 +1497,12 @@ fn probe_llj_dyn_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | \
@@ -1685,7 +1694,12 @@ fn sigma_bb_fixed_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -1785,7 +1799,12 @@ fn probe_bb_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb (χ²/dof {chi2:.2}) | \
@@ -2239,7 +2258,12 @@ fn probe_jj_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb \
@@ -2450,7 +2474,12 @@ fn sigma_jj_dynamical_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
     let rel = mean / mg - 1.0;
     eprintln!(
@@ -3138,7 +3167,12 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize, ladder_note: &
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -3278,7 +3312,12 @@ fn probe_recarded_budget_ladder() {
                     sigma_err_pb: err,
                 });
             }
-            let (mean, mean_err, chi2) = combine_seeds(&runs);
+            let SeedMean {
+                mean,
+                err: mean_err,
+                chi2_per_dof: chi2,
+                ..
+            } = combine(&runs);
             let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
             eprintln!(
                 "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb (χ²/dof {chi2:.2}) | \
@@ -3351,7 +3390,7 @@ const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
 /// Every [`HEADROOM_ARMS`] σ bound read on the first three of its seeds and on all
 /// five, at its own gate budget — the headroom census behind the seed counts.
 ///
-/// [`combine_seeds`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
+/// [`combine`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
 /// gate forms it on two: wide enough that a converged row can post an alarming
 /// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` and
 /// `JJ_SEEDS` are five. The bounds the three-seed rows are held to were
@@ -3475,7 +3514,12 @@ fn probe_hadronic_seed_headroom() {
         }
 
         let read = |n: usize| {
-            let (mean, mean_err, chi2) = combine_seeds(&runs[..n]);
+            let SeedMean {
+                mean,
+                err: mean_err,
+                chi2_per_dof: chi2,
+                ..
+            } = combine(&runs[..n]);
             let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
             let rel = mean / mg - 1.0;
             eprintln!(
@@ -3533,10 +3577,11 @@ type LadderArm = (&'static str, &'static str, &'static [(usize, usize)]);
 /// alone, so the channel weights are identical along a row and the survey is
 /// not on the list of things a rung changes.
 ///
-/// Two errors are printed per rung: the quoted `√(Σσᵢ²)/n`, and the seeds' own
-/// RMS about their mean over `√n`. Neither is the estimator's real spread at
-/// five seeds — `probe_llj_seed_ensemble` measures that over forty — and the
-/// scatter is the further off of the two, so both are printed rather than one.
+/// Both parts of each rung's error are printed beside the larger one the pull
+/// and drift are read with: the quoted `√(Σσᵢ²)/n`, and the seeds' own RMS
+/// about their mean over `√n`. Neither is the estimator's real spread at five
+/// seeds — `probe_llj_seed_ensemble` measures that over forty — and the scatter
+/// is the further off of the two, so both are printed rather than one.
 ///
 /// Reads, on the `mmll = 0` card against MadGraph's `504.630 ± 1.674 pb`:
 /// `504.506` / `505.184` / `505.977` / `505.849` / `505.828` at `150k` through
@@ -3622,15 +3667,14 @@ fn probe_llj_deep_budget_ladder() {
                     sigma_err_pb: err,
                 });
             }
-            let (mean, mean_err, chi2) = combine_seeds(&runs);
-            let n = runs.len() as f64;
-            let scatter = (runs
-                .iter()
-                .map(|r| (r.sigma_pb - mean).powi(2))
-                .sum::<f64>()
-                / (n - 1.0))
-                .sqrt()
-                / n.sqrt();
+            let SeedMean {
+                mean,
+                err: mean_err,
+                quoted,
+                spread: scatter,
+                chi2_per_dof: chi2,
+                ..
+            } = combine(&runs);
             let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
             let kept = (niter - 2) * neval;
             let drift = base.map(|(b, be)| {
@@ -3644,7 +3688,7 @@ fn probe_llj_deep_budget_ladder() {
             }
             eprintln!(
                 "  {neval:>7} x {niter:<2} (kept {:>5.1}M): σ = {mean:.4} ± {mean_err:.4} pb \
-                 [scatter ±{scatter:.4}] (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2}{} | \
+                 [quoted ±{quoted:.4}, scatter ±{scatter:.4}] (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2}{} | \
                  {:.0} s",
                 kept as f64 / 1e6,
                 mean / mg - 1.0,
@@ -3758,13 +3802,13 @@ fn seed_ensemble_of(
         .collect();
 
     eprintln!("── {run}: MG {mg:.6e} ± {mg_err:.3e} pb, {seeds} seeds a rung ──");
-    let mut per_rung: Vec<Vec<f64>> = Vec::new();
+    let mut per_rung: Vec<Vec<(f64, f64)>> = Vec::new();
     for &(neval, niter) in rungs {
         let clock = Stopwatch::start();
         let mut summary = Vec::new();
-        let mut sigmas: Vec<f64> = Vec::new();
+        let mut pairs: Vec<(f64, f64)> = Vec::new();
         for k in 0..seeds {
-            let (sigma, _) = run_seed_shaped(
+            let (sigma, err) = run_seed_shaped(
                 &groups,
                 &amps,
                 model,
@@ -3779,12 +3823,13 @@ fn seed_ensemble_of(
                 true,
                 ScaleShape::PerEvent,
             );
-            sigmas.push(sigma);
+            pairs.push((sigma, err));
         }
+        let read = combine(&pairs);
+        let sigmas: Vec<f64> = pairs.iter().map(|&(s, _)| s).collect();
         let n = sigmas.len() as f64;
-        let mean = sigmas.iter().sum::<f64>() / n;
-        let var = sigmas.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0);
-        let sd = var.sqrt();
+        let mean = read.mean;
+        let sd = read.spread * n.sqrt();
         let skew = sigmas
             .iter()
             .map(|s| ((s - mean) / sd).powi(3))
@@ -3798,14 +3843,14 @@ fn seed_ensemble_of(
             "  {neval:>7} x {niter:<2}: mean {mean:.4} ± {:.4} pb | median {median:.4} \
              (mean − median {:+.4}) | sd {sd:.4} | skew {skew:+.2} | \
              range [{:.2}, {:.2}] | rel {:+.4} | {:.0} s",
-            sd / n.sqrt(),
+            read.err,
             mean - median,
             sorted[0],
             sorted[sorted.len() - 1],
             mean / mg - 1.0,
             clock.seconds(),
         );
-        per_rung.push(sigmas);
+        per_rung.push(pairs);
     }
 
     eprintln!("  disjoint five-seed ladders over the same rungs:");
@@ -3813,7 +3858,7 @@ fn seed_ensemble_of(
     for q in 0..seeds / 5 {
         let means: Vec<f64> = per_rung
             .iter()
-            .map(|s| s[5 * q..5 * q + 5].iter().sum::<f64>() / 5.0)
+            .map(|s| combine(&s[5 * q..5 * q + 5]).mean)
             .collect();
         let up = means.windows(2).all(|w| w[1] > w[0]);
         let down = means.windows(2).all(|w| w[1] < w[0]);
@@ -4015,16 +4060,12 @@ fn probe_llj_dyn_scatter_guard_calibration() {
             }
         })
         .collect();
-    let (mean, _, chi2) = combine_seeds(&runs);
+    let all = combine(&runs);
+    let (mean, chi2) = (all.mean, all.chi2_per_dof);
     let n = runs.len() as f64;
-    let sd = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0))
-        .sqrt();
+    let sd = all.spread * n.sqrt();
     let quoted = runs.iter().map(|r| r.sigma_err_pb).sum::<f64>() / n;
-    let quintets: Vec<f64> = runs.chunks(5).map(|q| combine_seeds(q).2).collect();
+    let quintets: Vec<f64> = runs.chunks(5).map(|q| combine(q).chi2_per_dof).collect();
     let over = quintets
         .iter()
         .filter(|&&c| c > LLJ_MAX_CHI2_PER_DOF)
@@ -4420,7 +4461,12 @@ fn probe_dynamic_rows_seed_sweep() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         eprintln!(
             "SWEEP-ROW {run}: {} seeds from {first} at {} x {}: σ = {mean:.6e} ± {mean_err:.3e} pb \
              | χ²/dof {chi2:.2} | MG {mg:.6e} ± {mg_err:.3e} | pull {:+.2} | rel {:+.4} | {:.0} s",
@@ -4438,8 +4484,8 @@ fn probe_dynamic_rows_seed_sweep() {
 const XQCUT_ONLY_SEEDS: &[u64] = &[20260941, 20260942, 20260943, 20260944, 20260945];
 const XQCUT_ONLY_NEVAL: usize = 150_000;
 
-/// A seeded MadEvent reference read under the manifest's seed policy: the
-/// inverse-variance mean of the seeds, with `max(quoted, spread / √n)`.
+/// A seeded MadEvent reference read under the manifest's seed policy
+/// ([`combine`]): the seeds' unweighted mean, with `max(quoted, spread / √n)`.
 ///
 /// `part` selects one process's share of each run (its `by_lprup` entry, the
 /// `@N` of the proc card); `None` reads the run's total.
@@ -4465,32 +4511,8 @@ fn seeded_reference(file: &str, row: &str, part: Option<&str>) -> (f64, f64, usi
             )
         })
         .collect();
-    let weights: f64 = pairs.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let mean = pairs.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / weights;
-    let quoted = weights.sqrt().recip();
-    let n = pairs.len() as f64;
-    let plain = pairs.iter().map(|(s, _)| s).sum::<f64>() / n;
-    let spread = (pairs.iter().map(|(s, _)| (s - plain).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
-    (mean, quoted.max(spread / n.sqrt()), pairs.len())
-}
-
-/// This side's seeds read under the seed policy: [`combine_seeds`]'s
-/// unweighted mean, with an error no smaller than the seeds' spread over `√n`,
-/// and the seeds' χ²/dof about that mean.
-///
-/// The spread enters because a heavy-tailed estimator's quoted error
-/// underestimates its seed-to-seed scatter; the mean stays unweighted because
-/// such a seed's low quoted error tends to come with a low estimate.
-fn policy_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let (mean, quoted, chi2) = combine_seeds(runs);
-    let n = runs.len() as f64;
-    let spread = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0))
-        .sqrt();
-    (mean, quoted.max(spread / n.sqrt()), chi2)
+    let read = combine(&pairs);
+    (read.mean, read.err, read.n)
 }
 
 /// The largest |pull| of the seed means, both sides read under the seed policy,
@@ -4525,7 +4547,12 @@ fn write_mlm_sigma_cell(
     duration_s: f64,
 ) -> bool {
     let (mg, mg_err, mg_seeds) = mg;
-    let (mean, mean_err, chi2) = policy_seeds(runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(runs);
     let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
     let rel = mean / mg - 1.0;
     let band = mlm_chi2_band(runs.len());
