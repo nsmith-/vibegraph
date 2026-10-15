@@ -136,26 +136,7 @@ const PAIRS: &[Pair] = &[
 /// the original process's diagrams that flip against the rest (the minority: a sign
 /// shared by every diagram is invisible). Two-way: a listed pair must flip exactly
 /// these diagrams, and every other pair none.
-///
-/// The convention signs are read at the rooting that takes the vertex holding leg 0
-/// as the amplitude vertex, and their product changes with that choice:
-///
-/// * `w+ e- > z ve`: the W exchange, whose leg-0 vertex moves from the WWZ vertex to
-///   the lepton vertex;
-/// * `w+ h > t b~` and `z h > t t~`: the s-channel boson, against the two quark
-///   exchanges whose leg-0 vertex moves from the gauge vertex to the Yukawa vertex on
-///   the final-state quark pair;
-/// * `w+ w- > w+ w- z NP<=1`: six of the diagrams whose photon–Z–Higgs vertex changes
-///   between producing the Higgs and producing a vector;
-/// * `w+ a > e+ ve a`: the diagram whose leg-0 vertex moves between the WWA vertex and
-///   the lepton vertex.
-const KNOWN_RELABELLING_DEPENDENT: &[(&str, &[usize])] = &[
-    ("w+ e- > z ve", &[1]),
-    ("w+ h > t b~", &[0]),
-    ("z h > t t~", &[0]),
-    ("w+ w- > w+ w- z NP<=1", &[142, 143, 144, 148, 149, 150]),
-    ("w+ a > e+ ve a", &[6]),
-];
+const KNOWN_RELABELLING_DEPENDENT: &[(&str, &[usize])] = &[];
 
 /// Tolerance on a diagram's deviation from `±1` times its partner, relative to its
 /// largest value. Both labellings evaluate the same currents; only the rooting and

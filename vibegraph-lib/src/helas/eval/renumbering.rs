@@ -12,7 +12,7 @@ use rand_chacha::ChaCha8Rng;
 use super::compile::AmplitudeEvaluator;
 use super::root_diagram::compile_single_diagram;
 use super::run::BoundAmplitude;
-use crate::diagrams::diagram::{Diagram, VtxIdx};
+use crate::diagrams::diagram::{Diagram, LegIdx, VtxIdx};
 use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
 use crate::helas::color::colorize::colorize_process;
 use crate::helas::LorentzVector;
@@ -254,8 +254,8 @@ pub(super) fn single_diagram_amplitudes(
     out
 }
 
-/// Two renumberings of `d`: a random one, and one that also moves whichever vertex is
-/// numbered 0 away from index 0 (when there is more than one vertex), so every
+/// Two renumberings of `d`: a random one, and one that also moves the vertex external
+/// leg 0 attaches to away from index 0 (when there is more than one vertex), so every
 /// convention still keyed to an index rather than to the graph is exercised.
 fn renumberings(d: &Diagram, model: &UFOModel, rng: &mut ChaCha8Rng) -> Vec<(Vec<usize>, Diagram)> {
     let n_v = d.vertices.len();
@@ -264,7 +264,7 @@ fn renumberings(d: &Diagram, model: &UFOModel, rng: &mut ChaCha8Rng) -> Vec<(Vec
     for forced in [false, true] {
         let mut vertex_order: Vec<usize> = (0..n_v).collect();
         vertex_order.shuffle(rng);
-        if forced && n_v > 1 && vertex_order[0] == d.anchor().0 {
+        if forced && n_v > 1 && vertex_order[0] == d.leg_attachment(LegIdx(0)).0 .0 {
             vertex_order.swap(0, 1 + (rng.random::<u64>() as usize) % (n_v - 1));
         }
         let mut prop_order: Vec<usize> = (0..n_p).collect();
@@ -281,12 +281,12 @@ fn renumberings(d: &Diagram, model: &UFOModel, rng: &mut ChaCha8Rng) -> Vec<(Vec
 ///
 /// Every census diagram is renumbered at random — vertices and propagators permuted,
 /// propagator orientations reversed — and compiled again. Its `fermi_sign` must be
-/// exactly the original's for every colour chain, its anchor must be the same vertex,
-/// its canonical form must be the original's, and (for subprocesses of at most
+/// exactly the original's for every colour chain, its canonical form must be the
+/// original's, and (for subprocesses of at most
 /// [`AMP_MAX_DIAGRAMS`] diagrams) its per-helicity, per-flow amplitudes at a fixed point
 /// must agree to [`AMP_REL_TOL`]. A convention sign read off a vertex *index* rather
 /// than off the graph fails this wherever it is not symmetric under the move, which the
-/// forced renumbering (the anchor moved off index 0) makes sure is reached.
+/// forced renumbering (leg 0's vertex moved off index 0) makes sure is reached.
 ///
 /// The canonical form is held to the other direction too: it is idempotent, and the
 /// diagrams of one subprocess — which the enumeration produces distinct — keep distinct
@@ -300,7 +300,7 @@ fn renumbering_preserves_signs_and_amplitudes() {
     let mut rng = ChaCha8Rng::seed_from_u64(0x0d1a_9a3e);
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut failures: Vec<String> = Vec::new();
-    let (mut n_diagrams, mut n_signs, mut n_amps, mut n_anchor_moved) = (0, 0, 0, 0);
+    let (mut n_diagrams, mut n_signs, mut n_amps, mut n_leg0_moved) = (0, 0, 0, 0);
     for (key, model, process) in census_processes() {
         let evaluated = EvaluatedModel::from_model(model.clone());
         for set in generate(&process, &model) {
@@ -343,12 +343,9 @@ fn renumbering_preserves_signs_and_amplitudes() {
                     .map(|m| single_diagram_amplitudes(&set, d, &model, &evaluated, m));
                 for (vertex_order, r) in renumberings(d, &model, &mut rng) {
                     let tag = format!("{key} | {sub} | diagram {di} | order {vertex_order:?}");
-                    n_anchor_moved += (r.anchor() != VtxIdx(0)) as usize;
+                    n_leg0_moved += (r.leg_attachment(LegIdx(0)).0 != VtxIdx(0)) as usize;
                     if r.canonical(&model) != d.canonical(&model) {
                         failures.push(format!("{tag}: canonical forms differ"));
-                    }
-                    if vertex_order[r.anchor().0] != d.anchor().0 {
-                        failures.push(format!("{tag}: the anchor moved to another vertex"));
                     }
                     for &chain in &chains {
                         let moved: Vec<u8> = vertex_order.iter().map(|&v| chain[v]).collect();
@@ -382,15 +379,16 @@ fn renumbering_preserves_signs_and_amplitudes() {
     }
     println!(
         "{n_diagrams} diagrams, {n_signs} (renumbering, chain) signs, {n_amps} amplitude \
-         comparisons, {n_anchor_moved} renumberings with the anchor off index 0, {} failures",
+         comparisons, {n_leg0_moved} renumberings with leg 0's vertex off index 0, {} \
+         failures",
         failures.len()
     );
     for f in failures.iter().take(40) {
         println!("  {f}");
     }
     assert!(
-        n_anchor_moved > 1000,
-        "the renumberings barely move the anchor"
+        n_leg0_moved > 1000,
+        "the renumberings barely move leg 0's vertex"
     );
     assert!(
         failures.is_empty(),

@@ -288,14 +288,14 @@ fn toy_point(sqrt_s: f64, initial: [f64; 2], fin: &[f64], seed: usize) -> Vec<Lo
     momenta
 }
 
-/// Vertices that mix structures with different rooting-convention signs under one
-/// coupling order compile, and their one merged diagram equals the sum of the two
-/// diagrams the order split gives.
+/// Vertices that mix structurally different terms under one coupling order compile,
+/// and their one merged diagram equals the sum of the two diagrams the order split
+/// gives.
 ///
-/// `Identity` and `Gamma5` both take the crossed-line −1 as a fermion current
-/// (`C·1ᵀ·C⁻¹ = 1`, `C·γ⁵ᵀ·C⁻¹ = γ⁵`), and `SSS1` and `SSSD` both take the all-scalar
-/// −1; a vertex whose structures disagreed on that sign would have no per-vertex
-/// sign to lift. The split rows are the ones pinned per MadGraph graph in
+/// `Identity` beside `Gamma5`, and `SSS1` beside `SSSD`, carry the same diagram-level
+/// convention sign (no reversal sign for `1` and `γ⁵`, `C·1ᵀ·C⁻¹ = 1`,
+/// `C·γ⁵ᵀ·C⁻¹ = γ⁵`; none for an all-scalar vertex), so the merged vertex has one sign
+/// to lift. The split rows are the ones pinned per MadGraph graph in
 /// `standalone_jamps`; this comparison carries their signs onto the merged vertex.
 /// It is blind to a sign shared by both structures of a merged vertex, which the
 /// split rows see.

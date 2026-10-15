@@ -518,44 +518,26 @@ impl Diagram {
     /// The relative fermion sign that the external-leg permutation parity leaves out,
     /// one factor per fermion line.
     ///
-    /// It comes from which vertex slot each external wavefunction is bound to. Diagram
-    /// enumeration binds slots in the *all-incoming* identity — an outgoing leg sits at
-    /// its antiparticle's slot — while the HELAS bookkeeping the amplitudes are defined
-    /// against binds them in the *all-outgoing* identity, where an *incoming* leg sits at
-    /// its antiparticle's slot. A slot fixes a spinor adjoint (the pair-first slot takes
-    /// the ket, the pair-second the bra), so the two bindings disagree exactly on the
-    /// legs neither convention crosses the same way:
-    ///
-    /// * A line with at least one **initial-state** end is read against its own arrow at
-    ///   every vertex (the initial leg always, and a mixed line's final leg because the
-    ///   evaluator types it by its physical wavefunction while the slot stays the
-    ///   all-incoming one). Reading a bilinear against its arrow replaces each vertex
-    ///   structure by `C Γᵀ C⁻¹`, which for `Γ = γ^μ P_χ` is `−γ^μ P_χ̄`: the evaluator
-    ///   applies the chirality flip per vertex and one of the `V` minus signs at the
-    ///   line's single vector-rooted sink (its reversed-bilinear parity). The remaining
-    ///   `V − 1` — one per internal fermion propagator on the line — are this factor.
-    ///   Pinned by the `u u~ > c c~ e+ e- mu+ mu- QCD=0` per-diagram oracle for the
-    ///   initial–initial case and by `u d > e+ e- u d QCD=0`, whose 35 diagrams split on
-    ///   whether a *mixed* quark line carries the propagator, for the mixed case.
-    ///
-    ///   The factor does not depend on what the vertices are. A chain of Yukawa-type
-    ///   vertices takes it exactly as a gauge line does: the tau line of
-    ///   `ta+ ta- > t t~ h` that radiates a Higgs and then annihilates into another,
-    ///   and the same lines of `ta+ ta- > t t~ h h`, are bit-for-bit against MadGraph's
-    ///   per-diagram `AMP()` only with the −1, as is the mixed gauge/Yukawa `b` line of
-    ///   `b b~ > c c~ e+ e- mu+ mu- QCD=0` (one photon and one `b b~ H` vertex across
-    ///   one propagator). The toy model's `qt qt~ > o8 o8` agrees with it too: its
-    ///   s-channel runs through an all-scalar cubic vertex, whose own scalar-sink −1
-    ///   (the evaluator's `LorentzEvalTree::build_at_leg`) balances the t/u-channel
-    ///   propagator's.
+    /// * A line with at least one **initial-state** end takes `(−1)^P`, one `−1` per
+    ///   internal fermion propagator on it. That is the propagator's phase: MadGraph's
+    ///   off-shell fermion current carries `i(q̸ + m)/D` and the evaluator's `−i(q̸ + m)/D`.
+    ///   It does not depend on what the line's vertices are: a chain of Yukawa vertices
+    ///   takes it exactly as a gauge line does. Pinned per diagram against MadGraph's
+    ///   `AMP()` by the `u u~ > c c~ e+ e- mu+ mu- QCD=0` oracle for the initial–initial
+    ///   case, by `u d > e+ e- u d QCD=0`, whose 35 diagrams split on whether a *mixed*
+    ///   quark line carries the propagator, for the mixed case, and by the tau line of
+    ///   `ta+ ta- > t t~ h` and `ta+ ta- > t t~ h h` that radiates a Higgs and then
+    ///   annihilates, for an all-Yukawa line.
     /// * A **crossed** line — both ends final-state, kept in the all-incoming
-    ///   (conjugate-wavefunction) representation — is read *along* its arrow at every
-    ///   vertex, so it takes no per-propagator factor; its single −1 is the operator
-    ///   reordering of the conjugated pair relative to the reference's physical pair.
-    ///   Exposed by Bhabha, where the s-channel has one crossed line and the t-channel
-    ///   none; its propagator-independence by `u d > e+ e- u d QCD=0`, where one
-    ///   propagator on the crossed lepton line and one on a mixed quark line must give
-    ///   opposite signs.
+    ///   (conjugate-wavefunction) representation — takes a single `−1`, the operator
+    ///   reordering of the conjugated pair relative to the reference's physical pair
+    ///   (`ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁`). Its propagators' phases are counted with the
+    ///   evaluator's other propagator phases, in its convention sign. Exposed by Bhabha,
+    ///   where the s-channel has one crossed line and the t-channel none.
+    ///
+    /// How each vertex reads its bilinears (against its UFO order on a line with an
+    /// initial-state end, along it on a crossed one) is a per-vertex sign of the
+    /// evaluator's, not part of this factor.
     ///
     /// Both arms read only the lines themselves — their ends and their propagator count —
     /// so this is a property of the diagram, not of how it is rooted or numbered.
@@ -655,24 +637,6 @@ impl Diagram {
                 .map(LegIdx)
                 .collect(),
         )
-    }
-
-    /// The diagram's anchor: of the vertices with the fewest rays, the first in canonical
-    /// order ([`canonical`](Self::canonical)).
-    ///
-    /// On a diagram built only from three-point vertices this is the vertex external leg
-    /// 0 attaches to; a lower-arity vertex elsewhere displaces a four-point vertex holding
-    /// leg 0. The rule reads only the labelled external legs and slot order, so every
-    /// numbering of one diagram has the same anchor. The per-diagram HELAS convention
-    /// signs are defined at the rooting that takes the anchor as the amplitude vertex.
-    pub(crate) fn anchor(&self) -> VtxIdx {
-        let (order, _, _) = self.canonical_numbering();
-        let fewest = self.vertices.iter().map(|v| v.rays.len()).min();
-        let first = order
-            .into_iter()
-            .find(|&v| Some(self.vertices[v].rays.len()) == fewest)
-            .expect("a diagram has a vertex");
-        VtxIdx(first)
     }
 
     /// The diagram under its canonical internal numbering.
@@ -868,51 +832,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    /// The anchor is the vertex external leg 0 attaches to wherever every vertex has three
-    /// legs, and a three-point vertex displaces a four-point contact holding leg 0.
-    #[test]
-    fn the_anchor_is_the_first_lowest_arity_vertex() {
-        use crate::diagrams::diagram::LegIdx;
-        use crate::ufo::sm::sm_model;
-
-        let model = sm_model(SMRestrict::Default);
-        let generate = |process: &str| {
-            let pc = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
-                .unwrap();
-            generate_from_proc_card(&pc, &model).unwrap()
-        };
-        for process in ["e+ e- > W+ W-", "g g > t t~", "u d > e+ e- u d QCD=0"] {
-            for set in generate(process) {
-                for d in &set.diagrams {
-                    assert!(d.vertices.iter().all(|v| v.rays.len() == 3));
-                    assert_eq!(d.anchor(), d.leg_attachment(LegIdx(0)).0, "{process}");
-                }
-            }
-        }
-
-        let mut displaced = 0;
-        for set in generate("g g > g g g") {
-            for d in &set.diagrams {
-                let holder = d.leg_attachment(LegIdx(0)).0;
-                let anchor = d.anchor();
-                assert_eq!(
-                    d.vertex(anchor).rays.len(),
-                    3,
-                    "g g > g g g has a VVV everywhere"
-                );
-                if d.vertex(holder).rays.len() == 4 {
-                    assert_ne!(anchor, holder);
-                    displaced += 1;
-                } else {
-                    assert_eq!(anchor, holder);
-                }
-            }
-        }
-        assert_eq!(
-            displaced, 6,
-            "the six contact diagrams with leg 0 on the contact"
-        );
     }
 }

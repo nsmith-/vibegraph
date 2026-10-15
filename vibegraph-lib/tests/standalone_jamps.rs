@@ -97,6 +97,7 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
     ("ttx_to_hh_chbox", TTX_TO_HH_GRAPHS),
     ("ht_to_ht_chbox", HT_TO_HT_GRAPHS),
     ("hh_to_hh_chbox", HH_TO_HH_GRAPHS),
+    ("tata_to_ttxa_tensor4f", TATA_TO_TTXA_TENSOR4F_GRAPHS),
     (
         "ee_to_ee_4f",
         &[
@@ -104,6 +105,10 @@ const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
         ],
     ),
 ];
+
+/// Each of the 16 diagrams equals one graph at unit modulus, uniquely.
+const TATA_TO_TTXA_TENSOR4F_GRAPHS: &[usize] =
+    &[9, 13, 14, 15, 3, 4, 5, 0, 1, 2, 6, 7, 8, 10, 11, 12];
 
 const TOY_YUKAWA_GRAPHS: &[usize] = &[
     10, 11, 12, 14, 13, 15, 16, 18, 17, 19, 0, 1, 2, 4, 3, 5, 6, 8, 7, 9, 20, 21, 23, 22, 24, 25,
@@ -251,29 +256,55 @@ struct Measured {
     n_graph_entries: usize,
 }
 
+/// Rows whose MadGraph side carries a coupling its Fortran writes from a
+/// seven-significant-digit literal, with the tolerance they compare at instead of
+/// [`REL_TOL`]. SMEFTsim's loop-induced photon–Z–Higgs and photon–photon–Higgs
+/// couplings, `GC_303 = 2i·gHza/vevhat` and `GC_299 = 4i·gHaa/vevhat`, come out
+/// 1.2e-8 and 2.8e-8 off the exact value (`coupling_oracle.rs`'s
+/// `KNOWN_FORTRAN_DEVIATIONS`, and the per-graph modulus of every graph carrying
+/// them), so a flow that sums such graphs is off by at most that much of the largest
+/// amplitude. The tolerance is that bound with a factor of three to spare; a sign on
+/// any graph that reaches 1e-7 of the largest amplitude is still seen.
+const SEVEN_DIGIT_COUPLING_ROWS: &[(&str, f64)] = &[
+    ("wpwm_to_az_cw", 1e-7),
+    ("az_to_wpwm_cw", 1e-7),
+    ("aa_to_wpwm_cw", 1e-7),
+    ("wpwm_to_wpwmz_cw", 1e-7),
+    ("wpwm_to_wpwma_cw", 1e-7),
+    ("ee_to_wpwmwpwm_cw", 1e-7),
+];
+
+fn row_tolerance(key: &str) -> f64 {
+    SEVEN_DIGIT_COUPLING_ROWS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map_or(REL_TOL, |(_, tol)| *tol)
+}
+
 impl Measured {
     /// Every way the comparison can disagree with MadGraph, empty when it agrees.
     fn disagreements(&self, key: &str) -> Vec<String> {
+        let tol = row_tolerance(key);
         let mut out = Vec::new();
-        if self.worst_flow >= REL_TOL {
+        if self.worst_flow >= tol {
             out.push(format!(
                 "{key}: {} ({:.3e} of the largest amplitude)",
                 self.worst_flow_where, self.worst_flow
             ));
         }
-        if self.worst_m2 >= REL_TOL {
+        if self.worst_m2 >= tol {
             out.push(format!(
                 "{key}: {} ({:.3e})",
                 self.worst_m2_where, self.worst_m2
             ));
         }
-        if self.worst_graph >= REL_TOL {
+        if self.worst_graph >= tol {
             out.push(format!(
                 "{key}: {} ({:.3e} of the largest graph)",
                 self.worst_graph_where, self.worst_graph
             ));
         }
-        if (self.g.norm() - 1.0).abs() >= REL_TOL {
+        if (self.g.norm() - 1.0).abs() >= tol {
             out.push(format!(
                 "{key}: the flows agree only up to |G| = {}",
                 self.g.norm()
@@ -469,12 +500,7 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
-    "wpwm_to_epem",
-    "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
-         comes out with the wrong sign relative to the photon and Z s-channel, while \
-         `e+ e- > w+ w-` (the same graphs crossed) agrees",
-)];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -512,26 +538,26 @@ fn gg_to_ggg() {
     check("gg_to_ggg");
 }
 
-/// A quark-line anchor with triple-gluon vertices and a four-gluon contact as sources.
+/// A quark line at leg 0 beside triple-gluon vertices and a four-gluon contact.
 #[test]
 fn uux_to_ggg() {
     check("uux_to_ggg");
 }
 
-/// Quark-gluon scattering with the quark first: a triple-gluon source beside the
-/// quark-line anchor.
+/// Quark-gluon scattering with the quark first: a triple-gluon vertex beside the
+/// quark line holding leg 0.
 #[test]
 fn ug_to_ug() {
     check("ug_to_ug");
 }
 
-/// Colourless four-vector contacts as sources beside a lepton-line anchor.
+/// Colourless four-vector contacts beside a lepton line holding leg 0.
 #[test]
 fn ee_to_wpwmz() {
     check("ee_to_wpwmz");
 }
 
-/// A colourless four-vector contact as the anchor, beside photon, Z and Higgs exchange.
+/// A colourless four-vector contact holding leg 0, beside photon, Z and Higgs exchange.
 #[test]
 fn wpwm_to_wpwm() {
     check("wpwm_to_wpwm");
@@ -544,10 +570,153 @@ fn ttx_to_gg_chg() {
     check("ttx_to_gg_chg");
 }
 
-/// Known disagreement, kept running.
+/// A W pair at leg 0 beside a final-state lepton line: the neutrino exchange against
+/// the photon and Z s-channel, whose two kinds of diagram hold leg 0 at a two-fermion
+/// vertex and at the WWV vertex.
 #[test]
 fn wpwm_to_epem() {
     check("wpwm_to_epem");
+}
+
+/// The same graphs with both pairs of legs listed in the other order.
+#[test]
+fn wmwp_to_emep() {
+    check("wmwp_to_emep");
+}
+
+/// A quark line in place of the lepton line: the down-quark exchange against the
+/// s-channel.
+#[test]
+fn wpwm_to_uux() {
+    check("wpwm_to_uux");
+}
+
+/// A colourless vector at leg 0 on a mixed lepton line: the W exchange holds leg 0 at
+/// the WWZ vertex, the other two diagrams at a lepton vertex.
+#[test]
+fn wpem_to_zve() {
+    check("wpem_to_zve");
+}
+
+/// The photon at leg 0: the s-channel W through the AWW vertex beside the electron
+/// exchange.
+#[test]
+fn aem_to_wmve() {
+    check("aem_to_wmve");
+}
+
+/// The W at leg 0 of `W+ H > t b~`: the quark exchanges hold it at the Wtb vertex,
+/// on a final-state quark pair whose other vertex is a Yukawa.
+#[test]
+fn wph_to_tbx() {
+    check("wph_to_tbx");
+}
+
+/// The same graphs with the Higgs at leg 0, held at the Yukawa vertex.
+#[test]
+fn hwp_to_tbx() {
+    check("hwp_to_tbx");
+}
+
+/// A Z pair at leg 0: the s-channel Higgs, a ZZH vertex producing it and the top
+/// Yukawa closing it, beside the top exchange.
+#[test]
+fn zz_to_ttx() {
+    check("zz_to_ttx");
+}
+
+/// A Higgs pair at leg 0: the triple-Higgs vertex beside the top exchange.
+#[test]
+fn hh_to_ttx() {
+    check("hh_to_ttx");
+}
+
+/// A gluon pair at leg 0: the triple-gluon vertex beside the quark exchange, the
+/// coloured analogue of [`wpwm_to_uux`].
+#[test]
+fn gg_to_uux() {
+    check("gg_to_uux");
+}
+
+/// 2 → 3 with a W pair at leg 0: a Z off the final-state lepton line, off the
+/// s-channel boson, or from a WWZ or WWZZ vertex.
+#[test]
+fn wpwm_to_epemz() {
+    check("wpwm_to_epemz");
+}
+
+/// 2 → 3 with a W pair at leg 0 and a gluon off the final-state quark line.
+#[test]
+fn wpwm_to_uuxg() {
+    check("wpwm_to_uuxg");
+}
+
+/// O_W's four-vector contacts at leg 0, beside photon, Z and Higgs exchange through
+/// O_W's triple-gauge structures.
+#[test]
+fn wpwm_to_wpwm_cw() {
+    check("wpwm_to_wpwm_cw");
+}
+
+/// O_W's WWZZ contact beside the W exchange and the s-channel Higgs.
+#[test]
+fn wpwm_to_zz_cw() {
+    check("wpwm_to_zz_cw");
+}
+
+/// The photon–Z–Higgs vertex producing the off-shell Higgs from the external photon
+/// and Z, beside O_W's WWAZ contact.
+#[test]
+fn wpwm_to_az_cw() {
+    check("wpwm_to_az_cw");
+}
+
+/// The photon–Z–Higgs vertex as the amplitude, with the photon at leg 0.
+#[test]
+fn az_to_wpwm_cw() {
+    check("az_to_wpwm_cw");
+}
+
+/// The photon–photon–Higgs vertex as the amplitude.
+#[test]
+fn aa_to_wpwm_cw() {
+    check("aa_to_wpwm_cw");
+}
+
+/// O_W's two five-vector contacts, each the whole of one diagram, and the
+/// photon–Z–Higgs vertex producing a Higgs or a photon current.
+#[test]
+fn wpwm_to_wpwmz_cw() {
+    check("wpwm_to_wpwmz_cw");
+}
+
+/// The photon twin: the WWWW-photon five-vector contacts and the photon–photon–Higgs
+/// vertex beside the photon–Z–Higgs one.
+#[test]
+fn wpwm_to_wpwma_cw() {
+    check("wpwm_to_wpwma_cw");
+}
+
+/// The five-vector contacts as sources: the s-channel photon or Z off the electron
+/// line ends on a WWWW-photon or WWWW-Z contact.
+#[test]
+fn ee_to_wpwmwpwm_cw() {
+    check("ee_to_wpwmwpwm_cw");
+}
+
+/// A gluon off the initial quark line of a four-quark vector contact, which produces
+/// the off-shell quark current the emission closes, in both colour contractions.
+#[test]
+fn uux_to_ttxg_4f() {
+    check("uux_to_ttxg_4f");
+}
+
+/// A photon off either line of the tensor four-fermion contact (`O_leQt3`), read
+/// through the tensor path as the current the emission closes; compared per
+/// MadGraph graph.
+#[test]
+fn tata_to_ttxa_tensor4f() {
+    check("tata_to_ttxa_tensor4f");
 }
 
 /// The tau Yukawa's s-channel Higgs beside Higgsstrahlung and the top Yukawa: the
@@ -587,31 +756,30 @@ fn ee_to_ttxh() {
     check("ee_to_ttxh");
 }
 
-/// SMEFTsim's bare `Identity(2,1)` top Yukawa rooted as a fermion current on the
-/// crossed top line: the four Higgs-off-top graphs carry the crossed-line −1 that the
-/// `ProjM + ProjP` spelling of [`ee_to_ttxh`] takes, relative to Higgsstrahlung.
+/// SMEFTsim's bare `Identity(2,1)` top Yukawa on the crossed top line: the four
+/// Higgs-off-top graphs against Higgsstrahlung, the same relative sign the
+/// `ProjM + ProjP` spelling of [`ee_to_ttxh`] has.
 #[test]
 fn ee_to_ttxh_identity() {
     check("ee_to_ttxh_identity");
 }
 
 /// The toy model's bare `Identity` and `Gamma5` Yukawas emitted off a final-state
-/// quark pair and off the initial lepton line: both bilinears take the same
-/// crossed-line −1 as fermion currents.
+/// quark pair and off the initial lepton line, beside the vector exchange.
 #[test]
 fn ll_to_qqxs_toy_yukawa() {
     check("ll_to_qqxs_toy_yukawa");
 }
 
-/// The derivative cubic scalar vertex as a scalar current, beside its plain
-/// partner: both take the all-scalar −1.
+/// The derivative cubic scalar vertex producing the s-channel scalar, beside its
+/// plain partner.
 #[test]
 fn ll_to_ss_toy_dscalar() {
     check("ll_to_ss_toy_dscalar");
 }
 
-/// The derivative cubic scalar vertex as the amplitude, with a scalar on leg 0:
-/// both it and its plain partner take the all-scalar −1.
+/// The derivative cubic scalar vertex at the t-channel scalar exchange, with a
+/// scalar on leg 0, beside its plain partner.
 #[test]
 fn sl_to_sl_toy_dscalar() {
     check("sl_to_sl_toy_dscalar");
