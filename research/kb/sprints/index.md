@@ -8,32 +8,34 @@
 
 ## Directories
 
-* [banked-open-ends](banked-open-ends/index.md) - 1 concepts
-* [color-flow](color-flow/index.md) - 1 concepts
-* [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md) - 1 concepts
-* [draw-followup](draw-followup/index.md) - 1 concepts
-* [draw-performance](draw-performance/index.md) - 1 concepts
-* [dynamical-scales](dynamical-scales/index.md) - 1 concepts
-* [early-sprints](early-sprints/index.md) - 1 concepts
-* [eval-perf-2](eval-perf-2/index.md) - 1 concepts
-* [eval-performance-program](eval-performance-program/index.md) - 1 concepts
-* [event-output-lhef](event-output-lhef/index.md) - 1 concepts
-* [hadronic-xsec](hadronic-xsec/index.md) - 1 concepts
-* [hygiene](hygiene/index.md) - 53 concepts
-* [kt-spine](kt-spine/index.md) - 1 concepts
-* [logging-tui](logging-tui/index.md) - 1 concepts
-* [mlm](mlm/index.md) - 1 concepts
-* [note-29-validation](note-29-validation/index.md) - 1 concepts
-* [perf-3-addendum](perf-3-addendum/index.md) - 1 concepts
-* [perf-sprint-3](perf-sprint-3/index.md) - 1 concepts
-* [process-grammar](process-grammar/index.md) - 1 concepts
-* [resonance-sampling](resonance-sampling/index.md) - 1 concepts
-* [sigma-ttx-mlm-at1](sigma-ttx-mlm-at1/index.md) - 10 concepts
-* [splitting-kernel-sampling](splitting-kernel-sampling/index.md) - 1 concepts
-* [ufo-lorentz](ufo-lorentz/index.md) - 1 concepts
-* [user-distribution-proton-events](user-distribution-proton-events/index.md) - 1 concepts
-* [ux-mini-sprint](ux-mini-sprint/index.md) - 1 concepts
-* [v3-backlog](v3-backlog/index.md) - 1 concepts
-* [validation-2](validation-2/index.md) - 1 concepts
-* [validation-3](validation-3/index.md) - 1 concepts
-* [validation-sprint](validation-sprint/index.md) - 1 concepts
+* [amplitude-signs](amplitude-signs/index.md)
+* [banked-open-ends](banked-open-ends/index.md)
+* [color-flow](color-flow/index.md)
+* [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md)
+* [draw-followup](draw-followup/index.md)
+* [draw-performance](draw-performance/index.md)
+* [dynamical-scales](dynamical-scales/index.md)
+* [early-sprints](early-sprints/index.md)
+* [eval-perf-2](eval-perf-2/index.md)
+* [eval-performance-program](eval-performance-program/index.md)
+* [event-output-lhef](event-output-lhef/index.md)
+* [hadronic-xsec](hadronic-xsec/index.md)
+* [hygiene](hygiene/index.md)
+* [kt-spine](kt-spine/index.md)
+* [logging-tui](logging-tui/index.md)
+* [mlm](mlm/index.md)
+* [note-29-validation](note-29-validation/index.md)
+* [perf-3-addendum](perf-3-addendum/index.md)
+* [perf-sprint-3](perf-sprint-3/index.md)
+* [process-grammar](process-grammar/index.md)
+* [resonance-sampling](resonance-sampling/index.md)
+* [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
+* [sigma-ttx-mlm-at1](sigma-ttx-mlm-at1/index.md)
+* [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
+* [ufo-lorentz](ufo-lorentz/index.md)
+* [user-distribution-proton-events](user-distribution-proton-events/index.md)
+* [ux-mini-sprint](ux-mini-sprint/index.md)
+* [v3-backlog](v3-backlog/index.md)
+* [validation-2](validation-2/index.md)
+* [validation-3](validation-3/index.md)
+* [validation-sprint](validation-sprint/index.md)

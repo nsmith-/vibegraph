@@ -20,9 +20,9 @@ The question this gate answers is the one no other check can: does the
 artifact a user downloads work on a machine that never built it? It is not a
 physics gate.
 
-**State: it has never passed in CI.** See
-[acceptance-yml-never-passed](../backlog/hygiene/acceptance-yml-never-passed.md)
-for the open state and the next step, and
+**State: green in CI.** Its first green run was a dispatch against `v0.1.0`
+from `main` on 2026-10-15 (run 38771664781), after the refusal check learned
+that the binary names the consent flag by its short spelling, `-y`. See
 [acceptance-yml-fails-on-refdata-releases](../backlog/hygiene/acceptance-yml-fails-on-refdata-releases.md)
 for why every `refdata-*` prerelease produces a red run. The script
 itself is exercised locally through `--binary`.
@@ -107,13 +107,10 @@ the data path is not platform-specific.
 - **Upstream repackaging on a cache hit.** On the miss path it downloads and
   verifies every run, so on a timer it would be the second detector, beside an
   ignored test, for CERN re-tarring the pinned archive
-  ([asset resolution](asset-resolution.md)). The weekly `schedule` trigger is
-  not on yet: [acceptance-yml-weekly-schedule](../backlog/hygiene/acceptance-yml-weekly-schedule.md).
-  The workflow's header comment still gives "until a first release exists" as
-  the reason; the backlog item records that `v0.1.0` exists and the real
-  blocker is that no run has been green.
-- **Anything until it runs green once.** Its GitHub-side behaviour is
-  unproven.
+  ([asset resolution](asset-resolution.md)). It runs weekly (Mondays 06:17
+  UTC) against the latest release, so that detector is on; no scheduled run
+  has completed yet
+  ([acceptance-yml-weekly-schedule](../backlog/hygiene/acceptance-yml-weekly-schedule.md)).
 
 An earlier two-leg transcript in note 24 (7.5 s, labelled "verified for
 real") cannot have come from the committed script; only the run quoted above is

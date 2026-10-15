@@ -1005,7 +1005,7 @@ fn mg_amp_groups(lines: &[String]) -> Vec<Vec<usize>> {
 /// must preserve, and this comparison sees no Lorentz structure: the per-flow
 /// amplitude gates pin it (`amplitude_oracle`'s `gg_to_gg`, and
 /// `standalone_jamps`' `uux_to_ggg` and `gg_to_ggg`, whose contact vertex has an
-/// internal leg as here).
+/// internal leg as here, and its `gg_to_ttxg`, which is this process).
 ///
 /// The per-graph units are then held to each other. MadGraph's own freedom here is
 /// its fermion factor, which is real, and every other difference between the two
