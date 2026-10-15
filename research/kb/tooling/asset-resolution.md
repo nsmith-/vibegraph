@@ -178,8 +178,8 @@ differently.
 - **Upstream repackaging is a live risk.** If CERN re-tars the set, every user
   on a cache miss gets a hard checksum failure. That is the right failure
   direction, but it is a failure. The second detector would be
-  [release acceptance](release-acceptance.md) on a timer, which does not run
-  yet ([acceptance-yml-weekly-schedule](../backlog/hygiene/acceptance-yml-weekly-schedule.md)).
+  [release acceptance](release-acceptance.md), which runs weekly against the
+  latest release.
 - **The cache-hit path for the default set is pinned at unit level only.** A
   CLI-level test that populated the cache under the real name would mismatch
   the pin and trigger a 27.6 MB download inside the suite, so the CLI test
