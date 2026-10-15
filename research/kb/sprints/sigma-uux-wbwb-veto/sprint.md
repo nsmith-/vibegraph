@@ -3,7 +3,7 @@ type: Sprint
 title: "u u~ > w+ b w- b~ $ t t~ offset"
 description: "Attribute the ~2 % gap between this side and patched MadEvent on the on-shell-veto t t~ row, and gate the row or document a measured reference-side defect."
 status: draft
-active: true
+active: false
 tags: [process-grammar, onshell-veto, madgraph-defect, info-cell, top]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -20,7 +20,7 @@ defect with a measured cause.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [uux-wbwb-onshell-veto-tt-2pct-off](../../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md)
+- `uux-wbwb-onshell-veto-tt-2pct-off` (closed by this PR; see [closeout](closeout.md))
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,
@@ -39,7 +39,7 @@ comment on this PR listing exactly what to run.
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
 | [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only | — |
-| [V2](sessions/V2.md) | validation-dev (Opus) | V1 | diagnosis only | — |
+| [V2](sessions/V2.md) | validation-dev (Opus) | V1 | diagnosis only | uux-wbwb-onshell-veto-tt-2pct-off |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.

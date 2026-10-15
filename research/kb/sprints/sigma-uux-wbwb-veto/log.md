@@ -19,3 +19,18 @@
   Open: MadEvent's side rests on one seed per configuration, and the decisive
   region test was not run. V2 is queued behind the host's current validate
   run.
+* **V2 landed** (`bcaff1c`): the continuum deficit is confirmed, −2.0 % over
+  five fresh seeds (8σ). V1's both-W-forward region is falsified: MadEvent
+  integrates that slice correctly on its own, and is −1.46 % on the
+  complement. The whole deficit sits in channels G7–G9. In G8 and G9, iterations
+  that catch large weights alternate with ones that miss, and the combination
+  favours the misses. G7's grid never samples the region. Equal-weight
+  recombination recovers about 40 %. Machine-confirmed by the manager: the
+  commit; the five fresh seeds' mean, 0.044956, from the raw result lines.
+* **Close-out**: documented as a MadEvent defect with a measured cause, as
+  the item's closing condition allows. The row stays reported and is not
+  gated. The manifest note, the `cli_onshell_veto` doc comment and three
+  concepts no longer say "unexplained" or "moves down with budget".
+  `cargo fmt --check` is clean and the manifest parses. The item is deleted
+  and three Found items filed. V1's "keep `G*/results.dat` in banked runs" is
+  covered by `sigma-reference-scatter`'s D1.
