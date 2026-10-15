@@ -111,3 +111,38 @@ single-run units under A, roughly 5 min:
 
 The total is roughly 9 h plus the 2 → 6 rows, before any 20 + 20 ladders.
 These are estimates from this host's timings and are not measured on the M3.
+
+## Second amendment proposed after the survey finding (awaiting the user)
+
+PR #23's V4 found that MadEvent's default survey left `g q > t t~ q` 0.55 %
+low, and that `hard_survey = 2` removes it. A cross-check on the other rows
+diagnosed in this sprint (all pinned 3.7.1, fresh directories, compared with
+an adaptation-free or vibegraph value):
+
+| row | default, reported | `hard_survey = 2`, reported | `hard_survey = 2`, equal-weight | cost |
+|---|---|---|---|---|
+| ttx gq, unmatched (#23) | −0.58 % | **−0.03 %** | — | ~1× |
+| `pp_to_llj_xqcut_only` (20 seeds) | +0.08 % (EW −0.26 % vs ours) | **−0.005 %** | −0.009 % | 1.09× |
+| `ee_to_mumua` (39 seeds) | −0.95 % | −0.66 % (−14σ) | −0.26 %, heavy-tailed | ~1.05× |
+| uux top-free (20 seeds) | −2.03 % | −0.68 % (−6σ), χ²/dof 4.4 | +0.21 %, heavy-tailed | ~0.3× |
+| fixed-beam 2 → 4 (#22) | −0.12 % | **inert**: `mmjj > 0.01 · (ebeam1 + ebeam2)` already forces the harder survey (`madevent_interface.py:3526`) | — | — |
+
+`hard_survey = 2` fixes the rows where MadEvent missed through its survey grid
+or a long refine chain. It does not fix the rows with rare, very large
+weights (`ee_to_mumua`'s G6/G8, uux's G8/G9). There the equal-weight value
+is too heavy-tailed at 10k events to bank.
+
+**Proposed:**
+1. Bank every row with `hard_survey = 2`. The cost is negligible.
+2. Record each run's effective `min_events`/`max_events` (`run_config.inc`).
+   A card where `hard_survey` is inert is then visible rather than assumed.
+3. Rows with a channel whose seed χ²/dof stays above 3 under `hard_survey = 2`
+   are banked as usual, but their σ cell stays `info` against MadEvent. If an
+   adaptation-free estimate exists, that is recorded beside it. Today these
+   are `ee_to_mumua` and the uux continuum (not a gated row). The screen lists
+   any new one back to the user.
+4. Two driver checks: a run that writes fewer events than asked fails, and so
+   does a σ that is not a number. `generate_events` exits 0 on the
+   `libgammaUPC.a` compile race.
+
+Unchanged: fresh seeds, the 4× screen, and both values recorded per seed.
