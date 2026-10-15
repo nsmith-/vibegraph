@@ -149,7 +149,8 @@ impl DynamicalChoice {
 /// One event's kinematics, in the frame the scale is defined in.
 #[derive(Clone, Copy, Debug)]
 pub struct ScaleEvent<'a> {
-    /// Incoming momenta `[E, px, py, pz]`, beams along ±z.
+    /// Incoming momenta `[E, px, py, pz]`, beams along ±z, in whichever
+    /// longitudinal frame the caller chooses.
     ///
     /// MadEvent evaluates every prescription on the partonic-CM momenta its
     /// matrix element reads. Not every one is invariant under a longitudinal

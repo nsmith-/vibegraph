@@ -19,7 +19,10 @@
 //! A matrix element is evaluated in the **partonic CM** with the beams along
 //! ±z — the frame the helicity-pruned [`BoundAmplitude::eval_m2`] requires — where
 //! `|M|²` is a Lorentz invariant. A cut filter operates in the **lab frame**,
-//! whose rapidity/pT observables are not z-boost invariant.
+//! whose rapidity/pT observables are not z-boost invariant. Some per-event scales
+//! are not invariant either ([`ScaleEvent::incoming`]): the proton integrand
+//! clusters in the partonic CM, as MadEvent does, and evaluates the closed-form
+//! choices in the lab frame.
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::PI;
@@ -399,9 +402,12 @@ impl EventScaleSource {
         }
     }
 
-    /// The scales for one event, from its momenta in the frame
-    /// [`ScaleEvent::incoming`] describes and the sampling channel the point was
-    /// drawn from.
+    /// The scales for one event, from its momenta with the beams along ±z and the
+    /// sampling channel the point was drawn from.
+    ///
+    /// The scales are those of the frame the momenta are given in, and for the
+    /// clustering and closed-form choice 1 that frame changes them (see
+    /// [`ScaleEvent::incoming`]).
     ///
     /// # Panics
     ///

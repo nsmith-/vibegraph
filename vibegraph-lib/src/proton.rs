@@ -2113,9 +2113,9 @@ impl<'a> ProtonIntegrand<'a> {
     /// as that event: the configuration is drawn from `AMP2` at the mirrored
     /// argument `Rq` and clustered at `Rq` too, where the representative's first
     /// parton is on the first beam again. Both terms cluster in the partonic CM
-    /// ([`term_at`](Self::term_at)). The
-    /// draws share the uniform, which correlates them without changing any one
-    /// term's distribution, and the sum is linear in each term.
+    /// ([`term_at`](Self::term_at)). The draws share the uniform, which correlates
+    /// them without changing any one term's distribution, and the sum is linear in
+    /// each term.
     ///
     /// The sampling channel reaches only the direct terms of the groups whose
     /// diagrams it was built from, and only as the draw's fallback where `AMP2`
