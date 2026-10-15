@@ -299,27 +299,6 @@ const SCALUP_IS_NOT_MU_R: &[&str] = &["p3r3_to_p3r3_toy_epsilon", "p3r3_to_p3r3_
 /// scale that carries it is larger by its square root.
 const CROSSING_INFLATION: f64 = 1e-6;
 
-/// Events a run's replay is allowed to miss, and how many.
-///
-/// This is not a tolerance and not a placeholder count. Each event admitted here
-/// has to carry the *signature* below — the printed field is reproduced by the
-/// computed scale times exactly the crossing inflation — and the count is
-/// asserted for equality, so a population that grows, shrinks, or changes
-/// character fails.
-///
-/// **`pp_to_jj`, 9 events of 10 000.** All are `q q' → q q'` subprocesses whose
-/// merge graph has a single integration channel and two allowed beam–leg pairs.
-/// MadGraph inflated the winning candidate and this replay did not, and the two
-/// scales differ by `√(1 + 1e-6)` and by nothing else — `<rscale>`'s eight digits
-/// resolve the ratio to `5.03e-7` and `5.16e-7` against the inflation's
-/// `5.000e-7`. Which of two numerically degenerate candidates `cluster.f` chose
-/// is decided below the eleven digits the record prints, so the record cannot
-/// settle it; the engine's own tie-break is pinned bit-for-bit elsewhere
-/// (`uux_to_uux`'s 32 inflated candidates, `validate_kt_cluster.rs`). Settling
-/// *this* population needs a clustering dump for `p p → j j`, which the sprint
-/// did not bank.
-const TIE_BREAK_MISSES: &[(&str, usize)] = &[("pp_to_jj", 9)];
-
 /// The runs whose `scalefact` is not `1`, with the value their card carries.
 ///
 /// One exists, and it is the only thing that pins where MadGraph applies the
@@ -857,8 +836,9 @@ fn replay(choice: &ScaleChoice, channels: Option<&Channels>, event: &Event) -> R
 /// is zero has a cluster scale that is a function of the event alone.
 ///
 /// The runs outside are outside for reasons that are not tolerances; see
-/// [`Declined`]. `pp_to_jj` carries a small declared exception of its own; see
-/// [`TIE_BREAK_MISSES`].
+/// [`Declined`]. Every event of every other run is reproduced: the replay
+/// clusters in the partonic CM ([`partonic_cm`]), so `cluster.f`'s beam
+/// tie-break on the sign of `p_z` reads the signs MadEvent read.
 #[test]
 fn banked_events_reproduce_every_printed_scale() {
     let runs = banked_runs();
@@ -908,7 +888,6 @@ fn banked_events_reproduce_every_printed_scale() {
 
         let mut run_worst = (0.0f64, "all fields".to_string());
         let mut missed: BTreeSet<usize> = BTreeSet::new();
-        let mut inflated: BTreeSet<usize> = BTreeSet::new();
         let mut comparisons = 0usize;
         let mut other_channel = 0usize;
         let mut reported = 0usize;
@@ -930,12 +909,6 @@ fn banked_events_reproduce_every_printed_scale() {
                 comparisons += 1;
                 if fraction > 1.0 {
                     missed.insert(index);
-                    // The one class of miss this gate admits: the same scale
-                    // with `cluster.f`'s crossing inflation on it.
-                    let with_inflation = pick(got.mu) * (1.0 + CROSSING_INFLATION).sqrt();
-                    if (with_inflation - printed).abs() <= budget {
-                        inflated.insert(index);
-                    }
                     if reported < 12 {
                         reported += 1;
                         println!(
@@ -957,34 +930,20 @@ fn banked_events_reproduce_every_printed_scale() {
             }
         }
 
-        let allowed = TIE_BREAK_MISSES
-            .iter()
-            .find(|(run, _)| run == name)
-            .map_or(0, |(_, count)| *count);
-        assert_eq!(
-            missed.len(),
-            allowed,
-            "{name}: {} of {} events outside the printing budget against a declared {allowed}",
+        assert!(
+            missed.is_empty(),
+            "{name}: {} of {} events outside the printing budget",
             missed.len(),
             events.len()
         );
-        assert_eq!(
-            missed.len() - inflated.len(),
-            0,
-            "{name}: {} of the {} missed events do not carry the crossing inflation, so they \
-             are a different failure than the one declared",
-            missed.len() - inflated.len(),
-            missed.len()
-        );
         println!(
             "{name}: {} events, {comparisons} scale comparisons, worst {:.3} of budget (in {}), \
-             {other_channel} needing a channel other than the first, {} declared misses",
+             {other_channel} needing a channel other than the first",
             events.len(),
             run_worst.0,
             run_worst.1,
-            missed.len()
         );
-        if run_worst.0 > worst.0 && allowed == 0 {
+        if run_worst.0 > worst.0 {
             worst = (run_worst.0, name.clone(), run_worst.1);
         }
         total_events += events.len();
@@ -1152,14 +1111,7 @@ fn banked_events_reproduce_aqcdup_from_the_computed_scale() {
             run_worst = run_worst.max(fraction);
             events_checked += 1;
         }
-        let allowed = TIE_BREAK_MISSES
-            .iter()
-            .find(|(run, _)| run == name)
-            .map_or(0, |(_, count)| *count);
-        assert!(
-            outside <= allowed,
-            "{name}: {outside} events miss AQCDUP against a declared {allowed}"
-        );
+        assert_eq!(outside, 0, "{name}: {outside} events miss AQCDUP");
         if run_worst > worst.0 {
             worst = (run_worst, name.clone());
         }
@@ -1603,6 +1555,32 @@ fn channels_for(name: &str, run: &Path) -> Channels {
     }
 }
 
+/// The event's momenta boosted along the beam axis into its partonic centre of
+/// mass, beams first and then the outgoing legs: the frame MadEvent clusters
+/// in, which the record's lab-frame momenta are a longitudinal boost of.
+///
+/// The clustering is not boost-invariant, because `cluster.f` breaks the tie
+/// between the two beams of an initial-state merge on the sign of `p_z`.
+/// Replayed in the lab, nine `pp_to_jj` events whose winning candidate MadEvent
+/// inflated by the crossing factor come out without it.
+fn partonic_cm(event: &Event) -> [Vec<[f64; 4]>; 2] {
+    let [a, b] = event.incoming;
+    let beta = (a[3] + b[3]) / (a[0] + b[0]);
+    let gamma = 1.0 / ((1.0 - beta) * (1.0 + beta)).sqrt();
+    let boost = |p: &[f64; 4]| {
+        [
+            gamma * (p[0] - beta * p[3]),
+            p[1],
+            p[2],
+            gamma * (p[3] - beta * p[0]),
+        ]
+    };
+    [
+        event.incoming.iter().map(boost).collect(),
+        event.outgoing.iter().map(boost).collect(),
+    ]
+}
+
 /// The scales the general path derives for one event, under one integration
 /// channel.
 fn general(
@@ -1612,10 +1590,11 @@ fn general(
     config: usize,
 ) -> Result<MuTriple, ScaleError> {
     let derived = channels.of(event);
+    let [incoming, outgoing] = partonic_cm(event);
     let scales = choice.cluster_scales(
         &ScaleEvent {
-            incoming: event.incoming,
-            outgoing: &event.outgoing,
+            incoming: [incoming[0], incoming[1]],
+            outgoing: &outgoing,
         },
         &ClusterInput {
             set: &derived.set,

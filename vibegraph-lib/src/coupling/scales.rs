@@ -149,8 +149,15 @@ impl DynamicalChoice {
 /// One event's kinematics, in the frame the scale is defined in.
 #[derive(Clone, Copy, Debug)]
 pub struct ScaleEvent<'a> {
-    /// Incoming momenta `[E, px, py, pz]`, in the lab frame — the clustering's
-    /// beam measure is a transverse mass about the beam axis.
+    /// Incoming momenta `[E, px, py, pz]`, beams along ±z.
+    ///
+    /// MadEvent evaluates every prescription on the partonic-CM momenta its
+    /// matrix element reads. Not every one is invariant under a longitudinal
+    /// boost, so the frame matters: the transverse masses of choices 2 and 3,
+    /// `√ŝ`, and the clustering's `p_T`-type measures are, but choice 1's
+    /// `E_T = E·p_T/|p|` is not, and neither is the clustering, whose beam
+    /// tie-break reads the sign of the merged leg's `p_z` and whose measure for a
+    /// pair of massive legs reads their pseudorapidities.
     pub incoming: [[f64; 4]; 2],
     /// Outgoing momenta, matrix-element level — resonances that a Les Houches
     /// record lists as intermediate are not among them.

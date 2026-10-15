@@ -399,8 +399,9 @@ impl EventScaleSource {
         }
     }
 
-    /// The scales for one event, from lab-frame momenta and the sampling channel
-    /// the point was drawn from.
+    /// The scales for one event, from its momenta in the frame
+    /// [`ScaleEvent::incoming`] describes and the sampling channel the point was
+    /// drawn from.
     ///
     /// # Panics
     ///
