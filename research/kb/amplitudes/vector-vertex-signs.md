@@ -210,7 +210,7 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
   (|M|² `max_rel` 2.79e1). The SM part of the same process agrees to 3.7e-12,
   so the residual is `O_W`'s five-vector and momentum-bearing contact
   structures; its `amplitudes` cell is informational. Tracked as
-  [wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md).
+  `wpwmz-cw-ow-five-vector-residual` (closed by PR #33).
 
 [^n39-wrong]: Note 39 §1. Defect 2 of note 38 (`u u~ > t t~ g NP<=1`, `vg_c4q`) was the triple-gluon source sign, not the four-quark contacts.
 [^n39-rule]: Note 39 §2.

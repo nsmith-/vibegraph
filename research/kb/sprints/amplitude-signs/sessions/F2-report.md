@@ -5,6 +5,7 @@ description: "The six O_W rows that carry GC_303/GC_299 now bank AMP() and gate 
 status: draft
 tags: [amplitude, smeft, five-vector, vvs, config-groups, registered-deviation, standalone, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: gate, resource: "https://github.com/nsmith-/vibegraph/commit/fe3043f", title: "validation: gate wpwm_to_wpwmz_cw per graph, exempting only the rounded-coupling graphs' modulus"}
 ---
