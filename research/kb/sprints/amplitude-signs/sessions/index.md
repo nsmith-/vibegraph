@@ -4,10 +4,14 @@
 
 ## Session Brief
 
+* [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
+* [G1: g g > t t~ g against MadGraph standalone, per flow](G1.md) - Bank a standalone JAMP table for g g > t t~ g and compare it per flow, pinning which colour structure multiplies which Lorentz structure at the four-gluon contact.
 * [Q-H: hygiene review of the same-flavour four-fermion per-graph gate](Q-H.md) - Review PR #35's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [Q1: same-flavour four-fermion contact against MadGraph](Q1.md) - Bank an ee_to_ee_4f SMEFTsim standalone row, gate its |M|² per helicity and its amplitudes against MadGraph, and record the per-pairing diagram count as a convention cell.
 
 ## Session Report
 
+* [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
+* [G1 report: t t~ + jet against MadGraph standalone, per flow](G1-report.md) - All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u u~) agree with MadGraph 3.7.1 standalone per flow to <= 6.9e-16, colour-assignment mutations fail them at O(1), and MadEvent's width pattern agrees too, so the @1 sigma excess is not in |M|^2.
 * [Q-H report: hygiene review of the same-flavour four-fermion per-graph gate](Q-H-report.md) - Hygiene review of PR #35's per-graph AMP() route: findings written before any edit, then the local ones fixed with run mutations and an identity check on standalone_jamps' printed numbers.
 * [Q1 report: same-flavour four-lepton contacts agree with MadGraph per graph and per pairing](Q1-report.md) - `e+ e- > e+ e- NP<=1` under SMEFTsim's four-lepton card is banked as a standalone row and gated per helicity, per flow and per MadGraph graph. 22 diagrams here make up MadGraph's 19 graphs, and each contact's two pairings carry MadGraph's relative sign exactly. Flipping that sign fails the gate at O(1).
