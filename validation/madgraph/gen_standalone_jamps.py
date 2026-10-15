@@ -15,10 +15,13 @@ per helicity in MadGraph's own NHEL table:
   * JAMP(1..NCOLOR), the per-flow amplitudes, copied out of MATRIX by a COMMON
     block patched in after MadGraph builds them.
 
-The per-diagram AMP() are dumped with `--amps` for diagnosis but not banked:
-where a contact vertex has several colour structures MadGraph writes one AMP()
-per structure, so its graph list is not our diagram list, while its JAMP order
-is the colour basis the Rust gate already pairs flow by flow.
+The per-diagram AMP() are dumped with `--amps` for diagnosis and banked only
+for a row that sets `bank_amps`: where a contact vertex has several colour
+structures MadGraph writes one AMP() per structure, so its graph list is not our
+diagram list, while its JAMP order is the colour basis the Rust gate already
+pairs flow by flow. A row that banks them is a single-flow row whose graphs the
+Rust gate pairs with groups of its own diagrams, and it banks JAMP(1)'s
+coefficient on each AMP() beside them.
 
 The table carries the param card the numbers were computed with, so the Rust
 side binds the same parameters rather than re-deriving them.
@@ -84,6 +87,8 @@ class Row:
     # spacelike propagator and this crate follows it; standalone output keeps it,
     # so a process with a massive t-channel line is compared at zero width.
     zero_widths: bool = False
+    # Bank AMP(1..NGRAPHS) and their JAMP(1) coefficients. Single-flow rows only.
+    bank_amps: bool = False
 
     def import_model(self) -> str:
         if self.model is None:
@@ -129,6 +134,13 @@ ROWS = {
         # The Standard Model's own all-Yukawa line: t/u-channel b exchange (one
         # propagator) beside the triple-Higgs annihilation (none).
         Row("bbx_to_hh", "b b~ > h h", (5, -5), (25, 25), 500.0, 3, 4063),
+        # Bhabha scattering through the four-lepton contacts: every contact joins
+        # one flavour, so the s- and t-channel pairings of one vertex interfere with
+        # each other and with photon and Z exchange in both channels. Widths are
+        # zero for the spacelike Z.
+        Row("ee_to_ee_4f", "e+ e- > e+ e- NP<=1", (-11, 11), (-11, 11), 500.0, 4, 4064,
+            model=SMEFT, restrict="vg_c4l", model_row="ee_to_mumu_4f", zero_widths=True,
+            bank_amps=True),
     ]
 }
 
@@ -210,6 +222,21 @@ DRIVER = """\
       ENDDO
       END
 """
+
+
+def read_jamp_coefficients(pdir: str, ngraphs: int) -> list[float]:
+    """JAMP(1)'s coefficient on each AMP(), from a single-flow matrix.f."""
+    with open(os.path.join(pdir, "matrix.f")) as f:
+        src = f.read()
+    m = re.search(r"\n      JAMP\(1\) =(.*?)\n(?!     \$)", src, re.S)
+    assert m, "no JAMP(1) assignment"
+    expr = re.sub(r"\n     \$ ?", "", m.group(1)).replace(" ", "")
+    coefs = [0.0] * ngraphs
+    for sign, num, k in re.findall(r"([+-]?)(?:\(([^()]*)\)\*)?AMP\((\d+)\)", expr):
+        c = float(num.replace("D", "E")) if num else 1.0
+        coefs[int(k) - 1] += -c if sign == "-" else c
+    assert all(c != 0.0 for c in coefs), f"an AMP() outside JAMP(1): {coefs}"
+    return coefs
 
 
 def build_driver(pdir: str, ngraphs: int, ncolor: int) -> str:
@@ -337,6 +364,9 @@ def bank(row: Row, args) -> None:
 
     with open(card) as f:
         card_lines = f.read().splitlines()
+    if row.bank_amps:
+        assert ncolor == 1, f"{row.key}: bank_amps needs a single-flow process"
+    amps = args.amps or row.bank_amps
     table = {
         "key": row.key,
         "process": row.process,
@@ -346,6 +376,8 @@ def bank(row: Row, args) -> None:
         "n_flows": ncolor,
         "helicities": hels,
         "param_card": card_lines,
+        **({"jamp_coefficients": read_jamp_coefficients(pdir, ngraphs)}
+           if row.bank_amps else {}),
         "points": [
             {
                 "momenta": pt,
@@ -353,7 +385,7 @@ def bank(row: Row, args) -> None:
                     {
                         "m2": h["m2"],
                         "jamps": h["jamps"],
-                        **({"amps": h["amps"]} if args.amps else {}),
+                        **({"amps": h["amps"]} if amps else {}),
                     }
                     for h in per_point[i]
                 ],
