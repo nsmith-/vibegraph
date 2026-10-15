@@ -46,7 +46,7 @@ comment on this PR listing exactly what to run.
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| D1 | manager | — | user approval | — |
+| [D1](decisions/D1-reference-error-design.md) | manager | V1 measurements from sibling PRs | user approval | — |
 | [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnostic only | — |
 | F1 | feature-dev (Opus) | D1 approved | hermetic + `--skip-deps validate` unmoved (inert until re-banked) | — |
 
