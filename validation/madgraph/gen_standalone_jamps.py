@@ -223,8 +223,8 @@ ROWS = {
             (-9000011, 9000011), (9000025, 9000025), 500.0, 3, 4074,
             model="vibegraph_toy_UFO", restrict="dscalar", bank_amps=True),
         # The same vertices with a scalar as leg 0: the t-channel scalar exchange
-        # holds it at the cubic vertex, beside s- and u-channel lepton exchange. Widths are zero for the
-        # spacelike scalar.
+        # holds it at the cubic vertex, beside s- and u-channel lepton exchange.
+        # Widths are zero for the spacelike scalar.
         Row("sl_to_sl_toy_dscalar", "st lt > st lt NP<=2 NPD<=1",
             (9000025, 9000011), (9000025, 9000011), 500.0, 3, 4075,
             model="vibegraph_toy_UFO", restrict="dscalar", zero_widths=True, bank_amps=True),
