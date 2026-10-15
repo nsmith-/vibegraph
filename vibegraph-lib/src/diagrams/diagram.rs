@@ -579,7 +579,7 @@ impl Diagram {
 
     /// Whether each external leg is on the `endpoints[0]` side of `prop`: reached from
     /// that endpoint's vertex without crossing the line.
-    fn legs_on_start_side(&self, prop: PropIdx) -> Vec<bool> {
+    pub(crate) fn legs_on_start_side(&self, prop: PropIdx) -> Vec<bool> {
         let mut on_side = vec![false; self.legs.len()];
         let mut seen = vec![false; self.vertices.len()];
         let mut stack = vec![self.prop(prop).endpoints[0].0];
