@@ -71,3 +71,43 @@ diagnostic, not a gate.
 - A region that every MadEvent iteration misses. Equal weights do not help
   there, and only an independent estimator can find it.
 - The `#28` continuum deficit may be partly that.
+
+## Amendment proposed after V1 (awaiting the user)
+
+[V1](../sessions/V1-report.md) measured 20 fresh seeds on each llj MLM row and
+5 + one 4× on five single-run hadronic rows. Two points bear on A as approved:
+
+1. **Equal-weight recombination is not validated on every row.** It closed
+   the offset against an adaptation-free estimate on the fixed-beam 2 → 4
+   (#22) and on `ee_to_mumua` at 100k (#26). On `pp_to_llj_xqcut_only` it
+   reads this side −0.26 % (−2.5σ). Each channel refines for a
+   precision-dependent number of iterations (3 to 21), so an equal-weight mean
+   carries an optional-stopping exposure no estimator here has measured.
+   - **Proposed:** bank both values per seed, as A already says. The gate
+     reads the equal-weight mean only on rows where an adaptation-free check
+     validated it; elsewhere it reads the reported-σ seed mean, and the
+     equal-weight difference is recorded but not added to any tolerance.
+2. **Two runs at 4× cannot calibrate a budget shift** against a 1× spread from
+   five seeds (the ladder rule asks for 20+ on both rungs).
+   - **Proposed:** keep 5 + 2 × 4× for every row as a screen. A row whose 4×
+     runs sit more than 2σ from its 1× mean gets a 20 + 20 ladder before it
+     is banked.
+
+### Rows and estimated M3 time
+
+These are the 54 banked or long-tier σ rows in `validation/manifest.toml`.
+Seeded generators already exist for the decay-chain and grammar rows. At
+about 0.7× this host's per-run time, a 10k-event row costs about 10
+single-run units under A, roughly 5 min:
+
+| group | rows | M3 estimate |
+|---|---|---|
+| fixed-beam single-run rows (ee, uux, gg, toy, SMEFT) | ~40 | ~3.5 h |
+| hadronic single-run rows (`pp_to_*`, all banked at iseed 21) | 9 | ~1 h |
+| llj MLM rows (fresh seeds measured in V1; add 4×) | 3 | ~0.5 h |
+| `ee_to_mumua` at 100k events, `m(μμ)` cells (#26) | 1 | ~2 h |
+| `pp_to_ll_0j2j_mlm`, `pp_to_ttx_0j1j_mlm` | 2 | ~2 h |
+| long-tier 2 → 6 rows | 2 | not timed; probably several h |
+
+The total is roughly 9 h plus the 2 → 6 rows, before any 20 + 20 ladders.
+These are estimates from this host's timings and are not measured on the M3.
