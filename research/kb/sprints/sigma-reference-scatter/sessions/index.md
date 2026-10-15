@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [F1: a seeded fresh-directory banking driver, its bundle record, and the σ gates' reader](F1.md) - Build the driver that re-banks every σ reference under D1 as amended (fresh seeds, a 4× screen, reported and equal-weight σ per seed), the bundle's per-seed record, and the gate reader. Inert until the user banks.
 * [V1: diagnostic fresh-directory seeds on the llj MLM rows](V1.md) - Measure whether fresh, independent MadEvent directories move the three llj MLM references, and measure MadEvent seed scatter and budget shift on a few cheap gated σ rows, as input to D1.
 
 ## Session Report
