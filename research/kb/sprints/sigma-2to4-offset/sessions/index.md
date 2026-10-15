@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: which side owns the fixed-beam 2 → 4 offset](V1.md) - Diagnose the +0.29 % offset on fixed-beam u u~ > e+ e- g g with sliced σ on both sides and a non-adaptive estimator, and attribute it with evidence.
+
+## Session Report
+
+* [V1 report: the fixed-beam 2 → 4 offset is MadEvent's iteration weighting](V1-report.md) - On fixed-beam u u~ > e+ e- g g, vibegraph agrees with an independent non-adaptive estimator to 0.05 %; MadEvent reads 0.1–0.2 % low because it combines its VEGAS iterations with mean²/σ² weights, and its own iterations averaged without them land on vibegraph. The m(ll) > 150 'tail surplus' was an artefact of MadEvent's event sample, not of σ.
