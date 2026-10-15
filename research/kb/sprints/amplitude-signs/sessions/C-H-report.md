@@ -6,7 +6,10 @@ status: draft
 tags: [hygiene, review, amplitude, sign-convention, scalar, toy-ufo, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
-  - {id: findings, resource: "https://github.com/nsmith-/vibegraph/commit/FINDINGS", title: "kb: C-H brief and findings"}
+  - {id: 8938adf, resource: "https://github.com/nsmith-/vibegraph/commit/8938adf", title: "kb: C-H brief and findings"}
+  - {id: d53bd49, resource: "https://github.com/nsmith-/vibegraph/commit/d53bd49", title: "docs(amplitudes): name every rooting-sign source and the mixed-vertex refusal"}
+  - {id: a8c53d6, resource: "https://github.com/nsmith-/vibegraph/commit/a8c53d6", title: "validation: SSSD's comment names the operator SMEFTsim's SSS2 carries"}
+  - {id: 9bb7f88, resource: "https://github.com/nsmith-/vibegraph/commit/9bb7f88", title: "test(amplitudes): pin the mixed-sign refusal through compile; toy copies in tempdirs"}
 ---
 Review of the C1 and C2 change on `amp-signs/identity-derivative-scalar-signs`
 at `5c0957f`: `fea4aef` (the standalone rows, the toy-UFO cubic scalar, the
@@ -57,3 +60,220 @@ None of their sites is wrong or fixed by this change except H14.
 **Scope.** `git diff origin/main...HEAD` also carries the Q1 branch (the
 same-flavour four-fermion rows and Q-H's fixes), merged in by C1 and already
 reviewed by Q-H. This review covers C1 and C2 only.
+
+**Found while fixing** (after the findings commit, so outside the hit rate):
+
+| id | pt | site | evidence | conf. | disposition |
+|---|---|---|---|---|---|
+| H21 | 1 | `tests/toy_models.rs:252` | `merged_order_toy_model` writes its copy into a fixed-name directory under `CARGO_TARGET_TMPDIR` and only overwrites, so a file removed from `vibegraph_toy_UFO` would survive in the copy from an earlier run and still be loaded. The filed item `scratch-dirs-hand-rolled` (AGENTS.md: no hand-written temp directories) does not list this site; `tempfile` is already in the lock file through the CLI's tests | checked | fixed |
+
+## Dispositions
+
+| id | disposition | where |
+|---|---|---|
+| H1, H2, H3 | fixed | `d53bd49` |
+| H4, H5, H6 | fixed | `a8c53d6` |
+| H7, H8, H9, H15, H21 | fixed | `9bb7f88` |
+| H10, H12, H13, H14, H16 | filed (Found below) | — |
+| H11 | routed to the manager for validation-dev (physics) | Found 2 |
+| H17, H18, H19, H20 | rejected: sound on re-reading, with the mutations below | — |
+
+What changed:
+- **H1–H3** (doc comments only). `standalone_projector_crossed`'s doc names the
+  four standalone bilinears whose arms apply it and the `FFS2` row that pins the
+  `Identity` case; its stray first two lines are now `pair_crossed`'s doc. The
+  sign-source lists on `RootedTerm::build_sign`,
+  `DiagramEvalTree::build_convention_sign` and `build_at_leg` name
+  `vertex_contact_sign`'s all-scalar and four-vector contact sign, and
+  `build_at_leg` names `γ⁵` beside `1` and `P_χ`. `build_convention_sign` and
+  `VertexInfo::reversed_sign` say that a mixed vertex is refused.
+- **H4–H6** (comments and whitespace). `SSSD`'s comment says SMEFTsim's `SSS2`
+  carries O_HDD (O_Hbox goes on `SSS3`); the `vertices.py` docstring is
+  reflowed; `KNOWN_DISAGREEMENT`'s continuation lines are indented as on `main`.
+- **H7, H8, H15, H21** (`toy_models.rs`). `edited_toy_model(edits)` replaces
+  `merged_order_toy_model`: it copies the toy UFO into a `tempfile` directory and
+  requires every replacement's pattern to be present, where the old
+  `assert_ne!` passed if either of the two did. `toy_point` draws RAMBO through
+  `rambo_massive` with a seeded `ChaCha8Rng`. The split-sum test sums over
+  `AmplitudeEvaluator::helicities()` and asserts the split and merged lists are
+  equal, in place of a hand-written state list per case; it is 92 lines (108
+  before). The module doc names the two copy-based checks. `vibegraph-lib`
+  gains the dev-dependency `tempfile = "3"`, the version the CLI's tests use
+  (`Cargo.lock` gains the one dependency line).
+- **H9** (`toy_models.rs::mixed_sign_vertex_is_refused_at_compile`, new). It
+  compiles `lt~ lt > st NP<=1` in a toy copy whose `FFS5` is
+  `P(-1,3)*Gamma(-1,2,1)` under `NP`, beside `FFS1 = Identity(2,1)`, and asserts
+  that `AmplitudeEvaluator::compile` fails with `unsupported vertex: …` and
+  `carry mixed rooting-convention signs`. `EvalError` lives in the private
+  `helas::eval::error` module and is not re-exported, so an integration test
+  cannot match the variant; the message is the most specific handle it has (see
+  Found 6). Its doc says that the same vertex compiles at the other rooting
+  (H11), so it pins the refusal's path, not where a sign exists.
+
+## Mutations
+
+Each was applied by a script that edits, runs, logs and restores the file
+(`CH-mutate.py` in the session scratchpad), on the tree named in the row.
+
+| id | mutation | tree, test | result |
+|---|---|---|---|
+| MA | `root_diagram.rs:571` `sign *= info.build_sign()?` → `.unwrap_or(1)` | before the fixes: `--lib helas::eval`, `toy_models`, `standalone_jamps` | **passes**: 170, 5 and 25 passed (H9's evidence) |
+| MA | same | after: `toy_models` | **fails**: `mixed_sign_vertex_is_refused_at_compile`, "was refused for another reason: … carry mixed reversed-bilinear parities" (this vertex mixes both; the test asserts *which* refusal fired) |
+| MA2 | MA plus the same on `reversed_sign()?` (`:594`) | after: `toy_models` | **fails**: "'lt~ lt > st NP<=1' compiled a vertex with mixed rooting-convention signs" |
+| M1 | `uniform_sign`: `if it.all(…) \|\| true` (accepts a mismatch) | before: `--lib helas::eval::diagram_eval` | **fails**: `mixed_vertex_signs_are_refused` at `diagram_eval.rs:390` |
+| M1 | same | after: `toy_models` | **fails**: `mixed_sign_vertex_is_refused_at_compile`, "compiled a vertex with mixed rooting-convention signs" |
+| M2 | `VertexTerm::build_sign` reads `terms.iter().take(1)` | before: `diagram_eval` unit test | **fails** at `:390`, the within-one-coupling case (the across-couplings case still refuses at the `VertexInfo` level) |
+| M3 | the `Identity` arm's flip under `if false && …` | before: `standalone_jamps`, `toy_models` | **fails**: `ee_to_ttxh_identity`, `ll_to_qqxs_toy_yukawa` (23 passed, 2 failed); split-sum test refused at compile |
+| M3 | same | after: `toy_models` | **fails**: the split-sum test, at its `compile` (`toy_models.rs:371`) |
+| M4 | the all-scalar sign restricted to `term.ops.is_empty()` (C2's base) | before: `standalone_jamps`, `toy_models` | **fails**: the five derivative rows (20 passed, 5 failed); split-sum test refused at compile |
+| M4 | same | after: `toy_models` | **fails**: the split-sum test, at its `compile` |
+| MH8 | the old split-sum test with `lt~`'s states `&[-1, 1]` → `&[-1]` | before: `toy_models mixed_structure` | **passes** (1 passed): a dropped state shrinks the comparison silently. After the fix there is no hand list to mutate |
+
+Sites no mutation reaches:
+- The split-sum test's value comparison. Every sign mutation tried that leaves
+  both structures' signs equal (M3 and M4 move one structure, so they refuse
+  instead) passes it, as its doc says. A sign shared by both structures is the
+  standalone rows' to see.
+- H7's RNG swap and H21's scratch directory change no assertion's power; the
+  printed split-sum ratios moved from 7.9e-16/3.9e-16/7.5e-16 to
+  6.5e-16/6.2e-16/8.5e-16 with the new points.
+- The refusal at rootings where the mixed vertex compiles (H11): no test can
+  pin a refusal that does not fire.
+
+## Identity check
+
+Production changes are doc comments only, so no printed number may move. The
+oracle, chosen before the first edit: the `--nocapture --test-threads=1` output
+of `standalone_jamps` and `amplitude_oracle` at `5c0957f`
+(`CH-baseline.log`) against the same run on the fixed tree, with ANSI codes,
+`Running` lines and `finished in` timings removed.
+
+```
+$ sect() { awk '/Running tests\/(standalone_jamps|amplitude_oracle)/{on=1} /Running tests\/toy_models/{on=0} on' "$1" \
+    | sed 's/\x1b\[[0-9;]*m//g' | grep -v -E "Running |finished in" | sort; }
+$ diff <(sect CH-baseline.log) <(sect CH-gate-identity.log) && echo IDENTICAL
+IDENTICAL
+```
+
+235 lines on each side, 33 of them `worst …` measurements: every row's `G`,
+worst flow, worst |M|² and worst graph, and all 49 `amplitude_oracle` lines.
+For example `ee_to_ttxh_identity: 240 graph entries, worst graph 4.119e-15` and
+`hh_to_hh_chbox: 256 graph entries, worst graph 1.810e-15`, C2's numbers.
+`toy_models` is outside the oracle: H7 changes its points on purpose.
+
+## Gates
+
+All on the committed tree `9bb7f88`, with `CARGO_BUILD_JOBS=2
+CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`.
+
+- `cargo fmt --all --check`: exit 0, no output.
+- `cargo clippy --workspace --all-targets -- -D warnings`: exit 0,
+  `Finished \`dev\` profile [optimized] target(s) in 21.06s`.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: exit
+  0, `Finished \`dev\` profile [optimized] target(s) in 27.52s`.
+- `cargo test --workspace --no-fail-fast`: exit 0, 38 suites, 1413 passed, 0
+  failed, 16 ignored (summed `test result` lines). The one test added is
+  `toy_models::mixed_sign_vertex_is_refused_at_compile` (`toy_models` 5 → 6
+  passed); no test was deleted, and no other test file changed beyond
+  `standalone_jamps.rs`'s whitespace (25 passed before and after).
+- `cargo doc -p vibegraph-lib --no-deps --document-private-items`: exit 0, `generated 8
+  warnings`, none in a file this session touched (`coupling/cluster/configs.rs`,
+  `phasespace/channel.rs`, `coupling/alphas.rs`, `coupling/scales.rs` ×2,
+  `ufo/parameters.rs`, `lhef/mod.rs` ×2: pre-existing, the class
+  `rustdoc-warnings-ungated` tracks). Only `vibegraph-lib` was touched.
+- `pixi run --skip-deps validate`: `VALIDATE EXIT 0`, 63 suites, 1798 passed, 0
+  failed, 84 ignored; `64 rows × 4 categories = 256 cells: 203 measured in the
+  layers this run drove (196 ✅, 7 ⚠️, 13 ⏳, 40 — / uncovered)`, and `the measured
+  cells are the declared cells`. The cell line is C2's.
+
+The production changes are doc comments, so no banked target's inputs move and
+none was run on its own; `validate` drives the whole banked layer.
+
+## Method
+
+| technique | share | yield |
+|---|---|---|
+| Reading each changed item's doc against its body, and the docs of the items the change newly calls (`standalone_projector_crossed`, `vertex_contact_sign`'s readers) | 20% | H1, H2, H3, H15 |
+| Checking comments' physics claims against the vendored source (the `H H H` vertex's coupling map) | 5% | H4 |
+| Grep of the new test helpers' bodies workspace-wide (`.fract())`, `beam_momenta`, `cartesian_helicity_product`, `card_dir`) | 15% | H7, H8, H12, H16 |
+| A throwaway probe test on an edited toy copy, to find a real trigger for the refusal | 15% | H9, H10, H11 |
+| Run mutations (MA before writing H9; M1–M4 on the existing tests; the same on the new ones) through an apply-run-revert script | 30% | H9 settled, H17 and H18 confirmed sound |
+| Backlog check by path tail | 10% | H14; `scratch-dirs-hand-rolled` led to H21 while fixing |
+| Comment and `pub` greps over the added lines | 5% | nothing (H19, H20) |
+
+Leads that did not hold up: the `assert_ne!` "no longer" message (a
+diagnostic, not history); merging the four standalone-bilinear arms (real, but
+the brief reserves that restructuring for the follow-up); the split-sum test's
+tolerance (linear, relative, 1000× above its measured residual).
+
+## Routed
+
+- **H11, to validation-dev (physics).** A vertex whose structures disagree on
+  the rooting-convention sign is refused only at rootings where the disagreement
+  shows on the anchor tree. The H9 probe vertex (`Identity(2,1)` beside
+  `P(-1,3)*Gamma(-1,2,1)` under one order) is refused for `lt~ lt > st`,
+  `lt~ lt > st st`, `st lt > st lt`, `lt~ lt > st vt`, `qt qt~ > st st` and
+  `lt~ lt > qt qt~ st`, and compiles for `st > lt lt~` (one diagram). Whether
+  the sign it compiles with is right needs a MadGraph row, which is what
+  `mixed-dirac-and-matrix-free-vertex-terms` asks for.
+
+## Found
+
+1. **The mixed-sign refusal does not name the vertex a user would recognise
+   (H10, the brief's question).** It prints the rooted rendering with internal
+   ids, `the structures of \`CouplingId(5)*(1*ScalarProduct(IdentityAmp(Leg(1),Leg(0)),Leg(2))) + CouplingId(7)*(…)\``,
+   and no process. A user with an arbitrary UFO cannot map `CouplingId(5)` to
+   `GC_LS`, nor the rendering to `V_ltltst`'s `FFS1` and `FFS5`.
+   `reject_cyclic_structure` names its structure (`Lorentz structure {name}
+   ({structure})`). To close it: carry the UFO vertex's id on `VertexInfo` (12
+   constructions in `diagram_eval.rs` and `run.rs`) so the message names the
+   vertex, its Lorentz structures and their couplings with orders, and have
+   `AmplitudeEvaluator::compile` add the subprocess it already formats for its
+   tracing span. The follow-up session that restructures these sign functions
+   is the natural owner.
+2. **A mixed-sign vertex compiles at some rootings (H11).** Routed above;
+   evidence there.
+3. **`restrict_<name>.dat` is located three ways, and Rust disagrees with
+   MadGraph on precedence (H12).** `gen_standalone_jamps.py:95`
+   `Row.ufo_paths` and `build.sh:99` `model_card_dir` (with its copy order)
+   prefer the authored card under `validation/madgraph/cards/<family>/`;
+   `tests/common/manifest.rs:160` `RowModel::restrict_card` prefers the model's
+   own. No name collides today. To close it: one rule, stated once (for example
+   the manifest records the card path, as the `"ufo"` standalone tables do), and
+   a check that no card name exists in both places.
+4. **`mixed-dirac-and-matrix-free-vertex-terms` is stale (H14).** Its "would
+   most likely panic on the first assertion" is now a typed refusal at the
+   rootings H11 lists, and a compile at `st > lt lt~`; its
+   `diagram_eval.rs:131-169`, `:265` sites have moved (`uniform_sign` is at
+   `:300`, the remaining `tensor()` asserts at `:149` and `:280`). The item
+   should say which half of its "refuse it with a typed error" option exists,
+   and cite `toy_models.rs::mixed_sign_vertex_is_refused_at_compile`.
+5. **The CM beam momenta are hand-copied (H16).** `tests/toy_models.rs`
+   `toy_point` and `reweight/engine.rs:954` `points` compute
+   `e1 = (s + m1² − m2²)/(2√s)` and its momentum beside
+   `phasespace::beams::beam_momenta`, which is `pub(crate)`. To close it: the
+   in-crate copy calls `beam_momenta`; exposing it (or a test helper in
+   `tests/common`) serves the integration test. A site for
+   `kinematic-helpers-hand-rolled`.
+6. **`AmplitudeEvaluator::compile`'s error type cannot be named outside the
+   crate.** It returns `EvalError`, a `pub enum` in the private
+   `helas::eval::error` module with no re-export, as are `CompileError` and
+   `RootLorentzError`. An integration test can only match the message, which is
+   what the new refusal test does. To close it: re-export the error tree from
+   `helas::eval`, then match the variant.
+7. **For the follow-up restructuring (H13).** `build_child`'s `ProjM`, `ProjP`,
+   `Identity` and `Gamma5` arms (`root_lorentz.rs:426–520`) each repeat the
+   wrapped-index pick and the `standalone_projector_crossed` flip.
+8. **Backlog drift, one line.** `majorana-fermions-unsupported` cites
+   `root_lorentz.rs:580` for the `C` refusal, now `:591`.
+
+## Brief corrections
+
+- The brief's diff, `git diff origin/main...HEAD`, also carries the Q1 branch
+  merged in by C1 (Q-H reviewed it); the C1 and C2 commits are `fea4aef`,
+  `4e8b614` and `06acd5a`. Local `main` in the shared checkout is stale
+  (`cc8b12c`); `origin/main` (`68e7f95`) is the merge base.
+- The brief asks whether the refusal names "vertex, structures, coupling
+  order": it names none of them in UFO terms (Found 1).
+- The brief lists `root_diagram.rs` as reviewed code; its change is the
+  `Result` propagation only, and its one doc fix is H2.
