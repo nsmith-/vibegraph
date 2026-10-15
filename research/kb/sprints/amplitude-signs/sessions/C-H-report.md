@@ -5,6 +5,7 @@ description: "Hygiene review of PR #32's C1 and C2 change: findings written befo
 status: draft
 tags: [hygiene, review, amplitude, sign-convention, scalar, toy-ufo, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: 8938adf, resource: "https://github.com/nsmith-/vibegraph/commit/8938adf", title: "kb: C-H brief and findings"}
   - {id: d53bd49, resource: "https://github.com/nsmith-/vibegraph/commit/d53bd49", title: "docs(amplitudes): name every rooting-sign source and the mixed-vertex refusal"}
