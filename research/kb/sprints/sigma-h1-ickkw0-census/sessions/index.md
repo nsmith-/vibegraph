@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [H1: hygiene pass on the permuted-first-call census script](H1.md) - Review and fix validation/madgraph/census_permuted_first_call.py for maintainability, non-vacuity and fit with the existing validation/madgraph tooling.
 * [V1: census of grouped clustering-scale rows and H1 share per row](V1.md) - Machine-check which banked grouped rows carry non-identity permutations under a clustering scale, and measure H1's σ share on each affected row with diagnostic patched MadEvent runs.
 
 ## Session Report

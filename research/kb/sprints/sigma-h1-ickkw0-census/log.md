@@ -14,3 +14,14 @@
   `xqcut > 0` at `ickkw = 0` also clusters, and `-1` with all three scales
   fixed does not. The census uses the corrected criterion. The item text is
   corrected at close-out.
+* **V1 final** (`ef002da`): phases B and C0 done. Every banked grouped row
+  is checked. Identity-only: the llj family, the four fixed-beam `e+e-`+jet
+  rows, and the `pp_to_ll` and `uux` rows. Permuted but immune, with 0
+  differing lines in a same-seed screen: the 2 → 2 rows and
+  `pp_ttx_lep_dyn`. Permuted and moving, but negligible: `uu_full`/`uu_tt`
+  (≤ 3e-5 of σ). The R1 positive control moves +2.1 %. No banking request.
+  Machine-confirmed by the manager: the commit, the screen summary, the
+  permutation table, and the script's CLI.
+* **Relay**: the `uu_tt` bound has gone to `sigma-uux-wbwb-veto`'s V1 brief.
+* **Next**: H1 (hygiene-dev, Sonnet) on `census_permuted_first_call.py`, then
+  close-out.
