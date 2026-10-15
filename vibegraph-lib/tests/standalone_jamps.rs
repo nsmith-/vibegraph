@@ -43,7 +43,7 @@ use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
-use vibegraph::ufo::EvaluatedModel;
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 /// Relative deviation allowed per entry, against the largest MadGraph amplitude of
 /// the table. Both sides round over the same few dozen diagrams, which sits near
@@ -153,6 +153,11 @@ impl Measured {
 /// [`KNOWN_DISAGREEMENT`] must not absorb them. The deviations themselves are
 /// returned for [`check`] to judge.
 fn measure(key: &str) -> Measured {
+    measure_with(key, |_| {})
+}
+
+/// [`measure`] on the table's model after `alter` has edited a private copy of it.
+fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
     let path = table_path(key);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let table: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -160,6 +165,9 @@ fn measure(key: &str) -> Measured {
         "sm" => sm_model(),
         row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
     };
+    let mut altered = (*model).clone();
+    alter(&mut altered);
+    let model = std::sync::Arc::new(altered);
     let process = table["process"].as_str().unwrap();
     let card: ParamCard = table["param_card"]
         .as_array()
@@ -486,4 +494,71 @@ fn bbx_to_hh() {
 #[test]
 fn ee_to_ee_4f() {
     check("ee_to_ee_4f");
+}
+
+/// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top
+/// line, whose three colour structures each multiply one of its Lorentz structures.
+#[test]
+fn gg_to_ttxg() {
+    check("gg_to_ttxg");
+}
+
+/// Quark-gluon `t t~ + jet` with the quark first: the light-quark line and the top
+/// pair joined by a gluon, the radiated gluon on either line or at a triple-gluon
+/// vertex.
+#[test]
+fn ug_to_ttxu() {
+    check("ug_to_ttxu");
+}
+
+/// The same channel in MadEvent's own leg order, the gluon first.
+#[test]
+fn gu_to_ttxu() {
+    check("gu_to_ttxu");
+}
+
+/// The antiquark-gluon channel in MadEvent's leg order.
+#[test]
+fn gux_to_ttxux() {
+    check("gux_to_ttxux");
+}
+
+/// Quark annihilation into `t t~ + g`: the gluon off either quark line or off the
+/// s-channel gluon.
+#[test]
+fn uux_to_ttxg() {
+    check("uux_to_ttxg");
+}
+
+/// The gate is sensitive to which colour structure of the four-gluon contact
+/// multiplies which Lorentz structure: each of the five non-identity assignments
+/// disagrees with `gg_to_ttxg` far above [`REL_TOL`]. Measured over the five, the
+/// weakest worst-flow deviation is 4.4e-2 and the weakest |M|² deviation 2.9e-2, so
+/// the 1e-2 floor is a factor of three below the weakest. The identity assignment
+/// is the banked agreement at 1e-15.
+#[test]
+fn gg_to_ttxg_sees_the_contact_colour_assignment() {
+    let permutations = [[1, 2, 0], [2, 0, 1], [1, 0, 2], [0, 2, 1], [2, 1, 0]];
+    for perm in permutations {
+        let m = measure_with("gg_to_ttxg", |model| {
+            let gluon = model.particle_id("g").unwrap();
+            let contacts: Vec<_> = model
+                .vertices
+                .values_mut()
+                .filter(|v| v.particles.len() == 4 && v.particles.iter().all(|&p| p == gluon))
+                .collect();
+            assert_eq!(contacts.len(), 1, "the SM has one four-gluon contact");
+            let contact = &mut *contacts.into_iter().next().unwrap();
+            contact.couplings = std::mem::take(&mut contact.couplings)
+                .into_iter()
+                .map(|((c, l), id)| ((perm[c], l), id))
+                .collect();
+        });
+        assert!(
+            m.worst_flow > 1e-2 && m.worst_m2 > 1e-2,
+            "colour permutation {perm:?}: worst flow {:.3e}, worst |M|² {:.3e}",
+            m.worst_flow,
+            m.worst_m2
+        );
+    }
 }

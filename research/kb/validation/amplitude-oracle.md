@@ -198,15 +198,16 @@ a spacelike propagator; MadEvent zeroes it (`zerowidth_tchannel`) and this crate
 follows MadEvent, so rows with a massive t-channel line (`ee_to_wpwmz`,
 `wpwm_to_wpwm`, `ttx_to_gg_chg`, `wpwm_to_epem`) are generated with every width
 zero on both sides (`zero_widths = True`). Through such a line the difference is
-0.1–0.5 % per helicity, not a sign. Rows at `787070e`: `gg_to_ggg`,
+0.1–0.5 % per helicity, not a sign. Rows: `gg_to_ggg`,
 `uux_to_ggg`, `ug_to_ug`, `ee_to_wpwmz`, `wpwm_to_wpwm`, `ttx_to_gg_chg`,
-`tata_to_ttxh`, `tata_to_ttxhh`, `bbx_to_hh`, and `wpwm_to_epem` as a two-way
+`tata_to_ttxh`, `tata_to_ttxhh`, `bbx_to_hh`, the five `t t~ + jet` rows
+(`gg_to_ttxg`, `gu_to_ttxu`, `gux_to_ttxux`, `ug_to_ttxu`, `uux_to_ttxg`), and `wpwm_to_epem` as a two-way
 known disagreement
 ([wpwm-to-epem-neutrino-exchange-sign](../backlog/validation/wpwm-to-epem-neutrino-exchange-sign.md)).
 It is blind to the phase of `G`, to compensating errors in diagrams reaching the
 same flows with the same weights, and to kinematics outside its points[^n39-gates].
-`g g > t t~ g` has no amplitude gate at all
-([gg-ttxg-no-amplitude-gate](../backlog/validation/gg-ttxg-no-amplitude-gate.md)).
+`g g > t t~ g` and the other `t t~ + jet` subprocesses (`g u > t t~ u`,
+`g u~ > t t~ u~`, `u u~ > t t~ g`) are gated per flow by `standalone_jamps`.
 
 ## Known blind spots
 

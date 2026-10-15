@@ -5,9 +5,13 @@
 ## Session Brief
 
 * [F1: localise w+ w- > w+ w- z's O_W residual per diagram](F1.md) - Per-diagram MadGraph AMP() for the O_W five-vector and momentum-bearing contact structures, by the 222-graph row itself or a smaller process isolating one structure; localise and verify a candidate on the dumps. Diagnosis only.
+* [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
+* [G1: g g > t t~ g against MadGraph standalone, per flow](G1.md) - Bank a standalone JAMP table for g g > t t~ g and compare it per flow, pinning which colour structure multiplies which Lorentz structure at the four-gluon contact.
 * [Q1: same-flavour four-fermion contact against MadGraph](Q1.md) - Bank an ee_to_ee_4f SMEFTsim standalone row, gate its |M|² per helicity and its amplitudes against MadGraph, and record the per-pairing diagram count as a convention cell.
 
 ## Session Report
 
 * [F1 report: wpwm_to_wpwmz_cw is two missing signs, one of them not O_W's](F1-report.md) - Diagnosis. Per graph against MadGraph's AMP(), the 222-graph row disagrees by a relative −1 on exactly eight diagrams: O_W's two five-vector contacts, and six diagrams where the loop-induced photon–Z–Higgs vertex (VVS4, SMHLOOP) produces the off-shell Higgs. Flipping both classes takes |M|² from 2.79e1 to 1.1e-11 in production; the remainder is MadGraph's seven-digit GC_303. Neither is W1's leg-0 anchor rule. A diagram pairing derived from the AMP() values makes the configuration partitions identical.
+* [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
+* [G1 report: t t~ + jet against MadGraph standalone, per flow](G1-report.md) - All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u u~) agree with MadGraph 3.7.1 standalone per flow to <= 6.9e-16, colour-assignment mutations fail them at O(1), and MadEvent's width pattern agrees too, so the @1 sigma excess is not in |M|^2.
 * [Q1 report: same-flavour four-lepton contacts agree with MadGraph per graph and per pairing](Q1-report.md) - `e+ e- > e+ e- NP<=1` under SMEFTsim's four-lepton card is banked as a standalone row and gated per helicity, per flow and per MadGraph graph. 22 diagrams here make up MadGraph's 19 graphs, and each contact's two pairings carry MadGraph's relative sign exactly. Flipping that sign fails the gate at O(1).
