@@ -19,3 +19,6 @@
   `reference-sigma-seed-scatter-untested` (PR #25) together with every other
   single-draw σ reference. The item is deleted, the concepts and the manifest
   note are updated, and two Found items are filed.
+* **Approval relayed** (2026-10-15, by the planner session, as the user's
+  decision): close on attribution to MadEvent, as proposed. Correcting
+  references for it is decided in `sigma-reference-scatter`'s D1 (option A).
