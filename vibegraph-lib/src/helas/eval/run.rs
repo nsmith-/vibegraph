@@ -1967,6 +1967,7 @@ mod tests {
             OutDiracWf,
         },
         ufo::color::ColorExpr,
+        ufo::particles::ParticleId,
         ufo::slha::ParamCard,
     };
     use num_complex::ComplexFloat;
@@ -2142,6 +2143,86 @@ mod tests {
         );
     }
 
+    /// External spin-1/2 leg of a hand-built diagram.
+    fn fermion_leg(leg_idx: usize, id: ParticleId, charge: Charge, incoming: bool) -> ExtLegInfo {
+        ExtLegInfo {
+            leg_idx,
+            id,
+            spin: 2,
+            charge,
+            incoming,
+        }
+    }
+
+    /// The nodes of a single s-channel current f f̄ → (FFV) → boson*: the two externals
+    /// feed the off-shell current (rooted at the vector leg), and the propagator dresses
+    /// it. Children reference earlier nodes by index.
+    fn s_channel_current_nodes(
+        leg1: &ExtLegInfo,
+        leg2: &ExtLegInfo,
+        vertex: &VertexInfo,
+        prop_id: ParticleId,
+    ) -> Vec<EvalNode> {
+        vec![
+            EvalNode::External(leg1.clone()),
+            EvalNode::External(leg2.clone()),
+            EvalNode::OffShellCurrent {
+                info: vertex.clone(),
+                adjoint: None,
+                children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                fermion_pairs: vec![(0, 1)],
+            },
+            EvalNode::Propagate {
+                info: PropInfo {
+                    id: prop_id,
+                    t_channel: false,
+                },
+                adjoint: None,
+                child: EvalNodeId::new(2),
+            },
+        ]
+    }
+
+    /// The s-channel current as a two-leg diagram. Rooting at the propagator makes
+    /// `run_forward_slot` return the dressed current itself (a vector).
+    fn s_channel_current_diagram(
+        leg1: &ExtLegInfo,
+        leg2: &ExtLegInfo,
+        vertex: &VertexInfo,
+        prop_id: ParticleId,
+    ) -> DiagramEval {
+        DiagramEval::from_nodes(2, s_channel_current_nodes(leg1, leg2, vertex, prop_id))
+    }
+
+    /// The s-channel current extended with the sink contraction on `legs[2]`, `legs[3]`
+    /// (a scalar M). The sink's first child fills the UFO slot whose spinor index
+    /// `ProjM`/`ProjP` act on: with the ket there (`reversed = false`) the line is read
+    /// along the vertex's own orientation, as the current side is; with the bra there
+    /// the evaluator reads the line reversed, through C γ^{μT} C⁻¹ = −γ^μ, which
+    /// exchanges the chiral projectors.
+    fn s_channel_amplitude_diagram(
+        legs: &[ExtLegInfo; 4],
+        current: &VertexInfo,
+        prop_id: ParticleId,
+        sink: &VertexInfo,
+        reversed: bool,
+    ) -> DiagramEval {
+        let mut nodes = s_channel_current_nodes(&legs[0], &legs[1], current, prop_id);
+        nodes.push(EvalNode::External(legs[2].clone()));
+        nodes.push(EvalNode::External(legs[3].clone()));
+        let (first, second) = if reversed { (4, 5) } else { (5, 4) };
+        nodes.push(EvalNode::ContractAmplitude {
+            info: sink.clone(),
+            children: vec![
+                EvalNodeId::new(first),
+                EvalNodeId::new(second),
+                EvalNodeId::new(3),
+            ],
+            fermion_pairs: vec![(0, 1)],
+        });
+        DiagramEval::from_nodes(4, nodes)
+    }
+
     /// Chiral weights `(w_L, w_R)` of an SM FFV Lorentz structure, read off its UFO
     /// definition `Gamma·(w_L·ProjM + w_R·ProjP)`: a term `c·FFVk` is the HELAS
     /// coupling pair `[w_L·Im c, w_R·Im c]`.
@@ -2250,15 +2331,26 @@ mod tests {
                 })
                 .collect(),
         };
+        // The SM FFV couplings are pure imaginary; the real chiral strength is the
+        // imaginary part, and the real part is checked to be absent.
+        let coupling_im = |name: &str| {
+            let c = evaluated.coupling(model.coupling_id(name).unwrap());
+            assert!(
+                c.re.abs() <= 1e-15 * c.im.abs(),
+                "{name} = {c} is not imaginary"
+            );
+            c.im
+        };
         let helas_gc = |terms: &[(&str, &str)]| {
             terms
                 .iter()
                 .fold([0.0, 0.0], |[gl, gr], &(lorentz, coupling)| {
                     let (wl, wr) = ffv_chiral_weights(lorentz);
-                    let g = evaluated.coupling(model.coupling_id(coupling).unwrap()).im;
+                    let g = coupling_im(coupling);
                     [gl + wl * g, gr + wr * g]
                 })
         };
+        let mut aloha_checks = 0;
 
         for (case, prop_name) in iproduct!(&cases, ["a", "Z"]) {
             let gc_current = helas_gc(case.current_terms);
@@ -2296,102 +2388,16 @@ mod tests {
                 case.sink_pair[1]
             );
 
-            let leg1_info = ExtLegInfo {
-                leg_idx: 0,
-                id: inpart_id,
-                spin: 2,
-                charge: Charge::Particle,
-                incoming: true,
-            };
-            let leg2_info = ExtLegInfo {
-                leg_idx: 1,
-                id: inpart_p_id,
-                spin: 2,
-                charge: Charge::Antiparticle,
-                incoming: true,
-            };
-            let leg3_info = ExtLegInfo {
-                leg_idx: 2,
-                id: outpart_id,
-                spin: 2,
-                charge: Charge::Particle,
-                incoming: false,
-            };
-            let leg4_info = ExtLegInfo {
-                leg_idx: 3,
-                id: outpart_p_id,
-                spin: 2,
-                charge: Charge::Antiparticle,
-                incoming: false,
-            };
+            let legs = [
+                fermion_leg(0, inpart_id, Charge::Particle, true),
+                fermion_leg(1, inpart_p_id, Charge::Antiparticle, true),
+                fermion_leg(2, outpart_id, Charge::Particle, false),
+                fermion_leg(3, outpart_p_id, Charge::Antiparticle, false),
+            ];
             let vertex_info = vertex(case.current_terms, Some(2));
-            let prop_info = PropInfo {
-                id: prop_id,
-                t_channel: false,
-            };
             let amp_info = vertex(case.sink_terms, None);
-
-            // Single s-channel current sub-diagram f f̄ → (FFV) → boson*: the two
-            // externals feed the off-shell current (rooted at the vector leg), and the
-            // propagator dresses it. Rooting at the propagator makes `run_forward_slot`
-            // return the dressed current itself (a vector), so we read it straight off
-            // the pass. Children reference earlier nodes by index.
-            let current_diagram = DiagramEval::from_nodes(
-                2,
-                vec![
-                    EvalNode::External(leg1_info.clone()),
-                    EvalNode::External(leg2_info.clone()),
-                    EvalNode::OffShellCurrent {
-                        info: vertex_info.clone(),
-                        adjoint: None,
-                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
-                        fermion_pairs: vec![(0, 1)],
-                    },
-                    EvalNode::Propagate {
-                        info: prop_info.clone(),
-                        adjoint: None,
-                        child: EvalNodeId::new(2),
-                    },
-                ],
-            );
-            // The full diagram extends it with the sink contraction (a scalar M). The
-            // sink's first child fills the UFO slot whose spinor index `ProjM`/`ProjP`
-            // act on: with the ket there (`reversed = false`) the line is read along
-            // the vertex's own orientation, as the current side is; with the bra there
-            // the evaluator reads the line reversed, through C γ^{μT} C⁻¹ = −γ^μ, which
-            // exchanges the chiral projectors.
-            let amp_diagram = |reversed: bool| {
-                let (first, second) = if reversed { (4, 5) } else { (5, 4) };
-                DiagramEval::from_nodes(
-                    4,
-                    vec![
-                        EvalNode::External(leg1_info.clone()),
-                        EvalNode::External(leg2_info.clone()),
-                        EvalNode::OffShellCurrent {
-                            info: vertex_info.clone(),
-                            adjoint: None,
-                            children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
-                            fermion_pairs: vec![(0, 1)],
-                        },
-                        EvalNode::Propagate {
-                            info: prop_info.clone(),
-                            adjoint: None,
-                            child: EvalNodeId::new(2),
-                        },
-                        EvalNode::External(leg3_info.clone()),
-                        EvalNode::External(leg4_info.clone()),
-                        EvalNode::ContractAmplitude {
-                            info: amp_info.clone(),
-                            children: vec![
-                                EvalNodeId::new(first),
-                                EvalNodeId::new(second),
-                                EvalNodeId::new(3),
-                            ],
-                            fermion_pairs: vec![(0, 1)],
-                        },
-                    ],
-                )
-            };
+            let current_diagram =
+                s_channel_current_diagram(&legs[0], &legs[1], &vertex_info, prop_id);
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
             // Physical adjoint (per the leg charge labels): leg1 (Particle, in) and
@@ -2407,8 +2413,8 @@ mod tests {
             // UFO coupling carries at each vertex, times a sign this hand-built diagram
             // carries for its sink orientation: +i along the vertex, −i reversed. Both
             // are pinned as measured here; neither is visible in |M|², and relative
-            // diagram signs are the MadGraph-gated processes' to pin. Read reversed, the line couples
-            // `[g_R, g_L]`.
+            // diagram signs are the MadGraph-gated processes' to pin. Read reversed,
+            // the line couples `[g_R, g_L]`.
             let ref_amp = |hel1, hel2, hel3, hel4, reversed: bool| {
                 let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
                 let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
@@ -2420,9 +2426,10 @@ mod tests {
                     iovxxx(&fo_out_m, &fi_out_p, &current, gc_sink) * Complex64::i()
                 }
             };
-            // Both comparisons are relative to the largest reference over the helicities,
-            // so a helicity whose reference vanishes is still held to the same scale and
-            // currents orders of magnitude apart are held to the same relative precision.
+            // The current comparisons are relative to the largest reference current over
+            // the helicities, so a helicity whose reference vanishes is still held to the
+            // same scale and currents orders of magnitude apart (photon and Z) are held
+            // to the same relative precision.
             let current_scale = iproduct!(hels, hels)
                 .map(|(h1, h2)| ref_current(h1, h2).eps.bare_norm_sq().sqrt())
                 .fold(0.0_f64, f64::max);
@@ -2472,19 +2479,18 @@ mod tests {
 
                 // ALOHA's FFVk_3 folds a −i into the current that vibegraph carries in
                 // the coupling, so `FFVk_3(c = g) = −i·jioxxx([w_L·g, w_R·g])`.
-                let aloha_coupling =
-                    |c: &str| Complex64::from(evaluated.coupling(model.coupling_id(c).unwrap()).im);
                 let (fi, fo) = (ket_in(hel1), bra_in(hel2));
                 let aloha = match (m_in != 0.0, case.current_terms) {
                     (true, [("FFV2", c)]) => {
-                        Some(ffv2_3(&fi, &fo, aloha_coupling(c), mprop, wprop))
+                        Some(ffv2_3(&fi, &fo, coupling_im(c).into(), mprop, wprop))
                     }
                     (true, [("FFV4", c)]) => {
-                        Some(ffv4_3(&fi, &fo, aloha_coupling(c), mprop, wprop))
+                        Some(ffv4_3(&fi, &fo, coupling_im(c).into(), mprop, wprop))
                     }
                     _ => None,
                 };
                 if let Some(aloha) = aloha {
+                    aloha_checks += 1;
                     let adiff = (aloha.eps - want.eps * -Complex64::i())
                         .bare_norm_sq()
                         .sqrt();
@@ -2497,7 +2503,8 @@ mod tests {
             }
 
             for reversed in [false, true] {
-                let diagram = amp_diagram(reversed);
+                let diagram =
+                    s_channel_amplitude_diagram(&legs, &vertex_info, prop_id, &amp_info, reversed);
                 let amp_scale = iproduct!(hels, hels, hels, hels)
                     .map(|(h1, h2, h3, h4)| ref_amp(h1, h2, h3, h4, reversed).norm())
                     .fold(0.0_f64, f64::max);
@@ -2520,6 +2527,9 @@ mod tests {
                 }
             }
         }
+        // The ALOHA cross-check applies to the single-structure FFV2 and FFV4 massive
+        // cases: 2 structures x 2 propagators x 4 helicity pairs.
+        assert_eq!(aloha_checks, 16, "ALOHA comparisons run");
     }
 
     /// Cross-check the *combined* SM Z off-shell current — built through
@@ -2550,20 +2560,8 @@ mod tests {
         let inpart_p_id = model.particle_id("e-").unwrap();
         let m_in = evaluated.mass(inpart_id);
 
-        let leg1_info = ExtLegInfo {
-            leg_idx: 0,
-            id: inpart_id,
-            spin: 2,
-            charge: Charge::Particle,
-            incoming: true,
-        };
-        let leg2_info = ExtLegInfo {
-            leg_idx: 1,
-            id: inpart_p_id,
-            spin: 2,
-            charge: Charge::Antiparticle,
-            incoming: true,
-        };
+        let leg1_info = fermion_leg(0, inpart_id, Charge::Particle, true);
+        let leg2_info = fermion_leg(1, inpart_p_id, Charge::Antiparticle, true);
 
         // Two-term vertex: FFV2 (left) ⊕ FFV4 (left + 2·right), both with GC_3.
         let vertex_info = VertexInfo {
@@ -2605,27 +2603,8 @@ mod tests {
             let mprop = evaluated.mass(prop_id);
             let wprop = evaluated.width(prop_id);
 
-            let current_diagram = DiagramEval::from_nodes(
-                2,
-                vec![
-                    EvalNode::External(leg1_info.clone()),
-                    EvalNode::External(leg2_info.clone()),
-                    EvalNode::OffShellCurrent {
-                        info: vertex_info.clone(),
-                        adjoint: None,
-                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
-                        fermion_pairs: vec![(0, 1)],
-                    },
-                    EvalNode::Propagate {
-                        info: PropInfo {
-                            id: prop_id,
-                            t_channel: false,
-                        },
-                        adjoint: None,
-                        child: EvalNodeId::new(2),
-                    },
-                ],
-            );
+            let current_diagram =
+                s_channel_current_diagram(&leg1_info, &leg2_info, &vertex_info, prop_id);
 
             for (hel1, hel2) in iproduct!(hels, hels) {
                 let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
@@ -2717,20 +2696,8 @@ mod tests {
             "Ward identity requires massless producing fermions"
         );
 
-        let leg1_info = ExtLegInfo {
-            leg_idx: 0,
-            id: inpart_id,
-            spin: 2,
-            charge: Charge::Particle,
-            incoming: true,
-        };
-        let leg2_info = ExtLegInfo {
-            leg_idx: 1,
-            id: inpart_p_id,
-            spin: 2,
-            charge: Charge::Antiparticle,
-            incoming: true,
-        };
+        let leg1_info = fermion_leg(0, inpart_id, Charge::Particle, true);
+        let leg2_info = fermion_leg(1, inpart_p_id, Charge::Antiparticle, true);
 
         let vertex_info = VertexInfo {
             terms: vec![
@@ -2749,27 +2716,8 @@ mod tests {
             let p_in_m = LorentzVector::from_pxpypzmass(0.0, 0.0, -p3, 0.0);
             let p_in_p = LorentzVector::from_pxpypzmass(0.0, 0.0, p3, 0.0);
 
-            let current_diagram = DiagramEval::from_nodes(
-                2,
-                vec![
-                    EvalNode::External(leg1_info.clone()),
-                    EvalNode::External(leg2_info.clone()),
-                    EvalNode::OffShellCurrent {
-                        info: vertex_info.clone(),
-                        adjoint: None,
-                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
-                        fermion_pairs: vec![(0, 1)],
-                    },
-                    EvalNode::Propagate {
-                        info: PropInfo {
-                            id: z_id,
-                            t_channel: false,
-                        },
-                        adjoint: None,
-                        child: EvalNodeId::new(2),
-                    },
-                ],
-            );
+            let current_diagram =
+                s_channel_current_diagram(&leg1_info, &leg2_info, &vertex_info, z_id);
 
             // Track the largest current over helicities so transversality is not
             // vacuously satisfied (the chiral coupling kills the equal-helicity combos).
