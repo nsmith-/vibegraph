@@ -14,3 +14,20 @@
     per-run JSON (20, 19 and 10 runs, all 3.7.1);
   - the `Q2FACT(1)` line in the generated `P1_gq_ttxq/auto_dsig1.f`.
   No banking request. V2 is dispatched for the per-point falsifier.
+* **V2 landed** (`d1be31a`): root cause found on this side. The matched
+  integrand clusters in the lab frame (`per_group_sum` hands `term_at` the
+  lab momenta), but MadEvent clusters in the partonic CM. `cluster.f`'s
+  beam tie-break reads the sign of p_z, which flips at large x. Clustering
+  in the CM makes every point agree with MadEvent factor by factor, and is
+  worth −1.05 % on gg and −0.09 % on gq (paired), about 57 % of the `@1`
+  excess. A residual of +0.57 % on gg and +0.87 % on gq remains. V1's Found 4
+  (`Q2FACT(1)` in gq) is not a defect.
+  Machine-confirmed by the manager:
+  - recomputed from the raw comparison tables: in the lab frame 3330/20000
+    (our points) and 3135/20000 (MadEvent's) differ, in the CM frame 0/20000
+    in both (max |r−1| 2.4e-10);
+  - `proton.rs` passes `lab` to `term_at`;
+  - the `ScaleEvent` doc claims the lab frame suffices;
+  - the tie-break is at `cluster.f:629` at the pin.
+* **Next**: F1 (feature-dev): CM clustering in the integrand; then V3
+  (re-measure the clustered rows and attack the residual).
