@@ -4,10 +4,14 @@
 
 ## Session Brief
 
+* [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
+* [G1: g g > t t~ g against MadGraph standalone, per flow](G1.md) - Bank a standalone JAMP table for g g > t t~ g and compare it per flow, pinning which colour structure multiplies which Lorentz structure at the four-gluon contact.
 * [J-H: hygiene review of the jioxxx chirality and longitudinal test](J-H.md) - Review PR #34's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [J1: give test_eval_jioxxx teeth on chirality and the longitudinal term](J1.md) - A per-helicity complex comparison of a mixed-chirality, q·J ≠ 0 current that fails under the cl·gL − cr·gR flip and sees the longitudinal-term denominator, with the HELAS-vs-ALOHA difference resolved or documented.
 
 ## Session Report
 
+* [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
+* [G1 report: t t~ + jet against MadGraph standalone, per flow](G1-report.md) - All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u u~) agree with MadGraph 3.7.1 standalone per flow to <= 6.9e-16, colour-assignment mutations fail them at O(1), and MadEvent's width pattern agrees too, so the @1 sigma excess is not in |M|^2.
 * [J-H report: hygiene review of the jioxxx chirality and longitudinal test](J-H-report.md) - Findings of the four-point hygiene review of PR #34 (test_eval_jioxxx and the jioxxx reference port), written before any edit, with their dispositions.
 * [J1 report: jioxxx chirality and longitudinal-term oracle](J1-report.md) - test_eval_jioxxx gains a massive-fermion (q·J ≠ 0) regime with the real SM Z vertices, every sink structure in both line orientations, and an ALOHA cross-check. jioxxx is aligned with ALOHA's real-m² longitudinal denominator. 13 mutations recorded.
