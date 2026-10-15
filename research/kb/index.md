@@ -8,21 +8,21 @@ okf_version: "0.2"
 
 ## Directories
 
-* [amplitudes](amplitudes/index.md) - 23 concepts
+* [amplitudes](amplitudes/index.md)
 * [backlog](backlog/) - one file per item; rendered by `pixi run backlog`
-* [decisions](decisions/index.md) - 6 concepts
-* [events](events/index.md) - 11 concepts
-* [hadronic](hadronic/index.md) - 3 concepts
-* [history](history/index.md) - 54 concepts
-* [model](model/index.md) - 8 concepts
-* [performance](performance/index.md) - 31 concepts
-* [phase-space](phase-space/index.md) - 23 concepts
-* [pipeline](pipeline/index.md) - 5 concepts
-* [process](process/index.md) - 9 concepts
-* [references](references/index.md) - 27 concepts
-* [run-card](run-card/index.md) - 4 concepts
-* [scales-pdf](scales-pdf/index.md) - 18 concepts
-* [sprints](sprints/index.md) - 90 concepts
-* [tooling](tooling/index.md) - 15 concepts
-* [validation](validation/index.md) - 43 concepts
-* [workflow](workflow/index.md) - 9 concepts
+* [decisions](decisions/index.md)
+* [events](events/index.md)
+* [hadronic](hadronic/index.md)
+* [history](history/index.md)
+* [model](model/index.md)
+* [performance](performance/index.md)
+* [phase-space](phase-space/index.md)
+* [pipeline](pipeline/index.md)
+* [process](process/index.md)
+* [references](references/index.md)
+* [run-card](run-card/index.md)
+* [scales-pdf](scales-pdf/index.md)
+* [sprints](sprints/index.md)
+* [tooling](tooling/index.md)
+* [validation](validation/index.md)
+* [workflow](workflow/index.md)

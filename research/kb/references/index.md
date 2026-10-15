@@ -4,5 +4,5 @@
 
 ## Directories
 
-* [codebases](codebases/index.md) - 8 concepts
-* [papers](papers/index.md) - 19 concepts
+* [codebases](codebases/index.md)
+* [papers](papers/index.md)
