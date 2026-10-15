@@ -89,7 +89,8 @@ would mean the threshold had stopped rejecting.** The 2× rule does not apply, a
 "form the statistic over more seeds" can make an extremum-vs-floor statistic
 worse: more draws lower the expected minimum p and raise the flag rate. Seed
 count matters to these through degrees of freedom instead: `χ²/dof < 4` is a
-1.8 % false-positive rate on 2 dof and 0.30 % on 4.
+1.8 % false-positive rate on 2 dof and 0.30 % on 4, which is why every hadronic
+σ gate forms it on five seeds, the count its bound was calibrated on.
 
 ## Buying margin
 

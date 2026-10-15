@@ -129,7 +129,9 @@ raise the flag rate. The two `info` rows sat below the floor by construction
 ## `validate_hadronic.rs`
 
 `LLJ_SEEDS` was already five; `DY_SEEDS`, `BB_SEEDS`, `JJ_SEEDS` and
-`RECARDED_SEEDS` were three. `probe_hadronic_seed_headroom` runs each
+`RECARDED_SEEDS` were three at this census. All are five since 2026-10-14, and
+their gate readings were re-recorded at five seeds under the unweighted seed
+rule ([seed policy](madevent-reference-seed-policy.md)). `probe_hadronic_seed_headroom` runs each
 three-seed arm over its three gate seeds plus two. The `χ²/dof < 4` bounds were
 calibrated on five-seed ladders but formed on three seeds; `DY_MAX_CHI2_PER_DOF`
 had no independent calibration (its comment quoted the gate's own

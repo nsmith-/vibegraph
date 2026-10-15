@@ -94,9 +94,10 @@ inverse-variance mean with an error no smaller than spread/√n. [^n38-z2]
 
 The unrestricted controls (0.4198 pb and 154.9 pb on MadEvent's side) are the known-wrong
 comparisons, and the gate fails if a restriction removed nothing. The `$$ z` pull is the
-reference's spread: MadEvent's five seeds sit at χ²/dof 20 (four at 157.26–157.53, one at
-156.48), and this side agrees with the majority. This side's own `$$ z` mean climbs about
-0.5% with budget before plateauing at the gated rung
+reference's spread: MadEvent's five seeds sit at χ²/dof 15 about their unweighted mean (four at
+157.26–157.53, one at 156.48), and this side agrees with the majority. This side's own `$$ z`
+seeds scatter beyond their quotes below the gated rung (χ²/dof 3.84 and 2.01 at ¼ and 1 times
+its base budget), the sign of a region its low-budget seeds miss
 ([backlog](../backlog/validation/ee-ee-nsz-sigma-low-at-low-budget.md)).
 
 ## `$`: the on-shell veto, pointwise in the amplitude
