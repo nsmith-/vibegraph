@@ -168,6 +168,28 @@ ROWS = {
         # 2 -> 3 with a W pair at leg 0 and a gluon off the final-state quark line.
         Row("wpwm_to_uuxg", "w+ w- > u u~ g", (24, -24), (2, -2, 21), 800.0, 3, 5045,
             zero_widths=True),
+        # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
+        # top line, where the contact's three colour structures meet its three
+        # Lorentz structures. The top exchanged between the two beam gluons is
+        # spacelike, so widths are zeroed as for the other massive t-channel rows.
+        Row("gg_to_ttxg", "g g > t t~ g", (21, 21), (6, -6, 21), 1000.0, 3, 4064,
+            zero_widths=True),
+        # The quark-gluon half of t t~ + jet, the gluon either radiated off the
+        # light-quark line or attached to the top pair through a triple-gluon
+        # vertex. MadEvent's own subprocess puts the gluon first (`g u`, and `g u~`
+        # beside it); `u g` is the same amplitude with the beams swapped.
+        Row("ug_to_ttxu", "u g > t t~ u", (2, 21), (6, -6, 2), 1000.0, 3, 4065,
+            zero_widths=True),
+        Row("gu_to_ttxu", "g u > t t~ u", (21, 2), (6, -6, 2), 1000.0, 3, 4066,
+            zero_widths=True),
+        Row("gux_to_ttxux", "g u~ > t t~ u~", (21, -2), (6, -6, -2), 1000.0, 3, 4067,
+            zero_widths=True),
+        # Quark annihilation into t t~ + gluon: the gluon off either quark line or
+        # off the s-channel gluon through a triple-gluon vertex. Every t-channel
+        # line here is a light quark or gluon; the top lines are timelike, so
+        # zeroing widths only removes the timelike top width from both sides.
+        Row("uux_to_ttxg", "u u~ > t t~ g", (2, -2), (6, -6, 21), 1000.0, 3, 4068,
+            zero_widths=True),
     ]
 }
 

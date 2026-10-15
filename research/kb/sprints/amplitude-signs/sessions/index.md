@@ -4,8 +4,12 @@
 
 ## Session Brief
 
+* [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
+* [G1: g g > t t~ g against MadGraph standalone, per flow](G1.md) - Bank a standalone JAMP table for g g > t t~ g and compare it per flow, pinning which colour structure multiplies which Lorentz structure at the four-gluon contact.
 * [W1: diagnose the w+ w- > e+ e- neutrino-exchange sign](W1.md) - Per-diagram x per-helicity dumps against MadGraph standalone AMP() for the W-pair-anchored fermion-line rows and their agreeing controls, a GF(2) solve for the sign rule, and arithmetic verification on the dumps. Diagnosis only.
 
 ## Session Report
 
+* [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
+* [G1 report: t t~ + jet against MadGraph standalone, per flow](G1-report.md) - All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u u~) agree with MadGraph 3.7.1 standalone per flow to <= 6.9e-16, colour-assignment mutations fail them at O(1), and MadEvent's width pattern agrees too, so the @1 sigma excess is not in |M|^2.
 * [W1 report: the w+ w- > e+ e- sign is a leg-0 anchor sign](W1-report.md) - Diagnosis. When external leg 0 is a colourless vector, a diagram anchored at a two-fermion vertex has the wrong sign relative to one anchored at a boson vertex. One factor fixes all 22 failing probe processes, including 7 predictions outside the fit. The rule is not derived, because the class-b sign product depends on the reference root.
