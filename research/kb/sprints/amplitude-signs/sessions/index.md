@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [J-H: hygiene review of the jioxxx chirality and longitudinal test](J-H.md) - Review PR #34's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [J1: give test_eval_jioxxx teeth on chirality and the longitudinal term](J1.md) - A per-helicity complex comparison of a mixed-chirality, q·J ≠ 0 current that fails under the cl·gL − cr·gR flip and sees the longitudinal-term denominator, with the HELAS-vs-ALOHA difference resolved or documented.
 
 ## Session Report
 
+* [J-H report: hygiene review of the jioxxx chirality and longitudinal test](J-H-report.md) - Findings of the four-point hygiene review of PR #34 (test_eval_jioxxx and the jioxxx reference port), written before any edit, with their dispositions.
 * [J1 report: jioxxx chirality and longitudinal-term oracle](J1-report.md) - test_eval_jioxxx gains a massive-fermion (q·J ≠ 0) regime with the real SM Z vertices, every sink structure in both line orientations, and an ALOHA cross-check. jioxxx is aligned with ALOHA's real-m² longitudinal denominator. 13 mutations recorded.
