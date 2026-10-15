@@ -120,8 +120,10 @@ Read the live state from `validation/manifest.toml`; at `6ccc6e4`:
 - **`gg_to_gg_cg`**: `diagrams` info by convention (21 diagrams against
   MadGraph's 27 `NGRAPHS`, one `AMP()` per diagram and colour-ordered contact
   structure, as SM `gg_to_gg` sits at 4/6); `integrals` info, taken at MadGraph's
-  own `dynamical_scale_choice = 3`, a converged −0.22% offset with no attribution
-  ([gg-to-gg-cg-sigma-offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md)).
+  own `dynamical_scale_choice = 3`. Its −0.22% offset is the reference's: the bank
+  is one high MadEvent draw, and fresh seeds agree with this side to 6e-6. It
+  stays info until it is re-banked as seeds
+  ([reference-sigma-seed-scatter-untested](../backlog/validation/reference-sigma-seed-scatter-untested.md)).
 - **2 → 1 rows** (`bbx_to_h_identity`, `gg_to_h_cp*`): `integrals` and `samples`
   uncovered; MadEvent has no volume to integrate and banked no σ or events.
 - **Massive incoming legs** (`qqx_to_o8o8_toy_dcolor`, both `p3r3` rows) gate: the

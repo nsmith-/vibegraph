@@ -5,6 +5,7 @@ description: "The banked σ is MadEvent's iseed 21, reproduced bit for bit here,
 status: draft
 tags: [smeftsim, sigma, dynamical-scale-choice-3, madevent, seeds, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Diagnosis only. No source change was committed. The probes were an uncommitted
 test file and a Fortran driver, both kept in the scratchpad. Every MadEvent run

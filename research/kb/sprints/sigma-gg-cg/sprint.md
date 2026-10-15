@@ -3,7 +3,7 @@ type: Sprint
 title: "gg_to_gg_cg σ offset"
 description: "Attribute the converged −0.22 % offset of gg_to_gg_cg (dynamical_scale_choice = 3) with a measurement, and flip its integrals cell to a gate or record why it stays info."
 status: draft
-active: true
+active: false
 tags: [smeftsim, sigma, scale-fallback, dynamical-scale-choice-3, info-cell]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -21,7 +21,7 @@ info.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [gg-to-gg-cg-sigma-offset](../../backlog/validation/gg-to-gg-cg-sigma-offset.md)
+- `gg-to-gg-cg-sigma-offset` (closed by this PR; see [closeout](closeout.md))
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,
@@ -39,7 +39,7 @@ comment on this PR listing exactly what to run.
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only | — |
+| [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only | gg-to-gg-cg-sigma-offset |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.
