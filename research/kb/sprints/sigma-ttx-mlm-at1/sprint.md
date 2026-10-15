@@ -45,6 +45,7 @@ comment on this PR listing exactly what to run.
 | [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only | — |
 | [V2](sessions/V2.md) | validation-dev (Opus) | V1 | diagnosis only | — |
 | [F1](sessions/F1.md) | feature-dev (Opus) | V2 | fmt, clippy, hermetic, `--skip-deps validate`; moved cells reported | — |
+| [V3](sessions/V3.md) | validation-dev (Opus) | F1 | measurement only | — |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.

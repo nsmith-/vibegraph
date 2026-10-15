@@ -31,3 +31,24 @@
   - the tie-break is at `cluster.f:629` at the pin.
 * **Next**: F1 (feature-dev): CM clustering in the integrand; then V3
   (re-measure the clustered rows and attack the residual).
+* **F1 partial hand-back** (no commit): the fix and the hermetic test are in
+  `scratchpad/ttxf1-fix.patch`. Mutation evidence: the lab mutant fails the
+  new test and the fix passes it. V2's Found 5 is resolved: 113 of the 133
+  points are the same p_z tie-break acting on a top, and 20 are the
+  pseudorapidity `dj` of a massive t t̄ pair. The "before" validate is still
+  running. F1 is resumed to finish the gate, the "after" validate, and the
+  commits. Found (to file): closed-form choice 1 (E_T) is evaluated on lab
+  momenta.
+* **F1 landed** (`6740954`): the hadronic integrand clusters in the partonic
+  CM, the mirrored term at its mirrored argument. A new hermetic test fails on
+  the lab-frame mutant and passes on the fix. `validate_scales`' LHE replay
+  now clusters in the CM too, and `pp_to_jj`'s nine "tie-break" misses
+  vanish: they were this frame bug. The allowance is gone, and the replay
+  asserts zero misses. Gates on the fixed tree: fmt and clippy clean; `cargo
+  test --workspace` green; `--skip-deps validate` rc 0, "every gate cell
+  passed". The matched rows are oracle-layer (⏳), so their σ is measured in
+  V3. The commit was meant to be two (fix, then allowance); it is one.
+  Machine-confirmed by the manager: the commit; the validate tail (rc 0); the
+  `pp_to_jj` line "50000 scale comparisons … 0 needing a channel other than
+  the first"; the diff tightening `TIE_BREAK_MISSES` to `missed.is_empty()`.
+  F1 wrote no report file; its hand-back is recorded here.
