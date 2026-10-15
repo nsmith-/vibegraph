@@ -45,7 +45,7 @@ pub struct RoundedCoupling {
 const GC_303: &str = "GC_303";
 const GC_299: &str = "GC_299";
 
-/// `GC_303 = 2i·gHza/vevhat`. Measured per graph over the 54 graphs that carry it
+/// `GC_303 = 2i·gHza/vevhat`. Measured per graph over the 50 graphs that carry it
 /// in the rows below: −1.1970234e-8, all within 9e-15 of each other. The
 /// `wpwm_to_wpwmz_cw` coupling table's own Python and Fortran values give
 /// −1.1970231e-8.
