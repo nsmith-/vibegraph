@@ -71,7 +71,7 @@ pub(crate) struct RootedTerm {
     /// The ±1 runtime `reversed`-bilinear parity this term's fermion→vector sink
     /// contributes (see [`term_reversed_parity`]). It depends on the rooting and is
     /// common to a vertex's terms; the diagram cancels the live tree's
-    /// ([`DiagramEvalTree::reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign))
+    /// ([`DiagramEvalTree::live_reversed_parity`](super::root_diagram::DiagramEvalTree::live_reversed_parity))
     /// and carries each vertex's value as the amplitude root instead.
     pub(crate) reversed_sign: i8,
     /// Whether this term's index graph is cyclic, so that it is evaluated through the
@@ -314,6 +314,18 @@ impl Tree for LorentzEvalTree {
     }
 }
 
+/// The other index of a two-index operator `op` reached through `idx`, and whether
+/// that other index is the operator's first (for a spinor operator, its row).
+fn partner_index(first: isize, second: isize, idx: isize, op: &LorentzOp) -> (isize, bool) {
+    if first == idx {
+        (second, false)
+    } else if second == idx {
+        (first, true)
+    } else {
+        unreachable!("{op:?} should involve idx {idx}")
+    }
+}
+
 /// The vector-output transform for a rooted structure term: the honest
 /// contravariant current `+V^μ` ([`LorentzEvalNode::MetricVout`]), for every
 /// vector-output structure alike.
@@ -412,48 +424,22 @@ impl LorentzEvalTree {
                     unreachable!("Gamma op should involve idx {}", idx);
                 }
             }
-            LorentzOp::ProjM { i, j } => {
-                let (wrapped, wrapped_is_row) = if *i == idx {
-                    (*j, false)
-                } else if *j == idx {
-                    (*i, true)
-                } else {
-                    unreachable!("ProjM op should involve idx {}", idx);
-                };
+            LorentzOp::ProjM { i, j } | LorentzOp::ProjP { i, j } => {
+                let (wrapped, wrapped_is_row) = partner_index(*i, *j, idx, op);
                 let beside_sigma = sigma_chained(term, if idx >= 0 { wrapped } else { idx }, iop);
                 let child = self.build_child(term, wrapped, visited_ops, flows, out_adjoint)?;
-                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows, beside_sigma) {
-                    LorentzEvalNode::ProjP { i: child }
-                } else {
-                    LorentzEvalNode::ProjM { i: child }
-                };
-                Ok(self.add_node(node))
-            }
-            LorentzOp::ProjP { i, j } => {
-                let (wrapped, wrapped_is_row) = if *i == idx {
-                    (*j, false)
-                } else if *j == idx {
-                    (*i, true)
-                } else {
-                    unreachable!("ProjP op should involve idx {}", idx);
-                };
-                let beside_sigma = sigma_chained(term, if idx >= 0 { wrapped } else { idx }, iop);
-                let child = self.build_child(term, wrapped, visited_ops, flows, out_adjoint)?;
-                let node = if chiral_correction(idx, wrapped, wrapped_is_row, flows, beside_sigma) {
+                // The chirality the node emits: the operator's own, or the opposite one
+                // where the projector is reached against its UFO order.
+                let left = matches!(op, LorentzOp::ProjM { .. })
+                    != chiral_correction(idx, wrapped, wrapped_is_row, flows, beside_sigma);
+                Ok(self.add_node(if left {
                     LorentzEvalNode::ProjM { i: child }
                 } else {
                     LorentzEvalNode::ProjP { i: child }
-                };
-                Ok(self.add_node(node))
+                }))
             }
             LorentzOp::Metric { mu, nu } => {
-                let other = if *mu == idx {
-                    *nu
-                } else if *nu == idx {
-                    *mu
-                } else {
-                    unreachable!("Metric op should involve idx {}", idx);
-                };
+                let (other, _) = partner_index(*mu, *nu, idx, op);
                 let child = self.build_child(term, other, visited_ops, flows, out_adjoint)?;
                 Ok(self.add_node(vector_out_node(child)))
             }
@@ -463,23 +449,11 @@ impl LorentzEvalTree {
                 Ok(self.add_node(LorentzEvalNode::P { leg: *leg as usize }))
             }
             LorentzOp::Identity { i, j } => {
-                let wrapped = if *i == idx {
-                    *j
-                } else if *j == idx {
-                    *i
-                } else {
-                    unreachable!("Identity op should involve idx {}", idx);
-                };
+                let (wrapped, _) = partner_index(*i, *j, idx, op);
                 self.build_child(term, wrapped, visited_ops, flows, out_adjoint)
             }
             LorentzOp::Gamma5 { i, j } => {
-                let wrapped = if *i == idx {
-                    *j
-                } else if *j == idx {
-                    *i
-                } else {
-                    unreachable!("Gamma5 op should involve idx {}", idx);
-                };
+                let (wrapped, _) = partner_index(*i, *j, idx, op);
                 // `C γ⁵ᵀ C⁻¹ = γ⁵`, so a γ⁵ reached through a summed index needs no
                 // chirality conjugation of its own.
                 let child = self.build_child(term, wrapped, visited_ops, flows, out_adjoint)?;
