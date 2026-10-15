@@ -5,6 +5,7 @@ description: "Diagnosis of the ~2 % gap on the on-shell-veto t t~ row: it is not
 status: draft
 tags: [process-grammar, onshell-veto, madgraph-defect, info-cell, top, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Diagnosis only; no source change is committed. Every number below is a run
 made in this session (scratchpad, commands and logs under

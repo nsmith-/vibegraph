@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [V1: the patched reference at two budgets and a window decomposition](V1.md) - Run the seeded patched reference at two budgets and decompose σ by top window (both outside, one inside) on both sides, to attribute the 2 % gap.
+* [V2: confirm the continuum deficit and its region](V2.md) - Give the top-free continuum's MadEvent deficit five fresh seeds and the paired iteration test, and run the decisive |cos θ_W| > 0.99 slice on both sides, so the uu_tt row can be documented as a measured reference-side defect.
 
 ## Session Report
 
