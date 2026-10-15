@@ -106,9 +106,11 @@ file, is retired in favour of the sprint folder.[^n42-shape]
   never in bulk. Manager spot-checks add `verified` with the manager's agent
   actor. A drafted concept is `status: draft` until reviewed.
 - **Indexes are generated, never hand-written.** `pixi run kb-index` writes each
-  folder's `index.md` from the frontmatter, grouped by type. The backlog
-  folders have none: an index there would change with every item and conflict
-  between branches, so `pixi run backlog` is their listing.
+  folder's `index.md` from the frontmatter, grouped by type. Nothing in an
+  index counts concepts: a count changes with every addition anywhere below it
+  and so conflicts between any two branches that add files. The backlog folders
+  have no index at all, for the same reason, so `pixi run backlog` is their
+  listing.
 - **Sources resolve.** A note section is cited by permalink at a commit with a
   line range. Upstream code is cited by permalink at the pinned commit (below).
   Our own code is cited by path.
