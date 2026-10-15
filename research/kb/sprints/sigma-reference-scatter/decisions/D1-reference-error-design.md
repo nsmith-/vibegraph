@@ -27,16 +27,24 @@ rows, all pinned 3.7.1 with fresh directories:
 | `ee_to_mumua` (#26), banked 10k | −0.95 % | −0.55 % | no: −0.94 % at 100k, χ²/dof 3.6 |
 | `ee_to_mumua` at 100k | −0.94 % | −0.19 % ± 0.34 % | — |
 | `u u~ > w+ b w- b~ / t t~` (#28), fixed μ | −1.9 % (1 seed) | moves up 0.5–1.2 % | no clear trend |
+| `gg_to_gg_cg` (#27): not this bias, a single draw | banked run +0.22 % above fresh seeds at 10× budget | — | — |
 
 On every row this side agrees with the adaptation-free estimate within its
 errors. The reported MadEvent value is the outlier, and its quoted error does
 not cover the bias. Seeds sharing a directory hide the bias further, because
 they inherit its grid (χ²/dof 0.3–0.8 on the MLM rows).
 
+A single-run reference is one draw. `gg_to_gg_cg`'s bank (iseed 21) sits 2.1
+seed sd above MadEvent's own converged value, and this side agrees with the
+converged value to 6e-6 (#27). Every single-run fixed-beam row in
+`sigma_reference.json` has the same exposure.
+
 ## Options
 
 - **A (proposed). Recombine, and record the scatter.**
-  - Every gated σ reference is banked from ≥ 5 fresh-directory seeds at the
+  - Every gated σ reference, the single-run fixed-beam rows of
+    `sigma_reference.json` included (first `gg_to_gg_cg`, expected 2.7065e5),
+    is banked from ≥ 5 fresh-directory seeds at the
     banked budget plus ≥ 2 at 4×. Each run keeps its `G*/results.dat`.
   - The bundle records, per seed, the reported σ and the equal-weight sum of
     each channel's iterations, and, per row, both values' seed χ²/dof and the
