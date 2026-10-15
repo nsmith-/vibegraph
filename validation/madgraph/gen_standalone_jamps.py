@@ -245,6 +245,48 @@ ROWS = {
         # cubic vertex at either end. Widths are zero for the spacelike Higgs.
         Row("hh_to_hh_chbox", "h h > h h NP<=1", (25, 25), (25, 25), 800.0, 8, 4078,
             model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # The rows below are O_W (`vg_cW`) probes at zero widths, informational:
+        # the loop-induced photon-Z-Higgs and photon-photon-Higgs vertices
+        # (`VVS4`, `GC_303`/`GC_299`, coupling order SMHLOOP) and O_W's five-vector
+        # contacts disagree with MadGraph by a sign per diagram, and MadGraph's
+        # Fortran writes `GC_303` and `GC_299` at seven significant digits, so even
+        # an agreeing row sits near 1e-10 rather than at rounding.
+        #
+        # Controls: O_W's four-vector contacts (WWWW, WWZZ) as the anchor, beside
+        # the photon, Z and Higgs exchanges with O_W's triple-gauge structures.
+        Row("wpwm_to_wpwm_cw", "w+ w- > w+ w- NP<=1", (24, -24), (24, -24), 800.0, 3, 4071,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        Row("wpwm_to_zz_cw", "w+ w- > z z NP<=1", (24, -24), (23, 23), 800.0, 3, 4072,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        # The WWAZ contact, and the photon-Z-Higgs vertex producing the off-shell
+        # Higgs from the external photon and Z.
+        Row("wpwm_to_az_cw", "w+ w- > a z NP<=1", (24, -24), (22, 23), 800.0, 3, 4073,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        # The photon-Z-Higgs vertex as the amplitude sink: leg 0 is the photon, so
+        # that vertex is the anchor of the Higgs s-channel diagram.
+        Row("az_to_wpwm_cw", "a z > w+ w- NP<=1", (22, 23), (24, -24), 800.0, 3, 4075,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        # The same for the photon-photon-Higgs vertex.
+        Row("aa_to_wpwm_cw", "a a > w+ w- NP<=1", (22, 22), (24, -24), 800.0, 3, 4078,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        # The amplitude row `wpwm_to_wpwmz_cw` itself: O_W's two five-vector
+        # contacts each the whole of one diagram, the photon-Z-Higgs vertex
+        # producing a Higgs or a photon current, and the four-vector contacts as
+        # sources. MadGraph standalone numbers its AMP() as the MadEvent export of
+        # the amplitude row does.
+        Row("wpwm_to_wpwmz_cw", "w+ w- > w+ w- z NP<=1", (24, -24), (24, -24, 23), 500.0, 4,
+            4074, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True),
+        # Its photon twin: the WWWW-photon five-vector contacts, and the
+        # photon-photon-Higgs vertex beside the photon-Z-Higgs one.
+        Row("wpwm_to_wpwma_cw", "w+ w- > w+ w- a NP<=1", (24, -24), (24, -24, 22), 500.0, 3,
+            4077, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True),
+        # The five-vector contacts as sources: the s-channel photon or Z off the
+        # electron line, which holds the anchor, ends on a WWWW-photon/Z contact.
+        Row("ee_to_wpwmwpwm_cw", "e+ e- > w+ w- w+ w- NP<=1", (-11, 11), (24, -24, 24, -24),
+            1000.0, 3, 4076, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True),
         # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
         # top line, where the contact's three colour structures meet its three
         # Lorentz structures. The top exchanged between the two beam gluons is
