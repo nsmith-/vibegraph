@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [HY1 report: hygiene pass on the permuted-first-call census script](HY1-report.md) - Review of validation/madgraph/census_permuted_first_call.py: its perms mode could pass vacuously in four ways, the docstring omitted the sigma-can-move condition, and its run-card parser duplicated extract_sigma's. All fixed; runs output is byte-identical.
 * [V1 report: H1 census of the banked grouped rows](V1-report.md) - Every banked MadEvent run checked for a clustered first call, symmetry permutations (machine-read) and a same-seed patched/unpatched screen. No banked row besides the two already registered carries a measurable H1, and no row needs re-banking.
