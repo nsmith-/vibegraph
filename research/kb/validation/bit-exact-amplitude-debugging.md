@@ -111,7 +111,7 @@ The rule this produced lives in `helas/eval/root_diagram.rs`:
 `Diagram::anchor` and multiplied into `fermi_sign` in `compile_single_diagram`.
 The physics is in [vector-vertex signs](../amplitudes/vector-vertex-signs.md);
 the rooting-invariance argument is in
-[rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+[rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ## Worked cases
 
@@ -142,7 +142,7 @@ per-term product cancels on even-term vertices), and verify factorability first
 (every re-rooting changed each diagram by exactly a global ±1 over 1583
 diagram × root × helicity checks before any extraction was designed)[^n19-v5].
 The derivation itself belongs to
-[rooting invariance](../amplitudes/rooting-invariance-and-anchor.md).
+[rooting invariance](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ## False leads and why each failed
 

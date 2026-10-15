@@ -55,7 +55,7 @@ every non-test build it is `canonical_root` alone.
 The rooting-dependent convention signs are read off one fixed rooting, at the
 diagram's anchor, and lifted into the diagram's `fermi_sign`; the honest
 currents are then root-invariant. The convention itself is described in
-[rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+[rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 The `rooting_soundness` module pins it: `all_rootings_preserve_amplitude`
 re-roots every diagram at every vertex across the MG-validated processes and
 requires |M|² to match the baseline (unoverridden) evaluation within

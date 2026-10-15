@@ -73,7 +73,7 @@ high-external hub duplicates them. The physics does not depend on the choice: th
 currents are root-invariant, and every root-dependent convention sign is read
 from a second tree rooted at the diagram's *anchor* (`Diagram::anchor`, built only
 when the two roots differ). See
-[rooting-invariance-and-anchor](rooting-invariance-and-anchor.md) and
+[rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md) and
 [performance/diagram-rooting](../performance/diagram-rooting.md).
 
 ## Bind and evaluate

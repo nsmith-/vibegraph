@@ -11,7 +11,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 User decision (sprint log, 2026-10-15): W2 and F2's sign work run as this one
 session. Read the [W1](W1-report.md), [F1](F1-report.md), [C1](C1-report.md)
 and [C2](C2-report.md) reports first; then
-[rooting invariance and the anchor](../../../amplitudes/rooting-invariance-and-anchor.md),
+[rooting invariance and the anchor](../../../amplitudes/rooting-invariance-and-canonical-form.md),
 [vector-vertex signs](../../../amplitudes/vector-vertex-signs.md) and
 [fermion-line sign](../../../amplitudes/fermion-line-sign.md).
 
