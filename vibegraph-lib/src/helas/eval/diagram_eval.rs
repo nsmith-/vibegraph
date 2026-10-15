@@ -282,7 +282,7 @@ impl VertexInfo {
     /// [`VertexTerm::reversed_sign`]). With the vertex as the amplitude root it is one
     /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`); the
     /// product over a live tree is
-    /// [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
+    /// [`live_reversed_parity`](super::root_diagram::DiagramEvalTree::live_reversed_parity).
     pub(super) fn reversed_sign(&self) -> Result<i8, RootLorentzError> {
         let signs = self
             .terms
