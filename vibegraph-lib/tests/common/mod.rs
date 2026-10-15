@@ -4,6 +4,7 @@ pub mod leshouche;
 pub mod manifest;
 pub mod pdfset;
 pub mod report;
+pub mod seed_record;
 pub mod seeds;
 
 // Here rather than beside either item: `report.rs` and `seeds.rs` are each

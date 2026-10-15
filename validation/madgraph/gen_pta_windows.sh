@@ -52,17 +52,20 @@
 # Environment overrides: NEVENTS, SEEDS, WINDOWS (1-based indices into the edge
 # list), TAG_SUFFIX. Each stage appends to output/pta_windows_<stage>.tsv and
 # rebuilds pta_window_reference.json from every TSV present, so stages are
-# independent and individually re-runnable.
+# independent and individually re-runnable. PTA_WORK moves the templates, run
+# directories, logs and TSVs out of output/, and RESULT_JSON the rebuilt table:
+# bank_seeded_sigma.sh runs the m(mumu) partition that way, so its runs leave
+# the committed table and the banked work area as they were.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=madevent_seeds.sh
 source "$HERE/madevent_seeds.sh"
-OUT="$HERE/output"
-BANKED="$OUT/ee_to_mumua"
+OUT="${PTA_WORK:-$HERE/output}"
+BANKED="$HERE/output/ee_to_mumua"
 # Committed: a few dozen scalars, expensive to produce and stable, so they
 # travel in git like sigma_reference.json rather than in the fetched bundle.
-RESULT_JSON="$HERE/pta_window_reference.json"
+RESULT_JSON="${RESULT_JSON:-$HERE/pta_window_reference.json}"
 
 # Frozen before any measurement (see the design note): the outer edges are the
 # `pta` cut and sqrt(s)/2, the 20 GeV edge is twice the cut, and 39.4 GeV is
@@ -288,10 +291,15 @@ run_one() {
   # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
   # make_opts STDLIB line, so the link needs the platform C++ runtime
   # (mes_ldflags) appended explicitly.
-  LDFLAGS="$(mes_ldflags)" "$dir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
+  # From a scratch working directory: a failed generate_events leaves an
+  # ME5_debug link in whatever directory it was started from.
+  local scratch
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/vg_pta_cwd_XXXXXX")"
+  (cd "$scratch" && LDFLAGS="$(mes_ldflags)" "$dir/bin/generate_events" -f "run_$tag") >"$log" 2>&1 || {
     echo "!!! [$tag] generate_events returned non-zero; see $log" >&2
     tail -30 "$log" >&2
   }
+  rm -rf "$scratch"
   local results="$dir/SubProcesses/results.dat"
   if [ ! -s "$results" ]; then
     echo "!!! [$tag] no results.dat at $results" >&2

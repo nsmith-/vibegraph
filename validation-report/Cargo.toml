@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 publish = false
+# Two binaries: the collator, which `cargo run -p vibegraph-validation-report`
+# runs, and `seed-record`, which writes a MadEvent seed record for
+# `validation/madgraph/bank_seeded_sigma.sh`.
+default-run = "validation-report"
 
 # The collator is a development tool, not part of what the crate ships: it reads
 # the row files the validation gates wrote and renders the report. It depends on
