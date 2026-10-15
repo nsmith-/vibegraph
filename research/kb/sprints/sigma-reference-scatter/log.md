@@ -42,3 +42,19 @@
   `madevent-cumulated-time-host-dependence` (claimed on this PR) is step 2 of
   the same banking comment. It produces timings, not references. F1 adds
   `--nb-core` to `time_stages.py` for it.
+* **F1 landed** (`2f9d640`, `bd92c97`, `57e9b4a`). It adds:
+  - the seeded banking driver, `pixi run -e madgraph bank-seeded-sigma`, with
+    row groups;
+  - the per-row `seed_record.json`, written by the Rust `seed-record` binary
+    and read by `tests/common/seed_record.rs`;
+  - the record reader in `validate_sigma` and `validate_hadronic`;
+  - `time_stages.py --nb-core`.
+  It is inert: with no records present, `validate` reads exactly what it read
+  before. Machine-confirmed by the manager: the commits; `report.json` before
+  and after identical once timing and host fields are stripped; `build.sh`,
+  now sourceable, still runs `build_main` when executed and has no side
+  effects when sourced. The banking comment's command is **held**: V4 on
+  `sigma-ttx-mlm-at1` found that MadEvent's default survey biases σ by
+  0.5–1 % and that `hard_survey = 2` removes it. A cross-check on the
+  sibling rows is running, and an amendment (bank with `hard_survey = 2`)
+  goes to the user before the comment is made runnable.

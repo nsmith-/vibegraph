@@ -13,6 +13,7 @@ sources:
   - {id: d1, resource: "../decisions/D1-reference-error-design.md", title: "D1 and its amendment"}
   - {id: c-driver, resource: "https://github.com/nsmith-/vibegraph/commit/2f9d640", title: "2f9d640 feat(validation): seeded fresh-directory MadEvent sigma references"}
   - {id: c-timing, resource: "https://github.com/nsmith-/vibegraph/commit/bd92c97", title: "bd92c97 feat(validation): time_stages.py --nb-core and kept results.dat"}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Two commits on `sigma/reference-scatter`: `2f9d640` (the driver, the record and
 the reader) and `bd92c97` (the `time_stages.py` scope addition). This report is
