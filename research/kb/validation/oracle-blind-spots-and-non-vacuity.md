@@ -35,7 +35,7 @@ report cell means, [validation-report](validation-report.md).
 |---|---|---|
 | total |M|² | a global phase | per-diagram and per-flow amplitude gates ([amplitude-oracle](amplitude-oracle.md)) |
 | the colour CF matrix | a uniform index transpose (it is a Gram matrix) | per-flow complex JAMPs |
-| `color_cf_oracle` (graphs compared as sets of colour structures) | which colour structure multiplies which Lorentz structure | per-flow amplitude gates on `gg_to_gg`, `uux_to_ggg`, `gg_to_ggg`; `g g > t t~ g` has none ([gg-ttxg-no-amplitude-gate](../backlog/validation/gg-ttxg-no-amplitude-gate.md)) |
+| `color_cf_oracle` (graphs compared as sets of colour structures) | which colour structure multiplies which Lorentz structure | per-flow amplitude gates on `gg_to_gg`, `uux_to_ggg`, `gg_to_ggg` and `gg_to_ttxg` |
 | per-flow JAMPs on `gg_to_gg` | a swap within trace-reversal pairs (`J₁=J₆`, `J₂=J₄`, `J₃=J₅`) | `color_flow_tags_oracle` against `leshouche.inc` ([colour-oracles](colour-oracles.md)) |
 | `spine_sign_from_flow`'s class test | a sign common to every diagram | the `ud_to_epemud_qcd0` row of `amplitude_oracle`; if it were demoted, the class test would pass with the spine sign globally wrong[^n28-spine] |
 | the coupling oracle | a rounding both sides share | nothing; stated in its doc comment |

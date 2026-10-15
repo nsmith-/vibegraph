@@ -91,6 +91,14 @@ Concurrent heavy validation runs do not fit the machines this project uses:
 - **Cloud container.** Three concurrent workspace builds do not fit the disk.
   One session hit `ENOSPC`, and a manager had to stop another session's 16 GB
   debug tree to keep the disk alive.[^n35-t2]
+  In the amplitude-signs sprint (4 cores, ~30 GB free) one agent's debug
+  `target/` reached 15 GB and the disk filled under two agents, killing a
+  `cargo test` in the linker (`Bus error`). Two dev agents fit with the lean
+  cargo settings every agent definition now names; the manager also deletes a
+  worktree's `target/` once its session is checked, and copies reference data
+  only into worktrees about to be dispatched. The `release-debug` profile cannot
+  be tuned through `CARGO_PROFILE_*` variables (cargo misreads the hyphenated
+  name), so its debuginfo stays as the profile sets it.
 
 So **run each session's gate suites one at a time per host**. Where parallel
 sessions are unavoidable, the manager serialises their heavy runs.
