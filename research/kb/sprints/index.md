@@ -29,6 +29,7 @@
 * [perf-sprint-3](perf-sprint-3/index.md)
 * [process-grammar](process-grammar/index.md)
 * [resonance-sampling](resonance-sampling/index.md)
+* [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
 * [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)

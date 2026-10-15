@@ -24,4 +24,5 @@
 * **Decision**: Seeds of equal budget, on this side and MadEvent's, are read as their unweighted mean with error `max(quoted, spread/√n)` and a separate χ²/dof scatter check, through one helper; the three-seed hadronic σ gates move to five seeds ([seed policy](validation/madevent-reference-seed-policy.md)). The `$$ z` grammar row's budget climb was an artifact of the old `1/σ²` mean ([seed sweeps](validation/seed-sweeps-and-budget-ladders.md)).
 
 ## 2026-10-15
+* **H1 census closed** ([record](sprints/sigma-h1-ickkw0-census/closeout.md), [nsmith-/vibegraph#24](https://github.com/nsmith-/vibegraph/pull/24)): every banked grouped row checked for the permuted first call; only `pp_to_ll_0j2j_mlm` is measurably affected, and no reference needed re-banking.
 * **`$ t t~` on-shell-veto offset closed** ([record](sprints/sigma-uux-wbwb-veto/closeout.md), [nsmith-/vibegraph#28](https://github.com/nsmith-/vibegraph/pull/28)): MadEvent under-integrates the top-free continuum in channels G7–G9 by −2.0 %; the row stays reported.
