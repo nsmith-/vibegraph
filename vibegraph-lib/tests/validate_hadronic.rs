@@ -77,9 +77,13 @@ const DY_NITER: usize = 12;
 /// adaptation.
 const DY_ADAPT_SURVEY: usize = 20_000;
 const DY_ADAPT_ITERS: usize = 6;
-/// Independent seeds each Drell–Yan row is measured on. Three rather than one for
-/// the reason the ℓℓj sweep gives below; the row is cheap enough to afford them.
-const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721];
+/// Independent seeds each Drell–Yan row is measured on, for the reason the ℓℓj
+/// sweep gives below.
+///
+/// Five, so the χ²/dof the gate forms carries the four degrees of freedom
+/// [`DY_MAX_CHI2_PER_DOF`] was calibrated on: `χ²/dof < 4` is a `0.30 %`
+/// false-positive rate on four, against `1.8 %` on the two three seeds give.
+const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721, 20260722, 20260723];
 
 /// Independent seeds the ℓℓj cross section is measured on. Several runs rather
 /// than one because an under-sampled region is reported as a confident number,
@@ -159,22 +163,22 @@ const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 ///
 /// Asserted together with `|pull| < 3`, not instead of it. MadGraph's own error
 /// is `0.051%` on the default card and `0.044%` on the m_ll window, and this
-/// side's three-seed mean carries about `0.06%`, so the pull's denominator is
-/// near `0.08%` and the pull is the binding bound, at about `0.24%`. This one
+/// side's five-seed mean carries about `0.05%`, so the pull's denominator is
+/// near `0.07%` and the pull is the binding bound, at about `0.22%`. This one
 /// bounds what the pull cannot: a run whose quoted error is inflated — a seed
 /// that caught a weight tail — shrinks the pull without moving σ any closer.
 ///
-/// `0.005` is the census reading with headroom: over the gate's three seeds
-/// `+7.2e-4` and `−2.0e-4`, over five `+5.9e-4` and `−1.3e-4`
-/// (`probe_hadronic_seed_headroom`), so the bound clears the worst by `6.9x`,
-/// and it is the value every other σ row in this file is held to.
+/// `0.005` is the census reading with headroom: over the gate's five seeds
+/// `+4.5e-4` and `+2.2e-4` (`probe_hadronic_seed_headroom`), so the bound clears
+/// the worst by `11x`, and it is the value every other σ row in this file is
+/// held to.
 const DY_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
 /// errors — the guard the scalar pull cannot be: a run that missed a region
-/// reports a small integral *and* a small error. The census reads `1.06` and
-/// `1.43` over the gate's three seeds, `0.80` and `0.97` over five
-/// (`probe_hadronic_seed_headroom`); like the other rows' `χ²/dof < 4` it is a
-/// false-positive rate, `1.8%` on the two degrees of freedom three seeds give.
+/// reports a small integral *and* a small error. The census reads `1.23` and
+/// `0.41` over the gate's five seeds (`probe_hadronic_seed_headroom`); like the
+/// other rows' `χ²/dof < 4` it is a false-positive rate, `0.30%` on the four
+/// degrees of freedom five seeds give.
 const DY_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 fn validation_dir() -> PathBuf {
@@ -1522,7 +1526,11 @@ const BB_PROCESS: &str = "p p > b b~ QCD=2";
 
 /// Independent seeds the `b b̄` cross section is measured on, for the reason the
 /// ℓℓj sweep gives.
-const BB_SEEDS: &[u64] = &[20260801, 20260802, 20260803];
+///
+/// Five, the count [`BB_MAX_CHI2_PER_DOF`] was calibrated on by
+/// [`probe_bb_budget_ladder`]: `χ²/dof < 4` is a `0.30 %` false-positive rate on
+/// the four degrees of freedom five seeds give.
+const BB_SEEDS: &[u64] = &[20260801, 20260802, 20260803, 20260804, 20260805];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const BB_ADAPT_SURVEY: usize = 8_000;
 const BB_ADAPT_ITERS: usize = 5;
@@ -1540,7 +1548,7 @@ const BB_ADAPT_ITERS: usize = 5;
 /// which spread the same budget over 24 pooled channels and so reach a converged
 /// rung much later, are the reason that is checked rather than assumed.
 ///
-/// At `75 000` three seeds leave this side's error at `0.076%` against the banked
+/// At `75 000` five seeds leave this side's error at `0.059%` against the banked
 /// run's own `0.182%`, so the combined error of the two sides is still dominated
 /// by the reference.
 const BB_NEVAL: usize = 75_000;
@@ -1549,8 +1557,8 @@ const BB_NITER: usize = 10;
 ///
 /// MadGraph's own Monte-Carlo error on the banked run is `0.182%`, which is the
 /// floor — no agreement tighter than the reference's precision is meaningful —
-/// and this side's is `0.076%` at the gate budget, so `0.005` is two and a half
-/// times the two sides' combined `0.197%`. The whole measured budget family sits
+/// and this side's is `0.059%` at the gate budget, so `0.005` is two and a half
+/// times the two sides' combined `0.191%`. The whole measured budget family sits
 /// inside `0.16%`.
 const BB_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their own
@@ -1726,7 +1734,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
     row.niter = BB_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "three seeds at 75k in this layer; the five-seed 75k to 600k ladder \
+        "five seeds at 75k in this layer; the five-seed 75k to 600k ladder \
          (probe_bb_budget_ladder) reads +0.15% / +0.16% / +0.11% / +0.14% at \
          chi2/dof 0.63 / 0.79 / 0.68 / 0.06, an 0.05% span with no direction to \
          it, so the gate runs at the lowest rung the ladder resolves as converged"
@@ -1749,7 +1757,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
 
 /// The budget ladder behind [`BB_NEVAL`], five seeds a rung.
 ///
-/// The gate reads three seeds at one budget, and that pair of numbers cannot
+/// The gate reads five seeds at one budget, and that pair of numbers cannot
 /// separate an agreement from an estimator still moving: a VEGAS run reports an
 /// under-sampled region as a confident value, error bar included, because the
 /// region's absence lowers the integral and its quoted error together. What tells the two apart is whether σ moves with the
@@ -3029,8 +3037,8 @@ fn comps(p: &V) -> [f64; 4] {
 const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
     // Flat across the whole ladder — `+0.07%`, `−0.01%`, `+0.02%`, `−0.02%` at
     // 75k, 150k, 300k and 600k, with χ²/dof 0.55, 1.00, 0.09, 0.19 — so the
-    // lowest rung is the converged one. Three seeds there leave this side's
-    // error at `0.044%` against the reference's `0.071%`.
+    // lowest rung is the converged one. Five seeds there leave this side's
+    // error at `0.043%` against the reference's `0.071%`.
     (
         "pp_to_bb",
         "p p > b b~",
@@ -3063,7 +3071,7 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
          rung's error is inflated by a single seed",
     ),
     // Flat: `−0.03%`, `+0.05%`, `−0.02%`, `−0.04%` at χ²/dof 0.82, 0.65, 0.65,
-    // 0.21, with this side's three-seed error `0.084%` against the reference's
+    // 0.21, with this side's five-seed error `0.065%` against the reference's
     // `0.198%` at the lowest rung.
     (
         "pp_to_ll_scalefact2",
@@ -3075,7 +3083,11 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
 
 /// Independent seeds these rows are measured on, for the reason the ℓℓj sweep
 /// gives: a single seed's error bar is not a measurement of a VEGAS estimator.
-const RECARDED_SEEDS: &[u64] = &[20260901, 20260902, 20260903];
+///
+/// Five, the count [`RECARDED_MAX_CHI2_PER_DOF`] was calibrated on by
+/// [`probe_recarded_budget_ladder`]: `χ²/dof < 4` is a `0.30 %` false-positive
+/// rate on the four degrees of freedom five seeds give.
+const RECARDED_SEEDS: &[u64] = &[20260901, 20260902, 20260903, 20260904, 20260905];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const RECARDED_ADAPT_SURVEY: usize = 8_000;
 const RECARDED_ADAPT_ITERS: usize = 5;
@@ -3198,7 +3210,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize, ladder_note: &
     row.niter = RECARDED_NITER;
     row.subsampler = summary;
     row.note = Some(format!(
-        "three seeds at {neval} points an iteration, {ladder_note}"
+        "five seeds at {neval} points an iteration, {ladder_note}"
     ));
     row.duration_s = Some(clock.seconds());
     row.write();
@@ -3328,77 +3340,47 @@ fn probe_recarded_budget_ladder() {
     }
 }
 
-/// The Drell–Yan, `b b̄`, `j j` and re-carded σ gates of this file, each with five
-/// seeds.
-///
-/// Every entry starts with its gate's own seed list. The `j j` gate reads all five
-/// ([`JJ_SEEDS`]); the others read the first three, so their five-seed reading
-/// contains the three-seed one and the difference between them is exactly what
-/// the extra seeds buy. The extensions follow the budget ladders'
-/// convention of continuing each family's run of consecutive seeds.
+/// The Drell–Yan, `b b̄`, `j j` and re-carded σ gates of this file, each on its
+/// gate's own seed list.
 const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
-    (
-        "dy_default",
-        &[20260719, 20260720, 20260721, 20260722, 20260723],
-        DY_MAX_REL,
-        DY_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "dy_mmll_60_120",
-        &[20260719, 20260720, 20260721, 20260722, 20260723],
-        DY_MAX_REL,
-        DY_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "pp_to_bb_fixed",
-        &[20260801, 20260802, 20260803, 20260804, 20260805],
-        BB_MAX_REL,
-        BB_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "pp_to_jj",
-        &[20260810, 20260811, 20260812, 20260813, 20260814],
-        JJ_MAX_REL,
-        JJ_MAX_CHI2_PER_DOF,
-    ),
+    ("dy_default", DY_SEEDS, DY_MAX_REL, DY_MAX_CHI2_PER_DOF),
+    ("dy_mmll_60_120", DY_SEEDS, DY_MAX_REL, DY_MAX_CHI2_PER_DOF),
+    ("pp_to_bb_fixed", BB_SEEDS, BB_MAX_REL, BB_MAX_CHI2_PER_DOF),
+    ("pp_to_jj", JJ_SEEDS, JJ_MAX_REL, JJ_MAX_CHI2_PER_DOF),
     (
         "pp_to_bb",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_bb_qcd2",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_llj",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_ll_scalefact2",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
 ];
 
-/// Every [`HEADROOM_ARMS`] σ bound read on the first three of its seeds and on all
-/// five, at its own gate budget — the headroom census behind the seed counts.
+/// Every [`HEADROOM_ARMS`] σ bound read on its gate's seeds at its own gate
+/// budget, under the seed policy ([`combine`]) — the headroom census behind
+/// each bound.
 ///
-/// [`combine`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
-/// gate forms it on two: wide enough that a converged row can post an alarming
-/// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` and
-/// `JJ_SEEDS` are five. The bounds the three-seed rows are held to were
-/// calibrated on five-seed budget ladders, so bound and statistic do not have the
-/// same degrees of freedom behind them. This prints both readings with each
-/// bound's ratio to the five-seed value, so how much of each row's margin is the
-/// comparison and how much is the seed count is a measurement rather than an
-/// inference.
+/// Each line prints the relative distance, the pull and the seeds' χ²/dof with
+/// each bound's ratio to its reading, so a row's margin is a measurement rather
+/// than an inference. Every arm reads five seeds, the count its χ²/dof bound
+/// was calibrated on.
 ///
 /// One rung, every arm; the budget ladders above are where the other axis lives.
 /// Run with `--ignored --nocapture`.
@@ -3513,30 +3495,21 @@ fn probe_hadronic_seed_headroom() {
             });
         }
 
-        let read = |n: usize| {
-            let SeedMean {
-                mean,
-                err: mean_err,
-                chi2_per_dof: chi2,
-                ..
-            } = combine(&runs[..n]);
-            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
-            let rel = mean / mg - 1.0;
-            eprintln!(
-                "  {n} seeds: σ = {mean:.6e} ± {mean_err:.3e} pb | rel {rel:+.4e} | \
-                 pull {pull:+.2} | χ²/dof {chi2:.2}"
-            );
-            (rel, pull, chi2)
-        };
-        let (rel3, pull3, chi23) = read(3);
-        let (rel5, pull5, chi25) = read(seeds.len());
+        let read = combine(&runs);
+        let pull = read.pull(mg, mg_err);
+        let rel = read.mean / mg - 1.0;
+        let chi2 = read.chi2_per_dof;
+        eprintln!(
+            "  {} seeds: σ = {:.6e} ± {:.3e} pb (quoted {:.3e}, spread {:.3e}) | \
+             rel {rel:+.4e} | pull {pull:+.2} | χ²/dof {chi2:.2}",
+            read.n, read.mean, read.err, read.quoted, read.spread,
+        );
         let line = format!(
-            "HEADROOM {arm:<22} | rel {rel3:+.3e} (3) {rel5:+.3e} (5) vs {max_rel} -> {:5.1}x | \
-             χ²/dof {chi23:.2} (3) {chi25:.2} (5) vs {max_chi2} -> {:5.1}x | \
-             pull {pull3:+.2} (3) {pull5:+.2} (5) vs 3.0 -> {:5.1}x",
-            max_rel / rel5.abs(),
-            max_chi2 / chi25,
-            3.0 / pull5.abs(),
+            "HEADROOM {arm:<22} | rel {rel:+.3e} vs {max_rel} -> {:5.1}x | \
+             χ²/dof {chi2:.2} vs {max_chi2} -> {:5.1}x | pull {pull:+.2} vs 3.0 -> {:5.1}x",
+            max_rel / rel.abs(),
+            max_chi2 / chi2,
+            3.0 / pull.abs(),
         );
         eprintln!("  {line}");
         census.push(line);
