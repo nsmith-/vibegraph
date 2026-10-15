@@ -188,13 +188,12 @@ def render_index(directory, concepts, is_root):
         out.append("")
     if subdirs:
         out += ["## Directories", ""]
+        # No counts: they change with every added concept and conflict across branches.
         for s in subdirs:
-            n = sum(1 for c in concepts if (directory / s) in c.path.parents)
             if s in NO_INDEX:
-                # No count: it would change with every item and conflict across branches.
                 out.append(f"* [{s}]({s}/) - one file per item; rendered by `pixi run backlog`")
             else:
-                out.append(f"* [{s}]({s}/index.md) - {n} concepts")
+                out.append(f"* [{s}]({s}/index.md)")
         out.append("")
     return "\n".join(out)
 
