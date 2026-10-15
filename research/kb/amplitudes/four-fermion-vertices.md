@@ -83,7 +83,7 @@ It is a registered counting convention (user, 2026-10-15): `standalone_jamps`'
 `ee_to_ee_4f` row (22 diagrams against 19 graphs) requires its declared groups
 to partition our diagrams into exactly MadGraph's graphs, each group matching
 its `AMP()` to 1e-12, and each pairing matched MadGraph's own term group at
-relative sign +1. Grouping by Feynman graph instead is
+relative sign +1. Tagging each pairing with the Feynman diagram it belongs to is
 [amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md).
 See [model/smeftsim-topu3l](../model/smeftsim-topu3l.md) for the model.
 
