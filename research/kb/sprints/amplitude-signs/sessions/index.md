@@ -4,10 +4,14 @@
 
 ## Session Brief
 
+* [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
+* [G1: g g > t t~ g against MadGraph standalone, per flow](G1.md) - Bank a standalone JAMP table for g g > t t~ g and compare it per flow, pinning which colour structure multiplies which Lorentz structure at the four-gluon contact.
 * [P-H: hygiene review of the probe–production bridge](P-H.md) - Review PR #31's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [P1: bridge the per-diagram probes to the production Program](P1.md) - Make the per-diagram evaluator probes provably agree with the production Program/fill_arenas path, on processes with an internal fermion, so per-diagram dumps diagnose the code that runs.
 
 ## Session Report
 
+* [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
+* [G1 report: t t~ + jet against MadGraph standalone, per flow](G1-report.md) - All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u u~) agree with MadGraph 3.7.1 standalone per flow to <= 6.9e-16, colour-assignment mutations fail them at O(1), and MadEvent's width pattern agrees too, so the @1 sigma excess is not in |M|^2.
 * [P-H report: hygiene review of the probe-production bridge](P-H-report.md) - Review of PR #31 on four points. The bridge's one function is split, three blind spots are closed (comparison counts, colour-factor source, row counts), the subsumed eemumu test is deleted, and two cross-module items are filed.
 * [P1 report: the per-diagram probes are bridged to the production Program](P1-report.md) - A hermetic test pins the per-diagram probes to the production evaluator, as complex values per amplitude, per flow and per helicity combination, on eleven SM processes. Measured agreement is at most 2.4e-14, and three single-path sign mutations fail it. The bridge cannot see anything the two paths share: rooting, anchor-read convention signs, external wavefunctions and kernels.
