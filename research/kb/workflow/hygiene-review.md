@@ -1,16 +1,19 @@
 ---
 type: Procedure
 title: "Running a hygiene review"
-description: "How to review code for maintainability, test non-vacuity, visibility and reusable abstractions: measured yield per point, the techniques that found real defects, reviewer calibration, mutation evidence, and a proposed checklist and report shape for a per-PR hygiene agent."
-status: draft
+description: "How to review code for maintainability, test non-vacuity, visibility and reusable abstractions: measured yield per point, the techniques that found real defects, reviewer calibration, mutation evidence, and the checklist, routing and report shape the hygiene-dev agent is built on."
+status: stable
 tags: [hygiene, review, non-vacuity, visibility, mutation-testing, agents, process]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-10}
+verified: [{by: "human:nsmith-", at: 2026-10-14}]
 sources:
   - {id: sprint, resource: "../sprints/hygiene/", title: "Hygiene sprint folder: plan, decisions, log, triage, protocols and the 21 session reports"}
   - {id: triage, resource: "../sprints/hygiene/triage.md", title: "Hygiene sprint triage: dispositions of 176 findings"}
   - {id: log, resource: "../sprints/hygiene/log.md", title: "Hygiene sprint log: chronology, restarts, the user's decisions, manager gate re-runs"}
   - {id: review-protocol, resource: "../sprints/hygiene/sessions/review-protocol.md", title: "Hygiene review protocol"}
   - {id: fix-protocol, resource: "../sprints/hygiene/sessions/fix-protocol.md", title: "Hygiene fix protocol"}
+  - {id: agent, resource: "../../../.agents/agents/hygiene-dev.md", title: "hygiene-dev agent definition"}
+  - {id: user-review, resource: "https://claude.ai/code/session_01Y5NsGfe1rRLuxB4VVe5pV9", title: "User review of the hygiene lessons and protocols, 2026-10-14"}
 ---
 A hygiene review looks at code from four points:
 1. **Maintainability.** Duplication, long functions, and comments that contradict the code or narrate its history.
@@ -18,7 +21,7 @@ A hygiene review looks at code from four points:
 3. **Visibility.** `pub` only where something outside the module needs it.
 4. **Reusable abstractions.** Patterns that want one home.
 
-This page records what one full pass over the codebase measured: eight read-only reviews, one per module cluster, then a triage, then ten serial fix sessions. It turns those measurements into a design for the hygiene agent in the [per-item PR flow][pr-item] ([hygiene-agent-type][agent-item]).
+This page records what one full pass over the codebase measured: eight read-only reviews, one per module cluster, then a triage, then ten serial fix sessions. It turns those measurements into the design of the hygiene agent in the [per-item PR flow][pr-item], [`hygiene-dev`][agent], whose definition is the [review][rp] and [fix][fp] protocols synthesised into one session.
 
 Every number below comes from the [triage][triage], the [log][log] or a session report. Where a number is derived, the text says how. The finding ids (`R-D.9`) and session names (`F-D`) appear only as citations into those reports.
 
@@ -191,9 +194,9 @@ New bounds came from a recorded reading (the census, a manifest note, a banked e
 
 A per-PR agent therefore keeps new debt out, and the whole-codebase pass stays a periodic sweep.
 
-### Proposed checklist
+### Checklist
 
-For the agent definition, in the shape of `.agents/agents/validation-dev.md`'s focus section.
+[`hygiene-dev`][agent] makes this checklist binding.
 
 **1. Maintainability**
 - Comments describe the code as it is: no plan, session, note or history references. Grep `\bT[0-9]\b|\bC[0-9]\b|Phase [0-9]|note [0-9]+|used to|no longer`.
@@ -224,9 +227,9 @@ For the agent definition, in the shape of `.agents/agents/validation-dev.md`'s f
 
 **Refactors:** choose the identity oracle before the first edit, and run it at the end.
 
-### Proposed report shape
+### Report shape
 
-These sections keep the calibration measurable, as the sprint's did.
+These sections keep the calibration measurable, as the sprint's did. `hygiene-dev` adds a **Routed** section for the findings it hands on (below).
 
 - **Findings**: id, point, `path:line`, the evidence (a command with its output, or quoted lines), the mutation, the disposition (*fixed*, *Found* or *leave*) and the confidence (*checked* or *suspected*).
 - **Mutations**: each one's command, its pre-fix result and its post-fix result, with the sites no mutation could reach.
@@ -235,9 +238,16 @@ These sections keep the calibration measurable, as the sprint's did.
 - **Found**: cross-module patterns, kb or backlog sites made stale, and real bugs outside the stop-rule ([session scoping][scoping]).
 - **Brief corrections.**
 
-**Open questions for the definition:**
-- Should the agent fix what it finds in the same session, or report first? The sprint kept review and fix apart so that hit rates stayed measurable ([D3][d3]). On a PR's diff the scope is small enough to do both, provided the findings table is written before any fix.
-- Which model should it run on? Every review and every fix session the log records ran on Opus; the tooling session ran on Sonnet.
+### Decided
+
+The user's review settled the definition's two open questions.[^user-review]
+
+- **The agent fixes what it finds, in the same session.** A finding whose fix is physics goes to `validation-dev`, and one whose case is performance goes to `performance-dev`. That should be rare: hygiene runs last in the PR sequence, after the feature session and the validation and performance reviews. The findings table is written before the first edit, so review and fix stay separately measurable as they were in the sprint ([D3][d3]).
+- **The PR flow chooses the model, Opus or Sonnet, by the change's scope and complexity.** A starting rule from this record, to be revised as per-PR reports accumulate:
+  - **Sonnet** for a small change whose hygiene is mostly comments, docs, visibility and moves within a module. The tooling session ran on Sonnet.
+  - **Opus** when the change adds or rewrites tests on stochastic or banked gates, where a tightening must be sized by its own power (two of the six first-tightening misses above, the overweight test and the frozen-grid replay, were of that kind), when a refactor needs an identity oracle, or when the change is large. Every review and every fix session in the sprint ran on Opus.
+
+[^user-review]: User review in the hygiene follow-up session, 2026-10-14.
 
 ## Protocol corrections
 
@@ -332,4 +342,4 @@ From the reports' "Brief corrections" sections.
 [scoping]: session-scoping-rules.md
 [blind]: ../validation/oracle-blind-spots-and-non-vacuity.md
 [pr-item]: ../decisions/pr-per-backlog-item.md
-[agent-item]: ../backlog/hygiene/hygiene-agent-type.md
+[agent]: ../../../.agents/agents/hygiene-dev.md

@@ -98,6 +98,7 @@ mod common;
 use common::report::{
     CategoryCount, Chi2Cell, FieldCell, KsCell, PolarizedLegCell, SamplesRow, SeedSample, Stopwatch,
 };
+use common::seeds::combine;
 
 /// α-adaptation budget for the multichannel combiner, matching the σ gate's, so
 /// the grids the events are drawn on are the ones that gate integrates over.
@@ -2090,9 +2091,11 @@ fn vg_cut(window: usize, seed: u64, neval: usize) -> (Sigma, f64) {
 /// `pta_window_reference.json` holds one row per MadGraph run: stage, version,
 /// estimator (`control` unwindowed, `part` windowed through `dummy_cuts`, `cut`
 /// windowed through the run card), `axis`, window index, seed, `nevents`, σ and
-/// its quoted error. This reduces a selection of those rows to a mean and the two
-/// error estimates that matter — the quoted errors combined, and the *spread* of
-/// the seeds about their own mean, which is the one B1 showed can be larger.
+/// its quoted error. This reduces a selection of those rows under the seed policy
+/// ([`combine`]) to the unweighted mean and both parts of its error, kept apart
+/// rather than maxed because this measurement reads each — the quoted errors
+/// combined (the `Sigma`'s error), and the *spread* of the seeds about their
+/// mean, which is the one B1 showed can be larger.
 ///
 /// `axis` must be part of the key: the two axes number their windows from 1
 /// independently, so a filter without it would silently pool `pt(γ)`'s window 3
@@ -2121,44 +2124,24 @@ fn mg_cloud(
     if runs.is_empty() {
         return None;
     }
-    let n = runs.len() as f64;
-    let s: Vec<f64> = runs
+    let values: Vec<(f64, f64)> = runs
         .iter()
-        .map(|r| r["sigma_pb"].as_f64().unwrap())
+        .map(|r| {
+            (
+                r["sigma_pb"].as_f64().unwrap(),
+                r["sigma_err_pb"].as_f64().unwrap(),
+            )
+        })
         .collect();
-    let e: Vec<f64> = runs
-        .iter()
-        .map(|r| r["sigma_err_pb"].as_f64().unwrap())
-        .collect();
-    let mean = s.iter().sum::<f64>() / n;
-    // The quoted errors of independent runs, combined as the error on their mean.
-    let quoted = (e.iter().map(|x| x * x).sum::<f64>()).sqrt() / n;
-    // The seeds' own spread, and the error on the mean it implies. A quoted error
-    // that undercuts this is the failure mode this whole measurement is about.
-    let spread = if runs.len() > 1 {
-        (s.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
-    } else {
-        f64::NAN
-    };
-    // χ²/dof of the cloud about its own mean on the quoted errors: > 1 means the
-    // runs disagree with each other by more than they claim.
-    let chi2_dof = if runs.len() > 1 {
-        s.iter()
-            .zip(&e)
-            .map(|(x, err)| ((x - mean) / err).powi(2))
-            .sum::<f64>()
-            / (n - 1.0)
-    } else {
-        f64::NAN
-    };
+    let read = combine(&values);
     Some((
         Sigma {
-            pb: mean,
-            err: quoted,
+            pb: read.mean,
+            err: read.quoted,
         },
-        spread / n.sqrt(),
-        chi2_dof,
-        runs.len(),
+        read.spread,
+        read.chi2_per_dof,
+        read.n,
     ))
 }
 
@@ -2352,27 +2335,18 @@ fn probe_pta_windows_against_madgraph() {
     }
 
     // ── the statistics the verdict is read off ──────────────────────────────
+    // Each cloud under the seed policy, its two error parts kept apart as on
+    // MadGraph's side: the `Sigma` carries the quoted part.
     let mean_over_seeds = |pick: &dyn Fn(usize) -> Sigma, n: usize| -> (Sigma, f64, f64) {
-        let vals: Vec<Sigma> = (0..n).map(pick).collect();
-        let m = vals.iter().map(|s| s.pb).sum::<f64>() / n as f64;
-        let quoted = vals.iter().map(|s| s.err * s.err).sum::<f64>().sqrt() / n as f64;
-        let spread = if n > 1 {
-            (vals.iter().map(|s| (s.pb - m).powi(2)).sum::<f64>() / (n as f64 - 1.0)).sqrt()
-        } else {
-            f64::NAN
-        };
-        let chi2_dof = if n > 1 {
-            vals.iter()
-                .map(|s| ((s.pb - m) / s.err).powi(2))
-                .sum::<f64>()
-                / (n as f64 - 1.0)
-        } else {
-            f64::NAN
-        };
+        let vals: Vec<(f64, f64)> = (0..n).map(pick).map(|s| (s.pb, s.err)).collect();
+        let read = combine(&vals);
         (
-            Sigma { pb: m, err: quoted },
-            spread / (n as f64).sqrt(),
-            chi2_dof,
+            Sigma {
+                pb: read.mean,
+                err: read.quoted,
+            },
+            read.spread,
+            read.chi2_per_dof,
         )
     };
 

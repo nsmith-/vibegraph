@@ -27,9 +27,11 @@ cover.
 
 ## Agent types and models
 
-- Each session goes to one dev agent: `feature-dev`, `validation-dev` or
-  `performance-dev`. Miscellaneous tasks go to the `claude` agent type with an
-  explicit model.
+- Each session goes to one dev agent: `feature-dev`, `validation-dev`,
+  `performance-dev` or `hygiene-dev`. Miscellaneous tasks go to the `claude`
+  agent type with an explicit model. `hygiene-dev` runs on Opus or Sonnet by
+  the change's scope and complexity
+  ([hygiene review](hygiene-review.md#decided)).
 - **Never `general-purpose`.** It ignores model overrides.
 - A dev agent may spawn a few narrow sub-agents itself, under these limits:
   - deterministic bulk work only (sweeps, fixture regeneration, mechanical

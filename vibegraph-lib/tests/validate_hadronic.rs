@@ -47,6 +47,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use common::report::{ChannelSummary, IntegralsRow, SeedResult, Stopwatch};
+use common::seeds::{combine, SeedMean};
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
@@ -76,9 +77,13 @@ const DY_NITER: usize = 12;
 /// adaptation.
 const DY_ADAPT_SURVEY: usize = 20_000;
 const DY_ADAPT_ITERS: usize = 6;
-/// Independent seeds each Drell–Yan row is measured on. Three rather than one for
-/// the reason the ℓℓj sweep gives below; the row is cheap enough to afford them.
-const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721];
+/// Independent seeds each Drell–Yan row is measured on, for the reason the ℓℓj
+/// sweep gives below.
+///
+/// Five, so the χ²/dof the gate forms carries the four degrees of freedom
+/// [`DY_MAX_CHI2_PER_DOF`] was calibrated on: `χ²/dof < 4` is a `0.30 %`
+/// false-positive rate on four, against `1.8 %` on the two three seeds give.
+const DY_SEEDS: &[u64] = &[20260719, 20260720, 20260721, 20260722, 20260723];
 
 /// Independent seeds the ℓℓj cross section is measured on. Several runs rather
 /// than one because an under-sampled region is reported as a confident number,
@@ -158,22 +163,22 @@ const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 ///
 /// Asserted together with `|pull| < 3`, not instead of it. MadGraph's own error
 /// is `0.051%` on the default card and `0.044%` on the m_ll window, and this
-/// side's three-seed mean carries about `0.06%`, so the pull's denominator is
-/// near `0.08%` and the pull is the binding bound, at about `0.24%`. This one
+/// side's five-seed mean carries about `0.05%`, so the pull's denominator is
+/// near `0.07%` and the pull is the binding bound, at about `0.22%`. This one
 /// bounds what the pull cannot: a run whose quoted error is inflated — a seed
 /// that caught a weight tail — shrinks the pull without moving σ any closer.
 ///
-/// `0.005` is the census reading with headroom: over the gate's three seeds
-/// `+7.2e-4` and `−2.0e-4`, over five `+5.9e-4` and `−1.3e-4`
-/// (`probe_hadronic_seed_headroom`), so the bound clears the worst by `6.9x`,
-/// and it is the value every other σ row in this file is held to.
+/// `0.005` is the census reading with headroom: over the gate's five seeds
+/// `+4.5e-4` and `+2.2e-4` (`probe_hadronic_seed_headroom`), so the bound clears
+/// the worst by `11x`, and it is the value every other σ row in this file is
+/// held to.
 const DY_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
 /// errors — the guard the scalar pull cannot be: a run that missed a region
-/// reports a small integral *and* a small error. The census reads `1.06` and
-/// `1.43` over the gate's three seeds, `0.80` and `0.97` over five
-/// (`probe_hadronic_seed_headroom`); like the other rows' `χ²/dof < 4` it is a
-/// false-positive rate, `1.8%` on the two degrees of freedom three seeds give.
+/// reports a small integral *and* a small error. The census reads `1.23` and
+/// `0.41` over the gate's five seeds (`probe_hadronic_seed_headroom`); like the
+/// other rows' `χ²/dof < 4` it is a false-positive rate, `0.30%` on the four
+/// degrees of freedom five seeds give.
 const DY_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 fn validation_dir() -> PathBuf {
@@ -417,31 +422,6 @@ fn run_seed_shaped(
     result
 }
 
-/// The unweighted mean of independent seeds, its error, and the scatter of the
-/// seeds about that mean in units of their own quoted errors.
-///
-/// Seeds run equal budgets, so weighting by `1/σ²` here is the same bias Lepage's
-/// theorem forbids for VEGAS's own iteration combination: a seed whose variance
-/// estimate came out low by chance is double-counted, both in the mean and in
-/// its own weight. The unweighted mean and `err = √(Σᵢ σᵢ²)/n` carry no such bias.
-///
-/// The scatter and not the error is what shows a missed region: a run that misses
-/// one reports a small integral *and* a small variance, which the mean alone
-/// cannot distinguish from convergence.
-fn combine_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let n = runs.len() as f64;
-    let mean: f64 = runs.iter().map(|r| r.sigma_pb).sum::<f64>() / n;
-    let var_sum: f64 = runs.iter().map(|r| r.sigma_err_pb * r.sigma_err_pb).sum();
-    let mean_err = var_sum.sqrt() / n;
-    let dof = runs.len().saturating_sub(1).max(1) as f64;
-    let chi2: f64 = runs
-        .iter()
-        .map(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).powi(2))
-        .sum::<f64>()
-        / dof;
-    (mean, mean_err, chi2)
-}
-
 /// σ(p p → e⁺e⁻) through the general hadronic path against a banked MadGraph run.
 ///
 /// What it proves: the whole assembled chain — the `(τ, y)` map and its Jacobian,
@@ -501,7 +481,12 @@ fn check_dy_run(run: &str, card: &str) {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -760,7 +745,8 @@ fn pointwise_integrand_oracle() {
 /// confidently wrong integral with a small error rather than a large one — the
 /// missed region is missing from the variance as much as from the integral — so
 /// a single seed agreeing is not evidence. The runs are compared individually
-/// and through their inverse-variance mean, and it is the mean the gate is on.
+/// and through their mean under the seed policy ([`combine`]), and it is the
+/// mean the gate is on.
 ///
 /// What it cannot see: anything the cross section integrates over. A per-diagram
 /// phase, a colour-flow relabelling and a helicity-by-helicity error all leave
@@ -823,7 +809,12 @@ fn probe_fiducial_bound_on_llj_fixed() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  bound {:>3}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | rel {:+.4} | \
@@ -893,7 +884,12 @@ fn sigma_llj_fixed_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -995,7 +991,12 @@ fn probe_llj_fixed_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | \
@@ -1070,13 +1071,14 @@ fn probe_accepted_point_floor_hadronic() {
             sigma_err_pb,
         });
     }
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
-    let sd = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (runs.len() - 1) as f64)
-        .sqrt();
+    let SeedMean {
+        mean,
+        err: mean_err,
+        spread,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
+    let sd = spread * (runs.len() as f64).sqrt();
     eprintln!(
         "  -> 5-seed sigma {mean:.4} +- {mean_err:.4} pb (chi2/dof {chi2:.2}) | rel {:+.4} \
          | seed sd/sigma {:.4}",
@@ -1189,13 +1191,14 @@ fn probe_alpha_survey_budget_hadronic() {
                         sigma_err_pb,
                     });
                 }
-                let (mean, mean_err, chi2) = combine_seeds(&runs);
-                let sd = (runs
-                    .iter()
-                    .map(|r| (r.sigma_pb - mean).powi(2))
-                    .sum::<f64>()
-                    / (runs.len() - 1) as f64)
-                    .sqrt();
+                let SeedMean {
+                    mean,
+                    err: mean_err,
+                    spread,
+                    chi2_per_dof: chi2,
+                    ..
+                } = combine(&runs);
+                let sd = spread * (runs.len() as f64).sqrt();
                 let lo = runs.iter().map(|r| r.sigma_pb).fold(f64::MAX, f64::min);
                 let hi = runs.iter().map(|r| r.sigma_pb).fold(f64::MIN, f64::max);
                 eprintln!(
@@ -1380,7 +1383,12 @@ fn sigma_llj_dynamical_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -1493,7 +1501,12 @@ fn probe_llj_dyn_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.4} ± {mean_err:.4} pb (χ²/dof {chi2:.2}) | \
@@ -1513,7 +1526,11 @@ const BB_PROCESS: &str = "p p > b b~ QCD=2";
 
 /// Independent seeds the `b b̄` cross section is measured on, for the reason the
 /// ℓℓj sweep gives.
-const BB_SEEDS: &[u64] = &[20260801, 20260802, 20260803];
+///
+/// Five, the count [`BB_MAX_CHI2_PER_DOF`] was calibrated on by
+/// [`probe_bb_budget_ladder`]: `χ²/dof < 4` is a `0.30 %` false-positive rate on
+/// the four degrees of freedom five seeds give.
+const BB_SEEDS: &[u64] = &[20260801, 20260802, 20260803, 20260804, 20260805];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const BB_ADAPT_SURVEY: usize = 8_000;
 const BB_ADAPT_ITERS: usize = 5;
@@ -1531,7 +1548,7 @@ const BB_ADAPT_ITERS: usize = 5;
 /// which spread the same budget over 24 pooled channels and so reach a converged
 /// rung much later, are the reason that is checked rather than assumed.
 ///
-/// At `75 000` three seeds leave this side's error at `0.076%` against the banked
+/// At `75 000` five seeds leave this side's error at `0.059%` against the banked
 /// run's own `0.182%`, so the combined error of the two sides is still dominated
 /// by the reference.
 const BB_NEVAL: usize = 75_000;
@@ -1540,8 +1557,8 @@ const BB_NITER: usize = 10;
 ///
 /// MadGraph's own Monte-Carlo error on the banked run is `0.182%`, which is the
 /// floor — no agreement tighter than the reference's precision is meaningful —
-/// and this side's is `0.076%` at the gate budget, so `0.005` is two and a half
-/// times the two sides' combined `0.197%`. The whole measured budget family sits
+/// and this side's is `0.059%` at the gate budget, so `0.005` is two and a half
+/// times the two sides' combined `0.191%`. The whole measured budget family sits
 /// inside `0.16%`.
 const BB_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their own
@@ -1685,7 +1702,12 @@ fn sigma_bb_fixed_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -1712,7 +1734,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
     row.niter = BB_NITER;
     row.subsampler = summary;
     row.note = Some(
-        "three seeds at 75k in this layer; the five-seed 75k to 600k ladder \
+        "five seeds at 75k in this layer; the five-seed 75k to 600k ladder \
          (probe_bb_budget_ladder) reads +0.15% / +0.16% / +0.11% / +0.14% at \
          chi2/dof 0.63 / 0.79 / 0.68 / 0.06, an 0.05% span with no direction to \
          it, so the gate runs at the lowest rung the ladder resolves as converged"
@@ -1735,7 +1757,7 @@ fn sigma_bb_fixed_scale_vs_mg() {
 
 /// The budget ladder behind [`BB_NEVAL`], five seeds a rung.
 ///
-/// The gate reads three seeds at one budget, and that pair of numbers cannot
+/// The gate reads five seeds at one budget, and that pair of numbers cannot
 /// separate an agreement from an estimator still moving: a VEGAS run reports an
 /// under-sampled region as a confident value, error bar included, because the
 /// region's absence lowers the integral and its quoted error together. What tells the two apart is whether σ moves with the
@@ -1785,7 +1807,12 @@ fn probe_bb_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb (χ²/dof {chi2:.2}) | \
@@ -2239,7 +2266,12 @@ fn probe_jj_budget_ladder() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
         eprintln!(
             "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb \
@@ -2450,7 +2482,12 @@ fn sigma_jj_dynamical_scale_vs_mg() {
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
     let rel = mean / mg - 1.0;
     eprintln!(
@@ -3000,8 +3037,8 @@ fn comps(p: &V) -> [f64; 4] {
 const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
     // Flat across the whole ladder — `+0.07%`, `−0.01%`, `+0.02%`, `−0.02%` at
     // 75k, 150k, 300k and 600k, with χ²/dof 0.55, 1.00, 0.09, 0.19 — so the
-    // lowest rung is the converged one. Three seeds there leave this side's
-    // error at `0.044%` against the reference's `0.071%`.
+    // lowest rung is the converged one. Five seeds there leave this side's
+    // error at `0.043%` against the reference's `0.071%`.
     (
         "pp_to_bb",
         "p p > b b~",
@@ -3034,7 +3071,7 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
          rung's error is inflated by a single seed",
     ),
     // Flat: `−0.03%`, `+0.05%`, `−0.02%`, `−0.04%` at χ²/dof 0.82, 0.65, 0.65,
-    // 0.21, with this side's three-seed error `0.084%` against the reference's
+    // 0.21, with this side's five-seed error `0.065%` against the reference's
     // `0.198%` at the lowest rung.
     (
         "pp_to_ll_scalefact2",
@@ -3046,7 +3083,11 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
 
 /// Independent seeds these rows are measured on, for the reason the ℓℓj sweep
 /// gives: a single seed's error bar is not a measurement of a VEGAS estimator.
-const RECARDED_SEEDS: &[u64] = &[20260901, 20260902, 20260903];
+///
+/// Five, the count [`RECARDED_MAX_CHI2_PER_DOF`] was calibrated on by
+/// [`probe_recarded_budget_ladder`]: `χ²/dof < 4` is a `0.30 %` false-positive
+/// rate on the four degrees of freedom five seeds give.
+const RECARDED_SEEDS: &[u64] = &[20260901, 20260902, 20260903, 20260904, 20260905];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const RECARDED_ADAPT_SURVEY: usize = 8_000;
 const RECARDED_ADAPT_ITERS: usize = 5;
@@ -3138,7 +3179,12 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize, ladder_note: &
         });
     }
 
-    let (mean, mean_err, chi2) = combine_seeds(&runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(&runs);
     let combined = (mean_err * mean_err + mg_err * mg_err).sqrt();
     let pull = (mean - mg) / combined;
     let rel = mean / mg - 1.0;
@@ -3164,7 +3210,7 @@ fn measure_recarded_sigma(run: &str, process: &str, neval: usize, ladder_note: &
     row.niter = RECARDED_NITER;
     row.subsampler = summary;
     row.note = Some(format!(
-        "three seeds at {neval} points an iteration, {ladder_note}"
+        "five seeds at {neval} points an iteration, {ladder_note}"
     ));
     row.duration_s = Some(clock.seconds());
     row.write();
@@ -3278,7 +3324,12 @@ fn probe_recarded_budget_ladder() {
                     sigma_err_pb: err,
                 });
             }
-            let (mean, mean_err, chi2) = combine_seeds(&runs);
+            let SeedMean {
+                mean,
+                err: mean_err,
+                chi2_per_dof: chi2,
+                ..
+            } = combine(&runs);
             let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
             eprintln!(
                 "  neval {neval:>7}: σ = {mean:.6e} ± {mean_err:.3e} pb (χ²/dof {chi2:.2}) | \
@@ -3289,77 +3340,47 @@ fn probe_recarded_budget_ladder() {
     }
 }
 
-/// The Drell–Yan, `b b̄`, `j j` and re-carded σ gates of this file, each with five
-/// seeds.
-///
-/// Every entry starts with its gate's own seed list. The `j j` gate reads all five
-/// ([`JJ_SEEDS`]); the others read the first three, so their five-seed reading
-/// contains the three-seed one and the difference between them is exactly what
-/// the extra seeds buy. The extensions follow the budget ladders'
-/// convention of continuing each family's run of consecutive seeds.
+/// The Drell–Yan, `b b̄`, `j j` and re-carded σ gates of this file, each on its
+/// gate's own seed list.
 const HEADROOM_ARMS: &[(&str, &[u64], f64, f64)] = &[
-    (
-        "dy_default",
-        &[20260719, 20260720, 20260721, 20260722, 20260723],
-        DY_MAX_REL,
-        DY_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "dy_mmll_60_120",
-        &[20260719, 20260720, 20260721, 20260722, 20260723],
-        DY_MAX_REL,
-        DY_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "pp_to_bb_fixed",
-        &[20260801, 20260802, 20260803, 20260804, 20260805],
-        BB_MAX_REL,
-        BB_MAX_CHI2_PER_DOF,
-    ),
-    (
-        "pp_to_jj",
-        &[20260810, 20260811, 20260812, 20260813, 20260814],
-        JJ_MAX_REL,
-        JJ_MAX_CHI2_PER_DOF,
-    ),
+    ("dy_default", DY_SEEDS, DY_MAX_REL, DY_MAX_CHI2_PER_DOF),
+    ("dy_mmll_60_120", DY_SEEDS, DY_MAX_REL, DY_MAX_CHI2_PER_DOF),
+    ("pp_to_bb_fixed", BB_SEEDS, BB_MAX_REL, BB_MAX_CHI2_PER_DOF),
+    ("pp_to_jj", JJ_SEEDS, JJ_MAX_REL, JJ_MAX_CHI2_PER_DOF),
     (
         "pp_to_bb",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_bb_qcd2",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_llj",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
     (
         "pp_to_ll_scalefact2",
-        &[20260901, 20260902, 20260903, 20260904, 20260905],
+        RECARDED_SEEDS,
         RECARDED_MAX_REL,
         RECARDED_MAX_CHI2_PER_DOF,
     ),
 ];
 
-/// Every [`HEADROOM_ARMS`] σ bound read on the first three of its seeds and on all
-/// five, at its own gate budget — the headroom census behind the seed counts.
+/// Every [`HEADROOM_ARMS`] σ bound read on its gate's seeds at its own gate
+/// budget, under the seed policy ([`combine`]) — the headroom census behind
+/// each bound.
 ///
-/// [`combine_seeds`]' χ²/dof carries `n − 1` degrees of freedom, so a three-seed
-/// gate forms it on two: wide enough that a converged row can post an alarming
-/// value and a scattered one an unremarkable one, which is why `LLJ_SEEDS` and
-/// `JJ_SEEDS` are five. The bounds the three-seed rows are held to were
-/// calibrated on five-seed budget ladders, so bound and statistic do not have the
-/// same degrees of freedom behind them. This prints both readings with each
-/// bound's ratio to the five-seed value, so how much of each row's margin is the
-/// comparison and how much is the seed count is a measurement rather than an
-/// inference.
+/// Each line prints the relative distance, the pull and the seeds' χ²/dof with
+/// each bound's ratio to its reading, so a row's margin is a measurement rather
+/// than an inference. Every arm reads five seeds, the count its χ²/dof bound
+/// was calibrated on.
 ///
 /// One rung, every arm; the budget ladders above are where the other axis lives.
 /// Run with `--ignored --nocapture`.
@@ -3474,25 +3495,21 @@ fn probe_hadronic_seed_headroom() {
             });
         }
 
-        let read = |n: usize| {
-            let (mean, mean_err, chi2) = combine_seeds(&runs[..n]);
-            let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
-            let rel = mean / mg - 1.0;
-            eprintln!(
-                "  {n} seeds: σ = {mean:.6e} ± {mean_err:.3e} pb | rel {rel:+.4e} | \
-                 pull {pull:+.2} | χ²/dof {chi2:.2}"
-            );
-            (rel, pull, chi2)
-        };
-        let (rel3, pull3, chi23) = read(3);
-        let (rel5, pull5, chi25) = read(seeds.len());
+        let read = combine(&runs);
+        let pull = read.pull(mg, mg_err);
+        let rel = read.mean / mg - 1.0;
+        let chi2 = read.chi2_per_dof;
+        eprintln!(
+            "  {} seeds: σ = {:.6e} ± {:.3e} pb (quoted {:.3e}, spread {:.3e}) | \
+             rel {rel:+.4e} | pull {pull:+.2} | χ²/dof {chi2:.2}",
+            read.n, read.mean, read.err, read.quoted, read.spread,
+        );
         let line = format!(
-            "HEADROOM {arm:<22} | rel {rel3:+.3e} (3) {rel5:+.3e} (5) vs {max_rel} -> {:5.1}x | \
-             χ²/dof {chi23:.2} (3) {chi25:.2} (5) vs {max_chi2} -> {:5.1}x | \
-             pull {pull3:+.2} (3) {pull5:+.2} (5) vs 3.0 -> {:5.1}x",
-            max_rel / rel5.abs(),
-            max_chi2 / chi25,
-            3.0 / pull5.abs(),
+            "HEADROOM {arm:<22} | rel {rel:+.3e} vs {max_rel} -> {:5.1}x | \
+             χ²/dof {chi2:.2} vs {max_chi2} -> {:5.1}x | pull {pull:+.2} vs 3.0 -> {:5.1}x",
+            max_rel / rel.abs(),
+            max_chi2 / chi2,
+            3.0 / pull.abs(),
         );
         eprintln!("  {line}");
         census.push(line);
@@ -3533,10 +3550,11 @@ type LadderArm = (&'static str, &'static str, &'static [(usize, usize)]);
 /// alone, so the channel weights are identical along a row and the survey is
 /// not on the list of things a rung changes.
 ///
-/// Two errors are printed per rung: the quoted `√(Σσᵢ²)/n`, and the seeds' own
-/// RMS about their mean over `√n`. Neither is the estimator's real spread at
-/// five seeds — `probe_llj_seed_ensemble` measures that over forty — and the
-/// scatter is the further off of the two, so both are printed rather than one.
+/// Both parts of each rung's error are printed beside the larger one the pull
+/// and drift are read with: the quoted `√(Σσᵢ²)/n`, and the seeds' own RMS
+/// about their mean over `√n`. Neither is the estimator's real spread at five
+/// seeds — `probe_llj_seed_ensemble` measures that over forty — and the scatter
+/// is the further off of the two, so both are printed rather than one.
 ///
 /// Reads, on the `mmll = 0` card against MadGraph's `504.630 ± 1.674 pb`:
 /// `504.506` / `505.184` / `505.977` / `505.849` / `505.828` at `150k` through
@@ -3622,15 +3640,14 @@ fn probe_llj_deep_budget_ladder() {
                     sigma_err_pb: err,
                 });
             }
-            let (mean, mean_err, chi2) = combine_seeds(&runs);
-            let n = runs.len() as f64;
-            let scatter = (runs
-                .iter()
-                .map(|r| (r.sigma_pb - mean).powi(2))
-                .sum::<f64>()
-                / (n - 1.0))
-                .sqrt()
-                / n.sqrt();
+            let SeedMean {
+                mean,
+                err: mean_err,
+                quoted,
+                spread: scatter,
+                chi2_per_dof: chi2,
+                ..
+            } = combine(&runs);
             let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
             let kept = (niter - 2) * neval;
             let drift = base.map(|(b, be)| {
@@ -3644,7 +3661,7 @@ fn probe_llj_deep_budget_ladder() {
             }
             eprintln!(
                 "  {neval:>7} x {niter:<2} (kept {:>5.1}M): σ = {mean:.4} ± {mean_err:.4} pb \
-                 [scatter ±{scatter:.4}] (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2}{} | \
+                 [quoted ±{quoted:.4}, scatter ±{scatter:.4}] (χ²/dof {chi2:.2}) | rel {:+.4} | pull {pull:+.2}{} | \
                  {:.0} s",
                 kept as f64 / 1e6,
                 mean / mg - 1.0,
@@ -3758,13 +3775,13 @@ fn seed_ensemble_of(
         .collect();
 
     eprintln!("── {run}: MG {mg:.6e} ± {mg_err:.3e} pb, {seeds} seeds a rung ──");
-    let mut per_rung: Vec<Vec<f64>> = Vec::new();
+    let mut per_rung: Vec<Vec<(f64, f64)>> = Vec::new();
     for &(neval, niter) in rungs {
         let clock = Stopwatch::start();
         let mut summary = Vec::new();
-        let mut sigmas: Vec<f64> = Vec::new();
+        let mut pairs: Vec<(f64, f64)> = Vec::new();
         for k in 0..seeds {
-            let (sigma, _) = run_seed_shaped(
+            let (sigma, err) = run_seed_shaped(
                 &groups,
                 &amps,
                 model,
@@ -3779,12 +3796,13 @@ fn seed_ensemble_of(
                 true,
                 ScaleShape::PerEvent,
             );
-            sigmas.push(sigma);
+            pairs.push((sigma, err));
         }
+        let read = combine(&pairs);
+        let sigmas: Vec<f64> = pairs.iter().map(|&(s, _)| s).collect();
         let n = sigmas.len() as f64;
-        let mean = sigmas.iter().sum::<f64>() / n;
-        let var = sigmas.iter().map(|s| (s - mean).powi(2)).sum::<f64>() / (n - 1.0);
-        let sd = var.sqrt();
+        let mean = read.mean;
+        let sd = read.spread * n.sqrt();
         let skew = sigmas
             .iter()
             .map(|s| ((s - mean) / sd).powi(3))
@@ -3798,14 +3816,14 @@ fn seed_ensemble_of(
             "  {neval:>7} x {niter:<2}: mean {mean:.4} ± {:.4} pb | median {median:.4} \
              (mean − median {:+.4}) | sd {sd:.4} | skew {skew:+.2} | \
              range [{:.2}, {:.2}] | rel {:+.4} | {:.0} s",
-            sd / n.sqrt(),
+            read.err,
             mean - median,
             sorted[0],
             sorted[sorted.len() - 1],
             mean / mg - 1.0,
             clock.seconds(),
         );
-        per_rung.push(sigmas);
+        per_rung.push(pairs);
     }
 
     eprintln!("  disjoint five-seed ladders over the same rungs:");
@@ -3813,7 +3831,7 @@ fn seed_ensemble_of(
     for q in 0..seeds / 5 {
         let means: Vec<f64> = per_rung
             .iter()
-            .map(|s| s[5 * q..5 * q + 5].iter().sum::<f64>() / 5.0)
+            .map(|s| combine(&s[5 * q..5 * q + 5]).mean)
             .collect();
         let up = means.windows(2).all(|w| w[1] > w[0]);
         let down = means.windows(2).all(|w| w[1] < w[0]);
@@ -4015,16 +4033,12 @@ fn probe_llj_dyn_scatter_guard_calibration() {
             }
         })
         .collect();
-    let (mean, _, chi2) = combine_seeds(&runs);
+    let all = combine(&runs);
+    let (mean, chi2) = (all.mean, all.chi2_per_dof);
     let n = runs.len() as f64;
-    let sd = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0))
-        .sqrt();
+    let sd = all.spread * n.sqrt();
     let quoted = runs.iter().map(|r| r.sigma_err_pb).sum::<f64>() / n;
-    let quintets: Vec<f64> = runs.chunks(5).map(|q| combine_seeds(q).2).collect();
+    let quintets: Vec<f64> = runs.chunks(5).map(|q| combine(q).chi2_per_dof).collect();
     let over = quintets
         .iter()
         .filter(|&&c| c > LLJ_MAX_CHI2_PER_DOF)
@@ -4420,7 +4434,12 @@ fn probe_dynamic_rows_seed_sweep() {
                 sigma_err_pb: err,
             });
         }
-        let (mean, mean_err, chi2) = combine_seeds(&runs);
+        let SeedMean {
+            mean,
+            err: mean_err,
+            chi2_per_dof: chi2,
+            ..
+        } = combine(&runs);
         eprintln!(
             "SWEEP-ROW {run}: {} seeds from {first} at {} x {}: σ = {mean:.6e} ± {mean_err:.3e} pb \
              | χ²/dof {chi2:.2} | MG {mg:.6e} ± {mg_err:.3e} | pull {:+.2} | rel {:+.4} | {:.0} s",
@@ -4438,8 +4457,8 @@ fn probe_dynamic_rows_seed_sweep() {
 const XQCUT_ONLY_SEEDS: &[u64] = &[20260941, 20260942, 20260943, 20260944, 20260945];
 const XQCUT_ONLY_NEVAL: usize = 150_000;
 
-/// A seeded MadEvent reference read under the manifest's seed policy: the
-/// inverse-variance mean of the seeds, with `max(quoted, spread / √n)`.
+/// A seeded MadEvent reference read under the manifest's seed policy
+/// ([`combine`]): the seeds' unweighted mean, with `max(quoted, spread / √n)`.
 ///
 /// `part` selects one process's share of each run (its `by_lprup` entry, the
 /// `@N` of the proc card); `None` reads the run's total.
@@ -4465,32 +4484,8 @@ fn seeded_reference(file: &str, row: &str, part: Option<&str>) -> (f64, f64, usi
             )
         })
         .collect();
-    let weights: f64 = pairs.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let mean = pairs.iter().map(|(s, e)| s / (e * e)).sum::<f64>() / weights;
-    let quoted = weights.sqrt().recip();
-    let n = pairs.len() as f64;
-    let plain = pairs.iter().map(|(s, _)| s).sum::<f64>() / n;
-    let spread = (pairs.iter().map(|(s, _)| (s - plain).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
-    (mean, quoted.max(spread / n.sqrt()), pairs.len())
-}
-
-/// This side's seeds read under the seed policy: [`combine_seeds`]'s
-/// unweighted mean, with an error no smaller than the seeds' spread over `√n`,
-/// and the seeds' χ²/dof about that mean.
-///
-/// The spread enters because a heavy-tailed estimator's quoted error
-/// underestimates its seed-to-seed scatter; the mean stays unweighted because
-/// such a seed's low quoted error tends to come with a low estimate.
-fn policy_seeds(runs: &[SeedResult]) -> (f64, f64, f64) {
-    let (mean, quoted, chi2) = combine_seeds(runs);
-    let n = runs.len() as f64;
-    let spread = (runs
-        .iter()
-        .map(|r| (r.sigma_pb - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0))
-        .sqrt();
-    (mean, quoted.max(spread / n.sqrt()), chi2)
+    let read = combine(&pairs);
+    (read.mean, read.err, read.n)
 }
 
 /// The largest |pull| of the seed means, both sides read under the seed policy,
@@ -4525,7 +4520,12 @@ fn write_mlm_sigma_cell(
     duration_s: f64,
 ) -> bool {
     let (mg, mg_err, mg_seeds) = mg;
-    let (mean, mean_err, chi2) = policy_seeds(runs);
+    let SeedMean {
+        mean,
+        err: mean_err,
+        chi2_per_dof: chi2,
+        ..
+    } = combine(runs);
     let pull = (mean - mg) / (mean_err * mean_err + mg_err * mg_err).sqrt();
     let rel = mean / mg - 1.0;
     let band = mlm_chi2_band(runs.len());

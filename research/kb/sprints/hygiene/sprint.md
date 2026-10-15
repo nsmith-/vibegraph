@@ -14,8 +14,8 @@ The first sprint run in the [sprint lifecycle](../../workflow/sprint-lifecycle.m
 folder shape, and its test on live work. It reviews the existing codebase from
 the four perspectives of the planned hygiene session type, fixes what is small,
 files what is large, and closes the hygiene items that already name their sites.
-How the reviews went is recorded as the input to
-[hygiene-agent-type](../../backlog/hygiene/hygiene-agent-type.md).
+How the reviews went is recorded as the input to the hygiene agent's design,
+which became [`hygiene-dev`](../../../../.agents/agents/hygiene-dev.md).
 
 ## Goal and exit criteria
 

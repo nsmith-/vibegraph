@@ -1,7 +1,7 @@
 ---
 type: Validation Methodology
 title: Seed policy for MadEvent references
-description: "At least five seeds (ten under a gate tighter than 0.3%), stored per seed, read as an inverse-variance mean with error max(quoted, spread/sqrt n); fresh directories per seed where shared-directory seeds are not independent enough."
+description: "At least five seeds (ten under a gate tighter than 0.3%), stored per seed, read as an unweighted mean with error max(quoted, spread/sqrt n); fresh directories per seed where shared-directory seeds are not independent enough."
 status: draft
 tags: [madgraph, references, seeds, statistics, sigma]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -36,9 +36,21 @@ policy"). Every MadEvent cross section or width banked as a reference is:
   tighter than 0.3 %;
 - **stored per seed** (`iseed`, value, quoted error), never as a combined mean, so
   the spread is on the record beside the quote;
-- **read** as the seeds' inverse-variance mean with uncertainty
-  `max(quoted, spread/√n)` — "quoted" the inverse-variance error of the seeds' own
-  quotes, "spread" their sample standard deviation.
+- **read** as the seeds' **unweighted** mean with uncertainty
+  `max(quoted, spread/√n)` — "quoted" `√(Σσᵢ²)/n` from the seeds' own quotes,
+  "spread" their sample standard deviation — and their χ²/dof about that mean
+  read as a separate scatter check. One helper implements it for every gate,
+  `combine` in `vibegraph-lib/tests/common/seeds.rs`.
+
+**Why unweighted.** A seed that misses a region reports a low value *and* a low
+variance, so a `1/σ²` mean up-weights exactly the seed that is wrong. Seeds of
+equal budget carry no information in their quoted errors that an unweighted
+mean needs. The user chose this rule on 2026-10-14, replacing a `1/σ²` mean
+that the policy text, the grammar gate and the MLM reference reader used while
+the hadronic gates already averaged unweighted.[^seed-rule] Under the old mean
+the grammar ladder's `$$ z` row showed a 0.5% climb with budget that the
+unweighted mean does not
+([seed sweeps](seed-sweeps-and-budget-ladders.md#the-second-axis-budget)).
 
 This crate's side of a seeded gate is read the same way: the gate asserts the
 pull of the two means, each of this side's seeds against MadEvent's mean, and this
@@ -141,3 +153,4 @@ Unweighting and truncation on MadEvent's side are
 [^n38-z2]: Note 38 §8.5.
 [^n41-m3]: Note 41 M3, D2 diagnosis.
 [^n41-z]: Note 41 Z, "`@2`'s reference from independent directories". M0's shared-directory values for `pp_to_ll_0j2j_mlm` are superseded and kept only in `shared_directory_runs`, which nothing reads.
+[^seed-rule]: User decision of 2026-10-14 on the seed-combination rule; the change re-read every MadEvent reference from its stored seeds; the largest move was `wpt_wm`, 0.45 of its old error.
