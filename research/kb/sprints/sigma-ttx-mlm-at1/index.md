@@ -6,6 +6,10 @@
 
 * [t t~ MLM @1 σ excess](sprint.md) - Attribute the +1.28 % excess of pp_to_ttx_0j1j_mlm's one-jet part over MadEvent to the reference, H1, or this side, starting from the reference-side and per-event steps.
 
+## Sprint Record
+
+* [t t~ MLM @1 σ excess](closeout.md) - The +1.28 % @1 excess was two things: this side clustering MLM scales in the lab frame (fixed, −4.47 pb) and MadEvent's default survey under-integrating g q > t t~ q; against a hard_survey = 2 reference @1 reads 0.88σ.
+
 ## Directories
 
 * [sessions](sessions/index.md)

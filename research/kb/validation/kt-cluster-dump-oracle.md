@@ -160,9 +160,9 @@ branches are reached by no dumped event[^n28-k36]:
 `scalefact ≠ 1` is not in any dump but is pinned at the scale level by the
 `pp_to_ll_scalefact2` row's replay ([the scale replay gate](scale-replay-gate.md)).
 `ickkw = 1` is not in these dumps; the matched runs have their own instrumented
-replay, [the MLM dump oracle](mlm-dump-oracle.md). `pp_to_jj`'s nine beam-crossing
-tie-break events are enforced by signature only, with no dump
-([pp-to-jj-tie-break-no-cluster-dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md)).
+replay, [the MLM dump oracle](mlm-dump-oracle.md). `pp_to_jj`'s nine former
+tie-break misses were a frame error in the replay, not a tie below printed
+precision; replayed in the partonic CM they reproduce ([scale replay](scale-replay-gate.md)).
 
 *Blind to*: cross-event state the engine deliberately does not carry (the
 `ipdgcl` common block, the per-directory jet memo) beyond the two diagnosed

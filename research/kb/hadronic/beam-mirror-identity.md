@@ -137,9 +137,9 @@ exchanged, the outgoing row untouched, the same integers.
 ## The mirrored term's scale
 
 Under a configuration-dependent scale the mirrored term is clustered as its own physical
-event: the configuration is drawn from `AMP2` at `Rq`, and the clustering reads the lab
-momenta rotated by π about x with the beams exchanged (`mirror_lab_into`), so the
-representative's first parton is on the first beam. This is MadEvent's `IMIRROR = 2`
+event: the configuration is drawn from `AMP2` at `Rq`, and the clustering reads the
+mirrored partonic-CM momenta `Rq` themselves, so the representative's first parton is
+on the first beam. This is MadEvent's `IMIRROR = 2`
 view, which clusters the unflipped momenta in its matrix element's flavour order. The
 resulting per-beam `μF` is swapped back to physical beam order. The scale consequences
 are [scales-pdf/clustering-configuration-draw](../scales-pdf/clustering-configuration-draw.md);

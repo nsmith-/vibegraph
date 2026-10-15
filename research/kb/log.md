@@ -25,3 +25,4 @@
 
 ## 2026-10-15
 * **H1 census closed** ([record](sprints/sigma-h1-ickkw0-census/closeout.md), [nsmith-/vibegraph#24](https://github.com/nsmith-/vibegraph/pull/24)): every banked grouped row checked for the permuted first call; only `pp_to_ll_0j2j_mlm` is measurably affected, and no reference needed re-banking.
+* **t t~ MLM @1 excess attributed** ([record](sprints/sigma-ttx-mlm-at1/closeout.md), [nsmith-/vibegraph#23](https://github.com/nsmith-/vibegraph/pull/23)): the hadronic integrand clustered MLM scales in the lab frame (fixed; −4.47 pb on `@1`), and MadEvent's default survey under-integrates `g q > t t~ q` ([measurement](validation/madevent-default-survey-bias.md)); the cell gates once re-banked with `hard_survey = 2`.

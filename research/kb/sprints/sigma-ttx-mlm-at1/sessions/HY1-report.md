@@ -7,6 +7,7 @@ tags: [hygiene, non-vacuity, mutation-testing, clustering, frames, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: docs-fix, resource: "https://github.com/nsmith-/vibegraph/commit/2dd52f4", title: "docs(scales): say which frame each scale path reads"}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 This report is from the hygiene-dev agent. The change under review is
 `6740954`, which touches `proton.rs`, `coupling/scales.rs`, `hadronic.rs`,

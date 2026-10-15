@@ -95,11 +95,10 @@ element reads it, weighted by that matrix element's `AMP2`.
 `ProtonIntegrand::per_group_sum` (`proton.rs`) does the same. For each group:
 
 - **direct term:** draw `c ∝ w_c(q)` from the group's own matrix element at the
-  partonic point `q`, cluster at the lab momenta, read the densities at its own
+  partonic point `q`, cluster at the partonic-CM momenta `q`, read the densities at its own
   `μF` and bind `αs(μR)`;
 - **mirrored term** (groups with distinct beam partons): draw from `w_c(Rq)`,
-  `R` the rotation by π about x, cluster at the lab momenta rotated the same way
-  with the beams exchanged (`mirror_lab_into`), and swap the per-beam `μF` back
+  `R` the rotation by π about x, cluster at the mirrored CM momenta `Rq`, and swap the per-beam `μF` back
   to physical beam order.
 
 All draws share the trailing uniform, which correlates them without changing

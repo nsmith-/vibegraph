@@ -133,11 +133,11 @@ Cross-cutting lists:
   `scalefact ≠ 1`, and the only oracle for where MadGraph applies it (once per
   scale on 3.7.1; `μF(beam 2) = μF(beam 1)` bit for bit in all 10 000
   events).[^vscales]
-- `TIE_BREAK_MISSES = [("pp_to_jj", 9)]`: events admitted only with the exact
-  `√(1 + 10⁻⁶)` crossing-inflation signature, count asserted for equality. Which
-  of two degenerate candidates `cluster.f` chose is decided below the printed
-  digits; settling it needs a `p p → j j` clustering dump
-  ([backlog](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md)).[^vscales]
+- **No allowed misses.** The replay boosts each event into its partonic CM before
+  clustering, as MadEvent does. `pp_to_jj`'s nine former "tie-break" events were
+  the lab-frame replay reading `cluster.f`'s p_z-sign beam tie-break in the wrong
+  frame; in the CM they reproduce, and the gate asserts zero misses
+  ([sigma-ttx-mlm-at1](../sprints/sigma-ttx-mlm-at1/closeout.md)).
 
 **Banking a process banks a run.** `launch` builds `matrix1_optim.f` and writes
 10 000 events, so registering an amplitude process adds a run that every

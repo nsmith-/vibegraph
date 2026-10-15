@@ -203,8 +203,7 @@ channel-dependent. A 2 → 1 (`nexternal = 3`) short-circuits at `:651-668`.
 
 Banked LHE fields cannot see a wrong tie-break or line PDG that leaves the
 printed scale unchanged; only the dump can, and runs without one (the four
-`2 → 3` partonic `llj` rows, `pp_to_jj`) are pinned by the printed scale alone
-([pp-to-jj-tie-break-no-cluster-dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md)).
+`2 → 3` partonic `llj` rows, `pp_to_jj`) are pinned by the printed scale alone.
 
 [^n28-k1]: Note 28 §K1–K1.4, read at `b7687064`.
 [^n28-k35]: Note 28 §K3.5 (the observation from the dump) and §K4.5 (the explanation).

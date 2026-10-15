@@ -3,7 +3,7 @@ type: Sprint
 title: "t t~ MLM @1 σ excess"
 description: "Attribute the +1.28 % excess of pp_to_ttx_0j1j_mlm's one-jet part over MadEvent to the reference, H1, or this side, starting from the reference-side and per-event steps."
 status: draft
-active: true
+active: false
 tags: [mlm, sigma, ttx, h1, madevent-reference]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---

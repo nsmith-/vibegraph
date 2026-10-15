@@ -78,3 +78,16 @@
 * **Item status:** attributed. The integrals cell can gate once the
   reference is re-banked with `hard_survey = 2`. That goes into the
   approved batch on PR #25, as an amendment for the user.
+* **HY1 landed** (`2dd52f4`, `be8da33`). The fix holds: all 6 unit-level and
+  2 replay-level frame mutations fail. The docs now say which frame each scale
+  path reads. Machine-confirmed by the manager: 8/8 FAILED in the mutation log.
+* **Close-out:**
+  - the kb sites that still described lab-frame clustering or the nine
+    `pp_to_jj` tie-break misses are corrected, and
+    `pp-to-jj-tie-break-no-cluster-dump` is deleted (the planner's call: its
+    misses were the frame bug);
+  - MadEvent's default-survey bias is recorded as a measurement;
+  - four Found items are filed, and a test-side boost duplicate is appended to
+    `kinematic-helpers-hand-rolled`;
+  - `ttx-mlm-at1-sigma-high` stays open, rewritten to its one remaining step,
+    the `hard_survey = 2` re-bank in PR #25's batch, and its claim is released.

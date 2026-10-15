@@ -27,6 +27,7 @@
 
 ## Measurement
 
+* [MadEvent's default survey under-integrates g q > t t~ q](madevent-default-survey-bias.md) - At the default survey MadEvent 3.7.1 reads unmatched g q > t t~ q 0.55 % low, wholly in channel G2, with seed χ²/dof 7.1; hard_survey = 2 removes it, while 10× events, splitting the folded configuration or sde_strategy = 2 do not.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
 * [Seed-sweep headroom of the enforced gate statistics (base 0538e2d)](seed-headroom-census-2026-09.md) - Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce.
 

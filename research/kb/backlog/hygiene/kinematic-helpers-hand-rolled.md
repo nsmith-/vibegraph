@@ -16,3 +16,8 @@ sources:
 Boosts: `helas/repr/lorentz.rs`, `hadronic.rs` `boost_z`, `onshell.rs`, `lhef/resonance.rs`, `coupling/cluster/kt.rs`, `diagram_channel.rs` (the last deliberately γ = E/√s). Transverse helpers: `cuts.rs`, `lhef/observables.rs`, `coupling/scales.rs` (R-D cross-cluster patterns).
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-D](../../sprints/hygiene/sessions/R-D-report.md).
+
+Two test-side copies of the lab-to-partonic-CM boost exist as well:
+`partonic_cm` in `vibegraph-lib/tests/validate_scales.rs` and the boost in
+`validate_hadronic.rs` near line 2903. Both targets include `tests/common`, so one
+helper there would serve both (found by `sigma-ttx-mlm-at1` HY1).
