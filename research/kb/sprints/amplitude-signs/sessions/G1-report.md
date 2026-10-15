@@ -5,6 +5,7 @@ description: "All five t t~ + jet matrix-element classes (g g, u g, g u, g u~, u
 status: draft
 tags: [validation, amplitudes, color, ttx, mlm, standalone-jamps, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: 556ec90, resource: "https://github.com/nsmith-/vibegraph/commit/556ec90", title: "bank t t~ + jet standalone JAMP tables and their per-flow gates"}
 ---

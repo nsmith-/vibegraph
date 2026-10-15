@@ -205,8 +205,8 @@ known disagreement
 ([wpwm-to-epem-neutrino-exchange-sign](../backlog/validation/wpwm-to-epem-neutrino-exchange-sign.md)).
 It is blind to the phase of `G`, to compensating errors in diagrams reaching the
 same flows with the same weights, and to kinematics outside its points[^n39-gates].
-`g g > t t~ g` has no amplitude gate at all
-([gg-ttxg-no-amplitude-gate](../backlog/validation/gg-ttxg-no-amplitude-gate.md)).
+`g g > t t~ g` and the other `t t~ + jet` subprocesses (`g u > t t~ u`,
+`g u~ > t t~ u~`, `u u~ > t t~ g`) are gated per flow by `standalone_jamps`.
 
 ## Known blind spots
 

@@ -62,9 +62,9 @@ negated, or one coefficient moved to another flow, must not[^n41-z].
 
 *Blind to*: whether each colour structure multiplies its own Lorentz structure —
 that is for the per-flow amplitude gates (`amplitude_oracle`'s `gg_to_gg`,
-`standalone_jamps`' `gg_to_ggg` and `uux_to_ggg`). `g g > t t~ g` itself has no
-amplitude gate
-([gg-ttxg-no-amplitude-gate](../backlog/validation/gg-ttxg-no-amplitude-gate.md)).
+`standalone_jamps`' `gg_to_ggg` and `uux_to_ggg`). `g g > t t~ g` itself is pinned per
+flow by `standalone_jamps`' `gg_to_ttxg`, which fails under each of the five
+wrong assignments of the four-gluon contact's colour structures.
 
 ## `color_flow_tags_oracle`: ICOLUP connectivity against leshouche.inc
 
