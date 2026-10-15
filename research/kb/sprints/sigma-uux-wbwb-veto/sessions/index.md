@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: the patched reference at two budgets and a window decomposition](V1.md) - Run the seeded patched reference at two budgets and decompose σ by top window (both outside, one inside) on both sides, to attribute the 2 % gap.
+
+## Session Report
+
+* [V1 report: the u u~ > w+ b w- b~ $ t t~ gap is MadEvent under-integrating the top-free continuum](V1-report.md) - Diagnosis of the ~2 % gap on the on-shell-veto t t~ row: it is not in the veto, the patch or the top windows. The same deficit appears on the top-free process (/ t t~); a non-adaptive third estimator agrees with vibegraph and sits 1.9 % above MadEvent; MadEvent's own iterations, recombined with equal weights, move it up by 0.5-1.2 %.
