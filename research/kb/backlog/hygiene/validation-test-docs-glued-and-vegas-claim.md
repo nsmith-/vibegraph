@@ -20,5 +20,4 @@ Found while moving the gates to one seed rule (2026-10-14).
   `probe_fiducial_bound_on_llj_fixed`.
 - `vibegraph-lib/tests/validate_sigma.rs` module doc: says VEGAS combines its
   iterations by `1/σ²`; `IterationCombination::Unweighted` is the `#[default]`
-  in `vegas.rs`. `AGENTS.md`'s "Samplers gate statistically" bullet makes the
-  same claim ("VEGAS's inverse-variance iteration combination").
+  in `vegas.rs`.

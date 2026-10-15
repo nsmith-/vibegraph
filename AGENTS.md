@@ -78,9 +78,10 @@ For paper references, submodule locations and key paths, and instructions for fe
   amplitudes before writing production code.
 - **Samplers gate statistically, and a fixed-seed pull is not evidence.**
   Bit-for-bit exists only with a pinned seed and unchanged sampling order.
-  VEGAS's inverse-variance iteration combination turns a missed region into a
-  *confidently wrong* σ — small error bar included — so sweep ≥5 seeds and read
-  the spread and χ²/dof, not the headline pull. A clean sweep is necessary, not
+  A VEGAS run that misses a region reports a low σ *and* a small error — a
+  *confidently wrong* σ, which any `1/σ²` combination of iterations or seeds
+  rewards — so sweep ≥5 seeds, combine them by unweighted mean, and read the
+  spread and χ²/dof, not the headline pull. A clean sweep is necessary, not
   sufficient: five mutually consistent seeds have been collectively 1% low, so
   budget convergence is a second axis. If extra budget makes a failure migrate
   between seeds instead of shrinking, it is a bug, not statistics. Five seeds
