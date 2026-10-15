@@ -179,3 +179,19 @@ go3 = Parameter(name='go3',
                 texname='g_{O^3}',
                 lhablock='TOYCOUP',
                 lhacode=[11])
+
+gs3 = Parameter(name='gs3',
+                nature='external',
+                type='real',
+                value=33.0,
+                texname='g_{S^3}',
+                lhablock='TOYCOUP',
+                lhacode=[12])
+
+gs3d = Parameter(name='gs3d',
+                 nature='external',
+                 type='real',
+                 value=1.1e-4,
+                 texname='g_{\\partial S^3}',
+                 lhablock='TOYCOUP',
+                 lhacode=[13])

@@ -30,12 +30,13 @@
 //! per MadGraph graph where `AMP()` is banked, but not inside a group); and any
 //! helicity or kinematic region the few banked points do not visit.
 //!
-//! Needs only the committed tables, the interned SM model and the vendored SMEFTsim
-//! UFO.
+//! Needs only the committed tables, the interned SM model, the vendored SMEFTsim
+//! UFO and the authored toy UFO.
 
 mod common;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use common::{generate_with, sm_model};
 use vibegraph::diagrams::DiagramSet;
@@ -80,12 +81,43 @@ fn complex(v: &serde_json::Value) -> C<f64> {
 /// two vertices in either order and are equal, so the values cannot tell which of
 /// each pair is which: those two pairings are banked in enumeration order, and
 /// swapping either is invisible here.
-const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[(
-    "ee_to_ee_4f",
-    &[
-        0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-    ],
-)];
+///
+/// Every other row pairs one diagram to one graph. In `ttx_to_hh_chbox`,
+/// `ht_to_ht_chbox` and `hh_to_hh_chbox` several graphs are equal at every point:
+/// a Yukawa pair whose two couplings are swapped between its vertices, and the
+/// O_Hbox shift of the cubic Higgs coupling against the same shift of the coupling
+/// on the other vertex. Within each such set any assignment fits equally, so the
+/// one banked is arbitrary and a swap inside the set is invisible.
+const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
+    ("ee_to_ttxh", &[3, 4, 1, 2, 0]),
+    ("ee_to_ttxh_identity", &[3, 4, 1, 2, 0]),
+    ("ll_to_qqxs_toy_yukawa", TOY_YUKAWA_GRAPHS),
+    ("ll_to_ss_toy_dscalar", &[0, 1, 2, 3]),
+    ("sl_to_sl_toy_dscalar", &[0, 1, 2, 3]),
+    ("ttx_to_hh_chbox", TTX_TO_HH_GRAPHS),
+    ("ht_to_ht_chbox", HT_TO_HT_GRAPHS),
+    ("hh_to_hh_chbox", HH_TO_HH_GRAPHS),
+    (
+        "ee_to_ee_4f",
+        &[
+            0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        ],
+    ),
+];
+
+const TOY_YUKAWA_GRAPHS: &[usize] = &[
+    10, 11, 12, 14, 13, 15, 16, 18, 17, 19, 0, 1, 2, 4, 3, 5, 6, 8, 7, 9, 20, 21, 23, 22, 24, 25,
+    26, 28, 27, 29, 30, 31, 33, 32, 34, 35, 36, 38, 37, 39,
+];
+
+const TTX_TO_HH_GRAPHS: &[usize] = &[0, 2, 1, 5, 6, 3, 4, 7, 10, 11, 8, 9, 12, 15, 16, 13, 14];
+
+const HT_TO_HT_GRAPHS: &[usize] = &[0, 3, 4, 1, 2, 5, 10, 11, 9, 8, 6, 7, 12, 15, 16, 13, 14];
+
+const HH_TO_HH_GRAPHS: &[usize] = &[
+    0, 2, 1, 3, 4, 5, 11, 10, 12, 13, 7, 6, 8, 9, 14, 20, 19, 21, 22, 16, 15, 17, 18, 23, 29, 28,
+    30, 31, 25, 24, 26, 27,
+];
 
 /// The per-graph level of a row that banks `AMP()`.
 struct GraphLevel {
@@ -189,6 +221,24 @@ impl GraphLevel {
     }
 }
 
+/// The model a table was computed in: the interned SM, the model and restrict card
+/// of the manifest row it names, or (`"ufo"`) the committed model directory and
+/// restrict card it records itself, for a model card no manifest row carries.
+fn table_model(key: &str, table: &serde_json::Value) -> Arc<UFOModel> {
+    match table["model"].as_str().unwrap() {
+        "sm" => sm_model(),
+        "ufo" => {
+            let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+            let ufo = &table["ufo"];
+            let dir = repo.join(ufo["dir"].as_str().unwrap());
+            let card = repo.join(ufo["restrict_card"].as_str().unwrap());
+            UFOModel::load(&dir, Some(&card))
+                .unwrap_or_else(|e| panic!("{key}: load {}: {e}", dir.display()))
+        }
+        row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
+    }
+}
+
 struct Measured {
     g: C<f64>,
     worst_flow: f64,
@@ -242,10 +292,7 @@ fn measure(key: &str) -> Measured {
     let path = table_path(key);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let table: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let model = match table["model"].as_str().unwrap() {
-        "sm" => sm_model(),
-        row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
-    };
+    let model = table_model(key, &table);
     let process = table["process"].as_str().unwrap();
     let card: ParamCard = table["param_card"]
         .as_array()
@@ -414,12 +461,59 @@ fn measure(key: &str) -> Measured {
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
-    "wpwm_to_epem",
-    "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
-     comes out with the wrong sign relative to the photon and Z s-channel, while \
-     `e+ e- > w+ w-` (the same graphs crossed) agrees",
-)];
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
+    (
+        "wpwm_to_epem",
+        "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
+         comes out with the wrong sign relative to the photon and Z s-channel, while \
+         `e+ e- > w+ w-` (the same graphs crossed) agrees",
+    ),
+    (
+        "ee_to_ttxh_identity",
+        "a bare `Identity` Yukawa rooted as a fermion current on the crossed top line: \
+         the four Higgs-off-top graphs (AMP 2-5) come out at -1 relative to \
+         Higgsstrahlung (AMP 1), where the `ProjM + ProjP` spelling of `ee_to_ttxh` \
+         agrees",
+    ),
+    (
+        "ll_to_qqxs_toy_yukawa",
+        "the bare `Identity` Yukawa rooted as a fermion current on the crossed quark \
+         line: the ten graphs that emit the scalar off the quark pair through \
+         `Identity` (AMP 1, 3, 4, 7, 8, 11, 13, 14, 17, 18) come out at -1 relative \
+         to the rest, while the same emission through `Gamma5` agrees",
+    ),
+    (
+        "ll_to_ss_toy_dscalar",
+        "the derivative cubic scalar vertex `SSSD` rooted as a scalar current: its \
+         graph (AMP 2) comes out at -1 relative to the plain `SSS1` graph and the \
+         lepton exchanges",
+    ),
+    (
+        "sl_to_sl_toy_dscalar",
+        "the derivative cubic scalar vertex `SSSD` rooted as the amplitude: its graph \
+         (AMP 3) comes out at -1 relative to the plain `SSS1` graph and the lepton \
+         exchanges",
+    ),
+    (
+        "ttx_to_hh_chbox",
+        "SMEFTsim's derivative Higgs self-couplings rooted as a scalar current: the \
+         `SSS3` (O_Hbox) and `SSS2` (O_HDD) graphs (AMP 2, 3) come out at -1 relative \
+         to every `SSS1` graph and the top exchanges",
+    ),
+    (
+        "ht_to_ht_chbox",
+        "SMEFTsim's derivative Higgs self-couplings rooted as the amplitude: the \
+         `SSS3` (O_Hbox) and `SSS2` (O_HDD) graphs (AMP 9, 10) come out at -1 \
+         relative to every `SSS1` graph and the top exchanges",
+    ),
+    (
+        "hh_to_hh_chbox",
+        "SMEFTsim's derivative Higgs self-couplings at four and three legs: the \
+         `SSSS3` and `SSSS2` contacts (AMP 2, 3) and the twelve exchanges with an \
+         `SSS3` or `SSS2` at one end come out at -1 relative to the `SSSS1` contacts \
+         and the exchanges through `SSS1` alone",
+    ),
+];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -522,4 +616,61 @@ fn bbx_to_hh() {
 #[test]
 fn ee_to_ee_4f() {
     check("ee_to_ee_4f");
+}
+
+/// The top Yukawa as MadGraph's `sm` writes it, `FFS4 = ProjM + ProjP`, with the
+/// Higgs emitted off the final-state top pair beside Higgsstrahlung: the control
+/// for the bare-`Identity` spelling of the same Yukawa.
+#[test]
+fn ee_to_ttxh() {
+    check("ee_to_ttxh");
+}
+
+/// Known disagreement, kept running: SMEFTsim's bare `Identity(2,1)` top Yukawa
+/// rooted as a fermion current on the crossed top line.
+#[test]
+fn ee_to_ttxh_identity() {
+    check("ee_to_ttxh_identity");
+}
+
+/// Known disagreement, kept running: the toy model's bare `Identity` and `Gamma5`
+/// Yukawas emitted off a final-state quark pair.
+#[test]
+fn ll_to_qqxs_toy_yukawa() {
+    check("ll_to_qqxs_toy_yukawa");
+}
+
+/// Known disagreement, kept running: the derivative cubic scalar vertex as a
+/// scalar current, beside its plain partner.
+#[test]
+fn ll_to_ss_toy_dscalar() {
+    check("ll_to_ss_toy_dscalar");
+}
+
+/// Known disagreement, kept running: the derivative cubic scalar vertex as the
+/// amplitude, with a scalar on leg 0.
+#[test]
+fn sl_to_sl_toy_dscalar() {
+    check("sl_to_sl_toy_dscalar");
+}
+
+/// Known disagreement, kept running: SMEFTsim's derivative Higgs self-couplings as
+/// the s-channel Higgs current off an initial top pair.
+#[test]
+fn ttx_to_hh_chbox() {
+    check("ttx_to_hh_chbox");
+}
+
+/// Known disagreement, kept running: SMEFTsim's derivative Higgs self-couplings as
+/// the amplitude of the t-channel Higgs exchange, with a Higgs on leg 0.
+#[test]
+fn ht_to_ht_chbox() {
+    check("ht_to_ht_chbox");
+}
+
+/// Known disagreement, kept running: SMEFTsim's derivative quartic Higgs contacts and
+/// derivative cubic vertices beside their plain partners, in four-Higgs scattering.
+#[test]
+fn hh_to_hh_chbox() {
+    check("hh_to_hh_chbox");
 }
