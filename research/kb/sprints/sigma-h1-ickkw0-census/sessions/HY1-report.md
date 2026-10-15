@@ -5,6 +5,7 @@ description: "Review of validation/madgraph/census_permuted_first_call.py: its p
 status: draft
 tags: [h1, hygiene, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Commit `b6d546d` on `sigma/h1-ickkw0-census`. Not pushed. No MadGraph run.
 

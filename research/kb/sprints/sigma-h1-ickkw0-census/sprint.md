@@ -3,7 +3,7 @@ type: Sprint
 title: "H1 census of banked grouped rows"
 description: "List every banked grouped MadEvent row with a clustering scale and non-identity symmetry permutations, measure H1's share on each affected one, and re-bank or register it."
 status: draft
-active: true
+active: false
 tags: [h1, madevent-reference, scales, grouping]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -22,7 +22,7 @@ vectorised path (`update_scale_coupling_vec`) is checked too.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [h1-ickkw0-grouped-rows-unchecked](../../backlog/validation/h1-ickkw0-grouped-rows-unchecked.md)
+- `h1-ickkw0-grouped-rows-unchecked` (closed by this PR; see [closeout](closeout.md))
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,
@@ -40,7 +40,8 @@ comment on this PR listing exactly what to run.
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| [V1](sessions/V1.md) | validation-dev (Opus) | — | census + diagnostic runs; no source change | — |
+| [V1](sessions/V1.md) | validation-dev (Opus) | — | census + diagnostic runs | h1-ickkw0-grouped-rows-unchecked |
+| [HY1](sessions/HY1.md) | hygiene-dev (Sonnet) | V1 | census script fails loudly; `runs` byte-identical | — |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.

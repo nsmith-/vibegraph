@@ -5,6 +5,7 @@ description: "Every banked MadEvent run checked for a clustered first call, symm
 status: draft
 tags: [h1, madevent-reference, scales, grouping, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Brief steps 1 and 2, phase B (permutations) and phase C0 (zero-variance screen)
 are done. Phase C1, the statistical runs, was not started, at the manager's

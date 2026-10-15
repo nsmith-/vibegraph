@@ -25,3 +25,10 @@
 * **Relay**: the `uu_tt` bound has gone to `sigma-uux-wbwb-veto`'s V1 brief.
 * **Next**: HY1 (hygiene-dev, Sonnet) on `census_permuted_first_call.py`, then
   close-out.
+* **HY1 landed** (`b6d546d`, `18ffc52`, `8de7fb4`): the census fails loudly;
+  `runs` output is byte-identical. Manager-checked: `runs` re-run and `cmp`
+  against V1's output; `perms /nonexistent` exits 1. The agent's request that
+  the manager delete `/hy1_runs.tsv` (a stray file its sandbox refused to
+  remove) was surfaced to the user, not acted on.
+* **Close-out**: item deleted, two Found items filed, concepts updated, record
+  written.

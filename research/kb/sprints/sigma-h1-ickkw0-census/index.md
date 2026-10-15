@@ -6,6 +6,10 @@
 
 * [H1 census of banked grouped rows](sprint.md) - List every banked grouped MadEvent row with a clustering scale and non-identity symmetry permutations, measure H1's share on each affected one, and re-bank or register it.
 
+## Sprint Record
+
+* [H1 census of banked grouped rows](closeout.md) - Every banked grouped MadEvent row checked for the permuted first call: only pp_to_ll_0j2j_mlm is measurably affected, the rest are identity, immune or negligible; no re-bank needed.
+
 ## Directories
 
 * [sessions](sessions/index.md) - 4 concepts
