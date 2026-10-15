@@ -5,6 +5,7 @@ description: "Eight new standalone rows, compared per MadGraph graph through the
 status: draft
 tags: [amplitude, sign-convention, fermion-flow, scalar, smeftsim, toy-ufo, diagnosis, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: rows, resource: "https://github.com/nsmith-/vibegraph/commit/fea4aef", title: "test(amplitudes): standalone falsifiers for the Identity crossed-line and derivative scalar signs"}
   - {id: merge, resource: "https://github.com/nsmith-/vibegraph/commit/992c7d5", title: "Merge of amp-signs/same-flavour-4f-contact (Q1's bank_amps and per-graph gate)"}
