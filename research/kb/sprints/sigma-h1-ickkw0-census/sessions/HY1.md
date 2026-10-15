@@ -1,6 +1,6 @@
 ---
 type: Session Brief
-title: "H1: hygiene pass on the permuted-first-call census script"
+title: "HY1: hygiene pass on the permuted-first-call census script"
 description: "Review and fix validation/madgraph/census_permuted_first_call.py for maintainability, non-vacuity and fit with the existing validation/madgraph tooling."
 status: draft
 agent: hygiene-dev (Sonnet)

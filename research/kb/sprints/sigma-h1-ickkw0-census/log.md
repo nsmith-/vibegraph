@@ -23,5 +23,5 @@
   Machine-confirmed by the manager: the commit, the screen summary, the
   permutation table, and the script's CLI.
 * **Relay**: the `uu_tt` bound has gone to `sigma-uux-wbwb-veto`'s V1 brief.
-* **Next**: H1 (hygiene-dev, Sonnet) on `census_permuted_first_call.py`, then
+* **Next**: HY1 (hygiene-dev, Sonnet) on `census_permuted_first_call.py`, then
   close-out.
