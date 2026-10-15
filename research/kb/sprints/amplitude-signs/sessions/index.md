@@ -5,3 +5,8 @@
 ## Session Brief
 
 * [C1: falsifiers for the Identity crossed-line sign and the derivative scalar contact](C1.md) - Bank standalone rows that root a bare Identity Yukawa as a current on a crossed line and a derivative all-scalar vertex as current and amplitude, compare per diagram against MadGraph AMP(), and diagnose. No change to the sign arms.
+* [Q1: same-flavour four-fermion contact against MadGraph](Q1.md) - Bank an ee_to_ee_4f SMEFTsim standalone row, gate its |M|² per helicity and its amplitudes against MadGraph, and record the per-pairing diagram count as a convention cell.
+
+## Session Report
+
+* [Q1 report: same-flavour four-lepton contacts agree with MadGraph per graph and per pairing](Q1-report.md) - `e+ e- > e+ e- NP<=1` under SMEFTsim's four-lepton card is banked as a standalone row and gated per helicity, per flow and per MadGraph graph. 22 diagrams here make up MadGraph's 19 graphs, and each contact's two pairings carry MadGraph's relative sign exactly. Flipping that sign fails the gate at O(1).

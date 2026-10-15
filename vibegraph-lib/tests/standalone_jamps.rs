@@ -17,9 +17,17 @@
 //! alike — but its phase is free: external-wavefunction phase conventions differ
 //! between the two programs by a process-dependent `±1`/`±i`.
 //!
+//! A single-flow table may also bank MadGraph's per-graph `AMP()` with JAMP(1)'s
+//! coefficient on each. Such a row declares in [`MG_GRAPH_DIAGRAMS`] which of its
+//! diagrams make up each MadGraph graph, and each group, compiled one diagram at a
+//! time through the production evaluator and summed, must equal `G · c_k · AMP_k`
+//! under the same `G`. A group is not always one diagram: see
+//! [`MG_GRAPH_DIAGRAMS`] on the four-fermion contacts.
+//!
 //! What it cannot see: that global phase (a sign shared by every diagram of the
 //! process); the split of a flow into diagrams, so two compensating errors in
-//! diagrams that reach the same flows with the same weights at every point; and any
+//! diagrams that reach the same flows with the same weights at every point (closed
+//! per MadGraph graph where `AMP()` is banked, but not inside a group); and any
 //! helicity or kinematic region the few banked points do not visit.
 //!
 //! Needs only the committed tables, the interned SM model and the vendored SMEFTsim
@@ -30,6 +38,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::{generate_with, sm_model};
+use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
 use vibegraph::helas::LorentzVector;
@@ -51,13 +60,59 @@ fn complex(v: &serde_json::Value) -> C<f64> {
     C::new(v[0].as_f64().unwrap(), v[1].as_f64().unwrap())
 }
 
+/// For a row that banks MadGraph's `AMP()`, which of this side's diagrams (indices
+/// into the enumerated set) make up each MadGraph graph, in `AMP()` order. Every
+/// diagram appears exactly once.
+///
+/// `ee_to_ee_4f`: the three four-lepton contacts are three MadGraph graphs and six
+/// diagrams here. MadGraph builds each contact on one canonical pairing of the
+/// four legs and writes both spinor pairings of its Lorentz structures into that
+/// one `AMP()` — its merged ALOHA routine carries the second pairing's terms with
+/// the `-1` of `get_sign_flow` — while this side builds one diagram per pairing on
+/// that pairing's own fermion lines, and the relative Fermi sign is the diagrams'.
+/// Each contact's two diagrams sum to its graph. For the `cll1` and `cee`
+/// contacts the two pairings are Fierz-equal, so each diagram is half the graph
+/// and the wrong relative sign would cancel the contact; for `cle` they differ.
+/// The photon and Z exchanges pair one to one. MadGraph's `AMP(5)`/`AMP(6)` and
+/// `AMP(13)`/`AMP(14)` carry the Standard-Model and SMEFT photon couplings on the
+/// two vertices in either order and are equal, so the values cannot tell which of
+/// each pair is which: those two pairings are banked in enumeration order, and
+/// swapping either is invisible here.
+const MG_GRAPH_DIAGRAMS: &[(&str, &[&[usize]])] = &[(
+    "ee_to_ee_4f",
+    &[
+        &[0, 1],
+        &[2, 3],
+        &[4, 5],
+        &[6],
+        &[7],
+        &[8],
+        &[9],
+        &[10],
+        &[11],
+        &[12],
+        &[13],
+        &[14],
+        &[15],
+        &[16],
+        &[17],
+        &[18],
+        &[19],
+        &[20],
+        &[21],
+    ],
+)];
+
 struct Measured {
     g: C<f64>,
     worst_flow: f64,
     worst_flow_where: String,
     worst_m2: f64,
     worst_m2_where: String,
+    worst_graph: f64,
+    worst_graph_where: String,
     n_entries: usize,
+    n_graph_entries: usize,
 }
 
 impl Measured {
@@ -74,6 +129,12 @@ impl Measured {
             out.push(format!(
                 "{key}: {} ({:.3e})",
                 self.worst_m2_where, self.worst_m2
+            ));
+        }
+        if self.worst_graph >= REL_TOL {
+            out.push(format!(
+                "{key}: {} ({:.3e} of the largest graph)",
+                self.worst_graph_where, self.worst_graph
             ));
         }
         if (self.g.norm() - 1.0).abs() >= REL_TOL {
@@ -129,6 +190,51 @@ fn measure(key: &str) -> Measured {
                 .collect()
         })
         .collect();
+    // MadGraph's graphs against groups of this side's diagrams, where the table
+    // banks `AMP()`: the groups must partition the diagram set and number NGRAPHS,
+    // which is the diagram-count convention stated as a check.
+    let graphs = table["jamp_coefficients"].as_array().map(|coefs| {
+        let coefs: Vec<f64> = coefs.iter().map(|c| c.as_f64().unwrap()).collect();
+        let groups = MG_GRAPH_DIAGRAMS
+            .iter()
+            .find(|(k, _)| *k == key)
+            .unwrap_or_else(|| panic!("{key}: banks AMP() but declares no MG_GRAPH_DIAGRAMS"))
+            .1;
+        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
+        assert_eq!(coefs.len(), n_graphs, "{key}: one coefficient per AMP()");
+        assert_eq!(groups.len(), n_graphs, "{key}: one diagram group per AMP()");
+        let mut covered: Vec<usize> = groups.iter().flat_map(|g| g.iter().copied()).collect();
+        covered.sort_unstable();
+        assert_eq!(
+            covered,
+            (0..set.diagrams.len()).collect::<Vec<_>>(),
+            "{key}: the diagram groups must cover each of the {} diagrams once",
+            set.diagrams.len()
+        );
+        let per_diagram: Vec<AmplitudeEvaluator> = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                AmplitudeEvaluator::compile(
+                    &DiagramSet {
+                        particles_in: set.particles_in.clone(),
+                        particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
+                        diagrams: vec![d.clone()],
+                    },
+                    model.as_ref(),
+                )
+                .unwrap()
+            })
+            .collect();
+        (coefs, groups, per_diagram)
+    });
+    let per_diagram_bound: Vec<BoundAmplitude<f64>> = graphs
+        .iter()
+        .flat_map(|(_, _, evs)| evs.iter())
+        .map(|ev| BoundAmplitude::<f64>::bind(ev, &evaluated))
+        .collect();
+
     let ours: std::collections::BTreeSet<&Vec<i32>> = evaluator.helicities().iter().collect();
     let theirs: std::collections::BTreeSet<&Vec<i32>> = helicities.iter().collect();
     assert_eq!(
@@ -139,6 +245,8 @@ fn measure(key: &str) -> Measured {
     // (MadGraph, ours) per flow entry, and per-helicity |M|² pairs.
     let mut flows: Vec<(C<f64>, C<f64>, String)> = Vec::new();
     let mut m2: Vec<(f64, f64, String)> = Vec::new();
+    // (c_k · AMP_k, the group's summed diagrams) per graph entry.
+    let mut graph_entries: Vec<(C<f64>, C<f64>, String)> = Vec::new();
     for (pi, point) in table["points"].as_array().unwrap().iter().enumerate() {
         let momenta: Vec<LorentzVector<f64>> = point["momenta"]
             .as_array()
@@ -183,6 +291,30 @@ fn measure(key: &str) -> Measured {
                 ours_m2,
                 format!("point {pi}, helicities {hel:?}"),
             ));
+            if let Some((coefs, groups, _)) = &graphs {
+                let diagram_values: Vec<C<f64>> = per_diagram_bound
+                    .iter()
+                    .map(|b| b.eval_amplitude(&momenta, hel, &mut b.scratch_space()))
+                    .collect();
+                for (k, (amp, group)) in entry["amps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .zip(groups.iter())
+                    .enumerate()
+                {
+                    let mg = complex(amp) * coefs[k];
+                    let vg: C<f64> = group.iter().map(|&d| diagram_values[d]).sum();
+                    graph_entries.push((
+                        mg,
+                        vg,
+                        format!(
+                            "point {pi}, helicities {hel:?}, AMP({}) = diagrams {group:?}",
+                            k + 1
+                        ),
+                    ));
+                }
+            }
         }
     }
 
@@ -216,13 +348,28 @@ fn measure(key: &str) -> Measured {
             );
         }
     }
+    let graph_scale = graph_entries.iter().map(|e| e.0.norm()).fold(0.0, f64::max);
+    let (mut worst_graph, mut worst_graph_where) = (0.0f64, String::new());
+    for (mg, vg, what) in &graph_entries {
+        let dev = (vg - g * mg).norm() / graph_scale;
+        if dev > worst_graph {
+            worst_graph = dev;
+            worst_graph_where = format!("{what}: vibegraph {vg:?} against G·c·AMP {:?}", g * mg);
+        }
+    }
+    if graphs.is_some() {
+        assert!(graph_scale > 0.0, "{key}: every banked AMP() vanishes");
+    }
     Measured {
         g,
         worst_flow,
         worst_flow_where,
         worst_m2,
         worst_m2_where,
+        worst_graph,
+        worst_graph_where,
         n_entries: flows.len(),
+        n_graph_entries: graph_entries.len(),
     }
 }
 
@@ -245,6 +392,12 @@ fn check(key: &str) {
         "{key}: {} flow entries, G = {:?}, worst flow {:.3e}, worst |M|² {:.3e}",
         m.n_entries, m.g, m.worst_flow, m.worst_m2
     );
+    if m.n_graph_entries > 0 {
+        println!(
+            "{key}: {} graph entries, worst graph {:.3e}",
+            m.n_graph_entries, m.worst_graph
+        );
+    }
     let disagreements = m.disagreements(key);
     match (disagreements.is_empty(), known) {
         (true, None) => {}
@@ -325,4 +478,12 @@ fn tata_to_ttxhh() {
 #[test]
 fn bbx_to_hh() {
     check("bbx_to_hh");
+}
+
+/// Bhabha scattering through the four-lepton contacts: each contact's two spinor
+/// pairings interfere with each other and with photon and Z exchange in both
+/// channels, compared per MadGraph graph as well as per helicity.
+#[test]
+fn ee_to_ee_4f() {
+    check("ee_to_ee_4f");
 }
