@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [F1 report: the seeded banking driver, its bundle record and the σ gates' reader](F1-report.md) - bank-seeded-sigma re-banks each σ row as fresh-directory MadEvent seeds at the budget and 4×, keeps every channel's iterations, and writes output/seeded_sigma/<row>/seed_record.json; validate_sigma and validate_hadronic read a record where the bundle carries one and are unchanged without. Dry run on ee_to_mumu and pp_to_bb_fixed; validate unmoved. time_stages.py gains --nb-core.
 * [V1 report: fresh-directory MadEvent seeds and scatter on gated σ rows](V1-report.md) - Twenty fresh-directory MadEvent seeds per llj MLM row leave the references where the shared-directory banks put them and scatter below their quoted errors as the shared seeds did. The ours-high offset on the rewgt rows is not a reference artefact. Five single-run hadronic rows scatter from 0.19 to 2.67 times their quoted variance. The CM-clustering fix (6740954), probed uncommitted, moves the rewgt rows' σ by −0.007 % paired per seed, a twentieth of the offset, and the pure-cut row not at all.

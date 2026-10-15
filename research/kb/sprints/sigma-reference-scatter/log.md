@@ -33,3 +33,12 @@
   20 + 20 ladder for any row more than 2σ off. The per-row banking list is
   posted on this PR. Its command is the seeded driver F1 lands here, and the
   comment is edited in place when F1 does.
+* **Approval relayed** (2026-10-15, by the planner session, as the user's
+  decision): the banking batch in PR #25's comment 6196244069, as listed.
+  F1 builds to it. When F1 lands, that comment is edited with the exact
+  command and output paths. Rows that trip the 2σ screen come back to the
+  user before any 20 + 20 ladder.
+* **Scope added** (user, relayed 2026-10-15): the M3 timing re-run for
+  `madevent-cumulated-time-host-dependence` (claimed on this PR) is step 2 of
+  the same banking comment. It produces timings, not references. F1 adds
+  `--nb-core` to `time_stages.py` for it.
