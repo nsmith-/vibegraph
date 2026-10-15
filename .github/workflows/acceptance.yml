@@ -15,7 +15,7 @@ name: acceptance
 #
 # # When this runs, and why not more often
 #
-# On a published release, and on demand. Not on pushes and not on pull
+# On a published release, on demand, and weekly. Not on pushes and not on pull
 # requests, for two reasons that point the same way:
 #
 #   * its input is a *published release asset*, which a branch or a PR does not
@@ -28,15 +28,17 @@ name: acceptance
 # from the branch. This job is the one that can see what those cannot: that the
 # artifact a user actually downloads works on a machine that has never built it.
 #
-# Worth turning on once releases are routine: a weekly `schedule` trigger. The
-# PDF pin is a checksum against an archive CERN could repackage at any time, and
-# today the only detector for that is an `#[ignore]`d test nobody runs on a
-# timer. A weekly run of this job would be the second one. It is left off until
-# a first release exists, since until then it can only fail.
+# The weekly run watches the upstream side. The PDF pin is a checksum against an
+# archive CERN could repackage at any time; the only other detector is an
+# `#[ignore]`d test nobody runs on a timer. A scheduled run has no tag, so it
+# tests the latest release, which skips prereleases and so is the newest `v*`
+# binary, never a `refdata-*` bundle.
 
 on:
   release:
     types: [published]
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       tag:
@@ -48,9 +50,9 @@ jobs:
   acceptance:
     # Only `v*` releases carry the binary under test. The `refdata-*` releases
     # publish a reference-data bundle and nothing else, so running on them
-    # downloads a binary that does not exist and fails. A manual dispatch is
-    # always allowed.
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    # downloads a binary that does not exist and fails. A manual dispatch and
+    # the weekly run (which tests the latest `v*` release) are always allowed.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     # One platform, not three. `release.yml` already builds and smoke-tests each
     # platform's binary natively on that platform; what this job adds is the
     # data path — PDF resolution, the download, the cache, cards to events —
