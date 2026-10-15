@@ -69,11 +69,15 @@ _RE_PARAM = re.compile(r"^\s*([^#!].*?)\s*=\s*([A-Za-z_]\w*)\s*(?:!.*)?$")
 
 def read_run_card_scalars(run_card: Path) -> Dict[str, str]:
     """Map of scalar `name -> raw value` from a run_card.dat (last wins)."""
-    out: Dict[str, str] = {}
     try:
-        text = run_card.read_text()
+        return parse_run_card_scalars(run_card.read_text())
     except OSError:
-        return out
+        return {}
+
+
+def parse_run_card_scalars(text: str) -> Dict[str, str]:
+    """Map of scalar `name -> raw value` from run-card text (last wins)."""
+    out: Dict[str, str] = {}
     for line in text.splitlines():
         m = _RE_PARAM.match(line)
         if m:

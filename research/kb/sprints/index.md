@@ -30,6 +30,7 @@
 * [process-grammar](process-grammar/index.md)
 * [resonance-sampling](resonance-sampling/index.md)
 * [sigma-2to4-offset](sigma-2to4-offset/index.md)
+* [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)
