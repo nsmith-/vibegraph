@@ -8,7 +8,7 @@
 
 ## Directories
 
-* [amplitude-signs](amplitude-signs/index.md) - 6 concepts
+* [amplitude-signs](amplitude-signs/index.md) - 8 concepts
 * [banked-open-ends](banked-open-ends/index.md) - 1 concepts
 * [color-flow](color-flow/index.md) - 1 concepts
 * [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md) - 1 concepts
