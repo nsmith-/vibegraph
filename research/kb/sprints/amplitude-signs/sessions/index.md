@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [P1: bridge the per-diagram probes to the production Program](P1.md) - Make the per-diagram evaluator probes provably agree with the production Program/fill_arenas path, on processes with an internal fermion, so per-diagram dumps diagnose the code that runs.
+
+## Session Report
+
+* [P1 report: the per-diagram probes are bridged to the production Program](P1-report.md) - A hermetic test pins the per-diagram probes to the production evaluator, as complex values per amplitude, per flow and per helicity combination, on eleven SM processes. Measured agreement is at most 2.4e-14, and three single-path sign mutations fail it. The bridge cannot see anything the two paths share: rooting, anchor-read convention signs, external wavefunctions and kernels.
