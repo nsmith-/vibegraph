@@ -1963,7 +1963,7 @@ mod tests {
             eval::root_diagram::{EvalNode, EvalNodeId},
             iovxxx, jioxxx,
             repr::numbers::Charge,
-            vertex::ffv2_4_3,
+            vertex::{ffv2_3, ffv2_4_3, ffv4_3},
             OutDiracWf,
         },
         ufo::color::ColorExpr,
@@ -2142,48 +2142,141 @@ mod tests {
         );
     }
 
+    /// Chiral weights `(w_L, w_R)` of an SM FFV Lorentz structure, read off its UFO
+    /// definition `Gamma·(w_L·ProjM + w_R·ProjP)`: a term `c·FFVk` is the HELAS
+    /// coupling pair `[w_L·Im c, w_R·Im c]`.
+    fn ffv_chiral_weights(lorentz: &str) -> (f64, f64) {
+        match lorentz {
+            "FFV1" => (1.0, 1.0),
+            "FFV2" => (1.0, 0.0),
+            "FFV4" => (1.0, 2.0),
+            "FFV5" => (1.0, 4.0),
+            other => panic!("no chiral weights for {other}"),
+        }
+    }
+
+    /// One hand-built s-channel FFV cross-check: the fermion pair feeding the current,
+    /// the pair at the amplitude sink, the CM energy, and the `(Lorentz, coupling)` terms
+    /// of the current-side and sink-side vertices.
+    struct JioxxxCase {
+        label: &'static str,
+        current_pair: [&'static str; 2],
+        sink_pair: [&'static str; 2],
+        sqrts: f64,
+        current_terms: &'static [(&'static str, &'static str)],
+        sink_terms: &'static [(&'static str, &'static str)],
+    }
+
     /// Cross-check the s-channel FFV current and amplitude — evaluated through the
-    /// generic `run_forward_slot` pass — against the `jioxxx`/`iovxxx` reference
-    /// routines.
+    /// generic `run_forward_slot` pass — per helicity, as complex values, against the
+    /// `jioxxx`/`iovxxx` reference routines.
     ///
-    /// Hand-built single diagrams (e⁺e⁻ → boson* [→ μ⁺μ⁻]) are assembled from `EvalNode`s
-    /// and run through lower → fold → `run_forward_slot`, which shares the kernels with
-    /// the production `fill_arenas` pass but not its typed instruction stream. Rooting at the propagator returns the dressed s-channel current, which
-    /// must equal `jioxxx` for every FFV structure (vector / left / left+2·right) and both
-    /// the photon and Z propagators. For the unambiguous vector coupling (FFV1) the full
-    /// μ⁺μ⁻ amplitude is also cross-checked against `iovxxx(·, jioxxx(·))`.
+    /// Hand-built single diagrams (f f̄ → boson* [→ f' f̄']) are assembled from
+    /// `EvalNode`s and run through lower → fold → `run_forward_slot`, which shares the
+    /// kernels with the production `fill_arenas` pass but not its typed instruction
+    /// stream. Rooting at the propagator returns the dressed s-channel current; the full
+    /// diagram adds the sink contraction. Both must equal the reference for every FFV
+    /// structure (vector / left / left+2·right) and both the photon and Z propagators.
+    ///
+    /// Two regimes, which see different error classes:
+    /// - massless e⁺e⁻ → μ⁺μ⁻: each helicity carries a single chirality, so a flipped
+    ///   L/R relative sign is a per-helicity global sign, and `q·J = 0`, so the massive
+    ///   propagator's longitudinal `q^μ(q·J)/m²` term vanishes;
+    /// - massive t t̄ → τ⁺τ⁻ at √s = 500 GeV: the helicity states mix chiralities and
+    ///   the axial current's divergence `∝ 2m·ψ̄γ⁵ψ` makes `q·J ≠ 0` on both lines, so
+    ///   a relative L/R sign, the longitudinal term and its denominator all enter the
+    ///   current and the amplitude. Here the vertices include the real SM Z couplings
+    ///   (tt̄Z: FFV2·GC_51 ⊕ FFV5·GC_58; τ⁺τ⁻Z: FFV2·GC_50 ⊕ FFV4·GC_59, both
+    ///   `g_L ≠ g_R`), which lower to the fused chiral-pair kernels.
+    ///
+    /// In the massive regime the single-structure FFV2/FFV4 currents are also compared
+    /// against the component-for-component ALOHA transcriptions `ffv2_3`/`ffv4_3`,
+    /// which share no bilinear code with either side and pin the longitudinal
+    /// denominator to ALOHA's literal `OM3 = 1/M3²`.
     #[test]
     fn test_eval_jioxxx() {
         // Both sides evaluate the same few products and one propagator division, so
         // they agree to a handful of roundings.
         const JIOXXX_REL_TOL: f64 = 1e-12;
+        const SINGLE: [(&str, &[(&str, &str)]); 3] = [
+            ("FFV1", &[("FFV1", "GC_3")]),
+            ("FFV2", &[("FFV2", "GC_3")]),
+            ("FFV4", &[("FFV4", "GC_3")]),
+        ];
+        let mut cases = Vec::new();
+        for (label, terms) in SINGLE {
+            cases.push(JioxxxCase {
+                label,
+                current_pair: ["e+", "e-"],
+                sink_pair: ["mu+", "mu-"],
+                sqrts: 1.0,
+                current_terms: terms,
+                sink_terms: terms,
+            });
+            cases.push(JioxxxCase {
+                label,
+                current_pair: ["t~", "t"],
+                sink_pair: ["ta+", "ta-"],
+                sqrts: 500.0,
+                current_terms: terms,
+                sink_terms: terms,
+            });
+        }
+        cases.push(JioxxxCase {
+            label: "SM Z",
+            current_pair: ["t~", "t"],
+            sink_pair: ["ta+", "ta-"],
+            sqrts: 500.0,
+            current_terms: &[("FFV2", "GC_51"), ("FFV5", "GC_58")],
+            sink_terms: &[("FFV2", "GC_50"), ("FFV4", "GC_59")],
+        });
+
         let model = sm_model(SMRestrict::Default);
         let evaluated = EvaluatedModel::from_model(model.clone());
+        let vertex = |terms: &[(&str, &str)], vout: Option<usize>| VertexInfo {
+            terms: terms
+                .iter()
+                .map(|&(lorentz, coupling)| {
+                    VertexTerm::from_ufo(
+                        &model,
+                        model.lorentz_id(lorentz).unwrap(),
+                        &no_color(),
+                        model.coupling_id(coupling).unwrap(),
+                        FFV_FLOW,
+                        vout,
+                        &[],
+                    )
+                    .unwrap()
+                })
+                .collect(),
+        };
+        let helas_gc = |terms: &[(&str, &str)]| {
+            terms
+                .iter()
+                .fold([0.0, 0.0], |[gl, gr], &(lorentz, coupling)| {
+                    let (wl, wr) = ffv_chiral_weights(lorentz);
+                    let g = evaluated.coupling(model.coupling_id(coupling).unwrap()).im;
+                    [gl + wl * g, gr + wr * g]
+                })
+        };
 
-        // This doesn't matter so much, it's pure imaginary and just scales the lorentz structure
-        let coupling_id = model.coupling_id("GC_3").unwrap();
+        for (case, prop_name) in iproduct!(&cases, ["a", "Z"]) {
+            let gc_current = helas_gc(case.current_terms);
+            let gc_sink = helas_gc(case.sink_terms);
 
-        // FFV1 is L+R, FFV2 is L, FFV4 is L+2R
-        let coups = vec![("FFV1", 1.0), ("FFV2", 0.0), ("FFV4", 2.0)];
-        let props = vec!["a", "Z"];
-        for ((coup_str, gr_fact), prop_name) in iproduct!(coups, props) {
-            let lorentz_id = model.lorentz_id(coup_str).unwrap();
-            let gc = evaluated.coupling(coupling_id);
-            let gc = [gc.im, gr_fact * gc.im];
-
-            let inpart_id = model.particle_id("e+").unwrap();
-            let inpart_p_id = model.particle_id("e-").unwrap();
+            let inpart_id = model.particle_id(case.current_pair[0]).unwrap();
+            let inpart_p_id = model.particle_id(case.current_pair[1]).unwrap();
             let m_in = evaluated.mass(inpart_id);
 
-            let outpart_id = model.particle_id("mu+").unwrap();
-            let outpart_p_id = model.particle_id("mu-").unwrap();
+            let outpart_id = model.particle_id(case.sink_pair[0]).unwrap();
+            let outpart_p_id = model.particle_id(case.sink_pair[1]).unwrap();
             let m_out = evaluated.mass(outpart_id);
 
             let prop_id = model.particle_id(prop_name).unwrap();
             let mprop = evaluated.mass(prop_id);
             let wprop = evaluated.width(prop_id);
 
-            let sqrts = 1.0;
+            let sqrts = case.sqrts;
             let p3_in = (sqrts * sqrts / 4.0 - m_in * m_in).sqrt();
             let p_in_m = LorentzVector::from_pxpypzmass(0.0, 0.0, -p3_in, m_in);
             let p_in_p = LorentzVector::from_pxpypzmass(0.0, 0.0, p3_in, m_in);
@@ -2194,8 +2287,15 @@ mod tests {
                 LorentzVector::from_pxpypzmass(p3_out * sintheta, 0.0, p3_out * costheta, m_out);
             let p_out_p =
                 LorentzVector::from_pxpypzmass(-p3_out * sintheta, 0.0, -p3_out * costheta, m_out);
+            let tag = format!(
+                "{}/{prop_name}, {}{}→{}{}",
+                case.label,
+                case.current_pair[0],
+                case.current_pair[1],
+                case.sink_pair[0],
+                case.sink_pair[1]
+            );
 
-            // Set up runtime evaluator data
             let leg1_info = ExtLegInfo {
                 leg_idx: 0,
                 id: inpart_id,
@@ -2224,36 +2324,14 @@ mod tests {
                 charge: Charge::Antiparticle,
                 incoming: false,
             };
-            let vertex_info = VertexInfo {
-                terms: vec![VertexTerm::from_ufo(
-                    &model,
-                    lorentz_id,
-                    &no_color(),
-                    coupling_id,
-                    FFV_FLOW,
-                    Some(2),
-                    &[],
-                )
-                .unwrap()],
-            };
+            let vertex_info = vertex(case.current_terms, Some(2));
             let prop_info = PropInfo {
                 id: prop_id,
                 t_channel: false,
             };
-            let amp_info = VertexInfo {
-                terms: vec![VertexTerm::from_ufo(
-                    &model,
-                    lorentz_id,
-                    &no_color(),
-                    coupling_id,
-                    FFV_FLOW,
-                    None,
-                    &[],
-                )
-                .unwrap()],
-            };
+            let amp_info = vertex(case.sink_terms, None);
 
-            // Single s-channel current sub-diagram e⁺e⁻ → (FFV) → boson*: the two
+            // Single s-channel current sub-diagram f f̄ → (FFV) → boson*: the two
             // externals feed the off-shell current (rooted at the vector leg), and the
             // propagator dresses it. Rooting at the propagator makes `run_forward_slot`
             // return the dressed current itself (a vector), so we read it straight off
@@ -2276,67 +2354,104 @@ mod tests {
                     },
                 ],
             );
-            // The full diagram extends it with the μ⁺μ⁻ sink contraction (a scalar M).
-            let amp_diagram = DiagramEval::from_nodes(
-                4,
-                vec![
-                    EvalNode::External(leg1_info),
-                    EvalNode::External(leg2_info),
-                    EvalNode::OffShellCurrent {
-                        info: vertex_info,
-                        adjoint: None,
-                        children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
-                        fermion_pairs: vec![(0, 1)],
-                    },
-                    EvalNode::Propagate {
-                        info: prop_info,
-                        adjoint: None,
-                        child: EvalNodeId::new(2),
-                    },
-                    EvalNode::External(leg3_info),
-                    EvalNode::External(leg4_info),
-                    EvalNode::ContractAmplitude {
-                        info: amp_info,
-                        children: vec![EvalNodeId::new(4), EvalNodeId::new(5), EvalNodeId::new(3)],
-                        fermion_pairs: vec![(0, 1)],
-                    },
-                ],
-            );
+            // The full diagram extends it with the sink contraction (a scalar M). The
+            // sink's first child fills the UFO slot whose spinor index `ProjM`/`ProjP`
+            // act on: with the ket there (`reversed = false`) the line is read along
+            // the vertex's own orientation, as the current side is; with the bra there
+            // the evaluator reads the line reversed, through C γ^{μT} C⁻¹ = −γ^μ, which
+            // exchanges the chiral projectors.
+            let amp_diagram = |reversed: bool| {
+                let (first, second) = if reversed { (4, 5) } else { (5, 4) };
+                DiagramEval::from_nodes(
+                    4,
+                    vec![
+                        EvalNode::External(leg1_info.clone()),
+                        EvalNode::External(leg2_info.clone()),
+                        EvalNode::OffShellCurrent {
+                            info: vertex_info.clone(),
+                            adjoint: None,
+                            children: vec![EvalNodeId::new(0), EvalNodeId::new(1)],
+                            fermion_pairs: vec![(0, 1)],
+                        },
+                        EvalNode::Propagate {
+                            info: prop_info.clone(),
+                            adjoint: None,
+                            child: EvalNodeId::new(2),
+                        },
+                        EvalNode::External(leg3_info.clone()),
+                        EvalNode::External(leg4_info.clone()),
+                        EvalNode::ContractAmplitude {
+                            info: amp_info.clone(),
+                            children: vec![
+                                EvalNodeId::new(first),
+                                EvalNodeId::new(second),
+                                EvalNodeId::new(3),
+                            ],
+                            fermion_pairs: vec![(0, 1)],
+                        },
+                    ],
+                )
+            };
 
             let hels = [SpinorHelicity::Down, SpinorHelicity::Up];
+            // Physical adjoint (per the leg charge labels): leg1 (Particle, in) and
+            // leg4 (Antiparticle, out) are kets; leg2 (Antiparticle, in) and
+            // leg3 (Particle, out) are bras. The reference s-channel current is
+            // jioxxx(fo=leg2 bra, fi=leg1 ket); the sink is iovxxx.
+            let ket_in = |hel| InDiracWf::from_momentum(p_in_m, m_in, hel, Charge::Particle);
+            let bra_in = |hel| OutDiracWf::from_momentum(p_in_p, m_in, hel, Charge::Antiparticle);
+            let ref_current =
+                |hel1, hel2| jioxxx(&bra_in(hel2), &ket_in(hel1), gc_current, mprop, wprop);
+            // The amplitude reproduces the composed reference iovxxx∘jioxxx up to a
+            // global factor: the i the routines fold into the amplitude vs. the i the
+            // UFO coupling carries at each vertex, times a sign this hand-built diagram
+            // carries for its sink orientation: +i along the vertex, −i reversed. Both
+            // are pinned as measured here; neither is visible in |M|², and relative
+            // diagram signs are the MadGraph-gated processes' to pin. Read reversed, the line couples
+            // `[g_R, g_L]`.
+            let ref_amp = |hel1, hel2, hel3, hel4, reversed: bool| {
+                let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
+                let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
+                let current = ref_current(hel1, hel2);
+                if reversed {
+                    let swapped = [gc_sink[1], gc_sink[0]];
+                    iovxxx(&fo_out_m, &fi_out_p, &current, swapped) * -Complex64::i()
+                } else {
+                    iovxxx(&fo_out_m, &fi_out_p, &current, gc_sink) * Complex64::i()
+                }
+            };
             // Both comparisons are relative to the largest reference over the helicities,
             // so a helicity whose reference vanishes is still held to the same scale and
-            // the photon's and the Z's currents, three orders of magnitude apart at this
-            // √s, are held to the same relative precision.
-            let ref_current = |hel1, hel2| {
-                let fi_em = InDiracWf::from_momentum(p_in_m, m_in, hel1, Charge::Particle);
-                let fo_ep = OutDiracWf::from_momentum(p_in_p, m_in, hel2, Charge::Antiparticle);
-                jioxxx(&fo_ep, &fi_em, gc, mprop, wprop)
-            };
+            // currents orders of magnitude apart are held to the same relative precision.
             let current_scale = iproduct!(hels, hels)
                 .map(|(h1, h2)| ref_current(h1, h2).eps.bare_norm_sq().sqrt())
                 .fold(0.0_f64, f64::max);
-            assert!(current_scale > 0.0, "every reference current vanishes");
-            let ref_amp = |hel1, hel2, hel3, hel4| {
-                let fo_out_m = OutDiracWf::from_momentum(p_out_m, m_out, hel3, Charge::Particle);
-                let fi_out_p = InDiracWf::from_momentum(p_out_p, m_out, hel4, Charge::Antiparticle);
-                iovxxx(&fo_out_m, &fi_out_p, &ref_current(hel1, hel2), gc) * -Complex64::i()
-            };
-            let amp_scale = iproduct!(hels, hels, hels, hels)
-                .map(|(h1, h2, h3, h4)| ref_amp(h1, h2, h3, h4).norm())
-                .fold(0.0_f64, f64::max);
-            assert!(amp_scale > 0.0, "every reference amplitude vanishes");
-            for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
-                // Physical adjoint (per the leg charge labels): leg1 (Particle, in) and
-                // leg4 (Antiparticle, out) are kets; leg2 (Antiparticle, in) and
-                // leg3 (Particle, out) are bras. The reference s-channel current is
-                // jioxxx(fo=leg2 bra, fi=leg1 ket); the sink is iovxxx.
-                let v_gamma_exp = ref_current(hel1, hel2);
+            assert!(
+                current_scale > 0.0,
+                "every reference current vanishes ({tag})"
+            );
 
-                // The dressed s-channel current from the forward pass must match jioxxx
-                // exactly (value + routed momentum jmom = fo.p − fi.p), for every FFV
-                // structure (vector / left / left+2·right) and both propagators.
-                let WaveformSlot::Vector(v_gamma) = eval_single_diagram_slot(
+            // Which regime the case is in: `q·ε` of the dressed current is `q·J` over
+            // `−m²` (massive) or `q²` (massless boson), so it vanishes exactly when the
+            // longitudinal term does. A current is conserved when its fermions are
+            // massless or it has no axial part (`g_L = g_R`); the rest must sit well
+            // clear of rounding, or the case does not test what it claims.
+            let divergence = iproduct!(hels, hels)
+                .map(|(h1, h2)| {
+                    let v = ref_current(h1, h2);
+                    v.eps.dot_lorentz(&v.momentum).norm()
+                })
+                .fold(0.0_f64, f64::max)
+                / (current_scale * sqrts);
+            if m_in == 0.0 || gc_current[0] == gc_current[1] {
+                assert!(divergence < 1e-13, "q·ε = {divergence:.3e} ({tag})");
+            } else {
+                assert!(divergence > 1e-2, "q·ε = {divergence:.3e} ({tag})");
+            }
+
+            for (hel1, hel2) in iproduct!(hels, hels) {
+                let want = ref_current(hel1, hel2);
+                let WaveformSlot::Vector(got) = eval_single_diagram_slot(
                     &current_diagram,
                     &[p_in_m, p_in_p],
                     &[hel1.sign(), hel2.sign()],
@@ -2345,35 +2460,62 @@ mod tests {
                     panic!("s-channel current must evaluate to a vector");
                 };
                 assert_eq!(
-                    v_gamma.momentum, v_gamma_exp.momentum,
-                    "current momentum ({coup_str}/{prop_name}, hel {hel1}{hel2})"
+                    got.momentum, want.momentum,
+                    "current momentum ({tag}, hel {hel1}{hel2})"
                 );
-                let cdiff: f64 = (v_gamma.eps - v_gamma_exp.eps).bare_norm_sq().sqrt();
+                let cdiff: f64 = (got.eps - want.eps).bare_norm_sq().sqrt();
                 assert!(
                     cdiff <= JIOXXX_REL_TOL * current_scale,
-                    "current vs jioxxx ({coup_str}/{prop_name}, hel {hel1}{hel2}): \
+                    "current vs jioxxx ({tag}, hel {hel1}{hel2}): \
                      |diff|={cdiff:.3e}, scale={current_scale:.3e}"
                 );
 
-                // The vector (FFV1) coupling has no chirality ambiguity, so the full
-                // amplitude reproduces the composed reference iovxxx∘jioxxx up to one
-                // global convention factor of −i (the i the routines fold into the
-                // amplitude vs. the i the UFO coupling carries at each vertex; it drops
-                // out of |M|²). The pure-chiral FFV2/FFV4 sinks use a different HELAS
-                // gc=[gl,gr] decomposition, so only their current is cross-checked above;
-                // the chiral amplitude sink is covered by the full-process tests
-                // (`test_whole_amplitude_equals_diagram_sum_eemumu`, `validate_helas`).
-                if coup_str == "FFV1" {
+                // ALOHA's FFVk_3 folds a −i into the current that vibegraph carries in
+                // the coupling, so `FFVk_3(c = g) = −i·jioxxx([w_L·g, w_R·g])`.
+                let aloha_coupling =
+                    |c: &str| Complex64::from(evaluated.coupling(model.coupling_id(c).unwrap()).im);
+                let (fi, fo) = (ket_in(hel1), bra_in(hel2));
+                let aloha = match (m_in != 0.0, case.current_terms) {
+                    (true, [("FFV2", c)]) => {
+                        Some(ffv2_3(&fi, &fo, aloha_coupling(c), mprop, wprop))
+                    }
+                    (true, [("FFV4", c)]) => {
+                        Some(ffv4_3(&fi, &fo, aloha_coupling(c), mprop, wprop))
+                    }
+                    _ => None,
+                };
+                if let Some(aloha) = aloha {
+                    let adiff = (aloha.eps - want.eps * -Complex64::i())
+                        .bare_norm_sq()
+                        .sqrt();
+                    assert!(
+                        adiff <= JIOXXX_REL_TOL * current_scale,
+                        "−i·jioxxx vs ALOHA FFVk_3 ({tag}, hel {hel1}{hel2}): \
+                         |diff|={adiff:.3e}, scale={current_scale:.3e}"
+                    );
+                }
+            }
+
+            for reversed in [false, true] {
+                let diagram = amp_diagram(reversed);
+                let amp_scale = iproduct!(hels, hels, hels, hels)
+                    .map(|(h1, h2, h3, h4)| ref_amp(h1, h2, h3, h4, reversed).norm())
+                    .fold(0.0_f64, f64::max);
+                assert!(
+                    amp_scale > 0.0,
+                    "every reference amplitude vanishes ({tag})"
+                );
+                for (hel1, hel2, hel3, hel4) in iproduct!(hels, hels, hels, hels) {
                     let momenta = [p_in_m, p_in_p, p_out_m, p_out_p];
                     let hel_codes = [hel1.sign(), hel2.sign(), hel3.sign(), hel4.sign()];
-                    let got = eval_single_diagram(&amp_diagram, &momenta, &hel_codes, &evaluated);
-
-                    let want = ref_amp(hel1, hel2, hel3, hel4);
+                    let got = eval_single_diagram(&diagram, &momenta, &hel_codes, &evaluated);
+                    let want = ref_amp(hel1, hel2, hel3, hel4, reversed);
                     let diff = (got - want).norm();
                     assert!(
                         diff <= JIOXXX_REL_TOL * amp_scale,
-                        "amplitude vs iovxxx∘jioxxx ({coup_str}/{prop_name}, \
-                         hel {hel1}{hel2}{hel3}{hel4}): got={got:.6e} want={want:.6e} diff={diff}"
+                        "amplitude vs iovxxx∘jioxxx ({tag}, reversed sink {reversed}, \
+                         hel {hel1}{hel2}{hel3}{hel4}): got={got:.6e} want={want:.6e} \
+                         diff={diff:.3e} scale={amp_scale:.3e}"
                     );
                 }
             }
