@@ -5,10 +5,11 @@ description: "A hermetic test pins the per-diagram probes to the production eval
 status: draft
 tags: [evaluator, oracle, blind-spot, validation, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: bridge, resource: "https://github.com/nsmith-/vibegraph/commit/23e57f2", title: "test(eval): bridge the per-diagram probes to the production Program"}
 ---
-Closes [per-diagram-probes-bypass-production-runtime](../../../backlog/validation/per-diagram-probes-bypass-production-runtime.md)
+Closes `per-diagram-probes-bypass-production-runtime` (closed by this PR)
 by its second arm: a hermetic test that bridges the two paths on processes with
 internal fermions.
 
