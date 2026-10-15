@@ -326,3 +326,37 @@ fn tata_to_ttxhh() {
 fn bbx_to_hh() {
     check("bbx_to_hh");
 }
+
+/// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top
+/// line, whose three colour structures each multiply one of its Lorentz structures.
+#[test]
+fn gg_to_ttxg() {
+    check("gg_to_ttxg");
+}
+
+/// Quark-gluon `t t~ + jet` with the quark first: the light-quark line and the top
+/// pair joined by a gluon, the radiated gluon on either line or at a triple-gluon
+/// vertex.
+#[test]
+fn ug_to_ttxu() {
+    check("ug_to_ttxu");
+}
+
+/// The same channel in MadEvent's own leg order, the gluon first.
+#[test]
+fn gu_to_ttxu() {
+    check("gu_to_ttxu");
+}
+
+/// The antiquark-gluon channel in MadEvent's leg order.
+#[test]
+fn gux_to_ttxux() {
+    check("gux_to_ttxux");
+}
+
+/// Quark annihilation into `t t~ + g`: the gluon off either quark line or off the
+/// s-channel gluon.
+#[test]
+fn uux_to_ttxg() {
+    check("uux_to_ttxg");
+}
