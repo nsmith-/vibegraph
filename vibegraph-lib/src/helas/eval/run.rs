@@ -916,7 +916,9 @@ where
 /// evaluated exactly once. Rooting a sub-tree returns that node's slot, which the
 /// per-diagram probes read. It shares the kernels with production but not the typed
 /// [`Program`](super::layout::Program) that `fill_arenas` runs, so a probe through it
-/// checks rooting, lowering and kernels, not the production instruction stream.
+/// checks rooting, lowering and kernels, not the production instruction stream. The
+/// `probe_bridge` test pins the probes' scalar amplitudes, per amplitude and per flow,
+/// to that program's.
 #[cfg(test)]
 pub(super) fn run_forward_slot<F: Real>(
     folded: &Folded,
@@ -1946,6 +1948,9 @@ fn build_external_core<F: Real>(
         other => panic!("unsupported external spin code: {other}"),
     }
 }
+
+#[cfg(test)]
+mod probe_bridge;
 
 #[cfg(test)]
 mod tests {
