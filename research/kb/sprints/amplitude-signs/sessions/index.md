@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [Q-H: hygiene review of the same-flavour four-fermion per-graph gate](Q-H.md) - Review PR #35's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [Q1: same-flavour four-fermion contact against MadGraph](Q1.md) - Bank an ee_to_ee_4f SMEFTsim standalone row, gate its |M|² per helicity and its amplitudes against MadGraph, and record the per-pairing diagram count as a convention cell.
 
 ## Session Report
 
+* [Q-H report: hygiene review of the same-flavour four-fermion per-graph gate](Q-H-report.md) - Hygiene review of PR #35's per-graph AMP() route: findings written before any edit, then the local ones fixed with run mutations and an identity check on standalone_jamps' printed numbers.
 * [Q1 report: same-flavour four-lepton contacts agree with MadGraph per graph and per pairing](Q1-report.md) - `e+ e- > e+ e- NP<=1` under SMEFTsim's four-lepton card is banked as a standalone row and gated per helicity, per flow and per MadGraph graph. 22 diagrams here make up MadGraph's 19 graphs, and each contact's two pairings carry MadGraph's relative sign exactly. Flipping that sign fails the gate at O(1).
