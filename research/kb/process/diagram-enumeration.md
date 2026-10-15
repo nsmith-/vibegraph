@@ -131,7 +131,7 @@ made in `ufo/topo.rs::build_feyngraph_model`, one feyngraph vertex per pairing,
 not by feyngraph itself. It is a registered convention, checked per graph by
 `standalone_jamps`' `ee_to_ee_4f`
 ([four-fermion vertices](../amplitudes/four-fermion-vertices.md),
-[madgraph-style-diagram-grouping](../backlog/feature/madgraph-style-diagram-grouping.md)).
+[amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md)).
 
 There is no command to draw or summarise a card's diagrams before integrating
 ([backlog](../backlog/feature/diagram-inspection-command-missing.md)).

@@ -84,7 +84,7 @@ It is a registered counting convention (user, 2026-10-15): `standalone_jamps`'
 to partition our diagrams into exactly MadGraph's graphs, each group matching
 its `AMP()` to 1e-12, and each pairing matched MadGraph's own term group at
 relative sign +1. Grouping by Feynman graph instead is
-[madgraph-style-diagram-grouping](../backlog/feature/madgraph-style-diagram-grouping.md).
+[amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md).
 See [model/smeftsim-topu3l](../model/smeftsim-topu3l.md) for the model.
 
 Sinks that close two lines at once, and the rooting-invariance falsifier, are in
