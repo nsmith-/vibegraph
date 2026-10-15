@@ -147,7 +147,7 @@ not a gating exception).[^vsigma]
 seed's pull and this side's χ²/dof band. A row whose reference is a single
 MadEvent run is `covered-by` a seeded row rather than gated, because one run is
 not a reference under that policy.[^n38-z2] Where MadEvent's own seeds scatter
-far beyond their quotes (`ee_to_ee_nsz`: χ²/dof 20; the unrestricted Bhabha
+far beyond their quotes (`ee_to_ee_nsz`: χ²/dof 15; the unrestricted Bhabha
 control: 93), the reference's error is its spread and a pull of ~1.8 is this
 side sitting with MadEvent's majority.[^n38-z2] This side's own low-budget tail
 on that row is

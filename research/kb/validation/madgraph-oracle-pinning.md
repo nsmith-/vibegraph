@@ -113,7 +113,7 @@ carry no PDF, and under 3.7.1 their `αs` is the model's own.
   the grid runs with the fixed-scale runs and asserts that set non-empty on its
   own account.
 - **A σ cell that flips after a re-card is read on a budget ladder, not one
-  seed**[^n29-g10]. The four re-carded rows gate on three seeds at the budgets in
+  seed**[^n29-g10]. The four re-carded rows gate on five seeds at the budgets in
   `RECARDED_ROWS` (`validate_hadronic.rs`): `pp_to_bb`, `pp_to_bb_qcd2` and
   `pp_to_ll_scalefact2` at 75k points an iteration, where their ladders are
   flat; `pp_to_llj` at 150k, the lowest rung whose error a single inflated `75k`

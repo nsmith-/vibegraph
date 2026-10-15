@@ -21,7 +21,7 @@
 //! its factorisation into two off-shell `Z` lines, integrated by quadrature to
 //! `1e-9` (`decay_width_exact.json`). On those rows MadEvent is compared against
 //! the same exact value and reported, not gated: on `h > e+ e- mu+ mu-` its ten
-//! 10k-event seeds sit 0.14% below it, 2.2 standard errors of their own mean,
+//! 10k-event seeds sit 0.13% below it, 2.1 standard errors of their own mean,
 //! scattering by 1.33× the error each quotes, and three 100k-event seeds sit
 //! 0.05% below — MadEvent converging on the exact width with budget, where this
 //! side's seeds sit within about one standard error at every budget measured.
@@ -43,6 +43,9 @@
 //! MadEvent additionally writes the intermediate `W` as a status-2 record between
 //! the top and its leptons; this generator writes no intermediate records for any
 //! process, so that record is not compared.
+
+#[path = "../../vibegraph-lib/tests/common/seeds.rs"]
+mod seeds;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -207,32 +210,22 @@ fn integrate(
     parse_width(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// Inverse-variance mean and its error.
-fn weighted_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let w: f64 = values.iter().map(|(_, e)| 1.0 / (e * e)).sum();
-    let m = values.iter().map(|(v, e)| v / (e * e)).sum::<f64>() / w;
-    (m, 1.0 / w.sqrt())
+/// The seed policy's reading of equal-budget seeds ([`seeds::combine`]): the
+/// unweighted mean, with an error no smaller than the seeds' spread allows.
+fn seed_mean(values: &[(f64, f64)]) -> (f64, f64) {
+    let read = seeds::combine(values);
+    (read.mean, read.err)
 }
 
 /// The seeds' sample standard deviation.
-fn spread(values: &[(f64, f64)]) -> f64 {
-    let n = values.len() as f64;
-    let m = values.iter().map(|(v, _)| v).sum::<f64>() / n;
-    (values.iter().map(|(v, _)| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+fn sample_sd(values: &[(f64, f64)]) -> f64 {
+    let read = seeds::combine(values);
+    read.spread * (read.n as f64).sqrt()
 }
 
-/// The inverse-variance mean, with an error no smaller than the seed spread
-/// allows.
-fn seed_mean(values: &[(f64, f64)]) -> (f64, f64) {
-    let (m, quoted) = weighted_mean(values);
-    (m, quoted.max(spread(values) / (values.len() as f64).sqrt()))
-}
-
-/// χ²/dof of `values` about their inverse-variance mean.
+/// χ²/dof of `values` about their unweighted mean.
 fn chi2_per_dof(values: &[(f64, f64)]) -> f64 {
-    let (m, _) = weighted_mean(values);
-    let chi2: f64 = values.iter().map(|(v, e)| ((v - m) / e).powi(2)).sum();
-    chi2 / (values.len() - 1) as f64
+    seeds::combine(values).chi2_per_dof
 }
 
 #[test]
@@ -294,8 +287,8 @@ fn partial_widths_match_madevent_over_seeds() {
             row.process,
             mg.len(),
             chi2_per_dof(&mg),
-            spread(&mg),
-            spread(&ours),
+            sample_sd(&mg),
+            sample_sd(&ours),
         );
         for (v, e) in &ours {
             println!("            seed value {v:.6e} ± {e:.2e}");

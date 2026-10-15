@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: e+ e- > e+ e- $$ z under-samples a region below the plateau budget
-description: The twenty-seed σ mean of the $$ z Bhabha row climbs 0.5% with budget before plateauing; the missed region and the CLI default budget's reach are unmeasured.
+description: "The $$ z Bhabha row's twenty-seed scatter is well above its quotes below the plateau budget (χ²/dof 3.84 and 2.01); the missed region and the CLI default budget's reach are unmeasured."
 area: validation
 state: open
 priority: high
@@ -14,19 +14,23 @@ sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L280-L288", title: "TODO.md entry T012"}
 ---
 `e+ e- > e+ e- $$ z` (`ee_to_ee_nsz`) is the only row of the grammar σ
-ladder (`probe_grammar_seed_sweep`, twenty seeds per rung) whose mean moves
-with budget:
+ladder (`probe_grammar_seed_sweep`, twenty seeds per rung) whose seeds
+scatter well beyond their quotes at low budget. Read under the unweighted seed
+rule (2026-10-14):
 
 | budget | ×¼ (10k×6) | ×1 (40k×6) | ×4 (160k×6) | ×16 (640k×6) |
 |---|---|---|---|---|
-| mean (pb) | 156.71 ± 0.17 | 157.25 ± 0.09 | 157.55 ± 0.05 | 157.54 ± 0.02 |
-| seed χ²/dof | 2.23 | 1.80 | 1.22 | 1.53 |
+| mean (pb) | 157.63 ± 0.23 | 157.43 ± 0.12 | 157.58 ± 0.05 | 157.55 ± 0.03 |
+| seed χ²/dof | 3.84 | 2.01 | 1.23 | 1.53 |
+
+The 0.5% mean climb this item first recorded (156.71 → 157.54) was the `1/σ²`
+seed mean up-weighting the low seeds; the unweighted mean does not move.
 
 A region is missed until the budget covers it. The seeded gate
 (`the_grammar_rows_match_madevents_seeds` in `validate_sigma`) runs on the
 plateau at 160 000 × 6, so it does not see this. MadEvent's own seeds have the
 same low tail: one of five at 156.48 on this row, and two of five 0.8% and
-1.3% low on unrestricted Bhabha (seed χ²/dof 20 and 93).
+1.3% low on unrestricted Bhabha (seed χ²/dof 15 and 93).
 
 Unmeasured: which region it is, and whether `vibegraph integrate` at its
 default budget reaches the plateau on every seed. Start with a per-channel

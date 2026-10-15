@@ -79,9 +79,19 @@ mean.[^n24-p3] VEGAS combines iterations by **unweighted mean**
 (`IterationCombination::Unweighted`, the `#[default]` in `vegas.rs`): weights
 fixed before sampling cannot correlate with what they weight.[^vegas] See
 [iteration combination](../phase-space/vegas-iteration-combination.md). The
-same reasoning sets how a gate combines its seeds: `combine_seeds` in
-`validate_hadronic.rs` takes the unweighted mean with `err = √(Σσᵢ²)/n`, and
-the seeds' scatter, not the error, is what shows a missed region.[^vhad]
+same reasoning sets how a gate combines its seeds, on this side and MadEvent's:
+the unweighted mean with error `max(√(Σσᵢ²)/n, spread/√n)`, one helper
+(`combine` in `tests/common/seeds.rs`) for every gate, and the seeds' scatter,
+not the error, is what shows a missed region
+([seed policy](madevent-reference-seed-policy.md)).[^vhad]
+
+A `1/σ²` seed mean can manufacture a budget climb. Under it the grammar ladder's
+`e+ e- > e+ e- $$ z` row read 156.71, 157.25, 157.55 and 157.54 pb over twenty
+seeds at ¼, 1, 4 and 16 times 40 000 × 6, a 0.5% climb. Read unweighted the
+same rungs are 157.63 ± 0.23, 157.43 ± 0.12, 157.58 ± 0.05 and 157.55 ± 0.03:
+no climb. The low-budget seeds that missed the region show instead in the
+scatter, χ²/dof 3.84 and 2.01 on the two lower rungs against 1.23 and 1.53
+above (`GRAMMAR_NEVAL`'s doc in `validate_sigma.rs`).
 
 So any σ gate on a many-channel or high-dimensional integrand records a budget
 ladder (typically five seeds per rung over an eightfold range, 75k–600k) beside

@@ -4,6 +4,15 @@ pub mod leshouche;
 pub mod manifest;
 pub mod pdfset;
 pub mod report;
+pub mod seeds;
+
+// Here rather than beside either item: `report.rs` and `seeds.rs` are each
+// included by path into test targets that do not carry the other.
+impl seeds::SeedValue for report::SeedResult {
+    fn value_and_err(&self) -> (f64, f64) {
+        (self.sigma_pb, self.sigma_err_pb)
+    }
+}
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;

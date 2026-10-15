@@ -17,6 +17,8 @@ mod common;
 
 use std::sync::Arc;
 
+use common::seeds::combine;
+
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::hadronic::{
@@ -325,16 +327,21 @@ fn probe_h4l_width_ladder() {
     report_ladder_rung("flat RAMBO 1000000×20", &runs);
 }
 
+/// One rung's seeds under the seed policy ([`combine`]), with the seeds' sample
+/// standard deviation beside the mean of their quoted errors: the per-seed
+/// scatter against the per-seed claim is what this ladder reads.
 fn report_ladder_rung(label: &str, runs: &[(f64, f64, f64)]) {
-    let n = runs.len() as f64;
-    let mean = runs.iter().map(|r| r.0).sum::<f64>() / n;
-    let spread = (runs.iter().map(|r| (r.0 - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt();
+    let read = combine(&runs.iter().map(|r| (r.0, r.1)).collect::<Vec<_>>());
+    let n = read.n as f64;
+    let spread = read.spread * n.sqrt();
     let quoted = runs.iter().map(|r| r.1).sum::<f64>() / n;
     println!(
-        "{label}: mean {mean:.6e} ± {:.2e} (seed spread {spread:.2e}, mean quoted {quoted:.2e}) \
-         over {} seeds; values {:?}",
-        spread / n.sqrt(),
-        runs.len(),
+        "{label}: mean {:.6e} ± {:.2e} (seed spread {spread:.2e}, mean quoted {quoted:.2e}, \
+         χ²/dof {:.2}) over {} seeds; values {:?}",
+        read.mean,
+        read.err,
+        read.chi2_per_dof,
+        read.n,
         runs.iter().map(|r| r.0).collect::<Vec<_>>()
     );
 }
