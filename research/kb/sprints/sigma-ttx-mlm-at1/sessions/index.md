@@ -10,3 +10,4 @@
 ## Session Report
 
 * [V1 report: reference side and per-event share of the ttx @1 excess](V1-report.md) - The +1.28 % on @1 is not the reference (20 fresh directories agree with the bank) and not H1 (+0.03 ± 0.11 pb); it is +1.6 % on g g > t t~ g and +1.0 % on g q > t t~ q, appears only under matching, and mostly disappears with pdfwgt = F. Not yet attributed to a line of code.
+* [V2 report: per-point integrand against MadEvent DSIG1 in the pdfwgt branch](V2-report.md) - The integrand clusters each matched term in the lab frame, and MadEvent clusters in the partonic CM frame. The beam tie-break in cluster.f reads the sign of p_z, so about 16 % of g g > t t~ g points cluster their gluon onto the other beam. Clustering in the CM makes 26 000 points agree with an instrumented DSIG1 on every factor (worst 3e-7), and lowers gg by 1.05 % and gq by 0.09 %. A residual of about +0.6 % on gg and +0.9 % on gq remains. It is not in the per-point integrand.
