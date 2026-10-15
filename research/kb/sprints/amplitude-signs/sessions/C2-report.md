@@ -5,6 +5,7 @@ description: "The Identity arm takes the crossed-line −1 and every all-scalar 
 status: draft
 tags: [amplitude, sign-convention, fermion-flow, scalar, smeftsim, toy-ufo, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: fix, resource: "https://github.com/nsmith-/vibegraph/commit/4e8b614", title: "fix(amplitudes): crossed-line sign for Identity currents and the all-scalar sign for derivative vertices"}
 ---
