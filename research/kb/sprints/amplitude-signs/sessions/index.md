@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [P-H: hygiene review of the probe–production bridge](P-H.md) - Review PR #31's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [P1: bridge the per-diagram probes to the production Program](P1.md) - Make the per-diagram evaluator probes provably agree with the production Program/fill_arenas path, on processes with an internal fermion, so per-diagram dumps diagnose the code that runs.
 
 ## Session Report
 
+* [P-H report: hygiene review of the probe-production bridge](P-H-report.md) - Review of PR #31 on four points. The bridge's one function is split, three blind spots are closed (comparison counts, colour-factor source, row counts), the subsumed eemumu test is deleted, and two cross-module items are filed.
 * [P1 report: the per-diagram probes are bridged to the production Program](P1-report.md) - A hermetic test pins the per-diagram probes to the production evaluator, as complex values per amplitude, per flow and per helicity combination, on eleven SM processes. Measured agreement is at most 2.4e-14, and three single-path sign mutations fail it. The bridge cannot see anything the two paths share: rooting, anchor-read convention signs, external wavefunctions and kernels.
