@@ -92,6 +92,14 @@ evaluator sessions:
 - **Run gates with `--skip-deps`** unless the assignment explicitly says
   reference data must be regenerated — without the reference data present, a
   bare `pixi run validate` silently launches a multi-hour MG regeneration.
+- **Disk is finite, and a full disk looks like a failure.** A debug workspace
+  build with incremental data reaches ~15 GB per worktree, and two such trees
+  have filled a cloud container mid-gate. On a shared or small host, run cargo
+  with `CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`
+  (they change disk use only, not what a gate checks). An `ENOSPC`, a linker
+  `Bus error` or a truncated log is a kill, not a result: free only your own
+  `target/` and re-run. Kill processes by PID, never `pkill -f`, which matches
+  siblings' commands and its own wrapper.
 
 ## Hard rules
 
