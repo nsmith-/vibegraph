@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [F1 report: wpwm_to_wpwmz_cw is two missing signs, one of them not O_W's](F1-report.md) - Diagnosis. Per graph against MadGraph's AMP(), the 222-graph row disagrees by a relative −1 on exactly eight diagrams: O_W's two five-vector contacts, and six diagrams where the loop-induced photon–Z–Higgs vertex (VVS4, SMHLOOP) produces the off-shell Higgs. Flipping both classes takes |M|² from 2.79e1 to 1.1e-11 in production; the remainder is MadGraph's seven-digit GC_303. Neither is W1's leg-0 anchor rule. A diagram pairing derived from the AMP() values makes the configuration partitions identical.
 * [Q1 report: same-flavour four-lepton contacts agree with MadGraph per graph and per pairing](Q1-report.md) - `e+ e- > e+ e- NP<=1` under SMEFTsim's four-lepton card is banked as a standalone row and gated per helicity, per flow and per MadGraph graph. 22 diagrams here make up MadGraph's 19 graphs, and each contact's two pairings carry MadGraph's relative sign exactly. Flipping that sign fails the gate at O(1).
