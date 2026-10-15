@@ -461,59 +461,12 @@ fn measure(key: &str) -> Measured {
 /// exemption cannot outlive the defect. The exemption covers the measured deviations
 /// only: a listed row whose table is missing or whose process stops matching the
 /// table's colour and helicity structure fails like any other.
-const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[
-    (
-        "wpwm_to_epem",
-        "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
+const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
+    "wpwm_to_epem",
+    "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
          comes out with the wrong sign relative to the photon and Z s-channel, while \
          `e+ e- > w+ w-` (the same graphs crossed) agrees",
-    ),
-    (
-        "ee_to_ttxh_identity",
-        "a bare `Identity` Yukawa rooted as a fermion current on the crossed top line: \
-         the four Higgs-off-top graphs (AMP 2-5) come out at -1 relative to \
-         Higgsstrahlung (AMP 1), where the `ProjM + ProjP` spelling of `ee_to_ttxh` \
-         agrees",
-    ),
-    (
-        "ll_to_qqxs_toy_yukawa",
-        "the bare `Identity` Yukawa rooted as a fermion current on the crossed quark \
-         line: the ten graphs that emit the scalar off the quark pair through \
-         `Identity` (AMP 1, 3, 4, 7, 8, 11, 13, 14, 17, 18) come out at -1 relative \
-         to the rest, while the same emission through `Gamma5` agrees",
-    ),
-    (
-        "ll_to_ss_toy_dscalar",
-        "the derivative cubic scalar vertex `SSSD` rooted as a scalar current: its \
-         graph (AMP 2) comes out at -1 relative to the plain `SSS1` graph and the \
-         lepton exchanges",
-    ),
-    (
-        "sl_to_sl_toy_dscalar",
-        "the derivative cubic scalar vertex `SSSD` rooted as the amplitude: its graph \
-         (AMP 3) comes out at -1 relative to the plain `SSS1` graph and the lepton \
-         exchanges",
-    ),
-    (
-        "ttx_to_hh_chbox",
-        "SMEFTsim's derivative Higgs self-couplings rooted as a scalar current: the \
-         `SSS3` (O_Hbox) and `SSS2` (O_HDD) graphs (AMP 2, 3) come out at -1 relative \
-         to every `SSS1` graph and the top exchanges",
-    ),
-    (
-        "ht_to_ht_chbox",
-        "SMEFTsim's derivative Higgs self-couplings rooted as the amplitude: the \
-         `SSS3` (O_Hbox) and `SSS2` (O_HDD) graphs (AMP 9, 10) come out at -1 \
-         relative to every `SSS1` graph and the top exchanges",
-    ),
-    (
-        "hh_to_hh_chbox",
-        "SMEFTsim's derivative Higgs self-couplings at four and three legs: the \
-         `SSSS3` and `SSSS2` contacts (AMP 2, 3) and the twelve exchanges with an \
-         `SSS3` or `SSS2` at one end come out at -1 relative to the `SSSS1` contacts \
-         and the exchanges through `SSS1` alone",
-    ),
-];
+)];
 
 fn check(key: &str) {
     let known = KNOWN_DISAGREEMENT.iter().find(|(k, _)| *k == key);
@@ -626,50 +579,52 @@ fn ee_to_ttxh() {
     check("ee_to_ttxh");
 }
 
-/// Known disagreement, kept running: SMEFTsim's bare `Identity(2,1)` top Yukawa
-/// rooted as a fermion current on the crossed top line.
+/// SMEFTsim's bare `Identity(2,1)` top Yukawa rooted as a fermion current on the
+/// crossed top line: the four Higgs-off-top graphs carry the crossed-line −1 that the
+/// `ProjM + ProjP` spelling of [`ee_to_ttxh`] takes, relative to Higgsstrahlung.
 #[test]
 fn ee_to_ttxh_identity() {
     check("ee_to_ttxh_identity");
 }
 
-/// Known disagreement, kept running: the toy model's bare `Identity` and `Gamma5`
-/// Yukawas emitted off a final-state quark pair.
+/// The toy model's bare `Identity` and `Gamma5` Yukawas emitted off a final-state
+/// quark pair and off the initial lepton line: both bilinears take the same
+/// crossed-line −1 as fermion currents.
 #[test]
 fn ll_to_qqxs_toy_yukawa() {
     check("ll_to_qqxs_toy_yukawa");
 }
 
-/// Known disagreement, kept running: the derivative cubic scalar vertex as a
-/// scalar current, beside its plain partner.
+/// The derivative cubic scalar vertex as a scalar current, beside its plain
+/// partner: both take the all-scalar −1.
 #[test]
 fn ll_to_ss_toy_dscalar() {
     check("ll_to_ss_toy_dscalar");
 }
 
-/// Known disagreement, kept running: the derivative cubic scalar vertex as the
-/// amplitude, with a scalar on leg 0.
+/// The derivative cubic scalar vertex as the amplitude, with a scalar on leg 0:
+/// both it and its plain partner take the all-scalar −1.
 #[test]
 fn sl_to_sl_toy_dscalar() {
     check("sl_to_sl_toy_dscalar");
 }
 
-/// Known disagreement, kept running: SMEFTsim's derivative Higgs self-couplings as
-/// the s-channel Higgs current off an initial top pair.
+/// SMEFTsim's derivative Higgs self-couplings (`SSS2`, `SSS3`) as the s-channel
+/// Higgs current off an initial top pair.
 #[test]
 fn ttx_to_hh_chbox() {
     check("ttx_to_hh_chbox");
 }
 
-/// Known disagreement, kept running: SMEFTsim's derivative Higgs self-couplings as
-/// the amplitude of the t-channel Higgs exchange, with a Higgs on leg 0.
+/// SMEFTsim's derivative Higgs self-couplings (`SSS2`, `SSS3`) as the amplitude of
+/// the t-channel Higgs exchange, with a Higgs on leg 0.
 #[test]
 fn ht_to_ht_chbox() {
     check("ht_to_ht_chbox");
 }
 
-/// Known disagreement, kept running: SMEFTsim's derivative quartic Higgs contacts and
-/// derivative cubic vertices beside their plain partners, in four-Higgs scattering.
+/// SMEFTsim's derivative quartic Higgs contacts (`SSSS2`, `SSSS3`) and derivative
+/// cubic vertices beside their plain partners, in four-Higgs scattering.
 #[test]
 fn hh_to_hh_chbox() {
     check("hh_to_hh_chbox");

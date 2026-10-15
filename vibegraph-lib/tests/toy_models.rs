@@ -18,9 +18,13 @@ mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::ufo::UFOModel;
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use vibegraph::helas::LorentzVector;
+use vibegraph::phasespace::rambo;
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 /// The two model directories whose rows this file owns, as the manifest spells
 /// them.
@@ -237,4 +241,170 @@ fn gated_rows_op_census() {
         .map(|(key, model, processes)| (*key, model.as_ref(), &processes[..]))
         .collect();
     assert_op_coverage_across(&instances, &KNOWN_UNCOVERED);
+}
+
+/// A copy of `vibegraph_toy_UFO` in which the pseudoscalar Yukawa and the derivative
+/// cubic scalar share the `NP` order of their partners, so `V_ltltst`/`V_qtqtst`
+/// (`Identity` beside `Gamma5`) and `V_ststst` (`SSS1` beside `SSSD`) each reach the
+/// diagram as one vertex carrying both structures.
+fn merged_order_toy_model() -> Arc<UFOModel> {
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO");
+    let dst = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("vibegraph_toy_merged_orders_UFO");
+    std::fs::create_dir_all(&dst).unwrap();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            std::fs::copy(&path, dst.join(path.file_name().unwrap())).unwrap();
+        }
+    }
+    let couplings = std::fs::read_to_string(src.join("couplings.py")).unwrap();
+    let merged = couplings
+        .replace("order={'NPCP': 1}", "order={'NP': 1}")
+        .replace("order={'NPD': 1}", "order={'NP': 1}");
+    assert_ne!(
+        merged, couplings,
+        "the toy couplings no longer carry NPCP/NPD"
+    );
+    std::fs::write(dst.join("couplings.py"), merged).unwrap();
+    UFOModel::load(&dst, Some(&dst.join("restrict_all.dat"))).expect("load the merged toy model")
+}
+
+/// Incoming momenta along ±z for masses `m1`, `m2` at `√s`, then the final state
+/// from massive RAMBO with fixed uniforms.
+fn toy_point(sqrt_s: f64, initial: [f64; 2], fin: &[f64], seed: usize) -> Vec<LorentzVector<f64>> {
+    let s = sqrt_s * sqrt_s;
+    let [m1, m2] = initial;
+    let lambda = (s - (m1 + m2).powi(2)) * (s - (m1 - m2).powi(2));
+    let p = lambda.sqrt() / (2.0 * sqrt_s);
+    let e1 = (s + m1 * m1 - m2 * m2) / (2.0 * sqrt_s);
+    let mut momenta = vec![
+        LorentzVector::new(e1, 0.0, 0.0, p),
+        LorentzVector::new(sqrt_s - e1, 0.0, 0.0, -p),
+    ];
+    let u: Vec<f64> = (0..4 * fin.len())
+        .map(|k| ((k + 1 + 7 * seed) as f64 * 0.618_033_988_749_894_9).fract())
+        .collect();
+    momenta.extend(rambo(sqrt_s, fin, &u).momenta);
+    momenta
+}
+
+/// Vertices that mix structures with different rooting-convention signs under one
+/// coupling order compile, and their one merged diagram equals the sum of the two
+/// diagrams the order split gives.
+///
+/// `Identity` and `Gamma5` both take the crossed-line −1 as a fermion current
+/// (`C·1ᵀ·C⁻¹ = 1`, `C·γ⁵ᵀ·C⁻¹ = γ⁵`), and `SSS1` and `SSSD` both take the all-scalar
+/// −1; a vertex whose structures disagreed on that sign would have no per-vertex
+/// sign to lift. The split rows are the ones pinned per MadGraph graph in
+/// `standalone_jamps`; this comparison carries their signs onto the merged vertex.
+/// It is blind to a sign shared by both structures of a merged vertex, which the
+/// split rows see.
+#[test]
+fn mixed_structure_vertices_equal_their_split_sum() {
+    let split = UFOModel::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO"),
+        Some(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../validation/ufo/vibegraph_toy_UFO/restrict_all.dat"),
+        ),
+    )
+    .expect("load the toy model");
+    let merged = merged_order_toy_model();
+    const MLT: f64 = 10.0;
+    const MQT: f64 = 50.0;
+    const MST: f64 = 200.0;
+    struct Case {
+        split: &'static str,
+        merged: &'static str,
+        initial: [f64; 2],
+        fin: &'static [f64],
+        /// The helicity states of each leg, in process order.
+        states: &'static [&'static [i32]],
+    }
+    let cases = [
+        Case {
+            split: "lt~ lt > qt qt~ st NP<=3 NPCP<=3 NPD<=3",
+            merged: "lt~ lt > qt qt~ st NP<=3",
+            initial: [MLT, MLT],
+            fin: &[MQT, MQT, MST],
+            states: &[&[-1, 1], &[-1, 1], &[-1, 1], &[-1, 1], &[0]],
+        },
+        Case {
+            split: "st lt > st lt NP<=2 NPCP<=2 NPD<=2",
+            merged: "st lt > st lt NP<=2",
+            initial: [MST, MLT],
+            fin: &[MST, MLT],
+            states: &[&[0], &[-1, 1], &[0], &[-1, 1]],
+        },
+        Case {
+            split: "lt~ lt > st st NP<=2 NPCP<=2 NPD<=2",
+            merged: "lt~ lt > st st NP<=2",
+            initial: [MLT, MLT],
+            fin: &[MST, MST],
+            states: &[&[-1, 1], &[-1, 1], &[0], &[0]],
+        },
+    ];
+    for Case {
+        split: split_process,
+        merged: merged_process,
+        initial,
+        fin,
+        states,
+    } in cases
+    {
+        let compile = |model: &Arc<UFOModel>, process: &str| {
+            let set = common::generate_with(process, model.as_ref()).remove(0);
+            let n = set.diagrams.len();
+            let ev = AmplitudeEvaluator::compile(&set, model.as_ref())
+                .unwrap_or_else(|e| panic!("compile '{process}': {e}"));
+            (ev, n)
+        };
+        let (ev_split, n_split) = compile(&split, split_process);
+        let (ev_merged, n_merged) = compile(&merged, merged_process);
+        assert!(
+            n_merged < n_split,
+            "'{merged_process}' has {n_merged} diagrams against the split {n_split}, so no \
+             vertex merged its structures"
+        );
+        let em_split = EvaluatedModel::from_model(Arc::clone(&split));
+        let em_merged = EvaluatedModel::from_model(Arc::clone(&merged));
+        let b_split = BoundAmplitude::<f64>::bind(&ev_split, &em_split);
+        let b_merged = BoundAmplitude::<f64>::bind(&ev_merged, &em_merged);
+        let (mut s_split, mut s_merged) = (b_split.scratch_space(), b_merged.scratch_space());
+
+        let mut helicities: Vec<Vec<i32>> = vec![vec![]];
+        for leg in states {
+            helicities = helicities
+                .into_iter()
+                .flat_map(|h| {
+                    leg.iter().map(move |&s| {
+                        let mut h = h.clone();
+                        h.push(s);
+                        h
+                    })
+                })
+                .collect();
+        }
+        let (mut worst, mut largest) = (0.0f64, 0.0f64);
+        for seed in 0..3 {
+            let momenta = toy_point(1000.0, initial, fin, seed);
+            for hel in &helicities {
+                let a = b_split.eval_amplitude(&momenta, hel, &mut s_split);
+                let b = b_merged.eval_amplitude(&momenta, hel, &mut s_merged);
+                worst = worst.max((a - b).norm());
+                largest = largest.max(a.norm());
+            }
+        }
+        assert!(largest > 0.0, "'{split_process}' evaluates to zero");
+        println!(
+            "'{merged_process}': {n_merged} diagrams against {n_split} split, worst \
+             |A_split - A_merged| / max|A| = {:.3e}",
+            worst / largest
+        );
+        assert!(
+            worst <= 1e-12 * largest,
+            "'{merged_process}' differs from its split sum: {:.3e} of max|A|",
+            worst / largest
+        );
+    }
 }
