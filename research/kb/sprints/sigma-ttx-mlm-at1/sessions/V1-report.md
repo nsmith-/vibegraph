@@ -6,6 +6,7 @@ status: draft
 tags: [mlm, sigma, ttx, h1, madevent-reference, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources: []
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 This report is from the validation-dev agent. It is a diagnosis only. No
 source change was committed, and the probes were reverted.

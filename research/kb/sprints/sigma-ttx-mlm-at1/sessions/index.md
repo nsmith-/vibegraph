@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [V1: reference side and per-event share of the ttx @1 excess](V1.md) - Re-measure MadEvent's @1 from independent directories and with the first-call patch, and measure H1's per-event share on @1, before any look at this side's amplitude.
+* [V2: per-point integrand against MadEvent DSIG1 in the pdfwgt branch](V2.md) - Compare this side's matched per-group integrand with an instrumented MadEvent DSIG1 at fixed points (x1, x2, momenta, configuration) where the ttx @1 excess sits, and name the factor that differs.
 
 ## Session Report
 
