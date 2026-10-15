@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [C-H: hygiene review of the Identity and derivative-scalar sign fixes](C-H.md) - Review PR #32's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [C1: falsifiers for the Identity crossed-line sign and the derivative scalar contact](C1.md) - Bank standalone rows that root a bare Identity Yukawa as a current on a crossed line and a derivative all-scalar vertex as current and amplitude, compare per diagram against MadGraph AMP(), and diagnose. No change to the sign arms.
 * [C2: land the Identity crossed-line and derivative all-scalar signs](C2.md) - Apply C1's two derived sign rules in production, turn the seven informational standalone rows into gates, and turn the mixed-sign compile panic into a tested case.
 * [G-H: hygiene review of the t t~ + jet per-flow gate](G-H.md) - Review PR #29's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
@@ -13,6 +14,7 @@
 
 ## Session Report
 
+* [C-H report: hygiene review of the Identity and derivative-scalar sign fixes](C-H-report.md) - Hygiene review of PR #32's C1 and C2 change: findings written before any edit, then the local ones fixed with run mutations and an identity check on standalone_jamps' and amplitude_oracle's printed numbers.
 * [C1 report: the Identity crossed-line sign and the derivative scalar sign are both missing a −1](C1-report.md) - Eight new standalone rows, compared per MadGraph graph through the production evaluator. A bare `Identity` Yukawa rooted as a fermion current on a crossed line, and every all-scalar vertex that carries `P`, come out at exactly −1 against MadGraph. The SM `FFS4` spelling and every plain `SSS1`/`SSSS1` agree. One candidate rule per item flips exactly the 34 affected diagrams of seven rows, SMEFTsim predictions outside the toy fit included, and brings every row to ≤1.8e-14. No production sign changed; the seven disagreeing rows land informational.
 * [C2 report: the Identity crossed-line and derivative all-scalar signs land, and the seven rows gate](C2-report.md) - The Identity arm takes the crossed-line −1 and every all-scalar vertex takes the scalar-sink −1. The seven informational standalone rows now gate per MadGraph graph at ≤1.8e-14. A mixed-sign vertex is refused with an error instead of panicking, and a merged-order toy vertex equals its split sum to 8e-16. All 49 amplitude_oracle lines and every banked cell are unchanged.
 * [G-H report: hygiene review of the t t~ + jet per-flow gate](G-H-report.md) - PR #29's five standalone rows, five tests and one comment hold up on all four points; one test is added so the four-gluon contact sensitivity of the gg_to_ttxg gate stays under test, and two stale row lists in the kb are filed.
