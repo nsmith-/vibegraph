@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: reference side and per-event share of the ttx @1 excess](V1.md) - Re-measure MadEvent's @1 from independent directories and with the first-call patch, and measure H1's per-event share on @1, before any look at this side's amplitude.
+
+## Session Report
+
+* [V1 report: reference side and per-event share of the ttx @1 excess](V1-report.md) - The +1.28 % on @1 is not the reference (20 fresh directories agree with the bank) and not H1 (+0.03 ± 0.11 pb); it is +1.6 % on g g > t t~ g and +1.0 % on g q > t t~ q, appears only under matching, and mostly disappears with pdfwgt = F. Not yet attributed to a line of code.
