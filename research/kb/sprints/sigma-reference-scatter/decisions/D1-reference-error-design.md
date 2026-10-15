@@ -72,7 +72,7 @@ diagnostic, not a gate.
   there, and only an independent estimator can find it.
 - The `#28` continuum deficit may be partly that.
 
-## Amendment proposed after V1 (awaiting the user)
+## Amendment after V1 (approved by the user, relayed 2026-10-15)
 
 [V1](../sessions/V1-report.md) measured 20 fresh seeds on each llj MLM row and
 5 + one 4× on five single-run hadronic rows. Two points bear on A as approved:

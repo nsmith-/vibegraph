@@ -27,3 +27,9 @@
   against an adaptation-free check; a 4× screen with a 20 + 20 ladder on
   failure), with the row inventory and M3 estimates. It goes to the user
   before the banking comment.
+* **Approval relayed** (2026-10-15, by the planner session, as the user's
+  decision): the D1 amendment, as proposed. The equal-weight value gates only
+  rows an adaptation-free check has validated. 5 + 2 × 4× is a screen, with a
+  20 + 20 ladder for any row more than 2σ off. The per-row banking list is
+  posted on this PR. Its command is the seeded driver F1 lands here, and the
+  comment is edited in place when F1 does.
