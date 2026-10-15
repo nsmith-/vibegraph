@@ -205,7 +205,7 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
   constant sign on the γWW/ZWW vertex fixes it and breaks
   `w+ w- > w+ w- z`. The next place to look is the final–final fermion line
   with chiral `FFV2` vertices, per diagram against `AMP()`. Tracked as
-  [wpwm-to-epem-neutrino-exchange-sign](../backlog/validation/wpwm-to-epem-neutrino-exchange-sign.md)[^n39-open].
+  `wpwm-to-epem-neutrino-exchange-sign` (closed by PR #30)[^n39-open].
 - **`wpwm_to_wpwmz_cw`** (`O_W` through a five-vector vertex) still disagrees
   (|M|² `max_rel` 2.79e1). The SM part of the same process agrees to 3.7e-12,
   so the residual is `O_W`'s five-vector and momentum-bearing contact

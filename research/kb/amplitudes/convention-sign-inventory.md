@@ -167,7 +167,7 @@ showed every diagram root-invariant, so the defect was not in the currents.
 
 ## Open
 
-- [wpwm-to-epem-neutrino-exchange-sign](../backlog/validation/wpwm-to-epem-neutrino-exchange-sign.md):
+- `wpwm-to-epem-neutrino-exchange-sign` (closed by PR #30):
   `w+ w- > e+ e-` has the wrong t-channel sign against the s-channel.
 - [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md):
   per-configuration phases and sign patterns are asserted on the rows with a

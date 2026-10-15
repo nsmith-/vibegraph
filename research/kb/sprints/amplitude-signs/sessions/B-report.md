@@ -5,6 +5,7 @@ description: "The class-b role signs read at Diagram::anchor are replaced by one
 status: draft
 tags: [amplitude, sign-convention, rooting, relabelling, fermion-flow, smeftsim, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: relabel, resource: "https://github.com/nsmith-/vibegraph/commit/6f2df1e", title: "test(amplitudes): relabelling invariance of per-diagram amplitudes, informational"}
   - {id: fix, resource: "https://github.com/nsmith-/vibegraph/commit/f1bb5bb", title: "fix(amplitudes): a convention sign read off the graph, not off the anchor rooting"}
