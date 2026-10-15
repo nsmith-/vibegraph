@@ -285,6 +285,9 @@ impl VertexInfo {
     /// The reversed-bilinear parity of this vertex, common to all its terms (see
     /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the anchor
     /// rooting is [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
+    ///
+    /// A vertex whose couplings disagree on the parity is refused, as for
+    /// [`build_sign`](Self::build_sign).
     pub(super) fn reversed_sign(&self) -> Result<i8, RootLorentzError> {
         let signs = self
             .terms

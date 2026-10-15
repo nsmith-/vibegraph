@@ -554,12 +554,16 @@ impl DiagramEvalTree {
 
     /// The diagram's rooting-convention sign: the product over its vertices of each
     /// vertex's [`build_sign`](super::diagram_eval::VertexInfo::build_sign) (VVS
-    /// `pure_metric`, FFS scalar-sink, crossed-pair). Each vertex's sign depends on which
-    /// leg the rooting made its output, so this is only rooting-invariant when read off a
-    /// tree built at one fixed rooting — the diagram's [anchor](Diagram::anchor), which
-    /// [`compile_single_diagram`] roots at, folding the result into `fermi_sign` so the
-    /// honest (sign-free) currents stay root-invariant. Mirrors [`yang_mills_vvv_sign`],
-    /// which carries the VVV vertex sign the same way.
+    /// `pure_metric`, FFS scalar-sink, crossed-pair, all-scalar and four-vector contacts).
+    /// Each vertex's sign depends on which leg the rooting made its output, so this is
+    /// only rooting-invariant when read off a tree built at one fixed rooting — the
+    /// diagram's [anchor](Diagram::anchor), which [`compile_single_diagram`] roots at,
+    /// folding the result into `fermi_sign` so the honest (sign-free) currents stay
+    /// root-invariant. Mirrors [`yang_mills_vvv_sign`], which carries the VVV vertex sign
+    /// the same way.
+    ///
+    /// A vertex whose structures disagree on the sign has no single factor to lift, and
+    /// is refused with [`RootLorentzError::UnsupportedVertex`].
     pub(super) fn build_convention_sign(&self) -> Result<i8, RootLorentzError> {
         let mut sign = 1i8;
         for id in self.iter() {

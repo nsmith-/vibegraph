@@ -62,7 +62,8 @@ pub(crate) struct RootedTerm {
     /// Coefficient carried from the UFO LorentzTerm.coeff (real, since couplings are stored separately).
     pub(crate) coeff: f64,
     /// The ±1 rooting-convention sign this term picked up from [`LorentzEvalTree::build_at_leg`]
-    /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
+    /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair, and the all-scalar and four-vector
+    /// contact sign of [`vertex_contact_sign`]). It is **not** folded into `coeff`,
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
     /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
     /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
@@ -606,10 +607,11 @@ impl LorentzEvalTree {
     /// structures collected for an amplitude/scalar sink contract to scalars, so they
     /// root through vectors and never consult the adjoint.
     ///
-    /// Returns the tree together with a ±1 sign for the enclosing term coefficient:
-    /// a standalone scalar bilinear (`ψ̄ Γ ψ`, Γ gamma-less) over a *crossed* pair
+    /// Returns the tree together with a ±1 sign for the enclosing term coefficient. It
+    /// starts at the vertex-shape sign of [`vertex_contact_sign`], and a standalone
+    /// scalar bilinear (`ψ̄ Γ ψ`, Γ gamma-less) over a *crossed* pair flips it: the pair
     /// evaluates `ū₁Γv₂` for a vertex defined as `ū₂Γv₁ = −ū₁(CΓᵀC⁻¹)v₂`, and with
-    /// `CΓᵀC⁻¹ = Γ` for `1`/`P_χ` the −1 survives (unlike the gamma-chained case,
+    /// `CΓᵀC⁻¹ = Γ` for `1`/`γ⁵`/`P_χ` the −1 survives (unlike the gamma-chained case,
     /// where `Cγ^{μT}C⁻¹ = −γ^μ` cancels it — see [`chiral_correction`]).
     ///
     /// Note: idx is 0-indexed
@@ -878,15 +880,15 @@ impl std::fmt::Display for LorentzEvalTree {
     }
 }
 
-/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegAdjoint`]).
-/// Summed (negative) indices carry no binding and are skipped.
-/// A *standalone* chiral projector (`ψ̄ P_χ ψ`, not gamma-chained) rooted as an
-/// off-shell fermion current, whose wrapped input leg sits on a crossed line:
-/// the reversed bilinear reading takes the same −1 as the amplitude case
-/// ([`pair_crossed`]), but with only one external leg in view. `idx ≥ 0` (the
-/// output fermion slot) excludes gamma-chained projectors reached through a
-/// summed index, whose −1 is supplied by the runtime reversed-bilinear sign.
-/// Pinned by e+e-→τ+τ-H (H emitted off the crossed τ line) vs MadGraph AMP().
+/// A *standalone* scalar bilinear (`ψ̄ Γ ψ` with Γ one of `1`, `γ⁵`, `P_L`, `P_R`,
+/// not gamma-chained) rooted as an off-shell fermion current, whose wrapped input
+/// leg sits on a crossed line: the reversed bilinear reading takes the same −1 as
+/// the amplitude case ([`pair_crossed`]), but with only one external leg in view.
+/// The `Identity`, `Gamma5`, `ProjM` and `ProjP` arms of `build_child` apply it.
+/// `idx ≥ 0` (the output fermion slot) excludes operators reached through a summed
+/// index, whose −1 is supplied by the runtime reversed-bilinear sign. Pinned by
+/// e+e-→τ+τ-H (H emitted off the crossed τ line) vs MadGraph AMP(), and for the
+/// bare `Identity` by `e+ e- > t t~ h` under SMEFTsim's `FFS2`.
 fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegAdjoint>]) -> bool {
     idx >= 0
         && wrapped >= 0
@@ -1040,6 +1042,8 @@ fn vertex_contact_sign(spins: &[i32]) -> (f64, bool) {
     (1.0, false)
 }
 
+/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegAdjoint`]).
+/// Summed (negative) indices carry no binding and are skipped.
 fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {
     [i, j].into_iter().any(|k| {
         k >= 0
