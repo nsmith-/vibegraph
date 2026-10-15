@@ -43,7 +43,7 @@ use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
 use vibegraph::helas::LorentzVector;
 use vibegraph::ufo::slha::ParamCard;
-use vibegraph::ufo::EvaluatedModel;
+use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 /// Relative deviation allowed per entry, against the largest MadGraph amplitude of
 /// the table. Both sides round over the same few dozen diagrams, which sits near
@@ -60,9 +60,11 @@ fn complex(v: &serde_json::Value) -> C<f64> {
     C::new(v[0].as_f64().unwrap(), v[1].as_f64().unwrap())
 }
 
-/// For a row that banks MadGraph's `AMP()`, which of this side's diagrams (indices
-/// into the enumerated set) make up each MadGraph graph, in `AMP()` order. Every
-/// diagram appears exactly once.
+/// For a row that banks MadGraph's `AMP()`, the MadGraph graph each of this side's
+/// diagrams belongs to, in enumeration order: entry `d` is diagram `d`'s graph,
+/// 0-based in `AMP()` order, the convention of `amplitude_oracle`'s
+/// `MG_DIAGRAM_ORDER`. The diagrams that share a graph make it up together, and
+/// every graph must have at least one.
 ///
 /// `ee_to_ee_4f`: the three four-lepton contacts are three MadGraph graphs and six
 /// diagrams here. MadGraph builds each contact on one canonical pairing of the
@@ -78,30 +80,114 @@ fn complex(v: &serde_json::Value) -> C<f64> {
 /// two vertices in either order and are equal, so the values cannot tell which of
 /// each pair is which: those two pairings are banked in enumeration order, and
 /// swapping either is invisible here.
-const MG_GRAPH_DIAGRAMS: &[(&str, &[&[usize]])] = &[(
+const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[(
     "ee_to_ee_4f",
     &[
-        &[0, 1],
-        &[2, 3],
-        &[4, 5],
-        &[6],
-        &[7],
-        &[8],
-        &[9],
-        &[10],
-        &[11],
-        &[12],
-        &[13],
-        &[14],
-        &[15],
-        &[16],
-        &[17],
-        &[18],
-        &[19],
-        &[20],
-        &[21],
+        0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
     ],
 )];
+
+/// The per-graph level of a row that banks `AMP()`.
+struct GraphLevel {
+    /// JAMP(1)'s coefficient on each `AMP()`.
+    coefs: Vec<f64>,
+    /// The diagrams that make up each graph, in `AMP()` order.
+    groups: Vec<Vec<usize>>,
+    /// One evaluator per diagram, each compiled from a one-diagram set.
+    per_diagram: Vec<AmplitudeEvaluator>,
+}
+
+impl GraphLevel {
+    /// Reads the row's [`MG_GRAPH_DIAGRAMS`] entry against its table, two-way: a
+    /// table that banks `AMP()` must be declared there, and a declared row must bank
+    /// them. The entry must give every diagram a graph and every one of the NGRAPHS
+    /// graphs a diagram, which is the diagram-count convention stated as a check.
+    fn read(
+        key: &str,
+        table: &serde_json::Value,
+        set: &DiagramSet,
+        model: &UFOModel,
+    ) -> Option<Self> {
+        let declared = MG_GRAPH_DIAGRAMS.iter().find(|(k, _)| *k == key);
+        let (coefs, graph_of) = match (table["jamp_coefficients"].as_array(), declared) {
+            (None, None) => return None,
+            (Some(coefs), Some((_, graph_of))) => (coefs, *graph_of),
+            (Some(_), None) => panic!("{key}: banks AMP() but declares no MG_GRAPH_DIAGRAMS"),
+            (None, Some(_)) => {
+                panic!("{key}: declares MG_GRAPH_DIAGRAMS but its table banks no AMP()")
+            }
+        };
+        let coefs: Vec<f64> = coefs.iter().map(|c| c.as_f64().unwrap()).collect();
+        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
+        assert_eq!(coefs.len(), n_graphs, "{key}: one coefficient per AMP()");
+        assert_eq!(
+            graph_of.len(),
+            set.diagrams.len(),
+            "{key}: MG_GRAPH_DIAGRAMS must name one graph for each diagram"
+        );
+        let mut groups = vec![Vec::new(); n_graphs];
+        for (d, &k) in graph_of.iter().enumerate() {
+            assert!(
+                k < n_graphs,
+                "{key}: diagram {d} names graph {k} of {n_graphs}"
+            );
+            groups[k].push(d);
+        }
+        let empty: Vec<usize> = (0..n_graphs).filter(|&k| groups[k].is_empty()).collect();
+        assert!(empty.is_empty(), "{key}: graphs {empty:?} have no diagram");
+        let per_diagram = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                AmplitudeEvaluator::compile(
+                    &DiagramSet {
+                        particles_in: set.particles_in.clone(),
+                        particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
+                        diagrams: vec![d.clone()],
+                    },
+                    model,
+                )
+                .unwrap()
+            })
+            .collect();
+        Some(GraphLevel {
+            coefs,
+            groups,
+            per_diagram,
+        })
+    }
+
+    /// `(c_k · AMP_k, the sum of graph k's diagrams, where)` for each graph of one
+    /// helicity entry, from MadGraph's `amps` and this side's per-diagram values.
+    fn entries(
+        &self,
+        key: &str,
+        amps: &serde_json::Value,
+        diagram_values: &[C<f64>],
+        what: &str,
+    ) -> Vec<(C<f64>, C<f64>, String)> {
+        let amps = amps.as_array().unwrap();
+        assert_eq!(
+            amps.len(),
+            self.coefs.len(),
+            "{key}: {what}: one AMP() per graph"
+        );
+        amps.iter()
+            .zip(&self.groups)
+            .enumerate()
+            .map(|(k, (amp, group))| {
+                let mg = complex(amp) * self.coefs[k];
+                let vg: C<f64> = group.iter().map(|&d| diagram_values[d]).sum();
+                (
+                    mg,
+                    vg,
+                    format!("{what}, AMP({}) = diagrams {group:?}", k + 1),
+                )
+            })
+            .collect()
+    }
+}
 
 struct Measured {
     g: C<f64>,
@@ -190,48 +276,10 @@ fn measure(key: &str) -> Measured {
                 .collect()
         })
         .collect();
-    // MadGraph's graphs against groups of this side's diagrams, where the table
-    // banks `AMP()`: the groups must partition the diagram set and number NGRAPHS,
-    // which is the diagram-count convention stated as a check.
-    let graphs = table["jamp_coefficients"].as_array().map(|coefs| {
-        let coefs: Vec<f64> = coefs.iter().map(|c| c.as_f64().unwrap()).collect();
-        let groups = MG_GRAPH_DIAGRAMS
-            .iter()
-            .find(|(k, _)| *k == key)
-            .unwrap_or_else(|| panic!("{key}: banks AMP() but declares no MG_GRAPH_DIAGRAMS"))
-            .1;
-        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
-        assert_eq!(coefs.len(), n_graphs, "{key}: one coefficient per AMP()");
-        assert_eq!(groups.len(), n_graphs, "{key}: one diagram group per AMP()");
-        let mut covered: Vec<usize> = groups.iter().flat_map(|g| g.iter().copied()).collect();
-        covered.sort_unstable();
-        assert_eq!(
-            covered,
-            (0..set.diagrams.len()).collect::<Vec<_>>(),
-            "{key}: the diagram groups must cover each of the {} diagrams once",
-            set.diagrams.len()
-        );
-        let per_diagram: Vec<AmplitudeEvaluator> = set
-            .diagrams
-            .iter()
-            .map(|d| {
-                AmplitudeEvaluator::compile(
-                    &DiagramSet {
-                        particles_in: set.particles_in.clone(),
-                        particles_out: set.particles_out.clone(),
-                        polarizations: set.polarizations.clone(),
-                        diagrams: vec![d.clone()],
-                    },
-                    model.as_ref(),
-                )
-                .unwrap()
-            })
-            .collect();
-        (coefs, groups, per_diagram)
-    });
+    let graphs = GraphLevel::read(key, &table, &set, model.as_ref());
     let per_diagram_bound: Vec<BoundAmplitude<f64>> = graphs
         .iter()
-        .flat_map(|(_, _, evs)| evs.iter())
+        .flat_map(|level| level.per_diagram.iter())
         .map(|ev| BoundAmplitude::<f64>::bind(ev, &evaluated))
         .collect();
 
@@ -291,29 +339,17 @@ fn measure(key: &str) -> Measured {
                 ours_m2,
                 format!("point {pi}, helicities {hel:?}"),
             ));
-            if let Some((coefs, groups, _)) = &graphs {
+            if let Some(level) = &graphs {
                 let diagram_values: Vec<C<f64>> = per_diagram_bound
                     .iter()
                     .map(|b| b.eval_amplitude(&momenta, hel, &mut b.scratch_space()))
                     .collect();
-                for (k, (amp, group)) in entry["amps"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .zip(groups.iter())
-                    .enumerate()
-                {
-                    let mg = complex(amp) * coefs[k];
-                    let vg: C<f64> = group.iter().map(|&d| diagram_values[d]).sum();
-                    graph_entries.push((
-                        mg,
-                        vg,
-                        format!(
-                            "point {pi}, helicities {hel:?}, AMP({}) = diagrams {group:?}",
-                            k + 1
-                        ),
-                    ));
-                }
+                graph_entries.extend(level.entries(
+                    key,
+                    &entry["amps"],
+                    &diagram_values,
+                    &format!("point {pi}, helicities {hel:?}"),
+                ));
             }
         }
     }
