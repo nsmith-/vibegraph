@@ -5,6 +5,7 @@ description: "Hygiene review of PR #35's per-graph AMP() route: findings written
 status: draft
 tags: [hygiene, review, four-fermion, madgraph-oracle, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: 2fce423, resource: "https://github.com/nsmith-/vibegraph/commit/2fce423", title: "kb: Q-H brief and findings"}
   - {id: 8569c3f, resource: "https://github.com/nsmith-/vibegraph/commit/8569c3f", title: "validation: one JAMP(1) coefficient parser, refusing terms it cannot read"}
