@@ -5,7 +5,14 @@ description: "Hygiene review of B′'s convention_sign change on PR #30: finding
 status: draft
 tags: [hygiene, review, sign-convention, rooting, relabelling, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
-sources: []
+sources:
+  - {id: fa01bfb, resource: "https://github.com/nsmith-/vibegraph/commit/fa01bfb", title: "kb: B-H brief and findings"}
+  - {id: 8d21b42, resource: "https://github.com/nsmith-/vibegraph/commit/8d21b42", title: "refactor(amplitudes): one leg binding and one uncrossed-leg set for the live tree and the convention sign"}
+  - {id: a9bb102, resource: "https://github.com/nsmith-/vibegraph/commit/a9bb102", title: "refactor(amplitudes): one partner-index pick and one projector arm in build_child"}
+  - {id: 0d67c26, resource: "https://github.com/nsmith-/vibegraph/commit/0d67c26", title: "docs(amplitudes): rooting_soundness says what it tests, without history"}
+  - {id: f983616, resource: "https://github.com/nsmith-/vibegraph/commit/f983616", title: "test(amplitudes): relabelling reuses the renumbering helpers and refuses an empty comparison"}
+  - {id: 5bb34ab, resource: "https://github.com/nsmith-/vibegraph/commit/5bb34ab", title: "validation: rewrap a 104-column row comment"}
+  - {id: 65facf1, resource: "https://github.com/nsmith-/vibegraph/commit/65facf1", title: "kb: rewrite the five concepts that described the anchor convention"}
 ---
 Review of B′'s code commits on `amp-signs/wpwm-epem-neutrino-sign` at
 `5d4a346`: `6f2df1e` (the relabelling test) and `f1bb5bb` (the convention
@@ -66,3 +73,205 @@ names):
 - `weighted-order-computed-three-ways`, `majorana-fermions-unsupported`,
   `diagram-enumeration-cost-unmeasured`: name `stitching.rs` or `diagram.rs`
   for other reasons; unaffected.
+
+## Dispositions
+
+| id | final | commit |
+|---|---|---|
+| H1 | fixed: `mixed_line_final_legs(diagram, model)` reads `Diagram::fermion_lines`; `external_leg` is the one leg-binding rule; `bake_node` and `external_bindings` both call them; `collect_fermion_pairs` and `input_slot` are deleted (−68 lines net in `root_diagram.rs`) | `8d21b42` |
+| H2 | rejected: the shared part is a three-line step; the two walks return different things | — |
+| H3 | fixed: `renumbering::single_diagram_amplitudes_at` takes the helicity list (`single_diagram_amplitudes` calls it with `None`, so the four other callers are unchanged); `diagram_values` deleted | `f983616` |
+| H4 | fixed: `ray_leg_sets` reads `Diagram::legs_on_start_side` (now `pub(crate)`) | `f983616` |
+| H5 | fixed: `relabelling` uses `renumbering::load`; the `Model` enum is the `(dir, card)` pair | `f983616` |
+| H6 | fixed: a pair with fewer than two compared diagrams fails, naming the pair | `f983616` |
+| H7 | rejected: sound. A leg-0-keyed `−1` fails three pairs (below) | — |
+| H8 | rejected: sound. Each of the five parts set to `+1` fails it (below); the product blind spot is the MadGraph rows', as its doc says | — |
+| H9 | fixed | `8d21b42` |
+| H10 | fixed: `live_reversed_parity`, private; the links in `diagram_eval.rs` and `root_lorentz.rs` follow | `8d21b42` |
+| H11 | fixed | `0d67c26` |
+| H12 | rejected: the module tests what its doc says. Dropping the cancellation fails `literal_sigma_currents_are_rooting_invariant` (default suite) and 3 of 270 sweep re-rootings. Its name still fits: it is rooting soundness, and the convention sign is not its subject | — |
+| H13 | fixed: `partner_index` and one `ProjM \| ProjP` arm (−26 lines) | `a9bb102` |
+| H14 | rejected: one arm per op is the reason; now about 190 lines | — |
+| H15 | Found | — |
+| H16 | fixed | `5bb34ab` |
+| H17–H19 | rejected (reasons in the table) | — |
+
+## Mutations
+
+Driven by `scratchpad/BH/mutate.py` (apply, run, restore; one log per
+mutation). The commands are `cargo test -p vibegraph-lib --lib -- <filter>`.
+
+| id | mutation | test | old test | new test |
+|---|---|---|---|---|
+| M1 | `relabelling.rs`: `VANISHING = 1.0` | `relabelling_preserves_per_diagram_amplitudes` | **passes** (`ok. 1 passed`) | fails: `w+ e- > z ve: 1 diagrams compared, too few to show a relative sign` |
+| M2 | `convention_sign` × `−1` when leg 0's vertex has a fermion leg | same | fails: `w+ e- > z ve` flips `[1]`, `w+ a > e+ ve a` `[6]`, `st lt > st lt` `[1, 2]` | (same test logic; not rerun) |
+| M3a | `propagator_phase_sign`: scalar count `× 0` | `named_processes_exercise_every_convention_factor` | fails (`root_diagram.rs:1353`, `b b~ > h h`) | unchanged test |
+| M3b | crossed-line count `× 0` | same | fails | — |
+| M3c | `vertex_root_signs` drops `reversed_sign` | same | fails | — |
+| M3d | `vertex_root_signs` drops the tensor `build_sign` | same | fails | — |
+| M3e | `triple_gluon_sign` always `+1` | same | fails | — |
+| M4 | `fermi_sign` without `* tree.reversed_convention_sign()?` | `rooting_soundness` (default), `relabelling`, `renumbering`, the ignored sweep, the identity digest | `literal_sigma_currents_are_rooting_invariant` FAILED, the other four default `rooting_soundness` tests pass; relabelling and renumbering pass (`0 failures`); sweep `270 re-rootings, 3 failures across 1 processes` (`b b~ > c c~ e+ e- mu+ mu- QCD=0`); compiled digest `39280d4b…` against `bdca3693…` | — |
+
+M4 also shows the identity digest has power: it changes on a sign-only
+mutation, and its rooted half (which holds no `fermi_sign`) does not.
+
+Sites no mutation reaches: H1's two copies agreed before the fix (the digest
+is unchanged), so no test distinguished them; after the fix there is one copy
+and nothing left to diverge. M2–M4 are on unchanged tests and measure their
+power, not a fix.
+
+## Identity check
+
+Chosen before the first edit:
+
+1. A temporary lib test (not committed) hashing with `sha2` the `Debug` of
+   `compile_single_diagram(d, model, chain)` for every census subprocess,
+   diagram and colour chain (the renumbering census: 3730 diagrams, 3774
+   distinct chains), and of `root_tree_at(d, model, chain, v)` at every vertex
+   (15 497 rootings).
+
+   ```
+   before (5d4a346): compiled bdca36932a38ea7bb48ec8498b13d192859b34ee220bc9254fd309aabdad0a40 rooted 50aef3ad0a2ee6c9307ccd365fa4e14a5625ea2787aea94f3f14bb9d4f450db8
+   after:            compiled bdca36932a38ea7bb48ec8498b13d192859b34ee220bc9254fd309aabdad0a40 rooted 50aef3ad0a2ee6c9307ccd365fa4e14a5625ea2787aea94f3f14bb9d4f450db8
+   ```
+
+   `DiagramEval` and `DiagramEvalTree` are `Vec`-based, so the digest is
+   deterministic; the program built from them is a function of these values.
+2. `standalone_jamps` and `amplitude_oracle`, `--nocapture --test-threads=1`,
+   sorted lines with ANSI codes and `finished in` stripped: `diff` empty for
+   both (103 and 167 lines). `46 passed` and `49 passed`.
+3. `relabelling` and `renumbering` printed lines: `diff` empty.
+
+## Concepts rewritten
+
+All `status: draft`, no `verified:`.
+
+- `amplitudes/rooting-invariance-and-canonical-form` (renamed from
+  `rooting-invariance-and-anchor`, whose title named the anchor): every sign
+  reads the graph, the live parity is cancelled, so every rooting and labelling
+  agrees; canonical form, container equality and the four invariance gates.
+- `amplitudes/convention-sign-inventory`: `fermi_sign = Diagram::sign ×
+  convention_sign × live parity`, each arm with what it reads and the rows that
+  fail without it, the GF(2) derivation, the free per-process sign, and the
+  unmeasured classes.
+- `amplitudes/vector-vertex-signs`: no colourless vector vertex carries a sign,
+  a VVS's scalar line takes its propagator phase, and the triple-gluon `−1` is
+  calibrated and invisible to pure-gluon processes.
+- `amplitudes/fermion-line-sign`: `(−1)^P` is the fermion propagator's phase;
+  the bilinear reversal is `vertex_root_signs`' per-vertex factor; a crossed
+  line's propagator phases sit in `propagator_phase_sign`. The falsified
+  "WWγ takes no Yang–Mills sign" alternative is dropped (it is now the
+  convention).
+- `validation/convention-channel-coverage`: the firing test and its mutations,
+  B′'s per-factor mutation table, the three invariance gates with what each
+  catches (M2, M4), and what none sees.
+
+Inbound links follow the rename in `B.md`, `W1.md`, `evaluator-architecture`,
+`diagram-enumeration`, `decay-chains`, `diagram-rooting`,
+`bit-exact-amplitude-debugging`, and the `replaced_by` of three archived
+notes. The concepts cite code at `5d4a346` (pushed) but name
+`live_reversed_parity`, this branch's name for `reversed_convention_sign`.
+
+## Gates
+
+Every cargo call with `CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`, on the fixed tree.
+
+- `cargo fmt --all --check`: exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`: `Finished`, exit 0.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  `Finished`, exit 0.
+- `cargo test --workspace --no-fail-fast`: exit 0; 38 suites, 1431 passed, 0
+  failed, 16 ignored (summed `test result` lines), B′'s count: no test added or
+  deleted.
+- `cargo doc -p vibegraph-lib --no-deps --document-private-items`: 8 warnings,
+  all in files this session does not touch (`coupling/cluster/configs.rs`,
+  `phasespace/channel.rs`, `coupling/alphas.rs`, `coupling/scales.rs` ×2,
+  `ufo/parameters.rs`, `lhef/mod.rs` ×2).
+- Banked targets: `standalone_jamps` (46 passed) and `amplitude_oracle`
+  (49 passed), run for the identity check above.
+- `pixi run -e kb kb-lint`: `0 errors, 2 warnings` (two blocked backlog items,
+  not this session's).
+- `pixi run --skip-deps validate`: see below.
+
+## Method
+
+- Reading B′'s diff against the helpers the new code sits beside, and
+  grepping each new function's body lines workspace-wide: 35%. Found H1, H3,
+  H4, H5 (all second copies the change added).
+- Running mutations on the tests the change added or touched: 25%. Settled
+  H6, H7, H8, H12 (one fix, three sound).
+- Comment and `pub` greps over the added lines, visibility of touched items:
+  10%. H9, H10, H11, H15.
+- Identity oracle and gates: 20%. Concept rewrite: the rest of the session.
+- Leads that did not hold: the `ProjM`/`ProjP` refactor (H13) needed no
+  physics; `line_end` against `fermion_lines` (H2) shared too little to merge;
+  a missing two-way check between the committed standalone tables and the
+  `check()` calls (45 tables, 45 checks, `diff` empty, so nothing is lost, but
+  nothing enforces it either); the row comments' "leg 0" framing (H17).
+- One process slip: a `git mv` staged before the first code commit went into
+  it. The five unpushed commits were undone with `git reset --soft` and redone
+  with path-limited `git commit -- <paths>`; no work was touched.
+
+## Found
+
+1. **`spine_sign_from_flow` and `root_tree_at` are `pub(super)` with no caller
+   outside `root_diagram.rs`** (H15; `git grep` at `5d4a346`). To close: make
+   them private.
+2. **Seven kb concepts outside this brief still describe the anchor or the
+   removed sign functions**, one entry each:
+   - `amplitudes/evaluator-architecture.md:74`: the second tree at
+     `Diagram::anchor`.
+   - `amplitudes/four-fermion-vertices.md:124-152`: `fermion_current_line_sign`
+     and "the anchor rooting"; the tensor-path sign is now
+     `vertex_root_signs`' factor.
+   - `amplitudes/fermion-flow-and-crossing.md:82`: `pair_crossed`,
+     `standalone_projector_crossed`.
+   - `amplitudes/global-phase-i-counting.md:98`: `yang_mills_vvv_sign`.
+   - `amplitudes/charge-flow-phase-study.md:100-143`: `yang_mills_vvv_sign`,
+     `vector_contact_sign`, "contact at the anchor", `channel_counts`.
+   - `validation/bit-exact-amplitude-debugging.md:92-160`: the three
+     vector-vertex sign functions "keyed to `Diagram::anchor`".
+   - `performance/diagram-rooting.md:4,56,128`: "soundness rests on anchor-read
+     convention signs".
+
+   To close: describe `convention_sign` there, or link the rewritten concepts.
+3. **`mixed-dirac-and-matrix-free-vertex-terms` is stale**: its body says an
+   `Identity` term "takes the scalar-sink −1"; that build sign is gone, and the
+   cited lines `diagram_eval.rs:131-169`, `:265` have moved. To close: restate
+   the open question as B′'s H11 account (a mixed vertex has a sign only where
+   no bilinear is read reversed) and cite `uniform_sign` by name.
+4. **`comment-leftovers-after-hygiene-sprint`: its `root_diagram.rs` site is
+   fixed** (the "note 16 §6" comment went with the deleted guard test). To
+   close: drop that site from the item.
+5. **`one-diagram-diagramset-built-by-hand`**: the change added an eighth site
+   (`relabelling.rs:241`) and this session removed it again; the item's seven
+   sites stand, and `single_diagram_amplitudes_at` is the natural home for the
+   helper the item asks for.
+6. **`unit-signs-flip-between-f64-and-i8` is one site smaller**: the tree path
+   of `build_at_leg` returns a constant `1.0`; only the tensor path's `f64` and
+   `root_term`'s `if sign < 0.0` remain.
+7. **The live-parity cancellation is thinly pinned**: dropping it fails one
+   default-suite test (`literal_sigma_currents_are_rooting_invariant`) and 3 of
+   270 sweep re-rootings, all on one process; the amplitude oracles (not run on
+   M4) are the other line of defence. To close, if wanted: a default-suite
+   test that compiles a few diagrams at two rootings where the live parity
+   differs and compares `fermi_sign × kernel`.
+8. **No check ties the committed standalone tables to the `check()` calls**
+   (45 each today, by hand). To close: a test that lists
+   `validation/madgraph/standalone/*.json` and requires a named test per key,
+   or `gen_standalone_jamps.py`'s `ROWS` both ways.
+
+## Brief corrections
+
+- **C-H's report is not on this branch.** Its H13 is in `29da327` on
+  `amp-signs/identity-derivative-scalar-signs`
+  (`sessions/C-H-report.md:37`), which `5d4a346` does not contain.
+- **`main` in the worktree is stale** (`cc8b12c`); `git diff main...HEAD`
+  carries the merged W1, F1 and C2 work too. B′'s own change is
+  `d6f2d41..5d4a346` on the code paths.
+- **"`rooting_soundness` now checks only kernels"** undersells it: it also
+  pins the cancellation of the live reversed parity (M4), as B′'s report says.
+- **The rename touches three archived notes** (`replaced_by` only), which the
+  brief's "update the inbound links" covers but the archive's "unchanged" rule
+  does not mention; kb-lint does not check `replaced_by`.
