@@ -3,7 +3,7 @@ type: Backlog Item
 title: acceptance.yml has never passed against a binary release
 description: The release acceptance workflow has never run green, and no run has targeted v0.1.0 since the repository went public on 2026-09-25.
 area: hygiene
-state: needs-user
+state: open
 priority: medium
 closes_when: An acceptance.yml run against a published binary release (v0.1.0 or later) is green, and its log has been read to confirm the PDF download, consent prompt, cache and card-to-.lhe steps all ran.
 blocked_by: []
@@ -33,3 +33,11 @@ Next step (needs `actions: write`): `gh workflow run acceptance.yml -f tag=v0.1.
 or cut the next `v*` release. Then read the first green run: it is the first
 evidence this gate can pass at all. Background: [note 24](../../history/notes/24-user-distribution-and-proton-events-plan.md),
 "Acceptance A: what it covers today, and what it cannot see".
+
+**2026-10-15:** the user dispatched it against `v0.1.0` and against `main`
+(runs 38769083090, 38769288270). The binary now downloads; both runs failed
+at the refusal check, because the script greps for `--yes` while the binary
+(by design, pinned by `cli_first_run.rs`) names the flag as `-y`. With the
+check accepting either spelling, the whole script passed against `v0.1.0`
+locally (download, consent, cache, `.lhe` written and read back). What is
+left is a green dispatch once that fix is on `main`.

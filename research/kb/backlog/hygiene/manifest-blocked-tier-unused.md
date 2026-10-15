@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
 title: The manifest's blocked tier is a schema slot nothing uses
-description: validation/manifest.toml documents a blocked tier with a blocker field, but no cell uses it; whether to keep or retire it is a schema decision.
+description: validation/manifest.toml documents a blocked tier with a blocker field, but no cell uses it; the user decided to retire it.
 area: hygiene
-state: needs-user
+state: open
 priority: low
-closes_when: The blocked tier is either retired from the manifest schema and collator, or kept with a stated use.
+closes_when: The blocked tier and its blocker field are removed from the manifest header, the manifest schema and the collator code that reads them, with the collator's tests updated.
 blocked_by: []
 opened: 2026-08-06
 tags: [manifest, schema, collator]
@@ -20,3 +20,5 @@ handled per test instead (for example the asserted reasons in
 `vibegraph-lib/tests/validate_scales.rs`). Deciding between keeping the slot for
 later use and retiring it, along with the collator code that reads it, is a call
 about the schema.
+
+**Decided (user, 2026-10-15):** retire it.

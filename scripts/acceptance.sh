@@ -207,7 +207,9 @@ if "$binary" integrate "$cards/proc_card.dat" \
      --fixed-budget --neval 2000 --niter 2 >"$work/refusal.out" 2>&1; then
   fail "the binary downloaded a PDF set without being asked"
 fi
-grep -q -- "--yes" "$work/refusal.out" \
+# The refusal names the consent flag by its short spelling (`--yes` is its long
+# form), so accept either.
+grep -qE -- "pass (-y|--yes)" "$work/refusal.out" \
   || fail "the refusal does not name the flag that would allow the download"
 grep -q "lhapdfsets.web.cern.ch" "$work/refusal.out" \
   || fail "the refusal does not name the URL it would have fetched"
