@@ -45,3 +45,13 @@
   and later briefs say so. The manager's re-run confirmed the report.
 * **Not filed**: J-H's duplicated `ExtLegInfo` literals outside the change, too
   small for an item.
+* **Decision** (human:nsmith-): MadGraph's seven-digit UFO literals (`GC_303`,
+  and `GC_299` by the same mechanism) are classified under the defect policy as
+  an approximation this crate improves on at negligible cost: a registered
+  deviation, named in the affected rows and catalogued (PR #33).
+* **Answer** to the user on the per-pairing split: it is made by vibegraph in
+  `ufo/topo.rs::build_feyngraph_model` (one feyngraph vertex per pairing), not
+  by feyngraph. feyngraph's one-`spin_map`-per-vertex API made it the easy route,
+  and the evaluator relies on one set of fermion lines per diagram (one Fermi
+  sign, one wavefunction typing, one rooting). Filed as
+  `madgraph-style-diagram-grouping` (PR #35).
