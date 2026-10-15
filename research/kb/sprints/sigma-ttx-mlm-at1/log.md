@@ -63,3 +63,18 @@
 * **Next:** V4, an adaptation-free estimate of unmatched fixed-μ `g q > t t~
   q` (the test that settled #22 and #28), with a per-point check. Then the
   hygiene session on `6740954`, and close-out.
+* **V4 landed** (`ff82833`): the post-fix gq excess belongs to MadEvent.
+  - On unmatched, fixed-μ `g q > t t~ q`, an adaptation-free oracle reads
+    137.928 ± 0.067, and vibegraph agrees to −0.02 %. MadEvent is −0.55 %,
+    wholly in channel G2, with seed χ²/dof 7.1.
+  - `hard_survey = 2` removes it (137.887 ± 0.125). Ten times the events,
+    splitting the folded configuration and `sde_strategy = 2` do not.
+  - On the matched row with `hard_survey = 2` (20 fresh seeds), MadEvent
+    reads `@1` 578.239 ± 0.520 against this side's 578.780, a pull of 0.88;
+    gg 1.00σ and gq 0.64σ. So V3's gg residual was the same survey effect.
+  Machine-confirmed by the manager: the commit; the oracle's 10 seeds
+  (137.902) and MadEvent's 10 `hard_survey = 2` seeds (137.887), recomputed
+  from the raw result lines.
+* **Item status:** attributed. The integrals cell can gate once the
+  reference is re-banked with `hard_survey = 2`. That goes into the
+  approved batch on PR #25, as an amendment for the user.
