@@ -28,15 +28,20 @@
 //! inside the flow sums.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use num_complex::Complex64;
+use num_traits::ToPrimitive;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use super::super::compile::{root_amplitudes, Configurations};
+use super::super::layout::Program;
 use super::super::root_diagram::{compile_diagram_ast, DiagramEval};
 use super::*;
+use crate::diagrams::diagram::FermionLine;
 use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+use crate::helas::color::colorize::Contribution;
 use crate::helas::color::{colorize_process, ColorBasis};
 use crate::phasespace::rambo_massive;
 use crate::ufo::sm::{sm_model, SMRestrict};
@@ -107,7 +112,7 @@ struct Residuals {
     n_flow: usize,
 }
 
-fn generate(model: &std::sync::Arc<UFOModel>, process: &str) -> DiagramSet {
+fn generate(model: &Arc<UFOModel>, process: &str) -> DiagramSet {
     let card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
         .expect("parse the process");
     let mut sets = generate_from_proc_card(&card, model).expect("generate the process");
@@ -152,8 +157,8 @@ fn count_features(set: &DiagramSet, model: &UFOModel, basis: &ColorBasis, f: &mu
     let mut signs = [false; 2];
     for d in &set.diagrams {
         let lines = d.fermion_lines(model);
-        let carries = |l: &crate::diagrams::diagram::FermionLine| l.vertices.len() > 1;
-        let final_end = |l: &crate::diagrams::diagram::FermionLine, i: usize| l.legs[i].0 >= d.n_in;
+        let carries = |l: &FermionLine| l.vertices.len() > 1;
+        let final_end = |l: &FermionLine, i: usize| l.legs[i].0 >= d.n_in;
         f.internal_fermion += usize::from(lines.iter().any(carries));
         f.crossed_line_with_propagator += usize::from(
             lines
@@ -178,10 +183,9 @@ fn count_features(set: &DiagramSet, model: &UFOModel, basis: &ColorBasis, f: &mu
         .count();
 }
 
-/// A colour coefficient with `Nc = 3`, as the production lowering applies it.
-fn colour_coeff(c: &crate::helas::color::colorize::Contribution) -> Complex64 {
-    let r = c.coeff.eval_nc(3);
-    let q = *r.numer() as f64 / *r.denom() as f64;
+/// A colour coefficient evaluated at `Nc = 3`, as the production lowering applies it.
+fn colour_coeff(c: &Contribution) -> Complex64 {
+    let q = c.coeff.eval_nc(3).to_f64().expect("rational in f64 range");
     if c.coeff.imag {
         Complex64::new(0.0, q)
     } else {
@@ -189,162 +193,278 @@ fn colour_coeff(c: &crate::helas::color::colorize::Contribution) -> Complex64 {
     }
 }
 
+/// One process, compiled once, with the probe side's view of the same diagrams.
+struct Case<'a> {
+    process: &'a str,
+    set: DiagramSet,
+    basis: ColorBasis,
+    evals: HashMap<(usize, Vec<u8>), DiagramEval>,
+    /// The `(diagram, chain)` keys of the configuration amplitudes, in the production
+    /// readout order.
+    config_amps: Vec<(usize, Vec<u8>)>,
+    /// Every key of `evals`, sorted.
+    keys: Vec<(usize, Vec<u8>)>,
+    /// The diagrams' chain-zero rootings, which the colour-free per-diagram probes use.
+    colour_free: Vec<DiagramEval>,
+    /// The colour-factor matrix as `f64`, from the evaluator's exact rationals.
+    cf: Vec<f64>,
+}
+
+impl<'a> Case<'a> {
+    fn new(
+        model: &Arc<UFOModel>,
+        eval: &AmplitudeEvaluator,
+        process: &'a str,
+        set: DiagramSet,
+        features: &mut Features,
+    ) -> Self {
+        let basis = colorize_process(model, &set.diagrams).expect("colour basis");
+        let evals = root_amplitudes(&basis, &set, model).expect("root the amplitudes");
+        let configs = Configurations::group(&set, model, &evals);
+        let config_amps: Vec<(usize, Vec<u8>)> = configs.amps.into_iter().flatten().collect();
+        count_features(&set, model, &basis, features);
+
+        // The production readout order is the one the evaluator was compiled with.
+        assert_eq!(basis.ncolor(), eval.n_flows(), "{process}: flow count");
+        assert_eq!(
+            config_amps.iter().map(|(d, _)| *d).collect::<Vec<_>>(),
+            eval.config_amp_diagrams(),
+            "{process}: configuration amplitude order"
+        );
+        let colour_free = compile_diagram_ast(&set, model).expect("colour-free rooting");
+        let mut keys: Vec<_> = evals.keys().cloned().collect();
+        keys.sort();
+        let cf = eval
+            .cf_matrix()
+            .iter()
+            .map(|r| r.to_f64().expect("rational in f64 range"))
+            .collect();
+        Case {
+            process,
+            set,
+            basis,
+            evals,
+            config_amps,
+            keys,
+            colour_free,
+            cf,
+        }
+    }
+
+    /// The probe amplitude of every `(diagram, chain)` at one helicity combination.
+    fn probe_amplitudes(
+        &self,
+        p: &[LorentzVector<f64>],
+        hel: &[i32],
+        evaluated: &EvaluatedModel,
+    ) -> HashMap<&(usize, Vec<u8>), C<f64>> {
+        self.keys
+            .iter()
+            .map(|k| (k, eval_single_diagram(&self.evals[k], p, hel, evaluated)))
+            .collect()
+    }
+
+    /// The colour-free probe of each diagram equals its chain-zero amplitude to the bit.
+    fn check_colour_free(
+        &self,
+        probe: &HashMap<&(usize, Vec<u8>), C<f64>>,
+        p: &[LorentzVector<f64>],
+        hel: &[i32],
+        evaluated: &EvaluatedModel,
+    ) {
+        for (d, diagram) in self.colour_free.iter().enumerate() {
+            let key = (d, vec![0u8; self.set.diagrams[d].vertices.len()]);
+            if let Some(&want) = probe.get(&key) {
+                let got = eval_single_diagram(diagram, p, hel, evaluated);
+                assert!(
+                    got == want,
+                    "{}: diagram {d} hel {hel:?}: colour-free probe {got:e} differs from \
+                     its chain-zero amplitude {want:e}",
+                    self.process
+                );
+            }
+        }
+    }
+
+    /// Each flow's probe JAMP: the colour-weighted sum of its contributions' probes.
+    fn probe_jamps(&self, probe: &HashMap<&(usize, Vec<u8>), C<f64>>) -> Vec<C<f64>> {
+        self.basis
+            .elements
+            .iter()
+            .map(|elem| {
+                elem.contributions
+                    .iter()
+                    .map(|c| colour_coeff(c) * probe[&(c.diagram, c.chain.clone())])
+                    .sum()
+            })
+            .collect()
+    }
+
+    /// The terms `Σ_j J_j CF_ji conj(J_i)`, one per flow `i`, whose sum is the
+    /// colour-summed |M|² of one helicity combination.
+    fn contract<'b>(&'b self, jamps: &'b [C<f64>]) -> impl Iterator<Item = f64> + 'b {
+        let n = jamps.len();
+        (0..n).map(move |i| {
+            let ztemp: C<f64> = (0..n).map(|j| jamps[j] * self.cf[j * n + i]).sum();
+            (ztemp * jamps[i].conj()).re
+        })
+    }
+}
+
+/// The helicity-expanded program's configuration amplitudes, one row per helicity
+/// combination, read off the arenas of the last `fill_for` pass.
+fn expanded_amp_rows(
+    bound: &BoundAmplitude<'_, f64>,
+    program: &Program,
+    scratch: &ScratchSpace<f64>,
+) -> Vec<Vec<C<f64>>> {
+    let n = (program.n_amps as usize).max(1);
+    program
+        .amp_locs
+        .chunks_exact(n)
+        .zip(program.amp_weights.chunks_exact(n))
+        .map(|(locs, ws)| {
+            locs.iter()
+                .zip(ws)
+                .map(|(&l, &w)| bound.weighted(w, scratch.scalars[l as usize]))
+                .collect()
+        })
+        .collect()
+}
+
+/// Assert `got` agrees with `want` to [`REL_TOL`] of `scale`, recording the residual.
+fn check_level(what: &str, level: &str, got: C<f64>, want: C<f64>, scale: f64, worst: &mut f64) {
+    let r = (got - want).norm() / scale;
+    *worst = worst.max(r);
+    assert!(
+        r <= REL_TOL,
+        "{what}: {level} {got:e} vs probe {want:e} (rel {r:.2e})"
+    );
+}
+
 /// Run the bridge on one process, asserting every level and returning the largest
 /// residuals met.
 fn bridge(
-    model: &std::sync::Arc<UFOModel>,
+    model: &Arc<UFOModel>,
     evaluated: &EvaluatedModel,
     process: &str,
     features: &mut Features,
 ) -> Residuals {
     let set = generate(model, process);
     let eval = AmplitudeEvaluator::compile(&set, model).expect("compile");
+    let case = Case::new(model, &eval, process, set, features);
     let bound = BoundAmplitude::<f64>::bind(&eval, evaluated);
-    let basis = colorize_process(model, &set.diagrams).expect("colour basis");
-    let evals: HashMap<(usize, Vec<u8>), DiagramEval> =
-        root_amplitudes(&basis, &set, model).expect("root the amplitudes");
-    let configs = Configurations::group(&set, model, &evals);
-    let config_amps: Vec<&(usize, Vec<u8>)> = configs.amps.iter().flatten().collect();
-    count_features(&set, model, &basis, features);
-
-    // The production readout order is the one the evaluator was compiled with.
-    assert_eq!(basis.ncolor(), eval.n_flows(), "{process}: flow count");
-    assert_eq!(
-        config_amps.iter().map(|(d, _)| *d).collect::<Vec<_>>(),
-        eval.config_amp_diagrams(),
-        "{process}: configuration amplitude order"
-    );
-    // The diagrams' chain-zero rootings, which the colour-free per-diagram probes use.
-    let colour_free = compile_diagram_ast(&set, model).expect("colour-free rooting");
 
     let n_flows = eval.n_flows();
     let helicities = eval.helicities();
     let folded_hel = eval.folded_hel();
     let program_hel = folded_hel.program();
     let n_amps = program_hel.n_amps as usize;
-    assert_eq!(n_amps, config_amps.len(), "{process}: amplitude row length");
-    let mut keys: Vec<&(usize, Vec<u8>)> = evals.keys().collect();
-    keys.sort();
+    assert_eq!(
+        n_amps,
+        case.config_amps.len(),
+        "{process}: amplitude row length"
+    );
+    assert_eq!(
+        program_hel.amp_locs.len(),
+        helicities.len() * n_amps,
+        "{process}: one amplitude row per helicity combination"
+    );
 
+    let pts = points(&eval, evaluated);
     let mut res = Residuals::default();
     let mut scratch = bound.scratch_space();
     let mut hel_jamps = Vec::new();
-    for p in points(&eval, evaluated) {
-        bound.eval_hel_jamps(&p, &mut scratch, &mut hel_jamps);
-        // The helicity-expanded configuration amplitudes, one row per combination,
-        // read off the arenas `eval_hel_jamps` just filled.
-        bound.fill_for(folded_hel, &p, &mut scratch);
-        let amp_rows: Vec<Vec<C<f64>>> = program_hel
-            .amp_locs
-            .chunks_exact(n_amps.max(1))
-            .zip(program_hel.amp_weights.chunks_exact(n_amps.max(1)))
-            .map(|(locs, ws)| {
-                locs.iter()
-                    .zip(ws)
-                    .map(|(&l, &w)| bound.weighted(w, scratch.scalars[l as usize]))
-                    .collect()
-            })
-            .collect();
+    for p in &pts {
+        bound.eval_hel_jamps(p, &mut scratch, &mut hel_jamps);
+        assert_eq!(
+            hel_jamps.len(),
+            helicities.len() * n_flows,
+            "{process}: one JAMP row per helicity combination"
+        );
+        // `eval_hel_jamps` leaves the arenas filled; the pass refills them identically.
+        bound.fill_for(folded_hel, p, &mut scratch);
+        let amp_rows = expanded_amp_rows(&bound, program_hel, &scratch);
+        assert_eq!(
+            amp_rows.len(),
+            helicities.len(),
+            "{process}: amplitude rows"
+        );
+
         let mut m2_probe = 0.0;
         for (h, hel) in helicities.iter().enumerate() {
-            let probe: HashMap<&(usize, Vec<u8>), C<f64>> = keys
-                .iter()
-                .map(|&k| (k, eval_single_diagram(&evals[k], &p, hel, evaluated)))
-                .collect();
-            let scale = probe.values().map(|a| a.norm()).fold(0.0, f64::max);
-            let rel = |a: C<f64>, b: C<f64>| {
-                let r = (a - b).norm();
-                if scale > 0.0 {
-                    r / scale
-                } else {
-                    r
-                }
+            let probe = case.probe_amplitudes(p, hel, evaluated);
+            // A diagram scale, not the flow's value, so a cancelling flow is not lost. A
+            // helicity-forbidden combination (every probe zero) is held to `REL_TOL`
+            // absolutely.
+            let scale = match probe.values().map(|a| a.norm()).fold(0.0, f64::max) {
+                s if s > 0.0 => s,
+                _ => 1.0,
             };
+            case.check_colour_free(&probe, p, hel, evaluated);
 
-            for (d, diagram) in colour_free.iter().enumerate() {
-                let key = (d, vec![0u8; set.diagrams[d].vertices.len()]);
-                if let Some(&want) = probe.get(&key) {
-                    let got = eval_single_diagram(diagram, &p, hel, evaluated);
-                    assert!(
-                        got == want,
-                        "{process}: diagram {d} hel {hel:?}: colour-free probe {got:e} \
-                         differs from its chain-zero amplitude {want:e}"
-                    );
-                }
-            }
-
-            let base_amps = bound.run_config_amps(&p, hel, &mut scratch);
-            for (i, &key) in config_amps.iter().enumerate() {
-                let e = &evals[key];
+            let base_amps = bound.run_config_amps(p, hel, &mut scratch);
+            for (i, key) in case.config_amps.iter().enumerate() {
+                let e = &case.evals[key];
                 let sf = e.symmetry_factor * f64::from(e.fermi_sign);
-                let want = probe[key];
-                for (level, got, worst) in [
-                    ("helicity-expanded", amp_rows[h][i], &mut res.amp_hel),
-                    ("base", base_amps[i], &mut res.amp_base),
-                ] {
-                    let r = rel(got * sf, want);
-                    *worst = worst.max(r);
-                    assert!(
-                        r <= REL_TOL,
-                        "{process}: amplitude {key:?} hel {hel:?}: {level} program \
-                         {:e} vs probe {want:e} (rel {r:.2e})",
-                        got * sf
-                    );
-                }
-                res.n_amp += 2;
-            }
-
-            let probe_jamps: Vec<C<f64>> = basis
-                .elements
-                .iter()
-                .map(|elem| {
-                    elem.contributions
-                        .iter()
-                        .map(|c| colour_coeff(c) * probe[&(c.diagram, c.chain.clone())])
-                        .sum()
-                })
-                .collect();
-            let base_jamps = if n_flows == 1 {
-                vec![bound.eval_amplitude(&p, hel, &mut scratch)]
-            } else {
-                bound.run_flows(&p, hel, &mut scratch)
-            };
-            for (f, &want) in probe_jamps.iter().enumerate() {
+                let what = format!("{process}: amplitude {key:?} hel {hel:?}");
                 for (level, got, worst) in [
                     (
-                        "helicity-expanded",
+                        "helicity-expanded program",
+                        amp_rows[h][i],
+                        &mut res.amp_hel,
+                    ),
+                    ("base program", base_amps[i], &mut res.amp_base),
+                ] {
+                    check_level(&what, level, got * sf, probe[key], scale, worst);
+                    res.n_amp += 1;
+                }
+            }
+
+            let probe_jamps = case.probe_jamps(&probe);
+            let base_jamps = if n_flows == 1 {
+                vec![bound.eval_amplitude(p, hel, &mut scratch)]
+            } else {
+                bound.run_flows(p, hel, &mut scratch)
+            };
+            for (f, &want) in probe_jamps.iter().enumerate() {
+                let what = format!("{process}: flow {f} hel {hel:?}");
+                for (level, got, worst) in [
+                    (
+                        "helicity-expanded JAMP",
                         hel_jamps[h * n_flows + f],
                         &mut res.flow_hel,
                     ),
-                    ("base", base_jamps[f], &mut res.flow_base),
+                    ("base JAMP", base_jamps[f], &mut res.flow_base),
                 ] {
-                    let r = rel(got, want);
-                    *worst = worst.max(r);
-                    assert!(
-                        r <= REL_TOL,
-                        "{process}: flow {f} hel {hel:?}: {level} JAMP {got:e} vs probe \
-                         sum {want:e} (rel {r:.2e})"
-                    );
+                    check_level(&what, level, got, want, scale, worst);
+                    res.n_flow += 1;
                 }
-                res.n_flow += 2;
             }
-
-            let cf = bound.cf_weights();
-            for i in 0..n_flows {
-                let ztemp: C<f64> = (0..n_flows)
-                    .map(|j| probe_jamps[j] * cf[j * n_flows + i])
-                    .sum();
-                m2_probe += (ztemp * probe_jamps[i].conj()).re;
+            for term in case.contract(&probe_jamps) {
+                m2_probe += term;
             }
         }
-        let m2 = bound.eval_m2(&p, &mut scratch);
-        let r = (m2 - m2_probe).abs() / m2_probe.abs().max(f64::MIN_POSITIVE);
+        let m2 = bound.eval_m2(p, &mut scratch);
+        assert!(m2_probe > 0.0, "{process}: probe |M|² {m2_probe:e}");
+        let r = (m2 - m2_probe).abs() / m2_probe;
         res.m2 = res.m2.max(r);
         assert!(
             r <= REL_TOL,
             "{process}: eval_m2 {m2:e} vs probe contraction {m2_probe:e} (rel {r:.2e})"
         );
     }
+    // Every comparison the loops should make was made: a truncated loop is not green.
+    assert_eq!(
+        res.n_amp,
+        2 * pts.len() * helicities.len() * n_amps,
+        "{process}: amplitude comparisons"
+    );
+    assert_eq!(
+        res.n_flow,
+        2 * pts.len() * helicities.len() * n_flows,
+        "{process}: flow comparisons"
+    );
     res
 }
 
