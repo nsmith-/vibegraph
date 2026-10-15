@@ -8,6 +8,7 @@
 * [V1: reference side and per-event share of the ttx @1 excess](V1.md) - Re-measure MadEvent's @1 from independent directories and with the first-call patch, and measure H1's per-event share on @1, before any look at this side's amplitude.
 * [V2: per-point integrand against MadEvent DSIG1 in the pdfwgt branch](V2.md) - Compare this side's matched per-group integrand with an instrumented MadEvent DSIG1 at fixed points (x1, x2, momenta, configuration) where the ttx @1 excess sits, and name the factor that differs.
 * [V3: re-measure the clustered rows on the CM fix, and attack the ttx residual](V3.md) - Measure the CM-clustering fix's σ shift on every matched and clustered-scale row, and attribute pp_to_ttx_0j1j_mlm @1's remaining excess, checking MadEvent's iteration bias first.
+* [V4: which side owns the unmatched g q > t t~ q excess](V4.md) - Settle the +0.5-0.9 % gq excess that survives the CM fix, matching off and a fixed scale, with an adaptation-free estimate and a per-point check on vibegraph-drawn points.
 
 ## Session Report
 

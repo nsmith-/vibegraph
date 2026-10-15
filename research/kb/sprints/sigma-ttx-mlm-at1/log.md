@@ -52,3 +52,14 @@
   `pp_to_jj` line "50000 scale comparisons … 0 needing a channel other than
   the first"; the diff tightening `TIE_BREAK_MISSES` to `missed.is_empty()`.
   F1 wrote no report file; its hand-back is recorded here.
+* **V3 landed** (`0468cc6`): on the fix, `@1` moves by −4.465 ± 0.083 pb
+  (paired over 10 seeds; V2 predicted −4.5). `@0` and `pp_to_ll_0j2j_mlm` do
+  not move, and the ll row still passes. `@1` remains +0.45 % (3.8σ) above
+  MadEvent's equal-weight seeds. The iteration bias is all in gg, and after
+  it gg is +0.36 % (2.3σ, the generic multi-leg size). gq stays at +0.87 %,
+  and the same +0.5–0.7 % is there unmatched and at fixed μ, with MadEvent's
+  gq seeds scattering at χ²/dof about 4.7. Machine-confirmed by the manager:
+  the commit; the paired shift recomputed from `ttx3-vg-results.txt`.
+* **Next:** V4, an adaptation-free estimate of unmatched fixed-μ `g q > t t~
+  q` (the test that settled #22 and #28), with a per-point check. Then the
+  hygiene session on `6740954`, and close-out.

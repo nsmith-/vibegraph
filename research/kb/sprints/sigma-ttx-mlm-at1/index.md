@@ -8,4 +8,4 @@
 
 ## Directories
 
-* [sessions](sessions/index.md) - 7 concepts
+* [sessions](sessions/index.md) - 8 concepts
