@@ -15,13 +15,13 @@ per helicity in MadGraph's own NHEL table:
   * JAMP(1..NCOLOR), the per-flow amplitudes, copied out of MATRIX by a COMMON
     block patched in after MadGraph builds them.
 
-The per-diagram AMP() are dumped with `--amps` for diagnosis and banked only
-for a row that sets `bank_amps`: where a contact vertex has several colour
-structures MadGraph writes one AMP() per structure, so its graph list is not our
-diagram list, while its JAMP order is the colour basis the Rust gate already
-pairs flow by flow. A row that banks them is a single-flow row whose graphs the
-Rust gate pairs with groups of its own diagrams, and it banks JAMP(1)'s
-coefficient on each AMP() beside them.
+`--amps` adds the per-diagram AMP() to the table for diagnosis, and the Rust
+gate does not read them: where a contact vertex has several colour structures
+MadGraph writes one AMP() per structure, so its graph list is not our diagram
+list, while its JAMP order is the colour basis the Rust gate already pairs flow
+by flow. A row that sets `bank_amps` always carries the AMP(), with JAMP(1)'s
+coefficient on each beside them. It is a single-flow row whose graphs the Rust
+gate pairs with groups of its own diagrams.
 
 The table carries the param card the numbers were computed with, so the Rust
 side binds the same parameters rather than re-deriving them.
@@ -54,6 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from gen_amplitude import beam_momenta, rambo  # noqa: E402
+from gen_amplitude_tables import join_continuations, parse_jamp_coefficients  # noqa: E402
 
 TABLE_DIR = os.path.join(HERE, "standalone")
 DEFAULT_WORK = os.path.join(HERE, "output", "standalone")
@@ -225,18 +226,19 @@ DRIVER = """\
 
 
 def read_jamp_coefficients(pdir: str, ngraphs: int) -> list[float]:
-    """JAMP(1)'s coefficient on each AMP(), from a single-flow matrix.f."""
+    """JAMP(1)'s coefficient on each AMP(), from a single-flow matrix.f.
+
+    The statement is MadEvent's `JAMP(1,1)` with one index, and the parser is
+    the amplitude tables'. The coefficients are banked as reals, so a complex
+    one is refused.
+    """
     with open(os.path.join(pdir, "matrix.f")) as f:
-        src = f.read()
-    m = re.search(r"\n      JAMP\(1\) =(.*?)\n(?!     \$)", src, re.S)
-    assert m, "no JAMP(1) assignment"
-    expr = re.sub(r"\n     \$ ?", "", m.group(1)).replace(" ", "")
-    coefs = [0.0] * ngraphs
-    for sign, num, k in re.findall(r"([+-]?)(?:\(([^()]*)\)\*)?AMP\((\d+)\)", expr):
-        c = float(num.replace("D", "E")) if num else 1.0
-        coefs[int(k) - 1] += -c if sign == "-" else c
-    assert all(c != 0.0 for c in coefs), f"an AMP() outside JAMP(1): {coefs}"
-    return coefs
+        src = join_continuations(f.read())
+    m = re.search(r"\n      JAMP\(1\) =(.*)", src)
+    assert m, f"{pdir}: no JAMP(1) assignment"
+    coefs = parse_jamp_coefficients(m.group(1), ngraphs, f"{pdir}: JAMP(1)")
+    assert all(c.imag == 0.0 for c in coefs), f"{pdir}: a complex JAMP(1) coefficient: {coefs}"
+    return [c.real for c in coefs]
 
 
 def build_driver(pdir: str, ngraphs: int, ncolor: int) -> str:
