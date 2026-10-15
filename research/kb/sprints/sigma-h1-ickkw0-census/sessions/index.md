@@ -8,4 +8,4 @@
 
 ## Session Report
 
-* [V1 interim report: H1 census, first-call criterion and run plan](V1-report.md) - Which banked grouped MadEvent runs have a clustering first call, which can move with it, which path they took (all scalar), and the plan for the permutation machine-check and the diagnostic MadEvent runs.
+* [V1 report: H1 census of the banked grouped rows](V1-report.md) - Every banked MadEvent run checked for a clustered first call, symmetry permutations (machine-read) and a same-seed patched/unpatched screen. No banked row besides the two already registered carries a measurable H1, and no row needs re-banking.
