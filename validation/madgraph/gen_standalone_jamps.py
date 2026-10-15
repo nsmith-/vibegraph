@@ -129,6 +129,45 @@ ROWS = {
         # The Standard Model's own all-Yukawa line: t/u-channel b exchange (one
         # propagator) beside the triple-Higgs annihilation (none).
         Row("bbx_to_hh", "b b~ > h h", (5, -5), (25, 25), 500.0, 3, 4063),
+        # The rest of the W-pair-initiated fermion-pair family: the leg order
+        # reversed, and a quark line in place of the lepton line.
+        Row("wmwp_to_emep", "w- w+ > e- e+", (-24, 24), (11, -11), 500.0, 3, 5001,
+            zero_widths=True),
+        Row("wpwm_to_uux", "w+ w- > u u~", (24, -24), (2, -2), 500.0, 3, 5002,
+            zero_widths=True),
+        # A colourless vector at leg 0 on a mixed lepton line: the W-exchange
+        # diagram's anchor is the WWZ vertex, the other two diagrams' a lepton vertex.
+        Row("wpem_to_zve", "w+ e- > z ve", (24, 11), (23, 12), 500.0, 3, 5020,
+            zero_widths=True),
+        # The photon at leg 0: s-channel W through the AWW vertex beside the
+        # electron exchange.
+        Row("aem_to_wmve", "a e- > w- ve", (22, 11), (-24, 12), 500.0, 3, 5022,
+            zero_widths=True),
+        # One graph set under two leg orders. With the W at leg 0 the top and bottom
+        # exchanges are anchored at the Wtb vertex; with the Higgs at leg 0, at the
+        # Yukawa vertex. The s-channel W diagram is anchored at the WWH vertex in both.
+        Row("wph_to_tbx", "w+ h > t b~", (24, 25), (6, -5), 800.0, 3, 5023,
+            zero_widths=True),
+        Row("hwp_to_tbx", "h w+ > t b~", (25, 24), (6, -5), 800.0, 3, 5025,
+            zero_widths=True),
+        # A Z pair at leg 0: the s-channel Higgs (ZZH vertex at the anchor, top
+        # Yukawa as the scalar source) beside the top exchange.
+        Row("zz_to_ttx", "z z > t t~", (23, 23), (6, -6), 800.0, 3, 5026,
+            zero_widths=True),
+        # A scalar at leg 0: the triple-Higgs vertex at the anchor beside the top
+        # exchange anchored at the Yukawa vertex.
+        Row("hh_to_ttx", "h h > t t~", (25, 25), (6, -6), 800.0, 3, 5024,
+            zero_widths=True),
+        # A gluon at leg 0: the triple-gluon vertex at the anchor beside the quark
+        # exchange, the coloured analogue of `w+ w- > u u~`.
+        Row("gg_to_uux", "g g > u u~", (21, 21), (2, -2), 500.0, 3, 5006),
+        # 2 -> 3 with a W pair at leg 0: a final-state lepton line beside a Z
+        # emitted from it, from the s-channel boson or from a WWZ/WWZZ vertex.
+        Row("wpwm_to_epemz", "w+ w- > e+ e- z", (24, -24), (-11, 11, 23), 800.0, 3, 5028,
+            zero_widths=True),
+        # 2 -> 3 with a W pair at leg 0 and a gluon off the final-state quark line.
+        Row("wpwm_to_uuxg", "w+ w- > u u~ g", (24, -24), (2, -2, 21), 800.0, 3, 5045,
+            zero_widths=True),
     ]
 }
 

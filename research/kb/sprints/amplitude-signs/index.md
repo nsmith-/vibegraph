@@ -4,4 +4,4 @@
 
 ## Directories
 
-* [sessions](sessions/index.md) - 1 concepts
+* [sessions](sessions/index.md) - 2 concepts

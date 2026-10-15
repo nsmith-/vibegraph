@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [W1: diagnose the w+ w- > e+ e- neutrino-exchange sign](W1.md) - Per-diagram x per-helicity dumps against MadGraph standalone AMP() for the W-pair-anchored fermion-line rows and their agreeing controls, a GF(2) solve for the sign rule, and arithmetic verification on the dumps. Diagnosis only.
+
+## Session Report
+
+* [W1 report: the w+ w- > e+ e- sign is a leg-0 anchor sign](W1-report.md) - Diagnosis. When external leg 0 is a colourless vector, a diagram anchored at a two-fermion vertex has the wrong sign relative to one anchored at a boson vertex. One factor fixes all 22 failing probe processes, including 7 predictions outside the fit. The rule is not derived, because the class-b sign product depends on the reference root.
