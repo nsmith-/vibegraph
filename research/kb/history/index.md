@@ -4,4 +4,4 @@
 
 ## Directories
 
-* [notes](notes/index.md) - 54 concepts
+* [notes](notes/index.md)
