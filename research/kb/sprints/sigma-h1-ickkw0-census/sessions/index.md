@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: census of grouped clustering-scale rows and H1 share per row](V1.md) - Machine-check which banked grouped rows carry non-identity permutations under a clustering scale, and measure H1's σ share on each affected row with diagnostic patched MadEvent runs.
+
+## Session Report
+
+* [V1 interim report: H1 census, first-call criterion and run plan](V1-report.md) - Which banked grouped MadEvent runs have a clustering first call, which can move with it, which path they took (all scalar), and the plan for the permutation machine-check and the diagnostic MadEvent runs.
