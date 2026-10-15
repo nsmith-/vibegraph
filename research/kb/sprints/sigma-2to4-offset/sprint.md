@@ -3,7 +3,7 @@ type: Sprint
 title: "2 → 4 σ offset against MadEvent"
 description: "Establish which side is wrong in the +0.3 % fixed-beam u u~ > e+ e- g g offset against MadEvent, and fix it on the side that owns it."
 status: draft
-active: true
+active: false
 tags: [sigma, madevent-reference, phase-space, 2to4]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -21,7 +21,7 @@ defect with a banking request for a corrected reference.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [generic-2to4-sigma-offset-vs-madevent](../../backlog/validation/generic-2to4-sigma-offset-vs-madevent.md)
+- `generic-2to4-sigma-offset-vs-madevent` (closed by this PR; see [closeout](closeout.md))
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,
@@ -39,7 +39,7 @@ comment on this PR listing exactly what to run.
 
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
-| [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only; hermetic gates unmoved if anything is committed | — |
+| [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnosis only | generic-2to4-sigma-offset-vs-madevent |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.

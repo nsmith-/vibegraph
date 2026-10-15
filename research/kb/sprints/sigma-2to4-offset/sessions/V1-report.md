@@ -7,6 +7,7 @@ tags: [validation, sigma, madevent-reference, 2to4, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: base, resource: "https://github.com/nsmith-/vibegraph/commit/05c214b", title: "Measured at 05c214b (sigma/2to4-offset base), no source changes"}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 ---
 Diagnosis only. No source change, no probe test committed. Every MadEvent run
 below comes from the **pinned MadGraph 3.7.1** (`validation/madgraph/mg5_pinned.sh`
