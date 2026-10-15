@@ -102,9 +102,9 @@ A reproducer inside MadGraph alone (`validation/madgraph/repro/permuted_first_ca
 and the one-line fix (`validation/madgraph/patches/first-call-unpermuted-momenta.patch`)
 back the report. A consequence for references: grouped MadEvent references at
 `dynamical_scale_choice = −1` whose directories carry non-identity permutations
-are biased whether or not they are matched, and no banked `ickkw = 0` row has
-been checked for such permutations
-([h1-ickkw0-grouped-rows-unchecked](../backlog/validation/h1-ickkw0-grouped-rows-unchecked.md)).
+are biased whether or not they are matched. A census of every banked grouped
+row found only `pp_to_ll_0j2j_mlm` affected measurably
+([the permuted first call](madgraph-permuted-first-call.md#census-of-the-banked-rows)).
 
 ## What this is not
 

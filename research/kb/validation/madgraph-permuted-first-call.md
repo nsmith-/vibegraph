@@ -133,17 +133,42 @@ reproducer). Both scale paths involved are described in
 [scales-pdf/mlm-scales](../scales-pdf/mlm-scales.md) and
 [scales-pdf/clustering-configuration-draw](../scales-pdf/clustering-configuration-draw.md).
 
+## Census of the banked rows
+
+Every banked grouped row was checked on 2026-10-15
+([sigma-h1-ickkw0-census](../sprints/sigma-h1-ickkw0-census/closeout.md)).
+
+**When the first call can move σ.** It clusters when `ickkw > 0`, or
+`xqcut > 0` (even at `ickkw = 0`), or `dynamical_scale_choice = -1` without
+all three `fixed_*_scale` flags. Even then it moves σ only through a PDF
+scale (`lpp ≠ 0`), an α_s-dependent coupling (μR), or a rejection.
+
+**Which rows are affected.** The census regenerated each row through
+`output` at the pin, read `symperms.inc`, and ran a same-seed unpatched
+against patched screen:
+
+| verdict | rows |
+|---|---|
+| identity permutations only | the llj family including the three llj MLM cards, `uux_to_epemg`, `ddx_to_epemg`, `gu_to_epemu`, `gux_to_epemux`, `pp_to_ll*`, `uux_to_uux`, `uux_to_ztg` |
+| permuted, screen identical | the 2 → 2 rows (`pp_to_jj`, `pp_to_bb*`, `gg_to_gg`, `gg_to_ttx*`), where equal-mass swapped legs have equal p_T, and `pp_ttx_lep_dyn` |
+| permuted, negligible | `uu_full` (−3.0e-5 of σ) and `uu_tt` (+1.5e-5; the permuted channels carry 0.28 % of σ), and `pp_to_ttx_0j1j_mlm` `@1` (+0.03 ± 0.11 pb over 19 paired seeds; the t ↔ t̄ swap leaves the clustering symmetric) |
+| affected | `pp_to_ll_0j2j_mlm` (`P2_qq_llqq`, above) |
+
+The R1 grouped reproducer moves +2.1 % under the same screen. Every banked
+run took the scalar path (`vector_size = 1`), so the one-line patch covers
+all of them. The census script is
+`validation/madgraph/census_permuted_first_call.py`.
+
 ## Open
 
-- **Banked `ickkw = 0` grouped rows are unchecked.** The banked scale gates
-  compare against replays of `PP` and could not see it:
-  [h1-ickkw0-grouped-rows-unchecked](../backlog/validation/h1-ickkw0-grouped-rows-unchecked.md).
 - **The vectorised path** (`vector_size > 1`): `DSIG_VEC` calls
   `update_scale_coupling_vec(all_p, …)` (`:312`) before `DSIGPROC_VEC` builds and
   mirrors `ALL_P1`, which is local and differently dimensioned, so the fix there
-  moves the call after the mirror loop with a copy. Read, not measured.
-- **H1's share of `pp_to_ttx_0j1j_mlm`'s `@1` excess** is unmeasured
-  ([ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
+  moves the call after the mirror loop with a copy. Read, not measured, and no
+  banked run takes it.
+- **`validate_scales` cannot see H1.** Its replay searches the permuted twin
+  configuration and never sees a first-call rejection
+  ([validate-scales-replay-blind-to-h1](../backlog/validation/validate-scales-replay-blind-to-h1.md)).
 - The clustering path behind the identical-quark channels.
 
 Rejected candidates for the reproducer, which show no effect: `u u~ > e+ e- u u~`
