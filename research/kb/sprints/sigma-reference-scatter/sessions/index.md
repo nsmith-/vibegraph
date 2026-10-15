@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: diagnostic fresh-directory seeds on the llj MLM rows](V1.md) - Measure whether fresh, independent MadEvent directories move the three llj MLM references, and measure MadEvent seed scatter and budget shift on a few cheap gated σ rows, as input to D1.
+
+## Session Report
+
+* [V1 report: fresh-directory MadEvent seeds and scatter on gated σ rows](V1-report.md) - Twenty fresh-directory MadEvent seeds per llj MLM row leave the references where the shared-directory banks put them and scatter below their quoted errors as the shared seeds did. The ours-high offset on the rewgt rows is not a reference artefact. Five single-run hadronic rows scatter from 0.19 to 2.67 times their quoted variance. The CM-clustering fix (6740954), probed uncommitted, moves the rewgt rows' σ by −0.007 % paired per seed, a twentieth of the offset, and the pure-cut row not at all.
