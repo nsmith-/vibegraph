@@ -5,6 +5,7 @@ description: "test_eval_jioxxx gains a massive-fermion (q·J ≠ 0) regime with 
 status: draft
 tags: [helas, chirality, oracle, propagator, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: cc76f58, resource: "https://github.com/nsmith-/vibegraph/commit/cc76f58", title: "pin jioxxx chirality and longitudinal term on massive fermions"}
 ---
