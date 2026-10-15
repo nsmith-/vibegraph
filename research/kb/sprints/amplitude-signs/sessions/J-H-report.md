@@ -5,6 +5,7 @@ description: "Findings of the four-point hygiene review of PR #34 (test_eval_jio
 status: draft
 tags: [hygiene, helas, review, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: base, resource: "https://github.com/nsmith-/vibegraph/commit/f9b0b05", title: "PR #34 tip reviewed"}
   - {id: findings, resource: "https://github.com/nsmith-/vibegraph/commit/dff72b8", title: "findings written before any edit"}
