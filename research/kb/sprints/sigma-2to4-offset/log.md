@@ -15,3 +15,6 @@
   goes to `sigma-reference-scatter`'s D1.
 * **Close-out**: no code landed, so no hygiene session. The item is deleted,
   the measurement recorded, and three Found items filed.
+* **Approval relayed** (2026-10-15, by the planner session, as the user's
+  decision): close on attribution to MadEvent, as proposed. Correcting
+  references for it is decided in `sigma-reference-scatter`'s D1 (option A).
