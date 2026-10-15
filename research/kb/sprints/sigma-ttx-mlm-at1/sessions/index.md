@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: cluster in the partonic CM frame in the hadronic integrand](F1.md) - Make per_group_sum cluster the CM momenta (and their mirror) as MadEvent does, pin it with a hermetic test that fails on the lab-frame code, and measure which gated cells move.
+* [HY1: hygiene pass on the CM-clustering fix](HY1.md) - Review commit 6740954 (CM-frame clustering in the hadronic integrand, the CM replay in validate_scales) for maintainability, test non-vacuity, visibility and reuse, then fix what is local.
 * [V1: reference side and per-event share of the ttx @1 excess](V1.md) - Re-measure MadEvent's @1 from independent directories and with the first-call patch, and measure H1's per-event share on @1, before any look at this side's amplitude.
 * [V2: per-point integrand against MadEvent DSIG1 in the pdfwgt branch](V2.md) - Compare this side's matched per-group integrand with an instrumented MadEvent DSIG1 at fixed points (x1, x2, momenta, configuration) where the ttx @1 excess sits, and name the factor that differs.
 * [V3: re-measure the clustered rows on the CM fix, and attack the ttx residual](V3.md) - Measure the CM-clustering fix's σ shift on every matched and clustered-scale row, and attribute pp_to_ttx_0j1j_mlm @1's remaining excess, checking MadEvent's iteration bias first.
