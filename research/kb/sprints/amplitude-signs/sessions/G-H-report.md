@@ -5,6 +5,7 @@ description: "PR #29's five standalone rows, five tests and one comment hold up 
 status: draft
 tags: [hygiene, review, standalone-jamps, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: df93d59, resource: "https://github.com/nsmith-/vibegraph/commit/df93d59", title: "keep the gg_to_ttxg gate's colour-assignment sensitivity under test"}
 ---
