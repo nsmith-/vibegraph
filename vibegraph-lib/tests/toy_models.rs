@@ -13,6 +13,11 @@
 //! each row's process string is the one its banked amplitude table was generated
 //! for, and the ops the rows compile to are measured against an allowlist that
 //! must shrink as coverage grows.
+//!
+//! Beside those, two checks on copies of `vibegraph_toy_UFO` whose coupling orders
+//! put two structures on one vertex: the merged vertex equals the sum of its split
+//! diagrams, and a merged vertex whose structures disagree on the rooting sign is
+//! refused when it is compiled.
 
 mod common;
 
@@ -20,10 +25,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
-use vibegraph::phasespace::rambo;
+use vibegraph::phasespace::rambo_massive;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
 
 /// The two model directories whose rows this file owns, as the manifest spells
@@ -243,35 +250,52 @@ fn gated_rows_op_census() {
     assert_op_coverage_across(&instances, &KNOWN_UNCOVERED);
 }
 
-/// A copy of `vibegraph_toy_UFO` in which the pseudoscalar Yukawa and the derivative
-/// cubic scalar share the `NP` order of their partners, so `V_ltltst`/`V_qtqtst`
-/// (`Identity` beside `Gamma5`) and `V_ststst` (`SSS1` beside `SSSD`) each reach the
-/// diagram as one vertex carrying both structures.
-fn merged_order_toy_model() -> Arc<UFOModel> {
-    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO");
-    let dst = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("vibegraph_toy_merged_orders_UFO");
-    std::fs::create_dir_all(&dst).unwrap();
+/// The authored toy model directory.
+fn toy_ufo_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO")
+}
+
+/// The pseudoscalar Yukawa moved to the `NP` order of its `Identity` partner, so
+/// `V_ltltst`/`V_qtqtst` reach a diagram as one vertex carrying both structures.
+const MERGE_NPCP: (&str, &str, &str) = ("couplings.py", "order={'NPCP': 1}", "order={'NP': 1}");
+
+/// The derivative cubic scalar moved to the `NP` order of its `SSS1` partner, so
+/// `V_ststst` reaches a diagram as one vertex carrying both structures.
+const MERGE_NPD: (&str, &str, &str) = ("couplings.py", "order={'NPD': 1}", "order={'NP': 1}");
+
+/// A copy of `vibegraph_toy_UFO` in a fresh scratch directory, with each
+/// `(file, from, to)` replacement applied, loaded under `restrict_all`. Every `from`
+/// must occur in its file.
+fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
+    let src = toy_ufo_dir();
+    let scratch = tempfile::tempdir().expect("create a scratch directory");
+    let dst = scratch.path();
     for entry in std::fs::read_dir(&src).unwrap() {
         let path = entry.unwrap().path();
         if path.is_file() {
             std::fs::copy(&path, dst.join(path.file_name().unwrap())).unwrap();
         }
     }
-    let couplings = std::fs::read_to_string(src.join("couplings.py")).unwrap();
-    let merged = couplings
-        .replace("order={'NPCP': 1}", "order={'NP': 1}")
-        .replace("order={'NPD': 1}", "order={'NP': 1}");
-    assert_ne!(
-        merged, couplings,
-        "the toy couplings no longer carry NPCP/NPD"
-    );
-    std::fs::write(dst.join("couplings.py"), merged).unwrap();
-    UFOModel::load(&dst, Some(&dst.join("restrict_all.dat"))).expect("load the merged toy model")
+    for (file, from, to) in edits {
+        let text = std::fs::read_to_string(dst.join(file)).unwrap();
+        assert!(
+            text.contains(from),
+            "the toy model's {file} has no `{from}`"
+        );
+        std::fs::write(dst.join(file), text.replace(from, to)).unwrap();
+    }
+    UFOModel::load(dst, Some(&dst.join("restrict_all.dat")))
+        .unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
 }
 
-/// Incoming momenta along ±z for masses `m1`, `m2` at `√s`, then the final state
-/// from massive RAMBO with fixed uniforms.
-fn toy_point(sqrt_s: f64, initial: [f64; 2], fin: &[f64], seed: usize) -> Vec<LorentzVector<f64>> {
+/// Incoming momenta along ±z for masses `initial` at `√s`, then the final state
+/// from massive RAMBO.
+fn toy_point(
+    sqrt_s: f64,
+    initial: [f64; 2],
+    fin: &[f64],
+    rng: &mut ChaCha8Rng,
+) -> Vec<LorentzVector<f64>> {
     let s = sqrt_s * sqrt_s;
     let [m1, m2] = initial;
     let lambda = (s - (m1 + m2).powi(2)) * (s - (m1 - m2).powi(2));
@@ -281,10 +305,7 @@ fn toy_point(sqrt_s: f64, initial: [f64; 2], fin: &[f64], seed: usize) -> Vec<Lo
         LorentzVector::new(e1, 0.0, 0.0, p),
         LorentzVector::new(sqrt_s - e1, 0.0, 0.0, -p),
     ];
-    let u: Vec<f64> = (0..4 * fin.len())
-        .map(|k| ((k + 1 + 7 * seed) as f64 * 0.618_033_988_749_894_9).fract())
-        .collect();
-    momenta.extend(rambo(sqrt_s, fin, &u).momenta);
+    momenta.extend(rambo_massive(sqrt_s, fin, rng));
     momenta
 }
 
@@ -302,14 +323,11 @@ fn toy_point(sqrt_s: f64, initial: [f64; 2], fin: &[f64], seed: usize) -> Vec<Lo
 #[test]
 fn mixed_structure_vertices_equal_their_split_sum() {
     let split = UFOModel::load(
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../validation/ufo/vibegraph_toy_UFO"),
-        Some(
-            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../validation/ufo/vibegraph_toy_UFO/restrict_all.dat"),
-        ),
+        &toy_ufo_dir(),
+        Some(&toy_ufo_dir().join("restrict_all.dat")),
     )
     .expect("load the toy model");
-    let merged = merged_order_toy_model();
+    let merged = edited_toy_model(&[MERGE_NPCP, MERGE_NPD]);
     const MLT: f64 = 10.0;
     const MQT: f64 = 50.0;
     const MST: f64 = 200.0;
@@ -318,8 +336,6 @@ fn mixed_structure_vertices_equal_their_split_sum() {
         merged: &'static str,
         initial: [f64; 2],
         fin: &'static [f64],
-        /// The helicity states of each leg, in process order.
-        states: &'static [&'static [i32]],
     }
     let cases = [
         Case {
@@ -327,21 +343,18 @@ fn mixed_structure_vertices_equal_their_split_sum() {
             merged: "lt~ lt > qt qt~ st NP<=3",
             initial: [MLT, MLT],
             fin: &[MQT, MQT, MST],
-            states: &[&[-1, 1], &[-1, 1], &[-1, 1], &[-1, 1], &[0]],
         },
         Case {
             split: "st lt > st lt NP<=2 NPCP<=2 NPD<=2",
             merged: "st lt > st lt NP<=2",
             initial: [MST, MLT],
             fin: &[MST, MLT],
-            states: &[&[0], &[-1, 1], &[0], &[-1, 1]],
         },
         Case {
             split: "lt~ lt > st st NP<=2 NPCP<=2 NPD<=2",
             merged: "lt~ lt > st st NP<=2",
             initial: [MLT, MLT],
             fin: &[MST, MST],
-            states: &[&[-1, 1], &[-1, 1], &[0], &[0]],
         },
     ];
     for Case {
@@ -349,7 +362,6 @@ fn mixed_structure_vertices_equal_their_split_sum() {
         merged: merged_process,
         initial,
         fin,
-        states,
     } in cases
     {
         let compile = |model: &Arc<UFOModel>, process: &str| {
@@ -366,29 +378,22 @@ fn mixed_structure_vertices_equal_their_split_sum() {
             "'{merged_process}' has {n_merged} diagrams against the split {n_split}, so no \
              vertex merged its structures"
         );
+        assert_eq!(
+            ev_split.helicities(),
+            ev_merged.helicities(),
+            "'{merged_process}' and its split process sum different helicities"
+        );
         let em_split = EvaluatedModel::from_model(Arc::clone(&split));
         let em_merged = EvaluatedModel::from_model(Arc::clone(&merged));
         let b_split = BoundAmplitude::<f64>::bind(&ev_split, &em_split);
         let b_merged = BoundAmplitude::<f64>::bind(&ev_merged, &em_merged);
         let (mut s_split, mut s_merged) = (b_split.scratch_space(), b_merged.scratch_space());
 
-        let mut helicities: Vec<Vec<i32>> = vec![vec![]];
-        for leg in states {
-            helicities = helicities
-                .into_iter()
-                .flat_map(|h| {
-                    leg.iter().map(move |&s| {
-                        let mut h = h.clone();
-                        h.push(s);
-                        h
-                    })
-                })
-                .collect();
-        }
+        let mut rng = ChaCha8Rng::seed_from_u64(0x70E5);
         let (mut worst, mut largest) = (0.0f64, 0.0f64);
-        for seed in 0..3 {
-            let momenta = toy_point(1000.0, initial, fin, seed);
-            for hel in &helicities {
+        for _ in 0..3 {
+            let momenta = toy_point(1000.0, initial, fin, &mut rng);
+            for hel in ev_split.helicities() {
                 let a = b_split.eval_amplitude(&momenta, hel, &mut s_split);
                 let b = b_merged.eval_amplitude(&momenta, hel, &mut s_merged);
                 worst = worst.max((a - b).norm());
@@ -407,4 +412,37 @@ fn mixed_structure_vertices_equal_their_split_sum() {
             worst / largest
         );
     }
+}
+
+/// A vertex whose structures disagree on the rooting-convention sign is refused when
+/// a process is compiled, rather than evaluated with one structure's sign.
+///
+/// The copy puts a derivative `P(-1,3)*Gamma(-1,2,1)` Yukawa in place of `Gamma5`,
+/// under `Identity`'s order. Where the vertex's fermion pair sinks into the scalar
+/// (`lt~ lt > st`), the `Identity` term takes the scalar-sink −1 and the gamma term
+/// does not, so the vertex has no one sign to lift into the diagram's. Rooted the
+/// other way round, with the scalar on leg 0 (`st > lt lt~`), the same vertex
+/// compiles: this pins the refusal's path out of `compile`, not which vertices a
+/// sign exists for.
+#[test]
+fn mixed_sign_vertex_is_refused_at_compile() {
+    let model = edited_toy_model(&[
+        MERGE_NPCP,
+        (
+            "lorentz.py",
+            "structure='Gamma5(2,1)'",
+            "structure='P(-1,3)*Gamma(-1,2,1)'",
+        ),
+    ]);
+    let process = "lt~ lt > st NP<=1";
+    let set = common::generate_with(process, model.as_ref()).remove(0);
+    let err = match AmplitudeEvaluator::compile(&set, model.as_ref()) {
+        Ok(_) => panic!("'{process}' compiled a vertex with mixed rooting-convention signs"),
+        Err(e) => e.to_string(),
+    };
+    assert!(
+        err.starts_with("unsupported vertex: ")
+            && err.contains("carry mixed rooting-convention signs"),
+        "'{process}' was refused for another reason: {err}"
+    );
 }
