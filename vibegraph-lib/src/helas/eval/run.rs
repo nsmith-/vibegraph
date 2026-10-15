@@ -916,7 +916,9 @@ where
 /// evaluated exactly once. Rooting a sub-tree returns that node's slot, which the
 /// per-diagram probes read. It shares the kernels with production but not the typed
 /// [`Program`](super::layout::Program) that `fill_arenas` runs, so a probe through it
-/// checks rooting, lowering and kernels, not the production instruction stream.
+/// checks rooting, lowering and kernels, not the production instruction stream. The
+/// `probe_bridge` test pins the probes' scalar amplitudes, per amplitude and per flow,
+/// to that program's.
 #[cfg(test)]
 pub(super) fn run_forward_slot<F: Real>(
     folded: &Folded,
@@ -1946,6 +1948,9 @@ fn build_external_core<F: Real>(
         other => panic!("unsupported external spin code: {other}"),
     }
 }
+
+#[cfg(test)]
+mod probe_bridge;
 
 #[cfg(test)]
 mod tests {
@@ -3974,51 +3979,6 @@ mod tests {
             "s-expr round-trip changed the tree"
         );
         assert!(reparsed.len() >= ast.len());
-    }
-
-    /// The whole-amplitude AST (one `Add` over all diagrams) reproduces the explicit
-    /// coherent sum over per-diagram amplitudes, for every helicity of e+e-→μ+μ-.
-    /// Guards the final diagram-sum `Add` and the symmetry/Fermi-sign folding.
-    #[test]
-    fn test_whole_amplitude_equals_diagram_sum_eemumu() {
-        use crate::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-
-        let model = sm_model(SMRestrict::Default);
-        let evaluated = EvaluatedModel::from_model_card(
-            model.clone(),
-            &"Block MASS\n 11 0.0\n 13 0.0\n"
-                .parse::<ParamCard>()
-                .unwrap(),
-        );
-        let opts = ParsingOptions::default();
-        let card = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
-        let sets = generate_from_proc_card(&card, &model).unwrap();
-        let eval = AmplitudeEvaluator::compile(&sets[0], &model).unwrap();
-        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
-        let diagrams = compile_diagram_ast(&sets[0], &model).unwrap();
-
-        let st = 0.6_f64;
-        let ct = (1.0 - st * st).sqrt();
-        let p = [
-            LorentzVector::new(50.0, 0.0, 0.0, 50.0),
-            LorentzVector::new(50.0, 0.0, 0.0, -50.0),
-            LorentzVector::new(50.0, 50.0 * st, 0.0, 50.0 * ct),
-            LorentzVector::new(50.0, -50.0 * st, 0.0, -50.0 * ct),
-        ];
-
-        let mut scratch = bound.scratch_space();
-        for hel in eval.helicities() {
-            let whole = bound.eval_amplitude(&p, hel, &mut scratch);
-            let parts = diagrams
-                .iter()
-                .map(|d| eval_single_diagram(d, &p, hel, &evaluated))
-                .fold(C::new(0.0, 0.0), |a, b| a + b);
-            assert!(
-                (whole - parts).norm() <= 1e-12 * (whole.norm() + 1e-30),
-                "whole-amplitude AST disagrees with per-diagram sum for hel {hel:?}: \
-                 whole={whole:.6e} parts={parts:.6e}"
-            );
-        }
     }
 
     /// Cross-check the Z current from the *outgoing* mu-pair against MadGraph's W11
