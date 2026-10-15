@@ -472,8 +472,8 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
 const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
     "wpwm_to_epem",
     "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
-         comes out with the wrong sign relative to the photon and Z s-channel, while \
-         `e+ e- > w+ w-` (the same graphs crossed) agrees",
+     comes out with the wrong sign relative to the photon and Z s-channel, while \
+     `e+ e- > w+ w-` (the same graphs crossed) agrees",
 )];
 
 fn check(key: &str) {
