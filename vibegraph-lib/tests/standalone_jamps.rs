@@ -17,19 +17,29 @@
 //! alike — but its phase is free: external-wavefunction phase conventions differ
 //! between the two programs by a process-dependent `±1`/`±i`.
 //!
+//! A single-flow table may also bank MadGraph's per-graph `AMP()` with JAMP(1)'s
+//! coefficient on each. Such a row declares in [`MG_GRAPH_DIAGRAMS`] which of its
+//! diagrams make up each MadGraph graph, and each group, compiled one diagram at a
+//! time through the production evaluator and summed, must equal `G · c_k · AMP_k`
+//! under the same `G`. A group is not always one diagram: see
+//! [`MG_GRAPH_DIAGRAMS`] on the four-fermion contacts.
+//!
 //! What it cannot see: that global phase (a sign shared by every diagram of the
 //! process); the split of a flow into diagrams, so two compensating errors in
-//! diagrams that reach the same flows with the same weights at every point; and any
+//! diagrams that reach the same flows with the same weights at every point (closed
+//! per MadGraph graph where `AMP()` is banked, but not inside a group); and any
 //! helicity or kinematic region the few banked points do not visit.
 //!
-//! Needs only the committed tables, the interned SM model and the vendored SMEFTsim
-//! UFO.
+//! Needs only the committed tables, the interned SM model, the vendored SMEFTsim
+//! UFO and the authored toy UFO.
 
 mod common;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use common::{generate_with, sm_model};
+use vibegraph::diagrams::DiagramSet;
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::repr::C;
 use vibegraph::helas::LorentzVector;
@@ -51,13 +61,194 @@ fn complex(v: &serde_json::Value) -> C<f64> {
     C::new(v[0].as_f64().unwrap(), v[1].as_f64().unwrap())
 }
 
+/// For a row that banks MadGraph's `AMP()`, the MadGraph graph each of this side's
+/// diagrams belongs to, in enumeration order: entry `d` is diagram `d`'s graph,
+/// 0-based in `AMP()` order, the convention of `amplitude_oracle`'s
+/// `MG_DIAGRAM_ORDER`. The diagrams that share a graph make it up together, and
+/// every graph must have at least one.
+///
+/// `ee_to_ee_4f`: the three four-lepton contacts are three MadGraph graphs and six
+/// diagrams here. MadGraph builds each contact on one canonical pairing of the
+/// four legs and writes both spinor pairings of its Lorentz structures into that
+/// one `AMP()` — its merged ALOHA routine carries the second pairing's terms with
+/// the `-1` of `get_sign_flow` — while this side builds one diagram per pairing on
+/// that pairing's own fermion lines, and the relative Fermi sign is the diagrams'.
+/// Each contact's two diagrams sum to its graph. For the `cll1` and `cee`
+/// contacts the two pairings are Fierz-equal, so each diagram is half the graph
+/// and the wrong relative sign would cancel the contact; for `cle` they differ.
+/// The photon and Z exchanges pair one to one. MadGraph's `AMP(5)`/`AMP(6)` and
+/// `AMP(13)`/`AMP(14)` carry the Standard-Model and SMEFT photon couplings on the
+/// two vertices in either order and are equal, so the values cannot tell which of
+/// each pair is which: those two pairings are banked in enumeration order, and
+/// swapping either is invisible here.
+///
+/// Every other row pairs one diagram to one graph. In `ttx_to_hh_chbox`,
+/// `ht_to_ht_chbox` and `hh_to_hh_chbox` several graphs are equal at every point:
+/// a Yukawa pair whose two couplings are swapped between its vertices, and the
+/// O_Hbox shift of the cubic Higgs coupling against the same shift of the coupling
+/// on the other vertex. Within each such set any assignment fits equally, so the
+/// one banked is arbitrary and a swap inside the set is invisible.
+const MG_GRAPH_DIAGRAMS: &[(&str, &[usize])] = &[
+    ("ee_to_ttxh", &[3, 4, 1, 2, 0]),
+    ("ee_to_ttxh_identity", &[3, 4, 1, 2, 0]),
+    ("ll_to_qqxs_toy_yukawa", TOY_YUKAWA_GRAPHS),
+    ("ll_to_ss_toy_dscalar", &[0, 1, 2, 3]),
+    ("sl_to_sl_toy_dscalar", &[0, 1, 2, 3]),
+    ("ttx_to_hh_chbox", TTX_TO_HH_GRAPHS),
+    ("ht_to_ht_chbox", HT_TO_HT_GRAPHS),
+    ("hh_to_hh_chbox", HH_TO_HH_GRAPHS),
+    (
+        "ee_to_ee_4f",
+        &[
+            0, 0, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+        ],
+    ),
+];
+
+const TOY_YUKAWA_GRAPHS: &[usize] = &[
+    10, 11, 12, 14, 13, 15, 16, 18, 17, 19, 0, 1, 2, 4, 3, 5, 6, 8, 7, 9, 20, 21, 23, 22, 24, 25,
+    26, 28, 27, 29, 30, 31, 33, 32, 34, 35, 36, 38, 37, 39,
+];
+
+const TTX_TO_HH_GRAPHS: &[usize] = &[0, 2, 1, 5, 6, 3, 4, 7, 10, 11, 8, 9, 12, 15, 16, 13, 14];
+
+const HT_TO_HT_GRAPHS: &[usize] = &[0, 3, 4, 1, 2, 5, 10, 11, 9, 8, 6, 7, 12, 15, 16, 13, 14];
+
+const HH_TO_HH_GRAPHS: &[usize] = &[
+    0, 2, 1, 3, 4, 5, 11, 10, 12, 13, 7, 6, 8, 9, 14, 20, 19, 21, 22, 16, 15, 17, 18, 23, 29, 28,
+    30, 31, 25, 24, 26, 27,
+];
+
+/// The per-graph level of a row that banks `AMP()`.
+struct GraphLevel {
+    /// JAMP(1)'s coefficient on each `AMP()`.
+    coefs: Vec<f64>,
+    /// The diagrams that make up each graph, in `AMP()` order.
+    groups: Vec<Vec<usize>>,
+    /// One evaluator per diagram, each compiled from a one-diagram set.
+    per_diagram: Vec<AmplitudeEvaluator>,
+}
+
+impl GraphLevel {
+    /// Reads the row's [`MG_GRAPH_DIAGRAMS`] entry against its table, two-way: a
+    /// table that banks `AMP()` must be declared there, and a declared row must bank
+    /// them. The entry must give every diagram a graph and every one of the NGRAPHS
+    /// graphs a diagram, which is the diagram-count convention stated as a check.
+    fn read(
+        key: &str,
+        table: &serde_json::Value,
+        set: &DiagramSet,
+        model: &UFOModel,
+    ) -> Option<Self> {
+        let declared = MG_GRAPH_DIAGRAMS.iter().find(|(k, _)| *k == key);
+        let (coefs, graph_of) = match (table["jamp_coefficients"].as_array(), declared) {
+            (None, None) => return None,
+            (Some(coefs), Some((_, graph_of))) => (coefs, *graph_of),
+            (Some(_), None) => panic!("{key}: banks AMP() but declares no MG_GRAPH_DIAGRAMS"),
+            (None, Some(_)) => {
+                panic!("{key}: declares MG_GRAPH_DIAGRAMS but its table banks no AMP()")
+            }
+        };
+        let coefs: Vec<f64> = coefs.iter().map(|c| c.as_f64().unwrap()).collect();
+        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
+        assert_eq!(coefs.len(), n_graphs, "{key}: one coefficient per AMP()");
+        assert_eq!(
+            graph_of.len(),
+            set.diagrams.len(),
+            "{key}: MG_GRAPH_DIAGRAMS must name one graph for each diagram"
+        );
+        let mut groups = vec![Vec::new(); n_graphs];
+        for (d, &k) in graph_of.iter().enumerate() {
+            assert!(
+                k < n_graphs,
+                "{key}: diagram {d} names graph {k} of {n_graphs}"
+            );
+            groups[k].push(d);
+        }
+        let empty: Vec<usize> = (0..n_graphs).filter(|&k| groups[k].is_empty()).collect();
+        assert!(empty.is_empty(), "{key}: graphs {empty:?} have no diagram");
+        let per_diagram = set
+            .diagrams
+            .iter()
+            .map(|d| {
+                AmplitudeEvaluator::compile(
+                    &DiagramSet {
+                        particles_in: set.particles_in.clone(),
+                        particles_out: set.particles_out.clone(),
+                        polarizations: set.polarizations.clone(),
+                        diagrams: vec![d.clone()],
+                    },
+                    model,
+                )
+                .unwrap()
+            })
+            .collect();
+        Some(GraphLevel {
+            coefs,
+            groups,
+            per_diagram,
+        })
+    }
+
+    /// `(c_k · AMP_k, the sum of graph k's diagrams, where)` for each graph of one
+    /// helicity entry, from MadGraph's `amps` and this side's per-diagram values.
+    fn entries(
+        &self,
+        key: &str,
+        amps: &serde_json::Value,
+        diagram_values: &[C<f64>],
+        what: &str,
+    ) -> Vec<(C<f64>, C<f64>, String)> {
+        let amps = amps.as_array().unwrap();
+        assert_eq!(
+            amps.len(),
+            self.coefs.len(),
+            "{key}: {what}: one AMP() per graph"
+        );
+        amps.iter()
+            .zip(&self.groups)
+            .enumerate()
+            .map(|(k, (amp, group))| {
+                let mg = complex(amp) * self.coefs[k];
+                let vg: C<f64> = group.iter().map(|&d| diagram_values[d]).sum();
+                (
+                    mg,
+                    vg,
+                    format!("{what}, AMP({}) = diagrams {group:?}", k + 1),
+                )
+            })
+            .collect()
+    }
+}
+
+/// The model a table was computed in: the interned SM, the model and restrict card
+/// of the manifest row it names, or (`"ufo"`) the committed model directory and
+/// restrict card it records itself, for a model card no manifest row carries.
+fn table_model(key: &str, table: &serde_json::Value) -> Arc<UFOModel> {
+    match table["model"].as_str().unwrap() {
+        "sm" => sm_model(),
+        "ufo" => {
+            let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+            let ufo = &table["ufo"];
+            let dir = repo.join(ufo["dir"].as_str().unwrap());
+            let card = repo.join(ufo["restrict_card"].as_str().unwrap());
+            UFOModel::load(&dir, Some(&card))
+                .unwrap_or_else(|e| panic!("{key}: load {}: {e}", dir.display()))
+        }
+        row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
+    }
+}
+
 struct Measured {
     g: C<f64>,
     worst_flow: f64,
     worst_flow_where: String,
     worst_m2: f64,
     worst_m2_where: String,
+    worst_graph: f64,
+    worst_graph_where: String,
     n_entries: usize,
+    n_graph_entries: usize,
 }
 
 impl Measured {
@@ -74,6 +265,12 @@ impl Measured {
             out.push(format!(
                 "{key}: {} ({:.3e})",
                 self.worst_m2_where, self.worst_m2
+            ));
+        }
+        if self.worst_graph >= REL_TOL {
+            out.push(format!(
+                "{key}: {} ({:.3e} of the largest graph)",
+                self.worst_graph_where, self.worst_graph
             ));
         }
         if (self.g.norm() - 1.0).abs() >= REL_TOL {
@@ -100,13 +297,10 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
     let path = table_path(key);
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let table: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let model = match table["model"].as_str().unwrap() {
-        "sm" => sm_model(),
-        row => common::model_for_row(row).unwrap_or_else(|e| panic!("{key}: {e}")),
-    };
+    let model = table_model(key, &table);
     let mut altered = (*model).clone();
     alter(&mut altered);
-    let model = std::sync::Arc::new(altered);
+    let model = Arc::new(altered);
     let process = table["process"].as_str().unwrap();
     let card: ParamCard = table["param_card"]
         .as_array()
@@ -137,6 +331,13 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
                 .collect()
         })
         .collect();
+    let graphs = GraphLevel::read(key, &table, &set, model.as_ref());
+    let per_diagram_bound: Vec<BoundAmplitude<f64>> = graphs
+        .iter()
+        .flat_map(|level| level.per_diagram.iter())
+        .map(|ev| BoundAmplitude::<f64>::bind(ev, &evaluated))
+        .collect();
+
     let ours: std::collections::BTreeSet<&Vec<i32>> = evaluator.helicities().iter().collect();
     let theirs: std::collections::BTreeSet<&Vec<i32>> = helicities.iter().collect();
     assert_eq!(
@@ -147,6 +348,8 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
     // (MadGraph, ours) per flow entry, and per-helicity |M|² pairs.
     let mut flows: Vec<(C<f64>, C<f64>, String)> = Vec::new();
     let mut m2: Vec<(f64, f64, String)> = Vec::new();
+    // (c_k · AMP_k, the group's summed diagrams) per graph entry.
+    let mut graph_entries: Vec<(C<f64>, C<f64>, String)> = Vec::new();
     for (pi, point) in table["points"].as_array().unwrap().iter().enumerate() {
         let momenta: Vec<LorentzVector<f64>> = point["momenta"]
             .as_array()
@@ -191,6 +394,18 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
                 ours_m2,
                 format!("point {pi}, helicities {hel:?}"),
             ));
+            if let Some(level) = &graphs {
+                let diagram_values: Vec<C<f64>> = per_diagram_bound
+                    .iter()
+                    .map(|b| b.eval_amplitude(&momenta, hel, &mut b.scratch_space()))
+                    .collect();
+                graph_entries.extend(level.entries(
+                    key,
+                    &entry["amps"],
+                    &diagram_values,
+                    &format!("point {pi}, helicities {hel:?}"),
+                ));
+            }
         }
     }
 
@@ -224,13 +439,28 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
             );
         }
     }
+    let graph_scale = graph_entries.iter().map(|e| e.0.norm()).fold(0.0, f64::max);
+    let (mut worst_graph, mut worst_graph_where) = (0.0f64, String::new());
+    for (mg, vg, what) in &graph_entries {
+        let dev = (vg - g * mg).norm() / graph_scale;
+        if dev > worst_graph {
+            worst_graph = dev;
+            worst_graph_where = format!("{what}: vibegraph {vg:?} against G·c·AMP {:?}", g * mg);
+        }
+    }
+    if graphs.is_some() {
+        assert!(graph_scale > 0.0, "{key}: every banked AMP() vanishes");
+    }
     Measured {
         g,
         worst_flow,
         worst_flow_where,
         worst_m2,
         worst_m2_where,
+        worst_graph,
+        worst_graph_where,
         n_entries: flows.len(),
+        n_graph_entries: graph_entries.len(),
     }
 }
 
@@ -242,8 +472,8 @@ fn measure_with(key: &str, alter: impl FnOnce(&mut UFOModel)) -> Measured {
 const KNOWN_DISAGREEMENT: &[(&str, &str)] = &[(
     "wpwm_to_epem",
     "a W pair at the anchor beside a final-state lepton line: the neutrino exchange \
-     comes out with the wrong sign relative to the photon and Z s-channel, while \
-     `e+ e- > w+ w-` (the same graphs crossed) agrees",
+         comes out with the wrong sign relative to the photon and Z s-channel, while \
+         `e+ e- > w+ w-` (the same graphs crossed) agrees",
 )];
 
 fn check(key: &str) {
@@ -253,6 +483,12 @@ fn check(key: &str) {
         "{key}: {} flow entries, G = {:?}, worst flow {:.3e}, worst |M|² {:.3e}",
         m.n_entries, m.g, m.worst_flow, m.worst_m2
     );
+    if m.n_graph_entries > 0 {
+        println!(
+            "{key}: {} graph entries, worst graph {:.3e}",
+            m.n_graph_entries, m.worst_graph
+        );
+    }
     let disagreements = m.disagreements(key);
     match (disagreements.is_empty(), known) {
         (true, None) => {}
@@ -333,6 +569,73 @@ fn tata_to_ttxhh() {
 #[test]
 fn bbx_to_hh() {
     check("bbx_to_hh");
+}
+
+/// Bhabha scattering through the four-lepton contacts: each contact's two spinor
+/// pairings interfere with each other and with photon and Z exchange in both
+/// channels, compared per MadGraph graph as well as per helicity.
+#[test]
+fn ee_to_ee_4f() {
+    check("ee_to_ee_4f");
+}
+
+/// The top Yukawa as MadGraph's `sm` writes it, `FFS4 = ProjM + ProjP`, with the
+/// Higgs emitted off the final-state top pair beside Higgsstrahlung: the control
+/// for the bare-`Identity` spelling of the same Yukawa.
+#[test]
+fn ee_to_ttxh() {
+    check("ee_to_ttxh");
+}
+
+/// SMEFTsim's bare `Identity(2,1)` top Yukawa rooted as a fermion current on the
+/// crossed top line: the four Higgs-off-top graphs carry the crossed-line −1 that the
+/// `ProjM + ProjP` spelling of [`ee_to_ttxh`] takes, relative to Higgsstrahlung.
+#[test]
+fn ee_to_ttxh_identity() {
+    check("ee_to_ttxh_identity");
+}
+
+/// The toy model's bare `Identity` and `Gamma5` Yukawas emitted off a final-state
+/// quark pair and off the initial lepton line: both bilinears take the same
+/// crossed-line −1 as fermion currents.
+#[test]
+fn ll_to_qqxs_toy_yukawa() {
+    check("ll_to_qqxs_toy_yukawa");
+}
+
+/// The derivative cubic scalar vertex as a scalar current, beside its plain
+/// partner: both take the all-scalar −1.
+#[test]
+fn ll_to_ss_toy_dscalar() {
+    check("ll_to_ss_toy_dscalar");
+}
+
+/// The derivative cubic scalar vertex as the amplitude, with a scalar on leg 0:
+/// both it and its plain partner take the all-scalar −1.
+#[test]
+fn sl_to_sl_toy_dscalar() {
+    check("sl_to_sl_toy_dscalar");
+}
+
+/// SMEFTsim's derivative Higgs self-couplings (`SSS2`, `SSS3`) as the s-channel
+/// Higgs current off an initial top pair.
+#[test]
+fn ttx_to_hh_chbox() {
+    check("ttx_to_hh_chbox");
+}
+
+/// SMEFTsim's derivative Higgs self-couplings (`SSS2`, `SSS3`) as the amplitude of
+/// the t-channel Higgs exchange, with a Higgs on leg 0.
+#[test]
+fn ht_to_ht_chbox() {
+    check("ht_to_ht_chbox");
+}
+
+/// SMEFTsim's derivative quartic Higgs contacts (`SSSS2`, `SSSS3`) and derivative
+/// cubic vertices beside their plain partners, in four-Higgs scattering.
+#[test]
+fn hh_to_hh_chbox() {
+    check("hh_to_hh_chbox");
 }
 
 /// The gluon-initiated `t t~ + jet` subprocess: a four-gluon contact beside the top

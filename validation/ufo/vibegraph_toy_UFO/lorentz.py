@@ -34,6 +34,13 @@ SSS1 = Lorentz(name='SSS1',
                spins=[1, 1, 1],
                structure='1')
 
+# A derivative cubic scalar coupling, symmetric in its three legs so a vertex of
+# three identical scalars has one reading whichever leg sits in which slot. It is
+# the shape of SMEFTsim's `SSS2`, the (dH)^2 piece of O_Hbox and O_HDD.
+SSSD = Lorentz(name='SSSD',
+               spins=[1, 1, 1],
+               structure='P(-1,1)*P(-1,2) + P(-1,1)*P(-1,3) + P(-1,2)*P(-1,3)')
+
 FFS1 = Lorentz(name='FFS1',
                spins=[2, 2, 1],
                structure='Identity(2,1)')
