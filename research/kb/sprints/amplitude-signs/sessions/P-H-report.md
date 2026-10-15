@@ -5,6 +5,7 @@ description: "Review of PR #31 on four points. The bridge's one function is spli
 status: draft
 tags: [hygiene, evaluator, oracle, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
 sources:
   - {id: fix, resource: "https://github.com/nsmith-/vibegraph/commit/3d84f53", title: "test(eval): tighten the probe bridge and delete the test it subsumes"}
 ---
