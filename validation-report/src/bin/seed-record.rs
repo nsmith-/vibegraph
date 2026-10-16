@@ -84,14 +84,9 @@ struct Channel {
 
 impl Channel {
     fn parse(text: &str) -> Result<Channel, String> {
-        let mut lines = text.lines();
-        let first = lines.next().ok_or("empty results.dat")?;
-        let mut head = first.split_whitespace().map(fortran_float);
-        let (Some(Some(value)), Some(Some(error))) = (head.next(), head.next()) else {
-            return Err(format!("no value and error on the first line {first:?}"));
-        };
+        let (value, error) = value_and_error(text)?;
         let mut iterations = Vec::new();
-        for line in lines {
+        for line in text.lines().skip(1) {
             if line.contains('<') {
                 break;
             }
@@ -130,8 +125,9 @@ impl Channel {
     }
 }
 
-/// The value and error on the first line of the combined `results.dat`.
-fn parse_total(text: &str) -> Result<(f64, f64), String> {
+/// The value and error on the first line of a `results.dat`: the combined
+/// one's total, or one channel's.
+fn value_and_error(text: &str) -> Result<(f64, f64), String> {
     let first = text.lines().next().ok_or("empty results.dat")?;
     let mut fields = first.split_whitespace().map(fortran_float);
     match (fields.next().flatten(), fields.next().flatten()) {
@@ -257,20 +253,147 @@ fn read(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The subdirectories of `dir`, sorted. An entry that cannot be read is an
+/// error: skipping it would drop a seed or a channel without a word.
 fn sorted_dirs(dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map_err(|e| format!("{}: {e}", dir.display()))?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.is_dir())
-        .collect();
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+        if path.is_dir() {
+            out.push(path);
+        }
+    }
     out.sort();
     Ok(out)
 }
 
+/// The last component of a path the walk itself produced.
+fn dir_name(path: &Path) -> String {
+    path.file_name()
+        .expect("a directory listed by read_dir has a name")
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The digits of a `<prefix><digits>` name: `s<iseed>` for a seed, `w<k>` for a
+/// window.
+fn numbered(name: &str, prefix: char) -> Option<&str> {
+    name.strip_prefix(prefix)
+        .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Every channel `symfact.dat` lists under a run's `SubProcesses/P*`, read from
+/// its `G<tag>/results.dat`.
+struct Channels {
+    by_channel: BTreeMap<String, ChannelValues>,
+    /// The channels' `results.dat` values, summed.
+    sum: f64,
+    /// The equal-weight values summed, and their variances summed.
+    equal_weight: f64,
+    equal_weight_var: f64,
+    count: usize,
+    /// The fewest and most refine iterations any channel recorded.
+    iterations: (usize, usize),
+    /// Per process (`P<N>_*`): its channels' equal-weight sum and variance.
+    parts: BTreeMap<String, (f64, f64)>,
+}
+
+fn read_channels(dir: &Path) -> Result<Channels, String> {
+    let mut c = Channels {
+        by_channel: BTreeMap::new(),
+        sum: 0.0,
+        equal_weight: 0.0,
+        equal_weight_var: 0.0,
+        count: 0,
+        iterations: (usize::MAX, 0),
+        parts: BTreeMap::new(),
+    };
+    for pdir in sorted_dirs(&dir.join("SubProcesses"))? {
+        let symfact = pdir.join("symfact.dat");
+        if !symfact.is_file() {
+            continue;
+        }
+        let name = dir_name(&pdir);
+        let id = subprocess_id(&name)
+            .ok_or_else(|| format!("{}: not a P<N>_ directory", pdir.display()))?;
+        for tag in parse_symfact(&read(&symfact)?)? {
+            let path = pdir.join(format!("G{tag}")).join("results.dat");
+            let channel =
+                Channel::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+            let (m, e) = channel.equal_weight();
+            c.by_channel.insert(
+                format!("{name}/G{tag}"),
+                ChannelValues {
+                    value_pb: channel.value,
+                    err_pb: channel.error,
+                    equal_weight_pb: m,
+                    iterations: channel.iterations.len(),
+                },
+            );
+            c.sum += channel.value;
+            c.equal_weight += m;
+            c.equal_weight_var += e * e;
+            let part = c.parts.entry(id.clone()).or_default();
+            part.0 += m;
+            part.1 += e * e;
+            c.count += 1;
+            c.iterations.0 = c.iterations.0.min(channel.iterations.len());
+            c.iterations.1 = c.iterations.1.max(channel.iterations.len());
+        }
+    }
+    if c.count == 0 {
+        return Err(format!(
+            "{}: no channel listed by any symfact.dat",
+            dir.display()
+        ));
+    }
+    Ok(c)
+}
+
+/// Per process, where the run's `init.txt` lists several: the `<init>` cross
+/// section as reported, and the equal-weight sum over that process's channels.
+/// Empty for a single-process run or one that kept no `<init>` block.
+fn split_by_lprup(
+    dir: &Path,
+    parts: &BTreeMap<String, (f64, f64)>,
+) -> Result<BTreeMap<String, PartValues>, String> {
+    let mut by_lprup = BTreeMap::new();
+    let init_path = dir.join("init.txt");
+    if !init_path.is_file() {
+        return Ok(by_lprup);
+    }
+    let init = parse_init(&read(&init_path)?)?;
+    if init.len() <= 1 {
+        return Ok(by_lprup);
+    }
+    let init_ids: BTreeSet<&String> = init.keys().collect();
+    let channel_ids: BTreeSet<&String> = parts.keys().collect();
+    if init_ids != channel_ids {
+        return Err(format!(
+            "{}: <init> lists processes {init_ids:?}, the subprocess directories are \
+             {channel_ids:?}",
+            dir.display()
+        ));
+    }
+    for (id, &(xsec, xerr)) in &init {
+        let (m, v) = parts[id];
+        by_lprup.insert(
+            id.clone(),
+            PartValues {
+                reported_pb: xsec,
+                reported_err_pb: xerr,
+                equal_weight_pb: m,
+                equal_weight_err_pb: v.sqrt(),
+            },
+        );
+    }
+    Ok(by_lprup)
+}
+
 fn read_run(dir: &Path) -> Result<RunValues, String> {
     let total_path = dir.join("SubProcesses/results.dat");
-    let reported =
-        parse_total(&read(&total_path)?).map_err(|e| format!("{}: {e}", total_path.display()))?;
+    let reported = value_and_error(&read(&total_path)?)
+        .map_err(|e| format!("{}: {e}", total_path.display()))?;
     let banner = read(&dir.join("banner.txt"))?;
     let card_int = |key: &str| -> Result<u64, String> {
         let v = banner_value(&banner, key)
@@ -305,113 +428,38 @@ fn read_run(dir: &Path) -> Result<RunValues, String> {
             dir.display()
         ));
     }
-    let mut by_channel = BTreeMap::new();
-
-    let mut sum = 0.0;
-    let mut ew = 0.0;
-    let mut ew_var = 0.0;
-    let mut channels = 0usize;
-    let mut iterations = (usize::MAX, 0usize);
-    let mut parts: BTreeMap<String, (f64, f64)> = BTreeMap::new();
-    for pdir in sorted_dirs(&dir.join("SubProcesses"))? {
-        let symfact = pdir.join("symfact.dat");
-        if !symfact.is_file() {
-            continue;
-        }
-        let name = pdir.file_name().unwrap().to_string_lossy().into_owned();
-        let id = subprocess_id(&name)
-            .ok_or_else(|| format!("{}: not a P<N>_ directory", pdir.display()))?;
-        for tag in parse_symfact(&read(&symfact)?)? {
-            let path = pdir.join(format!("G{tag}")).join("results.dat");
-            let channel =
-                Channel::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
-            let (m, e) = channel.equal_weight();
-            by_channel.insert(
-                format!("{name}/G{tag}"),
-                ChannelValues {
-                    value_pb: channel.value,
-                    err_pb: channel.error,
-                    equal_weight_pb: m,
-                    iterations: channel.iterations.len(),
-                },
-            );
-            sum += channel.value;
-            ew += m;
-            ew_var += e * e;
-            let part = parts.entry(id.clone()).or_default();
-            part.0 += m;
-            part.1 += e * e;
-            channels += 1;
-            iterations.0 = iterations.0.min(channel.iterations.len());
-            iterations.1 = iterations.1.max(channel.iterations.len());
-        }
-    }
-    if channels == 0 {
-        return Err(format!(
-            "{}: no channel listed by any symfact.dat",
-            dir.display()
-        ));
-    }
+    let channels = read_channels(dir)?;
     let scale = reported.0.abs().max(f64::MIN_POSITIVE);
-    if (sum - reported.0).abs() > CHANNEL_SUM_TOLERANCE * scale {
+    if (channels.sum - reported.0).abs() > CHANNEL_SUM_TOLERANCE * scale {
         return Err(format!(
-            "{}: the channels sum to {sum:.6e}, results.dat reports {:.6e}: the kept channels are \
+            "{}: the channels sum to {:.6e}, results.dat reports {:.6e}: the kept channels are \
              not the ones MadEvent combined",
             dir.display(),
+            channels.sum,
             reported.0
         ));
     }
-
-    let mut by_lprup = BTreeMap::new();
-    let init_path = dir.join("init.txt");
-    if init_path.is_file() {
-        let init = parse_init(&read(&init_path)?)?;
-        if init.len() > 1 {
-            let init_ids: BTreeSet<&String> = init.keys().collect();
-            let channel_ids: BTreeSet<&String> = parts.keys().collect();
-            if init_ids != channel_ids {
-                return Err(format!(
-                    "{}: <init> lists processes {init_ids:?}, the subprocess directories are \
-                     {channel_ids:?}",
-                    dir.display()
-                ));
-            }
-            for (id, &(xsec, xerr)) in &init {
-                let (m, v) = parts[id];
-                by_lprup.insert(
-                    id.clone(),
-                    PartValues {
-                        reported_pb: xsec,
-                        reported_err_pb: xerr,
-                        equal_weight_pb: m,
-                        equal_weight_err_pb: v.sqrt(),
-                    },
-                );
-            }
-        }
-    }
+    let by_lprup = split_by_lprup(dir, &channels.parts)?;
 
     Ok(RunValues {
         iseed,
         nevents,
         reported,
-        equal_weight: (ew, ew_var.sqrt()),
-        channels,
-        iterations,
+        equal_weight: (channels.equal_weight, channels.equal_weight_var.sqrt()),
+        channels: channels.count,
+        iterations: channels.iterations,
         by_lprup,
         hard_survey,
         run_config,
         events_written,
-        by_channel,
+        by_channel: channels.by_channel,
     })
 }
 
 /// The seed's kept directory: one run, or one run per `w<k>` window.
 fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
-    let name = seed_dir.file_name().unwrap().to_string_lossy().into_owned();
-    let iseed: u64 = name
-        .strip_prefix('s')
-        .and_then(|s| s.parse().ok())
+    let iseed: u64 = numbered(&dir_name(seed_dir), 's')
+        .and_then(|digits| digits.parse().ok())
         .ok_or_else(|| format!("{}: not an s<iseed> directory", seed_dir.display()))?;
     let wall_s = read(&seed_dir.join("vg_seed_result.txt"))?
         .split_whitespace()
@@ -421,13 +469,7 @@ fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
 
     let windows: Vec<PathBuf> = sorted_dirs(seed_dir)?
         .into_iter()
-        .filter(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .strip_prefix('w')
-                .is_some_and(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_digit()))
-        })
+        .filter(|p| numbered(&dir_name(p), 'w').is_some())
         .collect();
     let runs: Vec<RunValues> = if windows.is_empty() {
         vec![read_run(seed_dir)?]
@@ -482,10 +524,7 @@ fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
             .unwrap_or(seed_dir)
             .to_string_lossy()
             .into_owned(),
-        windows: windows
-            .iter()
-            .map(|w| w.file_name().unwrap().to_string_lossy().into_owned())
-            .collect(),
+        windows: windows.iter().map(|w| dir_name(w)).collect(),
         by_lprup: runs[0].by_lprup.clone(),
         hard_survey: runs[0].hard_survey,
         min_events: runs[0].run_config.0,
@@ -498,7 +537,7 @@ fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
                 .iter()
                 .zip(&runs)
                 .flat_map(|(w, r)| {
-                    let w = w.file_name().unwrap().to_string_lossy().into_owned();
+                    let w = dir_name(w);
                     r.by_channel
                         .iter()
                         .map(move |(k, v)| (format!("{w}/{k}"), *v))
@@ -558,8 +597,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
 fn build_record(args: &Args) -> Result<SeedRecord, String> {
     let mut seeds = Vec::new();
     for dir in sorted_dirs(&args.kept)? {
-        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
-        if name.starts_with('s') && name[1..].chars().all(|c| c.is_ascii_digit()) {
+        if numbered(&dir_name(&dir), 's').is_some() {
             seeds.push(read_seed(&args.kept, &dir)?);
         }
     }
@@ -786,18 +824,28 @@ mod tests {
         )
     }
 
-    /// A scratch directory unique to one test.
-    fn scratch(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("vg-seed-record-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    /// A scratch directory, removed when the test ends however it ends.
+    fn scratch() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix("vg-seed-record-")
+            .tempdir()
+            .unwrap()
     }
 
     fn write(path: &Path, text: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
+    }
+
+    /// The message of the panic `f` raises; fails when it does not panic.
+    fn panic_message(f: impl FnOnce()) -> String {
+        let payload =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).expect_err("the call panics");
+        payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+            .expect("a printable panic payload")
     }
 
     /// The pinned run's files under `dir`, as `bank_seeded_sigma.sh` keeps them.
@@ -862,7 +910,10 @@ mod tests {
     fn symfact_lists_the_channels_madevent_sums() {
         assert_eq!(parse_symfact(SYMFACT).unwrap(), vec!["1", "2.1", "2.2"]);
         assert_eq!(parse_symfact("1 1\n2 -1\n3 2\n").unwrap(), vec!["1", "3"]);
-        assert!(parse_symfact("1\n").is_err());
+        let err = parse_symfact("1\n").unwrap_err();
+        assert!(err.contains("symfact.dat line"), "{err}");
+        let err = parse_symfact("1 x\n").unwrap_err();
+        assert!(err.contains("symfact.dat multiplicity"), "{err}");
     }
 
     #[test]
@@ -887,9 +938,10 @@ mod tests {
     /// MadEvent's total, and the `Hel` directory is no channel.
     #[test]
     fn a_kept_run_sums_the_listed_channels_to_madevents_total() {
-        let dir = scratch("run");
-        keep_run(&dir, 7, 2000);
-        let run = read_run(&dir).unwrap();
+        let tmp = scratch();
+        let dir = tmp.path();
+        keep_run(dir, 7, 2000);
+        let run = read_run(dir).unwrap();
         assert_eq!((run.iseed, run.nevents), (7, 2000));
         assert_eq!(run.reported, (2024.8, 1.8766));
         assert_eq!(run.channels, 3);
@@ -898,22 +950,31 @@ mod tests {
         let want = (10.737 + 10.801 + 10.759) / 3.0 + g21;
         assert!((run.equal_weight.0 - want).abs() < 1e-9);
         assert!(run.by_lprup.is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A kept run missing one of its channels no longer sums to the total, and
     /// is refused rather than recorded low.
     #[test]
     fn a_run_missing_a_channel_is_refused() {
-        let dir = scratch("missing");
-        keep_run(&dir, 7, 2000);
+        let tmp = scratch();
+        let dir = tmp.path();
+        keep_run(dir, 7, 2000);
         write(
             &dir.join("SubProcesses/P1_ll_ll/symfact.dat"),
             "            1            1\n2.2            1\n",
         );
-        let err = read_run(&dir).unwrap_err();
+        let err = read_run(dir).unwrap_err();
         assert!(err.contains("not the ones MadEvent combined"), "{err}");
-        let _ = std::fs::remove_dir_all(&dir);
+        // One listing no channel at all says so.
+        write(
+            &dir.join("SubProcesses/P1_ll_ll/symfact.dat"),
+            "            1           -1\n",
+        );
+        let err = read_run(dir).unwrap_err();
+        assert!(
+            err.contains("no channel listed by any symfact.dat"),
+            "{err}"
+        );
     }
 
     fn args(kept: &Path, budget: u64) -> Args {
@@ -931,7 +992,8 @@ mod tests {
 
     #[test]
     fn a_record_carries_every_seed_and_screens_the_four_times_budget_ones() {
-        let row = scratch("record");
+        let tmp = scratch();
+        let row = tmp.path();
         for iseed in 1..=5 {
             keep_run(&row.join(format!("s{iseed}")), iseed, 2000);
             write(
@@ -946,7 +1008,7 @@ mod tests {
                 "2024.8 1.8766 30 abc\n",
             );
         }
-        let record = build_record(&args(&row, 2000)).unwrap();
+        let record = build_record(&args(row, 2000)).unwrap();
         assert_eq!(record.seeds.len(), 7);
         assert_eq!(record.at_budget().len(), 5);
         assert_eq!(record.screening().len(), 2);
@@ -965,17 +1027,17 @@ mod tests {
         assert_eq!(reference.estimator, Estimator::Reported);
         assert_eq!(reference.read.n, MIN_SEEDS);
         assert_eq!(reference.mean(), 2024.8);
-        let _ = std::fs::remove_dir_all(&row);
     }
 
     #[test]
     fn a_partitioned_seed_sums_its_windows() {
-        let row = scratch("windows");
+        let tmp = scratch();
+        let row = tmp.path();
         let seed = row.join("s3");
         keep_run(&seed.join("w1"), 3, 2000);
         keep_run(&seed.join("w2"), 3, 2000);
         write(&seed.join("vg_seed_result.txt"), "- - 40 abc\n");
-        let s = read_seed(&row, &seed).unwrap();
+        let s = read_seed(row, &seed).unwrap();
         assert_eq!(s.windows, vec!["w1", "w2"]);
         assert_eq!(s.reported_pb, 2.0 * 2024.8);
         assert!((s.reported_err_pb - 2f64.sqrt() * 1.8766).abs() < 1e-12);
@@ -984,21 +1046,25 @@ mod tests {
 
         // A window run under another seed is not this seed's.
         keep_run(&seed.join("w3"), 4, 2000);
-        assert!(read_seed(&row, &seed).unwrap_err().contains("iseed 4"));
-        let _ = std::fs::remove_dir_all(&row);
+        assert!(read_seed(row, &seed).unwrap_err().contains("iseed 4"));
     }
 
-    #[test]
-    fn a_multi_process_run_splits_by_lprup() {
-        let dir = scratch("lprup");
-        keep_run(&dir, 7, 2000);
-        // Two processes, @0 and @1, as the MLM rows have them.
+    /// The pinned run as two processes, `@0` and `@1`, as the MLM rows have them.
+    fn keep_two_process_run(dir: &Path, iseed: u64, nevents: u64) {
+        keep_run(dir, iseed, nevents);
         let p = dir.join("SubProcesses");
         std::fs::rename(p.join("P1_ll_ll"), p.join("P0_ll_ll")).unwrap();
         write(&p.join("P1_ll_llg/symfact.dat"), "1 1\n");
         write(&p.join("P1_ll_llg/G1/results.dat"), G22);
         write(&dir.join("init.txt"), INIT_TWO);
-        let run = read_run(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_multi_process_run_splits_by_lprup() {
+        let tmp = scratch();
+        let dir = tmp.path();
+        keep_two_process_run(dir, 7, 2000);
+        let run = read_run(dir).unwrap();
         assert_eq!(run.by_lprup.len(), 2);
         assert_eq!(run.by_lprup["0"].reported_pb, 513.21);
         assert!((run.by_lprup["0"].equal_weight_pb - run.equal_weight.0).abs() < 1e-9);
@@ -1009,8 +1075,7 @@ mod tests {
             &dir.join("init.txt"),
             &INIT_TWO.replace(" 1\n<gen", " 2\n<gen"),
         );
-        assert!(read_run(&dir).unwrap_err().contains("<init> lists"));
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(read_run(dir).unwrap_err().contains("<init> lists"));
     }
 
     fn seed(iseed: u64, nevents: u64, reported: f64, ew: f64) -> SeedRun {
@@ -1104,7 +1169,8 @@ mod tests {
         assert!(r.check().unwrap_err().contains("distinct iseeds"));
         let mut r = five_and_two();
         r.schema = SCHEMA + 1;
-        assert!(r.check().is_err());
+        let err = r.check().unwrap_err();
+        assert!(err.contains(&format!("schema {}", SCHEMA + 1)), "{err}");
     }
 
     #[test]
@@ -1141,27 +1207,41 @@ mod tests {
             );
         }
         assert_eq!(r.part_reference("1").mean(), 50.0);
-        let missing = std::panic::catch_unwind(|| r.part_reference("2"));
-        assert!(missing.is_err());
+        let missing = panic_message(|| {
+            r.part_reference("2");
+        });
+        assert!(missing.contains("records no process 2"), "{missing}");
     }
 
     #[test]
     fn a_work_area_without_a_record_reads_none() {
-        let dir = scratch("none");
-        assert!(seed_record::read(&dir, "ee_to_mumu").is_none());
-        let path = seed_record::record_path(&dir, "ee_to_mumu");
+        let tmp = scratch();
+        let dir = tmp.path();
+        assert!(seed_record::read(dir, "ee_to_mumu").is_none());
+        let path = seed_record::record_path(dir, "ee_to_mumu");
         write(&path, &serde_json::to_string(&five_and_two()).unwrap());
         // A record filed under another row's name is a broken bundle.
-        let wrong = std::panic::catch_unwind(|| seed_record::read(&dir, "ee_to_mumu"));
-        assert!(wrong.is_err());
+        let wrong = panic_message(|| {
+            seed_record::read(dir, "ee_to_mumu");
+        });
+        assert!(wrong.contains("records row row"), "{wrong}");
         let mut r = five_and_two();
         r.row = "ee_to_mumu".into();
         write(&path, &serde_json::to_string(&r).unwrap());
         assert_eq!(
-            seed_record::reference(&dir, "ee_to_mumu").unwrap().mean(),
+            seed_record::reference(dir, "ee_to_mumu").unwrap().mean(),
             100.0
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        // So is one that fails its check, and the panic names the file.
+        r.seeds[2].events_written = 99;
+        write(&path, &serde_json::to_string(&r).unwrap());
+        let broken = panic_message(|| {
+            seed_record::read(dir, "ee_to_mumu");
+        });
+        assert!(
+            broken.contains(&format!("{}: [ee_to_mumu] seed 3 wrote 99", path.display())),
+            "{broken}"
+        );
     }
 
     #[test]
@@ -1171,7 +1251,8 @@ mod tests {
             .replace("10000 )", "1000)")
             .replace("30000 )", "2000)");
         assert_eq!(parse_run_config(&template).unwrap(), (1000, 2000));
-        assert!(parse_run_config("      parameter (min_events = 10)\n").is_err());
+        let err = parse_run_config("      parameter (min_events = 10)\n").unwrap_err();
+        assert!(err.contains("sets max_events 0 times"), "{err}");
         // MadEvent's pass_in_difficult_integration_mode: 2500 (2 + r), 10000 (1 + r).
         assert_eq!(seed_record::survey_rate(1000, 2000), Some(0));
         assert_eq!(seed_record::survey_rate(7500, 20000), Some(1));
@@ -1201,21 +1282,22 @@ mod tests {
     /// card asked for is refused, as is a run with no positive finite σ.
     #[test]
     fn a_short_event_file_or_a_non_numeric_sigma_is_refused() {
-        let dir = scratch("short");
-        keep_run(&dir, 7, 2000);
-        assert!(read_run(&dir).is_ok());
+        let tmp = scratch();
+        let dir = tmp.path();
+        keep_run(dir, 7, 2000);
+        assert!(read_run(dir).is_ok());
         write(&dir.join("events_written.txt"), "1999\n");
-        let err = read_run(&dir).unwrap_err();
+        let err = read_run(dir).unwrap_err();
         assert!(err.contains("holds 1999 events"), "{err}");
         write(&dir.join("events_written.txt"), "2000\n");
         for total in ["NaN 0.1 0 0\n", "0.00000E+00 0.0 0 0\n", "-0.1E+01 0.1 0\n"] {
             write(&dir.join("SubProcesses/results.dat"), total);
-            let err = read_run(&dir).unwrap_err();
+            let err = read_run(dir).unwrap_err();
             assert!(err.contains("not a positive finite"), "{total}: {err}");
         }
         std::fs::remove_file(dir.join("SubProcesses/results.dat")).unwrap();
-        assert!(read_run(&dir).is_err());
-        let _ = std::fs::remove_dir_all(&dir);
+        let err = read_run(dir).unwrap_err();
+        assert!(err.contains("SubProcesses/results.dat: "), "{err}");
     }
 
     #[test]
@@ -1231,11 +1313,48 @@ mod tests {
         assert!(r.check().unwrap_err().contains("not a positive"));
     }
 
+    /// A NaN or an infinity in any of a seed's four values is refused: the
+    /// positive-σ refusal cannot stand in, since `NaN <= 0` is false.
+    #[test]
+    fn a_record_refuses_a_non_finite_value() {
+        type Field = fn(&mut SeedRun) -> &mut f64;
+        let fields: [Field; 4] = [
+            |s| &mut s.reported_pb,
+            |s| &mut s.reported_err_pb,
+            |s| &mut s.equal_weight_pb,
+            |s| &mut s.equal_weight_err_pb,
+        ];
+        for (i, field) in fields.iter().enumerate() {
+            for bad in [f64::NAN, f64::INFINITY] {
+                let mut r = five_and_two();
+                *field(&mut r.seeds[1]) = bad;
+                let err = r.check().unwrap_err();
+                assert!(
+                    err.contains("seed 2 has a non-finite value"),
+                    "field {i}, {bad}: {err}"
+                );
+            }
+        }
+    }
+
+    /// `reference` checks the record itself, so a record built in memory is held
+    /// to what a record read from the bundle is.
+    #[test]
+    fn a_record_that_fails_its_check_is_no_reference() {
+        let mut r = five_and_two();
+        r.seeds[2].events_written = 99;
+        let err = panic_message(|| {
+            r.reference();
+        });
+        assert!(err.contains("seed 3 wrote 99 events"), "{err}");
+    }
+
     #[test]
     fn a_kept_run_records_every_channel_and_its_survey() {
-        let dir = scratch("channels");
-        keep_run(&dir, 7, 2000);
-        let run = read_run(&dir).unwrap();
+        let tmp = scratch();
+        let dir = tmp.path();
+        keep_run(dir, 7, 2000);
+        let run = read_run(dir).unwrap();
         assert_eq!(run.hard_survey, 2);
         assert_eq!(run.run_config, (10000, 30000));
         assert_eq!(run.events_written, 2000);
@@ -1246,7 +1365,6 @@ mod tests {
             (g1.value_pb, g1.err_pb, g1.iterations),
             (10.767, 0.028571, 3)
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn with_channels(mut s: SeedRun, channels: &[(&str, f64, f64)]) -> SeedRun {
@@ -1308,15 +1426,16 @@ mod tests {
 
     #[test]
     fn a_partitioned_seed_names_each_windows_channels() {
-        let row = scratch("windowch");
+        let tmp = scratch();
+        let row = tmp.path();
         let seed = row.join("s3");
         keep_run(&seed.join("w1"), 3, 2000);
         keep_run(&seed.join("w2"), 3, 2000);
         write(&seed.join("w2/events_written.txt"), "1990\n");
         write(&seed.join("vg_seed_result.txt"), "- - 40 abc\n");
-        assert!(read_seed(&row, &seed).unwrap_err().contains("holds 1990"));
+        assert!(read_seed(row, &seed).unwrap_err().contains("holds 1990"));
         write(&seed.join("w2/events_written.txt"), "2000\n");
-        let s = read_seed(&row, &seed).unwrap();
+        let s = read_seed(row, &seed).unwrap();
         assert_eq!(s.by_channel.len(), 6);
         assert!(s.by_channel.contains_key("w2/P1_ll_ll/G2.1"));
         assert_eq!(
@@ -1329,9 +1448,121 @@ mod tests {
                 .replace("10000 )", "7500)")
                 .replace("30000 )", "20000)"),
         );
-        assert!(read_seed(&row, &seed)
+        assert!(read_seed(row, &seed)
             .unwrap_err()
             .contains("different surveys"));
-        let _ = std::fs::remove_dir_all(&row);
+    }
+
+    /// A partitioned seed's windows are one seed: one budget, one process each.
+    #[test]
+    fn a_partitioned_seed_refuses_windows_at_other_budgets_or_with_several_processes() {
+        let tmp = scratch();
+        let row = tmp.path();
+        let seed = row.join("s3");
+        keep_run(&seed.join("w1"), 3, 2000);
+        keep_run(&seed.join("w2"), 3, 4000);
+        write(&seed.join("vg_seed_result.txt"), "- - 40 abc\n");
+        let err = read_seed(row, &seed).unwrap_err();
+        assert!(err.contains("windows ran different nevents"), "{err}");
+
+        let seed = row.join("s4");
+        keep_two_process_run(&seed.join("w1"), 4, 2000);
+        keep_two_process_run(&seed.join("w2"), 4, 2000);
+        write(&seed.join("vg_seed_result.txt"), "- - 40 abc\n");
+        let err = read_seed(row, &seed).unwrap_err();
+        assert!(
+            err.contains("a partitioned seed with several processes is not supported"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_arguments_refuse_what_they_cannot_read() {
+        let full: Vec<String> = [
+            "--row",
+            "r",
+            "--kept",
+            "k",
+            "--budget",
+            "2000",
+            "--generator",
+            "g",
+            "--tree",
+            "t",
+            "--mg-version",
+            "3.7.1",
+            "--hard-survey",
+            "2",
+        ]
+        .map(String::from)
+        .to_vec();
+        let a = parse_args(&full).unwrap();
+        assert_eq!((a.budget, a.hard_survey, a.validated_ew), (2000, 2, false));
+        let mut ew = full.clone();
+        ew.push("--validated-ew".into());
+        assert!(parse_args(&ew).unwrap().validated_ew);
+
+        let refused = |args: &[String]| parse_args(args).err().expect("refused");
+        let with = |i: usize, value: &str| {
+            let mut args = full.clone();
+            args[i] = value.into();
+            refused(&args)
+        };
+        let err = with(5, "2k");
+        assert!(err.contains("--budget is an event count"), "{err}");
+        let err = with(13, "two");
+        assert!(err.contains("--hard-survey is a run-card integer"), "{err}");
+        let err = with(0, "--rows");
+        assert!(err.contains("unknown argument \"--rows\""), "{err}");
+        let err = refused(&full[2..]);
+        assert!(err.contains("--row is required"), "{err}");
+        let err = refused(&full[..13]);
+        assert!(err.contains("--hard-survey needs a value"), "{err}");
+    }
+
+    /// The screen reads the four-times-budget seeds' own mean against the
+    /// budget's mean (100 ± √0.5 here): two seeds each within two standard errors
+    /// whose mean is not are flagged, and one far seed its partner offsets is
+    /// not.
+    #[test]
+    fn the_screen_reads_the_screening_seeds_mean_not_any_one_seed() {
+        let mut r = five_and_two();
+        for s in r.seeds.iter_mut().filter(|s| s.nevents == 400) {
+            s.reported_pb = 102.2;
+        }
+        let screen = r.summarise().unwrap().screen;
+        // Each: 2.2 / √(1 + 0.5) = 1.80. Their mean: 102.2 ± 1/√2, so
+        // 2.2 / √(0.5 + 0.5) = 2.2.
+        for p in &screen.pulls {
+            assert!((p - 2.2 / 1.5f64.sqrt()).abs() < 1e-12, "{p}");
+        }
+        assert!((screen.mean_pull.unwrap() - 2.2).abs() < 1e-12);
+        assert!(screen.flagged);
+
+        let mut r = five_and_two();
+        let mut screening = r.seeds.iter_mut().filter(|s| s.nevents == 400);
+        screening.next().unwrap().reported_pb = 103.0;
+        screening.next().unwrap().reported_pb = 97.6;
+        let screen = r.summarise().unwrap().screen;
+        // The first alone: 3 / √1.5 = 2.45. Their mean: 100.3 ± 2.7 (the
+        // spread, 3.82/√2), so 0.3 / √(2.7² + 0.5) = 0.11.
+        assert!(screen.pulls[0] > 2.0);
+        let want = 0.3 / (2.7f64.powi(2) + 0.5).sqrt();
+        assert!((screen.mean_pull.unwrap() - want).abs() < 1e-9);
+        assert!(!screen.flagged);
+    }
+
+    /// Equal weight minus reported, paired per seed: its mean and the standard
+    /// error of that mean.
+    #[test]
+    fn the_paired_shift_carries_the_standard_error_of_its_mean() {
+        let mut r = five_and_two();
+        for (s, d) in r.seeds.iter_mut().zip([1.0, 3.0, 2.0, 2.0, 2.0]) {
+            s.equal_weight_pb = s.reported_pb + d;
+        }
+        let summary = r.summarise().unwrap();
+        assert!((summary.ew_minus_reported_pb - 2.0).abs() < 1e-12);
+        // Σ(d − 2)² = 2, over n − 1 = 4, over n = 5.
+        assert!((summary.ew_minus_reported_err_pb - 0.1f64.sqrt()).abs() < 1e-12);
     }
 }

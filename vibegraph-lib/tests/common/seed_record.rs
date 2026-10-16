@@ -50,9 +50,9 @@
 //! budget are the record's screen against a budget shift and are not averaged in:
 //! a mean over two budgets is no one estimator's expectation.
 //!
-//! The file depends on `std`, `serde`, `puruspe` and the sibling `seeds` module only, so the
-//! tool that writes records includes it by path and the two sides cannot
-//! disagree about the format.
+//! The file depends on `std`, `serde`, `serde_json`, `puruspe` and the sibling
+//! `seeds` module only, so the tool that writes records includes it by path and
+//! the two sides cannot disagree about the format.
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -205,7 +205,7 @@ pub struct RunConfig {
 
 /// `min_events`/`max_events` of a template no difficult-integration mode touched
 /// (MadGraph 3.7.1's `madgraph/iolibs/template_files/madevent_run_config.inc`).
-pub const DEFAULT_RUN_CONFIG: (u64, u64) = (1000, 2000);
+const DEFAULT_RUN_CONFIG: (u64, u64) = (1000, 2000);
 
 /// The difficult-integration rate a `run_config.inc` pair is MadEvent's setting
 /// for: `0` for the template's own, `r ≥ 1` for `2500·(2 + r)`/`10000·(1 + r)`.
@@ -290,7 +290,7 @@ pub struct Screen {
 
 /// How far the screening seeds may sit from the budget's mean, in combined
 /// standard errors, before the row is held for a budget ladder.
-pub const SCREEN_PULL_LIMIT: f64 = 2.0;
+const SCREEN_PULL_LIMIT: f64 = 2.0;
 
 /// Which of a seed's two values a reference is read from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,9 +387,11 @@ impl SeedRecord {
             .collect()
     }
 
-    /// Every structural promise a reader relies on, as an error naming the first
-    /// one broken: the schema, distinct seeds, every seed at one of the two
-    /// budgets, and finite values.
+    /// Every promise a reader relies on, as an error naming the first one
+    /// broken: the schema, distinct seeds, every seed at one of the two budgets,
+    /// finite values, a positive reported cross section, an event file holding
+    /// the events the seed ran for, and the record's `hard_survey` on every
+    /// seed.
     pub fn check(&self) -> Result<(), String> {
         if self.schema != SCHEMA {
             return Err(format!(
@@ -665,7 +667,7 @@ pub fn reference(output_dir: &Path, row: &str) -> Option<SeedReference> {
     Some(reference)
 }
 
-/// [`reference`] for one process's share of the row.
+/// [`reference()`] for one process's share of the row.
 pub fn part_reference(output_dir: &Path, row: &str, lprup: &str) -> Option<SeedReference> {
     let reference = read(output_dir, row)?.part_reference(lprup);
     eprintln!("{} (process @{lprup})", reference.describe(row));
