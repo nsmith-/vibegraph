@@ -1,7 +1,7 @@
 ---
 type: Caveat
 title: Rows gated differently from the default, and why
-description: "Why some rows report rather than assert a statistic (ee_to_mumua's pull, the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items."
+description: "Why some rows report rather than assert a statistic (the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items."
 status: draft
 tags: [validation, gating, cross-section, samples, exceptions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -57,11 +57,11 @@ section; the exceptions below are worked cases of them.
 | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md) |
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
-| `gg_to_gg_cg` · integrals | `info` | converged −0.22% offset, unattributed | [gg_to_gg_cg σ offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md) |
+| `gg_to_gg_cg` · integrals | `info` | the reference is one high MadEvent draw; this side agrees with fresh seeds to 6e-6 | [flip the cell](../backlog/validation/gg-to-gg-cg-integrals-cell-still-info.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |
 | `ee_to_wpwm_cw`, `ee_to_zh_smeft` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | the non-SM concept |
 | `pp_to_ttx_0j1j_mlm` · integrals | `long` / `info` | `@1` reads +1.28%, undiagnosed | [ttx MLM @1 high](../backlog/validation/ttx-mlm-at1-sigma-high.md); [MLM σ gate](mlm-sigma-gate.md) |
-| `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then a residual ~2% | [uux wbwb veto 2% off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md) |
+| `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then MadEvent under-integrating the top-free continuum by ~2% | [sigma-uux-wbwb-veto](../sprints/sigma-uux-wbwb-veto/closeout.md) |
 | `e+ e- > z z, z > e+ e-` (decay chain, `INFORMATIONAL` in `cli_decay_chain.rs`) | reported | we keep both pairings and their interference; MadGraph takes one pairing ÷ 2 | none (a decision; [identical particles across decays](../process/identical-particles-across-decays.md)) |
 
 Every manifest cell declared `mode = "info"` at `4277158` appears

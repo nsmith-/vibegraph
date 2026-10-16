@@ -68,6 +68,7 @@ kind is treated.
 | six MLM-path defects | note 41 §1.5 | at most one, refused | table below |
 | reweight module keeps one hypothesis per card | `reweight_interface.py` | the reweight oracle | one hypothesis per work area |
 | `rambo.py` overflow warning never fires | `rambo.py:218` | no | none needed |
+| VEGAS iterations combined with weight mean²/variance | `dsample.f:1995-1997` | σ low by 0.1–0.2 % on a fixed-beam 2 → 4, shrinking with budget | measured, [own concept](madevent-iteration-weighting-bias.md); references are read with it in mind, never reproduced |
 | **approximation**: identical particles across decays, one pairing kept and the interference between pairings dropped | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
 
 **`AQCDUP` with a truncated π.** `unwgt.f` writes
@@ -97,8 +98,10 @@ with `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch`, applied by
 `gen_onshell_veto.sh` to a copy of the pinned tree (row `uu_tt`; the unpatched
 reading stays as `uu_tt_mg371`)[^n07-p1d]. With the patch, MadGraph's standalone
 `SMATRIX` equals vibegraph's zeroed amplitude to 1e-12, yet MadEvent still sits
-about 2% low and drifts with budget[^n38-z1]; that residual is not this defect
-([uux-wbwb-onshell-veto-tt-2pct-off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md)).
+about 2% low[^n38-z1]; that residual is not this defect. It is MadEvent
+under-integrating the top-free continuum in its channels G7–G9 (−2.0 % over six
+fresh seeds on `u u~ > w+ b w- b~ / t t~`, against vibegraph and a non-adaptive
+estimator; [sigma-uux-wbwb-veto](../sprints/sigma-uux-wbwb-veto/closeout.md)).
 
 **`aS` injected into a model that declares none.** The Fortran exporter logs
 `CRITICAL: aS not define as external parameter adding it!` and appends

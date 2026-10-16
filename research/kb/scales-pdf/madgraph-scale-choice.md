@@ -136,8 +136,9 @@ choice 4 because `√ŝ` is the collider energy there, a constant of the run, an
 choice 3 because `gg_to_gg_cg`'s banked run selects it and replays 10 000 events
 (20 000 scale comparisons) at worst 0.999 of the printing budget in
 `validate_scales`, with its `samples` cell gated; its σ cell is informational at
-a converged `−0.22 %` offset that neither the scale formula nor the process
-explains ([gg-to-gg-cg-sigma-offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md)).[^n36-b6]
+a `−0.22 %` offset against one MadEvent draw. Fresh seeds at ten times the
+budget agree with this side to 6e-6, so the offset is the reference's
+([sigma-gg-cg](../sprints/sigma-gg-cg/closeout.md)).[^n36-b6]
 Choices 1, 2 and 5 are refused at fixed beams for the hadron-beam reason: their
 transcriptions have value tests (`coupling/scales.rs`) and no reference run
 ([fixed-beam-closed-form-scales-1-2-5](../backlog/feature/fixed-beam-closed-form-scales-1-2-5.md)).
