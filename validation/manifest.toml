@@ -136,11 +136,11 @@ schema = 1
 # the reference runs means a new `n`, a new archive and a new pin here.
 
 [refdata]
-version = 9
-archive = "vibegraph-refdata-9.tar.zst"
-url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-9/vibegraph-refdata-9.tar.zst"
-sha256 = "4183504c80da35eccd70a7f2c2c0d5f151a1b7e28ab05df1bf42acc0abfc341f"
-size_bytes = 166043012
+version = 10
+archive = "vibegraph-refdata-10.tar.zst"
+url = "https://github.com/nsmith-/vibegraph/releases/download/refdata-10/vibegraph-refdata-10.tar.zst"
+sha256 = "dcc91e154282b0c9530f33f7a2c6d98de34d449ae38c009933fcd1a6017983e4"
+size_bytes = 167428206
 unpacks_to = "validation/madgraph/output"
 # Every run in this bundle is MadGraph 3.7.1's except the six that measure a
 # 3.5.7 defect (the `ee_to_mumu_tata_qcd0` window/anti-window/control runs and
@@ -190,11 +190,20 @@ unpacks_to = "validation/madgraph/output"
 # print MadGraph's "UNKNOWN DEVELOPMENT VERSION" banner where earlier cuts print
 # `GIT v3.7.1`; the copy's `VERSION` file and every source file match the pin.
 #
+# Cut 10 is cut 9's 4245 files, every one byte-identical, plus the 10492 files
+# of `seeded_sigma/`: per gated sigma row (55), its `seed_record.json` and per
+# seed the files the record is computed from, banked by `bank_seeded_sigma.sh`
+# with `hard_survey = 2`, each seed in a fresh process directory: five at the
+# row's budget (`iseed` 20261101-20261105) and two at four times it (20261111,
+# 20261112). `ud_to_epemud_qcd0` takes 20261106 in place of 20261105, whose run
+# writes 9969 of its 10000 events at any attempt. They were generated on macOS
+# 15 by the pinned 3.7.1 submodule (b7687064); hadron beams use `lhaid 247000`.
+#
 # While the repository is private, the plain `url` serves 404 to unauthenticated
 # clients and the fetch falls back to an authenticated `gh release download` of
 # the same asset; $VIBEGRAPH_REFDATA_SOURCE still overrides both for a local
 # bundle.
-published = true
+published = false
 
 # ─────────────────────────── single-channel rows ────────────────────────────
 #
