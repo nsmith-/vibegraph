@@ -25,3 +25,10 @@
 
 ## 2026-10-15
 * **H1 census closed** ([record](sprints/sigma-h1-ickkw0-census/closeout.md), [nsmith-/vibegraph#24](https://github.com/nsmith-/vibegraph/pull/24)): every banked grouped row checked for the permuted first call; only `pp_to_ll_0j2j_mlm` is measurably affected, and no reference needed re-banking.
+
+## 2026-10-16
+* **Amplitude-signs sprint closed** ([record](sprints/amplitude-signs/closeout.md), PRs #29–#35).
+  - The anchor-read role signs are replaced by a root-free convention sign; every MadGraph per-graph table agrees.
+  - Every `pp → t t~ + jet` `@1` matrix element is gated per flow; the σ sprint's `@1` excess is not in |M|².
+  - Ten backlog items closed and 27 filed; no banked σ, sample or diagram cell moved.
+
