@@ -19,6 +19,7 @@
 * [P1: bridge the per-diagram probes to the production Program](P1.md) - Make the per-diagram evaluator probes provably agree with the production Program/fill_arenas path, on processes with an internal fermion, so per-diagram dumps diagnose the code that runs.
 * [Q-H: hygiene review of the same-flavour four-fermion per-graph gate](Q-H.md) - Review PR #35's change for maintainability, test non-vacuity, visibility and reusable abstractions, write the findings first, then fix the local ones.
 * [Q1: same-flavour four-fermion contact against MadGraph](Q1.md) - Bank an ee_to_ee_4f SMEFTsim standalone row, gate its |M|² per helicity and its amplitudes against MadGraph, and record the per-pairing diagram count as a convention cell.
+* [T1: derive the triple-gluon sign in convention_sign](T1.md) - Trace one u u~ > g g diagram through colorize, the f^{abc} slot ordering and ALOHA's VVV1, so the −1 per triple-gluon vertex comes from a stated convention, pinned by a test that fails if it is flipped or misattributed.
 * [W1: diagnose the w+ w- > e+ e- neutrino-exchange sign](W1.md) - Per-diagram x per-helicity dumps against MadGraph standalone AMP() for the W-pair-anchored fermion-line rows and their agreeing controls, a GF(2) solve for the sign rule, and arithmetic verification on the dumps. Diagnosis only.
 
 ## Session Report

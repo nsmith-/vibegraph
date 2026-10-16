@@ -67,3 +67,7 @@
 * **Correction**: B′'s row-wide 1e-7 tolerance for the seven-digit couplings
   was broader than the approved exemption; F2 replaced it with the approved
   per-graph form.
+* **User decision (via the planner)**: the triple-gluon −1 is to be derived,
+  not accepted as calibrated. A follow-up session, [T1](sessions/T1.md), claims
+  `triple-gluon-sign-calibrated-not-derived` in its own PR. If the derivation
+  disagrees with the constant, it stops and reports before any code changes.
