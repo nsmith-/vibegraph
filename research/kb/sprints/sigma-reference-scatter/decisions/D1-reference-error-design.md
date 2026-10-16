@@ -139,13 +139,16 @@ is too heavy-tailed at 10k events to bank.
 3. A row whose channels scatter beyond their quoted errors under
    `hard_survey = 2` is banked as usual, but its σ cell stays `info` against
    MadEvent. If an adaptation-free estimate exists, that is recorded beside it.
-   **The scatter rule** (third amendment): per channel, the seed χ²/dof of the
-   reported values at the banked budget. A row is flagged when the number of
-   channels above 3 exceeds the number expected by chance, which the record
-   stores; with 4 dof one correctly quoted channel exceeds 3 with probability
-   7·e⁻⁶ ≈ 1.7 %, so "worst channel above 3" alone would flag a 50-channel row
-   58 % of the time. A 5-seed flag is confirmed with 20 seeds before the cell
-   goes `info`. The screen lists any flagged row back to the user.
+   **The scatter rule** (third amendment): per channel, the seed χ² of the
+   reported values about their unweighted mean at the banked budget, and its
+   p-value on n − 1 dof. A row is flagged when the worst channel's p-value
+   times the number of channels tested is below 1 % (a look-elsewhere
+   correction), so a row whose quotes are right flags by chance at most 1 %
+   of the time, however many channels it has. A 5-seed flag is confirmed by
+   the same test on 20 seeds, and the cell goes `info` only if it confirms.
+   The record also keeps, for information, the count of channels above
+   χ²/dof 3 and the count expected there by chance. The screen lists any
+   flagged or confirmed row back to the user.
    Today two rows are `info` against MadEvent on an attribution, whatever the
    statistic reads: `ee_to_mumua`, on #26's rare large weights in G6/G8, and
    the uux continuum (not a gated row). Both do scatter: over 39
@@ -187,15 +190,17 @@ upstream-report candidate.
 
 ## Third amendment: the scatter rule (decided 2026-10-16)
 
-The user's decision, relayed by the planner. F2 measured that the second
-amendment's "a channel above χ²/dof 3" fires by chance on rows with many
-channels. Point 3 above carries the decided rule: compare the count above 3
-with the count expected by chance, and confirm a 5-seed flag with 20 seeds.
-The precise form of "compared with chance" is put back to the user: below
-about 58 channels the expected count is under one, so a literal "count above
-expected" fires exactly as often as "worst channel above 3"; a
-look-elsewhere-corrected worst-channel p-value keeps the chance rate at 1 %
-for any channel count. A χ²/dof cut of 3 is also not one significance at
-different seed counts: 2.78 is far past chance at 38 dof. `ee_to_mumua`
-stays `info` on #26's attribution, not on the threshold. The rule reads
-quantities every seed record already holds, so no re-bank follows.
+The user's decision, relayed by the planner, in two steps. F2 measured that
+the second amendment's "a channel above χ²/dof 3" fires by chance on rows with
+many channels: with 4 dof a correctly quoted channel exceeds 3 with
+probability 7·e⁻⁶ ≈ 1.7 %, so a 50-channel row would flag 58 % of the time.
+The user first chose to compare the count above 3 with the count expected by
+chance. Below about 58 channels that expected count is under one, so read
+literally it fires exactly as often as the old rule (measured on 5-seed
+subsets: uux 98 %, `ee_to_mumua` 49.5 %, llj 1.3 % under both). The user then
+chose the look-elsewhere form now in point 3 (measured: uux 92 %,
+`ee_to_mumua` 21 %, llj 0 %; at 20 seeds uux 100 %, `ee_to_mumua` 87 %,
+llj 0 %). A χ²/dof cut is also not one significance at different seed
+counts: `ee_to_mumua`'s 2.78 over 39 seeds is far past chance. It stays
+`info` on #26's attribution either way. The rule reads quantities every seed
+record already holds, so no re-bank follows.
