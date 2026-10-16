@@ -1,7 +1,7 @@
 ---
 type: Caveat
 title: Rows gated differently from the default, and why
-description: "Why some rows report rather than assert a statistic (ee_to_mumua's pull, the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items."
+description: "Why some rows report rather than assert a statistic (the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items."
 status: draft
 tags: [validation, gating, cross-section, samples, exceptions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -57,7 +57,6 @@ section; the exceptions below are worked cases of them.
 | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md) |
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
-| `pp_to_jj` · scale replay | 9 of 10 000 events admitted by signature | tie-break below printed precision | [jj tie-break, no cluster dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md) |
 | `gg_to_gg_cg` · integrals | `info` | the reference is one high MadEvent draw; this side agrees with fresh seeds to 6e-6 | [flip the cell](../backlog/validation/gg-to-gg-cg-integrals-cell-still-info.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |
 | `ee_to_wpwm_cw`, `ee_to_zh_smeft` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | the non-SM concept |
@@ -121,12 +120,11 @@ does under `dynamical_scale_choice = -1`, and its `SCALUP`/`AQCDUP` gate; a
 fixed-beam row that compiles no prescription fails the samples
 gate.[^n36-b8][^manifest]
 
-**`pp_to_jj` tie-breaks.** Nine `q q' → q q'` events in 10 000 have a single
-integration channel and two allowed beam-leg pairs; MadGraph inflated the
-winning candidate by `√(1 + 10⁻⁶)` and the replay did not. The gate admits an
-event only with that exact signature and asserts the count for equality
-(`TIE_BREAK_MISSES` in `validate_scales.rs`), so the class cannot become a
-different one unnoticed.[^manifest] See [scale replay](scale-replay-gate.md).
+**`pp_to_jj` tie-breaks (resolved).** Nine `q q' → q q'` events once missed the
+replay. They were the replay clustering lab momenta: `cluster.f` breaks a beam
+tie on the sign of p_z in the partonic CM. Replayed in the CM, all 10 000
+reproduce, and the gate now admits no misses. See
+[scale replay](scale-replay-gate.md).
 
 **`gg_to_gg_cg`.** The only banked σ at one of `setscales.f`'s closed forms
 (MadGraph chose `dynamical_scale_choice = 3` itself). Five seeds are mutually
