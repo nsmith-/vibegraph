@@ -5,3 +5,7 @@
 ## Sprint
 
 * [A tolerance for the MLM Pythia comparison](sprint.md) - Decide tolerances for the per-@N acceptance pulls and the jet-rate χ² of the MLM Pythia comparison, make its driver write a collator row, and flip the cell to gate.
+
+## Directories
+
+* [decisions](decisions/index.md)
