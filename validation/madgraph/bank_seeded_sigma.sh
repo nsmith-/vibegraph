@@ -388,7 +388,7 @@ run_row() {
   case " ${VALIDATED_EW_ROWS:-} " in *" $row "*) ew_flag=(--validated-ew) ;; esac
   "$(seed_record_bin)" --row "$row" --kept "$OUTDIR/$row" --budget "$base" \
     --generator "$generator" --tree "$tree" --mg-version "$(mg_version)" \
-    --hard-survey "$HARD_SURVEY" "${ew_flag[@]}" |
+    --hard-survey "$HARD_SURVEY" ${ew_flag[@]+"${ew_flag[@]}"} |
     tee "$WORK/$row/record.log"
 }
 
