@@ -118,10 +118,9 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
   quark–gluon vertex.
 - **A VSS vertex** (scalar–scalar–vector) appears in no model in reach. The
   convention predicts no vertex sign and `−1` for each scalar line beside it.
-- **`wpwm_to_wpwmz_cw`'s amplitude cell** (`O_W` through a five-vector vertex)
-  agrees with MadGraph at 1.14e-11, the `GC_303` precision, and is still
-  informational; its per-graph banking is tracked as
-  [wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md).
+- **`wpwm_to_wpwmz_cw`** (`O_W` through a five-vector vertex) agrees with
+  MadGraph per graph and is gated, with only the twelve `GC_303` graphs'
+  modulus exempted by name ([the amplitude oracle](../validation/amplitude-oracle.md)).
 
 [^b-report]: B′ report: "Correction to the brief", "The derivation", the mutation table and the blind spots.
 [^code-rootdiag]: `vibegraph-lib/src/helas/eval/root_diagram.rs`: `triple_gluon_sign`, `is_yang_mills_vvv`, `is_coloured`, `propagator_phase_sign`.

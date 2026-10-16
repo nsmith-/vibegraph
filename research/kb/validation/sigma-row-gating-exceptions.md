@@ -61,7 +61,7 @@ section; the exceptions below are worked cases of them.
 | `pp_to_jj` · scale replay | 9 of 10 000 events admitted by signature | tie-break below printed precision | [jj tie-break, no cluster dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md) |
 | `gg_to_gg_cg` · integrals | `info` | converged −0.22% offset, unattributed | [gg_to_gg_cg σ offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |
-| `ee_to_wpwm_cw`, `ee_to_zh_smeft`, `wpwm_to_wpwmz_cw` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | [wpwmz five-vector residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md) and the non-SM concept |
+| `ee_to_wpwm_cw`, `ee_to_zh_smeft` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | the non-SM concept |
 | `pp_to_ttx_0j1j_mlm` · integrals | `long` / `info` | `@1` reads +1.28%, undiagnosed | [ttx MLM @1 high](../backlog/validation/ttx-mlm-at1-sigma-high.md); [MLM σ gate](mlm-sigma-gate.md) |
 | `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then a residual ~2% | [uux wbwb veto 2% off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md) |
 | `e+ e- > z z, z > e+ e-` (decay chain, `INFORMATIONAL` in `cli_decay_chain.rs`) | reported | we keep both pairings and their interference; MadGraph takes one pairing ÷ 2 | none (a decision; [identical particles across decays](../process/identical-particles-across-decays.md)) |
