@@ -146,10 +146,12 @@ is too heavy-tailed at 10k events to bank.
    7·e⁻⁶ ≈ 1.7 %, so "worst channel above 3" alone would flag a 50-channel row
    58 % of the time. A 5-seed flag is confirmed with 20 seeds before the cell
    goes `info`. The screen lists any flagged row back to the user.
-   Today two rows are `info` against MadEvent on an attribution rather than on
-   this statistic: `ee_to_mumua`, on #26's rare large weights in G6/G8 (its
-   worst channel over 39 `hard_survey = 2` seeds is G8 at χ²/dof 2.78, below
-   3), and the uux continuum (not a gated row; G9 at 12.08).
+   Today two rows are `info` against MadEvent on an attribution, whatever the
+   statistic reads: `ee_to_mumua`, on #26's rare large weights in G6/G8, and
+   the uux continuum (not a gated row). Both do scatter: over 39
+   `hard_survey = 2` seeds `ee_to_mumua`'s worst channel, G8, is at χ²/dof 2.78
+   on 38 dof (p = 1.6·10⁻⁷ after correcting for its 6 channels), and over 20
+   seeds the uux continuum's G9 is at 12.08.
 4. Two driver checks: a run that writes fewer events than asked fails, and so
    does a σ that is not a number. `generate_events` exits 0 on the
    `libgammaUPC.a` compile race.
@@ -187,8 +189,13 @@ upstream-report candidate.
 
 The user's decision, relayed by the planner. F2 measured that the second
 amendment's "a channel above χ²/dof 3" fires by chance on rows with many
-channels, and that `ee_to_mumua`'s channels do not sit above 3. Point 3 above
-now carries the decided rule: compare the count above 3 with the count
-expected by chance, and confirm a 5-seed flag with 20 seeds. `ee_to_mumua`
+channels. Point 3 above carries the decided rule: compare the count above 3
+with the count expected by chance, and confirm a 5-seed flag with 20 seeds.
+The precise form of "compared with chance" is put back to the user: below
+about 58 channels the expected count is under one, so a literal "count above
+expected" fires exactly as often as "worst channel above 3"; a
+look-elsewhere-corrected worst-channel p-value keeps the chance rate at 1 %
+for any channel count. A χ²/dof cut of 3 is also not one significance at
+different seed counts: 2.78 is far past chance at 38 dof. `ee_to_mumua`
 stays `info` on #26's attribution, not on the threshold. The rule reads
 quantities every seed record already holds, so no re-bank follows.
