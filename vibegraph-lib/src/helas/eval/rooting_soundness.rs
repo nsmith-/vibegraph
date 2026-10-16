@@ -1,9 +1,8 @@
 //! Rooting-soundness gate.
 //!
 //! Every Feynman diagram is a tree; choosing which vertex to root it at orients its
-//! internal edges but must not change the physics. The whole amplitude machinery —
-//! momentum routing, Lorentz-output rooting, fermion-spine signs — was originally
-//! validated only for feyngraph's `VtxIdx(0)` orientation. The currents the kernels
+//! internal edges but must not change the physics: momentum routing, Lorentz-output
+//! rooting and the fermion-spine signs must give one |M|² at every root. The currents the kernels
 //! build carry no convention sign, and the diagram's convention sign is a function of
 //! the graph alone (`root_diagram::convention_sign`), so neither depends on the root;
 //! the one rooting-dependent sign, the runtime reversed-bilinear parity, is cancelled
@@ -355,7 +354,7 @@ fn all_rootings_preserve_amplitude() {
 /// Fast guard (runs under default `cargo test`): the override hook is wired into the
 /// production compile path and an explicit `VtxIdx(0)` override reproduces the baseline
 /// |M|² bit-for-bit — i.e. the hook itself is transparent. Keeps the machinery honest
-/// without the slow, currently-failing full sweep.
+/// without the slow full sweep.
 #[test]
 fn root_override_hook_is_transparent() {
     let model = Arc::new(sm_model(SMRestrict::Default));

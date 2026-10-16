@@ -15,7 +15,7 @@ sources:
   - {id: mg-signflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1878", title: "MadGraph import_ufo.py: UFOMG5Converter.get_sign_flow"}
   - {id: mg-fermionflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_fct.py#L26", title: "MadGraph aloha_fct.py: get_fermion_flow"}
   - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/topo.rs#L200-L380", title: "ufo/topo.rs: fermion_flow, permutation_sign, flow_groups"}
-  - {id: code-current-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L654-L680", title: "root_diagram.rs: fermion_current_line_sign"}
+  - {id: code-current-line, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: vertex_root_signs (the tensor-path build sign)"}
 ---
 
 # Four-fermion vertices
@@ -120,23 +120,27 @@ hermetic 4×4 Weyl-matrix pin alone.
 
 ## The tensor-path line sign
 
-A tree-rooted four-fermion current takes every line sign the diagram carries. A
-line that closes at a *fermion-output tensor-path* current at the anchor rooting
-takes none: `fermion_current_line_sign` divides those line signs back out of
-`fermi_sign`. It is a convention of the tensor kernel, which cuts the index cycle
-at one line, and was adjudicated against MadGraph standalone on processes where an
-emission leaves the contact by one of its lines (`MG/ours` against the 1/4
-helicity average):[^n38-s1][^code-current-line]
+A cyclic four-fermion structure on the tensor path cuts its index cycle at one
+line and reads the reversals of the other lines inside the kernel, so its terms
+carry no reversed-bilinear parity of their own. In the convention sign the vertex
+takes instead the sign that path gives its amplitude root: `RootedTerm::build_sign`,
+`−1` per crossed line of the cyclic structure and `+1` on every tree-rooted term,
+which `vertex_root_signs` multiplies in at each `VertexInfo::tensor` vertex. It is
+read from the vertex and the crossing of its lines, never from a rooting, so it is
+the same at every root. It was adjudicated against MadGraph standalone on
+processes where an emission leaves the contact by one of its lines (`MG/ours`
+against the 1/4 helicity average):[^n38-s1][^code-current-line]
 
-| process | contact | with the rule | without |
+| process | contact | with the tensor-path sign | without |
 |---|---|---|---|
 | `ta+ ta- > t t~ a` | tensor (`O_leQt3`) | 0.25000 ± 3e-6 | off by up to 20% |
 | `lt~ lt > qt qt~ vt` (toy) | tensor | 0.25 exactly | off |
 | `e+ e- > mu+ mu- a NP<=1` | vector (`vg_c4l`) | 0.21–0.49 | 0.25 exactly |
 
-so the rule is confined to tensor-path vertices. `u u~ > t t~ g NP<=1` under
-`vg_c4q` once missed MadGraph under either line rule; the four-quark contacts were
-innocent — the cause was the triple-gluon source sign beside a quark-line anchor
+so the sign belongs to tensor-path vertices only: on a vector-path contact it
+spoils an exact agreement. `u u~ > t t~ g NP<=1` under `vg_c4q` once missed
+MadGraph with the four-quark contacts blameless: the cause was the triple-gluon
+sign, which is `triple_gluon_sign`'s `−1` per coloured three-vector vertex
 ([vector-vertex-signs](vector-vertex-signs.md)), and the process agrees per
 flow.[^n39-1] The full sign inventory is
 [convention-sign-inventory](convention-sign-inventory.md).
@@ -149,4 +153,4 @@ flow.[^n39-1] The full sign inventory is
 [^n38-s1]: Note 38 §S1 (commit 2d99872, landed in 1539abc).
 [^n39-1]: Note 39 §1.
 [^code-topo]: `vibegraph-lib/src/ufo/topo.rs`.
-[^code-current-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `fermion_current_line_sign`.
+[^code-current-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `vertex_root_signs`; `root_lorentz.rs`, `RootedTerm::build_sign`.

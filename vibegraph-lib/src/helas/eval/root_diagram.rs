@@ -415,26 +415,15 @@ impl Baker<'_> {
                 spin,
                 incoming,
             } => {
-                let uncrossed = self.uncross.contains(leg_idx);
-                let (id, charge) = if uncrossed {
-                    let anti = model
-                        .particle_id(&model.particle(*particle).antiname)
-                        .expect("antiparticle exists in model");
-                    (anti, charge.anti())
-                } else {
-                    (*particle, *charge)
-                };
-                let info = ExtLegInfo {
-                    id,
-                    leg_idx: leg_idx.0,
-                    charge,
-                    spin: *spin,
-                    incoming: *incoming,
-                };
-                let bind = info.adjoint().map(|adjoint| LegAdjoint {
-                    adjoint,
-                    crossed: !info.incoming && !uncrossed,
-                });
+                let (info, bind) = external_leg(
+                    model,
+                    *particle,
+                    *leg_idx,
+                    *charge,
+                    *spin,
+                    *incoming,
+                    self.uncross.contains(leg_idx),
+                );
                 Ok((
                     DiagramEvalTree::add(&mut self.nodes, EvalNode::External(info)),
                     bind,
@@ -560,7 +549,7 @@ impl DiagramEvalTree {
     /// fermion-continuing current under another), so [`compile_single_diagram`] folds it
     /// into `fermi_sign` to cancel the runtime one, and the diagram carries the parity of
     /// [`convention_sign`] instead, which no rooting changes.
-    pub(super) fn reversed_convention_sign(&self) -> Result<i8, RootLorentzError> {
+    fn live_reversed_parity(&self) -> Result<i8, RootLorentzError> {
         let mut sign = 1i8;
         for id in self.iter() {
             let info = match self.value(id) {
@@ -683,81 +672,8 @@ pub(super) fn spine_sign_from_flow(tree: &DiagramEvalTree) -> i8 {
 
 // ─────────────────────── Mixed-line (initial↔final) uncrossing ───────────────────────
 
-/// Walk one raw subtree collecting closed fermion-line endpoint pairs into `pairs`,
-/// returning the subtree's open fermion end (the external leg whose line continues
-/// through this subtree's output), if any. A line closes at any vertex whose output
-/// is not a fermion (or at the root contraction) yet has two fermion inputs.
-fn collect_fermion_pairs(
-    raw: &RawDiagramTree,
-    diagram: &Diagram,
-    model: &UFOModel,
-    id: RawNodeId,
-    pairs: &mut Vec<(LegIdx, LegIdx)>,
-) -> Option<LegIdx> {
-    match raw.value(id) {
-        RawNode::Leg { leg_idx, spin, .. } => (spin.abs() == 2).then_some(*leg_idx),
-        RawNode::Vertex {
-            vertex,
-            vtx,
-            result,
-            children,
-        } => {
-            // Open fermion ends of this vertex's inputs, tagged with the vertex slot
-            // they arrive at, so the vertex's own pairing can match them up.
-            let mut open: Vec<(usize, LegIdx)> = Vec::new();
-            for (pos, &child) in children.iter().enumerate() {
-                if let Some(end) = collect_fermion_pairs(raw, diagram, model, child, pairs) {
-                    open.push((input_slot(pos, *result), end));
-                }
-            }
-            let out_slot = result.map(|rl| rl.slot.0);
-            let out_is_fermion = out_slot.is_some_and(|slot| {
-                let pid = model.vertex_def(*vertex).particles[slot];
-                model.particle(pid).spin.abs() == 2
-            });
-            let group = vertex_flow_group(model, *vertex, diagram.vertex(*vtx).flow_group);
-            let mut carried = None;
-            let mut closed = vec![false; open.len()];
-            for i in 0..open.len() {
-                if closed[i] {
-                    continue;
-                }
-                let partner = group.partner(open[i].0);
-                if Some(partner) == out_slot {
-                    carried = Some(open[i].1);
-                    closed[i] = true;
-                    continue;
-                }
-                let j = open
-                    .iter()
-                    .position(|&(slot, _)| slot == partner)
-                    .expect("a fermion line leaves this vertex by a leg the pairing names");
-                pairs.push((open[i].1, open[j].1));
-                closed[i] = true;
-                closed[j] = true;
-            }
-            assert_eq!(
-                carried.is_some(),
-                out_is_fermion,
-                "a fermion output leg continues exactly one input line"
-            );
-            carried
-        }
-    }
-}
-
-/// The vertex slot an input child sits at: children are the vertex's legs in slot
-/// order with the output leg's position removed, so every position at or beyond it
-/// shifts up by one.
-fn input_slot(pos: usize, result: Option<ResultLeg>) -> usize {
-    match result {
-        Some(rl) if pos >= rl.slot.0 => pos + 1,
-        _ => pos,
-    }
-}
-
-/// Inverse of [`input_slot`] for a vertex rooted at `out_slot`: the child position a
-/// vertex slot occupies once the output leg is removed from the list.
+/// The child position a vertex slot occupies in a vertex rooted at `out_slot`: children
+/// are the vertex's legs in slot order with the output leg's position removed.
 fn input_position(slot: usize, out_slot: usize) -> usize {
     if slot < out_slot {
         slot
@@ -790,23 +706,58 @@ fn closed_fermion_pairs(group: &FlowGroup, out_slot: Option<usize>) -> Vec<(usiz
 /// crossed (all-incoming) identity feyngraph reports: the crossed representation
 /// C-conjugates the whole bilinear chain, which is only an identity when *both*
 /// endpoints of the line conjugate together, i.e. for final–final pairs.
-fn mixed_line_final_legs(
-    raw: &RawDiagramTree,
-    diagram: &Diagram,
-    model: &UFOModel,
-    n_in: usize,
-) -> HashSet<LegIdx> {
-    let mut pairs = Vec::new();
-    let open = collect_fermion_pairs(raw, diagram, model, raw.root(), &mut pairs);
-    assert!(open.is_none(), "all fermion lines close at some sink");
-    pairs
+///
+/// A property of the diagram's lines ([`Diagram::fermion_lines`]), so the live tree and
+/// the convention sign ([`external_bindings`]) read the same set at every rooting.
+fn mixed_line_final_legs(diagram: &Diagram, model: &UFOModel) -> HashSet<LegIdx> {
+    let n_in = diagram.n_in;
+    diagram
+        .fermion_lines(model)
         .into_iter()
-        .filter_map(|(a, b)| match (a.0 < n_in, b.0 < n_in) {
-            (true, false) => Some(b),
-            (false, true) => Some(a),
-            _ => None,
+        .filter_map(|line| {
+            let [a, b] = line.legs;
+            match (a.0 < n_in, b.0 < n_in) {
+                (true, false) => Some(b),
+                (false, true) => Some(a),
+                _ => None,
+            }
         })
         .collect()
+}
+
+/// The external wavefunction a leg is built as, and the spinor binding it carries
+/// (`None` for a boson). A final-state leg of [`mixed_line_final_legs`] (`uncrossed`)
+/// is typed by its physical particle; every other leg keeps the identity diagram
+/// enumeration gives it, which puts a final-state fermion on a crossed line.
+fn external_leg(
+    model: &UFOModel,
+    particle: ParticleId,
+    leg_idx: LegIdx,
+    charge: Charge,
+    spin: i32,
+    incoming: bool,
+    uncrossed: bool,
+) -> (ExtLegInfo, Option<LegAdjoint>) {
+    let (id, charge) = if uncrossed {
+        let anti = model
+            .particle_id(&model.particle(particle).antiname)
+            .expect("antiparticle exists in model");
+        (anti, charge.anti())
+    } else {
+        (particle, charge)
+    };
+    let info = ExtLegInfo {
+        id,
+        leg_idx: leg_idx.0,
+        charge,
+        spin,
+        incoming,
+    };
+    let bind = info.adjoint().map(|adjoint| LegAdjoint {
+        adjoint,
+        crossed: !incoming && !uncrossed,
+    });
+    (info, bind)
 }
 
 // ───────────────────────────── Rooting entry point ─────────────────────────────
@@ -919,10 +870,14 @@ pub(super) fn root_tree_at(
         root: raw_root,
     };
 
-    let n_in = diagram.n_in;
-    let uncross = mixed_line_final_legs(&raw, diagram, model, n_in);
+    let uncross = mixed_line_final_legs(diagram, model);
     Ok(DiagramEvalTree::bake(
-        &raw, diagram, model, n_in, &uncross, chain,
+        &raw,
+        diagram,
+        model,
+        diagram.n_in,
+        &uncross,
+        chain,
     )?)
 }
 
@@ -941,7 +896,9 @@ pub(crate) struct DiagramEval {
     pub(crate) tree: DiagramEvalTree,
     /// Symmetry factor: 1 / (vertex_sym × propagator_sym)
     pub(crate) symmetry_factor: f64,
-    /// ±1 from the diagram's Fermi permutation sign
+    /// ±1: the diagram's relative Fermi sign ([`Diagram::sign`]) times its
+    /// [`convention_sign`], with the live tree's reversed-bilinear parity cancelled
+    /// (see [`compile_single_diagram`])
     pub(crate) fermi_sign: i8,
 }
 
@@ -1012,40 +969,24 @@ fn is_coloured(model: &UFOModel, interaction: VertexId) -> bool {
 }
 
 /// The spinor binding each external leg's wavefunction carries (`None` for a boson):
-/// its adjoint, and whether its fermion line is crossed. A final-state leg on a line
-/// with an initial-state end is typed by its physical particle (see
-/// [`mixed_line_final_legs`]), so it is not crossed.
+/// its adjoint, and whether its fermion line is crossed — the binding the live tree
+/// gives the leg ([`external_leg`]).
 fn external_bindings(diagram: &Diagram, model: &UFOModel) -> Vec<Option<LegAdjoint>> {
-    let mut uncrossed = vec![false; diagram.legs.len()];
-    for line in diagram.fermion_lines(model) {
-        let [a, b] = line.legs;
-        match (a.0 < diagram.n_in, b.0 < diagram.n_in) {
-            (true, false) => uncrossed[b.0] = true,
-            (false, true) => uncrossed[a.0] = true,
-            _ => {}
-        }
-    }
+    let uncross = mixed_line_final_legs(diagram, model);
     diagram
         .legs
         .iter()
         .map(|leg| {
-            let li = leg.leg_idx.0;
-            let charge = if uncrossed[li] {
-                leg.charge.anti()
-            } else {
-                leg.charge
-            };
-            let info = ExtLegInfo {
-                id: leg.particle,
-                leg_idx: li,
-                charge,
-                spin: leg.spin,
-                incoming: leg.incoming,
-            };
-            info.adjoint().map(|adjoint| LegAdjoint {
-                adjoint,
-                crossed: !leg.incoming && !uncrossed[li],
-            })
+            external_leg(
+                model,
+                leg.particle,
+                leg.leg_idx,
+                leg.charge,
+                leg.spin,
+                leg.incoming,
+                uncross.contains(&leg.leg_idx),
+            )
+            .1
         })
         .collect()
 }
@@ -1208,10 +1149,10 @@ pub(super) fn compile_single_diagram(
         "the rooted tree and the diagram's lines disagree on the fermion-line sign"
     );
     // The runtime `resolve_bra_ket` applies the live tree's reversed-bilinear parity
-    // (`tree.reversed_convention_sign()`); multiplying by it cancels that, and the
+    // (`tree.live_reversed_parity()`); multiplying by it cancels that, and the
     // diagram carries the rooting-free parity of `convention_sign` instead.
     let fermi_sign =
-        diagram.sign * convention_sign(diagram, model, chain)? * tree.reversed_convention_sign()?;
+        diagram.sign * convention_sign(diagram, model, chain)? * tree.live_reversed_parity()?;
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
         tree,
@@ -1616,19 +1557,10 @@ mod tests {
                     }
                     let vtx = &diagram.vertices[0];
                     let group = vertex_flow_group(&model, vtx.interaction, vtx.flow_group);
-                    let raw = {
-                        let mut builder = RawBuilder::new(diagram);
-                        let root = builder.walk_vertex(VtxIdx(0), None).unwrap();
-                        RawDiagramTree {
-                            nodes: builder.nodes,
-                            root,
-                        }
-                    };
-                    let mut uncross: Vec<usize> =
-                        mixed_line_final_legs(&raw, diagram, &model, diagram.n_in)
-                            .into_iter()
-                            .map(|l| l.0)
-                            .collect();
+                    let mut uncross: Vec<usize> = mixed_line_final_legs(diagram, &model)
+                        .into_iter()
+                        .map(|l| l.0)
+                        .collect();
                     uncross.sort();
                     let tree = root_tree_at(diagram, &model, &[0u8], VtxIdx(0)).unwrap();
                     seen.push((group.spin_map.clone(), uncross, spine_sign_from_flow(&tree)));

@@ -98,7 +98,7 @@ fn repo() -> PathBuf {
 /// A manifest row's UFO model under a restrict card, looked up the way the row's
 /// `.mg5` script imports it (the model's own cards first, then the authored ones), and
 /// loaded once.
-fn load(
+pub(super) fn load(
     models: &mut HashMap<(String, Option<String>), Arc<UFOModel>>,
     dir: &str,
     restrict: Option<&str>,
@@ -234,6 +234,19 @@ pub(super) fn single_diagram_amplitudes(
     evaluated: &EvaluatedModel,
     momenta: &[LorentzVector<f64>],
 ) -> Vec<Complex<f64>> {
+    single_diagram_amplitudes_at(set, diagram, model, evaluated, momenta, None)
+}
+
+/// The per-flow amplitudes of `diagram` alone, compiled as a one-diagram set, at each of
+/// `helicities` in its order, or at each of the evaluator's own helicities when `None`.
+pub(super) fn single_diagram_amplitudes_at(
+    set: &DiagramSet,
+    diagram: &Diagram,
+    model: &UFOModel,
+    evaluated: &EvaluatedModel,
+    momenta: &[LorentzVector<f64>],
+    helicities: Option<&[Vec<i32>]>,
+) -> Vec<Complex<f64>> {
     let single = DiagramSet {
         particles_in: set.particles_in.clone(),
         particles_out: set.particles_out.clone(),
@@ -244,7 +257,7 @@ pub(super) fn single_diagram_amplitudes(
     let bound = BoundAmplitude::<f64>::bind(&evaluator, evaluated);
     let mut scratch = bound.scratch_space();
     let mut out = Vec::new();
-    for hel in evaluator.helicities() {
+    for hel in helicities.unwrap_or(evaluator.helicities()) {
         if evaluator.n_flows() == 1 {
             out.push(bound.eval_amplitude(momenta, hel, &mut scratch));
         } else {

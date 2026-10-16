@@ -17,16 +17,13 @@
 //! moves.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use num_complex::Complex;
 
 use super::compile::AmplitudeEvaluator;
-use super::renumbering::{generate, point};
-use super::run::BoundAmplitude;
+use super::renumbering::{generate, load, point, single_diagram_amplitudes_at};
 use crate::diagrams::diagram::{Diagram, Ray, VtxIdx};
-use crate::diagrams::DiagramSet;
 use crate::helas::LorentzVector;
 use crate::ufo::sm::{sm_model, SMRestrict};
 use crate::ufo::{EvaluatedModel, UFOModel};
@@ -35,20 +32,16 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 /// permutation between them: leg `i` of the relabelled process is leg `perm[i]` of the
 /// original. Legs move only within the initial and within the final state.
 struct Pair {
-    model: Model,
+    /// `None` for the Standard Model, else a model directory and one of its restrict
+    /// cards, as `renumbering::load` resolves them.
+    model: Option<(&'static str, &'static str)>,
     original: &'static str,
     relabelled: &'static str,
     perm: &'static [usize],
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum Model {
-    Sm,
-    /// SMEFTsim under one of this repository's restrict cards.
-    Smeft(&'static str),
-    /// The authored toy model under one of its own restrict cards.
-    Toy(&'static str),
-}
+const SMEFT: &str = "validation/ufo/SMEFTsim_topU3l_MwScheme_UFO";
+const TOY: &str = "validation/ufo/vibegraph_toy_UFO";
 
 /// The relabelled pairs. The first five move the vertex leg 0 attaches to between
 /// vertex classes: a vector-boson vertex and a two-fermion vertex (`w+ e- > z ve`), a
@@ -59,73 +52,73 @@ enum Model {
 /// fermion vertex.
 const PAIRS: &[Pair] = &[
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "w+ e- > z ve",
         relabelled: "e- w+ > ve z",
         perm: &[1, 0, 3, 2],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "w+ h > t b~",
         relabelled: "h w+ > t b~",
         perm: &[1, 0, 2, 3],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "z h > t t~",
         relabelled: "h z > t t~",
         perm: &[1, 0, 2, 3],
     },
     Pair {
-        model: Model::Smeft("vg_cW"),
+        model: Some((SMEFT, "vg_cW")),
         original: "w+ w- > w+ w- z NP<=1",
         relabelled: "w- w+ > w- w+ z NP<=1",
         perm: &[1, 0, 3, 2, 4],
     },
     Pair {
-        model: Model::Smeft("vg_cW"),
+        model: Some((SMEFT, "vg_cW")),
         original: "a z > w+ w- NP<=1",
         relabelled: "z a > w- w+ NP<=1",
         perm: &[1, 0, 3, 2],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "w+ w- > e+ e-",
         relabelled: "w- w+ > e- e+",
         perm: &[1, 0, 3, 2],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "e+ e- > w+ w-",
         relabelled: "e- e+ > w- w+",
         perm: &[1, 0, 3, 2],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "w+ a > e+ ve a",
         relabelled: "a w+ > ve e+ a",
         perm: &[1, 0, 3, 2, 4],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "e+ e- > ta+ ta- h",
         relabelled: "e- e+ > ta- ta+ h",
         perm: &[1, 0, 3, 2, 4],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "u u~ > z g",
         relabelled: "u~ u > g z",
         perm: &[1, 0, 3, 2],
     },
     Pair {
-        model: Model::Sm,
+        model: None,
         original: "h h > t t~",
         relabelled: "h h > t~ t",
         perm: &[0, 1, 3, 2],
     },
     Pair {
-        model: Model::Toy("dscalar"),
+        model: Some((TOY, "dscalar")),
         original: "st lt > st lt NP<=2 NPD<=1",
         relabelled: "lt st > lt st NP<=2 NPD<=1",
         perm: &[1, 0, 3, 2],
@@ -147,58 +140,24 @@ const REL_TOL: f64 = 1e-10;
 /// a vanishing coupling (a massless fermion's Yukawa) leaves no sign to read.
 const VANISHING: f64 = 1e-12;
 
-fn load(model: Model, cache: &mut HashMap<Model, Arc<UFOModel>>) -> Arc<UFOModel> {
-    cache
-        .entry(model)
-        .or_insert_with(|| {
-            let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-            match model {
-                Model::Sm => sm_model(SMRestrict::Default),
-                Model::Smeft(card) => UFOModel::load(
-                    &repo.join("validation/ufo/SMEFTsim_topU3l_MwScheme_UFO"),
-                    Some(&repo.join(format!(
-                        "validation/madgraph/cards/smeft/restrict_{card}.dat"
-                    ))),
-                )
-                .unwrap(),
-                Model::Toy(card) => {
-                    let dir = repo.join("validation/ufo/vibegraph_toy_UFO");
-                    let card = dir.join(format!("restrict_{card}.dat"));
-                    UFOModel::load(&dir, Some(&card)).unwrap()
-                }
-            }
-        })
-        .clone()
-}
-
 /// The external legs on the far side of each of `v`'s rays, as original leg indices
 /// (`relabel` maps this diagram's legs to the original's).
 fn ray_leg_sets(d: &Diagram, v: usize, relabel: &[usize]) -> Vec<Vec<usize>> {
-    fn collect(d: &Diagram, from: usize, at: usize, relabel: &[usize], out: &mut Vec<usize>) {
-        for ray in &d.vertices[at].rays {
-            match *ray {
-                Ray::Leg(l) => out.push(relabel[l.0]),
-                Ray::Prop { prop, end } => {
-                    let (w, _) = d.props[prop.0].endpoints[1 - end];
-                    if w.0 != from {
-                        collect(d, at, w.0, relabel, out);
-                    }
-                }
-            }
-        }
-    }
     let mut sets: Vec<Vec<usize>> = d.vertices[v]
         .rays
         .iter()
         .map(|ray| {
-            let mut legs = Vec::new();
-            match *ray {
-                Ray::Leg(l) => legs.push(relabel[l.0]),
-                Ray::Prop { prop, end } => {
-                    let (w, _) = d.props[prop.0].endpoints[1 - end];
-                    collect(d, v, w.0, relabel, &mut legs);
-                }
-            }
+            let mut legs: Vec<usize> = match *ray {
+                Ray::Leg(l) => vec![relabel[l.0]],
+                // `v` sits at `endpoints[end]`; the far side is the other endpoint's.
+                Ray::Prop { prop, end } => d
+                    .legs_on_start_side(prop)
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &on_start)| on_start == (end == 1))
+                    .map(|(l, _)| relabel[l])
+                    .collect(),
+            };
             legs.sort_unstable();
             legs
         })
@@ -223,31 +182,6 @@ fn signature(d: &Diagram, relabel: &[usize]) -> Vec<(usize, usize, Vec<Vec<usize
         .collect();
     sig.sort();
     sig
-}
-
-/// One diagram's amplitude at `momenta` for each helicity of `helicities`.
-fn diagram_values(
-    set: &DiagramSet,
-    d: &Diagram,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    momenta: &[LorentzVector<f64>],
-    helicities: &[Vec<i32>],
-) -> Vec<Complex<f64>> {
-    let single = DiagramSet {
-        particles_in: set.particles_in.clone(),
-        particles_out: set.particles_out.clone(),
-        polarizations: set.polarizations.clone(),
-        diagrams: vec![d.clone()],
-    };
-    let evaluator = AmplitudeEvaluator::compile(&single, model).expect("compile one diagram");
-    assert_eq!(evaluator.n_flows(), 1, "relabelled pairs are single-flow");
-    let bound = BoundAmplitude::<f64>::bind(&evaluator, evaluated);
-    let mut scratch = bound.scratch_space();
-    helicities
-        .iter()
-        .map(|hel| bound.eval_amplitude(momenta, hel, &mut scratch))
-        .collect()
 }
 
 /// The original process's diagrams whose sign under relabelling differs from the
@@ -295,6 +229,12 @@ fn relabelling_flips(pair: &Pair, model: &Arc<UFOModel>) -> (Vec<usize>, usize) 
     let momenta1 = point(&set1, &evaluated);
     let momenta2: Vec<LorentzVector<f64>> = pair.perm.iter().map(|&j| momenta1[j]).collect();
     let evaluator1 = AmplitudeEvaluator::compile(&set1, model).unwrap();
+    assert_eq!(
+        evaluator1.n_flows(),
+        1,
+        "{}: relabelled pairs are single-flow",
+        pair.original
+    );
     let helicities1: Vec<Vec<i32>> = evaluator1.helicities().to_vec();
     let helicities2: Vec<Vec<i32>> = helicities1
         .iter()
@@ -304,7 +244,16 @@ fn relabelling_flips(pair: &Pair, model: &Arc<UFOModel>) -> (Vec<usize>, usize) 
     let values1: Vec<Vec<Complex<f64>>> = set1
         .diagrams
         .iter()
-        .map(|d| diagram_values(&set1, d, model, &evaluated, &momenta1, &helicities1))
+        .map(|d| {
+            single_diagram_amplitudes_at(
+                &set1,
+                d,
+                model,
+                &evaluated,
+                &momenta1,
+                Some(helicities1.as_slice()),
+            )
+        })
         .collect();
     let largest = values1
         .iter()
@@ -319,7 +268,14 @@ fn relabelling_flips(pair: &Pair, model: &Arc<UFOModel>) -> (Vec<usize>, usize) 
         if scale < VANISHING * largest {
             continue;
         }
-        let b = diagram_values(&set2, d2, model, &evaluated, &momenta2, &helicities2);
+        let b = single_diagram_amplitudes_at(
+            &set2,
+            d2,
+            model,
+            &evaluated,
+            &momenta2,
+            Some(helicities2.as_slice()),
+        );
         let k = (0..a.len())
             .max_by(|&x, &y| a[x].norm().total_cmp(&a[y].norm()))
             .unwrap();
@@ -341,6 +297,13 @@ fn relabelling_flips(pair: &Pair, model: &Arc<UFOModel>) -> (Vec<usize>, usize) 
         );
         signs.push((i, sign));
     }
+    // One compared diagram, or none, has no other to flip against.
+    assert!(
+        signs.len() >= 2,
+        "{}: {} diagrams compared, too few to show a relative sign",
+        pair.original,
+        signs.len()
+    );
     let minus = signs.iter().filter(|(_, s)| *s < 0.0).count();
     let majority = if 2 * minus > signs.len() { -1.0 } else { 1.0 };
     let mut flips: Vec<usize> = signs
@@ -356,10 +319,14 @@ fn relabelling_flips(pair: &Pair, model: &Arc<UFOModel>) -> (Vec<usize>, usize) 
 /// the whole process; [`KNOWN_RELABELLING_DEPENDENT`] lists the measured exceptions.
 #[test]
 fn relabelling_preserves_per_diagram_amplitudes() {
-    let mut cache = HashMap::new();
+    let mut models = HashMap::new();
+    let sm = sm_model(SMRestrict::Default);
     let mut failures = Vec::new();
     for pair in PAIRS {
-        let model = load(pair.model, &mut cache);
+        let model = match pair.model {
+            None => sm.clone(),
+            Some((dir, card)) => load(&mut models, dir, Some(card)),
+        };
         let (flips, compared) = relabelling_flips(pair, &model);
         let known = KNOWN_RELABELLING_DEPENDENT
             .iter()
