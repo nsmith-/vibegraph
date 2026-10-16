@@ -15,10 +15,13 @@ per helicity in MadGraph's own NHEL table:
   * JAMP(1..NCOLOR), the per-flow amplitudes, copied out of MATRIX by a COMMON
     block patched in after MadGraph builds them.
 
-The per-diagram AMP() are dumped with `--amps` for diagnosis but not banked:
-where a contact vertex has several colour structures MadGraph writes one AMP()
-per structure, so its graph list is not our diagram list, while its JAMP order
-is the colour basis the Rust gate already pairs flow by flow.
+`--amps` adds the per-diagram AMP() to the table for diagnosis, and the Rust
+gate does not read them: where a contact vertex has several colour structures
+MadGraph writes one AMP() per structure, so its graph list is not our diagram
+list, while its JAMP order is the colour basis the Rust gate already pairs flow
+by flow. A row that sets `bank_amps` always carries the AMP(), with JAMP(1)'s
+coefficient on each beside them. It is a single-flow row whose graphs the Rust
+gate pairs with groups of its own diagrams.
 
 The table carries the param card the numbers were computed with, so the Rust
 side binds the same parameters rather than re-deriving them.
@@ -51,6 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from gen_amplitude import beam_momenta, rambo  # noqa: E402
+from gen_amplitude_tables import join_continuations, parse_jamp_coefficients  # noqa: E402
 
 TABLE_DIR = os.path.join(HERE, "standalone")
 DEFAULT_WORK = os.path.join(HERE, "output", "standalone")
@@ -84,6 +88,8 @@ class Row:
     # spacelike propagator and this crate follows it; standalone output keeps it,
     # so a process with a massive t-channel line is compared at zero width.
     zero_widths: bool = False
+    # Bank AMP(1..NGRAPHS) and their JAMP(1) coefficients. Single-flow rows only.
+    bank_amps: bool = False
 
     def import_model(self) -> str:
         if self.model is None:
@@ -129,6 +135,13 @@ ROWS = {
         # The Standard Model's own all-Yukawa line: t/u-channel b exchange (one
         # propagator) beside the triple-Higgs annihilation (none).
         Row("bbx_to_hh", "b b~ > h h", (5, -5), (25, 25), 500.0, 3, 4063),
+        # Bhabha scattering through the four-lepton contacts: every contact joins
+        # one flavour, so the s- and t-channel pairings of one vertex interfere with
+        # each other and with photon and Z exchange in both channels. Widths are
+        # zero for the spacelike Z.
+        Row("ee_to_ee_4f", "e+ e- > e+ e- NP<=1", (-11, 11), (-11, 11), 500.0, 4, 4064,
+            model=SMEFT, restrict="vg_c4l", model_row="ee_to_mumu_4f", zero_widths=True,
+            bank_amps=True),
         # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
         # top line, where the contact's three colour structures meet its three
         # Lorentz structures. The top exchanged between the two beam gluons is
@@ -232,6 +245,22 @@ DRIVER = """\
       ENDDO
       END
 """
+
+
+def read_jamp_coefficients(pdir: str, ngraphs: int) -> list[float]:
+    """JAMP(1)'s coefficient on each AMP(), from a single-flow matrix.f.
+
+    The statement is MadEvent's `JAMP(1,1)` with one index, and the parser is
+    the amplitude tables'. The coefficients are banked as reals, so a complex
+    one is refused.
+    """
+    with open(os.path.join(pdir, "matrix.f")) as f:
+        src = join_continuations(f.read())
+    m = re.search(r"\n      JAMP\(1\) =(.*)", src)
+    assert m, f"{pdir}: no JAMP(1) assignment"
+    coefs = parse_jamp_coefficients(m.group(1), ngraphs, f"{pdir}: JAMP(1)")
+    assert all(c.imag == 0.0 for c in coefs), f"{pdir}: a complex JAMP(1) coefficient: {coefs}"
+    return [c.real for c in coefs]
 
 
 def build_driver(pdir: str, ngraphs: int, ncolor: int) -> str:
@@ -359,6 +388,9 @@ def bank(row: Row, args) -> None:
 
     with open(card) as f:
         card_lines = f.read().splitlines()
+    if row.bank_amps:
+        assert ncolor == 1, f"{row.key}: bank_amps needs a single-flow process"
+    amps = args.amps or row.bank_amps
     table = {
         "key": row.key,
         "process": row.process,
@@ -368,6 +400,8 @@ def bank(row: Row, args) -> None:
         "n_flows": ncolor,
         "helicities": hels,
         "param_card": card_lines,
+        **({"jamp_coefficients": read_jamp_coefficients(pdir, ngraphs)}
+           if row.bank_amps else {}),
         "points": [
             {
                 "momenta": pt,
@@ -375,7 +409,7 @@ def bank(row: Row, args) -> None:
                     {
                         "m2": h["m2"],
                         "jamps": h["jamps"],
-                        **({"amps": h["amps"]} if args.amps else {}),
+                        **({"amps": h["amps"]} if amps else {}),
                     }
                     for h in per_point[i]
                 ],

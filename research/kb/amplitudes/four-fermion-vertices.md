@@ -77,8 +77,14 @@ interaction splitting, 80 of 1985 interactions mix pairings, every one
 same-flavour (`X̄ X X̄ X`). The flow split is load-bearing only there and is not
 observable in any gated cell; it is pinned structurally. For a same-flavour
 process (`e+ e- > e+ e- NP<=1`) this engine emits one diagram per pairing where
-MadGraph draws one — the counting class of `gg_to_gg_cg` — and no banked row
-checks it ([same-flavour-four-fermion-diagram-count-ungated](../backlog/validation/same-flavour-four-fermion-diagram-count-ungated.md)).
+MadGraph draws one per contact coupling, writing the second pairing into the
+same `AMP()` with the `get_sign_flow` sign — the counting class of `gg_to_gg_cg`.
+It is a registered counting convention (user, 2026-10-15): `standalone_jamps`'
+`ee_to_ee_4f` row (22 diagrams against 19 graphs) requires its declared groups
+to partition our diagrams into exactly MadGraph's graphs, each group matching
+its `AMP()` to 1e-12, and each pairing matched MadGraph's own term group at
+relative sign +1. Tagging each pairing with the Feynman diagram it belongs to is
+[amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md).
 See [model/smeftsim-topu3l](../model/smeftsim-topu3l.md) for the model.
 
 Sinks that close two lines at once, and the rooting-invariance falsifier, are in

@@ -189,12 +189,36 @@ def read_jamp_coefficients(key, ngraphs):
     """
     with open(matrix_file(key)) as f:
         src = join_continuations(f.read())
-    stmt = re.search(r"JAMP\(1,1\)\s*=(.*)", src).group(1).replace(" ", "")
+    stmt = re.search(r"JAMP\(1,1\)\s*=(.*)", src).group(1)
+    return parse_jamp_coefficients(stmt, ngraphs, f"{key}: JAMP(1,1)")
+
+
+JAMP_TERM = re.compile(r"([+-]?)(?:\(([^()]*)\)\*)?AMP\((\d+)\)")
+
+
+def parse_jamp_coefficients(stmt, ngraphs, where):
+    """The c_i of a single-flow `JAMP(1) = sum_i c_i AMP(i)` right-hand side.
+
+    `stmt` is the statement folded onto one line. Every term must be `AMP(i)` or
+    `(c)*AMP(i)`, signed after the first, with `c` a real or `(re,im)` literal,
+    and each of the NGRAPHS amplitudes must appear once. Anything else, such as
+    an `IMAG1` factor or a `TMP_JAMP` temporary, is a form this parser has not
+    seen, so it asserts rather than reading past it.
+    """
+    stmt = stmt.replace(" ", "")
     coeffs = [0j] * ngraphs
     seen = set()
-    for sign, coef, idx in re.findall(r"([+-]?)(?:\(([^)]*)\)\*)?AMP\((\d+)\)", stmt):
+    pos = 0
+    while pos < len(stmt):
+        m = JAMP_TERM.match(stmt, pos)
+        assert m and (pos == 0 or m.group(1)), (
+            f"{where}: unrecognised term at {stmt[pos:pos + 40]!r}"
+        )
+        sign, coef, idx = m.groups()
+        pos = m.end()
         i = int(idx) - 1
-        assert i not in seen, f"{key}: AMP({idx}) appears twice in JAMP(1,1)"
+        assert 0 <= i < ngraphs, f"{where}: AMP({idx}) beyond NGRAPHS={ngraphs}"
+        assert i not in seen, f"{where}: AMP({idx}) appears twice"
         seen.add(i)
         if coef:
             parts = [float(p.replace("D", "E")) for p in coef.split(",")]
@@ -202,7 +226,7 @@ def read_jamp_coefficients(key, ngraphs):
         else:
             value = 1.0 + 0j
         coeffs[i] = -value if sign == "-" else value
-    assert len(seen) == ngraphs, f"{key}: JAMP(1,1) covers {len(seen)}/{ngraphs} graphs"
+    assert len(seen) == ngraphs, f"{where}: covers {len(seen)}/{ngraphs} graphs"
     return coeffs
 
 

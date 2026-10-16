@@ -126,9 +126,12 @@ any difference in diagram content could survive.
 
 A second counting divergence: for a same-flavour process through a four-fermion contact
 whose structures pair the legs both ways (`e+ e- > e+ e- NP<=1`), vibegraph emits one
-diagram per pairing where MadGraph draws one; no banked row checks it
-([backlog](../backlog/validation/same-flavour-four-fermion-diagram-count-ungated.md),
-[four-fermion vertices](../amplitudes/four-fermion-vertices.md)).
+diagram per pairing where MadGraph draws one per contact coupling. The split is
+made in `ufo/topo.rs::build_feyngraph_model`, one feyngraph vertex per pairing,
+not by feyngraph itself. It is a registered convention, checked per graph by
+`standalone_jamps`' `ee_to_ee_4f`
+([four-fermion vertices](../amplitudes/four-fermion-vertices.md),
+[amplitude-partial-sums-attributed-to-diagrams](../backlog/feature/amplitude-partial-sums-attributed-to-diagrams.md)).
 
 There is no command to draw or summarise a card's diagrams before integrating
 ([backlog](../backlog/feature/diagram-inspection-command-missing.md)).
