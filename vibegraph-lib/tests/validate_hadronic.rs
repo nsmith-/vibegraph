@@ -2581,8 +2581,9 @@ fn sigma_jj_dynamical_scale_vs_mg() {
 ///   pair at the same momenta. It is bounded below by the within-group number,
 ///   and the gap between the two is the part no configuration rule can reach.
 ///
-/// The clustering is rebuilt here from the run card and the groups' own diagrams
-/// rather than read off the integrand, which has no accessor for it. That
+/// The clustering is rebuilt here from the run card and the groups' own diagrams,
+/// at the point's partonic-CM momenta as the integrand clusters it, rather than
+/// read off the integrand, which has no accessor for it. That
 /// reconstruction is not assumed: on every point the value it gives in the
 /// channel the point was drawn in is compared against the scales the integrand
 /// itself recorded on that point, and a mismatch fails the probe. Without that
@@ -2670,8 +2671,8 @@ fn probe_cluster_scale_spread_over_configurations() {
                 continue;
             };
             kept += 1;
-            let incoming = [comps(&ev.lab[0]), comps(&ev.lab[1])];
-            let outgoing: Vec<[f64; 4]> = ev.lab[2..].iter().map(comps).collect();
+            let incoming = [comps(&ev.cm[0]), comps(&ev.cm[1])];
+            let outgoing: Vec<[f64; 4]> = ev.cm[2..].iter().map(comps).collect();
             let event = ScaleEvent {
                 incoming,
                 outgoing: &outgoing,

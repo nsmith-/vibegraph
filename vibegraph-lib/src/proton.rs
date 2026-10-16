@@ -308,22 +308,6 @@ pub(crate) fn beam_rows(pdf: &PdfMember, x1: f64, x2: f64, mu_f: [f64; 2]) -> [F
     rows
 }
 
-/// The lab-frame momenta of a point's mirrored physical event in the orientation
-/// the group's matrix element reads it in: every momentum rotated by π about the
-/// x axis and the two beams exchanged, so the first slot is again the beam that
-/// carries the representative's first parton.
-///
-/// This is MadEvent's view of an `IMIRROR = 2` point — it clusters the unflipped
-/// momenta with the subprocess's own flavour order — and it is the frame in which
-/// [`FlavorGroup::mirror_into`]'s argument is the partonic centre of mass.
-fn mirror_lab_into(lab: &[V], out: &mut Vec<V>) {
-    let rotate = |p: &V| V::new(p.e(), p.px(), -p.py(), -p.pz());
-    out.clear();
-    out.push(rotate(&lab[1]));
-    out.push(rotate(&lab[0]));
-    out.extend(lab[2..].iter().map(rotate));
-}
-
 impl FlavorGroup {
     /// The compiled, helicity-pruned amplitude every member shares.
     pub fn evaluator(&self) -> &AmplitudeEvaluator {
@@ -1269,9 +1253,11 @@ pub struct OuterPoint {
 ///
 /// The matrix element is evaluated in the **partonic CM** with the beams along ±z,
 /// the frame the helicity-pruned [`BoundAmplitude::eval_m2`] requires and the frame
-/// the channel maps generate in. The cut filter and the scale prescription operate in
-/// the **lab frame**, so the outgoing momenta are boosted along z by the partonic
-/// rapidity `y` first.
+/// the channel maps generate in. The cut filter and the closed-form scale
+/// prescriptions operate in the **lab frame**, so the outgoing momenta are boosted
+/// along z by the partonic rapidity `y` first. The clustering prescription reads
+/// the partonic CM, as MadEvent's does: its beam tie-break and its massive-pair
+/// measure are not invariant under that boost.
 pub struct ProtonIntegrand<'a> {
     groups: &'a FlavorGroups,
     subs: Vec<SubprocessProto<'a>>,
@@ -1368,9 +1354,6 @@ struct ProtonScratch<'a> {
     /// The last evaluated point's matched record fields
     /// ([`ProtonEvent::group_records`]).
     group_records: RefCell<Vec<[Option<MatchedRecord>; 2]>>,
-    /// The lab-frame momenta of the mirrored ordering's physical event, in the
-    /// orientation the group's matrix element reads them in.
-    lab_mirror_buf: RefCell<Vec<V>>,
     /// This thread's copies of [`ProtonIntegrand::vetoes`], per group.
     vetoed: Vec<Option<BoundVetoed<'a>>>,
 }
@@ -1666,7 +1649,6 @@ impl<'a> ProtonIntegrand<'a> {
                 group_scales: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_rewgt: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
                 group_records: RefCell::new(Vec::with_capacity(self.groups.groups().len())),
-                lab_mirror_buf: RefCell::new(Vec::with_capacity(2 + n_out)),
                 vetoed: bind_vetoes(&self.vetoes),
             }
         })
@@ -2129,10 +2111,11 @@ impl<'a> ProtonIntegrand<'a> {
     /// its own `μR`. A group's mirrored term is a different physical event — the
     /// same momenta with the beams' partons exchanged — and MadEvent clusters it
     /// as that event: the configuration is drawn from `AMP2` at the mirrored
-    /// argument `Rq` and clustered at the lab momenta rotated the same way, so
-    /// that the representative's first parton is on the first beam again. The
-    /// draws share the uniform, which correlates them without changing any one
-    /// term's distribution, and the sum is linear in each term.
+    /// argument `Rq` and clustered at `Rq` too, where the representative's first
+    /// parton is on the first beam again. Both terms cluster in the partonic CM
+    /// ([`term_at`](Self::term_at)). The draws share the uniform, which correlates
+    /// them without changing any one term's distribution, and the sum is linear in
+    /// each term.
     ///
     /// The sampling channel reaches only the direct terms of the groups whose
     /// diagrams it was built from, and only as the draw's fallback where `AMP2`
@@ -2176,8 +2159,7 @@ impl<'a> ProtonIntegrand<'a> {
             };
             let direct = {
                 let drawn = self.scale_channel(sc, cm, fallback, v);
-                let lab = sc.lab_buf.borrow();
-                self.term_at(sc, &lab, drawn)
+                self.term_at(sc, cm, drawn)
             };
             let mirrored = if g.has_mirror() {
                 g.mirror_into(cm, &mut mirror);
@@ -2190,12 +2172,9 @@ impl<'a> ProtonIntegrand<'a> {
                     },
                     v,
                 );
-                let lab = sc.lab_buf.borrow();
-                let mut lab_mirror = sc.lab_mirror_buf.borrow_mut();
-                mirror_lab_into(&lab, &mut lab_mirror);
                 // Clustered with the beams exchanged, so its per-beam
                 // factorisation scales come back in that order.
-                self.term_at(sc, &lab_mirror, drawn)
+                self.term_at(sc, &mirror, drawn)
                     .map(|(s, history, record)| {
                         (
                             EventScales {
@@ -2449,20 +2428,28 @@ impl<'a> ProtonIntegrand<'a> {
         }
     }
 
-    /// [`scales_at`](Self::scales_at), with the clustering the matched
-    /// reweighting reads where matching is on.
+    /// One term's clustered scales, with the clustering the matched reweighting
+    /// reads where matching is on, at `cm`: the partonic-CM momenta the term's
+    /// matrix element is evaluated at, beams first.
+    ///
+    /// The frame is MadEvent's: `update_scale_coupling` clusters the `PP` that
+    /// `DSIGPROC` evaluates, and that is the partonic CM, mirrored for an
+    /// `IMIRROR = 2` term. The clustering is not invariant under the
+    /// longitudinal boost to the lab: `cluster.f` breaks the tie between the two
+    /// beams of an initial-state merge on the sign of the merged leg's `p_z`, and
+    /// its massive-pair measure reads pseudorapidities.
     fn term_at(
         &self,
         sc: &ProtonScratch<'a>,
-        lab: &[V],
+        cm: &[V],
         channel: SampledChannel,
     ) -> Option<(EventScales, Option<RewgtHistory>, Option<MatchedRecord>)> {
         let mut buf = sc.scale_buf.borrow_mut();
         buf.clear();
-        buf.extend(lab[2..].iter().map(components));
+        buf.extend(cm[2..].iter().map(components));
         match self
             .scales
-            .point_history([components(&lab[0]), components(&lab[1])], &buf, channel)
+            .point_history([components(&cm[0]), components(&cm[1])], &buf, channel)
             .unwrap_or_else(|e| panic!("per-event scale on a sampled point: {e}"))
         {
             PointHistory::Scales {
@@ -4805,10 +4792,9 @@ mod tests {
                         // The clustering the term was scaled in, drawn and
                         // clustered again from the event's own momenta.
                         let sc = integ.scratch();
-                        let (argument, lab, fallback, x) = match ordering {
+                        let (argument, fallback, x) = match ordering {
                             BeamOrdering::Direct => (
                                 event.cm.clone(),
-                                event.lab.clone(),
                                 SampledChannel {
                                     group: gi,
                                     channel: integ.channel_members()[channel]
@@ -4819,12 +4805,10 @@ mod tests {
                                 event.x,
                             ),
                             BeamOrdering::Exchanged => {
-                                let (mut cm, mut lab) = (Vec::new(), Vec::new());
+                                let mut cm = Vec::new();
                                 g.mirror_into(&event.cm, &mut cm);
-                                mirror_lab_into(&event.lab, &mut lab);
                                 (
                                     cm,
-                                    lab,
                                     SampledChannel {
                                         group: gi,
                                         channel: 0,
@@ -4834,7 +4818,7 @@ mod tests {
                             }
                         };
                         let drawn = integ.scale_channel(sc, &argument, fallback, v);
-                        let (_, history, _) = integ.term_at(sc, &lab, drawn).expect("scaled");
+                        let (_, history, _) = integ.term_at(sc, &argument, drawn).expect("scaled");
                         let history = history.expect("matched");
                         let colors = integ.scales.channels().expect("channels")[gi].colors();
                         let source = integ.scales.alpha_s().expect("running coupling");
@@ -4888,6 +4872,123 @@ mod tests {
             if ickkw == 1 {
                 assert!(nontrivial > 0, "every matched factor was exactly one");
             }
+        }
+    }
+
+    /// A clustered term's scales are read in the partonic CM, so they are the
+    /// same at every rapidity of one partonic system, and the beam an
+    /// initial-state gluon is clustered onto is the one on its CM side.
+    ///
+    /// The point is a `q q̄ → l⁺ l⁻ g` system with the gluon slightly forward in
+    /// the CM (`p_z = +3 GeV` at `p_T = 40 GeV`), evaluated at partonic
+    /// rapidities `0` and `±0.3`. At `y = −0.3` the boost to the lab turns the
+    /// gluon backward. `cluster.f` decides between the two beams of the
+    /// initial-state merge by the sign of the gluon's `p_z`, so clustering the lab
+    /// momenta there moves the gluon's scale onto the other beam: both
+    /// assertions fail on such an integrand. Under matching, MadEvent's rule on
+    /// the CM momenta gives beam 1 the gluon's `p_T` and beam 2 the hard scale,
+    /// for the direct term and for the mirrored one, whose clustering sees the
+    /// same physical event rotated and is reported in physical beam order.
+    ///
+    /// What it cannot see: a frame that differs from the partonic CM by a
+    /// rotation about the beam axis, or by a boost that flips no sign at this
+    /// point; and the configuration draw, whose `AMP2` already reads the CM.
+    #[test]
+    fn clustered_scales_are_read_in_the_partonic_centre_of_mass() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let base = "  1 = lpp1\n  1 = lpp2\n  6500.0 = ebeam1\n  6500.0 = ebeam2\n\
+             \x20 lhapdf = pdlabel\n  247000 = lhaid\n  -1 = dynamical_scale_choice\n\
+             \x20 20.0 = ptj\n  10.0 = ptl\n  5.0 = etaj\n  2.5 = etal\n\
+             \x20 0.4 = drll\n  0.4 = drjl\n  50.0 = mmll\n  4 = maxjetflavor\n";
+        let pdf = probe_pdf();
+        let info = probe_alpha_s();
+
+        let sqrt_shat = 300.0_f64;
+        let (pt_g, pz_g) = (40.0_f64, 3.0_f64);
+        let e_g = (pt_g * pt_g + pz_g * pz_g).sqrt();
+        let e_l = 0.5 * (sqrt_shat - e_g);
+        let (px_l, pz_l) = (-0.5 * pt_g, -0.5 * pz_g);
+        let py_l = (e_l * e_l - px_l * px_l - pz_l * pz_l).sqrt();
+        let out = [
+            V::new(e_l, px_l, py_l, pz_l),
+            V::new(e_l, px_l, -py_l, pz_l),
+            V::new(e_g, pt_g, 0.0, pz_g),
+        ];
+        let at = |y: f64| {
+            let sqrt_tau = sqrt_shat / SQRT_S_HAD;
+            OuterPoint {
+                x1: sqrt_tau * y.exp(),
+                x2: sqrt_tau * (-y).exp(),
+                sqrt_shat,
+                jac: 1.0,
+            }
+        };
+        let backward = at(-0.3);
+        let beta = (backward.x1 - backward.x2) / (backward.x1 + backward.x2);
+        assert!(
+            boost_z(out[2], beta).pz() < 0.0,
+            "the lab boost keeps the gluon forward"
+        );
+
+        for ickkw in [1, 0] {
+            let card = RunCard::parse(&format!("{base}  {ickkw} = ickkw\n  20.0 = xqcut\n"))
+                .expect("clustered run card");
+            let groups = derive_flavor_groups(enumerate(LLJ, &m), &m, &evaluated, &card)
+                .expect("flavour groups");
+            let amps = bind_all(&groups, &evaluated);
+            let mut integ =
+                ProtonIntegrand::new(&groups, &amps, &evaluated, &pdf, SQRT_S_HAD, MU_F)
+                    .expect("integrand");
+            integ
+                .use_run_card_scales(&m, &evaluated, &card, Some(&info))
+                .expect("the clustered prescription compiles");
+            let evaluate = |y: f64| {
+                let sc = integ.scratch();
+                let shape = integ.shape(sc, &at(y), &out, 0, &[0.5]);
+                assert!(shape > 0.0, "the point carries weight at y = {y}");
+                let scales = sc.group_scales.borrow().clone();
+                let records = sc.group_records.borrow().clone();
+                (scales, records)
+            };
+            let flipped = evaluate(-0.3);
+            if ickkw == 1 {
+                let mut checked = 0;
+                for (gi, g) in groups.groups().iter().enumerate() {
+                    let rep = &g.members()[0];
+                    if rep.incoming.contains(&21) {
+                        continue;
+                    }
+                    assert_eq!(rep.outgoing[2], 21, "a quark-antiquark group emits a gluon");
+                    for (slot, scales) in flipped.0[gi].iter().enumerate() {
+                        let Some(scales) = scales else {
+                            continue;
+                        };
+                        assert!(
+                            (scales.mu_f[0] - pt_g).abs() < 1e-9 * pt_g,
+                            "group {gi} ordering {slot}: beam 1 carries the gluon's scale, \
+                             got {:?}",
+                            scales.mu_f
+                        );
+                        assert!(scales.mu_f[1] > 2.0 * pt_g, "{:?}", scales.mu_f);
+                        checked += 1;
+                    }
+                }
+                assert!(
+                    checked >= 2,
+                    "too few quark-antiquark terms checked: {checked}"
+                );
+            }
+            let central = evaluate(0.0);
+            assert_eq!(
+                flipped, central,
+                "ickkw = {ickkw}: the scales moved at y = -0.3"
+            );
+            assert_eq!(
+                evaluate(0.3),
+                central,
+                "ickkw = {ickkw}: the scales moved at y = 0.3"
+            );
         }
     }
 

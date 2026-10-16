@@ -148,10 +148,9 @@ topologies to MadGraph's 17, the whole deficit `g g > g g` (4 against 6),
 because the four-gluon contact term is written once here and once per colour
 structure there ([diagram enumeration](../process/diagram-enumeration.md)).
 `amplitudes` is `uncovered`: `gg_to_gg` and `uux_to_uux` cover two
-subprocesses, and the others would need parton rows.[^manifest] Nine of its
-10 000 events replay their scale only to a `√(1 + 10⁻⁶)` tie-break inflation;
-see [scale replay](scale-replay-gate.md) and
-[the missing jj cluster dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md).[^n28-k44]
+subprocesses, and the others would need parton rows.[^manifest] All 10 000 of
+its events replay their scale since the replay clusters in the partonic CM; nine
+had missed when it clustered lab momenta. See [scale replay](scale-replay-gate.md).[^n28-k44]
 
 ## The llj family
 

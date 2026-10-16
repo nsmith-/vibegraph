@@ -136,10 +136,11 @@ the `αs` comes from is [scales-pdf/alpha-s-sources](../scales-pdf/alpha-s-sourc
   one pair of density rows, every group evaluated at it.
 - **Per term**: the kT clustering (`dynamical_scale_choice = -1`) and anything under
   matching. Every group draws its own clustering configuration `∝ AMP2_c` of its own
-  matrix element from one shared trailing uniform, clusters at the lab momenta, reads
+  matrix element from one shared trailing uniform, clusters at the partonic-CM momenta (as MadEvent's `PP`; the
+  beam tie-break and the massive-pair measure are not boost-invariant), reads
   its densities at its own `μF` and binds `αs(μR)`. A group with a mirrored ordering
-  draws a second configuration from `AMP2` at `Rq` and clusters the mirrored physical
-  event (`mirror_lab_into`). MadEvent integrates each subprocess group apart, so a
+  draws a second configuration from `AMP2` at `Rq` and clusters at the mirrored CM
+  momenta `Rq`. MadEvent integrates each subprocess group apart, so a
   point is never clustered in another group's merge graph. The draw is
   [scales-pdf/clustering-configuration-draw](../scales-pdf/clustering-configuration-draw.md).
 

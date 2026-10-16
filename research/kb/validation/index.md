@@ -7,7 +7,7 @@
 * [MadGraph defects found by this project](madgraph-defects.md) - Register of MadGraph defects met while validating: where each sits, whether it changes a weight on a card we support, how vibegraph handles it, and its upstream status.
 * [Grouped MadEvent sets scales on the unpermuted point](madgraph-permuted-first-call.md) - Grouped DSIGPROC clusters and rejects the unpermuted PP while the matrix element reads P1; vibegraph clusters P1. A registered deviation (H1), with its measured size and reproducer.
 * [Partonic sigma is not comparable across some refdata boundaries](refdata-sigma-comparability.md) - A partonic sigma from refdata-2 is not comparable to refdata-3 or later (alpha_s 0.130 vs 0.118), nor are the four re-carded runs across refdata-4 to refdata-5 (up to -9.8%).
-* [Rows gated differently from the default, and why](sigma-row-gating-exceptions.md) - Why some rows report rather than assert a statistic (ee_to_mumua's pull, the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items.
+* [Rows gated differently from the default, and why](sigma-row-gating-exceptions.md) - Why some rows report rather than assert a statistic (the 2->6 rows, toy-row AQCDUP, pp_to_jj tie-breaks, info cells); open residuals are linked backlog items.
 
 ## Design
 
@@ -27,6 +27,7 @@
 
 ## Measurement
 
+* [MadEvent's default survey settings bias σ low](madevent-default-survey-bias.md) - MadEvent 3.7.1's default survey can leave a channel's grid short, biasing σ low by 0.5–1 % (g q > t t~ q: −0.55 % in G2); hard_survey = 2 removes it, but is inert when mmjj > 1 % of ebeam1 + ebeam2, and does not fix rare-large-weight channels.
 * [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.2 % low on a fixed-beam 2 → 4; equal-weight recombination lands on this side and an adaptation-free estimator.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
 * [Seed-sweep headroom of the enforced gate statistics (base 0538e2d)](seed-headroom-census-2026-09.md) - Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce.
