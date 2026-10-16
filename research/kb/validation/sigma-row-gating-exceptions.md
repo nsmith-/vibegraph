@@ -58,7 +58,7 @@ section; the exceptions below are worked cases of them.
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
 | `pp_to_jj` · scale replay | 9 of 10 000 events admitted by signature | tie-break below printed precision | [jj tie-break, no cluster dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md) |
-| `gg_to_gg_cg` · integrals | `info` | converged −0.22% offset, unattributed | [gg_to_gg_cg σ offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md) |
+| `gg_to_gg_cg` · integrals | `info` | the reference is one high MadEvent draw; this side agrees with fresh seeds to 6e-6 | [flip the cell](../backlog/validation/gg-to-gg-cg-integrals-cell-still-info.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |
 | `ee_to_wpwm_cw`, `ee_to_zh_smeft` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | the non-SM concept |
 | `pp_to_ttx_0j1j_mlm` · integrals | `long` / `info` | `@1` reads +1.28%, undiagnosed | [ttx MLM @1 high](../backlog/validation/ttx-mlm-at1-sigma-high.md); [MLM σ gate](mlm-sigma-gate.md) |

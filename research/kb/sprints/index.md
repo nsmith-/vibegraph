@@ -30,6 +30,7 @@
 * [process-grammar](process-grammar/index.md)
 * [resonance-sampling](resonance-sampling/index.md)
 * [sigma-ee-mumua](sigma-ee-mumua/index.md)
+* [sigma-gg-cg](sigma-gg-cg/index.md)
 * [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
 * [sigma-reference-scatter](sigma-reference-scatter/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
