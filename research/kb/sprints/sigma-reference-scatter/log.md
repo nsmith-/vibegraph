@@ -58,3 +58,11 @@
   0.5–1 % and that `hard_survey = 2` removes it. A cross-check on the
   sibling rows is running, and an amendment (bank with `hard_survey = 2`)
   goes to the user before the comment is made runnable.
+* **Approval relayed** (2026-10-16, by the planner session, as the user's
+  decision): the second D1 amendment. Bank every row with `hard_survey = 2`,
+  record the effective `min_events`/`max_events`, keep heavy-tailed rows
+  `info`, and have the driver fail short-event or non-numeric runs. At the
+  user's request the amendment now states cases (a) (the uux top-free
+  continuum) and (b) (#22's card, where `hard_survey` is inert) explicitly.
+  F2 implements the driver side; then the banking comment is made runnable in
+  one edit.

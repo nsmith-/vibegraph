@@ -112,7 +112,7 @@ single-run units under A, roughly 5 min:
 The total is roughly 9 h plus the 2 → 6 rows, before any 20 + 20 ladders.
 These are estimates from this host's timings and are not measured on the M3.
 
-## Second amendment proposed after the survey finding (awaiting the user)
+## Second amendment after the survey finding (approved by the user, relayed 2026-10-16)
 
 PR #23's V4 found that MadEvent's default survey left `g q > t t~ q` 0.55 %
 low, and that `hard_survey = 2` removes it. A cross-check on the other rows
@@ -146,3 +146,30 @@ is too heavy-tailed at 10k events to bank.
    `libgammaUPC.a` compile race.
 
 Unchanged: fresh seeds, the 4× screen, and both values recorded per seed.
+
+**The two cases named explicitly:**
+
+- **(a) The top-free continuum `u u~ > w+ b w- b~ / t t~` (#28).** It is not
+  a banked or gated row: no gate reads `uu_tt` or a top-free row, and #28
+  closed by documenting the deficit. So it is not in this batch. If a row for
+  it is ever added, it falls under point 3: banked with `hard_survey = 2`, its
+  σ cell `info` against MadEvent (−0.68 % after `hard_survey = 2`, channels
+  G8/G9 at χ²/dof 6–12), with #28's adaptation-free three-channel value
+  recorded beside it. Its equal-weight value is not used: it is too
+  heavy-tailed at 10k events.
+- **(b) #22's fixed-beam `u u~ > e+ e- g g` card, where `hard_survey` is
+  inert.** It is a diagnostic card, not a banked row, so there is nothing to
+  bank. #22 stays closed on its attribution, MadEvent's iteration combination,
+  which `hard_survey = 2` cannot change because MadEvent's harder survey
+  already runs there. In general, a banked row whose card has
+  `mmjj > 0.01 · (ebeam1 + ebeam2)` shows up in its recorded effective
+  `min_events`/`max_events`, and the screen lists it back. Its σ cell then
+  follows the first amendment: the equal-weight value only where an
+  adaptation-free check validated it, otherwise the reported mean. It stays
+  `info` if its channels scatter at χ²/dof > 3. No committed banked card is
+  known to trip the condition; the hadronic threshold is 130 GeV.
+
+The durable record of the survey bias is the concept
+`validation/madevent-default-survey-bias.md` on PR #23's branch. It is linked
+from `madgraph-defect-policy` as a MadGraph approximation, and listed as an
+upstream-report candidate.
