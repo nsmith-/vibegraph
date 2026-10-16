@@ -6,6 +6,10 @@
 
 * [ee → μμγ radiative-return excess](sprint.md) - Attribute the ~1 % ours-high excess of ee_to_mumua in the radiative-return pt(γ) windows to one side with a measurement, and re-arm the row's gates on attribution.
 
+## Sprint Record
+
+* [ee → μμγ radiative-return excess](closeout.md) - The +1.04 % excess was MadEvent's single default-survey bank under-weighting rare large Z-ISR weights; against the seeded hard_survey = 2 reference the row reads −0.074 % and its pull is asserted.
+
 ## Directories
 
 * [sessions](sessions/index.md)

@@ -3,7 +3,7 @@ type: Sprint
 title: "ee → μμγ radiative-return excess"
 description: "Attribute the ~1 % ours-high excess of ee_to_mumua in the radiative-return pt(γ) windows to one side with a measurement, and re-arm the row's gates on attribution."
 status: draft
-active: true
+active: false
 tags: [ee-to-mumua, sigma, madgraph-coverage, info-cell]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -20,7 +20,7 @@ reference is at fault).
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [ee-mumua-radiative-return-sigma-high](../../backlog/validation/ee-mumua-radiative-return-sigma-high.md)
+- `ee-mumua-radiative-return-sigma-high` (closed)
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,

@@ -20,3 +20,12 @@
   MadEvent references treat the iteration bias is decided once, in
   `sigma-reference-scatter`'s D1 (it also governs `sigma-2to4-offset` and
   `sigma-uux-wbwb-veto`). The banking request is posted once D1 is approved.
+* **Unblocked by PR #25** (merged): D1 banks every gated row as seeded
+  fresh-directory MadEvent runs at `hard_survey = 2`; refdata-10 carries
+  `ee_to_mumua` as five seeds of 100k-event `m(μμ)` window sums. Its reported
+  σ is 1.007732e-1 ± 1.9e-5, −0.033 % from the fixed-density estimate, and the
+  first banked run reads this side −0.074 %, pull −0.42.
+* **Approval relayed** (2026-10-16, by the planner session, as the user's
+  decision: "approve the ee_to_mumua gate"): assert the row's pull, rewrite
+  its manifest note, and close `ee-mumua-radiative-return-sigma-high`. This
+  supersedes D1's "stays `info`" for this row (recorded in D1).
