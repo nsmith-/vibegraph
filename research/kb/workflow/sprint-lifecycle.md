@@ -105,8 +105,9 @@ guard against fragmentation, together with `index.md` reading orders.[^n42-risks
    - **Backlog.** Delete the files of items the sprint closed. Drop the
      `Backlog:` lines of items it leaves open, which releases the claim. File
      the reports' Found entries as new items.
-   - **Bookkeeping.** Set `active: false` on `sprint.md`, add an entry to the
-     root `log.md`, regenerate the indexes, run `kb-lint`, and mark the PR
+   - **Bookkeeping.** Set `active: false` on `sprint.md`, fill `closed:` on the
+     close-out record (the rendered change log reads it; there is no root
+     `log.md` to edit), regenerate the indexes, run `kb-lint`, and mark the PR
      ready for review.
 
 ## Trust tiers on reports
