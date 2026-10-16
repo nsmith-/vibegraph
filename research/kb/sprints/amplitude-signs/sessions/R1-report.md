@@ -89,7 +89,7 @@ here). Mutation results are in the next section and cited by their ids.
 | 1.12 | `e+ e- > e+ e-` carries `c = (−1, −1, +1, +1)`; `g u~ > e+ e- u~` flips `T(1,5,2) → T(1,2,5)` and `+1 → −1` | `amplitudes/ee_to_ee.json`, `gu_to_epemu.json`, `gux_to_epemux.json` `jamp_coefficients` and `flow_structures` | holds |
 | 1.13 | "`g g > t t~` is uniform with crossed top lines carrying 0, 1 and 1 propagators, which is what pins the crossed line's propagator independence" | T1's factor table (`g g > t t~` as `g g > u u~`): `prop` is `+1, −1, −1` and `tg` `−1, +1, +1`, so `fermi_sign` is uniform because the crossed line's propagator phases are offset by the triple-gluon sign; only `Diagram::fermion_line_sign` is propagator-independent on a crossed line | **wrong** (stale): in this convention a crossed line's propagators each take `−1` |
 | 1.14 | `CONFIG_AMP_SIGNS` banks the per-process sign as a tripwire | `amplitude_oracle.rs:614, 1931-1970` | holds |
-| 1.15 | the "How a new sign gets found" account (`u d > e+ e- u d QCD=0`, three fitted candidates each falsified) | note 28 §S5 (archived) | record |
+| 1.15 | the "How a new sign gets found" account (`u d > e+ e- u d QCD=0`, three fitted candidates each falsified, "listed in fermion-line-sign") | note 28 §S5 (archived) | record; **imprecise**: `fermion-line-sign` lists two of the three (the third, no Yang–Mills sign on WWγ/WWZ, is a vertex rule), and a third alternative of its own |
 | 1.16 | Open items and links | the three backlog items exist; `kb-lint` resolves the links | holds |
 | 1.17 | sources: `code-*` cite this repo's code at `5d4a346` | `git merge-base --is-ancestor 5d4a346 HEAD` fails: a PR #30 branch commit; `root_diagram.rs` has changed since (T's doc of `triple_gluon_sign`, `triple_gluon.rs` is new). `workflow/knowledge-bundle`: "Our own code is cited by path" | **wrong**: cited by path instead |
 
@@ -238,3 +238,81 @@ here). Mutation results are in the next section and cited by their ids.
 | 10.7 | the "Why it is sound" paragraph (B-D's) | 1.1, 3.2 | holds |
 | 10.8 | `eval_strategies` figures | bench record (M3 Max) | record |
 | 10.9 | `root-diagram`, `rooting-soundness` sources at `787070e` | not in this clone | unchecked (items exist) |
+
+## Mutations and probes
+
+Driver `target/r1/mutate.py` (in the worktree's `target/`, not committed): each
+edit an exact-string replacement asserted to occur once, the suites run, the
+saved files written back and `git diff --quiet` checked (`reverted clean=True`
+after every one). `standalone_jamps` and `amplitude_oracle` run with
+`-- --test-threads=1`; the lib filters as named. The oracle's failures are split
+by their messages (`target/r1/aofail.py`): the oracle checks per diagram, then
+per flow, then `CONFIG_AMP_SIGNS`, returning on the first violation, so a row in
+the last class agrees with MadGraph up to a whole-process sign.
+
+| id | edit | `standalone_jamps` fails | `amplitude_oracle`: per diagram or per flow | `amplitude_oracle`: tripwire only | lib tests |
+|---|---|---|---|---|---|
+| M1 | `triple_gluon_sign` → `+1` | 10: `gg_to_ttxg`, `gg_to_uux`, `gu_to_ttxu`, `gux_to_ttxux`, `ttx_to_gg_chg`, `ug_to_ttxu`, `ug_to_ug`, `uux_to_ggg`, `uux_to_ttxg`, `uux_to_ttxg_4f` | 3: `gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2` | 0 | relabelling passes; `named_processes…` fails at `:1331` (the triple-gluon assertion); `the_triple_gluon_diagram_agrees_with_madgraph` fails, the other three pass |
+| MV-all | `convention_sign` without `vertex_root_signs` | 17: `aem_to_wmve`, `ee_to_ee_4f`, `ee_to_wpwmwpwm_cw`, `ee_to_wpwmz`, `gu_to_ttxu`, `gux_to_ttxux`, `ll_to_qqxs_toy_yukawa`, `tata_to_ttxa_tensor4f`, `tata_to_ttxh`, `tata_to_ttxhh`, `ttx_to_gg_chg`, `ug_to_ttxu`, `ug_to_ug`, `uux_to_ggg`, `uux_to_ttxg`, `uux_to_ttxg_4f`, `wpem_to_zve` | 13: per flow `bbx_to_ccx_emmm_qcd0`, `ud_to_epemud_qcd0`, `uux_to_ccx_emmm_qcd0`, `uux_to_uux`; per diagram `ee_to_ee`, `ee_to_mumu_4f`, `ee_to_mumu_tata_qcd0`, `ee_to_mumua`, `ee_to_wp0wm`, `ee_to_wp0wmt`, `ee_to_wpwm`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f` | 15: `ee_to_mumu`, `ee_to_mumu_eml`, `ee_to_mumu_smlimit`, `ee_to_tatah`, `ee_to_tlt`, `ee_to_ttx`, `ee_to_ttx_dipole`, `ee_to_ttx_smeft`, `ee_to_ttx_smlimit`, `ee_to_z0h`, `ee_to_zh`, `ll_to_qqx_toy_dipole`, `ll_to_qqx_toy_tensor`, `pp_to_ll_qcd0`, `uux_to_mumu` | relabelling passes; `a_charged_triple_vector_vertex…` fails |
+| MV-rev | `vertex_root_signs` without `reversed_sign` | the same 17 | the same 13 | the same 15 | relabelling passes; `named_processes…` fails |
+| MT | `vertex_root_signs` without the tensor `build_sign` | 1: `tata_to_ttxa_tensor4f` | 2 per diagram: `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` | 0 | relabelling passes; `named_processes…` fails |
+| MS | `propagator_phase_sign` without the scalar lines | 25: `aa_to_wpwm_cw`, `az_to_wpwm_cw`, `bbx_to_hh`, `ee_to_wpwmwpwm_cw`, `ee_to_wpwmz`, `hh_to_hh_chbox`, `hh_to_ttx`, `ht_to_ht_chbox`, `ll_to_qqxs_toy_yukawa`, `ll_to_ss_toy_dscalar`, `sl_to_sl_toy_dscalar`, `tata_to_ttxa_tensor4f`, `tata_to_ttxh`, `tata_to_ttxhh`, `ttx_to_gg_chg`, `ttx_to_hh_chbox`, `uux_to_ttxg_4f`, `wpwm_to_az_cw`, `wpwm_to_epemz`, `wpwm_to_wpwm`, `wpwm_to_wpwm_cw`, `wpwm_to_wpwma_cw`, `wpwm_to_wpwmz_cw`, `wpwm_to_zz_cw`, `zz_to_ttx` | 9: per flow `bbx_to_ccx_emmm_qcd0`, `gg_to_gg_cg`, `gg_to_ttx_smlimit_qcd2`, `qqx_to_o8o8_toy_dcolor`, `uux_to_ccx_emmm_qcd0`, `wpwm_to_wpwmz_cw`; per diagram `ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f` | 0 | relabelling passes; `named_processes…` fails |
+| MC | `propagator_phase_sign` without the crossed lines | 22: `ee_to_ttxh`, `ee_to_ttxh_identity`, `gg_to_ttxg`, `gg_to_uux`, `gu_to_ttxu`, `gux_to_ttxux`, `hh_to_ttx`, `hwp_to_tbx`, `ll_to_qqxs_toy_yukawa`, `tata_to_ttxa_tensor4f`, `tata_to_ttxh`, `tata_to_ttxhh`, `ug_to_ttxu`, `uux_to_ttxg`, `uux_to_ttxg_4f`, `wmwp_to_emep`, `wph_to_tbx`, `wpwm_to_epem`, `wpwm_to_epemz`, `wpwm_to_uux`, `wpwm_to_uuxg`, `zz_to_ttx` | 9: per flow `bbx_to_ccx_emmm_qcd0`, `gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2`, `ud_to_epemud_qcd0`, `uux_to_ccx_emmm_qcd0`; per diagram `ee_to_mumu_tata_qcd0`, `ee_to_mumua`, `ee_to_tatah` | 0 | relabelling passes; `named_processes…` fails; two of the `triple_gluon` tests fail |
+| M4 | `triple_gluon_sign` without `is_coloured` | 11: `aem_to_wmve`, `ee_to_wpwmwpwm_cw`, `ee_to_wpwmz`, `wmwp_to_emep`, `wpem_to_zve`, `wpwm_to_epem`, `wpwm_to_epemz`, `wpwm_to_uux`, `wpwm_to_uuxg`, `wpwm_to_wpwma_cw`, `wpwm_to_wpwmz_cw` | 5: per diagram `ee_to_wp0wm`, `ee_to_wp0wmt`, `ee_to_wpwm`; per flow `ud_to_epemud_qcd0`, `wpwm_to_wpwmz_cw` | 0 | `a_charged_triple_vector_vertex…` fails, the other three pass |
+| M2 | `f_to_traces` negated, `triple_gluon_sign` → `+1` | 0 (`ok. 49 passed`) | 0 (`ok. 49 passed`) | 0 | `the_triple_gluon_diagram_agrees_with_madgraph` (the literal) and `…_has_madgraphs_colour` fail |
+| M3 | `GC_10` negated in `from_model_card`, `triple_gluon_sign` → `+1` | 2: `ttx_to_gg_chg`, `uux_to_ttxg_4f` (SMEFTsim) | 2: the SMEFTsim `gg_to_ttx_smlimit` rows | 0 | `…_agrees_with_madgraph` and `…_reads_minus_one_outside_its_colour` fail |
+| ML | `fermi_sign` without `* tree.live_reversed_parity()` | 6: `ee_to_ee_4f`, `ll_to_qqxs_toy_yukawa`, `tata_to_ttxa_tensor4f`, `tata_to_ttxh`, `tata_to_ttxhh`, `ttx_to_gg_chg` | 7: per flow `bbx_to_ccx_emmm_qcd0`, `uux_to_uux`; per diagram `ee_to_ee`, `ee_to_mumu_4f`, `ll_to_qqx_toy_tensor`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f` | 24 | relabelling and renumbering pass; `literal_sigma_currents_are_rooting_invariant` fails; sweep `270 re-rootings, 3 failures across 1 processes` (`b b~ > c c~ e+ e- mu+ mu- QCD=0`) |
+
+Every `standalone_jamps` failure above is a per-flow disagreement (each panic
+message names a point, a helicity and a flow).
+
+**Reading.** B′'s table reproduces: every count and every row it names. T1's
+M1–M4 reproduce to the row. B-H's M3a–e (each part fails
+`named_processes_exercise_every_convention_factor`) and M4 (the live-parity
+cancellation) reproduce. What does not hold is the description "every listed
+failure is a per-diagram or per-flow disagreement": 15 of the vertex reading's
+28 `amplitude_oracle` failures are the tripwire. The relabelling test passes
+under all six factor mutations.
+
+**Probes** (temporary tests, reverted):
+
+- P0, `r1_probe_four_fermion_census` in `ufo/topo.rs`'s tests, over
+  `ParsedModel::parse` of the vendored SMEFTsim UFO: `interactions 1985
+  four-fermion interactions 802 four-fermion structures 21 mixed 80
+  same-flavour 60`; the twenty others are `V_752`/`V_753` (`t~ b b~ t`),
+  `V_795`–`V_798` (`u~ d d~ u`) and `V_807`–`V_810` (`c~ s s~ c`), split
+  interactions included.
+- P0 and M1, `r1_probe_uux_gg_ward` in `triple_gluon.rs`: `u u~ > g g` at
+  `√s = 500`, `cos θ = 0.3`, per helicity `eval_hel_m2`. Unmutated, every
+  helicity with equal gluon helicities is `0` (`[-1, 1, 1, 1]` and
+  `[1, -1, -1, -1]` read `2.6e-31`); under M1, `[-1, 1, -1, -1]`, `[-1, 1, 1, 1]`,
+  `[1, -1, -1, -1]` and `[1, -1, 1, 1]` read `9.604314e1`. The others are
+  unchanged (`4.252250e1`, `1.232901e1`).
+- `vvv_parity.py` (scratchpad): the parity of every triple-vector structure on a
+  vertex with a `W`/`W1` pair under the exchange of the pair's slots and
+  momenta, at five random momentum sets each, in the SM and SMEFTsim UFOs.
+  SM: `VVV1` odd on `a W- W+` and `W- W+ Z`. SMEFTsim: `VVV1`, `VVV2`, `VVV4`,
+  `VVV5`, `VVV6`, `VVV7`, `VVV9` odd, `VVV3` zero, on `a W- W+` and `W- W+ Z`;
+  `VVV5` odd on `W- W+ Z1` and on the `W1` pairs. The checker classifies
+  `Metric(1,2)*P(3,1) ± Metric(1,2)*P(3,2)` as even / odd and a mixed structure
+  as neither.
+
+Second batch (same driver), and the `extended-validation` rooting tests:
+
+| id | edit | `standalone_jamps` fails | `amplitude_oracle` fails | lib tests |
+|---|---|---|---|---|
+| MF-exempt | `fermion_line_sign` takes `(−1)^P` only on a line with a `Gamma`/`Sigma` vertex (note 35's reverted rule 5); the debug cross-check disabled | 8: `bbx_to_hh`, `ht_to_ht_chbox`, `ll_to_qqxs_toy_yukawa`, `ll_to_ss_toy_dscalar`, `sl_to_sl_toy_dscalar`, `tata_to_ttxh`, `tata_to_ttxhh`, `ttx_to_hh_chbox` | 1 per flow: `qqx_to_o8o8_toy_dcolor` | — |
+| MF-exempt+MS | the same, and the scalar-line phase dropped | 20, `tata_to_ttxh` and `tata_to_ttxhh` among them | 8, `qqx_to_o8o8_toy_dcolor` **not** among them | — |
+| MR-leg0 | `convention_sign` × `−1` when leg 0's vertex has a fermion slot (B-H's M2) | — | — | relabelling fails: `w+ e- > z ve` flips `[1]`, `w+ a > e+ ve a` `[6]`, `st lt > st lt` `[1, 2]`, the rest `[]` |
+
+MF-exempt+MS is note 35's state: the toy row agrees with the exemption only
+beside the missing scalar-line `−1`, and the tau rows fail. That is the
+fermion-line-sign concept's third alternative, reproduced.
+
+`cargo test -p vibegraph-lib --features extended-validation --lib helas::eval::rooting_soundness -- --nocapture --test-threads=1`:
+`ok. 5 passed; 0 failed; 1 ignored` (`four_fermion_currents_are_rooting_invariant`,
+`literal_sigma_currents_are_rooting_invariant`,
+`momentum_slashed_chain_is_rooting_invariant`, `root_override_hook_is_transparent`,
+`tensor_four_fermion_currents_are_rooting_invariant`).
+
+After the last mutation, `git diff --stat -- vibegraph-lib` is empty.
