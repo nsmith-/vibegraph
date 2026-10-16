@@ -34,5 +34,6 @@ profile.json.gz
 /py.py
 .DS_Store
 
-# Rendered by `pixi run backlog` in scripts/build-docs.sh; never committed.
+# Rendered by `pixi run backlog` and `pixi run kb-log` in scripts/build-docs.sh; never committed.
 docs/src/backlog.md
+docs/src/kb-log.md
