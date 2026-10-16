@@ -99,6 +99,15 @@
 //!   endpoints against `leshouche.inc`.
 //! - The CF matrix itself is not re-derived here; `color_cf_oracle` pins it
 //!   against every generated `DATA CF` block.
+//! - A row in `common::mg_graphs::ROUNDED_COUPLING_GRAPHS` carries graphs whose
+//!   MadGraph value is built on a coupling MadGraph's Fortran writes from a
+//!   seven-digit literal. Those graphs, named there and paired with this side's
+//!   diagrams through [`MG_DIAGRAM_ORDER`], are compared at the registered modulus
+//!   deviation: their share of this side's amplitude is divided by `1 + deviation`
+//!   before `|M|²`, the flows and `JAMP2` are compared ([`Rounded`]). A uniform
+//!   error of that size on exactly those diagrams cannot be seen, and nothing here
+//!   checks the list against MadGraph graph by graph: the row's standalone table
+//!   (`standalone_jamps`) is where each listed graph's modulus is measured.
 //! - A row named in [`KNOWN_LINEAR_DISAGREEMENT`] is measured but not enforced: its
 //!   comparison runs and is reported, and only its verdict is downgraded. Nothing
 //!   that row would otherwise pin is pinned while it is listed.
@@ -109,6 +118,7 @@ use libtest_mimic::{Arguments, Failed, Trial};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use common::mg_graphs;
 use common::report::{AmplitudesRow, Stopwatch};
 
 use vibegraph::diagrams::DiagramSet;
@@ -295,18 +305,13 @@ const KNOWN_CONFIG_MERGE: &[(&str, &str)] = &[
 /// need no pairing at all, and the cell reports the deviation it measures
 /// instead of reporting nothing.
 ///
+/// A pairing measured on a standalone table that numbers its graphs as the row's
+/// MadEvent export does is measured too, and needs no entry here.
+///
 /// Two-way: a listed row that starts banking per-diagram amplitudes fails here.
 /// At that point the pairing is derivable, and an exemption that outlives the
 /// reason for it is how a gate stops covering what it claims to.
-const KNOWN_CONFIG_PAIRING_UNAVAILABLE: &[(&str, &str)] = &[(
-    "wpwm_to_wpwmz_cw",
-    "222 graphs, so no per-diagram table is banked and the two orderings have \
-     nothing to be paired by. The partitions are not a shift of one another \
-     either: they agree on the multiset of group sizes and on nothing finer, \
-     and MadGraph's own per-diagram cluster trees in output/wpwm_to_wpwmz_cw.json \
-     are the honest route to the pairing whenever a session takes the five-vector \
-     structures on",
-)];
+const KNOWN_CONFIG_PAIRING_UNAVAILABLE: &[(&str, &str)] = &[];
 
 /// Processes whose linear-level comparison is known to disagree with MadGraph, with the
 /// finding that keeps them out of the gate.
@@ -408,7 +413,181 @@ const MG_DIAGRAM_ORDER: &[(&str, &[usize])] = &[
             25, 27, 29, 31, 33, 28, 32, 30, 34, 24, 26,
         ],
     ),
+    // 222 graphs, so this row's table banks no `AMP()`. The pairing is measured per
+    // graph on the standalone table of the same process instead, whose `AMP()`
+    // numbering is this export's (the amplitude-closing calls are the same lines),
+    // and it is what the configuration partition and the rounded-coupling graphs
+    // are read through here.
+    ("wpwm_to_wpwmz_cw", mg_graphs::WPWM_TO_WPWMZ_CW_GRAPHS),
 ];
+
+/// A row's registered rounded-coupling graphs as this side's diagrams: per coupling,
+/// one evaluator over the diagrams its graphs pair with, and `1 − 1/(1 + deviation)`,
+/// the share of their amplitude this side carries above MadGraph's rounded value.
+///
+/// What it reaches: `|M|²` at every point, the flows and `JAMP2`, each compared
+/// with this side's amplitude less that share. A row that also banks `AMP()` would
+/// need its diagram and configuration levels corrected the same way, and a
+/// multi-flow row its correction per flow; both are refused rather than compared
+/// uncorrected.
+struct Rounded {
+    parts: Vec<(AmplitudeEvaluator, f64)>,
+}
+
+impl Rounded {
+    fn for_row(
+        table: &Table,
+        set: &DiagramSet,
+        model: &vibegraph::ufo::UFOModel,
+        order: &[usize],
+        banks_amps: bool,
+    ) -> Result<Self, Failed> {
+        let name = table.key.as_str();
+        let registered = mg_graphs::rounded_couplings(name);
+        if registered.is_empty() {
+            return Ok(Rounded { parts: Vec::new() });
+        }
+        if table.n_flows != 1 || banks_amps {
+            return Err(format!(
+                "[{name}] registers rounded-coupling graphs, which this gate corrects on a \
+                 single-flow row that banks no AMP() only"
+            )
+            .into());
+        }
+        let is_permutation = order.len() == set.diagrams.len()
+            && order.len() == table.n_graphs
+            && order.iter().collect::<BTreeSet<_>>().len() == order.len()
+            && order.iter().all(|&k| k < table.n_graphs);
+        if !is_permutation {
+            return Err(format!(
+                "[{name}] its rounded-coupling graphs are read through MG_DIAGRAM_ORDER, \
+                 which is not a permutation of its {} graphs",
+                table.n_graphs
+            )
+            .into());
+        }
+        let couplings = read_coupling_table(name)?;
+        let mut parts = Vec::new();
+        for r in registered {
+            if let Some((python, fortran)) = &couplings {
+                let (Some(py), Some(ft)) = (python.get(r.coupling), fortran.get(r.coupling)) else {
+                    return Err(format!(
+                        "[{name}] the row's coupling table does not carry {} in both its \
+                         Python and its Fortran column",
+                        r.coupling
+                    )
+                    .into());
+                };
+                let recorded = py.norm() / ft.norm() - 1.0;
+                if (recorded - r.deviation).abs() > 1e-13 {
+                    return Err(format!(
+                        "[{name}] {} is registered at {:e} and the coupling table's Python \
+                         over Fortran reads {recorded:e}",
+                        r.coupling, r.deviation
+                    )
+                    .into());
+                }
+            }
+            let diagrams: Vec<_> = (0..set.diagrams.len())
+                .filter(|&d| r.graphs.contains(&order[d]))
+                .collect();
+            println!(
+                "  [{name}] {} on MadGraph AMP{:?} = our diagrams {diagrams:?}, compared at \
+                 |ours| / |MadGraph| - 1 = {:e}",
+                r.coupling,
+                r.graphs.iter().map(|k| k + 1).collect::<Vec<_>>(),
+                r.deviation
+            );
+            let subset = DiagramSet {
+                particles_in: set.particles_in.clone(),
+                particles_out: set.particles_out.clone(),
+                polarizations: set.polarizations.clone(),
+                diagrams: diagrams.iter().map(|&d| set.diagrams[d].clone()).collect(),
+            };
+            parts.push((
+                AmplitudeEvaluator::compile(&subset, model)?,
+                r.deviation / (1.0 + r.deviation),
+            ));
+        }
+        Ok(Rounded { parts })
+    }
+
+    fn bind<'a>(&'a self, evaluated: &EvaluatedModel) -> Vec<(BoundAmplitude<'a, f64>, f64)> {
+        self.parts
+            .iter()
+            .map(|(e, share)| (BoundAmplitude::<f64>::bind(e, evaluated), *share))
+            .collect()
+    }
+}
+
+/// The part of this side's one flow that MadGraph's rounded couplings do not
+/// carry, at one (point, helicity): zero on a row with none registered.
+fn rounding_excess(
+    parts: &[(BoundAmplitude<f64>, f64)],
+    momenta: &[LorentzVector<f64>],
+    hel: &[i32],
+) -> C<f64> {
+    parts
+        .iter()
+        .map(|(b, share)| b.eval_amplitude(momenta, hel, &mut b.scratch_space()) * *share)
+        .sum()
+}
+
+/// `Σ_hel |J − excess|² / Σ_hel |J|²` over every helicity combination at one point:
+/// what a single-flow `|M|²` or `JAMP2` of this side is multiplied by to compare it
+/// with MadGraph's rounded couplings. One on a row with none registered.
+fn rounding_ratio(
+    bound: &BoundAmplitude<f64>,
+    parts: &[(BoundAmplitude<f64>, f64)],
+    momenta: &[LorentzVector<f64>],
+) -> f64 {
+    if parts.is_empty() {
+        return 1.0;
+    }
+    let mut scratch = bound.scratch_space();
+    let (mut num, mut den) = (0.0f64, 0.0f64);
+    for hel in bound.evaluator().helicities() {
+        let j = bound.eval_amplitude(momenta, hel, &mut scratch);
+        num += (j - rounding_excess(parts, momenta, hel)).norm_sqr();
+        den += j.norm_sqr();
+    }
+    num / den
+}
+
+/// The Python and Fortran columns of the row's committed coupling table, where it
+/// has one.
+type CouplingColumns = (
+    std::collections::BTreeMap<String, C<f64>>,
+    std::collections::BTreeMap<String, C<f64>>,
+);
+
+fn read_coupling_table(name: &str) -> Result<Option<CouplingColumns>, Failed> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/couplings")
+        .join(format!("{name}.json"));
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{e}"))?;
+    let column = |field: &str| -> std::collections::BTreeMap<String, C<f64>> {
+        json[field]
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .map(|(k, z)| {
+                        let c = z.as_array().unwrap();
+                        (
+                            k.clone(),
+                            C::new(c[0].as_f64().unwrap(), c[1].as_f64().unwrap()),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    Ok(Some((column("python"), column("fortran"))))
+}
 
 /// Rows whose table is generated from another row's compiled MadGraph module, so
 /// the manifest gives them no `mg_amplitude` declaration of their own: the row key,
@@ -433,39 +612,39 @@ const BORROWED_TABLES: &[(&str, &str)] = &[("uux_to_mumu", "pp_to_ll_qcd0")];
 /// to either evaluator's sign conventions shows up here first. Two-way: a compared
 /// row must be listed, and a listed row must be compared.
 const CONFIG_AMP_SIGNS: &[(&str, &str)] = &[
-    ("bbx_to_h_identity", "--"),
-    ("ddx_to_epemg", "++++"),
+    ("bbx_to_h_identity", "++"),
+    ("ddx_to_epemg", "----"),
     ("ee_to_ee", "----"),
     ("ee_to_mumu", "--"),
     ("ee_to_mumu_4f", "--------"),
     ("ee_to_mumu_eml", "--"),
     ("ee_to_mumu_smlimit", "--"),
-    ("ee_to_mumu_tata_qcd0", "+++++++++++++++++--------"),
-    ("ee_to_mumua", "----++++"),
+    ("ee_to_mumu_tata_qcd0", "-----------------++++++++"),
+    ("ee_to_mumua", "++++----"),
     ("ee_to_tatah", "++++-"),
     ("ee_to_tlt", "--"),
     ("ee_to_ttx", "--"),
     ("ee_to_ttx_dipole", "----------"),
     ("ee_to_ttx_smeft", "-------------------------------"),
     ("ee_to_ttx_smlimit", "--"),
-    ("ee_to_wp0wm", "---"),
-    ("ee_to_wp0wmt", "---"),
-    ("ee_to_wpwm", "---"),
+    ("ee_to_wp0wm", "+++"),
+    ("ee_to_wp0wmt", "+++"),
+    ("ee_to_wpwm", "+++"),
     ("ee_to_z0h", "+"),
     ("ee_to_zh", "+"),
     ("ee_to_zh_smeft", "++++++++++++++"),
     ("gg_to_h_cpeven", "++"),
     ("gg_to_h_cpodd", "+++"),
-    ("gu_to_epemu", "++++"),
-    ("gux_to_epemux", "++++"),
+    ("gu_to_epemu", "----"),
+    ("gux_to_epemux", "----"),
     ("ll_to_qqx_toy_dipole", "--"),
     ("ll_to_qqx_toy_tensor", "-"),
     ("ll_to_qqx_toy_yukawa", "-++++"),
     ("pp_to_ll_qcd0", "--"),
     ("tata_to_ttx_tensor4f", "--+"),
-    ("uux_to_epemg", "++++"),
+    ("uux_to_epemg", "----"),
     ("uux_to_mumu", "--"),
-    ("uux_to_ztg", "--"),
+    ("uux_to_ztg", "++"),
 ];
 
 fn tables_dir() -> PathBuf {
@@ -661,6 +840,7 @@ fn compare_m2(
     table: &Table,
     bound: &BoundAmplitude<f64>,
     pruned: &BoundAmplitude<f64>,
+    rounded: &[(BoundAmplitude<f64>, f64)],
 ) -> M2Result {
     let mut scratch = bound.scratch_space();
     let mut scratch_pruned = pruned.scratch_space();
@@ -674,7 +854,8 @@ fn compare_m2(
     let n_configs = bound.evaluator().n_configs();
     let (mut amp2, mut amp2_pruned) = (vec![0.0; n_configs], vec![0.0; n_configs]);
     for (i, pt) in table.points.iter().enumerate() {
-        let ours = bound.eval_m2(&pt.momenta, &mut scratch);
+        let raw = bound.eval_m2(&pt.momenta, &mut scratch);
+        let ours = raw * rounding_ratio(bound, rounded, &pt.momenta);
         let rel = (ours - pt.m2).abs() / pt.m2.abs().max(1e-300);
         let (worst, tol) = if pt.set == "grid" {
             (&mut result.grid, GRID_REL_TOL)
@@ -718,10 +899,10 @@ fn compare_m2(
         // The production configuration drops helicity combinations that provably
         // contribute below rounding, so it must not move the sum at all.
         let m2_pruned = pruned.eval_m2(&pt.momenta, &mut scratch_pruned);
-        if m2_pruned.to_bits() != ours.to_bits() {
+        if m2_pruned.to_bits() != raw.to_bits() {
             result.failures.push(format!(
                 "point {i} ({}): helicity-pruned eval_m2 diverged from unpruned, \
-                 {m2_pruned:e} vs {ours:e}",
+                 {m2_pruned:e} vs {raw:e}",
                 pt.set
             ));
         }
@@ -984,8 +1165,6 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
     let bound = BoundAmplitude::<f64>::bind(&evaluator, &evaluated);
     let bound_pruned = BoundAmplitude::<f64>::bind(&pruned, &evaluated);
 
-    let m2 = compare_m2(&table, &bound, &bound_pruned);
-
     // ── the linear level ──────────────────────────────────────────────────────
 
     let banks_amps = table
@@ -1035,6 +1214,10 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
 
     let configs = check_configurations(&table, set, &model, &evaluator, &order, banks_amps)?;
 
+    let rounded = Rounded::for_row(&table, set, model.as_ref(), &order, banks_amps)?;
+    let rounded_bound = rounded.bind(&evaluated);
+    let m2 = compare_m2(&table, &bound, &bound_pruned, &rounded_bound);
+
     let mut per_diagram: Vec<AmplitudeEvaluator> = Vec::new();
     if per_diagram_fit {
         // One evaluator per diagram: a single-diagram `DiagramSet` compiles the
@@ -1058,7 +1241,15 @@ fn measure(path: PathBuf, informational: bool) -> Result<AmplitudesRow, Failed> 
             .collect::<Result<_, _>>()?;
     }
 
-    let linear = collect_linear(&table, &bound, &evaluated, &order, &configs, &per_diagram);
+    let linear = collect_linear(
+        &table,
+        &bound,
+        &evaluated,
+        &order,
+        &configs,
+        &per_diagram,
+        &rounded_bound,
+    );
     let Verdict {
         violations,
         worst_diagram,
@@ -1348,6 +1539,7 @@ fn collect_linear(
     order: &[usize],
     configs: &Configurations,
     per_diagram: &[AmplitudeEvaluator],
+    rounded: &[(BoundAmplitude<f64>, f64)],
 ) -> Linear {
     let Configurations {
         derived,
@@ -1422,7 +1614,10 @@ fn collect_linear(
 
         for (row, &hi) in detail.helicities.iter().enumerate() {
             let hel = &table.helicities[hi];
-            let ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            let mut ours = flows(bound, table.n_flows, &pt.momenta, hel, &mut scratch);
+            if !rounded.is_empty() {
+                ours[0] -= rounding_excess(rounded, &pt.momenta, hel);
+            }
             for (fi, mg) in detail.jamps[row].iter().enumerate() {
                 let structure = table
                     .flow_structures
@@ -1505,6 +1700,10 @@ fn collect_linear(
         }
         let mut ours = vec![0.0f64; table.n_flows];
         bound.eval_jamp2(&pt.momenta, &mut scratch, &mut ours);
+        let ratio = rounding_ratio(bound, rounded, &pt.momenta);
+        for jamp2 in &mut ours {
+            *jamp2 *= ratio;
+        }
         let norm = mg_jamp2.iter().cloned().fold(0.0f64, f64::max);
         for (fi, (a, b)) in ours.iter().zip(&mg_jamp2).enumerate() {
             let dev = (a - b).abs() / norm;

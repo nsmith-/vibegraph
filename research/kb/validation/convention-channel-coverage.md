@@ -1,172 +1,146 @@
 ---
 type: Validation Gate
 title: Which gate pins which convention-sign channel
-description: "Guard processes asserted to exercise every sign branch, mutation experiments per row, and the all-rootings soundness check; which channels have no varying instance."
+description: "Each factor of convention_sign fires on a named process (asserted), each one dropped fails named MadGraph rows (measured), and the relabelling, renumbering and rooting gates check the graph-only reading; what none of them can see."
 status: draft
-tags: [amplitudes, signs, coverage, rooting, non-vacuity]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+tags: [amplitudes, signs, coverage, rooting, relabelling, non-vacuity]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
+  - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: per-factor mutations, the relabelling test, the acceptance runs"}
+  - {id: bh-report, resource: "../sprints/amplitude-signs/sessions/B-H-report.md", title: "B-H report: mutations of the firing test, the relabelling test and the live-parity cancellation"}
+  - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon derivation and mutations M1–M4"}
+  - {id: code-firing, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "named_processes_exercise_every_convention_factor"}
+  - {id: code-relabel, resource: "vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
+  - {id: code-renumber, resource: "vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
+  - {id: code-rooting, resource: "vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the mutations re-measured on 0ec027a"}
   - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — the rooting-soundness gate"}
-  - {id: n19-v6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L711-L750", title: "Note 19 V6 — branch-level coverage and the guard census"}
-  - {id: n24-rows, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L682", title: "Note 24 P1 — rows enforced and channel counts"}
   - {id: n24-gux, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 — the q̄ g row"}
-  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — four mutation experiments"}
-  - {id: n24-p2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L834-L854", title: "Note 24 P1 — what the llj rows pin and do not"}
-  - {id: n29-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L437", title: "Note 29 §F.1 — the pinned-convention inventory"}
+  - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — mutation experiments"}
   - {id: n29-f10, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L830-L976", title: "Note 29 §F.10 — which rows vary which channel"}
-  - {id: n29-f13, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L1096-L1152", title: "Note 29 §F.13 — row 4b's attribution was wrong"}
-  - {id: code-guard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1393-L1470", title: "channel_counts and mg_guard_processes_exercise_every_convention_channel"}
-  - {id: code-fermi, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L1204-L1248", title: "compile_single_diagram — fermi_sign assembly"}
-  - {id: code-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
-  - {id: n39-gates, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L172-L208", title: "Note 39 §6 — vector-vertex sign mutations"}
 ---
 
 # Which gate pins which convention-sign channel
 
 A convention sign that no gated process varies is not pinned by any comparison
-against MadGraph: a global sign is absorbed into the amplitude oracle's fitted
-`G`, and `|M|²` cannot see it. The [`AGENTS.md`](../../../AGENTS.md) rule —
-convention claims are hypotheses, pinned by a test that would fail if they were
-false — is applied here in three ways: guard processes asserted to exercise
-each channel, mutation experiments run against the whole suite, and the
-all-rootings soundness check. The inventory of the signs themselves is
+against MadGraph: a sign shared by every diagram of a process is absorbed into
+the amplitude oracle's fitted `G`, and `|M|²` cannot see it. The
+[`AGENTS.md`](../../../AGENTS.md) rule — convention claims are hypotheses,
+pinned by a test that would fail if they were false — is applied here three
+ways: a test asserting that each factor fires on a named process, each factor
+dropped against the MadGraph suites, and three invariance gates for the claim
+that every factor reads the graph alone. The factors themselves are
 [convention signs](../amplitudes/convention-sign-inventory.md).
 
 ## The channels in `fermi_sign`
 
-`compile_single_diagram` (`helas/eval/root_diagram.rs`) assembles each
-diagram's sign as
-
 ```
-fermi_sign = diagram.sign                         // Fermi permutation + fermion-line sign
-           * fermion_current_line_sign(reference)
-           * yang_mills_vvv_sign(diagram, model)
-           * vector_contact_sign(diagram, model)
-           * gluon_scalar_current_sign(diagram, model)
-           * reference.build_convention_sign()
-           * reference.reversed_convention_sign() * tree.reversed_convention_sign()
+fermi_sign = diagram.sign                           // Wick parity × fermion-line sign
+           * convention_sign(diagram, model, chain) // propagator_phase_sign
+                                                    //   × vertex_root_signs
+                                                    //   × triple_gluon_sign
+           * tree.live_reversed_parity()            // cancels the runtime parity
 ```
 
-where `reference` is the tree rooted at `Diagram::anchor`. The fermion-line sign
-is carried by `Diagram::sign` through `Diagram::fermion_line_sign`;
-`spine_sign_from_flow` (the rooted-tree derivation) survives only as a
-`debug_assert` cross-check and in
+`spine_sign_from_flow` (the rooted-tree derivation of the line sign) is a
+`debug_assert` cross-check on every live tree and the subject of
 `fermion_line_sign_matches_the_rooted_tree_derivation`. See
 [the fermion-line sign](../amplitudes/fermion-line-sign.md) and
 [vector-vertex signs](../amplitudes/vector-vertex-signs.md).
 
-## The guard test
+## Each factor fires: the non-vacuity test
 
-`mg_guard_processes_exercise_every_convention_channel` (default suite) uses
-`channel_counts`, which counts per process the diagrams firing each of four
-channels on the anchor-rooted tree, and asserts each is `> 0` on a named
-process[^n19-v6]:
+`named_processes_exercise_every_convention_factor` (default suite) counts, per
+named process, the diagrams on which a factor is `−1`, and asserts each count is
+`> 0`[^code-firing]:
 
-| channel | guard process | why that one |
+| factor | process | what fires |
 |---|---|---|
-| Yang–Mills VVV source sign | `e+ e- > W+ W-` | the γ/Z → W⁺W⁻ vertex is a non-anchor source |
-| fermion-line sign | `e+ e- > e+ e-` | Bhabha's s-channel has a crossed line |
-| build −1, pure-metric arm | `g g > g g` | no fermion or scalar externals, so the four-gluon contact is the only build sign — the branch of the original VVVV phase bug |
-| build −1, scalar-bilinear arm | `e+ e- > ta+ ta- H` | its build sign comes only from the τ Yukawa |
-| reversed-bilinear parity | `e+ e- > mu+ mu-` | never fires on pure-gauge processes |
+| `propagator_phase_sign`, scalar line | `b b~ > h h` | the s-channel Higgs of the triple-Higgs diagram |
+| `propagator_phase_sign`, crossed fermion line | `e+ e- > ta+ ta- h` | the tau propagator when the Higgs comes off the final-state pair |
+| `vertex_root_signs`, reversed bilinear | `e+ e- > mu+ mu-` | the initial electron line, read against its UFO order |
+| `vertex_root_signs`, tensor path | `lt~ lt > qt qt~ NP<=1 NPGG<=1` (toy, `restrict_tensor`) | the tensor contact as the amplitude, on a crossed line |
+| `triple_gluon_sign` | `g g > t t~` | the s-channel gluon |
 
-Production roots at `canonical_root` (the anchor); re-rooting does not corrupt
-amplitudes, because every rooting-dependent sign is read off the anchor-rooted
-tree. The guard is non-vacuity only; per-channel properties live in
-`yang_mills_vvv_sign_fires_only_for_source_vvv`,
-`spine_sign_separates_mixed_line_and_crossed_line_propagators`,
-`fermion_line_sign_matches_the_rooted_tree_derivation`, and the
-`root_lorentz::tests::test_root_vvs_metric{,_scalar_out}` primitives. The VVS
-pure-metric −1 with the *scalar* leg as output appears only in the 2 → 6 Higgs
-classes; it is pinned at the primitive level by `test_root_vvs_metric_scalar_out`
-and bit-for-bit by `u u~ / b b~ > c c~ e+ e- mu+ mu-` in the amplitude oracle.
+Each part, set to `+1` on its own, fails the test (B-H report)[^bh-report]. The
+test calls each factor directly, so it cannot see `convention_sign` drop a factor
+from its product; that is the MadGraph rows' to see (next section). The `−1`
+values are not its business either.
 
-**What the guard does not cover.** `channel_counts` predates the three
-vector-vertex signs (`vector_contact_sign`, `gluon_scalar_current_sign`, and the
-colourless-only restriction of the VVV sign). Those are pinned instead by
-mutation against `standalone_jamps`, `gluon_parke_taylor` and
-`amplitude_oracle`[^n39-gates]:
+## Each factor dropped: the MadGraph rows
 
-| mutation | fails |
-|---|---|
-| drop `vector_contact_sign` | `gg_to_ggg`, `uux_to_ggg`, `ee_to_wpwmz`; both Parke–Taylor tests; oracle `gg_to_gg`, `gg_to_gg_cg` |
-| triple-gluon vertex keeps the source sign | `uux_to_ggg`, `ug_to_ug`, `ttx_to_gg_chg`; six-gluon Parke–Taylor; oracle `gg_to_gg`, `gg_to_gg_cg` |
-| drop `gluon_scalar_current_sign` | `ttx_to_gg_chg`; oracle `gg_to_gg_cg` |
-| colourless contact treated like a gluon one | `wpwm_to_wpwm` only |
+Each factor of `convention_sign` was set to `+1` on its own and the two
+MadGraph suites run (B′; re-measured on `0ec027a` in the R1 review, which
+reproduces B′'s counts and every row B′ names). Every `standalone_jamps` failure is a per-flow disagreement. An
+`amplitude_oracle` row runs its per-diagram and per-flow checks before the
+`CONFIG_AMP_SIGNS` tripwire, so a row that fails only the tripwire agrees with
+MadGraph up to a sign shared by all its diagrams; those are counted apart. Each
+factor varies within at least the rows of the first two columns[^b-report][^r1-report]:
 
-The colourless contact at the anchor is pinned only by the standalone
-`wpwm_to_wpwm` table; no enforced amplitude-oracle row reaches it.
+| dropped | `standalone_jamps` fails | `amplitude_oracle` fails per diagram or per flow | `amplitude_oracle` fails only on `CONFIG_AMP_SIGNS` |
+|---|---|---|---|
+| every vertex reading | 17 rows (`ee_to_ee_4f`, `uux_to_ggg`, `tata_to_ttxh`, …) | 13 rows: `ee_to_ee`, `ee_to_wpwm`, `ee_to_wp0wm`, `ee_to_wp0wmt`, `ee_to_mumua`, `ee_to_mumu_4f`, `ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f`, `ud_to_epemud_qcd0`, `uux_to_uux` and the two 2→6 rows | 15 rows (`ee_to_mumu`, `ee_to_ttx`, `ee_to_zh`, `uux_to_mumu`, …) |
+| the tensor-path sign only | `tata_to_ttxa_tensor4f` | `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` | none |
+| the scalar-line phase | 25 rows (`bbx_to_hh`, `hh_to_hh_chbox`, `zz_to_ttx`, the `O_W` rows, …) | 9 rows: `bbx/uux_to_ccx_emmm_qcd0`, `gg_to_gg_cg`, `qqx_to_o8o8_toy_dcolor`, `gg_to_ttx_smlimit_qcd2`, `wpwm_to_wpwmz_cw`, `ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f` | none |
+| the crossed-line fermion phase | 22 rows (`ee_to_ttxh`, `wpwm_to_epem`, `wph_to_tbx`, …) | 9 rows: `gg_to_ttx` and its two SM-limit rows, `ee_to_tatah`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`, `ud_to_epemud_qcd0` and the two 2→6 rows | none |
+| the triple-gluon sign | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f` | `gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2` | none |
 
-## Which channels have a varying instance
+The relabelling test passes under every one of these mutations: each is still
+a function of the graph.
 
-Per-diagram, a channel is pinned against MadGraph only where it varies across
-the diagrams of one process; a uniform sign is absorbed. Measured over the guard
-processes and the hostile cases[^n29-f10]:
+**The fermion-line sign** (on the diagram, not in `convention_sign`):
 
-- Seven of nine processes carry a `fermi_sign` that is a pure global sign
-  (`g g > g g`, `g g > t t~`, Bhabha, `e+ e- > mu+ mu-`, `e+ e- > W+ W-`,
-  `u u~ > u u~`, `u u~ > d d~`). The observable content concentrates in
-  `e+ e- > ta+ ta- h` (4 : 1) and `u d > e+ e- u d QCD=0` (18 : 17). Uniformity
-  still refutes rules that predict variation: `g g > t t~`'s crossed top line
-  carries 0, 1, 1 propagators with a uniform sign, which pins the crossed arm's
-  propagator-independence.
-- In Bhabha and `u u~ > u u~`, the Fermi pairing sign
-  (`Diagram::fermion_pairing_sign`) and the fermion-line sign cancel exactly, so
-  `Diagram::sign` (their product) is uniform there: those processes pin the
-  product, not either factor.
-- **The fermion-line sign's two arms** are both checked on
-  `u d > e+ e- u d QCD=0`: the line sign is −1 on 11 diagrams (`{4…11, 18, 21,
-  22}`, no mixed line carrying a propagator) and +1 on 24, matching
-  `channel_counts`. (The neutral-current/charged-current 24/11 split there is a
-  different partition, a Wick-pairing effect.)
-- **The standalone-projector-crossed −1** is checked on `e+ e- > ta+ ta- H`: its
-  build sign comes from the `ta ta H` `FFS4` vertex rooted at a fermion output,
-  not from the scalar-sink arm.
-- **The scalar-sink `ProjM/ProjP/Identity` −1 at a scalar or amplitude sink** had
-  no varying instance in the per-diagram processes chain F probed[^n29-f13]. The
-  gated flows-only row `bbx_to_ccx_emmm_qcd0` did vary it under note 19's
-  `VtxIdx(0)` rooting: it fired on diagram 121 (the `bbH` Yukawa at the amplitude
-  root consumes the `H`) and not on diagram 72 (the same `H` consumed as a
-  fermion current), and dropping it broke that row's per-flow comparison
-  (`1.99e0`)[^n19-v5]. That row banks flows only, so it can pin the arm through
-  flows but never per diagram, and whether it still varies under the anchor
-  rooting has not been re-measured. The guard comment on its fourth assertion still attributes `e+ e- > ta+ ta- H`'s
-  build sign to that arm, which does not fire there[^n29-f13]. The Standard-Model
-  Yukawa and Higgs self-coupling rows added since (`tata_to_ttxh`,
-  `tata_to_ttxhh`, `bbx_to_hh` in `standalone_jamps`, after the all-scalar vertex
-  was given the scalar-sink sign) may vary it; that has not been re-measured.
-- **The reversed-bilinear parity and the crossed-pair −1** (`pair_crossed`) have
-  no varying instance in the banked set, so neither is checked per diagram. The
-  parity is unchecked in principle at the `fermi_sign` level, because its live and
-  anchor factors are equal on every production compile and their product is `+1`;
-  the runtime reversed-FFV parity is exercised on coloured spines by
-  `uux_to_epemg` and `ddx_to_epemg`[^n24-rows].
-- **Row-by-row coverage is uneven.** The four ℓℓj partonic rows do **not** pin
-  the fermion-line sign: it fires on all four diagrams of `g q → ℓℓq`, so dropping
-  it is a global sign; that mutation (2026-07-30, against the `|M|²` and
-  per-diagram gates since folded into `amplitude_oracle`) failed 7 `|M|²` rows and
-  two per-diagram rows, none of them ℓℓj[^n24-mut]. A slot rule wrong only for `g u~` was caught by
-  `gux_to_epemux` alone, which had no other detector[^n24-gux].
+- Its two arms are checked on `u d > e+ e- u d QCD=0`, whose 35 diagrams split 24
+  / 9 / 2 by where the internal fermion propagator sits (a mixed quark line, the
+  crossed lepton line, none); `spine_sign_separates_mixed_line_and_crossed_line_propagators`
+  asserts the split and the signs, with `g g > t t~` as the control that a
+  crossed line's −1 does not count propagators.
+- In Bhabha and `u u~ > u u~` the pairing sign and the line sign cancel exactly,
+  so those rows pin the product, not either factor[^n29-f10].
+- The four ℓℓj partonic rows do **not** pin the line sign: it fires on all four
+  diagrams of `g q → ℓℓq`, so dropping it is a global sign there. That mutation
+  failed seven `|M|²` rows and two per-diagram rows, none of them ℓℓj[^n24-mut].
+  A slot rule wrong only for `g u~` was caught by `gux_to_epemux` alone[^n24-gux].
 
-Majorana lines (none in the SM UFO) and charge-flow phrasings that agree on every
-tree diagram are untestable with the banked set; see
-[the charge-flow phase study](../amplitudes/charge-flow-phase-study.md).
+## The graph-only reading: three invariance gates
 
-## The rooting-soundness check
+| gate | holds | catches | blind to |
+|---|---|---|---|
+| `relabelling_preserves_per_diagram_amplitudes` (default suite) | twelve processes against the same process with its legs listed in another order, each diagram paired with its partner by a label-free graph signature and compared per helicity at a generic point, up to one sign per process; at least two diagrams compared per pair | a sign keyed to the vertex holding a particular leg: a `−1` wherever leg 0's vertex has a fermion leg flips diagrams of `w+ e- > z ve`, `w+ a > e+ ve a` and the toy `st lt > st lt`[^bh-report] | a wrong function of the graph (every factor mutation above passes it); a dependence on a vertex no listed relabelling moves; multi-flow processes |
+| `renumbering_preserves_signs_and_amplitudes` (default suite) | every census diagram renumbered twice (once with leg 0's vertex forced off index 0): exact `fermi_sign` per colour chain, the same canonical form, and on subprocesses of at most 40 diagrams per-helicity per-flow amplitudes to 1e-10 | a sign read off a vertex or propagator *index* | a wrong function of the graph |
+| `rooting_soundness` | \|M\|² under re-rooting against the production rooting's own value | a kernel that is not rooting-invariant; a live parity that is not cancelled | any error shared by every rooting, which includes every convention-sign error |
 
-`helas/eval/rooting_soundness.rs` (a module of the library, not an integration
-test) re-roots diagrams through a test-only override hook and requires `|M|²` to
-match the production rooting's value, which [the amplitude
-oracle](amplitude-oracle.md) already pins against MadGraph[^n19-v5]. Per-diagram
-root isolation runs for processes up to 40 diagrams, whole-process re-rooting
-for the two 579/615-diagram 2 → 6 processes, at `REL_TOL = 1e-10`: re-rooting
-reassociates momentum sums, and the measured floor is 2.2e-11
-(`e+ e- > ta+ ta- H`), far below any O(1) sign error.
+### The rooting-soundness check
+
+`helas/eval/rooting_soundness.rs` (a module of the library) re-roots diagrams
+through a test-only override hook and requires `|M|²` to match the production
+rooting's value, which [the amplitude oracle](amplitude-oracle.md) pins against
+MadGraph[^n19-v5]. Per-diagram root isolation runs for processes up to 40
+diagrams, whole-process re-rooting for the two 579/615-diagram 2 → 6 processes,
+at `REL_TOL = 1e-10`: re-rooting reassociates momentum sums, and the measured
+floor is 2.2e-11 (`e+ e- > ta+ ta- H`), far below any O(1) sign error. The
+convention sign reads no root, so what the module tests is the kernels'
+rooting invariance and the cancellation of the live tree's reversed parity in
+`fermi_sign`[^code-rooting]. That cancellation dropped is seen by
+`literal_sigma_currents_are_rooting_invariant` in the default suite and by 3 of
+the sweep's 270 re-rootings, all on `b b~ > c c~ e+ e- mu+ mu- QCD=0`; the
+relabelling and renumbering gates pass it (B-H report)[^bh-report]. The
+MadGraph suites see it too: 6 `standalone_jamps` rows (`ee_to_ee_4f`,
+`tata_to_ttxh`, `ttx_to_gg_chg`, …) and 7 `amplitude_oracle` rows per diagram
+or per flow (`ee_to_ee`, `uux_to_uux`, `bbx_to_ccx_emmm_qcd0`, …), with 24 more
+on `CONFIG_AMP_SIGNS` only (R1 review)[^r1-report].
 
 - `root_override_hook_is_transparent` runs in the default suite: an explicit
-  override to the canonical root reproduces the default `|M|²`.
-- `all_rootings_preserve_amplitude` is `#[ignore]` (oracle layer for cost):
+  `VtxIdx(0)` override reproduces the default `|M|²` bit for bit on
+  `e+ e- > mu+ mu-` and Bhabha, where the canonical root is vertex 0.
+- `literal_sigma_currents_are_rooting_invariant` runs in the default suite;
+  `momentum_slashed_chain_is_rooting_invariant`,
+  `four_fermion_currents_are_rooting_invariant` and
+  `tensor_four_fermion_currents_are_rooting_invariant` are
+  `extended-validation` tests. Each re-roots a few diagrams whose currents a
+  structure-specific defect would make rooting-dependent.
+- `all_rootings_preserve_amplitude` is `#[ignore]` for cost:
 
   ```
   RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
@@ -177,14 +151,41 @@ reassociates momentum sums, and the measured floor is 2.2e-11
   It passes with 0 failures; the re-rooting count grows with the validated
   process list (270 at the last recorded run).
 
-*Blind to*: any error shared by every rooting, since its oracle is this crate's
-own production value; and any sign whose live and anchor factors coincide.
+## What no gate here sees
 
-[^n19-v5]: Note 19 V5. Its rooting is now the anchor rather than `VtxIdx(0)`, and the line sign is carried by the diagram.
-[^n19-v6]: Note 19 V6.
-[^n24-rows]: Note 24 P1, rows enforced.
+- **Which factor carries the triple-gluon `−1`.** The sign is derived: it is the
+  slot exchange the all-incoming crossing gives every charged triple-vector
+  vertex inside its kernel, which the self-conjugate gluon vertex does not get
+  ([vector-vertex-signs](../amplitudes/vector-vertex-signs.md)). Both MadGraph
+  gates are blind to where it sits. Moved into the colour (`f_to_traces`
+  negated, `triple_gluon_sign` at `+1`), all 49 tests of `standalone_jamps`
+  (its 45 table rows and four checks) and all 49 of `amplitude_oracle` pass; moved into the coupling (`GC_10` negated),
+  every SM row passes and only SMEFTsim rows, whose triple-gluon coupling has
+  another name, fail. `amplitude_oracle` compares `gg_to_ttx` per flow, not per
+  diagram, although its table banks `AMP()`. The colour and the rest are pinned
+  separately by `helas::eval::triple_gluon` on `g g > t t~`, with
+  `e+ e- > w+ w-` as the colourless control[^t1-report].
+- **The triple-gluon predicate is a proxy** for "no conjugate pair among the
+  legs": a colourless vertex of three self-conjugate vectors would need `−1` by
+  the derivation and gets none; no model in reach has one.
+- **The per-process sign is free.** Every oracle here and `|M|²` are blind to a
+  sign shared by all diagrams of a process; `CONFIG_AMP_SIGNS` banks the one the
+  convention gives as a tripwire.
+- **The tensor-path sign** is pinned on (initial, crossed) line pairs only. A
+  cyclic structure on two mixed lines is unmeasured.
+- **No committed row** reaches a scalar⊗scalar four-fermion contact rooted in a
+  tree (`O_ledq`-type) or a VSS vertex.
+- Majorana lines (none in the SM UFO) and charge-flow phrasings that agree on
+  every tree diagram are untestable with the banked set; see
+  [the charge-flow phase study](../amplitudes/charge-flow-phase-study.md).
+
+[^b-report]: B′ report, "Mutations (each factor pinned by MadGraph)" and "Relabelling test".
+[^bh-report]: B-H report, "Mutations".
+[^r1-report]: R1 report, "Mutations".
+[^t1-report]: T1 report, "Mutations" M2 and M3.
+[^code-firing]: `vibegraph-lib/src/helas/eval/root_diagram.rs` tests.
+[^code-rooting]: `vibegraph-lib/src/helas/eval/rooting_soundness.rs`, module doc and `REL_TOL`.
+[^n19-v5]: Note 19 V5.
 [^n24-gux]: Note 24 P1, the `q̄ g` gap.
 [^n24-mut]: Note 24 P1, mutation experiments 3 and 4.
 [^n29-f10]: Note 29 §F.8 and §F.10, hostile cases H2–H5.
-[^n29-f13]: Note 29 §F.13 item 3.
-[^n39-gates]: Note 39 §6, the mutation table.

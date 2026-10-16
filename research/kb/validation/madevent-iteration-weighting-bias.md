@@ -54,7 +54,8 @@ cuts.
   processes with peaked integrands. A σ gate that sizes its tolerance on the
   reference's quoted error alone is exposed to it. The reference error
   design is
-  [reference-sigma-seed-scatter-untested](../backlog/validation/reference-sigma-seed-scatter-untested.md).
+  [D1](../sprints/sigma-reference-scatter/decisions/D1-reference-error-design.md):
+  seeded fresh-directory references, banked in refdata-10.
 - MadEvent's unweighted samples also under-populate high-weight regions. On
   `m(ll) > 150` they are 5.4 % short of the run's own sliced σ, and still 4σ
   short with the final truncation disabled. A reference built as inclusive σ ×

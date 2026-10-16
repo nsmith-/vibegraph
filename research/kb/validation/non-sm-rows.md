@@ -5,7 +5,7 @@ description: "How non-SM rows are banked and gated: per-class restrict cards, or
 status: draft
 tags: [smeftsim, toy-ufo, non-sm, oracle, coverage]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n35-v1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L676-L746", title: "Note 35 V1, SMEFTsim into the oracle pipeline"}
   - {id: n35-l2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L747-L787", title: "Note 35 L2, the SM-limit gate"}
@@ -60,8 +60,9 @@ tensor four-fermion structure or a baryonic colour atom.
 - **The defaults are MadGraph's generated card.** A restrict card's non-zero
   values become the model's defaults and its zeros lock, which is what MadGraph
   writes into the generated `param_card.dat`.
-  `restricted_defaults_are_madgraphs_generated_param_card` compares 421 external
-  parameters over 13 gated rows against MadGraph's own cards at ≤ 1e-12. Before
+  `restricted_defaults_are_madgraphs_generated_param_card` compares 444 external
+  parameters over the 14 gated rows against MadGraph's own cards at ≤ 1e-12
+  (at `4277158`). Before
   that, a card-less evaluation of a restricted model was silently its SM limit
   (the Wilson coefficients stayed at `parameters.py`'s zeros)[^n35-c]. MadGraph
   also fixes parameters a restrict card sets to exactly `1`; no card here does
@@ -98,23 +99,23 @@ the `d` colour basis, literal `Sigma`, the Yukawa-only fermion line, baryonic
 
 ## Cell status
 
-Read the live state from `validation/manifest.toml`; at `6ccc6e4`:
+Read the live state from `validation/manifest.toml`; at `4277158`:
 - **gate**: every `diagrams` cell but `gg_to_gg_cg`'s; every `amplitudes` cell
-  but three; `integrals` and `samples` on every row that has a banked σ and
+  but two; `integrals` and `samples` on every row that has a banked σ and
   sample, except `gg_to_gg_cg`'s σ. Integrals budgets are sized from the
   reference's own error; each `rel_tol` is the measured five-seed spread with
   headroom and each budget ladder is flat ([sigma-gate](sigma-gate.md)).
-- **`ee_to_wpwm_cw` amplitudes, info**: the linear level agrees exactly, and 47 of
-  48 |M|² points agree below 1e-12, but one point sits at 2.08e-12 where the
-  helicity sum cancels by a factor 875; enforcing it would mean loosening the
-  budget for one point.
+- **`ee_to_wpwm_cw` amplitudes, info**: the per-diagram and per-flow levels sit
+  at rounding, and 47 of 48 |M|² points agree below 1e-12, but one reads
+  1.63e-12 at `4277158`. The manifest note, taken before the amplitude-signs
+  sprint, records 2.08e-12 at a point whose helicity sum cancels by a factor
+  875. Enforcing the row would mean loosening the budget for one point.
 - **`ee_to_zh_smeft` amplitudes, info**: the `GC_303` seven-digit Fortran literal
   ([madgraph-defects](madgraph-defects.md)); this crate agrees with MadGraph's
   Python to 6.5e-15.
-- **`wpwm_to_wpwmz_cw` amplitudes, info**: |M|² 2.79e1 after the vector-vertex
-  sign fix of note 39, owned by O_W's five-vector and momentum-bearing contact
-  structures ([wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md));
-  its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
+- **`wpwm_to_wpwmz_cw` amplitudes, gated** per MadGraph graph, with the twelve
+  `GC_303` graphs' modulus exempted by name
+  ([the amplitude oracle](amplitude-oracle.md)); its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
   for it, which this crate refuses: `nhel = 1` is in scope but not built
   ([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md)).
 - **`gg_to_gg_cg`**: `diagrams` info by convention (21 diagrams against
@@ -141,8 +142,9 @@ Read the live state from `validation/manifest.toml`; at `6ccc6e4`:
 `ee_to_ttx_smeft`, `e+ e- > t t~ NP<=1` at √s = 500 GeV under `restrict_massless`,
 is the one banked σ whose every class is on. At 160000 × 8 it reads
 2.222986 ± 6.565e-4 pb against MadGraph's 2.2223 ± 5.257e-4, pull +0.82; seven
-seeds span pulls −0.80 to +1.22, the budget ladder is flat, and `rel_tol = 0.002`
-is set from the seed spread. The gate is not blind to the SMEFT content: the same
+seeds stay within |pull| ≤ 1.44 in the manifest's reading (−0.80 to +1.22 in
+note 35's), the budget ladder is flat, and `rel_tol = 0.002` is set from the seed
+spread. The gate is not blind to the SMEFT content: the same
 process under `SMlimit_massless` gives 0.5496 pb, a factor 4.04 below. The CLI
 path (`--ufo-dir`, the `-<restrict>` suffix, the artifact's model label and
 digest) is pinned by the hermetic `cli_ufo_model.rs`[^n35-c].
@@ -153,8 +155,9 @@ digest) is pinned by the hermetic `cli_ufo_model.rs`[^n35-c].
   legs: blind to σ, and to the beams except through the incoming-leg column. Three
   rows once carried a 6–7% σ error and cleared the KS floor comfortably.
 - A rounding both sides share is invisible to the coupling and amplitude gates.
-- The σ gate cannot see amplitude residuals of 1e-12 or a 6e-11 derived-parameter
-  spread, far below any budget's Monte-Carlo error.
+- The σ gate cannot see amplitude residuals of 1e-12, or the 6.0e-11 that
+  `GC_303`'s seven-digit Fortran literal puts on `ee_to_zh_smeft`'s reference,
+  far below any budget's Monte-Carlo error.
 - `NP^2==1` and other squared-order constraints are refused, not compared. They
   are in scope but not built
   ([squared-order-constraints-refused](../backlog/feature/squared-order-constraints-refused.md)).

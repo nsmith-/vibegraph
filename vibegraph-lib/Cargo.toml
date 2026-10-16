@@ -85,6 +85,9 @@ num-bigint = "0.4"
 num-modular = "0.5"
 num-prime = { version = "0.4", default-features = false }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+# Fresh scratch directories for tests that write an edited copy of a model; the
+# version the CLI's tests already resolve.
+tempfile = "3"
 # The validation gates read one flag out of validation/manifest.toml — which rows
 # the pinned reference bundle carries. Same version the report collator parses it
 # with, so the two cannot disagree about the manifest's shape.
