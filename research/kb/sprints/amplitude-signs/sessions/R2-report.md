@@ -5,6 +5,7 @@ description: "Every claim of the thirteen concepts checked against code, the com
 status: draft
 tags: [review, kb, amplitudes, validation, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 ---
 Brief: [R2](R2.md). Worktree `/home/user/wt/wt-review-b`, branch
 `amp-signs/concept-review-b`, built on `4277158`. No code was changed. Two
