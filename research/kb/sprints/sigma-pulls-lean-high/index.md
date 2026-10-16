@@ -5,3 +5,7 @@
 ## Sprint
 
 * [σ pulls lean high on the seeded references](sprint.md) - Re-read the 47 σ pulls against refdata-10 against each record's equal-weight mean, and attribute the population's +0.65 lean to the reference or to this side.
+
+## Directories
+
+* [sessions](sessions/index.md)
