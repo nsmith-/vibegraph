@@ -15,11 +15,17 @@ sources:
 ---
 On x86-64, `preserve_none` passes 12 arguments in registers with `rax` last.
 With all 12 in use, LLVM loads an indirect tail call's target into `rax`
-(`movq (%r10), %rax; jmpq *%rax`), so the callee receives its own address as
+(`movq (%r12), %rax; jmpq *%rax`), so the callee receives its own address as
 its last argument. LLVM reports "ran out of registers"; rustc drops that into
 a silent miscompile (garbage at `-O`, segfault at `-O0`; correct with ≤ 11
 arguments or a plain call). Standalone LLVM IR and rustc reproducers, re-run on
 LLVM 23.1.4 and rustc nightly 2026-10-15, are in
 [`research/upstream/llvm-preserve-none-tail-call/`](../../../upstream/llvm-preserve-none-tail-call/README.md).
-Filing an upstream issue publicly is the user's call. Detail:
+The root cause is two bugs. In LLVM, the x86 tail-call register class
+`GR64_TC` has no register left under `preserve_none`. In rustc, LLVM 20's
+`DK_RegAllocFailure` diagnostic is dropped, which is also the cause of
+rust-lang/rust#146393. Both are in the README. Ready for the user: an LLVM
+issue draft (`llvm-issue-draft.md`) and an evidence sheet for a
+user-written comment on #146393 (`rustc-146393-evidence.md`; Rust's LLM
+policy rules out a drafted comment). Filing is the user's call. Detail:
 [threaded-dispatch study](../../history/notes/threaded-dispatch-study-results.md).
