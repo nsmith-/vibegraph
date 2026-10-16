@@ -5,6 +5,7 @@ description: "Per diagram, helicity and flow against MadGraph, the triple-gluon 
 status: draft
 tags: [amplitude, sign-convention, colour, triple-gluon, crossing, derivation, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: code, resource: "https://github.com/nsmith-/vibegraph/commit/9549fcb", title: "docs(amplitudes): derive the triple-gluon sign and pin its factors against MadGraph"}
 ---

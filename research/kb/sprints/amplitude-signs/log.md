@@ -71,3 +71,14 @@
   not accepted as calibrated. A follow-up session, [T1](sessions/T1.md), claims
   `triple-gluon-sign-calibrated-not-derived` in its own PR. If the derivation
   disagrees with the constant, it stops and reports before any code changes.
+* **T1 outcome** (PR #39): the derivation agrees with the constant, so the stop
+  rule did not fire. The −1 is the slot exchange the all-incoming crossing gives
+  every triple-vector vertex with a conjugate pair of legs; a charged vertex
+  carries it in its kernel, and a gluon vertex, self-conjugate, gets it from
+  `triple_gluon_sign`. Colour, slot order and coupling were each ruled out per
+  diagram against MadGraph. The doc states the derivation and four tests pin the
+  factors separately. The manager re-ran the four tests, and mutation M1 (the
+  constant flipped) fails only the totals test, as its stated blind spots
+  predict. Filed: `colourless-self-conjugate-vvv-sign-unoracled`,
+  `standalone-amps-single-flow-only`,
+  `mixed-parity-vertex-refusal-depends-on-rooting`.
