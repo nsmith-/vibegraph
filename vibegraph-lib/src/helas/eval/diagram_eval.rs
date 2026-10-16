@@ -283,6 +283,9 @@ impl VertexInfo {
     /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`); the
     /// product over a live tree is
     /// [`live_reversed_parity`](super::root_diagram::DiagramEvalTree::live_reversed_parity).
+    ///
+    /// A vertex whose couplings disagree on the parity is refused, as for
+    /// [`build_sign`](Self::build_sign).
     pub(super) fn reversed_sign(&self) -> Result<i8, RootLorentzError> {
         let signs = self
             .terms
