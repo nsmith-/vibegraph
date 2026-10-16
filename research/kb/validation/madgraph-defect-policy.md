@@ -41,10 +41,10 @@ permitted outcomes, and "silently fixed" is not one of them.**
    written had only the first two[^n41-15][^n41-m3].
 
 Every defect found goes into the catalogue of
-[MadGraph defects](madgraph-defects.md) with an upstream report draft; filing
+[MadGraph defects](madgraph-defects.md) with an upstream report draft
+([madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md)); filing
 them upstream is the user's
-([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md),
-[mlm-madgraph-defects-undrafted](../backlog/validation/mlm-madgraph-defects-undrafted.md)).
+([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
 A defect that changes no weight (grids only, Python systematics, a record-only
 field) is catalogued and needs no outcome.
 

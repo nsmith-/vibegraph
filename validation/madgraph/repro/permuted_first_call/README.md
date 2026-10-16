@@ -188,6 +188,125 @@ clustering path distinguishes the two was not isolated.
 MLM-off test took 27 minutes (15 runs), on a 4-core machine shared with other
 builds.
 
+## MadGraph 3.8.1 (latest release, tag `v3.8.1`, commit `a5b17913`)
+
+The defect is unchanged in 3.8.1. The call is `super_auto_dsig_group_v4.inc:856`,
+`P1` is built at `:819` and mirrored at `:829`, and the generated `auto_dsig.f`
+carries the same `CALL UPDATE_SCALE_COUPLING(PP, WGT)`.
+
+The runs below used the same conda toolchain, on 2026-10-16, with:
+
+```
+pixi run -e madgraph env VG_MG5_ROOT=<3.8.1 checkout> MG5="bash $PWD/validation/madgraph/mg5_pinned.sh" \
+  [RUN_CARD=$PWD/validation/madgraph/repro/permuted_first_call/run_card_ickkw0.dat] \
+  bash validation/madgraph/repro/permuted_first_call/repro.sh <workdir> 11 12 13 14 15
+```
+
+With MLM off (`run_card_ickkw0.dat`):
+
+```
+grouped    seed 11     sigma 106.64 +- 0.306 pb  (37s)
+nongrouped seed 11     sigma 109.66 +- 0.355 pb  (48s)
+patched    seed 11     sigma 110.59 +- 0.399 pb  (21s)
+grouped    seed 12     sigma 107.33 +- 0.349 pb  (26s)
+nongrouped seed 12     sigma 106.92 +- 0.399 pb  (42s)
+patched    seed 12     sigma 111.09 +- 0.356 pb  (33s)
+grouped    seed 13     sigma 106.61 +- 0.391 pb  (24s)
+nongrouped seed 13     sigma 108.79 +- 0.4 pb  (38s)
+patched    seed 13     sigma 110.8 +- 0.428 pb  (22s)
+grouped    seed 14     sigma 106.13 +- 0.333 pb  (26s)
+nongrouped seed 14     sigma 108.85 +- 0.357 pb  (32s)
+patched    seed 14     sigma 110.16 +- 0.329 pb  (25s)
+grouped    seed 15     sigma 106.49 +- 0.452 pb  (22s)
+nongrouped seed 15     sigma 108.77 +- 0.412 pb  (38s)
+patched    seed 15     sigma 110.13 +- 0.442 pb  (24s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  106.64  0.436      0.195    0.366
+nongrouped  5  108.598  1.01      0.451    0.385
+patched     5  110.554  0.414      0.185    0.391
+grouped - nongrouped: -1.958 pb (-1.80%), pull -4.0 sigma (measured spreads)
+patched - nongrouped: +1.956 pb (+1.80%), pull +4.0 sigma (measured spreads)
+```
+
+MLM card (`run_card.dat`):
+
+```
+grouped seed 11: attempt 1 failed, see /tmp/claude-0/-home-user-vibegraph/f027113e-ae0f-56cd-90fe-cca0ffca80be/scratchpad/runs/h1_381_mlm/grouped_11.log
+grouped    seed 11     sigma 55.612 +- 0.193 pb  (35s)
+nongrouped seed 11     sigma 56.056 +- 0.193 pb  (33s)
+patched    seed 11     sigma 57.382 +- 0.187 pb  (42s)
+grouped    seed 12     sigma 55.61 +- 0.203 pb  (29s)
+nongrouped seed 12     sigma 56.394 +- 0.194 pb  (40s)
+patched    seed 12     sigma 57.786 +- 0.195 pb  (39s)
+grouped    seed 13     sigma 55.314 +- 0.212 pb  (28s)
+nongrouped seed 13     sigma 55.929 +- 0.241 pb  (30s)
+patched    seed 13     sigma 57.312 +- 0.24 pb  (27s)
+grouped    seed 14     sigma 55.877 +- 0.213 pb  (46s)
+nongrouped seed 14     sigma 56.247 +- 0.184 pb  (41s)
+patched    seed 14     sigma 57.654 +- 0.219 pb  (47s)
+grouped    seed 15     sigma 55.652 +- 0.182 pb  (59s)
+nongrouped seed 15     sigma 56.222 +- 0.277 pb  (90s)
+patched    seed 15     sigma 57.517 +- 0.211 pb  (37s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  55.613  0.2      0.0896    0.201
+nongrouped  5  56.1696  0.18      0.0806    0.218
+patched     5  57.5302  0.194      0.0867    0.21
+grouped - nongrouped: -0.5566 pb (-0.99%), pull -4.6 sigma (measured spreads)
+patched - nongrouped: +1.361 pb (+2.42%), pull +11.5 sigma (measured spreads)
+```
+
+Grouped against grouped + fix, at the same seeds:
+
+| card | grouped (pb) | grouped + fix (pb) | shift |
+|---|---|---|---|
+| default | 106.64 ± 0.20 | 110.55 ± 0.19 | +3.7 %, 14.6σ |
+| MLM | 55.61 ± 0.09 | 57.53 ± 0.09 | +3.4 %, 15.4σ |
+
+**The non-grouped comparison is confounded in 3.8.1.** The fixed grouped
+output now reads +1.8 % (default) and +2.4 % (MLM) above the non-grouped one.
+The non-grouped σ at the default card is bit-identical per seed to 3.7.1.
+
+The extra shift is a change to MadEvent's refine step. It is not this defect:
+- Upstream commit `ebbdc974` ("move back to refine_grid=False", merged into
+  3.8.0 with 3.5.16) sets `keep_grid_for_refine = False` in
+  `madgraph/madevent/gen_ximprove.py`.
+- It raises grouped σ by about 2 % in every channel, including `G3`, whose
+  configs carry no permutation (default card, `patched` per channel: `G3`
+  31.72 against 30.92 pb in 3.7.1).
+
+It was located by bisecting the first-parent merges from `v3.7.1` to `v3.8.1`
+at seed 11, `patched`. The value steps 109.63 → 110.78 pb at merge
+`31c57a65e`. A later reshuffle of the random stream (`aa59ff474`) moves it
+to 110.59.
+
+With that one setting restored (`keep_grid_for_refine = True` and its
+`base_directory` line in a copy of the 3.8.1 tree), 3.8.1 reproduces 3.7.1's
+picture:
+
+```
+grouped    seed 11     sigma 105.09 +- 0.342 pb  (25s)
+nongrouped seed 11     sigma 109.66 +- 0.355 pb  (36s)
+patched    seed 11     sigma 109.65 +- 0.371 pb  (23s)
+grouped    seed 12     sigma 104.72 +- 0.43 pb  (33s)
+nongrouped seed 12     sigma 106.92 +- 0.399 pb  (40s)
+patched    seed 12     sigma 109.15 +- 0.448 pb  (34s)
+grouped    seed 13     sigma 103.95 +- 0.329 pb  (36s)
+nongrouped seed 13     sigma 108.79 +- 0.4 pb  (39s)
+patched    seed 13     sigma 107.99 +- 0.337 pb  (32s)
+grouped    seed 14     sigma 103.51 +- 0.363 pb  (20s)
+nongrouped seed 14     sigma 108.85 +- 0.357 pb  (22s)
+patched    seed 14     sigma 108.06 +- 0.392 pb  (17s)
+grouped    seed 15     sigma 104.62 +- 0.328 pb  (21s)
+nongrouped seed 15     sigma 108.77 +- 0.412 pb  (35s)
+patched    seed 15     sigma 108.41 +- 0.354 pb  (20s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  104.378  0.636      0.285    0.358
+nongrouped  5  108.598  1.01      0.451    0.385
+patched     5  108.652  0.723      0.323    0.38
+grouped - nongrouped: -4.22 pb (-3.89%), pull -7.9 sigma (measured spreads)
+patched - nongrouped: +0.054 pb (+0.05%), pull +0.1 sigma (measured spreads)
+```
+
 ## Notes
 
 - MadEvent's parallel `Source` build occasionally fails with
