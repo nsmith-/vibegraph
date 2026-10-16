@@ -88,11 +88,12 @@
 #
 #   (the driver prints the same lines when it finishes). The record to bank is
 #   /scratch/confirm/<row>/ whole: it carries the five original seeds, so it is
-#   a superset of the banked one. Copy it over output/seeded_sigma/<row>/ only when its LADDER or SCATTER line has been
-#   read; a "re-bank at 4x" verdict changes which rung the gates read, which is
-#   the manifest's and the decision record's call, not this driver's. Without
-#   SEEDED_OUT the new seeds are written into output/seeded_sigma/<row>/
-#   directly. An explicit SEEDS or SEEDS_4X overrides the plan.
+#   a superset of the banked one. Copy it over output/seeded_sigma/<row>/ only
+#   when its LADDER or SCATTER line has been read; a "re-bank at 4x" verdict
+#   changes which rung the gates read, which is the manifest's and the decision
+#   record's call, not this driver's. Without SEEDED_OUT the new seeds are
+#   written into output/seeded_sigma/<row>/ directly. An explicit SEEDS or
+#   SEEDS_4X overrides the plan.
 #
 # The σ gates read a row's record where the bundle carries one
 # (vibegraph-lib/tests/common/seed_record.rs) and its single banked run

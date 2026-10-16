@@ -23,7 +23,8 @@
 //! `<kept>/seed_record.json` in the format `vibegraph-lib/tests/common/seed_record.rs`
 //! defines and the σ gates read. It prints one line per seed, the seed-policy
 //! readings, the screen of the four-times-budget seeds against the budget's
-//! mean, the budget ladder's verdict (with 20 seeds on each rung), the survey the runs made and the row's per-channel scatter test.
+//! mean, the budget ladder's verdict (with 20 seeds on each rung), the survey
+//! the runs made and the row's per-channel scatter test.
 //!
 //! `--rescreen` reads a record this tool wrote (at any version of the same
 //! schema), checks it, and prints the same lines with the summary computed
@@ -1915,23 +1916,29 @@ mod tests {
         assert!((summary.ew_minus_reported_err_pb - 0.1f64.sqrt()).abs() < 1e-12);
     }
 
-    /// A record with `n` seeds on each rung, the 1x rung alternating ±1 about
-    /// 100 and the 4x rung ±1 about `centre4`. Every seed quotes a huge error,
-    /// which the ladder must not read.
-    fn ladder_record(n1: usize, n4: usize, centre4: f64) -> SeedRecord {
-        let rung = |count: usize, nevents: u64, centre: f64, first: u64| -> Vec<SeedRun> {
+    /// A record with `n1` seeds at the budget alternating ±1 about 100 and `n4`
+    /// at four times it alternating ±`amp4` about `centre4` (even counts, so
+    /// each rung's mean is its centre). Every seed quotes a huge error, which
+    /// the ladder must not read.
+    fn ladder_record_with(n1: usize, n4: usize, amp4: f64, centre4: f64) -> SeedRecord {
+        let rung = |count: usize, nevents: u64, centre: f64, amp: f64, first: u64| {
             (0..count)
                 .map(|i| {
-                    let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+                    let sign = if i % 2 == 0 { amp } else { -amp };
                     let mut s = seed(first + i as u64, nevents, centre + sign, centre + sign);
                     s.reported_err_pb = 1e6;
                     s
                 })
-                .collect()
+                .collect::<Vec<SeedRun>>()
         };
-        let mut seeds = rung(n1, 100, 100.0, 1);
-        seeds.extend(rung(n4, 400, centre4, 1000));
+        let mut seeds = rung(n1, 100, 100.0, 1.0, 1);
+        seeds.extend(rung(n4, 400, centre4, amp4, 1000));
         record(seeds)
+    }
+
+    /// Both rungs at ±1.
+    fn ladder_record(n1: usize, n4: usize, centre4: f64) -> SeedRecord {
+        ladder_record_with(n1, n4, 1.0, centre4)
     }
 
     /// Twenty seeds a side at ±1: s² = 20/19 per rung, so
@@ -1993,6 +2000,39 @@ mod tests {
         );
     }
 
+    /// Rungs of different size and spread: 20 seeds at ±1 and 30 at ±3 give
+    /// σ² = (20/19)/20 + 9 (30/29)/30 = 1/19 + 9/29. Swapping which rung's
+    /// variance divides by which count, or reading one rung's spread for both,
+    /// moves σ and, at 2.1 σ or 1.9 σ, the verdict.
+    #[test]
+    fn the_ladder_weights_each_rungs_spread_by_its_own_count() {
+        let sigma = (1.0f64 / 19.0 + 9.0 / 29.0).sqrt();
+        let swapped = (20.0f64 / 19.0 / 30.0 + 9.0 * 30.0 / 29.0 / 20.0).sqrt();
+        let one_spread = (20.0f64 / 19.0 * (1.0 / 20.0 + 1.0 / 30.0)).sqrt();
+        assert!(2.1 * sigma / swapped < 2.0 && 1.9 * sigma / one_spread > 2.0);
+        let l = ladder_record_with(20, 30, 3.0, 100.0 + 2.1 * sigma).ladder();
+        assert!((l.sigma.unwrap() - sigma).abs() < 1e-12, "{l:?}");
+        assert!((l.pull.unwrap() - 2.1).abs() < 1e-9, "{l:?}");
+        let (m1, s1) = l.budget.unwrap();
+        let (m4, s4) = l.screening.unwrap();
+        assert!((m1 - 100.0).abs() < 1e-12 && (m4 - (100.0 + 2.1 * sigma)).abs() < 1e-12);
+        assert!((s1 * s1 - 20.0 / 19.0).abs() < 1e-12);
+        assert!((s4 * s4 - 9.0 * 30.0 / 29.0).abs() < 1e-12);
+        assert_eq!(l.verdict, seed_record::LadderVerdict::Rebank);
+        let inside = ladder_record_with(20, 30, 3.0, 100.0 + 1.9 * sigma).ladder();
+        assert_eq!(inside.verdict, seed_record::LadderVerdict::Stays);
+    }
+
+    /// The line names each rung's own mean, spread and count.
+    #[test]
+    fn the_ladder_line_keeps_the_two_rungs_apart() {
+        let line = ladder_line("row", &ladder_record_with(20, 30, 3.0, 101.0).ladder());
+        assert!(
+            line.contains("20 seeds at 1x mean 1.000000e2 (sd 1.026e0), 30 at 4x mean 1.010000e2 (sd 3.051e0)"),
+            "{line}"
+        );
+    }
+
     /// Two channels whose tails both underflow `f64` tie at p = 0; the worst
     /// is the one with the larger χ², not the first by name.
     #[test]
@@ -2027,6 +2067,7 @@ mod tests {
             "p = {p:e}, want {q:e}"
         );
         assert_eq!(chi2_p_value(0.0, 4), 1.0);
+        assert_eq!(chi2_p_value(5.0, 0), 1.0);
         assert_eq!(p_text(p), format!("{p:.2e}"));
         assert_eq!(p_text(0.0), "< 1e-300");
     }
