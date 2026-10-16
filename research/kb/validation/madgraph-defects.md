@@ -118,7 +118,10 @@ to 1e-14 on every coupling of every row[^n35-e1]. Only `ee_to_zh_smeft` and
 `wpwm_to_wpwmz_cw` carry it. `coupling_oracle.rs` takes Python as the arbiter and
 lists the Fortran deviation by name; an unlisted Fortran/Python disagreement
 fails ([coupling-oracle](coupling-oracle.md))[^n36-b5]. `ee_to_zh_smeft`'s
-amplitude cell stays `info` rather than matching a rounded reference.
+amplitude cell stays `info` rather than matching a rounded reference. `gHaa` is written the same way, putting `GC_299` 2.8e-8 off; no banked
+amplitude row carries it yet, so `coupling_oracle` does not list it. The
+user classified both as an approximation this crate improves on at negligible
+cost, kept as a registered deviation ([policy](madgraph-defect-policy.md)).
 
 **`get_channel_cut` reads an unassigned `t`** under `sde_strat = 1` with
 `tmin_for_channel ≠ -1` (`genps.f:1878-1960`). The early returns cover

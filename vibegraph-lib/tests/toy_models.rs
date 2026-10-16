@@ -16,8 +16,8 @@
 //!
 //! Beside those, two checks on copies of `vibegraph_toy_UFO` whose coupling orders
 //! put two structures on one vertex: the merged vertex equals the sum of its split
-//! diagrams, and a merged vertex whose structures disagree on the rooting sign is
-//! refused when it is compiled.
+//! diagrams, and a merged vertex whose structures disagree on the reversed-bilinear
+//! parity is refused when it is compiled.
 
 mod common;
 
@@ -309,14 +309,14 @@ fn toy_point(
     momenta
 }
 
-/// Vertices that mix structures with different rooting-convention signs under one
-/// coupling order compile, and their one merged diagram equals the sum of the two
-/// diagrams the order split gives.
+/// Vertices that mix structurally different terms under one coupling order compile,
+/// and their one merged diagram equals the sum of the two diagrams the order split
+/// gives.
 ///
-/// `Identity` and `Gamma5` both take the crossed-line −1 as a fermion current
-/// (`C·1ᵀ·C⁻¹ = 1`, `C·γ⁵ᵀ·C⁻¹ = γ⁵`), and `SSS1` and `SSSD` both take the all-scalar
-/// −1; a vertex whose structures disagreed on that sign would have no per-vertex
-/// sign to lift. The split rows are the ones pinned per MadGraph graph in
+/// `Identity` beside `Gamma5`, and `SSS1` beside `SSSD`, carry the same diagram-level
+/// convention sign (no reversal sign for `1` and `γ⁵`, `C·1ᵀ·C⁻¹ = 1`,
+/// `C·γ⁵ᵀ·C⁻¹ = γ⁵`; none for an all-scalar vertex), so the merged vertex has one sign
+/// to lift. The split rows are the ones pinned per MadGraph graph in
 /// `standalone_jamps`; this comparison carries their signs onto the merged vertex.
 /// It is blind to a sign shared by both structures of a merged vertex, which the
 /// split rows see.
@@ -414,16 +414,17 @@ fn mixed_structure_vertices_equal_their_split_sum() {
     }
 }
 
-/// A vertex whose structures disagree on the rooting-convention sign is refused when
+/// A vertex whose structures disagree on the reversed-bilinear parity is refused when
 /// a process is compiled, rather than evaluated with one structure's sign.
 ///
 /// The copy puts a derivative `P(-1,3)*Gamma(-1,2,1)` Yukawa in place of `Gamma5`,
 /// under `Identity`'s order. Where the vertex's fermion pair sinks into the scalar
-/// (`lt~ lt > st`), the `Identity` term takes the scalar-sink −1 and the gamma term
-/// does not, so the vertex has no one sign to lift into the diagram's. Rooted the
-/// other way round, with the scalar on leg 0 (`st > lt lt~`), the same vertex
-/// compiles: this pins the refusal's path out of `compile`, not which vertices a
-/// sign exists for.
+/// (`lt~ lt > st`), the gamma term is a fermion→vector sink and takes the reversed
+/// parity (`C·γ^μᵀ·C⁻¹ = −γ^μ`) while the `Identity` term does not
+/// (`C·1ᵀ·C⁻¹ = 1`), so the vertex has no one parity to lift into the diagram's
+/// convention sign. Rooted the other way round, with the scalar on leg 0
+/// (`st > lt lt~`), the same vertex compiles: this pins the refusal's path out of
+/// `compile`, not which vertices a sign exists for.
 #[test]
 fn mixed_sign_vertex_is_refused_at_compile() {
     let model = edited_toy_model(&[
@@ -437,12 +438,12 @@ fn mixed_sign_vertex_is_refused_at_compile() {
     let process = "lt~ lt > st NP<=1";
     let set = common::generate_with(process, model.as_ref()).remove(0);
     let err = match AmplitudeEvaluator::compile(&set, model.as_ref()) {
-        Ok(_) => panic!("'{process}' compiled a vertex with mixed rooting-convention signs"),
+        Ok(_) => panic!("'{process}' compiled a vertex with mixed reversed-bilinear parities"),
         Err(e) => e.to_string(),
     };
     assert!(
         err.starts_with("unsupported vertex: ")
-            && err.contains("carry mixed rooting-convention signs"),
+            && err.contains("carry mixed reversed-bilinear parities"),
         "'{process}' was refused for another reason: {err}"
     );
 }

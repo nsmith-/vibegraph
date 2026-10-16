@@ -5,7 +5,7 @@
 ## Derivation
 
 * [The global amplitude phase: i-counting and the contravariant vector current](global-phase-i-counting.md) - Vertex i and propagator −i multiply to i for any tree, so |G|=1 and Re G=0 against MadGraph; every vector producer emits the physical contravariant current and carries no sign of its own.
-* [Rooting invariance, the diagram anchor and canonical form](rooting-invariance-and-anchor.md) - Graph-property signs live on Diagram; kernel-compensation signs are read at Diagram::anchor (first lowest-arity vertex), so currents are rooting-invariant; canonical form and container equality.
+* [Rooting invariance, the graph-read signs and canonical form](rooting-invariance-and-canonical-form.md) - Every sign a diagram carries reads the graph alone (Diagram::sign and convention_sign) and the live tree's reversed-bilinear parity is cancelled, so every rooting and every leg labelling gives one amplitude; canonical form and container equality.
 
 ## Design
 
@@ -32,10 +32,10 @@
 
 * [Colour tensors under crossing; epsilon and sextet atoms](colour-crossing-epsilon-and-sextets.md) - Undoing feyngraph's all-incoming crossing transposes each T per tensor and swaps Epsilon↔EpsilonBar, K6↔K6Bar; how epsilon and sextet atoms flow through grammar and basis; what stays refused.
 * [Colour lines from the basis, and how flows transform under conjugation](colour-flow-lines-and-conjugation.md) - ICOLUP lines are read from each basis key's T/Tr chains, incoming legs take the conjugate rep, only connectivity is physical; full vs partial (crossing) conjugation of a flow.
-* [Convention signs in a diagram's sign and what pins each](convention-sign-inventory.md) - Every relative-sign arm folded into a diagram's fermi_sign (Wick parity, line, tensor line, VVV, contact, gluon-scalar, build, reversed bilinear), where each is read, and which oracle pins it.
+* [Convention signs in a diagram's sign and what pins each](convention-sign-inventory.md) - fermi_sign = Diagram::sign × convention_sign × the live tree's reversed parity: the Wick and line signs, the propagator phases, each vertex's reversed-bilinear parity as the amplitude root, the tensor-path sign and the triple-gluon −1; what each reads and which oracle pins it.
 * [Fermion flow, bra/ket dispatch and crossed legs](fermion-flow-and-crossing.md) - Flow-typed fermion slots, bra/ket chosen by physical flow, the per-leg crossed bit, and how C Γᵀ C⁻¹ acts on vector, chiral, scalar and tensor bilinears read against their arrow.
-* [Fermion-line sign](fermion-line-sign.md) - Diagram::fermion_line_sign: an uncrossed line takes one −1 per internal propagator whatever its vertices; a crossed line takes a single −1; why the fitted alternatives fail.
+* [Fermion-line sign](fermion-line-sign.md) - Diagram::fermion_line_sign: a line with an initial-state end takes one −1 per internal propagator, the fermion propagator's phase, whatever its vertices; a crossed line takes a single −1; why the fitted alternatives fail.
 * [ALOHA Levi-Civita and Sigma conventions](levi-civita-and-sigma-conventions.md) - ALOHA's Epsilon is ε^{0123}=−1; Sigma is half of (i/2)[γ^μ,γ^ν]; a chiral projector beside Sigma keeps its chirality; both pinned against MadGraph via CP-even/odd interference.
 * [How MadGraph factorizes colour: colorize, basis, JAMPs, CF matrix](madgraph-colour-factorization.md) - MadGraph splits M into JAMPs times an exact-rational colour matrix from symbolic SU(3) simplification; runtime never sees a colour index.
-* [Vector-vertex convention signs](vector-vertex-signs.md) - The colourless VVV source sign, the four-vector contact sign (per vertex) and the gluon–scalar current sign, read at Diagram::anchor; why they are graph invariants; the open W-pair case.
+* [Vector-vertex convention signs](vector-vertex-signs.md) - A colourless vector vertex (VVV, VVS, a four- or five-vector contact, O_W's included) carries no convention sign; a scalar line beside one takes its propagator phase; the triple-gluon vertex takes a calibrated −1; why, and what pins it.
 * [External wavefunctions and propagators](wavefunctions-and-propagators.md) - HELAS/ALOHA external vector/scalar wavefunctions and storage; Weyl-basis fermion, Feynman/unitary-gauge vector and scalar propagators with fixed-width denominators.

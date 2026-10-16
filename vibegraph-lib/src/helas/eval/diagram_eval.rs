@@ -123,16 +123,14 @@ impl VertexTerm {
         Ok(VertexTerm { terms, coupling_id })
     }
 
-    /// The rooting-convention sign shared by this vertex-term's Lorentz terms (see
-    /// [`RootedTerm::build_sign`]). Every term of a vertex carries the same sign — the
-    /// convention −1 is a property of the vertex current, not of an individual coupling
-    /// term — so a chiral `ProjM`+`ProjP` pair flips together (verified across the
-    /// MG-validated set: no vertex has mixed per-term build signs). Empty term list → `+1`.
-    /// Terms that disagree have no per-vertex sign to lift, and the vertex is refused.
+    /// The tensor-path sign shared by this vertex-term's Lorentz terms (see
+    /// [`RootedTerm::build_sign`]); `+1` for tree-rooted terms and for an empty term
+    /// list. Terms that disagree have no per-vertex sign to lift, and the vertex is
+    /// refused.
     fn build_sign(&self) -> Result<i8, RootLorentzError> {
         uniform_sign(
             self.terms.iter().map(|t| t.build_sign),
-            "rooting-convention signs",
+            "tensor-path signs",
             self,
         )
     }
@@ -253,11 +251,9 @@ impl VertexInfo {
         Ok(VertexInfo { terms })
     }
 
-    /// The rooting-convention sign of this vertex, common to all its `(color, lorentz)`
-    /// terms (see [`VertexTerm::build_sign`]). Product of these over a diagram's vertices,
-    /// evaluated at the rooting that takes the diagram's anchor as the amplitude vertex,
-    /// is the diagram's
-    /// [`build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign).
+    /// The tensor-path sign of this vertex, common to all its `(color, lorentz)` terms
+    /// (see [`VertexTerm::build_sign`]); with the vertex as the amplitude root it is one
+    /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`).
     ///
     /// A vertex whose couplings disagree on the sign is refused: the sign is lifted to
     /// one factor per vertex, which such a vertex does not have.
@@ -267,7 +263,7 @@ impl VertexInfo {
             .iter()
             .map(VertexTerm::build_sign)
             .collect::<Result<Vec<_>, _>>()?;
-        uniform_sign(signs, "rooting-convention signs", self)
+        uniform_sign(signs, "tensor-path signs", self)
     }
 
     /// Whether this vertex is evaluated through the rank-2 tensor path, common to all its
@@ -283,8 +279,10 @@ impl VertexInfo {
     }
 
     /// The reversed-bilinear parity of this vertex, common to all its terms (see
-    /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the anchor
-    /// rooting is [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
+    /// [`VertexTerm::reversed_sign`]). With the vertex as the amplitude root it is one
+    /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`); the
+    /// product over a live tree is
+    /// [`live_reversed_parity`](super::root_diagram::DiagramEvalTree::live_reversed_parity).
     ///
     /// A vertex whose couplings disagree on the parity is refused, as for
     /// [`build_sign`](Self::build_sign).
@@ -334,7 +332,7 @@ mod tests {
     use super::*;
     use crate::ufo::lorentz::LorentzTerm;
 
-    /// A plain all-scalar term rooted at the amplitude, carrying the all-scalar −1.
+    /// A plain all-scalar term rooted at the amplitude.
     fn scalar_term() -> RootedTerm {
         let term = LorentzTerm {
             coeff: 1.0,
@@ -343,14 +341,14 @@ mod tests {
         super::super::root_lorentz::root_term(&term, &[1, 1, 1], &[], None, &[None; 3]).unwrap()
     }
 
-    /// A vertex whose structures disagree on the rooting-convention sign, or on the
+    /// A vertex whose structures disagree on the tensor-path sign, or on the
     /// reversed-bilinear parity, is refused rather than given the first term's sign.
     #[test]
     fn mixed_vertex_signs_are_refused() {
         let plain = scalar_term();
-        assert_eq!(plain.build_sign, -1);
+        assert_eq!(plain.build_sign, 1);
         let mut flipped = plain.clone();
-        flipped.build_sign = 1;
+        flipped.build_sign = -1;
         let mut reversed = plain.clone();
         reversed.reversed_sign = -reversed.reversed_sign;
 
@@ -366,7 +364,7 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(vertex(&plain, &plain).build_sign().unwrap(), -1);
+        assert_eq!(vertex(&plain, &plain).build_sign().unwrap(), 1);
         assert_eq!(vertex(&plain, &plain).reversed_sign().unwrap(), 1);
         for (what, a, b) in [
             (
@@ -392,7 +390,7 @@ mod tests {
         ] {
             let err = a.build_sign().unwrap_err();
             assert!(
-                matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("rooting-convention")),
+                matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("tensor-path")),
                 "{what}: {err:?}"
             );
             let err = b.reversed_sign().unwrap_err();

@@ -79,16 +79,19 @@ resulting sign bookkeeping per line class is
 |---|---|---|
 | `γ^μ` | `−γ^μ` | reversed-bilinear parity at the vector sink (`term_reversed_parity`; runtime `reversed` flag) |
 | `γ^μ P_χ` (gamma-chained projector) | `−γ^μ P_χ̄` | chirality flip per vertex (`chiral_correction`); the `−1` as above |
-| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip; on a crossed line the reordering `−1` (`pair_crossed` at a scalar sink, all four; `standalone_projector_crossed` at a fermion output, `P_χ` and `γ⁵` only — a standalone `Identity` rooted at a fermion output on a crossed line takes no `−1`, and no gated row reaches that case) |
+| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip, and no reversed-bilinear parity (`reversed_sign` is `+1` for them); a crossed line's reordering `−1` is not a per-structure sign but the line's: `Diagram::fermion_line_sign` and `propagator_phase_sign` in `convention_sign` |
 | `σ^{μν}` | `−σ^{μν}` | the same reversed-bilinear `−1` as `γ^μ`; a projector beside a literal `Sigma` keeps its chirality (`σ^{μν}` commutes with `γ⁵`) |
 | `γ^αγ^β` (tensor-path line) | transposed | the two gammas swap; projectors move with their slots **without** conjugating chirality |
 
 A gamma-chained projector conjugates on two disjoint occasions: an uncrossed line
 traversing the vertex against its arrow (an initial-state annihilation pair), and a
 crossed line. A crossed pair's two `−1`s cancel, so neither case carries an
-explicit sign in `chiral_correction`. All the per-vertex signs that depend on the
-rooting are lifted into the diagram's `fermi_sign`
-([convention-sign-inventory](convention-sign-inventory.md)).
+explicit sign in `chiral_correction`. The reversed-bilinear parity the live tree
+applies depends on the rooting, so `fermi_sign` cancels it and multiplies in the
+parity each vertex has with the vertex as the amplitude root, which reads the graph
+alone (`vertex_root_signs`;
+[convention-sign-inventory](convention-sign-inventory.md),
+[rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md)).
 
 ## Vertices that close two lines
 

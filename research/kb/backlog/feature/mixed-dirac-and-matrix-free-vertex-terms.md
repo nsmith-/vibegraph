@@ -49,3 +49,5 @@ To resolve, either:
 - refuse it consistently, at every rooting, with a typed error.
 
 History of the line-sign rule: [note 35 §T3](../../history/notes/35-ufo-lorentz-sprint-plan.md).
+
+Since PR #30 there is no scalar-sink −1: every convention sign is read off the graph (`convention_sign` in `root_diagram.rs`), and only a non-uniform reversed parity or tensor sign at the vertex's own sink can still refuse. The line numbers above predate that change.

@@ -1,14 +1,15 @@
 ---
 type: Physics Convention
 title: Fermion-line sign
-description: "Diagram::fermion_line_sign: an uncrossed line takes one −1 per internal propagator whatever its vertices; a crossed line takes a single −1; why the fitted alternatives fail."
+description: "Diagram::fermion_line_sign: a line with an initial-state end takes one −1 per internal propagator, the fermion propagator's phase, whatever its vertices; a crossed line takes a single −1; why the fitted alternatives fail."
 status: draft
 tags: [fermion-flow, sign-convention, crossing, diagrams, madgraph-oracle]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
-  - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L526-L581", title: "Diagram::fermion_line_sign and its derivation doc"}
-  - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L718", title: "spine_sign_from_flow / closed_line_sign: the rooted-tree cross-check"}
+  - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/diagrams/diagram.rs#L518-L555", title: "Diagram::fermion_line_sign and its derivation doc"}
+  - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L680", title: "spine_sign_from_flow: the rooted-tree cross-check"}
+  - {id: code-convention, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs#L1069-L1190", title: "convention_sign: propagator_phase_sign and vertex_root_signs"}
+  - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the propagator phases and the vertex reading"}
   - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes 4–6 (initial-state spine sign, crossed-line conjugation, per-propagator parity)"}
   - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2598-L2756", title: "Note 28 S6, the crossing sign rule (mixed lines)"}
   - {id: n35-t3, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L1042-L1112", title: "Note 35 T3 (the Dirac-content exemption, since reverted)"}
@@ -60,20 +61,27 @@ side crosses the same way:[^n28-s6]
 | final, on a crossed line | anti identity, kept | physical |
 
 A line with at least one initial-state end is therefore read *against* its slot
-arrow at every vertex. Reading a bilinear backwards replaces the vertex structure
-by `C Γᵀ C⁻¹`, which for `Γ = γ^μ P_χ` is `−γ^μ P_χ̄`. The chirality flip is applied
-per vertex (`chiral_correction`, `root_lorentz.rs`). Of the `V` minus signs, one is
-applied at the line's single vector-rooted sink by the reversed-bilinear parity
-(see [convention-sign-inventory](convention-sign-inventory.md)); the remaining
-`V − 1 = P`, one per internal propagator, are this factor.
+arrow. Reading a bilinear backwards replaces the vertex structure by `C Γᵀ C⁻¹`,
+which for `Γ = γ^μ P_χ` is `−γ^μ P_χ̄`. The kernels apply the chirality flip per
+vertex (`chiral_correction`, `root_lorentz.rs`). The sign is a per-vertex factor of
+the diagram's convention sign, not of this one: `vertex_root_signs` reads each
+vertex's reversed-bilinear parity with the vertex as the amplitude root (see
+[convention-sign-inventory](convention-sign-inventory.md)).[^code-convention]
+
+The `(−1)^P` is the propagators' phase. MadGraph's off-shell fermion current
+carries `i(q̸ + m)/D` and the evaluator's `−i(q̸ + m)/D` (`kernel::propagate_core`),
+so each internal fermion propagator on the line differs from MadGraph's by `−1`.
+On a line with an initial-state end that phase is this factor.
 
 A crossed line keeps the anti identity *and* the anti wavefunction, so it is read
-*along* its arrow and takes no per-propagator factor. Its single −1 is the
-operator reordering of the conjugated pair relative to the reference's physical
-pair: a final-state pair evaluates `ū₁Γv₂` where the vertex is defined `ū₂Γv₁`, and
-`ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁`.[^n12-causes] Crossing inverts slot identity and adjoint
-together, which is why the evaluator carries an explicit per-leg `crossed` bit
-(see [fermion-flow-and-crossing](fermion-flow-and-crossing.md)).
+*along* its arrow. Its single −1 is the operator reordering of the conjugated pair
+relative to the reference's physical pair: a final-state pair evaluates `ū₁Γv₂`
+where the vertex is defined `ū₂Γv₁`, and `ū₁Γv₂ = −ū₂(CΓᵀC⁻¹)v₁`.[^n12-causes] Its
+propagators carry the same phase as any other; the convention sign counts them
+(`propagator_phase_sign`, beside the scalar lines), not this factor.[^b-report]
+Crossing inverts slot identity and adjoint together, which is why the evaluator
+carries an explicit per-leg `crossed` bit (see
+[fermion-flow-and-crossing](fermion-flow-and-crossing.md)).
 
 ## The factor ignores vertex content
 
@@ -88,11 +96,10 @@ MadGraph per diagram or per helicity:
   one `b b~ H` vertex, one propagator) is bit-for-bit only with the −1.
 - `b b~ > h h` (`bbx_to_hh`, and the unit test `every_line_takes_the_propagator_sign`):
   the exchange diagrams take the line's −1, the triple-Higgs annihilation diagram
-  takes its −1 from the all-scalar `HHH` vertex's scalar-sink sign instead, and the
-  two interfere at MadGraph's relative sign.
-- The toy row `qt qt~ > o8 o8` agrees because its s-channel runs through an
-  all-scalar cubic vertex whose own scalar-sink −1 (`build_at_leg`, the `SSS1`/`SSSS1`
-  arm) balances the t/u-channel propagator's.
+  takes its −1 from its internal Higgs line's phase instead
+  (`propagator_phase_sign`), and the two interfere at MadGraph's relative sign.
+- The toy row `qt qt~ > o8 o8` agrees because its s-channel scalar line's phase
+  balances the t/u-channel fermion propagator's.
 
 ## Alternatives that fit some data and are false
 
@@ -102,17 +109,14 @@ Each was a candidate at some point; each is refuted by a bit-exact row.[^n28-s6]
   QCD=0` alone it selects the complement of the right set and a global sign
   absorbs it, but it moves `e+ e- > mu+ mu- ta+ ta-` diagrams 0–15 against 17–24
   and `g g > t t~`'s t/u-channel diagrams against the s-channel.
-- **"The WWγ/WWZ vertex takes no Yang–Mills sign."** Falsified by
-  `e+ e- > W+ W-`, whose s-channel diagrams need the VVV source sign.
 - **"−1 per spacelike boson propagator."** Fits `u d > e+ e- u d` and is false on
   `u u~ > u u~`.
 - **"−1 per propagator only on lines whose vertices carry a Dirac matrix"**
-  (`Identity`/`Gamma5`/projector lines exempt). It looked right on
-  `qt qt~ > o8 o8` only because it cancelled a second bug, the missing
-  scalar-sink −1 on `SSS1`/`SSSS1`. With the exemption, `ta+ ta- > t t~ h h` has
-  24 wrong signs of 96 against MadGraph's `AMP()`; with both fixed it has none.
-  Reverted in 7f523ad (PR #13); `carries_dirac_matrix` no longer exists.[^pr13]
-  Note 35 §T3 and §10.1 rule 5 (archived) describe the reverted rule.[^n35-t3][^n35-closeout]
+  (`Identity`/`Gamma5`/projector lines exempt). It fits `qt qt~ > o8 o8` only
+  beside a second error, a missing −1 on the internal scalar line. With the
+  exemption, `ta+ ta- > t t~ h h` has 24 wrong signs of 96 against MadGraph's
+  `AMP()`; without it, and with the scalar line's −1, it has none.[^pr13]
+  Note 35 §T3 and §10.1 rule 5 (archived) state the rule.[^n35-t3][^n35-closeout]
 
 ## How it is checked
 
@@ -140,17 +144,20 @@ Each was a candidate at some point; each is refuted by a bit-exact row.[^n28-s6]
   the sink" are the same function on every tree line (`P = V − 1`), so no
   tree-level dump can tell the two phrasings apart (see
   [charge-flow-phase-study](charge-flow-phase-study.md)).
-- A line closed at a fermion-output *tensor-path* four-fermion current has its
-  line sign divided back out (`fermion_current_line_sign`); see
-  [four-fermion-vertices](four-fermion-vertices.md).
+- A cyclic (tensor-path) four-fermion structure carries its own sign at the
+  amplitude root inside the convention sign, pinned on (initial, crossed) line
+  pairs only; see [four-fermion-vertices](four-fermion-vertices.md) and
+  [convention-sign-inventory](convention-sign-inventory.md).
 - Majorana lines are out of scope; see
   [majorana-fermions-unsupported](../backlog/feature/majorana-fermions-unsupported.md).
 
 Because the factor reads only the graph, it is invariant under re-rooting and
-renumbering; see [rooting-invariance-and-anchor](rooting-invariance-and-anchor.md).
+renumbering; see [rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md).
 
 [^code-line-sign]: `vibegraph-lib/src/diagrams/diagram.rs`, `fermion_line_sign` and its doc comment.
-[^code-closed-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `spine_sign_from_flow`, `closed_line_sign`, `compile_single_diagram`.
+[^code-closed-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `spine_sign_from_flow`, `compile_single_diagram`.
+[^code-convention]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `convention_sign`, `propagator_phase_sign`, `vertex_root_signs`.
+[^b-report]: B′ report, "The derivation".
 [^n12-causes]: Note 12, root causes 4–6.
 [^n28-s6]: Note 28 §S5–S6.
 [^n35-t3]: Note 35 §T3.
