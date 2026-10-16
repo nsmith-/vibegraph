@@ -27,7 +27,16 @@ f:
         jmpq    *%rax           # TAILCALL
 ```
 
-LLVM 18 does not parse `preserve_nonecc`.
+LLVM 18 does not parse `preserve_nonecc`. On Compiler Explorer (2026-10-16),
+`llc` trunk (with and without assertions), 22.1.0 and 19.1.0 all fail the same
+way at `-O0` and `-O2`, under the default, `pic` and `static` relocation
+models; none crashes. With the 12th argument removed, `llc` exits 0 and puts
+the target in the now-free `rax`. `r10` and `rbx` are neither argument nor
+callee-saved registers under `preserve_none`, yet are not used for the target.
+
+The closest rustc report is rust-lang/rust#146393 (RISC-V with all but one
+register reserved): there too `llc` reports "ran out of registers" and rustc
+emits wrong code with no error.
 
 ## rustc (`repro.rs`)
 
