@@ -69,3 +69,38 @@ jet-rate χ² to 937/24, and qCut 45 on both sides is followed within 1.3σ.
 - **|pull| < 3.23 on all eight tests under one look-elsewhere rule.** This is
   uniform with SCATTER but slightly looser on the acceptances than the
   planner's 3.
+
+## Amendment: a per-bin pull leg (user's decision, relayed by the planner 2026-10-16)
+
+Items 1, 3 and 4 and the rest of item 2 are approved as written. A χ² per
+histogram is too coarse for a localised feature: a 3σ excess in two bins near
+log10 qCut adds about 18 to a 20–26-dof χ² and can still pass, and the
+matching region is where an MLM bug shows. Added to item 2:
+
+- **Per-bin pulls.** For every bin of d01, d12 and d23 after the ≥100-event
+  merging, the pull of B − A on the normalised shape, with the χ²'s
+  event-spread errors. N_bins is the actual total (about 72 today).
+- **Look-elsewhere.** The leg fails when p_min (two-sided) × N_bins < α, i.e.
+  |pull|max > z* with 2·Φ̄(z*) = α / N_bins.
+- **One jet-rate verdict, one trial factor.** The χ² leg and the per-bin leg
+  each run at **α = 0.5 %** (option (a)), so the jet-rate verdict's
+  false-fail rate stays at or below 1 %, the same rate as SCATTER and the χ²
+  leg as first approved. Option (b), 1 % per leg with up to about 2 % total,
+  was not chosen, because it would make this cell the one rule in the set
+  that fails a correct comparison twice as often. At 72 bins, z* is about 3.97.
+- **Null.** MadEvent's A-vs-A split is read under the identical two-leg rule.
+  If it fails, the whole jet-rate verdict is `info` with "null failed", and
+  nothing is rescaled.
+- **Collator row** adds max |pull| with its histogram and bin, z*, N_bins, and
+  the null's max |pull|.
+- **Not gated:** the localisation variables (`pt_clust`, parton pT and |η|,
+  `SCALUP`, `pt_clust/pT`) stay information only.
+
+**Blind spots added.** A shape distortion spread thinly over many bins is left
+to the χ² leg. A localised offset below z* per-bin σ passes. The
+normalised-shape pulls are correlated through the normalisation, so the
+look-elsewhere correction is somewhat conservative.
+
+**Today's numbers** (filled in by V1 before implementing): N_bins, z*, the
+B-vs-A max |pull| with its histogram and bin, and the null's. If either
+already fails the rule, V1 stops and the manager reports to the planner.
