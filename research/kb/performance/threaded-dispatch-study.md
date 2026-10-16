@@ -130,8 +130,13 @@ interpreters use, exposed on the pinned nightly as `extern "rust-preserve-none"`
   registers in use LLVM loads the tail-call target into `rax`, the 12th argument register,
   so the callee receives its own address. Step 2 needs 20 registers, more than x86-64 has
   for this anyway. Step 1 builds and passes on x86-64 (under Rosetta); its timing there was
-  not measured. Standalone reproducers, the root cause (an LLVM tail-call register
-  class, and rustc dropping LLVM's error) and upstream drafts are in
+  not measured. Two bugs combine. LLVM's tail-call register class has no free register
+  under `preserve_none`, filed as
+  [llvm/llvm-project#232957](https://github.com/llvm/llvm-project/issues/232957). rustc
+  drops LLVM's "ran out of registers" error, which is the root cause of
+  [rust-lang/rust#146393](https://github.com/rust-lang/rust/issues/146393) and is described
+  in [a comment there](https://github.com/rust-lang/rust/issues/146393#issuecomment-6226753606).
+  Reproducers and evidence are in
   [`research/upstream/llvm-preserve-none-tail-call`](../../upstream/llvm-preserve-none-tail-call/README.md).
 
 **What remains at scalar width is structural**: the frame record, argument spills around

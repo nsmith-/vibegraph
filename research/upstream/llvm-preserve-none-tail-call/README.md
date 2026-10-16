@@ -110,7 +110,7 @@ gdb script: [`rustc-146393-evidence.md`](rustc-146393-evidence.md).
   labelled `backend:X86`, `confirmed` and `crash-on-valid`.
   [`llvm-issue-draft.md`](llvm-issue-draft.md) is the draft it was written
   from. The posted issue is the record.
-- **rustc:** a comment on rust-lang/rust#146393, not a new issue, because it
-  is the same root cause. The Rust LLM policy bans LLM-originated comments, so
-  [`rustc-146393-evidence.md`](rustc-146393-evidence.md) is an evidence sheet,
-  not a draft. The user writes the comment.
+- **rustc:** commented on rust-lang/rust#146393 on 2026-10-16
+  (<https://github.com/rust-lang/rust/issues/146393#issuecomment-6226753606>).
+  The Rust LLM policy bans LLM-originated comments, so the user wrote it from
+  [`rustc-146393-evidence.md`](rustc-146393-evidence.md).
