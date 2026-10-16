@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [HY1: hygiene review of the sigma-pulls tool](HY1.md) - Review V1's new validation-report binary for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [V1: read the σ pull population against the seed records](V1.md) - Re-measure this side on every seeded σ row, read the population of pulls against both the reported and the equal-weight seed means and against the 4× seeds, and attribute the +0.65 lean.
 
 ## Session Report
 
+* [HY1 report: hygiene review of the sigma-pulls tool](HY1-report.md) - sigma-pulls reuses the seed policy and the record types; its row loss was silent in four places and 27 of 36 one-line mutations of its statistics survived its seven tests. Now loud and 35 of 36 killed, output byte-identical.
 * [V1 report: a quarter of the σ pull lean is this side's fixed seed, the rest MadEvent's iteration weighting and budget dependence](V1-report.md) - Re-measured at d4b8bb3, the 48 σ pulls that read a seed record lean +0.615. With five seeds on this side, the fixed-beam rows go from +0.61 to +0.41. Read against equal-weight references the population is at +0.29 ± 0.13, and at 4× budget +0.11 ± 0.14. The inverse-variance weighted mean offset is +0.003 % ± 0.005 %, so σ is not shifted as a whole: the lean sits in a few imprecise rows.

@@ -103,4 +103,4 @@ About 40% mutation batches (old, new, repair), 25% reading the tool against `see
 
 - "The tool's population output unchanged before/after (diff it)": satisfied, but the brief's sweep path is `v1/sigmalean-V1-sweep.tsv` (it exists, 170 lines) and the unmatched controls are four, not the three the first lines of output show before `head`.
 - The brief asks whether the tool re-implements "the equal-weight value" or the seed policy: it does neither; the duplicated part is the selection around them (H11).
-- The sessions index (`sessions/index.md`) is generated; this report is not listed in it, and I did not edit it.
+- The sessions index (`sessions/index.md`) is generated and `pixi run kb-lint` reports it stale once this report exists; I ran `pixi run kb-index` (one file, 2 lines added) and committed it. After that `kb-lint` still prints the pre-existing `mg-single-helicity-bench-no-consumer.md` warning only.
