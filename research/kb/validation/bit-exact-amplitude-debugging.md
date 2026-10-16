@@ -82,7 +82,10 @@ working detail and the cases that established it.
 
 ## Per-diagram sign recovery and the GF(2) solve
 
-The vector-vertex sign work shows the full method[^n39-found]:
+The vector-vertex sign work shows the full method[^n39-found]. The rule it
+produced was anchor-keyed and has since been replaced by the root-free
+`convention_sign` (see the end of this section); the steps below record how that
+earlier rule was found, and the features named in step 2 belong to it:
 
 1. A least-squares fit `Σ_d c_d · (our diagram d's per-flow values) = MG JAMPs`
    over all entries; every residual came out at 1e-15 with every `c_d = ±c`.
@@ -105,12 +108,17 @@ The vector-vertex sign work shows the full method[^n39-found]:
    nothing fitted to it, missed by 7.6e-2 with the first two items and agreed to
    5.7e-16 with the third.
 
-The rule this produced lives in `helas/eval/root_diagram.rs`:
-`yang_mills_vvv_sign` (a −1 per colourless VVV vertex other than the anchor),
-`vector_contact_sign`, and `gluon_scalar_current_sign`, all keyed to
-`Diagram::anchor` and multiplied into `fermi_sign` in `compile_single_diagram`.
-The physics is in [vector-vertex signs](../amplitudes/vector-vertex-signs.md);
-the rooting-invariance argument is in
+The rule that fit produced three role-keyed vector-vertex sign functions read at
+a per-diagram anchor. That rule has since been replaced: the same GF(2) method,
+rerun with the root-invariance equations and the vertex's reversal parity as a
+feature, has a root-free solution, and `convention_sign` in
+`helas/eval/root_diagram.rs` is a product of local constants read off the graph,
+with no anchor. What the code does now is
+[convention-sign-inventory](../amplitudes/convention-sign-inventory.md) (the
+factors and the derivation) and
+[vector-vertex signs](../amplitudes/vector-vertex-signs.md) (no colourless vector
+vertex carries a sign; the triple-gluon vertex takes a calibrated `−1`); the
+rooting-invariance argument is in
 [rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ## Worked cases
@@ -157,7 +165,7 @@ The derivation itself belongs to
   VVS vertices (the 3 Higgs diagrams have 0 fermion and 1 scalar propagator),
   which is precisely why the bug hit that process. Machine-check every count;
   note 29's own write-up repeated the mistake and had to correct it against
-  `channel_counts`.
+  the code's channel counts.
 - **Plausible mechanisms that match the data.** "The bra projects on the wrong
   side of the slash" was falsified because `γ^μ P_L = P_R γ^μ` makes the fix
   either bit-identical or Ward-breaking.

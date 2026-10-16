@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [B-D: bring seven more concepts in line with the root-free convention sign](B-D.md) - Rewrite the passages of seven kb concepts that still describe Diagram::anchor, the anchor reference tree or the removed role-sign functions, so the bundle describes convention_sign as it is.
 * [B-H: hygiene review of the root-free convention sign, and the concepts it supersedes](B-H.md) - Review PR #30's convention-sign change for maintainability, test non-vacuity, visibility and reusable abstractions; fix the local findings; and rewrite the five kb concepts that still describe the anchor convention.
 * [B′: one root-independent role-sign convention](B.md) - Derive the class-b role signs so a diagram's sign product no longer depends on its root, accept it on a relabelling-invariance test plus every MadGraph per-diagram table, and land it; or stop and return the three fitted rules.
 * [C1: falsifiers for the Identity crossed-line sign and the derivative scalar contact](C1.md) - Bank standalone rows that root a bare Identity Yukawa as a current on a crossed line and a derivative all-scalar vertex as current and amplitude, compare per diagram against MadGraph AMP(), and diagnose. No change to the sign arms.

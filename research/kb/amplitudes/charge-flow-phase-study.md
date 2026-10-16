@@ -95,12 +95,17 @@ and line numbers describe the code of its date.
 
 **Witness pairs.** W1, against the strong reading: `g g > g g`'s contact diagram
 and an exchange diagram had empty, identical charge-flow inputs and different
-contact/VVV signs (their product agreed). The current code no longer gives gluon
-vertices any net sign (gluon VVV and gluon contacts are exempt in
-`yang_mills_vvv_sign` and `vector_contact_sign`), so W1 no longer holds as
-written; the arrow-free arms that remain — colourless VVV sources, the colourless
-contact at the anchor, pure-metric VVS, scalar sinks — still carry the
-factorization. That last statement is read from the code, not re-measured. W2,
+contact/VVV signs (their product agreed). In the current code a gluon contact
+takes no sign and a gluon exchange diagram takes `−1` at each of its two
+triple-gluon vertices, so the two carry the same net sign and W1 no longer holds as
+written. Nor do the arrow-free arms it names exist: the code has no
+colourless-VVV source sign, contact sign, pure-metric-VVS sign or scalar-sink sign
+at all, and no root or anchor is read. The arrow-free factors that remain are
+class constants of the graph, `propagator_phase_sign`'s `−1` per internal scalar
+line and `triple_gluon_sign`'s `−1` per coloured three-vector vertex
+([convention-sign-inventory](convention-sign-inventory.md),
+[vector-vertex-signs](vector-vertex-signs.md)); they too factorize from the charge
+flow. That is read from the code, not re-measured. W2,
 against the `G`-sign clause: `e+ e- > mu+ mu-` and `u u~ > mu+ mu-` have identical
 fermion-line structure and `G = −i` vs `+i`; MadGraph's coefficients compensate
 (`G·c₀ = +i` for both). The sign of `G` tracks MadGraph's own colour-coefficient
@@ -140,7 +145,7 @@ These limits are intrinsic to the reference data, not to the effort spent.[^n29-
   neutral-/charged-current (Wick) split; the line sign's own partition of the same
   35 diagrams is 11 vs 24, a different partition of the same shape. A first
   by-hand count of it was wrong — machine-check census claims.
-- P0 was sited on `channel_counts`, a code-internal quantity, so it could refute
+- P0 was sited on a code-internal count (the channel counts), so it could refute
   only a bookkeeping claim. Site a falsifier on a dump-visible quantity.
 
 Oracle mechanics: [validation/amplitude-oracle](../validation/amplitude-oracle.md).
