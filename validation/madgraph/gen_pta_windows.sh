@@ -50,7 +50,8 @@
 #   pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage refocus
 #
 # Environment overrides: NEVENTS, SEEDS, WINDOWS (1-based indices into the edge
-# list), TAG_SUFFIX. Each stage appends to output/pta_windows_<stage>.tsv and
+# list), TAG_SUFFIX, HARD_SURVEY (set on every run card when given). Each stage
+# appends to output/pta_windows_<stage>.tsv and
 # rebuilds pta_window_reference.json from every TSV present, so stages are
 # independent and individually re-runnable. PTA_WORK moves the templates, run
 # directories, logs and TSVs out of output/, and RESULT_JSON the rebuilt table:
@@ -212,18 +213,25 @@ clone_run_dir() {
   silence_madgraph_ui "$dest/Cards/me5_configuration.txt"
 }
 
-# Install the banked cards verbatim, changing only nevents, iseed and -- when a
-# refocused window is asked for -- the photon pt cuts.
+# Install the banked cards verbatim, changing only nevents, iseed, hard_survey
+# when HARD_SURVEY is set, and -- when a refocused window is asked for -- the
+# photon pt cuts.
 install_cards() {
   local dir="$1" seed="$2" ptlo="${3:--}" pthi="${4:--}"
   cp "$BANKED/Cards/run_card.dat" "$dir/Cards/run_card.dat"
   cp "$BANKED/Cards/param_card.dat" "$dir/Cards/param_card.dat"
-  python3 - "$dir/Cards/run_card.dat" "$NEVENTS" "$seed" "$ptlo" "$pthi" <<'PY'
+  python3 - "$dir/Cards/run_card.dat" "$NEVENTS" "$seed" "$ptlo" "$pthi" "${HARD_SURVEY:-}" <<'PY'
 import re, sys
-path, nev, seed, ptlo, pthi = sys.argv[1:6]
+path, nev, seed, ptlo, pthi, hard_survey = sys.argv[1:7]
 text = open(path).read()
 text = re.sub(r"^\s*\S+\s*=\s*nevents\b", "  %s = nevents" % nev, text, flags=re.M)
 text = re.sub(r"^\s*\S+\s*=\s*iseed\b", "  %s = iseed" % seed, text, flags=re.M)
+if hard_survey:
+    text, n = re.subn(r"^\s*\S+\s*=\s*hard_survey\b", "  %s = hard_survey" % hard_survey,
+                      text, flags=re.M)
+    assert n <= 1, "hard_survey found %d times" % n
+    if n == 0:
+        text += "  %s = hard_survey\n" % hard_survey
 if ptlo != "-":
     n = len(re.findall(r"^\s*\S+\s*=\s*pta\b", text, flags=re.M))
     assert n == 1, "expected exactly one pta line, found %d" % n

@@ -9,6 +9,10 @@
 //! * `banner.txt`, the run's banner, whose run card says which `iseed` and
 //!   `nevents` the run made;
 //! * `init.txt`, the event file's `<init>` block, where the event file had one;
+//! * `Source/run_config.inc`, as the run left it: the survey mode's
+//!   `min_events`/`max_events`;
+//! * `events_written.txt`, the number of events the run's event file holds, as
+//!   `madevent_seeds.sh`'s `mes_check_run` counted them;
 //! * `vg_seed_result.txt`, `madevent_seeds.sh`'s line `value err wall_s card_sha`.
 //!
 //! A seed of a partitioned row keeps one such run per window, `s<iseed>/w<k>/`,
@@ -18,14 +22,18 @@
 //! equal-weight recombination of each channel's iterations, and writes
 //! `<kept>/seed_record.json` in the format `vibegraph-lib/tests/common/seed_record.rs`
 //! defines and the σ gates read. It prints one line per seed, the seed-policy
-//! readings, and the screen of the four-times-budget seeds against the budget's
-//! mean.
+//! readings, the screen of the four-times-budget seeds against the budget's
+//! mean, the survey the runs made and the row's worst per-channel seed scatter.
+//!
+//! A seed is refused, and no record written, when its run wrote fewer events than
+//! it ran for, reports no positive finite cross section, or ran another
+//! `hard_survey` than `--hard-survey`.
 //!
 //! Usage:
 //!
 //! ```text
 //! seed-record --row ROW --kept DIR --budget NEVENTS --generator TEXT \
-//!             --tree TEXT --mg-version VERSION [--validated-ew]
+//!             --tree TEXT --mg-version VERSION --hard-survey N [--validated-ew]
 //! ```
 
 #[path = "../../../vibegraph-lib/tests/common/seeds.rs"]
@@ -38,7 +46,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use seed_record::{PartValues, SeedRecord, SeedRun, RECORD_FILE, SCHEMA};
+use seed_record::{ChannelValues, PartValues, SeedRecord, SeedRun, RECORD_FILE, SCHEMA};
 
 /// How far the sum of the channels' printed values may sit from the printed
 /// total, relative to the total. Both are printed to five significant digits, so
@@ -65,8 +73,10 @@ fn fortran_float(field: &str) -> Option<f64> {
 /// One integration channel's `results.dat`.
 #[derive(Clone, Debug, PartialEq)]
 struct Channel {
-    /// The channel's combined value, the first field of its first line.
+    /// The channel's combined value and error, the first two fields of its
+    /// first line.
     value: f64,
+    error: f64,
     /// Its refine iterations, `(value, error)`: the second and third fields of
     /// every six-field line after the first.
     iterations: Vec<(f64, f64)>,
@@ -76,11 +86,10 @@ impl Channel {
     fn parse(text: &str) -> Result<Channel, String> {
         let mut lines = text.lines();
         let first = lines.next().ok_or("empty results.dat")?;
-        let value = first
-            .split_whitespace()
-            .next()
-            .and_then(fortran_float)
-            .ok_or_else(|| format!("no value on the first line {first:?}"))?;
+        let mut head = first.split_whitespace().map(fortran_float);
+        let (Some(Some(value)), Some(Some(error))) = (head.next(), head.next()) else {
+            return Err(format!("no value and error on the first line {first:?}"));
+        };
         let mut iterations = Vec::new();
         for line in lines {
             if line.contains('<') {
@@ -94,7 +103,11 @@ impl Channel {
             let e = fortran_float(fields[2]).ok_or_else(|| format!("iteration line {line:?}"))?;
             iterations.push((v, e));
         }
-        Ok(Channel { value, iterations })
+        Ok(Channel {
+            value,
+            error,
+            iterations,
+        })
     }
 
     /// The unweighted mean of the iterations and its error, `√Σeᵢ² / n`. A
@@ -157,6 +170,28 @@ fn banner_value(banner: &str, key: &str) -> Option<String> {
     })
 }
 
+/// `min_events` and `max_events` of a `run_config.inc`: its
+/// `parameter (min_events = N)` lines.
+fn parse_run_config(text: &str) -> Result<(u64, u64), String> {
+    let get = |key: &str| -> Result<u64, String> {
+        let found: Vec<u64> = text
+            .lines()
+            .filter_map(|line| {
+                let line = line.split('!').next()?;
+                let inner = line.trim().strip_prefix("parameter")?.trim();
+                let inner = inner.strip_prefix('(')?.split(')').next()?;
+                let (name, value) = inner.split_once('=')?;
+                (name.trim().eq_ignore_ascii_case(key)).then(|| value.trim().parse().ok())?
+            })
+            .collect();
+        match found[..] {
+            [v] => Ok(v),
+            _ => Err(format!("run_config.inc sets {key} {} times", found.len())),
+        }
+    };
+    Ok((get("min_events")?, get("max_events")?))
+}
+
 /// The `<init>` block's per-process cross sections, `LPRUP → (XSECUP, XERRUP)`.
 fn parse_init(text: &str) -> Result<BTreeMap<String, (f64, f64)>, String> {
     let body = text
@@ -212,6 +247,10 @@ struct RunValues {
     /// Per process: the `<init>` value where the event file listed several, and
     /// the equal-weight sum over that process's channels.
     by_lprup: BTreeMap<String, PartValues>,
+    hard_survey: u32,
+    run_config: (u64, u64),
+    events_written: u64,
+    by_channel: BTreeMap<String, ChannelValues>,
 }
 
 fn read(path: &Path) -> Result<String, String> {
@@ -229,7 +268,9 @@ fn sorted_dirs(dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn read_run(dir: &Path) -> Result<RunValues, String> {
-    let reported = parse_total(&read(&dir.join("SubProcesses/results.dat"))?)?;
+    let total_path = dir.join("SubProcesses/results.dat");
+    let reported =
+        parse_total(&read(&total_path)?).map_err(|e| format!("{}: {e}", total_path.display()))?;
     let banner = read(&dir.join("banner.txt"))?;
     let card_int = |key: &str| -> Result<u64, String> {
         let v = banner_value(&banner, key)
@@ -240,6 +281,31 @@ fn read_run(dir: &Path) -> Result<RunValues, String> {
     };
     let iseed = card_int("iseed")?;
     let nevents = card_int("nevents")?;
+    let hard_survey = u32::try_from(card_int("hard_survey")?)
+        .map_err(|_| format!("{}: hard_survey out of range", dir.display()))?;
+    let run_config_path = dir.join("Source/run_config.inc");
+    let run_config = parse_run_config(&read(&run_config_path)?)
+        .map_err(|e| format!("{}: {e}", run_config_path.display()))?;
+    let events_path = dir.join("events_written.txt");
+    let events_written: u64 = read(&events_path)?
+        .trim()
+        .parse()
+        .map_err(|_| format!("{}: not an event count", events_path.display()))?;
+    if !(reported.0.is_finite() && reported.0 > 0.0 && reported.1.is_finite()) {
+        return Err(format!(
+            "{}: results.dat reports {} +- {}, not a positive finite cross section",
+            dir.display(),
+            reported.0,
+            reported.1
+        ));
+    }
+    if events_written < nevents {
+        return Err(format!(
+            "{}: the event file holds {events_written} events, the run card asked for {nevents}",
+            dir.display()
+        ));
+    }
+    let mut by_channel = BTreeMap::new();
 
     let mut sum = 0.0;
     let mut ew = 0.0;
@@ -260,6 +326,15 @@ fn read_run(dir: &Path) -> Result<RunValues, String> {
             let channel =
                 Channel::parse(&read(&path)?).map_err(|e| format!("{}: {e}", path.display()))?;
             let (m, e) = channel.equal_weight();
+            by_channel.insert(
+                format!("{name}/G{tag}"),
+                ChannelValues {
+                    value_pb: channel.value,
+                    err_pb: channel.error,
+                    equal_weight_pb: m,
+                    iterations: channel.iterations.len(),
+                },
+            );
             sum += channel.value;
             ew += m;
             ew_var += e * e;
@@ -324,6 +399,10 @@ fn read_run(dir: &Path) -> Result<RunValues, String> {
         channels,
         iterations,
         by_lprup,
+        hard_survey,
+        run_config,
+        events_written,
+        by_channel,
     })
 }
 
@@ -372,6 +451,12 @@ fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
                 seed_dir.display()
             ));
         }
+        if run.hard_survey != runs[0].hard_survey || run.run_config != runs[0].run_config {
+            return Err(format!(
+                "{}: windows ran different surveys",
+                seed_dir.display()
+            ));
+        }
         if !windows.is_empty() && !run.by_lprup.is_empty() {
             return Err(format!(
                 "{}: a partitioned seed with several processes is not supported",
@@ -402,6 +487,24 @@ fn read_seed(row_dir: &Path, seed_dir: &Path) -> Result<SeedRun, String> {
             .map(|w| w.file_name().unwrap().to_string_lossy().into_owned())
             .collect(),
         by_lprup: runs[0].by_lprup.clone(),
+        hard_survey: runs[0].hard_survey,
+        min_events: runs[0].run_config.0,
+        max_events: runs[0].run_config.1,
+        events_written: runs.iter().map(|r| r.events_written).min().unwrap(),
+        by_channel: if windows.is_empty() {
+            runs[0].by_channel.clone()
+        } else {
+            windows
+                .iter()
+                .zip(&runs)
+                .flat_map(|(w, r)| {
+                    let w = w.file_name().unwrap().to_string_lossy().into_owned();
+                    r.by_channel
+                        .iter()
+                        .map(move |(k, v)| (format!("{w}/{k}"), *v))
+                })
+                .collect()
+        },
     })
 }
 
@@ -412,6 +515,7 @@ struct Args {
     generator: String,
     tree: String,
     mg_version: String,
+    hard_survey: u32,
     validated_ew: bool,
 }
 
@@ -422,7 +526,8 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     while let Some(flag) = it.next() {
         match flag.as_str() {
             "--validated-ew" => validated_ew = true,
-            "--row" | "--kept" | "--budget" | "--generator" | "--tree" | "--mg-version" => {
+            "--row" | "--kept" | "--budget" | "--generator" | "--tree" | "--mg-version"
+            | "--hard-survey" => {
                 let value = it.next().ok_or_else(|| format!("{flag} needs a value"))?;
                 map.insert(flag.as_str(), value.as_str());
             }
@@ -443,6 +548,9 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
         generator: get("--generator")?,
         tree: get("--tree")?,
         mg_version: get("--mg-version")?,
+        hard_survey: get("--hard-survey")?
+            .parse()
+            .map_err(|_| "--hard-survey is a run-card integer".to_string())?,
         validated_ew,
     })
 }
@@ -464,6 +572,7 @@ fn build_record(args: &Args) -> Result<SeedRecord, String> {
         mg5_tree: args.tree.clone(),
         budget_nevents: args.budget,
         validated_ew: args.validated_ew,
+        hard_survey: args.hard_survey,
         seeds,
         summary: None,
     };
@@ -489,6 +598,13 @@ fn print_record(record: &SeedRecord) {
             s.iterations_min,
             s.iterations_max,
             s.wall_s,
+        );
+    }
+    for s in &record.seeds {
+        println!(
+            "[{row}] s{} survey: hard_survey {}, run_config.inc min_events {} max_events {}, \
+             {} events written",
+            s.iseed, s.hard_survey, s.min_events, s.max_events, s.events_written
         );
     }
     let Some(summary) = &record.summary else {
@@ -550,6 +666,74 @@ fn print_record(record: &SeedRecord) {
             "within the screen"
         }
     );
+    print_survey(row, &summary.survey);
+    print_heavy_tail(row, &summary.heavy_tail);
+}
+
+fn print_survey(row: &str, survey: &seed_record::SurveySummary) {
+    let configs = survey
+        .run_config
+        .iter()
+        .map(|c| {
+            format!(
+                "{}/{} ({})",
+                c.min_events,
+                c.max_events,
+                c.rate
+                    .map(|r| format!("rate {r}"))
+                    .unwrap_or_else(|| "no survey mode's".into())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!(
+        "SURVEY {row}: hard_survey {} on every card; run_config.inc min/max_events {configs} -> {}",
+        survey.hard_survey,
+        if survey.as_set {
+            "as set"
+        } else {
+            "INERT: the survey ran at another rate than hard_survey asks (mmjj > 0.01 (ebeam1 + \
+             ebeam2) forces rate 1); list the row back"
+        }
+    );
+}
+
+fn print_heavy_tail(row: &str, h: &seed_record::HeavyTail) {
+    let Some(worst) = &h.worst else {
+        println!("SCATTER {row}: no channel testable");
+        return;
+    };
+    let above = h
+        .above_limit
+        .iter()
+        .map(|c| {
+            format!(
+                "{} {:.2} ({:.1}% of sigma)",
+                c.channel,
+                c.chi2_per_dof,
+                100.0 * c.share
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!(
+        "SCATTER {row}: worst channel {} at seed chi2/dof {:.2} ({} dof, {:.1}% of sigma) of {} \
+         tested; {} above {} [{}], {:.2} expected by chance -> {}",
+        worst.channel,
+        worst.chi2_per_dof,
+        h.dof,
+        100.0 * worst.share,
+        h.channels_tested,
+        h.above_limit.len(),
+        seed_record::HEAVY_TAIL_CHI2_LIMIT,
+        above,
+        h.expected_above_by_chance,
+        if h.flagged {
+            "FLAGGED: heavy-tailed; the row's sigma cell mode is the manifest's decision"
+        } else {
+            "within the limit"
+        }
+    );
 }
 
 fn main() -> ExitCode {
@@ -583,7 +767,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use seed_record::{Estimator, MIN_SEEDS};
+    use seed_record::{Estimator, HEAVY_TAIL_CHI2_LIMIT, MIN_SEEDS};
 
     /// A pinned 3.7.1 run of `e+ e- > mu+ mu-` at the Z pole (iseed 7, 2000
     /// events): channel 1, and channel 2 split into `2.1`/`2.2`, plus the `Hel`
@@ -598,7 +782,7 @@ mod tests {
 
     fn banner(iseed: u64, nevents: u64) -> String {
         format!(
-            "<MGVersion>\n3.7.1\n</MGVersion>\n<MGRunCard>\n  {nevents}\t= nevents ! Number of unweighted events requested \n {iseed} = iseed ! rnd seed (0=assigned automatically=default))\n</MGRunCard>\n"
+            "<MGVersion>\n3.7.1\n</MGVersion>\n<MGRunCard>\n  {nevents}\t= nevents ! Number of unweighted events requested \n {iseed} = iseed ! rnd seed (0=assigned automatically=default))\n  2 = hard_survey\n</MGRunCard>\n"
         )
     }
 
@@ -626,7 +810,13 @@ mod tests {
         write(&p.join("G2.2/results.dat"), G22);
         write(&p.join("Hel/results.dat"), HEL);
         write(&dir.join("banner.txt"), &banner(iseed, nevents));
+        write(&dir.join("Source/run_config.inc"), RUN_CONFIG_HS2);
+        write(&dir.join("events_written.txt"), &format!("{nevents}\n"));
     }
+
+    /// The lines of a pinned 3.7.1 run's `Source/run_config.inc` after a
+    /// `hard_survey = 2` survey rewrote them.
+    const RUN_CONFIG_HS2: &str = "      integer    min_events                 !Minimum number of events/iteration\n      parameter (min_events = 10000 )         !to refine a channel\n      integer    max_events                 !Maximum number of events/iteration\n      parameter (max_events = 30000 )        !to refine a channel\n      integer    MaxEventsPerJob            !Maximum number of events requested from a single job\n      parameter (MaxEventsPerJob=1000)\n";
 
     #[test]
     fn fortran_reals_in_every_spelling_madevent_writes() {
@@ -734,6 +924,7 @@ mod tests {
             generator: "test".into(),
             tree: "pinned".into(),
             mg_version: "3.7.1".into(),
+            hard_survey: 2,
             validated_ew: false,
         }
     }
@@ -837,6 +1028,11 @@ mod tests {
             files: format!("s{iseed}"),
             windows: Vec::new(),
             by_lprup: BTreeMap::new(),
+            hard_survey: 2,
+            min_events: 10000,
+            max_events: 30000,
+            events_written: nevents,
+            by_channel: BTreeMap::new(),
         }
     }
 
@@ -849,6 +1045,7 @@ mod tests {
             mg5_tree: "pinned".into(),
             budget_nevents: 100,
             validated_ew: false,
+            hard_survey: 2,
             seeds,
             summary: None,
         }
@@ -965,5 +1162,176 @@ mod tests {
             100.0
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_config_gives_the_survey_mode_the_run_made() {
+        assert_eq!(parse_run_config(RUN_CONFIG_HS2).unwrap(), (10000, 30000));
+        let template = RUN_CONFIG_HS2
+            .replace("10000 )", "1000)")
+            .replace("30000 )", "2000)");
+        assert_eq!(parse_run_config(&template).unwrap(), (1000, 2000));
+        assert!(parse_run_config("      parameter (min_events = 10)\n").is_err());
+        // MadEvent's pass_in_difficult_integration_mode: 2500 (2 + r), 10000 (1 + r).
+        assert_eq!(seed_record::survey_rate(1000, 2000), Some(0));
+        assert_eq!(seed_record::survey_rate(7500, 20000), Some(1));
+        assert_eq!(seed_record::survey_rate(10000, 30000), Some(2));
+        assert_eq!(seed_record::survey_rate(10000, 20000), None);
+        assert_eq!(seed_record::survey_rate(5000, 10000), None);
+    }
+
+    #[test]
+    fn a_survey_at_another_rate_than_the_card_asks_reads_inert() {
+        let r = five_and_two();
+        let s = r.survey();
+        assert!(s.as_set);
+        assert_eq!(s.run_config.len(), 1);
+        assert_eq!(s.run_config[0].rate, Some(2));
+        // The mmjj condition: rate 1 whatever hard_survey says, on one seed.
+        let mut r = five_and_two();
+        r.seeds[6].min_events = 7500;
+        r.seeds[6].max_events = 20000;
+        let s = r.survey();
+        assert!(!s.as_set);
+        assert_eq!(s.run_config.len(), 2);
+        assert_eq!(s.run_config[0].rate, Some(1));
+    }
+
+    /// The forced failure: a kept run whose event file holds fewer events than its
+    /// card asked for is refused, as is a run with no positive finite σ.
+    #[test]
+    fn a_short_event_file_or_a_non_numeric_sigma_is_refused() {
+        let dir = scratch("short");
+        keep_run(&dir, 7, 2000);
+        assert!(read_run(&dir).is_ok());
+        write(&dir.join("events_written.txt"), "1999\n");
+        let err = read_run(&dir).unwrap_err();
+        assert!(err.contains("holds 1999 events"), "{err}");
+        write(&dir.join("events_written.txt"), "2000\n");
+        for total in ["NaN 0.1 0 0\n", "0.00000E+00 0.0 0 0\n", "-0.1E+01 0.1 0\n"] {
+            write(&dir.join("SubProcesses/results.dat"), total);
+            let err = read_run(&dir).unwrap_err();
+            assert!(err.contains("not a positive finite"), "{total}: {err}");
+        }
+        std::fs::remove_file(dir.join("SubProcesses/results.dat")).unwrap();
+        assert!(read_run(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_record_refuses_a_short_seed_and_another_hard_survey() {
+        let mut r = five_and_two();
+        r.seeds[2].events_written = 99;
+        assert!(r.check().unwrap_err().contains("wrote 99 events"));
+        let mut r = five_and_two();
+        r.seeds[0].hard_survey = 0;
+        assert!(r.check().unwrap_err().contains("hard_survey = 0"));
+        let mut r = five_and_two();
+        r.seeds[0].reported_pb = 0.0;
+        assert!(r.check().unwrap_err().contains("not a positive"));
+    }
+
+    #[test]
+    fn a_kept_run_records_every_channel_and_its_survey() {
+        let dir = scratch("channels");
+        keep_run(&dir, 7, 2000);
+        let run = read_run(&dir).unwrap();
+        assert_eq!(run.hard_survey, 2);
+        assert_eq!(run.run_config, (10000, 30000));
+        assert_eq!(run.events_written, 2000);
+        let keys: Vec<&str> = run.by_channel.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["P1_ll_ll/G1", "P1_ll_ll/G2.1", "P1_ll_ll/G2.2"]);
+        let g1 = run.by_channel["P1_ll_ll/G1"];
+        assert_eq!(
+            (g1.value_pb, g1.err_pb, g1.iterations),
+            (10.767, 0.028571, 3)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn with_channels(mut s: SeedRun, channels: &[(&str, f64, f64)]) -> SeedRun {
+        for &(name, value, err) in channels {
+            s.by_channel.insert(
+                name.into(),
+                ChannelValues {
+                    value_pb: value,
+                    err_pb: err,
+                    equal_weight_pb: value,
+                    iterations: 3,
+                },
+            );
+        }
+        s
+    }
+
+    /// Two channels over five seeds: one scattering within its quote, one far
+    /// outside it. The flag names the second; a zero channel is not tested.
+    #[test]
+    fn the_heavy_tail_flag_names_the_channel_that_scatters_past_its_quote() {
+        let mut r = five_and_two();
+        let calm = [50.0, 51.0, 49.0, 50.5, 49.5];
+        let wild = [50.0, 58.0, 42.0, 51.0, 49.0];
+        for (i, s) in r.seeds.iter_mut().enumerate() {
+            let k = i.min(4);
+            *s = with_channels(
+                s.clone(),
+                &[
+                    ("P1_x/G1", calm[k], 1.0),
+                    ("P1_x/G2", wild[k], 1.0),
+                    ("P1_x/G3", 0.0, 0.0),
+                ],
+            );
+        }
+        let h = r.summarise().unwrap().heavy_tail;
+        assert_eq!(h.channels_tested, 2);
+        assert_eq!(h.dof, 4);
+        let worst = h.worst.as_ref().unwrap();
+        assert_eq!(worst.channel, "P1_x/G2");
+        // Σ(v − 50)² = 0 + 64 + 64 + 1 + 1 = 130, over 4 dof.
+        assert!((worst.chi2_per_dof - 32.5).abs() < 1e-12);
+        assert!((worst.share - 0.5).abs() < 1e-12);
+        assert!(h.flagged);
+        assert_eq!(h.above_limit.len(), 1);
+        // P(χ²₄ > 12) = e⁻⁶ (1 + 6) per channel tested.
+        let chance = 7.0 * (-6.0f64).exp();
+        assert!((h.expected_above_by_chance - 2.0 * chance).abs() < 1e-9);
+
+        // Within its quote, nothing is flagged.
+        for s in &mut r.seeds {
+            let c = s.by_channel.get_mut("P1_x/G2").unwrap();
+            c.err_pb = 10.0;
+        }
+        let h = r.summarise().unwrap().heavy_tail;
+        assert!(!h.flagged);
+        assert!(h.worst.unwrap().chi2_per_dof <= HEAVY_TAIL_CHI2_LIMIT);
+    }
+
+    #[test]
+    fn a_partitioned_seed_names_each_windows_channels() {
+        let row = scratch("windowch");
+        let seed = row.join("s3");
+        keep_run(&seed.join("w1"), 3, 2000);
+        keep_run(&seed.join("w2"), 3, 2000);
+        write(&seed.join("w2/events_written.txt"), "1990\n");
+        write(&seed.join("vg_seed_result.txt"), "- - 40 abc\n");
+        assert!(read_seed(&row, &seed).unwrap_err().contains("holds 1990"));
+        write(&seed.join("w2/events_written.txt"), "2000\n");
+        let s = read_seed(&row, &seed).unwrap();
+        assert_eq!(s.by_channel.len(), 6);
+        assert!(s.by_channel.contains_key("w2/P1_ll_ll/G2.1"));
+        assert_eq!(
+            (s.min_events, s.max_events, s.events_written),
+            (10000, 30000, 2000)
+        );
+        write(
+            &seed.join("w2/Source/run_config.inc"),
+            &RUN_CONFIG_HS2
+                .replace("10000 )", "7500)")
+                .replace("30000 )", "20000)"),
+        );
+        assert!(read_seed(&row, &seed)
+            .unwrap_err()
+            .contains("different surveys"));
+        let _ = std::fs::remove_dir_all(&row);
     }
 }

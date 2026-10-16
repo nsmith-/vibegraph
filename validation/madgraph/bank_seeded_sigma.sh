@@ -22,23 +22,34 @@
 #        pta      ee_to_mumua: gen_pta_windows.sh's m(mumu) partition
 #                 (--stage mll-371), five windows per seed, each its own fresh
 #                 directory; the seed's value is the sum over its windows.
-#   2. Per seed, the template is copied, the card installed with `iseed` set
-#      (and `nevents` times four for SEEDS_4X), and generate_events run from a
-#      scratch working directory. A failed run is retried once in a fresh copy:
-#      MadEvent's parallel make has failed a link (`archive has no index`) on a
-#      run that then succeeded.
+#   2. Per seed, the template is copied, the card installed with `iseed` and
+#      `hard_survey = 2` set (and `nevents` times four for SEEDS_4X), and
+#      generate_events run from a scratch working directory. The committed and
+#      banked cards are not edited. A run fails when generate_events fails, when
+#      results.dat holds no positive finite cross section, or when the event
+#      file holds fewer events than the card asked for (mes_check_run):
+#      generate_events has exited 0 on runs that hold neither. A failed run is
+#      retried once in a fresh copy: MadEvent's parallel make has failed a link
+#      (`archive has no index`) on a run that then succeeded.
 #   3. The run keeps, under output/seeded_sigma/<row>/s<iseed>/:
 #      SubProcesses/results.dat, every P*/symfact.dat and the G*/results.dat it
-#      lists, the banner, the event file's <init> block and madevent_seeds.sh's
-#      vg_seed_result.txt. The run directory is then dropped. A seed whose kept
-#      files exist under the same run card is read back, not re-run
-#      (VG_FORCE=1 re-runs it).
+#      lists, the banner, the event file's <init> block, Source/run_config.inc
+#      (the min_events/max_events the survey mode left), the event count and
+#      madevent_seeds.sh's vg_seed_result.txt. The run directory is then
+#      dropped. A seed whose kept files exist under the same run card is read
+#      back, not re-run (VG_FORCE=1 re-runs it).
 #   4. `seed-record` (validation-report/src/bin/seed-record.rs) writes
 #      output/seeded_sigma/<row>/seed_record.json: per seed the reported value,
 #      the equal-weight recombination of each channel's iterations, the budget
-#      and the wall time; and it prints the screen, the 4x seeds against the 1x
-#      mean in standard errors. A row whose screen is FLAGGED needs a budget
-#      ladder before its record is banked.
+#      the survey and the wall time; and it prints three lines per row:
+#        SCREEN   the 4x seeds against the 1x mean in standard errors. FLAGGED:
+#                 the row needs a budget ladder before its record is banked.
+#        SURVEY   hard_survey and the run_config.inc min/max_events every seed
+#                 ran with. INERT: the survey ran at another rate than
+#                 hard_survey asks (a card with mmjj > 0.01 (ebeam1 + ebeam2)).
+#        SCATTER  the worst per-channel seed chi2/dof at the budget. FLAGGED:
+#                 above 3; whether the row's sigma cell gates is the manifest's
+#                 decision, not this driver's.
 #
 # The σ gates read a row's record where the bundle carries one
 # (vibegraph-lib/tests/common/seed_record.rs) and its single banked run
@@ -52,6 +63,8 @@
 #   SEEDS_4X iseeds at four times the budget (default 20261111 20261112)
 #   NB_CORE  cores per madevent run (default 2)
 #   JOBS     rows run at once (default 1)
+#   HARD_SURVEY  hard_survey on every run's card (default 2); for diagnostic
+#            runs only, as it is not the banked survey
 #   NEVENTS  the budget, in place of the card's own nevents (ee_to_mumua:
 #            100000); for diagnostic runs only, as it is not the banked budget
 #   VALIDATED_EW_ROWS  rows whose record marks the equal-weight values as the
@@ -73,9 +86,10 @@ SEEDS="${SEEDS:-$(seq -f '%.0f' -s ' ' 20261101 20261105)}"
 SEEDS_4X="${SEEDS_4X-20261111 20261112}"
 NB_CORE="${NB_CORE:-2}"
 JOBS="${JOBS:-1}"
+HARD_SURVEY="${HARD_SURVEY:-2}"
 P1D_PATCH="$HERE/patches/aloha-p1d-flipped-fermion.patch"
 PTA_BUDGET=100000
-export OUTDIR WORK SEEDS SEEDS_4X NB_CORE
+export OUTDIR WORK SEEDS SEEDS_4X NB_CORE HARD_SURVEY
 
 LHAPDF_DATA_PATH="$ROOT/validation/pdf"
 if command -v lhapdf-config >/dev/null 2>&1; then
@@ -196,6 +210,9 @@ keep_run() {
       cp "$pdir/G$g/results.dat" "$dest/SubProcesses/$name/G$g/"
     done < <(awk '$2 > 0 { print $1 }' "$pdir/symfact.dat")
   done
+  mkdir -p "$dest/Source"
+  cp "$rundir/Source/run_config.inc" "$dest/Source/"
+  cp "$rundir/Events/run_$tag/vg_events_written.txt" "$dest/events_written.txt"
   local banner
   banner="$(ls "$rundir/Events/run_$tag"/*_banner.txt 2>/dev/null | head -1)"
   [ -n "$banner" ] || die "no banner in $rundir/Events/run_$tag"
@@ -225,7 +242,7 @@ run_fresh() {
   local row="$1" seed="$2" nev="$3" card="$4" param="$5" overrides="$6"
   local keep="$OUTDIR/$row/s$seed" rundir="$WORK/$row/run_s$seed" tag="s$seed"
   local tmpcard="$WORK/$row/card_s$seed.dat" sha have=""
-  mes_install_card "$card" "$tmpcard" "${overrides:+$overrides;}nevents=$nev" "$seed"
+  mes_install_card "$card" "$tmpcard" "${overrides:+$overrides;}hard_survey=$HARD_SURVEY;nevents=$nev" "$seed"
   sha="$(mes_sha256 "$tmpcard")"
   [ -s "$keep/vg_seed_result.txt" ] && read -r _ _ _ have < "$keep/vg_seed_result.txt"
   if [ "${VG_FORCE:-0}" != 1 ] && [ "$have" = "$sha" ]; then
@@ -239,13 +256,14 @@ run_fresh() {
     mes_configure_dir "$rundir" "$NB_CORE"
     cp "$tmpcard" "$rundir/Cards/run_card.dat"
     [ -n "$param" ] && cp "$param" "$rundir/Cards/param_card.dat"
-    if mes_run_seed "$rundir" "$tag" "$WORK/$row/logs/s$seed.$attempt.log" > /dev/null; then
+    if mes_run_seed "$rundir" "$tag" "$WORK/$row/logs/s$seed.$attempt.log" > /dev/null &&
+      mes_check_run "$rundir" "$tag" "$nev"; then
       ok=1
       break
     fi
     echo "!!! [$row s$seed] attempt $attempt failed" >&2
   done
-  [ "$ok" = 1 ] || die "$row s$seed: generate_events failed twice; logs in $WORK/$row/logs"
+  [ "$ok" = 1 ] || die "$row s$seed: two attempts failed; logs in $WORK/$row/logs"
   rm -rf "$keep.tmp"
   keep_run "$rundir" "$tag" "$keep.tmp"
   cp "$rundir/Events/run_$tag/vg_seed_result.txt" "$keep.tmp/"
@@ -265,7 +283,7 @@ run_pta() {
     mes_sha256 "$HERE/output/$row/Cards/run_card.dat"
     mes_sha256 "$HERE/output/$row/Cards/param_card.dat"
     mes_sha256 "$HERE/gen_pta_windows.sh"
-    echo "mll-371 $nev $seed"
+    echo "mll-371 $nev $seed hard_survey=$HARD_SURVEY"
   } > "$stampfile"
   sha="$(mes_sha256 "$stampfile")"
   [ -s "$keep/vg_seed_result.txt" ] && read -r _ _ _ have < "$keep/vg_seed_result.txt"
@@ -277,14 +295,18 @@ run_pta() {
   for attempt in 1 2; do
     started="$(date +%s)"
     if PTA_WORK="$ptawork" RESULT_JSON="$ptawork/pta_window_reference.json" \
-      NEVENTS="$nev" SEEDS="$seed" WINDOWS="1 2 3 4 5" TAG_SUFFIX="" \
+      NEVENTS="$nev" SEEDS="$seed" WINDOWS="1 2 3 4 5" TAG_SUFFIX="" HARD_SURVEY="$HARD_SURVEY" \
       bash "$HERE/gen_pta_windows.sh" --stage mll-371 > "$WORK/$row/logs/s$seed.$attempt.log" 2>&1; then
       ok=1
-      break
+      for w in 1 2 3 4 5; do
+        local wtag="mll-371_w${w}_n${nev}_s${seed}"
+        mes_check_run "$ptawork/pta_$wtag" "$wtag" "$nev" || ok=0
+      done
+      [ "$ok" = 1 ] && break
     fi
     echo "!!! [$row s$seed] attempt $attempt failed; see $WORK/$row/logs/s$seed.$attempt.log" >&2
   done
-  [ "$ok" = 1 ] || die "$row s$seed: gen_pta_windows.sh failed twice"
+  [ "$ok" = 1 ] || die "$row s$seed: two attempts of gen_pta_windows.sh failed"
   wall=$(($(date +%s) - started))
   rm -rf "$keep.tmp"
   for w in 1 2 3 4 5; do
@@ -341,7 +363,7 @@ run_row() {
       ;;
     *) die "$row: not a row this driver knows (no scripts/$row.mg5)" ;;
   esac
-  generator="bank_seeded_sigma.sh, one fresh directory per seed: $generator"
+  generator="bank_seeded_sigma.sh, one fresh directory per seed, hard_survey = $HARD_SURVEY on every run's card: $generator"
 
   if [ "$kind" = pta ]; then
     base="${NEVENTS:-$PTA_BUDGET}"
@@ -363,7 +385,8 @@ run_row() {
   local ew_flag=()
   case " ${VALIDATED_EW_ROWS:-} " in *" $row "*) ew_flag=(--validated-ew) ;; esac
   "$(seed_record_bin)" --row "$row" --kept "$OUTDIR/$row" --budget "$base" \
-    --generator "$generator" --tree "$tree" --mg-version "$(mg_version)" "${ew_flag[@]}" |
+    --generator "$generator" --tree "$tree" --mg-version "$(mg_version)" \
+    --hard-survey "$HARD_SURVEY" "${ew_flag[@]}" |
     tee "$WORK/$row/record.log"
 }
 
@@ -407,6 +430,7 @@ printf '%s\n' "${rows[@]}" |
 echo
 echo "=== screen (output/seeded_sigma/<row>/seed_record.json carries each) ==="
 for row in "${rows[@]}"; do
-  grep -h '^SCREEN ' "$WORK/$row/record.log" 2>/dev/null || echo "SCREEN $row: no record (the row failed)"
+  grep -hE '^(SCREEN|SURVEY|SCATTER) ' "$WORK/$row/record.log" 2>/dev/null ||
+    echo "SCREEN $row: no record (the row failed)"
 done | tee "$WORK/screen.txt"
 exit "$status"

@@ -135,6 +135,38 @@ mes_run_seed() {
   echo "$result"
 }
 
+# mes_check_run PROCDIR TAG NEVENTS — the run `run_<tag>` holds what it ran
+# for: a positive finite cross section on results.dat's first line, and at least
+# NEVENTS events in its event file. generate_events exits 0 on runs that hold
+# neither (a parallel compile that lost the `libgammaUPC.a` race leaves an empty
+# results.dat), so its exit status is not this check. The count is written to
+# `Events/run_<tag>/vg_events_written.txt`.
+mes_check_run() {
+  local procdir="$1" tag="$2" nev="$3"
+  local rundir="$procdir/Events/run_$tag"
+  python3 - "$procdir/SubProcesses/results.dat" "$rundir/unweighted_events.lhe.gz" \
+    "$nev" "$rundir/vg_events_written.txt" <<'PY'
+import gzip, math, re, sys
+results, lhe, nev, out = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+try:
+    fields = open(results).readline().split()
+    value, err = (float(f.replace("D", "E")) for f in fields[:2])
+except (OSError, ValueError) as e:
+    sys.exit("no cross section on the first line of %s: %s" % (results, e))
+if not (math.isfinite(value) and value > 0 and math.isfinite(err)):
+    sys.exit("%s reports %r +- %r, not a positive finite cross section" % (results, value, err))
+event = re.compile(r"^\s*<event[\s>]")
+try:
+    with gzip.open(lhe, "rt") as f:
+        n = sum(1 for line in f if event.match(line))
+except (OSError, EOFError) as e:
+    sys.exit("cannot read the event file %s: %s" % (lhe, e))
+if n < nev:
+    sys.exit("%s holds %d events, the run card asked for %d" % (lhe, n, nev))
+open(out, "w").write("%d\n" % n)
+PY
+}
+
 # mes_launch_sets SCRIPT — the `set key value` lines of a .mg5 script's launch
 # block, one `key value` per line.
 mes_launch_sets() {

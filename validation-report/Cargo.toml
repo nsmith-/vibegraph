@@ -23,3 +23,6 @@ workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 toml = "1"
+# The chi-squared survival function behind the seed record's chance-exceedance
+# count (the regularised incomplete gamma function), as vibegraph-lib uses it.
+puruspe = "0.4"
