@@ -67,21 +67,9 @@ P1D_PATCH="$HERE/patches/aloha-p1d-flipped-fermion.patch"
 
 mkdir -p "$OUT"
 
-# The patched copy of the pinned tree, made once. A copy that exists is reused
-# only if it was made from this patch.
+# The patched copy of the pinned tree, made once (mes_p1d_tree).
 p1d_tree() {
-  local tree="$OUT/mg5amcnlo-p1d" stamp
-  stamp="$(mes_sha256 "$P1D_PATCH")"
-  if [ ! -f "$tree/.vg_patch" ] || [ "$(cat "$tree/.vg_patch")" != "$stamp" ]; then
-    echo ">>> copying the pinned MadGraph tree and applying $(basename "$P1D_PATCH")" >&2
-    rm -rf "$tree"
-    cp -a "$ROOT/research/refs/mg5amcnlo" "$tree"
-    rm -rf "$tree/aloha/__pycache__"
-    find "$tree/models" -name aloha.pkl -delete
-    patch -p1 -s -d "$tree" < "$P1D_PATCH"
-    echo "$stamp" > "$tree/.vg_patch"
-  fi
-  echo "$tree"
+  mes_p1d_tree "$OUT" "$P1D_PATCH"
 }
 
 # name|proc lines (';'-separated)|base card|overrides|tree (pinned or p1d)

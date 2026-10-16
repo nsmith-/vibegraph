@@ -760,11 +760,38 @@ fn plan_for(dir: &str) -> Plan {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct BankedSigma {
     process: String,
     sigma_pb: f64,
     sigma_err_pb: f64,
+}
+
+impl BankedSigma {
+    /// The MadEvent value a gate compares against: the row's seed record read
+    /// under the seed policy where the bundle carries one
+    /// ([`common::seed_record`]), and this single-run entry where it does not.
+    /// The second field names the record for the cell's note; `None` for the
+    /// single run, whose provenance the cell has always implied.
+    fn madevent_reference(&self, dir: &str) -> (BankedSigma, Option<String>) {
+        match common::seed_record::reference(&output_dir(), dir) {
+            Some(seeded) => (
+                BankedSigma {
+                    process: self.process.clone(),
+                    sigma_pb: seeded.mean(),
+                    sigma_err_pb: seeded.err(),
+                },
+                Some(format!(
+                    "MadEvent side: {} {} seeds of {}/{dir}/{} under the seed policy",
+                    seeded.read.n,
+                    seeded.estimator.label(),
+                    common::seed_record::RECORD_DIR,
+                    common::seed_record::RECORD_FILE
+                )),
+            ),
+            None => (self.clone(), None),
+        }
+    }
 }
 
 /// Whether a banked run directory is on this machine, and — when it is not —
@@ -3662,7 +3689,8 @@ fn compare(sigma_vg: f64, err_vg: f64, banked: &BankedSigma) -> (f64, f64) {
 ///
 /// Every non-skipped row writes its measurement to the report directory,
 /// including a failing one: the report is what ran, not what passed.
-fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
+fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Result<(), String> {
+    let banked = &banked;
     let clock = Stopwatch::start();
     let (neval, niter, mode, reason, rel_tol) = match plan_for(dir) {
         Plan::Skip(reason) => {
@@ -3756,7 +3784,10 @@ fn gate_dir(dir: &str, banked: &BankedSigma) -> Result<(), String> {
     row.neval = neval;
     row.niter = niter;
     row.subsampler = subsampler;
-    row.note = reason.map(str::to_string);
+    row.note = match (reason, mg_source) {
+        (Some(r), Some(m)) => Some(format!("{r}; {m}")),
+        (r, m) => r.map(str::to_string).or(m),
+    };
     row.duration_s = Some(clock.seconds());
     row.write();
 
@@ -4186,7 +4217,7 @@ fn sigma_gate_matches_madgraph() {
                 "[{dir}] is exempt from the pull bound but is not a gated row"
             );
         }
-        if let Err(e) = gate_dir(dir, entry) {
+        if let Err(e) = gate_dir(dir, entry.madevent_reference(dir)) {
             failures.push(e);
         }
     }
@@ -4262,7 +4293,7 @@ fn the_long_tier_sigma_rows_match_madgraph() {
             ),
         }
         asserted += 1;
-        if let Err(e) = gate_dir(dir, entry) {
+        if let Err(e) = gate_dir(dir, entry.madevent_reference(dir)) {
             failures.push(e);
         }
     }
@@ -4715,6 +4746,38 @@ fn madevent_seeds(row: &SeededRow) -> (f64, f64) {
     policy_mean(&runs)
 }
 
+/// MadEvent's side of one grammar entry: `((mean, err), χ²/dof, seeds, source)`.
+///
+/// The restricted process is a manifest row, so the bundle may carry a seed
+/// record for it ([`common::seed_record`]), which is then what is read. A control
+/// (the unrestricted or other-polarization process beside it) is no manifest row
+/// and is always read from `grammar_sigma_reference.json`.
+fn grammar_madevent(entry: &GrammarEntry, row: &SeededRow) -> ((f64, f64), f64, usize, String) {
+    if entry.variant.is_none() {
+        if let Some(seeded) = common::seed_record::reference(&output_dir(), entry.row) {
+            return (
+                (seeded.mean(), seeded.err()),
+                seeded.read.chi2_per_dof,
+                seeded.read.n,
+                format!(
+                    "{} values of {}/{}/{}",
+                    seeded.estimator.label(),
+                    common::seed_record::RECORD_DIR,
+                    entry.row,
+                    common::seed_record::RECORD_FILE
+                ),
+            );
+        }
+    }
+    let runs: Vec<(f64, f64)> = row.runs.iter().map(|r| (r.sigma_pb, r.err_pb)).collect();
+    (
+        madevent_seeds(row),
+        combine(&runs).chi2_per_dof,
+        runs.len(),
+        "grammar_sigma_reference.json".to_string(),
+    )
+}
+
 /// `(a - b)` over their combined error.
 fn separation((a, ea): (f64, f64), (b, eb): (f64, f64)) -> f64 {
     (a - b) / (ea * ea + eb * eb).sqrt()
@@ -4773,14 +4836,7 @@ fn the_grammar_rows_match_madevents_seeds() {
         let clock = Stopwatch::start();
         let row = &reference.rows[entry.reference];
         check_grammar_card(entry, row);
-        let mg = madevent_seeds(row);
-        let mg_chi2 = combine(
-            &row.runs
-                .iter()
-                .map(|r| (r.sigma_pb, r.err_pb))
-                .collect::<Vec<_>>(),
-        )
-        .chi2_per_dof;
+        let (mg, mg_chi2, mg_seeds, mg_source) = grammar_madevent(entry, row);
         let measured = GrammarMeasurement::take(entry, &row.process);
         let here = measured.mean();
         let chi2 = combine(&measured.per_seed).chi2_per_dof;
@@ -4806,7 +4862,7 @@ fn the_grammar_rows_match_madevents_seeds() {
             GRAMMAR_NITER,
             mg.0,
             mg.1,
-            row.runs.len(),
+            mg_seeds,
         );
         let mut problems = Vec::new();
         if pull.abs() > GRAMMAR_MEAN_PULL_LIMIT {
@@ -4855,9 +4911,8 @@ fn the_grammar_rows_match_madevents_seeds() {
         cell.niter = GRAMMAR_NITER;
         cell.subsampler = measured.subsampler;
         cell.note = Some(format!(
-            "against MadEvent's {} seeds (grammar_sigma_reference.json), both sides read \
-             under the seed policy (unweighted mean +- max(quoted, spread/sqrt(n)))",
-            row.runs.len()
+            "against MadEvent's {mg_seeds} seeds ({mg_source}), both sides read \
+             under the seed policy (unweighted mean +- max(quoted, spread/sqrt(n)))"
         ));
         cell.duration_s = Some(clock.seconds());
         cell.write();

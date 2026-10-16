@@ -1,6 +1,7 @@
 # Shared by the generators that bank a MadEvent reference as one run per seed
 # (gen_decay_widths.sh, gen_decay_chain_sigma.sh, gen_decay_chain_events.sh,
-# gen_onshell_veto.sh, gen_grammar_sigma.sh). Sourced, not run.
+# gen_onshell_veto.sh, gen_grammar_sigma.sh, gen_mlm_references.sh,
+# bank_seeded_sigma.sh). Sourced, not run.
 #
 # The caching rule is the madgraph stage's: a process directory that exists is
 # never regenerated, and a seed whose run already finished under the same run
@@ -109,13 +110,19 @@ mes_run_seed() {
   fi
   echo ">>> [$tag] madevent ..." >&2
   rm -rf "$rundir"
-  local started
+  local started scratch status=0
   started="$(date +%s)"
-  LDFLAGS="$(mes_ldflags)" "$procdir/bin/generate_events" -f "run_$tag" > "$log" 2>&1 || {
+  # From a scratch working directory: a failed generate_events leaves an
+  # ME5_debug link in whatever directory it was started from.
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/vg_seed_cwd_XXXXXX")"
+  (cd "$scratch" && LDFLAGS="$(mes_ldflags)" "$procdir/bin/generate_events" -f "run_$tag") \
+    > "$log" 2>&1 || status=$?
+  rm -rf "$scratch"
+  if [ "$status" != 0 ]; then
     echo "!!! [$tag] generate_events failed; see $log" >&2
     tail -40 "$log" >&2
     return 1
-  }
+  fi
   local wall=$(($(date +%s) - started))
   local result
   result="$(awk -v wall="$wall" 'NR==1{printf "%.10g %.10g %d\n", $1, $2, wall}' \
@@ -126,4 +133,93 @@ mes_run_seed() {
   }
   printf '%s %s\n' "$result" "$card_sha" > "$record"
   echo "$result"
+}
+
+# mes_check_run PROCDIR TAG NEVENTS — the run `run_<tag>` holds what it ran
+# for: a positive finite cross section on results.dat's first line, and at least
+# NEVENTS events in its event file. generate_events exits 0 on runs that hold
+# neither (a parallel compile that lost the `libgammaUPC.a` race leaves an empty
+# results.dat), so its exit status is not this check. The count is written to
+# `Events/run_<tag>/vg_events_written.txt`.
+mes_check_run() {
+  local procdir="$1" tag="$2" nev="$3"
+  local rundir="$procdir/Events/run_$tag"
+  python3 - "$procdir/SubProcesses/results.dat" "$rundir/unweighted_events.lhe.gz" \
+    "$nev" "$rundir/vg_events_written.txt" <<'PY'
+import gzip, math, re, sys
+results, lhe, nev, out = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
+try:
+    fields = open(results).readline().split()
+    value, err = (float(f.replace("D", "E")) for f in fields[:2])
+except (OSError, ValueError) as e:
+    sys.exit("no cross section on the first line of %s: %s" % (results, e))
+if not (math.isfinite(value) and value > 0 and math.isfinite(err)):
+    sys.exit("%s reports %r +- %r, not a positive finite cross section" % (results, value, err))
+event = re.compile(r"^\s*<event[\s>]")
+try:
+    with gzip.open(lhe, "rt") as f:
+        n = sum(1 for line in f if event.match(line))
+except (OSError, EOFError) as e:
+    sys.exit("cannot read the event file %s: %s" % (lhe, e))
+if n < nev:
+    sys.exit("%s holds %d events, the run card asked for %d" % (lhe, n, nev))
+open(out, "w").write("%d\n" % n)
+PY
+}
+
+# mes_launch_sets SCRIPT — the `set key value` lines of a .mg5 script's launch
+# block, one `key value` per line.
+mes_launch_sets() {
+  sed -n '/^[[:space:]]*launch[[:space:]]*$/,/^[[:space:]]*done[[:space:]]*$/p' "$1" |
+    awk '$1 == "set" { print $2, $3 }'
+}
+
+# mes_check_card SCRIPT CARD [KEYS] — every launch-block setting of SCRIPT is
+# what the run card CARD says, so a run made on CARD is the run SCRIPT describes.
+# KEYS (space-separated) are left out: the ones the caller sets per run itself.
+# A script with no setting left to compare is refused: the check would hold
+# whatever CARD says.
+mes_check_card() {
+  mes_launch_sets "$1" | awk -v skip=" ${3:-} " 'index(skip, " " $1 " ") == 0' | python3 -c '
+import re, sys
+card = open(sys.argv[1]).read()
+bad = []
+compared = 0
+for line in sys.stdin:
+    key, want = line.split()
+    compared += 1
+    m = re.search(r"^\s*(\S+)\s*=\s*%s\b" % re.escape(key), card, re.M | re.I)
+    got = m.group(1) if m else None
+    try:
+        same = got is not None and float(got) == float(want)
+    except ValueError:
+        same = got is not None and got.lower() == want.lower()
+    if not same:
+        bad.append("%s: script %s, card %s" % (key, want, got))
+if not compared:
+    sys.exit("no launch-block setting to compare (a bare `launch` line, then `set key value`)")
+if bad:
+    sys.exit("run card disagrees with the script launch block: " + "; ".join(bad))
+' "$2"
+}
+
+# mes_p1d_tree WORK PATCH — a copy of the pinned MadGraph tree with PATCH
+# applied, made once under WORK and printed. A copy that exists is reused only
+# if it was made from this patch; the pinned checkout itself is never modified.
+mes_p1d_tree() {
+  local work="$1" patch_file="$2" tree stamp root
+  root="$(cd "$HERE/../.." && pwd)"
+  tree="$work/mg5amcnlo-p1d"
+  stamp="$(mes_sha256 "$patch_file")"
+  if [ ! -f "$tree/.vg_patch" ] || [ "$(cat "$tree/.vg_patch")" != "$stamp" ]; then
+    echo ">>> copying the pinned MadGraph tree and applying $(basename "$patch_file")" >&2
+    rm -rf "$tree"
+    mkdir -p "$work"
+    cp -a "$root/research/refs/mg5amcnlo" "$tree"
+    rm -rf "$tree/aloha/__pycache__"
+    find "$tree/models" -name aloha.pkl -delete
+    patch -p1 -s -d "$tree" < "$patch_file"
+    echo "$stamp" > "$tree/.vg_patch"
+  fi
+  echo "$tree"
 }

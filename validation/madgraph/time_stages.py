@@ -26,6 +26,14 @@ here reads or writes ``validation/madgraph/output``: these runs exist to be
 timed, their physics is thrown away, and a regenerated process directory must
 not be mistaken for a banked one.  ``--out`` is required for that reason.
 
+``--nb-core N`` runs MadEvent in multicore mode on N cores (``run_mode = 2``,
+``nb_core = N``), as ``madevent_seeds.sh``'s ``mes_configure_dir`` sets a
+process directory; each run's entry records the value, ``null`` when the flag
+is absent and MadGraph's own configuration decided.  Every timed run's
+``SubProcesses/results.dat``, whose ``<cumulated_time>`` is MadEvent's summed
+job time, is copied to ``<out>/results/<process>.results.dat`` and named in the
+entry, so a later regeneration of the process directory does not lose it.
+
 The result is ``<out>/timings.json``, rewritten after every process so an
 interrupted pass still leaves a readable record of what it got through.  It
 carries the same machine identity the validation report's ``host.json`` does,
@@ -135,14 +143,50 @@ def fortran_flags(proc_dir):
     ]
 
 
-def driver_for(process, out_dir, launch):
+def core_settings(nb_core):
+    """The MadEvent configuration lines ``--nb-core`` sets, as ``key = value``."""
+    return [] if nb_core is None else [("run_mode", "2"), ("nb_core", str(nb_core))]
+
+
+def configure_dir(proc_dir, nb_core):
+    """Silence the generated directory's UI and apply ``--nb-core``, rewriting
+    rather than uncommenting so the value is what this says whatever the file
+    held (``mes_configure_dir``)."""
+    cfg = proc_dir / "Cards/me5_configuration.txt"
+    if not cfg.is_file():
+        return
+    settings = [("automatic_html_opening", "False"), ("notification_center", "False")]
+    settings += core_settings(nb_core)
+    keys = "|".join(k for k, _ in settings)
+    kept = [l for l in cfg.read_text().splitlines()
+            if not re.match(rf"\s*#?\s*({keys})\s*=", l)]
+    cfg.write_text("\n".join(kept + [f"{k} = {v}" for k, v in settings]) + "\n")
+
+
+def keep_results(proc_dir, out_dir, process):
+    """Copy the run's combined ``results.dat`` beside ``timings.json``; its path
+    relative to ``out_dir``, or None when the run wrote none."""
+    src = proc_dir / "SubProcesses/results.dat"
+    if not src.is_file():
+        return None
+    dest = out_dir / "results" / f"{process}.results.dat"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src, dest)
+    return str(dest.relative_to(out_dir))
+
+
+def driver_for(process, out_dir, launch, nb_core=None):
     """The .mg5 script to run, with its output redirected into the scratch area.
 
     ``launch = False`` truncates the script before its ``launch`` block, which is
     how the generate/output stages are reached without paying for the run.
+    ``nb_core`` prepends ``set`` lines for MadEvent's core settings: the launch
+    applies every MadEvent option the session's history sets to the run it
+    starts (``launch_ext_program.MELauncher``), and ``--no_save`` keeps them out
+    of the pinned tree's own configuration.
     """
     src = (SCRIPTS / f"{process}.mg5").read_text()
-    lines = []
+    lines = [f"set {k} {v} --no_save" for k, v in core_settings(nb_core)]
     for line in src.splitlines():
         if re.match(r"^\s*output\s+\S+", line):
             line = re.sub(r"^(\s*output\s+)\S+", rf"\g<1>{out_dir / process}", line)
@@ -152,10 +196,10 @@ def driver_for(process, out_dir, launch):
     return "\n".join(lines) + "\n"
 
 
-def time_script_process(process, out_dir, logs):
+def time_script_process(process, out_dir, logs, nb_core=None):
     """A process whose whole life is one .mg5 script: generate, output and launch."""
     driver = Path(tempfile.mkstemp(prefix=f"vg_time_{process}_", suffix=".mg5")[1])
-    driver.write_text(driver_for(process, out_dir, launch=True))
+    driver.write_text(driver_for(process, out_dir, launch=True, nb_core=nb_core))
     env = dict(os.environ, LDFLAGS=os.environ.get("LDFLAGS", "") + CXX_RUNTIME)
     status, elapsed, stamped = run_timed(
         ["bash", str(HERE / "mg5_pinned.sh"), str(driver)],
@@ -164,9 +208,10 @@ def time_script_process(process, out_dir, logs):
     )
     driver.unlink(missing_ok=True)
     record = {"process": process, "driver": "mg5 script", "status": status,
-              "total_s": round(elapsed, 3)}
+              "total_s": round(elapsed, 3), "nb_core": nb_core}
     record["stages"] = spans_of(stamped)
     record["fortran"] = fortran_flags(out_dir / process)
+    record["results_dat"] = keep_results(out_dir / process, out_dir, process)
     return record
 
 
@@ -178,7 +223,7 @@ DY13_CARDS = {
 }
 
 
-def time_dy13(name, out_dir, logs):
+def time_dy13(name, out_dir, logs, nb_core=None):
     """`p p > e+ e-`, which the reference layer drives in two commands.
 
     The process directory comes from a bare generate/output script and the run
@@ -200,17 +245,11 @@ def time_dy13(name, out_dir, logs):
     driver.unlink(missing_ok=True)
     if s1 != 0:
         return {"process": name, "driver": "generate_events", "status": s1,
-                "total_s": round(e1, 3), "stages": spans_of(gen_stamped), "fortran": None}
+                "total_s": round(e1, 3), "nb_core": nb_core,
+                "stages": spans_of(gen_stamped), "fortran": None, "results_dat": None}
 
     shutil.copy(HERE / DY13_CARDS[name], proc_dir / "Cards/run_card.dat")
-    cfg = proc_dir / "Cards/me5_configuration.txt"
-    if cfg.is_file():
-        kept = [
-            l for l in cfg.read_text().splitlines()
-            if not re.match(r"\s*#?\s*(automatic_html_opening|notification_center)\s*=", l)
-        ]
-        cfg.write_text("\n".join(kept + ["automatic_html_opening = False",
-                                         "notification_center = False"]) + "\n")
+    configure_dir(proc_dir, nb_core)
     s2, e2, run_stamped = run_timed(
         [str(proc_dir / "bin/generate_events"), "-f", f"run_{name.removeprefix('dy13_')}"],
         logs / f"{name}.run.timed.log",
@@ -220,8 +259,9 @@ def time_dy13(name, out_dir, logs):
     stages.update({k: v for k, v in spans_of(run_stamped).items()
                    if k in ("compile", "integrate", "events")})
     return {"process": name, "driver": "generate_events",
-            "status": s1 or s2, "total_s": round(e1 + e2, 3),
-            "stages": stages, "fortran": fortran_flags(proc_dir)}
+            "status": s1 or s2, "total_s": round(e1 + e2, 3), "nb_core": nb_core,
+            "stages": stages, "fortran": fortran_flags(proc_dir),
+            "results_dat": keep_results(proc_dir, out_dir, name)}
 
 
 def main():
@@ -230,8 +270,13 @@ def main():
     ap.add_argument("--out", required=True,
                     help="scratch directory the timed runs are generated into; "
                          "must not be the reference bank")
+    ap.add_argument("--nb-core", type=int, default=None, metavar="N",
+                    help="run MadEvent in multicore mode on N cores (run_mode = 2, "
+                         "nb_core = N); without it MadGraph's own configuration decides")
     ap.add_argument("processes", nargs="+")
     args = ap.parse_args()
+    if args.nb_core is not None and args.nb_core < 1:
+        ap.error("--nb-core needs a positive core count")
 
     out_dir = Path(args.out).resolve()
     bank = (HERE / "output").resolve()
@@ -259,9 +304,9 @@ def main():
     for process in args.processes:
         print(f">>> timing {process} ...", flush=True)
         if process in DY13_CARDS:
-            record = time_dy13(process, out_dir, logs)
+            record = time_dy13(process, out_dir, logs, args.nb_core)
         else:
-            record = time_script_process(process, out_dir, logs)
+            record = time_script_process(process, out_dir, logs, args.nb_core)
         doc["runs"] = [r for r in doc["runs"] if r["process"] != process] + [record]
         doc["pass_wall_s"] = round(already + time.monotonic() - pass_start, 3)
         timings.write_text(json.dumps(doc, indent=2) + "\n")

@@ -6,7 +6,8 @@
 # files and their banners and logs, the run and parameter cards, each
 # subprocess's `leshouche.inc` and every `matrixN_orig.f` (one per diagram-group
 # case, `#1`, `#2`, ...), the combined `results.dat`, and the fixed-grid
-# amplitude tables — and nothing that a build produces
+# amplitude tables, and the seeded sigma references under `seeded_sigma/` — and
+# nothing that a build produces
 # (objects, libraries, executables, generated Fortran beyond the two files the
 # gates parse).
 #
@@ -83,6 +84,11 @@ vg_say ">>> selecting banked files under $WORK_AREA"
   done
   # The fixed-grid amplitude tables sit beside the process directories.
   find . -maxdepth 1 -type f -name '*_amplitude.csv' 2>/dev/null | sed 's|^\./||'
+  # The seeded sigma references (bank_seeded_sigma.sh): per row its
+  # seed_record.json, which the sigma gates read, and per seed the files the
+  # record was computed from. No process directory, so the loop above skips it.
+  find seeded_sigma -type f \
+    \( -name seed_record.json -o -regex 'seeded_sigma/[^/]*/s[0-9]*/.*' \) 2>/dev/null || true
 ) | LC_ALL=C sort > "$STAGE/members.txt"
 
 count="$(wc -l < "$STAGE/members.txt" | tr -d ' ')"

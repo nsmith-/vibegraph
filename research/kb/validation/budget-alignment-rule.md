@@ -93,9 +93,11 @@ They are measured and reported on the long tier rather than gated (see
   unconverged at the budget it was banked with. A MadGraph-only study measured
   χ²/dof of 3–14 across MadEvent seeds at the 0.1 % level, even on full-process
   runs ([identical particles across decays](../process/identical-particles-across-decays.md)).
-  Matching `σ_ours` to a quoted `σ_MG` assumes that quoted error is honest;
-  the hadronic σ references are single runs and nothing tests it
-  ([reference-sigma-seed-scatter-untested](../backlog/validation/reference-sigma-seed-scatter-untested.md)).
+  Matching `σ_ours` to a quoted `σ_MG` assumes that quoted error is honest.
+  Since refdata-10 each gated σ reference is five fresh-directory MadEvent
+  seeds plus two at 4× budget, banked with `hard_survey = 2`, and the gate's
+  MadGraph error is the larger of the quoted error and the seed spread
+  (`sprints/sigma-reference-scatter`, decision D1).
 - **A tolerance is not part of this rule.** Budgets move under it; tolerances
   do not. A cut that would need a wider tolerance is not licensed.
 

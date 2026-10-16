@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 publish = false
+# Two binaries: the collator, which `cargo run -p vibegraph-validation-report`
+# runs, and `seed-record`, which writes a MadEvent seed record for
+# `validation/madgraph/bank_seeded_sigma.sh`.
+default-run = "validation-report"
 
 # The collator is a development tool, not part of what the crate ships: it reads
 # the row files the validation gates wrote and renders the report. It depends on
@@ -19,3 +23,10 @@ workspace = true
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 toml = "1"
+# The chi-squared survival function behind the seed record's chance-exceedance
+# count (the regularised incomplete gamma function), as vibegraph-lib uses it.
+puruspe = "0.4"
+
+[dev-dependencies]
+# Scratch directories for seed-record's tests, removed when a test ends or fails.
+tempfile = "3"

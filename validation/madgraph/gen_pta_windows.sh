@@ -50,19 +50,23 @@
 #   pixi run -e madgraph bash validation/madgraph/gen_pta_windows.sh --stage refocus
 #
 # Environment overrides: NEVENTS, SEEDS, WINDOWS (1-based indices into the edge
-# list), TAG_SUFFIX. Each stage appends to output/pta_windows_<stage>.tsv and
+# list), TAG_SUFFIX, HARD_SURVEY (set on every run card when given). Each stage
+# appends to output/pta_windows_<stage>.tsv and
 # rebuilds pta_window_reference.json from every TSV present, so stages are
-# independent and individually re-runnable.
+# independent and individually re-runnable. PTA_WORK moves the templates, run
+# directories, logs and TSVs out of output/, and RESULT_JSON the rebuilt table:
+# bank_seeded_sigma.sh runs the m(mumu) partition that way, so its runs leave
+# the committed table and the banked work area as they were.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=madevent_seeds.sh
 source "$HERE/madevent_seeds.sh"
-OUT="$HERE/output"
-BANKED="$OUT/ee_to_mumua"
+OUT="${PTA_WORK:-$HERE/output}"
+BANKED="$HERE/output/ee_to_mumua"
 # Committed: a few dozen scalars, expensive to produce and stable, so they
 # travel in git like sigma_reference.json rather than in the fetched bundle.
-RESULT_JSON="$HERE/pta_window_reference.json"
+RESULT_JSON="${RESULT_JSON:-$HERE/pta_window_reference.json}"
 
 # Frozen before any measurement (see the design note): the outer edges are the
 # `pta` cut and sqrt(s)/2, the 20 GeV edge is twice the cut, and 39.4 GeV is
@@ -209,25 +213,27 @@ clone_run_dir() {
   silence_madgraph_ui "$dest/Cards/me5_configuration.txt"
 }
 
-# Install the banked cards verbatim, changing only nevents, iseed and -- when a
-# refocused window is asked for -- the photon pt cuts.
+# Install the banked cards verbatim, changing only nevents, iseed, hard_survey
+# when HARD_SURVEY is set (mes_install_card), and -- when a refocused window is
+# asked for -- the photon pt cuts.
 install_cards() {
   local dir="$1" seed="$2" ptlo="${3:--}" pthi="${4:--}"
-  cp "$BANKED/Cards/run_card.dat" "$dir/Cards/run_card.dat"
+  mes_install_card "$BANKED/Cards/run_card.dat" "$dir/Cards/run_card.dat" \
+    "nevents=$NEVENTS${HARD_SURVEY:+;hard_survey=$HARD_SURVEY}" "$seed"
   cp "$BANKED/Cards/param_card.dat" "$dir/Cards/param_card.dat"
-  python3 - "$dir/Cards/run_card.dat" "$NEVENTS" "$seed" "$ptlo" "$pthi" <<'PY'
+  if [ "$ptlo" = - ]; then
+    return 0
+  fi
+  python3 - "$dir/Cards/run_card.dat" "$ptlo" "$pthi" <<'PY'
 import re, sys
-path, nev, seed, ptlo, pthi = sys.argv[1:6]
+path, ptlo, pthi = sys.argv[1:4]
 text = open(path).read()
-text = re.sub(r"^\s*\S+\s*=\s*nevents\b", "  %s = nevents" % nev, text, flags=re.M)
-text = re.sub(r"^\s*\S+\s*=\s*iseed\b", "  %s = iseed" % seed, text, flags=re.M)
-if ptlo != "-":
-    n = len(re.findall(r"^\s*\S+\s*=\s*pta\b", text, flags=re.M))
-    assert n == 1, "expected exactly one pta line, found %d" % n
-    text = re.sub(r"^\s*\S+\s*=\s*pta\b", "  %s = pta" % ptlo, text, flags=re.M)
-    n = len(re.findall(r"^\s*\S+\s*=\s*ptamax\b", text, flags=re.M))
-    assert n == 1, "expected exactly one ptamax line, found %d" % n
-    text = re.sub(r"^\s*\S+\s*=\s*ptamax\b", "  %s = ptamax" % pthi, text, flags=re.M)
+n = len(re.findall(r"^\s*\S+\s*=\s*pta\b", text, flags=re.M))
+assert n == 1, "expected exactly one pta line, found %d" % n
+text = re.sub(r"^\s*\S+\s*=\s*pta\b", "  %s = pta" % ptlo, text, flags=re.M)
+n = len(re.findall(r"^\s*\S+\s*=\s*ptamax\b", text, flags=re.M))
+assert n == 1, "expected exactly one ptamax line, found %d" % n
+text = re.sub(r"^\s*\S+\s*=\s*ptamax\b", "  %s = ptamax" % pthi, text, flags=re.M)
 open(path, "w").write(text)
 PY
 }
@@ -288,10 +294,15 @@ run_one() {
   # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
   # make_opts STDLIB line, so the link needs the platform C++ runtime
   # (mes_ldflags) appended explicitly.
-  LDFLAGS="$(mes_ldflags)" "$dir/bin/generate_events" -f "run_$tag" >"$log" 2>&1 || {
+  # From a scratch working directory: a failed generate_events leaves an
+  # ME5_debug link in whatever directory it was started from.
+  local scratch
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/vg_pta_cwd_XXXXXX")"
+  (cd "$scratch" && LDFLAGS="$(mes_ldflags)" "$dir/bin/generate_events" -f "run_$tag") >"$log" 2>&1 || {
     echo "!!! [$tag] generate_events returned non-zero; see $log" >&2
     tail -30 "$log" >&2
   }
+  rm -rf "$scratch"
   local results="$dir/SubProcesses/results.dat"
   if [ ! -s "$results" ]; then
     echo "!!! [$tag] no results.dat at $results" >&2

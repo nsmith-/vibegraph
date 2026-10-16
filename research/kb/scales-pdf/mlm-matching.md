@@ -127,10 +127,10 @@ Settled by the user on 2026-09-28, every recommendation accepted:[^n41-dec]
 
 Cross sections against MadEvent: [validation/mlm-sigma-gate](../validation/mlm-sigma-gate.md).
 Per-event scales, `rewgt` factors and record fields against an instrumented MadEvent:
-[validation/mlm-dump-oracle](../validation/mlm-dump-oracle.md). Open items: the three
-single-multiplicity `ℓℓj` rows read high together by 0.03–0.23%
-([backlog: llj-mlm-rows-sit-high-together](../backlog/validation/llj-mlm-rows-sit-high-together.md)),
-and `pp_to_ttx_0j1j_mlm`'s `@1` reads 1.28% high, undiagnosed
+[validation/mlm-dump-oracle](../validation/mlm-dump-oracle.md). The three
+single-multiplicity `ℓℓj` rows' shared 0.03–0.23% high reading was on the
+MadEvent reference side ([MLM σ gate](../validation/mlm-sigma-gate.md)).
+Open: `pp_to_ttx_0j1j_mlm`'s `@1` reads 1.28% high, undiagnosed
 ([backlog: ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
 
 [^n41-intro]: Note 41, goal and division of labour.

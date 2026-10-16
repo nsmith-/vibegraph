@@ -94,33 +94,11 @@ SELECTED="${ROWS:-${ALL_ROWS[*]}}"
 
 die() { printf '!!! %s\n' "$*" >&2; exit 1; }
 
-# launch_sets ROW — the `set key value` lines of the script's launch block.
-launch_sets() {
-  sed -n '/^[[:space:]]*launch[[:space:]]*$/,/^[[:space:]]*done[[:space:]]*$/p' "$HERE/scripts/$1.mg5" |
-    awk '$1 == "set" { print $2, $3 }'
-}
-
 # check_card ROW — every launch-block setting is what the committed card says.
 check_card() {
   local row="$1" card="$HERE/$1_run_card.dat"
   [ -f "$card" ] || die "$row: no committed run card $card"
-  launch_sets "$row" | python3 -c '
-import re, sys
-card = open(sys.argv[1]).read()
-bad = []
-for line in sys.stdin:
-    key, want = line.split()
-    m = re.search(r"^\s*(\S+)\s*=\s*%s\b" % re.escape(key), card, re.M | re.I)
-    got = m.group(1) if m else None
-    try:
-        same = got is not None and float(got) == float(want)
-    except ValueError:
-        same = got is not None and got.lower() == want.lower()
-    if not same:
-        bad.append("%s: script %s, card %s" % (key, want, got))
-if bad:
-    sys.exit("run card disagrees with the script launch block: " + "; ".join(bad))
-' "$card" || die "$row: $HERE/scripts/$row.mg5 and $card disagree"
+  mes_check_card "$HERE/scripts/$row.mg5" "$card" || die "$row: $HERE/scripts/$row.mg5 and $card disagree"
 }
 
 # generate_dir ROW DIR — the script's proc lines, with `output` redirected.
