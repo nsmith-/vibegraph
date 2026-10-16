@@ -4,7 +4,7 @@
 
 ## Audit
 
-* [MadGraph upstream report drafts](madgraph-upstream-report-drafts.md) - Upstream bug-report drafts for the MadGraph defects this project found, each checked against the latest release (3.8.1) and paired with a MadGraph-only reproducer; filing them is the user's step.
+* [MadGraph upstream report drafts](madgraph-upstream-report-drafts.md) - Index of the MadGraph defects this project found, each checked against the latest release (3.8.1), with a folder per defect under research/upstream/ holding its MadGraph-only reproducer and, if still present, a report draft; filing is the user's step.
 
 ## Caveat
 

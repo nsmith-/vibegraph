@@ -1,13 +1,29 @@
 # MadEvent MLM: `rewgt` evaluates a non-jet parton's line with a stale flavour
 
 A MadGraph-only reproducer. It needs a stock MadGraph5_aMC@NLO with a Fortran
-compiler, and nothing from this repository.
+compiler, and nothing from vibegraph.
 
-## The defect
+## What it shows
 
-Under MLM matching (`ickkw = 1`), `rewgt` (`Template/LO/SubProcesses/reweight.f`,
-`:1534-1538`, the same in 3.7.1 and 3.8.1) labels the clustering tree with the
-drawn flavour combination's codes. It does so for jets only:
+Under MLM matching, a final-state parton that is not a jet keeps whatever PDG
+code an earlier event left in the clustering table `ipdgcl`. When one IPROC
+mixes such a leg with jet flavours, its PDF ratio is evaluated for the wrong
+flavour, and which wrong flavour depends on the events generated before it.
+
+Take a five-flavour `p p > z j` at `maxjetflavor = 4`. On 3.7.1, 93 of 97
+`g b > z b` events take the PDF ratio of a `d` or `s` line; on 3.8.1, 87 of 97
+do. The same events generated without the other flavours take no PDF ratio.
+
+## Status
+
+**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+[`report-draft.md`](report-draft.md). No one-line fix exists (see "Root
+cause").
+
+## Where
+
+`Template/LO/SubProcesses/reweight.f:1534-1538`, in `rewgt`; the same lines in
+3.7.1 and 3.8.1. The table is first filled at `cluster.f:373` (`initcluster`).
 
 ```fortran
       do i=1,nexternal
@@ -17,66 +33,74 @@ c        Set jet identities according to chosen subprocess
      $        ipdgcl(j,igraphs(1),iproc)=idup(i,ipsel,iproc)
 ```
 
-`ipdgcl` lives in a common block, keyed by (leg, graph, IPROC) and never by
-combination.
-- `initcluster` fills it from the IPROC's **first** combination
-  (`cluster.f:373`).
-- After that, a leg's entry changes only when some event labels that leg a jet.
-- A final-state parton that is not a jet therefore keeps the code that an
-  earlier event, or the first combination, left there.
+## Root cause
 
-That code is then used to:
-- transmit flavours along the clustering (`ipartupdate`);
-- choose the parton density in the PDF-ratio chain (`pdg2pdf`);
-- decide which lines are parton lines (`goodjet`).
-
-The first `setclscales` call of the next event reads the same table.
-
-Whenever one IPROC holds combinations in which a final-state leg is a jet in
-some and a non-jet parton in others, the event weight depends on that leg's
-true flavour and also on the events generated before it.
+- *Verified* (runs below):
+  - `ipdgcl` is keyed by (leg, graph, IPROC), never by flavour combination.
+  - `rewgt` writes the drawn combination's code for jet legs only.
+  - A non-jet parton (a `b` at `maxjetflavor = 4`) therefore carries the code
+    of the IPROC's first combination (`d`), or of the last event that labelled
+    that leg a jet (`s`).
+  - The PDF-ratio chain written by `use_syst` (`<pdfrwt>`) shows these codes
+    on the b events.
+- *Verified* (tried on 3.7.1, not kept as a variant): dropping the `isjet`
+  guard, so that every leg takes the drawn code, makes the survey stop with
+  `Error: Failed despite same graph: 2`.
+  - With the right labels, the b is a non-jet in `setclscales` too.
+  - The number of jets per config then varies with the flavour combination,
+    which the per-config jet memo (`njetstore`/`iqjetstore`,
+    `reweight.f:985-1018`) assumes it does not.
+  - The stale label is what lets stock runs complete.
+- *Inferred from source:* the next event's first `setclscales` call reads the
+  same table for its jet tagging (the `xqcut` rejection). That use is not
+  measured separately.
 
 ## The test
 
-The process is `p p > z j` with a five-flavour proton and massless b
-(`sm-no_b_mass`, b in `p` and `j`). The cards are `ickkw = 1`, `xqcut = 20`
-and `maxjetflavor = 4`. MadGraph defaults to 5 for this process, and 4 is the
-user's choice of a four-flavour jet definition.
-- The b is then a parton but not a jet.
-- `P1_gq_zq` puts `g d > z d`, `g s > z s` and `g b > z b` in one IPROC (and
-  their antiquarks in another), with `d` first.
+There are two stock process directories with the same cards:
+- `sm-no_b_mass`, with b in `p` and `j`;
+- `ickkw = 1`, `xqcut = 20`, `maxjetflavor = 4`;
+- `use_syst = T`, `systematics_program = none`;
+- `nevents = 2000`, `iseed = 1`.
 
-`use_syst = T` writes the chain each event used (`<mgrwt><pdfrwt>`) and its
-α_s ratios (`<asrwt>`), with `systematics_program = none`.
+MadGraph defaults to `maxjetflavor = 5` for this process; 4 is the user's
+choice of a four-flavour jet definition.
 
-| run | what it is |
-|---|---|
-| `mixed` | `p p > z j`: b shares its IPROC with d and s |
-| `alone` | `g b > z b` and `g b~ > z b~` only, same cards; the b is its IPROC's first combination, so its label is right |
+| run | process | role |
+|---|---|---|
+| `mixed` | `p p > z j` | the defect: `P1_gq_zq` puts `g d > z d`, `g s > z s` and `g b > z b` in one IPROC, `d` first |
+| `alone` | `g b > z b`, `g b~ > z b~` | control: the b is its IPROC's first combination, so its label is right |
 
 For every event with exactly one incoming gluon and an outgoing quark, the
-script tallies the codes on the gluon beam's chain and the number of α_s
-ratios.
+script tallies the codes on the gluon beam's `<pdfrwt>` chain and the number of
+α_s ratios (`<asrwt>`).
+
+## Versions tested
+
+| version | source | commit |
+|---|---|---|
+| 3.7.1 | `git clone --depth 1 --branch v3.7.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.7.1` | `b7687064` |
+| 3.8.1 (latest release, 2026-10-09) | `git clone --depth 1 --branch v3.8.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.8.1` | `a5b17913` |
+
+Both ran on 2026-10-16 (Linux x86-64), with Python 3.11 and gfortran from
+vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
+this directory, with `$MG` the directory holding the two clones:
 
 ```
-MG5=/path/to/MG5_aMC/bin/mg5_aMC ./repro.sh /tmp/ip
+pixi run -e madgraph env MG5="python $MG/mg-3.7.1/bin/mg5_aMC" ./repro.sh /tmp/ip
+pixi run -e madgraph env MG5="python $MG/mg-3.8.1/bin/mg5_aMC" ./repro.sh /tmp/ip
 ```
 
-It takes about two minutes.
+On a stock install, use `MG5=/path/to/MG5_aMC/bin/mg5_aMC ./repro.sh /tmp/ip`.
 
-There is no one-line fix to run as a control. Giving every leg the drawn
-combination's code (dropping the `isjet` guard) was tried on 3.7.1, and the
-survey stops with `Error: Failed despite same graph: 2`. With the right
-labels the b is a non-jet in `setclscales` too, so the number of jets per
-config then varies with the flavour combination. The per-config jet memo
-(`njetstore`/`iqjetstore`, `reweight.f:985-1018`) assumes it does not. The
-stale label is what lets those runs complete.
 
-## Results
+It takes about two minutes per version.
 
-These runs used the conda toolchain from `pixi run -e madgraph`.
-- **3.7.1** is tag `v3.7.1`, commit `b7687064`.
-- **3.8.1** is tag `v3.8.1`, commit `a5b17913`, the latest release on 2026-10-16.
+## Expected against actual
+
+**Expected:** the b events of `mixed` read as in `alone`, with no PDF ratio
+(chain `21`) and one α_s ratio. A jet quark `q` reads `21,-q` (the spacelike
+line after `g → q q~`) with one α_s ratio.
 
 ```
 #### 3.7.1
@@ -139,16 +163,11 @@ expected: the b events of 'mixed' read as in 'alone' (where the label is right):
 observed in 'mixed': most b events take the PDF ratio of a d or s line (chain 21,+-1 or 21,+-3), whichever an earlier event left
 ```
 
-- **Jet quarks.** `g q > z q` with `q = u, c, d, s` takes the ratio of its own
-  line (`21,-q`) and one α_s ratio, or no ratio at all.
-- **b in `alone`.** No PDF ratio (chain `21`) and one α_s ratio, on every event.
-- **b in `mixed`.** Most events take one α_s ratio plus the PDF ratio of a `d`
-  or `s` line (`21,±1` or `21,±3`): 93 of 97 b events (96 %) on 3.7.1, and 87
-  of 97 (90 %) on 3.8.1. Which of the two depends on the events before it.
+**Actual**, on both versions:
+- `u`, `c`, `d` and `s` events read their own flavour.
+- The b events of `mixed` mostly read `21,±1` or `21,±3`, a `d` or `s` PDF
+  ratio: 93 of 97 on 3.7.1, and 87 of 97 on 3.8.1.
+- `alone` reads `21` on every b event.
 
-So the b events' weights in `mixed` include a PDF ratio that `alone` does not
-take, evaluated for a quark flavour that is not in the event.
-- The effect on σ is not measured. It is limited to the b channels: 97 of
-  this sample's 2000 events.
-- The same table drives the first `setclscales` call's jet tagging (the
-  `xqcut` rejection) for the next event. That use is not measured separately.
+The effect on σ has not been measured; it is limited to the b channels (97 of
+2000 events).

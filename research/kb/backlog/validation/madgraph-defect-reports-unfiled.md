@@ -13,23 +13,28 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L229-L241", title: "TODO.md entry T005"}
 ---
-The drafts are in
+The drafts are indexed in
 [madgraph-upstream-report-drafts](../../validation/madgraph-upstream-report-drafts.md).
-Each was checked against MadGraph 3.8.1, the latest release, and has a
-reproducer under `validation/madgraph/repro/` that needs only a stock MadGraph.
-Ready to file:
+Each defect has a folder under `research/upstream/madgraph-*/` with a
+MadGraph-only reproducer, a README, and a `report-draft.md` if the defect is
+still present in 3.8.1, the latest release. Ready to file:
 
-- H1, the grouped first `setclscales` call on the unpermuted point;
-- `reweight.f:1138`, `scalefact` skipped with one fixed μF;
-- `setcuts.f`, the duplicate `iforest(2)` test;
-- `cuts.f`, the `NMASSLESS` precedence (`ktdurham`/`ptlund`);
-- `addmothers.f:115`, the stale loop index (code quality; unreachable);
-- `banner.py`, `RivetCard.setWeightName`;
-- `rewgt`, the stale `ipdgcl` of a non-jet parton.
+- `madgraph-grouped-first-call-unpermuted` (H1);
+- `madgraph-fixed-fac-scale-precedence` (`reweight.f:1138`);
+- `madgraph-setxqcuts-duplicate-test` (`setcuts.f`);
+- `madgraph-nmassless-precedence` (`cuts.f`, `ktdurham`/`ptlund`);
+- `madgraph-addmothers-stale-index` (code quality; unreachable);
+- `madgraph-rivet-setweightname` (`banner.py`);
+- `madgraph-rewgt-stale-ipdgcl` (`rewgt`).
+
+MadGraph publishes no policy on AI-assisted reports (the index records what
+was checked), so each draft ends in an `Assisted-by` line for the user to keep
+or reword.
 
 The `AQCDUP` π truncation and `rambo.py` drafts are still in note 07's appendix
 and are still present in 3.8.1. The ALOHA `P1D` (`FFV2P1D_1`) defect is fixed
-in 3.8.1 (PR #428); do not file it.
+in 3.8.1 (PR #428), so do not file it
+(`research/upstream/madgraph-aloha-p1d-flipped-fermion/`).
 
 The CDATA / `setMad` interplay is tracked separately as
 [pythia-setmad-drops-cdata-run-card](pythia-setmad-drops-cdata-run-card.md).

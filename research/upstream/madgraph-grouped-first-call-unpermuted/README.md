@@ -1,31 +1,63 @@
 # MadEvent: the first `setclscales` call clusters the unpermuted point
 
-A MadGraph-only reproducer. It uses nothing from this repository except the
-pinned MadGraph tree and the MG5 scripts and cards in this directory. The fix is
-`../../patches/first-call-unpermuted-momenta.patch`.
+A MadGraph-only reproducer. It needs a stock MadGraph5_aMC@NLO with a Fortran
+compiler and the MG5 scripts and cards in this directory, and nothing from
+vibegraph.
 
-## The defect (MadGraph 3.7.1, tree `b7687064`)
+## What it shows
 
-In grouped output, `DSIGPROC`
-(`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`) builds
-`P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))` (`:805`) and mirrors it
-(`:814-826`). The matrix element and `REWGT`'s second `setclscales` call read
-`P1`. The first call, `update_scale_coupling(pp, wgt)` (`:842`), is handed the
-unpermuted `PP`.
+In grouped output (`group_subprocesses True`, the default), MadEvent sets the
+dynamical scales, and applies the MLM `xqcut` rejection, on the sampled point
+before the channel's symmetry permutation. The matrix element is evaluated on
+the permuted point. On `define q = u d; generate u q > z u q`, the one-line
+fix below raises grouped σ:
+- by 3.7 % (14.6σ) on 3.8.1 and 4.2 % on 3.7.1 at default cards;
+- by 3.4 % (about 15σ on 3.8.1) with MLM.
 
-That first call:
-- sets μR;
-- sets the PDF scales, at which `DSIG` evaluates the densities before `REWGT`;
-- sets `q2bck`;
-- can reject the point: the `xqcut` test on every clustering vertex with a jet
-  daughter (`Template/LO/SubProcesses/reweight.f:1066-1085`).
+On 3.7.1 the fixed grouped output agrees with the non-grouped output.
 
-`REWGT` returns 0 when the second call rejects (`reweight.f:1465`). A point
-therefore survives only if both calls accept it.
+## Status
 
-When a channel's symmetry permutation exchanges equal-mass legs of different
-flavour, the first call clusters a relabelled event, and σ comes out low.
-Non-grouped output never permutes: there, `P1` is `PP` boosted.
+**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+[`report-draft.md`](report-draft.md).
+
+## Where
+
+`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`, `DSIGPROC`:
+
+| | 3.7.1 | 3.8.1 |
+|---|---|---|
+| `P1 = SWITCHMOM(PP, PERMS(...))` | `:805` | `:819` |
+| mirror of `P1` | `:814-826` | `:829` |
+| `call update_scale_coupling(pp, wgt)` | `:842` | `:856` |
+| vectorised `update_scale_coupling_vec(all_p, ...)` | `:312` | `:317` |
+
+The fix is one line: `call update_scale_coupling(p1, wgt)`. In this
+repository it is `validation/madgraph/patches/first-call-unpermuted-momenta.patch`.
+
+## Root cause
+
+- *Verified* (the `patched` variant): handing the first call `P1` instead of
+  `PP` removes the deficit.
+  - On 3.7.1, grouped + fix agrees with non-grouped at both cards.
+  - On 3.8.1 it does so once the unrelated refine change below is undone.
+- *Inferred from source:*
+  - `DSIGPROC` builds `P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))` and
+    mirrors it, and the matrix element and `REWGT`'s second `setclscales` call
+    read `P1`. The first call, `update_scale_coupling(pp, wgt)`, is handed the
+    unpermuted `PP`.
+  - That first call sets μR, the PDF scales at which `DSIG` evaluates the
+    densities, and `q2bck`. It can also reject the point: the `xqcut` test on
+    every clustering vertex with a jet daughter
+    (`Template/LO/SubProcesses/reweight.f:1066-1085`).
+  - `REWGT` returns 0 when the second call rejects, so a point survives only
+    if both calls accept it.
+  - Non-grouped output never permutes: there, `P1` is `PP` boosted.
+- *Not isolated:* the clustering path that makes some identical-quark
+  permutations matter (channel `G4` at the default card) and not others
+  (`G3`).
+- *Inferred, not measured:* the vectorised path (`vector_size > 1`) has the
+  same defect and needs a larger change.
 
 ## The test
 
@@ -53,19 +85,19 @@ The run card is MadGraph 3.7.1's default LO card with these changes:
 Beams are the default: `pp` at 13 TeV, the built-in `nn23lo1` PDF, and the
 default dynamical scale. No LHAPDF is needed.
 
-## Running it
+## Running it (versions tested: 3.7.1 `b7687064`, 3.8.1 `a5b17913`)
 
-Any MadGraph 3.7.x with a Fortran compiler will do:
+Any MadGraph 3.7.x or 3.8.x with a Fortran compiler will do:
 
 ```
-MG5=/path/to/MG5_aMC_v3_7_1/bin/mg5_aMC ./repro.sh /tmp/permtest 11 12 13 14 15
+MG5=/path/to/MG5_aMC/bin/mg5_aMC ./repro.sh /tmp/permtest 11 12 13 14 15
 ```
 
-In this repository, with the pinned tree:
+In vibegraph, with the pinned 3.7.1 tree (submodule commit `b7687064`):
 
 ```
 pixi run -e madgraph env MG5="bash $PWD/validation/madgraph/mg5_pinned.sh" \
-  bash validation/madgraph/repro/permuted_first_call/repro.sh <workdir> 11 12 13 14 15
+  bash research/upstream/madgraph-grouped-first-call-unpermuted/repro.sh <workdir> 11 12 13 14 15
 ```
 
 - Every seed and variant runs in a fresh copy of a freshly generated process
@@ -77,7 +109,10 @@ pixi run -e madgraph env MG5="bash $PWD/validation/madgraph/mg5_pinned.sh" \
 - `RUN_CARD=run_card_ickkw0.dat` repeats the test with MLM off: the default
   card, `dynamical_scale_choice = -1`, `use_syst = F`.
 
-## Expected output
+## Expected against actual
+
+**Expected:** grouped and non-grouped give the same σ; the patched grouped
+output is the control.
 
 These are the MadGraph 3.7.1 runs at pin `b7687064`, seeds 11–15. The build
 was the Linux conda toolchain from `pixi run -e madgraph`, sharing 4 cores with
@@ -198,8 +233,8 @@ The runs below used the same conda toolchain, on 2026-10-16, with:
 
 ```
 pixi run -e madgraph env VG_MG5_ROOT=<3.8.1 checkout> MG5="bash $PWD/validation/madgraph/mg5_pinned.sh" \
-  [RUN_CARD=$PWD/validation/madgraph/repro/permuted_first_call/run_card_ickkw0.dat] \
-  bash validation/madgraph/repro/permuted_first_call/repro.sh <workdir> 11 12 13 14 15
+  [RUN_CARD=$PWD/research/upstream/madgraph-grouped-first-call-unpermuted/run_card_ickkw0.dat] \
+  bash research/upstream/madgraph-grouped-first-call-unpermuted/repro.sh <workdir> 11 12 13 14 15
 ```
 
 With MLM off (`run_card_ickkw0.dat`):

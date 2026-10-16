@@ -43,7 +43,7 @@ silently "fixed". Lines are at the pinned tree
 `b7687064` (3.7.1) unless stated.
 
 **Upstream status: nothing filed.** The report drafts, each checked against the
-latest release (3.8.1) with a MadGraph-only reproducer, are in
+latest release (3.8.1) with a MadGraph-only reproducer, are indexed in
 [madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md). Filing is
 the user's step
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
