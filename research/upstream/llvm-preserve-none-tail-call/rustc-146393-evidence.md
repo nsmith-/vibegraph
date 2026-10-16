@@ -90,8 +90,9 @@ No root cause has been given and no PR is linked.
      `-O3`. With a plain call instead of `become` it prints 66, which is
      correct.
    - The x86 trigger itself is an LLVM bug: the tail-call register class has
-     no free register under `preserve_none`. That is filed separately
-     (`llvm-issue-draft.md`). Its link goes in the comment once it exists.
+     no free register under `preserve_none`. That is filed separately as
+     llvm/llvm-project#232957. Valid code exists, so it is a missed lowering,
+     not an unavoidable failure.
 
 4. **What a fix would need to do.** This is a direction for the user to judge
    and write up; it is not a patch. Errors of a kind rustc does not wrap
@@ -111,7 +112,8 @@ No root cause has been given and no PR is linked.
   `DK_RegAllocFailure` kind added in LLVM 20, and show that this matches the
   bisected window.
 - The x86-64 reproducer, showing it is not RISC-V-only and needs no reserved
-  registers, with a link to the LLVM issue for the separate x86 bug.
+  registers, with a link to llvm/llvm-project#232957 for the separate x86
+  bug.
 - The gdb evidence, or a simpler equivalent: `--emit=llvm-ir` then `llc`
   reports the error.
 - Perhaps a suggestion to retitle the issue, since it is not RISC-V-specific.

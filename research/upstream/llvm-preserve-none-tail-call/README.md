@@ -105,10 +105,11 @@ gdb script: [`rustc-146393-evidence.md`](rustc-146393-evidence.md).
 
 ## Reporting upstream
 
-- **LLVM:** a new issue. [`llvm-issue-draft.md`](llvm-issue-draft.md) is a
-  draft for the user to edit and post under LLVM's AI tool policy (a human
-  reviews it and can explain it; tool use is disclosed). No existing issue
-  matched a search of llvm-project for `preserve_none` on 2026-10-16.
+- **LLVM:** filed as llvm/llvm-project#232957
+  (<https://github.com/llvm/llvm-project/issues/232957>) on 2026-10-16. It is
+  labelled `backend:X86`, `confirmed` and `crash-on-valid`.
+  [`llvm-issue-draft.md`](llvm-issue-draft.md) is the draft it was written
+  from. The posted issue is the record.
 - **rustc:** a comment on rust-lang/rust#146393, not a new issue, because it
   is the same root cause. The Rust LLM policy bans LLM-originated comments, so
   [`rustc-146393-evidence.md`](rustc-146393-evidence.md) is an evidence sheet,

@@ -24,8 +24,9 @@ LLVM 23.1.4 and rustc nightly 2026-10-15, are in
 The root cause is two bugs. In LLVM, the x86 tail-call register class
 `GR64_TC` has no register left under `preserve_none`. In rustc, LLVM 20's
 `DK_RegAllocFailure` diagnostic is dropped, which is also the cause of
-rust-lang/rust#146393. Both are in the README. Ready for the user: an LLVM
-issue draft (`llvm-issue-draft.md`) and an evidence sheet for a
-user-written comment on #146393 (`rustc-146393-evidence.md`; Rust's LLM
-policy rules out a drafted comment). Filing is the user's call. Detail:
+rust-lang/rust#146393. Both are in the README. The LLVM side is filed as
+llvm/llvm-project#232957 (2026-10-16). What remains is the user-written comment
+on #146393, which can draw on the evidence sheet
+(`rustc-146393-evidence.md`; Rust's LLM policy rules out a drafted comment).
+After that, link both from the threaded-dispatch study. Detail:
 [threaded-dispatch study](../../history/notes/threaded-dispatch-study-results.md).
