@@ -66,3 +66,28 @@
   continuum) and (b) (#22's card, where `hard_survey` is inert) explicitly.
   F2 implements the driver side; then the banking comment is made runnable in
   one edit.
+* **F2, HY1, F3 landed** (F2 `1c4583e`, HY1 `9dcf9c7`/`9a54c7a`, F3 `8086c97`):
+  the driver banks with `hard_survey = 2` and records the survey; HY1 pinned
+  seed-record's untested refusals with mutation evidence; F3 reads D1's
+  look-elsewhere SCATTER rule and adds a read-only `--rescreen`.
+  Machine-confirmed by the manager: the commits and trailers, no `helas/`
+  change, the gate logs, and F3's Rust/Python verdict agreement.
+* **Approvals relayed** (2026-10-16, by the planner session, as the user's
+  decisions): the look-elsewhere scatter rule (third amendment) and the
+  ladder rule with measured-spread σ (fourth amendment).
+* **Banked by the user on the M3** (refdata-10, `7437e59`, published
+  `c7bb711`): 55 rows, 5 + 2 × 4× fresh-directory seeds each at
+  `hard_survey = 2`, none `INERT`. `ud_to_epemud_qcd0` uses iseed 20261106 for
+  20261105, which wrote 9969 of 10000 events. The user fixed a bash 3.2
+  empty-array error in the driver (`02e2a28`).
+* **Checked by the manager:** the archive hashes to the pin; all 55 records
+  rescreen under F3 (53 within chance; only the two 2 → 4 long-tier rows
+  flagged, whose σ cells are already `info`); the `nb_core = 12` timing pass
+  leaves `cumulated_time` unchanged (geomean 0.98 over 31 processes).
+* **Ladder** (`ll_to_qqx_toy_dipole`, run by the user): 20 + 20 seeds,
+  4× − 1× = −0.0039 ± 0.0045 pb (−0.87σ on the measured spread): it stays at
+  1×, and its 5-seed record in refdata-10 is kept (user decision).
+* **First σ-gate run on the seed records** (CI `banked`, run 38923646457):
+  203 measured cells, 197 ✅, 6 ⚠️; 47 σ pulls, max |pull| 2.45.
+  `ee_to_mumua` reads −0.074 % (pull −0.42), so its standing +1.04 % offset
+  was the old bank's. The pulls average +0.65 (filed).

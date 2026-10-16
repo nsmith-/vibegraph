@@ -6,6 +6,10 @@
 
 * [Reference σ seed scatter](sprint.md) - Give every gated σ reference independent MadEvent seeds and a second budget, record their scatter in the bundle, and size the σ gates on it; regenerate the llj MLM references from fresh directories.
 
+## Sprint Record
+
+* [Reference σ seed scatter](closeout.md) - Every gated σ reference is now five fresh-directory MadEvent seeds plus two at 4×, banked with hard_survey = 2 and read with its measured scatter; the llj MLM offset was the reference's.
+
 ## Directories
 
 * [decisions](decisions/index.md)

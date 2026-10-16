@@ -47,9 +47,12 @@
 #        SURVEY   hard_survey and the run_config.inc min/max_events every seed
 #                 ran with. INERT: the survey ran at another rate than
 #                 hard_survey asks (a card with mmjj > 0.01 (ebeam1 + ebeam2)).
-#        SCATTER  the worst per-channel seed chi2/dof at the budget. FLAGGED:
-#                 above 3; whether the row's sigma cell gates is the manifest's
-#                 decision, not this driver's.
+#        SCATTER  the worst channel's seed chi2 p-value at the budget, times
+#                 the channels tested (look-elsewhere). Below 0.01 it reads
+#                 FLAGGED (confirm with 20 seeds), or CONFIRMED with 20 seeds
+#                 or more; whether the row's sigma cell gates is the
+#                 manifest's decision, not this driver's. `seed-record
+#                 --rescreen PATH` re-reads a written record under this rule.
 #
 # The σ gates read a row's record where the bundle carries one
 # (vibegraph-lib/tests/common/seed_record.rs) and its single banked run

@@ -3,7 +3,7 @@ type: Sprint
 title: "Reference σ seed scatter"
 description: "Give every gated σ reference independent MadEvent seeds and a second budget, record their scatter in the bundle, and size the σ gates on it; regenerate the llj MLM references from fresh directories."
 status: draft
-active: true
+active: false
 tags: [validation, refdata, madgraph, seeds, convergence, mlm, llj]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 ---
@@ -27,8 +27,8 @@ implementation, and the re-banked references come from the user's M3 run.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [reference-sigma-seed-scatter-untested](../../backlog/validation/reference-sigma-seed-scatter-untested.md)
-- [llj-mlm-rows-sit-high-together](../../backlog/validation/llj-mlm-rows-sit-high-together.md)
+- `reference-sigma-seed-scatter-untested` (closed)
+- `llj-mlm-rows-sit-high-together` (closed)
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,
