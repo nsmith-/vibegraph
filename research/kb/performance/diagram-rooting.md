@@ -5,7 +5,7 @@ description: "canonical_root picks the vertex with fewest attached external legs
 status: draft
 tags: [performance, rooting, cse, evaluator, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n15-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L80-L111", title: "Note 15 §1.3 (rooting symmetry)"}
   - {id: n15-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L611-L667", title: "Note 15 §3.1 (rooting study results)"}

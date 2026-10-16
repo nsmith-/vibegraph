@@ -5,6 +5,7 @@ description: "Each factor of convention_sign fires on a named process (asserted)
 status: draft
 tags: [amplitudes, signs, coverage, rooting, relabelling, non-vacuity]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: per-factor mutations, the relabelling test, the acceptance runs"}
   - {id: bh-report, resource: "../sprints/amplitude-signs/sessions/B-H-report.md", title: "B-H report: mutations of the firing test, the relabelling test and the live-parity cancellation"}

@@ -5,6 +5,7 @@ description: "Against MadGraph every triple-vector vertex carries −1: a charge
 status: draft
 tags: [sign-conventions, vector-vertices, qcd, electroweak, madgraph-comparison]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: no role is needed; the triple-gluon constant; the mutations"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}

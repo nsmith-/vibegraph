@@ -5,6 +5,7 @@ description: "Every sign a diagram carries reads the graph alone (Diagram::sign 
 status: draft
 tags: [rooting, sign-conventions, diagrams, relabelling, canonical-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the convention sign is a product of local constants, read off the graph"}
   - {id: code-rootdiag, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "compile_single_diagram, convention_sign, canonical_root, choose_root"}

@@ -316,3 +316,198 @@ fermion-line-sign concept's third alternative, reproduced.
 `tensor_four_fermion_currents_are_rooting_invariant`).
 
 After the last mutation, `git diff --stat -- vibegraph-lib` is empty.
+
+## Fixes made
+
+Commits `f2bc5d7` (the five convention concepts) and `8cdc40f` (the five
+neighbours), after the findings (`5e4dd02`) and the measurements (`4ffcb23`).
+Every finding marked **wrong** or **imprecise** above was fixed in its concept,
+except 2.8's measurement (unchecked, now labelled as the retired fact's) and
+7.8/10.9 (the `787070e` code pins, replaced by path citations, which removes
+what could not be checked). In short:
+
+- **convention-sign-inventory**: 1.6 and the vertex row (13 + 15); 1.9 scoped to
+  models without odd-gluon vertices, which join the unmeasured classes; 1.11
+  restated as a comparison with the previous convention; 1.13 rewritten; 1.15
+  names the three candidates; the live parity's MadGraph pins (ML); code by path.
+- **fermion-line-sign**: 2.8 wording; 2.9 reframed (each alternative was one
+  factor added to the signs then in use; the crossed-line `−1` is in
+  `propagator_phase_sign`); 2.10 re-measured (MF); 2.11, 2.12; code by path.
+- **rooting-invariance-and-canonical-form**: 3.3 and 3.7 dated as measurements
+  of older code, the current measurement beside them; 3.5; code by path.
+- **vector-vertex-signs**: 4.2, 4.5, 4.7 (the probe's value beside note 39's),
+  4.9, 4.10, 4.12, 4.13, 4.14, two new open items; code by path.
+- **convention-channel-coverage**: 5.4 (the table gains the tripwire column and
+  the full per-diagram/per-flow lists), 5.9, 5.11 (the MadGraph rows ML fails),
+  5.12, 5.13; code by path.
+- **charge-flow-phase-study**: 6.2.
+- **evaluator-architecture**: 7.2, 7.4; code by path.
+- **fermion-flow-and-crossing**: 8.6, 8.7, 8.8; code by path.
+- **four-fermion-vertices**: 9.4, 9.7, 9.9 (the current pins from MT; the old
+  table labelled as the rule's first adjudication, under the anchor convention
+  and as a line-sign rule); code by path.
+- **diagram-rooting**: 10.2, 10.5.
+
+No stated convention and no number that code or a gate reads was changed.
+
+## Stamps
+
+Stamped `{by: claude-code/claude-opus-5-5, at: 2026-10-16}`, `status: draft`
+kept, on nine: `convention-sign-inventory`, `rooting-invariance-and-canonical-form`,
+`vector-vertex-signs`, `convention-channel-coverage`, `charge-flow-phase-study`,
+`evaluator-architecture`, `fermion-flow-and-crossing`, `four-fermion-vertices`,
+`diagram-rooting`. For each, every claim about the current code, tests and
+tables was re-read or re-run, every count re-counted, and every recorded
+measurement checked against its archived source and labelled as a record.
+Their records not re-measured are listed above (1.10, 1.11, 1.15, 3.3, 3.6, 3.7,
+3.9, 4.6's `u u~ > g g` trace, 5.6, 5.7, 6.1, 10.4, 10.8); the stamp vouches
+that they are faithful and attributed, not that they would reproduce.
+
+**Not stamped: `fermion-line-sign`.** Its `b b~ > c c~ e+ e- mu+ mu- QCD=0` pin
+(2.8) and its `fact-line-sign` source rest on a Phase B fact file that is not
+archived, so neither the measurement nor its record could be opened. The PR #13
+count (24 of 96) is also not in this clone, though MF reproduces the rule's
+failure on the same rows. Stamping it needs the fact file (from `787070e`) or a
+re-measurement of the `b` line's sign per helicity.
+
+Five of the nine carried a 2026-10-09 stamp from before the 2026-10-15/16
+rewrites; the new stamp sits beside it (Found 11).
+
+## Stop-rule items
+
+None fired. No fix changes a stated convention or a number the code or a gate
+relies on. The two closest calls, reported for the user's decision rather than
+acted on beyond the wording:
+
+- **The quark–gluon phrasing of the triple-gluon convention** (1.9, 4.9). The
+  concepts and T1 call `−1` per quark–gluon vertex "the same convention up to a
+  sign common to the process". That is true only without vertices of odd gluon
+  number; SMEFTsim has five (Found 8). The code's convention (`−1` per coloured
+  three-vector vertex) is unchanged; the concepts now say where the equivalence
+  holds. Which convention is right beside a five-gluon contact or `g g g H` is
+  unmeasured.
+- **The B′ mutation table's description** (1.6). Correcting it changes what the
+  concepts say a recorded measurement showed, not the measurement; the B′ report
+  itself is left as written (Found 6).
+
+## Method
+
+- Code reading against each claim: about 30%. Found 1.13, 2.9, 3.7, 7.2, 7.4,
+  8.6, 8.7, 9.9, 10.2.
+- Running every cited test, then reading what the output says rather than that
+  it passed: about 15%. Found 2.11/2.12 (`per-diagram 0.00e0 (not banked)` on
+  `ud_to_epemud_qcd0`) and 5.12 (two tests listed where four were claimed).
+- Re-running the mutation tables and classifying each failure by the check that
+  fired: about 30% (mostly wall time). Every count reproduced; the
+  classification found 1.6. A reproduced count is not a reproduced claim.
+- Machine censuses (probe P0, the UFO vertex censuses, `vvv_parity.py`,
+  `standalone/*.json` point counts): about 15%. Found 9.4, 4.5, 1.9, 4.14.
+- Archived-note checks: about 10%. The `787070e` line ranges are two lines off
+  the archive (frontmatter), and with that offset every range lands on its
+  section; found 3.7, 10.5 (a neighbouring note contradicting the concept), 9.7.
+- Leads that did not hold: the ALOHA phases, the four-fermion `get_sign_flow`
+  excerpt and line numbers, the `e+ e- > e+ e-` and `g u~` colour coefficients,
+  the W-pair oddness, the relabelling and renumbering numbers, and every
+  mutation count: all as written.
+
+## Brief corrections
+
+- The brief's ten concepts include five that B-D edited only in passing; their
+  older text (outside B-D's passages) held most of the stale items (7.2, 8.6,
+  8.7, 9.4, 10.5).
+- "the triple-gluon derivation in T1": T1's report carries two statements the
+  concepts copied that need scoping (Found 7); the derivation itself checks out.
+- The brief's host discipline (two cargo jobs, single test targets) made each
+  mutation about eight minutes; the 14 mutation and probe runs took about two
+  hours of wall time.
+
+## Found
+
+Each entry: what is wrong, the evidence, what would close it. None of these was
+edited here (code, backlog, reports and concepts outside the ten are not this
+session's).
+
+1. **Code doc, `kernel.rs:488-493`** (`propagate_scalar`): "The compensating
+   signs live in the scalar-sink vertex roots (see `build_at_leg`'s scalar-root
+   arms)". There are none; the scalar line's `−1` is `propagator_phase_sign`'s.
+   To close: point the doc at `propagator_phase_sign`.
+2. **Test doc, `rooting_soundness.rs:496-504`**
+   (`four_fermion_currents_are_rooting_invariant`): "Every four-fermion diagram of
+   the gated rows is a single contact vertex". `uux_to_ttxg_4f` and
+   `tata_to_ttxa_tensor4f` put a contact on an internal line. To close: reword.
+3. **Code doc, `compile.rs`** (`folded_hel` field): "`eval_m2` is its only
+   consumer". `eval_jamp2`, `eval_amp2`, `eval_hel_m2`, `eval_hel_jamps` and
+   others read it (`grep -n 'folded_hel()' run.rs`). To close: reword.
+4. **Test doc, `root_diagram.rs`**
+   (`spine_sign_separates_mixed_line_and_crossed_line_propagators`): "the gate on
+   `ud_to_epemud_qcd0` in `tests/amplitude_oracle.rs` is what pins the absolute
+   per-diagram values". That row is compared per flow (`per-diagram 0.00e0 (not
+   banked)`). To close: say per flow, or bank its JAMP coefficient matrix so the
+   oracle compares it per diagram.
+5. **`model/smeftsim-topu3l.md:99-100`**: "80 of the 1985 interactions … every one
+   of them same-flavour". Sixty are (probe P0); twenty pair two flavours of a
+   doublet. `topo.rs`'s `the_four_lepton_vertex_carries_both_pairings` checks the
+   flavour of `mixed[0]` only. To close: fix the concept; assert the 60/20 split
+   (or whatever property is meant) over all 80.
+6. **The oracle failures in the per-factor mutation tables include the
+   `CONFIG_AMP_SIGNS` tripwire.** Dropping the vertex reading fails 28
+   `amplitude_oracle` rows, 15 of them only on the banked sign pattern (a
+   whole-process flip). The B′ report says every listed failure is a per-diagram
+   or per-flow disagreement. Fixed in the two concepts here; the report is a
+   record. To close: nothing, or a line in the sprint close-out.
+7. **T1 report, "Stop rule"**: "the triple-vector vertices are `g g g`, `a W- W+`
+   and `W- W+ Z`" in SMEFTsim; the UFO has eleven more on `W1`/`Z1`, all with a
+   charged pair, so the conclusion holds. And the identity
+   `n_qg + n_ggg ≡ n_ext_g (mod 2)` holds only where every other vertex carries
+   an even number of gluons. Both fixed in the concepts here.
+8. **Unmeasured class: vertices of odd gluon number besides `q q̄ g` and `g g g`**
+   (SMEFTsim's five-gluon `O_G` contact, `g g g H` ×2, `g g g H H`, `g g g H1`,
+   `q q̄ g H`). Beside them `triple_gluon_sign` and "−1 per quark–gluon vertex"
+   differ diagram by diagram, and no row reaches one. To close: a standalone row,
+   for example `g g > g g g NP<=1` under `vg_cG`, or `g g > g h` under
+   `vg_cHG`, gated per flow against MadGraph.
+9. **Own code pinned at a commit.** `workflow/knowledge-bundle` says "Our own code
+   is cited by path", but 87 concepts cite `vibegraph-lib` at `787070e` (176
+   citations; `grep -rhoE 'blob/787070e…/vibegraph-[a-z]+/' research/kb`), and
+   this shallow clone cannot resolve them. Fixed here for the ten concepts'
+   stale or branch-commit pins only. To close: a bundle-wide pass, or a rule
+   change if pinning is now intended.
+10. **Backlog item `mixed-dirac-and-matrix-free-vertex-terms`**: its description
+    says the vertex "is refused at some rootings and compiles, unchecked, at
+    others". Since PR #30 the refusal is read with every vertex as the amplitude
+    root (`vertex_root_signs`), so it does not depend on the rooting (B′'s H11,
+    derived, not run). To close: restate the item from B′'s H11 and run its
+    falsifier.
+11. **`verified` stamps older than the text they cover.** Five of the ten
+    (`evaluator-architecture`, `fermion-flow-and-crossing`,
+    `four-fermion-vertices`, `charge-flow-phase-study`, `diagram-rooting`) carry
+    a 2026-10-09 stamp and were rewritten in part on 2026-10-15/16. A stamp does
+    not say which revision it covers. To close: a bundle rule (a stamp names the
+    commit it read, or an edit drops the stamps).
+12. **The W-pair structures' oddness** is still checked only by scratch scripts
+    (T1's and R1's, `vvv_parity.py`, which found every structure odd and `VVV3`
+    zero, on `W` and `W1` pairs). T-H routed it (H12). To close: commit the check
+    as a test over the vendored UFOs.
+13. **`term_reversed_parity` counts a `Gamma`/`Sigma` whose own row index is the
+    leg.** A structure that puts a projector, `Identity` or `Gamma5` at the row
+    leg before a `Gamma` (`ProjM(2,-1)*Gamma(3,-1,1)`) would read the bilinear's
+    reversal as `+1`. No structure in the SM, SMEFTsim or the toy UFOs is
+    written so. To close: a refusal, or a reading through the chain.
+
+## Gate
+
+On the final tree (concepts, stamps and this report):
+
+```
+$ python3 scripts/kb.py index
+wrote 0 index files
+$ pixi run -e kb kb-lint
+632 concepts, 214 backlog items; 0 errors, 2 warnings
+$ python3 scripts/kb.py index --check; echo $?
+0
+```
+
+The two warnings are the pre-existing `state: blocked` items
+(`egraph-sharing-rewrites-need-global-extractor`,
+`mg-single-helicity-bench-no-consumer`). No code changed: `git diff --stat
+0ec027a -- vibegraph-lib vibegraph-cli` is empty.

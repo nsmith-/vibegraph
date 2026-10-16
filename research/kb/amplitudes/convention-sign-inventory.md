@@ -5,6 +5,7 @@ description: "fermi_sign = Diagram::sign × convention_sign × the live tree's r
 status: draft
 tags: [sign-convention, fermi-sign, rooting, amplitudes, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the derivation, the census comparison and the per-factor mutations"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
