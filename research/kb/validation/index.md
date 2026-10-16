@@ -27,6 +27,7 @@
 
 ## Measurement
 
+* [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.2 % low on a fixed-beam 2 → 4; equal-weight recombination lands on this side and an adaptation-free estimator.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
 * [Seed-sweep headroom of the enforced gate statistics (base 0538e2d)](seed-headroom-census-2026-09.md) - Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce.
 

@@ -35,8 +35,8 @@ private target to reproduce[^n41-m3].
 
 The first three are specific to this row. H1 is
 [madgraph-permuted-first-call](madgraph-permuted-first-call.md). The fourth is
-open and outside MLM:
-[generic-2to4-sigma-offset-vs-madevent](../backlog/validation/generic-2to4-sigma-offset-vs-madevent.md).
+outside MLM: MadEvent's own iteration combination, which reads low on a fixed-beam
+2 → 4 ([madevent-iteration-weighting-bias](madevent-iteration-weighting-bias.md)).
 
 ## Localisation by subprocess directory
 
