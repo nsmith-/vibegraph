@@ -5,7 +5,7 @@ description: "Crate couplings against MadGraph's Python model_reader (the arbite
 status: draft
 tags: [couplings, madgraph, oracle, ufo, model]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n36-b5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/36-banked-open-ends-plan.md#L413-L457", title: "Note 36 B5 — a coupling-level oracle ahead of the amplitude gate"}
   - {id: code-coupling, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/tests/coupling_oracle.rs", title: "vibegraph-lib/tests/coupling_oracle.rs"}
@@ -89,8 +89,5 @@ unary-minus precedence defect of `ufo/expr.rs` (`-ee**2/(2.*cw)` read as
   vertex sets. See [restriction semantics](../model/restriction-semantics.md).
 - **The running strong coupling is not reached.** Both sides read the card's own
   `aS`; `validate_scale_couplings.rs` compares the constant pools as `aS` moves.
-
-The manifest's `couplings-mg` note still describes the precedence defect as a
-live `KNOWN_CRATE_DEFECTS` entry; the code is the current state.
 
 [^n36-b5]: Note 36 B5. Its "≤ 1 ulp against Python" plan was replaced by the measured `1e-13`, and the precedence defect it found was fixed in the same sprint.

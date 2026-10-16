@@ -5,7 +5,7 @@ description: "Topology-then-assignment generation via feyngraph and what vibegra
 status: draft
 tags: [diagrams, feyngraph, enumeration, madgraph, ngraphs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n01-sl, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/01-paper-summaries.md#L94-L106", title: "Note 01, Stelzer and Long: the diagram enumeration algorithm"}
   - {id: n02-fg, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/02-reference-implementations.md#L160-L283", title: "Note 02, FeynGraph Goal 2: diagram enumeration (read at 1dc4ea7)"}
@@ -121,8 +121,8 @@ SMEFTsim's `gg_to_gg_cg` is 21 against 27. [^n25-findings] [^n35-ngraphs]
 **Decision** (note 25's findings register): report vibegraph's count in its own
 convention and mark those `diagrams` cells informational (⚠️ in the report). Re-splitting
 the enumeration to match a counting convention would change the thing being validated to
-make a number match, and `g g > g g` is pinned per colour flow at 8.25e-14, far below what
-any difference in diagram content could survive.
+make a number match, and `g g > g g` is pinned per colour flow at 5.4e-16 (its grid `|M|²`
+at 8.3e-14) at `4277158`, far below what any difference in diagram content could survive.
 
 A second counting divergence: for a same-flavour process through a four-fermion contact
 whose structures pair the legs both ways (`e+ e- > e+ e- NP<=1`), vibegraph emits one

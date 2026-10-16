@@ -5,6 +5,7 @@ description: "Every claim of the ten concepts B-H and B-D rewrote around convent
 status: draft
 tags: [review, sign-convention, kb, amplitudes, mutations, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: brief, resource: "R1.md", title: "R1 brief"}
   - {id: b-report, resource: "B-report.md", title: "B′ report"}

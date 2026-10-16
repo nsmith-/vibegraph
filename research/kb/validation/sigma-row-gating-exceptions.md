@@ -66,7 +66,7 @@ section; the exceptions below are worked cases of them.
 | `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then a residual ~2% | [uux wbwb veto 2% off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md) |
 | `e+ e- > z z, z > e+ e-` (decay chain, `INFORMATIONAL` in `cli_decay_chain.rs`) | reported | we keep both pairings and their interference; MadGraph takes one pairing ÷ 2 | none (a decision; [identical particles across decays](../process/identical-particles-across-decays.md)) |
 
-Every manifest cell declared `mode = "info"` at `6ccc6e4` appears
+Every manifest cell declared `mode = "info"` at `4277158` appears
 in this table; list the current set with
 `awk '/^key = /{k=$3} /mode = "info"/{print k, $1}' validation/manifest.toml`.
 
