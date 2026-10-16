@@ -2,6 +2,7 @@
 
 pub mod leshouche;
 pub mod manifest;
+pub mod mg_graphs;
 pub mod pdfset;
 pub mod report;
 pub mod seeds;

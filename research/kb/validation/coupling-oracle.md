@@ -52,8 +52,8 @@ MadGraph's own Python. That defect belongs to the list in
 [MadGraph defects](madgraph-defects.md). Matching it would mean rounding a literal
 on purpose, so `ee_to_zh_smeft`'s amplitude cell stays informational instead (see
 also [the defect policy](madgraph-defect-policy.md)). `wpwm_to_wpwmz_cw` carries
-the same deviation, but its amplitude cell is informational for a far larger,
-unrelated residual (`|M|²` 2.79e1; see [the amplitude oracle](amplitude-oracle.md)).
+the same deviation and is gated with the affected graphs' modulus exempted by name
+([the amplitude oracle](amplitude-oracle.md)).
 
 ## Tolerances and the two lists
 

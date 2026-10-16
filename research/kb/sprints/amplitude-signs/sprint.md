@@ -3,7 +3,7 @@ type: Sprint
 title: "Amplitude signs and conventions"
 description: "Pin, diagnose and fix the amplitude-level sign and convention errors where |M|² itself may be wrong, each against MadGraph standalone per diagram, per helicity and per flow."
 status: draft
-active: true
+active: false
 tags: [amplitudes, sign-convention, standalone, madgraph-oracle, sprint]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:

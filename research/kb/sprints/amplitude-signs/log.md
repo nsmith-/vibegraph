@@ -55,3 +55,15 @@
   and the evaluator relies on one set of fermion lines per diagram (one Fermi
   sign, one wavefunction typing, one rooting). Filed as
   `madgraph-style-diagram-grouping` (PR #35).
+
+## 2026-10-16
+* **Close-out**: all sessions done (G1, G-H, W1, B′, B-H, B-D, P1, P-H, C1,
+  C2, C-H, F1, F2, J1, J-H, Q1, Q-H). Ten items closed, 27 filed; the record is
+  [closeout.md](closeout.md). The rewritten convention concepts stay `draft` for
+  the user's review.
+* **B′ outcome**: a derived convention passed every acceptance check, so the
+  stop rule did not trigger and no fitted rule (A′) landed. The triple-gluon −1
+  is calibrated, not derived; filed.
+* **Correction**: B′'s row-wide 1e-7 tolerance for the seven-digit couplings
+  was broader than the approved exemption; F2 replaced it with the approved
+  per-graph form.

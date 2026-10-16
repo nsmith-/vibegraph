@@ -147,16 +147,20 @@ Each list is **two-way**: an entry fails when its reason goes away.
 | `KNOWN_CONFIG_PAIRING_UNAVAILABLE` | no per-diagram table, so no pairing to compare partitions through; both partitions are printed and `\|M\|²`, JAMPs and JAMP2 still run | `wpwm_to_wpwmz_cw` (222 graphs; the partitions share only the multiset of group sizes, `{3×8, 7×8, 12, 17×4}`, and are not a shift of each other[^n35-wpwmz]) |
 | `KNOWN_LINEAR_DISAGREEMENT` | the comparison runs and records instead of failing, so an `info` cell carries real numbers | **empty** — every row is gated at the linear level |
 
-A manifest `amplitudes` cell may be `info` independently of these lists. At
-`787070e` three are: `ee_to_wpwm_cw` (linear level exact; one grid point's
+A manifest `amplitudes` cell may be `info` independently of these lists. Two
+are: `ee_to_wpwm_cw` (linear level exact; one grid point's
 `|M|²` at 2.078e-12, 336× its own ulp sensitivity, with a helicity sum cancelling
 by 875), `ee_to_zh_smeft` (MadGraph's Fortran rounds `GC_303`'s UFO literal to
-seven digits; see [the coupling oracle](coupling-oracle.md)), and
-`wpwm_to_wpwmz_cw` (`|M|²` 2.79e1 after the vector-vertex sign fix; the residual
-belongs to O_W's five-vector structures, tracked as
-[wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md),
-and its partition as
-[wpwmz-cw-config-partition-uncompared](../backlog/validation/wpwmz-cw-config-partition-uncompared.md)).
+seven digits; see [the coupling oracle](coupling-oracle.md)).
+`wpwm_to_wpwmz_cw` carries the same rounding and is gated: the graphs that carry
+`GC_303` are named in `tests/common/mg_graphs.rs` (`ROUNDED_COUPLING_GRAPHS`) and
+only their modulus is exempted, by their measured deviation. Each graph is also
+checked on its own scale (`GRAPH_RATIO_TOL`, 1e-10), because a dropped name can
+hide below the table-normalised 1e-12 gate. Here the MadEvent table banks no
+`AMP()`, so the named graphs' share is corrected through the MadGraph-derived
+pairing before |M|², flows and JAMP2 are compared. The standalone rows with
+`AMP()` pin the name list. This is a registered deviation of the approximation
+kind ([defect policy](madgraph-defect-policy.md)).
 
 ## The fitted constants carry bits, not phases
 

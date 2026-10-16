@@ -126,7 +126,7 @@ Informational, each with its cause recorded in `validation/manifest.toml`:
 a 1e-12 budget, 336× its own one-ulp sensitivity), `ee_to_zh_smeft` (MadGraph's
 Fortran writes the `GC_303` literal `11/24` to seven digits; the reference is the
 side that rounds) and `wpwm_to_wpwmz_cw`
-([wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md)).
+(`wpwmz-cw-ow-five-vector-residual` (closed by PR #33)).
 The SMEFTsim rows are described in [validation/non-sm-rows](../validation/non-sm-rows.md).
 
 [^n35-e1]: Note 35 §E1, including its landed record.

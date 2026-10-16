@@ -20,8 +20,9 @@ gate does not read them: where a contact vertex has several colour structures
 MadGraph writes one AMP() per structure, so its graph list is not our diagram
 list, while its JAMP order is the colour basis the Rust gate already pairs flow
 by flow. A row that sets `bank_amps` always carries the AMP(), with JAMP(1)'s
-coefficient on each beside them. It is a single-flow row whose graphs the Rust
-gate pairs with groups of its own diagrams.
+coefficient on each beside them, at the points and NHEL entries `amp_points` and
+`amp_helicity_stride` select. It is a single-flow row whose graphs the Rust gate
+pairs with groups of its own diagrams.
 
 The table carries the param card the numbers were computed with, so the Rust
 side binds the same parameters rather than re-deriving them.
@@ -91,6 +92,11 @@ class Row:
     zero_widths: bool = False
     # Bank AMP(1..NGRAPHS) and their JAMP(1) coefficients. Single-flow rows only.
     bank_amps: bool = False
+    # Bank the AMP() at the first `amp_points` points only, and at every
+    # `amp_helicity_stride`-th entry of the NHEL table; the JAMPs at every point and
+    # helicity. A table with hundreds of graphs and helicities is a few MB a point.
+    amp_points: int | None = None
+    amp_helicity_stride: int = 1
 
     def ufo_paths(self) -> dict:
         """The committed model directory and restrict card, repository-relative,
@@ -248,7 +254,9 @@ ROWS = {
         # photon-Z-Higgs and photon-photon-Higgs vertices (`VVS4`, `GC_303`/`GC_299`,
         # coupling order SMHLOOP) in each role, and O_W's five-vector contacts.
         # MadGraph's Fortran writes `GC_303` and `GC_299` at seven significant
-        # digits, so a row carrying them agrees near 1e-10 rather than at rounding.
+        # digits, so every graph carrying them is 1.2e-8 or 2.8e-8 off in modulus.
+        # The rows carrying them bank AMP(), so the Rust gate can name those graphs
+        # and hold everything else at rounding.
         #
         # Controls: O_W's four-vector contacts (WWWW, WWZZ) holding leg 0, beside
         # the photon, Z and Higgs exchanges with O_W's triple-gauge structures.
@@ -259,14 +267,17 @@ ROWS = {
         # The WWAZ contact, and the photon-Z-Higgs vertex producing the off-shell
         # Higgs from the external photon and Z.
         Row("wpwm_to_az_cw", "w+ w- > a z NP<=1", (24, -24), (22, 23), 800.0, 3, 4073,
-            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
         # The photon-Z-Higgs vertex holding leg 0, the photon, in the Higgs
         # s-channel diagram.
         Row("az_to_wpwm_cw", "a z > w+ w- NP<=1", (22, 23), (24, -24), 800.0, 3, 4075,
-            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
         # The same for the photon-photon-Higgs vertex.
         Row("aa_to_wpwm_cw", "a a > w+ w- NP<=1", (22, 22), (24, -24), 800.0, 3, 4078,
-            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
         # The amplitude row `wpwm_to_wpwmz_cw` itself: O_W's two five-vector
         # contacts each the whole of one diagram, the photon-Z-Higgs vertex
         # producing a Higgs or a photon current, and the four-vector contacts as
@@ -274,17 +285,20 @@ ROWS = {
         # the amplitude row does.
         Row("wpwm_to_wpwmz_cw", "w+ w- > w+ w- z NP<=1", (24, -24), (24, -24, 23), 500.0, 4,
             4074, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
-            zero_widths=True),
+            zero_widths=True,
+            bank_amps=True, amp_points=1),
         # Its photon twin: the WWWW-photon five-vector contacts, and the
         # photon-photon-Higgs vertex beside the photon-Z-Higgs one.
         Row("wpwm_to_wpwma_cw", "w+ w- > w+ w- a NP<=1", (24, -24), (24, -24, 22), 500.0, 3,
             4077, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
-            zero_widths=True),
+            zero_widths=True,
+            bank_amps=True, amp_points=1),
         # The five-vector contacts as sources: the s-channel photon or Z off the
         # electron line, which holds leg 0, ends on a WWWW-photon/Z contact.
         Row("ee_to_wpwmwpwm_cw", "e+ e- > w+ w- w+ w- NP<=1", (-11, 11), (24, -24, 24, -24),
             1000.0, 3, 4076, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
-            zero_widths=True),
+            zero_widths=True,
+            bank_amps=True, amp_points=1, amp_helicity_stride=3),
         # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
         # top line, where the contact's three colour structures meet its three
         # Lorentz structures. The top exchanged between the two beam gluons is
@@ -567,9 +581,12 @@ def bank(row: Row, args) -> None:
                     {
                         "m2": h["m2"],
                         "jamps": h["jamps"],
-                        **({"amps": h["amps"]} if amps else {}),
+                        **({"amps": h["amps"]}
+                           if amps and (row.amp_points is None or i < row.amp_points)
+                           and ih % row.amp_helicity_stride == 0
+                           else {}),
                     }
-                    for h in per_point[i]
+                    for ih, h in enumerate(per_point[i])
                 ],
             }
             for i, pt in enumerate(pts)

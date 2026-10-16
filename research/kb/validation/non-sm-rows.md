@@ -111,10 +111,9 @@ Read the live state from `validation/manifest.toml`; at `6ccc6e4`:
 - **`ee_to_zh_smeft` amplitudes, info**: the `GC_303` seven-digit Fortran literal
   ([madgraph-defects](madgraph-defects.md)); this crate agrees with MadGraph's
   Python to 6.5e-15.
-- **`wpwm_to_wpwmz_cw` amplitudes, info**: |M|² 2.79e1 after the vector-vertex
-  sign fix of note 39, owned by O_W's five-vector and momentum-bearing contact
-  structures ([wpwmz-cw-ow-five-vector-residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md));
-  its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
+- **`wpwm_to_wpwmz_cw` amplitudes, gated** per MadGraph graph, with the twelve
+  `GC_303` graphs' modulus exempted by name
+  ([the amplitude oracle](amplitude-oracle.md)); its `integrals` and `samples` are uncovered because MadGraph chose `nhel = 1`
   for it, which this crate refuses: `nhel = 1` is in scope but not built
   ([nhel1-run-cards-refused](../backlog/feature/nhel1-run-cards-refused.md)).
 - **`gg_to_gg_cg`**: `diagrams` info by convention (21 diagrams against

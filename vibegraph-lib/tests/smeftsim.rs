@@ -557,7 +557,7 @@ fn restricted_defaults_are_madgraphs_generated_param_card() {
 ///
 /// This list is the model's coverage instrument twice over: the diagram counts
 /// below and the op census at the end of the file both run on it.
-const GATED_ROWS: [(&str, &str); 13] = [
+const GATED_ROWS: [(&str, &str); 14] = [
     ("ee_to_mumu_smlimit", "e+ e- > mu+ mu-"),
     ("gg_to_ttx_smlimit", "g g > t t~"),
     ("gg_to_ttx_smlimit_qcd2", "g g > t t~ QCD<=2"),
@@ -571,6 +571,7 @@ const GATED_ROWS: [(&str, &str); 13] = [
     ("uux_to_ttx_4f", "u u~ > t t~ NP<=1"),
     ("tata_to_ttx_tensor4f", "ta+ ta- > t t~ NP<=1"),
     ("ee_to_ttx_smeft", "e+ e- > t t~ NP<=1"),
+    ("wpwm_to_wpwmz_cw", "w+ w- > w+ w- z NP<=1"),
 ];
 
 /// [`GATED_ROWS`] is exactly the set of SMEFTsim rows the manifest declares

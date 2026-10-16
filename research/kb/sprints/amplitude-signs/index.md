@@ -6,6 +6,10 @@
 
 * [Amplitude signs and conventions](sprint.md) - Pin, diagnose and fix the amplitude-level sign and convention errors where |M|² itself may be wrong, each against MadGraph standalone per diagram, per helicity and per flow.
 
+## Sprint Record
+
+* [Amplitude signs and conventions](closeout.md) - Ten items closed across seven PRs: every pp → t t~ + jet @1 matrix element gated per flow, the anchor-read role signs replaced by one root-free convention sign that agrees with MadGraph per graph on every table, two crossed-line and derivative-scalar signs fixed, and three oracles given teeth.
+
 ## Directories
 
 * [sessions](sessions/index.md)

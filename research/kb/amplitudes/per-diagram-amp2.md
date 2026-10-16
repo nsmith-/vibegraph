@@ -213,7 +213,7 @@ Known gaps:
 - **`wpwm_to_wpwmz_cw`** has no banked diagram pairing, so its 21-group
   partition matches MadGraph's only in group sizes
   (`KNOWN_CONFIG_PAIRING_UNAVAILABLE`); see
-  [wpwmz-cw-config-partition-uncompared](../backlog/validation/wpwmz-cw-config-partition-uncompared.md).
+  `wpwmz-cw-config-partition-uncompared` (closed by PR #33).
 - **The diagram pairing** between our enumeration and MadGraph's is banked in
   `MG_DIAGRAM_ORDER`, not searched for, so a reordering on either side fails
   loudly instead of being re-matched.
