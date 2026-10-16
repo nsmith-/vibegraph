@@ -23,6 +23,7 @@
 * [hygiene](hygiene/index.md)
 * [kt-spine](kt-spine/index.md)
 * [logging-tui](logging-tui/index.md)
+* [map-default-guards](map-default-guards/index.md)
 * [mlm](mlm/index.md)
 * [note-29-validation](note-29-validation/index.md)
 * [perf-3-addendum](perf-3-addendum/index.md)
