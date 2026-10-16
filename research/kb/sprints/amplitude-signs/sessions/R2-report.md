@@ -302,6 +302,11 @@ If either is a reason to withhold, the stamps on sigma-row-gating-exceptions
 and agent-dispatch-and-worktrees rest most on records, and are the ones to
 reconsider.
 
+**Manager's disposition:** withheld. The brief stamps only concepts checked end
+to end, and a measurement matched to its record was not re-measured, so the
+manager removed this session's stamp from sigma-row-gating-exceptions and
+agent-dispatch-and-worktrees. Eleven concepts carry it.
+
 ## Stop-rule items
 
 None fired. No fix changes a stated convention or a number a gate or code
