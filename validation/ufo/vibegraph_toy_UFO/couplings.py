@@ -50,3 +50,11 @@ GC_QO = Coupling(name='GC_QO',
 GC_O3 = Coupling(name='GC_O3',
                  value='complex(0,1)*go3',
                  order={'NP': 1})
+
+GC_S3 = Coupling(name='GC_S3',
+                 value='complex(0,1)*gs3',
+                 order={'NP': 1})
+
+GC_S3D = Coupling(name='GC_S3D',
+                  value='complex(0,1)*gs3d',
+                  order={'NPD': 1})

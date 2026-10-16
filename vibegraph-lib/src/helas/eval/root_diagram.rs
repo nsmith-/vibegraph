@@ -554,13 +554,17 @@ impl DiagramEvalTree {
 
     /// The diagram's rooting-convention sign: the product over its vertices of each
     /// vertex's [`build_sign`](super::diagram_eval::VertexInfo::build_sign) (VVS
-    /// `pure_metric`, FFS scalar-sink, crossed-pair). Each vertex's sign depends on which
-    /// leg the rooting made its output, so this is only rooting-invariant when read off a
-    /// tree built at one fixed rooting — the diagram's [anchor](Diagram::anchor), which
-    /// [`compile_single_diagram`] roots at, folding the result into `fermi_sign` so the
-    /// honest (sign-free) currents stay root-invariant. Mirrors [`yang_mills_vvv_sign`],
-    /// which carries the VVV vertex sign the same way.
-    pub(super) fn build_convention_sign(&self) -> i8 {
+    /// `pure_metric`, FFS scalar-sink, crossed-pair, all-scalar and four-vector contacts).
+    /// Each vertex's sign depends on which leg the rooting made its output, so this is
+    /// only rooting-invariant when read off a tree built at one fixed rooting — the
+    /// diagram's [anchor](Diagram::anchor), which [`compile_single_diagram`] roots at,
+    /// folding the result into `fermi_sign` so the honest (sign-free) currents stay
+    /// root-invariant. Mirrors [`yang_mills_vvv_sign`], which carries the VVV vertex sign
+    /// the same way.
+    ///
+    /// A vertex whose structures disagree on the sign has no single factor to lift, and
+    /// is refused with [`RootLorentzError::UnsupportedVertex`].
+    pub(super) fn build_convention_sign(&self) -> Result<i8, RootLorentzError> {
         let mut sign = 1i8;
         for id in self.iter() {
             let info = match self.value(id) {
@@ -568,9 +572,9 @@ impl DiagramEvalTree {
                 | EvalNode::ContractAmplitude { info, .. } => info,
                 _ => continue,
             };
-            sign *= info.build_sign();
+            sign *= info.build_sign()?;
         }
-        sign
+        Ok(sign)
     }
 
     /// The diagram's runtime `reversed`-bilinear parity: the product over its vertices of
@@ -583,7 +587,7 @@ impl DiagramEvalTree {
     /// live rooting is the anchor rooting the two are equal and the factor is `+1`; when
     /// they differ this correction is what keeps the re-rooted amplitude equal to the
     /// anchor-rooted one.
-    pub(super) fn reversed_convention_sign(&self) -> i8 {
+    pub(super) fn reversed_convention_sign(&self) -> Result<i8, RootLorentzError> {
         let mut sign = 1i8;
         for id in self.iter() {
             let info = match self.value(id) {
@@ -591,9 +595,9 @@ impl DiagramEvalTree {
                 | EvalNode::ContractAmplitude { info, .. } => info,
                 _ => continue,
             };
-            sign *= info.reversed_sign();
+            sign *= info.reversed_sign()?;
         }
-        sign
+        Ok(sign)
     }
 }
 
@@ -1259,9 +1263,9 @@ pub(super) fn compile_single_diagram(
         * yang_mills_vvv_sign(diagram, model)
         * vector_contact_sign(diagram, model)
         * gluon_scalar_current_sign(diagram, model)
-        * reference.build_convention_sign()
-        * reference.reversed_convention_sign()
-        * tree.reversed_convention_sign();
+        * reference.build_convention_sign()?
+        * reference.reversed_convention_sign()?
+        * tree.reversed_convention_sign()?;
     Ok(DiagramEval {
         n_ext: diagram.n_ext(),
         tree,
@@ -1427,8 +1431,8 @@ mod tests {
                 let t = root_tree_at(diagram, model, &chain, diagram.anchor()).unwrap();
                 vvv += (yang_mills_vvv_sign(diagram, model) < 0) as usize;
                 spine += (diagram.fermion_line_sign(model) < 0) as usize;
-                build += (t.build_convention_sign() < 0) as usize;
-                reversed += (t.reversed_convention_sign() < 0) as usize;
+                build += (t.build_convention_sign().unwrap() < 0) as usize;
+                reversed += (t.reversed_convention_sign().unwrap() < 0) as usize;
             }
         }
         (vvv, spine, build, reversed)

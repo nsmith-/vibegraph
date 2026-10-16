@@ -1,9 +1,9 @@
-"""Seven vertices. Particles are listed all-incoming, the anti-fermion first, so
+"""Eight vertices. Particles are listed all-incoming, the anti-fermion first, so
 a structure's spinor index 1 is the barred spinor and index 2 the unbarred one.
 
 The two-structure vertices (`V_qtqtvt`, the two Yukawas, the four-fermion
-contact) are deliberate: they are the shape MadGraph splits into one interaction
-per coupling-order tuple.
+contact, the scalar self-coupling) are deliberate: they are the shape MadGraph
+splits into one interaction per coupling-order tuple.
 """
 
 from object_library import all_vertices, Vertex
@@ -52,3 +52,9 @@ V_o8o8o8 = Vertex(name='V_o8o8o8',
                   color=['d(1,2,3)'],
                   lorentz=[L.SSS1],
                   couplings={(0, 0): C.GC_O3})
+
+V_ststst = Vertex(name='V_ststst',
+                  particles=[P.st, P.st, P.st],
+                  color=['1'],
+                  lorentz=[L.SSS1, L.SSSD],
+                  couplings={(0, 0): C.GC_S3, (0, 1): C.GC_S3D})

@@ -62,7 +62,8 @@ pub(crate) struct RootedTerm {
     /// Coefficient carried from the UFO LorentzTerm.coeff (real, since couplings are stored separately).
     pub(crate) coeff: f64,
     /// The ±1 rooting-convention sign this term picked up from [`LorentzEvalTree::build_at_leg`]
-    /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair). It is **not** folded into `coeff`,
+    /// (VVS `pure_metric`, FFS scalar-sink, crossed-pair, and the all-scalar and four-vector
+    /// contact sign of [`vertex_contact_sign`]). It is **not** folded into `coeff`,
     /// because it depends on the output-leg (rooting) choice; the honest tensor `tree` is
     /// rooting-invariant. All terms of a vertex share this sign, so it is lifted to a
     /// per-diagram scalar computed at the rooting that takes the diagram's anchor as the
@@ -482,13 +483,24 @@ impl LorentzEvalTree {
                 Ok(self.add_node(LorentzEvalNode::P { leg: *leg as usize }))
             }
             LorentzOp::Identity { i, j } => {
-                if *i == idx {
-                    self.build_child(term, *j, visited_ops, flows, out_adjoint, sign)
+                let wrapped = if *i == idx {
+                    *j
                 } else if *j == idx {
-                    self.build_child(term, *i, visited_ops, flows, out_adjoint, sign)
+                    *i
                 } else {
                     unreachable!("Identity op should involve idx {}", idx);
+                };
+                // `C·1ᵀ·C⁻¹ = 1`, so a standalone identity bilinear over a crossed pair
+                // keeps the −1 of the reversed reading, as `Gamma5` and the chiral
+                // projectors do (see [`standalone_projector_crossed`]); the `ProjM + ProjP`
+                // spelling of the same Yukawa takes it through those arms. Pinned per
+                // MadGraph graph by `e+ e- > t t~ h` under SMEFTsim's `FFS2` and by the
+                // toy `lt~ lt > qt qt~ st` (`Identity` beside `Gamma5` on the crossed
+                // quark line).
+                if standalone_projector_crossed(idx, wrapped, flows) {
+                    *sign = -*sign;
                 }
+                self.build_child(term, wrapped, visited_ops, flows, out_adjoint, sign)
             }
             LorentzOp::Gamma5 { i, j } => {
                 let wrapped = if *i == idx {
@@ -595,10 +607,11 @@ impl LorentzEvalTree {
     /// structures collected for an amplitude/scalar sink contract to scalars, so they
     /// root through vectors and never consult the adjoint.
     ///
-    /// Returns the tree together with a ±1 sign for the enclosing term coefficient:
-    /// a standalone scalar bilinear (`ψ̄ Γ ψ`, Γ gamma-less) over a *crossed* pair
+    /// Returns the tree together with a ±1 sign for the enclosing term coefficient. It
+    /// starts at the vertex-shape sign of [`vertex_contact_sign`], and a standalone
+    /// scalar bilinear (`ψ̄ Γ ψ`, Γ gamma-less) over a *crossed* pair flips it: the pair
     /// evaluates `ū₁Γv₂` for a vertex defined as `ū₂Γv₁ = −ū₁(CΓᵀC⁻¹)v₂`, and with
-    /// `CΓᵀC⁻¹ = Γ` for `1`/`P_χ` the −1 survives (unlike the gamma-chained case,
+    /// `CΓᵀC⁻¹ = Γ` for `1`/`γ⁵`/`P_χ` the −1 survives (unlike the gamma-chained case,
     /// where `Cγ^{μT}C⁻¹ = −γ^μ` cancels it — see [`chiral_correction`]).
     ///
     /// Note: idx is 0-indexed
@@ -624,7 +637,7 @@ impl LorentzEvalTree {
             nodes: vec![],
             root: None,
         };
-        let (mut sign, mut metric_vertex_applied) = vertex_contact_sign(term, spins);
+        let (mut sign, mut metric_vertex_applied) = vertex_contact_sign(spins);
         let mut visited_ops = Vec::new(); // LorentzOp is so small that Vec is probably better than HashSet
         let mut term_roots = Vec::new();
 
@@ -867,15 +880,15 @@ impl std::fmt::Display for LorentzEvalTree {
     }
 }
 
-/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegAdjoint`]).
-/// Summed (negative) indices carry no binding and are skipped.
-/// A *standalone* chiral projector (`ψ̄ P_χ ψ`, not gamma-chained) rooted as an
-/// off-shell fermion current, whose wrapped input leg sits on a crossed line:
-/// the reversed bilinear reading takes the same −1 as the amplitude case
-/// ([`pair_crossed`]), but with only one external leg in view. `idx ≥ 0` (the
-/// output fermion slot) excludes gamma-chained projectors reached through a
-/// summed index, whose −1 is supplied by the runtime reversed-bilinear sign.
-/// Pinned by e+e-→τ+τ-H (H emitted off the crossed τ line) vs MadGraph AMP().
+/// A *standalone* scalar bilinear (`ψ̄ Γ ψ` with Γ one of `1`, `γ⁵`, `P_L`, `P_R`,
+/// not gamma-chained) rooted as an off-shell fermion current, whose wrapped input
+/// leg sits on a crossed line: the reversed bilinear reading takes the same −1 as
+/// the amplitude case ([`pair_crossed`]), but with only one external leg in view.
+/// The `Identity`, `Gamma5`, `ProjM` and `ProjP` arms of `build_child` apply it.
+/// `idx ≥ 0` (the output fermion slot) excludes operators reached through a summed
+/// index, whose −1 is supplied by the runtime reversed-bilinear sign. Pinned by
+/// e+e-→τ+τ-H (H emitted off the crossed τ line) vs MadGraph AMP(), and for the
+/// bare `Identity` by `e+ e- > t t~ h` under SMEFTsim's `FFS2`.
 fn standalone_projector_crossed(idx: isize, wrapped: isize, flows: &[Option<LegAdjoint>]) -> bool {
     idx >= 0
         && wrapped >= 0
@@ -994,10 +1007,11 @@ fn other_spinor_index(op: &LorentzOp, idx: isize) -> Option<isize> {
     }
 }
 
-/// The sign a term takes from the shape of its vertex alone, before any operator is
-/// rooted, and whether that sign is the once-per-vertex −1 a pure-metric term would
-/// otherwise apply (so a structure with several `Metric` ops, VVVV, applies it once).
-fn vertex_contact_sign(term: &LorentzTerm, spins: &[i32]) -> (f64, bool) {
+/// The sign a term takes from the shape of its vertex (its legs' spins) alone, before
+/// any operator is rooted, and whether that sign is the once-per-vertex −1 a
+/// pure-metric term would otherwise apply (so a structure with several `Metric` ops,
+/// VVVV, applies it once).
+fn vertex_contact_sign(spins: &[i32]) -> (f64, bool) {
     // An all-vector contact of four or more legs carries the −1 as a property of
     // the *vertex*, not of the operators a particular term happens to contain: the
     // four-gluon vertex and the field-strength operators sharing its legs sit in
@@ -1010,20 +1024,26 @@ fn vertex_contact_sign(term: &LorentzTerm, spins: &[i32]) -> (f64, bool) {
     if spins.len() >= 4 && spins.iter().all(|&s| s == 3) {
         return (-1.0, true);
     }
-    // A pure scalar contact (`SSS1`, `SSSS1`: all legs scalars, no operator) sinks
-    // into a scalar wherever it is rooted, so it takes the same −1 against the
-    // −i/D scalar propagator as the scalar-sink bilinears and the pure-metric `VVS`
-    // of [`LorentzEvalTree::scalar_root`]; with no operator it reaches neither arm. Pinned per diagram against
+    // An all-scalar vertex (`SSS1`, `SSSS1`, and the derivative `P(-1,a)*P(-1,b)`
+    // structures) sinks into a scalar wherever it is rooted, so it takes the same −1
+    // against the −i/D scalar propagator as the scalar-sink bilinears and the
+    // pure-metric `VVS` of [`LorentzEvalTree::scalar_root`]. Like the four-vector
+    // contact's, the −1 belongs to the vertex rather than to the term's operators: a
+    // momentum contraction carries no sign of its own, and a plain and a derivative
+    // structure sharing one vertex take one sign. Pinned per diagram against
     // MadGraph's `AMP()` on `ta+ ta- > t t~ h` (one `HHH`) and `ta+ ta- > t t~ h h`
-    // (`HHH` as amplitude and as current, `HHHH`, two `HHH` cancelling). A
-    // derivative all-scalar structure, which carries `P` operators, is not covered
-    // by any oracle and takes no sign here.
-    if spins.len() >= 3 && spins.iter().all(|&s| s == 1) && term.ops.is_empty() {
+    // (`HHH` as amplitude and as current, `HHHH`, two `HHH` cancelling); the
+    // derivative structures on the toy `SSSD` (`lt~ lt > st st`, `st lt > st lt`)
+    // and on SMEFTsim's `SSS2`/`SSS3`/`SSSS2`/`SSSS3` (`t t~ > h h`, `h t > h t`,
+    // `h h > h h`), each as current and as amplitude.
+    if spins.len() >= 3 && spins.iter().all(|&s| s == 1) {
         return (-1.0, false);
     }
     (1.0, false)
 }
 
+/// True iff a fermion pair's plain legs sit on a crossed line (see [`LegAdjoint`]).
+/// Summed (negative) indices carry no binding and are skipped.
 fn pair_crossed(i: isize, j: isize, flows: &[Option<LegAdjoint>]) -> bool {
     [i, j].into_iter().any(|k| {
         k >= 0

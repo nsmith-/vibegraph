@@ -17,7 +17,7 @@ sources:
 Fermion-flow handling assumes every fermion line is Dirac-continuous end to end
 and has no flow-flip machinery. Rooting refuses the UFO charge-conjugation
 operator `C` with "Charge conjugation is deferred to future work"
-(`vibegraph-lib/src/helas/eval/root_lorentz.rs:580`). Descoped by user decision
+(`vibegraph-lib/src/helas/eval/root_lorentz.rs:591`). Descoped by user decision
 D2 ([note 35 §7](../../history/notes/35-ufo-lorentz-sprint-plan.md)). MadGraph itself refuses
 Majorana fermions in four-fermion vertices, so those can stay refused.
 

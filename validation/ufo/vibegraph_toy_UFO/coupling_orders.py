@@ -5,9 +5,9 @@ The split is what makes the per-diagram oracle sharp: MadGraph creates one
 interaction per distinct coupling-order tuple, so two structures sharing a
 vertex reach the generated matrix element as two diagrams with an `AMP()` each
 rather than as one diagram whose amplitude is already their sum. `NPCP` and
-`NPGG` exist for exactly that reason -- they carry the pseudoscalar Yukawa and
-the gamma-gamma spelling of the tensor contact, whose partners sit on the same
-vertices under `NP`.
+`NPGG` and `NPD` exist for exactly that reason -- they carry the pseudoscalar
+Yukawa, the gamma-gamma spelling of the tensor contact and the derivative scalar
+self-coupling, whose partners sit on the same vertices under `NP`.
 """
 
 from object_library import all_orders, CouplingOrder
@@ -35,3 +35,7 @@ NPCP = CouplingOrder(name='NPCP',
 NPGG = CouplingOrder(name='NPGG',
                      expansion_order=99,
                      hierarchy=1)
+
+NPD = CouplingOrder(name='NPD',
+                    expansion_order=99,
+                    hierarchy=1)
