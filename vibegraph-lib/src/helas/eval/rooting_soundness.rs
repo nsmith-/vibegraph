@@ -1,11 +1,12 @@
 //! Rooting-soundness gate.
 //!
 //! Every Feynman diagram is a tree; choosing which vertex to root it at orients its
-//! internal edges but must not change the physics. The whole amplitude machinery —
-//! momentum routing, Lorentz-output rooting, fermion-spine signs — was originally
-//! validated only for feyngraph's `VtxIdx(0)` orientation; the convention signs are read
-//! off one fixed rooting, at the diagram's anchor, so the honest currents stay
-//! root-invariant. This module
+//! internal edges but must not change the physics: momentum routing, Lorentz-output
+//! rooting and the fermion-spine signs must give one |M|² at every root. The currents the kernels
+//! build carry no convention sign, and the diagram's convention sign is a function of
+//! the graph alone (`root_diagram::convention_sign`), so neither depends on the root;
+//! the one rooting-dependent sign, the runtime reversed-bilinear parity, is cancelled
+//! in `fermi_sign` at the live rooting. This module
 //! drives the [`super::root_diagram`] test hook to re-root diagrams and asserts the |M|²
 //! is invariant under the root choice, which is what lets production root each diagram at
 //! [`canonical_root`](super::root_diagram) instead.
@@ -16,8 +17,7 @@
 //! comparison uses `REL_TOL`, since re-rooting reassociates momentum sums and is never
 //! bit-for-bit even when it is correct.
 //!
-//! Full sweep (passes — the rooting-dependent convention signs are lifted to the
-//! diagram's `fermi_sign` at the anchor rooting; see `research/kb/amplitudes/rooting-invariance-and-anchor.md`):
+//! Full sweep:
 //! ```text
 //! RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib \
 //!     --lib helas::eval::rooting_soundness::all_rootings_preserve_amplitude \
@@ -47,10 +47,9 @@ use crate::ufo::{EvaluatedModel, UFOModel};
 /// A correct re-rooting reassociates the momentum sums that route each propagator (the
 /// off-shell current momenta are accumulated in a different order), so agreement against
 /// the baseline is never bit-for-bit and the floor is *looser* than the amplitude-level
-/// reordering `tests/amplitude_oracle.rs` pins at 1e-12. The rooting-dependent **signs**
-/// are all lifted to the diagram's `fermi_sign` (build-convention and reversed-bilinear
-/// computed at the anchor rooting, the fermion-line sign carried by the diagram itself),
-/// so a surviving
+/// reordering `tests/amplitude_oracle.rs` pins at 1e-12. No convention **sign** depends
+/// on the rooting (the diagram's convention sign reads the graph alone, and the runtime
+/// reversed-bilinear parity is cancelled at the live rooting), so a surviving
 /// deviation here is pure double-precision reassociation: the observed worst case across
 /// the MG-validated suite is 2.2e-11 (`e+e-→τ+τ-H`, an 8-momentum sum). This rides a few×
 /// above that floor and still an enormous margin below any sign/structure error (O(1)).
@@ -233,11 +232,10 @@ fn record(
 /// root (all *other* diagrams held at `VtxIdx(0)`), and require the resulting |M|² to
 /// match the baseline within `REL_TOL`. A correct amplitude is root-invariant; a
 /// deviation is a soundness bug in momentum routing / Lorentz-output rooting /
-/// fermion-spine signs (see `research/kb/amplitudes/rooting-invariance-and-anchor.md`).
+/// fermion-spine signs.
 ///
-/// This passes: the honest currents are rooting-invariant tensors and every
-/// rooting-dependent convention sign (build-convention, reversed-bilinear) is lifted to
-/// the diagram's `fermi_sign` at the anchor rooting. Ignored
+/// This passes: the honest currents are rooting-invariant tensors, and the diagram's
+/// convention sign reads only the graph. Ignored
 /// only because the full O(Σ vertices) recompile sweep is slow; run it explicitly after
 /// touching the rooting / Lorentz-output / fermion-sign machinery.
 #[test]
@@ -356,7 +354,7 @@ fn all_rootings_preserve_amplitude() {
 /// Fast guard (runs under default `cargo test`): the override hook is wired into the
 /// production compile path and an explicit `VtxIdx(0)` override reproduces the baseline
 /// |M|² bit-for-bit — i.e. the hook itself is transparent. Keeps the machinery honest
-/// without the slow, currently-failing full sweep.
+/// without the slow full sweep.
 #[test]
 fn root_override_hook_is_transparent() {
     let model = Arc::new(sm_model(SMRestrict::Default));

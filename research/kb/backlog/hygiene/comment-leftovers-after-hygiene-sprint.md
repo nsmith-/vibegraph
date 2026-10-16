@@ -18,3 +18,5 @@ sources:
 F-A Found 4, F-B Found 1, F-C Found 4, V1 Found 7. Also from the close-out kb pass: the doc of `a_members_share_of_the_draw_is_its_share_of_the_parton_luminosity` (`proton.rs` ~:5712) links the deleted `FlavorGroup::member_luminosity`, and the `ParsedModel` doc says it holds \"everything in `UFOModel` except `topo`\" though it also carries `propagators`.
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [F-A](../../sprints/hygiene/sessions/F-A-report.md), [F-B](../../sprints/hygiene/sessions/F-B-report.md), [F-C](../../sprints/hygiene/sessions/F-C-report.md).
+
+The `root_diagram.rs` "note 16 §6" site is gone: PR #30 deleted that code.

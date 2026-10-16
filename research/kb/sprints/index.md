@@ -31,6 +31,7 @@
 * [resonance-sampling](resonance-sampling/index.md)
 * [sigma-ee-mumua](sigma-ee-mumua/index.md)
 * [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
+* [sigma-reference-scatter](sigma-reference-scatter/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)

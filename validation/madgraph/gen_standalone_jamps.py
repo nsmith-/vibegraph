@@ -20,8 +20,9 @@ gate does not read them: where a contact vertex has several colour structures
 MadGraph writes one AMP() per structure, so its graph list is not our diagram
 list, while its JAMP order is the colour basis the Rust gate already pairs flow
 by flow. A row that sets `bank_amps` always carries the AMP(), with JAMP(1)'s
-coefficient on each beside them. It is a single-flow row whose graphs the Rust
-gate pairs with groups of its own diagrams.
+coefficient on each beside them, at the points and NHEL entries `amp_points` and
+`amp_helicity_stride` select. It is a single-flow row whose graphs the Rust gate
+pairs with groups of its own diagrams.
 
 The table carries the param card the numbers were computed with, so the Rust
 side binds the same parameters rather than re-deriving them.
@@ -82,7 +83,8 @@ class Row:
     model: str | None = None
     restrict: str | None = None
     # The manifest row whose model and restrict card the Rust side loads for a
-    # non-`sm` table.
+    # non-`sm` table. A row with a model and no `model_row` names the model
+    # directory and restrict card in its table instead.
     model_row: str | None = None
     # Every width set to zero on both sides. MadEvent zeroes the width of a
     # spacelike propagator and this crate follows it; standalone output keeps it,
@@ -90,6 +92,22 @@ class Row:
     zero_widths: bool = False
     # Bank AMP(1..NGRAPHS) and their JAMP(1) coefficients. Single-flow rows only.
     bank_amps: bool = False
+    # Bank the AMP() at the first `amp_points` points only, and at every
+    # `amp_helicity_stride`-th entry of the NHEL table; the JAMPs at every point and
+    # helicity. A table with hundreds of graphs and helicities is a few MB a point.
+    amp_points: int | None = None
+    amp_helicity_stride: int = 1
+
+    def ufo_paths(self) -> dict:
+        """The committed model directory and restrict card, repository-relative,
+        looked up the way `build.sh` stages them: an authored card under
+        `cards/` first, then the model's own."""
+        model_dir = f"validation/ufo/{self.model}"
+        card_dir = "smeft" if self.model.startswith("SMEFTsim_") else self.model
+        card = f"validation/madgraph/cards/{card_dir}/restrict_{self.restrict}.dat"
+        if not os.path.isfile(os.path.join(HERE, "..", "..", card)):
+            card = f"{model_dir}/restrict_{self.restrict}.dat"
+        return {"dir": model_dir, "restrict_card": card}
 
     def import_model(self) -> str:
         if self.model is None:
@@ -104,26 +122,26 @@ ROWS = {
         # triple-gluon vertex, the smallest multiplicity where a contact is not
         # the whole diagram. 24 flows, 32 helicities.
         Row("gg_to_ggg", "g g > g g g", (21, 21), (21, 21, 21), 500.0, 3, 4041),
-        # A quark line as the anchor: triple-gluon vertices and a four-gluon
+        # A quark line at leg 0: triple-gluon vertices and a four-gluon
         # contact appear only as sources, beside quark-exchange diagrams.
         Row("uux_to_ggg", "u u~ > g g g", (2, -2), (21, 21, 21), 500.0, 3, 4043),
         # The quark-gluon channel with the quark first: the gluon exchange puts a
-        # triple-gluon source beside the quark-line anchor.
+        # triple-gluon vertex beside the quark line holding leg 0.
         Row("ug_to_ug", "u g > u g", (2, 21), (2, 21), 500.0, 3, 4054),
-        # Colourless contacts (WWZZ, WWAZ) as sources beside a lepton-line anchor.
+        # Colourless contacts (WWZZ, WWAZ) beside a lepton line holding leg 0.
         Row("ee_to_wpwmz", "e+ e- > w+ w- z", (-11, 11), (24, -24, 23), 800.0, 3, 4052,
             zero_widths=True),
-        # A colourless contact as the anchor: the WWWW contact beside the photon,
+        # A colourless contact holding leg 0: the WWWW contact beside the photon,
         # Z and Higgs exchanges, whose gauge cancellation fixes its sign.
         Row("wpwm_to_wpwm", "w+ w- > w+ w-", (24, -24), (24, -24), 800.0, 3, 4053,
             zero_widths=True),
         # O_HG's gluon-pair-scalar vertex producing the s-channel Higgs current
-        # beside the top-line anchor, interfering with QCD.
+        # beside the top line holding leg 0, interfering with QCD.
         Row("ttx_to_gg_chg", "t t~ > g g NP<=1", (6, -6), (21, 21), 800.0, 3, 4056,
             model=SMEFT, restrict="vg_cHG", model_row="gg_to_h_cpeven", zero_widths=True),
-        # A W pair at the anchor beside a final-state lepton line: disagrees with
-        # MadGraph (the neutrino exchange carries the wrong sign relative to the
-        # s-channel), banked so the comparison keeps running.
+        # A W pair at leg 0 beside a final-state lepton line: the neutrino exchange
+        # against the photon and Z s-channel, whose diagrams hold leg 0 at a lepton
+        # vertex and at the WWV vertex respectively.
         Row("wpwm_to_epem", "w+ w- > e+ e-", (24, -24), (-11, 11), 500.0, 3, 4049,
             zero_widths=True),
         # The tau Yukawa's s-channel Higgs, whose diagrams carry both Yukawas and
@@ -135,6 +153,45 @@ ROWS = {
         # The Standard Model's own all-Yukawa line: t/u-channel b exchange (one
         # propagator) beside the triple-Higgs annihilation (none).
         Row("bbx_to_hh", "b b~ > h h", (5, -5), (25, 25), 500.0, 3, 4063),
+        # The rest of the W-pair-initiated fermion-pair family: the leg order
+        # reversed, and a quark line in place of the lepton line.
+        Row("wmwp_to_emep", "w- w+ > e- e+", (-24, 24), (11, -11), 500.0, 3, 5001,
+            zero_widths=True),
+        Row("wpwm_to_uux", "w+ w- > u u~", (24, -24), (2, -2), 500.0, 3, 5002,
+            zero_widths=True),
+        # A colourless vector at leg 0 on a mixed lepton line: the W-exchange
+        # diagram holds leg 0 at the WWZ vertex, the other two at a lepton vertex.
+        Row("wpem_to_zve", "w+ e- > z ve", (24, 11), (23, 12), 500.0, 3, 5020,
+            zero_widths=True),
+        # The photon at leg 0: s-channel W through the AWW vertex beside the
+        # electron exchange.
+        Row("aem_to_wmve", "a e- > w- ve", (22, 11), (-24, 12), 500.0, 3, 5022,
+            zero_widths=True),
+        # One graph set under two leg orders. With the W at leg 0 the top and bottom
+        # exchanges hold it at the Wtb vertex; with the Higgs at leg 0, at the Yukawa
+        # vertex. The s-channel W diagram holds leg 0 at the WWH vertex in both.
+        Row("wph_to_tbx", "w+ h > t b~", (24, 25), (6, -5), 800.0, 3, 5023,
+            zero_widths=True),
+        Row("hwp_to_tbx", "h w+ > t b~", (25, 24), (6, -5), 800.0, 3, 5025,
+            zero_widths=True),
+        # A Z pair at leg 0: the s-channel Higgs (the ZZH vertex holding leg 0, top
+        # Yukawa as the scalar source) beside the top exchange.
+        Row("zz_to_ttx", "z z > t t~", (23, 23), (6, -6), 800.0, 3, 5026,
+            zero_widths=True),
+        # A scalar at leg 0: the triple-Higgs vertex holding it beside the top
+        # exchange, which holds it at the Yukawa vertex.
+        Row("hh_to_ttx", "h h > t t~", (25, 25), (6, -6), 800.0, 3, 5024,
+            zero_widths=True),
+        # A gluon at leg 0: the triple-gluon vertex holding it beside the quark
+        # exchange, the coloured analogue of `w+ w- > u u~`.
+        Row("gg_to_uux", "g g > u u~", (21, 21), (2, -2), 500.0, 3, 5006),
+        # 2 -> 3 with a W pair at leg 0: a final-state lepton line beside a Z
+        # emitted from it, from the s-channel boson or from a WWZ/WWZZ vertex.
+        Row("wpwm_to_epemz", "w+ w- > e+ e- z", (24, -24), (-11, 11, 23), 800.0, 3, 5028,
+            zero_widths=True),
+        # 2 -> 3 with a W pair at leg 0 and a gluon off the final-state quark line.
+        Row("wpwm_to_uuxg", "w+ w- > u u~ g", (24, -24), (2, -2, 21), 800.0, 3, 5045,
+            zero_widths=True),
         # Bhabha scattering through the four-lepton contacts: every contact joins
         # one flavour, so the s- and t-channel pairings of one vertex interfere with
         # each other and with photon and Z exchange in both channels. Widths are
@@ -142,6 +199,106 @@ ROWS = {
         Row("ee_to_ee_4f", "e+ e- > e+ e- NP<=1", (-11, 11), (-11, 11), 500.0, 4, 4064,
             model=SMEFT, restrict="vg_c4l", model_row="ee_to_mumu_4f", zero_widths=True,
             bank_amps=True),
+        # The top Yukawa spelled as SMEFTsim spells it, a bare `Identity(2,1)`
+        # (`FFS2`), with the Higgs emitted off the final-state top pair: rooted as a
+        # fermion current whose wrapped leg sits on that crossed line, beside
+        # Higgsstrahlung. The only non-zero Wilson coefficient touches the b, so
+        # every diagram is the Standard Model's. `SMHLOOP=0` drops the loop-induced
+        # h-gamma-gamma and h-Z-gamma vertices, whose Fortran couplings MadGraph
+        # writes from seven-digit literals.
+        Row("ee_to_ttxh_identity", "e+ e- > t t~ h NP<=1 SMHLOOP=0", (-11, 11), (6, -6, 25),
+            1000.0, 3, 4071, model=SMEFT, restrict="vg_cbH", model_row="bbx_to_h_identity",
+            bank_amps=True),
+        # The same process under MadGraph's own `sm`, whose top Yukawa is `FFS4`
+        # (ProjM + ProjP): the control for the `Identity` spelling above.
+        Row("ee_to_ttxh", "e+ e- > t t~ h", (-11, 11), (6, -6, 25), 1000.0, 3, 4072,
+            bank_amps=True),
+        # The toy model's bare `Identity` and bare `Gamma5` Yukawas emitted off a
+        # final-state quark pair, beside the vector exchange and emission off the
+        # initial lepton line: scalar and pseudoscalar currents rooted on a crossed
+        # line in one sum.
+        Row("ll_to_qqxs_toy_yukawa", "lt~ lt > qt qt~ st NP<=3 NPCP<=3",
+            (-9000011, 9000011), (9000004, -9000004, 9000025), 600.0, 3, 4073,
+            model="vibegraph_toy_UFO", restrict="yukawa", model_row="ll_to_qqx_toy_yukawa",
+            bank_amps=True),
+        # The toy scalar's cubic self-coupling, plain (`SSS1`) and derivative
+        # (`SSSD`, under its own coupling order so each is a diagram of its own),
+        # producing the s-channel scalar current beside t- and u-channel lepton
+        # exchange.
+        Row("ll_to_ss_toy_dscalar", "lt~ lt > st st NP<=2 NPD<=1",
+            (-9000011, 9000011), (9000025, 9000025), 500.0, 3, 4074,
+            model="vibegraph_toy_UFO", restrict="dscalar", bank_amps=True),
+        # The same vertices with a scalar as leg 0: the t-channel scalar exchange
+        # holds it at the cubic vertex, beside s- and u-channel lepton exchange.
+        # Widths are zero for the spacelike scalar.
+        Row("sl_to_sl_toy_dscalar", "st lt > st lt NP<=2 NPD<=1",
+            (9000025, 9000011), (9000025, 9000011), 500.0, 3, 4075,
+            model="vibegraph_toy_UFO", restrict="dscalar", zero_widths=True, bank_amps=True),
+        # SMEFTsim's derivative Higgs self-couplings (`SSS3` from O_Hbox, `SSS2` from
+        # O_HDD) beside the Standard Model's `SSS1`, each its own diagram: the
+        # s-channel Higgs current off an initial top pair, beside t- and u-channel
+        # top exchange. Widths are zero for the spacelike top.
+        Row("ttx_to_hh_chbox", "t t~ > h h NP<=1", (6, -6), (25, 25), 800.0, 3, 4076,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # The same vertex with a Higgs on leg 0: the t-channel Higgs exchange holds
+        # it at the derivative vertex, beside s- and u-channel top exchange. Widths
+        # are zero for the spacelike Higgs.
+        Row("ht_to_ht_chbox", "h t > h t NP<=1", (25, 6), (25, 6), 800.0, 3, 4077,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # Four Higgs bosons: the derivative quartic contacts (`SSSS3`, `SSSS2`) beside
+        # the plain one, and s-, t- and u-channel Higgs exchange with one derivative
+        # cubic vertex at either end. Widths are zero for the spacelike Higgs.
+        Row("hh_to_hh_chbox", "h h > h h NP<=1", (25, 25), (25, 25), 800.0, 8, 4078,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # The rows below are O_W (`vg_cW`) probes at zero widths: the loop-induced
+        # photon-Z-Higgs and photon-photon-Higgs vertices (`VVS4`, `GC_303`/`GC_299`,
+        # coupling order SMHLOOP) in each role, and O_W's five-vector contacts.
+        # MadGraph's Fortran writes `GC_303` and `GC_299` at seven significant
+        # digits, so every graph carrying them is 1.2e-8 or 2.8e-8 off in modulus.
+        # The rows carrying them bank AMP(), so the Rust gate can name those graphs
+        # and hold everything else at rounding.
+        #
+        # Controls: O_W's four-vector contacts (WWWW, WWZZ) holding leg 0, beside
+        # the photon, Z and Higgs exchanges with O_W's triple-gauge structures.
+        Row("wpwm_to_wpwm_cw", "w+ w- > w+ w- NP<=1", (24, -24), (24, -24), 800.0, 3, 4071,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        Row("wpwm_to_zz_cw", "w+ w- > z z NP<=1", (24, -24), (23, 23), 800.0, 3, 4072,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True),
+        # The WWAZ contact, and the photon-Z-Higgs vertex producing the off-shell
+        # Higgs from the external photon and Z.
+        Row("wpwm_to_az_cw", "w+ w- > a z NP<=1", (24, -24), (22, 23), 800.0, 3, 4073,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
+        # The photon-Z-Higgs vertex holding leg 0, the photon, in the Higgs
+        # s-channel diagram.
+        Row("az_to_wpwm_cw", "a z > w+ w- NP<=1", (22, 23), (24, -24), 800.0, 3, 4075,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
+        # The same for the photon-photon-Higgs vertex.
+        Row("aa_to_wpwm_cw", "a a > w+ w- NP<=1", (22, 22), (24, -24), 800.0, 3, 4078,
+            model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw", zero_widths=True,
+            bank_amps=True),
+        # The amplitude row `wpwm_to_wpwmz_cw` itself: O_W's two five-vector
+        # contacts each the whole of one diagram, the photon-Z-Higgs vertex
+        # producing a Higgs or a photon current, and the four-vector contacts as
+        # sources. MadGraph standalone numbers its AMP() as the MadEvent export of
+        # the amplitude row does.
+        Row("wpwm_to_wpwmz_cw", "w+ w- > w+ w- z NP<=1", (24, -24), (24, -24, 23), 500.0, 4,
+            4074, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True,
+            bank_amps=True, amp_points=1),
+        # Its photon twin: the WWWW-photon five-vector contacts, and the
+        # photon-photon-Higgs vertex beside the photon-Z-Higgs one.
+        Row("wpwm_to_wpwma_cw", "w+ w- > w+ w- a NP<=1", (24, -24), (24, -24, 22), 500.0, 3,
+            4077, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True,
+            bank_amps=True, amp_points=1),
+        # The five-vector contacts as sources: the s-channel photon or Z off the
+        # electron line, which holds leg 0, ends on a WWWW-photon/Z contact.
+        Row("ee_to_wpwmwpwm_cw", "e+ e- > w+ w- w+ w- NP<=1", (-11, 11), (24, -24, 24, -24),
+            1000.0, 3, 4076, model=SMEFT, restrict="vg_cW", model_row="wpwm_to_wpwmz_cw",
+            zero_widths=True,
+            bank_amps=True, amp_points=1, amp_helicity_stride=3),
         # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
         # top line, where the contact's three colour structures meet its three
         # Lorentz structures. The top exchanged between the two beam gluons is
@@ -164,6 +321,19 @@ ROWS = {
         # zeroing widths only removes the timelike top width from both sides.
         Row("uux_to_ttxg", "u u~ > t t~ g", (2, -2), (6, -6, 21), 1000.0, 3, 4068,
             zero_widths=True),
+        # A gluon off the initial quark line of a four-quark contact: the contact
+        # produces the off-shell quark current the emission vertex closes, in both
+        # colour contractions, beside the s-channel gluon with the gluon off either
+        # quark line or off the triple-gluon vertex.
+        Row("uux_to_ttxg_4f", "u u~ > t t~ g NP<=1", (2, -2), (6, -6, 21), 1000.0, 3, 5101,
+            model=SMEFT, restrict="vg_c4q", model_row="uux_to_ttx_4f", zero_widths=True),
+        # A photon off either line of the tensor four-fermion contact (`O_leQt3`):
+        # the contact, read through the tensor path, produces the off-shell lepton
+        # or top current the emission closes. `SMHLOOP=0` drops the loop-induced
+        # Higgs-photon vertices and their seven-digit Fortran couplings.
+        Row("tata_to_ttxa_tensor4f", "ta+ ta- > t t~ a NP<=1 SMHLOOP=0", (-15, 15),
+            (6, -6, 22), 1000.0, 3, 5102, model=SMEFT, restrict="vg_cleQt3",
+            model_row="tata_to_ttx_tensor4f", bank_amps=True),
     ]
 }
 
@@ -394,7 +564,9 @@ def bank(row: Row, args) -> None:
     table = {
         "key": row.key,
         "process": row.process,
-        "model": "sm" if row.model is None else row.model_row,
+        "model": "sm" if row.model is None else (row.model_row or "ufo"),
+        **({"ufo": row.ufo_paths()} if row.model is not None and row.model_row is None
+           else {}),
         "n_ext": len(row.pdgs_in) + len(row.pdgs_out),
         "n_graphs": ngraphs,
         "n_flows": ncolor,
@@ -409,9 +581,12 @@ def bank(row: Row, args) -> None:
                     {
                         "m2": h["m2"],
                         "jamps": h["jamps"],
-                        **({"amps": h["amps"]} if amps else {}),
+                        **({"amps": h["amps"]}
+                           if amps and (row.amp_points is None or i < row.amp_points)
+                           and ih % row.amp_helicity_stride == 0
+                           else {}),
                     }
-                    for h in per_point[i]
+                    for ih, h in enumerate(per_point[i])
                 ],
             }
             for i, pt in enumerate(pts)

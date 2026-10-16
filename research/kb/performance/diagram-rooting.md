@@ -1,11 +1,11 @@
 ---
 type: Design Decision
 title: Diagram rooting at the vertex with fewest external legs
-description: "canonical_root picks the vertex with fewest attached external legs (~20% fewer post-CSE nodes); greedy rooting buys ~1% more and was rejected. Soundness rests on anchor-read convention signs."
+description: "canonical_root picks the vertex with fewest attached external legs (~20% fewer post-CSE nodes); greedy rooting buys ~1% more and was rejected. Soundness rests on a convention sign read off the graph, not the root."
 status: draft
 tags: [performance, rooting, cse, evaluator, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n15-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L80-L111", title: "Note 15 §1.3 (rooting symmetry)"}
   - {id: n15-results, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/15-eval-optimization-plan.md#L611-L667", title: "Note 15 §3.1 (rooting study results)"}
@@ -14,8 +14,10 @@ sources:
   - {id: rs-totals, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/rooting-study-results.md#L222-L266", title: "Rooting study: cross-process totals and findings"}
   - {id: n20-outcome, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L23-L58", title: "Note 20 sprint outcome"}
   - {id: n20-s4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/20-eval-perf-2-plan.md#L219-L267", title: "Note 20 S4 rooting-cse"}
-  - {id: root-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L850-L920", title: "canonical_root and choose_root"}
-  - {id: rooting-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/rooting_soundness.rs#L1-L60", title: "rooting_soundness.rs (all-rootings gate, REL_TOL)"}
+  - {id: root-diagram, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "canonical_root and choose_root"}
+  - {id: rooting-soundness, resource: "vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "rooting_soundness.rs (all-rootings gate, REL_TOL, PER_DIAGRAM_MAX)"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the rooting-soundness sweep on 0ec027a"}
+  - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 S1: feyngraph's vertex 0 against leg 0's vertex on the census"}
 measured:
   - {commit: 9bb8e14, command: "RUST_MIN_STACK=134217728 cargo test -p vibegraph-lib --profile profiling --features extended-validation rooting_study::rooting_headroom_study -- --ignored --nocapture --test-threads=1"}
   - {commit: 6ab25f1, host: "Apple M3 Max", command: "cargo bench -p vibegraph-lib --bench eval_strategies"}
@@ -52,14 +54,20 @@ every non-test build it is `canonical_root` alone.
 
 ## Why it is sound
 
-The rooting-dependent convention signs are read off one fixed rooting, at the
-diagram's anchor, and lifted into the diagram's `fermi_sign`; the honest
-currents are then root-invariant. The convention itself is described in
-[rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+No sign depends on the root. The kernels' currents are root-invariant, the
+diagram's `fermi_sign` is `Diagram::sign` times `convention_sign`, both read off the
+graph alone, and the one rooting-dependent factor, the live tree's
+reversed-bilinear parity, is cancelled in it. The convention is described in
+[rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md)
+and its factors in
+[convention-sign-inventory](../amplitudes/convention-sign-inventory.md).
 The `rooting_soundness` module pins it: `all_rootings_preserve_amplitude`
-re-roots every diagram at every vertex across the MG-validated processes and
-requires |M|² to match the baseline (unoverridden) evaluation within
-`REL_TOL = 1e-10`.[^rooting-soundness]
+re-roots the MG-validated processes and requires |M|² to match the baseline
+(unoverridden) evaluation within `REL_TOL = 1e-10`. A process of at most 40
+diagrams (`PER_DIAGRAM_MAX`) has each diagram re-rooted in turn at each of its
+vertices but `VtxIdx(0)`, the other diagrams held at `VtxIdx(0)`; the two 2→6
+processes (579 and 615 diagrams) have every diagram re-rooted at once, at each
+vertex position. The sweep is 270 re-rootings.[^rooting-soundness]
 
 - The oracle is the baseline itself, not MadGraph: production is already pinned
   against MadGraph, so any rooting that reproduces it is correct.
@@ -108,8 +116,12 @@ run and does not reproduce it. Cross-process totals:[^rs-totals]
   makes no difference.
 - "Most external legs" moves the wrong way: rooting at a central, high-degree
   vertex duplicates currents.
-- Feyngraph's `VtxIdx(0)` is already the vertex adjacent to the lowest-index
-  external leg, so "lowest-leg anchor" reproduces it on every process.
+- On all 14 study processes feyngraph's `VtxIdx(0)` is the vertex adjacent to
+  the lowest-index external leg, so "lowest-leg anchor" reproduces it there. It
+  is not so in general: on the later diagram census it held on 2475 of 2517
+  diagrams, and the other 42 (`g g > g g g` 6, `g g > t t~ g` 1,
+  `W+ W- > W+ W- Z NP<=1` 35) put leg 0 on a four-point contact, where feyngraph
+  numbers a three-point vertex first.[^n38-s1]
 - 2→2 processes do not move: their vertices tie on external-leg count, so
   `canonical_root == VtxIdx(0)` there.
 - The extremes are the 8-point QCD=0 processes: `u u~ > c c~ e+ e- mu+ mu-`
@@ -125,8 +137,8 @@ run and does not reproduce it. Cross-process totals:[^rs-totals]
 In the original study every node-reducing rooting failed the MadGraph gate,
 silently and grossly (max_rel up to 1.7e3, 50/50 points) on `e+e-→W+W-`,
 `e+e-→τ+τ-H` and every ≥6-point QCD=0 process. That was the
-orientation-dependence the anchor-read signs removed; it is why the gate above
-exists, and the study's table records which rootings had exercised
+orientation-dependence of the signs the study then used; the graph-read
+`convention_sign` has none, and the gate above exists to keep it so, and the study's table records which rootings had exercised
 it.[^rs-totals][^n15-results]
 
 ## What it bought
@@ -158,4 +170,5 @@ program the rooted diagrams lower into is in
 [^n20-outcome]: Note 20 sprint outcome.
 [^n20-s4]: Note 20 S4 `rooting-cse` outcome.
 [^root-diagram]: `canonical_root`, `choose_root`, `set_root_override` in `root_diagram.rs`.
-[^rooting-soundness]: `rooting_soundness.rs` module doc, `REL_TOL`, `all_rootings_preserve_amplitude`.
+[^rooting-soundness]: `rooting_soundness.rs` module doc, `REL_TOL`, `PER_DIAGRAM_MAX`, `all_rootings_preserve_amplitude`; the 270 is R1's run on `0ec027a` ([R1 report](../sprints/amplitude-signs/sessions/R1-report.md)).
+[^n38-s1]: Note 38 §4 S1, "feyngraph's vertex 0 is not the vertex leg 0 attaches to".

@@ -2,10 +2,10 @@
 type: Derivation
 title: "The global amplitude phase: i-counting and the contravariant vector current"
 description: "Vertex i and propagator −i multiply to i for any tree, so |G|=1 and Re G=0 against MadGraph; every vector producer emits the physical contravariant current and carries no sign of its own."
-status: draft
+status: stable
 tags: [phase-conventions, propagators, vector-current, madgraph-oracle, derivation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-16}]
 sources:
   - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L405-L500", title: "kernel.rs: propagate_core and the −i/D propagators"}
   - {id: code-metricvout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L890-L910", title: "kernel.rs: metric_vout, the contravariant current"}
@@ -93,9 +93,13 @@ propagator outputs a contravariant current.[^code-metricvout]
 - A `P`-carrying term rooted at its vector leg (`P(1,2)·Metric(2,3)` at leg 1)
   emits the bare momentum wrapped in the same `MetricVout`. The output-leg momentum
   is `PMomOut = −Σ inputs`, ALOHA's `P1 = −(V2+V3)`.
-- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting. The
-  `−1` a colourless VVV vertex needs as a *source* is a diagram-level sign,
-  `yang_mills_vvv_sign`, not a producer phase.
+- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting, and
+  `convention_sign` gives a colourless VVV vertex no factor. A charged one still
+  reads `−1` against MadGraph inside its kernel, because the all-incoming
+  crossing exchanges its W⁺ and W⁻ slots and its structure is odd under that.
+  The triple-gluon vertex, self-conjugate, gets no exchange, so its `−1` is a
+  diagram-level factor (`triple_gluon_sign` in `convention_sign`), not a
+  producer phase ([vector-vertex-signs](vector-vertex-signs.md)).
 - There is no covariant vector slot and no index-lowering op. Variance is a type
   parameter on `VectorWf`; the evaluator's register carries contravariant vectors
   only (see [flat-op-ir](flat-op-ir.md)).
