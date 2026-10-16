@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: An LLVM preserve_none tail-call miscompile is not reported upstream
-description: x86-64 preserve_none with an indirect musttail and 12 arguments miscompiles silently in rustc; a 25-line reproducer exists but no issue is filed.
+description: x86-64 preserve_none with an indirect musttail and 12 arguments miscompiles silently in rustc; standalone reproducers exist but no issue is filed.
 area: hygiene
 state: needs-user
 priority: low
@@ -18,7 +18,8 @@ With all 12 in use, LLVM loads an indirect tail call's target into `rax`
 (`movq (%r10), %rax; jmpq *%rax`), so the callee receives its own address as
 its last argument. LLVM reports "ran out of registers"; rustc drops that into
 a silent miscompile (garbage at `-O`, segfault at `-O0`; correct with ≤ 11
-arguments or a plain call). The reproducers are under the
-`study/threaded-dispatch` tag (`4657c92`, on origin; not fetched in every
-clone). Filing an upstream issue publicly is the user's call. Detail:
+arguments or a plain call). Standalone LLVM IR and rustc reproducers, re-run on
+LLVM 23.1.4 and rustc nightly 2026-10-15, are in
+[`research/upstream/llvm-preserve-none-tail-call/`](../../../upstream/llvm-preserve-none-tail-call/README.md).
+Filing an upstream issue publicly is the user's call. Detail:
 [threaded-dispatch study](../../history/notes/threaded-dispatch-study-results.md).
