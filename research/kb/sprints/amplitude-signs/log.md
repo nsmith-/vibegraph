@@ -81,7 +81,7 @@
   constant flipped) fails only the totals test, as its stated blind spots
   predict. Filed: `colourless-self-conjugate-vvv-sign-unoracled`,
   `standalone-amps-single-flow-only`,
-  `mixed-parity-vertex-refusal-depends-on-rooting`.
+  `mixed-dirac-and-matrix-free-vertex-terms` (updated; the duplicate filed here was folded into it by the concept review).
 * **T-H outcome** (PR #39): 16 findings, the local ones fixed under a to_bits
   digest identity check, and the stale concepts rewritten around the derived
   sign. The real gap was H6: an empty banked table let the colour test pass
