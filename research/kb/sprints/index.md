@@ -29,6 +29,7 @@
 * [perf-sprint-3](perf-sprint-3/index.md)
 * [process-grammar](process-grammar/index.md)
 * [resonance-sampling](resonance-sampling/index.md)
+* [sigma-2to4-offset](sigma-2to4-offset/index.md)
 * [sigma-ee-mumua](sigma-ee-mumua/index.md)
 * [sigma-gg-cg](sigma-gg-cg/index.md)
 * [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
