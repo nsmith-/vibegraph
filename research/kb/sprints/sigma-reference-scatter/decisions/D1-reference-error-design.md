@@ -224,3 +224,14 @@ The `SCREEN` line's pull uses the seed-policy error (max of quoted and
 spread/√n) and is a screen, not this verdict. Until `seed-record` prints the
 ladder verdict itself, it is computed from the record's per-seed values.
 First row under it: `ll_to_qqx_toy_dipole` (5 + 2 screen: 4× mean pull −2.34).
+
+## `ee_to_mumua` is gated (decided 2026-10-16)
+
+The user's decision, relayed by the planner ("approve the ee_to_mumua gate").
+It supersedes point 3's "stays `info`" for this row. With `hard_survey = 2` at
+100k events per window, refdata-10's reported σ sits on #26's adaptation-free
+value (−0.033 % ± 0.022 %), and the first banked run against it reads
+−0.074 %, pull −0.42. The row's +1.04 % offset was MadEvent's 10k single-run
+default-survey bank. PR #26 asserts the row's pull (removing it from
+`validate_sigma.rs`'s `PULL_REPORTED_NOT_ASSERTED`), rewrites its manifest
+note, and closes `ee-mumua-radiative-return-sigma-high`.
