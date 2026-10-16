@@ -110,8 +110,9 @@ grows without bound as `err_vg` falls, so asserting it would fail a row that had
 not moved. A row leaves the list only when its residual shrinks with budget and
 its five-seed scatter sits near χ²/dof 1, never because its budget was cut. The
 gate asserts that every listed row is still gated, so an exemption cannot hide
-a row that asserts nothing.[^vsigma] Which rows are on it, and why, is
-[sigma-row gating exceptions](sigma-row-gating-exceptions.md).
+a row that asserts nothing.[^vsigma] The list is empty: its last row,
+`ee_to_mumua`, was a biased reference, resolved by re-banking it
+([sigma-row gating exceptions](sigma-row-gating-exceptions.md)).
 
 ## References
 

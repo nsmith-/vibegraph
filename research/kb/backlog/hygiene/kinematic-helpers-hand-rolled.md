@@ -16,3 +16,8 @@ sources:
 Boosts: `helas/repr/lorentz.rs`, `hadronic.rs` `boost_z`, `onshell.rs`, `lhef/resonance.rs`, `coupling/cluster/kt.rs`, `diagram_channel.rs` (the last deliberately γ = E/√s). Transverse helpers: `cuts.rs`, `lhef/observables.rs`, `coupling/scales.rs` (R-D cross-cluster patterns).
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-D](../../sprints/hygiene/sessions/R-D-report.md).
+
+Two more sites (hygiene review of PR #32): `tests/toy_models.rs::toy_point` and
+`reweight/engine.rs` (~:954) hand-copy the CM beam momenta beside the
+`pub(crate)` `phasespace::beams::beam_momenta`; the test needs it exposed or a
+`tests/common` helper.

@@ -131,14 +131,15 @@ rerun agreed within 1.1σ. The fix is upstream `286feb8e` (first released in
 measurement, `validate_samples::the_higgs_pole_window_is_measured_against_madgraph`,
 against the committed `higgs_window_reference.json`.
 
-**`ee_to_mumua` radiative-return offset.** Our σ sits a fixed +1.04% above the
-bank. MadGraph's `pt(a)` closure failed (`C_MG` +3.07σ) while ours held
+**`ee_to_mumua` radiative-return offset.** Our σ sat a fixed +1.04% above a
+single default-survey MadEvent run, and sits −0.074% from the seeded
+`hard_survey = 2` reference (pull −0.42). MadGraph's `pt(a)` closure failed (`C_MG` +3.07σ) while ours held
 (`C_VG` −1.53σ), and MadGraph's `pt(a)` and `m(μμ)` partitions of its own run
 disagree with each other at 16.7σ, both above its unwindowed control; its
 `m(μμ)` partition recovers our total to 0.16σ.[^vsigma][^n29-addenda] The row's
-gating is in [sigma-row gating exceptions](sigma-row-gating-exceptions.md) and
-its open item is
-[ee-mumua radiative return](../backlog/validation/ee-mumua-radiative-return-sigma-high.md).
+gating is in [sigma-row gating exceptions](sigma-row-gating-exceptions.md); the
+attribution (MadEvent's rare large Z-ISR weights in G6/G8, under-surveyed at its
+default) is `sprints/sigma-ee-mumua`.
 The probe is `probe_pta_windows_against_madgraph` (`#[ignore]`d), its driver
 `validation/madgraph/gen_pta_windows.sh`.
 

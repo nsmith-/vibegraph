@@ -31,8 +31,7 @@ closing `gg-to-gg-cg-sigma-offset`. Chronology in [log.md](log.md).
   partonic CM coincide, and choice 3 is boost-invariant in any case.
 - **The cell stays `info`** until the row is re-banked as ≥ 10 fresh-directory
   seeds. That re-bank belongs with every other single-draw σ reference, in
-  [reference-sigma-seed-scatter-untested](../../backlog/validation/reference-sigma-seed-scatter-untested.md)
-  (PR #25). Expected re-banked value: 2.7065e5.
+  `reference-sigma-seed-scatter-untested` (PR #25). Expected re-banked value: 2.7065e5.
 
 ## Trust
 

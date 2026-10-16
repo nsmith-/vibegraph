@@ -5,7 +5,7 @@ description: "HELAS/ALOHA external vector/scalar wavefunctions and storage; Weyl
 status: draft
 tags: [helas, wavefunctions, propagators, conventions, aloha]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n10-prims, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L140-L236", title: "Note 10 §4.1–§4.6 (vxxxxx, sxxxxx, Dirac/massless/massive propagators, GammaV)"}
   - {id: n10-open, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L579-L605", title: "Note 10 §11 (open questions)"}
@@ -122,8 +122,9 @@ Conventions in that table:
   the same `−i/D` as the vector, so every off-shell chain type sits in phase
   with MadGraph's. The compensating signs that keep scalar chains right live in
   the scalar-sink vertex roots (`build_at_leg`), not in the propagator. This is
-  pinned per diagram by the internal-H chains (ee→μμττ, the uux and b b̄ 2→6
-  rows) and external-H chains (e⁺e⁻→τ⁺τ⁻H) against MadGraph `AMP()`. A
+  pinned per diagram against MadGraph `AMP()` by the internal-H chains of
+  ee→μμττ and the external-H chains of e⁺e⁻→τ⁺τ⁻H. The uux and b b̄ 2→6 rows
+  bank flows only, so they pin it per helicity and flow. A
   per-chain-type phase that is uniform within one process is invisible to
   |M|² until diagram classes with different chain content mix. The full phase
   ledger is [global-phase-i-counting](../amplitudes/global-phase-i-counting.md)[^n12-causes].
@@ -155,11 +156,13 @@ denominator. On-shell, `(q̸ + m)` at `q² = m²` equals `Σ_s u_s ū_s`.
 
 The per-propagator −1 on a fermion line read against its arrow
 (`Diagram::fermion_line_sign`) is a property of the line, not of whether the
-propagators are massive. It is pinned bit-for-bit against MadGraph per-diagram
-`AMP()` on massive tau lines that radiate a Higgs before annihilating
-(`ta+ ta- > t t~ h` and `ta+ ta- > t t~ h h` under the SM default restrict card,
-which keeps m_τ; rows `tata_to_ttxh` and `tata_to_ttxhh` in
-`validation/madgraph/gen_standalone_jamps.py`)[^code-diagram][^n12-stand]. The sign itself
+propagators are massive. It is pinned against MadGraph standalone output, per
+helicity and flow at `REL_TOL = 1e-12`, on massive tau lines that radiate a
+Higgs before annihilating (`ta+ ta- > t t~ h` and `ta+ ta- > t t~ h h` under the
+SM default restrict card, which keeps m_τ; rows `tata_to_ttxh` and
+`tata_to_ttxhh` in `validation/madgraph/gen_standalone_jamps.py`)[^code-diagram][^n12-stand].
+Both tables are single-flow and bank no `AMP()`, so a wrong sign shows only where
+the diagrams it touches interfere with the rest. The sign itself
 belongs to [fermion-line-sign](../amplitudes/fermion-line-sign.md).
 
 ## Not supported

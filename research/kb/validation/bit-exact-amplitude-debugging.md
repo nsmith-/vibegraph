@@ -2,10 +2,10 @@
 type: Validation Methodology
 title: Localising an amplitude disagreement with a bit-exact oracle
 description: "Match parameter provenance, then compare per-diagram x per-helicity complex amplitudes, fit per-diagram signs (least squares, then a GF(2) solve over diagram features), and verify a fix on the dumps."
-status: draft
+status: stable
 tags: [amplitudes, debugging, oracle, madgraph, signs]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-16}]
 sources:
   - {id: n12-intro, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L11-L19", title: "Note 12 — the 2→6 continuum bug"}
   - {id: n12-hard, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L20-L36", title: "Note 12 — why it was hard"}
@@ -82,7 +82,10 @@ working detail and the cases that established it.
 
 ## Per-diagram sign recovery and the GF(2) solve
 
-The vector-vertex sign work shows the full method[^n39-found]:
+The vector-vertex sign work shows the full method[^n39-found]. The rule it
+produced was anchor-keyed and has since been replaced by the root-free
+`convention_sign` (see the end of this section); the steps below record how that
+earlier rule was found, and the features named in step 2 belong to it:
 
 1. A least-squares fit `Σ_d c_d · (our diagram d's per-flow values) = MG JAMPs`
    over all entries; every residual came out at 1e-15 with every `c_d = ±c`.
@@ -105,13 +108,20 @@ The vector-vertex sign work shows the full method[^n39-found]:
    nothing fitted to it, missed by 7.6e-2 with the first two items and agreed to
    5.7e-16 with the third.
 
-The rule this produced lives in `helas/eval/root_diagram.rs`:
-`yang_mills_vvv_sign` (a −1 per colourless VVV vertex other than the anchor),
-`vector_contact_sign`, and `gluon_scalar_current_sign`, all keyed to
-`Diagram::anchor` and multiplied into `fermi_sign` in `compile_single_diagram`.
-The physics is in [vector-vertex signs](../amplitudes/vector-vertex-signs.md);
-the rooting-invariance argument is in
-[rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+The rule that fit produced three role-keyed vector-vertex sign functions read at
+a per-diagram anchor. That rule has since been replaced: the same GF(2) method,
+rerun with the root-invariance equations and the vertex's reversal parity as a
+feature, has a root-free solution, and `convention_sign` in
+`helas/eval/root_diagram.rs` is a product of local constants read off the graph,
+with no anchor. What the code does now is
+[convention-sign-inventory](../amplitudes/convention-sign-inventory.md) (the
+factors and the derivation) and
+[vector-vertex signs](../amplitudes/vector-vertex-signs.md) (no colourless vector
+vertex carries a convention sign, a charged triple-vector vertex reads `−1` in
+its kernel from the crossing's slot exchange, and the self-conjugate
+triple-gluon vertex takes that `−1` from `triple_gluon_sign`); the
+rooting-invariance argument is in
+[rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ## Worked cases
 
@@ -142,7 +152,7 @@ per-term product cancels on even-term vertices), and verify factorability first
 (every re-rooting changed each diagram by exactly a global ±1 over 1583
 diagram × root × helicity checks before any extraction was designed)[^n19-v5].
 The derivation itself belongs to
-[rooting invariance](../amplitudes/rooting-invariance-and-anchor.md).
+[rooting invariance](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ## False leads and why each failed
 
@@ -157,7 +167,7 @@ The derivation itself belongs to
   VVS vertices (the 3 Higgs diagrams have 0 fermion and 1 scalar propagator),
   which is precisely why the bug hit that process. Machine-check every count;
   note 29's own write-up repeated the mistake and had to correct it against
-  `channel_counts`.
+  the code's channel counts.
 - **Plausible mechanisms that match the data.** "The bra projects on the wrong
   side of the slash" was falsified because `γ^μ P_L = P_R γ^μ` makes the fix
   either bit-identical or Ward-breaking.

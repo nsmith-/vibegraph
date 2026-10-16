@@ -49,7 +49,7 @@ tag if a gate ever needs one.
 |---|---|
 | Provenance | Authored in this repository, 2026-09-06 |
 | Licence | `MIT OR Apache-2.0`, the repository's own |
-| Role | The Lorentz structures SMEFTsim never emits, one per vertex. A literal `Sigma` in an FFV dipole and in a tensor-tensor four-fermion contact; the bare `Identity` and `Gamma5` scalar bilinears; and the symmetric colour structure constant `d(1,2,3)`, which this crate's colour algebra can represent and no Standard-Model process reaches |
+| Role | The Lorentz structures SMEFTsim never emits, one per vertex. A literal `Sigma` in an FFV dipole and in a tensor-tensor four-fermion contact; the bare `Identity` and `Gamma5` scalar bilinears; a plain and a derivative cubic scalar self-coupling, on one vertex under two coupling orders; and the symmetric colour structure constant `d(1,2,3)`, which this crate's colour algebra can represent and no Standard-Model process reaches |
 
 FeynRules expands `sigma^{mu nu}` into `gamma^mu gamma^nu` chains before it
 writes a UFO, so a literal `Sigma` appears in ALOHA's object library and in no
@@ -64,8 +64,8 @@ scalar `st`, a singlet vector `vt` and a real colour-octet scalar `o8`. Masses
 and widths are free external parameters chosen to keep every banked row at
 sqrt(s) = 500 GeV above threshold and off every pole. Restrict cards, inside the
 model directory because the model is ours: `restrict_dipole`, `restrict_tensor`,
-`restrict_yukawa`, `restrict_dcolor` — one structure class each — and
-`restrict_all` with everything switched on.
+`restrict_yukawa`, `restrict_dcolor`, `restrict_dscalar` — one structure class
+each — and `restrict_all` with everything switched on.
 
 ## `vibegraph_toy_color_UFO`
 

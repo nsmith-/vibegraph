@@ -139,7 +139,7 @@ and why, are collected in
 [sigma-row gating exceptions](sigma-row-gating-exceptions.md). The one
 standing `samples` cell at `info` is `ee_to_mumua`, whose `pt(a)` column
 measures a defect of MadGraph's own banked sample
-([backlog](../backlog/validation/ee-mumua-radiative-return-sigma-high.md)).[^manifest]
+([backlog](../backlog/validation/ee-mumua-sample-reference-mis-shaped.md)).[^manifest]
 
 One field is reported by construction rather than by mode: `AQCDUP` on the six
 toy rows whose model declares no `aS` (`UNDECLARED_ALPHA_S_RUNS` in
