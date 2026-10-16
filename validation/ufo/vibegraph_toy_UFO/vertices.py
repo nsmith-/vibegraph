@@ -2,8 +2,8 @@
 a structure's spinor index 1 is the barred spinor and index 2 the unbarred one.
 
 The two-structure vertices (`V_qtqtvt`, the two Yukawas, the four-fermion
-contact, the scalar self-coupling) are deliberate: they are the shape MadGraph splits into one interaction
-per coupling-order tuple.
+contact, the scalar self-coupling) are deliberate: they are the shape MadGraph
+splits into one interaction per coupling-order tuple.
 """
 
 from object_library import all_vertices, Vertex
