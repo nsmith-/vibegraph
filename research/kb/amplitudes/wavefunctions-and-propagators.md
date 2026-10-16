@@ -108,11 +108,12 @@ Conventions in that table:
 
 - **The longitudinal term divides by real `m²`.** This is ALOHA's form: the
   generated routines declare `OM3 = 0; if (M3.ne.0) OM3 = 1/M3**2` with a real
-  mass[^aloha-om]. Only the denominator is complex. The legacy HELAS port
-  `helas/vertex.rs::jioxxx` instead divides by complex `m² − imΓ`; it is a
-  test reference, not on the production path[^code-vertex], and its comparison test
-  (`test_eval_jioxxx` in `run.rs`) uses massless external fermions whose
-  current is conserved, `q·J = 0`, so it cannot tell the two forms apart.
+  mass[^aloha-om]. Only the denominator is complex. HELAS's own `jioxxx.F` divides
+  by complex `m² − imΓ`; the port `helas/vertex.rs::jioxxx`, a test reference
+  and not on the production path[^code-vertex], follows ALOHA instead and says
+  so. `test_eval_jioxxx` in `run.rs` compares the two with massive external
+  fermions, where `q·J ≠ 0`, and against independent ALOHA transcriptions of the
+  `FFV2`/`FFV4` currents, so it fails if either side's denominator changes.
 - **The massless vector is Feynman gauge.** It ignores the width and does not
   guard `q² = 0`; the caller must keep the line off-shell.
 - **No complex-mass scheme.** `set complex_mass_scheme True` in a proc card is
