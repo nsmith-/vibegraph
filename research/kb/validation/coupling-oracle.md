@@ -90,7 +90,4 @@ unary-minus precedence defect of `ufo/expr.rs` (`-ee**2/(2.*cw)` read as
 - **The running strong coupling is not reached.** Both sides read the card's own
   `aS`; `validate_scale_couplings.rs` compares the constant pools as `aS` moves.
 
-The manifest's `couplings-mg` note still describes the precedence defect as a
-live `KNOWN_CRATE_DEFECTS` entry; the code is the current state.
-
 [^n36-b5]: Note 36 B5. Its "≤ 1 ulp against Python" plan was replaced by the measured `1e-13`, and the precedence defect it found was fixed in the same sprint.

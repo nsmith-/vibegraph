@@ -61,7 +61,7 @@ kind is treated.
 | `$` never vetoes a flipped-slot fermion propagator | `create_aloha.py:262-263, 527-530` | σ of `$ t t~` 37% high | reference from patched ALOHA |
 | grouped first `setclscales` on the unpermuted point (H1) | `super_auto_dsig_group_v4.inc:842`, `update_scale_coupling(pp, wgt)` | process-dependent | registered deviation, [own concept](madgraph-permuted-first-call.md) |
 | `aS` injected into a model with none, inconsistent with `G` | `export_v4.py:7076` | `AQCDUP` on six toy rows | measured, not enforced |
-| UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8 | Python `model_reader` is the arbiter |
+| **approximation**: UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8, `GC_299` by 2.8e-8 | registered deviation: Python `model_reader` is the arbiter, and the graphs carrying them are exempted by name |
 | `t` read unassigned in `get_channel_cut` at `sde_strat = 1`, `tmin_for_channel ≠ -1` | `genps.f:1878-1960`, read at `:1937-1938` | unreachable here | such a card refused (run-card parser, `hadronic::configurations_weighted_by_amp2`) |
 | 3.5.x `get_channel_cut` dimensionally wrong | 3.5.x `genps.f` | yes, at narrow poles | references come from 3.7.1 |
 | 3.5.7 applied a PDF set's `αs(M_Z)` at `lpp = 0` | 3.5.7 parameter card | partonic σ by `0.920ⁿ` | cuts across it not comparable |
@@ -114,14 +114,27 @@ on `UNDECLARED_ALPHA_S_RUNS`); `validate_alphas` replays MadGraph's events from
 **Seven-digit UFO literals.** `gHza`'s `0.4583333333333333` (11/24) is written
 `4.583333D-01`, so `MATRIX1` runs on a `GC_303 = 2i·gHza/vevhat` 1.2e-8 off the
 model's own Python value; MadGraph's Python `model_reader` agrees with this crate
-to 1e-14 on every coupling of every row[^n35-e1]. Only `ee_to_zh_smeft` and
-`wpwm_to_wpwmz_cw` carry it. `coupling_oracle.rs` takes Python as the arbiter and
-lists the Fortran deviation by name; an unlisted Fortran/Python disagreement
-fails ([coupling-oracle](coupling-oracle.md))[^n36-b5]. `ee_to_zh_smeft`'s
-amplitude cell stays `info` rather than matching a rounded reference. `gHaa` is written the same way, putting `GC_299` 2.8e-8 off; no banked
-amplitude row carries it yet, so `coupling_oracle` does not list it. The
-user classified both as an approximation this crate improves on at negligible
-cost, kept as a registered deviation ([policy](madgraph-defect-policy.md)).
+to 1e-14 on every coupling of every row[^n35-e1]. Of the coupling tables, only
+`ee_to_zh_smeft`'s and `wpwm_to_wpwmz_cw`'s Fortran carry it. `coupling_oracle.rs`
+takes Python as the arbiter and lists the Fortran deviation by name; an unlisted
+Fortran/Python disagreement fails ([coupling-oracle](coupling-oracle.md))[^n36-b5].
+`gHaa` is written the same way, putting `GC_299 = 4i·gHaa/vevhat` 2.8e-8 off. No
+coupling table's Fortran carries `GC_299`, so `coupling_oracle` does not list it.
+
+The amplitude gates exempt the rounding graph by graph.
+`tests/common/mg_graphs.rs` (`ROUNDED_COUPLING_GRAPHS`) names, per row, the graphs
+whose MadGraph value carries either coupling, with the measured deviation:
+
+- `GC_303` on `wpwm_to_wpwmz_cw` and on the standalone rows `wpwm_to_az_cw`,
+  `az_to_wpwm_cw`, `wpwm_to_wpwma_cw` and `ee_to_wpwmwpwm_cw`;
+- `GC_299` on `aa_to_wpwm_cw`, `wpwm_to_wpwma_cw` and `ee_to_wpwmwpwm_cw`.
+
+Only those graphs' modulus is compared at the deviation. `ee_to_zh_smeft`'s table
+banks `AMP()`, which that correction does not yet cover, so its amplitude cell
+stays `info` rather than matching a rounded reference
+([ee-to-zh-smeft-rounded-coupling-gate](../backlog/validation/ee-to-zh-smeft-rounded-coupling-gate.md)).
+The user classified both roundings as an approximation this crate improves on at
+negligible cost, kept as a registered deviation ([policy](madgraph-defect-policy.md)).
 
 **`get_channel_cut` reads an unassigned `t`** under `sde_strat = 1` with
 `tmin_for_channel ≠ -1` (`genps.f:1878-1960`). The early returns cover

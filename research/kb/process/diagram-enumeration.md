@@ -121,8 +121,8 @@ SMEFTsim's `gg_to_gg_cg` is 21 against 27. [^n25-findings] [^n35-ngraphs]
 **Decision** (note 25's findings register): report vibegraph's count in its own
 convention and mark those `diagrams` cells informational (⚠️ in the report). Re-splitting
 the enumeration to match a counting convention would change the thing being validated to
-make a number match, and `g g > g g` is pinned per colour flow at 8.25e-14, far below what
-any difference in diagram content could survive.
+make a number match, and `g g > g g` is pinned per colour flow at 5.4e-16 (its grid `|M|²`
+at 8.3e-14) at `4277158`, far below what any difference in diagram content could survive.
 
 A second counting divergence: for a same-flavour process through a four-fermion contact
 whose structures pair the legs both ways (`e+ e- > e+ e- NP<=1`), vibegraph emits one

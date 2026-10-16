@@ -137,10 +137,12 @@ massless the per-diagram channel maps degenerate onto one another, and the
 sampled channel carries no information about which diagram produced a point.
 
 **Caveat: this is MadEvent's channel weight only under its default
-integration strategy.** `SMATRIX` rescales every `AMP2(j)` by
-`GET_CHANNEL_CUT` (the product of the configuration's inverse squared
-propagator denominators), and under `sde_strategy = 2` it replaces the amplitude
-by that product outright. That moves the written colour flow of a process whose
+integration strategy.** Under `sde_strategy = 1`, `SMATRIX` multiplies every
+`AMP2(j)` by `GET_CHANNEL_CUT`, which is 1 when `tmin_for_channel = −1` and
+otherwise a damping factor on the configuration's t-channel lines. Under
+`sde_strategy = 2` it replaces `AMP2(j)` by `GET_CHANNEL_CUT` outright, which
+there is the product of the configuration's inverse squared propagator
+denominators (`matrix_madevent_group_v4.inc:218-222`, `genps.f:1817-1960`). That moves the written colour flow of a process whose
 `ICOLAMP` rows separate the flows configuration by configuration; it never
 reaches `|M|²` or σ.
 
@@ -210,10 +212,12 @@ Known gaps:
   with no per-diagram comparison, every multi-flow row among them, are not
   covered: [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md);
   see the [F-G1 report](../sprints/hygiene/sessions/F-G1-report.md).
-- **`wpwm_to_wpwmz_cw`** has no banked diagram pairing, so its 21-group
-  partition matches MadGraph's only in group sizes
-  (`KNOWN_CONFIG_PAIRING_UNAVAILABLE`); see
-  `wpwmz-cw-config-partition-uncompared` (closed by PR #33).
+- **`wpwm_to_wpwmz_cw`'s MadEvent table banks no `AMP()`** (222 graphs), so
+  its pairing is not measured on that table. It is measured per graph on the
+  row's standalone table, which numbers the graphs as the MadEvent export does
+  (`tests/common/mg_graphs.rs`, `WPWM_TO_WPWMZ_CW_GRAPHS`). The 21-group
+  partition is compared through that pairing, and
+  `KNOWN_CONFIG_PAIRING_UNAVAILABLE` is empty.
 - **The diagram pairing** between our enumeration and MadGraph's is banked in
   `MG_DIAGRAM_ORDER`, not searched for, so a reordering on either side fails
   loudly instead of being re-matched.

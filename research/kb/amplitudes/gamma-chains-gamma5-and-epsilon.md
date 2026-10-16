@@ -120,13 +120,17 @@ the equivalence evidence is the hermetic `ffv_vout_matches_generic_chiral_pair` 
 ## Rows that exercise these structures
 
 Gated: `gg_to_h_cpeven`, `gg_to_h_cpodd`, `ee_to_ttx_dipole`, `gg_to_gg_cg` (whose
-contact sign is a vector-vertex matter: [vector-vertex-signs](vector-vertex-signs.md)).
+contact sign is a vector-vertex matter: [vector-vertex-signs](vector-vertex-signs.md)),
+and `wpwm_to_wpwmz_cw`, whose twelve graphs carrying `GC_303` are compared at their
+registered modulus deviation and every other graph at the ordinary tolerance
+([the amplitude oracle](../validation/amplitude-oracle.md)).
 Informational, each with its cause recorded in `validation/manifest.toml`:
-`ee_to_wpwm_cw` (linear level exact; one of 48 `|M|²` points at 2.078e-12 against
-a 1e-12 budget, 336× its own one-ulp sensitivity), `ee_to_zh_smeft` (MadGraph's
-Fortran writes the `GC_303` literal `11/24` to seven digits; the reference is the
-side that rounds) and `wpwm_to_wpwmz_cw`
-(`wpwmz-cw-ow-five-vector-residual` (closed by PR #33)).
+`ee_to_wpwm_cw` and `ee_to_zh_smeft`. On `ee_to_wpwm_cw` the per-diagram and
+per-flow levels sit at rounding, but the worst of its 48 `|M|²` points reads
+1.63e-12 against a 1e-12 budget at `4277158`. The manifest note, taken before
+the amplitude-signs sprint, records 2.078e-12 at one point, 336× that point's
+one-ulp sensitivity. On `ee_to_zh_smeft`, MadGraph's Fortran writes the
+`GC_303` literal `11/24` to seven digits, so the reference is the side that rounds.
 The SMEFTsim rows are described in [validation/non-sm-rows](../validation/non-sm-rows.md).
 
 [^n35-e1]: Note 35 §E1, including its landed record.

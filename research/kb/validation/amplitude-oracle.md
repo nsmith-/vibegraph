@@ -141,26 +141,33 @@ colour-ordered `AMP()`s.
 
 Each list is **two-way**: an entry fails when its reason goes away.
 
-| list | means | at `787070e` |
+| list | means | at `4277158` |
 |---|---|---|
 | `KNOWN_CONFIG_MERGE` | MadGraph merges several diagrams into one accumulator; each entry says why | 14 rows, e.g. `ee_to_ee` (γ/Z t-channel), `ud_to_epemud_qcd0` (35 diagrams, 21 accumulators), the 2 → 1 rows, the SMEFT rows whose SM and operator structures share a topology |
-| `KNOWN_CONFIG_PAIRING_UNAVAILABLE` | no per-diagram table, so no pairing to compare partitions through; both partitions are printed and `\|M\|²`, JAMPs and JAMP2 still run | `wpwm_to_wpwmz_cw` (222 graphs; the partitions share only the multiset of group sizes, `{3×8, 7×8, 12, 17×4}`, and are not a shift of each other[^n35-wpwmz]) |
+| `KNOWN_CONFIG_PAIRING_UNAVAILABLE` | no per-diagram table, so no pairing to compare partitions through; both partitions are printed and `\|M\|²`, JAMPs and JAMP2 still run | **empty**. `wpwm_to_wpwmz_cw` (222 graphs, no `AMP()` in its MadEvent table) pairs through the graph mapping measured on its standalone table (`mg_graphs::WPWM_TO_WPWMZ_CW_GRAPHS`). Before that mapping existed, its two partitions shared only the multiset of group sizes, `{3×8, 7×8, 12, 17×4}`, and were not a shift of each other[^n35-wpwmz] |
 | `KNOWN_LINEAR_DISAGREEMENT` | the comparison runs and records instead of failing, so an `info` cell carries real numbers | **empty** — every row is gated at the linear level |
 
 A manifest `amplitudes` cell may be `info` independently of these lists. Two
-are: `ee_to_wpwm_cw` (linear level exact; one grid point's
-`|M|²` at 2.078e-12, 336× its own ulp sensitivity, with a helicity sum cancelling
-by 875), `ee_to_zh_smeft` (MadGraph's Fortran rounds `GC_303`'s UFO literal to
-seven digits; see [the coupling oracle](coupling-oracle.md)).
+are:
+
+- `ee_to_wpwm_cw`: per diagram 4.7e-16 and per flow 2.9e-16, but one grid point's
+  `|M|²` reads 1.63e-12 at `4277158`. The manifest note, taken before the
+  amplitude-signs sprint, records 2.078e-12 at one point, 336× that point's own
+  ulp sensitivity, with a helicity sum cancelling by 875. The row's report note also
+  records that `CONFIG_AMP_SIGNS` banks no sign pattern for it, a failure the
+  `info` mode does not raise.
+- `ee_to_zh_smeft`: MadGraph's Fortran rounds `GC_303`'s UFO literal to seven
+  digits; see [the coupling oracle](coupling-oracle.md).
+
 `wpwm_to_wpwmz_cw` carries the same rounding and is gated: the graphs that carry
 `GC_303` are named in `tests/common/mg_graphs.rs` (`ROUNDED_COUPLING_GRAPHS`) and
-only their modulus is exempted, by their measured deviation. Each graph is also
-checked on its own scale (`GRAPH_RATIO_TOL`, 1e-10), because a dropped name can
-hide below the table-normalised 1e-12 gate. Here the MadEvent table banks no
-`AMP()`, so the named graphs' share is corrected through the MadGraph-derived
-pairing before |M|², flows and JAMP2 are compared. The standalone rows with
-`AMP()` pin the name list. This is a registered deviation of the approximation
-kind ([defect policy](madgraph-defect-policy.md)).
+only their modulus is exempted, by their measured deviation. The MadEvent table
+banks no `AMP()`, so here the named graphs' share is corrected through the
+MadGraph-derived pairing before |M|², flows and JAMP2 are compared. The name list
+is pinned by the row's standalone table, which banks `AMP()`: `standalone_jamps`
+also checks each graph on its own scale (`GRAPH_RATIO_TOL`, 1e-10), because a
+dropped name can hide below the table-normalised 1e-12 gate. This is a
+registered deviation of the approximation kind ([defect policy](madgraph-defect-policy.md)).
 
 ## The fitted constants carry bits, not phases
 
@@ -189,7 +196,8 @@ and checks the per-process `run_config_amps` sign patterns against the banked
 the [F-G1 report](../sprints/hygiene/sessions/F-G1-report.md)). Rows without a per-diagram comparison are open as
 [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md).
 Asserting that `run_config_amps` *equals* the per-diagram amplitudes would fail
-on those three rows, and asserting uniformity would be false[^n29-f14].
+on every row with a `−` in its pattern, and asserting uniformity would fail on the
+five rows above[^n29-f14].
 
 ## The standalone JAMP gate
 
@@ -200,14 +208,15 @@ NHEL helicity, every flow, at a few RAMBO points, one fitted `G` with
 `|G| = 1`, `REL_TOL = 1e-12`[^n39-oracle]. Standalone output keeps the width of
 a spacelike propagator; MadEvent zeroes it (`zerowidth_tchannel`) and this crate
 follows MadEvent, so rows with a massive t-channel line (`ee_to_wpwmz`,
-`wpwm_to_wpwm`, `ttx_to_gg_chg`, `wpwm_to_epem`) are generated with every width
-zero on both sides (`zero_widths = True`). Through such a line the difference is
-0.1–0.5 % per helicity, not a sign. Rows: `gg_to_ggg`,
+`wpwm_to_wpwm`, `ttx_to_gg_chg`, `wpwm_to_epem` among them) are generated with
+every width zero on both sides (`zero_widths = True`, set on 33 of the 45 rows at
+`4277158`). Through such a line the difference is 0.1–0.5 % per helicity, not a
+sign. The 45 tables at `4277158` include `gg_to_ggg`,
 `uux_to_ggg`, `ug_to_ug`, `ee_to_wpwmz`, `wpwm_to_wpwm`, `ttx_to_gg_chg`,
 `tata_to_ttxh`, `tata_to_ttxhh`, `bbx_to_hh`, the five `t t~ + jet` rows
-(`gg_to_ttxg`, `gu_to_ttxu`, `gux_to_ttxux`, `ug_to_ttxu`, `uux_to_ttxg`), and `wpwm_to_epem` as a two-way
-known disagreement
-(`wpwm-to-epem-neutrino-exchange-sign` (closed by PR #30)).
+(`gg_to_ttxg`, `gu_to_ttxu`, `gux_to_ttxux`, `ug_to_ttxu`, `uux_to_ttxg`),
+`wpwm_to_epem` and the O_W rows. Its `KNOWN_DISAGREEMENT` list is empty: every
+table gates.
 It is blind to the phase of `G`, to compensating errors in diagrams reaching the
 same flows with the same weights, and to kinematics outside its points[^n39-gates].
 `g g > t t~ g` and the other `t t~ + jet` subprocesses (`g u > t t~ u`,
