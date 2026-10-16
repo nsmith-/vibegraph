@@ -170,9 +170,9 @@ open work:
 
 ## Related rows
 
-`ee_to_mumua`'s photon-pole tail is a standing finding owned by validation:
-its pull is reported, not asserted, against a fixed +1.04% offset that is the
-reference's own ([gating exceptions](../validation/sigma-row-gating-exceptions.md)).
+`ee_to_mumua`'s photon-pole tail is gated against a seeded MadEvent reference;
+an earlier +1.04% offset was the single-run reference's own
+([gating exceptions](../validation/sigma-row-gating-exceptions.md)).
 The pole-map reference survey is
 [MadEvent phase-space maps](../references/codebases/madevent-phase-space-maps.md).
 

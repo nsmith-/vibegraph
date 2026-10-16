@@ -59,8 +59,8 @@ degraded measurement. The outcome was the first row: MadGraph's own windowed
 partition in `pt(γ)` exceeded its unwindowed σ (+3.07σ on quoted errors, +2.82σ
 on seed spreads, both readings recorded). A secondary `m(μμ)` axis, registered
 beforehand to carry no verdict, then showed the same signature five times larger,
-and it stayed localisation evidence only. The part still unattributed is
-[ee-mumua-radiative-return-sigma-high](../backlog/validation/ee-mumua-radiative-return-sigma-high.md).
+and it stayed localisation evidence only. The σ offset was later attributed to MadEvent's reference
+(`sprints/sigma-ee-mumua`).
 
 ## A bar for "success" that counts its own freedom
 

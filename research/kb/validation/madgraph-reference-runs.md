@@ -146,8 +146,10 @@ read (code-located defects are [madgraph-defects](madgraph-defects.md)):
   `ee_to_mumua`, MadEvent's sample puts 8.73% of σ in `pt(γ) ∈ [10, 20)` against
   9.40% from its own windowed runs (about 20σ), in both 3.5.7 and 3.7.1, and two
   complete `dummy_cuts` partitions of one run's phase space (in `pt(γ)` and in
-  `m(μμ)`) disagree with each other by 16.7σ[^n29-d]. The open part is
-  [ee-mumua-radiative-return-sigma-high](../backlog/validation/ee-mumua-radiative-return-sigma-high.md);
+  `m(μμ)`) disagree with each other by 16.7σ[^n29-d]. The σ part is
+  attributed (MadEvent's rare large Z-ISR weights, under-surveyed at its
+  default; `sprints/sigma-ee-mumua`); the sample's shape is
+  [ee-mumua-sample-reference-mis-shaped](../backlog/validation/ee-mumua-sample-reference-mis-shaped.md);
   the method is [windowed-partition-closure](windowed-partition-closure.md).
 - **Not bit-reproducible**: multi-group unweighting is scheduling-sensitive, and
   the mixed MLM rows' runs differ across hosts.

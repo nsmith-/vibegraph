@@ -145,9 +145,9 @@ to 0.1% in millions, seeds 20260719/20/21:[^n37-s3]
   reproduces isotropic bit for bit.
 - The one gated Standard-Model row the rule touches is `ee_to_mumua`
   (`μ* → μ γ` splits). Over five seeds at 80,000 × 8 its quoted error is 12–21%
-  smaller (variance −22% to −37%), χ²/dof 0.64–1.35, and its known +1.0% offset
-  against MadGraph is unmoved
-  ([backlog](../backlog/validation/ee-mumua-radiative-return-sigma-high.md)).
+  smaller (variance −22% to −37%), χ²/dof 0.64–1.35, and its then +1.0% offset
+  against a single MadEvent run is unmoved; that offset was the reference's
+  ([gating exceptions](../validation/sigma-row-gating-exceptions.md)).
 
 ## Why `soft-all` and `1/τ²` are options, not defaults
 
