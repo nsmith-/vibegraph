@@ -8,8 +8,10 @@
 # and refresh docs/src/cli/reference.md from the built binary first, so the
 # published CLI reference is always the binary's own help text. The backlog
 # page, docs/src/backlog.md, is rendered from the knowledge bundle's
-# backlog items (`pixi run backlog`) and is gitignored: committed, it would change with
-# every item and conflict between branches. `docs.yml` runs
+# backlog items (`pixi run backlog`), and the bundle's change log,
+# docs/src/kb-log.md, from its dated Sprint Records and Design Decisions
+# (`pixi run kb-log`). Both are gitignored: committed, they would change with
+# every item or close-out and conflict between branches. `docs.yml` runs
 # exactly this script; locally, `pixi run docs` does too. Requires `pixi` on
 # PATH, and `mdbook`, `mdbook-katex` and `mdbook-mermaid`, which
 # `scripts/install-mdbook-tools.sh` provides at the pinned versions.
@@ -31,6 +33,8 @@ claims=()
 pixi run backlog ${claims[@]+"${claims[@]}"} \
   --link-base "https://github.com/nsmith-/vibegraph/blob/main/research/kb/" \
   -o docs/src/backlog.md
+pixi run kb-log --link-base "https://github.com/nsmith-/vibegraph/blob/main/research/kb/" \
+  -o docs/src/kb-log.md
 
 RUSTDOCFLAGS="--html-in-header $repo/doc-include/mathjax-header.html" \
   cargo doc -q --no-deps --document-private-items -p vibegraph-lib

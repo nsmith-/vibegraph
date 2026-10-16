@@ -46,8 +46,12 @@ values, so the bundle defines its own vocabulary.[^n42-okf]
 - **Links** are standard markdown. Consumers must tolerate broken ones. Concepts
   here use file-relative links.
 - **Reserved files.** `index.md` carries no frontmatter, except the root's,
-  which declares `okf_version: "0.2"`. `log.md` is a newest-first list under
-  `## YYYY-MM-DD` headings.
+  which declares `okf_version: "0.2"`. The bundle commits no root `log.md`: a
+  shared log that every close-out appended to conflicted between any two
+  branches. `pixi run kb-log` renders the change log, newest first under
+  `## YYYY-MM-DD` headings, from the Sprint Records' `closed` and the Design
+  Decisions' `decided` dates, and the documentation site carries it. A sprint
+  folder's own `log.md` stays, since only that sprint writes it.
 - **Extra keys.** Unknown frontmatter keys are allowed. That is what lets the
   [`measured:` block](measurement-provenance.md), `closes_when`, `active` and
   `decided_by` exist without a spec change.
@@ -96,7 +100,7 @@ file, is retired in favour of the sprint folder.[^n42-shape]
 
 ## Conventions
 
-- **Bodies state current truth.** History lives in `log.md`, git and the
+- **Bodies state current truth.** History lives in the rendered log, the sprint logs, git and the
   archived notes. A concept carries no status banners ("APPROVED", "PLANNED"),
   no "amendment 2" sections, and no "originally … later" narrative. This matches
   the comment rule in `AGENTS.md`. Binding project rules stay in `AGENTS.md`;
@@ -128,6 +132,7 @@ anyway, so a Rust crate would buy nothing.[^n42-decisions]
 | `pixi run kb-index` | Regenerates every `index.md`; `--check` reports stale ones. |
 | `pixi run kb-lint` | Runs in CI as its own job. |
 | `pixi run backlog` | Renders the backlog view ([backlog items](backlog-items.md)). |
+| `pixi run kb-log` | Renders the change log from dated Sprint Records and Design Decisions. |
 
 The scripts read one bundle root, `ROOT` in `kb.py`: `research/kb/`.
 `pixi run new-sprint <name>` scaffolds `sprints/<name>/` with `sprint.md`,
