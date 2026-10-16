@@ -27,3 +27,4 @@
 # Development
 
 - [Backlog](backlog.md)
+- [Knowledge-bundle log](kb-log.md)
