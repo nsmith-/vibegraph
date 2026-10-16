@@ -152,10 +152,11 @@ use common::seeds::{combine, SeedMean};
 /// this limit is the instrument working rather than a margin running out. A
 /// limit with more room than that would have stopped rejecting.
 ///
-/// The one row the sweep puts *above* it is `ee_to_mumua` at `3.56`, which is
-/// the row [`PULL_REPORTED_NOT_ASSERTED`] names and the measurement that keeps
-/// that list from being vacuous: without the exemption the gate would fail on a
-/// disagreement it has separately established is the reference's own.
+/// A reference that is itself biased reads as a many-sigma pull here, which is
+/// why every gated σ reference is a seeded MadEvent record: a single MadEvent
+/// run at the default survey can sit a percent low (`ee_to_mumua`'s single
+/// 10k-event run read `1.04%` below this side; its seeded reference reads
+/// `−0.074%`, pull `−0.42`).
 const PULL_LIMIT: f64 = 3.5;
 
 /// The gated rows whose pull is reported rather than asserted, and why the pull
@@ -169,23 +170,11 @@ const PULL_LIMIT: f64 = 3.5;
 /// comparison does not have, and tightening the budget would eventually fail a
 /// row that had not moved.
 ///
-/// `ee_to_mumua` is that case, and the offset is the reference's own. Five seeds
-/// at the gate budget put this side `+1.04%` above the bank at `χ²/dof` `0.50`,
-/// so the residual is a fixed offset the seeds resolve rather than a spread they
-/// scatter over; the same sweep with the cut-implied timelike floors on the
-/// invariant draw moves `σ` by `+0.006%` and reads `+1.05%` at `χ²/dof` `0.45`,
-/// which is what says the offset belongs to the comparison rather than to this
-/// side's sampling. Its pull is `+4.11` and `+4.17` across those two sweeps —
-/// above [`PULL_LIMIT`] on a disagreement that is not shrinking, which is the
-/// reading this list exists to refuse. One seed cannot see any of it: the gate's
-/// own seed sits `0.089%` below its five-seed mean and reads `2.83`, an accident
-/// of the draw rather than an agreement.
-///
-/// Where the offset lives is adjudicated rather than assumed. MadGraph's `pt(a)`
-/// and `m(μμ)` partitions of one of its own runs disagree with *each other* by
-/// `16.7σ`, both above its own unwindowed control, while this side's total
-/// matches MadGraph's `m(μμ)` re-integration to `0.16σ`. `rel_tol` stays
-/// enforced at `0.03`, and it is what bounds the offset's size.
+/// No row needs it: every gated row's residual against its seeded reference is
+/// Monte Carlo. A systematic in the reference is resolved by re-banking it, as
+/// for `ee_to_mumua`, whose single default-survey MadEvent run sat `1.04%` low
+/// while an adaptation-free estimate and the seeded `hard_survey = 2` reference
+/// both land on this side.
 ///
 /// `gu_to_epemu` and `gux_to_epemux` make the distinction concrete by no longer
 /// needing it. They are the only fixed-energy rows whose cluster scale moves
@@ -199,7 +188,7 @@ const PULL_LIMIT: f64 = 3.5;
 /// `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3` against a reference whose
 /// own error is `1.8e-3` and `2.0e-3`. A row leaves this list by its residual
 /// shrinking, not by its budget being cut.
-const PULL_REPORTED_NOT_ASSERTED: [&str; 1] = ["ee_to_mumua"];
+const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 
 /// The rows whose subprocess re-evaluates the whole model on each scale change
 /// rather than rescaling its constant pools — roughly two orders of magnitude

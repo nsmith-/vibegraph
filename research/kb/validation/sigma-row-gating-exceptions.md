@@ -53,8 +53,7 @@ section; the exceptions below are worked cases of them.
 
 | row · cell | treatment | standing reason | tracked as |
 |---|---|---|---|
-| `ee_to_mumua` · integrals | gate on `rel_tol 0.03`; pull reported | a fixed +1.04% offset, not a spread | [ee-mumua radiative return](../backlog/validation/ee-mumua-radiative-return-sigma-high.md) |
-| `ee_to_mumua` · samples | `info` | `pt(a)` measures MadGraph's own sample | same item |
+| `ee_to_mumua` · samples | `info` | `pt(a)` measures MadGraph's own sample | [ee-mumua sample reference](../backlog/validation/ee-mumua-sample-reference-mis-shaped.md) |
 | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md) |
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
@@ -72,18 +71,15 @@ in this table; list the current set with
 
 ## Why each standing reason holds
 
-**`ee_to_mumua`.** Five seeds at the gate budget put this side +1.04% above the
-bank at χ²/dof 0.50, so the residual is a fixed offset; the cut-implied
-timelike floors move σ by +0.006%, and the soft-angle split rule leaves it at
-+0.74% to +1.05%.[^vsigma][^n37] Its pull is +4.11 at five seeds; the gate's own
-seed once read +2.83 only because it sat 0.089% below the five-seed mean, which
-is how the row passed a one-seed gate until a stream change re-rolled
-it.[^n34-floor] Without the exemption the gate fails (worst pull over five
-seeds 3.56 > 3.5), which is what keeps the exemption from being
-vacuous.[^n36a] Where the offset lives was adjudicated by windowed
-re-integration: MadGraph's `pt(a)` and `m(μμ)` partitions of its own run
-disagree with each other at 16.7σ, and its `m(μμ)` partition recovers our
-total; see [windowed partition closure](windowed-partition-closure.md). The
+**`ee_to_mumua`.** The integrals cell is an ordinary gate: its pull is
+asserted. Against a single 10k-event MadEvent run at the default survey this
+side read a fixed +1.04% high (pull +4.11 at five seeds), and the pull was
+reported rather than asserted. That offset was the reference's: an
+adaptation-free estimate lands on this side, and the seeded refdata-10
+reference (five fresh directories at `hard_survey = 2`, 100k events per
+`m(μμ)` window) reads −0.074%, pull −0.42 (`sprints/sigma-ee-mumua`). The
+windowed adjudication that localised it to MadGraph is
+[windowed partition closure](windowed-partition-closure.md). The
 samples cell is `info` because the `pt(a)` KS flapped across the floor (worst
 p 8.3e-6) on an unchanged shape, and MadGraph's banked sample puts 8.73% of σ
 below `pt(a) = 20` GeV where its own windowed cross sections put 9.40%: the
