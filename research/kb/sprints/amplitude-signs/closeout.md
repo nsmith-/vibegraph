@@ -31,8 +31,9 @@ verified on those dumps before production code changed.
   - the propagator phases (−1 per internal scalar line and per crossed fermion
     line);
   - each vertex's own reversed-bilinear parity;
-  - a −1 per triple-gluon vertex. That one is calibrated, not derived; see
-    `triple-gluon-sign-calibrated-not-derived`.
+  - a −1 per triple-gluon vertex. At close-out it was calibrated, not derived;
+    the follow-up session [T1](sessions/T1-report.md) (PR #39) derived it as the
+    slot exchange a self-conjugate vertex does not get from the crossing.
 
   A hermetic relabelling-invariance test pins the result.
 - **Gates.** Every MadGraph per-graph table agrees: 49 `standalone_jamps` rows,

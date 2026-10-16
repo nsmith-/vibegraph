@@ -1020,7 +1020,8 @@ fn line_end(diagram: &Diagram, model: &UFOModel, v: VtxIdx, slot: usize) -> LegI
 ///
 /// * [`propagator_phase_sign`]: the phase of each propagator against ALOHA's;
 /// * [`vertex_root_signs`]: each vertex's reading of its fermion bilinears;
-/// * [`triple_gluon_sign`]: the colour convention of the triple-gluon vertex.
+/// * [`triple_gluon_sign`]: the slot exchange the triple-gluon vertex, alone of the
+///   triple-vector vertices, does not get from the crossing.
 ///
 /// With [`Diagram::sign`] (the external fermions' pairing parity and the crossed-line
 /// reordering) that is the whole of `fermi_sign`.
@@ -1106,18 +1107,40 @@ fn vertex_root_signs(
     Ok(sign)
 }
 
-/// `−1` per triple-gluon vertex.
+/// `−1` per triple-gluon vertex: the slot exchange every other triple-vector vertex
+/// carries in its kernel.
 ///
-/// Its Lorentz structure and its coupling's normalisation are those of the colourless
-/// triple-vector vertices, which take no sign; the sign belongs to the colour-ordered
-/// decomposition of its antisymmetric `f^{abc}`. Only its ratio to the quark–gluon
-/// vertex is observable: a process's external gluons fix the parity of the two
-/// counts together, so `−1` per quark–gluon vertex is the same convention up to a sign
-/// common to the process. Without it the diagrams through a triple-gluon vertex come
-/// out with the wrong sign against those with a quark line in its place: every
-/// MadGraph row that has both (`u u~ > g g g`, `u g > u g`, `g g > u u~`,
-/// `g g > t t~` and the `t t~ + jet` rows) disagrees.
-fn triple_gluon_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
+/// feyngraph reads every interaction slot incoming and MadGraph reads it outgoing, so
+/// each leg stands in its antiparticle's slot of the UFO vertex, and the two slots of
+/// every conjugate pair hold each other's legs against MadGraph's reading. At a fermion
+/// vertex that exchange is undone, in the colour by `convert_expr`'s transpose of each
+/// `T` and in the bilinear by [`vertex_root_signs`]. At a `γW⁺W⁻` or `ZW⁺W⁻` vertex
+/// nothing undoes it: the `W⁺` and `W⁻` slots are exchanged, and `VVV1`, like every
+/// triple-vector structure the SM and SMEFTsim put on a W pair, is odd under that
+/// exchange, so the kernel reads `−1` against MadGraph's `COUP · L`. The other factors
+/// of [`convention_sign`] are set against kernels that carry it: `w+ w- > u u~` and
+/// `g g > u u~` carry the same [`Diagram::sign`], propagator phases and bilinear
+/// parities diagram for diagram, as do `e+ e- > w+ w-` and `u u~ > g g`, and the
+/// colourless one of each pair agrees with MadGraph with no vertex sign.
+///
+/// A gluon is its own antiparticle, so the crossing exchanges none of the triple-gluon
+/// vertex's slots. Its rays stand in MadGraph's slot order up to a permutation its
+/// colour `f(1,2,3)` follows, since both are read positionally; its coupling `GC_10`
+/// is MadGraph's; and its colour coefficients are MadGraph's JAMP coefficients term by
+/// term, because `f` passes through `convert_expr` untouched and `f_to_traces` is
+/// MadGraph's expansion. So the `−1` is not in the colour factor or the coupling: it
+/// is the slot exchange the kernel does not get. The vertices counted are the coloured
+/// ones; by the same account a colourless triple-vector vertex of three self-conjugate
+/// legs would take it too, and no model in reach has one.
+///
+/// Only its ratio to the quark–gluon vertex is observable: a process's external gluons
+/// fix the parity of the two counts together, so `−1` per quark–gluon vertex is the
+/// same convention up to a sign common to the process. Without it the diagrams through
+/// a triple-gluon vertex come out with the wrong sign against those with a quark line
+/// in its place: every MadGraph row that has both (`u u~ > g g g`, `u g > u g`,
+/// `g g > u u~`, `g g > t t~` and the `t t~ + jet` rows) disagrees. The factors are
+/// pinned one by one against MadGraph's `AMP()` in `helas::eval::triple_gluon`.
+pub(super) fn triple_gluon_sign(diagram: &Diagram, model: &UFOModel) -> i8 {
     let n = diagram
         .vertices
         .iter()

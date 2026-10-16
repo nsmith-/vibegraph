@@ -8,6 +8,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: per-factor mutations, the relabelling test, the acceptance runs"}
   - {id: bh-report, resource: "../sprints/amplitude-signs/sessions/B-H-report.md", title: "B-H report: mutations of the firing test, the relabelling test and the live-parity cancellation"}
+  - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon derivation and mutations M1–M4"}
   - {id: code-firing, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "named_processes_exercise_every_convention_factor"}
   - {id: code-relabel, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
   - {id: code-renumber, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
@@ -142,9 +143,21 @@ relabelling and renumbering gates pass it (B-H report)[^bh-report].
 
 ## What no gate here sees
 
-- **The triple-gluon `−1` is calibrated, not derived.** Every row above that
-  fails without it agrees with it, and the GF(2) solve over 3495 MadGraph-verified
-  diagrams gives it as the unique minimal constant; why it is `−1` is open.
+- **Which factor carries the triple-gluon `−1`.** The sign is derived: it is the
+  slot exchange the all-incoming crossing gives every charged triple-vector
+  vertex inside its kernel, which the self-conjugate gluon vertex does not get
+  ([vector-vertex-signs](../amplitudes/vector-vertex-signs.md)). Both MadGraph
+  gates are blind to where it sits. Moved into the colour (`f_to_traces`
+  negated, `triple_gluon_sign` at `+1`), every row of `standalone_jamps` (49)
+  and `amplitude_oracle` (49) passes; moved into the coupling (`GC_10` negated),
+  every SM row passes and only SMEFTsim rows, whose triple-gluon coupling has
+  another name, fail. `amplitude_oracle` compares `gg_to_ttx` per flow, not per
+  diagram, although its table banks `AMP()`. The colour and the rest are pinned
+  separately by `helas::eval::triple_gluon` on `g g > t t~`, with
+  `e+ e- > w+ w-` as the colourless control[^t1-report].
+- **The triple-gluon predicate is a proxy** for "no conjugate pair among the
+  legs": a colourless vertex of three self-conjugate vectors would need `−1` by
+  the derivation and gets none; no model in reach has one.
 - **The per-process sign is free.** Every oracle here and `|M|²` are blind to a
   sign shared by all diagrams of a process; `CONFIG_AMP_SIGNS` banks the one the
   convention gives as a tripwire.
@@ -158,6 +171,7 @@ relabelling and renumbering gates pass it (B-H report)[^bh-report].
 
 [^b-report]: B′ report, "Mutations (each factor pinned by MadGraph)" and "Relabelling test".
 [^bh-report]: B-H report, "Mutations".
+[^t1-report]: T1 report, "Mutations" M2 and M3.
 [^code-firing]: `vibegraph-lib/src/helas/eval/root_diagram.rs` tests.
 [^code-rooting]: `vibegraph-lib/src/helas/eval/rooting_soundness.rs`, module doc and `REL_TOL`.
 [^n19-v5]: Note 19 V5.

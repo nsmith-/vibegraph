@@ -15,8 +15,15 @@ sources:
   - {id: c1, resource: "../../sprints/amplitude-signs/sessions/C1-report.md", title: "C1 report, Found 4"}
   - {id: q1, resource: "../../sprints/amplitude-signs/sessions/Q1-report.md", title: "Q1 report, Found 3"}
   - {id: b, resource: "../../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report, Found"}
+  - {id: t1, resource: "../../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report, Found 5"}
 ---
 `probe_process_diagrams` reads only SM MadEvent work areas and colour chain zero
 ([colour-free-probe-sees-chain-zero-only](colour-free-probe-sees-chain-zero-only.md)).
 B′ notes a chain-zero shortcut once produced a false difference on
 `u u~ > t t~ g`; a committed tool must use real colour chains.
+
+T1 used ALOHA's Python output from the pinned submodule, following
+`matrix1_orig.f`'s call sequence, as a MadGraph-side per-diagram instrument
+without gfortran. Against the committed `gg_to_uux` JAMPs it was bit-exact
+(worst deviation 0.0). Committed with a known-answer check against one table,
+it would serve every row whose per-graph `AMP()` is not banked.
