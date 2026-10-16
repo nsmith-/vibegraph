@@ -88,7 +88,8 @@ date), **imprecise** (the claim is right in substance but its wording is off),
 | PD6 | Pruning moved `AMP2` by 39.5% on `gg_to_ttx`, 3.2% on `gg_to_gg` and 0 elsewhere, when the oracle was introduced | re-run: 3.95e-1 and 3.19e-2; also nonzero now on `gg_to_ttx_smlimit` (3.98e-1) and `gg_to_ttx_smlimit_qcd2` (4.07e-1), rows added later; 0 on the other 44 | ok as a dated reading |
 | PD7 | `gg_to_gg`'s partition is `[[3],[4],[5]]` | re-run: 3 configurations; record: `MG_DIAGRAM_ORDER` `gg_to_gg` = `[0,3,4,5]` | ok |
 | PD8 | Code names (`config_carrying_diagrams`, `config_groups`, `config_tag`, `pair_config_weights`, `amp_weights`, `amp_locs`, `config_amp_counts`, `config_diagram`, `select_config_and_flow(amp2, jamp2, [u0,u1], clustered)`, `eval_amp2`, `run_config_amps`, `config_flows`) | code | ok |
-| PD9 | "About 21% of the 2→6 row's instructions" | record: topdown-zen4 §7 | ok as a record; not re-measured (needs the perf host) |
+| PD9 | "About 21% of the 2→6 row's instructions" | record: topdown-zen4 L354 | ok as a record; not re-measured (needs the perf host) |
+| PD10 | "`SMATRIX` rescales every `AMP2(j)` by `GET_CHANNEL_CUT` (the product of the configuration's inverse squared propagator denominators)" | source: `matrix_madevent_group_v4.inc:218-222`; `genps.f:1878` returns 1 at `sde_strat = 1`, `tmin_for_channel = −1`, and the products are built only inside `if (sde_strat.eq.2)` | **imprecise**: the product is what `GET_CHANNEL_CUT` is under `sde_strategy = 2` only. Found while editing, after the findings commit |
 
 ### amplitudes/wavefunctions-and-propagators
 
@@ -109,7 +110,14 @@ Mutations for WF2. Each was applied with `sed` to one line, run with
 test_eval_jioxxx`, and reverted with a per-file checkout of the mutated file
 (`git diff --stat` empty afterwards):
 
-MUTATION_RESULTS
+| id | mutation (one line) | result |
+|---|---|---|
+| control | none, with `momentum_slashed_chain_is_rooting_invariant` | both pass |
+| M7 | `vertex.rs:67` `jioxxx`: `/ vm2` to `/ C::new(vm2, -vmass * vwidth)` (HELAS's complex denominator) | **fails**: `current vs jioxxx (FFV2/Z, t~t→ta+ta-, hel ↓↓): \|diff\|=1.774e-4, scale=6.409e-3` |
+| M6 | `kernel.rs:101` `propagate_vector_bare`: the same change on the production side | **fails**: `current vs jioxxx (FFV2/Z, t~t→ta+ta-, hel ↓↓): \|diff\|=1.774e-4, scale=6.411e-3` |
+
+Both reproduce J1's M6 and M7 to the digit. I did not re-run the base-commit
+test against them (J1's P3 records that it passed M6).
 
 ### process/decay-chains
 
@@ -156,6 +164,7 @@ MUTATION_RESULTS
 | AO12 | Standalone gate: `REL_TOL = 1e-12`, `zero_widths = True` on the four named rows; "Rows: …" | code; census: 45 standalone tables, and the concept names 15 | **imprecise**: the row list reads as complete and is not |
 | AO13 | `wpwm_to_epem` is a two-way known disagreement, citing `wpwm-to-epem-neutrino-exchange-sign` | code: `standalone_jamps`' `KNOWN_DISAGREEMENT` is `&[]`; re-run: `wpwm_to_epem` passes | **wrong**: the row gates; the slug points at a deleted item |
 | AO14 | The `t t~ + jet` rows are gated per flow by `standalone_jamps` | re-run: `gg_to_ttxg`, `gu_to_ttxu`, `gux_to_ttxux`, `ug_to_ttxu`, `uux_to_ttxg` pass | ok |
+| AO15 | "rows with a massive t-channel line (`ee_to_wpwmz`, `wpwm_to_wpwm`, `ttx_to_gg_chg`, `wpwm_to_epem`) are generated with every width zero" | census: an AST parse of `gen_standalone_jamps.py` finds `zero_widths=True` on 33 of 45 rows | **imprecise**: the four are examples, not the set. Found while editing, after the findings commit |
 
 ### validation/colour-oracles
 
@@ -248,20 +257,114 @@ cited note or item), and all of them agree with that record.
 
 ## Fixes
 
-FIXES_SECTION
+All fixes are in the concepts, in `da9cf8a`, the commit after the findings
+commit `677242e`. The stamps follow in the commit after that. Each row names the
+finding it closes.
+
+| concept | finding | change |
+|---|---|---|
+| gamma-chains-gamma5-and-epsilon | GC1, GC2, GC5 | `wpwm_to_wpwmz_cw` moved to the gated rows, with its named `GC_303` exemption; the closed slug dropped; `ee_to_wpwm_cw`'s reading given as 1.63e-12 at `4277158`, with the manifest's 2.078e-12 and 336× attributed to the manifest note and dated before the sprint |
+| per-diagram-amp2 | PD1, PD10 | the `wpwm_to_wpwmz_cw` gap replaced by how its pairing is measured now, with the list stated empty; the `SMATRIX` caveat split by `sde_strategy`, with source lines |
+| wavefunctions-and-propagators | WF8, WF9 | the scalar-chain pins split into per diagram (ee→μμττ, e⁺e⁻→τ⁺τ⁻H) and per helicity and flow (the 2→6 rows); the tau-line pin restated as per helicity and flow at 1e-12 on single-flow tables without `AMP()`, with what that can and cannot see |
+| decay-chains | DC4, DC6, DC7 | the per-diagram oracle is bit for bit on all 147 pairs; `OnShell { Free, Forced }`, with `$` described as not a diagram flag; `ForestLine` placed in `graph.rs` |
+| diagram-enumeration | DE5 | `g g > g g` per flow at 5.4e-16 (its grid `\|M\|²` at 8.3e-14) |
+| amplitude-oracle | AO6, AO7, AO8, AO9, AO11, AO12, AO13, AO15 | the exemption table at `4277158`, with `KNOWN_CONFIG_PAIRING_UNAVAILABLE` empty and the note 35 partition finding kept as history; the two `info` rows as a list with current numbers and the `CONFIG_AMP_SIGNS` gap; `GRAPH_RATIO_TOL` placed in `standalone_jamps`; the "three rows" antecedent fixed; the standalone row list marked as a subset of 45 tables, `zero_widths` on 33 of them; `wpwm_to_epem` gated, `KNOWN_DISAGREEMENT` empty, the closed slug dropped |
+| coupling-oracle | CP4 | the stale remark about the manifest's `couplings-mg` note removed |
+| madgraph-defects | MD3, MD4, MD5 | the seven-digit-literal row marked **approximation**, `GC_299` added, handling "registered deviation"; the prose names which coupling tables carry `GC_303`, which standalone rows carry `GC_303`/`GC_299` under `ROUNDED_COUPLING_GRAPHS`, and why `ee_to_zh_smeft` stays `info` (with its open item) |
+| non-sm-rows | NS3, NS4, NS5, NS6, NS8 | 444 parameters over 14 rows; "but two" at `4277158`; `ee_to_wpwm_cw` at 1.63e-12; the capstone's seed reading as the manifest's \|pull\| ≤ 1.44 beside note 35's range; the 6.0e-11 attributed to `GC_303` |
+| sigma-row-gating-exceptions | SG1 | the info-cell census stamped `4277158` (re-run, same nine cells) |
+| agent-dispatch-and-worktrees | AD2, AD3, AD4 | `hygiene-dev.md` added to the footnote; a footnote for the amplitude-signs disk incident; the `release-debug` sentence says what cargo does (refuses every build) |
+
+No concept was rewritten beyond those passages. `colour-oracles` and
+`oracle-blind-spots-and-non-vacuity` needed no fix.
 
 ## Stamps
 
-STAMPS_SECTION
+Stamped `{by: claude-code/claude-opus-5-5, at: 2026-10-16}`, `status` left
+`draft`, after the fixes: all thirteen.
+
+Each was checked end to end in the sense of the method section. Every body
+claim has a re-run, a census, a code or source reading, or (for a dated
+measurement or an incident) a match against the record that holds it. What
+that does not cover, said once here for all thirteen:
+
+- **The `787070e` pins of vibegraph source** were not opened (shallow clone, no
+  GitHub). Every item they name was found and checked in the current tree.
+- **Recorded measurements I did not re-run**: the σ and seed-sweep numbers
+  (sigma-row-gating-exceptions, the non-sm-rows capstone), the perf figures
+  (per-diagram-amp2's 21%), the 24 of 96 wrong-sign diagrams of PR #13
+  (oracle-blind-spots), the `ee_to_wpwm_cw` 336× and 875 factors (now
+  attributed to the manifest note), and the operational incidents
+  (agent-dispatch). Each matches its record. Re-running them needs a σ host,
+  a perf host or history that no longer exists.
+
+If either is a reason to withhold, the stamps on sigma-row-gating-exceptions
+and agent-dispatch-and-worktrees rest most on records, and are the ones to
+reconsider.
 
 ## Stop-rule items
 
-STOP_SECTION
+None fired. No fix changes a stated convention or a number a gate or code
+relies on.
+
+- The madgraph-defects reclassification (MD5) only applies the decision already
+  recorded in `madgraph-defect-policy.md:89` (2026-10-15, human:nsmith-).
+- The numbers I changed are descriptive readings, re-measured by the gate that
+  produces them. No tolerance, list or manifest mode was touched.
+- The manifest notes that are stale (Found 2, 3) are not kb concepts, and I left
+  them alone.
 
 ## Found
 
-FOUND_SECTION
+1. **`Diagram::fermion_line_sign`'s doc comment overstates its pins.**
+   `vibegraph-lib/src/diagrams/diagram.rs:524-530` says the sign is "pinned per
+   diagram against MadGraph's `AMP()`" by `u u~ > c c~ e+ e- mu+ mu- QCD=0` and
+   by `ta+ ta- > t t~ h (h)`. Neither banks `AMP()`: `uux_to_ccx_emmm_qcd0.json`
+   has `amp_table: false`, and the two tau tables have no `jamp_coefficients`
+   and no `MG_GRAPH_DIAGRAMS` entry. To close: say "per helicity and flow" for
+   those rows (hygiene).
+2. **`ee_to_wpwm_cw` has no `CONFIG_AMP_SIGNS` entry, and its `info` mode hides
+   the failure.** `target/validation-report/amplitudes/ee_to_wpwm_cw.json`
+   (`amplitude_oracle` at `4277158`) reads "2 of the linear-level checks failed;
+   first: … read +++++++ and CONFIG_AMP_SIGNS banks none for this row". The
+   list's doc says "a compared row must be listed". To close: bank the measured
+   pattern, or have the two-way bookkeeping check fail whatever the row's mode
+   (validation).
+3. **The `ee_to_wpwm_cw` amplitudes note in `validation/manifest.toml` is
+   stale.** It gives `G = +1i`, per flow 3.07e-16, JAMP2 1.83e-15 and the worst
+   point at 2.078e-12. At `4277158` the gate reads `G = −1i`, 2.87e-16,
+   2.03e-15 and 1.632e-12. The point index, the 336× ulp ratio and the 875
+   cancellation need re-measuring at the new reading. To close: re-measure and
+   rewrite the note (validation).
+4. **The `pp_to_ttx_0j1j_mlm` amplitudes note** says "the one-jet subprocesses
+   have no amplitude row". `standalone_jamps` now gates `gg_to_ttxg`,
+   `gu_to_ttxu`, `gux_to_ttxux`, `ug_to_ttxu` and `uux_to_ttxg`. To close: point
+   the cell at those rows (`covered-by`), or say what is still missing.
+5. **`madgraph-defect-policy.md:89`** says "the affected rows exempt only those
+   graphs' modulus by name and are otherwise gated". `ee_to_zh_smeft` is
+   affected and still `info`; its route is the open item
+   `ee-to-zh-smeft-rounded-coupling-gate`. To close: qualify the sentence (kb).
+6. **`model/restriction-semantics.md:52` and
+   `validation/toy-ufo-models.md:95`** quote "421 external parameters over 13
+   gated rows". The test prints 444 over 14 (`smeftsim -- --nocapture`). To
+   close: update both (kb).
+7. **`amplitudes/levi-civita-and-sigma-conventions.md:95`** quotes
+   `ee_to_wpwm_cw`'s point at 2.08e-12; it reads 1.63e-12 at `4277158` (kb).
+8. **The info amplitude rows' sign patterns are generally unbanked.**
+   `ee_to_zh_smeft` is in `CONFIG_AMP_SIGNS`, but nothing makes an `info` row's
+   bookkeeping lists two-way. This generalises Found 2. To close: a test that
+   every row comparing per-diagram amplitudes is listed, independent of mode
+   (validation).
 
 ## Corrections to the brief
 
-BRIEF_SECTION
+- **"Re-measure every claim you can" meets the shallow clone.** The `787070e`
+  pins cannot be opened without contacting GitHub, which the brief forbids.
+  Either allow a read-only `git fetch` of that one commit, or accept the pins
+  as provenance (my reading).
+- **"Pinned-commit source links" and the history archive.** The archive's
+  line numbers run two past the pinned ones on note 35. A reviewer checking
+  note anchors locally should know the offset; it may differ per note.
+- **The first commit's index.** The findings commit (`677242e`) did not
+  regenerate `sessions/index.md`, so `kb-lint` fails on that commit alone. The
+  next commit regenerates it.

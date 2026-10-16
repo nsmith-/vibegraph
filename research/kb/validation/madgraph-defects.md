@@ -5,7 +5,7 @@ description: "Register of MadGraph defects met while validating: where each sits
 status: draft
 tags: [madgraph, defects, reference, upstream-report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n07-tables, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L43-L227", title: "Note 07, weaknesses and bug tables (rows marked found here)"}
   - {id: n07-aqcdup, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/07-mg5-code-quality.md#L367-L415", title: "Note 07, AQCDUP truncated pi and rambo.py"}

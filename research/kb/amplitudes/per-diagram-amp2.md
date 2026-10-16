@@ -5,7 +5,7 @@ description: "Op::Configs roots and eval_amp2; MadGraph's get_amp2_lines configu
 status: draft
 tags: [amp2, configurations, colour-selection, amplitude-oracle, madgraph]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-10}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n27-b6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L912-L1038", title: "Note 27 §B6 (the per-diagram AMP2 accumulator)"}
   - {id: n27-findings, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L1223-L1243", title: "Note 27 §7 findings register (pruning moves AMP2; config merge)"}
