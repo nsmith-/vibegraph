@@ -9,10 +9,11 @@ sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: per-factor mutations, the relabelling test, the acceptance runs"}
   - {id: bh-report, resource: "../sprints/amplitude-signs/sessions/B-H-report.md", title: "B-H report: mutations of the firing test, the relabelling test and the live-parity cancellation"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon derivation and mutations M1–M4"}
-  - {id: code-firing, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "named_processes_exercise_every_convention_factor"}
-  - {id: code-relabel, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
-  - {id: code-renumber, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
-  - {id: code-rooting, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
+  - {id: code-firing, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "named_processes_exercise_every_convention_factor"}
+  - {id: code-relabel, resource: "vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
+  - {id: code-renumber, resource: "vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
+  - {id: code-rooting, resource: "vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "helas/eval/rooting_soundness.rs"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the mutations re-measured on 0ec027a"}
   - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 V5 — the rooting-soundness gate"}
   - {id: n24-gux, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L683-L703", title: "Note 24 P1 — the q̄ g row"}
   - {id: n24-mut, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L756-L809", title: "Note 24 P1 — mutation experiments"}
@@ -69,16 +70,20 @@ values are not its business either.
 ## Each factor dropped: the MadGraph rows
 
 Each factor of `convention_sign` was set to `+1` on its own and the two
-MadGraph suites run. Every failure listed is a per-diagram or per-flow
-disagreement, so each factor varies within at least the rows it fails[^b-report]:
+MadGraph suites run (B′; re-measured on `0ec027a` in the R1 review, which
+reproduces B′'s counts and every row B′ names). Every `standalone_jamps` failure is a per-flow disagreement. An
+`amplitude_oracle` row runs its per-diagram and per-flow checks before the
+`CONFIG_AMP_SIGNS` tripwire, so a row that fails only the tripwire agrees with
+MadGraph up to a sign shared by all its diagrams; those are counted apart. Each
+factor varies within at least the rows of the first two columns[^b-report][^r1-report]:
 
-| dropped | `standalone_jamps` fails | `amplitude_oracle` fails |
-|---|---|---|
-| every vertex reading | 17 rows (`ee_to_ee_4f`, `uux_to_ggg`, `tata_to_ttxh`, …) | 28 rows, e.g. `ee_to_ee`, `ee_to_wpwm`, `ud_to_epemud_qcd0`, `uux_to_uux` |
-| the tensor-path sign only | `tata_to_ttxa_tensor4f` | `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` |
-| the scalar-line phase | 25 rows (`bbx_to_hh`, `hh_to_hh_chbox`, `zz_to_ttx`, the `O_W` rows, …) | `bbx/uux_to_ccx_emmm_qcd0`, `gg_to_gg_cg`, `qqx_to_o8o8_toy_dcolor`, … |
-| the crossed-line fermion phase | 22 rows (`ee_to_ttxh`, `wpwm_to_epem`, `wph_to_tbx`, …) | `gg_to_ttx`, `ee_to_tatah`, `ud_to_epemud_qcd0`, … |
-| the triple-gluon sign | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f` | `gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2` |
+| dropped | `standalone_jamps` fails | `amplitude_oracle` fails per diagram or per flow | `amplitude_oracle` fails only on `CONFIG_AMP_SIGNS` |
+|---|---|---|---|
+| every vertex reading | 17 rows (`ee_to_ee_4f`, `uux_to_ggg`, `tata_to_ttxh`, …) | 13 rows: `ee_to_ee`, `ee_to_wpwm`, `ee_to_wp0wm`, `ee_to_wp0wmt`, `ee_to_mumua`, `ee_to_mumu_4f`, `ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f`, `ud_to_epemud_qcd0`, `uux_to_uux` and the two 2→6 rows | 15 rows (`ee_to_mumu`, `ee_to_ttx`, `ee_to_zh`, `uux_to_mumu`, …) |
+| the tensor-path sign only | `tata_to_ttxa_tensor4f` | `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` | none |
+| the scalar-line phase | 25 rows (`bbx_to_hh`, `hh_to_hh_chbox`, `zz_to_ttx`, the `O_W` rows, …) | 9 rows: `bbx/uux_to_ccx_emmm_qcd0`, `gg_to_gg_cg`, `qqx_to_o8o8_toy_dcolor`, `gg_to_ttx_smlimit_qcd2`, `wpwm_to_wpwmz_cw`, `ee_to_mumu_tata_qcd0`, `ll_to_qqx_toy_yukawa`, `tata_to_ttx_tensor4f` | none |
+| the crossed-line fermion phase | 22 rows (`ee_to_ttxh`, `wpwm_to_epem`, `wph_to_tbx`, …) | 9 rows: `gg_to_ttx` and its two SM-limit rows, `ee_to_tatah`, `ee_to_mumua`, `ee_to_mumu_tata_qcd0`, `ud_to_epemud_qcd0` and the two 2→6 rows | none |
+| the triple-gluon sign | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f` | `gg_to_ttx`, `gg_to_ttx_smlimit`, `gg_to_ttx_smlimit_qcd2` | none |
 
 The relabelling test passes under every one of these mutations: each is still
 a function of the graph.
@@ -102,7 +107,7 @@ a function of the graph.
 | gate | holds | catches | blind to |
 |---|---|---|---|
 | `relabelling_preserves_per_diagram_amplitudes` (default suite) | twelve processes against the same process with its legs listed in another order, each diagram paired with its partner by a label-free graph signature and compared per helicity at a generic point, up to one sign per process; at least two diagrams compared per pair | a sign keyed to the vertex holding a particular leg: a `−1` wherever leg 0's vertex has a fermion leg flips diagrams of `w+ e- > z ve`, `w+ a > e+ ve a` and the toy `st lt > st lt`[^bh-report] | a wrong function of the graph (every factor mutation above passes it); a dependence on a vertex no listed relabelling moves; multi-flow processes |
-| `renumbering_preserves_signs_and_amplitudes` (default suite) | every census diagram renumbered twice (once with leg 0's vertex forced off index 0): exact `fermi_sign` per colour chain, the same canonical form, per-helicity per-flow amplitudes to 1e-10 | a sign read off a vertex or propagator *index* | a wrong function of the graph |
+| `renumbering_preserves_signs_and_amplitudes` (default suite) | every census diagram renumbered twice (once with leg 0's vertex forced off index 0): exact `fermi_sign` per colour chain, the same canonical form, and on subprocesses of at most 40 diagrams per-helicity per-flow amplitudes to 1e-10 | a sign read off a vertex or propagator *index* | a wrong function of the graph |
 | `rooting_soundness` | \|M\|² under re-rooting against the production rooting's own value | a kernel that is not rooting-invariant; a live parity that is not cancelled | any error shared by every rooting, which includes every convention-sign error |
 
 ### The rooting-soundness check
@@ -119,17 +124,21 @@ rooting invariance and the cancellation of the live tree's reversed parity in
 `fermi_sign`[^code-rooting]. That cancellation dropped is seen by
 `literal_sigma_currents_are_rooting_invariant` in the default suite and by 3 of
 the sweep's 270 re-rootings, all on `b b~ > c c~ e+ e- mu+ mu- QCD=0`; the
-relabelling and renumbering gates pass it (B-H report)[^bh-report].
+relabelling and renumbering gates pass it (B-H report)[^bh-report]. The
+MadGraph suites see it too: 6 `standalone_jamps` rows (`ee_to_ee_4f`,
+`tata_to_ttxh`, `ttx_to_gg_chg`, …) and 7 `amplitude_oracle` rows per diagram
+or per flow (`ee_to_ee`, `uux_to_uux`, `bbx_to_ccx_emmm_qcd0`, …), with 24 more
+on `CONFIG_AMP_SIGNS` only (R1 review)[^r1-report].
 
 - `root_override_hook_is_transparent` runs in the default suite: an explicit
   `VtxIdx(0)` override reproduces the default `|M|²` bit for bit on
   `e+ e- > mu+ mu-` and Bhabha, where the canonical root is vertex 0.
-- `momentum_slashed_chain_is_rooting_invariant`,
-  `four_fermion_currents_are_rooting_invariant`,
-  `tensor_four_fermion_currents_are_rooting_invariant` and
-  `literal_sigma_currents_are_rooting_invariant` run in the default suite, each
-  on a few diagrams whose currents a structure-specific defect would make
-  rooting-dependent.
+- `literal_sigma_currents_are_rooting_invariant` runs in the default suite;
+  `momentum_slashed_chain_is_rooting_invariant`,
+  `four_fermion_currents_are_rooting_invariant` and
+  `tensor_four_fermion_currents_are_rooting_invariant` are
+  `extended-validation` tests. Each re-roots a few diagrams whose currents a
+  structure-specific defect would make rooting-dependent.
 - `all_rootings_preserve_amplitude` is `#[ignore]` for cost:
 
   ```
@@ -148,8 +157,8 @@ relabelling and renumbering gates pass it (B-H report)[^bh-report].
   vertex inside its kernel, which the self-conjugate gluon vertex does not get
   ([vector-vertex-signs](../amplitudes/vector-vertex-signs.md)). Both MadGraph
   gates are blind to where it sits. Moved into the colour (`f_to_traces`
-  negated, `triple_gluon_sign` at `+1`), every row of `standalone_jamps` (49)
-  and `amplitude_oracle` (49) passes; moved into the coupling (`GC_10` negated),
+  negated, `triple_gluon_sign` at `+1`), all 49 tests of `standalone_jamps`
+  (its 45 table rows and four checks) and all 49 of `amplitude_oracle` pass; moved into the coupling (`GC_10` negated),
   every SM row passes and only SMEFTsim rows, whose triple-gluon coupling has
   another name, fail. `amplitude_oracle` compares `gg_to_ttx` per flow, not per
   diagram, although its table banks `AMP()`. The colour and the rest are pinned
@@ -171,6 +180,7 @@ relabelling and renumbering gates pass it (B-H report)[^bh-report].
 
 [^b-report]: B′ report, "Mutations (each factor pinned by MadGraph)" and "Relabelling test".
 [^bh-report]: B-H report, "Mutations".
+[^r1-report]: R1 report, "Mutations".
 [^t1-report]: T1 report, "Mutations" M2 and M3.
 [^code-firing]: `vibegraph-lib/src/helas/eval/root_diagram.rs` tests.
 [^code-rooting]: `vibegraph-lib/src/helas/eval/rooting_soundness.rs`, module doc and `REL_TOL`.

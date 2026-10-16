@@ -8,10 +8,11 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: no role is needed; the triple-gluon constant; the mutations"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
-  - {id: code-tg, resource: "https://github.com/nsmith-/vibegraph/blob/9549fcb20df0c6f6756ecae403df1af99ba3527f/vibegraph-lib/src/helas/eval/triple_gluon.rs", title: "helas::eval::triple_gluon (the factor-by-factor tests against MadGraph AMP())"}
-  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "triple_gluon_sign, is_yang_mills_vvv, is_coloured, propagator_phase_sign"}
-  - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/tests/standalone_jamps.rs", title: "standalone_jamps (per-flow JAMPs against MadGraph standalone)"}
-  - {id: code-pt, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/tests/gluon_parke_taylor.rs", title: "gluon_parke_taylor (hermetic MHV check)"}
+  - {id: code-tg, resource: "vibegraph-lib/src/helas/eval/triple_gluon.rs", title: "helas::eval::triple_gluon (the factor-by-factor tests against MadGraph AMP())"}
+  - {id: code-rootdiag, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "triple_gluon_sign, is_yang_mills_vvv, is_coloured, propagator_phase_sign"}
+  - {id: code-standalone, resource: "vibegraph-lib/tests/standalone_jamps.rs", title: "standalone_jamps (per-flow JAMPs against MadGraph standalone)"}
+  - {id: code-pt, resource: "vibegraph-lib/tests/gluon_parke_taylor.rs", title: "gluon_parke_taylor (hermetic MHV check)"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the u u~ > g g probe and the vertex censuses"}
   - {id: n39-wrong, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L16-L53", title: "Note 39 §1 (the Ward-identity failure of u u~ > g g)"}
   - {id: n39-oracle, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L73-L123", title: "Note 39 §3 (the standalone JAMP oracle)"}
   - {id: n35-e2, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L432-L474", title: "Note 35 §3.5 (the ALOHA VVV normalisation)"}
@@ -28,7 +29,7 @@ it inside its kernel, so `convention_sign` has no factor for it[^t1-report]:
 |---|---|---|
 | charged VVV (γW⁺W⁻, ZW⁺W⁻, SMEFT VVV, `O_W`'s triple-gauge structures) | none | `−1`, in the kernel (the crossing's slot exchange) |
 | colourless contact of four or five vectors (WWZZ, WWAA, WWWW, `O_W`'s five-vector contacts) | none | agrees with no vertex sign |
-| gluon contact (any structure) | none | agrees with no vertex sign |
+| gluon contact | none | agrees with no vertex sign on the four-gluon contacts (SM and `O_G`); `O_G`'s five-gluon contact is in no row |
 | VVS, colourless or coloured (ZZH, effective ggH, `O_HG`, the loop-induced γZH and γγH) | none; a scalar line at it takes `−1` as every internal scalar line does | agrees with no vertex sign |
 | triple-gluon VVV | `−1` (`triple_gluon_sign`) | `+1` in the kernel (no slot exchanged), so the constant supplies it |
 
@@ -102,19 +103,28 @@ readings were fixed[^b-report]; the slot exchange is why.
 **The predicate is a proxy.** `triple_gluon_sign` counts the vertices that are
 Yang–Mills triple-vector and coloured. The derived rule counts the triple-vector
 vertices with no conjugate pair among their legs. The two part only on a
-colourless vertex of three self-conjugate vectors, which no model in reach has
-(the SM and SMEFTsim carry `g g g`, `a W- W+` and `W- W+ Z`, the toy UFOs no
-triple-vector vertex); the derivation predicts `−1` there and the code gives `+1`.
+colourless vertex of three self-conjugate vectors, which no model in reach has:
+the SM carries `g g g`, `a W- W+` and `W- W+ Z`; SMEFTsim those and eleven more
+on its auxiliary `W1`/`Z1` fields (`a W1- W1+`, `W- W1+ Z1`, …), each with a
+charged pair; the toy UFOs no triple-vector vertex. The derivation predicts `−1`
+there and the code gives `+1`.
 
-Only its ratio to the quark–gluon vertex is observable. In a process the
-external gluons fix the parity of the triple-gluon count and the quark–gluon
-count together, so `−1` per quark–gluon vertex is the same convention up to a
-sign common to the process.
+Only its ratio to the quark–gluon vertex is observable where every other vertex
+carries an even number of gluons, as in the SM: counting gluon line ends,
+`n_qg + n_ggg ≡ n_ext_g (mod 2)`, so a process's external gluons fix the parity
+of the two counts together, and `−1` per quark–gluon vertex is the same
+convention up to a sign common to the process. SMEFTsim breaks the identity with
+vertices of odd gluon number: `O_G`'s five-gluon contact, and `g g g H`,
+`g g g H H` and `q q̄ g H` from `O_HG` and the dipole operators. There the two
+phrasings differ diagram by diagram, so the convention's choice is observable,
+and no committed row reaches such a vertex.
 
 The relative sign it sets is visible without MadGraph: with the triple-gluon
-vertex at the colourless VVV's sign, the same-helicity `u u~ > g g` amplitudes,
-which the Ward identity sets to zero, come out at `|M|² ≈ 105` at
-`√s = 500`[^n39-wrong].
+vertex at the colourless VVV's sign, the `u u~ > g g` helicities with equal gluon
+helicities, which the Ward identity sets to zero, come out at `|M|² ≈ 105` at
+`√s = 500`[^n39-wrong]. On the current code, with `triple_gluon_sign` set to
+`+1`, they read `9.6e1` at `√s = 500`, `cos θ = 0.3`, against `0` (to `3e-31`)
+with it[^r1-report].
 
 ### Details that matter
 
@@ -129,22 +139,23 @@ which the Ward identity sets to zero, come out at `|M|² ≈ 105` at
 - **A pure-gluon process cannot see it.** On a tree of three- and four-gluon
   vertices with `n` external gluons, `V₃ + 2V₄ = n − 2`, so the triple-gluon count
   has the same parity in every diagram and the sign is global. A quark line
-  beside a gluon vertex is what pins it.
+  beside a gluon vertex is what pins it. With `O_G`'s five-gluon contact a
+  pure-gluon process can see it too (above).
 
 ## What pins it, and what each gate cannot see
 
 `validation/madgraph/gen_standalone_jamps.py` generates a process with MadGraph
 `output standalone` (pinned 3.7.1), patches `MATRIX` to copy `AMP()` and
 `JAMP()` into a COMMON block, and dumps per RAMBO point and per helicity the
-colour-summed |M|², every JAMP and every AMP, at the same param card and
-momenta as ours. Standalone output keeps the width of a spacelike propagator
+colour-summed |M|² and every JAMP, and, on a single-flow row that asks for them
+(`bank_amps`), every AMP, at the same param card and momenta as ours. Standalone output keeps the width of a spacelike propagator
 while MadEvent (and this crate) zero it (`zerowidth_tchannel`). Through a
 massive t-channel line that is a 0.1–0.5% per-helicity difference, not a sign,
 so such rows compare with every width zero on both sides (`zero_widths`)[^n39-oracle].
 
 | gate | what it pins | blind to |
 |---|---|---|
-| `tests/standalone_jamps.rs`[^code-standalone] (hermetic, committed tables in `validation/madgraph/standalone/`) | per-helicity, per-flow JAMPs and \|M\|² against MadGraph standalone, one fitted `G` with `\|G\| = 1`, at 1e-12 (1e-7 on the rows carrying `GC_303`/`GC_299`). Vector-vertex rows: `gg_to_ggg`, `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ee_to_wpwmz`, `wpwm_to_wpwm`, `ttx_to_gg_chg`, the W-pair rows (`wpwm_to_epem`, `wmwp_to_emep`, `wpwm_to_uux`, `wpem_to_zve`, `aem_to_wmve`, `wph_to_tbx`, `hwp_to_tbx`, `zz_to_ttx`, `hh_to_ttx`, `wpwm_to_epemz`, `wpwm_to_uuxg`), `O_W`'s rows, and the `t t~ + jet` rows | the phase of `G`; compensating errors in diagrams that reach the same flows with the same weight; kinematics outside three points |
+| `tests/standalone_jamps.rs`[^code-standalone] (hermetic, committed tables in `validation/madgraph/standalone/`) | per-helicity, per-flow JAMPs and \|M\|² against MadGraph standalone, one fitted `G` with `\|G\| = 1`, at 1e-12; on the rows of `ROUNDED_COUPLING_GRAPHS` the named graphs built on MadGraph's seven-digit `GC_303`/`GC_299` are divided by their registered modulus deviation first, and every graph of such a row must also match on its own scale (`GRAPH_RATIO_TOL = 1e-10`). Vector-vertex rows: `gg_to_ggg`, `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ee_to_wpwmz`, `wpwm_to_wpwm`, `ttx_to_gg_chg`, the W-pair rows (`wpwm_to_epem`, `wmwp_to_emep`, `wpwm_to_uux`, `wpem_to_zve`, `aem_to_wmve`, `wpwm_to_epemz`, `wpwm_to_uuxg`), the VVS rows `wph_to_tbx`, `hwp_to_tbx` and `zz_to_ttx` (with `hh_to_ttx`, which has no vector vertex, as their control), `O_W`'s rows, and the `t t~ + jet` rows | the phase of `G`; compensating errors in diagrams that reach the same flows with the same weight; kinematics outside the banked points (three per row, four on two rows, eight on one) |
 | `tests/gluon_parke_taylor.rs`[^code-pt] (hermetic, no MadGraph) | 5 and 6 gluons, every MHV and anti-MHV configuration: `J_σ·⟨σ1σ2⟩…⟨σnσ1⟩` constant over flows and `\|J\|·\|cyclic\|/\|⟨ij⟩\|⁴` constant over configurations; tolerance 1e-10 in units of the point's largest flow | the triple-gluon sign (global on a pure-gluon process); global phase and normalisation; NMHV; anything with a quark |
 | `tests/amplitude_oracle.rs` | per-diagram and per-flow values on the banked rows | anything those rows do not reach |
 
@@ -181,8 +192,12 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
 - **A colourless triple-vector vertex of three self-conjugate vectors** is
   predicted to need `−1` and gets none from the predicate
   ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
-- **The W-pair structures' oddness** under the slot exchange rests on a scratch
-  parity check, not a committed test.
+- **The W-pair structures' oddness** under the slot exchange rests on scratch
+  parity checks (T1's, and an independent one in the R1 review, which also finds
+  `VVV5` odd on SMEFTsim's `W1` pairs), not a committed test.
+- **Vertices of odd gluon number besides `q q̄ g` and `g g g`** (SMEFTsim's
+  five-gluon `O_G` contact, `g g g H`, `g g g H H`, `q q̄ g H`) are in no row;
+  `triple_gluon_sign` does not count them.
 - **No committed table banks `AMP()` for `u u~ > g g` or `g g > u u~`**, so the
   factor tests run on `g g > t t~`
   ([standalone-amps-single-flow-only](../backlog/validation/standalone-amps-single-flow-only.md)).
@@ -199,5 +214,6 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
 [^code-standalone]: `vibegraph-lib/tests/standalone_jamps.rs`.
 [^code-pt]: `vibegraph-lib/tests/gluon_parke_taylor.rs`.
 [^n39-wrong]: Note 39 §1.
+[^r1-report]: R1 report, probes P0 and M1.
 [^n39-oracle]: Note 39 §3. Its per-row before/after table and the `p p > j j` σ figures are as of 2026-09-25 and are not repeated here.
 [^n35-e2]: Note 35 §3.5, the ALOHA VVV normalisation.
