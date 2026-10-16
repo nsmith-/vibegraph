@@ -68,7 +68,9 @@ current [fermion-line-sign](fermion-line-sign.md) exactly.
 Two structural findings came before any dump:
 
 - The per-propagator `−1` is not a repackaged propagator `−i`: the propagator's
-  `−i` is applied in the kernel and is present separately.
+  `−i` is applied in the kernel and is present separately. Against MadGraph the
+  `−1` is the ratio of the two propagator phases, the kernel's `−i` to ALOHA's
+  `+i` ([fermion-line-sign](fermion-line-sign.md)).
 - "One −1 per propagator" and "one −1 per vertex read backwards, less the sink" are
   extensionally identical on every tree line (`P = V − 1`). No tree-level dump can
   ever choose between them.
