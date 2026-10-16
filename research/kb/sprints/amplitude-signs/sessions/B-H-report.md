@@ -5,6 +5,7 @@ description: "Hygiene review of B′'s convention_sign change on PR #30: finding
 status: draft
 tags: [hygiene, review, sign-convention, rooting, relabelling, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: fa01bfb, resource: "https://github.com/nsmith-/vibegraph/commit/fa01bfb", title: "kb: B-H brief and findings"}
   - {id: 8d21b42, resource: "https://github.com/nsmith-/vibegraph/commit/8d21b42", title: "refactor(amplitudes): one leg binding and one uncrossed-leg set for the live tree and the convention sign"}
