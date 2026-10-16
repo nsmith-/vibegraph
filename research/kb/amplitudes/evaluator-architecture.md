@@ -70,10 +70,12 @@ directly attached external legs, ties to the lowest vertex index.[^code-root] A
 deep, few-external root keeps more sub-currents in the canonical
 `(edge, direction)` form that cross-diagram sharing deduplicates; rooting at a
 high-external hub duplicates them. The physics does not depend on the choice: the
-currents are root-invariant, and every root-dependent convention sign is read
-from a second tree rooted at the diagram's *anchor* (`Diagram::anchor`, built only
-when the two roots differ). See
-[rooting-invariance-and-anchor](rooting-invariance-and-anchor.md) and
+currents are root-invariant, and the diagram's `fermi_sign` is read off the graph
+alone (`Diagram::sign` times `convention_sign`), with the one rooting-dependent
+factor, the live tree's reversed-bilinear parity, cancelled; no second tree is
+built. The factors are in
+[convention-sign-inventory](convention-sign-inventory.md); see also
+[rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md) and
 [performance/diagram-rooting](../performance/diagram-rooting.md).
 
 ## Bind and evaluate

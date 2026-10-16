@@ -99,7 +99,7 @@ never to |M|². [^n38-d2]
   ([resonance records](../events/resonance-records.md)).
 - `Prop::particle` is the particle of the slot at `endpoints[1]`; renumbering a diagram
   that flips a line must conjugate its particle. The canonical form and rooting are in
-  [rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+  [rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 
 ### What is refused
 

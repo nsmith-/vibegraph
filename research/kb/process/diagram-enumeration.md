@@ -94,7 +94,7 @@ The generation path (`diagrams/mod.rs`) [^code-enum]:
    combinations and on-shell flags, vertices with their interaction and fermion-flow group,
    the Fermi sign (feyngraph's `view.sign()` pairing parity times the per-line sign), the
    symmetry factor and provenance. Its canonical form and the sign conventions are in
-   [rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+   [rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md).
 6. **s-channel filters** (`>`, `$$`) run on the converted diagrams
    ([s-channel restrictions](s-channel-restrictions.md)).
 

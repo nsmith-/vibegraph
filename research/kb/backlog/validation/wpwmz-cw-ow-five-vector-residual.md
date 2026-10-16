@@ -5,7 +5,7 @@ description: w+ w- > w+ w- z under O_W disagrees with MadGraph at |M|² 2.79e1 w
 area: validation
 state: open
 priority: high
-closes_when: wpwm_to_wpwmz_cw's amplitudes cell agrees with MadGraph inside the amplitude gate's tolerance and is flipped from info to gate.
+closes_when: "The standalone wpwm_to_wpwmz_cw table gates per graph against MadGraph AMP() at 1e-12, with only the twelve GC_303-carrying graphs' modulus exempted by name (MadGraph writes GC_303 to seven digits), and the MadEvent amplitudes cell flips from info to gate with that cause attributed."
 blocked_by: []
 opened: 2026-09-07
 tags: [non-sm-ufo, smeftsim, five-vector, amplitudes, info-cell]
@@ -41,3 +41,5 @@ five-vector structure.
 
 The configuration-partition comparison for this row belongs with this work;
 see [wpwmz-cw-config-partition-uncompared](wpwmz-cw-config-partition-uncompared.md).
+
+The original condition (agreement inside the amplitude gate's tolerance) cannot be met: MadGraph's Fortran writes `GC_303` to seven digits, leaving ~1e-11 on this row. The user approved the restated condition on 2026-10-15 as a registered deviation.

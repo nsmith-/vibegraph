@@ -8,7 +8,7 @@ created: 2026-07-19
 status: deprecated
 tags: [validation, sprint-plan, rooting, cross-section, nhel, madgraph]
 generated: {by: claude-code, at: 2026-07-19}
-replaced_by: [validation/convention-channel-coverage, amplitudes/rooting-invariance-and-anchor, validation/bit-exact-amplitude-debugging, tooling/profiling, validation/madgraph-reference-runs, validation/structural-censuses, validation/sigma-gate, amplitudes/helicity-sum-and-pruning, tooling/ci-coverage]
+replaced_by: [validation/convention-channel-coverage, amplitudes/rooting-invariance-and-canonical-form, validation/bit-exact-amplitude-debugging, tooling/profiling, validation/madgraph-reference-runs, validation/structural-censuses, validation/sigma-gate, amplitudes/helicity-sum-and-pruning, tooling/ci-coverage]
 ---
 # 19 — `validation-2` Sprint Plan
 

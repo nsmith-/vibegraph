@@ -85,8 +85,7 @@ const CASES: &[Case] = &[
         card: "g b > w- t, t > w+ b",
         chain: |_| vec![r(6, &["W+", "b"], vec![])],
     },
-    // Yang-Mills vertices: three-gluon, four-gluon and electroweak quartic vertices, whose
-    // convention signs are read at the diagram's anchor.
+    // Yang-Mills vertices: three-gluon, four-gluon and electroweak quartic vertices.
     Case {
         card: "g g > t t~ g, t > w+ b",
         chain: |_| vec![r(6, &["W+", "b"], vec![])],

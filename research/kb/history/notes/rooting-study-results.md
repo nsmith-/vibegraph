@@ -6,7 +6,7 @@ description: "How the post-CSE node count depends on per-diagram rooting: greedy
 status: deprecated
 tags: [performance, cse, diagram-rooting, evaluator, amplitudes]
 generated: {by: claude-code, at: 2026-08-06}
-replaced_by: [performance/diagram-rooting, amplitudes/rooting-invariance-and-anchor]
+replaced_by: [performance/diagram-rooting, amplitudes/rooting-invariance-and-canonical-form]
 ---
 # Rooting-exploration study — results (branch `explore/rooting`, throwaway)
 

@@ -8,7 +8,7 @@ created: 2026-09-25
 status: deprecated
 tags: [process-grammar, proc-card, decay-chains, polarization, sprint]
 generated: {by: claude-code, at: 2026-09-25}
-replaced_by: [validation/sigma-row-gating-exceptions, process/s-channel-restrictions, validation/structural-censuses, validation/madevent-reference-seed-policy, process/proc-card-grammar, amplitudes/rooting-invariance-and-anchor, process/decay-chains, validation/refdata-banking-procedure, validation/madgraph-defects, process/supported-card-check, validation/samples-gate, process/polarization]
+replaced_by: [validation/sigma-row-gating-exceptions, process/s-channel-restrictions, validation/structural-censuses, validation/madevent-reference-seed-policy, process/proc-card-grammar, amplitudes/rooting-invariance-and-canonical-form, process/decay-chains, validation/refdata-banking-procedure, validation/madgraph-defects, process/supported-card-check, validation/samples-gate, process/polarization]
 ---
 # 38 — `process-grammar` feature sprint plan: MadGraph LO process parity
 

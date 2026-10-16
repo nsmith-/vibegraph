@@ -1,7 +1,7 @@
 ---
 type: Design Decision
 title: Diagram rooting at the vertex with fewest external legs
-description: "canonical_root picks the vertex with fewest attached external legs (~20% fewer post-CSE nodes); greedy rooting buys ~1% more and was rejected. Soundness rests on anchor-read convention signs."
+description: "canonical_root picks the vertex with fewest attached external legs (~20% fewer post-CSE nodes); greedy rooting buys ~1% more and was rejected. Soundness rests on a convention sign read off the graph, not the root."
 status: draft
 tags: [performance, rooting, cse, evaluator, diagrams]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -52,10 +52,13 @@ every non-test build it is `canonical_root` alone.
 
 ## Why it is sound
 
-The rooting-dependent convention signs are read off one fixed rooting, at the
-diagram's anchor, and lifted into the diagram's `fermi_sign`; the honest
-currents are then root-invariant. The convention itself is described in
-[rooting invariance and the anchor](../amplitudes/rooting-invariance-and-anchor.md).
+No sign depends on the root. The kernels' currents are root-invariant, the
+diagram's `fermi_sign` is `Diagram::sign` times `convention_sign`, both read off the
+graph alone, and the one rooting-dependent factor, the live tree's
+reversed-bilinear parity, is cancelled in it. The convention is described in
+[rooting invariance and canonical form](../amplitudes/rooting-invariance-and-canonical-form.md)
+and its factors in
+[convention-sign-inventory](../amplitudes/convention-sign-inventory.md).
 The `rooting_soundness` module pins it: `all_rootings_preserve_amplitude`
 re-roots every diagram at every vertex across the MG-validated processes and
 requires |M|² to match the baseline (unoverridden) evaluation within
@@ -125,8 +128,8 @@ run and does not reproduce it. Cross-process totals:[^rs-totals]
 In the original study every node-reducing rooting failed the MadGraph gate,
 silently and grossly (max_rel up to 1.7e3, 50/50 points) on `e+e-→W+W-`,
 `e+e-→τ+τ-H` and every ≥6-point QCD=0 process. That was the
-orientation-dependence the anchor-read signs removed; it is why the gate above
-exists, and the study's table records which rootings had exercised
+orientation-dependence of the signs the study then used; the graph-read
+`convention_sign` has none, and the gate above exists to keep it so, and the study's table records which rootings had exercised
 it.[^rs-totals][^n15-results]
 
 ## What it bought
