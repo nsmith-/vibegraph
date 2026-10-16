@@ -82,3 +82,10 @@
   predict. Filed: `colourless-self-conjugate-vvv-sign-unoracled`,
   `standalone-amps-single-flow-only`,
   `mixed-parity-vertex-refusal-depends-on-rooting`.
+* **T-H outcome** (PR #39): 16 findings, the local ones fixed under a to_bits
+  digest identity check, and the stale concepts rewritten around the derived
+  sign. The real gap was H6: an empty banked table let the colour test pass
+  against unchecked constants; it is now refused. The manager re-ran the four
+  tests and rewrote a fifth stale passage (global-phase-i-counting). Filed:
+  `helas-colour-and-table-helpers-duplicated`,
+  `w-pair-vvv-slot-exchange-oddness-unpinned`.

@@ -5,6 +5,7 @@ description: "Hygiene review of PR #39's triple_gluon test module and triple_glu
 status: draft
 tags: [hygiene, review, sign-convention, triple-gluon, colour, crossing, report]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: t1, resource: "T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
   - {id: brief, resource: "T-H.md", title: "T-H brief"}
