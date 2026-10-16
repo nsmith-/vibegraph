@@ -71,12 +71,24 @@ arguments, `RegAllocBase::getErrorAssignment` reports
 `DiagnosticInfoRegAllocFailure` and assigns `AllocOrder.front()`, which is
 `RAX`. Calling `%fp` directly (no load) fails the same way. A direct
 `musttail` to a symbol is fine. `x86_64-pc-windows-msvc` and
-`x86_64-apple-darwin` fail the same way. *Inferred:* a fix could be a
-`preserve_none` tail-call class that adds `R10` (and perhaps `RBX`), following
-the existing per-convention classes (`GR64_TCW64` for Win64, `GR32` for HiPE).
-That class would have to handle `nest` and the base pointer and stay in sync
-with `checkTCRetEnoughRegs`. This is not small enough to sketch a patch for
-here.
+`x86_64-apple-darwin` fail the same way.
+
+*Verified:* valid code exists. `check-valid-code.sh` links four hand-written
+bodies of `f` with a `preserve_none` caller and callee compiled by llc. llc's
+own `movq (%r12), %rax; jmpq *%rax` prints garbage. The `r10` and `rbx`
+variants and `jmpq *(%r12)` all print 66. So this is a missed lowering, not
+just a poor error message.
+
+*Inferred from source, untested:* there are two possible fixes.
+1. Allow the load fold (`TCRETURNmi64`, `jmpq *(%r12)`).
+   `checkTCRetEnoughRegs` counts all GPR argument registers against
+   `GR64_TC`, including `r12`–`r15`, which are not in that class, so it
+   rejects the fold.
+2. Add a `preserve_none` tail-call class with `R10` (and perhaps `RBX`), like
+   `GR64_TCW64` for Win64 and `GR32` for HiPE. It must handle `nest` and the
+   base pointer.
+
+Neither change is small enough to sketch a patch for here.
 
 **rustc: unknown LLVM diagnostic kinds are dropped.** *Verified:* LLVM 20
 (llvm/llvm-project#119492) made register-allocation failures report through a
