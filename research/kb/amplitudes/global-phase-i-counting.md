@@ -2,10 +2,10 @@
 type: Derivation
 title: "The global amplitude phase: i-counting and the contravariant vector current"
 description: "Vertex i and propagator −i multiply to i for any tree, so |G|=1 and Re G=0 against MadGraph; every vector producer emits the physical contravariant current and carries no sign of its own."
-status: draft
+status: stable
 tags: [phase-conventions, propagators, vector-current, madgraph-oracle, derivation]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: "human:nsmith-", at: 2026-10-16}]
 sources:
   - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L405-L500", title: "kernel.rs: propagate_core and the −i/D propagators"}
   - {id: code-metricvout, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L890-L910", title: "kernel.rs: metric_vout, the contravariant current"}
