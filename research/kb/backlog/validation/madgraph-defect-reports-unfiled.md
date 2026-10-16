@@ -26,3 +26,8 @@ The older drafts (`FFV2P1D_1`, the `AQCDUP` π truncation) are tracked with the
 `process-grammar` findings and in note 07. The CDATA / `setMad` interplay is
 tracked separately as
 [pythia-setmad-drops-cdata-run-card](pythia-setmad-drops-cdata-run-card.md).
+
+Candidate added 2026-10-15: MadEvent's default survey under-integrates by
+0.5–1 % on some processes, and `hard_survey` is silently ignored when `mmjj`
+exceeds 1 % of the beam-energy sum
+([default survey bias](../../validation/madevent-default-survey-bias.md)).
