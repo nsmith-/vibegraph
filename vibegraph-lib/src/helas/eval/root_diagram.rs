@@ -1117,11 +1117,11 @@ fn vertex_root_signs(
 /// `T` and in the bilinear by [`vertex_root_signs`]. At a `γW⁺W⁻` or `ZW⁺W⁻` vertex
 /// nothing undoes it: the `W⁺` and `W⁻` slots are exchanged, and `VVV1`, like every
 /// triple-vector structure the SM and SMEFTsim put on a W pair, is odd under that
-/// exchange, so the kernel reads `−1` against MadGraph's `COUP · L`. The
-/// other factors of [`convention_sign`] are set against kernels that carry it:
-/// `w+ w- > u u~` and `g g > u u~` carry the same [`Diagram::sign`], propagator phases and bilinear parities diagram for diagram, as
-/// do `e+ e- > w+ w-` and `u u~ > g g`, and the colourless one of each pair agrees with
-/// MadGraph with no vertex sign.
+/// exchange, so the kernel reads `−1` against MadGraph's `COUP · L`. The other factors
+/// of [`convention_sign`] are set against kernels that carry it: `w+ w- > u u~` and
+/// `g g > u u~` carry the same [`Diagram::sign`], propagator phases and bilinear
+/// parities diagram for diagram, as do `e+ e- > w+ w-` and `u u~ > g g`, and the
+/// colourless one of each pair agrees with MadGraph with no vertex sign.
 ///
 /// A gluon is its own antiparticle, so the crossing exchanges none of the triple-gluon
 /// vertex's slots. Its rays stand in MadGraph's slot order up to a permutation its

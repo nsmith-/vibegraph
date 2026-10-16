@@ -28,19 +28,20 @@
 use std::path::Path;
 
 use num_complex::Complex;
+use num_traits::ToPrimitive;
 
-use super::compile::AmplitudeEvaluator;
+use super::renumbering::single_diagram_amplitudes_at;
 use super::root_diagram::triple_gluon_sign;
-use super::run::BoundAmplitude;
 use crate::diagrams::diagram::{antiparticle, Ray};
 use crate::diagrams::{generate_from_proc_card, parse_proc_card, DiagramSet, ParsingOptions};
+use crate::helas::color::coeff::ColorCoeff;
 use crate::helas::color::colorize::colorize_process;
 use crate::helas::color::factor::ImmutableString;
 use crate::helas::color::TensorKind;
 use crate::helas::LorentzVector;
 use crate::ufo::slha::ParamCard;
 use crate::ufo::sm::{sm_model, SMRestrict};
-use crate::ufo::EvaluatedModel;
+use crate::ufo::{EvaluatedModel, UFOModel};
 
 type C = Complex<f64>;
 
@@ -51,8 +52,9 @@ const TOL: f64 = 1e-12;
 const I: C = C::new(0.0, 1.0);
 const ZERO: C = C::new(0.0, 0.0);
 
-/// MadGraph's `JAMP(f) = Σ_k c[f][k] · AMP(k)` for `g g > t t~`, from its
-/// `matrix1.f`: `JAMP(1) = i·AMP(1) − AMP(2)`, `JAMP(2) = −i·AMP(1) − AMP(3)`. The
+/// MadGraph's `JAMP(f) = Σ_k c[f][k] · AMP(k)` for `g g > t t~`, from the
+/// `matrix1_orig.f` of its `P1_gg_ttx` export: `JAMP(1) = i·AMP(1) − AMP(2)`,
+/// `JAMP(2) = −i·AMP(1) − AMP(3)`. The
 /// coefficients carry MadGraph's colour and its fermion factor together, and
 /// [`MadGraphRow::read`] checks them against the banked `JAMP()`.
 const GG_TO_TTX_JAMP: [[C; 3]; 2] = [
@@ -76,13 +78,9 @@ struct MadGraphRow {
     triple_gluon: Vec<f64>,
 }
 
-fn coeff(c: &crate::helas::color::coeff::ColorCoeff) -> C {
-    assert_eq!(
-        *c.q.denom(),
-        1,
-        "a tree-level 2 → 2 colour coefficient is an integer"
-    );
-    let v = *c.q.numer() as f64 * 3f64.powi(c.nc_power);
+/// A colour coefficient at `Nc = 3`.
+fn coeff(c: &ColorCoeff) -> C {
+    let v = c.eval_nc(3).to_f64().expect("rational in f64 range");
     if c.imag {
         C::new(0.0, v)
     } else {
@@ -104,46 +102,136 @@ fn key_name(key: &ImmutableString) -> String {
         .collect()
 }
 
-impl MadGraphRow {
-    fn read(process: &str, key: &str, jamp: Option<Vec<Vec<C>>>) -> (Self, DiagramSet) {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph");
-        let path = root.join(format!("amplitudes/{key}.json"));
-        let table: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let complex =
-            |v: &serde_json::Value| C::new(v[0].as_f64().unwrap(), v[1].as_f64().unwrap());
-        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
-        let jamp = jamp.unwrap_or_else(|| {
-            vec![table["jamp_coefficients"]
+/// One banked `(point, helicity)` entry: MadGraph's per-graph `AMP()` and its `JAMP()`.
+struct Entry {
+    helicity: Vec<i32>,
+    amp: Vec<C>,
+    jamps: Vec<C>,
+}
+
+fn complex(v: &serde_json::Value) -> C {
+    C::new(v[0].as_f64().unwrap(), v[1].as_f64().unwrap())
+}
+
+fn complexes(v: &serde_json::Value) -> Vec<C> {
+    v.as_array().unwrap().iter().map(complex).collect()
+}
+
+fn read_table(key: &str) -> serde_json::Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/madgraph/amplitudes")
+        .join(format!("{key}.json"));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
+}
+
+fn param_card(table: &serde_json::Value) -> ParamCard {
+    table["param_card"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .unwrap()
+}
+
+/// The table's points that carry a `detail`, the only ones that bank MadGraph's
+/// per-graph `AMP()`: each point's momenta and its banked entries.
+fn detailed_points(table: &serde_json::Value) -> Vec<(Vec<LorentzVector<f64>>, Vec<Entry>)> {
+    let helicities: Vec<Vec<i32>> = table["helicities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| {
+            h.as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_i64().unwrap() as i32)
+                .collect()
+        })
+        .collect();
+    table["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p.get("detail").is_some())
+        .map(|point| {
+            let momenta = point["momenta"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(complex)
-                .collect()]
-        });
-        let card: ParamCard = table["param_card"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|l| l.as_str().unwrap())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .parse()
-            .unwrap();
+                .map(|k| {
+                    let c: Vec<f64> = k
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.as_f64().unwrap())
+                        .collect();
+                    LorentzVector::new(c[0], c[1], c[2], c[3])
+                })
+                .collect();
+            let detail = &point["detail"];
+            let entries = detail["helicities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(e, h)| Entry {
+                    helicity: helicities[h.as_u64().unwrap() as usize].clone(),
+                    amp: complexes(&detail["amps"][e]),
+                    jamps: complexes(&detail["jamps"][e]),
+                })
+                .collect();
+            (momenta, entries)
+        })
+        .collect()
+}
+
+/// Per diagram, the position in the process's colour basis `flows` of each flow the
+/// diagram reaches when compiled alone.
+fn flow_maps(key: &str, model: &UFOModel, set: &DiagramSet, flows: &[String]) -> Vec<Vec<usize>> {
+    set.diagrams
+        .iter()
+        .enumerate()
+        .map(|(d, diagram)| {
+            let own = colorize_process(model, std::slice::from_ref(diagram)).unwrap();
+            own.elements
+                .iter()
+                .map(|e| {
+                    let name = key_name(&e.structure);
+                    flows.iter().position(|k| *k == name).unwrap_or_else(|| {
+                        panic!("{key}: diagram {d}'s flow {name} is not in the basis {flows:?}")
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Checks that `jamp` rebuilds each entry's banked `JAMP()` from its banked `AMP()`.
+fn check_transcription(key: &str, jamp: &[Vec<C>], entries: &[Entry]) {
+    for entry in entries {
+        let scale = entry.amp.iter().map(|a| a.norm()).fold(0.0, f64::max);
+        for (f, row) in jamp.iter().enumerate() {
+            let sum: C = row.iter().zip(&entry.amp).map(|(c, a)| c * a).sum();
+            assert!(
+                (sum - entry.jamps[f]).norm() <= TOL * scale.max(f64::MIN_POSITIVE),
+                "{key}: the transcribed JAMP coefficients do not rebuild MadGraph's flow {f}"
+            );
+        }
+    }
+}
+
+impl MadGraphRow {
+    fn read(process: &str, key: &str, jamp: Option<Vec<Vec<C>>>) -> (Self, DiagramSet) {
+        let table = read_table(key);
+        let n_graphs = table["n_graphs"].as_u64().unwrap() as usize;
+        let jamp = jamp.unwrap_or_else(|| vec![complexes(&table["jamp_coefficients"])]);
         let model = sm_model(SMRestrict::Default);
-        let evaluated = EvaluatedModel::from_model_card(model.clone(), &card);
-        let helicities: Vec<Vec<i32>> = table["helicities"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|h| {
-                h.as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.as_i64().unwrap() as i32)
-                    .collect()
-            })
-            .collect();
+        let evaluated = EvaluatedModel::from_model_card(model.clone(), &param_card(&table));
 
         let opts = ParsingOptions::default();
         let card = parse_proc_card(&format!("generate {process}"), &opts).unwrap();
@@ -182,95 +270,41 @@ impl MadGraphRow {
             }
         }
 
-        // Each diagram compiled alone; its flows mapped onto the full basis by key.
-        let singles: Vec<(AmplitudeEvaluator, Vec<usize>)> = set
-            .diagrams
-            .iter()
-            .map(|d| {
-                let single = DiagramSet {
-                    diagrams: vec![d.clone()],
-                    ..set.clone()
-                };
-                let own = colorize_process(&model, &single.diagrams).unwrap();
-                let map = own
-                    .elements
-                    .iter()
-                    .map(|e| {
-                        flows
-                            .iter()
-                            .position(|k| *k == key_name(&e.structure))
-                            .unwrap()
-                    })
-                    .collect();
-                (AmplitudeEvaluator::compile(&single, &model).unwrap(), map)
-            })
-            .collect();
-        let bound: Vec<BoundAmplitude<f64>> = singles
-            .iter()
-            .map(|(evaluator, _)| BoundAmplitude::<f64>::bind(evaluator, &evaluated))
-            .collect();
+        let maps = flow_maps(key, &model, &set, &flows);
+
+        let points = detailed_points(&table);
+        assert!(
+            !points.is_empty(),
+            "{key}: no banked point carries MadGraph's per-graph AMP()"
+        );
         let mut amps = Vec::new();
         let mut values = vec![Vec::new(); n_graphs];
-        // Only the points that carry a `detail` bank MadGraph's per-graph `AMP()`.
-        let detailed = table["points"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|p| p.get("detail").is_some());
-        for point in detailed {
-            let momenta: Vec<LorentzVector<f64>> = point["momenta"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|k| {
-                    let c: Vec<f64> = k
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|x| x.as_f64().unwrap())
-                        .collect();
-                    LorentzVector::new(c[0], c[1], c[2], c[3])
-                })
-                .collect();
-            let detail = &point["detail"];
-            let entries = detail["helicities"].as_array().unwrap();
-            for (e, h) in entries.iter().enumerate() {
-                let hel = &helicities[h.as_u64().unwrap() as usize];
-                let amp: Vec<C> = detail["amps"][e]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(complex)
-                    .collect();
-                let banked: Vec<C> = detail["jamps"][e]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(complex)
-                    .collect();
-                let scale = amp.iter().map(|a| a.norm()).fold(0.0, f64::max);
-                for (f, row) in jamp.iter().enumerate() {
-                    let sum: C = row.iter().zip(&amp).map(|(c, a)| c * a).sum();
-                    assert!(
-                        (sum - banked[f]).norm() <= TOL * scale.max(f64::MIN_POSITIVE),
-                        "{key}: the transcribed JAMP coefficients do not rebuild MadGraph's flow {f}"
-                    );
-                }
-                for (d, ((evaluator, map), bound)) in singles.iter().zip(&bound).enumerate() {
-                    let mut scratch = bound.scratch_space();
-                    let own = if evaluator.n_flows() == 1 {
-                        vec![bound.eval_amplitude(&momenta, hel, &mut scratch)]
-                    } else {
-                        bound.run_flows(&momenta, hel, &mut scratch)
-                    };
+        for (momenta, entries) in &points {
+            check_transcription(key, &jamp, entries);
+            let helicities: Vec<Vec<i32>> = entries.iter().map(|e| e.helicity.clone()).collect();
+            for (d, (diagram, map)) in set.diagrams.iter().zip(&maps).enumerate() {
+                let own = single_diagram_amplitudes_at(
+                    &set,
+                    diagram,
+                    &model,
+                    &evaluated,
+                    momenta,
+                    Some(&helicities),
+                );
+                assert_eq!(
+                    own.len(),
+                    helicities.len() * map.len(),
+                    "{key}: diagram {d} evaluates one value per own flow and helicity"
+                );
+                for per_flow in own.chunks(map.len()) {
                     let mut full = vec![ZERO; flows.len()];
-                    for (v, &f) in own.iter().zip(map) {
+                    for (v, &f) in per_flow.iter().zip(map) {
                         full[f] = *v;
                     }
                     values[d].push(full);
                 }
-                amps.push(amp);
             }
+            amps.extend(entries.iter().map(|e| e.amp.clone()));
         }
         let triple_gluon = set
             .diagrams
@@ -392,12 +426,19 @@ fn the_triple_gluon_diagram_agrees_with_madgraph() {
     let all: Vec<usize> = std::iter::once(s).chain(t).collect();
     let (g, dev) = row.fit(&row.totals(&all));
     println!("g g > t t~, each diagram against G·c·AMP: worst {dev:.3e}, G = {g:.15}");
-    assert!((g.norm() - 1.0).abs() < TOL, "|G| = {}", g.norm());
+    assert!(
+        (g.norm() - 1.0).abs() < TOL,
+        "g g > t t~: the fitted G = {g} is not a phase (|G| = {})",
+        g.norm()
+    );
     assert!(
         dev < TOL,
         "a diagram of g g > t t~ disagrees with MadGraph's c·AMP: worst {dev:.3e} (G = {g})"
     );
-    assert_eq!(row.triple_gluon[s], -1.0);
+    assert_eq!(
+        row.triple_gluon[s], -1.0,
+        "triple_gluon_sign on the triple-gluon diagram {s} of g g > t t~"
+    );
 }
 
 /// The colour coefficients are MadGraph's JAMP coefficients up to one sign shared by
@@ -419,7 +460,12 @@ fn the_triple_gluon_diagram_has_madgraphs_colour() {
     }
     let phi = ratios[0].2;
     println!("g g > t t~, colour over MadGraph's coefficient: {ratios:?}");
-    assert!((phi.norm() - 1.0).abs() < 1e-15);
+    assert!(
+        (phi.norm() - 1.0).abs() < 1e-15,
+        "diagram {}, flow {}: colour coefficient over MadGraph's is {phi}, not a phase",
+        ratios[0].0,
+        ratios[0].1
+    );
     for (d, f, r) in &ratios {
         assert!(
             (r - phi).norm() < 1e-15,
@@ -479,7 +525,11 @@ fn a_charged_triple_vector_vertex_carries_its_sign_in_its_kernel() {
         total < TOL,
         "a diagram of e+ e- > w+ w- disagrees with MadGraph's c·AMP: worst {total:.3e} (G = {g})"
     );
-    assert!(row.triple_gluon.iter().all(|&s| s == 1.0));
+    assert!(
+        row.triple_gluon.iter().all(|&s| s == 1.0),
+        "triple_gluon_sign fires on e+ e- > w+ w-: {:?}",
+        row.triple_gluon
+    );
     let (k, dev) = row.fit(&row.rest(&all));
     println!("e+ e- > w+ w-, colour divided out, against AMP: K = {k:.15}, worst {dev:.3e}");
     assert!(
