@@ -177,13 +177,17 @@ mes_launch_sets() {
 # mes_check_card SCRIPT CARD [KEYS] — every launch-block setting of SCRIPT is
 # what the run card CARD says, so a run made on CARD is the run SCRIPT describes.
 # KEYS (space-separated) are left out: the ones the caller sets per run itself.
+# A script with no setting left to compare is refused: the check would hold
+# whatever CARD says.
 mes_check_card() {
   mes_launch_sets "$1" | awk -v skip=" ${3:-} " 'index(skip, " " $1 " ") == 0' | python3 -c '
 import re, sys
 card = open(sys.argv[1]).read()
 bad = []
+compared = 0
 for line in sys.stdin:
     key, want = line.split()
+    compared += 1
     m = re.search(r"^\s*(\S+)\s*=\s*%s\b" % re.escape(key), card, re.M | re.I)
     got = m.group(1) if m else None
     try:
@@ -192,6 +196,8 @@ for line in sys.stdin:
         same = got is not None and got.lower() == want.lower()
     if not same:
         bad.append("%s: script %s, card %s" % (key, want, got))
+if not compared:
+    sys.exit("no launch-block setting to compare (a bare `launch` line, then `set key value`)")
 if bad:
     sys.exit("run card disagrees with the script launch block: " + "; ".join(bad))
 ' "$2"

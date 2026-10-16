@@ -236,8 +236,10 @@ PY
   fi
 }
 
-# run_fresh ROW SEED NEVENTS CARD PARAM — one seed in a fresh copy of the
-# template, kept under OUTDIR; read back when kept under the same card.
+# run_fresh ROW SEED NEVENTS CARD PARAM OVERRIDES — one seed in a fresh copy of
+# the template, kept under OUTDIR; read back when kept under the same card.
+# OVERRIDES (`key=value;...`, may be empty) go onto the card with iseed,
+# hard_survey and nevents.
 run_fresh() {
   local row="$1" seed="$2" nev="$3" card="$4" param="$5" overrides="$6"
   local keep="$OUTDIR/$row/s$seed" rundir="$WORK/$row/run_s$seed" tag="s$seed"

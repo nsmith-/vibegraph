@@ -112,18 +112,25 @@ model_card_dir() {
 # OUTPUT_PATH, and `import model validation/ufo/NAME[-CARD]` to the staged copy
 # of that model under MODELS_DIR. With `no-launch` the launch block and
 # everything after it are dropped, which leaves a generated process directory
-# that no run has touched.
+# that no run has touched; a launch line that is not a bare `launch` is refused
+# rather than left in.
 script_driver() {
   local script_path="$1" output_path="$2" models_dir="$3" mode="${4:-}"
   local script driver
   script="$(basename "$script_path")"
-  driver="$(mktemp -t vg_build_XXXXXX).mg5"
+  driver="$(mktemp "${TMPDIR:-/tmp}/vg_build_XXXXXX")"
+  mv "$driver" "$driver.mg5"
+  driver="$driver.mg5"
   sed -E -e "s|^([[:space:]]*output[[:space:]]+)[^[:space:]]+|\1$output_path|" \
     -e "s|^([[:space:]]*import[[:space:]]+model[[:space:]]+)validation/ufo/|\1$models_dir/|" \
     "$script_path" > "$driver"
   if [ "$mode" = no-launch ]; then
     sed -E '/^[[:space:]]*launch[[:space:]]*$/,$d' "$driver" > "$driver.cut"
     mv "$driver.cut" "$driver"
+    if grep -qE '^[[:space:]]*launch([[:space:]]|$)' "$driver"; then
+      echo "!!! $script has a launch line that is not a bare 'launch'; it would run" >&2
+      return 1
+    fi
   fi
   grep -qE "^[[:space:]]*output[[:space:]]+$output_path( |$)" "$driver" || {
     echo "!!! $script has no 'output' line to redirect" >&2

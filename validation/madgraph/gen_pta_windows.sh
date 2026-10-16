@@ -214,31 +214,26 @@ clone_run_dir() {
 }
 
 # Install the banked cards verbatim, changing only nevents, iseed, hard_survey
-# when HARD_SURVEY is set, and -- when a refocused window is asked for -- the
-# photon pt cuts.
+# when HARD_SURVEY is set (mes_install_card), and -- when a refocused window is
+# asked for -- the photon pt cuts.
 install_cards() {
   local dir="$1" seed="$2" ptlo="${3:--}" pthi="${4:--}"
-  cp "$BANKED/Cards/run_card.dat" "$dir/Cards/run_card.dat"
+  mes_install_card "$BANKED/Cards/run_card.dat" "$dir/Cards/run_card.dat" \
+    "nevents=$NEVENTS${HARD_SURVEY:+;hard_survey=$HARD_SURVEY}" "$seed"
   cp "$BANKED/Cards/param_card.dat" "$dir/Cards/param_card.dat"
-  python3 - "$dir/Cards/run_card.dat" "$NEVENTS" "$seed" "$ptlo" "$pthi" "${HARD_SURVEY:-}" <<'PY'
+  if [ "$ptlo" = - ]; then
+    return 0
+  fi
+  python3 - "$dir/Cards/run_card.dat" "$ptlo" "$pthi" <<'PY'
 import re, sys
-path, nev, seed, ptlo, pthi, hard_survey = sys.argv[1:7]
+path, ptlo, pthi = sys.argv[1:4]
 text = open(path).read()
-text = re.sub(r"^\s*\S+\s*=\s*nevents\b", "  %s = nevents" % nev, text, flags=re.M)
-text = re.sub(r"^\s*\S+\s*=\s*iseed\b", "  %s = iseed" % seed, text, flags=re.M)
-if hard_survey:
-    text, n = re.subn(r"^\s*\S+\s*=\s*hard_survey\b", "  %s = hard_survey" % hard_survey,
-                      text, flags=re.M)
-    assert n <= 1, "hard_survey found %d times" % n
-    if n == 0:
-        text += "  %s = hard_survey\n" % hard_survey
-if ptlo != "-":
-    n = len(re.findall(r"^\s*\S+\s*=\s*pta\b", text, flags=re.M))
-    assert n == 1, "expected exactly one pta line, found %d" % n
-    text = re.sub(r"^\s*\S+\s*=\s*pta\b", "  %s = pta" % ptlo, text, flags=re.M)
-    n = len(re.findall(r"^\s*\S+\s*=\s*ptamax\b", text, flags=re.M))
-    assert n == 1, "expected exactly one ptamax line, found %d" % n
-    text = re.sub(r"^\s*\S+\s*=\s*ptamax\b", "  %s = ptamax" % pthi, text, flags=re.M)
+n = len(re.findall(r"^\s*\S+\s*=\s*pta\b", text, flags=re.M))
+assert n == 1, "expected exactly one pta line, found %d" % n
+text = re.sub(r"^\s*\S+\s*=\s*pta\b", "  %s = pta" % ptlo, text, flags=re.M)
+n = len(re.findall(r"^\s*\S+\s*=\s*ptamax\b", text, flags=re.M))
+assert n == 1, "expected exactly one ptamax line, found %d" % n
+text = re.sub(r"^\s*\S+\s*=\s*ptamax\b", "  %s = ptamax" % pthi, text, flags=re.M)
 open(path, "w").write(text)
 PY
 }
