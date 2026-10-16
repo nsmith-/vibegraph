@@ -202,7 +202,18 @@ fn load_pdf_set() -> PdfSet {
 /// 2 of `SubProcesses/results.dat`, the same pair `gen_hadronic_sigma.sh` banks
 /// into the Drell–Yan reference JSON. Read from the run rather than copied into
 /// a committed file, so the number cannot drift from the run it came out of.
+///
+/// Where the bundle carries a seed record for the run's row
+/// ([`common::seed_record`]), that record's seed-policy reading is MadGraph's
+/// value instead, and the single run is not read.
 fn banked_llj_sigma(run_dir: &Path) -> (f64, f64) {
+    let row = run_dir
+        .file_name()
+        .expect("a run directory names its row")
+        .to_string_lossy();
+    if let Some(seeded) = common::seed_record::reference(&validation_dir().join("output"), &row) {
+        return (seeded.mean(), seeded.err());
+    }
     let path = run_dir.join("SubProcesses/results.dat");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
@@ -220,7 +231,16 @@ fn banked_llj_sigma(run_dir: &Path) -> (f64, f64) {
 }
 
 /// Banked MG σ ± Δσ for one run, or `None` when the reference JSON is absent.
+///
+/// The run's process directory is `output/dy13_<run>`; a seed record for that
+/// row ([`common::seed_record`]) is read in place of the single run where the
+/// bundle carries one.
 fn banked(run: &str) -> Option<(f64, f64)> {
+    if let Some(seeded) =
+        common::seed_record::reference(&validation_dir().join("output"), &format!("dy13_{run}"))
+    {
+        return Some((seeded.mean(), seeded.err()));
+    }
     let path = validation_dir().join("hadronic_sigma_reference.json");
     let text = std::fs::read_to_string(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -4463,7 +4483,18 @@ const XQCUT_ONLY_NEVAL: usize = 150_000;
 ///
 /// `part` selects one process's share of each run (its `by_lprup` entry, the
 /// `@N` of the proc card); `None` reads the run's total.
+///
+/// Where the bundle carries a seed record for the row ([`common::seed_record`]),
+/// its fresh-directory seeds are read instead of `file`.
 fn seeded_reference(file: &str, row: &str, part: Option<&str>) -> (f64, f64, usize) {
+    let output = validation_dir().join("output");
+    let seeded = match part {
+        Some(id) => common::seed_record::part_reference(&output, row, id),
+        None => common::seed_record::reference(&output, row),
+    };
+    if let Some(seeded) = seeded {
+        return (seeded.mean(), seeded.err(), seeded.read.n);
+    }
     let path = validation_dir().join(file);
     let v: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).expect("seeded reference")).expect("parses");

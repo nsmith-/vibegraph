@@ -74,6 +74,8 @@ mod rescale;
 #[cfg_attr(not(test), allow(dead_code))]
 mod prop_harness;
 #[cfg(test)]
+mod relabelling;
+#[cfg(test)]
 mod renumbering;
 mod root_diagram;
 mod root_lorentz;
@@ -90,6 +92,8 @@ mod stitching;
 #[cfg_attr(not(test), allow(dead_code))]
 mod schedule;
 mod tree;
+#[cfg(test)]
+mod triple_gluon;
 mod waveform_slot;
 
 /// Internal kernels, slot type, and typed random-slot generators, re-exported for

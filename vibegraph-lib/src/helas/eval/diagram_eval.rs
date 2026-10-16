@@ -123,20 +123,16 @@ impl VertexTerm {
         Ok(VertexTerm { terms, coupling_id })
     }
 
-    /// The rooting-convention sign shared by this vertex-term's Lorentz terms (see
-    /// [`RootedTerm::build_sign`]). Every term of a vertex carries the same sign — the
-    /// convention −1 is a property of the vertex current, not of an individual coupling
-    /// term — so a chiral `ProjM`+`ProjP` pair flips together (verified across the
-    /// MG-validated set: no vertex has mixed per-term build signs). Empty term list → `+1`.
-    fn build_sign(&self) -> i8 {
-        let mut it = self.terms.iter().map(|t| t.build_sign);
-        let Some(first) = it.next() else { return 1 };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's Lorentz terms carry mixed rooting-convention signs — the \
-             per-vertex sign factorization does not hold for this structure"
-        );
-        first
+    /// The tensor-path sign shared by this vertex-term's Lorentz terms (see
+    /// [`RootedTerm::build_sign`]); `+1` for tree-rooted terms and for an empty term
+    /// list. Terms that disagree have no per-vertex sign to lift, and the vertex is
+    /// refused.
+    fn build_sign(&self) -> Result<i8, RootLorentzError> {
+        uniform_sign(
+            self.terms.iter().map(|t| t.build_sign),
+            "tensor-path signs",
+            self,
+        )
     }
 
     /// Whether this vertex-term's Lorentz terms are evaluated through the rank-2 tensor
@@ -156,15 +152,13 @@ impl VertexTerm {
     /// The runtime `reversed`-bilinear parity shared by this vertex-term's Lorentz terms
     /// (see [`RootedTerm::reversed_sign`]). Uniform across the terms for the same reason
     /// as [`build_sign`](Self::build_sign) (they share the vertex's fermion legs). Empty
-    /// term list → `+1`.
-    fn reversed_sign(&self) -> i8 {
-        let mut it = self.terms.iter().map(|t| t.reversed_sign);
-        let Some(first) = it.next() else { return 1 };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's Lorentz terms carry mixed reversed-bilinear parities"
-        );
-        first
+    /// term list → `+1`; terms that disagree are refused.
+    fn reversed_sign(&self) -> Result<i8, RootLorentzError> {
+        uniform_sign(
+            self.terms.iter().map(|t| t.reversed_sign),
+            "reversed-bilinear parities",
+            self,
+        )
     }
 
     /// Convert the rooted term
@@ -257,19 +251,19 @@ impl VertexInfo {
         Ok(VertexInfo { terms })
     }
 
-    /// The rooting-convention sign of this vertex, common to all its `(color, lorentz)`
-    /// terms (see [`VertexTerm::build_sign`]). Product of these over a diagram's vertices,
-    /// evaluated at the rooting that takes the diagram's anchor as the amplitude vertex,
-    /// is the diagram's
-    /// [`build_convention_sign`](super::root_diagram::DiagramEvalTree::build_convention_sign).
-    pub(super) fn build_sign(&self) -> i8 {
-        let mut it = self.terms.iter().map(|t| t.build_sign());
-        let Some(first) = it.next() else { return 1 };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's couplings carry mixed rooting-convention signs"
-        );
-        first
+    /// The tensor-path sign of this vertex, common to all its `(color, lorentz)` terms
+    /// (see [`VertexTerm::build_sign`]); with the vertex as the amplitude root it is one
+    /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`).
+    ///
+    /// A vertex whose couplings disagree on the sign is refused: the sign is lifted to
+    /// one factor per vertex, which such a vertex does not have.
+    pub(super) fn build_sign(&self) -> Result<i8, RootLorentzError> {
+        let signs = self
+            .terms
+            .iter()
+            .map(VertexTerm::build_sign)
+            .collect::<Result<Vec<_>, _>>()?;
+        uniform_sign(signs, "tensor-path signs", self)
     }
 
     /// Whether this vertex is evaluated through the rank-2 tensor path, common to all its
@@ -285,16 +279,39 @@ impl VertexInfo {
     }
 
     /// The reversed-bilinear parity of this vertex, common to all its terms (see
-    /// [`VertexTerm::reversed_sign`]). Product over a diagram's vertices at the anchor
-    /// rooting is [`reversed_convention_sign`](super::root_diagram::DiagramEvalTree::reversed_convention_sign).
-    pub(super) fn reversed_sign(&self) -> i8 {
-        let mut it = self.terms.iter().map(|t| t.reversed_sign());
-        let Some(first) = it.next() else { return 1 };
-        assert!(
-            it.all(|s| s == first),
-            "a vertex's couplings carry mixed reversed-bilinear parities"
-        );
-        first
+    /// [`VertexTerm::reversed_sign`]). With the vertex as the amplitude root it is one
+    /// factor of the diagram's convention sign (`root_diagram::vertex_root_signs`); the
+    /// product over a live tree is
+    /// [`live_reversed_parity`](super::root_diagram::DiagramEvalTree::live_reversed_parity).
+    ///
+    /// A vertex whose couplings disagree on the parity is refused, as for
+    /// [`build_sign`](Self::build_sign).
+    pub(super) fn reversed_sign(&self) -> Result<i8, RootLorentzError> {
+        let signs = self
+            .terms
+            .iter()
+            .map(VertexTerm::reversed_sign)
+            .collect::<Result<Vec<_>, _>>()?;
+        uniform_sign(signs, "reversed-bilinear parities", self)
+    }
+}
+
+/// The one sign every entry of `signs` carries (`+1` for none), or a refusal naming
+/// `what` and the vertex when they differ.
+fn uniform_sign(
+    signs: impl IntoIterator<Item = i8>,
+    what: &str,
+    vertex: &impl std::fmt::Display,
+) -> Result<i8, RootLorentzError> {
+    let mut it = signs.into_iter();
+    let Some(first) = it.next() else { return Ok(1) };
+    if it.all(|s| s == first) {
+        Ok(first)
+    } else {
+        Err(RootLorentzError::UnsupportedVertex(format!(
+            "the structures of `{vertex}` carry mixed {what}, so the vertex has no single \
+             sign to lift into the diagram's"
+        )))
     }
 }
 
@@ -307,5 +324,80 @@ impl std::fmt::Display for VertexInfo {
                 .join(" + ")
                 .as_str(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ufo::lorentz::LorentzTerm;
+
+    /// A plain all-scalar term rooted at the amplitude.
+    fn scalar_term() -> RootedTerm {
+        let term = LorentzTerm {
+            coeff: 1.0,
+            ops: vec![],
+        };
+        super::super::root_lorentz::root_term(&term, &[1, 1, 1], &[], None, &[None; 3]).unwrap()
+    }
+
+    /// A vertex whose structures disagree on the tensor-path sign, or on the
+    /// reversed-bilinear parity, is refused rather than given the first term's sign.
+    #[test]
+    fn mixed_vertex_signs_are_refused() {
+        let plain = scalar_term();
+        assert_eq!(plain.build_sign, 1);
+        let mut flipped = plain.clone();
+        flipped.build_sign = -1;
+        let mut reversed = plain.clone();
+        reversed.reversed_sign = -reversed.reversed_sign;
+
+        let vertex = |a: &RootedTerm, b: &RootedTerm| VertexInfo {
+            terms: vec![
+                VertexTerm {
+                    terms: vec![a.clone()],
+                    coupling_id: CouplingId::from(0),
+                },
+                VertexTerm {
+                    terms: vec![b.clone()],
+                    coupling_id: CouplingId::from(1),
+                },
+            ],
+        };
+        assert_eq!(vertex(&plain, &plain).build_sign().unwrap(), 1);
+        assert_eq!(vertex(&plain, &plain).reversed_sign().unwrap(), 1);
+        for (what, a, b) in [
+            (
+                "across couplings",
+                vertex(&plain, &flipped),
+                vertex(&plain, &reversed),
+            ),
+            (
+                "within one coupling",
+                VertexInfo {
+                    terms: vec![VertexTerm {
+                        terms: vec![plain.clone(), flipped.clone()],
+                        coupling_id: CouplingId::from(0),
+                    }],
+                },
+                VertexInfo {
+                    terms: vec![VertexTerm {
+                        terms: vec![plain.clone(), reversed.clone()],
+                        coupling_id: CouplingId::from(0),
+                    }],
+                },
+            ),
+        ] {
+            let err = a.build_sign().unwrap_err();
+            assert!(
+                matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("tensor-path")),
+                "{what}: {err:?}"
+            );
+            let err = b.reversed_sign().unwrap_err();
+            assert!(
+                matches!(&err, RootLorentzError::UnsupportedVertex(why) if why.contains("reversed-bilinear")),
+                "{what}: {err:?}"
+            );
+        }
     }
 }

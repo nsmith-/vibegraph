@@ -1,12 +1,12 @@
 ---
 type: Backlog Item
 title: pp_to_ttx_0j1j_mlm's integrals cell waits on a hard_survey = 2 reference
-description: The @1 excess is attributed and this side's part fixed (CM-frame clustering); the cell can gate once the reference is re-banked with hard_survey = 2, against which @1 already reads 0.88σ.
+description: "The @1 excess is attributed and this side's part fixed (CM-frame clustering); refdata-10 re-banks the reference with hard_survey = 2, so the cell can be measured against it and gated."
 area: validation
-state: blocked
+state: open
 priority: high
-closes_when: The row's MadEvent reference is re-banked with hard_survey = 2 from fresh directories (in the seeded batch on PR #25), the integrals cell gates on a five-seed agreement with |pull| < 3, and the row's manifest note is rewritten on the fixed code.
-blocked_by: [reference-sigma-seed-scatter-untested]
+closes_when: The row's integrals cell, read against refdata-10's seeded hard_survey = 2 reference, gates on a five-seed agreement with |pull| < 3, and the row's manifest note is rewritten on the fixed code.
+blocked_by: []
 opened: 2026-10-03
 tags: [mlm, sigma, ttx, madevent-reference, survey]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
@@ -24,6 +24,9 @@ The +1.28 % on `@1` had two causes
   `hard_survey = 2`, 20 fresh seeds read `@1` 578.239 ± 0.520 against this
   side's 578.780 ± 0.327, a pull of 0.88.
 
-What is left: re-bank the row with `hard_survey = 2`, then flip its
-integrals cell from `info` to `gate`. The current bank reads a pull of 3.59.
+The reference is re-banked: refdata-10 carries the row as five
+fresh-directory seeds plus two at 4×, all at `hard_survey = 2`
+([D1](../../sprints/sigma-reference-scatter/decisions/D1-reference-error-design.md)).
+What is left: run the MLM σ gate against it and flip the integrals cell from
+`info` to `gate`. The single-run default-survey bank read a pull of 3.59.
 The row's manifest note still quotes pre-fix numbers.

@@ -18,3 +18,5 @@ Sites: `helas/eval/renumbering.rs:241`, `helas/eval/rooting_soundness.rs`
 `tests/standalone_jamps.rs` (`GraphLevel::read`). The per-graph route that
 several amplitude sessions now rely on makes this the common way to read one
 diagram from production.
+
+`renumbering::single_diagram_amplitudes_at` (PR #30) is the natural home for the shared helper.

@@ -5,7 +5,7 @@ description: "Per-structure fermion pairing split into feyngraph flow groups, Ma
 status: draft
 tags: [four-fermion, smeft, fermion-flow, fierz, tensor]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n35-14, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L175-L214", title: "Note 35 §1.4: reference conventions read from the pinned MadGraph source"}
   - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: four-fermion vertices"}
@@ -14,8 +14,9 @@ sources:
   - {id: n39-1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/39-vector-vertex-signs.md#L40-L60", title: "Note 39 §1: the u u~ > t t~ g (vg_c4q) defect was the triple-gluon source sign"}
   - {id: mg-signflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/models/import_ufo.py#L1878", title: "MadGraph import_ufo.py: UFOMG5Converter.get_sign_flow"}
   - {id: mg-fermionflow, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/aloha/aloha_fct.py#L26", title: "MadGraph aloha_fct.py: get_fermion_flow"}
-  - {id: code-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/ufo/topo.rs#L200-L380", title: "ufo/topo.rs: fermion_flow, permutation_sign, flow_groups"}
-  - {id: code-current-line, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L654-L680", title: "root_diagram.rs: fermion_current_line_sign"}
+  - {id: code-topo, resource: "vibegraph-lib/src/ufo/topo.rs", title: "ufo/topo.rs: fermion_flow, permutation_sign, flow_groups"}
+  - {id: code-current-line, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: vertex_root_signs (the tensor-path build sign)"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the four-fermion pairing census (probe P0) and the tensor-path mutation (MT)"}
 ---
 
 # Four-fermion vertices
@@ -73,9 +74,12 @@ structure by structure against the SMEFTsim model.
 
 **Census.** Of SMEFTsim's 21 four-fermion structures, 15 pair `(1,2)(3,4)` and 6
 pair `(1,4)(2,3)` (`FFFF13` and `FFFF16` write their chains crossed). After
-interaction splitting, 80 of 1985 interactions mix pairings, every one
-same-flavour (`X̄ X X̄ X`). The flow split is load-bearing only there and is not
-observable in any gated cell; it is pinned structurally. For a same-flavour
+interaction splitting, 80 of 1985 interactions mix pairings. Sixty are
+same-flavour (`X̄ X X̄ X`: the leptons, the neutrinos and the six quarks); the
+other twenty pair two flavours of one weak doublet (`t̄ b b̄ t`, `ū d d̄ u`,
+`c̄ s s̄ c`), where one pairing is the charged-current reading and the other the
+neutral-current one.[^r1-report] The flow split is load-bearing only on those 80 and
+is not observable in any gated cell; it is pinned structurally. For a same-flavour
 process (`e+ e- > e+ e- NP<=1`) this engine emits one diagram per pairing where
 MadGraph draws one per contact coupling, writing the second pairing into the
 same `AMP()` with the `get_sign_flow` sign — the counting class of `gg_to_gg_cg`.
@@ -120,29 +124,43 @@ chain walk. A literal `Sigma` per line is accepted in place of two adjacent gamm
 
 **Blind spot.** The gated row (`tata_to_ttx_tensor4f`) cannot see the grade-0
 weight of the reconstruction: SMEFTsim writes the tensor operator with its aligned
-structures at exactly `−2×` the reversed ones (`c₁₀₅₂ = −2 c₁₀₄₉` under
-`vg_cleQt3`), so the scalar part cancels identically. That weight rests on the
+structures at exactly `−2×` the reversed ones (on the `ta+ ta- t~ t` vertex
+`V_747`, `GC_1053` on the aligned `FFFF8` and `FFFF21` against `GC_1050` on the
+reversed `FFFF5`, `FFFF6`, `FFFF19` and `FFFF20`; the `cleQt3Im` vertex `V_746`
+vanishes under `vg_cleQt3`), so the scalar part cancels identically. That weight rests on the
 hermetic 4×4 Weyl-matrix pin alone.
 
 ## The tensor-path line sign
 
-A tree-rooted four-fermion current takes every line sign the diagram carries. A
-line that closes at a *fermion-output tensor-path* current at the anchor rooting
-takes none: `fermion_current_line_sign` divides those line signs back out of
-`fermi_sign`. It is a convention of the tensor kernel, which cuts the index cycle
-at one line, and was adjudicated against MadGraph standalone on processes where an
-emission leaves the contact by one of its lines (`MG/ours` against the 1/4
-helicity average):[^n38-s1][^code-current-line]
+A cyclic four-fermion structure on the tensor path cuts its index cycle at one
+line and reads the reversals of the other lines inside the kernel, so its terms
+carry no reversed-bilinear parity of their own. In the convention sign the vertex
+takes instead the sign that path gives its amplitude root: `RootedTerm::build_sign`,
+`−1` per crossed line of the cyclic structure and `+1` on every tree-rooted term,
+which `vertex_root_signs` multiplies in at each `VertexInfo::tensor` vertex. It is
+read from the vertex and the crossing of its lines, never from a rooting, so it is
+the same at every root.[^code-current-line] Dropped on its own, it fails
+`standalone_jamps`' `tata_to_ttxa_tensor4f` (`ta+ ta- > t t~ a`, the tensor
+contact beside a photon emission, per graph) and `amplitude_oracle`'s
+`ll_to_qqx_toy_tensor` and `tata_to_ttx_tensor4f`, per diagram, and nothing
+else; the vector four-fermion rows (`ee_to_mumu_4f`, `ee_to_ee_4f`,
+`uux_to_ttx_4f`, `uux_to_ttxg_4f`) agree without it.[^r1-report]
 
-| process | contact | with the rule | without |
+That only tensor-path vertices take a crossed-line sign was first settled
+against MadGraph standalone under the convention then in force, which read
+signs at a reference rooting, as a rule for the line sign of a line closed at a
+fermion-output four-fermion current (`MG/ours` against the 1/4 helicity
+average):[^n38-s1]
+
+| process | contact | with the sign | without |
 |---|---|---|---|
 | `ta+ ta- > t t~ a` | tensor (`O_leQt3`) | 0.25000 ± 3e-6 | off by up to 20% |
 | `lt~ lt > qt qt~ vt` (toy) | tensor | 0.25 exactly | off |
 | `e+ e- > mu+ mu- a NP<=1` | vector (`vg_c4l`) | 0.21–0.49 | 0.25 exactly |
 
-so the rule is confined to tensor-path vertices. `u u~ > t t~ g NP<=1` under
-`vg_c4q` once missed MadGraph under either line rule; the four-quark contacts were
-innocent — the cause was the triple-gluon source sign beside a quark-line anchor
+On the vector-path contact the sign spoils an exact agreement.
+`u u~ > t t~ g NP<=1` under `vg_c4q` once missed MadGraph with the four-quark contacts blameless: the cause was the triple-gluon
+sign, which is `triple_gluon_sign`'s `−1` per coloured three-vector vertex
 ([vector-vertex-signs](vector-vertex-signs.md)), and the process agrees per
 flow.[^n39-1] The full sign inventory is
 [convention-sign-inventory](convention-sign-inventory.md).
@@ -155,4 +173,5 @@ flow.[^n39-1] The full sign inventory is
 [^n38-s1]: Note 38 §S1 (commit 2d99872, landed in 1539abc).
 [^n39-1]: Note 39 §1.
 [^code-topo]: `vibegraph-lib/src/ufo/topo.rs`.
-[^code-current-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `fermion_current_line_sign`.
+[^r1-report]: R1 report. The census was counted on `0ec027a` by a temporary test over `ParsedModel::parse` of the vendored SMEFTsim UFO ([R1 report](../sprints/amplitude-signs/sessions/R1-report.md), probe P0); `topo.rs`'s `the_four_lepton_vertex_carries_both_pairings` asserts the 80 and checks only the first for flavour.
+[^code-current-line]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `vertex_root_signs`; `root_lorentz.rs`, `RootedTerm::build_sign`.

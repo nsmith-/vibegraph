@@ -5,14 +5,14 @@ description: "Flow-typed fermion slots, bra/ket chosen by physical flow, the per
 status: draft
 tags: [fermion-flow, spinors, crossing, helas, conventions]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12: root causes 2, 3 and 5 (flow-typed slots, flow-driven dispatch, crossed-line conjugation)"}
   - {id: n35-f1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/35-ufo-lorentz-sprint-plan.md#L475-L548", title: "Note 35 F1: sinks closing two fermion lines; per-pair bra/ket and crossed bookkeeping"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/kernel.rs#L538-L600", title: "kernel.rs: resolve_bra_ket, off_shell_fermion_current"}
-  - {id: code-adjoint, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/diagram_eval.rs#L38-L55", title: "diagram_eval.rs: ExtLegInfo::adjoint"}
-  - {id: code-rootlorentz, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_lorentz.rs#L942-L1140", title: "root_lorentz.rs: standalone_projector_crossed, term_reversed_parity, pair_crossed, chiral_correction"}
-  - {id: code-mixed, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L720-L850", title: "root_diagram.rs: collect_fermion_pairs, mixed_line_final_legs"}
+  - {id: code-kernel, resource: "vibegraph-lib/src/helas/eval/kernel.rs", title: "kernel.rs: resolve_bra_ket, off_shell_fermion_current"}
+  - {id: code-adjoint, resource: "vibegraph-lib/src/helas/eval/diagram_eval.rs", title: "diagram_eval.rs: ExtLegInfo::adjoint"}
+  - {id: code-rootlorentz, resource: "vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "root_lorentz.rs: term_reversed_parity, chiral_correction, add_cut_line"}
+  - {id: code-mixed, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: closed_fermion_pairs, mixed_line_final_legs, external_leg"}
 ---
 
 # Fermion flow, bra/ket dispatch and crossed legs
@@ -79,31 +79,38 @@ resulting sign bookkeeping per line class is
 |---|---|---|
 | `γ^μ` | `−γ^μ` | reversed-bilinear parity at the vector sink (`term_reversed_parity`; runtime `reversed` flag) |
 | `γ^μ P_χ` (gamma-chained projector) | `−γ^μ P_χ̄` | chirality flip per vertex (`chiral_correction`); the `−1` as above |
-| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip; on a crossed line the reordering `−1` (`pair_crossed` at a scalar sink, all four; `standalone_projector_crossed` at a fermion output, `P_χ` and `γ⁵` only — a standalone `Identity` rooted at a fermion output on a crossed line takes no `−1`, and no gated row reaches that case) |
+| standalone `P_χ`, `1`, `γ⁵` | unchanged | no flip, and no reversed-bilinear parity (`reversed_sign` is `+1` for them); a crossed line's reordering `−1` is not a per-structure sign but the line's: `Diagram::fermion_line_sign` and `propagator_phase_sign` in `convention_sign` |
 | `σ^{μν}` | `−σ^{μν}` | the same reversed-bilinear `−1` as `γ^μ`; a projector beside a literal `Sigma` keeps its chirality (`σ^{μν}` commutes with `γ⁵`) |
 | `γ^αγ^β` (tensor-path line) | transposed | the two gammas swap; projectors move with their slots **without** conjugating chirality |
 
 A gamma-chained projector conjugates on two disjoint occasions: an uncrossed line
 traversing the vertex against its arrow (an initial-state annihilation pair), and a
 crossed line. A crossed pair's two `−1`s cancel, so neither case carries an
-explicit sign in `chiral_correction`. All the per-vertex signs that depend on the
-rooting are lifted into the diagram's `fermi_sign`
-([convention-sign-inventory](convention-sign-inventory.md)).
+explicit sign in `chiral_correction`. The reversed-bilinear parity the live tree
+applies depends on the rooting, so `fermi_sign` cancels it and multiplies in the
+parity each vertex has with the vertex as the amplitude root, which reads the graph
+alone (`vertex_root_signs`;
+[convention-sign-inventory](convention-sign-inventory.md),
+[rooting-invariance-and-canonical-form](rooting-invariance-and-canonical-form.md)).
 
 ## Vertices that close two lines
 
 A four-fermion vertex may close two fermion lines at once. The rooted tree gets
 one spinor sink per pair, each with its own bra/ket resolution and `crossed`
-bookkeeping: `collect_fermion_pairs` tags each open fermion end with its vertex
-slot and closes them by the vertex's own pairing (its flow group), and
-`OffShellCurrent`/`ContractAmplitude` nodes carry `fermion_pairs`.[^n35-f1] The
+bookkeeping: `closed_fermion_pairs` reads the vertex's own pairing (its flow
+group) and returns, as positions in the node's child list, every pair whose two
+legs are both inputs, and `OffShellCurrent`/`ContractAmplitude` nodes carry them
+as `fermion_pairs`.[^n35-f1] The
 pairing decides how each shared external wavefunction is typed (crossed versus
 mixed), which is why the pairing split lives at the diagram layer; see
 [four-fermion-vertices](four-fermion-vertices.md). A current rooted on one line of
-such a vertex must group fermion legs by the pairing, not consecutively; the
-falsifier `four_fermion_currents_are_rooting_invariant` runs a line *through* the
-contact by adding a photon, since every gated four-fermion diagram is a single
-contact.
+such a vertex must group fermion legs by the pairing, not consecutively. The
+falsifier `four_fermion_currents_are_rooting_invariant` (an `extended-validation`
+test) runs a line *through* the contact by adding a photon to
+`e+ e- > mu+ mu- NP<=1` and re-roots it. Two MadGraph rows also put a contact on
+an internal line: `uux_to_ttxg_4f` (a four-quark contact producing the current a
+gluon emission closes) and `tata_to_ttxa_tensor4f` (the tensor contact beside a
+photon emission), both in `standalone_jamps`.
 
 The spinor and variance types these slots carry are described in
 [repr-layer-geometry-and-axes](repr-layer-geometry-and-axes.md). Majorana fermions
@@ -115,4 +122,4 @@ and the UFO `C` operator are refused
 [^code-kernel]: `vibegraph-lib/src/helas/eval/kernel.rs`, `resolve_bra_ket`, `off_shell_fermion_current`.
 [^code-adjoint]: `vibegraph-lib/src/helas/eval/diagram_eval.rs`, `ExtLegInfo::adjoint`.
 [^code-rootlorentz]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`.
-[^code-mixed]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `mixed_line_final_legs`.
+[^code-mixed]: `vibegraph-lib/src/helas/eval/root_diagram.rs`, `mixed_line_final_legs`, `closed_fermion_pairs`.

@@ -21,3 +21,8 @@ Two test-side copies of the lab-to-partonic-CM boost exist as well:
 `partonic_cm` in `vibegraph-lib/tests/validate_scales.rs` and the boost in
 `validate_hadronic.rs` near line 2903. Both targets include `tests/common`, so one
 helper there would serve both (found by `sigma-ttx-mlm-at1` HY1).
+
+Two more sites (hygiene review of PR #32): `tests/toy_models.rs::toy_point` and
+`reweight/engine.rs` (~:954) hand-copy the CM beam momenta beside the
+`pub(crate)` `phasespace::beams::beam_momenta`; the test needs it exposed or a
+`tests/common` helper.
