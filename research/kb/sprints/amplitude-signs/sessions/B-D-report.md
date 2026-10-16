@@ -5,6 +5,7 @@ description: "Seven kb concepts that still described Diagram::anchor, the anchor
 status: draft
 tags: [kb, sign-convention, rooting, documentation, report]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-16}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: 12053c4, resource: "https://github.com/nsmith-/vibegraph/commit/12053c4", title: "kb: bring seven concepts in line with the root-free convention sign"}
 ---

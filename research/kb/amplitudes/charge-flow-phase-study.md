@@ -75,6 +75,11 @@ Two structural findings came before any dump:
 
 ## Results (as of 2026-08-03)
 
+This table records the study as it stood on that date. The anchor-read arms it
+lists (the crossed-pair, scalar-sink, contact, VVV-source and standalone-projector
+signs) no longer exist; the current convention is
+[the convention-sign inventory](convention-sign-inventory.md).
+
 | convention | rule covers it | checked by a dump |
 |---|---|---|
 | Wick parity | yes | yes: Bhabha's MadGraph `c = −diagram.sign`; `u d > e+ e- u d` NC/CC split |
