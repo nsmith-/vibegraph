@@ -192,7 +192,11 @@ CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0`, on the fixed tree.
   (49 passed), run for the identity check above.
 - `pixi run -e kb kb-lint`: `0 errors, 2 warnings` (two blocked backlog items,
   not this session's).
-- `pixi run --skip-deps validate`: see below.
+- `pixi run --skip-deps validate` (after the sibling F2's run ended): `VALIDATE
+  EXIT 0`, 63 suites, 1816 passed, 0 failed, 84 ignored; `64 rows × 4
+  categories = 256 cells: 203 measured in the layers this run drove (196 ✅, 7
+  ⚠️, 13 ⏳, 40 — / uncovered)` and `the measured cells are the declared cells`.
+  These are B′'s counts.
 
 ## Method
 
