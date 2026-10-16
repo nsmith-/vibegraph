@@ -136,11 +136,20 @@ is too heavy-tailed at 10k events to bank.
 1. Bank every row with `hard_survey = 2`. The cost is negligible.
 2. Record each run's effective `min_events`/`max_events` (`run_config.inc`).
    A card where `hard_survey` is inert is then visible rather than assumed.
-3. Rows with a channel whose seed χ²/dof stays above 3 under `hard_survey = 2`
-   are banked as usual, but their σ cell stays `info` against MadEvent. If an
-   adaptation-free estimate exists, that is recorded beside it. Today these
-   are `ee_to_mumua` and the uux continuum (not a gated row). The screen lists
-   any new one back to the user.
+3. A row whose channels scatter beyond their quoted errors under
+   `hard_survey = 2` is banked as usual, but its σ cell stays `info` against
+   MadEvent. If an adaptation-free estimate exists, that is recorded beside it.
+   **The scatter rule** (third amendment): per channel, the seed χ²/dof of the
+   reported values at the banked budget. A row is flagged when the number of
+   channels above 3 exceeds the number expected by chance, which the record
+   stores; with 4 dof one correctly quoted channel exceeds 3 with probability
+   7·e⁻⁶ ≈ 1.7 %, so "worst channel above 3" alone would flag a 50-channel row
+   58 % of the time. A 5-seed flag is confirmed with 20 seeds before the cell
+   goes `info`. The screen lists any flagged row back to the user.
+   Today two rows are `info` against MadEvent on an attribution rather than on
+   this statistic: `ee_to_mumua`, on #26's rare large weights in G6/G8 (its
+   worst channel over 39 `hard_survey = 2` seeds is G8 at χ²/dof 2.78, below
+   3), and the uux continuum (not a gated row; G9 at 12.08).
 4. Two driver checks: a run that writes fewer events than asked fails, and so
    does a σ that is not a number. `generate_events` exits 0 on the
    `libgammaUPC.a` compile race.
@@ -166,10 +175,20 @@ Unchanged: fresh seeds, the 4× screen, and both values recorded per seed.
   `min_events`/`max_events`, and the screen lists it back. Its σ cell then
   follows the first amendment: the equal-weight value only where an
   adaptation-free check validated it, otherwise the reported mean. It stays
-  `info` if its channels scatter at χ²/dof > 3. No committed banked card is
+  `info` if point 3's scatter rule flags it. No committed banked card is
   known to trip the condition; the hadronic threshold is 130 GeV.
 
 The durable record of the survey bias is the concept
 `validation/madevent-default-survey-bias.md` on PR #23's branch. It is linked
 from `madgraph-defect-policy` as a MadGraph approximation, and listed as an
 upstream-report candidate.
+
+## Third amendment: the scatter rule (decided 2026-10-16)
+
+The user's decision, relayed by the planner. F2 measured that the second
+amendment's "a channel above χ²/dof 3" fires by chance on rows with many
+channels, and that `ee_to_mumua`'s channels do not sit above 3. Point 3 above
+now carries the decided rule: compare the count above 3 with the count
+expected by chance, and confirm a 5-seed flag with 20 seeds. `ee_to_mumua`
+stays `info` on #26's attribution, not on the threshold. The rule reads
+quantities every seed record already holds, so no re-bank follows.
