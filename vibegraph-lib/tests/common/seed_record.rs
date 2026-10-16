@@ -21,13 +21,20 @@
 //! mode at `r = 1` whatever `hard_survey` says, and the record shows it
 //! ([`SurveySummary::as_set`]).
 //!
-//! # The heavy-tail flag
+//! # The scatter test
 //!
-//! Per integration channel, the seeds at the budget are combined like the row
-//! ([`combine`]) and their χ²/dof read. A channel whose rare, very large weights
-//! its own quote does not cover scatters far above one; the row's worst channel
-//! above [`HEAVY_TAIL_CHI2_LIMIT`] flags it ([`HeavyTail`]). The flag reports; whether
-//! the row's cell gates is the manifest's decision.
+//! Per integration channel that every seed at the budget carries with a nonzero
+//! error, the seeds' χ² = Σ((xᵢ − x̄)/eᵢ)² about their unweighted mean, on
+//! n − 1 degrees of freedom, and its p-value. A channel whose rare, very large
+//! weights its own quote does not cover scatters far outside it. The row is
+//! flagged when the smallest p-value times the number of channels tested is
+//! below [`SCATTER_P_LIMIT`]: a row whose quotes are all right flags by chance at
+//! most that often, however many channels it has. A flag on a row with at least
+//! [`SCATTER_CONFIRM_SEEDS`] seeds at the budget is confirmed; one on fewer asks
+//! for that many ([`Scatter`]). The count of channels above χ²/dof
+//! [`SCATTER_INFO_CHI2_PER_DOF`], and the count expected there by chance, are
+//! kept for information and decide nothing. The test reports; whether the row's
+//! cell gates is the manifest's decision.
 //!
 //! # Two values per seed
 //!
@@ -179,7 +186,10 @@ pub struct RecordSummary {
     pub ew_minus_reported_err_pb: f64,
     pub screen: Screen,
     pub survey: SurveySummary,
-    pub heavy_tail: HeavyTail,
+    /// `None` in a record whose writer did not compute it;
+    /// [`SeedRecord::summarise`] computes it from the seeds' `by_channel`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scatter: Option<Scatter>,
 }
 
 /// The survey the seeds ran, read from their `run_config.inc`.
@@ -219,35 +229,71 @@ pub fn survey_rate(min_events: u64, max_events: u64) -> Option<u32> {
         .flatten()
 }
 
-/// A row's per-channel seed scatter at the budget.
+/// A row's per-channel seed scatter at the budget, and the test it is read by.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct HeavyTail {
+pub struct Scatter {
     /// Channels every seed at the budget carries with a nonzero error.
     pub channels_tested: usize,
     /// Degrees of freedom of each channel's χ²: the seeds at the budget less one.
     pub dof: usize,
-    /// The channel with the largest seed χ²/dof, if any was tested.
+    /// The tested channel with the smallest p-value.
     pub worst: Option<ChannelScatter>,
-    /// Every tested channel above [`HEAVY_TAIL_CHI2_LIMIT`], worst first.
-    pub above_limit: Vec<ChannelScatter>,
-    /// How many tested channels would sit above the limit by chance if every
-    /// channel's quote were its true error: Σ P(χ²_dof > limit·dof).
+    /// `min(1, channels_tested · worst.p_value)`; 1 with no channel tested.
+    pub corrected_p: f64,
+    pub verdict: ScatterVerdict,
+    /// Every tested channel above [`SCATTER_INFO_CHI2_PER_DOF`], worst first.
+    pub above_info_limit: Vec<ChannelScatter>,
+    /// How many tested channels would sit above [`SCATTER_INFO_CHI2_PER_DOF`]
+    /// by chance if every channel's quote were its true error.
     pub expected_above_by_chance: f64,
-    /// The worst channel is above [`HEAVY_TAIL_CHI2_LIMIT`].
-    pub flagged: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChannelScatter {
     pub channel: String,
+    /// Σ((xᵢ − x̄)/eᵢ)² over the seeds at the budget.
+    pub chi2: f64,
     pub chi2_per_dof: f64,
+    /// `Q(dof/2, χ²/2)`: the chance a channel whose quote is its true error
+    /// scatters this far or further.
+    pub p_value: f64,
     /// The channel's seed mean over the row's reported seed mean.
     pub share: f64,
 }
 
-/// The seed χ²/dof above which a channel is heavy-tailed: its quote does not
-/// cover its scatter.
-pub const HEAVY_TAIL_CHI2_LIMIT: f64 = 3.0;
+/// What the scatter test says about a row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScatterVerdict {
+    /// The corrected p-value is at or above [`SCATTER_P_LIMIT`], or no channel
+    /// was tested.
+    WithinChance,
+    /// Below the limit on fewer than [`SCATTER_CONFIRM_SEEDS`] seeds: the same
+    /// test on that many decides.
+    Flagged,
+    /// Below the limit on at least [`SCATTER_CONFIRM_SEEDS`] seeds.
+    Confirmed,
+}
+
+/// The look-elsewhere corrected p-value below which a row's channels scatter
+/// beyond their quotes.
+pub const SCATTER_P_LIMIT: f64 = 0.01;
+
+/// Seeds at the budget on which a flag stands as confirmed.
+pub const SCATTER_CONFIRM_SEEDS: usize = 20;
+
+/// The χ²/dof above which a channel is counted for information.
+pub const SCATTER_INFO_CHI2_PER_DOF: f64 = 3.0;
+
+/// `Q(dof/2, χ²/2)`, the upper tail of the χ² distribution on `dof` degrees of
+/// freedom.
+///
+/// `puruspe::gammq` returns exactly 0 once `χ²/2 > dof/2 + 20(√(dof/2) + 1)`,
+/// where the true tail is below 1e-16 at every `dof`: such a channel flags at
+/// any channel count.
+pub fn chi2_p_value(chi2: f64, dof: usize) -> f64 {
+    puruspe::gammq(dof as f64 / 2.0, chi2 / 2.0)
+}
 
 /// [`SeedMean`] as written into a record.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -536,7 +582,7 @@ impl SeedRecord {
         });
         let worst = mean_pull.or_else(|| pulls.first().copied());
         let survey = self.survey();
-        let heavy_tail = self.heavy_tail(reported.mean);
+        let scatter = self.scatter(reported.mean);
         Some(RecordSummary {
             reported: reported.into(),
             equal_weight: equal_weight.into(),
@@ -549,7 +595,7 @@ impl SeedRecord {
                 flagged: worst.is_some_and(|p| p.abs() > SCREEN_PULL_LIMIT),
             },
             survey,
-            heavy_tail,
+            scatter: Some(scatter),
         })
     }
 
@@ -576,12 +622,12 @@ impl SeedRecord {
         }
     }
 
-    /// Each channel's seed χ²/dof over the seeds at the budget, on its
+    /// The scatter test over the seeds at the budget, on each channel's
     /// `results.dat` value and quote. `row_mean` scales each channel's share.
-    pub fn heavy_tail(&self, row_mean: f64) -> HeavyTail {
+    pub fn scatter(&self, row_mean: f64) -> Scatter {
         let base = self.at_budget();
         let dof = base.len().saturating_sub(1);
-        let mut scatter: Vec<ChannelScatter> = Vec::new();
+        let mut tested: Vec<ChannelScatter> = Vec::new();
         if let Some(first) = base.first() {
             for name in first.by_channel.keys() {
                 let values: Option<Vec<(f64, f64)>> = base
@@ -597,33 +643,45 @@ impl SeedRecord {
                     continue;
                 };
                 let m = combine(&values);
-                scatter.push(ChannelScatter {
+                let chi2 = m.chi2_per_dof * dof as f64;
+                tested.push(ChannelScatter {
                     channel: name.clone(),
+                    chi2,
                     chi2_per_dof: m.chi2_per_dof,
+                    p_value: chi2_p_value(chi2, dof),
                     share: m.mean / row_mean,
                 });
             }
         }
-        scatter.sort_by(|a, b| b.chi2_per_dof.total_cmp(&a.chi2_per_dof));
+        tested.sort_by(|a, b| a.p_value.total_cmp(&b.p_value));
+        let n = tested.len();
+        let worst = tested.first().cloned();
+        let corrected_p = worst
+            .as_ref()
+            .map_or(1.0, |w| (n as f64 * w.p_value).min(1.0));
+        let verdict = if corrected_p >= SCATTER_P_LIMIT {
+            ScatterVerdict::WithinChance
+        } else if base.len() >= SCATTER_CONFIRM_SEEDS {
+            ScatterVerdict::Confirmed
+        } else {
+            ScatterVerdict::Flagged
+        };
         let chance = if dof > 0 {
-            let k = dof as f64;
-            puruspe::gammq(k / 2.0, HEAVY_TAIL_CHI2_LIMIT * k / 2.0)
+            chi2_p_value(SCATTER_INFO_CHI2_PER_DOF * dof as f64, dof)
         } else {
             0.0
         };
-        let worst = scatter.first().cloned();
-        HeavyTail {
-            channels_tested: scatter.len(),
+        Scatter {
+            channels_tested: n,
             dof,
-            expected_above_by_chance: chance * scatter.len() as f64,
-            flagged: worst
-                .as_ref()
-                .is_some_and(|w| w.chi2_per_dof > HEAVY_TAIL_CHI2_LIMIT),
-            above_limit: scatter
-                .into_iter()
-                .filter(|c| c.chi2_per_dof > HEAVY_TAIL_CHI2_LIMIT)
-                .collect(),
             worst,
+            corrected_p,
+            verdict,
+            above_info_limit: tested
+                .into_iter()
+                .filter(|c| c.chi2_per_dof > SCATTER_INFO_CHI2_PER_DOF)
+                .collect(),
+            expected_above_by_chance: chance * n as f64,
         }
     }
 }

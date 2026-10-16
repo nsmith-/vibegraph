@@ -23,7 +23,11 @@
 //! `<kept>/seed_record.json` in the format `vibegraph-lib/tests/common/seed_record.rs`
 //! defines and the σ gates read. It prints one line per seed, the seed-policy
 //! readings, the screen of the four-times-budget seeds against the budget's
-//! mean, the survey the runs made and the row's worst per-channel seed scatter.
+//! mean, the survey the runs made and the row's per-channel scatter test.
+//!
+//! `--rescreen` reads a record this tool wrote (at any version of the same
+//! schema), checks it, and prints the same lines with the summary computed
+//! afresh from its seeds. It writes nothing.
 //!
 //! A seed is refused, and no record written, when its run wrote fewer events than
 //! it ran for, reports no positive finite cross section, or ran another
@@ -34,6 +38,7 @@
 //! ```text
 //! seed-record --row ROW --kept DIR --budget NEVENTS --generator TEXT \
 //!             --tree TEXT --mg-version VERSION --hard-survey N [--validated-ew]
+//! seed-record --rescreen PATH/seed_record.json
 //! ```
 
 #[path = "../../../vibegraph-lib/tests/common/seeds.rs"]
@@ -558,6 +563,18 @@ struct Args {
     validated_ew: bool,
 }
 
+/// `Some` when the arguments ask to rescreen an existing record: its path, or
+/// why the arguments do not name one.
+fn rescreen_path(args: &[String]) -> Option<Result<PathBuf, String>> {
+    if args.first().map(String::as_str) != Some("--rescreen") {
+        return None;
+    }
+    Some(match &args[1..] {
+        [path] => Ok(PathBuf::from(path)),
+        _ => Err("--rescreen takes one seed_record.json and nothing else".to_string()),
+    })
+}
+
 fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut map: BTreeMap<&str, &str> = BTreeMap::new();
     let mut validated_ew = false;
@@ -705,7 +722,7 @@ fn print_record(record: &SeedRecord) {
         }
     );
     print_survey(row, &summary.survey);
-    print_heavy_tail(row, &summary.heavy_tail);
+    println!("{}", scatter_line(row, summary.scatter.as_ref()));
 }
 
 fn print_survey(row: &str, survey: &seed_record::SurveySummary) {
@@ -736,13 +753,23 @@ fn print_survey(row: &str, survey: &seed_record::SurveySummary) {
     );
 }
 
-fn print_heavy_tail(row: &str, h: &seed_record::HeavyTail) {
-    let Some(worst) = &h.worst else {
-        println!("SCATTER {row}: no channel testable");
-        return;
+/// A p-value to three digits; `chi2_p_value` reads 0 only below 1e-16.
+fn p_text(p: f64) -> String {
+    if p == 0.0 {
+        "< 1e-16".to_string()
+    } else {
+        format!("{p:.2e}")
+    }
+}
+
+/// The screen's `SCATTER` line: the look-elsewhere p-value, the channels
+/// tested, the verdict, and the informational count above χ²/dof 3.
+fn scatter_line(row: &str, scatter: Option<&seed_record::Scatter>) -> String {
+    let Some((h, worst)) = scatter.and_then(|h| Some((h, h.worst.as_ref()?))) else {
+        return format!("SCATTER {row}: no channel testable");
     };
     let above = h
-        .above_limit
+        .above_info_limit
         .iter()
         .map(|c| {
             format!(
@@ -754,28 +781,57 @@ fn print_heavy_tail(row: &str, h: &seed_record::HeavyTail) {
         })
         .collect::<Vec<_>>()
         .join(", ");
-    println!(
-        "SCATTER {row}: worst channel {} at seed chi2/dof {:.2} ({} dof, {:.1}% of sigma) of {} \
-         tested; {} above {} [{}], {:.2} expected by chance -> {}",
+    format!(
+        "SCATTER {row}: look-elsewhere p {} over {} channels tested (worst {} at seed chi2/dof \
+         {:.2} on {} dof, p {}, {:.1}% of sigma) -> {}; for information: {} above chi2/dof {} \
+         [{}], {:.2} expected by chance",
+        p_text(h.corrected_p),
+        h.channels_tested,
         worst.channel,
         worst.chi2_per_dof,
         h.dof,
+        p_text(worst.p_value),
         100.0 * worst.share,
-        h.channels_tested,
-        h.above_limit.len(),
-        seed_record::HEAVY_TAIL_CHI2_LIMIT,
+        match h.verdict {
+            seed_record::ScatterVerdict::WithinChance => "within chance".to_string(),
+            seed_record::ScatterVerdict::Flagged => format!(
+                "FLAGGED: confirm with {} seeds",
+                seed_record::SCATTER_CONFIRM_SEEDS
+            ),
+            seed_record::ScatterVerdict::Confirmed => "CONFIRMED".to_string(),
+        },
+        h.above_info_limit.len(),
+        seed_record::SCATTER_INFO_CHI2_PER_DOF,
         above,
         h.expected_above_by_chance,
-        if h.flagged {
-            "FLAGGED: heavy-tailed; the row's sigma cell mode is the manifest's decision"
-        } else {
-            "within the limit"
-        }
-    );
+    )
+}
+
+/// An existing record, checked, with its summary computed afresh from its
+/// seeds by this tool's rules.
+fn rescreen(path: &Path) -> Result<SeedRecord, String> {
+    let text = read(path)?;
+    let mut record: SeedRecord = serde_json::from_str(&text)
+        .map_err(|e| format!("{} does not parse: {e}", path.display()))?;
+    record.check()?;
+    record.summary = record.summarise();
+    Ok(record)
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(path) = rescreen_path(&args) {
+        return match path.and_then(|p| rescreen(&p)) {
+            Ok(record) => {
+                print_record(&record);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("seed-record --rescreen: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = match parse_args(&args) {
         Ok(a) => a,
         Err(e) => {
@@ -805,7 +861,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use seed_record::{Estimator, HEAVY_TAIL_CHI2_LIMIT, MIN_SEEDS};
+    use seed_record::{
+        chi2_p_value, Estimator, ScatterVerdict, MIN_SEEDS, SCATTER_INFO_CHI2_PER_DOF,
+        SCATTER_P_LIMIT,
+    };
 
     /// A pinned 3.7.1 run of `e+ e- > mu+ mu-` at the Z pole (iseed 7, 2000
     /// events): channel 1, and channel 2 split into `2.1`/`2.2`, plus the `Hel`
@@ -1383,9 +1442,10 @@ mod tests {
     }
 
     /// Two channels over five seeds: one scattering within its quote, one far
-    /// outside it. The flag names the second; a zero channel is not tested.
+    /// outside it. The informational count names the second; a zero channel is
+    /// not tested.
     #[test]
-    fn the_heavy_tail_flag_names_the_channel_that_scatters_past_its_quote() {
+    fn the_informational_count_names_the_channel_past_chi2_per_dof_3() {
         let mut r = five_and_two();
         let calm = [50.0, 51.0, 49.0, 50.5, 49.5];
         let wild = [50.0, 58.0, 42.0, 51.0, 49.0];
@@ -1400,28 +1460,260 @@ mod tests {
                 ],
             );
         }
-        let h = r.summarise().unwrap().heavy_tail;
+        let h = r.summarise().unwrap().scatter.unwrap();
         assert_eq!(h.channels_tested, 2);
         assert_eq!(h.dof, 4);
         let worst = h.worst.as_ref().unwrap();
         assert_eq!(worst.channel, "P1_x/G2");
         // Σ(v − 50)² = 0 + 64 + 64 + 1 + 1 = 130, over 4 dof.
+        assert!((worst.chi2 - 130.0).abs() < 1e-10);
         assert!((worst.chi2_per_dof - 32.5).abs() < 1e-12);
         assert!((worst.share - 0.5).abs() < 1e-12);
-        assert!(h.flagged);
-        assert_eq!(h.above_limit.len(), 1);
+        assert_eq!(h.above_info_limit.len(), 1);
         // P(χ²₄ > 12) = e⁻⁶ (1 + 6) per channel tested.
         let chance = 7.0 * (-6.0f64).exp();
         assert!((h.expected_above_by_chance - 2.0 * chance).abs() < 1e-9);
 
-        // Within its quote, nothing is flagged.
+        // Within its quote, nothing is counted.
         for s in &mut r.seeds {
             let c = s.by_channel.get_mut("P1_x/G2").unwrap();
             c.err_pb = 10.0;
         }
-        let h = r.summarise().unwrap().heavy_tail;
-        assert!(!h.flagged);
-        assert!(h.worst.unwrap().chi2_per_dof <= HEAVY_TAIL_CHI2_LIMIT);
+        let h = r.summarise().unwrap().scatter.unwrap();
+        assert!(h.above_info_limit.is_empty());
+        assert!(h.worst.unwrap().chi2_per_dof <= SCATTER_INFO_CHI2_PER_DOF);
+    }
+
+    /// `n` seeds at the budget, each reading 100 pb; channel `name` reads
+    /// `50 + deviations[i]` ± `err` in seed `i`.
+    fn scatter_record(n: usize, channels: &[(String, Vec<f64>, f64)]) -> SeedRecord {
+        let seeds = (0..n)
+            .map(|i| {
+                let values: Vec<(&str, f64, f64)> = channels
+                    .iter()
+                    .map(|(name, d, err)| (name.as_str(), 50.0 + d[i], *err))
+                    .collect();
+                with_channels(seed(i as u64 + 1, 100, 100.0, 100.0), &values)
+            })
+            .collect();
+        record(seeds)
+    }
+
+    /// `count` channels `P1_x/G<k>`, each scattering by `deviations` with a
+    /// unit quote, the one at `odd` by `odd_deviations` instead.
+    fn channel_set(
+        count: usize,
+        deviations: &[f64],
+        odd: usize,
+        odd_deviations: &[f64],
+    ) -> Vec<(String, Vec<f64>, f64)> {
+        (1..=count)
+            .map(|k| {
+                let d = if k == odd { odd_deviations } else { deviations };
+                (format!("P1_x/G{k}"), d.to_vec(), 1.0)
+            })
+            .collect()
+    }
+
+    /// Deviations about 50 giving χ² = 40 on 4 dof with a unit quote.
+    const FAR: [f64; 5] = [4.0, -4.0, 2.0, -2.0, 0.0];
+
+    /// Relative agreement asked of `puruspe::gammq` against a closed form: it
+    /// is good to about 1e-11 at the values these tests take.
+    const P_TOLERANCE: f64 = 1e-9;
+
+    fn scatter_of(r: &SeedRecord) -> seed_record::Scatter {
+        r.summarise().unwrap().scatter.unwrap()
+    }
+
+    #[test]
+    fn the_look_elsewhere_p_value_is_the_worst_tail_times_the_channels_tested() {
+        // Q(2, 6) = e⁻⁶ (1 + 6) ≈ 0.0174; Q(1, 1) = e⁻¹.
+        let q = 7.0 * (-6.0f64).exp();
+        assert!((chi2_p_value(12.0, 4) / q - 1.0).abs() < P_TOLERANCE);
+        assert!((chi2_p_value(2.0, 2) / (-1.0f64).exp() - 1.0).abs() < P_TOLERANCE);
+
+        // Six channels over five seeds; G4 scatters by 3, −1, −1, −1, 0 about
+        // 50 on a unit quote, χ² = 12 on 4 dof; the others do not move (p = 1).
+        // Six times 0.0174 is within chance.
+        let r = scatter_record(
+            5,
+            &channel_set(6, &[0.0; 5], 4, &[3.0, -1.0, -1.0, -1.0, 0.0]),
+        );
+        let h = scatter_of(&r);
+        assert_eq!((h.channels_tested, h.dof), (6, 4));
+        let worst = h.worst.as_ref().unwrap();
+        assert_eq!(worst.channel, "P1_x/G4");
+        assert!((worst.chi2 - 12.0).abs() < 1e-12);
+        assert!((worst.p_value / q - 1.0).abs() < P_TOLERANCE);
+        assert!((h.corrected_p / (6.0 * q) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(h.verdict, ScatterVerdict::WithinChance);
+    }
+
+    /// Fifty channels over five seeds, each at χ² = 4 on 4 dof (p = 3e⁻² ≈ 0.41)
+    /// but one at χ² = 14 (p = 8e⁻⁷ ≈ 0.0073): about the smallest of fifty
+    /// p-values from channels whose quotes are right. It is past χ²/dof 3 and
+    /// below 1 % on its own, and within chance once the fifty are counted.
+    #[test]
+    fn many_channels_quoting_their_errors_do_not_flag() {
+        let calm = [1.0, -1.0, 1.0, -1.0, 0.0];
+        let r = scatter_record(5, &channel_set(50, &calm, 37, &[3.0, -2.0, -1.0, 0.0, 0.0]));
+        let h = scatter_of(&r);
+        assert_eq!(h.channels_tested, 50);
+        let worst = h.worst.as_ref().unwrap();
+        assert_eq!(worst.channel, "P1_x/G37");
+        let p = 8.0 * (-7.0f64).exp();
+        assert!((worst.p_value / p - 1.0).abs() < P_TOLERANCE);
+        assert!(worst.p_value < SCATTER_P_LIMIT);
+        assert!((h.corrected_p / (50.0 * p) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(h.verdict, ScatterVerdict::WithinChance);
+        assert_eq!(h.above_info_limit.len(), 1);
+    }
+
+    /// The same fifty channels with G37 at 4, −4, 2, −2, 0: χ² = 40 on 4 dof.
+    #[test]
+    fn one_channel_far_outside_its_quote_flags() {
+        let calm = [1.0, -1.0, 1.0, -1.0, 0.0];
+        let r = scatter_record(5, &channel_set(50, &calm, 37, &FAR));
+        let h = scatter_of(&r);
+        let worst = h.worst.as_ref().unwrap();
+        assert_eq!(worst.channel, "P1_x/G37");
+        // Q(2, 20) = e⁻²⁰ (1 + 20) ≈ 4.3e-8.
+        let p = 21.0 * (-20.0f64).exp();
+        assert!((worst.p_value / p - 1.0).abs() < P_TOLERANCE);
+        assert!((h.corrected_p / (50.0 * p) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(h.verdict, ScatterVerdict::Flagged);
+    }
+
+    /// Ten channels alternating ±1 about 50 over twenty seeds (χ² = 20 on 19
+    /// dof), one of them ±3 (χ² = 180): confirmed on twenty seeds, a flag still
+    /// to confirm on nineteen, and nothing on the ten calm ones alone.
+    #[test]
+    fn twenty_seeds_confirm_a_flag() {
+        let alternate = |a: f64| {
+            (0..20)
+                .map(|i| if i % 2 == 0 { a } else { -a })
+                .collect::<Vec<_>>()
+        };
+        let channels = channel_set(10, &alternate(1.0), 7, &alternate(3.0));
+        let h = scatter_of(&scatter_record(20, &channels));
+        assert_eq!(h.dof, 19);
+        assert_eq!(h.worst.as_ref().unwrap().channel, "P1_x/G7");
+        assert!((h.worst.as_ref().unwrap().chi2 - 180.0).abs() < 1e-9);
+        assert_eq!(h.verdict, ScatterVerdict::Confirmed);
+
+        let h = scatter_of(&scatter_record(19, &channels));
+        assert_eq!(h.dof, 18);
+        assert!(h.corrected_p < SCATTER_P_LIMIT);
+        assert_eq!(h.verdict, ScatterVerdict::Flagged);
+
+        let calm = channel_set(10, &alternate(1.0), 0, &[]);
+        let h = scatter_of(&scatter_record(20, &calm));
+        assert!(h.corrected_p > 0.5, "{}", h.corrected_p);
+        assert_eq!(h.verdict, ScatterVerdict::WithinChance);
+    }
+
+    /// One channel over five seeds at 3, −1, −1, −1, 0 about 50, its quote set
+    /// so χ² = 13 (p = 7.5 e⁻⁶·⁵ ≈ 0.0113) and then 13.5 (p = 7.75 e⁻⁶·⁷⁵ ≈
+    /// 0.0091), either side of the 1 % limit.
+    #[test]
+    fn the_flag_falls_below_one_percent_not_above() {
+        let devs = vec![3.0, -1.0, -1.0, -1.0, 0.0];
+        let at = |chi2: f64| {
+            let r = scatter_record(5, &[("P1_x/G1".into(), devs.clone(), (12.0 / chi2).sqrt())]);
+            scatter_of(&r)
+        };
+        let above = at(13.0);
+        assert!((above.corrected_p / (7.5 * (-6.5f64).exp()) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(above.verdict, ScatterVerdict::WithinChance);
+        let below = at(13.5);
+        assert!((below.corrected_p / (7.75 * (-6.75f64).exp()) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(below.verdict, ScatterVerdict::Flagged);
+    }
+
+    #[test]
+    fn the_scatter_line_states_the_corrected_p_the_channels_and_the_verdict() {
+        let calm = [1.0, -1.0, 1.0, -1.0, 0.0];
+        let line = |r: &SeedRecord| scatter_line("row", Some(&scatter_of(r)));
+
+        let flagged = line(&scatter_record(5, &channel_set(50, &calm, 37, &FAR)));
+        assert_eq!(
+            flagged,
+            "SCATTER row: look-elsewhere p 2.16e-6 over 50 channels tested (worst P1_x/G37 at \
+             seed chi2/dof 10.00 on 4 dof, p 4.33e-8, 50.0% of sigma) -> FLAGGED: confirm with \
+             20 seeds; for information: 1 above chi2/dof 3 [P1_x/G37 10.00 (50.0% of sigma)], \
+             0.87 expected by chance"
+        );
+
+        let within = line(&scatter_record(5, &channel_set(6, &[0.0; 5], 4, &calm)));
+        assert!(
+            within.contains("look-elsewhere p 1.00e0 over 6 channels"),
+            "{within}"
+        );
+        assert!(within.contains("-> within chance;"), "{within}");
+
+        let alternate = |a: f64| {
+            (0..20)
+                .map(|i| if i % 2 == 0 { a } else { -a })
+                .collect::<Vec<_>>()
+        };
+        let confirmed = line(&scatter_record(
+            20,
+            &channel_set(3, &alternate(1.0), 2, &alternate(9.0)),
+        ));
+        assert!(
+            confirmed.contains("look-elsewhere p < 1e-16 over 3 channels"),
+            "{confirmed}"
+        );
+        assert!(confirmed.contains("-> CONFIRMED;"), "{confirmed}");
+
+        assert_eq!(
+            scatter_line("row", None),
+            "SCATTER row: no channel testable"
+        );
+    }
+
+    /// The `summary` a schema-2 writer before the scatter test wrote: a
+    /// `heavy_tail` block and no `scatter`.
+    const SUMMARY_HEAVY_TAIL: &str = r#"{
+        "channels_tested": 6, "dof": 4,
+        "worst": {"channel": "P1_x/G4", "chi2_per_dof": 10.0, "share": 0.5},
+        "above_limit": [{"channel": "P1_x/G4", "chi2_per_dof": 10.0, "share": 0.5}],
+        "expected_above_by_chance": 0.1, "flagged": true
+    }"#;
+
+    #[test]
+    fn a_record_written_with_the_heavy_tail_summary_reads_and_rescreens() {
+        let mut r = scatter_record(5, &channel_set(6, &[0.0; 5], 4, &FAR));
+        r.row = "ee_to_mumu".into();
+        r.summary = r.summarise();
+        let mut json = serde_json::to_value(&r).unwrap();
+        let summary = json["summary"].as_object_mut().unwrap();
+        assert!(summary.remove("scatter").is_some());
+        summary.insert(
+            "heavy_tail".into(),
+            serde_json::from_str(SUMMARY_HEAVY_TAIL).unwrap(),
+        );
+
+        let tmp = scratch();
+        let path = seed_record::record_path(tmp.path(), "ee_to_mumu");
+        write(&path, &serde_json::to_string_pretty(&json).unwrap());
+        let read = seed_record::read(tmp.path(), "ee_to_mumu").unwrap();
+        assert_eq!(read.summary.as_ref().unwrap().scatter, None);
+        assert_eq!(read.reference().mean(), 100.0);
+
+        let rescreened = rescreen(&path).unwrap();
+        let h = rescreened.summary.unwrap().scatter.unwrap();
+        assert_eq!(h.worst.unwrap().channel, "P1_x/G4");
+        assert!((h.corrected_p / (6.0 * 21.0 * (-20.0f64).exp()) - 1.0).abs() < P_TOLERANCE);
+        assert_eq!(h.verdict, ScatterVerdict::Flagged);
+        assert_eq!(rescreened.seeds, r.seeds);
+
+        // A record that fails its check is refused, not rescreened.
+        json["seeds"][1]["events_written"] = 7.into();
+        write(&path, &serde_json::to_string_pretty(&json).unwrap());
+        let err = rescreen(&path).unwrap_err();
+        assert!(err.contains("seed 2 wrote 7 events"), "{err}");
     }
 
     #[test]
@@ -1518,6 +1810,20 @@ mod tests {
         assert!(err.contains("--row is required"), "{err}");
         let err = refused(&full[..13]);
         assert!(err.contains("--hard-survey needs a value"), "{err}");
+
+        assert!(rescreen_path(&full).is_none());
+        let words = |w: &[&str]| w.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            rescreen_path(&words(&["--rescreen", "r/seed_record.json"])),
+            Some(Ok(PathBuf::from("r/seed_record.json")))
+        );
+        for bad in [&["--rescreen"][..], &["--rescreen", "a", "b"]] {
+            let err = rescreen_path(&words(bad)).unwrap().unwrap_err();
+            assert!(
+                err.contains("--rescreen takes one seed_record.json"),
+                "{err}"
+            );
+        }
     }
 
     /// The screen reads the four-times-budget seeds' own mean against the
