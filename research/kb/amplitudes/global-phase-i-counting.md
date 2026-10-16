@@ -93,11 +93,13 @@ propagator outputs a contravariant current.[^code-metricvout]
 - A `P`-carrying term rooted at its vector leg (`P(1,2)·Metric(2,3)` at leg 1)
   emits the bare momentum wrapped in the same `MetricVout`. The output-leg momentum
   is `PMomOut = −Σ inputs`, ALOHA's `P1 = −(V2+V3)`.
-- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting, and a
-  colourless VVV vertex takes no sign at all. The only vector-vertex sign is the
-  triple-gluon `−1`, a diagram-level factor (`triple_gluon_sign` in
-  `convention_sign`), not a producer phase
-  ([vector-vertex-signs](vector-vertex-signs.md)).
+- The Yang–Mills VVV current is built honestly (`+V^μ`) at every rooting, and
+  `convention_sign` gives a colourless VVV vertex no factor. A charged one still
+  reads `−1` against MadGraph inside its kernel, because the all-incoming
+  crossing exchanges its W⁺ and W⁻ slots and its structure is odd under that.
+  The triple-gluon vertex, self-conjugate, gets no exchange, so its `−1` is a
+  diagram-level factor (`triple_gluon_sign` in `convention_sign`), not a
+  producer phase ([vector-vertex-signs](vector-vertex-signs.md)).
 - There is no covariant vector slot and no index-lowering op. Variance is a type
   parameter on `VectorWf`; the evaluator's register carries contravariant vectors
   only (see [flat-op-ir](flat-op-ir.md)).

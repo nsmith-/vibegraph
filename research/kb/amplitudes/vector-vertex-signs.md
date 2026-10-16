@@ -1,12 +1,14 @@
 ---
 type: Physics Convention
 title: Vector-vertex convention signs
-description: "A colourless vector vertex (VVV, VVS, a four- or five-vector contact, O_W's included) carries no convention sign; a scalar line beside one takes its propagator phase; the triple-gluon vertex takes a calibrated −1; why, and what pins it."
+description: "Against MadGraph every triple-vector vertex carries −1: a charged one (γW⁺W⁻, ZW⁺W⁻) in its kernel, from the W⁺/W⁻ slot exchange of the all-incoming crossing, and the self-conjugate triple-gluon vertex in triple_gluon_sign. Contacts and VVS vertices carry no convention sign, and a scalar line beside one takes its propagator phase. Why, and what pins it."
 status: draft
 tags: [sign-conventions, vector-vertices, qcd, electroweak, madgraph-comparison]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: no role is needed; the triple-gluon constant; the mutations"}
+  - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
+  - {id: code-tg, resource: "https://github.com/nsmith-/vibegraph/blob/9549fcb20df0c6f6756ecae403df1af99ba3527f/vibegraph-lib/src/helas/eval/triple_gluon.rs", title: "helas::eval::triple_gluon (the factor-by-factor tests against MadGraph AMP())"}
   - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "triple_gluon_sign, is_yang_mills_vvv, is_coloured, propagator_phase_sign"}
   - {id: code-standalone, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/tests/standalone_jamps.rs", title: "standalone_jamps (per-flow JAMPs against MadGraph standalone)"}
   - {id: code-pt, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/tests/gluon_parke_taylor.rs", title: "gluon_parke_taylor (hermetic MHV check)"}
@@ -18,32 +20,55 @@ sources:
 # Vector-vertex convention signs
 
 A diagram's `fermi_sign` carries one sign for vector vertices, and only for the
-coloured three-vector one (`helas/eval/root_diagram.rs`)[^code-rootdiag]:
+coloured three-vector one (`helas/eval/root_diagram.rs`)[^code-rootdiag]. Against
+MadGraph's reading every triple-vector vertex carries `−1`; a charged one carries
+it inside its kernel, so `convention_sign` has no factor for it[^t1-report]:
 
-| vertex | convention sign |
-|---|---|
-| colourless VVV (γWW, ZWW, SMEFT VVV, `O_W`'s triple-gauge structures) | none |
-| colourless contact of four or five vectors (WWZZ, WWAA, WWWW, `O_W`'s five-vector contacts) | none |
-| gluon contact (any structure) | none |
-| VVS, colourless or coloured (ZZH, effective ggH, `O_HG`, the loop-induced γZH and γγH) | none; a scalar line at it takes `−1` as every internal scalar line does |
-| triple-gluon VVV | `−1` (`triple_gluon_sign`) |
+| vertex | convention sign | against MadGraph's `COUP · L` |
+|---|---|---|
+| charged VVV (γW⁺W⁻, ZW⁺W⁻, SMEFT VVV, `O_W`'s triple-gauge structures) | none | `−1`, in the kernel (the crossing's slot exchange) |
+| colourless contact of four or five vectors (WWZZ, WWAA, WWWW, `O_W`'s five-vector contacts) | none | agrees with no vertex sign |
+| gluon contact (any structure) | none | agrees with no vertex sign |
+| VVS, colourless or coloured (ZZH, effective ggH, `O_HG`, the loop-induced γZH and γγH) | none; a scalar line at it takes `−1` as every internal scalar line does | agrees with no vertex sign |
+| triple-gluon VVV | `−1` (`triple_gluon_sign`) | `+1` in the kernel (no slot exchanged), so the constant supplies it |
 
 The other factors of `fermi_sign` are in
 [convention-sign-inventory](convention-sign-inventory.md).
 
-## Why a colourless vector vertex carries no sign
+## Why `convention_sign` has no factor for a colourless vector vertex
 
 ALOHA evaluates every vertex as `COUP · L` and closes the amplitude with `−i`
 whichever vertex closes it, and its vector propagator carries
 `−i(g − qq/m²)/D`, the phase of the evaluator's own. The kernels build each
 vector vertex's current as the honest tensor contraction, the same at every
-output leg. So a vertex with no fermion bilinear has nothing to read against a
-UFO order, and a vector line beside it has no phase to make up: the ratio to
-MadGraph at that vertex is `+1`, in every role and at every multiplicity. The
-same holds for VVS. What differs there is the scalar line beside the vertex,
+output leg. So a vertex with no fermion bilinear has no bilinear to read against
+a UFO order, and a vector line beside it has no phase to make up: whatever the
+vertex's kernel reads against MadGraph, it reads the same in every role and at
+every multiplicity. What differs at a VVS vertex is the scalar line beside it,
 whose propagator ALOHA writes `+i/D` against the evaluator's `−i/D`; that `−1`
 belongs to the line (`propagator_phase_sign`), whichever vertex produces or
 consumes it[^b-report].
+
+The kernel's own reading is not `+1` at a charged triple-vector vertex. feyngraph
+reads every interaction slot incoming and MadGraph reads every leg outgoing, so
+each leg stands in its antiparticle's slot of the UFO vertex, and the two slots
+of a conjugate pair hold each other's legs. On `e+ e- > w+ w-` the `a W- W+` rays
+are `[p, 3, 4]`: the final W⁺ stands in the W⁻ slot, where MadGraph's
+`VVV1_0(W5, W4, W3, …)` puts it in the W⁺ slot. `VVV1` is odd under exchanging
+two slots with their momenta, as is every triple-vector structure the SM and
+SMEFTsim put on a W pair (`VVV1`–`VVV7` and `VVV9` on `a W- W+` and `W- W+ Z`,
+by a numeric parity check at random momenta; `VVV3` vanishes identically), so
+the charged vertex's kernel reads `−1` against MadGraph's `COUP · L`. The rest of
+`convention_sign` is set against kernels that carry it: `e+ e- > w+ w-` and
+`u u~ > g g` carry the same `Diagram::sign`, propagator phases, bilinear
+parities and live parity diagram for diagram, and the colourless one agrees with
+MadGraph with no vertex sign[^t1-report]. At a fermion vertex the same exchange
+is undone, in the colour by `convert_expr`'s transpose of each `T` and in the
+bilinear by the slot binding `vertex_root_signs` reads.
+
+The contacts and VVS vertices of the table agree with MadGraph with no vertex
+sign on the rows below. The slot exchange has not been traced through their
+structures one by one.
 
 ALOHA's VVV normalisation is uniform: it emits `VERTEX = −i·COUP·L` for every VVV
 structure, so SMEFTsim's real `GC_7 = G` against the SM's `i·G` does not change
@@ -51,14 +76,35 @@ the convention[^n35-e2].
 
 ## The triple-gluon `−1`
 
-The triple-gluon vertex's Lorentz structure and coupling normalisation are the
-colourless VVV's. Its sign belongs to the colour-ordered decomposition of its
-antisymmetric `f^{abc}`: `f_to_traces` matches MadGraph's
-`f = −2i Tr(abc) + 2i Tr(cba)` term for term, so the `−1` sits in how the trace
-basis meets the vertex slots, which no session has traced. It is calibrated,
-not derived: it is the unique minimal solution of the per-diagram sign system
-over every MadGraph-verified row (3495 diagrams) once the propagator phases and
-the bilinear readings are fixed[^b-report].
+A gluon is its own antiparticle, so the crossing exchanges none of the
+triple-gluon vertex's slots, and its kernel gets none of the `−1` the charged
+vertices' kernels carry. `triple_gluon_sign` supplies it. The `−1` is not in the
+colour factor or the coupling[^t1-report]:
+
+- **Colour.** Every colour coefficient of the triple-gluon diagram equals
+  MadGraph's JAMP coefficient term by term (`u u~ > g g`: `(−i, +i)` on
+  `T(3,4,2,1)`/`T(4,3,2,1)`, as in `P1_qq_gg`'s `JAMP(1) = −i·AMP(1) + AMP(2)`).
+  On `g g > u u~` and `g g > t t~` every coefficient is MadGraph's times `−1` on
+  every diagram alike, which is MadGraph's fermion factor riding in its
+  coefficients. `f` passes through `convert_expr` untouched, and `f_to_traces`
+  is MadGraph's `f = −2i Tr(abc) + 2i Tr(cba)`.
+- **Slot order.** The triple-gluon rays (`[3, 4, p]` in `u u~ > g g`) and
+  MadGraph's (`[p, 3, 4]`, `VVV1P0_1(W3, W4)`) differ by a permutation that acts
+  on `f` and on `VVV1` together, since both are read positionally and both are
+  antisymmetric; their product cannot change.
+- **Coupling.** `GC_10 = −G` on both sides, from the same UFO and card, and
+  MadGraph passes it unmodified.
+
+The GF(2) solve over every MadGraph-verified row (3495 diagrams) gave the same
+constant as the unique minimal one once the propagator phases and the bilinear
+readings were fixed[^b-report]; the slot exchange is why.
+
+**The predicate is a proxy.** `triple_gluon_sign` counts the vertices that are
+Yang–Mills triple-vector and coloured. The derived rule counts the triple-vector
+vertices with no conjugate pair among their legs. The two part only on a
+colourless vertex of three self-conjugate vectors, which no model in reach has
+(the SM and SMEFTsim carry `g g g`, `a W- W+` and `W- W+ Z`, the toy UFOs no
+triple-vector vertex); the derivation predicts `−1` there and the code gives `+1`.
 
 Only its ratio to the quark–gluon vertex is observable. In a process the
 external gluons fix the parity of the triple-gluon count and the quark–gluon
@@ -105,17 +151,41 @@ so such rows compare with every width zero on both sides (`zero_widths`)[^n39-or
 Dropping the triple-gluon `−1` fails `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`,
 `ttx_to_gg_chg`, the five `t t~ + jet` rows and `uux_to_ttxg_4f` in
 `standalone_jamps`, and `gg_to_ttx` with its two SM-limit rows in
-`amplitude_oracle`[^b-report]. No mutation has been run that puts a sign on a
-colourless vector vertex alone. Which gate pins which
+`amplitude_oracle`[^b-report]. Putting `−1` on the charged triple-vector
+vertices too (`triple_gluon_sign` without `is_coloured`) fails 11
+`standalone_jamps` rows (`wpwm_to_epem`, `wpwm_to_uux`, `ee_to_wpwmz`, …) and 5
+`amplitude_oracle` rows (`ee_to_wpwm`, `ee_to_wp0wm`, `ee_to_wp0wmt`,
+`ud_to_epemud_qcd0`, `wpwm_to_wpwmz_cw`)[^t1-report].
+
+Neither MadGraph gate sees which factor carries the triple-gluon sign. Moving it
+into the colour (`f_to_traces` negated, `triple_gluon_sign` at `+1`) or into the
+coupling (`GC_10` negated) keeps every SM row of both suites green. The tests of
+`helas::eval::triple_gluon`[^code-tg] pin the factors separately on the banked
+`g g > t t~` and `e+ e- > w+ w-` `AMP()` tables:
+
+| test | asserts | blind to |
+|---|---|---|
+| `the_triple_gluon_diagram_agrees_with_madgraph` | each diagram is `G·c·AMP` under one `G` with `\|G\| = 1`, at 1e-12; `triple_gluon_sign` is `−1` on the triple-gluon diagram | a sign shared by every diagram; how the value splits into factors |
+| `the_triple_gluon_diagram_has_madgraphs_colour` | our colour coefficient over MadGraph's is one unit constant over every `(diagram, flow)` | a colour sign common to every diagram; anything outside colour |
+| `the_triple_gluon_diagram_reads_minus_one_outside_its_colour` | with colour and `triple_gluon_sign` divided out, the quark exchanges are `K·AMP` and the triple-gluon diagram `−K·AMP(1)` | the split among kernel, coupling, propagator phases and the rest of `fermi_sign`; a flip of `triple_gluon_sign` alone |
+| `a_charged_triple_vector_vertex_carries_its_sign_in_its_kernel` | on `e+ e- > w+ w-`, colour divided out, every diagram is `K·AMP` under one `K`; each final-state W stands in its antiparticle's slot | the split inside the rest; vertices other than `a W- W+` and `W- W+ Z` |
+
+Each also inherits the oracle's limits: one process, six banked points and the
+helicities they carry. Which gate pins which
 factor across the whole convention is
 [validation/convention-channel-coverage](../validation/convention-channel-coverage.md);
 the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracle.md).
 
 ## Open
 
-- **The triple-gluon `−1` has no derivation.** Following the trace basis through
-  `colorize` for one `u u~ > g g` diagram would place it against the
-  quark–gluon vertex.
+- **A colourless triple-vector vertex of three self-conjugate vectors** is
+  predicted to need `−1` and gets none from the predicate
+  ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
+- **The W-pair structures' oddness** under the slot exchange rests on a scratch
+  parity check, not a committed test.
+- **No committed table banks `AMP()` for `u u~ > g g` or `g g > u u~`**, so the
+  factor tests run on `g g > t t~`
+  ([standalone-amps-single-flow-only](../backlog/validation/standalone-amps-single-flow-only.md)).
 - **A VSS vertex** (scalar–scalar–vector) appears in no model in reach. The
   convention predicts no vertex sign and `−1` for each scalar line beside it.
 - **`wpwm_to_wpwmz_cw`** (`O_W` through a five-vector vertex) agrees with
@@ -123,6 +193,8 @@ the oracle family is [validation/amplitude-oracle](../validation/amplitude-oracl
   modulus exempted by name ([the amplitude oracle](../validation/amplitude-oracle.md)).
 
 [^b-report]: B′ report: "Correction to the brief", "The derivation", the mutation table and the blind spots.
+[^t1-report]: T1 report: "The numbers", "The derivation", "Stop rule" and mutations M1–M4.
+[^code-tg]: `vibegraph-lib/src/helas/eval/triple_gluon.rs`.
 [^code-rootdiag]: `vibegraph-lib/src/helas/eval/root_diagram.rs`: `triple_gluon_sign`, `is_yang_mills_vvv`, `is_coloured`, `propagator_phase_sign`.
 [^code-standalone]: `vibegraph-lib/tests/standalone_jamps.rs`.
 [^code-pt]: `vibegraph-lib/tests/gluon_parke_taylor.rs`.

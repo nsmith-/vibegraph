@@ -7,6 +7,7 @@ tags: [sign-convention, fermi-sign, rooting, amplitudes, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the derivation, the census comparison and the per-factor mutations"}
+  - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
   - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: convention_sign, propagator_phase_sign, vertex_root_signs, triple_gluon_sign, compile_single_diagram"}
   - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "root_lorentz.rs: term_reversed_parity, RootedTerm::build_sign (the tensor path)"}
   - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/kernel.rs", title: "kernel.rs: propagate_core (every propagator −i)"}
@@ -51,7 +52,7 @@ and `convention_sign` is that product[^b-report].
 | propagator phase | `propagator_phase_sign` | `−1` per internal scalar line, and per internal fermion line of a crossed line | 25 standalone rows fail without the scalar term, 22 without the crossed-line term |
 | vertex reading | `vertex_root_signs`, from `VertexInfo::reversed_sign` | each vertex's reversed-bilinear parity, read with the vertex as the amplitude root: `−1` per `γ^μ` or `σ^{μν}` bilinear whose row slot is bound to a ket | 17 standalone rows and 28 amplitude-oracle rows fail without it |
 | tensor-path sign | `vertex_root_signs`, from `VertexInfo::build_sign` on a cyclic four-fermion term | the sign the tensor path gives its amplitude root: `−1` per crossed line of the cyclic structure | `tata_to_ttxa_tensor4f`, `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` |
-| triple gluon | `triple_gluon_sign` | `−1` per coloured three-vector vertex | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`; oracle `gg_to_ttx` and its two SM-limit rows |
+| triple gluon | `triple_gluon_sign` | `−1` per coloured three-vector vertex | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`; oracle `gg_to_ttx` and its two SM-limit rows; which factor carries it, by `helas::eval::triple_gluon` |
 | live reversed parity | `DiagramEvalTree::live_reversed_parity` | the runtime parity of the live tree, applied again so that it cancels | `rooting_soundness` |
 
 The "pinned by" column is the per-factor mutation of the B′ session: each factor
@@ -84,14 +85,21 @@ carry instead the sign that path gives its amplitude root
 (`RootedTerm::build_sign`, `+1` on every tree-rooted term). See
 [four-fermion-vertices](four-fermion-vertices.md).
 
-**The triple-gluon vertex.** Its Lorentz structure and coupling normalisation
-are the colourless triple-vector vertices', which take no sign; the sign
-belongs to how the colour-ordered decomposition of `f^{abc}` meets the vertex
-slots. Only its ratio to the quark–gluon vertex is observable: a process's
-external gluons fix the parity of the two counts together, so `−1` per
-quark–gluon vertex is the same convention up to a sign common to the process.
-The constant is calibrated, not derived (below). Why no other vector vertex
-carries a sign is [vector-vertex-signs](vector-vertex-signs.md).
+**The triple-gluon vertex.** Against MadGraph's all-outgoing reading every
+triple-vector vertex carries `−1`. feyngraph reads every slot incoming, so the
+two slots of each conjugate pair hold each other's legs; at a charged vertex
+(γW⁺W⁻, ZW⁺W⁻) that exchanges the W⁺ and W⁻ slots, and `VVV1` is odd under it,
+so the kernel itself reads `−1` against MadGraph's `COUP · L` and
+`convention_sign` has no factor for it. The other factors here are set against
+kernels that carry that `−1`. A gluon is self-conjugate, so the crossing
+exchanges none of the triple-gluon vertex's slots, and `triple_gluon_sign`
+supplies the `−1`. Its colour coefficients and its coupling `GC_10` are
+MadGraph's, per diagram and per flow, so the sign is not in the colour
+factor[^t1-report]. Only its ratio to the quark–gluon vertex is observable: a
+process's external gluons fix the parity of the two counts together, so `−1`
+per quark–gluon vertex is the same convention up to a sign common to the
+process. The derivation, and why the contacts and VVS vertices carry no sign,
+are [vector-vertex-signs](vector-vertex-signs.md).
 
 The colour side has one more convention, the `3`/`3̄` transpose of every `T`
 under feyngraph's crossing; see
@@ -109,7 +117,8 @@ The factors are the minimal solution of a linear system over GF(2)[^b-report]:
 - The system is consistent once the vertex class carries its reversal parity.
   With the line constants fixed from the propagator phases, the unique minimal
   solution is one more constant: `−1` on the triple-gluon vertex. The next
-  smallest has weight 9.
+  smallest has weight 9. The crossing's slot exchange (above) is why that
+  constant is `−1`.
 
 The convention was then compared, per (diagram, colour chain), with the
 measured signs on 506 subprocesses (7347 signs) and differed on none.
@@ -158,9 +167,11 @@ the sign pattern over graph features, as above.
 
 ## Open
 
-- **The triple-gluon `−1` has no derivation.** It is the one constant the
-  propagator phases and the bilinear algebra do not fix; following the trace
-  basis through `colorize` for one `u u~ > g g` diagram would place it.
+- **The triple-gluon predicate is a proxy.** `triple_gluon_sign` counts coloured
+  Yang–Mills triple-vector vertices; the derivation counts triple-vector
+  vertices with no conjugate pair among their legs. They part only on a
+  colourless vertex of three self-conjugate vectors, which no model in reach has
+  ([colourless-self-conjugate-vvv-sign-unoracled](../backlog/validation/colourless-self-conjugate-vvv-sign-unoracled.md)).
 - **Unmeasured classes.** No committed row reaches a scalar⊗scalar four-fermion
   contact rooted in a tree (`O_ledq`-type: the convention gives it no vertex
   sign), a cyclic tensor structure on two mixed lines (the tensor-path sign is
@@ -179,6 +190,7 @@ constant), [charge-flow-phase-study](charge-flow-phase-study.md) (why these sign
 do not reduce to one principle).
 
 [^b-report]: B′ report: the derivation table, the GF(2) solve, the (diagram, chain) comparison and the per-factor mutations.
+[^t1-report]: T1 report: "The derivation" and "The convention, stated".
 [^code-compile]: `vibegraph-lib/src/helas/eval/root_diagram.rs`.
 [^code-rootl]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`, `term_reversed_parity` and `RootedTerm::build_sign`.
 [^code-kernel]: `vibegraph-lib/src/helas/eval/kernel.rs`, `propagate_core`.

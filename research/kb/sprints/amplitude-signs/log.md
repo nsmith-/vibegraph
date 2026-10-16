@@ -67,3 +67,25 @@
 * **Correction**: B′'s row-wide 1e-7 tolerance for the seven-digit couplings
   was broader than the approved exemption; F2 replaced it with the approved
   per-graph form.
+* **User decision (via the planner)**: the triple-gluon −1 is to be derived,
+  not accepted as calibrated. A follow-up session, [T1](sessions/T1.md), claims
+  `triple-gluon-sign-calibrated-not-derived` in its own PR. If the derivation
+  disagrees with the constant, it stops and reports before any code changes.
+* **T1 outcome** (PR #39): the derivation agrees with the constant, so the stop
+  rule did not fire. The −1 is the slot exchange the all-incoming crossing gives
+  every triple-vector vertex with a conjugate pair of legs; a charged vertex
+  carries it in its kernel, and a gluon vertex, self-conjugate, gets it from
+  `triple_gluon_sign`. Colour, slot order and coupling were each ruled out per
+  diagram against MadGraph. The doc states the derivation and four tests pin the
+  factors separately. The manager re-ran the four tests, and mutation M1 (the
+  constant flipped) fails only the totals test, as its stated blind spots
+  predict. Filed: `colourless-self-conjugate-vvv-sign-unoracled`,
+  `standalone-amps-single-flow-only`,
+  `mixed-parity-vertex-refusal-depends-on-rooting`.
+* **T-H outcome** (PR #39): 16 findings, the local ones fixed under a to_bits
+  digest identity check, and the stale concepts rewritten around the derived
+  sign. The real gap was H6: an empty banked table let the colour test pass
+  against unchecked constants; it is now refused. The manager re-ran the four
+  tests and rewrote a fifth stale passage (global-phase-i-counting). Filed:
+  `helas-colour-and-table-helpers-duplicated`,
+  `w-pair-vvv-slot-exchange-oddness-unpinned`.
