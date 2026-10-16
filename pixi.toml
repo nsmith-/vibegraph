@@ -230,6 +230,12 @@ generate-grammar-sigma = "bash validation/madgraph/gen_grammar_sigma.sh"
 # MLM rows, the instrumented replay of each row's samples-grade run, and the
 # jet-memo / IPROC censuses. MLM_STAGE=runs|dumps|census runs one stage.
 generate-mlm-references = { cmd = "bash validation/madgraph/gen_mlm_references.sh", depends-on = ["fetch-pdf"] }
+# Independent MadEvent seeds per sigma reference row: each seed in a fresh copy of
+# the row's never-run process directory, at the banked budget and at 4x, kept
+# per channel under output/seeded_sigma/<row>/ with the seed record the sigma
+# gates read. ROWS= (rows or @groups) is required; SEEDS, SEEDS_4X, NB_CORE and
+# JOBS as validation/madgraph/bank_seeded_sigma.sh describes.
+bank-seeded-sigma = { cmd = "bash validation/madgraph/bank_seeded_sigma.sh", depends-on = ["fetch-pdf"] }
 # MadGraph standalone per-helicity, per-flow JAMPs for every standalone table;
 # the SMEFTsim row reads the models build.sh stages
 generate-standalone-jamps = { cmd = "python validation/madgraph/gen_standalone_jamps.py all", depends-on = ["build-diagrams"] }
