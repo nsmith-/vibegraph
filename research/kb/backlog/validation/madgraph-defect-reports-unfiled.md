@@ -31,3 +31,6 @@ Candidate added 2026-10-15: MadEvent's default survey under-integrates by
 0.5–1 % on some processes, and `hard_survey` is silently ignored when `mmjj`
 exceeds 1 % of the beam-energy sum
 ([default survey bias](../../validation/madevent-default-survey-bias.md)).
+The same candidate covers the difficult-mode `run_config.inc` substitution,
+whose pattern does not match its own output, so a reused process directory
+keeps its first survey rate.

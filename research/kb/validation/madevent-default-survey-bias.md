@@ -48,7 +48,8 @@ fresh directories, each compared with an adaptation-free or vibegraph value.
 
 - **What `hard_survey = 2` fixes.** It closes the rows where MadEvent missed
   through its survey grid or through a long refine chain. The run-time cost is
-  at most 1.1×.
+  1.05–1.09× at 10k events, and 1.2–1.5× at 2000 events, where the survey is a
+  larger share of the run.
 - **What it does not fix.** It does not repair channels with rare, very large
   weights (`ee_to_mumua`'s G6/G8, the W-pair continuum's G8/G9). Those also
   carry the iteration-combination bias, recorded on PR #22's branch as
@@ -59,7 +60,16 @@ fresh directories, each compared with an adaptation-free or vibegraph value.
   with that `mmjj` cut gets no benefit from the setting, and nothing says
   so. The effective `min_events`/`max_events` in each run's
   `Source/run_config.inc` show which mode ran: 10000/30000 at
-  `hard_survey = 2`, 1000/2000 at the default.
+  `hard_survey = 2`, 7500/20000 at rate 1, 1000/2000 at the default. It is
+  only partly inert: `gen_ximprove.py:114` still sets `combining_job = 1`
+  from `hard_survey > 1`, so the refine's job layout changes.
+- **A reused directory keeps its first rate.** The difficult-integration mode
+  rewrites `run_config.inc` by substituting the pattern
+  `\(min_events = \d+\)` with `(min_events = %i )`
+  (`madevent_interface.py:3593`). Its own output has a space before
+  `)`, so the pattern never matches again: a directory that ran once in that
+  mode keeps that rate for every later run, whatever its `hard_survey`. Fresh
+  copies avoid it, and the recorded `run_config.inc` exposes it.
 
 **Consequence.** A MadEvent reference banked at the default survey can sit
 0.5–1 % low on a process whose dominant channel's survey grid misses part of
@@ -69,9 +79,9 @@ the visible sign. This is distinct from the iteration-combination bias
 
 **Policy.** This is a MadGraph approximation, a survey sized for speed, under
 [madgraph-defect-policy](madgraph-defect-policy.md). References are banked with
-`hard_survey = 2`, each run's effective `min_events`/`max_events` is recorded,
-and a row whose channels still scatter at χ²/dof > 3 keeps its σ cell `info`
-(D1 on PR #25). It is a candidate for an upstream report
+`hard_survey = 2` in fresh directories, each run's effective
+`min_events`/`max_events` is recorded, and a row whose channels still scatter
+beyond their quoted errors keeps its σ cell `info` (D1 on PR #25). It is a candidate for an upstream report
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
 
 The machine-confirmed check covers the commit and the oracle's and
