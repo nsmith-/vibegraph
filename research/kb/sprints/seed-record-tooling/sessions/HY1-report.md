@@ -2,6 +2,7 @@
 type: Session Report
 title: "HY1 report: hygiene review of the seed-record tooling change"
 description: "Findings, fixes and mutation evidence for F1's ladder verdict, tie-break, statrs p-values and SEED_PLAN driver."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-16}
 sources: [148c665]
 ---

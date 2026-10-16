@@ -2,6 +2,7 @@
 type: Session Report
 title: "F1 report: seed-record ladder verdict, tie-break, deep-tail p-values"
 description: "What changed in seed-record, stats.rs and the seeded-sigma driver, with test, mutation and before/after rescreen evidence."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-16}
 sources: [0f9a7ed9b0b08547228297a677da844388d91699]
 ---

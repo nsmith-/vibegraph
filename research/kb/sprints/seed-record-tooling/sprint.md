@@ -3,7 +3,7 @@ type: Sprint
 title: "seed-record: ladder verdict, 20-seed recipe, p-value floor"
 description: "seed-record prints the 20 + 20 ladder verdict on measured-spread σ, the driver documents the 20-seed SCATTER confirmation, worst-channel ties break on χ², and a deep-tail χ² p-value is a value or a bound, never 0."
 status: draft
-active: true
+active: false
 tags: [seed-record, tooling, chi2, ladder, refdata]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
