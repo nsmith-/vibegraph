@@ -20,7 +20,15 @@ use crate::helas::wavefn::{InDiracWf, OutDiracWf, VectorWf};
 /// left/right couplings.
 ///
 /// Mirrors the HELAS `jioxxx` routine.  Uses Feynman gauge for massless bosons
-/// and unitary gauge (with the Fabio fixed-width prescription) for massive ones.
+/// and unitary gauge with a fixed width for massive ones.
+///
+/// One deliberate difference from HELAS: the unitary-gauge longitudinal term
+/// `q^μ (q·J)/m²` divides by the real `m²`, as ALOHA's generated currents do
+/// (`OM3 = 1/M3**2`), where HELAS `jioxxx.F` divides by Fabio's complex
+/// `m² − i·mΓ`. MadGraph 5 evaluates the SM through ALOHA, outside the complex-mass
+/// scheme, and so does the production evaluator, which this port is an oracle for.
+/// The two agree whenever `q·J = 0` (massless fermions, or a pure-vector coupling
+/// between equal masses) and otherwise differ by `O(Γ/m)` of the longitudinal term.
 ///
 /// It handles a single boson species (photon *or* Z) at a time. To compute the
 /// full SM `e⁺e⁻ → μ⁺μ⁻` matrix element, call this once for the photon and once
@@ -52,12 +60,11 @@ pub fn jioxxx<F: Real>(
         // Massless: Feynman gauge — propagator is 1/q²
         blin / q2
     } else {
-        // Massive: unitary gauge with Fabio fixed-width complex denominator
+        // Massive: unitary gauge, fixed-width Breit–Wigner denominator
         let vm2 = vmass * vmass;
-        let vmw = vmass * vwidth;
-        let denom = C::new(q2 - vm2, vmw);
-        // Longitudinal mode subtraction: divide by m²−imΓ (Fabio prescription)
-        let cs = blin.dot_lorentz(&q) / C::new(vm2, -vmw);
+        let denom = C::new(q2 - vm2, vmass * vwidth);
+        // Longitudinal mode subtraction over the real m² (ALOHA's OM3)
+        let cs = blin.dot_lorentz(&q) / vm2;
         (blin - ComplexVector::from(q) * cs) / denom
     };
 
