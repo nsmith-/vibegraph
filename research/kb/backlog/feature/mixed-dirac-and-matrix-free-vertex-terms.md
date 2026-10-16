@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: A vertex mixing Dirac-matrix and matrix-free bilinears has no defined sign
-description: An interaction whose Lorentz terms mix a γ-matrix bilinear with an Identity/Gamma5/projector one may carry mixed per-term rooting signs, which a uniformity assertion turns into a panic.
+description: "An interaction mixing a γ-matrix bilinear with an Identity/Gamma5/projector one may carry mixed per-term rooting signs; it is refused at some rootings and compiles, unchecked, at others."
 area: feature
 state: open
 priority: low
@@ -28,18 +28,25 @@ lifted from per-term values that must agree:
 - `reversed_sign` (reversed-bilinear parity);
 - `tensor`.
 
-Uniformity assertions in `vibegraph-lib/src/helas/eval/diagram_eval.rs:131-169`
-and `:265` enforce this. They were checked only across the MadGraph-validated
-set. An `Identity` term takes the scalar-sink −1 and a `Gamma` term does not, so
-a mixed vertex would most likely panic on the first assertion. Nobody has run
-this, and no test confirms it.
+The sign uniformity is enforced in `vibegraph-lib/src/helas/eval/diagram_eval.rs`
+(`uniform_sign`, ~:300), which since PR #32 returns a typed refusal
+(`RootLorentzError::UnsupportedVertex`) instead of panicking. The refusal is
+pinned by `toy_models.rs::mixed_sign_vertex_is_refused_at_compile`, on a toy
+vertex with `Identity(2,1)` beside `P(-1,3)*Gamma(-1,2,1)` under one order. The
+`tensor()` uniformity asserts (~:149, ~:280) still panic
+([tensor-uniformity-asserts-panic](../validation/tensor-uniformity-asserts-panic.md)).
+
+The refusal depends on rooting: the hygiene review of PR #32 found that this
+vertex is refused for `lt~ lt > st`, `lt~ lt > st st`, `st lt > st lt`,
+`lt~ lt > st vt`, `qt qt~ > st st` and `lt~ lt > qt qt~ st`, but compiles for
+`st > lt lt~`, with a sign no oracle has checked.
 
 To resolve, either:
 
 - add such a vertex to `vibegraph_toy_UFO`, bank MadGraph's per-diagram `AMP()`,
   and derive how the signs factorise per term
   ([note 12](../../history/notes/12-helas-continuum-bugfix-journey.md) method); or
-- refuse it with a typed error instead of a panic.
+- refuse it consistently, at every rooting, with a typed error.
 
 History of the line-sign rule: [note 35 §T3](../../history/notes/35-ufo-lorentz-sprint-plan.md).
 
