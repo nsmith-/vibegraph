@@ -204,3 +204,23 @@ llj 0 %). A χ²/dof cut is also not one significance at different seed
 counts: `ee_to_mumua`'s 2.78 over 39 seeds is far past chance. It stays
 `info` on #26's attribution either way. The rule reads quantities every seed
 record already holds, so no re-bank follows.
+
+## Fourth amendment: what a 20 + 20 ladder decides (decided 2026-10-16)
+
+The user's decision, relayed by the planner ("Accept the ladder rule with
+measured-spread σ"). A row the 5 + 2 screen holds gets 20 seeds at its banked
+budget and 20 at 4×. Then:
+
+- **σ** is the combined standard error of the two rung means, from each rung's
+  measured seed-to-seed spread: σ = √(s₁ₓ²/n₁ₓ + s₄ₓ²/n₄ₓ), with s the sample
+  standard deviation of the seeds' reported values. The per-run quoted errors
+  do not enter, following the ladder rule in `AGENTS.md`: few-seed scatter
+  and quoted errors have understated heavy-tailed rows' spread.
+- **If |mean₄ₓ − mean₁ₓ| > 2σ**, the row is re-banked at the 4× budget: its
+  record's budget rung becomes the 4× seeds.
+- **Otherwise** it stays at 1×, now with 20 seeds.
+
+The `SCREEN` line's pull uses the seed-policy error (max of quoted and
+spread/√n) and is a screen, not this verdict. Until `seed-record` prints the
+ladder verdict itself, it is computed from the record's per-seed values.
+First row under it: `ll_to_qqx_toy_dipole` (5 + 2 screen: 4× mean pull −2.34).
