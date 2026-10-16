@@ -97,8 +97,10 @@ with `validation/madgraph/patches/aloha-p1d-flipped-fermion.patch`, applied by
 `gen_onshell_veto.sh` to a copy of the pinned tree (row `uu_tt`; the unpatched
 reading stays as `uu_tt_mg371`)[^n07-p1d]. With the patch, MadGraph's standalone
 `SMATRIX` equals vibegraph's zeroed amplitude to 1e-12, yet MadEvent still sits
-about 2% low and drifts with budget[^n38-z1]; that residual is not this defect
-([uux-wbwb-onshell-veto-tt-2pct-off](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md)).
+about 2% low[^n38-z1]; that residual is not this defect. It is MadEvent
+under-integrating the top-free continuum in its channels G7–G9 (−2.0 % over six
+fresh seeds on `u u~ > w+ b w- b~ / t t~`, against vibegraph and a non-adaptive
+estimator; [sigma-uux-wbwb-veto](../sprints/sigma-uux-wbwb-veto/closeout.md)).
 
 **`aS` injected into a model that declares none.** The Fortran exporter logs
 `CRITICAL: aS not define as external parameter adding it!` and appends
