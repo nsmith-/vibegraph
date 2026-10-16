@@ -5,7 +5,7 @@ description: "Research-only test of whether charge flow fixes every pinned phase
 status: draft
 tags: [phase-conventions, fermion-flow, sign-convention, research, negative-result]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n29-chainf, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L227-L270", title: "Note 29 chain F: the hypothesis and its sidecar terms"}
   - {id: n29-design, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L682", title: "Note 29 F.1–F.6: inventory, pre-registered bar, hostile cases, method, vacuity modes, brief errors"}
@@ -68,7 +68,9 @@ current [fermion-line-sign](fermion-line-sign.md) exactly.
 Two structural findings came before any dump:
 
 - The per-propagator `−1` is not a repackaged propagator `−i`: the propagator's
-  `−i` is applied in the kernel and is present separately.
+  `−i` is applied in the kernel and is present separately. Against MadGraph the
+  `−1` is the ratio of the two propagator phases, the kernel's `−i` to ALOHA's
+  `+i` ([fermion-line-sign](fermion-line-sign.md)).
 - "One −1 per propagator" and "one −1 per vertex read backwards, less the sink" are
   extensionally identical on every tree line (`P = V − 1`). No tree-level dump can
   ever choose between them.

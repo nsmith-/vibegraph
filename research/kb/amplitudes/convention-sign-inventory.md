@@ -5,12 +5,14 @@ description: "fermi_sign = Diagram::sign × convention_sign × the live tree's r
 status: draft
 tags: [sign-convention, fermi-sign, rooting, amplitudes, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the derivation, the census comparison and the per-factor mutations"}
   - {id: t1-report, resource: "../sprints/amplitude-signs/sessions/T1-report.md", title: "T1 report: the triple-gluon −1 is the slot exchange every other triple-vector vertex gets from the crossing"}
-  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: convention_sign, propagator_phase_sign, vertex_root_signs, triple_gluon_sign, compile_single_diagram"}
-  - {id: code-rootl, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "root_lorentz.rs: term_reversed_parity, RootedTerm::build_sign (the tensor path)"}
-  - {id: code-kernel, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/kernel.rs", title: "kernel.rs: propagate_core (every propagator −i)"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the per-factor mutations re-measured on 0ec027a"}
+  - {id: code-compile, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: convention_sign, propagator_phase_sign, vertex_root_signs, triple_gluon_sign, compile_single_diagram"}
+  - {id: code-rootl, resource: "vibegraph-lib/src/helas/eval/root_lorentz.rs", title: "root_lorentz.rs: term_reversed_parity, RootedTerm::build_sign (the tensor path)"}
+  - {id: code-kernel, resource: "vibegraph-lib/src/helas/eval/kernel.rs", title: "kernel.rs: propagate_core (every propagator −i)"}
   - {id: n24-p1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/24-user-distribution-and-proton-events-plan.md#L665-L755", title: "Note 24 P1: rows enforced per channel; c_i·AMP(i) is the comparable object"}
   - {id: n28-s5s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2346-L2756", title: "Note 28 S5–S6: falsified candidates and the crossing sign rule"}
   - {id: n29-f, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/29-v01-validation-sprint-plan.md#L353-L1152", title: "Note 29 chain F: what the per-diagram dumps pin"}
@@ -50,14 +52,17 @@ and `convention_sign` is that product[^b-report].
 | Wick parity | `Diagram::fermion_pairing_sign` | parity of the external fermions paired by line | every multi-line MadGraph row |
 | fermion-line sign | `Diagram::fermion_line_sign` | a line with an initial-state end: `(−1)^P`, the fermion propagators' phase; a crossed line: `−1`, the reordering of the conjugated pair | [fermion-line-sign](fermion-line-sign.md) |
 | propagator phase | `propagator_phase_sign` | `−1` per internal scalar line, and per internal fermion line of a crossed line | 25 standalone rows fail without the scalar term, 22 without the crossed-line term |
-| vertex reading | `vertex_root_signs`, from `VertexInfo::reversed_sign` | each vertex's reversed-bilinear parity, read with the vertex as the amplitude root: `−1` per `γ^μ` or `σ^{μν}` bilinear whose row slot is bound to a ket | 17 standalone rows and 28 amplitude-oracle rows fail without it |
+| vertex reading | `vertex_root_signs`, from `VertexInfo::reversed_sign` | each vertex's reversed-bilinear parity, read with the vertex as the amplitude root: `−1` per `γ^μ` or `σ^{μν}` bilinear whose row slot is bound to a ket | 17 standalone rows fail without it, and 13 amplitude-oracle rows per diagram or per flow (15 more only on the `CONFIG_AMP_SIGNS` tripwire) |
 | tensor-path sign | `vertex_root_signs`, from `VertexInfo::build_sign` on a cyclic four-fermion term | the sign the tensor path gives its amplitude root: `−1` per crossed line of the cyclic structure | `tata_to_ttxa_tensor4f`, `ll_to_qqx_toy_tensor`, `tata_to_ttx_tensor4f` |
 | triple gluon | `triple_gluon_sign` | `−1` per coloured three-vector vertex | `uux_to_ggg`, `ug_to_ug`, `gg_to_uux`, `ttx_to_gg_chg`, the five `t t~ + jet` rows, `uux_to_ttxg_4f`; oracle `gg_to_ttx` and its two SM-limit rows; which factor carries it, by `helas::eval::triple_gluon` |
-| live reversed parity | `DiagramEvalTree::live_reversed_parity` | the runtime parity of the live tree, applied again so that it cancels | `rooting_soundness` |
+| live reversed parity | `DiagramEvalTree::live_reversed_parity` | the runtime parity of the live tree, applied again so that it cancels | `rooting_soundness` (`literal_sigma_currents_are_rooting_invariant`, 3 of the sweep's 270 re-rootings), and 6 standalone and 7 amplitude-oracle rows |
 
-The "pinned by" column is the per-factor mutation of the B′ session: each factor
-dropped on its own, against `standalone_jamps` and `amplitude_oracle`; every
-listed failure is a per-diagram or per-flow disagreement with MadGraph[^b-report].
+The "pinned by" column is the per-factor mutation of the B′ session, re-measured
+in the R1 review: each factor dropped on its own, against `standalone_jamps` and
+`amplitude_oracle`. Every listed `standalone_jamps` failure is a per-flow or
+per-graph disagreement with MadGraph; of the `amplitude_oracle` failures, those
+the table counts apart fail only on `CONFIG_AMP_SIGNS`, a sign shared by every
+diagram of the row[^b-report][^r1-report].
 [validation/convention-channel-coverage](../validation/convention-channel-coverage.md)
 has the full table.
 
@@ -95,10 +100,12 @@ kernels that carry that `−1`. A gluon is self-conjugate, so the crossing
 exchanges none of the triple-gluon vertex's slots, and `triple_gluon_sign`
 supplies the `−1`. Its colour coefficients and its coupling `GC_10` are
 MadGraph's, per diagram and per flow, so the sign is not in the colour
-factor[^t1-report]. Only its ratio to the quark–gluon vertex is observable: a
+factor[^t1-report]. Where every other vertex carries an even number of gluons,
+as in the SM, only its ratio to the quark–gluon vertex is observable: a
 process's external gluons fix the parity of the two counts together, so `−1`
 per quark–gluon vertex is the same convention up to a sign common to the
-process. The derivation, and why the contacts and VVS vertices carry no sign,
+process. SMEFTsim's vertices of odd gluon number (the five-gluon `O_G` contact,
+`g g g H`, `q q̄ g H`) break that identity, and no row reaches one. The derivation, and why the contacts and VVS vertices carry no sign,
 are [vector-vertex-signs](vector-vertex-signs.md).
 
 The colour side has one more convention, the `3`/`3̄` transpose of every `T`
@@ -120,8 +127,12 @@ The factors are the minimal solution of a linear system over GF(2)[^b-report]:
   smallest has weight 9. The crossing's slot exchange (above) is why that
   constant is `−1`.
 
-The convention was then compared, per (diagram, colour chain), with the
-measured signs on 506 subprocesses (7347 signs) and differed on none.
+The convention was then compared, per (diagram, colour chain), with the one it
+replaced, corrected by W1's and F1's MadGraph-measured fixes, on 506
+subprocesses (7347 signs: the renumbering census and every MadGraph-verified
+row), and differed on none. Most of those subprocesses carry no MadGraph
+measurement, so the comparison shows agreement with the previous convention
+there, not with MadGraph.
 
 ## MadGraph puts the same sign elsewhere
 
@@ -142,9 +153,11 @@ and `H_d` the sign-free evaluation. The per-diagram gate pins
 process, and never the split between `φ` and `H`: a sign moved from one to the
 other is invisible to every banked oracle[^n29-f]. In `e+ e- > e+ e-` and
 `u u~ > u u~` the Wick and line signs cancel exactly and the relative sign
-MadGraph pins sits inside `H`. A uniform `φ` is still evidence: `g g > t t~` is
-uniform with crossed top lines carrying 0, 1 and 1 propagators, which is what
-pins the crossed line's propagator independence.
+MadGraph pins sits inside `H`. A uniform `φ` is still evidence: in
+`g g > t t~` it is uniform although the crossed top line carries 0, 1 and 1
+propagators, because the triple-gluon `−1` on the s-channel offsets the
+propagator phases of the t- and u-channels; the gate sees that product, not
+either factor.
 
 **The per-process sign is free.** `|M|²`, every σ and the relabelling test are
 blind to a sign shared by every diagram of a process, and the fitted `G`
@@ -157,8 +170,10 @@ it as a tripwire, not as physics[^b-report].
 The mixed-line arm of the line sign is the worked case[^n28-s5s6].
 `u d > e+ e- u d QCD=0`, the first row with two mixed quark lines, disagreed on a
 subset of diagrams. Three candidate factors each fitted it and each was
-falsified by an independent bit-exact row (listed in
-[fermion-line-sign](fermion-line-sign.md)). The fix came from asking which slot
+falsified by an independent bit-exact row: a `−1` per propagator on a crossed
+line and a `−1` per spacelike boson propagator (both in
+[fermion-line-sign](fermion-line-sign.md)), and exempting the WWγ/WWZ vertex
+from the Yang–Mills vertex sign the convention then carried. The fix came from asking which slot
 binding disagrees with the reference, and the account made a prediction that was
 not the thing being fixed. The method in general is
 [bit-exact-amplitude-debugging](../validation/bit-exact-amplitude-debugging.md):
@@ -175,8 +190,9 @@ the sign pattern over graph features, as above.
 - **Unmeasured classes.** No committed row reaches a scalar⊗scalar four-fermion
   contact rooted in a tree (`O_ledq`-type: the convention gives it no vertex
   sign), a cyclic tensor structure on two mixed lines (the tensor-path sign is
-  pinned on (initial, crossed) line pairs only), or a VSS vertex (no vertex
-  sign, and `−1` for the scalar lines beside it).
+  pinned on (initial, crossed) line pairs only), a VSS vertex (no vertex
+  sign, and `−1` for the scalar lines beside it), or a vertex of odd gluon
+  number other than `q q̄ g` and `g g g` (above).
 - [config-amp-signs-blind-to-multiflow-rows](../backlog/validation/config-amp-signs-blind-to-multiflow-rows.md):
   per-configuration phases and sign patterns are asserted on the rows with a
   per-diagram comparison (`CONFIG_AMP_SIGNS`), not yet on the multi-flow rows.
@@ -191,6 +207,7 @@ do not reduce to one principle).
 
 [^b-report]: B′ report: the derivation table, the GF(2) solve, the (diagram, chain) comparison and the per-factor mutations.
 [^t1-report]: T1 report: "The derivation" and "The convention, stated".
+[^r1-report]: R1 report, "Mutations".
 [^code-compile]: `vibegraph-lib/src/helas/eval/root_diagram.rs`.
 [^code-rootl]: `vibegraph-lib/src/helas/eval/root_lorentz.rs`, `term_reversed_parity` and `RootedTerm::build_sign`.
 [^code-kernel]: `vibegraph-lib/src/helas/eval/kernel.rs`, `propagate_core`.

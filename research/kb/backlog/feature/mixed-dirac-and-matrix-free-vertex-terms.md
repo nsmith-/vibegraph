@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: A vertex mixing Dirac-matrix and matrix-free bilinears has no defined sign
-description: "An interaction mixing a γ-matrix bilinear with an Identity/Gamma5/projector one may carry mixed per-term rooting signs; it is refused at some rootings and compiles, unchecked, at others."
+description: "An interaction mixing a γ-matrix bilinear with an Identity/Gamma5/projector one can carry mixed reversed-bilinear parities; it is refused at some rootings and compiles, unchecked, at others."
 area: feature
 state: open
 priority: low
@@ -14,32 +14,24 @@ sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L931-L934", title: "TODO.md entry T082"}
 ---
 Example: a derivative-coupled `P·Gamma` term next to an `Identity` term in one
-FFS interaction. No model in the tree has such a vertex, and no oracle in the
-suite tests it.
+FFS interaction. No model in the tree has such a vertex.
 
-The `carries_dirac_matrix` assertion named in TODO.md is gone: `7f523ad`
-removed it when the line sign went back to one −1 per propagator (see the fact
-[fermion-line-sign-ignores-vertex-content](../../amplitudes/fermion-line-sign.md)).
-
-The open question is now a different one. The per-vertex rooting signs are
-lifted from per-term values that must agree:
-
-- `build_sign` (scalar-sink, pure-metric and contact −1s);
-- `reversed_sign` (reversed-bilinear parity);
-- `tensor`.
-
-The sign uniformity is enforced in `vibegraph-lib/src/helas/eval/diagram_eval.rs`
-(`uniform_sign`, ~:300), which since PR #32 returns a typed refusal
-(`RootLorentzError::UnsupportedVertex`) instead of panicking. The refusal is
-pinned by `toy_models.rs::mixed_sign_vertex_is_refused_at_compile`, on a toy
-vertex with `Identity(2,1)` beside `P(-1,3)*Gamma(-1,2,1)` under one order. The
-`tensor()` uniformity asserts (~:149, ~:280) still panic
+Each vertex's reversed-bilinear parity (and tensor sign) is lifted from per-term
+values that must agree (`uniform_sign` in `helas/eval/diagram_eval.rs`). Since
+PR #32 a disagreement is a typed refusal (`RootLorentzError::UnsupportedVertex`),
+pinned by `toy_models.rs::mixed_sign_vertex_is_refused_at_compile` on a toy
+vertex with `Identity(2,1)` beside `P(-1,3)*Gamma(-1,2,1)`. The `tensor()`
+asserts still panic
 ([tensor-uniformity-asserts-panic](../validation/tensor-uniformity-asserts-panic.md)).
 
-The refusal depends on rooting: the hygiene review of PR #32 found that this
-vertex is refused for `lt~ lt > st`, `lt~ lt > st st`, `st lt > st lt`,
-`lt~ lt > st vt`, `qt qt~ > st st` and `lt~ lt > qt qt~ st`, but compiles for
-`st > lt lt~`, with a sign no oracle has checked.
+**The refusal depends on rooting**, under the root-free convention too
+(re-measured when PR #30 merged PR #32's hygiene commits). Where the fermion pair
+sinks into the scalar (`lt~ lt > st`, and five more processes C-H listed), the
+gamma term is a `GammaVout` sink and `Identity` is not, so the vertex is refused
+with "mixed reversed-bilinear parities". With the scalar on leg 0
+(`st > lt lt~`) neither term is a fermion→vector sink, and the vertex compiles
+with a sign no oracle has checked. B′'s derived claim that the refusal no longer
+depends on the rooting does not hold.
 
 To resolve, either:
 
@@ -48,6 +40,5 @@ To resolve, either:
   ([note 12](../../history/notes/12-helas-continuum-bugfix-journey.md) method); or
 - refuse it consistently, at every rooting, with a typed error.
 
-History of the line-sign rule: [note 35 §T3](../../history/notes/35-ufo-lorentz-sprint-plan.md).
-
-Since PR #30 there is no scalar-sink −1: every convention sign is read off the graph (`convention_sign` in `root_diagram.rs`), and only a non-uniform reversed parity or tensor sign at the vertex's own sink can still refuse. The line numbers above predate that change.
+History of the line-sign rule: [note 35 §T3](../../history/notes/35-ufo-lorentz-sprint-plan.md)
+and [fermion-line-sign](../../amplitudes/fermion-line-sign.md).

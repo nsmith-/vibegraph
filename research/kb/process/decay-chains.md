@@ -5,7 +5,7 @@ description: "Core and decays are enumerated separately and glued at forced line
 status: draft
 tags: [decay-chains, diagrams, process-grammar, madgraph-parity, oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n38-decays, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L129-L156", title: "Note 38 §1.3, decays and decay chains in MadGraph"}
   - {id: n38-g1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L310-L361", title: "Note 38 §4 G1, decay assignment measured with MadGraph"}
@@ -86,12 +86,11 @@ never to |M|². [^n38-d2]
 
 ### Representation
 
-- `Prop::onshell: OnShell { Free, Forced, Forbidden }` is MadGraph's per-propagator flag
+- `Prop::onshell: OnShell { Free, Forced }` is MadGraph's per-propagator flag
   and part of the canonical diagram key. Phase space reads the `Forced` lines, with mass
-  and width from `Prop::particle`. `Forbidden` exists for `$` lines, but the on-shell veto
+  and width from `Prop::particle`. A `$` line is not a diagram flag: the on-shell veto
   keeps its own per-subprocess bookkeeping
-  ([s-channel restrictions](s-channel-restrictions.md)) and no enumerated diagram carries
-  it today.
+  ([s-channel restrictions](s-channel-restrictions.md)).
 - `Diagram::provenance: Provenance { process (the @N), decays: Vec<DecayOrigin { node,
   prop }> }`, not part of the key. `ChainNode` is the preorder index of a decay on the
   card: the core is 0, and `(t > w+ b, w+ > e+ ve), t~ > w- b~` numbers its decays 1, 2, 3.
@@ -137,8 +136,8 @@ an overall order is removed (`helas_objects.py:3986`). [^n38-d3]
    s-channel Z to the two Z slots of a `W W Z Z` / `H Z Z` vertex in the other order; the
    test pairs those by a slot-order-free description. Dropping the between-block
    permutations fails it (`z z, z > e+ e-`: 2 stitched, 4 filtered).
-2. **Per-diagram amplitudes**: all 147 pairs agree per helicity and per colour flow,
-   worst 1.2e-16 relative (bit-equal except the two slot-swapped pairs).
+2. **Per-diagram amplitudes**: all 147 pairs agree per helicity and per colour flow
+   bit for bit at `4277158`, the two slot-swapped pairs included (worst relative 0.0).
 3. **MadGraph census** (`validation/madgraph/dump_decay_chain_census.py` →
    `decay_chain_census.json`, hermetic `decay_chain_census`, `HelasMultiProcess` on the
    pinned checkout): 24 cards. The decay-chain set stitches 17 cards and matches 54
@@ -161,7 +160,7 @@ at the default 15. The forced windows and maps are in
 event record in [resonance records](../events/resonance-records.md). `cut_decays` is
 consumed. A decay chain's dynamic scale is the core process's, as MadEvent's: the
 clustering tags a forced line on-BW inside its window whatever its width
-(`ForestLine::forced`, `coupling/cluster/kt.rs`, after `myamp.f`'s `gForceBW = 1`
+(`ForestLine::forced` in `coupling/cluster/graph.rs`, read by `kt.rs`, after `myamp.f`'s `gForceBW = 1`
 branch), so the resonance reaches the scale setting as one core leg.
 
 [^n38-decays]: Note 38 §1.3: MadGraph's decay-chain syntax, `DecayChainAmplitude`, `gForceBW = 1`, the dropped decay.

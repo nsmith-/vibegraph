@@ -5,13 +5,15 @@ description: "Every sign a diagram carries reads the graph alone (Diagram::sign 
 status: draft
 tags: [rooting, sign-conventions, diagrams, relabelling, canonical-form]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the convention sign is a product of local constants, read off the graph"}
-  - {id: code-rootdiag, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs", title: "compile_single_diagram, convention_sign, canonical_root, choose_root"}
-  - {id: code-diagram, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::canonical, fermion_line_sign, fermion_pairing_sign"}
-  - {id: code-soundness, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "all_rootings_preserve_amplitude"}
-  - {id: code-renumber, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
-  - {id: code-relabel, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
+  - {id: code-rootdiag, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "compile_single_diagram, convention_sign, canonical_root, choose_root"}
+  - {id: code-diagram, resource: "vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::canonical, fermion_line_sign, fermion_pairing_sign"}
+  - {id: code-soundness, resource: "vibegraph-lib/src/helas/eval/rooting_soundness.rs", title: "all_rootings_preserve_amplitude"}
+  - {id: code-renumber, resource: "vibegraph-lib/src/helas/eval/renumbering.rs", title: "renumbering_preserves_signs_and_amplitudes"}
+  - {id: code-relabel, resource: "vibegraph-lib/src/helas/eval/relabelling.rs", title: "relabelling_preserves_per_diagram_amplitudes"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the sweep and the gate runs on 0ec027a"}
   - {id: n19-v5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/19-validation-pass-plan.md#L148-L710", title: "Note 19 §V5 (rooting soundness: factorability and the reversed-parity design)"}
   - {id: n38-container, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L254-L291", title: "Note 38 §3.3 (the diagram container is the oracle boundary)"}
   - {id: n38-s1, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/38-process-grammar-sprint-plan.md#L362-L432", title: "Note 38 §4 S1 (signs to the diagrams stage; the census)"}
@@ -60,12 +62,13 @@ renumbering and under every relabelling of the legs[^b-report].
 Two measured facts carry the design:
 
 1. **The kernels are rooting-invariant.** Re-rooting changes a diagram's
-   amplitude by at most a global ±1, never by a value: swept over every diagram
-   of every process of at most 60 diagrams, at every rooting and every helicity
-   (1583 checks), and over `b b~ > c c~ e+ e- mu+ mu-` (96 480 checks), with no
-   violation. The remaining ±1 is the live reversed parity, which
-   `fermi_sign` cancels; `rooting_soundness` measures the product, 270
-   re-rootings with 0 failures[^n19-v5][^b-report].
+   amplitude by at most a global ±1, never by a value. That was measured on the
+   kernels of 2026-07-20 over every diagram of every process of at most 60
+   diagrams, at every rooting and every helicity (1583 checks), and over
+   `b b~ > c c~ e+ e- mu+ mu-` (96 480 checks), with no violation[^n19-v5]. The
+   remaining ±1 is the live reversed parity, which `fermi_sign` cancels;
+   `rooting_soundness` measures the product on the current code: 270
+   re-rootings, 0 failures[^b-report][^r1-report].
 2. **The reversed parity is a per-diagram scalar, not a per-node flag.** A
    vertex is a `GammaVout` sink (which carries `reversed`) under one rooting and
    a fermion-continuing `GammaIout`/`GammaOout` (which does not) under another,
@@ -76,7 +79,8 @@ Two measured facts carry the design:
 Multiplying a diagram by ±1 does not round, so a sign carried on `fermi_sign`
 rather than on a term moves no amplitude bit. What re-rooting does change is
 the association order of momentum sums (`POut = −Σ inputs`): a correct
-re-rooting differs at the 1e-11 level (worst 2.2e-11 on the census), which is
+re-rooting differs at the 1e-11 level (worst 2.2e-11 over the MG-validated
+processes), which is
 why the rooting gates compare at 1e-10.
 
 ## The signs on the diagram
@@ -100,9 +104,12 @@ amplitudes, never to |M|² ([process/decay-chains](../process/decay-chains.md))[
 `compile_single_diagram` keeps the rooted-tree derivation of the line sign
 (`spine_sign_from_flow`) as a debug-build cross-check on every live tree:
 `debug_assert_eq!(spine_sign_from_flow(&tree), diagram.fermion_line_sign(model))`.
-On a census of every rooting of 2553 (diagram, chain) pairs the tree derivation
-never varied with the rooting. It counts every closed line, including one
-closed at a four-fermion current rooted at a fermion leg[^n38-s1].
+`fermion_line_sign_matches_the_rooted_tree_derivation` holds the two equal at
+every rooting of eight processes (two all-Yukawa or mixed-content quark lines
+among them). The derivation counts every closed line, including one closed at a
+four-fermion current rooted at a fermion leg; the census that first showed the
+tree reading never varies with the rooting (2553 (diagram, chain) pairs, every
+rooting) ran the line rule then in force[^n38-s1].
 
 ## Production rooting
 
@@ -179,6 +186,7 @@ how the whole compile pipeline is laid out is
 [evaluator-architecture](evaluator-architecture.md)[^code-soundness][^code-renumber][^code-relabel].
 
 [^b-report]: B′ report: the derivation, the relabelling test's before and after, and the acceptance runs.
+[^r1-report]: R1 report, "Runs".
 [^n19-v5]: Note 19 §V5, locus (b): factorability and the reversed-parity design.
 [^n38-container]: Note 38 §3.3.
 [^n38-s1]: Note 38 §4 S1: the line-sign census and the renumbering gate.

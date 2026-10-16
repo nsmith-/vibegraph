@@ -6,9 +6,10 @@ status: draft
 tags: [fermion-flow, sign-convention, crossing, diagrams, madgraph-oracle]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
 sources:
-  - {id: code-line-sign, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/diagrams/diagram.rs#L518-L555", title: "Diagram::fermion_line_sign and its derivation doc"}
-  - {id: code-closed-line, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs#L583-L680", title: "spine_sign_from_flow: the rooted-tree cross-check"}
-  - {id: code-convention, resource: "https://github.com/nsmith-/vibegraph/blob/5d4a34672e784f8b5fc985e82bd656232ae07caa/vibegraph-lib/src/helas/eval/root_diagram.rs#L1069-L1190", title: "convention_sign: propagator_phase_sign and vertex_root_signs"}
+  - {id: code-line-sign, resource: "vibegraph-lib/src/diagrams/diagram.rs", title: "Diagram::fermion_line_sign and its derivation doc"}
+  - {id: code-closed-line, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "spine_sign_from_flow: the rooted-tree cross-check"}
+  - {id: code-convention, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "convention_sign: propagator_phase_sign and vertex_root_signs"}
+  - {id: r1-report, resource: "../sprints/amplitude-signs/sessions/R1-report.md", title: "R1 report: the Dirac-content exemption re-measured (MF)"}
   - {id: b-report, resource: "../sprints/amplitude-signs/sessions/B-report.md", title: "B′ report: the propagator phases and the vertex reading"}
   - {id: n12-causes, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/12-helas-continuum-bugfix-journey.md#L37-L87", title: "Note 12, root causes 4–6 (initial-state spine sign, crossed-line conjugation, per-propagator parity)"}
   - {id: n28-s6, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/28-kt-spine-feature-sprint-plan.md#L2598-L2756", title: "Note 28 S6, the crossing sign rule (mixed lines)"}
@@ -92,8 +93,10 @@ MadGraph per diagram or per helicity:
 - `ta+ ta- > t t~ h` (14 diagrams) and `ta+ ta- > t t~ h h`: the tau line that
   radiates a Higgs and then annihilates is right only with the −1; standalone JAMP
   rows `tata_to_ttxh` and `tata_to_ttxhh` (`tests/standalone_jamps.rs`).
-- `b b~ > c c~ e+ e- mu+ mu- QCD=0`: a mixed gauge/Yukawa `b` line (one photon,
-  one `b b~ H` vertex, one propagator) is bit-for-bit only with the −1.
+- `b b~ > c c~ e+ e- mu+ mu- QCD=0`: an initial–initial `b` line with one gauge
+  and one Yukawa vertex (one photon, one `b b~ H` vertex, one propagator) is
+  bit-for-bit only with the −1 (the retired fact's measurement, which is not
+  archived); the committed `bbx_to_ccx_emmm_qcd0` row compares it per flow.
 - `b b~ > h h` (`bbx_to_hh`, and the unit test `every_line_takes_the_propagator_sign`):
   the exchange diagrams take the line's −1, the triple-Higgs annihilation diagram
   takes its −1 from its internal Higgs line's phase instead
@@ -103,12 +106,19 @@ MadGraph per diagram or per helicity:
 
 ## Alternatives that fit some data and are false
 
-Each was a candidate at some point; each is refuted by a bit-exact row.[^n28-s6]
+Each was proposed as one more factor on top of the signs in use at the time,
+which read the vertices at a reference rooting; each, so added, is refuted by a
+bit-exact row.[^n28-s6] Each is a statement about *this* factor, the line sign:
+whether a rule is right depends on the factors beside it.
 
-- **"−1 per propagator on a crossed final–final line."** On `u d > e+ e- u d
-  QCD=0` alone it selects the complement of the right set and a global sign
-  absorbs it, but it moves `e+ e- > mu+ mu- ta+ ta-` diagrams 0–15 against 17–24
-  and `g g > t t~`'s t/u-channel diagrams against the s-channel.
+- **"−1 per propagator on a crossed final–final line"**, added to the line sign.
+  On `u d > e+ e- u d QCD=0` alone it selects the complement of the right set and
+  a global sign absorbs it, but it moves `e+ e- > mu+ mu- ta+ ta-` diagrams 0–15
+  against 17–24 and `g g > t t~`'s t/u-channel diagrams against the s-channel.
+  The convention does give a crossed line's propagators that `−1`, in
+  `propagator_phase_sign` rather than here, beside the vertex readings and the
+  triple-gluon sign that came with it; on `g g > t t~` the triple-gluon `−1`
+  restores the uniformity, and both rows agree with MadGraph.
 - **"−1 per spacelike boson propagator."** Fits `u d > e+ e- u d` and is false on
   `u u~ > u u~`.
 - **"−1 per propagator only on lines whose vertices carry a Dirac matrix"**
@@ -116,6 +126,11 @@ Each was a candidate at some point; each is refuted by a bit-exact row.[^n28-s6]
   beside a second error, a missing −1 on the internal scalar line. With the
   exemption, `ta+ ta- > t t~ h h` has 24 wrong signs of 96 against MadGraph's
   `AMP()`; without it, and with the scalar line's −1, it has none.[^pr13]
+  Re-measured on the current code: the exemption alone fails
+  `qqx_to_o8o8_toy_dcolor` and eight standalone rows (`tata_to_ttxh`,
+  `tata_to_ttxhh`, `bbx_to_hh`, …); with the scalar line's −1 dropped as well,
+  `qqx_to_o8o8_toy_dcolor` agrees again and `tata_to_ttxh`, `tata_to_ttxhh` still
+  fail.[^r1-report]
   Note 35 §T3 and §10.1 rule 5 (archived) state the rule.[^n35-t3][^n35-closeout]
 
 ## How it is checked
@@ -128,16 +143,19 @@ Each was a candidate at some point; each is refuted by a bit-exact row.[^n28-s6]
   asserts the 24 / 9 / 2 split of `u d > e+ e- u d QCD=0` (propagator on a mixed
   line / on the crossed lepton line / none) with `g g > t t~` as the control that
   a crossed line's −1 does not count propagators.
-- Per-diagram MadGraph rows in `tests/amplitude_oracle.rs`, notably
-  `ud_to_epemud_qcd0` (the first row with two mixed quark lines), `ee_to_ee`
-  (crossed s-channel vs uncrossed t-channel) and the uux/bbx 2→6 classes.
+- MadGraph rows in `tests/amplitude_oracle.rs`: `ee_to_ee` (crossed s-channel
+  vs uncrossed t-channel) per diagram; `ud_to_epemud_qcd0` (the first row with
+  two mixed quark lines) and the uux/bbx 2→6 classes per flow and per helicity.
+  `ud_to_epemud_qcd0`'s table banks `AMP()`, but the row has two flows and no
+  banked JAMP coefficients, so it is not compared per diagram; the 2→6 tables
+  bank flows only.
 
 ## Caveats
 
-- Every test above is blind to a sign common to all diagrams of a process; the
-  absolute per-diagram pattern of `u d > e+ e- u d` is pinned only by its
-  `amplitude_oracle` row. If that row were demoted, the split test alone would
-  pass with the line sign off by a global sign.
+- Every test above is blind to a sign common to all diagrams of a process. The
+  split test checks the rule's shape on `u d > e+ e- u d` (each propagator class
+  uniform, the two classes opposite), not that MadGraph agrees with it; that
+  agreement is the `ud_to_epemud_qcd0` row's alone, per flow.
 - On a mixed gauge/Yukawa line, which vertex "owns" which factor is not resolved
   by any oracle; only the product per line is pinned.
 - "One −1 per propagator" and "one −1 per vertex read backwards, less the one at
@@ -164,3 +182,4 @@ renumbering; see [rooting-invariance-and-canonical-form](rooting-invariance-and-
 [^n35-closeout]: Note 35 §10.1.
 [^fact-line-sign]: The fact file this concept replaces.
 [^pr13]: Commit 7f523ad.
+[^r1-report]: R1 report, mutations MF-exempt and MF-exempt+MS.

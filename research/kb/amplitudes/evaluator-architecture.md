@@ -5,13 +5,13 @@ description: "A process compiles once into a card-independent program, binds a p
 status: draft
 tags: [evaluator, architecture, rooting, compile, amplitudes]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-16}]
 sources:
   - {id: n10-goal, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L27-L46", title: "Note 10 §1: compile phase and evaluation phase"}
   - {id: n10-topo, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/10-lorentz-runtime-eval-plan.md#L355-L382", title: "Note 10 §5.4: rooting a tree diagram into currents"}
-  - {id: code-compile, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/compile.rs#L1-L130", title: "compile.rs: AmplitudeEvaluator and its passes"}
-  - {id: code-root, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/root_diagram.rs#L855-L990", title: "root_diagram.rs: canonical_root, root_tree, root_tree_at"}
-  - {id: code-bind, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/helas/eval/run.rs#L230-L400", title: "run.rs: BoundAmplitude::bind and eval_m2"}
+  - {id: code-compile, resource: "vibegraph-lib/src/helas/eval/compile.rs", title: "compile.rs: AmplitudeEvaluator::compile, root_amplitudes"}
+  - {id: code-root, resource: "vibegraph-lib/src/helas/eval/root_diagram.rs", title: "root_diagram.rs: canonical_root, root_tree, root_tree_at, compile_single_diagram"}
+  - {id: code-bind, resource: "vibegraph-lib/src/helas/eval/run.rs", title: "run.rs: BoundAmplitude::bind and eval_m2"}
 ---
 
 # Evaluator architecture: compile, bind, evaluate
@@ -30,27 +30,36 @@ primitive is a statically compiled kernel dispatched through a flat `Op` enum
 
 `helas/eval/compile.rs` orchestrates the passes:[^code-compile]
 
-1. **Root each diagram (pass 1+2).** `compile_single_diagram` walks the diagram
-   from a chosen root vertex into a `DiagramEval`: external legs become leaves,
-   each internal vertex emits an off-shell current toward the root followed by a
-   `Propagate` through its propagator, and the root vertex emits the amplitude
-   contraction. Each vertex's UFO Lorentz structure is rooted at the leg the walk
-   leaves through (`root_lorentz.rs::build_at_leg`). The per-diagram convention
-   sign `fermi_sign` is attached here ([convention-sign-inventory](convention-sign-inventory.md)).
-2. **Colourize.** Each diagram's colour strings are simplified into the colour
-   basis and exact CF matrix ([colour-flow-evaluator](colour-flow-evaluator.md)).
-3. **Lower (3a).** `lower::lower_flows` inlines every diagram into one whole-amplitude
-   `Ast<Sym>`: per flow, `JAMP_f = Σ (colour coeff) · (symmetry · fermi_sign) ·
-   amp_{d,chain}`, under a single `Flows` root (bundled with per-configuration
-   amplitudes under `Configs`). A single-flow process omits unit colour
-   coefficients and the `Flows` wrapper: its one JAMP is the root, and the
-   constant colour factor is applied after the helicity sum. Hash-consing shares every sub-current used by more
-   than one diagram, flow or colour chain.
+1. **Colourize.** `colorize_process` simplifies each diagram's colour strings
+   into the colour basis and the exact CF matrix
+   ([colour-flow-evaluator](colour-flow-evaluator.md)). Each contribution to a
+   flow names an amplitude by `(diagram, colour-index chain)`; the chain picks
+   one colour structure per vertex.
+2. **Root each amplitude (pass 1+2).** `root_amplitudes` calls
+   `compile_single_diagram` once per `(diagram, chain)` the basis names. It walks
+   the diagram from a chosen root vertex into a `DiagramEval`: external legs
+   become leaves, each internal vertex emits an off-shell current toward the root
+   followed by a `Propagate` through its propagator, and the root vertex emits
+   the amplitude contraction. Each vertex's UFO Lorentz structure is rooted at the
+   leg the walk leaves through (`root_lorentz.rs::build_at_leg`), with the
+   couplings of the colour structure the chain selects. The per-diagram
+   convention sign `fermi_sign` is attached here
+   ([convention-sign-inventory](convention-sign-inventory.md)).
+3. **Lower (3a).** `lower::lower_flows` inlines every amplitude into one
+   whole-amplitude `Ast<Sym>`: per flow, `JAMP_f = Σ (colour coeff) ·
+   (symmetry · fermi_sign) · amp_{d,chain}`, under a single `Flows` root (bundled
+   with per-configuration amplitudes under `Configs`). A unit colour coefficient
+   is omitted, and a single-flow process has no `Flows` wrapper: its one JAMP is
+   the root, and the constant colour factor is applied after the helicity sum. A
+   `(diagram, chain)` amplitude in several flows is lowered once, and
+   `lower::optimize` then shares every sub-current used by more than one diagram,
+   flow or colour chain.
 4. **Fold (3b).** `Folded::build` interns constants into a card-independent
    skeleton with constant-pool specs.
 
 The helicity-expanded program (every helicity combination baked into one arena
-under an `Op::Hels` root) is built lazily on first use of `eval_m2`; see
+under an `Op::Hels` root) is built lazily, on the first call of any read-out that
+sums helicities (`eval_m2`, `eval_jamp2`, `eval_amp2` and the per-helicity ones); see
 [helicity-sum-and-pruning](helicity-sum-and-pruning.md) and
 [performance/helicity-expansion](../performance/helicity-expansion.md).
 

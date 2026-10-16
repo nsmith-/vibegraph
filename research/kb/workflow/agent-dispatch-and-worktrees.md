@@ -96,9 +96,11 @@ Concurrent heavy validation runs do not fit the machines this project uses:
   `cargo test` in the linker (`Bus error`). Two dev agents fit with the lean
   cargo settings every agent definition now names; the manager also deletes a
   worktree's `target/` once its session is checked, and copies reference data
-  only into worktrees about to be dispatched. The `release-debug` profile cannot
-  be tuned through `CARGO_PROFILE_*` variables (cargo misreads the hyphenated
-  name), so its debuginfo stays as the profile sets it.
+  only into worktrees about to be dispatched.[^amp-signs-disk] The
+  `release-debug` profile cannot be tuned through `CARGO_PROFILE_*` variables:
+  cargo reads `CARGO_PROFILE_RELEASE_DEBUG_DEBUG` as a key of `profile.release`
+  and refuses every build while it is set (cargo 1.97.0), so its debuginfo stays
+  as the profile sets it.
 
 So **run each session's gate suites one at a time per host**. Where parallel
 sessions are unavoidable, the manager serialises their heavy runs.
@@ -179,7 +181,8 @@ when the brief was wrong.[^n36-closeout] How sessions are scoped is in
 [session scoping](session-scoping-rules.md).
 
 [^agents-md]: `AGENTS.md`, "Sprint & Subagent Operations (manager side)".
-[^feature-dev]: `.agents/agents/feature-dev.md` (the same section is in `validation-dev.md` and `performance-dev.md`).
+[^feature-dev]: `.agents/agents/feature-dev.md` (the same section is in `validation-dev.md`, `performance-dev.md` and `hygiene-dev.md`).
+[^amp-signs-disk]: The amplitude-signs sprint's G1 report ("Host disk") and close-out ("Process lessons"); commit `404e700`, which put the lean cargo settings into every agent definition.
 [^n24-dispatch]: Note 24, "Execution notes (agent dispatch)".
 [^n24-acceptance]: Note 24 close-out, "Acceptance A".
 [^n24-hook]: Note 24 close-out, "The commit-time regression".
