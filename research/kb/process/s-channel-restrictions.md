@@ -188,7 +188,8 @@ one line patched in the generated `Source/DHELAS`, at fixed μ = 173 GeV, MadEve
 MadEvent moving down with budget while this side does not (nor under another split-angle
 map), and the unrestricted fixed-μ rows agreeing (15.060 against 15.052). The row stays
 informational. See [MadGraph defects](../validation/madgraph-defects.md) and the
-[backlog item](../backlog/validation/uux-wbwb-onshell-veto-tt-2pct-off.md).
+[record of the residual's attribution](../sprints/sigma-uux-wbwb-veto/closeout.md): MadEvent
+under-integrates the top-free continuum, about 94 % of the row, in three channels.
 
 ## `$` and a decay chain are complements
 

@@ -33,6 +33,7 @@
 * [sigma-gg-cg](sigma-gg-cg/index.md)
 * [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
 * [sigma-reference-scatter](sigma-reference-scatter/index.md)
+* [sigma-uux-wbwb-veto](sigma-uux-wbwb-veto/index.md)
 * [splitting-kernel-sampling](splitting-kernel-sampling/index.md)
 * [ufo-lorentz](ufo-lorentz/index.md)
 * [user-distribution-proton-events](user-distribution-proton-events/index.md)

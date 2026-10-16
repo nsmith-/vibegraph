@@ -293,7 +293,10 @@ mod heavy {
     /// applied; the unpatched reading, 37% above this side, is kept beside it as
     /// `uu_tt_mg371`. With the routine corrected, MadGraph's standalone `SMATRIX`
     /// agrees with the amplitudes here to 1e-12 at six points, zeroed and not,
-    /// yet MadEvent integrates about 2% below this side, which is unexplained.
+    /// yet MadEvent integrates about 2% below this side. That residual is
+    /// MadEvent's: it under-integrates the top-free continuum (most of this
+    /// row's σ) in three of its channels, against both this side and a
+    /// non-adaptive estimator.
     /// The row runs so that a change on either side shows, and gates only that
     /// the lines are zeroed at all.
     #[test]
