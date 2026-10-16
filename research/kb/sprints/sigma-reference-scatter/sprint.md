@@ -49,6 +49,7 @@ comment on this PR listing exactly what to run.
 | [D1](decisions/D1-reference-error-design.md) | manager | V1 measurements from sibling PRs | user approval | — |
 | [V1](sessions/V1.md) | validation-dev (Opus) | — | diagnostic only | — |
 | [F1](sessions/F1.md) | feature-dev (Opus) | D1 approved | hermetic + `--skip-deps validate` unmoved (inert until re-banked) | — |
+| [F2](sessions/F2.md) | feature-dev (Opus) | F1 | touched-crate tests; inert | — |
 
 Further sessions (a fix, its validation, performance where it applies, then
 hygiene) are added once the diagnosis says which side owns the defect.
