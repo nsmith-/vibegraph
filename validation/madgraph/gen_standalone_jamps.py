@@ -82,7 +82,8 @@ class Row:
     model: str | None = None
     restrict: str | None = None
     # The manifest row whose model and restrict card the Rust side loads for a
-    # non-`sm` table.
+    # non-`sm` table. A row with a model and no `model_row` names the model
+    # directory and restrict card in its table instead.
     model_row: str | None = None
     # Every width set to zero on both sides. MadEvent zeroes the width of a
     # spacelike propagator and this crate follows it; standalone output keeps it,
@@ -90,6 +91,17 @@ class Row:
     zero_widths: bool = False
     # Bank AMP(1..NGRAPHS) and their JAMP(1) coefficients. Single-flow rows only.
     bank_amps: bool = False
+
+    def ufo_paths(self) -> dict:
+        """The committed model directory and restrict card, repository-relative,
+        looked up the way `build.sh` stages them: an authored card under
+        `cards/` first, then the model's own."""
+        model_dir = f"validation/ufo/{self.model}"
+        card_dir = "smeft" if self.model.startswith("SMEFTsim_") else self.model
+        card = f"validation/madgraph/cards/{card_dir}/restrict_{self.restrict}.dat"
+        if not os.path.isfile(os.path.join(HERE, "..", "..", card)):
+            card = f"{model_dir}/restrict_{self.restrict}.dat"
+        return {"dir": model_dir, "restrict_card": card}
 
     def import_model(self) -> str:
         if self.model is None:
@@ -142,6 +154,58 @@ ROWS = {
         Row("ee_to_ee_4f", "e+ e- > e+ e- NP<=1", (-11, 11), (-11, 11), 500.0, 4, 4064,
             model=SMEFT, restrict="vg_c4l", model_row="ee_to_mumu_4f", zero_widths=True,
             bank_amps=True),
+        # The top Yukawa spelled as SMEFTsim spells it, a bare `Identity(2,1)`
+        # (`FFS2`), with the Higgs emitted off the final-state top pair: rooted as a
+        # fermion current whose wrapped leg sits on that crossed line, beside
+        # Higgsstrahlung. The only non-zero Wilson coefficient touches the b, so
+        # every diagram is the Standard Model's. `SMHLOOP=0` drops the loop-induced
+        # h-gamma-gamma and h-Z-gamma vertices, whose Fortran couplings MadGraph
+        # writes from seven-digit literals.
+        Row("ee_to_ttxh_identity", "e+ e- > t t~ h NP<=1 SMHLOOP=0", (-11, 11), (6, -6, 25),
+            1000.0, 3, 4071, model=SMEFT, restrict="vg_cbH", model_row="bbx_to_h_identity",
+            bank_amps=True),
+        # The same process under MadGraph's own `sm`, whose top Yukawa is `FFS4`
+        # (ProjM + ProjP): the control for the `Identity` spelling above.
+        Row("ee_to_ttxh", "e+ e- > t t~ h", (-11, 11), (6, -6, 25), 1000.0, 3, 4072,
+            bank_amps=True),
+        # The toy model's bare `Identity` and bare `Gamma5` Yukawas emitted off a
+        # final-state quark pair, beside the vector exchange and emission off the
+        # initial lepton line: scalar and pseudoscalar currents rooted on a crossed
+        # line in one sum.
+        Row("ll_to_qqxs_toy_yukawa", "lt~ lt > qt qt~ st NP<=3 NPCP<=3",
+            (-9000011, 9000011), (9000004, -9000004, 9000025), 600.0, 3, 4073,
+            model="vibegraph_toy_UFO", restrict="yukawa", model_row="ll_to_qqx_toy_yukawa",
+            bank_amps=True),
+        # The toy scalar's cubic self-coupling, plain (`SSS1`) and derivative
+        # (`SSSD`, under its own coupling order so each is a diagram of its own),
+        # producing the s-channel scalar current beside t- and u-channel lepton
+        # exchange.
+        Row("ll_to_ss_toy_dscalar", "lt~ lt > st st NP<=2 NPD<=1",
+            (-9000011, 9000011), (9000025, 9000025), 500.0, 3, 4074,
+            model="vibegraph_toy_UFO", restrict="dscalar", bank_amps=True),
+        # The same vertices with a scalar as leg 0: the t-channel scalar exchange is
+        # anchored at the cubic vertex, which is rooted as the amplitude there,
+        # beside s- and u-channel lepton exchange. Widths are zero for the
+        # spacelike scalar.
+        Row("sl_to_sl_toy_dscalar", "st lt > st lt NP<=2 NPD<=1",
+            (9000025, 9000011), (9000025, 9000011), 500.0, 3, 4075,
+            model="vibegraph_toy_UFO", restrict="dscalar", zero_widths=True, bank_amps=True),
+        # SMEFTsim's derivative Higgs self-couplings (`SSS3` from O_Hbox, `SSS2` from
+        # O_HDD) beside the Standard Model's `SSS1`, each its own diagram: the
+        # s-channel Higgs current off an initial top pair, beside t- and u-channel
+        # top exchange. Widths are zero for the spacelike top.
+        Row("ttx_to_hh_chbox", "t t~ > h h NP<=1", (6, -6), (25, 25), 800.0, 3, 4076,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # The same vertex anchored at a Higgs on leg 0: the t-channel Higgs exchange
+        # roots it as the amplitude, beside s- and u-channel top exchange. Widths
+        # are zero for the spacelike Higgs.
+        Row("ht_to_ht_chbox", "h t > h t NP<=1", (25, 6), (25, 6), 800.0, 3, 4077,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
+        # Four Higgs bosons: the derivative quartic contacts (`SSSS3`, `SSSS2`) beside
+        # the plain one, and s-, t- and u-channel Higgs exchange with one derivative
+        # cubic vertex at either end. Widths are zero for the spacelike Higgs.
+        Row("hh_to_hh_chbox", "h h > h h NP<=1", (25, 25), (25, 25), 800.0, 8, 4078,
+            model=SMEFT, restrict="vg_cHbox", zero_widths=True, bank_amps=True),
         # The gluon-initiated half of t t~ + jet: a four-gluon contact beside the
         # top line, where the contact's three colour structures meet its three
         # Lorentz structures. The top exchanged between the two beam gluons is
@@ -394,7 +458,9 @@ def bank(row: Row, args) -> None:
     table = {
         "key": row.key,
         "process": row.process,
-        "model": "sm" if row.model is None else row.model_row,
+        "model": "sm" if row.model is None else (row.model_row or "ufo"),
+        **({"ufo": row.ufo_paths()} if row.model is not None and row.model_row is None
+           else {}),
         "n_ext": len(row.pdgs_in) + len(row.pdgs_out),
         "n_graphs": ngraphs,
         "n_flows": ncolor,
