@@ -129,7 +129,12 @@ MadEvent references committed as one run per seed (the decay, decay-chain, `$`,
 samples-grade runs and `pp_to_ll_0j2j_mlm`'s twenty independent directories
 under `output/`, and replays each samples-grade run instrumented into the
 per-event dumps `validate-mlm-dumps` reads (outside the bundle, pinned in
-`mlm_dump_manifest.json`). Committed references
+`mlm_dump_manifest.json`). `pixi run -e madgraph bank-seeded-sigma` (with
+`ROWS=` rows or `@groups`) re-banks σ rows as independent fresh-directory
+seeds at the banked budget and at 4×, writing
+`output/seeded_sigma/<row>/seed_record.json`; the σ gates read a row's record
+where the bundle carries one and its single run otherwise
+(`vibegraph-lib/tests/common/seed_record.rs`). Committed references
 (`validation/madgraph/*_reference.json`, `validation/madgraph/diagrams.json`,
 `validation/madgraph/configs.json`,
 `validation/alphas/reference.csv`, `validation/madgraph/reweight_mg_reference.json`)

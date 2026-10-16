@@ -55,3 +55,37 @@
   and the evaluator relies on one set of fermion lines per diagram (one Fermi
   sign, one wavefunction typing, one rooting). Filed as
   `madgraph-style-diagram-grouping` (PR #35).
+
+## 2026-10-16
+* **Close-out**: all sessions done (G1, G-H, W1, B′, B-H, B-D, P1, P-H, C1,
+  C2, C-H, F1, F2, J1, J-H, Q1, Q-H). Ten items closed, 27 filed; the record is
+  [closeout.md](closeout.md). The rewritten convention concepts stay `draft` for
+  the user's review.
+* **B′ outcome**: a derived convention passed every acceptance check, so the
+  stop rule did not trigger and no fitted rule (A′) landed. The triple-gluon −1
+  is calibrated, not derived; filed.
+* **Correction**: B′'s row-wide 1e-7 tolerance for the seven-digit couplings
+  was broader than the approved exemption; F2 replaced it with the approved
+  per-graph form.
+* **User decision (via the planner)**: the triple-gluon −1 is to be derived,
+  not accepted as calibrated. A follow-up session, [T1](sessions/T1.md), claims
+  `triple-gluon-sign-calibrated-not-derived` in its own PR. If the derivation
+  disagrees with the constant, it stops and reports before any code changes.
+* **T1 outcome** (PR #39): the derivation agrees with the constant, so the stop
+  rule did not fire. The −1 is the slot exchange the all-incoming crossing gives
+  every triple-vector vertex with a conjugate pair of legs; a charged vertex
+  carries it in its kernel, and a gluon vertex, self-conjugate, gets it from
+  `triple_gluon_sign`. Colour, slot order and coupling were each ruled out per
+  diagram against MadGraph. The doc states the derivation and four tests pin the
+  factors separately. The manager re-ran the four tests, and mutation M1 (the
+  constant flipped) fails only the totals test, as its stated blind spots
+  predict. Filed: `colourless-self-conjugate-vvv-sign-unoracled`,
+  `standalone-amps-single-flow-only`,
+  `mixed-dirac-and-matrix-free-vertex-terms` (updated; the duplicate filed here was folded into it by the concept review).
+* **T-H outcome** (PR #39): 16 findings, the local ones fixed under a to_bits
+  digest identity check, and the stale concepts rewritten around the derived
+  sign. The real gap was H6: an empty banked table let the colour test pass
+  against unchecked constants; it is now refused. The manager re-ran the four
+  tests and rewrote a fifth stale passage (global-phase-i-counting). Filed:
+  `helas-colour-and-table-helpers-duplicated`,
+  `w-pair-vvv-slot-exchange-oddness-unpinned`.

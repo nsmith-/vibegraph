@@ -53,37 +53,33 @@ section; the exceptions below are worked cases of them.
 
 | row · cell | treatment | standing reason | tracked as |
 |---|---|---|---|
-| `ee_to_mumua` · integrals | gate on `rel_tol 0.03`; pull reported | a fixed +1.04% offset, not a spread | [ee-mumua radiative return](../backlog/validation/ee-mumua-radiative-return-sigma-high.md) |
-| `ee_to_mumua` · samples | `info` | `pt(a)` measures MadGraph's own sample | same item |
+| `ee_to_mumua` · samples | `info` | `pt(a)` measures MadGraph's own sample | [ee-mumua sample reference](../backlog/validation/ee-mumua-sample-reference-mis-shaped.md) |
 | `uux_to_ccx_emmm_qcd0`, `bbx_to_ccx_emmm_qcd0` · integrals | `long` / `info` (`Plan::Long`, no `rel_tol`) | heavy-tailed estimator; the sweep licenses no bound | [2→6 integrals not enforced](../backlog/validation/two-to-six-integrals-not-enforced.md) |
 | same rows · samples | `long` / `gate` | cost: ~40 min of serial unweighting | [2→6 samples serial cost](../backlog/performance/two-to-six-samples-serial-unweighting-cost.md) |
 | six toy rows · samples `AQCDUP` | reported, `SCALUP` gated | the model declares no `aS` | [MadGraph defects](madgraph-defects.md) |
 | `pp_to_jj` · scale replay | 9 of 10 000 events admitted by signature | tie-break below printed precision | [jj tie-break, no cluster dump](../backlog/hygiene/pp-to-jj-tie-break-no-cluster-dump.md) |
 | `gg_to_gg_cg` · integrals | `info` | converged −0.22% offset, unattributed | [gg_to_gg_cg σ offset](../backlog/validation/gg-to-gg-cg-sigma-offset.md) |
 | `gg_to_gg`, `gg_to_gg_cg` · diagrams | `info` | four-gluon contact counted per colour structure by MadGraph | none (a convention) |
-| `ee_to_wpwm_cw`, `ee_to_zh_smeft`, `wpwm_to_wpwmz_cw` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | [wpwmz five-vector residual](../backlog/validation/wpwmz-cw-ow-five-vector-residual.md) and the non-SM concept |
+| `ee_to_wpwm_cw`, `ee_to_zh_smeft` · amplitudes | `info` | see [non-SM rows](non-sm-rows.md) | the non-SM concept |
 | `pp_to_ttx_0j1j_mlm` · integrals | `long` / `info` | `@1` reads +1.28%, undiagnosed | [ttx MLM @1 high](../backlog/validation/ttx-mlm-at1-sigma-high.md); [MLM σ gate](mlm-sigma-gate.md) |
 | `u u~ > w+ b w- b~ $ t t~` (on-shell veto) | reported | MadGraph's `FFV2P1D_1` defect, then MadEvent under-integrating the top-free continuum by ~2% | [sigma-uux-wbwb-veto](../sprints/sigma-uux-wbwb-veto/closeout.md) |
 | `e+ e- > z z, z > e+ e-` (decay chain, `INFORMATIONAL` in `cli_decay_chain.rs`) | reported | we keep both pairings and their interference; MadGraph takes one pairing ÷ 2 | none (a decision; [identical particles across decays](../process/identical-particles-across-decays.md)) |
 
-Every manifest cell declared `mode = "info"` at `6ccc6e4` appears
+Every manifest cell declared `mode = "info"` at `4277158` appears
 in this table; list the current set with
 `awk '/^key = /{k=$3} /mode = "info"/{print k, $1}' validation/manifest.toml`.
 
 ## Why each standing reason holds
 
-**`ee_to_mumua`.** Five seeds at the gate budget put this side +1.04% above the
-bank at χ²/dof 0.50, so the residual is a fixed offset; the cut-implied
-timelike floors move σ by +0.006%, and the soft-angle split rule leaves it at
-+0.74% to +1.05%.[^vsigma][^n37] Its pull is +4.11 at five seeds; the gate's own
-seed once read +2.83 only because it sat 0.089% below the five-seed mean, which
-is how the row passed a one-seed gate until a stream change re-rolled
-it.[^n34-floor] Without the exemption the gate fails (worst pull over five
-seeds 3.56 > 3.5), which is what keeps the exemption from being
-vacuous.[^n36a] Where the offset lives was adjudicated by windowed
-re-integration: MadGraph's `pt(a)` and `m(μμ)` partitions of its own run
-disagree with each other at 16.7σ, and its `m(μμ)` partition recovers our
-total; see [windowed partition closure](windowed-partition-closure.md). The
+**`ee_to_mumua`.** The integrals cell is an ordinary gate: its pull is
+asserted. Against a single 10k-event MadEvent run at the default survey this
+side read a fixed +1.04% high (pull +4.11 at five seeds), and the pull was
+reported rather than asserted. That offset was the reference's: an
+adaptation-free estimate lands on this side, and the seeded refdata-10
+reference (five fresh directories at `hard_survey = 2`, 100k events per
+`m(μμ)` window) reads −0.074%, pull −0.42 (`sprints/sigma-ee-mumua`). The
+windowed adjudication that localised it to MadGraph is
+[windowed partition closure](windowed-partition-closure.md). The
 samples cell is `info` because the `pt(a)` KS flapped across the floor (worst
 p 8.3e-6) on an unchanged shape, and MadGraph's banked sample puts 8.73% of σ
 below `pt(a) = 20` GeV where its own windowed cross sections put 9.40%: the

@@ -33,6 +33,5 @@ sampling as the cheaper lever for the trace-form study).
 **Where it matters now.** For the 222-diagram `wpwm_to_wpwmz_cw`, MadGraph
 itself chose `nhel = 1`, so the reference's banked σ and its 10000 events are
 unreachable from the card that produced them, and the row's `integrals` and
-`samples` cells are `uncovered`. Even once reachable, both cells stay
-informational until the row's amplitudes agree; see
-[wpwmz-cw-ow-five-vector-residual](../validation/wpwmz-cw-ow-five-vector-residual.md).
+`samples` cells are `uncovered`. The row's amplitudes now agree with MadGraph
+per graph, so those cells can gate once the card is accepted.

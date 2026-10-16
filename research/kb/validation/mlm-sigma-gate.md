@@ -107,9 +107,12 @@ causes.
   stays `info`, and a gate needs a five-seed agreement on record first
   ([ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
 - **The three llj rows all sit high**, +0.03% to +0.23%, a shift common to them
-  and not following the reweighting; their references come from one shared
-  directory each
-  ([llj-mlm-rows-sit-high-together](../backlog/validation/llj-mlm-rows-sit-high-together.md)).
+  and not following the reweighting. The offset was on the reference side:
+  MadEvent's default survey (`hard_survey = 2` closes `xqcut_only` over 20
+  fresh seeds) and its mean²/variance iteration combination (equal weights
+  close the two `rewgt` rows). Against refdata-10's fresh-directory
+  `hard_survey = 2` references the three read +0.14 %, +0.11 % and +0.31 %,
+  within 1.4σ each (`sprints/sigma-reference-scatter`).
 - A full banked run on a heavily loaded host once aborted in `validate_hadronic`
   with no panic message, and passed alone on the same data
   ([malloc-abort-under-proton-sample-load](../backlog/validation/malloc-abort-under-proton-sample-load.md)).

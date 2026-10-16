@@ -16,3 +16,5 @@ sources:
 R-A.18.
 
 Filed at the close-out of the [hygiene sprint](../../sprints/hygiene/sprint.md); evidence in [R-A](../../sprints/hygiene/sessions/R-A-report.md).
+
+Since PR #30 only the tensor path's f64 sign remains.

@@ -10,6 +10,10 @@
 # whose events and cross section become a reference. It runs from a temporary
 # directory, so each script's relative `output <name>` is rewritten to the
 # absolute work-area path before it is handed over.
+#
+# Sourced rather than run, it defines its functions and runs nothing:
+# bank_seeded_sigma.sh generates its process directories through
+# `script_driver` and stages models with `stage_models`.
 
 set -e
 
@@ -19,9 +23,6 @@ SCRIPTS_DIR="$SCRIPT_DIR/scripts"
 OUTPUT_BASE="$SCRIPT_DIR/output"
 MODELS_DIR="$OUTPUT_BASE/models"
 SUMMARY_FILE="$OUTPUT_BASE/build_summary.txt"
-
-# Ensure output directory exists
-mkdir -p "$OUTPUT_BASE"
 
 # Stage the vendored UFO models into the work area.
 #
@@ -103,125 +104,157 @@ model_card_dir() {
   esac
 }
 
-echo "Building MadGraph validation output directories..."
-echo "Output base: $OUTPUT_BASE"
-stage_models
-echo ""
-
-SKIPPED=0
-GENERATED=0
-TOTAL_ELAPSED=0
-
-BUILD_START=$(date +%s)
-
-# Dynamically process all .mg5 scripts in scripts/ directory
-for script_path in "$SCRIPTS_DIR"/*.mg5; do
-  [ -f "$script_path" ] || continue
-
-  script=$(basename "$script_path")
-
-  # Derive output directory name from script name by removing .mg5 extension
-  # ee_to_mumu.mg5 -> ee_to_mumu
-  # pp_to_ll_qcd0.mg5 -> pp_to_ll_qcd0
-  output_dir="${script%.mg5}"
-  output_path="$OUTPUT_BASE/$output_dir"
-
-  if [ -d "$output_path" ]; then
-    echo "⊘ Skipping: $script (output already exists at $output_dir/)"
-    SKIPPED=$((SKIPPED + 1))
-    continue
-  fi
-
-  # A script whose banked run another generator makes names that generator on a
-  # `# built-by:` line (the MLM rows: gen_mlm_references.sh runs them per seed,
-  # and needs the samples-grade run to be the first its directory makes).
-  built_by="$(sed -n 's/^# built-by:[[:space:]]*//p' "$script_path" | head -1)"
-  if [ -n "$built_by" ]; then
-    echo "⊘ Skipping: $script (built by $built_by)"
-    SKIPPED=$((SKIPPED + 1))
-    continue
-  fi
-
-  echo "Processing: $script -> $output_dir/"
-
-  t0=$(date +%s)
-
-  # Both paths a script names are repository-relative and both are rewritten to
-  # the work area, because MadGraph runs from a temporary directory: `output`
-  # to this process's directory, and `import model validation/ufo/NAME[-CARD]`
-  # to the staged copy of that model.
-  driver="$(mktemp -t vg_build_XXXXXX).mg5"
+# script_driver SCRIPT OUTPUT_PATH MODELS_DIR [no-launch] — write the MadGraph
+# script MadGraph runs for SCRIPT and print its path.
+#
+# Both paths a script names are repository-relative and both are rewritten to
+# the work area, because MadGraph runs from a temporary directory: `output` to
+# OUTPUT_PATH, and `import model validation/ufo/NAME[-CARD]` to the staged copy
+# of that model under MODELS_DIR. With `no-launch` the launch block and
+# everything after it are dropped, which leaves a generated process directory
+# that no run has touched; a launch line that is not a bare `launch` is refused
+# rather than left in.
+script_driver() {
+  local script_path="$1" output_path="$2" models_dir="$3" mode="${4:-}"
+  local script driver
+  script="$(basename "$script_path")"
+  driver="$(mktemp "${TMPDIR:-/tmp}/vg_build_XXXXXX")"
+  mv "$driver" "$driver.mg5"
+  driver="$driver.mg5"
   sed -E -e "s|^([[:space:]]*output[[:space:]]+)[^[:space:]]+|\1$output_path|" \
-    -e "s|^([[:space:]]*import[[:space:]]+model[[:space:]]+)validation/ufo/|\1$MODELS_DIR/|" \
+    -e "s|^([[:space:]]*import[[:space:]]+model[[:space:]]+)validation/ufo/|\1$models_dir/|" \
     "$script_path" > "$driver"
+  if [ "$mode" = no-launch ]; then
+    sed -E '/^[[:space:]]*launch[[:space:]]*$/,$d' "$driver" > "$driver.cut"
+    mv "$driver.cut" "$driver"
+    if grep -qE '^[[:space:]]*launch([[:space:]]|$)' "$driver"; then
+      echo "!!! $script has a launch line that is not a bare 'launch'; it would run" >&2
+      return 1
+    fi
+  fi
   grep -qE "^[[:space:]]*output[[:space:]]+$output_path( |$)" "$driver" || {
     echo "!!! $script has no 'output' line to redirect" >&2
-    exit 1
+    return 1
   }
   if grep -qE "^[[:space:]]*import[[:space:]]+model[[:space:]]+validation/" "$driver"; then
     echo "!!! $script imports a model path that was not rewritten into the work area" >&2
-    exit 1
+    return 1
   fi
+  echo "$driver"
+}
 
-  # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
-  # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
-  # LDFLAGS as already set), so a `pdlabel = lhapdf` run leaves the LHAPDF C++
-  # runtime symbols unresolved when madevent links libpdf.a. Appending -lc++ is
-  # what gen_hadronic_sigma.sh already does for the same reason; it is inert for a
-  # script that links no C++. `-lc++` names libc++, which is the system C++
-  # runtime on macOS and generally absent on Linux, where the same symbols come
-  # from libstdc++ and the flag would fail the link instead of fixing it.
-  log="$(mktemp -t vg_build_log_XXXXXX)"
-  case "$(uname -s)" in
-    Darwin) build_ldflags="${LDFLAGS:-} -lc++" ;;
-    *) build_ldflags="${LDFLAGS:-}" ;;
-  esac
-  if ! LDFLAGS="$build_ldflags" bash "$SCRIPT_DIR/mg5_pinned.sh" "$driver" > "$log" 2>&1; then
-    echo "!!! $script failed; last 40 lines of its log:" >&2
-    tail -40 "$log" >&2
-    if [ -d "$output_path" ]; then mv "$log" "$output_path/build.log"; fi
-    exit 1
-  fi
-  rm -f "$driver"
-  mv "$log" "$output_path/build.log"
+build_main() {
+  mkdir -p "$OUTPUT_BASE"
 
-  strip_ansi_escapes "$output_path"
-
-  t1=$(date +%s)
-  elapsed=$((t1 - t0))
-  echo "Total build time: (${elapsed}s)" >> "$output_path/build.log"
-  TOTAL_ELAPSED=$((TOTAL_ELAPSED + elapsed))
-
-  echo "✓ Completed: $script (${elapsed}s)"
-  GENERATED=$((GENERATED + 1))
+  echo "Building MadGraph validation output directories..."
+  echo "Output base: $OUTPUT_BASE"
+  stage_models
   echo ""
-done
 
-BUILD_END=$(date +%s)
-WALL_TIME=$((BUILD_END - BUILD_START))
+  SKIPPED=0
+  GENERATED=0
+  TOTAL_ELAPSED=0
 
-# Count total files across all output directories (excluding JSON/CSV summaries)
-TOTAL_FILES=$(find "$OUTPUT_BASE" -maxdepth 4 -type f | wc -l | tr -d ' ')
+  BUILD_START=$(date +%s)
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✓ MadGraph build complete"
-echo "  Generated: $GENERATED new directories"
-echo "  Skipped:   $SKIPPED existing directories"
-echo "  Wall time: ${WALL_TIME}s  (MG5 time for new processes: ${TOTAL_ELAPSED}s)"
-echo "  Total files in output/: $TOTAL_FILES"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "Output directories available in: $OUTPUT_BASE"
+  # Dynamically process all .mg5 scripts in scripts/ directory
+  for script_path in "$SCRIPTS_DIR"/*.mg5; do
+    [ -f "$script_path" ] || continue
 
-# Write summary file
-{
-  echo "MadGraph build summary"
-  echo "Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-  echo "Generated: $GENERATED new directories"
-  echo "Skipped:   $SKIPPED existing directories"
-  echo "Wall time: ${WALL_TIME}s"
-  echo "MG5 time (new processes): ${TOTAL_ELAPSED}s"
-  echo "Total files in output/: $TOTAL_FILES"
-} > "$SUMMARY_FILE"
+    script=$(basename "$script_path")
 
-echo "Summary written to: $SUMMARY_FILE"
+    # Derive output directory name from script name by removing .mg5 extension
+    # ee_to_mumu.mg5 -> ee_to_mumu
+    # pp_to_ll_qcd0.mg5 -> pp_to_ll_qcd0
+    output_dir="${script%.mg5}"
+    output_path="$OUTPUT_BASE/$output_dir"
+
+    if [ -d "$output_path" ]; then
+      echo "⊘ Skipping: $script (output already exists at $output_dir/)"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+
+    # A script whose banked run another generator makes names that generator on a
+    # `# built-by:` line (the MLM rows: gen_mlm_references.sh runs them per seed,
+    # and needs the samples-grade run to be the first its directory makes).
+    built_by="$(sed -n 's/^# built-by:[[:space:]]*//p' "$script_path" | head -1)"
+    if [ -n "$built_by" ]; then
+      echo "⊘ Skipping: $script (built by $built_by)"
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+
+    echo "Processing: $script -> $output_dir/"
+
+    t0=$(date +%s)
+
+    driver="$(script_driver "$script_path" "$output_path" "$MODELS_DIR")" || exit 1
+
+    # The conda activation exports its own LDFLAGS, which suppresses MadGraph's
+    # make_opts `STDLIB=-lc++` (its `ifeq($(origin LDFLAGS),undefined)` guard sees
+    # LDFLAGS as already set), so a `pdlabel = lhapdf` run leaves the LHAPDF C++
+    # runtime symbols unresolved when madevent links libpdf.a. Appending -lc++ is
+    # what gen_hadronic_sigma.sh already does for the same reason; it is inert for a
+    # script that links no C++. `-lc++` names libc++, which is the system C++
+    # runtime on macOS and generally absent on Linux, where the same symbols come
+    # from libstdc++ and the flag would fail the link instead of fixing it.
+    log="$(mktemp -t vg_build_log_XXXXXX)"
+    case "$(uname -s)" in
+      Darwin) build_ldflags="${LDFLAGS:-} -lc++" ;;
+      *) build_ldflags="${LDFLAGS:-}" ;;
+    esac
+    if ! LDFLAGS="$build_ldflags" bash "$SCRIPT_DIR/mg5_pinned.sh" "$driver" > "$log" 2>&1; then
+      echo "!!! $script failed; last 40 lines of its log:" >&2
+      tail -40 "$log" >&2
+      if [ -d "$output_path" ]; then mv "$log" "$output_path/build.log"; fi
+      exit 1
+    fi
+    rm -f "$driver"
+    mv "$log" "$output_path/build.log"
+
+    strip_ansi_escapes "$output_path"
+
+    t1=$(date +%s)
+    elapsed=$((t1 - t0))
+    echo "Total build time: (${elapsed}s)" >> "$output_path/build.log"
+    TOTAL_ELAPSED=$((TOTAL_ELAPSED + elapsed))
+
+    echo "✓ Completed: $script (${elapsed}s)"
+    GENERATED=$((GENERATED + 1))
+    echo ""
+  done
+
+  BUILD_END=$(date +%s)
+  WALL_TIME=$((BUILD_END - BUILD_START))
+
+  # Count total files across all output directories (excluding JSON/CSV summaries)
+  TOTAL_FILES=$(find "$OUTPUT_BASE" -maxdepth 4 -type f | wc -l | tr -d ' ')
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "✓ MadGraph build complete"
+  echo "  Generated: $GENERATED new directories"
+  echo "  Skipped:   $SKIPPED existing directories"
+  echo "  Wall time: ${WALL_TIME}s  (MG5 time for new processes: ${TOTAL_ELAPSED}s)"
+  echo "  Total files in output/: $TOTAL_FILES"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "Output directories available in: $OUTPUT_BASE"
+
+  # Write summary file
+  {
+    echo "MadGraph build summary"
+    echo "Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo "Generated: $GENERATED new directories"
+    echo "Skipped:   $SKIPPED existing directories"
+    echo "Wall time: ${WALL_TIME}s"
+    echo "MG5 time (new processes): ${TOTAL_ELAPSED}s"
+    echo "Total files in output/: $TOTAL_FILES"
+  } > "$SUMMARY_FILE"
+
+  echo "Summary written to: $SUMMARY_FILE"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  build_main "$@"
+fi
