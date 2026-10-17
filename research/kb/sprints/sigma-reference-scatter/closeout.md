@@ -65,7 +65,7 @@ the M3. The CI report is the run's own.
 - [madevent-generators-accept-empty-results](../../backlog/validation/madevent-generators-accept-empty-results.md)
 - [cli-integrate-dy13-skips-seed-record](../../backlog/validation/cli-integrate-dy13-skips-seed-record.md)
 - [pta-windows-need-full-mg-work-area](../../backlog/validation/pta-windows-need-full-mg-work-area.md)
-- [sigma-pulls-lean-high-on-seeded-refs](../../backlog/validation/sigma-pulls-lean-high-on-seeded-refs.md)
+- `sigma-pulls-lean-high-on-seeded-refs` (closed in [sigma-pulls-lean-high](../sigma-pulls-lean-high/closeout.md))
 - [hadronic-sigma-cells-unnamed-reference](../../backlog/hygiene/hadronic-sigma-cells-unnamed-reference.md)
 - [madevent-shell-refusals-untested](../../backlog/hygiene/madevent-shell-refusals-untested.md)
 - [lib-tests-hand-roll-temp-dirs](../../backlog/hygiene/lib-tests-hand-roll-temp-dirs.md)
