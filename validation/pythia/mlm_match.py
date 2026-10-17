@@ -95,6 +95,7 @@ import hashlib
 import json
 import math
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -375,6 +376,35 @@ def run_one(exe: Path, lhe: Path, settings, seed: int, work: Path, tag: str, key
     data = np.loadtxt(tsv, ndmin=2)
     return {"tag": tag, "seed": seed, "data": data, "summary": summary,
             "messages": pythia_messages(stdout)}
+
+
+def pythia_version(printed: str) -> str:
+    """Pythia's version as the driver prints it (a float, `8.3120e+00`) in the
+    `8.312` form; anything that is not a number stays as printed."""
+    try:
+        return f"{float(printed):.3f}"
+    except ValueError:
+        return printed
+
+
+def pythia_build(prefix: Path = Path(sys.prefix)) -> dict:
+    """The Pythia build the driver was compiled and run against: the platform,
+    `pythia8-config --version`, and the conda package (name, version, build,
+    channel, subdir) installed in `prefix`'s environment, when there is one.
+    Results differ between builds, so a recorded run names the one it ran on.
+    It describes the environment of this invocation, not of any run that is
+    read back from the cache."""
+    build = {"platform": f"{platform.system()} {platform.machine()}"}
+    try:
+        build["pythia8_config_version"] = subprocess.run(
+            ["pythia8-config", "--version"], capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    for meta in sorted((prefix / "conda-meta").glob("pythia8-[0-9]*.json")):
+        pkg = json.loads(meta.read_text())
+        build.update(package=f"{pkg['name']}-{pkg['version']}-{pkg['build']}",
+                     channel=pkg.get("channel"), subdir=pkg.get("subdir"))
+    return build
 
 
 def pythia_messages(stdout: str) -> list[str]:
@@ -721,6 +751,14 @@ def verdict(pulls: dict[str, float | None], legs: dict, null_legs: dict | None) 
     return {"status": "pass" if passed else "fail", "pulls_failed": failed, "jet_rates": jet}
 
 
+def judge(comparison: dict, nulls: dict) -> tuple[dict, dict, dict]:
+    """The comparison's pulls, jet-rate legs and verdict. Side A's null decides
+    whether the jet rates count; side B's is recorded for information only."""
+    pulls = gated_pulls(comparison)
+    legs = jet_rate_legs(comparison["jet_rates"])
+    return pulls, legs, verdict(pulls, legs, nulls["a"]["legs"] if nulls["a"] else None)
+
+
 def legs_record(legs: dict) -> dict:
     return {
         "legs": legs["verdict"],
@@ -863,16 +901,16 @@ def main() -> int:
                                args.bootstrap)
     for h in comparison["jet_rates"].values():
         h["bin_pulls"] = bin_pulls(h)
-    pulls = gated_pulls(comparison)
-    legs = jet_rate_legs(comparison["jet_rates"])
     nulls = {s: null_split(info[s], events[s], runs[s], args.min_count) for s in ("a", "b")}
-    decision = verdict(pulls, legs, nulls["a"]["legs"] if nulls["a"] else None)
+    pulls, legs, decision = judge(comparison, nulls)
 
-    version = results[jobs[0]]["summary"].get("version", ["?"])[0]
+    version = pythia_version(results[jobs[0]]["summary"].get("version", ["?"])[0])
+    build = pythia_build()
     row = {
         "row": "mlm-pythia",
         "task": "validate-mlm-pythia",
         "pythia_version": version,
+        "pythia_build": build,
         "config": args.config,
         "settings": [{"key": k, "value": v, "source": src} for k, v, src in settings],
         "driver_settings": [{"key": k, "value": v} for k, v in DRIVER_SETTINGS],
@@ -893,7 +931,8 @@ def main() -> int:
     args.out.write_text(json.dumps(row, indent=1) + "\n")
 
     la, lb = args.label_a, args.label_b
-    print(f"Pythia {version}; {len(args.seeds)} seeds; {la}: {summary['a']['n_events']} events in "
+    print(f"Pythia {version} ({build.get('package', 'package unknown')}, {build['platform']}); "
+          f"{len(args.seeds)} seeds; {la}: {summary['a']['n_events']} events in "
           f"{len(info['a'])} file(s) [{args.transform_a}], {lb}: {summary['b']['n_events']} in "
           f"{len(info['b'])} [{args.transform_b}]")
     for c, v in comparison["acceptance"].items():

@@ -122,7 +122,7 @@ fn main() {
 
     let (rows, mut problems) = cells::load_all(&report_dir);
     check_standalone_tasks(&manifest, &mut problems);
-    check_standalone_modes(&manifest, &report_dir, &mut problems);
+    check_standalone_modes(&manifest.standalone, &report_dir, &mut problems);
     let mut resolved = resolve(&manifest, &rows, &mut problems);
     number_notes(&mut resolved);
 
@@ -182,11 +182,11 @@ fn check_standalone_tasks(manifest: &Manifest, problems: &mut Vec<String>) {
 /// the manifest enforces, nor the other way round. An absent row file is "not
 /// run in this invocation", as for any standalone gate with its own task.
 fn check_standalone_modes(
-    manifest: &Manifest,
+    standalones: &[manifest::Standalone],
     report_dir: &std::path::Path,
     problems: &mut Vec<String>,
 ) {
-    for standalone in &manifest.standalone {
+    for standalone in standalones {
         let (Some(row), Some(mode)) = (standalone.row.as_deref(), standalone.mode) else {
             continue;
         };
@@ -475,6 +475,97 @@ fn number_notes(resolved: &mut [ResolvedRow]) {
             if let Some(note) = cell.note.clone() {
                 let next = numbers.len() + 1;
                 cell.note_ref = Some(*numbers.entry(note).or_insert(next));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn standalone(row: Option<&str>, mode: Option<&str>) -> manifest::Standalone {
+        let mut text =
+            String::from("key = \"gate-under-test\"\nlayer = \"oracle\"\nrationale = \"r\"\n");
+        if let Some(row) = row {
+            text += &format!("row = \"{row}\"\n");
+        }
+        if let Some(mode) = mode {
+            text += &format!("mode = \"{mode}\"\n");
+        }
+        toml::from_str(&text).expect("a standalone entry")
+    }
+
+    /// The problems `check_standalone_modes` reports for one entry whose row
+    /// file (when `written` is given) holds that text.
+    fn problems_for(entry: manifest::Standalone, written: Option<&str>) -> Vec<String> {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        std::fs::create_dir(dir.path().join("standalone")).unwrap();
+        if let Some(text) = written {
+            std::fs::write(dir.path().join("standalone/row.json"), text).unwrap();
+        }
+        let mut problems = Vec::new();
+        check_standalone_modes(&[entry], dir.path(), &mut problems);
+        problems
+    }
+
+    #[test]
+    fn a_row_recording_the_declared_mode_is_clean() {
+        for mode in ["gate", "info"] {
+            let written = format!("{{\"mode\": \"{mode}\"}}");
+            assert!(
+                problems_for(standalone(Some("row.json"), Some(mode)), Some(&written)).is_empty()
+            );
+        }
+    }
+
+    /// A driver recording `info` for a declared gate (and the converse) is named,
+    /// with both modes and the row file.
+    #[test]
+    fn a_row_recording_the_other_mode_is_reported() {
+        for (declared, written) in [("gate", "info"), ("info", "gate")] {
+            let text = format!("{{\"mode\": \"{written}\"}}");
+            let problems = problems_for(standalone(Some("row.json"), Some(declared)), Some(&text));
+            assert_eq!(problems.len(), 1, "{problems:?}");
+            assert!(
+                problems[0].starts_with("standalone 'gate-under-test' "),
+                "{problems:?}"
+            );
+            assert!(
+                problems[0].contains(&format!("is declared mode '{declared}' but ")),
+                "{problems:?}"
+            );
+            assert!(
+                problems[0].ends_with(&format!("row.json records mode '{written}'")),
+                "{problems:?}"
+            );
+        }
+    }
+
+    /// A row with no mode, or one that is not JSON, cannot stand in for a declared mode.
+    #[test]
+    fn a_row_without_a_readable_mode_is_reported() {
+        for text in ["{\"status\": \"pass\"}", "not json", "{\"mode\": 3}"] {
+            let problems = problems_for(standalone(Some("row.json"), Some("gate")), Some(text));
+            assert_eq!(problems.len(), 1, "{text}: {problems:?}");
+            assert!(
+                problems[0].contains("records mode (none)"),
+                "{text}: {problems:?}"
+            );
+        }
+    }
+
+    /// An absent row file is "not run in this invocation", and an entry that
+    /// declares no mode (or no row) is not checked, whatever its file says.
+    #[test]
+    fn absent_rows_and_undeclared_modes_are_left_alone() {
+        assert!(problems_for(standalone(Some("row.json"), Some("gate")), None).is_empty());
+        for (row, mode) in [(Some("row.json"), None), (None, Some("gate"))] {
+            for written in ["{\"mode\": \"info\"}", "{}", "not json"] {
+                assert!(
+                    problems_for(standalone(row, mode), Some(written)).is_empty(),
+                    "{written}"
+                );
             }
         }
     }

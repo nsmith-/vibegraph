@@ -472,12 +472,34 @@ fn mlm_pythia_verdict(value: &Value) -> String {
         legs(jet),
         null("null_a"),
         null("null_b"),
-        value
-            .get("pythia_version")
-            .and_then(Value::as_str)
-            .map(|v| format!("; Pythia {v}"))
-            .unwrap_or_default(),
+        pythia_text(value),
     )
+}
+
+/// `; Pythia 8.312 (pythia8-8.312-…, conda-forge/linux-64, Linux x86_64)`: the
+/// version and, when the row records it, the build and platform the run used.
+fn pythia_text(value: &Value) -> String {
+    let Some(version) = value.get("pythia_version").and_then(Value::as_str) else {
+        return String::new();
+    };
+    let build = &value["pythia_build"];
+    let text = |key: &str| build.get(key).and_then(Value::as_str);
+    let channel = text("channel").map(|c| c.trim_end_matches('/').rsplit('/').next().unwrap_or(c));
+    let package = match (text("package"), channel, text("subdir")) {
+        (Some(p), Some(c), Some(s)) => Some(format!("{p}, {c}/{s}")),
+        (Some(p), _, _) => Some(p.to_string()),
+        _ => None,
+    };
+    let details = [package, text("platform").map(str::to_string)]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if details.is_empty() {
+        format!("; Pythia {version}")
+    } else {
+        format!("; Pythia {version} ({details})")
+    }
 }
 
 /// Whether a standalone gate's verdict is at least as new as the newest per-row
@@ -608,6 +630,13 @@ mod tests {
             "row": "mlm-pythia",
             "mode": "gate",
             "pythia_version": "8.312",
+            "pythia_build": {
+                "platform": "Linux x86_64",
+                "pythia8_config_version": "8.312",
+                "package": "pythia8-8.312-py312hd50de4e_105",
+                "channel": "https://conda.anaconda.org/conda-forge/",
+                "subdir": "linux-64",
+            },
             "gate": {
                 "status": status,
                 "pull_limit": 3.0,
@@ -641,7 +670,7 @@ mod tests {
             "MadEvent null pass:",
             "max |pull| 2.93",
             "vibegraph null (information) not available",
-            "Pythia 8.312",
+            "Pythia 8.312 (pythia8-8.312-py312hd50de4e_105, conda-forge/linux-64, Linux x86_64)",
         ] {
             assert!(text.contains(needle), "missing {needle:?} in {text}");
         }
@@ -656,5 +685,21 @@ mod tests {
             .contains("jet rates info (null failed)"));
         assert!(mlm_pythia_verdict(&row("fail", "gate", "fail")).starts_with("❌ fail"));
         assert!(mlm_pythia_verdict(&row("fail", "info", "null failed")).starts_with("❌ fail"));
+    }
+
+    /// The build is optional in the row: the platform alone, the package without
+    /// a channel, and the version alone each render what is there.
+    #[test]
+    fn the_pythia_build_renders_what_the_row_records() {
+        let mut value = row("pass", "gate", "pass");
+        value["pythia_build"] = json!({"platform": "Darwin arm64"});
+        assert!(mlm_pythia_verdict(&value).ends_with("; Pythia 8.312 (Darwin arm64)"));
+        value["pythia_build"] = json!({"package": "pythia8-8.312-x_1", "platform": "Linux x86_64"});
+        assert!(mlm_pythia_verdict(&value)
+            .ends_with("; Pythia 8.312 (pythia8-8.312-x_1, Linux x86_64)"));
+        value.as_object_mut().unwrap().remove("pythia_build");
+        assert!(mlm_pythia_verdict(&value).ends_with("; Pythia 8.312"));
+        value.as_object_mut().unwrap().remove("pythia_version");
+        assert!(!mlm_pythia_verdict(&value).contains("Pythia"));
     }
 }
