@@ -16,3 +16,12 @@
 * **User decision** (relayed by the planner): run the K ladder now (P2). If a K
   wins, its default flip and banked run land before the calibration re-record
   (PR #45), sequenced with PR #51's map-default flip.
+* **P2 landed** (report `b3e5f3d`): the K ladder over 20 seeds on three rows;
+  K = 6 proposed. Manager-verified: per-arm σ and ε_unw means recomputed from
+  `results.jsonl`; the `dsample.f` reading (no power-2 rescale on the refined
+  grid) checked against the submodule source.
+* **Decision** (user, relayed by the planner): K = 6 becomes the default, with
+  a CLI way back to the unbounded grid, the grid rule in the artifact, and a
+  one-sitting timing before any variance-per-CPU claim; the banked run is
+  sequenced with `map-default-guards` so the calibrations re-record once. P3
+  dispatched.

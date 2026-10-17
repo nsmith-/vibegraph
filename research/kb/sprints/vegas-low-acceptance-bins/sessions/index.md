@@ -7,6 +7,7 @@
 * [HY1: hygiene review of the opt-in grid rules](HY1.md) - Review P1's VEGAS grid-rule change for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence; the default stays bit-identical.
 * [P1: measure acceptance-aware VEGAS grid rules as opt-in options](P1.md) - Add MadEvent's per-bin acceptance rescale, Σ|w| adaptation and a bin-width bound as opt-in grid rules with defaults bit-identical, and measure each on the banked rows over ≥5 seeds.
 * [P2: a K ladder for the bin-width bound](P2.md) - Measure the bin-width bound at K = 2, 3, 6 (and 10 if cheap) over 20 seeds on pp_to_llj, pp_to_llj_mlm and pp_to_jj, read each rung against the measured seed spread, and propose a default K or none.
+* [P3: flip the bin-width bound default to K = 6](P3.md) - Make --grid-max-bin-width 6 the integrate default with a CLI way back to the unbounded grid, record the grid rule in the artifact, time K = 6 against base in one sitting, and run the banked layer on the combined tree with the map-default flip.
 
 ## Session Report
 
