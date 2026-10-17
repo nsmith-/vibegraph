@@ -250,6 +250,8 @@ impl MapArgs {
 pub(crate) enum BinWeightArg {
     /// The point's squared weight `(f·w)²`.
     Squared,
+    /// The point's weight `|f·w|`, as MadEvent accumulates it.
+    Absolute,
 }
 
 /// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are the rule
@@ -260,15 +262,36 @@ pub(crate) struct GridRuleArgs {
     /// What each point adds to its bins of the refinement histogram.
     #[arg(long = "grid-bin-weight", value_enum, default_value_t = BinWeightArg::Squared)]
     pub(crate) bin_weight: BinWeightArg,
+
+    /// Credit each bin with the mean of its accepted points: multiply its
+    /// histogram entry by the iteration's accepted points over the bin's, capped
+    /// at 10⁴, as MadEvent does while its grid adapts.
+    #[arg(long = "grid-acceptance-rescale")]
+    pub(crate) acceptance_rescale: bool,
+
+    /// Bound every refined bin's width at this multiple of the uniform width;
+    /// must exceed 1.
+    #[arg(long = "grid-max-bin-width", value_name = "K")]
+    pub(crate) max_bin_width: Option<f64>,
 }
 
 impl GridRuleArgs {
     /// The rule the flags spell.
     pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
+        if let Some(k) = self.max_bin_width {
+            if !(k > 1.0 && k.is_finite()) {
+                return Err(err(format!(
+                    "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
+                )));
+            }
+        }
         Ok(GridRule {
             weight: match self.bin_weight {
                 BinWeightArg::Squared => BinWeight::Squared,
+                BinWeightArg::Absolute => BinWeight::Absolute,
             },
+            acceptance_rescale: self.acceptance_rescale,
+            max_bin_width: self.max_bin_width,
         })
     }
 }

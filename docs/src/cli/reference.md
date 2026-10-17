@@ -219,9 +219,16 @@ Options:
           What each point adds to its bins of the refinement histogram
 
           Possible values:
-          - squared: The point's squared weight `(f·w)²`
+          - squared:  The point's squared weight `(f·w)²`
+          - absolute: The point's weight `|f·w|`, as MadEvent accumulates it
           
           [default: squared]
+
+      --grid-acceptance-rescale
+          Credit each bin with the mean of its accepted points: multiply its histogram entry by the iteration's accepted points over the bin's, capped at 10⁴, as MadEvent does while its grid adapts
+
+      --grid-max-bin-width <K>
+          Bound every refined bin's width at this multiple of the uniform width; must exceed 1
 
   -h, --help
           Print help (see a summary with '-h')
