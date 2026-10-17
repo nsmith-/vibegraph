@@ -5,8 +5,8 @@ description: LaneField lanes beat scalar per event on every x86 target, but no i
 area: performance
 state: blocked
 priority: medium
-closes_when: The x86-64-v3 release asset evaluates lane-batched (N = 4) behind a lanes4 σ/event gate against the scalar path, and whether the baseline asset batches too is decided.
-blocked_by: [per-point-chain-f64-only, lane-eval-shares-one-alpha-s]
+closes_when: "integrate runs lane-batched end to end (sampler draw, map, cuts, scales and clustering, αs, PDFs, matrix element, weight) on every banked row including the clustered and MLM rows, behind a lanes4 σ gate against the scalar path; the x86-64-v3 release asset uses it at N = 4; and whether the baseline asset batches too is decided."
+blocked_by: [per-point-chain-f64-only, lane-eval-shares-one-alpha-s, sampler-hardwired-to-vegas-grid, jet-clustering-f64-only, pdf-lookup-f64-only]
 opened: 2026-09-23
 tags: [simd, lanes, release, x86-64-v3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -43,7 +43,12 @@ the table: they shrank the 2→6 arenas by 36%, and on Emerald Rapids width 8
 now beats width 4 there (44.4 against 46.6 µs/event,
 [topdown-zen4-results §6](../../history/notes/topdown-zen4-results.md)). Every lane ratio
 above, and the Zen 4 §5 reading, predates them. The 1.00–1.21× scalar gains
-change the denominator too. Found by Phase 2 drafter D5.
+change the denominator too.
 
 Detail: [x86-avx2-perf-study-results](../../history/notes/x86-avx2-perf-study-results.md),
 AVX-512 section and "The two x86 release builds".
+
+**Where "SIMD end to end" closes:** each per-point stage goes lane-generic in
+its `blocked_by` item; this one adds the batched driver. Out of scope, scalar by
+design: `generate`'s per-accepted-event work (accept/reject, helicity, colour
+and resonance choice for the record, LHE writing), a few percent of points.

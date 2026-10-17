@@ -52,4 +52,4 @@ code bit-for-bit, so adopting it anywhere is a byte-identity refactor.
 Consumers waiting on it:
 [sampler-hardwired-to-vegas-grid](../feature/sampler-hardwired-to-vegas-grid.md),
 [jet-clustering-f64-only](jet-clustering-f64-only.md),
-and the cut part of [per-point-chain-f64-only](per-point-chain-f64-only.md).
+[pdf-lookup-f64-only](pdf-lookup-f64-only.md), and the cut part of [per-point-chain-f64-only](per-point-chain-f64-only.md).
