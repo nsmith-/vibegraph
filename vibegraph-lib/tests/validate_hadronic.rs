@@ -4235,8 +4235,10 @@ fn llj_scatter_calibration(
     let quoted = runs.iter().map(|r| r.sigma_err_pb).sum::<f64>() / n;
     let quintets: Vec<f64> = runs.chunks(5).map(|q| combine(q).chi2_per_dof).collect();
     let pools: Vec<f64> = runs
-        .chunks_exact(20)
-        .map(|q| combine(q).chi2_per_dof)
+        .as_chunks::<20>()
+        .0
+        .iter()
+        .map(|q| combine(q.as_slice()).chi2_per_dof)
         .collect();
     let above = |v: &[f64], limit: f64| v.iter().filter(|&&c| c > limit).count();
     let beyond_3sigma: Vec<u64> = runs
