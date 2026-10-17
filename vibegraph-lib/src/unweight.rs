@@ -525,21 +525,17 @@ impl Unweighter {
             .enumerate()
             .map(|(j, &(grid, draws))| {
                 let out = scan_channel(integrand, grid, draws, j, seed, rule);
-                match out.0.scan.tail_index {
-                    Some(a) => tracing::debug!(
-                        "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero, \
-                         tail index {a:.3}",
-                        out.0.scan.w_max,
-                        out.0.scan.w_peak,
-                        out.0.scan.nonzero
-                    ),
-                    None => tracing::debug!(
-                        "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero",
-                        out.0.scan.w_max,
-                        out.0.scan.w_peak,
-                        out.0.scan.nonzero
-                    ),
-                }
+                let tail = out
+                    .0
+                    .scan
+                    .tail_index
+                    .map_or(String::new(), |a| format!(", tail index {a:.3}"));
+                tracing::debug!(
+                    "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero{tail}",
+                    out.0.scan.w_max,
+                    out.0.scan.w_peak,
+                    out.0.scan.nonzero
+                );
                 // The scan runs in parallel, so this counts completions rather than
                 // positions: `done` rises monotonically, but not in channel order.
                 let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1171,24 +1167,39 @@ mod tests {
         assert!((uw.largest_channel_share() - 1.0).abs() < 1e-12);
     }
 
-    /// Hill's estimator recovers the index of an exact Pareto sample: the
-    /// quantiles `w = (1 − q)^(−1/a)` at `q = (i + ½)/n` put the top `k` at the
-    /// tail's own law, so the estimate sits within the estimator's `a/√k`
-    /// spread of `a`.
+    /// Hill's estimator on an exact Pareto sample. At the quantiles
+    /// `w = (1 − q)^(−1/a)`, `q = (i + ½)/n`, the `j`-th largest weight over the
+    /// `(k+1)`-th is `((k + ½)/(j − ½))^(1/a)`, so the estimate is exactly
+    /// `a · k / Σⱼ₌₁..ₖ ln((k + ½)/(j − ½))` whatever `n` — about `0.993 a` at
+    /// `k = 20`, inside the estimator's `a/√k` spread. Pinning the closed form
+    /// rather than the spread fixes the count, the threshold and the scaling
+    /// with `a`.
     #[test]
     fn hill_tail_index_recovers_a_pareto_index() {
+        let k = HILL_TAIL_POINTS;
+        let kf = k as f64;
+        let factor = kf
+            / (1..=k)
+                .map(|j| ((kf + 0.5) / (j as f64 - 0.5)).ln())
+                .sum::<f64>();
+        assert!((factor - 1.0).abs() < 1.0 / kf.sqrt());
         for a in [1.0_f64, 2.0, 5.0] {
             let n = 25_000;
             let weights: Vec<f64> = (0..n)
                 .map(|i| (1.0 - (i as f64 + 0.5) / n as f64).powf(-1.0 / a))
                 .collect();
-            let got = hill_tail_index(&weights, HILL_TAIL_POINTS).expect("enough weights");
+            let got = hill_tail_index(&weights, k).expect("enough weights");
             assert!(
-                (got - a).abs() < a / (HILL_TAIL_POINTS as f64).sqrt(),
-                "index {a}: estimated {got}"
+                (got / (a * factor) - 1.0).abs() < 1e-9,
+                "index {a}: estimated {got}, closed form {}",
+                a * factor
             );
         }
-        assert_eq!(hill_tail_index(&[1.0; 20], HILL_TAIL_POINTS), None);
-        assert_eq!(hill_tail_index(&[2.0; 30], HILL_TAIL_POINTS), None);
+        assert_eq!(hill_tail_index(&[1.0; 20], k), None);
+        assert_eq!(hill_tail_index(&[2.0; 30], k), None);
+        // A threshold of zero leaves no ratio to take a logarithm of.
+        let mut zero_threshold = vec![0.0; 10];
+        zero_threshold.extend((1..=20).map(f64::from));
+        assert_eq!(hill_tail_index(&zero_threshold, k), None);
     }
 }
