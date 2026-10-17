@@ -5,3 +5,7 @@
 ## Sprint
 
 * [VEGAS grid starves low-acceptance bins](sprint.md) - Measure MadEvent's per-bin acceptance rescale, Σ|w| adaptation and a bin-width bound as opt-in grid rules on the banked rows (σ pulls, ε_unw, Hill index, ≥5 seeds) before adopting one.
+
+## Directories
+
+* [sessions](sessions/index.md)
