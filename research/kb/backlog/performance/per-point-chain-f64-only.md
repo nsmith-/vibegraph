@@ -24,3 +24,7 @@ First step is the audit: enumerate the `f64`-only functions on that chain and
 separate those that are `f64` by necessity (LHEF's printed fields, the PDF
 grid's own storage) from those that are `f64` by default. This is a
 prerequisite of [lane-batching-not-in-production](lane-batching-not-in-production.md).
+
+Cuts and other branchy per-point code cannot go generic until `Real` has
+lane-wise comparisons and selects:
+[real-has-no-lane-masks-or-bin-search](real-has-no-lane-masks-or-bin-search.md).

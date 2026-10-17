@@ -3,10 +3,10 @@ type: Backlog Item
 title: Integration, the w_max scan and unweighting are hard-wired to VegasGrid
 description: "No seam separates draw, accumulate, refine and freeze from the VEGAS grid, and the grid is f64-only; every other sampler, and lane-batched drawing, needs one, bit-for-bit inert on VEGAS."
 area: feature
-state: needs-user
+state: blocked
 priority: medium
 closes_when: "A sampler trait generic over F: Real (scalar and batch draw, point-order accumulate, refine, freeze) has VegasGrid and a no-adaptation uniform sampler as implementors, drives integrate_channels, adapt_blocks_iteration, scan_channel and Unweighter, and the default path's grid.bin.zst, LHE and validation report are byte-identical before and after at F = f64."
-blocked_by: []
+blocked_by: [real-has-no-lane-masks-or-bin-search]
 opened: 2026-10-17
 tags: [vegas, sampler, refactor, integration, unweighting, simd, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
@@ -29,16 +29,14 @@ warm-up and combination into `budget.rs`, and drop `grid_rule()` from
 VEGAS-shaped. The artifact keeps `VegasGrid`; tagging it is
 [artifact-has-no-sampler-kind](artifact-has-no-sampler-kind.md).
 
-**Open design question (the user's).** The VEGAS port has to make the refine
-loop SIMD-friendly, and how is not decided. What makes it hard: the
-point-order scatter-add into bins that the `-j` contract rests on
-(`vegas.rs:667`, `:910`); the per-lane bin index and edge gather
-(`vegas.rs:585-590`), which `Real` cannot express since `LaneField` converts to
-an integer through lane 0; Lepage's branchy `ln`/`powf` damping (`:695-705`); the
-three-bin smoothing stencil (`:707-713`); the serial, data-dependent edge rebuild
-(`:715-742`); and PR #48's `bound_bin_width` sort and fixed-point loop and
-per-bin acceptance counts. The draw uses `rng.random::<f64>()` (`:583`), not
-the lane-exact `u64_to_uniform`; switching must be pinned equal by a test.
+**The refine loop goes lane-friendly here, on the designed extension.**
+Lane-wise comparisons, selects and bin search for `F: Real` are designed first:
+[real-has-no-lane-masks-or-bin-search](../performance/real-has-no-lane-masks-or-bin-search.md).
+How accumulation and the edge rebuild are batched on top of it is the user's
+design, made when this item starts; the loop's obstacles, with file:line, are in
+the [seam concept](../../phase-space/importance-sampler-seam.md). The draw uses
+`rng.random::<f64>()` (`vegas.rs:583`), not the lane-exact `u64_to_uniform`;
+switching must be pinned equal by a test.
 
 **Inertness.** A pure refactor: same draws in the same order, so it closes on
 byte identity, not statistics ([no-change claims](../../validation/no-change-claims.md)):

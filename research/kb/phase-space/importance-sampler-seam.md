@@ -102,8 +102,12 @@ type change:
   damping branches per bin and calls `ln` and `powf` (`:695-705`); smoothing is a
   three-bin stencil (`:707-713`); the edge rebuild is a data-dependent serial
   scan (`:715-742`); PR #48 adds a sort and a fixed-point loop
-  (`bound_bin_width`) and a per-bin acceptance count (`BinHistogram::add`). How
-  to make this loop SIMD-friendly is open and is the user's design to make.
+  (`bound_bin_width`) and a per-bin acceptance count (`BinHistogram::add`). The
+  lane-wise comparisons, selects and bin search this needs are designed first,
+  in their own session, because jet clustering needs the same extension:
+  [real-has-no-lane-masks-or-bin-search](../backlog/performance/real-has-no-lane-masks-or-bin-search.md).
+  How the refine loop itself is batched on top of that is the user's design,
+  made when the sampler port starts.
 
 ## What the candidates need of it
 
