@@ -2589,7 +2589,7 @@ impl<'a> FixedBeamIntegrand<'a> {
     ///   frame makes it direction-independent;
     /// * a single sampling channel, so the integrand is that channel's term and
     ///   not a ratio of channel densities;
-    /// * cuts that admit every point ([`Cuts::admits_every_point`]);
+    /// * cuts that admit every point (`Cuts::admits_every_point`);
     /// * no configuration draw, so the coupling scale a point is evaluated at is a
     ///   function of its rotation-invariant kinematics alone.
     ///
@@ -2597,6 +2597,13 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// factors (flux, averages, symmetry factor, phase-space weight, `|M|²`,
     /// coupling scale) can depend on the point. The condition is not detected from
     /// sampled values, so it cannot fire on an integrand that merely looked flat.
+    ///
+    /// A decay of the Standard Model satisfies the single-channel and
+    /// no-configuration-draw conditions whenever it satisfies the others (one
+    /// diagram, and no channel forest to draw a configuration from), so they guard
+    /// a model with a second diagram for a `1 → 2` vertex, or a scale source
+    /// installed from outside; the unit tests reach them by installing those on the
+    /// integrand directly.
     pub fn has_constant_integrand(&self) -> bool {
         matches!(self.initial, InitialState::Decay(_))
             && self.final_masses.len() == 2
@@ -3215,6 +3222,71 @@ mod tests {
         );
         assert!(!integ.has_constant_integrand());
         assert!(!ChannelIntegrand::is_constant(&integ));
+    }
+
+    /// `Z → e+ e-` under a card with every threshold off satisfies every condition
+    /// of the declaration; withdrawing the single-channel condition or the
+    /// no-configuration-draw condition alone withdraws the declaration.
+    ///
+    /// Neither can be reached by a decay the Standard Model offers: a tree-level
+    /// `1 → 2` has one diagram and so one channel, and a decay compiles no channel
+    /// forest, so it draws no configuration. Both are installed on the integrand
+    /// directly: two flat channels, and the scale source of a `2 → 3` process.
+    #[test]
+    fn a_second_channel_or_a_configuration_draw_withdraws_the_declaration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let eval = build_evaluator("z > e+ e-", &m, &evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let legs = process_external_legs(&eval, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::decay_default(), &legs).unwrap();
+        let avg = initial_spin_color_average(&eval, &m, &evaluated);
+        let build = || {
+            FixedBeamIntegrand::new(
+                vec![&bound],
+                &cuts,
+                DecayAtRest::from_legs(&legs).unwrap(),
+                vec![0.0, 0.0],
+                avg,
+            )
+        };
+
+        let integ = build();
+        assert_eq!(
+            (integ.channel_count(), integ.scale_draw_ndim()),
+            (1, 0),
+            "the unmodified decay is one channel with no draw"
+        );
+        assert!(integ.has_constant_integrand(), "the positive control");
+
+        let mut two_channels = build();
+        let flat = || Box::new(RamboChannel::new(91.1876, vec![0.0, 0.0])) as Box<dyn Channel<f64>>;
+        two_channels.sampler = Sampler::Multi(MultiChannel::uniform(vec![flat(), flat()]));
+        assert_eq!(two_channels.channel_count(), 2);
+        assert!(!two_channels.has_constant_integrand());
+
+        let proc = parse_proc_card("generate u u~ > e+ e- g", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let source = compile_scale_source(
+            &[(&evals[0], &diagrams)],
+            &m,
+            &evaluated,
+            &RunCard::parse("1 = ickkw\n30 = xqcut\n").unwrap(),
+            None,
+            false,
+            ClosedForms::Refuse,
+        )
+        .expect("the prescription compiles");
+        assert!(source.draws_configuration());
+        let mut drawing = build();
+        drawing.scales = Some(source);
+        assert_eq!(drawing.scale_draw_ndim(), 1);
+        assert!(!drawing.has_constant_integrand());
     }
 
     #[test]
