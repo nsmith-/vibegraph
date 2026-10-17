@@ -136,7 +136,7 @@ pub(crate) enum IterationCombination {
 }
 
 /// What one point adds to each of its bins in the refinement histogram.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BinWeight {
     /// `(f·w)²`, the point's squared weight.
     ///
@@ -154,17 +154,24 @@ pub enum BinWeight {
 /// cap (`dsample.f:2113-2117`, `min(non_zero/inon_zero, 10000.)`).
 const MAX_ACCEPTANCE_RESCALE: f64 = 1.0e4;
 
+/// The bin-width bound of the default [`GridRule`], as a multiple of the
+/// uniform width.
+pub const DEFAULT_MAX_BIN_WIDTH: f64 = 6.0;
+
 /// How a grid turns one iteration's points into its next bin edges.
 ///
-/// The default accumulates `(f·w)²` with no acceptance correction and no
-/// bound on a bin's width. The other settings counter the weight tail an
-/// adapted grid builds where the cuts reject most of a bin: there the
-/// importance function is small, the bin is widened, and the few points that
-/// pass carry the width into their weight.
+/// The default accumulates `(f·w)²` with no acceptance correction and bounds
+/// every bin at [`DEFAULT_MAX_BIN_WIDTH`] times the uniform width. The bound
+/// and the acceptance rescale counter the weight tail an adapted grid builds
+/// where the cuts reject most of a bin: there the importance function is
+/// small, the bin is widened, and the few points that pass carry the width into
+/// their weight.
 ///
-/// The rule is a property of an adaptation, not of a trained grid, so it is not
-/// serialized and a stored grid's bytes do not depend on it.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+/// The rule is a property of an adaptation, not of a trained grid, so a stored
+/// [`VegasGrid`]'s bytes do not depend on it; an integration artifact records
+/// it beside the grids instead. Its serialized form is that record's wire
+/// format, field for field.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GridRule {
     /// What a point adds to its bins.
     pub weight: BinWeight,
@@ -189,9 +196,26 @@ pub struct GridRule {
 }
 
 impl GridRule {
+    /// The rule every grid was refined under before the bin width was bounded:
+    /// `(f·w)²`, no acceptance rescale, no bound.
+    pub const UNBOUNDED: GridRule = GridRule {
+        weight: BinWeight::Squared,
+        acceptance_rescale: false,
+        max_bin_width: None,
+    };
+
     /// Whether the rule is the default one.
     pub fn is_default(&self) -> bool {
         *self == GridRule::default()
+    }
+}
+
+impl Default for GridRule {
+    fn default() -> Self {
+        GridRule {
+            max_bin_width: Some(DEFAULT_MAX_BIN_WIDTH),
+            ..GridRule::UNBOUNDED
+        }
     }
 }
 
@@ -1923,25 +1947,26 @@ mod tests {
 
     // ── Grid rules ──────────────────────────────────────────────────────
 
-    /// The rules other than the default, each alone and MadEvent's pair.
+    /// Each setting alone on the unbounded rule, and MadEvent's pair; none of
+    /// them is the default rule.
     fn non_default_rules() -> [GridRule; 4] {
         [
             GridRule {
                 weight: BinWeight::Absolute,
-                ..GridRule::default()
+                ..GridRule::UNBOUNDED
             },
             GridRule {
                 acceptance_rescale: true,
-                ..GridRule::default()
+                ..GridRule::UNBOUNDED
             },
             GridRule {
                 weight: BinWeight::Absolute,
                 acceptance_rescale: true,
-                ..GridRule::default()
+                ..GridRule::UNBOUNDED
             },
             GridRule {
                 max_bin_width: Some(4.0),
-                ..GridRule::default()
+                ..GridRule::UNBOUNDED
             },
         ]
     }
@@ -1965,7 +1990,7 @@ mod tests {
     /// left as it is.
     #[test]
     fn test_rule_histograms_are_the_hand_replayed_ones() {
-        let mut rules = vec![GridRule::default()];
+        let mut rules = vec![GridRule::default(), GridRule::UNBOUNDED];
         rules.extend(non_default_rules());
         for rule in rules {
             let grid = VegasGrid::new(2, 8, 1.5).with_rule(rule);
@@ -2034,7 +2059,7 @@ mod tests {
     }
 
     /// Under a bound of `K`, no refined bin is wider than `K/nbins` however hard
-    /// the integrand pulls, and on this integrand the default rule does make
+    /// the integrand pulls, and on this integrand the unbounded rule does make
     /// wider ones — so the bound is binding, not vacuous. The widest bin also
     /// reaches `K/nbins`: the integrand's flat tails span many bins, so new bins
     /// fall wholly inside the raised floor, where the density is exactly `ρ` and
@@ -2051,7 +2076,7 @@ mod tests {
                 .fold(0.0_f64, f64::max)
         };
 
-        let mut free = VegasGrid::new(1, nbins, 1.5);
+        let mut free = VegasGrid::new(1, nbins, 1.5).with_rule(GridRule::UNBOUNDED);
         let mut rng = seeded_rng();
         free.adapt(peaked, 20_000, 6, &mut rng);
         assert!(
@@ -2114,13 +2139,13 @@ mod tests {
     }
 
     /// The case the rules exist for, on [`low_acceptance_strip`]: under the
-    /// default rule the grid widens the strip's bins of `u₀`, and the points that
-    /// pass there carry that width. The acceptance rescale credits those bins
-    /// with their accepted points' mean, so it keeps them near the uniform
-    /// width, alone or with `|f·w|`; the bound holds them at its cap. `|f·w|` alone widens
-    /// them further than `(f·w)²` does: a wide bin's few accepted points carry
-    /// large weights, which the square credits more. Every rule still
-    /// integrates to the same `σ`.
+    /// unbounded rule the grid widens the strip's bins of `u₀`, and the points
+    /// that pass there carry that width. The acceptance rescale credits those
+    /// bins with their accepted points' mean, so it keeps them near the uniform
+    /// width, alone or with `|f·w|`; a bound, the default's or a tighter one,
+    /// holds them at or inside its cap. `|f·w|` alone widens them further than `(f·w)²`
+    /// does: a wide bin's few accepted points carry large weights, which the
+    /// square credits more. Every rule still integrates to the same `σ`.
     #[test]
     fn test_rules_on_a_low_acceptance_region() {
         let nbins = 32;
@@ -2132,7 +2157,7 @@ mod tests {
                 .fold(0.0_f64, f64::max)
                 * nbins as f64
         };
-        let mut rules = vec![GridRule::default()];
+        let mut rules = vec![GridRule::UNBOUNDED, GridRule::default()];
         rules.extend(non_default_rules());
         let mut widths = Vec::new();
         for rule in rules {
@@ -2150,22 +2175,24 @@ mod tests {
                 .map(|&(_, w)| w)
                 .expect("rule measured")
         };
+        let unbounded = of(&|r| *r == GridRule::UNBOUNDED);
         let default = of(&|r| r.is_default());
         let absolute = of(&|r| r.weight == BinWeight::Absolute && !r.acceptance_rescale);
         let rescale = of(&|r| r.acceptance_rescale && r.weight == BinWeight::Squared);
         let madevent = of(&|r| r.acceptance_rescale && r.weight == BinWeight::Absolute);
-        let bound = of(&|r| r.max_bin_width.is_some());
+        let bound = of(&|r| r.max_bin_width == Some(4.0));
         eprintln!(
-            "widest strip bin, × uniform: default {default:.3}, |f·w| {absolute:.3}, \
-             rescale {rescale:.3}, |f·w| + rescale {madevent:.3}, bound 4 {bound:.3}"
+            "widest strip bin, × uniform: unbounded {unbounded:.3}, |f·w| {absolute:.3}, \
+             rescale {rescale:.3}, |f·w| + rescale {madevent:.3}, bound 4 {bound:.3}, \
+             default (bound {DEFAULT_MAX_BIN_WIDTH}) {default:.3}"
         );
         assert!(
-            default > 5.0,
-            "default rule's widest strip bin {default}× uniform"
+            unbounded > DEFAULT_MAX_BIN_WIDTH,
+            "unbounded rule's widest strip bin {unbounded}× uniform"
         );
         assert!(
-            absolute > default,
-            "|f·w| alone {absolute}× against {default}×"
+            absolute > unbounded,
+            "|f·w| alone {absolute}× against {unbounded}×"
         );
         assert!(
             rescale < 2.5,
@@ -2179,6 +2206,11 @@ mod tests {
             (bound - 4.0).abs() <= 4.0e-9,
             "bounded widest strip bin {bound}× uniform, not at the bound 4"
         );
+        assert!(
+            default <= DEFAULT_MAX_BIN_WIDTH * (1.0 + 1.0e-9) && default < unbounded,
+            "default rule's widest strip bin {default}× uniform, against its bound \
+             {DEFAULT_MAX_BIN_WIDTH} and the unbounded {unbounded}"
+        );
     }
 
     /// The block-split adaptation and the sequential one agree bit for bit under
@@ -2190,7 +2222,8 @@ mod tests {
         let stream = 0xC7A0_0010_u64;
         let neval = 3000;
         let niter = 4;
-        for rule in non_default_rules() {
+        let rules = [GridRule::default(), GridRule::UNBOUNDED];
+        for rule in rules.into_iter().chain(non_default_rules()) {
             let mut want = VegasGrid::new(2, 16, 1.5).with_rule(rule);
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
             rng.set_stream(stream);

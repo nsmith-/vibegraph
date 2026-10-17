@@ -39,8 +39,17 @@ dimension and bin, the histogram of `(f·w)²`, then `refine_grid`
 1. normalise each bin's sum by the expected hits per bin;
 2. damp with Lepage's rule `m_k → avg · ((r_k − 1)/ln r_k)^α`, `r_k = m_k/avg`;
 3. smooth with a three-bin nearest-neighbour average;
-4. redistribute the edges so every new bin carries an equal share of the
+4. raise each bin's weight to a density floor so that no new bin is wider
+   than `K` times the uniform width `1/nbins` (the default `GridRule` sets
+   `K = 6`, `DEFAULT_MAX_BIN_WIDTH`; `integrate --grid-max-bin-width none`
+   drops the bound);
+5. redistribute the edges so every new bin carries an equal share of the
    damped weight.
+
+The refinement settings are a `GridRule`; the rule a run used is recorded in
+its artifact from format version 12 on, and a file of an earlier version reads
+back as the unbounded rule every such run used
+([weight tail](vegas-grid-weight-tail.md)).
 
 The density is a product `∏_d g_d(u_d)`. A correlation between coordinates is
 invisible to it, which is why each multichannel term gets its own grid rather

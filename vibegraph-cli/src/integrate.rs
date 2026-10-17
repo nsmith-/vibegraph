@@ -50,6 +50,7 @@ use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle,
 use vibegraph::proton::{derive_flavor_groups, process_shape, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::unweight::ChannelIntegrand;
 use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
@@ -254,9 +255,35 @@ pub(crate) enum BinWeightArg {
     Absolute,
 }
 
-/// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are the rule
-/// every banked row was integrated under; the rule is not recorded in the
-/// artifact.
+/// A bin-width bound as the command line spells it: a multiple of the uniform
+/// width, or `none` for no bound.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct MaxBinWidthArg(pub(crate) Option<f64>);
+
+impl std::str::FromStr for MaxBinWidthArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("none") {
+            return Ok(MaxBinWidthArg(None));
+        }
+        s.parse::<f64>()
+            .map(|k| MaxBinWidthArg(Some(k)))
+            .map_err(|_| format!("expected a number or `none`, got `{s}`"))
+    }
+}
+
+impl std::fmt::Display for MaxBinWidthArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(k) => write!(f, "{k}"),
+            None => f.write_str("none"),
+        }
+    }
+}
+
+/// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are
+/// [`GridRule::default`]; the rule a run used is recorded in its artifact.
 #[derive(Args, Debug, Clone, Copy)]
 pub(crate) struct GridRuleArgs {
     /// What each point adds to its bins of the refinement histogram.
@@ -269,16 +296,20 @@ pub(crate) struct GridRuleArgs {
     #[arg(long = "grid-acceptance-rescale")]
     pub(crate) acceptance_rescale: bool,
 
-    /// Bound every refined bin's width at this multiple of the uniform width;
-    /// must exceed 1.
-    #[arg(long = "grid-max-bin-width", value_name = "K")]
-    pub(crate) max_bin_width: Option<f64>,
+    /// Bound every refined bin's width at this multiple of the uniform width,
+    /// which must exceed 1; `none` leaves the width unbounded.
+    #[arg(
+        long = "grid-max-bin-width",
+        value_name = "K",
+        default_value_t = MaxBinWidthArg(GridRule::default().max_bin_width)
+    )]
+    pub(crate) max_bin_width: MaxBinWidthArg,
 }
 
 impl GridRuleArgs {
     /// The rule the flags spell.
     pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
-        if let Some(k) = self.max_bin_width {
+        if let Some(k) = self.max_bin_width.0 {
             if !(k > 1.0 && k.is_finite()) {
                 return Err(err(format!(
                     "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
@@ -291,7 +322,7 @@ impl GridRuleArgs {
                 BinWeightArg::Absolute => BinWeight::Absolute,
             },
             acceptance_rescale: self.acceptance_rescale,
-            max_bin_width: self.max_bin_width,
+            max_bin_width: self.max_bin_width.0,
         })
     }
 }
@@ -543,6 +574,8 @@ struct RunOutput {
     channels: Vec<ChannelGrid>,
     /// The phase-space maps the run integrated under, every choice settled.
     maps: MapChoices,
+    /// The rule the integrand refined its grids under.
+    grid_rule: GridRule,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -721,7 +754,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
 
     let artifact = IntegrateArtifact {
-        format_version: IntegrateArtifact::version_for(&output.channels),
+        format_version: IntegrateArtifact::version_for(&output.channels, Some(output.grid_rule)),
         process: output.process,
         model: model_id,
         pdf_set: output.pdf_set,
@@ -737,6 +770,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
         maps: output.maps,
+        grid_rule: Some(output.grid_rule),
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -962,6 +996,7 @@ fn integrate_hadronic(
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })
@@ -1086,6 +1121,7 @@ fn integrate_fixed_energy(
             })
             .collect(),
         maps,
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })

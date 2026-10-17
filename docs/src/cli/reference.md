@@ -228,7 +228,9 @@ Options:
           Credit each bin with the mean of its accepted points: multiply its histogram entry by the iteration's accepted points over the bin's, capped at 10⁴, as MadEvent does while its grid adapts
 
       --grid-max-bin-width <K>
-          Bound every refined bin's width at this multiple of the uniform width; must exceed 1
+          Bound every refined bin's width at this multiple of the uniform width, which must exceed 1; `none` leaves the width unbounded
+          
+          [default: 6]
 
   -h, --help
           Print help (see a summary with '-h')
