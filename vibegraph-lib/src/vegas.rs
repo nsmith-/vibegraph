@@ -152,7 +152,7 @@ pub enum BinWeight {
 
 /// The largest factor the acceptance rescale multiplies a bin by, MadEvent's
 /// cap (`dsample.f:2113-2117`, `min(non_zero/inon_zero, 10000.)`).
-pub const MAX_ACCEPTANCE_RESCALE: f64 = 1.0e4;
+const MAX_ACCEPTANCE_RESCALE: f64 = 1.0e4;
 
 /// How a grid turns one iteration's points into its next bin edges.
 ///
@@ -170,7 +170,7 @@ pub struct GridRule {
     pub weight: BinWeight,
     /// Multiply each bin's histogram entry by the inverse of its own acceptance,
     /// `N_acc / n_acc(bin)` — the iteration's non-zero points over the bin's —
-    /// capped at [`MAX_ACCEPTANCE_RESCALE`]; a bin with no non-zero point is left
+    /// capped at `10⁴`; a bin with no non-zero point is left
     /// at zero. MadEvent's correction while its grid adapts (`dsample.f:2106-2124`,
     /// under the default `use_cut = 2`, `dsample.f:753`).
     ///
@@ -2013,7 +2013,9 @@ mod tests {
     }
 
     /// The rescale is capped at MadEvent's `10⁴`: one accepted point in a bin out
-    /// of 30 000 accepted would otherwise multiply it by 30 000.
+    /// of 30 000 accepted would otherwise multiply it by 30 000. The cap is written
+    /// out rather than read from [`MAX_ACCEPTANCE_RESCALE`], so a change to the
+    /// constant fails here.
     #[test]
     fn test_acceptance_rescale_is_capped() {
         let grid = VegasGrid::new(1, 2, 1.5).with_rule(GridRule {
@@ -2027,13 +2029,17 @@ mod tests {
         }
         hist.add(0.0, 0.0, std::iter::once(0));
         let got = hist.finish();
-        assert_eq!(got[0][0], 4.0 * MAX_ACCEPTANCE_RESCALE);
+        assert_eq!(got[0][0], 4.0 * 1.0e4);
         assert_eq!(got[0][1], 29_999.0 * (30_000.0 / 29_999.0));
     }
 
     /// Under a bound of `K`, no refined bin is wider than `K/nbins` however hard
     /// the integrand pulls, and on this integrand the default rule does make
-    /// wider ones — so the bound is binding, not vacuous.
+    /// wider ones — so the bound is binding, not vacuous. The widest bin also
+    /// reaches `K/nbins`: the integrand's flat tails span many bins, so new bins
+    /// fall wholly inside the raised floor, where the density is exactly `ρ` and
+    /// the width exactly `K/nbins`. A bound tighter than asked, down to the
+    /// uniform grid, would pass the upper bound alone.
     #[test]
     fn test_bin_width_bound_holds_through_refinement() {
         let peaked = |u: &[f64]| (-(u[0] - 0.3).powi(2) / 2e-4).exp() + 1e-6;
@@ -2067,6 +2073,11 @@ mod tests {
                 assert!(
                     w <= k / nbins as f64 * (1.0 + 1e-9),
                     "bound {k}: widest bin {w} exceeds {}",
+                    k / nbins as f64
+                );
+                assert!(
+                    w >= k / nbins as f64 * (1.0 - 1e-9),
+                    "bound {k}: widest bin {w} short of {}",
                     k / nbins as f64
                 );
             }
@@ -2106,7 +2117,7 @@ mod tests {
     /// default rule the grid widens the strip's bins of `u₀`, and the points that
     /// pass there carry that width. The acceptance rescale credits those bins
     /// with their accepted points' mean, so it keeps them near the uniform
-    /// width, alone or with `|f·w|`; the bound caps them. `|f·w|` alone widens
+    /// width, alone or with `|f·w|`; the bound holds them at its cap. `|f·w|` alone widens
     /// them further than `(f·w)²` does: a wide bin's few accepted points carry
     /// large weights, which the square credits more. Every rule still
     /// integrates to the same `σ`.
@@ -2165,8 +2176,8 @@ mod tests {
             "|f·w| + rescale widest strip bin {madevent}× uniform"
         );
         assert!(
-            bound <= 4.0 * (1.0 + 1e-9),
-            "bounded widest strip bin {bound}× uniform"
+            (bound - 4.0).abs() <= 4.0e-9,
+            "bounded widest strip bin {bound}× uniform, not at the bound 4"
         );
     }
 
