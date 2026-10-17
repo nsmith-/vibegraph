@@ -92,16 +92,22 @@
 //!
 //! # Statistical gate
 //!
-//! With a fixed RNG seed and fixed sampling order the integral is deterministic,
-//! so the gate is reproducible (not flaky). The primary check on an asserted
-//! process is the standard pull
+//! Each asserted row is integrated on the five seeds of [`HEADROOM_SEEDS`] and
+//! read as their unweighted mean under the seed policy ([`combine`]): `sigma_vg`
+//! is the mean and `err_vg` is `max(quoted, spread/√n)`. With fixed RNG seeds and
+//! fixed sampling order every seed's integral is deterministic, so the gate is
+//! reproducible (not flaky). The primary check on an asserted process is the
+//! standard pull of that mean against the row's MadEvent reference
 //!
 //! ```text
 //! pull = (sigma_vg - sigma_MG) / sqrt(err_vg^2 + err_MG^2)
 //! ```
 //!
 //! required to satisfy `|pull| <= PULL_LIMIT`, backed by a per-process
-//! relative-tolerance bound. The rows in [`PULL_REPORTED_NOT_ASSERTED`] are the
+//! relative-tolerance bound on the same mean. The seeds' χ²/dof about their mean
+//! is printed and written to the row's cell; nothing is asserted on it. The
+//! informational and oracle-layer rows ([`Plan::Info`], [`Plan::Long`]) are
+//! integrated on [`SEED`] alone. The rows in [`PULL_REPORTED_NOT_ASSERTED`] are the
 //! exception, for a reason recorded there: a pull cannot bound a residual that is
 //! a systematic rather than a fluctuation.
 //!
@@ -209,8 +215,26 @@ const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 /// would be a silent hundredfold on the banked layer.
 const SCALE_FALLBACK_ROWS: [&str; 2] = ["gg_to_gg_cg", "gg_to_ttx_smlimit_qcd2"];
 
-/// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
+/// The first of the gate's seeds, and the one seed of every probe that takes
+/// one. Fixed, so each seed's integral (and hence the pull) is reproducible.
 const SEED: u64 = 20_260_719;
+
+/// The seeds a [`Plan::Gate`] row is integrated on, [`SEED`] first — AGENTS.md's
+/// standard of five, and the same five the per-family sweeps use, so a gate
+/// reading and a sweep's are the same statistic.
+///
+/// The gate reads their unweighted mean under the seed policy ([`combine`]):
+/// the error is `max(quoted, spread/√n)` and the pull is taken against the row's
+/// seed record. A single seed is one draw from a distribution it never sees, and
+/// every gated row sharing that one seed shifts the whole population together:
+/// over these five the 34 gated rows' mean pull against their seed records is
+/// `+0.41`, where the first seed alone reads `+0.61`.
+const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+
+/// The fewest seeds a [`Plan::Gate`] row may be read on; [`gate_dir`] asserts it,
+/// so a gate that went back to one seed fails rather than passing on a draw.
+const MIN_GATE_SEEDS: usize = 5;
+const _: () = assert!(MIN_GATE_SEEDS >= 5 && HEADROOM_SEEDS.len() >= MIN_GATE_SEEDS);
 
 /// Points per survey iteration and number of survey→refine iterations when
 /// α-adapting the per-diagram multichannel combiner to each process's `Σ|M|²`.
@@ -709,9 +733,9 @@ fn plan_for(dir: &str) -> Plan {
         // rather than a residual convergence. χ²/dof over the seeds runs 0.76 to
         // 13.3 with no order in it, so `err_vg` does not see the tail either.
         //
-        // A gate spends one seed. Covering a 4.8% excursion would take a tolerance
-        // of about 0.10, which is not a bound on anything, and no budget this side
-        // can afford removes it — so these rows are reported and not asserted.
+        // Their driver spends one seed a run. Covering a 4.8% excursion would take
+        // a tolerance of about 0.10, which is not a bound on anything, and no
+        // budget this side can afford removes it — so these rows are reported and not asserted.
         // That is the middle rung of the enforcement ladder, taken deliberately:
         // the cross sections are measured against the bank on every run of their
         // driver, and the day the sampler resolves that tail the reason below is
@@ -984,6 +1008,41 @@ fn with_integrand<R>(
     mmll_override: Option<f64>,
     f: impl FnOnce(&FixedBeamIntegrand, &AlphaAdaptation<f64>) -> R,
 ) -> R {
+    with_integrand_parts(
+        dir,
+        process,
+        seed,
+        n_survey,
+        n_adapt_iter,
+        mmll_override,
+        |parts| f(parts.integ, parts.adaptation),
+    )
+}
+
+/// What [`with_integrand`] builds the integrand from, handed to a caller that
+/// evaluates the same matrix element, cuts and scale outside the integrand's own
+/// phase-space map.
+struct IntegrandParts<'p, 'a> {
+    integ: &'p FixedBeamIntegrand<'a>,
+    adaptation: &'p AlphaAdaptation<f64>,
+    /// One compiled evaluator per subprocess, in the integrand's order.
+    evals: &'p [AmplitudeEvaluator],
+    model: &'p vibegraph::ufo::UFOModel,
+    evaluated: &'p EvaluatedModel,
+    cuts: &'p Cuts,
+    spin_color_avg: f64,
+}
+
+/// [`with_integrand`], handing `f` the integrand's inputs beside it.
+fn with_integrand_parts<R>(
+    dir: &str,
+    process: &str,
+    seed: u64,
+    n_survey: usize,
+    n_adapt_iter: usize,
+    mmll_override: Option<f64>,
+    f: impl FnOnce(&IntegrandParts) -> R,
+) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let card_path = match mmll_override {
         None => card_path,
@@ -1067,7 +1126,15 @@ fn with_integrand<R>(
             trajectory: Vec::new(),
             variance_shares: Vec::new(),
         });
-    let out = f(&integ, &report);
+    let out = f(&IntegrandParts {
+        integ: &integ,
+        adaptation: &report,
+        evals: &evals,
+        model: &model,
+        evaluated: &evaluated,
+        cuts: &cuts,
+        spin_color_avg,
+    });
     // The per-point scale-configuration draw falls back to the sampling channel
     // when the squared amplitude it draws from is not finite, which is the only
     // way a NaN `AMP2` reaches production without saying anything. The counter
@@ -1200,21 +1267,16 @@ fn probe_smeft_capstone_seed_stability() {
     );
 }
 
-/// The seeds every headroom measurement in this file is formed over — AGENTS.md's
-/// standard, and the same five the per-family sweeps above use so their numbers
-/// and this one's are the same statistic.
-const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
-
-/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against the spread of five
-/// seeds at that row's own plan budget — the headroom census behind the
-/// single-seed gate.
+/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against each of its five
+/// seeds at that row's own plan budget — the per-seed headroom census behind the
+/// gate's bounds, read against the same MadEvent reference the gate reads
+/// ([`BankedSigma::madevent_reference`]).
 ///
-/// The gate spends one seed, so what it asserts is one draw from a distribution
-/// it never sees. That is sound only while the bound sits well outside the whole
-/// distribution, and "well outside" is a measurement: this prints, per row, the
-/// worst `|rel|` and `|pull|` over the five seeds, the seeds' mean and χ²/dof
-/// under the seed policy ([`combine`]), and the ratio of each bound to the worst
-/// value under it. A ratio near one is a row whose next sampling-stream change
+/// The gate asserts on the five seeds' mean; this asks how far inside each bound
+/// the individual seeds sit, which the mean does not show. "Well inside" is a
+/// measurement: this prints, per row, the worst `|rel|` and `|pull|` over the
+/// five seeds, the seeds' mean, pull and χ²/dof under the seed policy
+/// ([`combine`]), and the ratio of each bound to the worst value under it. A ratio near one is a row whose next sampling-stream change
 /// fails the gate on the draw rather than on the physics.
 ///
 /// It subsumes no per-family sweep: those carry a budget ladder beside the seeds,
@@ -1228,7 +1290,7 @@ fn probe_gate_row_seed_headroom() {
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
     let unbundled = common::manifest::unbundled_rows();
     let mut lines = Vec::new();
-    for (dir, e) in &banked {
+    for (dir, entry) in &banked {
         let Plan::Gate {
             neval,
             niter,
@@ -1241,11 +1303,16 @@ fn probe_gate_row_seed_headroom() {
             eprintln!("── {dir}: run directory absent, skipped ──");
             continue;
         }
+        let (e, source) = entry.madevent_reference(dir);
+        let e = &e;
         eprintln!(
-            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter}, rel_tol {rel_tol} ──",
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%; {}) at {neval}x{niter}, rel_tol {rel_tol} ──",
             e.sigma_pb,
             e.sigma_err_pb,
-            100.0 * e.sigma_err_pb / e.sigma_pb
+            100.0 * e.sigma_err_pb / e.sigma_pb,
+            source
+                .as_deref()
+                .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
         );
         let mut runs = Vec::new();
         for seed in HEADROOM_SEEDS {
@@ -1271,10 +1338,12 @@ fn probe_gate_row_seed_headroom() {
         let line = format!(
             "HEADROOM {dir:<26} {neval:>7}x{niter} | rel_tol {rel_tol:.4} vs worst |rel| \
              {worst_rel:.3e} -> {:5.1}x | PULL_LIMIT {PULL_LIMIT} vs worst |pull| \
-             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | chi2/dof {chi2:.2}",
+             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | mean pull {:+.2} | \
+             chi2/dof {chi2:.2}",
             rel_tol / worst_rel,
             PULL_LIMIT / worst_pull,
             mean / e.sigma_pb - 1.0,
+            read.pull(e.sigma_pb, e.sigma_err_pb),
         );
         eprintln!("  {line}");
         lines.push(line);
@@ -2972,6 +3041,492 @@ const LLJ_PARTON_ROWS: [&str; 4] = [
     "gux_to_epemux",
 ];
 
+/// A fixed-density estimate of the two `q q̄ → e⁺e⁻ g` cross sections, against
+/// MadEvent's two readings of the same seeds and against this crate's gate.
+///
+/// MadEvent combines its VEGAS iterations by `mean²/variance`, which reads low
+/// where an iteration under-samples a peak; its seed records also carry the
+/// equal-weight mean of the same iterations. Both MadEvent readings and this
+/// crate's gate come from adaptive samplers. This estimate does not adapt: each
+/// point is drawn from a density fixed before the first one, and the estimate is
+/// the plain mean of `f/p`, whose error is the sample error and nothing else.
+///
+/// Two densities, so a defect of either map shows as a disagreement:
+///
+/// * **analytic**: the three-body phase space as `s → Q g`, `Q → e⁺e⁻`. `Q²` is
+///   drawn from a mixture of a Z Breit–Wigner, `1/Q²` (the photon) and
+///   `1/(s − Q²)` (the soft gluon); the gluon's polar angle from a mixture of a
+///   flat density and `1/(1 + ε − cos²θ)` (the beam-collinear gluon); the lepton
+///   pair isotropically in the `Q` rest frame. None of it is this crate's
+///   phase-space code. The density covers every point the cuts admit: the gluon's
+///   `pT > ptj` bounds `s − Q² ≥ 2√s·ptj`, and `ptl` with `drll` bound
+///   `m(ℓℓ)² ≥ 2·ptl²·(ΔR²/2 − ΔR⁴/24) ≈ 15.8 GeV²`, above the density's `Q²`
+///   floor; both bounds are also checked on flat-RAMBO points that pass the cuts.
+/// * **frozen multichannel**: the production per-diagram mixture, its `α` adapted
+///   once on the gate seed's survey and then held, evaluated at uniform points
+///   with no VEGAS grid.
+///
+/// The integrand is this crate's: the matrix element at the strong coupling of
+/// each point's own clustered scale (the configuration drawn as the integrand
+/// draws it), the run card's cuts, flux and spin-colour average. Before any
+/// estimate, the analytic density's integrand is checked against
+/// [`FixedBeamIntegrand::event_in_channel`] on flat-RAMBO points: every value to
+/// `1e-12` relative after the massless three-body volume `s/(256π³)`, and the
+/// same cut verdict on every point.
+///
+/// What it cannot see: anything shared with the gate's integrand — the matrix
+/// element, the cut filter, the scale prescription (each gated elsewhere). It
+/// tests the integration on both sides and nothing else.
+///
+/// Configured by `VG_FIXED_DENSITY_SEEDS` (default 10), `VG_FIXED_DENSITY_POINTS`
+/// per seed and density (default 4 000 000) and `VG_FIXED_DENSITY_ROWS`
+/// (comma-separated, default both rows); the seeds run in parallel on rayon's
+/// pool (`RAYON_NUM_THREADS`). Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_fixed_density_llj_annihilation() {
+    use common::seed_record::Estimator;
+    use rand::Rng;
+    use rayon::prelude::*;
+    use vibegraph::helas::eval::ScaleAwareAmplitude;
+
+    let env_usize = |key: &str, default: usize| {
+        std::env::var(key)
+            .ok()
+            .map(|v| v.replace('_', "").parse::<usize>().expect(key))
+            .unwrap_or(default)
+    };
+    let n_seeds = env_usize("VG_FIXED_DENSITY_SEEDS", 10);
+    let n_points = env_usize("VG_FIXED_DENSITY_POINTS", 4_000_000);
+    let rows: Vec<String> = std::env::var("VG_FIXED_DENSITY_ROWS")
+        .map(|v| v.split(',').map(str::to_owned).collect())
+        .unwrap_or_else(|_| vec!["uux_to_epemg".into(), "ddx_to_epemg".into()]);
+    let seeds: Vec<u64> = (1..=n_seeds as u64).map(|i| 0xF1DE_0000 + i).collect();
+
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+
+    for dir in &rows {
+        let dir = dir.as_str();
+        let process = banked[dir].process.clone();
+        let card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat")).unwrap();
+        let density = AnnihilationDensity::new(
+            card.ebeam1 + card.ebeam2,
+            card.float("ptj"),
+            card.float("ptl"),
+            card.float("drll"),
+        );
+        eprintln!(
+            "── {dir}: {process}, √s {} GeV, Q² in [{:.3}, {:.1}] GeV², {n_seeds} seeds × \
+             {n_points} points per density ──",
+            density.sqrt_s, density.q2_lo, density.q2_hi
+        );
+
+        let (analytic, flat_check) = with_integrand_parts(dir, &process, SEED, 0, 0, None, |p| {
+            assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
+            // The analytic density writes its legs as (e+, e-, g).
+            let rep = &p.evals[0];
+            let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
+                .iter()
+                .map(|&id| p.model.particle(id).pdg_code)
+                .collect();
+            assert_eq!(
+                final_pdg,
+                [-11, 11, 21],
+                "[{dir}] outgoing legs (e+, e-, g)"
+            );
+            let integ = p.integ;
+            let n_final = integ.final_masses().len();
+            assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
+            assert!(
+                integ.final_masses().iter().all(|&m| m == 0.0),
+                "[{dir}] massless final state"
+            );
+            let alpha_s = integ
+                .alpha_s_source()
+                .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
+            let s = density.s;
+            let prefactor = p.spin_color_avg / (2.0 * s);
+            let point_ndim = integ.point_ndim();
+            let scale_draw = integ.scale_draw_ndim();
+
+            // The analytic density's integrand without its phase-space weight, in
+            // GeV⁻² per unit dΦ₃: zero outside the cuts.
+            let value = |amp: &mut ScaleAwareAmplitude<f64>,
+                         scratch: &mut _,
+                         momenta: &[LorentzVector<f64>],
+                         u: &[f64]|
+             -> f64 {
+                let mut ext = integ.incoming().to_vec();
+                ext.extend_from_slice(momenta);
+                if !p.cuts.pass(&ext) {
+                    return 0.0;
+                }
+                let scales = integ
+                    .event_scales_at(momenta, 0, u)
+                    .expect("a per-event prescription")
+                    .expect("a scale at a point that passes the cuts");
+                amp.set_alpha_s(alpha_s.eval(scales.mu_r));
+                prefactor * amp.eval_m2(&ext, scratch)
+            };
+
+            // The hand-assembled integrand against the crate's own, on flat RAMBO,
+            // where the map's weight is the constant massless volume.
+            let volume = s / (256.0 * std::f64::consts::PI.powi(3));
+            let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+            let mut scratch = amp.scratch_space();
+            let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
+            let mut momenta = Vec::new();
+            let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
+            let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
+            for _ in 0..200_000 {
+                let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
+                let theirs = integ.event_in_channel(0, &u, &mut momenta);
+                let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
+                checked += 1;
+                assert_eq!(
+                    theirs == 0.0,
+                    ours == 0.0,
+                    "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                );
+                if ours != 0.0 {
+                    passed += 1;
+                    worst = worst.max((ours / theirs - 1.0).abs());
+                    let q2 = (momenta[0] + momenta[1]).m2();
+                    q2_min = q2_min.min(q2);
+                    q2_max = q2_max.max(q2);
+                }
+            }
+            assert!(
+                passed > 1000,
+                "[{dir}] {passed} flat points passed the cuts"
+            );
+            assert!(
+                worst < 1e-12,
+                "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
+            );
+            assert!(
+                density.q2_lo < q2_min && q2_max < density.q2_hi,
+                "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
+                 the density's [{}, {}]",
+                density.q2_lo,
+                density.q2_hi
+            );
+            let flat_check = format!(
+                "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
+                 matches event_in_channel to {worst:.2e} worst relative; their m(ll)² spans \
+                 [{q2_min:.2}, {q2_max:.1}] GeV²"
+            );
+
+            let analytic: Vec<DensityRead> = seeds
+                .par_iter()
+                .map(|&seed| {
+                    let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                    let mut scratch = amp.scratch_space();
+                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                    let mut u = vec![0.5; point_ndim];
+                    let mut acc = DensityRead::new(seed);
+                    for _ in 0..n_points {
+                        let (momenta, ps_weight) = density.draw(&mut rng);
+                        if scale_draw == 1 {
+                            u[point_ndim - 1] = rng.random::<f64>();
+                        }
+                        let f = value(&mut amp, &mut scratch, &momenta, &u);
+                        acc.push(f * ps_weight * GEV2_TO_PB);
+                    }
+                    acc
+                })
+                .collect();
+            (analytic, flat_check)
+        });
+        eprintln!("  check: {flat_check}");
+
+        let frozen: Vec<DensityRead> = with_integrand(
+            dir,
+            &process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _| {
+                let ndim = integ.vegas_ndim();
+                seeds
+                    .par_iter()
+                    .map(|&seed| {
+                        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x00AA_0000_0000);
+                        let mut u = vec![0.0; ndim];
+                        let mut acc = DensityRead::new(seed);
+                        for _ in 0..n_points {
+                            u.iter_mut().for_each(|x| *x = rng.random::<f64>());
+                            acc.push(integ.value(&u) * GEV2_TO_PB);
+                        }
+                        acc
+                    })
+                    .collect()
+            },
+        );
+
+        let this_side: Vec<(f64, f64)> = HEADROOM_SEEDS
+            .iter()
+            .map(|&seed| {
+                let (neval, niter) = match plan_for(dir) {
+                    Plan::Gate { neval, niter, .. } => (neval, niter),
+                    _ => panic!("[{dir}] a gated row"),
+                };
+                let (s, e, _, _) = integrate_reported(dir, &process, neval, niter, seed);
+                (s, e)
+            })
+            .collect();
+        let this_side = combine(&this_side);
+
+        let record = common::seed_record::read(&output_dir(), dir)
+            .unwrap_or_else(|| panic!("[{dir}] a seed record"));
+        let read = |e: Estimator| {
+            let values: Vec<(f64, f64)> = record.at_budget().iter().map(|s| s.value(e)).collect();
+            combine(&values)
+        };
+        let references = [
+            ("MadEvent reported", read(Estimator::Reported)),
+            ("MadEvent equal-weight", read(Estimator::EqualWeight)),
+            ("this side, gate seeds", this_side),
+        ];
+        for (label, reads) in [("analytic", &analytic), ("frozen multichannel", &frozen)] {
+            eprintln!("  {label} density:");
+            for r in reads {
+                eprintln!("    {}", r.describe());
+            }
+            let est = combine(&reads.iter().map(DensityRead::value).collect::<Vec<_>>());
+            eprintln!(
+                "    {label} mean {:.6e} ± {:.3e} pb (rel {:.2e}; quoted {:.3e}, spread {:.3e}, \
+                 seed chi2/dof {:.2} on {} dof)",
+                est.mean,
+                est.err,
+                est.err / est.mean,
+                est.quoted,
+                est.spread,
+                est.chi2_per_dof,
+                est.n - 1
+            );
+            for (name, reference) in &references {
+                eprintln!(
+                    "      against {name:<22} {:.6e} ± {:.3e}: pull {:+.2}, rel {:+.3e}",
+                    reference.mean,
+                    reference.err,
+                    est.pull(reference.mean, reference.err),
+                    est.mean / reference.mean - 1.0
+                );
+            }
+        }
+        let a = combine(&analytic.iter().map(DensityRead::value).collect::<Vec<_>>());
+        let b = combine(&frozen.iter().map(DensityRead::value).collect::<Vec<_>>());
+        eprintln!(
+            "  analytic − frozen multichannel: {:+.3e} ± {:.3e} pb ({:+.2}σ)",
+            a.mean - b.mean,
+            a.err.hypot(b.err),
+            (a.mean - b.mean) / a.err.hypot(b.err)
+        );
+    }
+}
+
+/// One seed of a fixed-density estimate: the running sums of `f/p`.
+struct DensityRead {
+    seed: u64,
+    n: u64,
+    nonzero: u64,
+    sum: f64,
+    sum2: f64,
+    max: f64,
+}
+
+impl DensityRead {
+    fn new(seed: u64) -> Self {
+        DensityRead {
+            seed,
+            n: 0,
+            nonzero: 0,
+            sum: 0.0,
+            sum2: 0.0,
+            max: 0.0,
+        }
+    }
+
+    fn push(&mut self, w: f64) {
+        assert!(w.is_finite() && w >= 0.0, "a weight {w}");
+        self.n += 1;
+        if w > 0.0 {
+            self.nonzero += 1;
+            self.sum += w;
+            self.sum2 += w * w;
+            self.max = self.max.max(w);
+        }
+    }
+
+    /// The plain mean and its sample error.
+    fn value(&self) -> (f64, f64) {
+        let n = self.n as f64;
+        let mean = self.sum / n;
+        let var = (self.sum2 / n - mean * mean) * n / (n - 1.0);
+        (mean, (var / n).sqrt())
+    }
+
+    fn describe(&self) -> String {
+        let (mean, err) = self.value();
+        format!(
+            "seed {:#x}: {mean:.6e} ± {err:.3e} pb | {} of {} points nonzero | max weight / \
+             mean {:.0}",
+            self.seed,
+            self.nonzero,
+            self.n,
+            self.max / mean
+        )
+    }
+}
+
+/// The analytic three-body density of [`probe_fixed_density_llj_annihilation`]:
+/// `s → Q g` then `Q → e⁺e⁻`, with outgoing legs in the order `e⁺, e⁻, g`.
+///
+/// Its constants shape the variance only — any positive density covering the
+/// support gives the same expectation — so the Z mass and width are the
+/// density's own and not read from the model.
+struct AnnihilationDensity {
+    s: f64,
+    sqrt_s: f64,
+    q2_lo: f64,
+    q2_hi: f64,
+    /// `ε` of the gluon's collinear component `1/(1 + ε − cos²θ)`.
+    a2: f64,
+}
+
+impl AnnihilationDensity {
+    const MZ: f64 = 91.188;
+    const WZ: f64 = 2.441404;
+    /// Mixture shares of the `Q²` components: Breit–Wigner, `1/Q²`, `1/(s − Q²)`.
+    const Q2_SHARES: [f64; 3] = [0.5, 0.25, 0.25];
+    /// Share of the gluon angle's flat component.
+    const FLAT_SHARE: f64 = 0.3;
+
+    fn new(sqrt_s: f64, ptj: f64, ptl: f64, drll: f64) -> Self {
+        let s = sqrt_s * sqrt_s;
+        assert!(ptj > 0.0 && ptl > 0.0 && drll > 0.0 && drll < 1.0);
+        // m(ℓℓ)² = 2 pT₁ pT₂ (cosh Δη − cos Δφ) ≥ 2 ptl² (ΔR²/2 − ΔR⁴/24); the
+        // floor sits at half that.
+        let q2_lo = ptl * ptl * (drll * drll / 2.0 - drll.powi(4) / 24.0);
+        // E_g ≥ pT_g > ptj.
+        let q2_hi = s - 2.0 * sqrt_s * ptj;
+        let eps = (2.0 * ptj / sqrt_s).powi(2);
+        AnnihilationDensity {
+            s,
+            sqrt_s,
+            q2_lo,
+            q2_hi,
+            a2: 1.0 + eps,
+        }
+    }
+
+    /// The Breit–Wigner's angle range on `[q2_lo, q2_hi]`.
+    fn bw_range(&self) -> (f64, f64) {
+        let mg = Self::MZ * Self::WZ;
+        let m2 = Self::MZ * Self::MZ;
+        (
+            ((self.q2_lo - m2) / mg).atan(),
+            ((self.q2_hi - m2) / mg).atan(),
+        )
+    }
+
+    fn q2_density(&self, q2: f64) -> f64 {
+        let mg = Self::MZ * Self::WZ;
+        let m2 = Self::MZ * Self::MZ;
+        let (lo, hi) = self.bw_range();
+        let bw = mg / ((q2 - m2).powi(2) + mg * mg) / (hi - lo);
+        let photon = 1.0 / (q2 * (self.q2_hi / self.q2_lo).ln());
+        let soft = 1.0 / ((self.s - q2) * ((self.s - self.q2_lo) / (self.s - self.q2_hi)).ln());
+        let [a, b, c] = Self::Q2_SHARES;
+        a * bw + b * photon + c * soft
+    }
+
+    fn draw_q2(&self, rng: &mut impl rand::Rng) -> f64 {
+        let pick: f64 = rng.random();
+        let r: f64 = rng.random();
+        let [a, b, _] = Self::Q2_SHARES;
+        let q2 = if pick < a {
+            let (lo, hi) = self.bw_range();
+            Self::MZ * Self::MZ + Self::MZ * Self::WZ * (lo + r * (hi - lo)).tan()
+        } else if pick < a + b {
+            self.q2_lo * (self.q2_hi / self.q2_lo).powf(r)
+        } else {
+            self.s - (self.s - self.q2_hi) * ((self.s - self.q2_lo) / (self.s - self.q2_hi)).powf(r)
+        };
+        q2.clamp(self.q2_lo, self.q2_hi)
+    }
+
+    /// `T` with `c = a·tanh(a·t)`, `t ∈ [−T, T]` spanning `c ∈ [−1, 1]`.
+    fn collinear_t(&self) -> f64 {
+        let a = self.a2.sqrt();
+        (1.0 / a).atanh() / a
+    }
+
+    fn cos_density(&self, c: f64) -> f64 {
+        Self::FLAT_SHARE * 0.5
+            + (1.0 - Self::FLAT_SHARE) / (2.0 * self.collinear_t() * (self.a2 - c * c))
+    }
+
+    fn draw_cos(&self, rng: &mut impl rand::Rng) -> f64 {
+        let pick: f64 = rng.random();
+        let r: f64 = rng.random();
+        if pick < Self::FLAT_SHARE {
+            2.0 * r - 1.0
+        } else {
+            let a = self.a2.sqrt();
+            let t = self.collinear_t() * (2.0 * r - 1.0);
+            (a * (a * t).tanh()).clamp(-1.0, 1.0)
+        }
+    }
+
+    /// One point: the outgoing momenta `e⁺, e⁻, g` in the centre of mass, and
+    /// `dΦ₃ / p` at it, in the `(2π)⁴δ⁴ Π d³p/((2π)³ 2E)` normalisation.
+    fn draw(&self, rng: &mut impl rand::Rng) -> ([LorentzVector<f64>; 3], f64) {
+        use std::f64::consts::PI;
+        let q2 = self.draw_q2(rng);
+        let c = self.draw_cos(rng);
+        let phi = 2.0 * PI * rng.random::<f64>();
+        let e_g = (self.s - q2) / (2.0 * self.sqrt_s);
+        let sin = (1.0 - c * c).max(0.0).sqrt();
+        let k = [e_g * sin * phi.cos(), e_g * sin * phi.sin(), e_g * c];
+        let gluon = LorentzVector::new(e_g, k[0], k[1], k[2]);
+
+        // e⁺ in the Q rest frame, then boosted by Q's velocity −k/E_Q.
+        let m = q2.sqrt();
+        let e_q = self.sqrt_s - e_g;
+        let beta = [-k[0] / e_q, -k[1] / e_q, -k[2] / e_q];
+        let gamma = e_q / m;
+        let cs = 2.0 * rng.random::<f64>() - 1.0;
+        let ps = 2.0 * PI * rng.random::<f64>();
+        let ss = (1.0 - cs * cs).max(0.0).sqrt();
+        let half = m / 2.0;
+        let boost = |sign: f64| {
+            let p = [
+                sign * half * ss * ps.cos(),
+                sign * half * ss * ps.sin(),
+                sign * half * cs,
+            ];
+            let bp = beta[0] * p[0] + beta[1] * p[1] + beta[2] * p[2];
+            let f = gamma * gamma / (gamma + 1.0) * bp + gamma * half;
+            LorentzVector::new(
+                gamma * (half + bp),
+                p[0] + f * beta[0],
+                p[1] + f * beta[1],
+                p[2] + f * beta[2],
+            )
+        };
+        let (positron, electron) = (boost(1.0), boost(-1.0));
+
+        let production = (1.0 - q2 / self.s) / (8.0 * PI) / (2.0 * self.cos_density(c));
+        let mass = 1.0 / (2.0 * PI * self.q2_density(q2));
+        let decay = 1.0 / (8.0 * PI);
+        ([positron, electron, gluon], production * mass * decay)
+    }
+}
+
 /// The integration configuration drawn for a point reaches the scale prescription,
 /// and changes it — asserted on the rows where it must and reported on the rows
 /// where it need not.
@@ -3846,6 +4401,15 @@ fn probe_grid_adaptation_is_the_residue() {
     }
 }
 
+/// The seeds a row's plan is integrated on: [`HEADROOM_SEEDS`] for a gated row,
+/// and [`SEED`] alone for an informational or oracle-layer one.
+fn plan_seeds(plan: &Plan) -> &'static [u64] {
+    match plan {
+        Plan::Gate { .. } => &HEADROOM_SEEDS,
+        _ => &[SEED],
+    }
+}
+
 /// The signed `(pull, relative_deviation)` of a vibegraph integral against a
 /// banked value. Signed, because a table of magnitudes hides whether a family of
 /// rows leans the same way; the gate asserts on the magnitudes.
@@ -3864,7 +4428,10 @@ fn compare(sigma_vg: f64, err_vg: f64, banked: &BankedSigma) -> (f64, f64) {
 fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Result<(), String> {
     let banked = &banked;
     let clock = Stopwatch::start();
-    let (neval, niter, mode, reason, rel_tol) = match plan_for(dir) {
+    let plan = plan_for(dir);
+    let is_gate_plan = matches!(plan, Plan::Gate { .. });
+    let seeds = plan_seeds(&plan);
+    let (neval, niter, mode, reason, rel_tol) = match plan {
         Plan::Skip(reason) => {
             eprintln!("[{dir}] SKIP ({reason})");
             return Ok(());
@@ -3896,19 +4463,61 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
         ),
     };
 
-    let (sigma_vg, err_vg, chi2, subsampler) =
-        integrate_reported(dir, &banked.process, neval, niter, SEED);
+    let mut per_seed = Vec::with_capacity(seeds.len());
+    let mut first = None;
+    for &seed in seeds {
+        let (s, e, c, summary) = integrate_reported(dir, &banked.process, neval, niter, seed);
+        let (p, r) = compare(s, e, banked);
+        eprintln!(
+            "[{dir}]   seed {seed:>10}: vg = {s:.6e} +- {e:.3e} pb | pull = {p:+.2} | \
+             rel = {r:+.2e} | integration chi2/dof = {c:.2}"
+        );
+        per_seed.push(SeedResult {
+            seed,
+            sigma_pb: s,
+            sigma_err_pb: e,
+        });
+        first.get_or_insert((c, summary));
+    }
+    let (integration_chi2, subsampler) = first.expect("a plan integrates on one seed or more");
+    if is_gate_plan {
+        let read: Vec<u64> = per_seed.iter().map(|r| r.seed).collect();
+        assert!(
+            read.len() >= MIN_GATE_SEEDS && read[0] == SEED,
+            "[{dir}] a gated row is read on {MIN_GATE_SEEDS} seeds or more, the gate's seed \
+             first; it was read on {read:?}"
+        );
+    }
+    // One seed has no spread, so the cell carries that integration's own χ²/dof;
+    // several carry their scatter about the mean, as the report's schema reads it.
+    let (sigma_vg, err_vg, chi2) = if per_seed.len() >= 2 {
+        let read = combine(&per_seed);
+        (read.mean, read.err, read.chi2_per_dof)
+    } else {
+        (
+            per_seed[0].sigma_pb,
+            per_seed[0].sigma_err_pb,
+            integration_chi2,
+        )
+    };
     let (pull, rel) = compare(sigma_vg, err_vg, banked);
     eprintln!(
-        "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
-         pull = {pull:+.2}{} | rel = {rel:+.2e} | chi2/dof = {chi2:.2} ({neval}x{niter}){}",
+        "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb ({} seed{}) | MG = {:.6e} +- {:.3e} pb | \
+         pull = {pull:+.2}{} | rel = {rel:+.2e} | {} = {chi2:.2} ({neval}x{niter}){}",
         mode.to_uppercase(),
+        per_seed.len(),
+        if per_seed.len() == 1 { "" } else { "s" },
         banked.sigma_pb,
         banked.sigma_err_pb,
         if PULL_REPORTED_NOT_ASSERTED.contains(&dir) {
             " (reported, not asserted)"
         } else {
             ""
+        },
+        if per_seed.len() == 1 {
+            "chi2/dof"
+        } else {
+            "seed chi2/dof"
         },
         reason.map(|r| format!("  <{r}>")).unwrap_or_default()
     );
@@ -3947,12 +4556,8 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
     row.pull = pull;
     row.rel = rel;
     row.chi2_dof = chi2;
-    row.seeds = vec![SEED];
-    row.per_seed = vec![SeedResult {
-        seed: SEED,
-        sigma_pb: sigma_vg,
-        sigma_err_pb: err_vg,
-    }];
+    row.seeds = per_seed.iter().map(|r| r.seed).collect();
+    row.per_seed = per_seed;
     row.neval = neval;
     row.niter = niter;
     row.subsampler = subsampler;
@@ -3967,6 +4572,32 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
         Some(e) => Err(e),
         None => Ok(()),
     }
+}
+
+/// Every gated row is integrated on the gate's five seeds, the gate's seed first,
+/// and every other integrated row on that seed alone. A gate that went back to
+/// one seed would read one draw of each row, and every row the same draw.
+#[test]
+fn every_gated_row_is_read_on_five_seeds() {
+    let text = std::fs::read_to_string(reference_path()).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+    let mut gated = 0usize;
+    for dir in banked.keys() {
+        let plan = plan_for(dir);
+        let seeds = plan_seeds(&plan);
+        if matches!(plan, Plan::Gate { .. }) {
+            gated += 1;
+            let distinct: BTreeSet<u64> = seeds.iter().copied().collect();
+            assert!(
+                seeds.len() >= MIN_GATE_SEEDS && distinct.len() == seeds.len() && seeds[0] == SEED,
+                "[{dir}] gated on {seeds:?}"
+            );
+        } else {
+            assert_eq!(seeds, [SEED], "[{dir}]");
+        }
+    }
+    assert!(gated > 0, "no gated row in the reference");
 }
 
 /// A row the bundle does not carry may be absent; a row it carries may not.
@@ -5179,6 +5810,193 @@ fn probe_grammar_seed_sweep() {
                 mg.1,
                 mean / mg.0 - 1.0,
                 separation((mean, err), mg),
+            );
+        }
+    }
+}
+
+/// Polar-angle bin edges, `cos θ` of the outgoing `e+` against the incoming `e+`
+/// in the partonic CM, for the Bhabha region split. The card's `|η| < 2.5` keeps
+/// `|cos θ|` below `tanh 2.5 = 0.986614`, so the last bin holds only the sliver
+/// `[0.9866, 0.986614)`; the bins narrow toward that edge, where the forward
+/// t-channel photon pole puts `dσ/dcos θ ∝ 1/(1 − cos θ)²` at its largest.
+const NSZ_COS_EDGES: [f64; 16] = [
+    -1.0, -0.5, 0.0, 0.5, 0.8, 0.9, 0.95, 0.97, 0.98, 0.983, 0.985, 0.986, 0.9863, 0.9865, 0.9866,
+    1.0,
+];
+
+/// A probe parameter read from the environment, or its default.
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .map(|v| {
+            v.parse()
+                .unwrap_or_else(|_| panic!("{key}={v} does not parse"))
+        })
+        .unwrap_or(default)
+}
+
+/// `e+ e- > e+ e- $$ z` over the grammar ladder's rungs, split by channel, and
+/// on each seed's trained grids by polar angle.
+///
+/// Every seed prints its total and each channel's term as `adapt_grids` returns
+/// them (`NSZ_SEED`); every rung prints the seeds read under the seed policy
+/// (`NSZ_RUNG`). With `VG_NSZ_FROZEN = N`, each channel's final grid is then
+/// sampled frozen on `N` fresh points (`NSZ_FROZEN`, `NSZ_BIN`): its integral,
+/// the per-point variance it actually has, and the share of that variance each
+/// `cos θ` bin carries ([`NSZ_COS_EDGES`]). A frozen pass is unbiased whatever
+/// the grid, so it does not reproduce a seed's deficit; what it measures is the
+/// weight distribution that seed's last iteration sampled from, and so whether a
+/// small quoted error was a small variance or an unseen tail.
+///
+/// `VG_NSZ_SCALES` (comma-separated multiples of 40 000, default
+/// `0.25,1,4,16`), `VG_NSZ_SEEDS` (seeds `1..=n`, default 20). `VG_NSZ_ROW`
+/// replaces the row with another directory holding `Cards/run_card.dat` and
+/// `Cards/param_card.dat` (an absolute path is taken as is): the same process
+/// on an edited card, which is how a map bound is moved without touching the
+/// sampler. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_ee_nsz_channel_split() {
+    // Seed for the frozen passes, distinct from every integration seed.
+    const FROZEN_SEED: u64 = 0x5EED_B4A8;
+    let reference = grammar_reference();
+    let process = reference.rows["ee_no_sz"].process.clone();
+    let scales: Vec<f64> = std::env::var("VG_NSZ_SCALES")
+        .map(|s| s.split(',').map(|x| x.trim().parse().unwrap()).collect())
+        .unwrap_or_else(|_| vec![0.25, 1.0, 4.0, 16.0]);
+    let row: String = env_or("VG_NSZ_ROW", "ee_to_ee_nsz".to_string());
+    eprintln!("NSZ_ROW {row}");
+    let n_seeds: u64 = env_or("VG_NSZ_SEEDS", 20);
+    let frozen: usize = env_or("VG_NSZ_FROZEN", 0);
+    let nbins = NSZ_COS_EDGES.len() - 1;
+    for scale in scales {
+        let neval = (40_000.0 * scale) as usize;
+        let mut totals = Vec::new();
+        let mut terms: Vec<Vec<(f64, f64)>> = Vec::new();
+        for seed in 1..=n_seeds {
+            let t = std::time::Instant::now();
+            with_integrand(
+                &row,
+                &process,
+                seed,
+                MULTICHANNEL_SURVEY,
+                MULTICHANNEL_ITERS,
+                None,
+                |integ, _| {
+                    if seed == 1 {
+                        for (j, s) in integ.channel_samplers().iter().enumerate() {
+                            eprintln!("NSZ_CHANNEL ch{j} {s:?}");
+                        }
+                    }
+                    let (channels, total) = integ.adapt_grids(neval, GRAMMAR_NITER, seed);
+                    let s = total.integral * GEV2_TO_PB;
+                    let e = total.std_dev * GEV2_TO_PB;
+                    totals.push((s, e));
+                    terms.resize(channels.len(), Vec::new());
+                    let mut line = format!(
+                        "NSZ_SEED neval {neval} seed {seed} sigma {s:.6} err {e:.6} chi2 {:.3}",
+                        total.chi2_per_dof
+                    );
+                    for (j, ch) in channels.iter().enumerate() {
+                        let (sj, ej) = (
+                            ch.result.integral * GEV2_TO_PB,
+                            ch.result.std_dev * GEV2_TO_PB,
+                        );
+                        terms[j].push((sj, ej));
+                        line += &format!(
+                            " | ch{j} alpha {:.4e} neval {} sigma {sj:.6} err {ej:.6} chi2 {:.3}",
+                            ch.alpha, ch.neval, ch.result.chi2_per_dof
+                        );
+                    }
+                    eprintln!("{line} | {:.2} s", t.elapsed().as_secs_f64());
+                    if frozen == 0 {
+                        return;
+                    }
+                    let beam = integ.incoming()[0];
+                    let mut momenta = Vec::new();
+                    for (j, ch) in channels.iter().enumerate() {
+                        let mut rng = ChaCha8Rng::seed_from_u64(FROZEN_SEED ^ seed);
+                        rng.set_stream(1 + j as u64);
+                        let grid_ndim = ch.grid.ndim();
+                        let mut x = vec![0.0; integ.point_ndim()];
+                        let mut scale_draw =
+                            SubStream::from_stream(FROZEN_SEED, SCALE_DRAW_STREAM_BASE + j as u64);
+                        let mut sum = vec![0.0f64; nbins];
+                        let mut sum2 = vec![0.0f64; nbins];
+                        let mut wmax = vec![0.0f64; nbins];
+                        let mut hits = vec![0usize; nbins];
+                        for _ in 0..frozen {
+                            let jac = ch.grid.draw(&mut rng, &mut x[..grid_ndim]);
+                            scale_draw.fill_uniforms(&mut x[grid_ndim..]);
+                            let w = jac * integ.event_in_channel(j, &x, &mut momenta) * GEV2_TO_PB;
+                            if w == 0.0 {
+                                continue;
+                            }
+                            let p = momenta[0];
+                            let dot = p.px() * beam.px() + p.py() * beam.py() + p.pz() * beam.pz();
+                            let norm = (p.px().powi(2) + p.py().powi(2) + p.pz().powi(2)).sqrt()
+                                * (beam.px().powi(2) + beam.py().powi(2) + beam.pz().powi(2))
+                                    .sqrt();
+                            let c = dot / norm;
+                            let b = NSZ_COS_EDGES[1..]
+                                .iter()
+                                .position(|&hi| c < hi)
+                                .unwrap_or(nbins - 1);
+                            sum[b] += w;
+                            sum2[b] += w * w;
+                            wmax[b] = wmax[b].max(w);
+                            hits[b] += 1;
+                        }
+                        let n = frozen as f64;
+                        let mean: f64 = sum.iter().sum::<f64>() / n;
+                        let second: f64 = sum2.iter().sum::<f64>() / n;
+                        let var = second - mean * mean;
+                        // One iteration of this channel at its own budget, and the
+                        // mean of the iterations past the warm-up at that error.
+                        let per_iter = (var / ch.neval as f64).sqrt();
+                        let kept = (GRAMMAR_NITER - 2) as f64;
+                        eprintln!(
+                            "NSZ_FROZEN neval {neval} seed {seed} ch{j} draws {frozen} sigma \
+                             {mean:.6} err {:.6} point_rel_sd {:.4} implied_iter_err {per_iter:.6} \
+                             implied_mean_err {:.6} quoted {:.6}",
+                            (var / n).sqrt(),
+                            var.sqrt() / mean,
+                            per_iter / kept.sqrt(),
+                            ch.result.std_dev * GEV2_TO_PB,
+                        );
+                        for b in 0..nbins {
+                            let mb = sum[b] / n;
+                            let vb = sum2[b] / n - mb * mb;
+                            eprintln!(
+                                "NSZ_BIN neval {neval} seed {seed} ch{j} cos [{:.4},{:.4}) hits {} \
+                                 sigma {mb:.6} err {:.6} var_share {:.4} wmax {:.4e} wmax_over_mean \
+                                 {:.3e}",
+                                NSZ_COS_EDGES[b],
+                                NSZ_COS_EDGES[b + 1],
+                                hits[b],
+                                (vb / n).sqrt(),
+                                (sum2[b] / n) / second,
+                                wmax[b],
+                                wmax[b] / mean,
+                            );
+                        }
+                    }
+                },
+            );
+        }
+        let read = combine(&totals);
+        eprintln!(
+            "NSZ_RUNG neval {neval} total n {} mean {:.4} err {:.4} quoted {:.4} spread {:.4} \
+             chi2 {:.3}",
+            read.n, read.mean, read.err, read.quoted, read.spread, read.chi2_per_dof
+        );
+        for (j, t) in terms.iter().enumerate() {
+            let r = combine(t);
+            eprintln!(
+                "NSZ_RUNG neval {neval} ch{j} n {} mean {:.6} err {:.6} quoted {:.6} spread {:.6} \
+                 chi2 {:.3}",
+                r.n, r.mean, r.err, r.quoted, r.spread, r.chi2_per_dof
             );
         }
     }

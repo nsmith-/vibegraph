@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use common::seeds::combine;
 
+use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason, StopSignal};
 use vibegraph::cuts::Cuts;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
 use vibegraph::hadronic::{
@@ -91,6 +92,56 @@ impl Decay {
     }
 }
 
+impl Decay {
+    /// [`width`](Self::width) driven through the budgeted integration the command
+    /// line uses: `(Γ, ΔΓ, whether the integrand declared itself constant, the
+    /// convergence report)`.
+    fn budgeted_width(
+        &self,
+        card: &RunCard,
+        neval: usize,
+        niter: usize,
+        seed: u64,
+    ) -> (f64, f64, bool, ConvergenceReport) {
+        let rep = &self.evals[0];
+        let legs = process_external_legs(rep, &self.model, &self.evaluated);
+        let cuts = Cuts::compile(card, &legs).unwrap();
+        let bounds: Vec<_> = self
+            .evals
+            .iter()
+            .map(|e| BoundAmplitude::<f64>::bind(e, &self.evaluated))
+            .collect();
+        let final_masses: Vec<f64> = rep.external_particles()[1..]
+            .iter()
+            .map(|&id| self.evaluated.mass(id))
+            .collect();
+        let avg = initial_spin_color_average(rep, &self.model, &self.evaluated);
+        let mut integ = FixedBeamIntegrand::new(
+            bounds.iter().collect(),
+            &cuts,
+            DecayAtRest::from_legs(&legs).unwrap(),
+            final_masses,
+            avg,
+        );
+        integ
+            .use_running_coupling(&self.diagrams, &self.model, &self.evaluated, card)
+            .unwrap();
+        integ.use_multichannel(&self.diagrams, &self.evaluated, neval.min(40_000), 6, seed);
+        let (_, result, report) = integ.adapt_grids_budget(
+            Budget::Fixed { neval, niter },
+            BlockAllocation::ByAlpha,
+            seed,
+            &StopSignal::default(),
+        );
+        (
+            result.integral,
+            result.std_dev,
+            integ.has_constant_integrand(),
+            report,
+        )
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct TwoBody {
     parent: String,
@@ -159,6 +210,84 @@ fn two_body_widths_match_the_models_analytic_decays() {
             channel.width_gev
         );
     }
+}
+
+/// A two-body decay at rest is a constant integrand, known as such from the
+/// process: under the budget the command line spends (eight iterations here) it
+/// draws once, refines nothing, and reports the analytic width to rounding with
+/// an error bar at the rounding of its own variance.
+///
+/// Every row is held to the analytic width at `1e-10` — the scale the single
+/// iteration of [`two_body_widths_match_the_models_analytic_decays`] is held to —
+/// which a refined grid's `1e-4` noise misses by six orders.
+#[test]
+fn two_body_widths_integrate_once_and_exactly() {
+    for channel in two_body_widths() {
+        let process = channel.process();
+        let decay = Decay::new(&process);
+        let (width, err, constant, report) =
+            decay.budgeted_width(&RunCard::decay_default(), 20_000, 8, 0xDECA_2);
+        let rel = (width / channel.width_gev - 1.0).abs();
+        println!(
+            "{process:<14} Γ = {width:.10e} ± {err:.1e} GeV, decays.py {:.10e} (rel {rel:.1e}), \
+             {} iteration(s)",
+            channel.width_gev, report.iterations
+        );
+        assert!(
+            constant,
+            "{process}: not recognised as a constant integrand"
+        );
+        assert_eq!(report.stop, StopReason::Constant, "{process}");
+        assert_eq!(report.iterations, 1, "{process}");
+        assert_eq!(report.points, 20_000, "{process}");
+        assert!(rel < 1e-10, "{process}: Γ = {width} against decays.py");
+        assert!(
+            err / width < 1e-7,
+            "{process}: quoted relative error {:.1e}",
+            err / width
+        );
+    }
+}
+
+/// Each condition of the constant-integrand declaration is load-bearing: a decay
+/// that fails any of them is integrated for its whole budget, and the two-body
+/// width under cuts that bite is not the analytic one.
+#[test]
+fn only_a_structurally_constant_decay_skips_refinement() {
+    let free = RunCard::decay_default();
+
+    // Three bodies: the integrand varies over the Dalitz plane.
+    let three_body = Decay::new("t > b e+ ve");
+    let (_, _, constant, report) = three_body.budgeted_width(&free, 20_000, 4, 0xDECA_3);
+    assert!(!constant, "t > b e+ ve is not constant");
+    assert_eq!(report.stop, StopReason::Budget);
+    assert_eq!(report.iterations, 4);
+
+    // A polarized leg: the declaration is made only for helicity-summed states,
+    // so a fixed-helicity daughter is integrated as any other width, though its
+    // distribution in the mother's rest frame is isotropic too.
+    let polarized = Decay::new("t > w+{0} b");
+    let (_, _, constant, report) = polarized.budgeted_width(&free, 20_000, 4, 0xDECA_5);
+    assert!(!constant, "a polarized leg is outside the declaration");
+    assert_eq!(report.stop, StopReason::Budget);
+    assert_eq!(report.iterations, 4);
+
+    // Cuts that remove part of the phase space: the LO default card's lepton
+    // thresholds reject part of the Z decay's solid angle.
+    let z_ee = Decay::new("z > e+ e-");
+    let cut = RunCard::default();
+    let (cut_width, _, constant, report) = z_ee.budgeted_width(&cut, 20_000, 4, 0xDECA_4);
+    assert!(!constant, "cuts that bite make the integrand a step");
+    assert_eq!(report.iterations, 4);
+    let analytic = two_body_widths()
+        .into_iter()
+        .find(|c| c.process() == "Z > e- e+")
+        .expect("the oracle lists Z > e- e+")
+        .width_gev;
+    assert!(
+        cut_width < 0.99 * analytic,
+        "Γ = {cut_width} under cuts, analytic {analytic} without"
+    );
 }
 
 /// The same channels one level finer: `Σ_hel |M|²` at fixed rest-frame points,
