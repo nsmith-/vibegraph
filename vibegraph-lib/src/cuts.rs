@@ -823,6 +823,57 @@ impl Cuts {
             .map_or(0.0, |c| c.pt_min.max(0.0))
     }
 
+    /// Whether the compiled filter admits every point of every phase space: no ŝ
+    /// window, no decay-chain window, no lepton-plus-neutrino mass window, no
+    /// pairwise threshold, and every single-leg threshold at a value no momentum
+    /// fails.
+    ///
+    /// A sufficient condition, read off the thresholds and not off any sample: a
+    /// leg's transverse momentum and absolute rapidity are non-negative and its
+    /// energy is positive wherever its momentum is on a mass shell with a massive
+    /// parent, so a lower bound at or below zero and an absent upper bound reject
+    /// nothing. A filter for which this is `false` may still admit everything.
+    pub(crate) fn admits_every_point(&self) -> bool {
+        // Both structs are destructured in full, so a threshold added to either
+        // does not compile until this method has decided whether it can reject.
+        let Cuts {
+            incoming: _,
+            finals: _,
+            shat_min_sq,
+            shat_max_sq,
+            single,
+            pairs,
+            mmnl,
+            // A sampling aid derived from the thresholds above; it rejects nothing.
+            shat_min_hint: _,
+            windows,
+            // The width of the decay-chain windows, which `windows` already covers.
+            bwcutoff: _,
+        } = self;
+        *shat_min_sq <= 0.0
+            && *shat_max_sq < 0.0
+            && pairs.is_empty()
+            && mmnl.is_none()
+            && windows.is_empty()
+            && single.iter().all(|s| {
+                let SingleLegCut {
+                    idx: _,
+                    pt_min,
+                    pt_max,
+                    e_min,
+                    e_max,
+                    eta_min,
+                    eta_max,
+                } = s;
+                *pt_min <= 0.0
+                    && *pt_max < 0.0
+                    && *e_min <= 0.0
+                    && *e_max < 0.0
+                    && *eta_min <= 0.0
+                    && *eta_max < 0.0
+            })
+    }
+
     /// Phase-space indicator: `true` iff `momenta` (all external legs, in the
     /// order given to [`Cuts::compile`]) pass every compiled cut.
     pub fn pass<F: Real>(&self, momenta: &[LorentzVector<F>]) -> bool {
@@ -1315,6 +1366,74 @@ mod tests {
     fn dy_momenta(l1: V, l2: V) -> Vec<V> {
         let (b1, b2) = beams(500.0);
         vec![b1, b2, l1, l2]
+    }
+
+    // ── filters that admit every point ──────────────────────────────────
+
+    fn z_decay_legs() -> Vec<ExternalLeg> {
+        vec![
+            ExternalLeg::incoming(23, 91.1876),
+            ExternalLeg::outgoing(11, 0.0),
+            ExternalLeg::outgoing(-11, 0.0),
+        ]
+    }
+
+    /// Every lepton threshold the card has, switched off.
+    const LEPTON_CUTS_OFF: &str = "0 = ptl\n-1 = ptlmax\n0 = el\n-1 = elmax\n-1 = etal\n\
+                                   0 = etalmin\n0 = drll\n-1 = drllmax\n0 = mmll\n-1 = mmllmax\n";
+
+    #[test]
+    fn a_filter_with_every_threshold_off_admits_every_point() {
+        let legs = z_decay_legs();
+        let off = Cuts::compile(&card(LEPTON_CUTS_OFF), &legs).unwrap();
+        assert!(off.admits_every_point());
+        let decay = Cuts::compile(&RunCard::decay_default(), &legs).unwrap();
+        assert!(decay.admits_every_point());
+        let lo_default = Cuts::compile(&card(""), &legs).unwrap();
+        assert!(!lo_default.admits_every_point());
+    }
+
+    /// Each family of threshold, switched on alone against an otherwise empty
+    /// filter, withdraws the claim.
+    #[test]
+    fn each_threshold_withdraws_the_claim_that_nothing_is_rejected() {
+        let legs = z_decay_legs();
+        for on in [
+            "1 = ptl",
+            "50 = ptlmax",
+            "1 = el",
+            "50 = elmax",
+            "2.5 = etal",
+            "0.5 = etalmin",
+            "0.4 = drll",
+            "3 = drllmax",
+            "1 = mmll",
+            "50 = mmllmax",
+            "1 = mmnl",
+            "50 = mmnlmax",
+        ] {
+            let cuts = Cuts::compile(&card(&format!("{LEPTON_CUTS_OFF}{on}\n")), &legs).unwrap();
+            assert!(!cuts.admits_every_point(), "{on}");
+        }
+    }
+
+    /// The ŝ window and the decay-chain windows are thresholds too.
+    #[test]
+    fn a_shat_window_or_a_decay_window_withdraws_the_claim() {
+        let off = |extra: &str| card(&format!("{LEPTON_CUTS_OFF}{extra}"));
+        let open = Cuts::compile(&off(""), &dy_legs()).unwrap();
+        assert!(open.admits_every_point());
+        for on in ["100 = dsqrt_shat\n", "1000 = dsqrt_shatmax\n"] {
+            let cuts = Cuts::compile(&off(on), &dy_legs()).unwrap();
+            assert!(!cuts.admits_every_point(), "{on}");
+        }
+
+        let lines = forced(vec![vec![z_line(0b0011), z_line(0b1100)]]);
+        let legs = four_lepton_legs();
+        let unforced = Cuts::compile(&off(""), &legs).unwrap();
+        assert!(unforced.admits_every_point());
+        let windowed = Cuts::compile_with(&off(""), &legs, &lines).unwrap();
+        assert!(windowed.has_windows() && !windowed.admits_every_point());
     }
 
     // ── single-leg pT ───────────────────────────────────────────────────
