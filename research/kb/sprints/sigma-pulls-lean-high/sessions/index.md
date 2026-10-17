@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [F1: the fixed-beam σ rows gate on five seeds](F1.md) - Move the 34 fixed-beam σ rows of validate_sigma from the one shared gate seed to five seeds on this side, read under the seed policy against their seed records; no limit moves.
 * [HY1: hygiene review of the sigma-pulls tool](HY1.md) - Review V1's new validation-report binary for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [V1: read the σ pull population against the seed records](V1.md) - Re-measure this side on every seeded σ row, read the population of pulls against both the reported and the equal-weight seed means and against the 4× seeds, and attribute the +0.65 lean.
+* [V2: an adaptation-free 2 → 3 estimate on uux_to_epemg](V2.md) - Build a fixed-density (non-adaptive) estimator for u u~ > e+ e- g and d d~ > e+ e- g, and decide whether MadEvent's reported value, its equal-weight value or this side's sits on the truth.
 
 ## Session Report
 
