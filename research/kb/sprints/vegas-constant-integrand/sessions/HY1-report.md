@@ -4,6 +4,7 @@ title: "HY1 report: hygiene review of the constant-integrand change"
 description: "Review of P1 (79eacd9): two unreached guards now tested, admits_every_point kept in step with Cuts by construction, the declaration bound pinned from both sides, a NaN-blind gate fixed."
 status: draft
 tags: [hygiene, vegas, decays, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 sources:
   - {id: 472ef1f, resource: "https://github.com/nsmith-/vibegraph/commit/472ef1f", title: "cuts: admits_every_point destructures Cuts and SingleLegCut in full"}

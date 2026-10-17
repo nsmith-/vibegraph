@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [HY1: hygiene review of the constant-integrand change](HY1.md) - Review P1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [P1: a constant integrand integrates once](P1.md) - A single-channel two-body width skips grid refinement and reports the exact width, pinned by a test; every other seeded integration unmoved.
 
 ## Session Report
 
+* [HY1 report: hygiene review of the constant-integrand change](HY1-report.md) - Review of P1 (79eacd9): two unreached guards now tested, admits_every_point kept in step with Cuts by construction, the declaration bound pinned from both sides, a NaN-blind gate fixed.
 * [P1 report: a constant integrand integrates once](P1-report.md) - A single-channel helicity-summed two-body decay at rest is declared constant from the process, draws one iteration, and reports the analytic width to 1e-13; every non-constant run is bit-identical to before.

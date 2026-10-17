@@ -12,3 +12,8 @@
   window moved. `pixi run --skip-deps validate` was not run; the case for
   inertness is structural (every scattering integrand is pinned
   non-constant) plus 11 of 11 bit-identical non-constant comparisons.
+* **HY1 landed** (`472ef1f`, `facc329`, `ddb8d6c`, `79776cb`; report
+  `902c20a`): exhaustive cut destructure, the two unreached guards tested,
+  both sides of the declaration bound pinned, a NaN width fails.
+* **Close-out**: the item is deleted, four Found entries are filed, and the two
+  topic concepts that linked the item now describe the behaviour.

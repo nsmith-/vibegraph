@@ -4,6 +4,7 @@ title: "P1 report: a constant integrand integrates once"
 description: "A single-channel helicity-summed two-body decay at rest is declared constant from the process, draws one iteration, and reports the analytic width to 1e-13; every non-constant run is bit-identical to before."
 status: draft
 tags: [vegas, decays, width, performance, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 sources:
   - {id: 79eacd9, resource: "https://github.com/nsmith-/vibegraph/commit/79eacd9", title: "vegas: a structurally constant integrand integrates once"}

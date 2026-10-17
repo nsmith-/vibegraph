@@ -6,6 +6,10 @@
 
 * [Constant integrands integrate once](sprint.md) - A single-channel two-body (constant-integrand) run integrates once without grid refinement and reports the exact width, pinned by a test.
 
+## Sprint Record
+
+* [Constant integrands integrate once](closeout.md) - A structurally constant integrand (an unpolarized, uncut two-body decay at rest, one channel, no configuration draw) draws one iteration and stops, reporting the exact width; a declaration the iteration contradicts is withdrawn.
+
 ## Directories
 
 * [sessions](sessions/index.md)

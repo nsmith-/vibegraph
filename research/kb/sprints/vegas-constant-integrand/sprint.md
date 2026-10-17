@@ -3,7 +3,7 @@ type: Sprint
 title: "Constant integrands integrate once"
 description: "A single-channel two-body (constant-integrand) run integrates once without grid refinement and reports the exact width, pinned by a test."
 status: draft
-active: true
+active: false
 tags: [vegas, decay-width, two-body, performance]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
