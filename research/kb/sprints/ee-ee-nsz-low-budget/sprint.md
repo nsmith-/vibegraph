@@ -3,7 +3,7 @@ type: Sprint
 title: "ee_to_ee_nsz under-samples below the plateau"
 description: "Locate the region e+ e- > e+ e- $$ z misses below the plateau budget, and show the CLI default budget reaches the plateau on ≥20 seeds or fix the sampler so it does."
 status: draft
-active: true
+active: false
 tags: [process-grammar, vegas, budget-ladder, bhabha, seed-sweep]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---

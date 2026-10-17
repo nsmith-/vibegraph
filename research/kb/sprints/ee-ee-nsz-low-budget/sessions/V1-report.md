@@ -4,6 +4,7 @@ title: "V1 report: the ee_to_ee_nsz low-budget scatter is the |η| < 2.5 edge in
 description: "The under-sampled region is the last 3e-4 in cos θ below the lepton rapidity cut, where the spine t-map, bounded only by pT_min², leaves a step at the integrand's maximum; moving the map's bound to the edge removes the scatter, and the CLI default reaches the plateau on all twenty seeds."
 status: draft
 tags: [validation, vegas, budget-ladder, bhabha, s-channel-restriction, t-channel-map, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: 54510cb, resource: "https://github.com/nsmith-/vibegraph/commit/54510cb", title: "test(sigma): probe_ee_nsz_channel_split"}
