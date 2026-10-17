@@ -100,6 +100,12 @@ bash research/refs/fetch-papers.sh
 | `lhef` | Les Houches Event File format (hep-ph/0609017) | markdown |
 | `feynrules2` | FeynRules 2.0 (arXiv:1310.1921) | markdown |
 | `slha` | SUSY Les Houches Accord (hep-ph/0311123) | markdown |
+| `foam` | FOAM cellular Monte Carlo generator (physics/0203033) | markdown |
+| `foam206` | FOAM 2.06 upgrade (physics/0609068) | markdown |
+| `bendavid_bdt` | MC integration with boosted decision trees and generative DNNs (arXiv:1707.00028) | markdown |
+| `iflow` | i-flow: integration with normalizing flows (arXiv:2001.05486) | markdown |
+| `nis` | Neural importance sampling (arXiv:2001.05478) | markdown |
+| `madnis` | MadNIS: neural multi-channel importance sampling (arXiv:2212.06172) | markdown |
 
 The documentation site's bibliography (`docs/src/bibliography.md`) cites a few
 pre-arXiv or paywalled papers the script cannot fetch — RAMBO, Lepage's 1978
