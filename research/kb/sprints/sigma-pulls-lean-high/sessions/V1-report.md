@@ -4,6 +4,7 @@ title: "V1 report: a quarter of the σ pull lean is this side's fixed seed, the 
 description: "Re-measured at d4b8bb3, the 48 σ pulls that read a seed record lean +0.615. With five seeds on this side, the fixed-beam rows go from +0.61 to +0.41. Read against equal-weight references the population is at +0.29 ± 0.13, and at 4× budget +0.11 ± 0.14. The inverse-variance weighted mean offset is +0.003 % ± 0.005 %, so σ is not shifted as a whole: the lean sits in a few imprecise rows."
 status: draft
 tags: [validation, sigma, madevent-reference, seeds, iteration-combination, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 sources:
   - {id: base, resource: "https://github.com/nsmith-/vibegraph/commit/d4b8bb3", title: "Measured at d4b8bb3 (sigma-pulls-lean-high base)"}

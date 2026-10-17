@@ -25,3 +25,9 @@
   `validate_pdf_grid` 20/20 once the `NNPDF31_lo_as_0130` set, which the
   manager had not copied in, was fetched; F1's pass-2 suites and collator tally
   are its own.
+* **V2 landed** (`d620185`, report `67029a1`): the fixed-density estimate
+  lands on EW on both rows (uux +0.45, ddx −0.19; against R +3.01, +2.67).
+  Manager-verified from the run log. The `validated_ew` re-record was added to
+  the PR's banking comment as item 3.
+* **Close-out**: the item is deleted, seven items are filed, and `sigma-gate`
+  describes the five-seed fixed-beam reading.

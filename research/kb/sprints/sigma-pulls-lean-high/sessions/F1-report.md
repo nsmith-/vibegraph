@@ -2,6 +2,7 @@
 type: Session Report
 title: "F1 report: the fixed-beam σ rows gate on five seeds"
 description: "The 34 Plan::Gate rows of validate_sigma now read the unweighted mean of HEADROOM_SEEDS against their seed records. All 34 pass with limits unmoved. The gate's own mean pull over them is +0.410 ± 0.163, and the 48-row population is +0.475 (clustered se 0.148). Both reproduce V1's sweep exactly."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources: [6ab4e04]
 ---

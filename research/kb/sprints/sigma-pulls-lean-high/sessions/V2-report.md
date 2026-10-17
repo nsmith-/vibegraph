@@ -4,6 +4,7 @@ title: "V2 report: an adaptation-free estimate puts both q q̄ → e⁺e⁻ g ro
 description: "Two fixed densities, never adapted, on this crate's integrand: u u~ > e+ e- g reads 0.556431 ± 0.000091 pb and d d~ > e+ e- g 0.620387 ± 0.000112 pb (20 seeds each). Against MadEvent's reported mean they pull +3.01 and +2.67; against its equal-weight mean +0.45 and −0.19; against this side's gate −0.74 and −0.28. D1's condition is met. The flag lives only in the banked records, so the outcome is a re-record request."
 status: draft
 tags: [validation, sigma, madevent-reference, iteration-combination, fixed-density, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: code, resource: "https://github.com/nsmith-/vibegraph/commit/d620185", title: "The committed probe: probe_fixed_density_llj_annihilation"}

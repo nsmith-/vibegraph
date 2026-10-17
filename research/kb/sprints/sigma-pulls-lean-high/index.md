@@ -6,6 +6,10 @@
 
 * [σ pulls lean high on the seeded references](sprint.md) - Re-read the 47 σ pulls against refdata-10 against each record's equal-weight mean, and attribute the population's +0.65 lean to the reference or to this side.
 
+## Sprint Record
+
+* [σ pulls lean high on the seeded references](closeout.md) - The +0.615 mean pull over 48 seed-record rows splits into this side's one shared gate seed (now five seeds), MadEvent's iteration weighting (an adaptation-free 2 → 3 estimate lands on its equal-weight value) and a budget-dependent part at screen grade; this side has no common offset, and the pp_to_bb rows are the one open residual.
+
 ## Directories
 
 * [decisions](decisions/index.md)

@@ -3,7 +3,7 @@ type: Sprint
 title: "σ pulls lean high on the seeded references"
 description: "Re-read the 47 σ pulls against refdata-10 against each record's equal-weight mean, and attribute the population's +0.65 lean to the reference or to this side."
 status: draft
-active: true
+active: false
 tags: [sigma, madevent-reference, seeds, iteration-combination, refdata]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
@@ -29,4 +29,7 @@ comment on this PR listing exactly what to run.
 | Session | Agent type | Depends on | Gate | Closes |
 |---|---|---|---|---|
 | V1 | validation-dev (Opus) | — | diagnostic: population table, every cell a recorded measurement | — |
-| D1 | manager → user | V1 | user approval, if the reader changes | — |
+| HY1 | hygiene-dev (Sonnet) | V1 | output byte-identical; mutations | — |
+| [D1](decisions/D1-fixed-beam-seeds-and-ew.md) | manager → user | V1 | user approval (2026-10-17) | — |
+| F1 | validation-dev (Opus) | D1 | `--skip-deps validate`; one-seed mutation fails | — |
+| V2 | validation-dev (Opus) | D1, F1 | adaptation-free estimate recorded | — |
