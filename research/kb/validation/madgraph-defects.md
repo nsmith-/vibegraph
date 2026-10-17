@@ -63,7 +63,7 @@ kind is treated.
 | `aS` injected into a model with none, inconsistent with `G` | `export_v4.py:7076` | `AQCDUP` on six toy rows | measured, not enforced |
 | **approximation**: UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8, `GC_299` by 2.8e-8 | registered deviation: Python `model_reader` is the arbiter, and the graphs carrying them are exempted by name |
 | `t` read unassigned in `get_channel_cut` at `sde_strat = 1`, `tmin_for_channel ≠ -1` | `genps.f:1878-1960`, read at `:1937-1938` | unreachable here | such a card refused (run-card parser, `hadronic::configurations_weighted_by_amp2`) |
-| 3.5.x `get_channel_cut` dimensionally wrong | 3.5.x `genps.f` | yes, at narrow poles | references come from 3.7.1 |
+| 3.5.x `get_channel_cut` dimensionally wrong (fixed in 3.5.17) | 3.5.16 and earlier `genps.f` | yes, at narrow poles | references come from 3.7.1 |
 | 3.5.7 applied a PDF set's `αs(M_Z)` at `lpp = 0` | 3.5.7 parameter card | partonic σ by `0.920ⁿ` | cuts across it not comparable |
 | six MLM-path defects | note 41 §1.5 | at most one, refused | table below |
 | reweight module keeps one hypothesis per card | `reweight_interface.py` | the reweight oracle | one hypothesis per work area |
@@ -156,8 +156,11 @@ weight computes `tmp = (t-Mass)*(t+Mass)` with `t` already `p²`, so it never
 peaks on a pole: it handed 99.8% of a Higgs pole to continuum channels, and the
 unwindowed σ came out 2.3% low with a quoted 0.2% error that three fresh seeds
 confirmed. 3.7.1 has `tmp = (t-Mass**2)` with a plain Breit–Wigner
-weight[^n27-b1]. The fix, upstream `286feb8e`[^mg-286feb8], shipped in 3.6.2 and
-was never backported to 3.5.x, which is why references come from 3.7.1
+weight[^n27-b1]. The fix, upstream `286feb8e`[^mg-286feb8], shipped in 3.6.2. It
+reached the 3.5.x LTS line only in 3.5.17 (2026-10-09), as `186052bbb`
+(2026-10-06): 3.5.16 and every earlier 3.5.x still carry the defect, and 3.5.17's
+`get_channel_cut` weight is the same as 3.7.1's. The bank predates 3.5.17, which
+is why references come from 3.7.1
 ([madgraph-oracle-pinning](madgraph-oracle-pinning.md); MadEvent's channel weight
 is [phase-space/madevent-single-diagram-enhancement](../phase-space/madevent-single-diagram-enhancement.md)).
 
