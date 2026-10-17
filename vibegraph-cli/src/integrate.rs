@@ -50,7 +50,7 @@ use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle,
 use vibegraph::proton::{derive_flavor_groups, process_shape, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::vegas::VegasResult;
+use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -244,6 +244,58 @@ impl MapArgs {
     }
 }
 
+/// What a point adds to its bins of a VEGAS grid's refinement histogram
+/// ([`BinWeight`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum BinWeightArg {
+    /// The point's squared weight `(f·w)²`.
+    Squared,
+    /// The point's weight `|f·w|`, as MadEvent accumulates it.
+    Absolute,
+}
+
+/// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are the rule
+/// every banked row was integrated under; the rule is not recorded in the
+/// artifact.
+#[derive(Args, Debug, Clone, Copy)]
+pub(crate) struct GridRuleArgs {
+    /// What each point adds to its bins of the refinement histogram.
+    #[arg(long = "grid-bin-weight", value_enum, default_value_t = BinWeightArg::Squared)]
+    pub(crate) bin_weight: BinWeightArg,
+
+    /// Credit each bin with the mean of its accepted points: multiply its
+    /// histogram entry by the iteration's accepted points over the bin's, capped
+    /// at 10⁴, as MadEvent does while its grid adapts.
+    #[arg(long = "grid-acceptance-rescale")]
+    pub(crate) acceptance_rescale: bool,
+
+    /// Bound every refined bin's width at this multiple of the uniform width;
+    /// must exceed 1.
+    #[arg(long = "grid-max-bin-width", value_name = "K")]
+    pub(crate) max_bin_width: Option<f64>,
+}
+
+impl GridRuleArgs {
+    /// The rule the flags spell.
+    pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
+        if let Some(k) = self.max_bin_width {
+            if !(k > 1.0 && k.is_finite()) {
+                return Err(err(format!(
+                    "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
+                )));
+            }
+        }
+        Ok(GridRule {
+            weight: match self.bin_weight {
+                BinWeightArg::Squared => BinWeight::Squared,
+                BinWeightArg::Absolute => BinWeight::Absolute,
+            },
+            acceptance_rescale: self.acceptance_rescale,
+            max_bin_width: self.max_bin_width,
+        })
+    }
+}
+
 #[derive(Args, Debug)]
 pub(crate) struct IntegrateArgs {
     /// Process card selecting the model and process (`import model` +
@@ -352,6 +404,9 @@ pub(crate) struct IntegrateArgs {
 
     #[command(flatten)]
     pub(crate) maps: MapArgs,
+
+    #[command(flatten)]
+    pub(crate) grid: GridRuleArgs,
 }
 
 /// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
@@ -523,6 +578,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             "{} already exists (pass --force to overwrite)",
             out_path.display()
         )));
+    }
+
+    let grid_rule = args.grid.rule()?;
+    if !grid_rule.is_default() {
+        info!("VEGAS grid rule: {grid_rule:?}");
     }
 
     let opts = ParsingOptions::default();
@@ -870,6 +930,7 @@ fn integrate_hadronic(
     }
     let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
+    integ.set_grid_rule(args.grid.rule()?);
 
     tui::state::note_channels(integ.channel_count());
 
@@ -984,6 +1045,7 @@ fn integrate_fixed_energy(
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
+    integ.set_grid_rule(args.grid.rule()?);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.

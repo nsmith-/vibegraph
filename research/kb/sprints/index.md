@@ -44,3 +44,4 @@
 * [validation-2](validation-2/index.md)
 * [validation-3](validation-3/index.md)
 * [validation-sprint](validation-sprint/index.md)
+* [vegas-low-acceptance-bins](vegas-low-acceptance-bins/index.md)

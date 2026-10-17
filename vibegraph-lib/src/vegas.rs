@@ -135,6 +135,161 @@ pub(crate) enum IterationCombination {
     InverseVariance,
 }
 
+/// What one point adds to each of its bins in the refinement histogram.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BinWeight {
+    /// `(f·w)²`, the point's squared weight.
+    ///
+    /// A bin's share of the next grid then grows with the squares of the
+    /// weights it carries, and a bin that mostly fails the cuts is credited
+    /// only with its few accepted points.
+    #[default]
+    Squared,
+    /// `|f·w|`, the point's weight — MadEvent's accumulation
+    /// (`dsample.f:1890`, `grid(1, i, j) = grid(1, i, j) + abs(wgt)`).
+    Absolute,
+}
+
+/// The largest factor the acceptance rescale multiplies a bin by, MadEvent's
+/// cap (`dsample.f:2113-2117`, `min(non_zero/inon_zero, 10000.)`).
+const MAX_ACCEPTANCE_RESCALE: f64 = 1.0e4;
+
+/// How a grid turns one iteration's points into its next bin edges.
+///
+/// The default accumulates `(f·w)²` with no acceptance correction and no
+/// bound on a bin's width. The other settings counter the weight tail an
+/// adapted grid builds where the cuts reject most of a bin: there the
+/// importance function is small, the bin is widened, and the few points that
+/// pass carry the width into their weight.
+///
+/// The rule is a property of an adaptation, not of a trained grid, so it is not
+/// serialized and a stored grid's bytes do not depend on it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GridRule {
+    /// What a point adds to its bins.
+    pub weight: BinWeight,
+    /// Multiply each bin's histogram entry by the inverse of its own acceptance,
+    /// `N_acc / n_acc(bin)` — the iteration's non-zero points over the bin's —
+    /// capped at `10⁴`; a bin with no non-zero point is left
+    /// at zero. MadEvent's correction while its grid adapts (`dsample.f:2106-2124`,
+    /// under the default `use_cut = 2`, `dsample.f:753`).
+    ///
+    /// On equal-probability bins `N_acc / n_acc(bin)` is the bin count times the
+    /// iteration's acceptance over the bin's, and the constant cancels in the
+    /// refinement, which normalises each dimension: what the bin is credited
+    /// with is the mean over its accepted points, as if the cuts had passed
+    /// everything there.
+    pub acceptance_rescale: bool,
+    /// The widest a refined bin may be, as a multiple of the uniform width
+    /// `1/nbins`; must exceed `1`. Every bin's importance is raised to at least
+    /// `ρ·width`, with the density floor `ρ` solved so that the refined edges,
+    /// which give each new bin `1/nbins` of the raised total, leave none wider
+    /// than this. A bound of `K` caps each coordinate's Jacobian factor at `K`.
+    pub max_bin_width: Option<f64>,
+}
+
+impl GridRule {
+    /// Whether the rule is the default one.
+    pub fn is_default(&self) -> bool {
+        *self == GridRule::default()
+    }
+}
+
+/// One iteration's refinement histogram, accumulated point by point in draw
+/// order under a [`GridRule`].
+struct BinHistogram {
+    weight: BinWeight,
+    hist: Vec<Vec<f64>>,
+    /// Non-zero points per bin, kept only under the acceptance rescale.
+    accepted: Option<Vec<Vec<u64>>>,
+    total_accepted: u64,
+}
+
+impl BinHistogram {
+    fn new(grid: &VegasGrid) -> Self {
+        let rule = grid.rule;
+        BinHistogram {
+            weight: rule.weight,
+            hist: vec![vec![0.0_f64; grid.nbins]; grid.ndim],
+            accepted: rule
+                .acceptance_rescale
+                .then(|| vec![vec![0_u64; grid.nbins]; grid.ndim]),
+            total_accepted: 0,
+        }
+    }
+
+    /// Add one point of weighted value `fval` (`fval2 = fval²`) to the bins
+    /// `bins` yields, one per dimension in dimension order.
+    #[inline]
+    fn add(&mut self, fval: f64, fval2: f64, bins: impl Iterator<Item = usize>) {
+        let v = match self.weight {
+            BinWeight::Squared => fval2,
+            BinWeight::Absolute => fval.abs(),
+        };
+        match &mut self.accepted {
+            None => {
+                for (dim, k) in bins.enumerate() {
+                    self.hist[dim][k] += v;
+                }
+            }
+            Some(accepted) => {
+                let hit = fval != 0.0;
+                self.total_accepted += u64::from(hit);
+                for (dim, k) in bins.enumerate() {
+                    self.hist[dim][k] += v;
+                    accepted[dim][k] += u64::from(hit);
+                }
+            }
+        }
+    }
+
+    /// The histogram [`VegasGrid::refine_grid`] reshapes from.
+    fn finish(mut self) -> Vec<Vec<f64>> {
+        if let Some(accepted) = &self.accepted {
+            let total = self.total_accepted as f64;
+            for (h_dim, a_dim) in self.hist.iter_mut().zip(accepted) {
+                for (h, &a) in h_dim.iter_mut().zip(a_dim) {
+                    if a > 0 {
+                        *h *= (total / a as f64).min(MAX_ACCEPTANCE_RESCALE);
+                    }
+                }
+            }
+        }
+        self.hist
+    }
+}
+
+/// Raise each bin's importance `m[k]` to at least `ρ·width[k]`, with `ρ` the
+/// fixed point `ρ = Σ max(m, ρ·width) / max_width`, so that partitioning the
+/// raised importance into `nbins` equal shares makes no bin wider than
+/// `max_width / nbins`.
+///
+/// Within an old bin the refinement interpolates linearly, so the importance
+/// density there is `m[k]/width[k]`; a new bin holding `Σm'/nbins` over a density
+/// of at least `ρ = Σm'/max_width` is at most `max_width/nbins` wide. The fixed
+/// point is unique for `max_width > 1` (the residual's slope is at most
+/// `1 − max_width`), and is found exactly by admitting bins to the raised set in
+/// increasing order of their density.
+fn bound_bin_width(m: &mut [f64], edges: &[f64], max_width: f64) {
+    let widths: Vec<f64> = edges.windows(2).map(|w| w[1] - w[0]).collect();
+    let mut order: Vec<usize> = (0..m.len()).collect();
+    order.sort_by(|&a, &b| (m[a] / widths[a]).total_cmp(&(m[b] / widths[b])));
+    let mut rest: f64 = m.iter().sum();
+    let mut raised_width = 0.0_f64;
+    let mut rho = rest / max_width;
+    for &k in &order {
+        if m[k] / widths[k] >= rho {
+            break;
+        }
+        rest -= m[k];
+        raised_width += widths[k];
+        rho = rest / (max_width - raised_width);
+    }
+    for (mk, &w) in m.iter_mut().zip(&widths) {
+        *mk = mk.max(rho * w);
+    }
+}
+
 /// One evaluation point handed to a batched integrand callback.
 ///
 /// `u` is the `ndim`-length point in `[0,1]^ndim` after grid remapping (the
@@ -205,6 +360,9 @@ pub struct VegasGrid {
     /// same reason: it describes an adaptation, not a grid.
     #[serde(skip)]
     combination: IterationCombination,
+    /// How the grid refines. Not serialized, for the same reason.
+    #[serde(skip)]
+    rule: GridRule,
 }
 
 /// Plain deserialization target; validated into a [`VegasGrid`] afterward.
@@ -263,6 +421,7 @@ impl VegasGrid {
             xi,
             warmup: DEFAULT_WARMUP_ITERS,
             combination: IterationCombination::default(),
+            rule: GridRule::default(),
         }
     }
 
@@ -334,6 +493,7 @@ impl VegasGrid {
             // from uniform edges asks for one explicitly.
             warmup: 0,
             combination: IterationCombination::default(),
+            rule: GridRule::default(),
         })
     }
 
@@ -383,6 +543,23 @@ impl VegasGrid {
     /// [`IterationCombination`].
     pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.combination = combination;
+        self
+    }
+
+    /// Builder that sets how the grid refines. See [`GridRule`].
+    ///
+    /// # Panics
+    ///
+    /// If the rule bounds the bin width at or below the uniform width, which no
+    /// grid of `nbins` bins spanning `[0, 1]` can satisfy except the uniform one.
+    pub(crate) fn with_rule(mut self, rule: GridRule) -> Self {
+        if let Some(k) = rule.max_bin_width {
+            assert!(
+                k > 1.0 && k.is_finite(),
+                "a bin-width bound is a multiple of the uniform width above 1, got {k}"
+            );
+        }
+        self.rule = rule;
         self
     }
 
@@ -621,8 +798,8 @@ impl VegasGrid {
     }
 
     /// Draw `neval` samples in batches, evaluating `f` once per batch.
-    /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` accumulating
-    /// `fval²` for grid refinement.
+    /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` the histogram
+    /// the grid's [`GridRule`] accumulates for its refinement.
     fn run_iter_batched<Fb>(
         &self,
         f: &mut Fb,
@@ -634,7 +811,7 @@ impl VegasGrid {
         Fb: FnMut(&[SamplePoint], &mut [f64]),
     {
         let batch_size = batch_size.max(1);
-        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
+        let mut hist = BinHistogram::new(self);
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
 
@@ -663,24 +840,25 @@ impl VegasGrid {
                 sum += fval;
                 sum2 += fval2;
                 let ks = &flat_ks[i * self.ndim..(i + 1) * self.ndim];
-                for dim in 0..self.ndim {
-                    d[dim][ks[dim]] += fval2;
-                }
+                hist.add(fval, fval2, ks.iter().copied());
             }
             remaining -= this_batch;
         }
 
         let (mean, variance) = moments(sum, sum2, neval);
-        (mean, variance, d)
+        (mean, variance, hist.finish())
     }
 
-    /// Reshape the grid using accumulated `f²` weights from one iteration.
+    /// Reshape the grid from one iteration's histogram, as its [`GridRule`]
+    /// accumulated it.
     ///
     /// Each dimension is processed independently:
     /// 1. Normalize by expected hits per bin.
     /// 2. Apply Lepage's α-damping to smooth the importance function.
     /// 3. Smooth with nearest-neighbour averaging.
-    /// 4. Redistribute bin edges so each new bin captures equal total weight.
+    /// 4. Under a bin-width bound, raise the importance to the density floor that
+    ///    bound implies ([`GridRule::max_bin_width`]).
+    /// 5. Redistribute bin edges so each new bin captures equal total weight.
     pub(crate) fn refine_grid(&mut self, d: &[Vec<f64>], neval: usize) {
         let nbins = self.nbins;
         let hits_per_bin = (neval / nbins).max(1) as f64;
@@ -712,7 +890,12 @@ impl VegasGrid {
                 m[k] = ((left + m_copy[k] + right) / 3.0).max(1e-100);
             }
 
-            // Step 4: redistribute bin edges.
+            // Step 4: the bin-width bound.
+            if let Some(max_width) = self.rule.max_bin_width {
+                bound_bin_width(&mut m, &self.xi[dim], max_width);
+            }
+
+            // Step 5: redistribute bin edges.
             let total: f64 = m.iter().sum();
             let target = total / nbins as f64; // weight per new bin
 
@@ -782,7 +965,7 @@ pub(crate) struct BlockIteration {
     /// An integrand whose support had interior zeros would be undercounted by
     /// them, a set a continuous draw hits with probability zero.
     pub(crate) accepted: usize,
-    /// `hist[dim][bin]` accumulating `(f·w)²`, the input
+    /// `hist[dim][bin]` as the grid's [`GridRule`] accumulates it, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
 }
@@ -896,7 +1079,7 @@ where
         let grid = &grids[b];
         let ndim = grid.ndim;
         let nchunks = plan.neval.div_ceil(plan.chunk_size.max(1));
-        let mut hist = vec![vec![0.0_f64; grid.nbins]; ndim];
+        let mut hist = BinHistogram::new(grid);
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
         let mut accepted = 0_usize;
@@ -906,9 +1089,13 @@ where
                 sum += fval;
                 sum2 += fval2;
                 accepted += usize::from(fval != 0.0);
-                for (dim, &k) in bins[i * ndim..(i + 1) * ndim].iter().enumerate() {
-                    hist[dim][usize::from(k)] += fval2;
-                }
+                hist.add(
+                    fval,
+                    fval2,
+                    bins[i * ndim..(i + 1) * ndim]
+                        .iter()
+                        .map(|&k| usize::from(k)),
+                );
             }
         }
         next += nchunks;
@@ -918,7 +1105,7 @@ where
             integral: mean,
             variance,
             accepted,
-            hist,
+            hist: hist.finish(),
         });
     }
     out
@@ -1728,6 +1915,304 @@ mod tests {
                                 "block {b} edge {k} of dim {dim} at {nthreads} threads, chunk {chunk}"
                             );
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Grid rules ──────────────────────────────────────────────────────
+
+    /// The rules other than the default, each alone and MadEvent's pair.
+    fn non_default_rules() -> [GridRule; 4] {
+        [
+            GridRule {
+                weight: BinWeight::Absolute,
+                ..GridRule::default()
+            },
+            GridRule {
+                acceptance_rescale: true,
+                ..GridRule::default()
+            },
+            GridRule {
+                weight: BinWeight::Absolute,
+                acceptance_rescale: true,
+                ..GridRule::default()
+            },
+            GridRule {
+                max_bin_width: Some(4.0),
+                ..GridRule::default()
+            },
+        ]
+    }
+
+    /// A unit-height integrand that the "cuts" reject over most of the strip
+    /// `u₀ > 0.75`: there only `|u₁ − ½| < 0.02` passes, a 4% acceptance, the
+    /// shape of a large lepton-pair rapidity under a lepton-rapidity cut. The
+    /// integral is `0.75 + 0.25 · 0.04 = 0.76`.
+    fn low_acceptance_strip(u: &[f64]) -> f64 {
+        if u[0] < 0.75 || (u[1] - 0.5).abs() < 0.02 {
+            1.0
+        } else {
+            0.0
+        }
+    }
+    const STRIP_INTEGRAL: f64 = 0.76;
+
+    /// The histogram each rule hands the refinement, replayed by hand from the
+    /// same draws: `(f·w)²` or `|f·w|` per bin, and under the acceptance rescale
+    /// each bin times `min(N_acc / n_acc(bin), 10⁴)`, a bin with nothing accepted
+    /// left as it is.
+    #[test]
+    fn test_rule_histograms_are_the_hand_replayed_ones() {
+        let mut rules = vec![GridRule::default()];
+        rules.extend(non_default_rules());
+        for rule in rules {
+            let grid = VegasGrid::new(2, 8, 1.5).with_rule(rule);
+            let neval = 3000;
+            let mut rng = seeded_rng();
+            let (_, _, got) = grid.adapt_iteration(low_acceptance_strip, neval, &mut rng);
+
+            let mut rng = seeded_rng();
+            let mut want = vec![vec![0.0_f64; 8]; 2];
+            let mut hits = vec![vec![0_u64; 8]; 2];
+            let mut total = 0_u64;
+            let (mut x, mut ks) = ([0.0_f64; 2], [0_usize; 2]);
+            for _ in 0..neval {
+                let w = grid.draw_point(&mut rng, &mut x, &mut ks);
+                let fw = low_acceptance_strip(&x) * w;
+                let v = match rule.weight {
+                    BinWeight::Squared => fw * fw,
+                    BinWeight::Absolute => fw.abs(),
+                };
+                total += u64::from(fw != 0.0);
+                for dim in 0..2 {
+                    want[dim][ks[dim]] += v;
+                    hits[dim][ks[dim]] += u64::from(fw != 0.0);
+                }
+            }
+            if rule.acceptance_rescale {
+                for dim in 0..2 {
+                    for k in 0..8 {
+                        if hits[dim][k] > 0 {
+                            want[dim][k] *= (total as f64 / hits[dim][k] as f64).min(1.0e4);
+                        }
+                    }
+                }
+            }
+            for dim in 0..2 {
+                for k in 0..8 {
+                    assert_eq!(
+                        got[dim][k].to_bits(),
+                        want[dim][k].to_bits(),
+                        "{rule:?}: bin {k} of dim {dim}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The rescale is capped at MadEvent's `10⁴`: one accepted point in a bin out
+    /// of 30 000 accepted would otherwise multiply it by 30 000. The cap is written
+    /// out rather than read from [`MAX_ACCEPTANCE_RESCALE`], so a change to the
+    /// constant fails here.
+    #[test]
+    fn test_acceptance_rescale_is_capped() {
+        let grid = VegasGrid::new(1, 2, 1.5).with_rule(GridRule {
+            acceptance_rescale: true,
+            ..GridRule::default()
+        });
+        let mut hist = BinHistogram::new(&grid);
+        hist.add(2.0, 4.0, std::iter::once(0));
+        for _ in 0..29_999 {
+            hist.add(1.0, 1.0, std::iter::once(1));
+        }
+        hist.add(0.0, 0.0, std::iter::once(0));
+        let got = hist.finish();
+        assert_eq!(got[0][0], 4.0 * 1.0e4);
+        assert_eq!(got[0][1], 29_999.0 * (30_000.0 / 29_999.0));
+    }
+
+    /// Under a bound of `K`, no refined bin is wider than `K/nbins` however hard
+    /// the integrand pulls, and on this integrand the default rule does make
+    /// wider ones — so the bound is binding, not vacuous. The widest bin also
+    /// reaches `K/nbins`: the integrand's flat tails span many bins, so new bins
+    /// fall wholly inside the raised floor, where the density is exactly `ρ` and
+    /// the width exactly `K/nbins`. A bound tighter than asked, down to the
+    /// uniform grid, would pass the upper bound alone.
+    #[test]
+    fn test_bin_width_bound_holds_through_refinement() {
+        let peaked = |u: &[f64]| (-(u[0] - 0.3).powi(2) / 2e-4).exp() + 1e-6;
+        let nbins = 50;
+        let widest = |g: &VegasGrid| {
+            g.xi()[0]
+                .windows(2)
+                .map(|w| w[1] - w[0])
+                .fold(0.0_f64, f64::max)
+        };
+
+        let mut free = VegasGrid::new(1, nbins, 1.5);
+        let mut rng = seeded_rng();
+        free.adapt(peaked, 20_000, 6, &mut rng);
+        assert!(
+            widest(&free) > 4.0 / nbins as f64,
+            "the unbounded grid's widest bin {} must exceed the bound for the test to bind",
+            widest(&free)
+        );
+
+        for k in [1.5, 4.0, 10.0] {
+            let mut grid = VegasGrid::new(1, nbins, 1.5).with_rule(GridRule {
+                max_bin_width: Some(k),
+                ..GridRule::default()
+            });
+            let mut rng = seeded_rng();
+            for _ in 0..6 {
+                let (_, _, d) = grid.adapt_iteration(peaked, 20_000, &mut rng);
+                grid.refine_grid(&d, 20_000);
+                let w = widest(&grid);
+                assert!(
+                    w <= k / nbins as f64 * (1.0 + 1e-9),
+                    "bound {k}: widest bin {w} exceeds {}",
+                    k / nbins as f64
+                );
+                assert!(
+                    w >= k / nbins as f64 * (1.0 - 1e-9),
+                    "bound {k}: widest bin {w} short of {}",
+                    k / nbins as f64
+                );
+            }
+        }
+    }
+
+    /// The density floor is the fixed point it is documented as: every raised
+    /// bin sits exactly at `ρ·width`, every other is untouched and at or above
+    /// it, and `ρ = Σm'/K`.
+    #[test]
+    fn test_bound_bin_width_is_the_fixed_point() {
+        let edges: Vec<f64> = vec![0.0, 0.01, 0.05, 0.3, 0.32, 0.6, 0.61, 1.0];
+        let m0 = vec![5.0, 9.0, 0.2, 3.0, 0.01, 7.0, 0.5];
+        let k = 2.5;
+        let mut m = m0.clone();
+        bound_bin_width(&mut m, &edges, k);
+        let total: f64 = m.iter().sum();
+        let rho = total / k;
+        for (j, w) in edges.windows(2).enumerate() {
+            let width = w[1] - w[0];
+            if m[j] != m0[j] {
+                assert!(
+                    ((m[j] - rho * width) / m[j]).abs() < 1e-12,
+                    "raised bin {j}"
+                );
+            } else {
+                assert!(m[j] / width >= rho * (1.0 - 1e-12), "untouched bin {j}");
+            }
+        }
+        assert!(
+            m.iter().zip(&m0).any(|(a, b)| a != b),
+            "the bound must bind here"
+        );
+    }
+
+    /// The case the rules exist for, on [`low_acceptance_strip`]: under the
+    /// default rule the grid widens the strip's bins of `u₀`, and the points that
+    /// pass there carry that width. The acceptance rescale credits those bins
+    /// with their accepted points' mean, so it keeps them near the uniform
+    /// width, alone or with `|f·w|`; the bound holds them at its cap. `|f·w|` alone widens
+    /// them further than `(f·w)²` does: a wide bin's few accepted points carry
+    /// large weights, which the square credits more. Every rule still
+    /// integrates to the same `σ`.
+    #[test]
+    fn test_rules_on_a_low_acceptance_region() {
+        let nbins = 32;
+        let strip_widest = |g: &VegasGrid| -> f64 {
+            g.xi()[0]
+                .windows(2)
+                .filter(|w| w[1] > 0.75)
+                .map(|w| w[1] - w[0])
+                .fold(0.0_f64, f64::max)
+                * nbins as f64
+        };
+        let mut rules = vec![GridRule::default()];
+        rules.extend(non_default_rules());
+        let mut widths = Vec::new();
+        for rule in rules {
+            let mut grid = VegasGrid::new(2, nbins, 1.5).with_rule(rule);
+            let mut rng = seeded_rng();
+            let r = grid.adapt(low_acceptance_strip, 20_000, 8, &mut rng);
+            let pull = (r.integral - STRIP_INTEGRAL) / r.std_dev;
+            assert!(pull.abs() < 5.0, "{rule:?}: {r:?}, pull {pull:.2}");
+            widths.push((rule, strip_widest(&grid)));
+        }
+        let of = |pred: &dyn Fn(&GridRule) -> bool| {
+            widths
+                .iter()
+                .find(|(r, _)| pred(r))
+                .map(|&(_, w)| w)
+                .expect("rule measured")
+        };
+        let default = of(&|r| r.is_default());
+        let absolute = of(&|r| r.weight == BinWeight::Absolute && !r.acceptance_rescale);
+        let rescale = of(&|r| r.acceptance_rescale && r.weight == BinWeight::Squared);
+        let madevent = of(&|r| r.acceptance_rescale && r.weight == BinWeight::Absolute);
+        let bound = of(&|r| r.max_bin_width.is_some());
+        eprintln!(
+            "widest strip bin, × uniform: default {default:.3}, |f·w| {absolute:.3}, \
+             rescale {rescale:.3}, |f·w| + rescale {madevent:.3}, bound 4 {bound:.3}"
+        );
+        assert!(
+            default > 5.0,
+            "default rule's widest strip bin {default}× uniform"
+        );
+        assert!(
+            absolute > default,
+            "|f·w| alone {absolute}× against {default}×"
+        );
+        assert!(
+            rescale < 2.5,
+            "rescaled widest strip bin {rescale}× uniform"
+        );
+        assert!(
+            madevent < 2.5,
+            "|f·w| + rescale widest strip bin {madevent}× uniform"
+        );
+        assert!(
+            (bound - 4.0).abs() <= 4.0e-9,
+            "bounded widest strip bin {bound}× uniform, not at the bound 4"
+        );
+    }
+
+    /// The block-split adaptation and the sequential one agree bit for bit under
+    /// every rule, as they do under the default: the rule changes what is
+    /// accumulated, never the order.
+    #[test]
+    fn test_adapt_blocks_iteration_matches_sequential_under_every_rule() {
+        let seed = 0x5EED_B10D;
+        let stream = 0xC7A0_0010_u64;
+        let neval = 3000;
+        let niter = 4;
+        for rule in non_default_rules() {
+            let mut want = VegasGrid::new(2, 16, 1.5).with_rule(rule);
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            rng.set_stream(stream);
+            let w = want.adapt(low_acceptance_strip, neval, niter, &mut rng);
+            for chunk in [7, 1000] {
+                let mut got = VegasGrid::new(2, 16, 1.5).with_rule(rule);
+                let g = run_with_threads(3, || {
+                    got.adapt_parallel_seeded(
+                        |_| (),
+                        |_, u| low_acceptance_strip(u),
+                        neval,
+                        niter,
+                        seed,
+                        stream,
+                        chunk,
+                    )
+                });
+                assert_eq!(g.integral.to_bits(), w.integral.to_bits(), "{rule:?}");
+                assert_eq!(g.std_dev.to_bits(), w.std_dev.to_bits(), "{rule:?}");
+                for (a, b) in got.xi().iter().zip(want.xi()) {
+                    for (ea, eb) in a.iter().zip(b) {
+                        assert_eq!(ea.to_bits(), eb.to_bits(), "{rule:?} chunk {chunk}");
                     }
                 }
             }
