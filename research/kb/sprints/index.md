@@ -33,6 +33,7 @@
 * [resonance-sampling](resonance-sampling/index.md)
 * [seed-record-tooling](seed-record-tooling/index.md)
 * [sigma-2to4-offset](sigma-2to4-offset/index.md)
+* [sigma-calibration-rerecord](sigma-calibration-rerecord/index.md)
 * [sigma-ee-mumua](sigma-ee-mumua/index.md)
 * [sigma-gg-cg](sigma-gg-cg/index.md)
 * [sigma-h1-ickkw0-census](sigma-h1-ickkw0-census/index.md)
