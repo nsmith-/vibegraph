@@ -18,7 +18,10 @@ On 3.7.1 the fixed grouped output agrees with the non-grouped output.
 
 ## Status
 
-**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+**Present in 3.8.1** (ran). It is also present in 3.7.1.
+- **Absent from the 3.5.17 LTS release** (ran).
+- **Introduced in 3.6.0.** The unpermuted `update_scale_coupling(pp, wgt)` call
+  first appears in `v3.6.0`, by reading the tags; this was not bisected. The report draft is
 [`report-draft.md`](report-draft.md).
 
 ## Where
@@ -341,6 +344,84 @@ patched     5  108.652  0.723      0.323    0.38
 grouped - nongrouped: -4.22 pb (-3.89%), pull -7.9 sigma (measured spreads)
 patched - nongrouped: +0.054 pb (+0.05%), pull +0.1 sigma (measured spreads)
 ```
+
+## MadGraph 3.5.17 (latest LTS, tag `v3.5.17`, commit `4492b3e3`)
+
+**Not affected.** The code differs:
+- 3.5.17's `DSIGPROC` has no `update_scale_coupling` call.
+- The first `setclscales` call runs inside `PASSCUTS(P1)` (`cuts.f:1236`), on
+  the permuted point. `PASSCUTS` caches its result through `CUTSDONE`.
+
+The `patched` variant does not apply here, because the line it edits does not
+exist. So these runs compare grouped against non-grouped. They used the same
+command as above, with `VARIANTS="grouped nongrouped"`, on 2026-10-17.
+
+With MLM off (`run_card_ickkw0.dat`):
+
+```
+grouped    seed 11     sigma 109.57 +- 0.479 pb  (32s)
+nongrouped seed 11     sigma 108.67 +- 0.338 pb  (71s)
+grouped    seed 12     sigma 110.88 +- 0.421 pb  (54s)
+nongrouped seed 12     sigma 108.71 +- 0.412 pb  (25s)
+grouped    seed 13     sigma 110.4 +- 0.471 pb  (22s)
+nongrouped seed 13     sigma 109.01 +- 0.384 pb  (22s)
+grouped    seed 14     sigma 110.35 +- 0.456 pb  (18s)
+nongrouped seed 14     sigma 108.65 +- 0.37 pb  (38s)
+grouped    seed 15     sigma 110.5 +- 0.532 pb  (14s)
+nongrouped seed 15     sigma 108.56 +- 0.371 pb  (339s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  110.34  0.478      0.214    0.472
+nongrouped  5  108.72  0.171      0.0766    0.375
+grouped - nongrouped: +1.62 pb (+1.49%), pull +7.1 sigma (measured spreads)
+```
+
+MLM card (`run_card.dat`):
+
+```
+grouped    seed 11     sigma 57.41 +- 0.185 pb  (30s)
+nongrouped seed 11     sigma 56.205 +- 0.192 pb  (131s)
+grouped    seed 12     sigma 57.8 +- 0.205 pb  (45s)
+nongrouped seed 12     sigma 56.514 +- 0.188 pb  (44s)
+grouped    seed 13     sigma 57.522 +- 0.234 pb  (48s)
+nongrouped seed 13     sigma 56.481 +- 0.216 pb  (77s)
+grouped    seed 14     sigma 57.396 +- 0.21 pb  (27s)
+nongrouped seed 14     sigma 56.642 +- 0.193 pb  (73s)
+grouped    seed 15     sigma 57.559 +- 0.23 pb  (27s)
+nongrouped seed 15     sigma 55.826 +- 0.189 pb  (69s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  57.5374  0.163      0.0728    0.213
+nongrouped  5  56.3336  0.325      0.146    0.196
+grouped - nongrouped: +1.204 pb (+2.14%), pull +7.4 sigma (measured spreads)
+```
+
+Grouped reads above non-grouped here, not below. The size matches 3.8.1's
+refine-grid offset, and 3.5.17 carries the same `keep_grid_for_refine = False`
+(`gen_ximprove.py:1183`). The 3.5.17 grouped means (110.34 and 57.54 pb) equal
+3.8.1's grouped + fix (110.55 and 57.53 pb).
+
+With `keep_grid_for_refine = True` restored in a copy of the 3.5.17 tree, at
+the default card:
+
+```
+grouped    seed 11     sigma 109.28 +- 0.366 pb  (53s)
+nongrouped seed 11     sigma 108.67 +- 0.338 pb  (53s)
+grouped    seed 12     sigma 105.94 +- 0.348 pb  (51s)
+nongrouped seed 12     sigma 108.71 +- 0.412 pb  (24s)
+grouped    seed 13     sigma 108.55 +- 0.333 pb  (86s)
+nongrouped seed 13     sigma 109.01 +- 0.384 pb  (22s)
+grouped    seed 14     sigma 108.77 +- 0.437 pb  (32s)
+nongrouped seed 14     sigma 108.65 +- 0.37 pb  (35s)
+grouped    seed 15     sigma 107.6 +- 0.362 pb  (46s)
+nongrouped seed 15     sigma 108.56 +- 0.371 pb  (320s)
+variant     n   mean [pb]   spread [pb]  err(mean)  mean quoted err
+grouped     5  108.028  1.32      0.589    0.369
+nongrouped  5  108.72  0.171      0.0766    0.375
+grouped - nongrouped: -0.692 pb (-0.64%), pull -1.2 sigma (measured spreads)
+```
+
+That is −0.6 % (−1.2σ; seed 12 alone reads 105.94). Under the same setting,
+3.8.1's stock grouped output is −3.9 % (−7.9σ). There is no H1-sized deficit
+on 3.5.17.
 
 ## Notes
 

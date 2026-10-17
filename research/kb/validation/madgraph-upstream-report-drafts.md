@@ -40,30 +40,35 @@ crate is in the register, [madgraph-defects](madgraph-defects.md).
 
 ## Index
 
-Lines are 3.8.1's. "Ran" means the reproducer was run on 3.7.1 and 3.8.1, with
-the output in the folder's README; "read" means source only.
+Lines are 3.8.1's. Upstream asked whether the latest LTS (3.5.17) and the
+latest release (3.8.1) are affected, so both columns are given.
+- "ran": the reproducer was run on 3.7.1, 3.5.17 and 3.8.1, with output in the
+  folder's README.
+- "read": source only.
 
-| defect | folder | 3.8.1 status | file:line (3.8.1) | draft | filed |
-|---|---|---|---|---|---|
-| H1: grouped first `setclscales` on the unpermuted point | [`madgraph-grouped-first-call-unpermuted`](../../upstream/madgraph-grouped-first-call-unpermuted/README.md) | present (ran) | `super_auto_dsig_group_v4.inc:856` | yes | no |
-| `scalefact` skipped with only `fixed_fac_scale1` set | [`madgraph-fixed-fac-scale-precedence`](../../upstream/madgraph-fixed-fac-scale-precedence/README.md) | present (ran) | `reweight.f:1138` | yes | no |
-| `setxqcuts` tests `iforest(2)` twice | [`madgraph-setxqcuts-duplicate-test`](../../upstream/madgraph-setxqcuts-duplicate-test/README.md) | present (ran) | `setcuts.f:948-951` | yes | no |
-| `NMASSLESS` `.and.`/`.or.` precedence (`ktdurham`, `ptlund`) | [`madgraph-nmassless-precedence`](../../upstream/madgraph-nmassless-precedence/README.md) | present (ran) | `cuts.f:643-644`, `:745-746` | yes | no |
-| `addmothers` compares `igraphs(1)` to a stale loop index | [`madgraph-addmothers-stale-index`](../../upstream/madgraph-addmothers-stale-index/README.md) | present, unreachable at runtime (read) | `addmothers.f:115` | yes (code quality) | no |
-| `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | present (ran, code level) | `banner.py:1831` | yes | no |
-| `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | present (ran) | `reweight.f:1537-1538` | yes | no |
-| ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | **fixed in 3.8.1** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
-| `AQCDUP`/`AQEDUP` divide by `3.1415926` | none; note 07's appendix[^n07-older] | present (read) | `unwgt.f:768-769` | note 07 | no |
-| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | none; note 07's appendix[^n07-older] | present (read) | `rambo.py:218` | note 07 | no |
+| defect | folder | 3.5.17 (LTS) | 3.8.1 | file:line (3.8.1) | draft | filed |
+|---|---|---|---|---|---|---|
+| H1: grouped first `setclscales` on the unpermuted point | [`madgraph-grouped-first-call-unpermuted`](../../upstream/madgraph-grouped-first-call-unpermuted/README.md) | not affected (ran; the call came in 3.6.0) | affected (ran) | `super_auto_dsig_group_v4.inc:856` | yes | no |
+| `scalefact` skipped with only `fixed_fac_scale1` set | [`madgraph-fixed-fac-scale-precedence`](../../upstream/madgraph-fixed-fac-scale-precedence/README.md) | affected (ran) | affected (ran) | `reweight.f:1138` | yes | no |
+| `setxqcuts` tests `iforest(2)` twice | [`madgraph-setxqcuts-duplicate-test`](../../upstream/madgraph-setxqcuts-duplicate-test/README.md) | affected (ran) | affected (ran) | `setcuts.f:948-951` | yes | no |
+| `NMASSLESS` `.and.`/`.or.` precedence (`ktdurham`, `ptlund`) | [`madgraph-nmassless-precedence`](../../upstream/madgraph-nmassless-precedence/README.md) | affected (ran) | affected (ran) | `cuts.f:643-644`, `:745-746` | yes | no |
+| `addmothers` compares `igraphs(1)` to a stale loop index | [`madgraph-addmothers-stale-index`](../../upstream/madgraph-addmothers-stale-index/README.md) | not affected (read; no such code) | present, unreachable at runtime (read) | `addmothers.f:115` | yes (code quality) | no |
+| `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | affected (ran, code level) | affected (ran, code level) | `banner.py:1831` | yes | no |
+| `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | no |
+| ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | not affected (ran; no `P1D` for `$`, fix backported) | **fixed** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
+| `AQCDUP`/`AQEDUP` divide by `3.1415926` | none; note 07's appendix[^n07-older] | present (read, `unwgt.f:719-720`) | present (read) | `unwgt.f:768-769` | note 07 | no |
+| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | none; note 07's appendix[^n07-older] | present (read, `rambo.py:220`) | present (read) | `rambo.py:218` | note 07 | no |
 
-The `AQCDUP` and `rambo.py` drafts were checked only by reading the 3.8.1
-lines. They have no folder or reproducer here.
+The `AQCDUP` and `rambo.py` drafts were checked by reading only. They have no
+folder or reproducer here, and their note 07 drafts are not written in the
+one-issue form.
 
 ## Versions
 
 | | tag | commit | date |
 |---|---|---|---|
 | pinned | `v3.7.1` | `b7687064` | 2026-04-29 |
+| latest LTS | `v3.5.17` | `4492b3e3` | 2026-10-09 |
 | latest | `v3.8.1` | `a5b17913` | 2026-10-09 |
 
 - **Latest release.** `v3.8.1` is the highest tag on the GitHub repository and
@@ -110,6 +115,9 @@ These are new findings from this check. Neither has a report draft.
   - Restoring `keep_grid_for_refine = True` on 3.8.1 brings the fixed grouped
     output back onto non-grouped: 108.65 ± 0.32 against 108.60 ± 0.45 pb over
     five seeds.
+  - 3.5.17 (LTS) carries the same `keep_grid_for_refine = False`. There it
+    puts grouped σ 1.5 % above non-grouped at the default card and 2.1 % above
+    with MLM. Restoring it brings the two within 0.6 % (−1.2σ).
   - Which of the two settings integrates correctly is not established. With
     `keep_grid_for_refine = True` the two outputs agree. This bears on the
     default-survey under-integration candidate already filed under

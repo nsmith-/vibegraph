@@ -7,7 +7,12 @@ For the user to review before posting. The full evidence is in
 
 **Title:** Grouped output sets the scales (and applies the `xqcut` rejection) on the unpermuted phase-space point: σ about 4 % low on channels with symmetry permutations
 
-**Affected versions:** 3.8.1 yes. @LTS@
+**Affected versions:**
+- **3.8.1:** affected. Tested.
+- **3.5.17 (LTS):** not affected. Tested. There the first `setclscales` call
+  runs inside `PASSCUTS(P1)`, on the permuted point.
+- **Introduced:** the `update_scale_coupling(pp, wgt)` call first appears in
+  3.6.0. That is from reading the tags; I did not bisect.
 
 ### Summary
 
