@@ -4766,13 +4766,13 @@ fn sigma_ll_0j2j_mlm_vs_madevent() {
 }
 
 /// σ(p p → t t̄ + 0, 1 jets), MLM-matched at `xqcut = 30`, per `@N` and in
-/// total, against MadEvent's ten seeds (nine of them in one shared directory):
-/// the massive-core branches of the clustering under matching. Measured and
-/// reported, not enforced.
+/// total, against the row's seed record (fresh-directory MadEvent seeds at
+/// `hard_survey = 2`): the massive-core branches of the clustering under
+/// matching.
 #[test]
 #[ignore = "long tier: minutes of integration; `pixi run validate-mlm-sigma` runs this"]
 fn sigma_ttx_0j1j_mlm_vs_madevent() {
-    mlm_mixed_sigma_row("pp_to_ttx_0j1j_mlm", &[true, true], MIXED_SEEDS, "info");
+    mlm_mixed_sigma_row("pp_to_ttx_0j1j_mlm", &[true, true], MIXED_SEEDS, "gate");
 }
 
 /// One mixed-multiplicity MLM row's seeded σ, built and integrated the way

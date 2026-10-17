@@ -75,9 +75,10 @@ the samples-grade `run_01` plus twenty fresh directories `run_s20261101`–`run_
 each banked and its directory dropped); the other MLM rows still read nine
 shared-directory seeds plus the samples run, where the policy's `max(quoted, …)`
 takes the quote. A gate tighter than ~0.1 % on those would need independent
-directories too. The shared-directory reading is one of the unseparated causes of
-`pp_to_ttx_0j1j_mlm`'s +1.28 % `@1` disagreement
-([ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
+directories too. `pp_to_ttx_0j1j_mlm`'s +1.28 % `@1` disagreement was attributed
+to this side's lab-frame clustering and MadEvent's default survey, and the row
+now gates on refdata-10's fresh-directory seeds
+([refdata10-cell-flips](../sprints/refdata10-cell-flips/closeout.md)).
 
 **Which references are seeded.** `grammar_sigma_reference.json`, the decay, decay-chain
 and on-shell-veto tables, and `mlm_sigma_reference.json` are seeded through
