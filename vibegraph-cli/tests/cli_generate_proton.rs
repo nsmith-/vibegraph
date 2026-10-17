@@ -49,6 +49,7 @@ use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
+use vibegraph::vegas::GridRule;
 
 /// The banked run this replays: MadGraph's own cards, its own PDF set, and its own
 /// event file as the flavour and colour oracle.
@@ -1002,6 +1003,9 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let mut stale = artifact.clone();
     stale.format_version = 9;
+    // A file older than version 12 records no grid rule and reads back as the
+    // unbounded one.
+    stale.grid_rule = Some(GridRule::UNBOUNDED);
     let stale_path = dir.join("stale.bin.zst");
     stale
         .write_to_path(&stale_path, true)
