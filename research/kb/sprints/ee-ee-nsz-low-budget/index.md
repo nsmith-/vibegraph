@@ -5,3 +5,7 @@
 ## Sprint
 
 * [ee_to_ee_nsz under-samples below the plateau](sprint.md) - Locate the region e+ e- > e+ e- $$ z misses below the plateau budget, and show the CLI default budget reaches the plateau on ≥20 seeds or fix the sampler so it does.
+
+## Directories
+
+* [sessions](sessions/index.md)
