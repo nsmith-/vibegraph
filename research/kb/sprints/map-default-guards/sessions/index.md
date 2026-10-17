@@ -10,3 +10,4 @@
 ## Session Report
 
 * [V0 report: at the tip, neither guard holds its default back](V0-report.md) - The jj flavour χ² and the ℓℓj_dyn scatter guard measured at the branch tip under both maps, with the null of each statistic: both flipped defaults pass today's statistics; the brief's failing readings were taken before later changes to the code and do not reproduce.
+* [V1 report: soft-all and MadEvent's τ rule are the defaults, and the banked layer holds under them](V1-report.md) - MapOptions::resolve now defaults to soft-all and to MadEvent's τ rule; the banked layer passes with the same tally as the pre-flip commit, thirteen integrals and thirteen samples cells moved and all stay inside their limits; pp_to_llj_fixed reads χ²/dof 0.92 over eighty seeds under either map; the τ SPINUP null's 1.25 does not repeat on a second grid pair (0.75).
