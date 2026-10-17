@@ -3,7 +3,7 @@ type: Sprint
 title: "Match the jj flavour and ℓℓj scatter statistics, then flip the map defaults"
 description: "Match pp_to_jj's samples flavour statistic and pp_to_llj_dyn's scatter guard to their measured calibrations by statistics the user approves, then flip MapOptions::resolve to the τ rule and to soft-all."
 status: draft
-active: true
+active: false
 tags: [maps, tau-rule, soft-all, samples-gate, scatter-guard, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
