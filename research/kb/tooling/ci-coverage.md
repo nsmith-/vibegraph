@@ -18,7 +18,9 @@ sources:
 # What a green CI run covers
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests. A
-green check means four jobs passed, and each covers a defined slice. The
+green check means the six jobs passed (on a pull request `banked` may pass by
+being skipped), and each covers a defined slice. Branch protection requires
+only `all-pass`, which aggregates the rest. The
 layer definitions themselves are in
 [validation layers](../validation/validation-layers.md); the binding lint rule
 is in `AGENTS.md` ("Lints are gates, not advice").
@@ -28,11 +30,34 @@ is in `AGENTS.md` ("Lints are gates, not advice").
 | `fmt` | `cargo fmt --all --check` | formatting, everywhere. It compiles nothing; it is the only place the rule is enforced for everyone, since agent worktrees share no git hooks |
 | `kb` | `pixi run kb-lint` | knowledge-bundle conformance (frontmatter, backlog keys, generated indexes) |
 | `test` | `cargo clippy --workspace --all-targets --locked -- -D warnings`, then `cargo test --locked --workspace` | the **hermetic** layer: every default-feature target |
-| `banked` (needs `test`) | fetch the PDF sets and the refdata bundle, then `pixi run --skip-deps validate` | the **banked** layer: every `extended-validation` gate under `release-debug`, clippy with the feature on, the report collator |
+| `changes` | `scripts/banked-inputs-changed.sh` on a pull request's diff | whether `banked` has anything to check |
+| `banked` (needs `test`, `changes`) | fetch the PDF sets and the refdata bundle, then `pixi run --skip-deps validate` | the **banked** layer: every `extended-validation` gate under `release-debug`, clippy with the feature on, the report collator |
+| `all-pass` (needs all five, runs always) | checks each job's result | nothing itself: it passes only when every other job succeeded, or `banked` was skipped because `changes` found no banked input. A skip for any other reason (a failed `test`) fails it |
 
 Both compiling jobs set `RUSTFLAGS=-C target-cpu=x86-64-v3`; nothing they
 build ships. The oracle layer (anything that runs MadGraph, LHAPDF or f2py)
 is never in CI.
+
+## When `banked` is skipped
+
+On a pull request whose every changed file is on the skip list in
+`scripts/banked-inputs-changed.sh`, the `banked` job is skipped through its
+job-level `if:`. The list holds paths nothing in `pixi run validate` reads:
+`research/kb/`, `docs/` except `docs/src/cli/` (whose `reference.md` the
+`cli_reference_docs` test compares with `--help`), `.agents/`, `.claude/`,
+`assets/`, `doc-include/`, and `*.md` outside `vibegraph-*/`,
+`validation-report/` and `validation/`. Every other path is an input, the
+licence files `vibegraph-cli` compiles in and `research/upstream/` sources
+among them. A skipped job reports as passing, so `banked` alone cannot be the required
+check: it is also skipped when `test` fails. `all-pass` accepts the skip only
+when `changes` answered `run=false`; the `changes` job's
+summary then reads "banked skipped: no banked-layer inputs changed" above the
+file list. The decision fails open: no base revision, a failed or empty diff,
+or a failed `changes` job runs the layer. Pushes to `main` always run it, so
+every merged commit is checked in full.
+
+A path a test starts reading must come off the skip list in the same change,
+or a pull request touching only that path merges without the gate that reads it.
 
 ## The hermetic layer takes no runtime skips
 
