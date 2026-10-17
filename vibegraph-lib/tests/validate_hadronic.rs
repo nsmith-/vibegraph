@@ -52,7 +52,7 @@ use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptio
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::pdf::{PdfMember, PdfSet};
-use vibegraph::phasespace::maps::{MapOptions, SplitAngle};
+use vibegraph::phasespace::maps::{MapChoices, MapOptions, SplitAngle, TauMap};
 use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
@@ -4074,37 +4074,89 @@ const CHI2_PER_DOF_P01_19: f64 = 36.191 / 19.0;
 #[test]
 #[ignore]
 fn probe_llj_dyn_scatter_guard_calibration() {
-    llj_dyn_scatter_calibration("default", MapOptions::default());
+    llj_scatter_calibration(
+        LLJ_DYN_RUN,
+        ScaleShape::PerEvent,
+        LLJ_DYN_CALIBRATION_SEEDS,
+        "default",
+        MapOptions::default(),
+    );
 }
 
 /// [`probe_llj_dyn_scatter_guard_calibration`] with the soft-shaped angle on
-/// every split whose parent moves.
+/// every split whose parent moves and the log `τ` map.
 #[test]
 #[ignore]
 fn probe_llj_dyn_scatter_guard_calibration_soft_all() {
-    llj_dyn_scatter_calibration(
+    llj_scatter_calibration(
+        LLJ_DYN_RUN,
+        ScaleShape::PerEvent,
+        LLJ_DYN_CALIBRATION_SEEDS,
         "soft-all",
         MapOptions {
             split_angle: Some(SplitAngle::SoftAll),
+            tau: Some(TauMap::Log),
             ..MapOptions::default()
         },
     );
 }
 
-/// The calibration run behind both probes above, under `maps`.
+/// [`probe_llj_dyn_scatter_guard_calibration`] under [`MapChoices::LEGACY`]: the
+/// isotropic angle and the log `τ` map.
+#[test]
+#[ignore]
+fn probe_llj_dyn_scatter_guard_calibration_legacy() {
+    llj_scatter_calibration(
+        LLJ_DYN_RUN,
+        ScaleShape::PerEvent,
+        LLJ_DYN_CALIBRATION_SEEDS,
+        "legacy",
+        MapOptions::fixed(MapChoices::LEGACY),
+    );
+}
+
+/// Seeds in the fixed-scale scatter calibration: the gate's five first, then
+/// enough for one twenty-seed pool.
+const LLJ_FIXED_CALIBRATION_SEEDS: u64 = 20;
+
+/// [`probe_llj_dyn_scatter_guard_calibration`] on `sigma_llj_fixed_scale_vs_mg`'s
+/// card, under the production maps, over [`LLJ_FIXED_CALIBRATION_SEEDS`] seeds.
+///
+/// Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_llj_fixed_scatter_guard_calibration() {
+    llj_scatter_calibration(
+        "pp_to_llj_fixed",
+        ScaleShape::FixedAtMz,
+        LLJ_FIXED_CALIBRATION_SEEDS,
+        "default",
+        MapOptions::default(),
+    );
+}
+
+/// The calibration run behind the scatter probes above: `seeds` seeds from the
+/// gate's first, on the banked card of `run`, whose scales must have `shape`,
+/// under `maps`.
 ///
 /// Every seed prints one `SCATTER` line and one `CHANNEL` line per sampling
 /// channel — the term's selection weight, integral and error in picobarns, and
 /// its iteration `χ²/dof` — so a seed reading low can be located in the channels
 /// that carry the deficit. The per-channel terms are those of the same VEGAS
 /// pass the seed's σ is the sum of.
-fn llj_dyn_scatter_calibration(label: &str, maps: MapOptions) {
+fn llj_scatter_calibration(
+    run: &str,
+    shape: ScaleShape,
+    seeds: u64,
+    label: &str,
+    maps: MapOptions,
+) {
     use vibegraph::phasespace::GEV2_TO_PB;
 
-    if !dyn_run_present("probe_llj_dyn_scatter_guard_calibration", LLJ_DYN_RUN) {
+    if !dyn_run_present("llj_scatter_calibration", run) {
         return;
     }
-    let run_dir = validation_dir().join("output").join(LLJ_DYN_RUN);
+    let run_dir = validation_dir().join("output").join(run);
     let rc = RunCard::parse_file(&run_dir.join("Cards/run_card.dat")).expect("banked run card");
     let model = common::sm_model();
     let evaluated = EvaluatedModel::from_model(model.clone());
@@ -4118,7 +4170,7 @@ fn llj_dyn_scatter_calibration(label: &str, maps: MapOptions) {
         .collect();
     let mut summary = Vec::new();
     let mut runs: Vec<SeedResult> = Vec::new();
-    for k in 0..LLJ_DYN_CALIBRATION_SEEDS {
+    for k in 0..seeds {
         let clock = Stopwatch::start();
         let seed = LLJ_SEEDS[0] + k;
         let integ = adapted_integrand(
@@ -4134,7 +4186,7 @@ fn llj_dyn_scatter_calibration(label: &str, maps: MapOptions) {
             true,
             &mut summary,
             true,
-            ScaleShape::PerEvent,
+            shape,
             maps,
         );
         let (channels, total) = integ.adapt_grids(LLJ_NEVAL, LLJ_NITER, seed);
@@ -4181,7 +4233,7 @@ fn llj_dyn_scatter_calibration(label: &str, maps: MapOptions) {
         .map(|r| r.seed)
         .collect();
     eprintln!(
-        "── {LLJ_DYN_RUN} [{label}] at {LLJ_NEVAL} x {LLJ_NITER}: {} seeds, mean {mean:.4} pb, \
+        "── {run} [{label}] at {LLJ_NEVAL} x {LLJ_NITER}: {} seeds, mean {mean:.4} pb, \
          χ²/dof {chi2:.2}, sd {:.3}% against mean quoted {:.3}% (ratio {:.2})\n   \
          quintet χ²/dof {quintets:.2?}: {} of {} above {LLJ_MAX_CHI2_PER_DOF}, {} above \
          {CHI2_PER_DOF_P01_4:.2}\n   20-seed χ²/dof {pools:.2?}: {} of {} above \

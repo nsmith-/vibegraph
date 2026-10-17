@@ -833,6 +833,31 @@ const JJ_CALIBRATION_GEN_SEEDS: [[u64; 5]; 2] = [
     ],
 ];
 
+/// A second, independent grid pair for the calibration's null, with generation
+/// seeds of their own: the null of [`JJ_CALIBRATION_GRIDS`] reads each grid's
+/// samples against the other's, so one pair's readings share its two grids, and
+/// a second pair is the independent repeat.
+const JJ_SECOND_PAIR_GRIDS: [&str; 2] = ["20260751", "20260761"];
+
+/// Generation seeds for [`JJ_SECOND_PAIR_GRIDS`], disjoint from every other
+/// calibration grid's.
+const JJ_SECOND_PAIR_GEN_SEEDS: [[u64; 5]; 2] = [
+    [
+        0x5A_4D_3001,
+        0x5A_4D_3002,
+        0x5A_4D_3003,
+        0x5A_4D_3004,
+        0x5A_4D_3005,
+    ],
+    [
+        0x5A_4D_4001,
+        0x5A_4D_4002,
+        0x5A_4D_4003,
+        0x5A_4D_4004,
+        0x5A_4D_4005,
+    ],
+];
+
 /// The seed of the permutations the calibration splits samples with.
 const JJ_SPLIT_SEED: u64 = 0x5A_4D_5E11;
 
@@ -859,14 +884,38 @@ const MG_HALF_SPLITS: usize = 1000;
 #[test]
 #[ignore]
 fn probe_jj_flavour_chi2_calibration_log() {
-    jj_flavour_calibration("log");
+    jj_flavour_calibration("log", JJ_CALIBRATION_GRIDS, JJ_CALIBRATION_GEN_SEEDS);
 }
 
 /// [`probe_jj_flavour_chi2_calibration_log`] under MadEvent's `τ` rule.
 #[test]
 #[ignore]
 fn probe_jj_flavour_chi2_calibration_inverse_square() {
-    jj_flavour_calibration("inverse-square");
+    jj_flavour_calibration(
+        "inverse-square",
+        JJ_CALIBRATION_GRIDS,
+        JJ_CALIBRATION_GEN_SEEDS,
+    );
+}
+
+/// [`probe_jj_flavour_chi2_calibration_log`] on [`JJ_SECOND_PAIR_GRIDS`]: the
+/// grid-against-grid null repeated on two grids that share nothing with the
+/// first pair.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_second_grid_pair_log() {
+    jj_flavour_calibration("log", JJ_SECOND_PAIR_GRIDS, JJ_SECOND_PAIR_GEN_SEEDS);
+}
+
+/// [`probe_jj_flavour_chi2_second_grid_pair_log`] under MadEvent's `τ` rule.
+#[test]
+#[ignore]
+fn probe_jj_flavour_chi2_second_grid_pair_inverse_square() {
+    jj_flavour_calibration(
+        "inverse-square",
+        JJ_SECOND_PAIR_GRIDS,
+        JJ_SECOND_PAIR_GEN_SEEDS,
+    );
 }
 
 /// MadGraph's banked dijet sample against itself: [`MG_HALF_SPLITS`] random
@@ -908,8 +957,9 @@ fn probe_jj_flavour_chi2_mg_half_splits() {
     }
 }
 
-/// The calibration run behind the two map probes above.
-fn jj_flavour_calibration(map: &str) {
+/// The calibration run behind the map probes above, on the grid pair `grids`
+/// with generation seeds `gen_seeds`.
+fn jj_flavour_calibration(map: &str, grids: [&str; 2], gen_seeds: [[u64; 5]; 2]) {
     use rand::seq::SliceRandom;
     use rand::SeedableRng;
 
@@ -917,9 +967,9 @@ fn jj_flavour_calibration(map: &str) {
         return;
     }
     let mg = banked_sample(JJ_ROW.run, JJ_ROW.events);
-    let samples: Vec<Vec<EventSample>> = JJ_CALIBRATION_GRIDS
+    let samples: Vec<Vec<EventSample>> = grids
         .iter()
-        .zip(&JJ_CALIBRATION_GEN_SEEDS)
+        .zip(&gen_seeds)
         .map(|(&grid, seeds)| {
             let clock = Stopwatch::start();
             let generator = Generator::integrate_with(&JJ_ROW, grid, &["--map-tau", map]);
@@ -945,8 +995,8 @@ fn jj_flavour_calibration(map: &str) {
         })
         .collect();
 
-    for (g, grid) in JJ_CALIBRATION_GRIDS.iter().enumerate() {
-        for (sample, seed) in samples[g].iter().zip(JJ_CALIBRATION_GEN_SEEDS[g]) {
+    for (g, grid) in grids.iter().enumerate() {
+        for (sample, seed) in samples[g].iter().zip(gen_seeds[g]) {
             let found = compare(sample, &mg, labelling_for(sample, &mg));
             print_chi2_records(
                 map,
@@ -974,15 +1024,15 @@ fn jj_flavour_calibration(map: &str) {
     }
 
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(JJ_SPLIT_SEED);
-    for (g, grid) in JJ_CALIBRATION_GRIDS.iter().enumerate() {
+    for (g, grid) in grids.iter().enumerate() {
         let other = 1 - g;
         for (r, reference) in samples[other].iter().enumerate() {
             let mut order: Vec<usize> = (0..reference.len()).collect();
             order.shuffle(&mut rng);
             for (h, half) in order.chunks(reference.len() / 2).enumerate() {
                 let half = subsample(reference, half);
-                let tag = format!("null-{}-{r}-{h}", JJ_CALIBRATION_GRIDS[other]);
-                for (sample, seed) in samples[g].iter().zip(JJ_CALIBRATION_GEN_SEEDS[g]) {
+                let tag = format!("null-{}-{r}-{h}", grids[other]);
+                for (sample, seed) in samples[g].iter().zip(gen_seeds[g]) {
                     let found = compare(sample, &half, labelling_for(sample, &half));
                     print_chi2_records(
                         map,
