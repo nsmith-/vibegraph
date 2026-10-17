@@ -48,4 +48,5 @@
 * [validation-2](validation-2/index.md)
 * [validation-3](validation-3/index.md)
 * [validation-sprint](validation-sprint/index.md)
+* [vegas-absolute-grid-coords](vegas-absolute-grid-coords/index.md)
 * [vegas-constant-integrand](vegas-constant-integrand/index.md)
