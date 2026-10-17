@@ -11,5 +11,6 @@
 
 ## Session Report
 
+* [F1 report: the fixed-beam σ rows gate on five seeds](F1-report.md) - The 34 Plan::Gate rows of validate_sigma now read the unweighted mean of HEADROOM_SEEDS against their seed records. All 34 pass with limits unmoved. The gate's own mean pull over them is +0.410 ± 0.163, and the 48-row population is +0.475 (clustered se 0.148). Both reproduce V1's sweep exactly.
 * [HY1 report: hygiene review of the sigma-pulls tool](HY1-report.md) - sigma-pulls reuses the seed policy and the record types; its row loss was silent in four places and 27 of 36 one-line mutations of its statistics survived its seven tests. Now loud and 35 of 36 killed, output byte-identical.
 * [V1 report: a quarter of the σ pull lean is this side's fixed seed, the rest MadEvent's iteration weighting and budget dependence](V1-report.md) - Re-measured at d4b8bb3, the 48 σ pulls that read a seed record lean +0.615. With five seeds on this side, the fixed-beam rows go from +0.61 to +0.41. Read against equal-weight references the population is at +0.29 ± 0.13, and at 4× budget +0.11 ± 0.14. The inverse-variance weighted mean offset is +0.003 % ± 0.005 %, so σ is not shifted as a whole: the lean sits in a few imprecise rows.
