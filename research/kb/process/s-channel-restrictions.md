@@ -97,8 +97,12 @@ comparisons, and the gate fails if a restriction removed nothing. The `$$ z` pul
 reference's spread: MadEvent's five seeds sit at χ²/dof 15 about their unweighted mean (four at
 157.26–157.53, one at 156.48), and this side agrees with the majority. This side's own `$$ z`
 seeds scatter beyond their quotes below the gated rung (χ²/dof 3.84 and 2.01 at ¼ and 1 times
-its base budget), the sign of a region its low-budget seeds miss
-([backlog](../backlog/validation/ee-ee-nsz-sigma-low-at-low-budget.md)).
+its base budget). The cause is located: the t-channel map is bounded by the pT cut alone, while
+the cut that binds is |η| < 2.5, so a thin strip at cos θ ≈ 0.9863 just inside the rapidity edge
+gets about 1.5 draws an iteration on low-budget seeds. Moving only the map bound to the edge
+removes the scatter without moving σ. The CLI default reaches the plateau on 20 of 20 seeds
+(157.577 ± 0.032 pb, χ²/dof 1.13) ([ee-ee-nsz-low-budget](../sprints/ee-ee-nsz-low-budget/closeout.md);
+the sampler fix is [t-channel-map-ignores-rapidity-cut](../backlog/performance/t-channel-map-ignores-rapidity-cut.md)).
 
 ## `$`: the on-shell veto, pointwise in the amplitude
 

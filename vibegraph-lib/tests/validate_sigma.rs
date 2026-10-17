@@ -5632,6 +5632,193 @@ fn probe_grammar_seed_sweep() {
     }
 }
 
+/// Polar-angle bin edges, `cos θ` of the outgoing `e+` against the incoming `e+`
+/// in the partonic CM, for the Bhabha region split. The card's `|η| < 2.5` keeps
+/// `|cos θ|` below `tanh 2.5 = 0.986614`, so the last bin holds only the sliver
+/// `[0.9866, 0.986614)`; the bins narrow toward that edge, where the forward
+/// t-channel photon pole puts `dσ/dcos θ ∝ 1/(1 − cos θ)²` at its largest.
+const NSZ_COS_EDGES: [f64; 16] = [
+    -1.0, -0.5, 0.0, 0.5, 0.8, 0.9, 0.95, 0.97, 0.98, 0.983, 0.985, 0.986, 0.9863, 0.9865, 0.9866,
+    1.0,
+];
+
+/// A probe parameter read from the environment, or its default.
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .map(|v| {
+            v.parse()
+                .unwrap_or_else(|_| panic!("{key}={v} does not parse"))
+        })
+        .unwrap_or(default)
+}
+
+/// `e+ e- > e+ e- $$ z` over the grammar ladder's rungs, split by channel, and
+/// on each seed's trained grids by polar angle.
+///
+/// Every seed prints its total and each channel's term as `adapt_grids` returns
+/// them (`NSZ_SEED`); every rung prints the seeds read under the seed policy
+/// (`NSZ_RUNG`). With `VG_NSZ_FROZEN = N`, each channel's final grid is then
+/// sampled frozen on `N` fresh points (`NSZ_FROZEN`, `NSZ_BIN`): its integral,
+/// the per-point variance it actually has, and the share of that variance each
+/// `cos θ` bin carries ([`NSZ_COS_EDGES`]). A frozen pass is unbiased whatever
+/// the grid, so it does not reproduce a seed's deficit; what it measures is the
+/// weight distribution that seed's last iteration sampled from, and so whether a
+/// small quoted error was a small variance or an unseen tail.
+///
+/// `VG_NSZ_SCALES` (comma-separated multiples of 40 000, default
+/// `0.25,1,4,16`), `VG_NSZ_SEEDS` (seeds `1..=n`, default 20). `VG_NSZ_ROW`
+/// replaces the row with another directory holding `Cards/run_card.dat` and
+/// `Cards/param_card.dat` (an absolute path is taken as is): the same process
+/// on an edited card, which is how a map bound is moved without touching the
+/// sampler. Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_ee_nsz_channel_split() {
+    // Seed for the frozen passes, distinct from every integration seed.
+    const FROZEN_SEED: u64 = 0x5EED_B4A8;
+    let reference = grammar_reference();
+    let process = reference.rows["ee_no_sz"].process.clone();
+    let scales: Vec<f64> = std::env::var("VG_NSZ_SCALES")
+        .map(|s| s.split(',').map(|x| x.trim().parse().unwrap()).collect())
+        .unwrap_or_else(|_| vec![0.25, 1.0, 4.0, 16.0]);
+    let row: String = env_or("VG_NSZ_ROW", "ee_to_ee_nsz".to_string());
+    eprintln!("NSZ_ROW {row}");
+    let n_seeds: u64 = env_or("VG_NSZ_SEEDS", 20);
+    let frozen: usize = env_or("VG_NSZ_FROZEN", 0);
+    let nbins = NSZ_COS_EDGES.len() - 1;
+    for scale in scales {
+        let neval = (40_000.0 * scale) as usize;
+        let mut totals = Vec::new();
+        let mut terms: Vec<Vec<(f64, f64)>> = Vec::new();
+        for seed in 1..=n_seeds {
+            let t = std::time::Instant::now();
+            with_integrand(
+                &row,
+                &process,
+                seed,
+                MULTICHANNEL_SURVEY,
+                MULTICHANNEL_ITERS,
+                None,
+                |integ, _| {
+                    if seed == 1 {
+                        for (j, s) in integ.channel_samplers().iter().enumerate() {
+                            eprintln!("NSZ_CHANNEL ch{j} {s:?}");
+                        }
+                    }
+                    let (channels, total) = integ.adapt_grids(neval, GRAMMAR_NITER, seed);
+                    let s = total.integral * GEV2_TO_PB;
+                    let e = total.std_dev * GEV2_TO_PB;
+                    totals.push((s, e));
+                    terms.resize(channels.len(), Vec::new());
+                    let mut line = format!(
+                        "NSZ_SEED neval {neval} seed {seed} sigma {s:.6} err {e:.6} chi2 {:.3}",
+                        total.chi2_per_dof
+                    );
+                    for (j, ch) in channels.iter().enumerate() {
+                        let (sj, ej) = (
+                            ch.result.integral * GEV2_TO_PB,
+                            ch.result.std_dev * GEV2_TO_PB,
+                        );
+                        terms[j].push((sj, ej));
+                        line += &format!(
+                            " | ch{j} alpha {:.4e} neval {} sigma {sj:.6} err {ej:.6} chi2 {:.3}",
+                            ch.alpha, ch.neval, ch.result.chi2_per_dof
+                        );
+                    }
+                    eprintln!("{line} | {:.2} s", t.elapsed().as_secs_f64());
+                    if frozen == 0 {
+                        return;
+                    }
+                    let beam = integ.incoming()[0];
+                    let mut momenta = Vec::new();
+                    for (j, ch) in channels.iter().enumerate() {
+                        let mut rng = ChaCha8Rng::seed_from_u64(FROZEN_SEED ^ seed);
+                        rng.set_stream(1 + j as u64);
+                        let grid_ndim = ch.grid.ndim();
+                        let mut x = vec![0.0; integ.point_ndim()];
+                        let mut scale_draw =
+                            SubStream::from_stream(FROZEN_SEED, SCALE_DRAW_STREAM_BASE + j as u64);
+                        let mut sum = vec![0.0f64; nbins];
+                        let mut sum2 = vec![0.0f64; nbins];
+                        let mut wmax = vec![0.0f64; nbins];
+                        let mut hits = vec![0usize; nbins];
+                        for _ in 0..frozen {
+                            let jac = ch.grid.draw(&mut rng, &mut x[..grid_ndim]);
+                            scale_draw.fill_uniforms(&mut x[grid_ndim..]);
+                            let w = jac * integ.event_in_channel(j, &x, &mut momenta) * GEV2_TO_PB;
+                            if w == 0.0 {
+                                continue;
+                            }
+                            let p = momenta[0];
+                            let dot = p.px() * beam.px() + p.py() * beam.py() + p.pz() * beam.pz();
+                            let norm = (p.px().powi(2) + p.py().powi(2) + p.pz().powi(2)).sqrt()
+                                * (beam.px().powi(2) + beam.py().powi(2) + beam.pz().powi(2))
+                                    .sqrt();
+                            let c = dot / norm;
+                            let b = NSZ_COS_EDGES[1..]
+                                .iter()
+                                .position(|&hi| c < hi)
+                                .unwrap_or(nbins - 1);
+                            sum[b] += w;
+                            sum2[b] += w * w;
+                            wmax[b] = wmax[b].max(w);
+                            hits[b] += 1;
+                        }
+                        let n = frozen as f64;
+                        let mean: f64 = sum.iter().sum::<f64>() / n;
+                        let second: f64 = sum2.iter().sum::<f64>() / n;
+                        let var = second - mean * mean;
+                        // One iteration of this channel at its own budget, and the
+                        // mean of the iterations past the warm-up at that error.
+                        let per_iter = (var / ch.neval as f64).sqrt();
+                        let kept = (GRAMMAR_NITER - 2) as f64;
+                        eprintln!(
+                            "NSZ_FROZEN neval {neval} seed {seed} ch{j} draws {frozen} sigma \
+                             {mean:.6} err {:.6} point_rel_sd {:.4} implied_iter_err {per_iter:.6} \
+                             implied_mean_err {:.6} quoted {:.6}",
+                            (var / n).sqrt(),
+                            var.sqrt() / mean,
+                            per_iter / kept.sqrt(),
+                            ch.result.std_dev * GEV2_TO_PB,
+                        );
+                        for b in 0..nbins {
+                            let mb = sum[b] / n;
+                            let vb = sum2[b] / n - mb * mb;
+                            eprintln!(
+                                "NSZ_BIN neval {neval} seed {seed} ch{j} cos [{:.4},{:.4}) hits {} \
+                                 sigma {mb:.6} err {:.6} var_share {:.4} wmax {:.4e} wmax_over_mean \
+                                 {:.3e}",
+                                NSZ_COS_EDGES[b],
+                                NSZ_COS_EDGES[b + 1],
+                                hits[b],
+                                (vb / n).sqrt(),
+                                (sum2[b] / n) / second,
+                                wmax[b],
+                                wmax[b] / mean,
+                            );
+                        }
+                    }
+                },
+            );
+        }
+        let read = combine(&totals);
+        eprintln!(
+            "NSZ_RUNG neval {neval} total n {} mean {:.4} err {:.4} quoted {:.4} spread {:.4} \
+             chi2 {:.3}",
+            read.n, read.mean, read.err, read.quoted, read.spread, read.chi2_per_dof
+        );
+        for (j, t) in terms.iter().enumerate() {
+            let r = combine(t);
+            eprintln!(
+                "NSZ_RUNG neval {neval} ch{j} n {} mean {:.6} err {:.6} quoted {:.6} spread {:.6} \
+                 chi2 {:.3}",
+                r.n, r.mean, r.err, r.quoted, r.spread, r.chi2_per_dof
+            );
+        }
+    }
+}
+
 /// The five polarized rows whose cross sections the manifest covers by
 /// `ee_to_wp0wm`, each against its own banked MadEvent run: ten seeds here
 /// against one run there, whose quoted error the seed policy does not read as a
