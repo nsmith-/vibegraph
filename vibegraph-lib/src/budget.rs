@@ -146,9 +146,10 @@ pub const MAX_FLOOR_ACCEPTANCE_SCALE: usize = 4;
 /// `Σf²/n − (Σf/n)²`, a relative `~ε·n` of `f²` and so a relative error on the
 /// mean of `~√ε ≈ 1.5e-8` at any `n`, since the `√n` of the point count cancels
 /// against the `1/√n` of the mean's error. The bound sits several times above that
-/// floor and far below the error any real variation over a phase space leaves
-/// after an iteration, so a wrong declaration shows up as an error bar too wide
-/// to call exact.
+/// floor (the quoted error of the two-body decays is `2e-9` to `6e-9` at `1.2e5`
+/// to `1e7` points) and far below the error any real variation over a phase space
+/// leaves after an iteration, so a wrong declaration shows up as an error bar too
+/// wide to call exact.
 pub(crate) const CONSTANT_REL_ERROR: f64 = 1e-7;
 
 /// The points a channel of measured `acceptance` must draw for
@@ -862,16 +863,7 @@ where
         // skipping the rest for: a constant integrand's error bar is its own
         // rounding, and a wider one means the structural claim was wrong.
         if constant {
-            let rel_error = outcomes
-                .iter()
-                .map(|o| o.variance.sqrt() / o.integral.abs())
-                .fold(0.0, |worst: f64, x| {
-                    if x.is_nan() {
-                        f64::INFINITY
-                    } else {
-                        worst.max(x)
-                    }
-                });
+            let rel_error = worst_relative_error(&outcomes);
             if rel_error <= CONSTANT_REL_ERROR {
                 info!(
                     "constant integrand: one iteration, no grid refinement (relative error \
@@ -1357,6 +1349,22 @@ fn rel_of(r: &VegasResult) -> f64 {
     } else {
         f64::INFINITY
     }
+}
+
+/// The largest relative error any channel's own iteration quotes, `∞` for a
+/// channel whose integral and variance both vanish (a `0/0` has no error to speak
+/// of, and a declaration of constancy is not confirmed by it).
+fn worst_relative_error(outcomes: &[BlockIteration]) -> f64 {
+    outcomes
+        .iter()
+        .map(|o| o.variance.sqrt() / o.integral.abs())
+        .fold(0.0, |worst: f64, x| {
+            if x.is_nan() {
+                f64::INFINITY
+            } else {
+                worst.max(x)
+            }
+        })
 }
 
 /// The relative uncertainty the stopping test reads: every channel's quoted
@@ -2801,12 +2809,44 @@ mod tests {
     }
 
     /// A wrong declaration is caught by the iteration it licensed skipping the
-    /// rest for: the run withdraws it and spends the whole budget.
+    /// rest for: the run withdraws it and spends the whole budget. The tilts run
+    /// from a gross one to one whose error bar after the iteration (`~ tilt /
+    /// (2√3 · √4000) = 5e-6`) is only a few hundred times the rounding floor.
     #[test]
     fn a_declaration_the_iteration_contradicts_is_withdrawn() {
+        for tilt in [0.5, 1.0e-3] {
+            let integ = Declared {
+                level: DECLARED_LEVEL,
+                tilt,
+                declared: true,
+            };
+            let (_, total, report) = run_declared(
+                &integ,
+                Budget::Fixed {
+                    neval: 4_000,
+                    niter: 6,
+                },
+            );
+            assert_eq!(report.stop, StopReason::Budget, "tilt {tilt}");
+            assert_eq!(report.iterations, 6, "tilt {tilt}");
+            assert!(
+                (total.integral / DECLARED_LEVEL - 1.0).abs()
+                    < 5.0 * total.std_dev / total.integral,
+                "tilt {tilt}: {} ± {} against {DECLARED_LEVEL}",
+                total.integral,
+                total.std_dev
+            );
+        }
+    }
+
+    /// An integrand that vanishes everywhere has no relative error to confirm a
+    /// declaration with: its `0/0` withdraws it, as a vanishing channel withdraws
+    /// the stopping test's reading elsewhere.
+    #[test]
+    fn a_declared_integrand_that_vanishes_is_withdrawn() {
         let integ = Declared {
-            level: DECLARED_LEVEL,
-            tilt: 0.5,
+            level: 0.0,
+            tilt: 0.0,
             declared: true,
         };
         let (_, total, report) = run_declared(
@@ -2818,11 +2858,6 @@ mod tests {
         );
         assert_eq!(report.stop, StopReason::Budget);
         assert_eq!(report.iterations, 6);
-        assert!(
-            (total.integral / DECLARED_LEVEL - 1.0).abs() < 5.0 * total.std_dev / total.integral,
-            "{} ± {} against {DECLARED_LEVEL}",
-            total.integral,
-            total.std_dev
-        );
+        assert_eq!(total.integral, 0.0);
     }
 }
