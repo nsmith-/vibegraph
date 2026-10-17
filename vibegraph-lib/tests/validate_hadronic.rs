@@ -52,6 +52,7 @@ use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptio
 use vibegraph::helas::eval::BoundAmplitude;
 use vibegraph::helas::repr::lorentz::LorentzVector;
 use vibegraph::pdf::{PdfMember, PdfSet};
+use vibegraph::phasespace::maps::{MapOptions, SplitAngle};
 use vibegraph::proton::{derive_flavor_groups, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::RunCard;
 use vibegraph::ufo::slha::ParamCard;
@@ -385,14 +386,60 @@ fn run_seed_shaped(
     bound_transfer: bool,
     shape: ScaleShape,
 ) -> (f64, f64) {
-    let (survey, adapt_iters, neval, niter) = budget;
-    let build = if bound_transfer {
-        ProtonIntegrand::new
+    let (_, _, neval, niter) = budget;
+    let integ = adapted_integrand(
+        groups,
+        amps,
+        model,
+        evaluated,
+        set,
+        pdf,
+        rc,
+        budget,
+        seed,
+        expect_alpha_s,
+        summary,
+        bound_transfer,
+        shape,
+        MapOptions::default(),
+    );
+    let result = integ.integrate(neval, niter, seed);
+    assert_no_scale_draw_fallbacks(&integ);
+    result
+}
+
+/// The integrand [`run_seed_shaped`] integrates, under `maps`, with the run card's
+/// scale prescription installed and checked against `shape` and the channel
+/// weights adapted on `seed`'s survey substream: everything up to the VEGAS pass.
+#[allow(clippy::too_many_arguments)]
+fn adapted_integrand<'a>(
+    groups: &'a FlavorGroups,
+    amps: &'a [BoundAmplitude<'a, f64>],
+    model: &UFOModel,
+    evaluated: &'a EvaluatedModel,
+    set: &PdfSet,
+    pdf: &'a PdfMember,
+    rc: &RunCard,
+    budget: (usize, usize, usize, usize),
+    seed: u64,
+    expect_alpha_s: bool,
+    summary: &mut Vec<ChannelSummary>,
+    bound_transfer: bool,
+    shape: ScaleShape,
+    maps: MapOptions,
+) -> ProtonIntegrand<'a> {
+    let (survey, adapt_iters, _, _) = budget;
+    let mut integ = if bound_transfer {
+        ProtonIntegrand::new_with_maps(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F, maps)
     } else {
-        ProtonIntegrand::new_unbounded
-    };
-    let mut integ =
-        build(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F).expect("hadronic integrand");
+        assert_eq!(
+            maps,
+            MapOptions::default(),
+            "the unbounded integrand is built under the default maps only"
+        );
+        ProtonIntegrand::new_unbounded(groups, amps, evaluated, pdf, SQRT_S_HAD, MU_F)
+    }
+    .expect("hadronic integrand");
     let report = integ
         .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
         .expect("run card scale prescription compiles");
@@ -427,11 +474,14 @@ fn run_seed_shaped(
         *summary = subsampler_summary(&integ);
     }
     integ.adapt_alphas(seed, survey, adapt_iters, 0.5);
-    let result = integ.integrate(neval, niter, seed);
-    // The per-point scale-configuration draw falls back to the sampling channel
-    // when the squared amplitude it draws from is not finite, which is the only
-    // way a NaN `AMP2` reaches production without saying anything. The counter
-    // exists to be read; reading it here is what makes the path loud.
+    integ
+}
+
+/// The per-point scale-configuration draw falls back to the sampling channel when
+/// the squared amplitude it draws from is not finite, which is the only way a NaN
+/// `AMP2` reaches production without saying anything. The counter exists to be
+/// read; reading it after every pass is what makes the path loud.
+fn assert_no_scale_draw_fallbacks(integ: &ProtonIntegrand<'_>) {
     assert_eq!(
         integ.scale_draw_fallbacks(),
         0,
@@ -439,7 +489,6 @@ fn run_seed_shaped(
          their squared amplitudes summed to something the draw could not normalise",
         integ.scale_draw_fallbacks(),
     );
-    result
 }
 
 /// σ(p p → e⁺e⁻) through the general hadronic path against a banked MadGraph run.
@@ -3998,20 +4047,60 @@ fn without_amp2_weights(text: &str) -> String {
         .collect()
 }
 
+/// Seeds per map in the scatter-guard calibration, starting at the gate's first,
+/// so the gate's own quintet is the first one read.
+const LLJ_DYN_CALIBRATION_SEEDS: u64 = 80;
+
+/// `χ²/dof` at a `1%` false-alarm rate for honest Gaussian errors: on four degrees
+/// of freedom (five seeds) and on nineteen (twenty seeds). `χ²₄(0.99) = 13.277`,
+/// `χ²₁₉(0.99) = 36.191`.
+const CHI2_PER_DOF_P01_4: f64 = 13.277 / 4.0;
+const CHI2_PER_DOF_P01_19: f64 = 36.191 / 19.0;
+
 /// What `sigma_llj_dynamical_scale_vs_mg`'s scatter guard reads under the
-/// production maps, at the gate's own configuration, over forty seeds.
+/// production maps, at the gate's own configuration, over
+/// [`LLJ_DYN_CALIBRATION_SEEDS`] seeds.
 ///
 /// The guard forms `χ²/dof` of five seeds about their mean with their quoted
 /// errors and fails above [`LLJ_MAX_CHI2_PER_DOF`]. Whether that threshold is
-/// calibrated is a property of the estimator, not of any five seeds: this reports
-/// the forty-seed `χ²/dof`, the realised seed spread against the mean quoted
-/// error, and how many of the eight disjoint quintets cross the threshold.
+/// calibrated is a property of the estimator, not of any five seeds: this records
+/// every seed's value, error and per-channel terms, and reads the all-seed
+/// `χ²/dof`, the realised seed spread against the mean quoted error, how many
+/// disjoint quintets cross the threshold and the `p = 1%` one on four degrees of
+/// freedom, how many disjoint twenty-seed pools cross `p = 1%` on nineteen, and
+/// how many seeds sit beyond `3σ` of the all-seed mean.
 ///
 /// Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_llj_dyn_scatter_guard_calibration() {
-    const SEEDS: u64 = 40;
+    llj_dyn_scatter_calibration("default", MapOptions::default());
+}
+
+/// [`probe_llj_dyn_scatter_guard_calibration`] with the soft-shaped angle on
+/// every split whose parent moves.
+#[test]
+#[ignore]
+fn probe_llj_dyn_scatter_guard_calibration_soft_all() {
+    llj_dyn_scatter_calibration(
+        "soft-all",
+        MapOptions {
+            split_angle: Some(SplitAngle::SoftAll),
+            ..MapOptions::default()
+        },
+    );
+}
+
+/// The calibration run behind both probes above, under `maps`.
+///
+/// Every seed prints one `SCATTER` line and one `CHANNEL` line per sampling
+/// channel — the term's selection weight, integral and error in picobarns, and
+/// its iteration `χ²/dof` — so a seed reading low can be located in the channels
+/// that carry the deficit. The per-channel terms are those of the same VEGAS
+/// pass the seed's σ is the sum of.
+fn llj_dyn_scatter_calibration(label: &str, maps: MapOptions) {
+    use vibegraph::phasespace::GEV2_TO_PB;
+
     if !dyn_run_present("probe_llj_dyn_scatter_guard_calibration", LLJ_DYN_RUN) {
         return;
     }
@@ -4028,50 +4117,84 @@ fn probe_llj_dyn_scatter_guard_calibration() {
         .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), &evaluated))
         .collect();
     let mut summary = Vec::new();
-    let runs: Vec<SeedResult> = (0..SEEDS)
-        .map(|k| {
-            let seed = LLJ_SEEDS[0] + k;
-            let (sigma_pb, sigma_err_pb) = run_seed_shaped(
-                &groups,
-                &amps,
-                &model,
-                &evaluated,
-                &set,
-                &pdf,
-                &rc,
-                (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
-                seed,
-                true,
-                &mut summary,
-                true,
-                ScaleShape::PerEvent,
+    let mut runs: Vec<SeedResult> = Vec::new();
+    for k in 0..LLJ_DYN_CALIBRATION_SEEDS {
+        let clock = Stopwatch::start();
+        let seed = LLJ_SEEDS[0] + k;
+        let integ = adapted_integrand(
+            &groups,
+            &amps,
+            &model,
+            &evaluated,
+            &set,
+            &pdf,
+            &rc,
+            (LLJ_ADAPT_SURVEY, LLJ_ADAPT_ITERS, LLJ_NEVAL, LLJ_NITER),
+            seed,
+            true,
+            &mut summary,
+            true,
+            ScaleShape::PerEvent,
+            maps,
+        );
+        let (channels, total) = integ.adapt_grids(LLJ_NEVAL, LLJ_NITER, seed);
+        assert_no_scale_draw_fallbacks(&integ);
+        let (sigma_pb, sigma_err_pb) = (total.integral * GEV2_TO_PB, total.std_dev * GEV2_TO_PB);
+        eprintln!(
+            "SCATTER map={label} seed={seed} sigma_pb={sigma_pb:.6} err_pb={sigma_err_pb:.6} \
+             iter_chi2={:.3} seconds={:.1}",
+            total.chi2_per_dof,
+            clock.seconds()
+        );
+        for (j, (id, term)) in integ.channel_ids().iter().zip(&channels).enumerate() {
+            eprintln!(
+                "CHANNEL map={label} seed={seed} index={j} group={} channel={} alpha={:.6e} \
+                 sigma_pb={:.6} err_pb={:.6} iter_chi2={:.3}",
+                id.group,
+                id.channel,
+                term.alpha,
+                term.result.integral * GEV2_TO_PB,
+                term.result.std_dev * GEV2_TO_PB,
+                term.result.chi2_per_dof
             );
-            eprintln!("  seed {seed}: {sigma_pb:.3} ± {sigma_err_pb:.3} pb");
-            SeedResult {
-                seed,
-                sigma_pb,
-                sigma_err_pb,
-            }
-        })
-        .collect();
+        }
+        runs.push(SeedResult {
+            seed,
+            sigma_pb,
+            sigma_err_pb,
+        });
+    }
     let all = combine(&runs);
     let (mean, chi2) = (all.mean, all.chi2_per_dof);
     let n = runs.len() as f64;
     let sd = all.spread * n.sqrt();
     let quoted = runs.iter().map(|r| r.sigma_err_pb).sum::<f64>() / n;
     let quintets: Vec<f64> = runs.chunks(5).map(|q| combine(q).chi2_per_dof).collect();
-    let over = quintets
+    let pools: Vec<f64> = runs
+        .chunks_exact(20)
+        .map(|q| combine(q).chi2_per_dof)
+        .collect();
+    let above = |v: &[f64], limit: f64| v.iter().filter(|&&c| c > limit).count();
+    let beyond_3sigma: Vec<u64> = runs
         .iter()
-        .filter(|&&c| c > LLJ_MAX_CHI2_PER_DOF)
-        .count();
+        .filter(|r| ((r.sigma_pb - mean) / r.sigma_err_pb).abs() > 3.0)
+        .map(|r| r.seed)
+        .collect();
     eprintln!(
-        "── {LLJ_DYN_RUN} at {LLJ_NEVAL} x {LLJ_NITER}: {SEEDS} seeds, χ²/dof {chi2:.2}, \
-         sd {:.3}% against mean quoted {:.3}% (ratio {:.2}), quintet χ²/dof {quintets:.2?}, \
-         {over} of {} above {LLJ_MAX_CHI2_PER_DOF}",
+        "── {LLJ_DYN_RUN} [{label}] at {LLJ_NEVAL} x {LLJ_NITER}: {} seeds, mean {mean:.4} pb, \
+         χ²/dof {chi2:.2}, sd {:.3}% against mean quoted {:.3}% (ratio {:.2})\n   \
+         quintet χ²/dof {quintets:.2?}: {} of {} above {LLJ_MAX_CHI2_PER_DOF}, {} above \
+         {CHI2_PER_DOF_P01_4:.2}\n   20-seed χ²/dof {pools:.2?}: {} of {} above \
+         {CHI2_PER_DOF_P01_19:.2}\n   seeds beyond 3σ of the mean: {beyond_3sigma:?}",
+        runs.len(),
         100.0 * sd / mean,
         100.0 * quoted / mean,
         sd / quoted,
+        above(&quintets, LLJ_MAX_CHI2_PER_DOF),
         quintets.len(),
+        above(&quintets, CHI2_PER_DOF_P01_4),
+        above(&pools, CHI2_PER_DOF_P01_19),
+        pools.len(),
     );
 }
 
@@ -4787,7 +4910,6 @@ fn mlm_mixed_sigma_row(row: &str, alpha_s: &[bool], seeds: &[u64], mode: &'stati
     use vibegraph::hadronic::Observable;
     use vibegraph::multiplicity::{split_by_multiplicity, union_shape, MultiplicitySum};
     use vibegraph::onshell::{group_vetoes, subprocess_markings};
-    use vibegraph::phasespace::maps::MapOptions;
     use vibegraph::proton::process_shape;
 
     let clock = Stopwatch::start();
