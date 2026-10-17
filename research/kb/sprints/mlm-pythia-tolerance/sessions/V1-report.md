@@ -4,6 +4,7 @@ title: "V1 report: today's numbers pass the amended rule; the comparison is gate
 description: "Both sides through Pythia on this host: B-vs-A and MadEvent's null pass both jet-rate legs and all five pulls; mlm_match.py implements D1 as amended, writes a row the collator renders, and the mlm-pythia standalone entry is flipped to gate."
 status: draft
 tags: [mlm, pythia, matching, gate-promotion, look-elsewhere, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: df3bbf9, resource: "https://github.com/nsmith-/vibegraph/commit/df3bbf9", title: "validation: gate the matched MLM Pythia comparison"}

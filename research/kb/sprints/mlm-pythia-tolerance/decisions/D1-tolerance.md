@@ -101,6 +101,23 @@ to the χ² leg. A localised offset below z* per-bin σ passes. The
 normalised-shape pulls are correlated through the normalisation, so the
 look-elsewhere correction is somewhat conservative.
 
-**Today's numbers** (filled in by V1 before implementing): N_bins, z*, the
-B-vs-A max |pull| with its histogram and bin, and the null's. If either
-already fails the rule, V1 stops and the manager reports to the planner.
+**Today's numbers** (V1, 2026-10-17, linux-64 Pythia 8.312, today's twenty
+vibegraph samples; the driver's recorded run, re-read by the manager from the
+cache):
+
+- **B vs A: both legs pass.**
+  - N_bins is 72 (27 + 24 + 21), so z* = 3.98.
+  - The per-bin leg's max |pull| is 2.91, in d12 bin [0.0, 0.1]
+    (p_min × 72 = 0.26).
+  - The χ² leg's min p × 3 is 0.26 (d23, p 0.087).
+  - The acceptance and merged-σ pulls are −0.76 / −1.79 / −1.99 / −1.38 /
+    −0.39.
+- **MadEvent null (files 1–11 against 12–21): passes.**
+  - 69 bins, z* = 3.97, max |pull| 2.93 in d01 [1.0, 1.1].
+  - χ² min p × 3 is 0.19. Its d12 reads p 0.077 on this host, against 0.034
+    in the concept's record from another host.
+- **vibegraph null, for information.** Max |pull| 2.59, χ² min p × 3 = 1.07,
+  and the `@1` pull is −2.96.
+
+Neither reading fails the rule, so implementation proceeded without returning
+to the user.
