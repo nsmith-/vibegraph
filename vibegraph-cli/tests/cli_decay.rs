@@ -282,10 +282,18 @@ fn partial_widths_match_madevent_over_seeds() {
         // that guard a sampler against a missed region have nothing to read, and
         // the row is held to the exact width at the scale of float error instead.
         if let Some(&width) = exact.flatten().filter(|_| is_two_body(&row.process)) {
-            let worst = ours
-                .iter()
-                .map(|&(v, _)| (v / width - 1.0).abs())
-                .fold(0.0f64, f64::max);
+            // `f64::max` drops a NaN, so a width that did not parse as a number
+            // would read as agreement; count it as the worst difference there is.
+            let worst =
+                ours.iter()
+                    .map(|&(v, _)| (v / width - 1.0).abs())
+                    .fold(0.0f64, |worst, d| {
+                        if d.is_nan() {
+                            f64::INFINITY
+                        } else {
+                            worst.max(d)
+                        }
+                    });
             println!(
                 "{name:<11} {:<20} exact {width:.10e}: ours {our_mean:.10e}, worst seed relative \
                  difference {worst:.1e}, quoted errors {:?}",
