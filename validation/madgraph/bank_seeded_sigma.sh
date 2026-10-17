@@ -44,6 +44,11 @@
 #      the survey and the wall time; and it prints three lines per row:
 #        SCREEN   the 4x seeds against the 1x mean in standard errors. FLAGGED:
 #                 the row needs a budget ladder before its record is banked.
+#        LADDER   with 20 seeds at 1x and 20 at 4x: the two means, their measured
+#                 seed spreads and sigma = sqrt(s1^2/n1 + s4^2/n4) (the quoted
+#                 errors do not enter); "re-bank at 4x" when the means differ by
+#                 more than 2 sigma, else "stays at 1x". Below 20 + 20 it says
+#                 the ladder is not run.
 #        SURVEY   hard_survey and the run_config.inc min/max_events every seed
 #                 ran with. INERT: the survey ran at another rate than
 #                 hard_survey asks (a card with mmjj > 0.01 (ebeam1 + ebeam2)).
@@ -53,6 +58,42 @@
 #                 or more; whether the row's sigma cell gates is the
 #                 manifest's decision, not this driver's. `seed-record
 #                 --rescreen PATH` re-reads a written record under this rule.
+#
+# Confirming a SCATTER flag, and running a ladder, on the M3 (a record that has
+# only the default 5 + 2 seeds):
+#
+#   A row whose SCATTER line reads FLAGGED needs 20 seeds at its budget; one
+#   whose SCREEN line reads FLAGGED needs 20 at the budget and 20 at 4x. Both
+#   are the same command on the row's own output directory, with SEED_PLAN
+#   naming the larger seed set. Seeds whose kept files exist under the same run
+#   card are read back, not re-run, so only the new seeds cost a MadEvent run.
+#
+#     SEED_PLAN=confirm20  SEEDS = 20261101-20261105 and 20261201-20261215 (20 at
+#                          the budget); SEEDS_4X stays 20261111 20261112 (read
+#                          back). The record then holds 20 + 2 seeds and its
+#                          SCATTER line reads CONFIRMED or within chance.
+#     SEED_PLAN=ladder20   the same SEEDS, and SEEDS_4X = 20261111 20261112 and
+#                          20261301-20261318 (20 at 4x). The record then holds
+#                          20 + 20 seeds and its LADDER line gives the verdict.
+#
+#   One row, to a directory that leaves the banked record alone until the new
+#   one is read (from validation/madgraph, with the record's s* directories
+#   copied in so the seeds already run are read back):
+#
+#     mkdir -p /scratch/confirm && cp -R output/seeded_sigma/<row> /scratch/confirm/
+#     SEED_PLAN=ladder20 SEEDED_OUT=/scratch/confirm ROWS=<row> \
+#       pixi run -e madgraph bank-seeded-sigma
+#     cargo run -q -p vibegraph-validation-report --bin seed-record -- \
+#       --rescreen /scratch/confirm/<row>/seed_record.json
+#
+#   (the driver prints the same lines when it finishes). The record to bank is
+#   /scratch/confirm/<row>/ whole: it carries the five original seeds, so it is
+#   a superset of the banked one. Copy it over output/seeded_sigma/<row>/ only
+#   when its LADDER or SCATTER line has been read; a "re-bank at 4x" verdict
+#   changes which rung the gates read, which is the manifest's and the decision
+#   record's call, not this driver's. Without SEEDED_OUT the new seeds are
+#   written into output/seeded_sigma/<row>/ directly. An explicit SEEDS or
+#   SEEDS_4X overrides the plan.
 #
 # The σ gates read a row's record where the bundle carries one
 # (vibegraph-lib/tests/common/seed_record.rs) and its single banked run
@@ -64,6 +105,8 @@
 #            or row names (uu_tt is in no group)
 #   SEEDS    iseeds at the budget (default 20261101-20261105)
 #   SEEDS_4X iseeds at four times the budget (default 20261111 20261112)
+#   SEED_PLAN  confirm20 or ladder20: the larger seed sets above, where SEEDS and
+#            SEEDS_4X are not given
 #   NB_CORE  cores per madevent run (default 2)
 #   JOBS     rows run at once (default 1)
 #   HARD_SURVEY  hard_survey on every run's card (default 2); for diagnostic
@@ -85,8 +128,21 @@ SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
 
 OUTDIR="${SEEDED_OUT:-$HERE/output/seeded_sigma}"
 WORK="${SEEDED_WORK:-$HERE/work/seeded_sigma}"
-SEEDS="${SEEDS:-$(seq -f '%.0f' -s ' ' 20261101 20261105)}"
-SEEDS_4X="${SEEDS_4X-20261111 20261112}"
+seed_range() { seq -f '%.0f' -s ' ' "$1" "$2"; }
+case "${SEED_PLAN:-}" in
+  "") plan_seeds="$(seed_range 20261101 20261105)"; plan_seeds_4x="20261111 20261112" ;;
+  confirm20)
+    plan_seeds="$(seed_range 20261101 20261105) $(seed_range 20261201 20261215)"
+    plan_seeds_4x="20261111 20261112"
+    ;;
+  ladder20)
+    plan_seeds="$(seed_range 20261101 20261105) $(seed_range 20261201 20261215)"
+    plan_seeds_4x="20261111 20261112 $(seed_range 20261301 20261318)"
+    ;;
+  *) printf '!!! SEED_PLAN is confirm20 or ladder20, not %s\n' "$SEED_PLAN" >&2; exit 1 ;;
+esac
+SEEDS="${SEEDS:-$plan_seeds}"
+SEEDS_4X="${SEEDS_4X-$plan_seeds_4x}"
 NB_CORE="${NB_CORE:-2}"
 JOBS="${JOBS:-1}"
 HARD_SURVEY="${HARD_SURVEY:-2}"
@@ -435,7 +491,7 @@ printf '%s\n' "${rows[@]}" |
 echo
 echo "=== screen (output/seeded_sigma/<row>/seed_record.json carries each) ==="
 for row in "${rows[@]}"; do
-  grep -hE '^(SCREEN|SURVEY|SCATTER) ' "$WORK/$row/record.log" 2>/dev/null ||
+  grep -hE '^(SCREEN|LADDER|SURVEY|SCATTER) ' "$WORK/$row/record.log" 2>/dev/null ||
     echo "SCREEN $row: no record (the row failed)"
 done | tee "$WORK/screen.txt"
 exit "$status"

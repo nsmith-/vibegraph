@@ -70,8 +70,8 @@ the M3. The CI report is the run's own.
 - [madevent-shell-refusals-untested](../../backlog/hygiene/madevent-shell-refusals-untested.md)
 - [lib-tests-hand-roll-temp-dirs](../../backlog/hygiene/lib-tests-hand-roll-temp-dirs.md)
 - [madgraph-file-parsers-duplicated](../../backlog/hygiene/madgraph-file-parsers-duplicated.md)
-- [seed-record-ladder-verdict-and-tie-break](../../backlog/hygiene/seed-record-ladder-verdict-and-tie-break.md)
-- [chi2-p-value-floors-at-zero](../../backlog/hygiene/chi2-p-value-floors-at-zero.md)
+- `seed-record-ladder-verdict-and-tie-break` (closed in [seed-record-tooling](../seed-record-tooling/closeout.md))
+- `chi2-p-value-floors-at-zero` (closed in [seed-record-tooling](../seed-record-tooling/closeout.md))
 
 Updated: [madevent-cumulated-time-host-dependence](../../backlog/performance/madevent-cumulated-time-host-dependence.md)
 now asks only where a MadEvent job's non-`MATRIX1` CPU goes.

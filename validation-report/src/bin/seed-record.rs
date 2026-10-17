@@ -23,7 +23,8 @@
 //! `<kept>/seed_record.json` in the format `vibegraph-lib/tests/common/seed_record.rs`
 //! defines and the σ gates read. It prints one line per seed, the seed-policy
 //! readings, the screen of the four-times-budget seeds against the budget's
-//! mean, the survey the runs made and the row's per-channel scatter test.
+//! mean, the budget ladder's verdict (with 20 seeds on each rung), the survey
+//! the runs made and the row's per-channel scatter test.
 //!
 //! `--rescreen` reads a record this tool wrote (at any version of the same
 //! schema), checks it, and prints the same lines with the summary computed
@@ -721,6 +722,7 @@ fn print_record(record: &SeedRecord) {
             "within the screen"
         }
     );
+    println!("{}", ladder_line(row, &record.ladder()));
     print_survey(row, &summary.survey);
     println!("{}", scatter_line(row, summary.scatter.as_ref()));
 }
@@ -753,10 +755,52 @@ fn print_survey(row: &str, survey: &seed_record::SurveySummary) {
     );
 }
 
-/// A p-value to three digits; `chi2_p_value` reads 0 only below 1e-16.
+/// The `LADDER` line: the budget ladder's rung means, the combined standard
+/// error of their measured spreads, the separation in those and the verdict.
+fn ladder_line(row: &str, ladder: &seed_record::Ladder) -> String {
+    let (Some((m1, s1)), Some((m4, s4)), Some(sigma), Some(pull)) =
+        (ladder.budget, ladder.screening, ladder.sigma, ladder.pull)
+    else {
+        return format!(
+            "LADDER {row}: not run, it needs {} seeds at 1x and {} at {}x (this record has {} and {})",
+            seed_record::LADDER_SEEDS,
+            seed_record::LADDER_SEEDS,
+            seed_record::SCREEN_BUDGET_FACTOR,
+            ladder.n_budget,
+            ladder.n_screening,
+        );
+    };
+    let readings = format!(
+        "{} seeds at 1x mean {m1:.6e} (sd {s1:.3e}), {} at {}x mean {m4:.6e} (sd {s4:.3e}): \
+         sigma {sigma:.3e}, difference {pull:+.2} sigma",
+        ladder.n_budget,
+        ladder.n_screening,
+        seed_record::SCREEN_BUDGET_FACTOR,
+    );
+    match ladder.verdict {
+        seed_record::LadderVerdict::NotRun => format!(
+            "LADDER {row}: not run, it needs {} seeds at 1x and {} at {}x; readings only: {readings}",
+            seed_record::LADDER_SEEDS,
+            seed_record::LADDER_SEEDS,
+            seed_record::SCREEN_BUDGET_FACTOR,
+        ),
+        seed_record::LadderVerdict::Rebank => format!(
+            "LADDER {row}: {readings} -> re-bank at {}x (beyond {} sigma)",
+            seed_record::SCREEN_BUDGET_FACTOR,
+            seed_record::LADDER_SIGMA_LIMIT,
+        ),
+        seed_record::LadderVerdict::Stays => format!(
+            "LADDER {row}: {readings} -> stays at 1x (within {} sigma)",
+            seed_record::LADDER_SIGMA_LIMIT,
+        ),
+    }
+}
+
+/// A p-value to three digits; `chi2_p_value` reads 0 only where the tail
+/// underflows `f64`, below the smallest normal number.
 fn p_text(p: f64) -> String {
     if p == 0.0 {
-        "< 1e-16".to_string()
+        "< 1e-300".to_string()
     } else {
         format!("{p:.2e}")
     }
@@ -1518,8 +1562,8 @@ mod tests {
     /// Deviations about 50 giving χ² = 40 on 4 dof with a unit quote.
     const FAR: [f64; 5] = [4.0, -4.0, 2.0, -2.0, 0.0];
 
-    /// Relative agreement asked of `puruspe::gammq` against a closed form: it
-    /// is good to about 1e-11 at the values these tests take.
+    /// Relative agreement asked of the upper incomplete gamma function against
+    /// a closed form at the values these tests take.
     const P_TOLERANCE: f64 = 1e-9;
 
     fn scatter_of(r: &SeedRecord) -> seed_record::Scatter {
@@ -1662,7 +1706,7 @@ mod tests {
             &channel_set(3, &alternate(1.0), 2, &alternate(9.0)),
         ));
         assert!(
-            confirmed.contains("look-elsewhere p < 1e-16 over 3 channels"),
+            confirmed.contains("look-elsewhere p < 1e-300 over 3 channels"),
             "{confirmed}"
         );
         assert!(confirmed.contains("-> CONFIRMED;"), "{confirmed}");
@@ -1870,5 +1914,161 @@ mod tests {
         assert!((summary.ew_minus_reported_pb - 2.0).abs() < 1e-12);
         // Σ(d − 2)² = 2, over n − 1 = 4, over n = 5.
         assert!((summary.ew_minus_reported_err_pb - 0.1f64.sqrt()).abs() < 1e-12);
+    }
+
+    /// A record with `n1` seeds at the budget alternating ±1 about 100 and `n4`
+    /// at four times it alternating ±`amp4` about `centre4` (even counts, so
+    /// each rung's mean is its centre). Every seed quotes a huge error, which
+    /// the ladder must not read.
+    fn ladder_record_with(n1: usize, n4: usize, amp4: f64, centre4: f64) -> SeedRecord {
+        let rung = |count: usize, nevents: u64, centre: f64, amp: f64, first: u64| {
+            (0..count)
+                .map(|i| {
+                    let sign = if i % 2 == 0 { amp } else { -amp };
+                    let mut s = seed(first + i as u64, nevents, centre + sign, centre + sign);
+                    s.reported_err_pb = 1e6;
+                    s
+                })
+                .collect::<Vec<SeedRun>>()
+        };
+        let mut seeds = rung(n1, 100, 100.0, 1.0, 1);
+        seeds.extend(rung(n4, 400, centre4, amp4, 1000));
+        record(seeds)
+    }
+
+    /// Both rungs at ±1.
+    fn ladder_record(n1: usize, n4: usize, centre4: f64) -> SeedRecord {
+        ladder_record_with(n1, n4, 1.0, centre4)
+    }
+
+    /// Twenty seeds a side at ±1: s² = 20/19 per rung, so
+    /// σ = √(2 · (20/19) / 20) = √(2/19), whatever the quotes say.
+    #[test]
+    fn the_ladder_decides_on_the_measured_spread_either_side_of_two_sigma() {
+        let sigma = (2.0f64 / 19.0).sqrt();
+        let stays = ladder_record(20, 20, 100.0 + 1.9 * sigma).ladder();
+        assert!((stays.sigma.unwrap() - sigma).abs() < 1e-12);
+        assert!((stays.pull.unwrap() - 1.9).abs() < 1e-9);
+        assert_eq!(stays.verdict, seed_record::LadderVerdict::Stays);
+
+        let rebank = ladder_record(20, 20, 100.0 + 2.1 * sigma).ladder();
+        assert_eq!(rebank.verdict, seed_record::LadderVerdict::Rebank);
+        let down = ladder_record(20, 20, 100.0 - 2.1 * sigma).ladder();
+        assert_eq!(down.verdict, seed_record::LadderVerdict::Rebank);
+        assert!((down.pull.unwrap() + 2.1).abs() < 1e-9);
+    }
+
+    /// The ladder decides only with twenty seeds on each rung; the readings
+    /// are still given below that.
+    #[test]
+    fn the_ladder_is_not_run_below_twenty_and_twenty() {
+        for (n1, n4) in [(19, 20), (20, 19), (5, 2)] {
+            let l = ladder_record(n1, n4, 110.0).ladder();
+            assert_eq!(l.verdict, seed_record::LadderVerdict::NotRun, "{n1} + {n4}");
+            assert_eq!((l.n_budget, l.n_screening), (n1, n4));
+        }
+        let line = ladder_line("row", &ladder_record(5, 2, 110.0).ladder());
+        assert!(
+            line.starts_with("LADDER row: not run, it needs 20 seeds at 1x and 20 at 4x"),
+            "{line}"
+        );
+        let none = ladder_record(5, 0, 110.0).ladder();
+        assert_eq!(none.sigma, None);
+        assert_eq!(
+            ladder_line("row", &none),
+            "LADDER row: not run, it needs 20 seeds at 1x and 20 at 4x (this record has 5 and 0)"
+        );
+    }
+
+    #[test]
+    fn the_ladder_line_states_the_readings_and_the_verdict() {
+        let sigma = (2.0f64 / 19.0).sqrt();
+        let line = |c: f64| ladder_line("row", &ladder_record(20, 20, c).ladder());
+        let stays = line(100.0 + 0.5 * sigma);
+        assert!(
+            stays.contains("20 seeds at 1x mean 1.000000e2 (sd 1.026e0)"),
+            "{stays}"
+        );
+        assert!(
+            stays.contains("difference +0.50 sigma -> stays at 1x"),
+            "{stays}"
+        );
+        let rebank = line(100.0 + 3.0 * sigma);
+        assert!(
+            rebank.contains("difference +3.00 sigma -> re-bank at 4x"),
+            "{rebank}"
+        );
+    }
+
+    /// Rungs of different size and spread: 20 seeds at ±1 and 30 at ±3 give
+    /// σ² = (20/19)/20 + 9 (30/29)/30 = 1/19 + 9/29. Swapping which rung's
+    /// variance divides by which count, or reading one rung's spread for both,
+    /// moves σ and, at 2.1 σ or 1.9 σ, the verdict.
+    #[test]
+    fn the_ladder_weights_each_rungs_spread_by_its_own_count() {
+        let sigma = (1.0f64 / 19.0 + 9.0 / 29.0).sqrt();
+        let swapped = (20.0f64 / 19.0 / 30.0 + 9.0 * 30.0 / 29.0 / 20.0).sqrt();
+        let one_spread = (20.0f64 / 19.0 * (1.0 / 20.0 + 1.0 / 30.0)).sqrt();
+        assert!(2.1 * sigma / swapped < 2.0 && 1.9 * sigma / one_spread > 2.0);
+        let l = ladder_record_with(20, 30, 3.0, 100.0 + 2.1 * sigma).ladder();
+        assert!((l.sigma.unwrap() - sigma).abs() < 1e-12, "{l:?}");
+        assert!((l.pull.unwrap() - 2.1).abs() < 1e-9, "{l:?}");
+        let (m1, s1) = l.budget.unwrap();
+        let (m4, s4) = l.screening.unwrap();
+        assert!((m1 - 100.0).abs() < 1e-12 && (m4 - (100.0 + 2.1 * sigma)).abs() < 1e-12);
+        assert!((s1 * s1 - 20.0 / 19.0).abs() < 1e-12);
+        assert!((s4 * s4 - 9.0 * 30.0 / 29.0).abs() < 1e-12);
+        assert_eq!(l.verdict, seed_record::LadderVerdict::Rebank);
+        let inside = ladder_record_with(20, 30, 3.0, 100.0 + 1.9 * sigma).ladder();
+        assert_eq!(inside.verdict, seed_record::LadderVerdict::Stays);
+    }
+
+    /// The line names each rung's own mean, spread and count.
+    #[test]
+    fn the_ladder_line_keeps_the_two_rungs_apart() {
+        let line = ladder_line("row", &ladder_record_with(20, 30, 3.0, 101.0).ladder());
+        assert!(
+            line.contains("20 seeds at 1x mean 1.000000e2 (sd 1.026e0), 30 at 4x mean 1.010000e2 (sd 3.051e0)"),
+            "{line}"
+        );
+    }
+
+    /// Two channels whose tails both underflow `f64` tie at p = 0; the worst
+    /// is the one with the larger χ², not the first by name.
+    #[test]
+    fn a_tie_at_zero_p_names_the_channel_with_the_larger_chi_squared() {
+        let alternate = |a: f64| {
+            (0..20)
+                .map(|i| if i % 2 == 0 { a } else { -a })
+                .collect::<Vec<_>>()
+        };
+        let channels = vec![
+            ("P1_x/G1".to_string(), alternate(9.0), 1.0),
+            ("P1_x/G2".to_string(), alternate(20.0), 1.0),
+            ("P1_x/G3".to_string(), alternate(12.0), 1.0),
+        ];
+        let h = scatter_of(&scatter_record(20, &channels));
+        let worst = h.worst.as_ref().unwrap();
+        assert_eq!(worst.p_value, 0.0);
+        assert_eq!(worst.channel, "P1_x/G2");
+        assert!((worst.chi2 - 8000.0).abs() < 1e-6);
+        assert_eq!(h.verdict, ScatterVerdict::Confirmed);
+        assert_eq!(h.above_info_limit[0].channel, "P1_x/G2");
+    }
+
+    /// Q(2, 65) = 66 e⁻⁶⁵ ≈ 3.9e-27, which a series truncated at a fixed
+    /// number of terms reads as 0.
+    #[test]
+    fn a_deep_tail_p_value_is_not_truncated_to_zero() {
+        let q = 66.0 * (-65.0f64).exp();
+        let p = chi2_p_value(130.0, 4);
+        assert!(
+            p > 0.0 && (p / q - 1.0).abs() < P_TOLERANCE,
+            "p = {p:e}, want {q:e}"
+        );
+        assert_eq!(chi2_p_value(0.0, 4), 1.0);
+        assert_eq!(chi2_p_value(5.0, 0), 1.0);
+        assert_eq!(p_text(p), format!("{p:.2e}"));
+        assert_eq!(p_text(0.0), "< 1e-300");
     }
 }
