@@ -15,3 +15,7 @@
 * **D1 proposed** (flip on today's statistics), to the user through the
   planner. It replaces the planner's proposed statistics, whose premise V0
   found stale.
+* **Approval** (user, relayed by the planner): D1 as written. No statistic
+  changes; both defaults flip; V1 re-runs the banked layer under both flips and
+  lands before the calibration re-record (PR #45). The jj composition excess
+  and V0's Found 1 are filed at close-out.

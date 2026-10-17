@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [V0: the null distributions behind the jj flavour χ² and the ℓℓj scatter guard](V0.md) - Measurement only: the calibration each guard's statistic actually has, and how candidate statistics would read, as the evidence for the design decision that precedes flipping MapOptions::resolve.
+* [V1: flip the τ and soft-all defaults and re-run the banked layer](V1.md) - Flip MapOptions::resolve to MadEvent's τ rule and soft-all, re-measure resolve's documented numbers, run the banked layer under both flips, and record pp_to_llj_fixed under soft-all and the τ SPINUP null.
 
 ## Session Report
 

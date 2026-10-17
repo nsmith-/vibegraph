@@ -1,14 +1,16 @@
 ---
 type: Design Decision
 title: "Flip the τ and soft-all defaults on today's guard statistics"
-description: "Proposed: V0 found both guards pass under the flipped defaults at the tip, with measured false-alarm rates at or below their Gaussian design, so neither statistic changes; both defaults flip together, the banked layer is re-run under them before the σ calibrations are re-recorded, and the jj composition excess common to both maps is filed on its own."
+description: "Decided: V0 found both guards pass under the flipped defaults at the tip, with measured false-alarm rates at or below their Gaussian design, so neither statistic changes; both defaults flip together, the banked layer is re-run under them before the σ calibrations are re-recorded, and the jj composition excess common to both maps is filed on its own."
 status: draft
+decided: 2026-10-17
+decided_by: human:nsmith-
 tags: [maps, tau-rule, soft-all, samples-gate, scatter-guard]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: v0, resource: "../sessions/V0-report.md", title: "V0 report: the null distributions behind the jj flavour χ² and the ℓℓj scatter guard"}
 ---
-**Awaiting the user's decision.** Nothing here is implemented.
+**Approved by the user as written, relayed by the planner on 2026-10-17.**
 
 ## What V0 measured (commit `b23e246`, at today's tip)
 
