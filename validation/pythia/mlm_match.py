@@ -23,6 +23,23 @@ unweighting found above w_max at their own, larger weight.
 and their comparison: a pull per `@N` acceptance and per merged sigma, and a
 chi2 per jet-rate histogram with bin errors from both sides.
 
+The tolerance. The comparison passes when
+
+* each of the five pulls (acceptance `@0`, `@1`, `@2`, all, and the merged
+  sigma) sits below 3 in magnitude, and
+* the jet rates pass two legs, each at a false-fail rate of 0.5 % after its own
+  look-elsewhere factor: the chi2 leg fails when the smallest of the three
+  histograms' p-values times three is below 0.5 %; the per-bin leg fails when
+  the smallest two-sided per-bin p-value (B - A on the normalised shape, with
+  the chi2's errors) times the total number of bins is below 0.5 %, i.e. some
+  |pull| exceeds z* with 2 Phi-bar(z*) = 0.5 % / N_bins.
+
+The jet-rate legs count only while side A's own split (its first half of the
+files against its second) passes the same two legs: a failing null makes the
+jet-rate verdict `info` ("null failed"), and nothing is rescaled. Side B's
+split is computed beside it for information. The localisation variables are
+not part of the verdict. The process exits nonzero when the comparison fails.
+
 Statistics. The unit of independence is the Les Houches event: the seeds of one
 file shower the same events. Each event's outcome is therefore first averaged
 over the seeds (its accepted fraction, its fraction in each bin), and the
@@ -85,6 +102,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import NormalDist
 
 import numpy as np
 
@@ -611,6 +629,146 @@ def chi2_sf(x: float, k: int) -> float | None:
     return float(math.exp(-xx + a * math.log(xx) - math.lgamma(a)) * h)
 
 
+def compare_sides(sum_a: dict, sum_b: dict, ev_a: list[dict], ev_b: list[dict], min_count: float,
+                  n_boot: int) -> dict:
+    out = {"acceptance": {}}
+    for c in sum_a["acceptance"]:
+        if c in sum_b["acceptance"]:
+            out["acceptance"][c] = compare(sum_a["acceptance"], sum_b["acceptance"], c)
+    out["merged_sigma_pb"] = compare(sum_a, sum_b, "merged_sigma_pb")
+    out["merged_over_sigma_lhe"] = compare(sum_a, sum_b, "merged_over_sigma_lhe")
+    out["jet_rates"] = histograms(ev_a, ev_b, min_count, n_boot)
+    return out
+
+
+# ──────────────────────────────── the tolerance ─────────────────────────────
+
+#: Each acceptance and the merged sigma: |pull| below this.
+PULL_LIMIT = 3.0
+#: The false-fail rate of each jet-rate leg (the chi2 leg and the per-bin leg)
+#: after its own look-elsewhere factor, so the two together stay at or below 1 %.
+JET_RATE_ALPHA = 0.005
+#: The five gated pulls: acceptance @0, @1, @2, all, and the merged sigma.
+PULL_KEYS = ["0", "1", "2", "all", "merged_sigma"]
+
+
+def gated_pulls(comparison: dict) -> dict[str, float | None]:
+    out = {c: comparison["acceptance"].get(c, {}).get("pull") for c in PULL_KEYS[:-1]}
+    out["merged_sigma"] = comparison["merged_sigma_pb"]["pull"]
+    return out
+
+
+def bin_pulls(hist: dict) -> list[float]:
+    """B - A per bin of a normalised shape, over the chi2's (delta-method) errors."""
+    out = []
+    for (va, ea), (vb, eb) in zip(hist["shape_a"], hist["shape_b"]):
+        e = math.hypot(ea, eb)
+        out.append((vb - va) / e if e > 0 else 0.0)
+    return out
+
+
+def z_star(n_bins: int, alpha: float = JET_RATE_ALPHA) -> float:
+    """The |pull| at which the per-bin leg fails: 2 Phi-bar(z*) = alpha / n_bins."""
+    return NormalDist().inv_cdf(1.0 - alpha / n_bins / 2.0)
+
+
+def jet_rate_legs(jet_rates: dict, alpha: float = JET_RATE_ALPHA) -> dict:
+    """The chi2 leg and the per-bin leg on one comparison's jet-rate histograms.
+
+    The chi2 leg fails when min(p) times the number of histograms is below
+    alpha. The per-bin leg fails when the smallest two-sided per-bin p-value
+    times the total number of bins is below alpha. The per-bin pulls share each
+    histogram's normalisation, so the bin count overstates the independent
+    trials and the leg errs on the side of passing."""
+    p_values = {k: h["p_value"] for k, h in jet_rates.items()}
+    p_min = min(p_values.values())
+    chi2_trials = p_min * len(p_values)
+    n_bins = 0
+    worst = {"pull": 0.0, "histogram": None, "bin": None, "range": None}
+    for name, h in jet_rates.items():
+        pulls = bin_pulls(h)
+        n_bins += len(pulls)
+        for j, z in enumerate(pulls):
+            if abs(z) > abs(worst["pull"]):
+                worst = {"pull": z, "histogram": name, "bin": j, "range": h["bins"][j]}
+    p_bin = math.erfc(abs(worst["pull"]) / math.sqrt(2.0))
+    chi2_fail = chi2_trials < alpha
+    bin_fail = p_bin * n_bins < alpha
+    return {
+        "alpha": alpha,
+        "chi2": {"p_values": p_values, "p_min": p_min, "trials": len(p_values),
+                 "p_min_x_trials": chi2_trials, "verdict": "fail" if chi2_fail else "pass"},
+        "per_bin": {"n_bins": n_bins, "z_star": z_star(n_bins, alpha), "max_abs_pull": worst,
+                    "p_min_two_sided": p_bin, "p_min_x_n_bins": p_bin * n_bins,
+                    "verdict": "fail" if bin_fail else "pass"},
+        "verdict": "fail" if chi2_fail or bin_fail else "pass",
+    }
+
+
+def verdict(pulls: dict[str, float | None], legs: dict, null_legs: dict | None) -> dict:
+    """The comparison's verdict. Every gated pull must sit below PULL_LIMIT in
+    magnitude (a missing one fails). The jet-rate legs decide only while side
+    A's null passes the same legs; a failing or missing null makes the jet-rate
+    verdict `info`, and the jet rates then neither pass nor fail the comparison."""
+    failed = [k for k in PULL_KEYS if pulls.get(k) is None or not abs(pulls[k]) < PULL_LIMIT]
+    if null_legs is None:
+        jet = {"mode": "info", "verdict": "no null", "reason": "side A has fewer than two files"}
+    elif null_legs["verdict"] == "fail":
+        jet = {"mode": "info", "verdict": "null failed", "reason": "side A's own split fails the jet-rate rule"}
+    else:
+        jet = {"mode": "gate", "verdict": legs["verdict"]}
+    passed = not failed and jet["verdict"] != "fail"
+    return {"status": "pass" if passed else "fail", "pulls_failed": failed, "jet_rates": jet}
+
+
+def legs_record(legs: dict) -> dict:
+    return {
+        "legs": legs["verdict"],
+        "p_values": legs["chi2"]["p_values"],
+        "chi2_leg": legs["chi2"]["verdict"],
+        "p_min_x_trials": legs["chi2"]["p_min_x_trials"],
+        "n_bins": legs["per_bin"]["n_bins"],
+        "z_star": legs["per_bin"]["z_star"],
+        "max_abs_pull": legs["per_bin"]["max_abs_pull"],
+        "per_bin_leg": legs["per_bin"]["verdict"],
+        "p_min_x_n_bins": legs["per_bin"]["p_min_x_n_bins"],
+    }
+
+
+def gate_record(pulls: dict, legs: dict, nulls: dict, decision: dict) -> dict:
+    """What the validation report renders: the verdict and every number it rests on."""
+    return {
+        "status": decision["status"],
+        "pull_limit": PULL_LIMIT,
+        "alpha_per_leg": JET_RATE_ALPHA,
+        "pulls": pulls,
+        "pulls_failed": decision["pulls_failed"],
+        "jet_rates": {**decision["jet_rates"], **legs_record(legs)},
+        "null_a": ({"pulls": nulls["a"]["pulls"], **legs_record(nulls["a"]["legs"])} if nulls["a"] else None),
+        "null_b": ({"pulls": nulls["b"]["pulls"], **legs_record(nulls["b"]["legs"])} if nulls["b"] else None),
+    }
+
+
+def null_split(files: list[LheFile], events: list[dict], runs: list[list[dict]], min_count: float) -> dict | None:
+    """One side against itself: its first ceil(n/2) files against the rest,
+    under the comparison's own statistics and the same rule."""
+    n = len(files)
+    if n < 2:
+        return None
+    h = (n + 1) // 2
+    sa = side_summary(files[:h], events[:h], runs[:h])
+    sb = side_summary(files[h:], events[h:], runs[h:])
+    comparison = compare_sides(sa, sb, events[:h], events[h:], min_count, 0)
+    return {
+        "files": [[str(f.path) for f in files[:h]], [str(f.path) for f in files[h:]]],
+        "pulls": gated_pulls(comparison),
+        "jet_rates": {k: {"chi2": v["chi2"], "dof": v["dof"], "p_value": v["p_value"],
+                          "bin_pulls": bin_pulls(v), "bins": v["bins"]}
+                      for k, v in comparison["jet_rates"].items()},
+        "legs": jet_rate_legs(comparison["jet_rates"]),
+    }
+
+
 # ────────────────────────────────── main ────────────────────────────────────
 
 
@@ -701,13 +859,14 @@ def main() -> int:
         events[s] = [per_event(rr, f.weights) for rr, f in zip(runs[s], info[s])]
     summary = {s: side_summary(info[s], events[s], runs[s]) for s in ("a", "b")}
 
-    comparison = {"acceptance": {}}
-    for c in summary["a"]["acceptance"]:
-        if c in summary["b"]["acceptance"]:
-            comparison["acceptance"][c] = compare(summary["a"]["acceptance"], summary["b"]["acceptance"], c)
-    comparison["merged_sigma_pb"] = compare(summary["a"], summary["b"], "merged_sigma_pb")
-    comparison["merged_over_sigma_lhe"] = compare(summary["a"], summary["b"], "merged_over_sigma_lhe")
-    comparison["jet_rates"] = histograms(events["a"], events["b"], args.min_count, args.bootstrap)
+    comparison = compare_sides(summary["a"], summary["b"], events["a"], events["b"], args.min_count,
+                               args.bootstrap)
+    for h in comparison["jet_rates"].values():
+        h["bin_pulls"] = bin_pulls(h)
+    pulls = gated_pulls(comparison)
+    legs = jet_rate_legs(comparison["jet_rates"])
+    nulls = {s: null_split(info[s], events[s], runs[s], args.min_count) for s in ("a", "b")}
+    decision = verdict(pulls, legs, nulls["a"]["legs"] if nulls["a"] else None)
 
     version = results[jobs[0]]["summary"].get("version", ["?"])[0]
     row = {
@@ -725,7 +884,10 @@ def main() -> int:
             s: {"label": sides[s][0], "transform": sides[s][2], **summary[s]} for s in ("a", "b")
         },
         "comparison": comparison,
-        "mode": "info",
+        "nulls": {s: nulls[s] for s in ("a", "b")},
+        "mode": "gate",
+        "status": decision["status"],
+        "gate": gate_record(pulls, legs, nulls, decision),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(row, indent=1) + "\n")
@@ -746,8 +908,26 @@ def main() -> int:
         boot = h["bootstrap"]
         extra = f"; bootstrap errors: chi2 {boot['chi2']:.1f} (p = {boot['p_value']:.3g})" if boot else ""
         print(f"  {name}: chi2 {h['chi2']:.1f} / {h['dof']} (p = {h['p_value']:.3g}), {len(h['bins'])} bins{extra}")
+    for label, lg in (("B vs A", legs), (f"null {la} vs {la}", nulls["a"] and nulls["a"]["legs"]),
+                      (f"null {lb} vs {lb} (information)", nulls["b"] and nulls["b"]["legs"])):
+        if not lg:
+            print(f"  {label}: not available (fewer than two files)")
+            continue
+        w = lg["per_bin"]["max_abs_pull"]
+        print(f"  {label}: chi2 leg min p x {lg['chi2']['trials']} = {lg['chi2']['p_min_x_trials']:.3g} "
+              f"[{lg['chi2']['verdict']}]; per-bin leg max |pull| {abs(w['pull']):.2f} ({w['histogram']} bin "
+              f"{w['bin']}) against z* {lg['per_bin']['z_star']:.2f} at {lg['per_bin']['n_bins']} bins "
+              f"[{lg['per_bin']['verdict']}]")
+    for label, nl in ((f"null {la} vs {la}", nulls["a"]), (f"null {lb} vs {lb}", nulls["b"])):
+        if nl:
+            print(f"  {label} pulls: " + ", ".join(
+                f"{k} {v:+.2f}" if v is not None else f"{k} -" for k, v in nl["pulls"].items()))
+    jet = decision["jet_rates"]
+    print(f"verdict: {decision['status'].upper()} (pulls |pull| < {PULL_LIMIT:g}: "
+          f"{'all pass' if not decision['pulls_failed'] else 'failed ' + ', '.join(decision['pulls_failed'])}; "
+          f"jet rates {jet['mode']}: {jet['verdict']})")
     print(f"wrote {args.out}")
-    return 0
+    return 0 if decision["status"] == "pass" else 1
 
 
 if __name__ == "__main__":

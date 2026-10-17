@@ -57,11 +57,13 @@
 //! is a Rust test carry no row file: they ran inside the same `cargo test`
 //! invocation as the cells, so a failure in one of them fails the suite before
 //! this collator is reached — the list records what they are, not a fresh
-//! verdict. The one gate with a driver of its own (Pythia consumption, its own
-//! pixi environment) writes `standalone/pythia_consumption.json`, which is
-//! rendered when present. It runs under a separate task, so its absence reads as
-//! "not run in this invocation" and is not a failure; nothing in the manifest
-//! marks a standalone gate as required here.
+//! verdict. The gates with a driver of their own in the Pythia environment (event
+//! consumption, and the matched MLM comparison through the shower) write
+//! `standalone/pythia_consumption.json` and `standalone/mlm_pythia.json`, which
+//! are rendered when present. They run under separate tasks, so an absent file
+//! reads as "not run in this invocation" and is not a failure; nothing in the
+//! manifest marks a standalone gate as required here. A standalone gate that
+//! declares a `mode` must have written the same mode into its file.
 
 mod cells;
 mod manifest;
@@ -120,6 +122,7 @@ fn main() {
 
     let (rows, mut problems) = cells::load_all(&report_dir);
     check_standalone_tasks(&manifest, &mut problems);
+    check_standalone_modes(&manifest, &report_dir, &mut problems);
     let mut resolved = resolve(&manifest, &rows, &mut problems);
     number_notes(&mut resolved);
 
@@ -169,6 +172,38 @@ fn check_standalone_tasks(manifest: &Manifest, problems: &mut Vec<String>) {
             problems.push(format!(
                 "standalone '{}' declares layer 'oracle' but names no task",
                 standalone.key
+            ));
+        }
+    }
+}
+
+/// A standalone gate that declares a `mode` and whose row file is present must
+/// have written that mode: a driver reporting `info` cannot stand in for a gate
+/// the manifest enforces, nor the other way round. An absent row file is "not
+/// run in this invocation", as for any standalone gate with its own task.
+fn check_standalone_modes(
+    manifest: &Manifest,
+    report_dir: &std::path::Path,
+    problems: &mut Vec<String>,
+) {
+    for standalone in &manifest.standalone {
+        let (Some(row), Some(mode)) = (standalone.row.as_deref(), standalone.mode) else {
+            continue;
+        };
+        let path = report_dir.join("standalone").join(row);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let written = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("mode").and_then(|m| m.as_str()).map(str::to_string));
+        if written.as_deref() != Some(mode.as_str()) {
+            problems.push(format!(
+                "standalone '{}' is declared mode '{}' but {} records mode {}",
+                standalone.key,
+                mode.as_str(),
+                path.display(),
+                written.map_or("(none)".to_string(), |m| format!("'{m}'")),
             ));
         }
     }
