@@ -1008,6 +1008,41 @@ fn with_integrand<R>(
     mmll_override: Option<f64>,
     f: impl FnOnce(&FixedBeamIntegrand, &AlphaAdaptation<f64>) -> R,
 ) -> R {
+    with_integrand_parts(
+        dir,
+        process,
+        seed,
+        n_survey,
+        n_adapt_iter,
+        mmll_override,
+        |parts| f(parts.integ, parts.adaptation),
+    )
+}
+
+/// What [`with_integrand`] builds the integrand from, handed to a caller that
+/// evaluates the same matrix element, cuts and scale outside the integrand's own
+/// phase-space map.
+struct IntegrandParts<'p, 'a> {
+    integ: &'p FixedBeamIntegrand<'a>,
+    adaptation: &'p AlphaAdaptation<f64>,
+    /// One compiled evaluator per subprocess, in the integrand's order.
+    evals: &'p [AmplitudeEvaluator],
+    model: &'p vibegraph::ufo::UFOModel,
+    evaluated: &'p EvaluatedModel,
+    cuts: &'p Cuts,
+    spin_color_avg: f64,
+}
+
+/// [`with_integrand`], handing `f` the integrand's inputs beside it.
+fn with_integrand_parts<R>(
+    dir: &str,
+    process: &str,
+    seed: u64,
+    n_survey: usize,
+    n_adapt_iter: usize,
+    mmll_override: Option<f64>,
+    f: impl FnOnce(&IntegrandParts) -> R,
+) -> R {
     let card_path = output_dir().join(dir).join("Cards/run_card.dat");
     let card_path = match mmll_override {
         None => card_path,
@@ -1091,7 +1126,15 @@ fn with_integrand<R>(
             trajectory: Vec::new(),
             variance_shares: Vec::new(),
         });
-    let out = f(&integ, &report);
+    let out = f(&IntegrandParts {
+        integ: &integ,
+        adaptation: &report,
+        evals: &evals,
+        model: &model,
+        evaluated: &evaluated,
+        cuts: &cuts,
+        spin_color_avg,
+    });
     // The per-point scale-configuration draw falls back to the sampling channel
     // when the squared amplitude it draws from is not finite, which is the only
     // way a NaN `AMP2` reaches production without saying anything. The counter
@@ -2814,6 +2857,488 @@ const LLJ_PARTON_ROWS: [&str; 4] = [
     "gu_to_epemu",
     "gux_to_epemux",
 ];
+
+/// A fixed-density estimate of the two `q q̄ → e⁺e⁻ g` cross sections, against
+/// MadEvent's two readings of the same seeds and against this crate's gate.
+///
+/// MadEvent combines its VEGAS iterations by `mean²/variance`, which reads low
+/// where an iteration under-samples a peak; its seed records also carry the
+/// equal-weight mean of the same iterations. Both MadEvent readings and this
+/// crate's gate come from adaptive samplers. This estimate does not adapt: each
+/// point is drawn from a density fixed before the first one, and the estimate is
+/// the plain mean of `f/p`, whose error is the sample error and nothing else.
+///
+/// Two densities, so a defect of either map shows as a disagreement:
+///
+/// * **analytic**: the three-body phase space as `s → Q g`, `Q → e⁺e⁻`. `Q²` is
+///   drawn from a mixture of a Z Breit–Wigner, `1/Q²` (the photon) and
+///   `1/(s − Q²)` (the soft gluon); the gluon's polar angle from a mixture of a
+///   flat density and `1/(1 + ε − cos²θ)` (the beam-collinear gluon); the lepton
+///   pair isotropically in the `Q` rest frame. None of it is this crate's
+///   phase-space code. The density covers every point the cuts admit: the gluon's
+///   `pT > ptj` bounds `s − Q² ≥ 2√s·ptj`, and `ptl` with `drll` bound
+///   `m(ℓℓ)² ≥ 2·ptl²·(ΔR²/2 − ΔR⁴/24) ≈ 15.8 GeV²`, above the density's `Q²`
+///   floor; both bounds are also checked on flat-RAMBO points that pass the cuts.
+/// * **frozen multichannel**: the production per-diagram mixture, its `α` adapted
+///   once on the gate seed's survey and then held, evaluated at uniform points
+///   with no VEGAS grid.
+///
+/// The integrand is this crate's: the matrix element at the strong coupling of
+/// each point's own clustered scale (the configuration drawn as the integrand
+/// draws it), the run card's cuts, flux and spin-colour average. Before any
+/// estimate, the analytic density's integrand is checked against
+/// [`FixedBeamIntegrand::event_in_channel`] on flat-RAMBO points: every value to
+/// `1e-12` relative after the massless three-body volume `s/(256π³)`, and the
+/// same cut verdict on every point.
+///
+/// What it cannot see: anything shared with the gate's integrand — the matrix
+/// element, the cut filter, the scale prescription (each gated elsewhere). It
+/// tests the integration on both sides and nothing else.
+///
+/// Configured by `VG_FIXED_DENSITY_SEEDS` (default 10), `VG_FIXED_DENSITY_POINTS`
+/// per seed and density (default 4 000 000) and `VG_FIXED_DENSITY_ROWS`
+/// (comma-separated, default both rows); the seeds run in parallel on rayon's
+/// pool (`RAYON_NUM_THREADS`). Run with `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn probe_fixed_density_llj_annihilation() {
+    use common::seed_record::Estimator;
+    use rand::Rng;
+    use rayon::prelude::*;
+    use vibegraph::helas::eval::ScaleAwareAmplitude;
+
+    let env_usize = |key: &str, default: usize| {
+        std::env::var(key)
+            .ok()
+            .map(|v| v.replace('_', "").parse::<usize>().expect(key))
+            .unwrap_or(default)
+    };
+    let n_seeds = env_usize("VG_FIXED_DENSITY_SEEDS", 10);
+    let n_points = env_usize("VG_FIXED_DENSITY_POINTS", 4_000_000);
+    let rows: Vec<String> = std::env::var("VG_FIXED_DENSITY_ROWS")
+        .map(|v| v.split(',').map(str::to_owned).collect())
+        .unwrap_or_else(|_| vec!["uux_to_epemg".into(), "ddx_to_epemg".into()]);
+    let seeds: Vec<u64> = (1..=n_seeds as u64).map(|i| 0xF1DE_0000 + i).collect();
+
+    let text = std::fs::read_to_string(reference_path()).unwrap();
+    let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
+
+    for dir in &rows {
+        let dir = dir.as_str();
+        let process = banked[dir].process.clone();
+        let card = RunCard::parse_file(&output_dir().join(dir).join("Cards/run_card.dat")).unwrap();
+        let density = AnnihilationDensity::new(
+            card.ebeam1 + card.ebeam2,
+            card.float("ptj"),
+            card.float("ptl"),
+            card.float("drll"),
+        );
+        eprintln!(
+            "── {dir}: {process}, √s {} GeV, Q² in [{:.3}, {:.1}] GeV², {n_seeds} seeds × \
+             {n_points} points per density ──",
+            density.sqrt_s, density.q2_lo, density.q2_hi
+        );
+
+        let (analytic, flat_check) = with_integrand_parts(dir, &process, SEED, 0, 0, None, |p| {
+            assert_eq!(p.evals.len(), 1, "[{dir}] one subprocess");
+            // The analytic density writes its legs as (e+, e-, g).
+            let rep = &p.evals[0];
+            let final_pdg: Vec<i64> = rep.external_particles()[rep.n_in()..]
+                .iter()
+                .map(|&id| p.model.particle(id).pdg_code)
+                .collect();
+            assert_eq!(final_pdg, [-11, 11, 21], "[{dir}] outgoing legs (e+, e-, g)");
+            let integ = p.integ;
+            let n_final = integ.final_masses().len();
+            assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
+            assert!(
+                integ.final_masses().iter().all(|&m| m == 0.0),
+                "[{dir}] massless final state"
+            );
+            let alpha_s = integ
+                .alpha_s_source()
+                .unwrap_or_else(|| panic!("[{dir}] a per-event coupling"));
+            let s = density.s;
+            let prefactor = p.spin_color_avg / (2.0 * s);
+            let point_ndim = integ.point_ndim();
+            let scale_draw = integ.scale_draw_ndim();
+
+            // The analytic density's integrand without its phase-space weight, in
+            // GeV⁻² per unit dΦ₃: zero outside the cuts.
+            let value = |amp: &mut ScaleAwareAmplitude<f64>,
+                         scratch: &mut _,
+                         momenta: &[LorentzVector<f64>],
+                         u: &[f64]|
+             -> f64 {
+                let mut ext = integ.incoming().to_vec();
+                ext.extend_from_slice(momenta);
+                if !p.cuts.pass(&ext) {
+                    return 0.0;
+                }
+                let scales = integ
+                    .event_scales_at(momenta, 0, u)
+                    .expect("a per-event prescription")
+                    .expect("a scale at a point that passes the cuts");
+                amp.set_alpha_s(alpha_s.eval(scales.mu_r));
+                prefactor * amp.eval_m2(&ext, scratch)
+            };
+
+            // The hand-assembled integrand against the crate's own, on flat RAMBO,
+            // where the map's weight is the constant massless volume.
+            let volume = s / (256.0 * std::f64::consts::PI.powi(3));
+            let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+            let mut scratch = amp.scratch_space();
+            let mut rng = ChaCha8Rng::seed_from_u64(0xF1DE_C0DE);
+            let mut momenta = Vec::new();
+            let (mut checked, mut passed, mut worst) = (0usize, 0usize, 0.0f64);
+            let (mut q2_min, mut q2_max) = (f64::INFINITY, 0.0f64);
+            for _ in 0..200_000 {
+                let u: Vec<f64> = (0..point_ndim).map(|_| rng.random::<f64>()).collect();
+                let theirs = integ.event_in_channel(0, &u, &mut momenta);
+                let ours = value(&mut amp, &mut scratch, &momenta, &u) * volume;
+                checked += 1;
+                assert_eq!(
+                    theirs == 0.0,
+                    ours == 0.0,
+                    "[{dir}] cut verdicts differ at {momenta:?}: {theirs} against {ours}"
+                );
+                if ours != 0.0 {
+                    passed += 1;
+                    worst = worst.max((ours / theirs - 1.0).abs());
+                    let q2 = (momenta[0] + momenta[1]).m2();
+                    q2_min = q2_min.min(q2);
+                    q2_max = q2_max.max(q2);
+                }
+            }
+            assert!(
+                passed > 1000,
+                "[{dir}] {passed} flat points passed the cuts"
+            );
+            assert!(
+                worst < 1e-12,
+                "[{dir}] hand-assembled integrand differs from the crate's by {worst:.3e}"
+            );
+            assert!(
+                density.q2_lo < q2_min && q2_max < density.q2_hi,
+                "[{dir}] a point passing the cuts at m(ll)² in [{q2_min}, {q2_max}], outside \
+                 the density's [{}, {}]",
+                density.q2_lo,
+                density.q2_hi
+            );
+            let flat_check = format!(
+                "{passed}/{checked} flat points pass the cuts; the hand-assembled integrand \
+                 matches event_in_channel to {worst:.2e} worst relative; their m(ll)² spans \
+                 [{q2_min:.2}, {q2_max:.1}] GeV²"
+            );
+
+            let analytic: Vec<DensityRead> = seeds
+                .par_iter()
+                .map(|&seed| {
+                    let mut amp = ScaleAwareAmplitude::<f64>::new(&p.evals[0], p.evaluated);
+                    let mut scratch = amp.scratch_space();
+                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                    let mut u = vec![0.5; point_ndim];
+                    let mut acc = DensityRead::new(seed);
+                    for _ in 0..n_points {
+                        let (momenta, ps_weight) = density.draw(&mut rng);
+                        if scale_draw == 1 {
+                            u[point_ndim - 1] = rng.random::<f64>();
+                        }
+                        let f = value(&mut amp, &mut scratch, &momenta, &u);
+                        acc.push(f * ps_weight * GEV2_TO_PB);
+                    }
+                    acc
+                })
+                .collect();
+            (analytic, flat_check)
+        });
+        eprintln!("  check: {flat_check}");
+
+        let frozen: Vec<DensityRead> = with_integrand(
+            dir,
+            &process,
+            SEED,
+            MULTICHANNEL_SURVEY,
+            MULTICHANNEL_ITERS,
+            None,
+            |integ, _| {
+                let ndim = integ.vegas_ndim();
+                seeds
+                    .par_iter()
+                    .map(|&seed| {
+                        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x00AA_0000_0000);
+                        let mut u = vec![0.0; ndim];
+                        let mut acc = DensityRead::new(seed);
+                        for _ in 0..n_points {
+                            u.iter_mut().for_each(|x| *x = rng.random::<f64>());
+                            acc.push(integ.value(&u) * GEV2_TO_PB);
+                        }
+                        acc
+                    })
+                    .collect()
+            },
+        );
+
+        let this_side: Vec<(f64, f64)> = HEADROOM_SEEDS
+            .iter()
+            .map(|&seed| {
+                let (neval, niter) = match plan_for(dir) {
+                    Plan::Gate { neval, niter, .. } => (neval, niter),
+                    _ => panic!("[{dir}] a gated row"),
+                };
+                let (s, e, _, _) = integrate_reported(dir, &process, neval, niter, seed);
+                (s, e)
+            })
+            .collect();
+        let this_side = combine(&this_side);
+
+        let record = common::seed_record::read(&output_dir(), dir)
+            .unwrap_or_else(|| panic!("[{dir}] a seed record"));
+        let read = |e: Estimator| {
+            let values: Vec<(f64, f64)> = record.at_budget().iter().map(|s| s.value(e)).collect();
+            combine(&values)
+        };
+        let references = [
+            ("MadEvent reported", read(Estimator::Reported)),
+            ("MadEvent equal-weight", read(Estimator::EqualWeight)),
+            ("this side, gate seeds", this_side),
+        ];
+        for (label, reads) in [("analytic", &analytic), ("frozen multichannel", &frozen)] {
+            eprintln!("  {label} density:");
+            for r in reads {
+                eprintln!("    {}", r.describe());
+            }
+            let est = combine(&reads.iter().map(DensityRead::value).collect::<Vec<_>>());
+            eprintln!(
+                "    {label} mean {:.6e} ± {:.3e} pb (rel {:.2e}; quoted {:.3e}, spread {:.3e}, \
+                 seed chi2/dof {:.2} on {} dof)",
+                est.mean,
+                est.err,
+                est.err / est.mean,
+                est.quoted,
+                est.spread,
+                est.chi2_per_dof,
+                est.n - 1
+            );
+            for (name, reference) in &references {
+                eprintln!(
+                    "      against {name:<22} {:.6e} ± {:.3e}: pull {:+.2}, rel {:+.3e}",
+                    reference.mean,
+                    reference.err,
+                    est.pull(reference.mean, reference.err),
+                    est.mean / reference.mean - 1.0
+                );
+            }
+        }
+        let a = combine(&analytic.iter().map(DensityRead::value).collect::<Vec<_>>());
+        let b = combine(&frozen.iter().map(DensityRead::value).collect::<Vec<_>>());
+        eprintln!(
+            "  analytic − frozen multichannel: {:+.3e} ± {:.3e} pb ({:+.2}σ)",
+            a.mean - b.mean,
+            a.err.hypot(b.err),
+            (a.mean - b.mean) / a.err.hypot(b.err)
+        );
+    }
+}
+
+/// One seed of a fixed-density estimate: the running sums of `f/p`.
+struct DensityRead {
+    seed: u64,
+    n: u64,
+    nonzero: u64,
+    sum: f64,
+    sum2: f64,
+    max: f64,
+}
+
+impl DensityRead {
+    fn new(seed: u64) -> Self {
+        DensityRead {
+            seed,
+            n: 0,
+            nonzero: 0,
+            sum: 0.0,
+            sum2: 0.0,
+            max: 0.0,
+        }
+    }
+
+    fn push(&mut self, w: f64) {
+        assert!(w.is_finite() && w >= 0.0, "a weight {w}");
+        self.n += 1;
+        if w > 0.0 {
+            self.nonzero += 1;
+            self.sum += w;
+            self.sum2 += w * w;
+            self.max = self.max.max(w);
+        }
+    }
+
+    /// The plain mean and its sample error.
+    fn value(&self) -> (f64, f64) {
+        let n = self.n as f64;
+        let mean = self.sum / n;
+        let var = (self.sum2 / n - mean * mean) * n / (n - 1.0);
+        (mean, (var / n).sqrt())
+    }
+
+    fn describe(&self) -> String {
+        let (mean, err) = self.value();
+        format!(
+            "seed {:#x}: {mean:.6e} ± {err:.3e} pb | {} of {} points nonzero | max weight / \
+             mean {:.0}",
+            self.seed,
+            self.nonzero,
+            self.n,
+            self.max / mean
+        )
+    }
+}
+
+/// The analytic three-body density of [`probe_fixed_density_llj_annihilation`]:
+/// `s → Q g` then `Q → e⁺e⁻`, with outgoing legs in the order `e⁺, e⁻, g`.
+///
+/// Its constants shape the variance only — any positive density covering the
+/// support gives the same expectation — so the Z mass and width are the
+/// density's own and not read from the model.
+struct AnnihilationDensity {
+    s: f64,
+    sqrt_s: f64,
+    q2_lo: f64,
+    q2_hi: f64,
+    /// `ε` of the gluon's collinear component `1/(1 + ε − cos²θ)`.
+    a2: f64,
+}
+
+impl AnnihilationDensity {
+    const MZ: f64 = 91.188;
+    const WZ: f64 = 2.441404;
+    /// Mixture shares of the `Q²` components: Breit–Wigner, `1/Q²`, `1/(s − Q²)`.
+    const Q2_SHARES: [f64; 3] = [0.5, 0.25, 0.25];
+    /// Share of the gluon angle's flat component.
+    const FLAT_SHARE: f64 = 0.3;
+
+    fn new(sqrt_s: f64, ptj: f64, ptl: f64, drll: f64) -> Self {
+        let s = sqrt_s * sqrt_s;
+        assert!(ptj > 0.0 && ptl > 0.0 && drll > 0.0 && drll < 1.0);
+        // m(ℓℓ)² = 2 pT₁ pT₂ (cosh Δη − cos Δφ) ≥ 2 ptl² (ΔR²/2 − ΔR⁴/24); the
+        // floor sits at half that.
+        let q2_lo = ptl * ptl * (drll * drll / 2.0 - drll.powi(4) / 24.0);
+        // E_g ≥ pT_g > ptj.
+        let q2_hi = s - 2.0 * sqrt_s * ptj;
+        let eps = (2.0 * ptj / sqrt_s).powi(2);
+        AnnihilationDensity {
+            s,
+            sqrt_s,
+            q2_lo,
+            q2_hi,
+            a2: 1.0 + eps,
+        }
+    }
+
+    /// The Breit–Wigner's angle range on `[q2_lo, q2_hi]`.
+    fn bw_range(&self) -> (f64, f64) {
+        let mg = Self::MZ * Self::WZ;
+        let m2 = Self::MZ * Self::MZ;
+        (
+            ((self.q2_lo - m2) / mg).atan(),
+            ((self.q2_hi - m2) / mg).atan(),
+        )
+    }
+
+    fn q2_density(&self, q2: f64) -> f64 {
+        let mg = Self::MZ * Self::WZ;
+        let m2 = Self::MZ * Self::MZ;
+        let (lo, hi) = self.bw_range();
+        let bw = mg / ((q2 - m2).powi(2) + mg * mg) / (hi - lo);
+        let photon = 1.0 / (q2 * (self.q2_hi / self.q2_lo).ln());
+        let soft = 1.0 / ((self.s - q2) * ((self.s - self.q2_lo) / (self.s - self.q2_hi)).ln());
+        let [a, b, c] = Self::Q2_SHARES;
+        a * bw + b * photon + c * soft
+    }
+
+    fn draw_q2(&self, rng: &mut impl rand::Rng) -> f64 {
+        let pick: f64 = rng.random();
+        let r: f64 = rng.random();
+        let [a, b, _] = Self::Q2_SHARES;
+        let q2 = if pick < a {
+            let (lo, hi) = self.bw_range();
+            Self::MZ * Self::MZ + Self::MZ * Self::WZ * (lo + r * (hi - lo)).tan()
+        } else if pick < a + b {
+            self.q2_lo * (self.q2_hi / self.q2_lo).powf(r)
+        } else {
+            self.s - (self.s - self.q2_hi) * ((self.s - self.q2_lo) / (self.s - self.q2_hi)).powf(r)
+        };
+        q2.clamp(self.q2_lo, self.q2_hi)
+    }
+
+    /// `T` with `c = a·tanh(a·t)`, `t ∈ [−T, T]` spanning `c ∈ [−1, 1]`.
+    fn collinear_t(&self) -> f64 {
+        let a = self.a2.sqrt();
+        (1.0 / a).atanh() / a
+    }
+
+    fn cos_density(&self, c: f64) -> f64 {
+        Self::FLAT_SHARE * 0.5
+            + (1.0 - Self::FLAT_SHARE) / (2.0 * self.collinear_t() * (self.a2 - c * c))
+    }
+
+    fn draw_cos(&self, rng: &mut impl rand::Rng) -> f64 {
+        let pick: f64 = rng.random();
+        let r: f64 = rng.random();
+        if pick < Self::FLAT_SHARE {
+            2.0 * r - 1.0
+        } else {
+            let a = self.a2.sqrt();
+            let t = self.collinear_t() * (2.0 * r - 1.0);
+            (a * (a * t).tanh()).clamp(-1.0, 1.0)
+        }
+    }
+
+    /// One point: the outgoing momenta `e⁺, e⁻, g` in the centre of mass, and
+    /// `dΦ₃ / p` at it, in the `(2π)⁴δ⁴ Π d³p/((2π)³ 2E)` normalisation.
+    fn draw(&self, rng: &mut impl rand::Rng) -> ([LorentzVector<f64>; 3], f64) {
+        use std::f64::consts::PI;
+        let q2 = self.draw_q2(rng);
+        let c = self.draw_cos(rng);
+        let phi = 2.0 * PI * rng.random::<f64>();
+        let e_g = (self.s - q2) / (2.0 * self.sqrt_s);
+        let sin = (1.0 - c * c).max(0.0).sqrt();
+        let k = [e_g * sin * phi.cos(), e_g * sin * phi.sin(), e_g * c];
+        let gluon = LorentzVector::new(e_g, k[0], k[1], k[2]);
+
+        // e⁺ in the Q rest frame, then boosted by Q's velocity −k/E_Q.
+        let m = q2.sqrt();
+        let e_q = self.sqrt_s - e_g;
+        let beta = [-k[0] / e_q, -k[1] / e_q, -k[2] / e_q];
+        let gamma = e_q / m;
+        let cs = 2.0 * rng.random::<f64>() - 1.0;
+        let ps = 2.0 * PI * rng.random::<f64>();
+        let ss = (1.0 - cs * cs).max(0.0).sqrt();
+        let half = m / 2.0;
+        let boost = |sign: f64| {
+            let p = [
+                sign * half * ss * ps.cos(),
+                sign * half * ss * ps.sin(),
+                sign * half * cs,
+            ];
+            let bp = beta[0] * p[0] + beta[1] * p[1] + beta[2] * p[2];
+            let f = gamma * gamma / (gamma + 1.0) * bp + gamma * half;
+            LorentzVector::new(
+                gamma * (half + bp),
+                p[0] + f * beta[0],
+                p[1] + f * beta[1],
+                p[2] + f * beta[2],
+            )
+        };
+        let (positron, electron) = (boost(1.0), boost(-1.0));
+
+        let production = (1.0 - q2 / self.s) / (8.0 * PI) / (2.0 * self.cos_density(c));
+        let mass = 1.0 / (2.0 * PI * self.q2_density(q2));
+        let decay = 1.0 / (8.0 * PI);
+        ([positron, electron, gluon], production * mass * decay)
+    }
+}
 
 /// The integration configuration drawn for a point reaches the scale prescription,
 /// and changes it — asserted on the rows where it must and reported on the rows
