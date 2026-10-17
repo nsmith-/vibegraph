@@ -231,6 +231,16 @@ pub trait ChannelIntegrand {
         0
     }
 
+    /// Whether the integrand is known, from the structure of the process and not
+    /// from sampled values, to take one value at every point of its domain.
+    ///
+    /// An integration may then draw once and stop: a grid refined on a constant
+    /// integrand only follows the sampling noise of the iteration it was refined
+    /// from. `false` makes no claim.
+    fn is_constant(&self) -> bool {
+        false
+    }
+
     /// The `channel`-th term's integrand at
     /// `u ∈ [0,1]^(channel_grid_ndim(channel) + scale_draw_ndim)`, weighted by that
     /// channel's `αⱼ`, so the terms sum to the full integral. Points the cuts

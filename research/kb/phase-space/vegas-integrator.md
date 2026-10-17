@@ -159,8 +159,13 @@ inside a channel is open: [VEGAS+ unmeasured](../backlog/feature/vegas-plus-stra
 See also [VEGAS](../references/papers/vegas.md) and
 [VEGAS+](../references/papers/vegas-plus.md).
 
+A run whose integrand is structurally constant (a two-body decay at rest,
+unpolarized, uncut, one channel) draws one iteration and stops with
+`StopReason::Constant`, skipping refinement; a declaration the iteration
+contradicts is withdrawn and the run continues as an ordinary one
+([vegas-constant-integrand](../sprints/vegas-constant-integrand/closeout.md)).
+
 Open behaviour of the grid itself:
-[refinement noises a constant integrand](../backlog/performance/vegas-refinement-noises-constant-integrand.md),
 [low-acceptance bins starve](../backlog/performance/vegas-grid-starves-low-acceptance-bins.md).
 
 [^lepage]: Lepage 1978, the algorithm `vegas.rs` implements.

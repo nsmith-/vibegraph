@@ -129,10 +129,12 @@ MadEvent's layout for `t > b e+ ve`, matched field by field [^n38-d1]:
   χ²/dof 1.15 over 16 bins, m(b e+) 0.84 over 17, every bin within 4σ; `AQCDUP` equal to
   MadEvent's within 5e-7.
 
-**VEGAS on a constant integrand.** A single-channel two-body width is a constant, yet grid
-refinement follows the first iteration's sampling noise and the result reads ±0.03%
-instead of exact; such a run should skip refinement
-([backlog](../backlog/performance/vegas-refinement-noises-constant-integrand.md)).
+**A two-body width integrates once.** An unpolarized, uncut two-body decay at rest has a
+constant integrand, so it draws one iteration without grid refinement and reports the exact
+width: `h > b b~` reads 5.390779e-3 against 5.388806e-3 ± 0.033 % before, and the 19 SM
+two-body rows match `decays.py` to 1e-10 (`decay_widths.rs`). The `cli_decay` gate holds
+`t_wb` and `z_ee` to the exact width at 1e-6 instead of a seed-scatter window
+([vegas-constant-integrand](../sprints/vegas-constant-integrand/closeout.md)).
 
 [^n38-decays]: Note 38 §1.3: 1 → n processes as `ninitial = 1`, integrated to a partial width; no mixed initial counts.
 [^n38-d1]: Note 38 §4, 1→n decay processes: enumeration, integrand, decay run card, event file, gates and findings.

@@ -142,6 +142,19 @@ fn exact_widths() -> std::collections::BTreeMap<String, f64> {
     out
 }
 
+/// Relative agreement of a constant-integrand row with its exact width, at the
+/// resolution of the result line: seven significant figures are printed, so a
+/// width reads back to `5e-7`, and the `1e-4` noise of a refined grid is two
+/// orders above it. The width itself is held to `1e-10` where it is not rounded
+/// for printing (`vibegraph-lib/tests/decay_widths.rs`).
+const PRINTED_WIDTH_REL: f64 = 1e-6;
+
+/// Whether a decay process has exactly two daughters.
+fn is_two_body(process: &str) -> bool {
+    let (_, daughters) = process.split_once('>').expect("a process has a '>'");
+    daughters.split_whitespace().count() == 2
+}
+
 /// A process spelled with its daughters in sorted order, case folded.
 fn process_key(process: &str) -> String {
     let lower = process.to_lowercase();
@@ -264,6 +277,34 @@ fn partial_widths_match_madevent_over_seeds() {
             .run_card
             .is_none()
             .then(|| exact.get(&process_key(&row.process)));
+        // A two-body decay without cuts is a constant integrand, integrated once
+        // to rounding: its seeds are one number, so the seed-scatter statistics
+        // that guard a sampler against a missed region have nothing to read, and
+        // the row is held to the exact width at the scale of float error instead.
+        if let Some(&width) = exact.flatten().filter(|_| is_two_body(&row.process)) {
+            // `f64::max` drops a NaN, so a width that did not parse as a number
+            // would read as agreement; count it as the worst difference there is.
+            let worst =
+                ours.iter()
+                    .map(|&(v, _)| (v / width - 1.0).abs())
+                    .fold(0.0f64, |worst, d| {
+                        if d.is_nan() {
+                            f64::INFINITY
+                        } else {
+                            worst.max(d)
+                        }
+                    });
+            println!(
+                "{name:<11} {:<20} exact {width:.10e}: ours {our_mean:.10e}, worst seed relative \
+                 difference {worst:.1e}, quoted errors {:?}",
+                row.process,
+                ours.iter().map(|&(_, e)| e).collect::<Vec<_>>()
+            );
+            if worst > PRINTED_WIDTH_REL {
+                failures.push(name.clone());
+            }
+            continue;
+        }
         let (reference_width, reference_err, against) = match exact.flatten() {
             Some(&width) => (width, 0.0, "exact"),
             None => (mg_mean, mg_err, "MG"),
@@ -301,6 +342,58 @@ fn partial_widths_match_madevent_over_seeds() {
         }
     }
     assert!(failures.is_empty(), "rows outside the gate: {failures:?}");
+}
+
+/// A two-body width through the command: one iteration, no refinement, the
+/// exact width to float error with an error bar at the rounding of its own
+/// variance, and a run that says so. A three-body decay on the same budget runs
+/// its iterations and quotes a statistical error.
+#[test]
+fn a_two_body_width_is_integrated_once_and_a_three_body_one_is_not() {
+    let exact = exact_widths();
+    let tmp = tempfile::tempdir().unwrap();
+    let run = |process: &str| {
+        let card = proc_card(tmp.path(), process);
+        let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+            .arg("integrate")
+            .arg(&card)
+            .arg("--out")
+            .arg(tmp.path().join("grid"))
+            .arg("--force")
+            .args(["--target-rel", "1e-2", "--seed", "7"])
+            .current_dir(tmp.path())
+            .output()
+            .expect("spawn vibegraph");
+        assert!(
+            output.status.success(),
+            "{process}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let (width, err) = parse_width(&String::from_utf8_lossy(&output.stdout));
+        (
+            width,
+            err,
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+
+    let (width, err, log) = run("h > b b~");
+    let analytic = exact[&process_key("h > b b~")];
+    assert!(
+        (width / analytic - 1.0).abs() < PRINTED_WIDTH_REL,
+        "Γ = {width:.10e} against {analytic:.10e}"
+    );
+    assert!(
+        err / width < 1e-7,
+        "quoted relative error {:.1e}",
+        err / width
+    );
+    assert!(log.contains("constant integrand: one iteration"), "{log}");
+    assert!(log.contains("after 1 iterations"), "{log}");
+
+    let (width, err, log) = run("t > b e+ ve");
+    assert!(err / width > 1e-5, "a three-body width quotes {err:.1e}");
+    assert!(!log.contains("constant integrand"), "{log}");
 }
 
 /// The event record of every file this gate writes: the mother at rest first,
