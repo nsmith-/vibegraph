@@ -123,6 +123,11 @@ places:[^render]
   invocation", which is not a failure: nothing marks a standalone gate as
   required here. When the file is older than this invocation's row files, the
   verdict says it was recorded earlier and names the task that refreshes it.
+- A `[[standalone]]` row may declare `mode = "gate"` or `"info"`. The
+  collator reports a problem when the row file records another mode. A row
+  that declares none is not checked. The matched MLM comparison through
+  Pythia (`pixi run -e pythia validate-mlm-pythia`) is the first gate declared
+  this way ([its concept](mlm-pythia-matched-comparison.md)).
 
 Pythia consumption is a format and consumability property of each emitted
 sample, not a physics distribution, which is why it is a standalone gate and

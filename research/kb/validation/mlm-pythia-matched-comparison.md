@@ -1,13 +1,14 @@
 ---
 type: Validation Gate
 title: Matched MLM comparison through Pythia
-description: "Both sides' matched files through one Pythia main164 configuration: acceptance per @N, merged sigma, jet-rate shapes, MadEvent nulls and the <scales> negative control."
+description: "Both sides' matched files through one Pythia main164 configuration, gated: |pull| < 3 on the acceptances and merged sigma, and look-elsewhere jet-rate χ² and per-bin legs at 0.5 % each, enforced while MadEvent's null passes."
 status: draft
-tags: [mlm, pythia, matching, shower, info-cell]
+tags: [mlm, pythia, matching, shower, gate, look-elsewhere]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}, {by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 measured:
   - {command: "pixi run -e pythia validate-mlm-pythia (21 MadEvent against 20 vibegraph files, Pythia 8.312, seeds 20261201-10)"}
+  - {command: "pixi run -e pythia validate-mlm-pythia under the gate rule (2026-10-17, linux-64 Pythia 8.312 pythia8-8.312-py312hd50de4e_105, today's twenty vibegraph samples)"}
 sources:
   - {id: n41-m4, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1415-L1616", title: "Note 41 M4, the record and the CDATA finding"}
   - {id: n41-m5, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L1617-L1822", title: "Note 41 M5, matched end to end"}
@@ -21,7 +22,7 @@ The shower applies the MLM veto, so the matched sample's real test is what a
 shower does with it. MadEvent's and vibegraph's matched `pp_to_ll_0j2j_mlm` files
 go through one Pythia configuration, MadGraph's own, and the comparison reads the
 matching acceptance per `@N`, the merged σ and the differential jet rates. It is
-the only check that sees the shower's reading of `<scales>`. It is `info`. What
+the only check that sees the shower's reading of `<scales>`. It is a gate in the oracle layer (below). What
 vibegraph writes for the shower is
 [events/mlm-matched-event-record](../events/mlm-matched-event-record.md); what
 it does and leaves to the shower is [scales-pdf/mlm-matching](../scales-pdf/mlm-matching.md).
@@ -88,7 +89,7 @@ overflow, merged from the left until each holds 100 accepted events on both
 sides. At ten seeds the shower's share of an event's outcome variance is small,
 so events, not seeds, set the error.
 
-## Results
+## Results (the 2026-10-01 record, another host)
 
 21 MadEvent files against 20 vibegraph files, ten Pythia seeds, MadGraph's
 settings[^n41-c]:
@@ -156,15 +157,62 @@ xqcut, not MadGraph's 1.5·xqcut; nQmatch 4) and the acceptances agree within
 ([pythia-setmad-drops-cdata-run-card](../backlog/validation/pythia-setmad-drops-cdata-run-card.md),
 [events/pythia-interop](../events/pythia-interop.md))[^n41-m4].
 
-## Status and open items
+## The gate (decided 2026-10-17)
 
-The row is `info`, with no collator row and no decided tolerance
-([mlm-pythia-comparison-no-tolerance](../backlog/validation/mlm-pythia-comparison-no-tolerance.md)).
-The separate Pythia consumption gate (`validate-pythia`, `consume.py`) reads
-event structure only; its blind spots are
-[pythia-gate-header-semantics-unchecked](../backlog/validation/pythia-gate-header-semantics-unchecked.md)
-and [pythia-gate-momenta-unchecked](../backlog/validation/pythia-gate-momenta-unchecked.md).
-The σ itself is gated by [mlm-sigma-gate](mlm-sigma-gate.md).
+The rule is the user's ([D1](../sprints/mlm-pythia-tolerance/decisions/D1-tolerance.md),
+with its per-bin amendment). `mlm_match.py` applies it, and the
+`mlm-pythia` `[[standalone]]` row is `mode = "gate"`. The collator checks that
+mode against the row file.
+
+1. **Acceptances and merged σ.** Each of `@0`, `@1`, `@2`, all, and the merged
+   σ must have |pull| < 3. A missing pull fails.
+2. **Jet rates, two legs at α = 0.5 % each,** so the verdict's false-fail rate
+   is at most 1 %:
+   - the χ² leg fails when min(p_d01, p_d12, p_d23) × 3 < α;
+   - the per-bin leg fails when the two-sided p of the largest |pull| on the
+     normalised shapes, over all N_bins bins after the ≥100-event merging,
+     times N_bins is below α. That is |pull|max > z*, with 2·Φ̄(z*) = α / N_bins.
+3. **The null.** MadEvent's files, first half against second, are read under
+   the same two legs. If the null fails, the jet-rate verdict is `info`
+   ("null failed") and nothing is rescaled. A failing null never excuses a
+   pull.
+
+**The first recorded run** (2026-10-17, linux-64,
+`pythia8-8.312-py312hd50de4e_105`, today's twenty samples) passes.
+
+| | pulls `@0` / `@1` / `@2` / all / σ | χ² min p × 3 | max \|pull\| | N_bins, z* |
+|---|---|---|---|---|
+| vibegraph against MadEvent | −0.76 / −1.79 / −1.99 / −1.38 / −0.39 | 0.26 | 2.91, d12 [0.0, 0.1] | 72, 3.98 |
+| MadEvent null | −1.33 / +0.45 / +0.55 / −1.19 / −1.48 | 0.19 | 2.93, d01 [1.0, 1.1] | 69, 3.97 |
+| vibegraph null (information) | −0.79 / −2.96 / +0.25 / −1.39 / −1.51 | 1.07 | 2.59 | 69, 3.97 |
+
+- **Not reproducible across Pythia builds.** The same MadEvent files and
+  Pythia seeds moved by −1.3 to +1.7 shower-σ between the 2026-10-01 record
+  and this host, and on this host the MadEvent d12 null reads p 0.077, not
+  0.034. On one host a run is deterministic.
+- **The row records the build** (platform, `pythia8-config --version`, the
+  conda package) of the invocation. The run cache is keyed on inputs and the
+  driver, not on the library.
+
+**What it cannot see.**
+- An offset below the per-side resolution of about 0.3 % on `@1` and 0.5 % on
+  `@2`.
+- A localised feature below z*.
+- A thin shape distortion, which is left to the χ² leg.
+- Anything the files and Pythia seeds share. The pulls are correlated and the
+  normalised-shape pulls share their normalisation, so both trial factors are
+  conservative.
+
+## Open items
+
+- vibegraph's `@1` files scatter beyond their quoted errors on today's samples
+  (per-file χ²/dof 1.87 on 19 dof)
+  ([mlm-pythia-at1-files-scatter](../backlog/validation/mlm-pythia-at1-files-scatter.md)).
+- The separate Pythia consumption gate (`validate-pythia`, `consume.py`) reads
+  event structure only. Its blind spots are
+  [pythia-gate-header-semantics-unchecked](../backlog/validation/pythia-gate-header-semantics-unchecked.md)
+  and [pythia-gate-momenta-unchecked](../backlog/validation/pythia-gate-momenta-unchecked.md).
+- The σ itself is gated by [mlm-sigma-gate](mlm-sigma-gate.md).
 
 [^n41-m5]: Note 41 M5: MadGraph's settings, the driver, the negative controls, and where M4 was short (its smoke reading ran at Pythia's default `etaJetMax = 2.5` and its qCut 10 came from setting `merge = on` explicitly).
 [^n41-c]: Note 41 C, results, spreads, nulls and localisation.

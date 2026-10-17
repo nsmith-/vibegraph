@@ -214,6 +214,10 @@ pub(crate) struct Standalone {
     pub(crate) environment: Option<String>,
     #[serde(default)]
     pub(crate) row: Option<String>,
+    /// Whether the gate with a row file enforces its verdict. When declared, the
+    /// row file's own `mode` must agree with it.
+    #[serde(default)]
+    pub(crate) mode: Option<Mode>,
 }
 
 /// The four per-process categories, in the order the table's columns run.

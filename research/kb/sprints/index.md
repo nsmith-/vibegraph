@@ -25,6 +25,7 @@
 * [kt-spine](kt-spine/index.md)
 * [logging-tui](logging-tui/index.md)
 * [mlm](mlm/index.md)
+* [mlm-pythia-tolerance](mlm-pythia-tolerance/index.md)
 * [note-29-validation](note-29-validation/index.md)
 * [perf-3-addendum](perf-3-addendum/index.md)
 * [perf-sprint-3](perf-sprint-3/index.md)
