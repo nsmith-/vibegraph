@@ -4,6 +4,7 @@ title: "HY1 report: the MLM Pythia gate's tests were blind to its trial factors;
 description: "Hygiene review of V1 (df3bbf9): 16 of 41 one-line mutations of the verdict logic were missed; 14 Python and 5 Rust tests added so 43 of 46 are caught; the row records the Pythia build and the version prints as 8.312. Verdict, every printed number and the rest of the row are unchanged."
 status: draft
 tags: [mlm, pythia, matching, hygiene, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 sources:
   - {id: 61a5af1, resource: "https://github.com/nsmith-/vibegraph/commit/61a5af1", title: "validation: harden the MLM Pythia gate's tests, record the Pythia build"}

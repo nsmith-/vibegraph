@@ -16,3 +16,8 @@
   `mlm-pythia` standalone row is `mode = "gate"`. Manager-verified: the 16
   driver tests, and the cached recorded run (`verdict: PASS`, with the D1
   numbers above). Today's numbers are written into D1.
+* **HY1 landed** (`61a5af1`, report `6c58ea3`): 14 Python and 5 Rust tests;
+  the row records the Pythia build. Manager-verified: 30 tests; the cached
+  run's verdict unchanged; the `n_bins/2` mutation caught.
+* **Close-out**: the item is deleted, three items are filed, and the gate and
+  report concepts describe the gate.

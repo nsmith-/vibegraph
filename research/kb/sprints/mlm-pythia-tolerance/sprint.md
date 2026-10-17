@@ -3,7 +3,7 @@ type: Sprint
 title: "A tolerance for the MLM Pythia comparison"
 description: "Decide tolerances for the per-@N acceptance pulls and the jet-rate χ² of the MLM Pythia comparison, make its driver write a collator row, and flip the cell to gate."
 status: draft
-active: true
+active: false
 tags: [mlm, pythia, matching, gate-promotion, design]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-16}
 ---
