@@ -17,6 +17,19 @@ name: ci
 # fetched (PDF sets + the pinned `refdata` bundle, a release asset), then
 # `pixi run validate`, which ends with the report collator. It is a merge gate:
 # every input is fetchable on a fresh runner, so a red cell is a red check.
+#
+# On a pull request, `banked` runs only when the diff touches something the
+# layer reads. The `changes` job decides with `scripts/banked-inputs-changed.sh`:
+# the job is skipped only when every changed file is on that script's skip list
+# (`research/kb/`, the mdBook outside `docs/src/cli/`, agent prompts, README
+# media, Markdown outside the crates and `validation/`), and the `changes`
+# job's summary then says "banked skipped: no banked-layer inputs changed".
+# Any doubt (no base, a failed diff, an empty diff, `changes` itself failing)
+# runs it. Pushes to `main` always run it.
+#
+# A skipped job reports as passing, and `banked` is also skipped when `test`
+# fails, so the required check is `all-pass`: it accepts a skipped `banked`
+# only when `changes` answered `run=false`, and needs every other job green.
 on:
   push:
     branches: [main]
@@ -107,8 +120,44 @@ jobs:
       # second compile wave without adding coverage.
       - run: cargo test --locked --workspace
 
+  # Whether `banked` has anything to check. Outputs `run=false` only on a pull
+  # request whose every changed file is on the skip list; the list and its
+  # reasons are in the script.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: decide
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "banked: run: $GITHUB_EVENT_NAME event"
+            decision=run=true
+          else
+            decision=$(bash scripts/banked-inputs-changed.sh "$BASE" HEAD) || decision=run=true
+          fi
+          [ "$decision" = run=false ] || decision=run=true
+          echo "$decision" >> "$GITHUB_OUTPUT"
+          if [ "$decision" = run=false ]; then
+            {
+              echo "banked skipped: no banked-layer inputs changed"
+              echo
+              git diff --no-renames --name-only "$BASE...HEAD" | sed 's/^/    /'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # `!cancelled()` replaces the implicit `success()`, so a failed `changes` job
+  # (empty output) runs the layer rather than skipping it; `test` must still
+  # have passed.
   banked:
-    needs: test
+    needs: [test, changes]
+    if: ${{ !cancelled() && needs.test.result == 'success' && needs.changes.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -187,3 +236,27 @@ jobs:
           name: validation-report
           path: target/validation-report/
           if-no-files-found: warn
+
+  # The one check branch protection requires. It passes only when every job
+  # above succeeded, except that `banked` may be skipped when `changes` said
+  # it had nothing to check; any other skip, failure or cancellation fails it.
+  all-pass:
+    needs: [fmt, kb, test, changes, banked]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          FMT: ${{ needs.fmt.result }}
+          KB: ${{ needs.kb.result }}
+          TEST: ${{ needs.test.result }}
+          CHANGES: ${{ needs.changes.result }}
+          BANKED: ${{ needs.banked.result }}
+          BANKED_RUN: ${{ needs.changes.outputs.run }}
+        run: |
+          echo "fmt=$FMT kb=$KB test=$TEST changes=$CHANGES banked=$BANKED (changes run=$BANKED_RUN)"
+          for r in "$FMT" "$KB" "$TEST" "$CHANGES"; do
+            [ "$r" = success ] || exit 1
+          done
+          [ "$BANKED" = success ] && exit 0
+          [ "$BANKED" = skipped ] && [ "$BANKED_RUN" = false ] && exit 0
+          exit 1

@@ -24,8 +24,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 toml = "1"
 # The chi-squared survival function behind the seed record's chance-exceedance
-# count (the regularised incomplete gamma function), as vibegraph-lib uses it.
-puruspe = "0.4"
+# count (the regularised upper incomplete gamma function), as vibegraph-lib uses
+# it; its continued fraction does not truncate in the deep tail.
+statrs = { version = "0.19", default-features = false }
 
 [dev-dependencies]
 # Scratch directories for seed-record's tests, removed when a test ends or fails.

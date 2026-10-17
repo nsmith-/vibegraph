@@ -88,6 +88,16 @@ error with headroom and the measured five-seed spread, never fitted around the
 achieved central value; see [gate thresholds](gate-thresholds.md). It is
 always enforced, including on rows whose pull is only reported.
 
+Each `Gate` row is integrated on five seeds (`HEADROOM_SEEDS`, the gate's own
+`SEED` first) and read under the seed policy: the unweighted mean with error
+max(quoted, spread/√n), its pull and rel taken against the row's seed record
+through `madevent_reference`. The seeds' χ²/dof about the mean is printed and
+not asserted. `Info` and `Long` rows still run on `SEED` alone. Over the 34
+gated rows the mean pull is +0.41; one shared seed had added about +0.14 to
+every population read of the pulls
+([sigma-pulls-lean-high](../sprints/sigma-pulls-lean-high/closeout.md)).
+`every_gated_row_is_read_on_five_seeds` pins the seed count.
+
 The hadronic gates measure each row over several seeds and combine them with
 `combine_seeds`: the **unweighted** mean, `err = √(Σσᵢ²)/n`, and the seeds'
 χ²/dof about the mean. Weighting by `1/σ²` would double-count a seed whose

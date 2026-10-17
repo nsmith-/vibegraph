@@ -28,7 +28,7 @@
 ## Measurement
 
 * [MadEvent's default survey settings bias σ low](madevent-default-survey-bias.md) - MadEvent 3.7.1's default survey can leave a channel's grid short, biasing σ low by 0.5–1 % (g q > t t~ q: −0.55 % in G2); hard_survey = 2 removes it, but is inert when mmjj > 1 % of ebeam1 + ebeam2, and does not fix rare-large-weight channels.
-* [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.2 % low on a fixed-beam 2 → 4; equal-weight recombination lands on this side and an adaptation-free estimator.
+* [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.25 % low on fixed-beam 2 → 4 and 2 → 3 rows; adaptation-free estimators land on its equal-weight recombination.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
 * [Seed-sweep headroom of the enforced gate statistics (base 0538e2d)](seed-headroom-census-2026-09.md) - Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce.
 
@@ -48,7 +48,7 @@
 * [kT clustering dump oracle](kt-cluster-dump-oracle.md) - Instrumented MadGraph 3.7.1 dumps every candidate, merge, frame change and scale per banked event; validate_kt_cluster must match all of it. What the dump and the gate cannot see.
 * [LHAPDF PDF oracle](lhapdf-oracle.md) - gen_oracle.cpp against MadGraph's own LHAPDF 6.5.6 over knot, off-knot, seam, tail and corner categories, an analytic bilinear oracle, and validate_pdf_grid's per-category bars.
 * [MLM per-event dump oracle](mlm-dump-oracle.md) - Instrumented MadEvent replay and validate_mlm_dumps: engine replay and production path against both setclscales calls, rewgt factor by factor and the matched record, at 1e-12.
-* [Matched MLM comparison through Pythia](mlm-pythia-matched-comparison.md) - Both sides' matched files through one Pythia main164 configuration: acceptance per @N, merged sigma, jet-rate shapes, MadEvent nulls and the <scales> negative control.
+* [Matched MLM comparison through Pythia](mlm-pythia-matched-comparison.md) - Both sides' matched files through one Pythia main164 configuration, gated: |pull| < 3 on the acceptances and merged sigma, and look-elsewhere jet-rate χ² and per-bin legs at 0.5 % each, enforced while MadEvent's null passes.
 * [MLM cross-section gate](mlm-sigma-gate.md) - The five MLM rows: per-@N sigma through the composite integrand against seeded MadEvent references read under the seed policy, the gating rule, and the measured table at refdata-9.
 * [SMEFTsim and toy rows in the MadGraph oracle](non-sm-rows.md) - How non-SM rows are banked and gated: per-class restrict cards, order bounds in process strings, interactions.json, the primitive coverage table and the ee > tt~ NP<=1 capstone.
 * [The samples gate: event samples against MadGraph's](samples-gate.md) - Weighted KS and chi2 per observable against MadGraph's banked events at P_FLOOR 1e-4 over three seeds, plus beam, scale, polarization and spectrum columns; and what it cannot see.

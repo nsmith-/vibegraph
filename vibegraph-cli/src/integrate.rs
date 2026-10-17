@@ -699,6 +699,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
                 StopReason::MaxPoints => "GAVE UP on the evaluation cap",
                 StopReason::Aborted => "ABANDONED at the operator's request",
                 StopReason::Budget => "unreachable",
+                StopReason::Constant => "met exactly (constant integrand, drawn once)",
             },
             conv.iterations,
             conv.points,
