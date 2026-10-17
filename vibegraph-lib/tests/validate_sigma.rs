@@ -92,16 +92,22 @@
 //!
 //! # Statistical gate
 //!
-//! With a fixed RNG seed and fixed sampling order the integral is deterministic,
-//! so the gate is reproducible (not flaky). The primary check on an asserted
-//! process is the standard pull
+//! Each asserted row is integrated on the five seeds of [`HEADROOM_SEEDS`] and
+//! read as their unweighted mean under the seed policy ([`combine`]): `sigma_vg`
+//! is the mean and `err_vg` is `max(quoted, spread/√n)`. With fixed RNG seeds and
+//! fixed sampling order every seed's integral is deterministic, so the gate is
+//! reproducible (not flaky). The primary check on an asserted process is the
+//! standard pull of that mean against the row's MadEvent reference
 //!
 //! ```text
 //! pull = (sigma_vg - sigma_MG) / sqrt(err_vg^2 + err_MG^2)
 //! ```
 //!
 //! required to satisfy `|pull| <= PULL_LIMIT`, backed by a per-process
-//! relative-tolerance bound. The rows in [`PULL_REPORTED_NOT_ASSERTED`] are the
+//! relative-tolerance bound on the same mean. The seeds' χ²/dof about their mean
+//! is printed and written to the row's cell; nothing is asserted on it. The
+//! informational and oracle-layer rows ([`Plan::Info`], [`Plan::Long`]) are
+//! integrated on [`SEED`] alone. The rows in [`PULL_REPORTED_NOT_ASSERTED`] are the
 //! exception, for a reason recorded there: a pull cannot bound a residual that is
 //! a systematic rather than a fluctuation.
 //!
@@ -209,8 +215,26 @@ const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 /// would be a silent hundredfold on the banked layer.
 const SCALE_FALLBACK_ROWS: [&str; 2] = ["gg_to_gg_cg", "gg_to_ttx_smlimit_qcd2"];
 
-/// Fixed RNG seed — makes the integral (and hence the pull) reproducible.
+/// The first of the gate's seeds, and the one seed of every probe that takes
+/// one. Fixed, so each seed's integral (and hence the pull) is reproducible.
 const SEED: u64 = 20_260_719;
+
+/// The seeds a [`Plan::Gate`] row is integrated on, [`SEED`] first — AGENTS.md's
+/// standard of five, and the same five the per-family sweeps use, so a gate
+/// reading and a sweep's are the same statistic.
+///
+/// The gate reads their unweighted mean under the seed policy ([`combine`]):
+/// the error is `max(quoted, spread/√n)` and the pull is taken against the row's
+/// seed record. A single seed is one draw from a distribution it never sees, and
+/// every gated row sharing that one seed shifts the whole population together:
+/// over these five the 34 gated rows' mean pull against their seed records is
+/// `+0.41`, where the first seed alone reads `+0.61`.
+const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
+
+/// The fewest seeds a [`Plan::Gate`] row may be read on; [`gate_dir`] asserts it,
+/// so a gate that went back to one seed fails rather than passing on a draw.
+const MIN_GATE_SEEDS: usize = 5;
+const _: () = assert!(MIN_GATE_SEEDS >= 5 && HEADROOM_SEEDS.len() >= MIN_GATE_SEEDS);
 
 /// Points per survey iteration and number of survey→refine iterations when
 /// α-adapting the per-diagram multichannel combiner to each process's `Σ|M|²`.
@@ -709,9 +733,9 @@ fn plan_for(dir: &str) -> Plan {
         // rather than a residual convergence. χ²/dof over the seeds runs 0.76 to
         // 13.3 with no order in it, so `err_vg` does not see the tail either.
         //
-        // A gate spends one seed. Covering a 4.8% excursion would take a tolerance
-        // of about 0.10, which is not a bound on anything, and no budget this side
-        // can afford removes it — so these rows are reported and not asserted.
+        // Their driver spends one seed a run. Covering a 4.8% excursion would take
+        // a tolerance of about 0.10, which is not a bound on anything, and no
+        // budget this side can afford removes it — so these rows are reported and not asserted.
         // That is the middle rung of the enforcement ladder, taken deliberately:
         // the cross sections are measured against the bank on every run of their
         // driver, and the day the sampler resolves that tail the reason below is
@@ -1200,21 +1224,16 @@ fn probe_smeft_capstone_seed_stability() {
     );
 }
 
-/// The seeds every headroom measurement in this file is formed over — AGENTS.md's
-/// standard, and the same five the per-family sweeps above use so their numbers
-/// and this one's are the same statistic.
-const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
-
-/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against the spread of five
-/// seeds at that row's own plan budget — the headroom census behind the
-/// single-seed gate.
+/// Every gated row's `rel_tol` and [`PULL_LIMIT`] against each of its five
+/// seeds at that row's own plan budget — the per-seed headroom census behind the
+/// gate's bounds, read against the same MadEvent reference the gate reads
+/// ([`BankedSigma::madevent_reference`]).
 ///
-/// The gate spends one seed, so what it asserts is one draw from a distribution
-/// it never sees. That is sound only while the bound sits well outside the whole
-/// distribution, and "well outside" is a measurement: this prints, per row, the
-/// worst `|rel|` and `|pull|` over the five seeds, the seeds' mean and χ²/dof
-/// under the seed policy ([`combine`]), and the ratio of each bound to the worst
-/// value under it. A ratio near one is a row whose next sampling-stream change
+/// The gate asserts on the five seeds' mean; this asks how far inside each bound
+/// the individual seeds sit, which the mean does not show. "Well inside" is a
+/// measurement: this prints, per row, the worst `|rel|` and `|pull|` over the
+/// five seeds, the seeds' mean, pull and χ²/dof under the seed policy
+/// ([`combine`]), and the ratio of each bound to the worst value under it. A ratio near one is a row whose next sampling-stream change
 /// fails the gate on the draw rather than on the physics.
 ///
 /// It subsumes no per-family sweep: those carry a budget ladder beside the seeds,
@@ -1228,7 +1247,7 @@ fn probe_gate_row_seed_headroom() {
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
     let unbundled = common::manifest::unbundled_rows();
     let mut lines = Vec::new();
-    for (dir, e) in &banked {
+    for (dir, entry) in &banked {
         let Plan::Gate {
             neval,
             niter,
@@ -1241,11 +1260,16 @@ fn probe_gate_row_seed_headroom() {
             eprintln!("── {dir}: run directory absent, skipped ──");
             continue;
         }
+        let (e, source) = entry.madevent_reference(dir);
+        let e = &e;
         eprintln!(
-            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter}, rel_tol {rel_tol} ──",
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%; {}) at {neval}x{niter}, rel_tol {rel_tol} ──",
             e.sigma_pb,
             e.sigma_err_pb,
-            100.0 * e.sigma_err_pb / e.sigma_pb
+            100.0 * e.sigma_err_pb / e.sigma_pb,
+            source
+                .as_deref()
+                .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
         );
         let mut runs = Vec::new();
         for seed in HEADROOM_SEEDS {
@@ -1271,10 +1295,12 @@ fn probe_gate_row_seed_headroom() {
         let line = format!(
             "HEADROOM {dir:<26} {neval:>7}x{niter} | rel_tol {rel_tol:.4} vs worst |rel| \
              {worst_rel:.3e} -> {:5.1}x | PULL_LIMIT {PULL_LIMIT} vs worst |pull| \
-             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | chi2/dof {chi2:.2}",
+             {worst_pull:5.2} -> {:5.1}x | mean rel {:+.3e} | mean pull {:+.2} | \
+             chi2/dof {chi2:.2}",
             rel_tol / worst_rel,
             PULL_LIMIT / worst_pull,
             mean / e.sigma_pb - 1.0,
+            read.pull(e.sigma_pb, e.sigma_err_pb),
         );
         eprintln!("  {line}");
         lines.push(line);
@@ -3663,6 +3689,15 @@ fn probe_grid_adaptation_is_the_residue() {
     }
 }
 
+/// The seeds a row's plan is integrated on: [`HEADROOM_SEEDS`] for a gated row,
+/// and [`SEED`] alone for an informational or oracle-layer one.
+fn plan_seeds(plan: &Plan) -> &'static [u64] {
+    match plan {
+        Plan::Gate { .. } => &HEADROOM_SEEDS,
+        _ => &[SEED],
+    }
+}
+
 /// The signed `(pull, relative_deviation)` of a vibegraph integral against a
 /// banked value. Signed, because a table of magnitudes hides whether a family of
 /// rows leans the same way; the gate asserts on the magnitudes.
@@ -3681,7 +3716,10 @@ fn compare(sigma_vg: f64, err_vg: f64, banked: &BankedSigma) -> (f64, f64) {
 fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Result<(), String> {
     let banked = &banked;
     let clock = Stopwatch::start();
-    let (neval, niter, mode, reason, rel_tol) = match plan_for(dir) {
+    let plan = plan_for(dir);
+    let is_gate_plan = matches!(plan, Plan::Gate { .. });
+    let seeds = plan_seeds(&plan);
+    let (neval, niter, mode, reason, rel_tol) = match plan {
         Plan::Skip(reason) => {
             eprintln!("[{dir}] SKIP ({reason})");
             return Ok(());
@@ -3713,19 +3751,61 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
         ),
     };
 
-    let (sigma_vg, err_vg, chi2, subsampler) =
-        integrate_reported(dir, &banked.process, neval, niter, SEED);
+    let mut per_seed = Vec::with_capacity(seeds.len());
+    let mut first = None;
+    for &seed in seeds {
+        let (s, e, c, summary) = integrate_reported(dir, &banked.process, neval, niter, seed);
+        let (p, r) = compare(s, e, banked);
+        eprintln!(
+            "[{dir}]   seed {seed:>10}: vg = {s:.6e} +- {e:.3e} pb | pull = {p:+.2} | \
+             rel = {r:+.2e} | integration chi2/dof = {c:.2}"
+        );
+        per_seed.push(SeedResult {
+            seed,
+            sigma_pb: s,
+            sigma_err_pb: e,
+        });
+        first.get_or_insert((c, summary));
+    }
+    let (integration_chi2, subsampler) = first.expect("a plan integrates on one seed or more");
+    if is_gate_plan {
+        let read: Vec<u64> = per_seed.iter().map(|r| r.seed).collect();
+        assert!(
+            read.len() >= MIN_GATE_SEEDS && read[0] == SEED,
+            "[{dir}] a gated row is read on {MIN_GATE_SEEDS} seeds or more, the gate's seed \
+             first; it was read on {read:?}"
+        );
+    }
+    // One seed has no spread, so the cell carries that integration's own χ²/dof;
+    // several carry their scatter about the mean, as the report's schema reads it.
+    let (sigma_vg, err_vg, chi2) = if per_seed.len() >= 2 {
+        let read = combine(&per_seed);
+        (read.mean, read.err, read.chi2_per_dof)
+    } else {
+        (
+            per_seed[0].sigma_pb,
+            per_seed[0].sigma_err_pb,
+            integration_chi2,
+        )
+    };
     let (pull, rel) = compare(sigma_vg, err_vg, banked);
     eprintln!(
-        "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb | MG = {:.6e} +- {:.3e} pb | \
-         pull = {pull:+.2}{} | rel = {rel:+.2e} | chi2/dof = {chi2:.2} ({neval}x{niter}){}",
+        "[{dir}] {} vg = {sigma_vg:.6e} +- {err_vg:.3e} pb ({} seed{}) | MG = {:.6e} +- {:.3e} pb | \
+         pull = {pull:+.2}{} | rel = {rel:+.2e} | {} = {chi2:.2} ({neval}x{niter}){}",
         mode.to_uppercase(),
+        per_seed.len(),
+        if per_seed.len() == 1 { "" } else { "s" },
         banked.sigma_pb,
         banked.sigma_err_pb,
         if PULL_REPORTED_NOT_ASSERTED.contains(&dir) {
             " (reported, not asserted)"
         } else {
             ""
+        },
+        if per_seed.len() == 1 {
+            "chi2/dof"
+        } else {
+            "seed chi2/dof"
         },
         reason.map(|r| format!("  <{r}>")).unwrap_or_default()
     );
@@ -3764,12 +3844,8 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
     row.pull = pull;
     row.rel = rel;
     row.chi2_dof = chi2;
-    row.seeds = vec![SEED];
-    row.per_seed = vec![SeedResult {
-        seed: SEED,
-        sigma_pb: sigma_vg,
-        sigma_err_pb: err_vg,
-    }];
+    row.seeds = per_seed.iter().map(|r| r.seed).collect();
+    row.per_seed = per_seed;
     row.neval = neval;
     row.niter = niter;
     row.subsampler = subsampler;
@@ -3784,6 +3860,32 @@ fn gate_dir(dir: &str, (banked, mg_source): (BankedSigma, Option<String>)) -> Re
         Some(e) => Err(e),
         None => Ok(()),
     }
+}
+
+/// Every gated row is integrated on the gate's five seeds, the gate's seed first,
+/// and every other integrated row on that seed alone. A gate that went back to
+/// one seed would read one draw of each row, and every row the same draw.
+#[test]
+fn every_gated_row_is_read_on_five_seeds() {
+    let text = std::fs::read_to_string(reference_path()).expect("sigma reference readable");
+    let banked: BTreeMap<String, BankedSigma> =
+        serde_json::from_str(&text).expect("sigma_reference.json parses");
+    let mut gated = 0usize;
+    for dir in banked.keys() {
+        let plan = plan_for(dir);
+        let seeds = plan_seeds(&plan);
+        if matches!(plan, Plan::Gate { .. }) {
+            gated += 1;
+            let distinct: BTreeSet<u64> = seeds.iter().copied().collect();
+            assert!(
+                seeds.len() >= MIN_GATE_SEEDS && distinct.len() == seeds.len() && seeds[0] == SEED,
+                "[{dir}] gated on {seeds:?}"
+            );
+        } else {
+            assert_eq!(seeds, [SEED], "[{dir}]");
+        }
+    }
+    assert!(gated > 0, "no gated row in the reference");
 }
 
 /// A row the bundle does not carry may be absent; a row it carries may not.
