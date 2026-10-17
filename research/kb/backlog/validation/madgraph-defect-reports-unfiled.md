@@ -1,30 +1,42 @@
 ---
 type: Backlog Item
 title: MadGraph defect reports are drafted but not filed upstream
-description: R1's grouped first-call defect and the MLM study's other MadGraph defects need finalising and filing upstream; the user files them.
+description: Report drafts for the MadGraph defects still present in 3.8.1 are ready, each with a MadGraph-only reproducer; the user files them.
 area: validation
 state: needs-user
 priority: low
-closes_when: Each MadGraph defect report drafted in note 07 from the MLM study is filed upstream and its link recorded in note 07.
-blocked_by: [mlm-madgraph-defects-undrafted]
+closes_when: Each report in madgraph-upstream-report-drafts whose defect is still present upstream is filed, and its link recorded in that concept.
+blocked_by: []
 opened: 2026-09-29
 tags: [mlm, madgraph-defect, upstream-report, h1]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L229-L241", title: "TODO.md entry T005"}
 ---
-Ready to finalise: `super_auto_dsig_group_v4.inc`'s first `setclscales` call
-on the unpermuted `PP` (H1, note 41 R1). [Note 07](../../history/notes/07-mg5-code-quality.md) ("Direct Bug Found
-(grouped MadEvent scales and rejects the unpermuted point)") holds the draft.
-The one-line patch is `validation/madgraph/patches/first-call-unpermuted-momenta.patch`
-and the `u q > z u q` reproducer is in `validation/madgraph/repro/permuted_first_call/`.
+The drafts are indexed in
+[madgraph-upstream-report-drafts](../../validation/madgraph-upstream-report-drafts.md).
+Each defect has a folder under `research/upstream/madgraph-*/` with a
+MadGraph-only reproducer, a README, and a `report-draft.md` if the defect is
+still present in 3.8.1, the latest release. Ready to file:
 
-Still to draft: note 41 §1.5's six defects
-([mlm-madgraph-defects-undrafted](mlm-madgraph-defects-undrafted.md)).
+- `madgraph-grouped-first-call-unpermuted` (H1);
+- `madgraph-fixed-fac-scale-precedence` (`reweight.f:1138`);
+- `madgraph-setxqcuts-duplicate-test` (`setcuts.f`);
+- `madgraph-nmassless-precedence` (`cuts.f`, `ktdurham`/`ptlund`);
+- `madgraph-addmothers-stale-index` (code quality; unreachable);
+- `madgraph-rivet-setweightname` (`banner.py`);
+- `madgraph-rewgt-stale-ipdgcl` (`rewgt`).
 
-The older drafts (`FFV2P1D_1`, the `AQCDUP` π truncation) are tracked with the
-`process-grammar` findings and in note 07. The CDATA / `setMad` interplay is
-tracked separately as
+MadGraph publishes no policy on AI-assisted reports (the index records what
+was checked), so each draft ends in an `Assisted-by` line for the user to keep
+or reword.
+
+The `AQCDUP` π truncation and `rambo.py` drafts are still in note 07's appendix
+and are still present in 3.8.1. The ALOHA `P1D` (`FFV2P1D_1`) defect is fixed
+in 3.8.1 (PR #428), so do not file it
+(`research/upstream/madgraph-aloha-p1d-flipped-fermion/`).
+
+The CDATA / `setMad` interplay is tracked separately as
 [pythia-setmad-drops-cdata-run-card](pythia-setmad-drops-cdata-run-card.md).
 
 Candidate added 2026-10-15: MadEvent's default survey under-integrates by
@@ -33,4 +45,6 @@ exceeds 1 % of the beam-energy sum
 ([default survey bias](../../validation/madevent-default-survey-bias.md)).
 The same candidate covers the difficult-mode `run_config.inc` substitution,
 whose pattern does not match its own output, so a reused process directory
-keeps its first survey rate.
+keeps its first survey rate. Related: 3.8.1's `keep_grid_for_refine = False`
+moves grouped σ by about 2 %
+([report drafts, "Found while checking"](../../validation/madgraph-upstream-report-drafts.md#found-while-checking)).

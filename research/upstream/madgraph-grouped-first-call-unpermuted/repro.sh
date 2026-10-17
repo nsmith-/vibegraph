@@ -19,7 +19,7 @@
 #   nongrouped  output with group_subprocesses False
 #   patched     grouped, with the first update_scale_coupling call in each
 #               generated SubProcesses/P*/auto_dsig.f handed P1 instead of PP
-#               (the generated form of ../../patches/first-call-unpermuted-momenta.patch)
+#               (the one-line fix in report-draft.md, applied to the generated file)
 #
 # Prints one line per run to stdout and appends it to <workdir>/results.txt,
 # and each run's per-channel results (G directory, sigma, error) to
