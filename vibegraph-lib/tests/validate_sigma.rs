@@ -2947,7 +2947,11 @@ fn probe_fixed_density_llj_annihilation() {
                 .iter()
                 .map(|&id| p.model.particle(id).pdg_code)
                 .collect();
-            assert_eq!(final_pdg, [-11, 11, 21], "[{dir}] outgoing legs (e+, e-, g)");
+            assert_eq!(
+                final_pdg,
+                [-11, 11, 21],
+                "[{dir}] outgoing legs (e+, e-, g)"
+            );
             let integ = p.integ;
             let n_final = integ.final_masses().len();
             assert_eq!(n_final, 3, "[{dir}] a 2 → 3 row");
