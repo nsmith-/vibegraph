@@ -11,19 +11,20 @@ mixes such a leg with jet flavours, its PDF ratio is evaluated for the wrong
 flavour, and which wrong flavour depends on the events generated before it.
 
 Take a five-flavour `p p > z j` at `maxjetflavor = 4`. On 3.7.1, 93 of 97
-`g b > z b` events take the PDF ratio of a `d` or `s` line; on 3.8.1, 87 of 97
-do. The same events generated without the other flavours take no PDF ratio.
+`g b > z b` events take the PDF ratio of a `d` or `s` line; on 3.5.17, 97 of
+103 do; on 3.8.1, 87 of 97 do. The same events generated without the other flavours take no PDF ratio.
 
 ## Status
 
-**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+**Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
+3.7.1. The report draft is
 [`report-draft.md`](report-draft.md). No one-line fix exists (see "Root
 cause").
 
 ## Where
 
 `Template/LO/SubProcesses/reweight.f:1534-1538`, in `rewgt`; the same lines in
-3.7.1 and 3.8.1. The table is first filled at `cluster.f:373` (`initcluster`).
+3.7.1 and 3.8.1, and `:1501-1505` in 3.5.17. The table is first filled at `cluster.f:373` (`initcluster`).
 
 ```fortran
       do i=1,nexternal
@@ -80,14 +81,16 @@ script tallies the codes on the gluon beam's `<pdfrwt>` chain and the number of
 | version | source | commit |
 |---|---|---|
 | 3.7.1 | `git clone --depth 1 --branch v3.7.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.7.1` | `b7687064` |
+| 3.5.17 (latest LTS release, 2026-10-09) | `git clone --depth 1 --branch v3.5.17 https://github.com/mg5amcnlo/mg5amcnlo mg-3.5.17` | `4492b3e3` |
 | 3.8.1 (latest release, 2026-10-09) | `git clone --depth 1 --branch v3.8.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.8.1` | `a5b17913` |
 
-Both ran on 2026-10-16 (Linux x86-64), with Python 3.11 and gfortran from
-vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
-this directory, with `$MG` the directory holding the two clones:
+3.7.1 and 3.8.1 ran on 2026-10-16 and 3.5.17 on 2026-10-17 (Linux x86-64),
+with Python 3.11 and gfortran from vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
+this directory, with `$MG` the directory holding the clones:
 
 ```
 pixi run -e madgraph env MG5="python $MG/mg-3.7.1/bin/mg5_aMC" ./repro.sh /tmp/ip
+pixi run -e madgraph env MG5="python $MG/mg-3.5.17/bin/mg5_aMC" ./repro.sh /tmp/ip
 pixi run -e madgraph env MG5="python $MG/mg-3.8.1/bin/mg5_aMC" ./repro.sh /tmp/ip
 ```
 
@@ -163,10 +166,10 @@ expected: the b events of 'mixed' read as in 'alone' (where the label is right):
 observed in 'mixed': most b events take the PDF ratio of a d or s line (chain 21,+-1 or 21,+-3), whichever an earlier event left
 ```
 
-**Actual**, on both versions:
+**Actual**, on all three versions:
 - `u`, `c`, `d` and `s` events read their own flavour.
 - The b events of `mixed` mostly read `21,±1` or `21,±3`, a `d` or `s` PDF
-  ratio: 93 of 97 on 3.7.1, and 87 of 97 on 3.8.1.
+  ratio: 93 of 97 on 3.7.1, 97 of 103 on 3.5.17, and 87 of 97 on 3.8.1.
 - `alone` reads `21` on every b event.
 
 The effect on σ has not been measured; it is limited to the b channels (97 of

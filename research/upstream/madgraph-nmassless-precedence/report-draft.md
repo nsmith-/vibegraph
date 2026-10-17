@@ -1,60 +1,80 @@
-# Draft: MadGraph bug report
+# Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
-This draft is for the user to review, edit and file, either on Launchpad
-(<https://bugs.launchpad.net/mg5amcnlo>) or as an issue on
-<https://github.com/mg5amcnlo/mg5amcnlo>, which MadGraph's README names as the
-places for bug reports.
-- **Policy.** MadGraph publishes no policy on AI-assisted reports; checked on
-  2026-10-16 (see the index,
-  `research/kb/validation/madgraph-upstream-report-drafts.md`).
-- **Before filing.** Re-run the claims from [`README.md`](README.md) and be
-  ready to answer questions on them.
-- **Disclosure.** Keep or reword the `Assisted-by` line at the end; it
-  discloses the tool use.
-- **Attach:** `repro.sh` from this folder.
+For the user to review before posting. The full evidence is in
+[`README.md`](README.md).
 
 ---
 
-**Title:** `cuts.f`: `NMASSLESS` counts every `b`, including decay products and
-non-merging partons (`.and.`/`.or.` precedence), so the Durham-kT cut is
-applied to events with only massive merging partons
+**Title:** `ktdurham`/`ptlund` cut is applied when the only "massless" parton is a decayed `b` (`.and.`/`.or.` precedence in `NMASSLESS`)
 
-**Version:** 3.8.1 `Template/LO/SubProcesses/cuts.f:643-644` (Durham kT) and
-`:745-746` (ptlund). In 3.7.1 these are `:565-566` and `:667-668`.
+**Affected versions:** 3.5.17 (LTS) yes, and 3.8.1 yes. Both were tested.
 
-**Summary.** The cut is skipped when no massless merging parton is present.
-The source comment says this is "SINCE WE DO NOT WANT TO APPLY A CUT FOR JUST
-A SINGLE MASSIVE PARTICLE". The count is
-`is_pdg_for_merging_cut(i) .and. .not. from_decay(I) .and. is_a_j(i).or.is_a_b(i)`,
-which Fortran reads as `(… .and. is_a_j(i)) .or. is_a_b(i)`.
+### Summary
 
-Any `is_a_b` parton therefore counts. At `maxjetflavor = 4` that includes a
-`b` from a decay (with `cut_decays = F`) or one outside
-`pdgs_for_merging_cut`. The cut is then applied to the massive merging
-partons alone.
+The Durham-kT merging cut (`ktdurham`) is meant to be skipped when no massless
+parton is subject to the merging cut. The counter `NMASSLESS` counts every `b`
+quark, including one from a decay, so the cut is applied to events whose only
+merging partons are massive. In the example below, `ktdurham = 500` removes 34 %
+of σ when it should remove nothing.
 
-**Reproduce.** Run `e+ e- > t t~ z, z > b b~` at √s = 1 TeV with default
-cards, at `ktdurham = -1` and at `ktdurham = 500`.
+### How to reproduce
 
-**Expected:** the same σ, since the only merging partons are `t` and `t~`.
+```
+import model sm
+generate e+ e- > t t~ z, z > b b~
+output eettz
+launch eettz
+set lpp1 0
+set lpp2 0
+set ebeam1 500
+set ebeam2 500
+set ktdurham 500
+done
+```
 
-**Observed:**
+Repeat with `set ktdurham -1` and compare σ. The defaults (`maxjetflavor = 4`,
+`cut_decays = F`) make the `b` quarks `is_a_b` and `from_decay`, so the only
+merging-cut partons are `t` and `t~`. `repro.sh` (attached) runs both and a
+patched version.
 
-| version | `ktdurham = -1` (pb) | `ktdurham = 500` (pb) | change |
-|---|---|---|---|
-| 3.7.1 | 6.818e-4 | 4.513e-4 | −34 % |
-| 3.8.1 | 6.839e-4 | 4.469e-4 | −35 % |
+### Expected vs observed
 
-With the fix, the `ktdurham = 500` run is bit-identical to the
-`ktdurham = -1` run.
+σ should be the same with and without `ktdurham`.
 
-**Fix** (both places):
+| | 3.5.17 | 3.8.1 |
+|---|---|---|
+| `ktdurham = -1` | 6.820e-4 pb | 6.839e-4 pb |
+| `ktdurham = 500` | **4.509e-4 pb (−34 %)** | **4.469e-4 pb (−35 %)** |
+| `ktdurham = 500`, with the fix | 6.820e-4 pb (identical to the cut off) | 6.839e-4 pb (identical) |
+
+### Cause
+
+`Template/LO/SubProcesses/cuts.f`:
+
+```fortran
+          if(is_pdg_for_merging_cut(i) .and. .not. from_decay(I) .and.
+     &                        is_a_j(i).or.is_a_b(i)) then
+            NMASSLESS = NMASSLESS + 1
+```
+
+This reads as `(… .and. is_a_j(i)) .or. is_a_b(i)`, so every `b` counts
+whatever its origin. The same expression is used twice:
+
+| version | Durham kT | ptlund |
+|---|---|---|
+| 3.8.1 | lines 643–644 | lines 745–746 |
+| 3.5.17 | lines 551–552 | lines 653–654 |
+
+### Suggested fix (both places)
 
 ```diff
--          if(is_pdg_for_merging_cut(i) .and. .not. from_decay(I) .and.
+           if(is_pdg_for_merging_cut(i) .and. .not. from_decay(I) .and.
 -     &                        is_a_j(i).or.is_a_b(i)) then
-+          if(is_pdg_for_merging_cut(i) .and. .not. from_decay(I) .and.
 +     &                        (is_a_j(i).or.is_a_b(i))) then
 ```
+
+---
+Found with an AI assistant while validating an independent LO generator
+against MadGraph; reproduced on both versions before reporting.
 
 Assisted-by: claude-code:claude-opus-5-5

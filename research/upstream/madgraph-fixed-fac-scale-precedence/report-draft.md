@@ -1,60 +1,81 @@
-# Draft: MadGraph bug report
+# Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
-This draft is for the user to review, edit and file, either on Launchpad
-(<https://bugs.launchpad.net/mg5amcnlo>) or as an issue on
-<https://github.com/mg5amcnlo/mg5amcnlo>, which MadGraph's README names as the
-places for bug reports.
-- **Policy.** MadGraph publishes no policy on AI-assisted reports; checked on
-  2026-10-16 (see the index,
-  `research/kb/validation/madgraph-upstream-report-drafts.md`).
-- **Before filing.** Re-run the claims from [`README.md`](README.md) and be
-  ready to answer questions on them.
-- **Disclosure.** Keep or reword the `Assisted-by` line at the end; it
-  discloses the tool use.
-- **Attach:** `repro.sh` from this folder.
+For the user to review before posting. The full evidence is in
+[`README.md`](README.md).
 
 ---
 
-**Title:** `setclscales`: `if(.not. fixed_fac_scale1.or. fixed_fac_scale2)`
-drops `scalefact` (and `q2bck`) for beam 2 when only `fixed_fac_scale1` is
-set
+**Title:** `scalefact` is not applied to beam 2's factorisation scale when only `fixed_fac_scale1` is set
 
-**Version:** 3.8.1 and 3.7.1, `Template/LO/SubProcesses/reweight.f:1138` (the
-same line in both).
+**Affected versions:** 3.5.17 (LTS) yes, and 3.8.1 yes. Both were tested.
 
-**Summary.** The block that applies `scalefact²` to the dynamical
-factorisation scales, and copies them to `q2bck`, is guarded by
-`.not. fixed_fac_scale1.or. fixed_fac_scale2`. Fortran reads that as
-`(.not.fixed_fac_scale1) .or. fixed_fac_scale2`.
+### Summary
 
-With `fixed_fac_scale1 = T, fixed_fac_scale2 = F`, the guard is false. The
-block is then skipped:
-- `q2fact(2)` keeps the unscaled clustering scale;
-- `q2bck(2)` is not set.
+With `fixed_fac_scale1 = True`, `fixed_fac_scale2 = False` and a dynamical
+scale, the dynamical beam's factorisation scale ignores `scalefact`. With
+`scalefact = 2`, beam 2's μF stays at the unscaled clustering scale on every
+event. The cross section changes by about 10 % compared to the intended
+behaviour.
 
-The block is reached with `dynamical_scale_choice = -1`, matched or not.
+### How to reproduce
 
-**Reproduce.** Run `generate p p > z` with:
-- `dynamical_scale_choice = -1` and `scalefact = 2`;
-- `fixed_fac_scale1 = T`, `fixed_fac_scale2 = F`;
-- `dsqrt_q2fact1 = 10`.
+```
+import model sm
+generate p p > z
+output ppz
+launch ppz
+set dynamical_scale_choice -1
+set scalefact 2
+set fixed_fac_scale1 True
+set fixed_fac_scale2 False
+set dsqrt_q2fact1 10
+set nevents 1000
+done
+```
 
-SCALUP = `sqrt(max(q2fact))` is then beam 2's scale, and for 2 → 1 the
-clustering scale is √ŝ.
+For 2 → 1 the clustering scale is √ŝ = the Z mass. The fixed beam sits at
+10 GeV, so `SCALUP = sqrt(max(q2fact(1), q2fact(2)))` is beam 2's scale. A
+script that runs this, two controls and the patched version is attached
+(`repro.sh`).
 
-**Expected:** SCALUP = 2 √ŝ on every event, as with `(F,T)`, `(F,F)` or the
-fix.
+### Expected vs observed
 
-**Observed:** SCALUP = √ŝ on every one of 1000 events, on 3.7.1 and on 3.8.1.
-With the fix, σ rises by 10.4 % (3.8.1: 38 500 → 42 503 pb, one seed each).
+| | SCALUP / √ŝ on every event | σ (3.8.1, one seed) |
+|---|---|---|
+| expected (`scalefact` applied) | 2 | 42 503 ± 106 pb (with the fix below) |
+| observed | **1** | 38 500 ± 92 pb |
 
-**Fix:**
+The controls behave as expected. Fixing beam 2 instead (`F, T`) gives SCALUP/√ŝ
+= 2, and so does leaving both dynamical (`F, F`). 3.5.17 gives the same
+numbers within errors.
+
+### Cause
+
+`Template/LO/SubProcesses/reweight.f`, in `setclscales` (3.8.1 line 1138;
+3.5.17 line 1117):
+
+```fortran
+      if(.not. fixed_fac_scale1.or. fixed_fac_scale2) then
+         if(.not.fixed_fac_scale1) q2fact(1)=scalefact**2*q2fact(1)
+         if(.not.fixed_fac_scale2) q2fact(2)=scalefact**2*q2fact(2)
+```
+
+`.not.` binds tighter than `.or.`, so the condition is false for exactly
+`(T, F)`. The block is then skipped: `q2fact(2)` is not scaled, and `q2bck(2)`
+is not set either.
+
+### Suggested fix
 
 ```diff
 -      if(.not. fixed_fac_scale1.or. fixed_fac_scale2) then
 +      if(.not.fixed_fac_scale1.or..not.fixed_fac_scale2) then
 ```
 
-This is the form the same file's vectorised path writes at `:1903`.
+This is the form the vectorised path of the same file already uses
+(`reweight.f:1903` in 3.8.1). With it, SCALUP/√ŝ = 2 on every event.
+
+---
+Found with an AI assistant while validating an independent LO generator
+against MadGraph; reproduced on both versions before reporting.
 
 Assisted-by: claude-code:claude-opus-5-5

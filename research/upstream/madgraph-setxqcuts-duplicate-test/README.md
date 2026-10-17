@@ -12,13 +12,14 @@ order in which the process lists its legs:
 
 ## Status
 
-**Present in 3.8.1** (ran). It is also present in 3.7.1. It affects the
+**Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
+3.7.1. It affects the
 integration grids only. The report draft is [`report-draft.md`](report-draft.md).
 
 ## Where
 
 `Template/LO/SubProcesses/setcuts.f`, subroutine `setxqcuts`: `:948-951` in
-3.8.1, `:939-942` in 3.7.1.
+3.8.1, `:939-942` in 3.7.1, and `:946-949` in 3.5.17.
 
 ```fortran
                   if(iabs(idup(iforest(2,k,j),1,1)).le.maxjetflavor.or.
@@ -63,14 +64,16 @@ The cards are the defaults plus `ickkw = 1` and `xqcut = 20`. At the default
 | version | source | commit |
 |---|---|---|
 | 3.7.1 | `git clone --depth 1 --branch v3.7.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.7.1` | `b7687064` |
+| 3.5.17 (latest LTS release, 2026-10-09) | `git clone --depth 1 --branch v3.5.17 https://github.com/mg5amcnlo/mg5amcnlo mg-3.5.17` | `4492b3e3` |
 | 3.8.1 (latest release, 2026-10-09) | `git clone --depth 1 --branch v3.8.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.8.1` | `a5b17913` |
 
-Both ran on 2026-10-16 (Linux x86-64), with Python 3.11 and gfortran from
-vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
-this directory, with `$MG` the directory holding the two clones:
+3.7.1 and 3.8.1 ran on 2026-10-16 and 3.5.17 on 2026-10-17 (Linux x86-64),
+with Python 3.11 and gfortran from vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
+this directory, with `$MG` the directory holding the clones:
 
 ```
 pixi run -e madgraph env MG5="python $MG/mg-3.7.1/bin/mg5_aMC" ./repro.sh /tmp/sc
+pixi run -e madgraph env MG5="python $MG/mg-3.5.17/bin/mg5_aMC" ./repro.sh /tmp/sc
 pixi run -e madgraph env MG5="python $MG/mg-3.8.1/bin/mg5_aMC" ./repro.sh /tmp/sc
 ```
 
@@ -101,6 +104,23 @@ expected: the gluon-quark pairs carry xqcut = 20 in every run
   gbb: legs g b b~ -> xqcutij(4,3) = xqcutij(5,3) = 20, xqcutij(5,4) = 0
   bbg: legs b b~ g -> xqcutij(5,3) = xqcutij(5,4) = 20, xqcutij(4,3) = 0
 and sigma the same in all three runs (the table only shapes the grids)
+== 3.5.17
+== gbb  (legs 3 4 5 = g b b~; sigma 5.551880e+03 +- 4.605996e+01 pb)
+xqcutij # 3>     0.0    20.0    20.0
+xqcutij # 4>    20.0     0.0     0.0
+  xqcutij(4,3) = 20.0  xqcutij(5,3) = 20.0  xqcutij(5,4) = 0.0
+== bbg  (legs 3 4 5 = b b~ g; sigma 5.558220e+03 +- 4.417230e+01 pb)
+xqcutij # 3>     0.0     0.0     0.0
+xqcutij # 4>     0.0     0.0     0.0
+  xqcutij(4,3) = 0.0  xqcutij(5,3) = 0.0  xqcutij(5,4) = 0.0
+== bbg.fixed  (legs 3 4 5 = b b~ g, fixed; sigma 5.564170e+03 +- 4.573061e+01 pb)
+xqcutij # 3>     0.0     0.0    20.0
+xqcutij # 4>     0.0     0.0    20.0
+  xqcutij(4,3) = 0.0  xqcutij(5,3) = 20.0  xqcutij(5,4) = 20.0
+expected: the gluon-quark pairs carry xqcut = 20 in every run
+  gbb: legs g b b~ -> xqcutij(4,3) = xqcutij(5,3) = 20, xqcutij(5,4) = 0
+  bbg: legs b b~ g -> xqcutij(5,3) = xqcutij(5,4) = 20, xqcutij(4,3) = 0
+and sigma the same in all three runs (the table only shapes the grids)
 == 3.8.1
 == gbb  (legs 3 4 5 = g b b~; sigma 5.481800e+03 +- 5.061572e+01 pb)
 xqcutij # 3>     0.0    20.0    20.0
@@ -120,7 +140,7 @@ expected: the gluon-quark pairs carry xqcut = 20 in every run
 and sigma the same in all three runs (the table only shapes the grids)
 ```
 
-**Actual**, on both versions: `bbg` has 0 for both g–b pairs, and `bbg.fixed`
+**Actual**, on all three versions: `bbg` has 0 for both g–b pairs, and `bbg.fixed`
 has 20. σ agrees across the three runs within its 0.9 % error, as expected for
 a grid hint. No σ effect has been looked for. Here, by reading only, the kT cut
 on the gluon already implies m(b g) ≳ xqcut.

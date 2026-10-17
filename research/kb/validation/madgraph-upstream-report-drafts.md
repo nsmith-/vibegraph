@@ -75,26 +75,25 @@ lines. They have no folder or reproducer here.
 
 ## MadGraph's policy on AI-assisted reports
 
-MadGraph publishes none; checked on 2026-10-16. The places checked:
-
-- the repository: its `README.md` (bugs go to
-  <https://bugs.launchpad.net/mg5amcnlo> or a GitHub issue), with no
-  CONTRIBUTING, policy or agent-rules file, and no organisation `.github`
-  repository for `mg5amcnlo`;
-- the Launchpad project, bug-tracker and answers pages
-  (<https://launchpad.net/mg5amcnlo>, <https://bugs.launchpad.net/mg5amcnlo>,
-  <https://answers.launchpad.net/mg5amcnlo>), which carry no reporting
-  guidelines;
+MadGraph publishes no written policy on AI-assisted reports (checked on
+2026-10-16). The places checked:
+- the repository's README, which sends bugs to Launchpad or GitHub issues;
+- the absence of any CONTRIBUTING or agent-rules file;
+- the Launchpad project, bugs and answers pages;
 - a web search.
 
-Upstream's own development uses AI assistance openly. 262 commits between
-`v3.7.1` and `v3.8.1`, including the ALOHA fix and `e9576dbce`, carry a
-`Co-Authored-By: Claude …` trailer.
+The user then asked upstream directly, in
+[mg5amcnlo/mg5amcnlo#452](https://github.com/mg5amcnlo/mg5amcnlo/issues/452)
+(2026-10-17). Olivier Mattelaer replied that AI-found bugs are welcome, with
+two requests:
+- **One problem per issue.**
+- **Test against the latest LTS (3.5.x, now 3.5.17) or the latest release
+  (now 3.8.1).** Say whether one, both or neither is affected.
 
-The drafts are therefore written as reports for the user to review, edit and
-file. Each ends in an `Assisted-by: claude-code:claude-opus-5-5` line that
-the user can keep or reword. This differs from rustc's, whose LLM policy bans
-LLM-originated issue text.
+Each `report-draft.md` is therefore written as one GitHub issue for the user to
+review and post. Each opens with an "Affected versions" line for 3.5.17 and
+3.8.1, and ends in an `Assisted-by: claude-code:claude-opus-5-5` line that the
+user can keep or reword.
 
 ## Found while checking
 

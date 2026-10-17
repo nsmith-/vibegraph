@@ -1,47 +1,61 @@
-# Draft: MadGraph bug report
+# Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
-This draft is for the user to review, edit and file, either on Launchpad
-(<https://bugs.launchpad.net/mg5amcnlo>) or as an issue on
-<https://github.com/mg5amcnlo/mg5amcnlo>, which MadGraph's README names as the
-places for bug reports.
-- **Policy.** MadGraph publishes no policy on AI-assisted reports; checked on
-  2026-10-16 (see the index,
-  `research/kb/validation/madgraph-upstream-report-drafts.md`).
-- **Before filing.** Re-run the claims from [`README.md`](README.md) and be
-  ready to answer questions on them.
-- **Disclosure.** Keep or reword the `Assisted-by` line at the end; it
-  discloses the tool use.
+For the user to review before posting. The full evidence is in
+[`README.md`](README.md).
 
 ---
 
-**Title:** `addmothers.f:115` compares `igraphs(1)` with the loop index `i`
-after its loop has ended
+**Title:** `addmothers.f`: fallback to `igraphs(1)` compares it with a finished loop index (code quality, no runtime effect found)
 
-**Version:** 3.8.1 and 3.7.1, `madgraph/iolibs/template_files/addmothers.f:115`
-(byte-identical file).
+**Affected versions:** 3.8.1 yes. 3.5.17 (LTS) no: there `addmothers` sets
+`lconfig = igraphs(1)` directly. Both were checked by reading the source.
 
-**Summary.** The line reads
-`if (lconfig.eq.0.and.igraphs(1).ne.i.and.ivec.eq.1) lconfig = igraphs(1)`.
-Here `i` is the index of the `do i=-nexternal+2,nexternal` loop at `:100`, so
-it always holds `nexternal+1`.
+### Summary
 
-The test is meant to fall back to `igraphs(1)` when the event carries no
-matched graph. As written, it compares a graph number with a leg count.
-The likely intent is `igraphs(1).ne.0`.
+The test that chooses the configuration for the event record compares
+`igraphs(1)` with `i`. `i` is the index of a loop that has already finished, so
+it always holds `nexternal+1`. The intended test is probably
+`igraphs(1).ne.0`. I could not reach this branch at runtime, so this is a code
+cleanup, not a wrong-output report.
 
-**Reachability.** The branch needs `vec_igraph(ivec) = 0` on a written event
-with `ickkw > 0`. By reading, this never happens:
-- `rewgt` (`reweight.f:1419-1471`) zeroes `vec_igraph(ivec)`.
-- It then either returns weight 0, so the event is not written, or sets it to
-  `igraphs(1)` after a successful `setclscales`.
-- `cluster` returns success only after storing at least one graph
-  (`cluster.f:663-665`, `:810-830`).
+### Code
 
-Measured: `vec_igraph` was never 0 on the written events of five MLM samples
-in 3.7.1, read from MadEvent's own per-event intermediates.
+`madgraph/iolibs/template_files/addmothers.f` (3.8.1):
 
-**Suggested change:** replace `igraphs(1).ne.i` with `igraphs(1).ne.0`, or
-drop the dead fallback. This is a code-quality report, with no observable
-effect today.
+```fortran
+      do i=-nexternal+2,nexternal          ! line 100, last use of i
+      ...
+      lconfig = iconfig
+      if (ickkw.gt.0) then
+         ...
+         lconfig = vec_igraph(ivec)
+         if (lconfig.eq.0.and.igraphs(1).ne.i.and.ivec.eq.1) lconfig = igraphs(1)   ! line 115
+      endif
+```
+
+### Why it does not show at runtime
+
+The fallback needs `vec_igraph(ivec) = 0` on an event that is written with
+`ickkw > 0`. `rewgt` (`reweight.f:1419-1471`) zeroes `vec_igraph(ivec)` and
+then does one of two things:
+- it returns weight 0, and the event is never written; or
+- it sets `vec_igraph(ivec) = igraphs(1)` after a successful `setclscales`.
+
+`cluster` only succeeds after it has stored a graph. So the branch is dead on
+written events, and I never saw `vec_igraph = 0` on a written matched event in
+3.7.1.
+
+### Suggested change
+
+```diff
+-         if (lconfig.eq.0.and.igraphs(1).ne.i.and.ivec.eq.1) lconfig = igraphs(1)
++         if (lconfig.eq.0.and.igraphs(1).ne.0.and.ivec.eq.1) lconfig = igraphs(1)
+```
+
+Alternatively, remove the dead fallback.
+
+---
+Found with an AI assistant while validating an independent LO generator
+against MadGraph; checked against both versions before reporting.
 
 Assisted-by: claude-code:claude-opus-5-5

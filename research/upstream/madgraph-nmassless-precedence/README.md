@@ -12,7 +12,8 @@ partons are the massive `t` and `t~`, `ktdurham = 500` removes 34 % of σ.
 
 ## Status
 
-**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+**Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
+3.7.1. The report draft is
 [`report-draft.md`](report-draft.md).
 
 ## Where
@@ -23,6 +24,7 @@ appears twice:
 | version | Durham kT | ptlund |
 |---|---|---|
 | 3.7.1 | `:565-566` | `:667-668` |
+| 3.5.17 | `:551-552` | `:653-654` |
 | 3.8.1 | `:643-644` | `:745-746` |
 
 ```fortran
@@ -66,14 +68,16 @@ including 5 and 6. Each run has `nevents = 2000` and `iseed = 1`.
 | version | source | commit |
 |---|---|---|
 | 3.7.1 | `git clone --depth 1 --branch v3.7.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.7.1` | `b7687064` |
+| 3.5.17 (latest LTS release, 2026-10-09) | `git clone --depth 1 --branch v3.5.17 https://github.com/mg5amcnlo/mg5amcnlo mg-3.5.17` | `4492b3e3` |
 | 3.8.1 (latest release, 2026-10-09) | `git clone --depth 1 --branch v3.8.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.8.1` | `a5b17913` |
 
-Both ran on 2026-10-16 (Linux x86-64), with Python 3.11 and gfortran from
-vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
-this directory, with `$MG` the directory holding the two clones:
+3.7.1 and 3.8.1 ran on 2026-10-16 and 3.5.17 on 2026-10-17 (Linux x86-64),
+with Python 3.11 and gfortran from vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
+this directory, with `$MG` the directory holding the clones:
 
 ```
 pixi run -e madgraph env MG5="python $MG/mg-3.7.1/bin/mg5_aMC" ./repro.sh /tmp/kt
+pixi run -e madgraph env MG5="python $MG/mg-3.5.17/bin/mg5_aMC" ./repro.sh /tmp/kt
 pixi run -e madgraph env MG5="python $MG/mg-3.8.1/bin/mg5_aMC" ./repro.sh /tmp/kt
 ```
 
@@ -93,6 +97,12 @@ off       -1        6.818183e-04 +- 2.870782e-06
 on        500       4.512858e-04 +- 1.552665e-06
 on_fixed  500       6.818183e-04 +- 2.870782e-06
 expected: the three cross sections agree (no massless parton is subject to the merging cut)
+== 3.5.17
+run       ktdurham  sigma [pb]
+off       -1        6.820050e-04 +- 4.831283e-06
+on        500       4.509180e-04 +- 2.342569e-06
+on_fixed  500       6.820050e-04 +- 4.831283e-06
+expected: the three cross sections agree (no massless parton is subject to the merging cut)
 == 3.8.1
 run       ktdurham  sigma [pb]
 off       -1        6.838672e-04 +- 4.308265e-06
@@ -101,7 +111,8 @@ on_fixed  500       6.838672e-04 +- 4.308265e-06
 expected: the three cross sections agree (no massless parton is subject to the merging cut)
 ```
 
-**Actual:** `on` is 33.8 % below `off` on 3.7.1 and 34.6 % below on 3.8.1, and
+**Actual:** `on` is 33.8 % below `off` on 3.7.1, 33.9 % below on 3.5.17 and
+34.6 % below on 3.8.1, and
 `on_fixed` equals `off` to every printed digit.
 
 By reading, the same applies to any process whose only `is_a_b` partons are

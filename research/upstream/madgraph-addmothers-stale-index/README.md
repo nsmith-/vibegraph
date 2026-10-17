@@ -10,7 +10,12 @@ event.
 ## Status
 
 **Present in 3.8.1; unreachable at runtime** (read). The file is
-byte-identical in 3.7.1 (`b7687064`) and 3.8.1 (`a5b17913`). There is no
+byte-identical in 3.7.1 (`b7687064`) and 3.8.1 (`a5b17913`).
+
+**Absent from the 3.5.17 LTS release** (`4492b3e3`, read). There,
+`addmothers.f:110-116` sets `lconfig = iconfig` and, under `ickkw > 0`,
+`lconfig = igraphs(1)`. It has no `vec_igraph` and no fallback test; those came
+with the vectorised code of the 3.6+ line. There is no
 runtime reproducer, since no card reaches the line. The report draft is
 [`report-draft.md`](report-draft.md), as a code-quality report.
 

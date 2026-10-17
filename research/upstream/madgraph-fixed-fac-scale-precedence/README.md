@@ -13,13 +13,14 @@ With `fixed_fac_scale1 = T`, `fixed_fac_scale2 = F` and a clustering scale
 
 ## Status
 
-**Present in 3.8.1** (ran). It is also present in 3.7.1. The report draft is
+**Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
+3.7.1. The report draft is
 [`report-draft.md`](report-draft.md).
 
 ## Where
 
-`Template/LO/SubProcesses/reweight.f:1138`, in `setclscales`. The line is the
-same in 3.7.1 and 3.8.1.
+`Template/LO/SubProcesses/reweight.f`, in `setclscales`: line 1138 in 3.7.1
+and 3.8.1, and line 1117 in 3.5.17.
 
 ```fortran
       if(.not. fixed_fac_scale1.or. fixed_fac_scale2) then
@@ -71,14 +72,16 @@ incoming partons) and σ.
 | version | source | commit |
 |---|---|---|
 | 3.7.1 | `git clone --depth 1 --branch v3.7.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.7.1` | `b7687064` |
+| 3.5.17 (latest LTS release, 2026-10-09) | `git clone --depth 1 --branch v3.5.17 https://github.com/mg5amcnlo/mg5amcnlo mg-3.5.17` | `4492b3e3` |
 | 3.8.1 (latest release, 2026-10-09) | `git clone --depth 1 --branch v3.8.1 https://github.com/mg5amcnlo/mg5amcnlo mg-3.8.1` | `a5b17913` |
 
-Both ran on 2026-10-16 (Linux x86-64), with Python 3.11 and gfortran from
-vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
-this directory, with `$MG` the directory holding the two clones:
+3.7.1 and 3.8.1 ran on 2026-10-16 and 3.5.17 on 2026-10-17 (Linux x86-64),
+with Python 3.11 and gfortran from vibegraph's `madgraph` pixi environment (conda-forge). Exact commands, from
+this directory, with `$MG` the directory holding the clones:
 
 ```
 pixi run -e madgraph env MG5="python $MG/mg-3.7.1/bin/mg5_aMC" ./repro.sh /tmp/ffs
+pixi run -e madgraph env MG5="python $MG/mg-3.5.17/bin/mg5_aMC" ./repro.sh /tmp/ffs
 pixi run -e madgraph env MG5="python $MG/mg-3.8.1/bin/mg5_aMC" ./repro.sh /tmp/ffs
 ```
 
@@ -99,6 +102,13 @@ ft        F,T                     1000      2.000000-2.000000 2.934600e+04+-3.21
 ff        F,F                     1000      2.000000-2.000000 4.691600e+04+-5.812200e+01
 tf_fixed  T,F                     1000      2.000000-2.000000 4.228400e+04+-6.175700e+01
 expected: SCALUP/sqrt(s_hat) = 2 (scalefact) in every run, and sigma(tf) = sigma(tf_fixed)
+== 3.5.17
+run       fixed_fac_scale1,2    events     SCALUP/sqrt(s_hat)             sigma [pb]
+tf        T,F                     1000      1.000000-1.000000 3.824600e+04+-1.358800e+02
+ft        F,T                     1000      2.000000-2.000000 2.930800e+04+-4.728900e+01
+ff        F,F                     1000      2.000000-2.000000 4.684000e+04+-1.034700e+02
+tf_fixed  T,F                     1000      2.000000-2.000000 4.223500e+04+-1.477200e+02
+expected: SCALUP/sqrt(s_hat) = 2 (scalefact) in every run, and sigma(tf) = sigma(tf_fixed)
 == 3.8.1
 run       fixed_fac_scale1,2    events     SCALUP/sqrt(s_hat)             sigma [pb]
 tf        T,F                     1000      1.000000-1.000000 3.850000e+04+-9.249800e+01
@@ -108,10 +118,10 @@ tf_fixed  T,F                     1000      2.000000-2.000000 4.250300e+04+-1.05
 expected: SCALUP/sqrt(s_hat) = 2 (scalefact) in every run, and sigma(tf) = sigma(tf_fixed)
 ```
 
-**Actual**, on both versions:
+**Actual**, on all three versions:
 - `tf` has SCALUP/√ŝ = 1.000000 on all 1000 events. Every other run has 2.
 - The fix raises `tf`'s σ by 10.4 %: 38 310 → 42 284 pb on 3.7.1, and
-  38 500 → 42 503 pb on 3.8.1. Each is one seed, with quoted errors of
+  38 500 → 42 503 pb on 3.8.1, and 38 246 → 42 235 pb on 3.5.17. Each is one seed, with quoted errors of
   0.15–0.25 %.
 
 `tf` and `ft` are not expected to agree. In a mirrored subprocess

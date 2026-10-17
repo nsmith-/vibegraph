@@ -1,48 +1,60 @@
-# Draft: MadGraph bug report
+# Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
-This draft is for the user to review, edit and file, either on Launchpad
-(<https://bugs.launchpad.net/mg5amcnlo>) or as an issue on
-<https://github.com/mg5amcnlo/mg5amcnlo>, which MadGraph's README names as the
-places for bug reports.
-- **Policy.** MadGraph publishes no policy on AI-assisted reports; checked on
-  2026-10-16 (see the index,
-  `research/kb/validation/madgraph-upstream-report-drafts.md`).
-- **Before filing.** Re-run the claims from [`README.md`](README.md) and be
-  ready to answer questions on them.
-- **Disclosure.** Keep or reword the `Assisted-by` line at the end; it
-  discloses the tool use.
-- **Attach:** `check_setweightname.py` from this folder.
+For the user to review before posting. The full evidence is in
+[`README.md`](README.md).
 
 ---
 
-**Title:** `RivetCard.setWeightName`: `"Weight_MERGING={0}".str(…)` raises
-`AttributeError` for every `ickkw ≠ 0` run, so Rivet cannot run on an
-MLM-matched sample with the default `weight_name`
+**Title:** `RivetCard.setWeightName` raises `AttributeError` for every matched run (`"…".str(…)` instead of `.format(…)`)
 
-**Version:** 3.8.1 `madgraph/various/banner.py:1831` (3.7.1 `:1706`).
+**Affected versions:** 3.5.17 (LTS) yes, and 3.8.1 yes. Both were tested at
+code level.
 
-**Summary.** For `ickkw ≠ 0` with `weight_name = "default"`, the method builds
-the merged-weight name with `.str(round(py8card['JetMatching:qCut'],3))`, and
-`str` has no attribute `str`. `do_rivet`
-(`common_run_interface.py:3178`) calls it for every Rivet run that leaves
-`weight_name` at its default.
+### Summary
 
-**Reproduce** (no Rivet needed):
-`python check_setweightname.py <MG5 dir>`. It calls the method with a
-default `RunCardLO` at `ickkw = 1`, a `PY8Card` with
-`JetMatching:qCut = 30`, and a default `RivetCard`.
+For a run with `ickkw ≠ 0` and the default `weight_name`, building the Rivet
+weight name raises `AttributeError: 'str' object has no attribute 'str'`.
+`do_rivet` calls this method for every Rivet run that leaves `weight_name` at
+its default, so Rivet (or Contur) cannot run on an MLM-matched sample.
 
-**Expected:** `weight_name = 'Weight_MERGING=30.0'`.
+### How to reproduce
 
-**Observed:** `AttributeError: 'str' object has no attribute 'str'`, on 3.7.1
-and on 3.8.1. An end-to-end Rivet run was not made, since Rivet is not
-installed here.
+No Rivet installation is needed:
 
-**Fix:**
+```python
+import sys; sys.path.insert(0, "/path/to/MG5_aMC")
+import madgraph.various.banner as banner
+run_card = banner.RunCardLO(); run_card["ickkw"] = 1
+py8 = banner.PY8Card(); py8["JetMatching:qCut"] = 30.0
+banner.RivetCard().setWeightName(runcard=run_card, py8card=py8)
+```
+
+`check_setweightname.py` (attached) does this for `ickkw = 0` and `ickkw = 1`.
+
+### Expected vs observed
+
+- **Expected:** `weight_name = 'Weight_MERGING=30.0'`.
+- **Observed:** `AttributeError: 'str' object has no attribute 'str'`.
+- The `ickkw = 0` branch works.
+
+### Cause
+
+`madgraph/various/banner.py`, `RivetCard.setWeightName` (3.8.1 line 1831;
+3.5.17 line 1675):
+
+```python
+                self['weight_name'] = "Weight_MERGING={0}".str(round(py8card['JetMatching:qCut'],3))
+```
+
+### Suggested fix
 
 ```diff
 -                self['weight_name'] = "Weight_MERGING={0}".str(round(py8card['JetMatching:qCut'],3))
 +                self['weight_name'] = "Weight_MERGING={0}".format(round(py8card['JetMatching:qCut'],3))
 ```
+
+---
+Found with an AI assistant while validating an independent LO generator
+against MadGraph; reproduced on both versions before reporting.
 
 Assisted-by: claude-code:claude-opus-5-5

@@ -18,7 +18,12 @@ everywhere, so the window is never removed. On
   3.8.1, `aloha/create_aloha.py:263-280` leaves even powers of a flipped
   momentum unsigned.
 - **Releases with the fix:** 3.8.1 (`a5b17913`), the first in the 3.8 line,
-  and the LTS release 3.5.17. 3.8.0 does not have it. The 3.7.1 defect is
+  and the LTS release 3.5.17. 3.8.0 does not have it.
+- **The LTS line does not reach the defect anyway.** 3.5.17 (`4492b3e3`)
+  carries the same `parse_expression` change, but generates no `P1D` routines
+  for `$`: the same `output standalone` of
+  `u u~ > w+ b w- b~ $ t t~` writes no `FFV2P1D_*.f` (checked on 2026-10-17).
+  The `$` veto there does not go through ALOHA. The 3.7.1 defect is
   `create_aloha.py:262-263` (the flip) with `:527-530` (the `1D` numerator).
 
 ## Check (ran 2026-10-16)
