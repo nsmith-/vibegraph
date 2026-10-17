@@ -37,7 +37,18 @@
 //!   significance, and the threshold a caller compares against has to account for
 //!   how many were taken.
 
-use puruspe::gammq;
+use statrs::function::gamma::gamma_ur;
+
+/// The regularised upper incomplete gamma function `Q(a, x)`; 1 at `x = 0`.
+/// Accurate to a few ulp in the deep tail down to the smallest normal `f64`
+/// (`Q(2, 65) = 66·e⁻⁶⁵`), where a truncated series would read 0.
+fn gammq(a: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        1.0
+    } else {
+        gamma_ur(a, x)
+    }
+}
 
 /// Why a sample could not be tested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -432,6 +443,45 @@ mod tests {
         // distribution with two degrees of freedom, 18.307 the 5% point with ten.
         assert!((gammq(1.0, 5.991 / 2.0) - 0.05).abs() < 1e-4);
         assert!((gammq(5.0, 18.307 / 2.0) - 0.05).abs() < 1e-4);
+    }
+
+    /// The deep tail against closed forms: `Q(2, x) = (1 + x)e⁻ˣ` and
+    /// `Q(1, x) = e⁻ˣ`. A series truncated at a fixed number of terms reads 0
+    /// from about `x = a + 20(√a + 1)` on, far above the smallest `f64`.
+    #[test]
+    fn the_upper_incomplete_gamma_does_not_truncate_in_the_deep_tail() {
+        for x in [30.0, 65.0, 200.0, 700.0] {
+            let q2 = gammq(2.0, x);
+            let want = (1.0 + x) * (-x).exp();
+            assert!(q2 > 0.0, "Q(2, {x}) read 0");
+            assert!(
+                (q2 / want - 1.0).abs() < 1e-9,
+                "Q(2, {x}) = {q2:e}, want {want:e}"
+            );
+        }
+        let q1 = gammq(1.0, 700.0);
+        assert!(
+            (q1 / (-700.0f64).exp() - 1.0).abs() < 1e-9,
+            "Q(1, 700) = {q1:e}"
+        );
+        assert_eq!(gammq(3.0, 0.0), 1.0);
+    }
+
+    /// With two degrees of freedom the p-value is `e^(−χ²/2)` exactly; a χ² of
+    /// 147 sits at 1e-32, past where a truncated series reads 0.
+    #[test]
+    fn a_deep_tail_chi_squared_reports_its_p_value() {
+        let a = [100.0, 10.0, 10.0];
+        let b = [10.0, 100.0, 10.0];
+        let test = chi2_homogeneity(&a, &b).unwrap();
+        assert_eq!(test.dof, 2);
+        let want = (-test.chi2 / 2.0).exp();
+        assert!(test.chi2 > 140.0 && want < 1e-30, "{test:?}");
+        assert!(
+            (test.p / want - 1.0).abs() < 1e-9,
+            "p = {:e}, want {want:e}",
+            test.p
+        );
     }
 
     /// Under the null the χ² p-value is uniform too, and a genuinely different

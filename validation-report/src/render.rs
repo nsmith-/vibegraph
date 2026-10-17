@@ -349,6 +349,22 @@ fn standalone_verdict(standalone: &Standalone, report_dir: &Path) -> String {
     let Ok(value) = serde_json::from_str::<Value>(&text) else {
         return format!("`standalone/{row}` is unreadable");
     };
+    let freshness = if recorded_with_this_run(&path, report_dir) {
+        String::new()
+    } else {
+        format!(
+            " (recorded before this invocation's gates; `pixi run{} {}` refreshes it)",
+            standalone
+                .environment
+                .as_deref()
+                .map(|e| format!(" -e {e}"))
+                .unwrap_or_default(),
+            standalone.task.as_deref().unwrap_or("<task>"),
+        )
+    };
+    if value.get("row").and_then(Value::as_str) == Some("mlm-pythia") {
+        return format!("{}{freshness}", mlm_pythia_verdict(&value));
+    }
     let status = value
         .get("status")
         .and_then(Value::as_str)
@@ -380,20 +396,110 @@ fn standalone_verdict(standalone: &Standalone, report_dir: &Path) -> String {
             .and_then(Value::as_str)
             .map(|v| format!(" (Pythia {v})"))
             .unwrap_or_default(),
-        if recorded_with_this_run(&path, report_dir) {
-            String::new()
-        } else {
-            format!(
-                " (recorded before this invocation's gates; `pixi run{} {}` refreshes it)",
-                standalone
-                    .environment
-                    .as_deref()
-                    .map(|e| format!(" -e {e}"))
-                    .unwrap_or_default(),
-                standalone.task.as_deref().unwrap_or("<task>"),
-            )
-        }
+        freshness,
     )
+}
+
+/// The matched Pythia comparison's row (`mlm_match.py`): its verdict and every
+/// number the verdict rests on — the five pulls, the jet-rate legs on B against
+/// A, and the two nulls.
+fn mlm_pythia_verdict(value: &Value) -> String {
+    let gate = &value["gate"];
+    let num = |v: &Value| v.as_f64();
+    let signed = |v: &Value| num(v).map_or("—".to_string(), |x| format!("{x:+.2}"));
+    let status = gate["status"].as_str().unwrap_or("unknown");
+    let jet = &gate["jet_rates"];
+    let jet_mode = jet["mode"].as_str().unwrap_or("unknown");
+    let mark = match (status, jet_mode) {
+        ("pass", "gate") => "✅",
+        ("pass", _) => "⚠️",
+        _ => "❌",
+    };
+    let pulls = &gate["pulls"];
+    let pull_text = [
+        ("@0", "0"),
+        ("@1", "1"),
+        ("@2", "2"),
+        ("all", "all"),
+        ("merged σ", "merged_sigma"),
+    ]
+    .iter()
+    .map(|(label, key)| format!("{label} {}", signed(&pulls[*key])))
+    .collect::<Vec<_>>()
+    .join(", ");
+    let legs = |l: &Value| -> String {
+        let p = &l["p_values"];
+        let p_text = ["log10_d01", "log10_d12", "log10_d23"]
+            .iter()
+            .map(|k| num(&p[*k]).map_or("—".to_string(), |x| format!("{x:.3}")))
+            .collect::<Vec<_>>()
+            .join(" / ");
+        let worst = &l["max_abs_pull"];
+        let range = worst["range"]
+            .as_array()
+            .map(|r| {
+                let edge = |v: &Value| num(v).map_or("∞".to_string(), |x| format!("{x:.1}"));
+                format!(
+                    "[{}, {}]",
+                    r.first().map_or("?".to_string(), edge),
+                    r.get(1).map_or("?".to_string(), edge)
+                )
+            })
+            .unwrap_or_default();
+        format!(
+            "χ² p d01 / d12 / d23 {p_text} (min × 3 = {:.3}, {}); max |pull| {:.2} in {} {range} against z* {:.2} at {} bins ({})",
+            num(&l["p_min_x_trials"]).unwrap_or(f64::NAN),
+            l["chi2_leg"].as_str().unwrap_or("?"),
+            num(&worst["pull"]).map_or(f64::NAN, f64::abs),
+            worst["histogram"].as_str().unwrap_or("?"),
+            num(&l["z_star"]).unwrap_or(f64::NAN),
+            l["n_bins"].as_u64().unwrap_or(0),
+            l["per_bin_leg"].as_str().unwrap_or("?"),
+        )
+    };
+    let null = |key: &str| -> String {
+        let n = &gate[key];
+        if n.is_null() {
+            return "not available".to_string();
+        }
+        format!("{}: {}", n["legs"].as_str().unwrap_or("?"), legs(n))
+    };
+    format!(
+        "{mark} {status} — pulls (|pull| < {}): {pull_text}; jet rates {jet_mode} ({}), at α = {} per leg: {}; MadEvent null {}; vibegraph null (information) {}{}",
+        num(&gate["pull_limit"]).unwrap_or(f64::NAN),
+        jet["verdict"].as_str().unwrap_or("?"),
+        num(&gate["alpha_per_leg"]).unwrap_or(f64::NAN),
+        legs(jet),
+        null("null_a"),
+        null("null_b"),
+        pythia_text(value),
+    )
+}
+
+/// `; Pythia 8.312 (pythia8-8.312-…, conda-forge/linux-64, Linux x86_64)`: the
+/// version and, when the row records it, the build and platform the run used.
+fn pythia_text(value: &Value) -> String {
+    let Some(version) = value.get("pythia_version").and_then(Value::as_str) else {
+        return String::new();
+    };
+    let build = &value["pythia_build"];
+    let text = |key: &str| build.get(key).and_then(Value::as_str);
+    let channel = text("channel").map(|c| c.trim_end_matches('/').rsplit('/').next().unwrap_or(c));
+    let package = match (text("package"), channel, text("subdir")) {
+        (Some(p), Some(c), Some(s)) => Some(format!("{p}, {c}/{s}")),
+        (Some(p), _, _) => Some(p.to_string()),
+        _ => None,
+    };
+    let details = [package, text("platform").map(str::to_string)]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if details.is_empty() {
+        format!("; Pythia {version}")
+    } else {
+        format!("; Pythia {version} ({details})")
+    }
 }
 
 /// Whether a standalone gate's verdict is at least as new as the newest per-row
@@ -496,4 +602,104 @@ pub(crate) fn json(
         "ok": problems.is_empty(),
     });
     serde_json::to_string_pretty(&value).expect("the report serialises") + "\n"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn legs(verdict: &str, worst: f64) -> Value {
+        json!({
+            "legs": verdict,
+            "p_values": {"log10_d01": 0.274, "log10_d12": 0.111, "log10_d23": 0.0873},
+            "chi2_leg": "pass",
+            "p_min_x_trials": 0.262,
+            "n_bins": 72,
+            "z_star": 3.978,
+            "max_abs_pull": {"pull": worst, "histogram": "log10_d12", "bin": 1, "range": [0.0, 0.1]},
+            "per_bin_leg": verdict,
+            "p_min_x_n_bins": 0.258,
+        })
+    }
+
+    fn row(status: &str, jet_mode: &str, jet_verdict: &str) -> Value {
+        let mut jet = legs("pass", -2.91);
+        jet["mode"] = json!(jet_mode);
+        jet["verdict"] = json!(jet_verdict);
+        json!({
+            "row": "mlm-pythia",
+            "mode": "gate",
+            "pythia_version": "8.312",
+            "pythia_build": {
+                "platform": "Linux x86_64",
+                "pythia8_config_version": "8.312",
+                "package": "pythia8-8.312-py312hd50de4e_105",
+                "channel": "https://conda.anaconda.org/conda-forge/",
+                "subdir": "linux-64",
+            },
+            "gate": {
+                "status": status,
+                "pull_limit": 3.0,
+                "alpha_per_leg": 0.005,
+                "pulls": {"0": -0.76, "1": -1.79, "2": -1.99, "all": -1.38, "merged_sigma": -0.39},
+                "pulls_failed": [],
+                "jet_rates": jet,
+                "null_a": legs("pass", -2.93),
+                "null_b": null,
+            },
+        })
+    }
+
+    /// The row carries every number the verdict rests on: the five pulls, the
+    /// three p-values, the worst bin with its histogram and range, z* and the
+    /// bin count, and the null's own legs.
+    #[test]
+    fn the_mlm_pythia_row_renders_its_verdict_and_numbers() {
+        let text = mlm_pythia_verdict(&row("pass", "gate", "pass"));
+        for needle in [
+            "✅ pass",
+            "@0 -0.76",
+            "@1 -1.79",
+            "@2 -1.99",
+            "all -1.38",
+            "merged σ -0.39",
+            "jet rates gate (pass)",
+            "0.274 / 0.111 / 0.087",
+            "max |pull| 2.91 in log10_d12 [0.0, 0.1]",
+            "z* 3.98 at 72 bins",
+            "MadEvent null pass:",
+            "max |pull| 2.93",
+            "vibegraph null (information) not available",
+            "Pythia 8.312 (pythia8-8.312-py312hd50de4e_105, conda-forge/linux-64, Linux x86_64)",
+        ] {
+            assert!(text.contains(needle), "missing {needle:?} in {text}");
+        }
+    }
+
+    /// A pass whose jet rates are not enforced is not a green cell, and a fail
+    /// is a fail whatever the jet rates say.
+    #[test]
+    fn the_mlm_pythia_mark_follows_status_and_jet_rate_mode() {
+        assert!(mlm_pythia_verdict(&row("pass", "info", "null failed")).starts_with("⚠️ pass"));
+        assert!(mlm_pythia_verdict(&row("pass", "info", "null failed"))
+            .contains("jet rates info (null failed)"));
+        assert!(mlm_pythia_verdict(&row("fail", "gate", "fail")).starts_with("❌ fail"));
+        assert!(mlm_pythia_verdict(&row("fail", "info", "null failed")).starts_with("❌ fail"));
+    }
+
+    /// The build is optional in the row: the platform alone, the package without
+    /// a channel, and the version alone each render what is there.
+    #[test]
+    fn the_pythia_build_renders_what_the_row_records() {
+        let mut value = row("pass", "gate", "pass");
+        value["pythia_build"] = json!({"platform": "Darwin arm64"});
+        assert!(mlm_pythia_verdict(&value).ends_with("; Pythia 8.312 (Darwin arm64)"));
+        value["pythia_build"] = json!({"package": "pythia8-8.312-x_1", "platform": "Linux x86_64"});
+        assert!(mlm_pythia_verdict(&value)
+            .ends_with("; Pythia 8.312 (pythia8-8.312-x_1, Linux x86_64)"));
+        value.as_object_mut().unwrap().remove("pythia_build");
+        assert!(mlm_pythia_verdict(&value).ends_with("; Pythia 8.312"));
+        value.as_object_mut().unwrap().remove("pythia_version");
+        assert!(!mlm_pythia_verdict(&value).contains("Pythia"));
+    }
 }

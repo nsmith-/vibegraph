@@ -1656,16 +1656,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507460a910eb7b32ee961886ff48539633b788a36b65692b95f225b844c82553"
 
 [[package]]
-name = "lambert_w"
-version = "1.2.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f0846ee4f0299ca4c5b9ca06ff55cf88b3430a763bf591474cc734479c9b24"
-dependencies = [
- "num-complex",
- "num-traits",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2098,6 +2088,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+ "libm",
 ]
 
 [[package]]
@@ -2447,16 +2438,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "puruspe"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9d62b4ad8b456f2ac8a171567bd475cae8cecd53ff5a46fce4f261eef17648"
-dependencies = [
- "lambert_w",
- "num-complex",
 ]
 
 [[package]]
@@ -3125,6 +3106,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "statrs"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1837f9a1bd13dabbdbb04489c39451482d3cdd35a6e1a0d0f3570dea2b8c8be"
+dependencies = [
+ "approx",
+ "num-traits",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3752,7 +3744,6 @@ dependencies = [
  "num-traits",
  "ordered-float 5.3.0",
  "peg",
- "puruspe",
  "quick-xml",
  "rand 0.9.4",
  "rand_chacha 0.9.0",
@@ -3763,6 +3754,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "statrs",
  "strum",
  "tar",
  "tempfile",
@@ -3778,9 +3770,9 @@ dependencies = [
 name = "vibegraph-validation-report"
 version = "0.1.0"
 dependencies = [
- "puruspe",
  "serde",
  "serde_json",
+ "statrs",
  "tempfile",
  "toml",
 ]
