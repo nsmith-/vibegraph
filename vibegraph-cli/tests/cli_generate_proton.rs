@@ -874,8 +874,13 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    // `@1`'s 24 (group, diagram) pairs share six maps.
-    assert_eq!(artifact.format_version, 11);
+    // `@1`'s 24 (group, diagram) pairs share six maps; the default grid rule
+    // bounds the bin widths, which only a version-12 file records.
+    assert!(artifact
+        .channels
+        .iter()
+        .any(|c| matches!(c.key, ChannelKey::MergedChannel { .. })));
+    assert_eq!(artifact.format_version, 12);
     let mut sigma = [0.0f64; 2];
     let mut alpha = [0.0f64; 2];
     let mut previous = 0;
