@@ -4115,9 +4115,8 @@ fn probe_llj_dyn_scatter_guard_calibration_legacy() {
     );
 }
 
-/// Seeds in the fixed-scale scatter calibration: the gate's five first, then
-/// enough for one twenty-seed pool.
-const LLJ_FIXED_CALIBRATION_SEEDS: u64 = 20;
+/// Seeds per map in the fixed-scale scatter calibration, the gate's five first.
+const LLJ_FIXED_CALIBRATION_SEEDS: u64 = 80;
 
 /// [`probe_llj_dyn_scatter_guard_calibration`] on `sigma_llj_fixed_scale_vs_mg`'s
 /// card, under the production maps, over [`LLJ_FIXED_CALIBRATION_SEEDS`] seeds.
@@ -4132,6 +4131,19 @@ fn probe_llj_fixed_scatter_guard_calibration() {
         LLJ_FIXED_CALIBRATION_SEEDS,
         "default",
         MapOptions::default(),
+    );
+}
+
+/// [`probe_llj_fixed_scatter_guard_calibration`] under [`MapChoices::LEGACY`].
+#[test]
+#[ignore]
+fn probe_llj_fixed_scatter_guard_calibration_legacy() {
+    llj_scatter_calibration(
+        "pp_to_llj_fixed",
+        ScaleShape::FixedAtMz,
+        LLJ_FIXED_CALIBRATION_SEEDS,
+        "legacy",
+        MapOptions::fixed(MapChoices::LEGACY),
     );
 }
 

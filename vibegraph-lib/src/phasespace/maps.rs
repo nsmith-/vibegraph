@@ -227,16 +227,21 @@ impl MapOptions {
     ///   draw and [`TauMap::Log`] keeps it. `p p > j j` 0.77 ± 0.03,
     ///   `p p > b b~` 0.65 ± 0.05 in error² × evaluations (it stops on the
     ///   iteration floor); Drell–Yan reads 1.06 ± 0.05 the other way, which the
-    ///   resonance exception keeps; `p p > l+ l- j` is neutral, 1.03 ± 0.05.
+    ///   resonance exception keeps; `p p > l+ l- j` is neutral, 1.03 ± 0.05. The
+    ///   rule reads the whole process, not each channel as MadEvent does: one
+    ///   diagram with a whole-state resonance keeps every channel on the log map,
+    ///   so `p p > b b~ QCD=2`, whose electroweak diagrams carry `Z` and `h`
+    ///   propagators spanning the pair, stays on it.
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
     ///
-    /// These ratios were measured on the M3 Max host off the 2026-09-23 code,
-    /// twenty seeds per arm at the banked rows' own cards; the gate cells that
-    /// read the two maps were re-measured under them on 2026-10-17, the
-    /// `pp_to_jj` event sample's flavour χ² at minimum p 5.6e-2 against its
-    /// 1e-4 floor and `pp_to_llj_dyn`'s five-seed scatter guard at 1.96 against
-    /// its 4.0, both inside the false-alarm rates their 80-seed nulls measure.
+    /// The ratios are evaluations measured on the M3 Max host off the 2026-09-23
+    /// code, twenty seeds per arm at the banked rows' own cards, with the map
+    /// asked for by name. The gate cells were re-read under these rules on
+    /// 2026-10-17: `pp_to_jj`'s event sample at minimum `p` 5.6e-2 against its
+    /// 1e-4 floor, and the five-seed scatter guards of `pp_to_llj_dyn` and
+    /// `pp_to_llj_fixed` at `χ²/dof` 1.03 and 1.39 against their 4.0, the latter
+    /// at 0.92 over eighty seeds under either map.
     pub fn resolve(&self, shape: &ProcessShape) -> MapChoices {
         MapChoices {
             split_angle: self.split_angle.unwrap_or(SplitAngle::SoftAll),
