@@ -45,11 +45,10 @@ approved by the user.
     reported mean, +0.45 against its equal-weight mean.
   - `ddx_to_epemg`: 0.6203869 ± 0.0001118 pb, pulls +2.67 and −0.19.
 
-  MadEvent's reported value reads 0.20–0.25 % low on both. This is the 2 → 3
-  case of the
-  [iteration-weighting bias](../../validation/madevent-iteration-weighting-bias.md),
-  whose page holds only the 2 → 4 case. D1's condition for `validated_ew` is
-  met.
+  MadEvent's reported value reads 0.20–0.25 % low on both. The 2 → 3 case is
+  now recorded on the
+  [iteration-weighting bias](../../validation/madevent-iteration-weighting-bias.md)
+  page beside the 2 → 4 one. D1's condition for `validated_ew` is met.
 - **The tool.** `sigma-pulls` joins each row file to its record by value and
   fails loudly on a dropped row. [HY1](sessions/HY1-report.md) raised its
   tests from 7 to 20, which catch 35 of 36 one-line mutations.
@@ -73,10 +72,6 @@ sessions' own. The banked-layer evidence is this PR's CI.
 - **Banking request on this PR**, one comment with three items: a 20 + 20
   ladder on `uux/ddx_to_epemg`; 20 seeds on `pp_to_bb` and `pp_to_bb_fixed`;
   and the `validated_ew` re-record of three rows.
-- **The 2 → 3 row for the bias page.** It belongs on
-  `madevent-iteration-weighting-bias.md`, a MadGraph-defect page a parallel
-  drafting session owns. It is passed to the planner instead of being edited
-  here.
 - **`PULL_LIMIT`'s rationale.** It argues 3.5 as a bound on the worst of five
   per-seed pulls; the gate now asserts the mean's pull. The limit is
   unchanged; restating it belongs to `sigma-calibration-rerecord` (PR #45).
