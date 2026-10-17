@@ -135,6 +135,67 @@ pub(crate) enum IterationCombination {
     InverseVariance,
 }
 
+/// What one point adds to each of its bins in the refinement histogram.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BinWeight {
+    /// `(f·w)²`, the point's squared weight.
+    #[default]
+    Squared,
+}
+
+/// How a grid turns one iteration's points into its next bin edges.
+///
+/// The default is Lepage's rule as this crate has always run it: `(f·w)²`
+/// histograms refined by [`VegasGrid::refine_grid`].
+///
+/// The rule is a property of an adaptation, not of a trained grid, so it is not
+/// serialized and a stored grid's bytes do not depend on it.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GridRule {
+    /// What a point adds to its bins.
+    pub weight: BinWeight,
+}
+
+impl GridRule {
+    /// Whether the rule is the default one.
+    pub fn is_default(&self) -> bool {
+        *self == GridRule::default()
+    }
+}
+
+/// One iteration's refinement histogram, accumulated point by point in draw
+/// order under a [`GridRule`].
+struct BinHistogram {
+    weight: BinWeight,
+    hist: Vec<Vec<f64>>,
+}
+
+impl BinHistogram {
+    fn new(grid: &VegasGrid) -> Self {
+        BinHistogram {
+            weight: grid.rule.weight,
+            hist: vec![vec![0.0_f64; grid.nbins]; grid.ndim],
+        }
+    }
+
+    /// Add one point of weighted value `fval` (`fval2 = fval²`) to the bins
+    /// `bins` yields, one per dimension in dimension order.
+    #[inline]
+    fn add(&mut self, _fval: f64, fval2: f64, bins: impl Iterator<Item = usize>) {
+        let v = match self.weight {
+            BinWeight::Squared => fval2,
+        };
+        for (dim, k) in bins.enumerate() {
+            self.hist[dim][k] += v;
+        }
+    }
+
+    /// The histogram [`VegasGrid::refine_grid`] reshapes from.
+    fn finish(self) -> Vec<Vec<f64>> {
+        self.hist
+    }
+}
+
 /// One evaluation point handed to a batched integrand callback.
 ///
 /// `u` is the `ndim`-length point in `[0,1]^ndim` after grid remapping (the
@@ -205,6 +266,9 @@ pub struct VegasGrid {
     /// same reason: it describes an adaptation, not a grid.
     #[serde(skip)]
     combination: IterationCombination,
+    /// How the grid refines. Not serialized, for the same reason.
+    #[serde(skip)]
+    rule: GridRule,
 }
 
 /// Plain deserialization target; validated into a [`VegasGrid`] afterward.
@@ -263,6 +327,7 @@ impl VegasGrid {
             xi,
             warmup: DEFAULT_WARMUP_ITERS,
             combination: IterationCombination::default(),
+            rule: GridRule::default(),
         }
     }
 
@@ -334,6 +399,7 @@ impl VegasGrid {
             // from uniform edges asks for one explicitly.
             warmup: 0,
             combination: IterationCombination::default(),
+            rule: GridRule::default(),
         })
     }
 
@@ -383,6 +449,12 @@ impl VegasGrid {
     /// [`IterationCombination`].
     pub(crate) fn with_combination(mut self, combination: IterationCombination) -> Self {
         self.combination = combination;
+        self
+    }
+
+    /// Builder that sets how the grid refines. See [`GridRule`].
+    pub(crate) fn with_rule(mut self, rule: GridRule) -> Self {
+        self.rule = rule;
         self
     }
 
@@ -621,8 +693,8 @@ impl VegasGrid {
     }
 
     /// Draw `neval` samples in batches, evaluating `f` once per batch.
-    /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` accumulating
-    /// `fval²` for grid refinement.
+    /// Returns `(integral_estimate, variance, d)`, `d[dim][bin]` the histogram
+    /// the grid's [`GridRule`] accumulates for its refinement.
     fn run_iter_batched<Fb>(
         &self,
         f: &mut Fb,
@@ -634,7 +706,7 @@ impl VegasGrid {
         Fb: FnMut(&[SamplePoint], &mut [f64]),
     {
         let batch_size = batch_size.max(1);
-        let mut d = vec![vec![0.0_f64; self.nbins]; self.ndim];
+        let mut hist = BinHistogram::new(self);
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
 
@@ -663,15 +735,13 @@ impl VegasGrid {
                 sum += fval;
                 sum2 += fval2;
                 let ks = &flat_ks[i * self.ndim..(i + 1) * self.ndim];
-                for dim in 0..self.ndim {
-                    d[dim][ks[dim]] += fval2;
-                }
+                hist.add(fval, fval2, ks.iter().copied());
             }
             remaining -= this_batch;
         }
 
         let (mean, variance) = moments(sum, sum2, neval);
-        (mean, variance, d)
+        (mean, variance, hist.finish())
     }
 
     /// Reshape the grid using accumulated `f²` weights from one iteration.
@@ -782,7 +852,7 @@ pub(crate) struct BlockIteration {
     /// An integrand whose support had interior zeros would be undercounted by
     /// them, a set a continuous draw hits with probability zero.
     pub(crate) accepted: usize,
-    /// `hist[dim][bin]` accumulating `(f·w)²`, the input
+    /// `hist[dim][bin]` as the grid's [`GridRule`] accumulates it, the input
     /// [`VegasGrid::refine_grid`] reshapes the block's grid from.
     pub(crate) hist: Vec<Vec<f64>>,
 }
@@ -896,7 +966,7 @@ where
         let grid = &grids[b];
         let ndim = grid.ndim;
         let nchunks = plan.neval.div_ceil(plan.chunk_size.max(1));
-        let mut hist = vec![vec![0.0_f64; grid.nbins]; ndim];
+        let mut hist = BinHistogram::new(grid);
         let mut sum = 0.0_f64;
         let mut sum2 = 0.0_f64;
         let mut accepted = 0_usize;
@@ -906,9 +976,13 @@ where
                 sum += fval;
                 sum2 += fval2;
                 accepted += usize::from(fval != 0.0);
-                for (dim, &k) in bins[i * ndim..(i + 1) * ndim].iter().enumerate() {
-                    hist[dim][usize::from(k)] += fval2;
-                }
+                hist.add(
+                    fval,
+                    fval2,
+                    bins[i * ndim..(i + 1) * ndim]
+                        .iter()
+                        .map(|&k| usize::from(k)),
+                );
             }
         }
         next += nchunks;
@@ -918,7 +992,7 @@ where
             integral: mean,
             variance,
             accepted,
-            hist,
+            hist: hist.finish(),
         });
     }
     out

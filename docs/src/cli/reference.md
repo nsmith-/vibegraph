@@ -215,6 +215,14 @@ Options:
           
           [default: auto]
 
+      --grid-bin-weight <BIN_WEIGHT>
+          What each point adds to its bins of the refinement histogram
+
+          Possible values:
+          - squared: The point's squared weight `(f·w)²`
+          
+          [default: squared]
+
   -h, --help
           Print help (see a summary with '-h')
 ```

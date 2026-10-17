@@ -49,7 +49,7 @@ use rayon::prelude::*;
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::select::select_index;
-use crate::vegas::VegasGrid;
+use crate::vegas::{GridRule, VegasGrid};
 
 /// The RNG stream the per-channel weight scans run on, offset by channel index so
 /// each channel's scan is independent of the others and of the event generation.
@@ -236,6 +236,12 @@ pub trait ChannelIntegrand {
     /// channel's `αⱼ`, so the terms sum to the full integral. Points the cuts
     /// reject return exactly `0.0`.
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64;
+
+    /// How an integration of this integrand refines its channels' grids. An
+    /// accept/reject pass over frozen grids never reads it.
+    fn grid_rule(&self) -> GridRule {
+        GridRule::default()
+    }
 }
 
 /// What a frozen scan of one channel's grid found.
