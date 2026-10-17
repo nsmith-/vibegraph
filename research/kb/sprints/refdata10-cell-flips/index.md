@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Cells refdata-10 settles: ttx MLM @1 and gg_to_gg_cg](sprint.md) - Measure pp_to_ttx_0j1j_mlm's integrals cell and gg_to_gg_cg's against refdata-10's seeded hard_survey = 2 references, and flip each to gate on a five-seed agreement, rewriting both manifest notes on the current code.
+
+## Directories
+
+* [sessions](sessions/index.md)
