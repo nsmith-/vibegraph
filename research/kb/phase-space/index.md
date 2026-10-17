@@ -28,6 +28,7 @@
 * [Phase-space seam: maps, channels, combiners and the density contract](channel-contract.md) - PhaseSpaceMap/Channel/Combiner traits; sample()'s walk weight vs the combiner's Σα·g from density(), positive at foreign points; cut-first pricing; the subtree memo.
 * [Integration channels: MadGraph's merged configurations, merged again by map identity](channel-set.md) - One channel per config_groups group (coherent |ΣAMP|², channel cuts per configuration), then one hadronic sampling channel per distinct map; MadEvent's config_subproc_map compared.
 * [Per-diagram channels from the propagator chain](diagram-channels.md) - How a diagram's Prop chain becomes a 2-body decomposition tree, with non-prefix s-channel recovery and the beam-content rule that survives feyngraph's momentum routing.
+* [A pluggable importance sampler in front of the phase-space map (proposed)](importance-sampler-seam.md) - Where integration, the w_max scan, unweighting and the artifact assume a VegasGrid; the trait that would separate draw, accumulate, refine, freeze and serialise; and what each candidate sampler needs of it.
 * [Mixed-multiplicity composite integrand](mixed-multiplicity-integrand.md) - MultiplicitySum: one ProtonIntegrand per @N multiplicity with its own channels and grid dimension (channel_grid_ndim), a budget split by part spread, union-shape maps, versioned keys.
 
 ## Design Decision

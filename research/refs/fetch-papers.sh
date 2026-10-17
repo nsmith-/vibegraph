@@ -38,6 +38,13 @@ PAPERS=(
   "loop_induced_ps|https://ar5iv.org/html/1507.00020|Loop-induced processes and phase-space optimisation in MadGraph5 (arXiv:1507.00020)"
   # UFO / model format extensions:
   "madwidth|https://ar5iv.org/html/1402.1178|MadWidth: automatic decay widths, extends UFO with decay tables (arXiv:1402.1178)"
+  # Adaptive and learned samplers (candidates behind the importance-sampler seam):
+  "foam|https://ar5iv.org/html/physics/0203033|FOAM: general-purpose cellular Monte Carlo event generator (physics/0203033)"
+  "foam206|https://ar5iv.org/html/physics/0609068|FOAM 2.06 upgrade: memory-saving simplical grid (physics/0609068)"
+  "bendavid_bdt|https://ar5iv.org/html/1707.00028|Bendavid: MC integration with boosted decision trees and generative DNNs (arXiv:1707.00028)"
+  "iflow|https://ar5iv.org/html/2001.05486|i-flow: integration and sampling with normalizing flows (arXiv:2001.05486)"
+  "nis|https://ar5iv.org/html/2001.05478|Exploring phase space with Neural Importance Sampling (arXiv:2001.05478)"
+  "madnis|https://ar5iv.org/html/2212.06172|MadNIS: neural multi-channel importance sampling (arXiv:2212.06172)"
   # Equality saturation / term rewriting:
   "egglog|https://ar5iv.org/html/2304.04332|egglog: Better Together, Unifying Datalog and Equality Saturation (arXiv:2304.04332)"
   "egg|https://ar5iv.org/html/2004.03082|egg: Fast and Extensible Equality Saturation (arXiv:2004.03082)"
