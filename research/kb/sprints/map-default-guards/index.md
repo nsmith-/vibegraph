@@ -8,4 +8,5 @@
 
 ## Directories
 
+* [decisions](decisions/index.md)
 * [sessions](sessions/index.md)
