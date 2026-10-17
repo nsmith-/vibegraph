@@ -234,6 +234,8 @@ enum Plan {
     /// measured and recorded rather than absorbed into a widened `rel_tol`, and
     /// the arm a demotion lands on.
     ///
+    /// Kept while no row sits on it, so a demotion is a one-arm change.
+    #[allow(dead_code)]
     Info {
         neval: usize,
         niter: usize,
@@ -645,29 +647,15 @@ fn plan_for(dir: &str) -> Plan {
         // rather than at the clustering: MadGraph chose
         // `dynamical_scale_choice = 3` — half the sum of final-state transverse
         // masses — for this process itself, the row's own `.mg5` script asking
-        // for no scale at all.
+        // for no scale at all. The per-event replay reproduces both printed
+        // scales on all 10 000 banked events.
         //
-        // Measured and reported rather than asserted, because the residual is a
-        // converged offset with no attribution yet. The five seeds are mutually
-        // consistent at chi2/dof 0.88 and their seed-policy mean sits at
-        // rel -1.58e-3, which is 1.9x the reference's own 8.5e-4 relative error,
-        // and the budget ladder settles rather than shrinks (rel +1.2e-6 /
-        // -1.3e-4 / -2.0e-3 / -3.5e-3 / -2.5e-3 across a sixteenfold budget). So
-        // it is not sampling. What it is not, either, is the scale formula: the
-        // per-event replay reproduces both printed scales on all 10 000 banked
-        // events inside their own printing budget, worst 0.999 of it, with
-        // AQCDUP recovered from the computed mu_R on every one. And it is not
-        // the process's own convergence: `gg_to_gg` is the same final state
-        // under a run card differing in this one field, and sits at rel +9.8e-6.
-        // The offset therefore lives in what those two comparisons do not cover
-        // — the coupling this row's matrix element runs at across the whole cut
-        // region, rather than on the events MadGraph kept.
-        "gg_to_gg_cg" => Plan::Info {
+        // `rel_tol` is the SMEFTsim rows' 0.005, read against the row's seed
+        // record.
+        "gg_to_gg_cg" => Plan::Gate {
             neval: 40_000,
             niter: 6,
-            reason: "sigma is a converged -0.16% below the bank, seed-consistent at chi2/dof \
-                     0.88, while the per-event scale replay reproduces every banked event's \
-                     SCALUP and AQCDUP: measured and reported until the offset is attributed",
+            rel_tol: 0.005,
         },
         // ── the row whose banked run card this crate refuses ────────────────
         // Its script does not ask for the setting; MadGraph chose it for the
