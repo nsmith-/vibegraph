@@ -42,7 +42,7 @@ matching is on), and this crate applies the same override, so a card with
 `validate_hadronic.rs` (long tier, `#[ignore]`), `sigma_llj_xqcut_only_vs_madevent`,
 `sigma_llj_mlm_vs_madevent` and `sigma_llj_mlm_alps2_vs_madevent` (through
 `mlm_sigma_row`), `sigma_ll_0j2j_mlm_vs_madevent` (gate) and
-`sigma_ttx_0j1j_mlm_vs_madevent` (info). It reads only the committed
+`sigma_ttx_0j1j_mlm_vs_madevent` (gate since 2026-10-17). It reads only the committed
 `mlm_sigma_reference.json`; no MadGraph runs.
 
 - **This side.** The mixed rows build the composite exactly as `vibegraph
@@ -80,9 +80,9 @@ matching is on), and this crate applies the same override, so a card with
 | `pp_to_ll_0j2j_mlm` `@1` | 268.594 ± 0.451 | 267.874 ± 0.370 | +1.23 | +0.27% | 0.95 |
 | `pp_to_ll_0j2j_mlm` `@2` | 131.275 ± 0.663 | 130.908 ± 0.195 | +0.53 | +0.28% | 1.98 |
 | `pp_to_ll_0j2j_mlm` total | 1065.126 ± 0.684 | 1063.646 ± 0.546 | +1.69 | +0.14% | 1.06 |
-| `pp_to_ttx_0j1j_mlm` `@0` (info) | 513.222 ± 0.177 | 512.898 ± 0.181 | +1.28 | +0.06% | 2.01 |
-| `pp_to_ttx_0j1j_mlm` `@1` (info) | 583.192 ± 0.297 | 575.836 ± 0.777 | **+8.85** | **+1.28%** | 0.99 |
-| `pp_to_ttx_0j1j_mlm` total (info) | 1096.413 ± 0.381 | 1088.640 ± 0.797 | +8.80 | +0.71% | 1.42 |
+| `pp_to_ttx_0j1j_mlm` `@0` (info then) | 513.222 ± 0.177 | 512.898 ± 0.181 | +1.28 | +0.06% | 2.01 |
+| `pp_to_ttx_0j1j_mlm` `@1` (info then) | 583.192 ± 0.297 | 575.836 ± 0.777 | **+8.85** | **+1.28%** | 0.99 |
+| `pp_to_ttx_0j1j_mlm` total (info then) | 1096.413 ± 0.381 | 1088.640 ± 0.797 | +8.80 | +0.71% | 1.42 |
 
 The whole task takes 9.5 min on that host and is bit-identical on a second run; a
 mixed-row seed is about 35 s there[^n41-z]. `@2`'s error is its seed spread
@@ -101,11 +101,25 @@ causes.
 
 ## Standing residuals
 
-- **`t t̄` `@1` is +1.28%, undiagnosed**: all ten seeds (581.9–584.5 pb) sit above
-  MadEvent's whole range (572.5–579.7) while `@0` agrees. Not yet separated: the
-  shared-directory reference and H1's first-call rejections on this row. The cell
-  stays `info`, and a gate needs a five-seed agreement on record first
-  ([ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
+- **`t t̄` `@1` was +1.28 % at refdata-9; it is attributed and gated.** This
+  side clustered in the lab frame where MadEvent clusters in the partonic CM.
+  The fix moved `@1` by −4.465 pb. MadEvent's default survey also
+  under-integrates `g q > t t~ q`
+  ([sigma-ttx-mlm-at1](../sprints/sigma-ttx-mlm-at1/closeout.md)). Against
+  refdata-10's five `hard_survey = 2` seeds, ten seeds this side read
+  (2026-10-17, [refdata10-cell-flips](../sprints/refdata10-cell-flips/closeout.md)):
+
+  | part | vibegraph (10 seeds) | MadEvent (5 seeds) | pull | rel | this side χ²/dof |
+  |---|---|---|---|---|---|
+  | `@0` | 513.219 ± 0.179 | 513.106 ± 0.222 | +0.40 | +0.02 % | 2.09 |
+  | `@1` | 578.780 ± 0.327 | 578.337 ± 1.128 | +0.38 | +0.08 % | 1.26 |
+  | total | 1091.999 ± 0.421 | 1091.440 ± 1.149 | +0.46 | +0.05 % | 1.76 |
+
+  The cell is a gate on |pull| < 3 plus the χ²/dof band. The reference's
+  1.13 pb on `@1` dominates it, so the gate cannot see an `@1` offset under
+  about 0.6 %. `@0`'s per-seed error understates its scatter by about 1.45×,
+  consistently across refdata-9 and -10
+  ([ttx-mlm-at0-error-understated](../backlog/validation/ttx-mlm-at0-error-understated.md)).
 - **The three llj rows all sit high**, +0.03% to +0.23%, a shift common to them
   and not following the reweighting. The offset was on the reference side:
   MadEvent's default survey (`hard_survey = 2` closes `xqcut_only` over 20

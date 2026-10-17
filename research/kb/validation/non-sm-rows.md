@@ -124,8 +124,8 @@ Read the live state from `validation/manifest.toml`; at `4277158`:
   own `dynamical_scale_choice = 3`. Its −0.22% offset is the reference's: the bank
   is one high MadEvent draw, and fresh seeds agree with this side to 6e-6. refdata-10
   re-banks it as five fresh-directory seeds (reported 2.70658e5 ± 88 pb; this
-  side's pull +0.15); the cell stays info until it is flipped
-  ([gg-to-gg-cg-integrals-cell-still-info](../backlog/validation/gg-to-gg-cg-integrals-cell-still-info.md)).
+  side's pull +0.15 on the gate seed, +0.89 over five), and the cell gates on it
+  at `rel_tol` 0.005 ([refdata10-cell-flips](../sprints/refdata10-cell-flips/closeout.md)).
 - **2 → 1 rows** (`bbx_to_h_identity`, `gg_to_h_cp*`): `integrals` and `samples`
   uncovered; MadEvent has no volume to integrate and banked no σ or events.
 - **Massive incoming legs** (`qqx_to_o8o8_toy_dcolor`, both `p3r3` rows) gate: the
