@@ -1,16 +1,17 @@
 ---
 type: Measurement
 title: "MadEvent's iteration combination reads low"
-description: "MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.2 % low on a fixed-beam 2 → 4; equal-weight recombination lands on this side and an adaptation-free estimator."
+description: "MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.25 % low on fixed-beam 2 → 4 and 2 → 3 rows; adaptation-free estimators land on its equal-weight recombination."
 status: draft
-tags: [madevent-reference, sigma, vegas, iteration-combination, 2to4]
+tags: [madevent-reference, sigma, vegas, iteration-combination, 2to4, 2to3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-15}
-verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-15}, {by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 measured:
   host: "cloud container, 4 vCPU, linux-64, 2026-10-15"
   command: "fixed-beam u u~ > e+ e- g g at √s = 500 GeV (pp_to_ll_0j2j_mlm card at fixed beams, fixed scales, ickkw = 0, xqcut = 0, mmjj = 20); MadEvent pinned 3.7.1 via mg5_pinned.sh, one fresh never-run directory per seed, nb_core 2; vibegraph 2M × 8, -j 2; a hand-written fixed-density estimator linked to MadGraph's standalone matrix.o"
 sources:
   - {id: v1, resource: "../sprints/sigma-2to4-offset/sessions/V1-report.md", title: "sigma-2to4-offset V1 report"}
+  - {id: v2-2to3, resource: "../sprints/sigma-pulls-lean-high/sessions/V2-report.md", title: "sigma-pulls-lean-high V2 report: the 2 → 3 fixed-density estimate"}
   - {id: mg-dsample, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/dsample.f#L1995-L1997", title: "MadEvent dsample.f: iterations accumulated with weight mean²/variance"}
 ---
 # MadEvent's iteration combination reads low
@@ -47,6 +48,32 @@ cuts.
 - **Verification:** the manager recomputed the reported and vibegraph means
   from the raw per-seed logs. The paired numbers are the session's
   measurements.
+
+## The 2 → 3 case: `q q̄ > e⁺ e⁻ g` (2026-10-17)
+
+The banked fixed-beam rows `uux_to_epemg` and `ddx_to_epemg`, read against
+their refdata-10 seed records (five fresh-directory MadEvent seeds,
+`hard_survey = 2`, 10 000 events), with this crate's own |M|² and cuts.
+The adaptation-free estimate is `probe_fixed_density_llj_annihilation`
+(`validate_sigma.rs`, `#[ignore]`d). It draws each point from an analytic
+density fixed before the first point, with no iteration and no grid
+refinement, and reports the plain mean of f/p over 20 seeds × 3M points
+(seed χ²/dof 0.60 and 0.53 on 19 dof; 1.02 at 2000 × 10k).
+
+| row | adaptation-free σ (pb) | pull vs MadEvent reported | pull vs MadEvent equal-weight | pull vs vibegraph, 5 seeds |
+|---|---|---|---|---|
+| `uux_to_epemg` | 0.5564310 ± 0.0000915 | +3.01 | +0.45 | −0.74 |
+| `ddx_to_epemg` | 0.6203869 ± 0.0001118 | +2.67 | −0.19 | −0.28 |
+
+- MadEvent's reported value reads 0.20–0.25 % low on both rows at
+  `hard_survey = 2` and 10 000 events. On `uux` the estimate minus reported is
+  +0.001377 ± 0.000457 pb, against MadEvent's own paired equal-weight minus
+  reported of +0.001123 ± 0.000324 on the same seeds.
+- A second density (the production mixture, adapted once on a survey and then
+  frozen, with no VEGAS grid) agrees within 1.03σ on both rows.
+- **Verification:** the manager read the pulls above from the run log
+  (`sigma-pulls-lean-high` V2, the 20 × 3M run). The density's design and
+  its calibration runs are the session's.
 
 ## Consequences
 
