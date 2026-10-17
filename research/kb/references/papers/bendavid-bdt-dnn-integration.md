@@ -20,12 +20,15 @@ A single binary tree is a FOAM-like density: non-overlapping boxes `θⱼ` with
 weights `aⱼ`, sampled by choosing a box with probability `∝ Vⱼaⱼ` and then
 uniformly inside it ([FOAM](foam.md)). The paper replaces it with a boosted
 ensemble, whose boxes overlap; the density stays sampleable as long as every
-`aᵢⱼ` is non-negative, which the loss is built to guarantee (§2). Because a
+`aᵢⱼ` is non-negative, which the loss is built to guarantee (§2): squared error
+in log space, `Σ (ln f − ln g)²` (eq. 2.7), taken against the residual left by
+earlier trees (eq. 2.8). Because a
 later tree cannot correct an earlier one's overshoot, a second, ordinary
 regression ensemble `h` with `e^h ≈ f` is trained alongside and stands in for
 `f` in the generative ensemble's loss. Training alternates: sample from the
 current model, evaluate `f`, add trees, repeat until the integral stops moving.
-A "staged" mode samples `e^h` by accept–reject through the generative ensemble.
+A "staged" mode integrates by sampling `e^h`, with the generative ensemble used
+only for a secondary unweighting.
 
 ## Generative network
 
@@ -39,10 +42,14 @@ anywhere else needs the inverse, whose existence is not studied (§3.2).
 On the camel function (two Gaussians on the hypercube's diagonal), the ratio
 `σ_w/⟨w⟩` after training (Tables 1–2)[^bendavid]:
 
-| dims | VEGAS | FOAM | generative BDT | generative DNN | DNN, staged |
-|---|---|---|---|---|---|
-| 4 | 2.82 (3·10⁵ evals) | 0.319 (3.9·10⁶) | 0.082 (3·10⁵) | 0.083 (2.9·10⁵) | 0.030 |
-| 9 | 19 (1.5·10⁶) | — | 0.63 (3.2·10⁶) | 0.15 (2.9·10⁵) | 0.081 |
+| dims | VEGAS | FOAM | generative BDT | BDT, staged | generative DNN | DNN, staged |
+|---|---|---|---|---|---|---|
+| 4 | 2.82 (3·10⁵ evals) | 0.319 (3.9·10⁶) | 0.082 (3·10⁵) | 0.077 (3·10⁵) | 0.083 (2.9·10⁵) | 0.030 (2.9·10⁵) |
+| 9 | 19 (1.5·10⁶) | — | 0.63 (3.2·10⁶) | 0.31 (3.2·10⁶) | 0.15 (2.9·10⁵) | 0.081 (2.9·10⁵) |
+
+"Staged" integrates by sampling the regression model `e^h`, with the generative
+model used only for a secondary unweighting. The 9-dimensional BDT figures take
+3.2·10⁶ evaluations to VEGAS's 1.5·10⁶.
 
 The networks scale better with dimension than the trees. The DNN is
 implemented in TensorFlow/Keras, and the paper notes the log-determinant had no

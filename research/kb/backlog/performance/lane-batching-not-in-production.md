@@ -5,8 +5,8 @@ description: LaneField lanes beat scalar per event on every x86 target, but no i
 area: performance
 state: blocked
 priority: medium
-closes_when: "integrate runs lane-batched end to end (sampler draw, map, cuts, scales and clustering, αs, PDFs, matrix element, weight) on every banked row including the clustered and MLM rows, behind a lanes4 σ gate against the scalar path; the x86-64-v3 release asset uses it at N = 4; and whether the baseline asset batches too is decided."
-blocked_by: [per-point-chain-f64-only, lane-eval-shares-one-alpha-s, sampler-hardwired-to-vegas-grid, jet-clustering-f64-only, pdf-lookup-f64-only]
+closes_when: "integrate runs lane-batched end to end (sampler draw, map, cuts, scales and clustering, αs, PDFs, matrix element, weight), each stage lane-batched or behind a scalar gather where that stage's item recorded so, on every banked row including the clustered and MLM rows; a per-point test gives lane and scalar weights from the same draws agreeing within a stated tolerance at the algorithm's own error scale; a lanes4 σ gate against the scalar path over ≥5 seeds (unweighted mean, spread, χ²/dof) passes; the x86-64-v3 release asset uses it at N = 4; and whether the baseline asset batches too is decided."
+blocked_by: [per-point-chain-f64-only, per-point-branches-f64-only, lane-eval-shares-one-alpha-s, sampler-draw-not-lane-generic, jet-clustering-f64-only, pdf-lookup-f64-only]
 opened: 2026-09-23
 tags: [simd, lanes, release, x86-64-v3]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -32,10 +32,8 @@ whether the baseline asset batches.
 To adopt for the `x86-64-v3` asset (`release.yml`'s `-v3` musl leg): N = 4 is
 the natural width there (lanes8 is two ymm halves and buys nothing). CI already
 builds and tests under v3, so the lane-vs-scalar tests run there bit-exact.
-Missing: a consumer (a batched integrator, which needs the per-point chain
-generic in `F` and, for dynamic scales, per-lane `αs`) and a `lanes4` σ/event
-gate against scalar. The best width is host-dependent: on Zen 4 width 8 wins on
-every row ([topdown-zen4-results](../../history/notes/topdown-zen4-results.md) §5).
+Missing: the consumer, a batched integrator. The best width is host-dependent:
+on Zen 4 width 8 wins on every row ([topdown-zen4-results](../../history/notes/topdown-zen4-results.md) §5).
 
 **Re-measure before the adoption decision** (noted 2026-10-09). Constant
 collection, weighted JAMP sums and bare configuration amplitudes landed after
@@ -43,12 +41,15 @@ the table: they shrank the 2→6 arenas by 36%, and on Emerald Rapids width 8
 now beats width 4 there (44.4 against 46.6 µs/event,
 [topdown-zen4-results §6](../../history/notes/topdown-zen4-results.md)). Every lane ratio
 above, and the Zen 4 §5 reading, predates them. The 1.00–1.21× scalar gains
-change the denominator too.
-
-Detail: [x86-avx2-perf-study-results](../../history/notes/x86-avx2-perf-study-results.md),
-AVX-512 section and "The two x86 release builds".
+change the denominator too. Detail: the x86-avx2 study's AVX-512 section and
+"The two x86 release builds".
 
 **Where "SIMD end to end" closes:** each per-point stage goes lane-generic in
-its `blocked_by` item; this one adds the batched driver. Out of scope, scalar by
+its `blocked_by` item, or stays scalar behind a gather where that item recorded
+so (clustering may; the PDF grid's storage is `f64` by necessity); this one adds
+the batched driver. The gate is two-level: per point, lane and scalar weights
+from the same draws within a tolerance set from their measured difference, not
+ulp-exact; then σ over ≥5 seeds by unweighted mean, spread and χ²/dof
+([seed sweeps](../../validation/seed-sweeps-and-budget-ladders.md)). Scalar by
 design: `generate`'s per-accepted-event work (accept/reject, helicity, colour
 and resonance choice for the record, LHE writing), a few percent of points.

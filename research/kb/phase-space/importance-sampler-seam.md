@@ -82,32 +82,38 @@ The phase-space side is already generic: `PhaseSpaceMap<F: Real>::sample(&[F])`
 (`phasespace/channel.rs:50`), with `Real` the crate's scalar trait
 (`helas/repr/mod.rs:97`, `num_traits::Float + FloatConst + Send + Sync`) and
 `LaneField<N>` (`helas/eval/lane_field.rs`) its SIMD implementor, each lane
-bit-identical to scalar `f64`. The sampler is the `f64`-only link: `VegasGrid`
-stores `Vec<Vec<f64>>` and draws `f64`. The seam's draw, weight and accumulate
-signatures are therefore generic over `F: Real`, with a batch form beside the
-scalar one so a lane pack or, later, a GPU kernel can draw many points per
-call, and `F = f64` reproduces today's bits. Three things make that more than a
-type change:
+bit-identical to scalar `f64`, though `hadronic.rs` builds the maps only at
+`f64`. The sampler is one of several `f64`-only links, beside scales, αs, cuts
+and the PDF lookup: `VegasGrid` stores `Vec<Vec<f64>>` and draws `f64`. The
+seam's draw, weight and accumulate signatures are therefore generic over
+`F: Real`, with a batch form beside the scalar one so a lane pack or, later, a
+GPU kernel can draw many points per call, and `F = f64` reproduces today's bits.
+The seam is built and tested at `f64` first; the lane implementation is a later
+step. Three things make that more than a type change:
 
 - **The uniform.** `draw_into` takes `rng.random::<f64>()` (`vegas.rs:583`), not
-  the crate's documented `u64_to_uniform<F>` (`phasespace/rng.rs`), which is the
+  the crate's documented `u64_to_uniform<F>` (`phasespace/rng.rs:51-55`), which is the
   conversion lane sampling is pinned to. Routing through it keeps `f64` bits only
   if the two agree on every draw, a claim a test has to pin.
 - **The bin index.** `(pos as usize).min(nbins − 1)` (`vegas.rs:585`) is a
-  per-point integer, then a gather of two edges (`:588-590`). On `LaneField`, a
+  per-point integer, then a gather of two edges (`:587-588`). On `LaneField`, a
   conversion to an integer goes through lane 0 (`ToPrimitive`), so a per-lane
   index and gather need an operation `Real` does not have.
-- **Refinement.** Accumulation is a scatter-add by bin index in point order
-  (`vegas.rs:667`, `:910`), which is what the `-j` contract rests on; Lepage's
-  damping branches per bin and calls `ln` and `powf` (`:695-705`); smoothing is a
-  three-bin stencil (`:707-713`); the edge rebuild is a data-dependent serial
-  scan (`:715-742`); PR #48 adds a sort and a fixed-point loop
-  (`bound_bin_width`) and a per-bin acceptance count (`BinHistogram::add`). The
-  lane-wise comparisons, selects and bin search this needs are designed first,
-  in their own session, because jet clustering needs the same extension:
+- **Accumulation and refinement.** Only accumulation is per point: a
+  scatter-add by bin index in point order (`vegas.rs:667`, `:910`), which is
+  what the `-j` contract rests on, so a lane form must not reorder the sums.
+  Refinement runs once per iteration over bins, not per point, and stays `f64`:
+  Lepage's damping branches per bin and calls `ln` and `powf` (`:695-705`);
+  smoothing is a three-bin stencil (`:707-713`); the edge rebuild is a
+  data-dependent serial scan (`:715-742`); PR #48 adds a sort and a fixed-point
+  loop (`bound_bin_width`) and a per-bin acceptance count (`BinHistogram::add`).
+  Vectorising it is across bins or dimensions, not lanes of points. The per-lane
+  bin index, gather and scatter-add, and how refine is vectorised, are designed
+  together, in a dedicated design session with the user, because jet clustering
+  needs the same extension:
   [real-has-no-lane-masks-or-bin-search](../backlog/performance/real-has-no-lane-masks-or-bin-search.md).
-  How the refine loop itself is batched on top of that is the user's design,
-  made when the sampler port starts.
+  The lane port is
+  [sampler-draw-not-lane-generic](../backlog/performance/sampler-draw-not-lane-generic.md).
 
 ## What the candidates need of it
 

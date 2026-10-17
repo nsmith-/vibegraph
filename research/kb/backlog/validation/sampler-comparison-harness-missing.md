@@ -3,24 +3,26 @@ type: Backlog Item
 title: No harness runs the adopt-or-reject comparison between samplers
 description: "PR #48's grid-rule table was run by hand; every candidate sampler needs the same seed sweep (σ spread, χ²/dof, ε_unw, Hill index, evals to target, variance×CPU) as one reusable command."
 area: validation
-state: open
+state: blocked
 priority: medium
-closes_when: "One pixi task runs named arms (integrate flag sets) over rows, budgets and seeds, writes per-run JSON, and renders the comparison table; it reproduces PR #48 P1's base and bound4 rows on pp_to_llj_mlm within their seed spread; the protocol is recorded as a validation concept."
+closes_when: "One pixi task runs named arms (integrate flag sets) over rows, budgets and seeds, writes per-run JSON, and renders the comparison table; it reproduces PR #48's grid-rule measurements (its default and bin-width-bound K = 4 arms) on pp_to_llj_mlm within their seed spread; the protocol is recorded as a validation concept."
 blocked_by: []
 opened: 2026-10-17
 tags: [sampler, seed-sweep, unweighting, weight-tail, tooling, statistics]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
-  - {id: p1, resource: "https://github.com/nsmith-/vibegraph/pull/48", title: "vegas-low-acceptance-bins P1 report: the hand-run arm table"}
+  - {id: p1, resource: "https://github.com/nsmith-/vibegraph/pull/48", title: "PR #48: the hand-run grid-rule measurement table"}
 ---
 Every sampler candidate closes on the same question, adopt or reject, and the
-record that answers it should be produced the same way each time. PR #48's P1
-built that table by hand: per (row, arm, seed) an `integrate` and a `generate`
+record that answers it should be produced the same way each time. PR #48's
+grid-rule measurements built that table by hand: per (row, arm, seed) an `integrate` and a `generate`
 run, ε_unw read as `σ / Σⱼ w_maxⱼ` and the Hill index off `generate`'s per-channel
 debug log line, CPU from the process. Nothing of it is committed.
 
-Build it once, with arms as `integrate` flag sets, so it serves PR #48's grid
-rules today and `--sampler` kinds once
+**Blocked on PR #48 merging** (draft as of 2026-10-17): its `--grid-*` flags
+are the arms the reproduction check runs, and they are not on `main`. Build it
+once, with arms as `integrate` flag sets, so it serves PR #48's grid rules and
+`--sampler` kinds once
 [integrate-cannot-select-a-sampler](../feature/integrate-cannot-select-a-sampler.md)
 lands. Per arm and row: σ as the unweighted seed mean, the seeds' spread,
 quoted error, seeds' χ²/dof about their mean, pull against the MadEvent seed

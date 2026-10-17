@@ -5,7 +5,7 @@ description: "Flows (i-flow, MadNIS) learn correlated per-channel densities a VE
 area: feature
 state: needs-user
 priority: low
-closes_when: "The user has chosen the ML dependency (or offline training with in-tree inference), a flow sampler kind runs through --sampler, and it is measured against default VEGAS and the bin-width-bounded grid on the comparison harness's rows (≥5 seeds; 20+ on the deciding pair), recorded as adopt or reject."
+closes_when: "The user has chosen the ML dependency (or offline training with in-tree inference), a flow sampler kind runs through --sampler, and it is measured against default VEGAS and the bin-width-bounded grid PR #48 adds (or whatever default that work leaves) on the comparison harness's rows (≥5 seeds; 20+ on the deciding pair), recorded as adopt or reject."
 blocked_by: [sampler-hardwired-to-vegas-grid, artifact-has-no-sampler-kind, integrate-cannot-select-a-sampler, sampler-comparison-harness-missing]
 opened: 2026-10-17
 tags: [normalizing-flows, machine-learning, sampler, research, dependencies, user-requested]

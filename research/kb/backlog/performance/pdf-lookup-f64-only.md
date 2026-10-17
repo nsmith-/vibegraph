@@ -12,7 +12,7 @@ tags: [simd, lanes, pdf, real-trait, user-requested]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 ---
 Every hadronic point calls the PDF twice per flavour, and the call is scalar:
-`Pdf::xfx_q2(&self, pdg, x: f64, q2: f64) -> f64` (`pdf/mod.rs:203`) over the
+`PdfMember::xfx_q2(&self, pdg: i32, x: f64, q2: f64) -> f64` (`pdf/mod.rs:203`) over the
 `Bicubic2D` trait (`pdf/interp.rs:96-99`). The grid's knots and coefficients
 stay `f64` storage; what has to become lane-wise is the lookup and the
 arithmetic on top of it:
