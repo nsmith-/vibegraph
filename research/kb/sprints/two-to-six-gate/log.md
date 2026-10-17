@@ -15,3 +15,8 @@
   closes on the measurement; no fix. Manager-verified by recounting kept
   iterations from the traces (uux 17 370, min 49; bbx 18 450, min 51; none
   at 1–3 accepted points).
+* **User decisions** (relayed by the planner): the 2 → 6 ladder (600k and
+  1.2M rungs, 20+ seeds, both rows) runs on the M3, after the references'
+  20-seed confirmation; its commands go into this PR's banking comment. The
+  low seed χ²/dof (0.10–0.66) stays flagged in the record. F1 makes the probe
+  runnable that way.
