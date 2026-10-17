@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Constant integrands integrate once](sprint.md) - A single-channel two-body (constant-integrand) run integrates once without grid refinement and reports the exact width, pinned by a test.
+
+## Directories
+
+* [sessions](sessions/index.md)
