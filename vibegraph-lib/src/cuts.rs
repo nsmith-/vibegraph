@@ -833,19 +833,44 @@ impl Cuts {
     /// energy is positive wherever its momentum is on a mass shell with a massive
     /// parent, so a lower bound at or below zero and an absent upper bound reject
     /// nothing. A filter for which this is `false` may still admit everything.
-    pub fn admits_every_point(&self) -> bool {
-        self.shat_min_sq <= 0.0
-            && self.shat_max_sq < 0.0
-            && self.pairs.is_empty()
-            && self.mmnl.is_none()
-            && self.windows.is_empty()
-            && self.single.iter().all(|s| {
-                s.pt_min <= 0.0
-                    && s.pt_max < 0.0
-                    && s.e_min <= 0.0
-                    && s.e_max < 0.0
-                    && s.eta_min <= 0.0
-                    && s.eta_max < 0.0
+    pub(crate) fn admits_every_point(&self) -> bool {
+        // Both structs are destructured in full, so a threshold added to either
+        // does not compile until this method has decided whether it can reject.
+        let Cuts {
+            incoming: _,
+            finals: _,
+            shat_min_sq,
+            shat_max_sq,
+            single,
+            pairs,
+            mmnl,
+            // A sampling aid derived from the thresholds above; it rejects nothing.
+            shat_min_hint: _,
+            windows,
+            // The width of the decay-chain windows, which `windows` already covers.
+            bwcutoff: _,
+        } = self;
+        *shat_min_sq <= 0.0
+            && *shat_max_sq < 0.0
+            && pairs.is_empty()
+            && mmnl.is_none()
+            && windows.is_empty()
+            && single.iter().all(|s| {
+                let SingleLegCut {
+                    idx: _,
+                    pt_min,
+                    pt_max,
+                    e_min,
+                    e_max,
+                    eta_min,
+                    eta_max,
+                } = s;
+                *pt_min <= 0.0
+                    && *pt_max < 0.0
+                    && *e_min <= 0.0
+                    && *e_max < 0.0
+                    && *eta_min <= 0.0
+                    && *eta_max < 0.0
             })
     }
 
