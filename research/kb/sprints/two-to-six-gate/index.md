@@ -5,3 +5,7 @@
 ## Sprint
 
 * [2 → 6 integrals cells: budget ladder and stop scale](sprint.md) - Re-measure stop_scale's few-accepted-point inflation, re-run the 2 → 6 budget ladder under the accepted-point floor with 20+ seeds on the deciding rungs, and gate both integrals cells or record why not.
+
+## Directories
+
+* [sessions](sessions/index.md)
