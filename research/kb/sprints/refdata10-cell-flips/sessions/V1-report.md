@@ -4,6 +4,7 @@ title: "V1 report: both refdata-10 cells agree and gate"
 description: "pp_to_ttx_0j1j_mlm reads @0/@1/total pulls +0.40/+0.38/+0.46 over ten seeds against its refdata-10 seed record; gg_to_gg_cg reads +0.89 over five seeds (+0.15 on the gate seed). Both cells flipped to gate, notes rewritten."
 status: draft
 tags: [sigma, mlm, ttx, smeftsim, gate-promotion, refdata, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-17}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-17}
 sources:
   - {id: flip, resource: "https://github.com/nsmith-/vibegraph/commit/1158cfc", title: "1158cfc: gate the t t~ MLM and gg_to_gg_cg integrals cells on refdata-10"}
