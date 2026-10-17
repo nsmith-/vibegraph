@@ -145,7 +145,9 @@ far beyond their quotes (`ee_to_ee_nsz`: χ²/dof 15; the unrestricted Bhabha
 control: 93), the reference's error is its spread and a pull of ~1.8 is this
 side sitting with MadEvent's majority.[^n38-z2] This side's own low-budget tail
 on that row is
-[ee_ee_nsz low at low budget](../backlog/validation/ee-ee-nsz-sigma-low-at-low-budget.md).
+the t-channel map's rapidity edge
+([ee-ee-nsz-low-budget](../sprints/ee-ee-nsz-low-budget/closeout.md),
+[t-channel-map-ignores-rapidity-cut](../backlog/performance/t-channel-map-ignores-rapidity-cut.md)).
 Several decay and chain rows found MadEvent the side that converges with budget
 (`h > e+ e- mu+ mu-`, the `cut_decays = T` chain row).[^n38-d]
 

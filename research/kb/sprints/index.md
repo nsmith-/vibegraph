@@ -16,6 +16,7 @@
 * [draw-performance](draw-performance/index.md)
 * [dynamical-scales](dynamical-scales/index.md)
 * [early-sprints](early-sprints/index.md)
+* [ee-ee-nsz-low-budget](ee-ee-nsz-low-budget/index.md)
 * [eval-perf-2](eval-perf-2/index.md)
 * [eval-performance-program](eval-performance-program/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
