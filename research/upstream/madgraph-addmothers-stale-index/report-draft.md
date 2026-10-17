@@ -1,3 +1,9 @@
+---
+severity: trivial
+rank: 7  # of 7; 1 = most severe
+severity_reason: "A comparison against a leftover loop variable that can never be reached at runtime; a code clean-up only."
+---
+
 # Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
 For the user to review before posting. The full evidence is in
