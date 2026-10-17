@@ -364,9 +364,15 @@ generate-mlm-pythia-samples = { cmd = "bash validation/pythia/generate_mlm_sampl
 # independent directories its sigma reference is read from) and vibegraph's
 # samples through one Pythia kT-MLM configuration (MadGraph's own driving), ten
 # Pythia seeds: acceptance per @N, merged sigma and the jet rates d01, d12, d23,
-# compared. Informational, oracle layer: it reads the banked MadEvent runs and
-# the samples above, and regenerates neither.
+# compared. A gate: |pull| < 3 on each acceptance and the merged sigma, and the
+# jet rates under a look-elsewhere chi2 and per-bin rule that counts only while
+# MadEvent's own split passes it (mlm_match.py's docstring). Oracle layer: it
+# reads the banked MadEvent runs and the samples above, and regenerates neither;
+# it exits nonzero when the comparison fails.
 validate-mlm-pythia = "python validation/pythia/mlm_match.py"
+# The comparison's tolerance (the five pulls, the jet-rate chi2 and per-bin legs,
+# the null) on synthetic inputs; no Pythia run.
+test-mlm-pythia = "python validation/pythia/test_mlm_match.py -v"
 
 # --- MarkItDown: CLI tool for converting to markdown files ---
 [feature.markitdown.dependencies]
