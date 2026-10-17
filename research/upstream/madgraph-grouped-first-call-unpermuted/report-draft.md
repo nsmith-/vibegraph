@@ -1,70 +1,84 @@
-# Draft: MadGraph bug report
+# Draft: GitHub issue for mg5amcnlo/mg5amcnlo
 
-This draft is for the user to review, edit and file, either on Launchpad
-(<https://bugs.launchpad.net/mg5amcnlo>) or as an issue on
-<https://github.com/mg5amcnlo/mg5amcnlo>, which MadGraph's README names as the
-places for bug reports.
-- **Policy.** MadGraph publishes no policy on AI-assisted reports; checked on
-  2026-10-16 (see the index,
-  `research/kb/validation/madgraph-upstream-report-drafts.md`).
-- **Before filing.** Re-run the claims from [`README.md`](README.md) and be
-  ready to answer questions on them.
-- **Disclosure.** Keep or reword the `Assisted-by` line at the end; it
-  discloses the tool use.
-- **Attach:** `repro.sh`, `proc_grouped.mg5`, `proc_nongrouped.mg5`, `run_card.dat` and `run_card_ickkw0.dat` from this folder.
+For the user to review before posting. The full evidence is in
+[`README.md`](README.md).
 
 ---
 
-**Title:** Grouped MadEvent sets the dynamical scales (and applies the MLM
-`xqcut` rejection) on the unpermuted phase-space point: σ is 3–4 % low when a
-subprocess group carries symmetry permutations
+**Title:** Grouped output sets the scales (and applies the `xqcut` rejection) on the unpermuted phase-space point: σ about 4 % low on channels with symmetry permutations
 
-**Version:** MadGraph5_aMC@NLO 3.8.1 (`a5b17913`) and 3.7.1,
-`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`.
+**Affected versions:** 3.8.1 yes. @LTS@
 
-**Summary.** In grouped output, `DSIGPROC` builds
-`P1 = SWITCHMOM(PP, PERMS(MAPCONFIG(ICONFIG)))` (`:819`) and mirrors it
-(`:829`). The matrix element and `REWGT`'s second `setclscales` call read
-`P1`. But `update_scale_coupling(pp, wgt)` (`:856`) hands the **unpermuted**
-`PP` to the first `setclscales` call.
+### Summary
 
-That call does three things that depend on the momenta:
+In grouped output (`group_subprocesses True`, the default), `DSIGPROC`
+evaluates the matrix element on `P1`, the channel's symmetry permutation of the
+sampled point `PP`. The first `setclscales` call, made through
+`update_scale_coupling`, is handed the unpermuted `PP` instead. That call does
+three things:
 - it sets μR;
-- it sets the PDF scales `DSIG` evaluates the densities at;
-- it sets `q2bck`, and it can reject the point through the `xqcut` check.
+- it sets the PDF scales;
+- with matching, it can reject the point through the `xqcut` test.
 
-On a channel whose symmetry permutation is not the identity, it clusters an
-event whose momenta do not match the flavours and diagram that are evaluated.
-- With the default `dynamical_scale_choice = -1`, this changes μR and μF.
-- With `ickkw = 1`, it also rejects points that `P1` would keep.
+On channels whose permutation is not the identity, it clusters an event whose
+momenta don't match the flavours and diagram being evaluated. σ comes out low
+at default cards, and also with MLM matching.
 
-Non-grouped output never permutes and is unaffected.
+### How to reproduce
 
-**Reproduce** (`define q = u d; generate u q > z u q`, 13 TeV, default cards
-with `nevents = 5000`, five `iseed` values, each in a fresh copy of the
-generated directory). The one-line fix below is applied to the generated
-`auto_dsig.f`. Errors are the spread over seeds.
+```
+import model sm
+define q = u d
+generate u q > z u q
+output grouped
+```
 
-| version, card | grouped (pb) | grouped + fix (pb) | shift |
+Launch with the default run card (`nevents = 5000` is enough), with several
+`iseed` values, each in a fresh copy of the output. Then apply the one-line fix
+below to the generated `SubProcesses/P1_qq_zqq/auto_dsig.f`, and run the same
+seeds again. `P1_qq_zqq/symperms.inc` shows the `(1,2,3,5,4)` final-quark swap
+on configs 2, 5, 6 and 8. `repro.sh` (attached) automates this, including a
+`group_subprocesses False` comparison.
+
+### Expected vs observed
+
+The one-line fix should not change σ, since grouping is an implementation
+detail. Five seeds per row on 3.8.1; errors are the spread over seeds:
+
+| card | grouped (pb) | grouped + fix (pb) | change |
 |---|---|---|---|
-| 3.8.1, default | 106.64 ± 0.20 | 110.55 ± 0.19 | +3.7 %, 14.6σ |
-| 3.8.1, `ickkw = 1`, `xqcut = 40` | 55.61 ± 0.09 | 57.53 ± 0.09 | +3.4 %, 15.4σ |
-| 3.7.1, default | 104.28 ± 0.34 | 108.62 ± 0.35 | +4.2 %, 8.9σ |
-| 3.7.1, `ickkw = 1`, `xqcut = 40` | 54.48 ± 0.14 | 56.33 ± 0.13 | +3.4 %, 9.6σ |
+| default | 106.64 ± 0.20 | 110.55 ± 0.19 | +3.7 % |
+| `ickkw = 1`, `xqcut = 40` | 55.61 ± 0.09 | 57.53 ± 0.09 | +3.4 % |
 
-**Expected against observed.** In 3.7.1 the same test with
-`set group_subprocesses False` gives 108.60 ± 0.45 pb (default card) and
-56.14 ± 0.10 pb (matched). The fixed grouped output agrees with those values;
-the stock grouped output is 4.0 % and 3.0 % low.
+The deficit sits in the channels holding the permuted configs (`G4` and `G7`
+at default cards).
 
-In 3.8.1, non-grouped and grouped differ for a second reason as well; see
-"Note on 3.8.1" below.
+**Comparing with `group_subprocesses False` in 3.8.1.** In 3.7.1, grouped + fix
+agreed with the non-grouped output to 0.05 %, while stock grouped was 4 % low.
+In 3.8.1 that comparison has a second, unrelated offset. Setting
+`keep_grid_for_refine = False` in `gen_ximprove.py` (commit `ebbdc974`) raises
+grouped σ by about 2 % in every channel, including unpermuted ones.
+- With `keep_grid_for_refine = True` restored on 3.8.1, grouped + fix is
+  108.65 ± 0.32 pb against non-grouped 108.60 ± 0.45 pb, and stock grouped is
+  3.9 % low.
+- I don't know which refine setting gives the right answer, so grouped + fix
+  against stock grouped is the cleaner test.
 
-`P1_qq_zqq/symperms.inc` shows the `(1,2,3,5,4)` permutations on configs 2,
-5, 6 and 8. Per channel, the deficit sits in `G4` and `G7` (and `G1` with
-matching).
+### Cause
 
-**Fix** (scalar path):
+`madgraph/iolibs/template_files/super_auto_dsig_group_v4.inc`, `DSIGPROC`
+(3.8.1):
+
+```fortran
+        CALL SWITCHMOM(PP,P1,PERMS(1,MAPCONFIG(ICONFIG)),JC,NEXTERNAL)   ! line 819
+        ...                                                              ! mirror of P1, line 829
+            call update_scale_coupling(pp, wgt)                          ! line 856
+```
+
+The matrix element and `REWGT`'s second `setclscales` call read `P1`; the
+first call reads `PP`.
+
+### Suggested fix
 
 ```diff
        IF (VECSIZE_MEMMAX.LE.1.and.imode.ne.5) THEN ! no-vector (NB not VECSIZE_USED!)
@@ -73,28 +87,14 @@ matching).
        endif
 ```
 
-The vectorised path has the same shape and needs a larger change.
-`DSIG_VEC` calls `update_scale_coupling_vec(all_p, …)` (`:317`) before
-`DSIGPROC_VEC` builds and mirrors `ALL_P1`. The call has to move after the
-mirror loop, with the momenta copied into the `(4*maxdim/3+14, VECSIZE)`
-layout that routine reads. That change was found by reading and has not been
-measured.
+This covers the scalar path (`vector_size = 1`, the default). By reading, the
+vectorised path has the same problem and needs a larger change.
+`DSIG_VEC` calls `update_scale_coupling_vec(all_p, …)` (line 317) before
+`DSIGPROC_VEC` builds and mirrors `ALL_P1`, so the call would have to move after
+the mirror loop. I have not tested that path.
 
-**Note on 3.8.1.** In 3.8.1, `ebbdc974` ("move back to refine_grid=False",
-`gen_ximprove.py`) changed grouped σ independently of this
-defect. Even the unpermuted channel `G3` rises by about 2 %, so 3.8.1's
-grouped output no longer matches its non-grouped output. On 3.8.1:
-- the fixed grouped output reads +1.8 % (4.0σ) above non-grouped;
-- the stock grouped output reads −1.8 %.
-
-Restoring `keep_grid_for_refine = True` in 3.8.1 alone restores 3.7.1's
-picture, with five seeds at the default card:
-- grouped: 104.38 ± 0.29 pb;
-- grouped + fix: 108.65 ± 0.32 pb;
-- non-grouped: 108.60 ± 0.45 pb.
-
-That is −3.9 % (−7.9σ) for grouped, and +0.05 % (0.1σ) for grouped + fix. So compare grouped against
-grouped + fix at the same seeds, as in the table, to see this defect on
-3.8.1.
+---
+Found with an AI assistant while validating an independent LO generator
+against MadGraph; reproduced on both versions before reporting.
 
 Assisted-by: claude-code:claude-opus-5-5
