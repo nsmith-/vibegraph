@@ -4,8 +4,10 @@
 
 ## Session Brief
 
+* [HY1: hygiene review of the opt-in grid rules](HY1.md) - Review P1's VEGAS grid-rule change for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence; the default stays bit-identical.
 * [P1: measure acceptance-aware VEGAS grid rules as opt-in options](P1.md) - Add MadEvent's per-bin acceptance rescale, Σ|w| adaptation and a bin-width bound as opt-in grid rules with defaults bit-identical, and measure each on the banked rows over ≥5 seeds.
 
 ## Session Report
 
+* [HY1 report: hygiene review of the opt-in grid rules](HY1-report.md) - Twelve findings on P1's grid-rule change; four test-power gaps closed with run mutations (cap constant, over-tight bound, Hill count/threshold, untested K refusal), one pub narrowed, one log duplication merged; the default rule is bit-identical before and after on a library digest and two CLI artifacts.
 * [P1 report: acceptance-aware VEGAS grid rules, measured opt-in](P1-report.md) - Three opt-in grid rules (MadEvent's acceptance rescale, Σ|w| adaptation, a bin-width bound) behind a default-inert option; on the banked rows the bin-width bound K=4 raises unweighting efficiency 1.2-1.6x and the tail index on every tail row at unchanged σ and variance per CPU, Σ|w| loses everywhere, and the default is unchanged.
