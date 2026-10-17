@@ -1683,6 +1683,9 @@ pub struct FixedBeamIntegrand<'a> {
     /// clustering and coupling solve are skipped and the integral is what it
     /// would be with no prescription installed at all.
     alpha_s_dependent: bool,
+    /// Whether no leg of any subprocess is polarized, so the matrix element is
+    /// summed over every helicity of every external state.
+    unpolarized: bool,
     /// What the caller asked of the phase-space maps; read when the multichannel
     /// map is built, every unnamed choice settled by the rule then.
     map_options: MapOptions,
@@ -1935,6 +1938,7 @@ impl<'a> FixedBeamIntegrand<'a> {
         let initial = initial.into();
         let n = final_masses.len();
         let sqrt_s = initial.sqrt_s();
+        let unpolarized = amps.iter().all(|a| !a.evaluator().is_polarized());
         let subs = amps.into_iter().map(SubprocessProto::fixed).collect();
         let sampler = Sampler::Flat(RamboChannel::new(sqrt_s, final_masses.clone()));
         FixedBeamIntegrand {
@@ -1958,6 +1962,7 @@ impl<'a> FixedBeamIntegrand<'a> {
             scale_draw_fallbacks: AtomicU64::new(0),
             config_weights: None,
             alpha_s_dependent: false,
+            unpolarized,
             map_options: MapOptions::default(),
             maps: None,
             vetoes: Vec::new(),
@@ -2571,6 +2576,43 @@ impl<'a> FixedBeamIntegrand<'a> {
         &self.channel_samplers
     }
 
+    /// Whether the integrand is a constant over the unit hypercube, decided from
+    /// the structure of the process.
+    ///
+    /// The conditions, each necessary for the argument and together sufficient:
+    ///
+    /// * a decay at rest into two bodies, so the final state's only kinematic
+    ///   freedom is the direction of one daughter, and the two-body phase-space
+    ///   weight is the same at every direction;
+    /// * every external leg unpolarized, so `Σ|M|²` is summed over all helicities
+    ///   including the decaying particle's, and rotation invariance of the rest
+    ///   frame makes it direction-independent;
+    /// * a single sampling channel, so the integrand is that channel's term and
+    ///   not a ratio of channel densities;
+    /// * cuts that admit every point (`Cuts::admits_every_point`);
+    /// * no configuration draw, so the coupling scale a point is evaluated at is a
+    ///   function of its rotation-invariant kinematics alone.
+    ///
+    /// A two-body decay at rest has no other variable, so none of the integrand's
+    /// factors (flux, averages, symmetry factor, phase-space weight, `|M|²`,
+    /// coupling scale) can depend on the point. The condition is not detected from
+    /// sampled values, so it cannot fire on an integrand that merely looked flat.
+    ///
+    /// A decay of the Standard Model satisfies the single-channel and
+    /// no-configuration-draw conditions whenever it satisfies the others (one
+    /// diagram, and no channel forest to draw a configuration from), so they guard
+    /// a model with a second diagram for a `1 → 2` vertex, or a scale source
+    /// installed from outside; the unit tests reach them by installing those on the
+    /// integrand directly.
+    pub fn has_constant_integrand(&self) -> bool {
+        matches!(self.initial, InitialState::Decay(_))
+            && self.final_masses.len() == 2
+            && self.unpolarized
+            && self.channel_count() == 1
+            && self.cuts.admits_every_point()
+            && self.scale_draw_ndim() == 0
+    }
+
     /// The converged channel selection weights, or `[1.0]` under the flat map.
     pub fn channel_alphas(&self) -> Vec<f64> {
         match &self.sampler {
@@ -3080,6 +3122,10 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
         FixedBeamIntegrand::scale_draw_ndim(self)
     }
 
+    fn is_constant(&self) -> bool {
+        self.has_constant_integrand()
+    }
+
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         FixedBeamIntegrand::value_in_channel(self, channel, u)
     }
@@ -3151,6 +3197,96 @@ mod tests {
         let sets = generate_from_proc_card(&card, m).unwrap();
         let set = sets.into_iter().find(|s| !s.diagrams.is_empty()).unwrap();
         compile_class(&set, m, evaluated).unwrap()
+    }
+
+    /// Two bodies in the final state and no cut that bites are not enough: two
+    /// beams make the angular distribution of `e+ e- > mu+ mu-` the `1 + cos²θ` of
+    /// its propagator structure, and only a particle at rest has none.
+    #[test]
+    fn two_beams_into_two_bodies_are_not_a_constant_integrand() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let eval = build_evaluator("e+ e- > mu+ mu-", &m, &evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let legs = process_external_legs(&eval, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::decay_default(), &legs).unwrap();
+        assert!(cuts.admits_every_point(), "no cut can bite");
+        let masses = vec![0.0, 0.0];
+        let avg = initial_spin_color_average(&eval, &m, &evaluated);
+        let integ = FixedBeamIntegrand::new(
+            vec![&bound],
+            &cuts,
+            FixedBeams::massless(500.0),
+            masses,
+            avg,
+        );
+        assert!(!integ.has_constant_integrand());
+        assert!(!ChannelIntegrand::is_constant(&integ));
+    }
+
+    /// `Z → e+ e-` under a card with every threshold off satisfies every condition
+    /// of the declaration; withdrawing the single-channel condition or the
+    /// no-configuration-draw condition alone withdraws the declaration.
+    ///
+    /// Neither can be reached by a decay the Standard Model offers: a tree-level
+    /// `1 → 2` has one diagram and so one channel, and a decay compiles no channel
+    /// forest, so it draws no configuration. Both are installed on the integrand
+    /// directly: two flat channels, and the scale source of a `2 → 3` process.
+    #[test]
+    fn a_second_channel_or_a_configuration_draw_withdraws_the_declaration() {
+        let m = model();
+        let evaluated = EvaluatedModel::from_model(m.clone());
+        let eval = build_evaluator("z > e+ e-", &m, &evaluated);
+        let bound = BoundAmplitude::<f64>::bind(&eval, &evaluated);
+        let legs = process_external_legs(&eval, &m, &evaluated);
+        let cuts = Cuts::compile(&RunCard::decay_default(), &legs).unwrap();
+        let avg = initial_spin_color_average(&eval, &m, &evaluated);
+        let build = || {
+            FixedBeamIntegrand::new(
+                vec![&bound],
+                &cuts,
+                DecayAtRest::from_legs(&legs).unwrap(),
+                vec![0.0, 0.0],
+                avg,
+            )
+        };
+
+        let integ = build();
+        assert_eq!(
+            (integ.channel_count(), integ.scale_draw_ndim()),
+            (1, 0),
+            "the unmodified decay is one channel with no draw"
+        );
+        assert!(integ.has_constant_integrand(), "the positive control");
+
+        let mut two_channels = build();
+        let flat = || Box::new(RamboChannel::new(91.1876, vec![0.0, 0.0])) as Box<dyn Channel<f64>>;
+        two_channels.sampler = Sampler::Multi(MultiChannel::uniform(vec![flat(), flat()]));
+        assert_eq!(two_channels.channel_count(), 2);
+        assert!(!two_channels.has_constant_integrand());
+
+        let proc = parse_proc_card("generate u u~ > e+ e- g", &ParsingOptions::default()).unwrap();
+        let sets = generate_from_proc_card(&proc, &m).unwrap();
+        let evals = compile_subprocesses(&sets, &m, &evaluated).unwrap();
+        let diagrams: Vec<Diagram> = sets
+            .iter()
+            .flat_map(|s| s.diagrams.iter().cloned())
+            .collect();
+        let source = compile_scale_source(
+            &[(&evals[0], &diagrams)],
+            &m,
+            &evaluated,
+            &RunCard::parse("1 = ickkw\n30 = xqcut\n").unwrap(),
+            None,
+            false,
+            ClosedForms::Refuse,
+        )
+        .expect("the prescription compiles");
+        assert!(source.draws_configuration());
+        let mut drawing = build();
+        drawing.scales = Some(source);
+        assert_eq!(drawing.scale_draw_ndim(), 1);
+        assert!(!drawing.has_constant_integrand());
     }
 
     #[test]

@@ -57,7 +57,7 @@
 //! budget are the record's screen against a budget shift and are not averaged in:
 //! a mean over two budgets is no one estimator's expectation.
 //!
-//! The file depends on `std`, `serde`, `serde_json`, `puruspe` and the sibling
+//! The file depends on `std`, `serde`, `serde_json`, `statrs` and the sibling
 //! `seeds` module only, so the tool that writes records includes it by path and
 //! the two sides cannot disagree about the format.
 #![allow(dead_code)]
@@ -282,17 +282,65 @@ pub const SCATTER_P_LIMIT: f64 = 0.01;
 /// Seeds at the budget on which a flag stands as confirmed.
 pub const SCATTER_CONFIRM_SEEDS: usize = 20;
 
+/// Seeds at each of the two budgets a budget ladder needs before it decides.
+pub const LADDER_SEEDS: usize = 20;
+
+/// The separation of the two rungs' means, in combined standard errors of the
+/// seeds' measured spreads, beyond which the row is re-banked at the 4× budget.
+pub const LADDER_SIGMA_LIMIT: f64 = 2.0;
+
 /// The χ²/dof above which a channel is counted for information.
 pub const SCATTER_INFO_CHI2_PER_DOF: f64 = 3.0;
 
 /// `Q(dof/2, χ²/2)`, the upper tail of the χ² distribution on `dof` degrees of
-/// freedom.
-///
-/// `puruspe::gammq` returns exactly 0 once `χ²/2 > dof/2 + 20(√(dof/2) + 1)`,
-/// where the true tail is below 1e-16 at every `dof`: such a channel flags at
-/// any channel count.
+/// freedom. The upper incomplete gamma function is evaluated without a
+/// truncated series, so it reads 0 only where the tail underflows `f64`
+/// (below about 1e-308); ties there are broken on χ².
 pub fn chi2_p_value(chi2: f64, dof: usize) -> f64 {
-    puruspe::gammq(dof as f64 / 2.0, chi2 / 2.0)
+    if chi2 <= 0.0 || dof == 0 {
+        return 1.0;
+    }
+    statrs::function::gamma::gamma_ur(dof as f64 / 2.0, chi2 / 2.0)
+}
+
+/// What a budget ladder decides.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LadderVerdict {
+    /// Fewer than [`LADDER_SEEDS`] seeds on one rung: nothing is decided.
+    NotRun,
+    /// The rungs differ by more than [`LADDER_SIGMA_LIMIT`] σ.
+    Rebank,
+    /// The rungs agree: the row stays at its budget.
+    Stays,
+}
+
+/// The comparison of a row's seeds at the budget with those at
+/// [`SCREEN_BUDGET_FACTOR`] times it, on the reported values.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ladder {
+    pub n_budget: usize,
+    pub n_screening: usize,
+    /// Mean and sample standard deviation of the reported values per rung;
+    /// `None` below two seeds.
+    pub budget: Option<(f64, f64)>,
+    pub screening: Option<(f64, f64)>,
+    /// `√(s₁ₓ²/n₁ₓ + s₄ₓ²/n₄ₓ)`, the quoted errors not entering; `None` unless
+    /// both rungs hold two seeds.
+    pub sigma: Option<f64>,
+    /// `(mean₄ₓ − mean₁ₓ) / σ`.
+    pub pull: Option<f64>,
+    pub verdict: LadderVerdict,
+}
+
+/// Mean and sample standard deviation of `values`; `None` below two.
+fn mean_and_sample_sd(values: &[f64]) -> Option<(f64, f64)> {
+    if values.len() < 2 {
+        return None;
+    }
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    Some((mean, var.sqrt()))
 }
 
 /// [`SeedMean`] as written into a record.
@@ -599,6 +647,42 @@ impl SeedRecord {
         })
     }
 
+    /// The budget ladder over the reported values of the seeds at the budget
+    /// and at four times it. It decides only with [`LADDER_SEEDS`] seeds on each
+    /// rung; the readings are given below that.
+    pub fn ladder(&self) -> Ladder {
+        let reported =
+            |seeds: Vec<&SeedRun>| -> Vec<f64> { seeds.iter().map(|s| s.reported_pb).collect() };
+        let (a, b) = (reported(self.at_budget()), reported(self.screening()));
+        let (budget, screening) = (mean_and_sample_sd(&a), mean_and_sample_sd(&b));
+        let sigma = budget
+            .zip(screening)
+            .map(|((_, s1), (_, s4))| (s1 * s1 / a.len() as f64 + s4 * s4 / b.len() as f64).sqrt());
+        let pull = budget
+            .zip(screening)
+            .zip(sigma)
+            .map(|(((m1, _), (m4, _)), sigma)| (m4 - m1) / sigma);
+        let verdict = match pull {
+            Some(p) if a.len() >= LADDER_SEEDS && b.len() >= LADDER_SEEDS => {
+                if p.abs() > LADDER_SIGMA_LIMIT {
+                    LadderVerdict::Rebank
+                } else {
+                    LadderVerdict::Stays
+                }
+            }
+            _ => LadderVerdict::NotRun,
+        };
+        Ladder {
+            n_budget: a.len(),
+            n_screening: b.len(),
+            budget,
+            screening,
+            sigma,
+            pull,
+            verdict,
+        }
+    }
+
     /// The survey every seed, at either budget, ran.
     pub fn survey(&self) -> SurveySummary {
         let pairs: BTreeSet<(u64, u64)> = self
@@ -653,7 +737,11 @@ impl SeedRecord {
                 });
             }
         }
-        tested.sort_by(|a, b| a.p_value.total_cmp(&b.p_value));
+        tested.sort_by(|a, b| {
+            a.p_value
+                .total_cmp(&b.p_value)
+                .then(b.chi2.total_cmp(&a.chi2))
+        });
         let n = tested.len();
         let worst = tested.first().cloned();
         let corrected_p = worst

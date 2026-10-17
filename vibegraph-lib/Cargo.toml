@@ -54,7 +54,7 @@ ordered-float = "5"
 nalgebra = { version = "0.34", default-features = false, features = ["std"] }
 # The regularised incomplete gamma function, which the chi-squared p-value is:
 # a dependency-free special-function crate rather than a hand-rolled series.
-puruspe = "0.4"
+statrs = { version = "0.19", default-features = false }
 # The SIMD lane field's packed vector: statically dispatched on the target's
 # enabled vector units, with one-instruction ops that inline into the evaluator.
 wide = "1.7"

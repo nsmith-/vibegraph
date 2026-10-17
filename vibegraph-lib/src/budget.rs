@@ -138,6 +138,20 @@ pub const MIN_CHANNEL_NEVAL: usize = 512;
 /// than silently buying less coverage than the floor names.
 pub const MAX_FLOOR_ACCEPTANCE_SCALE: usize = 4;
 
+/// The largest relative error an integrand declared constant
+/// ([`ChannelIntegrand::is_constant`]) may quote after its one iteration before
+/// the declaration is withdrawn and the run proceeds as any other.
+///
+/// The variance of a constant integrand is the cancellation residue of
+/// `Σf²/n − (Σf/n)²`, a relative `~ε·n` of `f²` and so a relative error on the
+/// mean of `~√ε ≈ 1.5e-8` at any `n`, since the `√n` of the point count cancels
+/// against the `1/√n` of the mean's error. The bound sits several times above that
+/// floor (the quoted error of the two-body decays is `2e-9` to `6e-9` at `1.2e5`
+/// to `1e7` points) and far below the error any real variation over a phase space
+/// leaves after an iteration, so a wrong declaration shows up as an error bar too
+/// wide to call exact.
+pub(crate) const CONSTANT_REL_ERROR: f64 = 1e-7;
+
 /// The points a channel of measured `acceptance` must draw for
 /// [`MIN_CHANNEL_NEVAL`] of them to survive the cuts, capped at
 /// [`MAX_FLOOR_ACCEPTANCE_SCALE`] times the floor.
@@ -261,6 +275,11 @@ pub enum StopReason {
     /// A [`StopSignal`] was raised: the run stopped at the first iteration
     /// boundary after the request, whatever its budget still allowed.
     Aborted,
+    /// The integrand is constant by construction
+    /// ([`ChannelIntegrand::is_constant`]) and its one iteration confirmed it: the
+    /// run drew once, refined nothing, and the quoted error is that iteration's
+    /// own.
+    Constant,
 }
 
 impl StopReason {
@@ -268,7 +287,10 @@ impl StopReason {
     /// budget, which was asked for points rather than accuracy.
     #[cfg(test)]
     pub(crate) fn converged(self) -> bool {
-        matches!(self, StopReason::Budget | StopReason::TargetMet)
+        matches!(
+            self,
+            StopReason::Budget | StopReason::TargetMet | StopReason::Constant
+        )
     }
 }
 
@@ -708,11 +730,20 @@ where
 
     report_split(&ndims, &by_alpha, neval, allocation);
 
-    let warmup = grids
-        .first()
-        .map(|g| g.warmup())
-        .unwrap_or_default()
-        .min(budget.max_iters().saturating_sub(1));
+    // An integrand declared constant needs no warm-up: nothing is refined, so
+    // there is no grid for a discarded iteration to have trained, and its one
+    // iteration is the estimate. If the iteration contradicts the declaration the
+    // run carries on as an unwarmed one.
+    let mut constant = integrand.is_constant();
+    let warmup = if constant {
+        0
+    } else {
+        grids
+            .first()
+            .map(|g| g.warmup())
+            .unwrap_or_default()
+            .min(budget.max_iters().saturating_sub(1))
+    };
 
     let threads = rayon::current_num_threads();
     let mut current = by_alpha.clone();
@@ -827,6 +858,25 @@ where
             ns_per_eval,
         );
         report_channels(&plans, &outcomes);
+
+        // The declaration is checked against the one iteration it licenses
+        // skipping the rest for: a constant integrand's error bar is its own
+        // rounding, and a wider one means the structural claim was wrong.
+        if constant {
+            let rel_error = worst_relative_error(&outcomes);
+            if rel_error <= CONSTANT_REL_ERROR {
+                info!(
+                    "constant integrand: one iteration, no grid refinement (relative error \
+                     {rel_error:.1e}, the rounding of its own variance)"
+                );
+                break StopReason::Constant;
+            }
+            warn!(
+                "integrand declared constant but one iteration leaves a relative error of \
+                 {rel_error:.1e}; integrating as an ordinary run"
+            );
+            constant = false;
+        }
 
         // A budget that has run out on this very iteration keeps its own reason:
         // the run reached the end it was given, and was not cut short of it.
@@ -1299,6 +1349,22 @@ fn rel_of(r: &VegasResult) -> f64 {
     } else {
         f64::INFINITY
     }
+}
+
+/// The largest relative error any channel's own iteration quotes, `∞` for a
+/// channel whose integral and variance both vanish (a `0/0` has no error to speak
+/// of, and a declaration of constancy is not confirmed by it).
+fn worst_relative_error(outcomes: &[BlockIteration]) -> f64 {
+    outcomes
+        .iter()
+        .map(|o| o.variance.sqrt() / o.integral.abs())
+        .fold(0.0, |worst: f64, x| {
+            if x.is_nan() {
+                f64::INFINITY
+            } else {
+                worst.max(x)
+            }
+        })
 }
 
 /// The relative uncertainty the stopping test reads: every channel's quoted
@@ -2628,5 +2694,170 @@ mod tests {
             by_alpha.integral,
             neyman.integral
         );
+    }
+
+    /// One channel over two coordinates whose value is `level · (1 + tilt·(u₀ −
+    /// ½))`, integrating to `level` at any tilt, and which says whether it
+    /// declares itself constant independently of what it actually is.
+    struct Declared {
+        level: f64,
+        tilt: f64,
+        declared: bool,
+    }
+
+    impl ChannelIntegrand for Declared {
+        fn channel_count(&self) -> usize {
+            1
+        }
+        fn channel_grid_ndim(&self, _channel: usize) -> usize {
+            2
+        }
+        fn is_constant(&self) -> bool {
+            self.declared
+        }
+        fn value_in_channel(&self, _channel: usize, u: &[f64]) -> f64 {
+            self.level * (1.0 + self.tilt * (u[0] - 0.5))
+        }
+    }
+
+    fn run_declared(
+        integ: &Declared,
+        budget: Budget,
+    ) -> (Vec<ChannelIntegration>, VegasResult, ConvergenceReport) {
+        integrate_channels(
+            integ,
+            &[1.0],
+            1.5,
+            IterationCombination::Unweighted,
+            budget,
+            BlockAllocation::ByAlpha,
+            0x5EED,
+            &StopSignal::default(),
+        )
+    }
+
+    const DECLARED_LEVEL: f64 = 2.0 / 3.0;
+
+    /// A constant integrand that declares itself so is integrated by one
+    /// iteration, whatever the budget would have spent, and reports the level to
+    /// rounding with an error bar at the rounding of its own variance.
+    #[test]
+    fn a_declared_constant_integrand_draws_once_and_reports_its_level() {
+        let integ = Declared {
+            level: DECLARED_LEVEL,
+            tilt: 0.0,
+            declared: true,
+        };
+        for budget in [
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+            Budget::Target {
+                target_rel: 1.0e-3,
+                neval: 4_000,
+                min_iters: 4,
+                max_iters: 12,
+                max_points: 1_000_000,
+            },
+        ] {
+            let (per_channel, total, report) = run_declared(&integ, budget);
+            assert_eq!(report.stop, StopReason::Constant, "{budget:?}");
+            assert_eq!(report.iterations, 1);
+            assert_eq!(report.kept_iterations, 1);
+            assert_eq!(report.points, 4_000);
+            assert!(
+                (total.integral / DECLARED_LEVEL - 1.0).abs() < 1e-12,
+                "{} against {DECLARED_LEVEL}",
+                total.integral
+            );
+            assert!(total.std_dev / total.integral < CONSTANT_REL_ERROR);
+            assert!(report.stop.converged());
+            let uniform = VegasGrid::new(2, VEGAS_NBINS, 1.5);
+            assert_eq!(
+                per_channel[0].grid.xi(),
+                uniform.xi(),
+                "a constant integrand's grid is never refined"
+            );
+        }
+    }
+
+    /// The shortcut is licensed by the declaration and by nothing sampled: the
+    /// same constant values, undeclared, run every iteration of the budget and
+    /// refine.
+    #[test]
+    fn an_undeclared_constant_integrand_is_integrated_as_any_other() {
+        let integ = Declared {
+            level: DECLARED_LEVEL,
+            tilt: 0.0,
+            declared: false,
+        };
+        let (per_channel, _, report) = run_declared(
+            &integ,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+        );
+        assert_eq!(report.stop, StopReason::Budget);
+        assert_eq!(report.iterations, 6);
+        assert_ne!(
+            per_channel[0].grid.xi(),
+            VegasGrid::new(2, VEGAS_NBINS, 1.5).xi(),
+            "the undeclared run refines"
+        );
+    }
+
+    /// A wrong declaration is caught by the iteration it licensed skipping the
+    /// rest for: the run withdraws it and spends the whole budget. The tilts run
+    /// from a gross one to one whose error bar after the iteration (`~ tilt /
+    /// (2√3 · √4000) = 5e-6`) is only a few hundred times the rounding floor.
+    #[test]
+    fn a_declaration_the_iteration_contradicts_is_withdrawn() {
+        for tilt in [0.5, 1.0e-3] {
+            let integ = Declared {
+                level: DECLARED_LEVEL,
+                tilt,
+                declared: true,
+            };
+            let (_, total, report) = run_declared(
+                &integ,
+                Budget::Fixed {
+                    neval: 4_000,
+                    niter: 6,
+                },
+            );
+            assert_eq!(report.stop, StopReason::Budget, "tilt {tilt}");
+            assert_eq!(report.iterations, 6, "tilt {tilt}");
+            assert!(
+                (total.integral / DECLARED_LEVEL - 1.0).abs()
+                    < 5.0 * total.std_dev / total.integral,
+                "tilt {tilt}: {} ± {} against {DECLARED_LEVEL}",
+                total.integral,
+                total.std_dev
+            );
+        }
+    }
+
+    /// An integrand that vanishes everywhere has no relative error to confirm a
+    /// declaration with: its `0/0` withdraws it, as a vanishing channel withdraws
+    /// the stopping test's reading elsewhere.
+    #[test]
+    fn a_declared_integrand_that_vanishes_is_withdrawn() {
+        let integ = Declared {
+            level: 0.0,
+            tilt: 0.0,
+            declared: true,
+        };
+        let (_, total, report) = run_declared(
+            &integ,
+            Budget::Fixed {
+                neval: 4_000,
+                niter: 6,
+            },
+        );
+        assert_eq!(report.stop, StopReason::Budget);
+        assert_eq!(report.iterations, 6);
+        assert_eq!(total.integral, 0.0);
     }
 }
