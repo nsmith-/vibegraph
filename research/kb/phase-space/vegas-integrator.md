@@ -174,8 +174,8 @@ unpolarized, uncut, one channel) draws one iteration and stops with
 contradicts is withdrawn and the run continues as an ordinary one
 ([vegas-constant-integrand](../sprints/vegas-constant-integrand/closeout.md)).
 
-Open behaviour of the grid itself:
-[low-acceptance bins starve](../backlog/performance/vegas-grid-starves-low-acceptance-bins.md).
+The default bin-width bound (K = 6) and the measurements behind it are
+[vegas-low-acceptance-bins](../sprints/vegas-low-acceptance-bins/sprint.md).
 
 [^lepage]: Lepage 1978, the algorithm `vegas.rs` implements.
 [^n01-vegas]: Note 01, VEGAS and VEGAS+ paper summaries.

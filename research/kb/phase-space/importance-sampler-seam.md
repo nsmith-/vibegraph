@@ -63,8 +63,10 @@ phase-space map) with:
    `GridRule`);
 4. **freeze** — the trained state, `Clone + Send + Sync`, drawn from with no
    record (the scan and the trials);
-5. **serialise** — the trained state only; adaptation settings (`GridRule`,
-   damping, `nbins`) belong to a per-kind config, and warm-up and iteration
+5. **serialise** — the trained state only; adaptation settings (damping,
+   `nbins`) belong to a per-kind config, except the VEGAS `GridRule`, which the
+   artifact records top-level for provenance (`grid_rule: Option<GridRule>`,
+   format version 12; `None` for an artifact with no VEGAS grid), and warm-up and iteration
    combination to the driver in `budget.rs`.
 
 Static dispatch inside the hot loop (`integrate_channels` and
