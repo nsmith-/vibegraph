@@ -77,7 +77,11 @@ multichannel; no per-channel stop record).
     1.39 under the new defaults, 0.92 over 80 seeds);
   - `pp_to_llj_mlm`'s quoted error ~20–30 % above its 20-seed spread (#48 P2
     Found 4), in the spreads-beside-calibrations table;
-  - re-recording under #51's map defaults and #48's bound if it flips.
+  - re-recording under #51's map defaults and #48's K = 6 bound (both
+    decided; #48 P3 measured the combined tree, tree `6aecfc6`);
+  - its "before" from a banked run of the tree it lands on: #51's V1 banked
+    report predates #42's five-seed gates, so it is not a baseline for later
+    trees (#48 P3 Found; P3's map-only run at `87e3695` is the nearest).
 
 **User decisions on record:**
 - #52 D1 plus its amendment (α 0.5 % per leg);
