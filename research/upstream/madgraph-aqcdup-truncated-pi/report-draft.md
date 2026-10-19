@@ -26,6 +26,12 @@ the printed `AQCDUP` is one unit too high on about 12 % of events. Anything that
 compares the field with αs at the printed precision, as a downstream check or
 replay would, sees the mismatch.
 
+Cross sections and event weights are not affected, because `aaqcd`/`aaqed` are
+computed only for the event record. The one place MadGraph reads the field back
+is the reweight module (`reweight_interface.py`, `gstr = sqrt(4*pi*event.aqcd)`).
+There a matrix element with n powers of αs picks up (1 + 1.7e-8)ⁿ. That is below
+1e-7, smaller than the rounding already in the 7-digit field.
+
 ### How to reproduce
 
 Run `e+ e- > u u~ g` at √s = 1 TeV with a per-event scale
