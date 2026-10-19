@@ -31,6 +31,7 @@
 * [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.25 % low on fixed-beam 2 → 4 and 2 → 3 rows; adaptation-free estimators land on its equal-weight recombination.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
 * [Seed-sweep headroom of the enforced gate statistics (base 0538e2d)](seed-headroom-census-2026-09.md) - Five-seed headroom of every enforced tolerance and pull/chi2 threshold in the banked layer, read by threshold class; calibrations written before e73b158 no longer reproduce.
+* [Seed-sweep headroom of the σ gates (2026-10, refdata-10)](seed-headroom-census-2026-10.md) - Five-seed headroom of every gated fixed-beam σ row and the hadronic σ gates under soft-all, MadEvent's τ rule and the K = 6 bin bound, against refdata-10's seed records; 20- and 80-seed spreads beside the five-seed calibrations; what moved the 2026-09 census figures.
 
 ## Procedure
 
