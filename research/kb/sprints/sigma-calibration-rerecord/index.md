@@ -5,3 +5,7 @@
 ## Sprint
 
 * [Re-record the σ seed calibrations from one current run](sprint.md) - Re-record plan_for's seed figures, the census page, the σ gates' calibration comments and the ℓℓj ladder rationale from one current run, identify the drift's cause, and re-measure the two thin-headroom cells against refdata-10.
+
+## Directories
+
+* [sessions](sessions/index.md)

@@ -93,3 +93,8 @@ multichannel; no per-channel stop record).
 - #48 K ladder now.
 
 **Safety-net check-in:** 22:32 UTC, over #44 (empty check-in 2 of 3).
+
+## 2026-10-19
+* **V1 dispatched**: #44, #51 and #48 are on main (`e3f543f`), so both default
+  flips are in. Main merged into this branch at `445aa59`;
+  [V1's brief](sessions/V1.md) records today's numbers on that tree.
