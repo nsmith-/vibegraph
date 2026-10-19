@@ -2794,15 +2794,15 @@ fn probe_event_readout_cost() {
 /// smooth function of a fixed coupling: `αs(μR(p))` varies over the phase space
 /// the sampler adapts to. A seed sweep alone cannot say whether the residual is
 /// sampling — a bias that survives the budget is a defect — so both axes are
-/// reported here, five seeds at the gate budget and the same five at four times
-/// it. Run with `--ignored --nocapture`.
+/// reported here, the gate's five seeds at the gate budget and the same five at
+/// four times it, each rung read under the seed policy against the MadEvent
+/// reference the gate reads ([`BankedSigma::madevent_reference`]) and timed, so
+/// the rung's cost is printed beside its margin. Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_llj_parton_seed_stability() {
-    let ref_path = reference_path();
-    let text = std::fs::read_to_string(&ref_path).unwrap();
+    let text = std::fs::read_to_string(reference_path()).unwrap();
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
-    let seeds = [SEED, 11, 22, 33, 44];
     for dir in LLJ_PARTON_ROWS {
         // The budget the gate itself integrates at, so the `1x` rung is the row's
         // own cell and the `4x` rung is what says whether it is converged.
@@ -2812,27 +2812,44 @@ fn probe_llj_parton_seed_stability() {
             | Plan::Info { neval, niter, .. } => (neval, niter),
             Plan::Skip(_) => continue,
         };
-        let e = &banked[dir];
+        let (e, source) = banked[dir].madevent_reference(dir);
+        let e = &e;
         eprintln!(
-            "── {dir} (MG {:.6e} ± {:.2e}) ──",
-            e.sigma_pb, e.sigma_err_pb
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%; {}) at {neval}x{niter} ──",
+            e.sigma_pb,
+            e.sigma_err_pb,
+            100.0 * e.sigma_err_pb / e.sigma_pb,
+            source
+                .as_deref()
+                .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
         );
         for budget in [1usize, 4] {
-            let mut rels = Vec::new();
-            for seed in seeds {
+            let clock = Stopwatch::start();
+            let mut runs = Vec::new();
+            for seed in HEADROOM_SEEDS {
                 let (s, err, chi2) = integrate(dir, &e.process, neval * budget, niter, seed);
-                let pull = (s - e.sigma_pb) / (err * err + e.sigma_err_pb * e.sigma_err_pb).sqrt();
-                rels.push(s / e.sigma_pb - 1.0);
+                let (pull, rel) = compare(s, err, e);
                 eprintln!(
                     "  {:>7} seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+8.2} | \
-                     rel {:+.2e} | chi2/dof {chi2:.2}",
+                     rel {rel:+.3e} | chi2/dof {chi2:.2}",
                     format!("{}x", budget),
-                    s / e.sigma_pb - 1.0,
                 );
+                runs.push((s, err));
             }
-            let mean = rels.iter().sum::<f64>() / rels.len() as f64;
-            let worst = rels.iter().fold(0.0f64, |a, r| a.max(r.abs()));
-            eprintln!("  {budget}x mean rel {mean:+.2e} | worst |rel| {worst:.2e}");
+            let read = combine(&runs);
+            let worst = runs
+                .iter()
+                .map(|(s, _)| (s / e.sigma_pb - 1.0).abs())
+                .fold(0.0f64, f64::max);
+            eprintln!(
+                "  {budget}x: mean rel {:+.3e} | mean pull {:+.2} | chi2/dof {:.2} | \
+                 worst |rel| {worst:.3e} | {:.1} s for {} seeds",
+                read.mean / e.sigma_pb - 1.0,
+                read.pull(e.sigma_pb, e.sigma_err_pb),
+                read.chi2_per_dof,
+                clock.seconds(),
+                read.n,
+            );
         }
     }
 }
