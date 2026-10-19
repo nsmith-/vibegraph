@@ -1,11 +1,11 @@
 ---
 type: Backlog Item
-title: MadGraph defect reports are drafted but not filed upstream
-description: Report drafts for the MadGraph defects still present in 3.8.1 are ready, each with a MadGraph-only reproducer; the user files them.
+title: Two older MadGraph defect drafts are not filed upstream
+description: Six MadGraph reports are filed (#453–#458); the AQCDUP π truncation and rambo.py drafts in note 07 are still unfiled and not in the one-issue form.
 area: validation
 state: needs-user
 priority: low
-closes_when: Each report in madgraph-upstream-report-drafts whose defect is still present upstream is filed, and its link recorded in that concept.
+closes_when: The AQCDUP and rambo.py defects are each filed upstream (or declined by the user), with the outcome recorded in madgraph-upstream-report-drafts.
 blocked_by: []
 opened: 2026-09-29
 tags: [mlm, madgraph-defect, upstream-report, h1]
@@ -13,28 +13,17 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-06}
 sources:
   - {id: todo, resource: "https://github.com/nsmith-/vibegraph/blob/466a60f/TODO.md#L229-L241", title: "TODO.md entry T005"}
 ---
-The drafts are indexed in
-[madgraph-upstream-report-drafts](../../validation/madgraph-upstream-report-drafts.md).
-Each defect has a folder under `research/upstream/madgraph-*/` with a
-MadGraph-only reproducer, a README, and a `report-draft.md` if the defect is
-still present in 3.8.1, the latest release. Ready to file:
+Six reports were filed on 2026-10-19 as mg5amcnlo/mg5amcnlo #453–#458, and
+[madgraph-upstream-report-drafts](../../validation/madgraph-upstream-report-drafts.md)
+maps each folder to its issue. The user chose not to file the unreachable
+`addmothers` report.
 
-- `madgraph-grouped-first-call-unpermuted` (H1);
-- `madgraph-fixed-fac-scale-precedence` (`reweight.f:1138`);
-- `madgraph-setxqcuts-duplicate-test` (`setcuts.f`);
-- `madgraph-nmassless-precedence` (`cuts.f`, `ktdurham`/`ptlund`);
-- `madgraph-addmothers-stale-index` (code quality; unreachable);
-- `madgraph-rivet-setweightname` (`banner.py`);
-- `madgraph-rewgt-stale-ipdgcl` (`rewgt`).
-
-MadGraph publishes no policy on AI-assisted reports (the index records what
-was checked), so each draft ends in an `Assisted-by` line for the user to keep
-or reword.
-
-The `AQCDUP` π truncation and `rambo.py` drafts are still in note 07's appendix
-and are still present in 3.8.1. The ALOHA `P1D` (`FFV2P1D_1`) defect is fixed
-in 3.8.1 (PR #428), so do not file it
-(`research/upstream/madgraph-aloha-p1d-flipped-fermion/`).
+Still unfiled: the `AQCDUP` π truncation (`unwgt.f:768-769` in 3.8.1,
+`:719-720` in 3.5.17) and the `rambo.py:218` overflow-warning test. Both are
+present in 3.8.1 and 3.5.17 by reading. Their drafts are still note 07's older
+form. Each needs a `research/upstream/madgraph-*` folder in the one-issue form
+that upstream asked for on #452: one problem per issue, stating whether 3.5.17
+and 3.8.1 are affected.
 
 The CDATA / `setMad` interplay is tracked separately as
 [pythia-setmad-drops-cdata-run-card](pythia-setmad-drops-cdata-run-card.md).
@@ -45,6 +34,6 @@ exceeds 1 % of the beam-energy sum
 ([default survey bias](../../validation/madevent-default-survey-bias.md)).
 The same candidate covers the difficult-mode `run_config.inc` substitution,
 whose pattern does not match its own output, so a reused process directory
-keeps its first survey rate. Related: 3.8.1's `keep_grid_for_refine = False`
-moves grouped σ by about 2 %
+keeps its first survey rate. Related: `keep_grid_for_refine = False`, in both
+3.8.1 and 3.5.17, moves grouped σ by about 2 %
 ([report drafts, "Found while checking"](../../validation/madgraph-upstream-report-drafts.md#found-while-checking)).

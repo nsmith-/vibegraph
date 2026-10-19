@@ -12,6 +12,8 @@ order in which the process lists its legs:
 
 ## Status
 
+**Filed** as [mg5amcnlo/mg5amcnlo#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458) on 2026-10-19.
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. It affects the
 integration grids only. The report draft is [`report-draft.md`](report-draft.md).

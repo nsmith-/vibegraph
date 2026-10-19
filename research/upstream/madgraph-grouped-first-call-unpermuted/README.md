@@ -18,6 +18,8 @@ On 3.7.1 the fixed grouped output agrees with the non-grouped output.
 
 ## Status
 
+**Filed** as [mg5amcnlo/mg5amcnlo#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) on 2026-10-19.
+
 **Present in 3.8.1** (ran). It is also present in 3.7.1.
 - **Absent from the 3.5.17 LTS release** (ran).
 - **Introduced in 3.6.0.** The unpermuted `update_scale_coupling(pp, wgt)` call

@@ -42,12 +42,22 @@ affected rows' manifest notes) kept as a registered deviation; it is never
 silently "fixed". Lines are at the pinned tree
 `b7687064` (3.7.1) unless stated.
 
-**Upstream status: nothing filed.** The report drafts, each checked against the
-latest release (3.8.1) with a MadGraph-only reproducer, are indexed in
-[madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md). Filing is
-the user's step
+**Upstream status.** On 2026-10-19 six reports were filed as
+mg5amcnlo/mg5amcnlo
+[#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) to
+[#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458):
+- H1;
+- `reweight.f:1138`;
+- `cuts.f` `NMASSLESS`;
+- `rewgt`;
+- Rivet `setWeightName`;
+- `setxqcuts`.
+
+The index, [madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md),
+maps each report to its issue. The unreachable `addmothers` report was not
+filed. The ALOHA `P1D` defect is fixed upstream (PR #428). The `AQCDUP` and
+`rambo.py` drafts remain unfiled
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
-The ALOHA `P1D` defect is fixed upstream in 3.8.1 (PR #428), so it needs no report.
 
 Every entry is a **failure** (MadGraph's code does not do what it intends)
 except those marked as an **approximation** (a deliberate choice this project

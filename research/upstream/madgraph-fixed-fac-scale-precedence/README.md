@@ -13,6 +13,8 @@ With `fixed_fac_scale1 = T`, `fixed_fac_scale2 = F` and a clustering scale
 
 ## Status
 
+**Filed** as [mg5amcnlo/mg5amcnlo#454](https://github.com/mg5amcnlo/mg5amcnlo/issues/454) on 2026-10-19.
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. The report draft is
 [`report-draft.md`](report-draft.md).

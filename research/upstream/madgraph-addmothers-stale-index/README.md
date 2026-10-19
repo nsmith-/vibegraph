@@ -9,6 +9,8 @@ event.
 
 ## Status
 
+**Not filed** (the user's decision, 2026-10-19): it has no runtime effect.
+
 **Present in 3.8.1; unreachable at runtime** (read). The file is
 byte-identical in 3.7.1 (`b7687064`) and 3.8.1 (`a5b17913`).
 

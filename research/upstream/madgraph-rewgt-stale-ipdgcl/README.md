@@ -16,6 +16,8 @@ Take a five-flavour `p p > z j` at `maxjetflavor = 4`. On 3.7.1, 93 of 97
 
 ## Status
 
+**Filed** as [mg5amcnlo/mg5amcnlo#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) on 2026-10-19.
+
 **Present in 3.8.1 and in the 3.5.17 LTS release** (ran). It is also present in
 3.7.1. The report draft is
 [`report-draft.md`](report-draft.md). No one-line fix exists (see "Root
