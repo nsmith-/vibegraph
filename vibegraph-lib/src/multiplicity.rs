@@ -73,9 +73,10 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// multiplicities: every part's shape, summed as if one channel set.
 ///
 /// The choices are one per run, and an artifact banks one. The only choice the
-/// rule reads off the shape is the split angle, taken as the soft-emission map
-/// wherever any channel has a soft-emission split; on a part with none that map
-/// shapes nothing, so the union settles each part where it would settle alone.
+/// rule reads off the shape is the `τ` map, which keeps the log map wherever any
+/// part carries a resonance spanning its whole final state: a Drell–Yan part
+/// keeps the map its peak needs, and the parts above it, which would take
+/// `1/τ²` alone, take the log map with it.
 pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessShape {
     shapes
         .into_iter()

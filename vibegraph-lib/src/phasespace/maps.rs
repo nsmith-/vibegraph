@@ -12,8 +12,8 @@
 //!
 //! The rules in [`MapOptions::resolve`] are measurements, not opinions: each
 //! `Auto` picks the option that measured best on the process class the rule
-//! recognises, and falls back to the option every gated row was banked under
-//! where no measurement exists. A rule with no measurement behind it is not
+//! recognises, and keeps the [`MapChoices::LEGACY`] option where no measurement
+//! favours another. A rule with no measurement behind it is not
 //! written down as a rule.
 
 use serde::{Deserialize, Serialize};
@@ -27,8 +27,8 @@ use super::diagram_channel::{AngleShape, DiagramChannel};
 /// How a 2-body split of the decay tree draws its decay angle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SplitAngle {
-    /// Flat in `cos θ` and `φ` against the collision-CM axes — the map every
-    /// gated row was banked under, and MadEvent's.
+    /// Flat in `cos θ` and `φ` against the collision-CM axes: MadEvent's map, and
+    /// that of every artifact written before the choices were banked.
     Isotropic,
     /// Flat in `cos θ*` from the parent's direction of flight, confined to the
     /// angles at which both daughters clear their cut-implied energy floors, on
@@ -45,8 +45,9 @@ pub enum SplitAngle {
 /// How a hadronic run draws `τ = ŝ/s` above the cut-implied `τ_min`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TauMap {
-    /// `τ = τ_min^(1−u)`, density `∝ 1/τ` — the map every gated hadronic row was
-    /// banked under.
+    /// `τ = τ_min^(1−u)`, density `∝ 1/τ`: the rule's choice where a resonance
+    /// spans the whole final state, and the map of every artifact written before
+    /// the choices were banked.
     Log,
     /// Density `∝ 1/τ²`, MadEvent's `transpole(pole = −2)` for a hadronic run with
     /// no resonance spanning the whole final state.
@@ -121,8 +122,7 @@ impl ProcessShape {
 
 impl MapChoices {
     /// The maps every artifact written before the choices were banked was
-    /// integrated under, and the fallback of every rule with no measurement
-    /// behind it.
+    /// integrated under.
     pub const LEGACY: MapChoices = MapChoices {
         split_angle: SplitAngle::Isotropic,
         tau: TauMap::Log,
@@ -215,37 +215,41 @@ impl MapOptions {
     /// Measured as evaluations the convergence stop needs to reach a χ²-scaled
     /// 0.1%, twenty seeds or more per arm, as a ratio to the map it replaces:
     ///
-    /// * `split_angle`: [`SplitAngle::SoftEmission`] where some split has a single
-    ///   gluon or photon daughter, else [`SplitAngle::Isotropic`]. `u u~ > g g g`
-    ///   0.67 of isotropic; inert — bit-identical draws — everywhere else, which is
-    ///   every gated row but `e+ e- > mu+ mu- a`. [`SplitAngle::SoftAll`], the
-    ///   shape on every split whose parent moves, measures better still where it
-    ///   differs: `p p > l+ l- j` 0.50 ± 0.02, `g u > e+ e- u` 0.85 ± 0.02 (160
-    ///   seeds), `g g > g u u~` 1.02 ± 0.09. It is not the rule yet because
-    ///   `pp_to_llj_dyn`'s five-seed scatter guard reads 4.17 against its 4.0
-    ///   under it, while forty seeds at the gate's own configuration read
-    ///   `χ²/dof` 0.91 under either map — a decision about that cell, not the map.
-    /// * `tau`: [`TauMap::Log`]. MadEvent's rule — `1/τ²` unless a finite-width
-    ///   resonance spans the whole final state, which
-    ///   [`ProcessShape::whole_state_resonance`] detects — measures better where it
-    ///   differs: `p p > j j` 0.77 ± 0.03, `p p > b b~` 0.65 ± 0.05 in error² ×
-    ///   evaluations (it stops on the iteration floor), Drell–Yan 1.06 ± 0.05 the
-    ///   other way, `p p > l+ l- j` neutral. It is not the rule yet because the
-    ///   dijet event sample's flavour χ² against MadGraph's banked one crosses its
-    ///   gate floor on one seed under it, while two samples of our own, one per
-    ///   map, agree at χ² 40.5 / 47 — a decision about that cell, not the map.
+    /// * `split_angle`: [`SplitAngle::SoftAll`], the soft-shaped map on every
+    ///   split whose parent moves. `p p > l+ l- j` 0.50 ± 0.02 of isotropic,
+    ///   `g u > e+ e- u` 0.85 ± 0.02 (160 seeds), `g g > g u u~` 1.02 ± 0.09 of
+    ///   [`SplitAngle::SoftEmission`]; on `u u~ > g g g`, where every moving split
+    ///   has a gluon daughter, it is the soft-emission map, 0.67 of isotropic. A
+    ///   `2 → 2` process has no moving split, so every choice draws the same points.
+    /// * `tau`: MadEvent's rule, [`TauMap::InverseSquare`] unless a finite-width
+    ///   resonance spans the whole final state
+    ///   ([`ProcessShape::whole_state_resonance`]), where its peak sits in the `τ`
+    ///   draw and [`TauMap::Log`] keeps it. `p p > j j` 0.77 ± 0.03,
+    ///   `p p > b b~` 0.65 ± 0.05 in error² × evaluations (it stops on the
+    ///   iteration floor); Drell–Yan reads 1.06 ± 0.05 the other way, which the
+    ///   resonance exception keeps; `p p > l+ l- j` is neutral, 1.03 ± 0.05. The
+    ///   rule reads the whole process, not each channel as MadEvent does: one
+    ///   diagram with a whole-state resonance keeps every channel on the log map,
+    ///   so `p p > b b~ QCD=2`, whose electroweak diagrams carry `Z` and `h`
+    ///   propagators spanning the pair, stays on it.
     /// * `rung_order`: [`RungOrder::Derived`]. The reverse reads 1.01 ± 0.02 on
     ///   `u u~ > g g g`, the one row whose two-rung ladders it moves.
+    ///
+    /// The ratios are evaluations measured on the M3 Max host off the 2026-09-23
+    /// code, twenty seeds per arm at the banked rows' own cards, with the map
+    /// asked for by name. The gate cells were re-read under these rules on
+    /// 2026-10-17: `pp_to_jj`'s event sample at minimum `p` 5.6e-2 against its
+    /// 1e-4 floor, and the five-seed scatter guards of `pp_to_llj_dyn` and
+    /// `pp_to_llj_fixed` at `χ²/dof` 1.03 and 1.39 against their 4.0, the latter
+    /// at 0.92 over eighty seeds under either map.
     pub fn resolve(&self, shape: &ProcessShape) -> MapChoices {
         MapChoices {
-            split_angle: self
-                .split_angle
-                .unwrap_or(if shape.soft_emission_splits > 0 {
-                    SplitAngle::SoftEmission
-                } else {
-                    SplitAngle::Isotropic
-                }),
-            tau: self.tau.unwrap_or(TauMap::Log),
+            split_angle: self.split_angle.unwrap_or(SplitAngle::SoftAll),
+            tau: self.tau.unwrap_or(if shape.whole_state_resonance {
+                TauMap::Log
+            } else {
+                TauMap::InverseSquare
+            }),
             rung_order: self.rung_order.unwrap_or(RungOrder::Derived),
         }
     }
@@ -288,30 +292,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_rule_shapes_only_where_a_split_can_take_it() {
+    fn the_rule_reads_the_whole_state_resonance_and_shapes_every_split() {
         let auto = MapOptions::default();
-        let two_to_two = ProcessShape::default();
-        assert_eq!(auto.resolve(&two_to_two), MapChoices::LEGACY);
+        let flipped = MapChoices {
+            split_angle: SplitAngle::SoftAll,
+            tau: TauMap::InverseSquare,
+            rung_order: RungOrder::Derived,
+        };
+        assert_eq!(auto.resolve(&ProcessShape::default()), flipped);
         let resonant = ProcessShape {
             whole_state_resonance: true,
             ..ProcessShape::default()
         };
-        assert_eq!(auto.resolve(&resonant), MapChoices::LEGACY);
+        assert_eq!(
+            auto.resolve(&resonant),
+            MapChoices {
+                tau: TauMap::Log,
+                ..flipped
+            }
+        );
         let with = ProcessShape {
             soft_emission_splits: 2,
             max_rungs: 1,
             whole_state_resonance: false,
         };
-        assert_eq!(auto.resolve(&with).split_angle, SplitAngle::SoftEmission);
-        assert_eq!(auto.resolve(&with).rung_order, RungOrder::Derived);
+        assert_eq!(auto.resolve(&with), flipped);
     }
 
-    /// The rule reads real processes the way its documentation says: Drell–Yan, a
-    /// dijet process and a lepton pair recoiling against a gluon all keep the
-    /// legacy maps (the gluon is a leg of the root split, whose parent is at rest,
-    /// or of a rung), while a gluon emitted from a moving system is shaped. The shape
-    /// behind the pending `τ` rule is pinned too: only Drell–Yan carries a
-    /// resonance spanning its final state.
+    /// The rule reads real processes the way its documentation says: only
+    /// Drell–Yan carries a resonance spanning its final state and keeps the log
+    /// `τ` map, and every process takes the soft-shaped angle whether or not it has
+    /// a single-gluon split (`u u~ > g g g` has; the lepton pair recoiling against a
+    /// gluon has none, its gluon a leg of the root split or of a rung).
     #[test]
     fn the_rule_reads_real_processes() {
         use crate::cuts::{Cuts, ExternalLeg};
@@ -321,7 +333,7 @@ mod tests {
 
         let m = sm_model(SMRestrict::Default);
         let ev = EvaluatedModel::from_model(m.clone());
-        let resolve = |process: &str, legs: &[(i32, bool)]| -> (MapChoices, bool) {
+        let resolve = |process: &str, legs: &[(i32, bool)]| -> (MapChoices, ProcessShape) {
             let card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
                 .unwrap();
             let diagrams: Vec<Diagram> = generate_from_proc_card(&card, &m)
@@ -341,21 +353,25 @@ mod tests {
                 .collect();
             let cuts = Cuts::compile(&RunCard::default(), &legs).unwrap();
             let shape = ProcessShape::of(&diagrams, &ev, 500.0, &cuts);
-            (
-                MapOptions::default().resolve(&shape),
-                shape.whole_state_resonance,
-            )
+            (MapOptions::default().resolve(&shape), shape)
+        };
+        let choices = |tau| MapChoices {
+            split_angle: SplitAngle::SoftAll,
+            tau,
+            rung_order: RungOrder::Derived,
         };
         let dy = resolve(
             "u u~ > e+ e-",
             &[(2, true), (-2, true), (-11, false), (11, false)],
         );
-        assert_eq!(dy, (MapChoices::LEGACY, true));
+        assert_eq!(dy.0, choices(TauMap::Log));
+        assert!(dy.1.whole_state_resonance);
         let jj = resolve(
             "u u~ > d d~",
             &[(2, true), (-2, true), (1, false), (-1, false)],
         );
-        assert_eq!(jj, (MapChoices::LEGACY, false));
+        assert_eq!(jj.0, choices(TauMap::InverseSquare));
+        assert!(!jj.1.whole_state_resonance);
         let llj = resolve(
             "u u~ > e+ e- g",
             &[
@@ -366,12 +382,17 @@ mod tests {
                 (21, false),
             ],
         );
-        assert_eq!(llj, (MapChoices::LEGACY, false));
+        assert_eq!(llj.0, choices(TauMap::InverseSquare));
+        assert_eq!(
+            (llj.1.whole_state_resonance, llj.1.soft_emission_splits),
+            (false, 0)
+        );
         let ggg = resolve(
             "u u~ > g g g",
             &[(2, true), (-2, true), (21, false), (21, false), (21, false)],
         );
-        assert_eq!(ggg.0.split_angle, SplitAngle::SoftEmission);
+        assert_eq!(ggg.0, choices(TauMap::InverseSquare));
+        assert!(ggg.1.soft_emission_splits > 0);
     }
 
     #[test]

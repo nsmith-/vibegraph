@@ -4,7 +4,7 @@ title: Setting gate thresholds and reading headroom
 description: "Tolerances sit at the algorithm's error scale with measured ulp headroom; tolerances and extremum-of-N statistics read headroom oppositely; margin is bought with points, never by widening."
 status: draft
 tags: [validation, tolerances, statistics, headroom, ulp]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n27-rule, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/27-v3-backlog-plan.md#L11-L26", title: "Note 27 — never a loosened tolerance"}
@@ -123,7 +123,7 @@ defect. `pp_to_llj_dyn`'s five-seed scatter guard read χ²/dof 4.17 (limit 4.0)
 under one map; forty seeds of the gate's own configuration read 0.91 under both
 maps, with spread ÷ quoted error 0.91–0.95, and one of eight disjoint quintets
 above 4.0 — the gate's five had drawn a one-in-eight quintet
-(`probe_llj_dyn_scatter_guard_calibration`)[^n37-cells]. A
+(`probe_llj_dyn_scatter_guard_calibration`, which ran the then-default maps: since the flip that name is the shipped `soft-all` + `1/τ²` and the arm measured here is `…_legacy`)[^n37-cells]. A
 [seed sweep](seed-sweeps-and-budget-ladders.md) separates that from a real miss;
 the current per-statistic readings are
 [the seed headroom census](seed-headroom-census-2026-09.md). A failing samples

@@ -5,7 +5,7 @@ description: "Every importance-sampling map MadEvent 3.7.1 applies, read at b768
 resource: "https://github.com/mg5amcnlo/mg5amcnlo/tree/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO"
 status: draft
 tags: [madevent, phase-space, importance-sampling, vegas, external-code]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1, MadEvent's maps against ours"}
@@ -37,7 +37,7 @@ is [multichannel](../../phase-space/multichannel.md). The rest of MadGraph is
 
 | Variable | MadEvent | vibegraph |
 |---|---|---|
-| `τ = ŝ/s` (hadronic) | `transpole(pole = −2, width = xo)`: density `∝ 1/τ²` above `xo` (the cut-implied `ŝ_min/s`), flat below; a Breit–Wigner `tan` map instead when one finite-width resonance spans the whole final state | `TauMap::Log` by default (`τ = τ_min^(1−u)`, density `∝ 1/τ`); MadEvent's rule is `TauMap::InverseSquare`, selectable, not the default[^maps-rs] |
+| `τ = ŝ/s` (hadronic) | `transpole(pole = −2, width = xo)`: density `∝ 1/τ²` above `xo` (the cut-implied `ŝ_min/s`), flat below; a Breit–Wigner `tan` map instead when one finite-width resonance spans the whole final state | `TauMap::InverseSquare` by default, `TauMap::Log` (`τ = τ_min^(1−u)`, density `∝ 1/τ`) when a finite-width resonance spans the whole final state; decided once per process, not per channel[^maps-rs] |
 | rapidity `y` | flat in `[½ ln τ, −½ ln τ]` (`GENCMS`, `genps.f:1621`) | the same |
 | s-channel invariant, finite width | `transpole(pole > 0)`: `s = m² + mΓ tan θ`, `θ` uniform; only when the pole is reachable (`m + 5Γ ≥ xm`, `bwcutoff` widths for a decay-chain-forced line) and the line is not identical-particle radiation (`iden_part = 0`) | the same `tan` map (`draw_invariant`) whenever the line has a width; no reachability test |
 | s-channel invariant, zero width | `setgrid(itype = 1, xo)`: 90% of the grid bins log-spaced from 1 down to `xo` (`grid = xo^(1−i/ngu)`), 10% linear below; `gen_s` itself is flat (`spole = 0`) | the same two-piece shape as an analytic map (`log_scale`), floored by the cut-implied timelike floor |
@@ -128,8 +128,8 @@ unweighting device, not a map.
 
 ## Open candidates from this survey
 
-- `1/τ²` as the default hadronic map: measured, not adopted; see
-  [map choices](../../phase-space/map-choices.md).
+- Deciding the τ map per channel, as MadEvent does, rather than per process:
+  [tau-rule-reads-whole-process](../../backlog/performance/tau-rule-reads-whole-process.md).
 - Ping-pong ordering for ladders of three or more rungs (`p p > j j j j` class);
   inert for every gated row, since llj and the 2 → 3 QCD rows have at most two
   transfers: [tchannel-pingpong-for-three-rung-ladders](../../backlog/performance/tchannel-pingpong-for-three-rung-ladders.md).

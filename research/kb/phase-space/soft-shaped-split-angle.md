@@ -4,7 +4,7 @@ title: Soft-shaped 2-body split angle (SoftSplit) with energy floors
 description: "Draws a split's angle from the parent's flight direction with density ∝ 1/(E₁E₂) inside cut-implied energy floors: the z(1−z) structure, the map, reciprocity, and where it fires."
 status: draft
 tags: [phase-space-map, soft-emission, splitting-kernel, energy-floor, map-choices]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-z, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L71-L123", title: "Note 37 §2.1–2.2, the z(1−z) structure and the map"}
@@ -169,16 +169,15 @@ seeds settled it at +0.36σ ([seed sweeps](../validation/seed-sweeps-and-budget-
 
 ## What production uses
 
-`MapOptions::resolve` picks `SoftEmission` wherever some split has a single
-gluon or photon daughter, else `Isotropic`; under it every gated row but
-`e+ e- > mu+ mu- a` draws bit-identically to isotropic. `SoftAll` measures
-better where it differs but is not the rule, because under it
-`pp_to_llj_dyn`'s five-seed scatter guard reads 4.17 against its 4.0 limit,
-while forty seeds at the gate's configuration read χ²/dof 0.91 under either
-map — a decision about that cell, not the map. The decision and its flags are
-[map choices](map-choices.md); the held-back cell is
-[llj_dyn scatter guard under soft-all](../backlog/validation/llj-dyn-scatter-guard-under-soft-all.md).
-Not adopted: shaping every split by default, and the unregulated map[^n37-dec].
+`MapOptions::resolve` picks `SoftAll` for every process: the soft shape on
+every split whose parent moves, inside the cut-implied floors. On a `2 → 2`
+process no split moves, so it draws the same points as `Isotropic`. It measures
+better where it differs (tables above). `pp_to_llj_dyn`'s five-seed scatter
+guard, which once read 4.17 against its 4.0 limit under it (forty seeds read
+χ²/dof 0.91 under either map), reads 1.03 under the shipped defaults. The
+decision and its flags are [map choices](map-choices.md), the flip itself the
+[sprint record](../sprints/map-default-guards/sprint.md). Not adopted: the
+unregulated map[^n37-dec].
 Open shapes: a one-sided `1/E_g` map for `q* → q g`, and llj's
 `1/(ŝ − ŝ_rest)` on the spine remainder:
 [soft-gluon map shapes missing](../backlog/performance/soft-gluon-map-shapes-missing.md).

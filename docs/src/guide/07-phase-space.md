@@ -344,18 +344,20 @@ event sample is always drawn from the maps its grids were trained on.
   which both daughters clear the energy floor the cuts imply, because a
   $1/E$ map left to run down to the kinematic edge spends most of its draws
   below the $p_T$ threshold that rejects them; `windowed` is that
-  confinement alone. `auto` picks `soft-emission` where there is such a
-  split, a third fewer evaluations on $u\bar u \to ggg$. `soft-all`
-  measured best everywhere it was tried — half the evaluations on
-  $pp \to \ell^+\ell^- j$, where the shaped split is the lepton pair's — and
-  is the one to ask for there. A $2 \to 2$ process has no split whose parent
-  moves, so there every choice is the isotropic map.
+  confinement alone. `auto` is `soft-all`: half the evaluations of the
+  isotropic map on $pp \to \ell^+\ell^- j$, where the shaped split is the
+  lepton pair's, and a third fewer on $u\bar u \to ggg$, where every moving
+  split has a gluon daughter and the two shaped maps coincide; on
+  $gg \to gu\bar u$ it measures the same as `soft-emission`. A $2 \to 2$
+  process has no split whose parent moves, so there every choice is the
+  isotropic map.
 - **The $\tau = \hat s/s$ draw** of a proton-beam run (`--map-tau`): the
   logarithmic map of the [hadronic chapter](10-hadronic.md), or MadEvent's
-  $1/\tau^2$. `auto` keeps the logarithm. MadEvent takes $1/\tau^2$ unless a
-  resonance spans the whole final state, whose peak then sits in $\tau$;
-  here that measures a quarter fewer evaluations on dijets and slightly
-  more on Drell–Yan, and is available as `inverse-square`.
+  $1/\tau^2$ (`inverse-square`). `auto` follows MadEvent: $1/\tau^2$
+  unless a finite-width resonance spans the whole final state, whose peak
+  then sits in $\tau$, and the logarithm where one does. Here that measures
+  a quarter fewer evaluations on dijets, and on Drell–Yan, where the
+  logarithm is kept, $1/\tau^2$ would take slightly more.
 - **The order of a ladder's rungs** (`--map-rung-order`): as the diagram's
   spacelike lines nest outward from beam 0, or reversed, which exists to be
   measured against and measures the same.

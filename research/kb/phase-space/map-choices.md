@@ -1,10 +1,10 @@
 ---
 type: Design Decision
 title: "Phase-space map choices: --map-* flags, the auto rules and the measurements behind them"
-description: "MapOptions/MapChoices (split angle, τ map, rung order); auto = soft-emission / log τ / derived order, banked in the artifact; why soft-all and 1/τ² stay options, from 20-seed evaluations-to-0.1%."
+description: "MapOptions/MapChoices (split angle, τ map, rung order); auto = soft-all / MadEvent's τ rule (1/τ², log τ under a whole-state resonance) / derived order, banked in the artifact; why those are the defaults, from 20-seed evaluations-to-0.1%."
 status: draft
 tags: [phase-space, maps, vegas, madevent, configuration]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n37-survey, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/37-madevent-map-survey-and-soft-angle.md#L26-L68", title: "Note 37 §1 (MadEvent's maps against ours)"}
@@ -28,8 +28,8 @@ weight, i.e. the evaluations a run needs to reach an accuracy. The types are in
 
 | Choice | Enum | Values | `auto` |
 |---|---|---|---|
-| 2-body split angle | `SplitAngle` | `Isotropic`, `Windowed`, `SoftEmission`, `SoftAll` | `SoftEmission` if any split has a single massless-vector daughter, else `Isotropic` |
-| `τ = ŝ/s` draw (proton beams) | `TauMap` (`:47`) | `Log` (∝ 1/τ), `InverseSquare` (∝ 1/τ²) | `Log` |
+| 2-body split angle | `SplitAngle` | `Isotropic`, `Windowed`, `SoftEmission`, `SoftAll` | `SoftAll` |
+| `τ = ŝ/s` draw (proton beams) | `TauMap` (`:47`) | `Log` (∝ 1/τ), `InverseSquare` (∝ 1/τ²) | `InverseSquare`; `Log` when a finite-width resonance spans the whole final state |
 | peripheral chain rung order | `RungOrder` | `Derived`, `Reversed` | `Derived` |
 
 - `Windowed`: the isotropic angle confined to the angles at which both
@@ -52,8 +52,8 @@ process no split moves and every split-angle choice is the same map.
 `MapOptions::resolve(&ProcessShape)` settles it into `MapChoices`.
 `ProcessShape::of` reads the channels a decomposition builds, not the process
 string: soft-emission splits, moving splits, the longest chain, and whether a
-finite-width resonance spans the whole final state (the detector MadEvent's τ
-rule would read; in place and pinned, unused by `auto`). `MapChoices::channel`
+finite-width resonance spans the whole final state (what the `auto` τ rule
+reads). `MapChoices::channel`
 (`maps.rs:143`) is the one place a channel is built for integration or replay,
 so an integrator and the generator replaying its grids cannot disagree.
 
@@ -149,29 +149,50 @@ to 0.1% in millions, seeds 20260719/20/21:[^n37-s3]
   against a single MadEvent run is unmoved; that offset was the reference's
   ([gating exceptions](../validation/sigma-row-gating-exceptions.md)).
 
-## Why `soft-all` and `1/τ²` are options, not defaults
+## Why `soft-all` and `1/τ²` are the defaults
 
-Each measured improvement, made the default, took one banked gate cell over
-its threshold, and each time a reference-free check said the map moved no
-physics. Both cells are at-threshold statistics, which this repository settles
-by matching the statistic to its calibration, never by widening; that decision
-is the user's, so the rules stay where they validated and both maps ship as
-options. Flipping either is a one-line change to `resolve`.[^n37-s6]
+Both maps measured better than what they replaced (the tables above). Each had
+been held back because, made the default, it took one banked gate cell over its
+threshold, and a reference-free check said the map moved no physics. Both cells
+were then re-read with the guards unchanged, and neither sits near its limit
+under the flip ([decision](../sprints/map-default-guards/decisions/D1-flip-on-todays-statistics.md),
+[V1 report](../sprints/map-default-guards/sessions/V1-report.md)):
 
-- **`soft-all` and `pp_to_llj_dyn`'s scatter guard.** The σ gate is fine
-  (+0.23%, pull +0.69), but the five-seed χ²/dof guard (limit 4.0) reads 4.17:
-  one seed sits ~3.6σ below the other four under *every* map. Forty seeds at
-  the gate's configuration read χ²/dof 0.91 under both maps; the gate's five
-  seeds drew a one-in-eight quintet
-  (`probe_llj_dyn_scatter_guard_calibration`;
-  [backlog](../backlog/validation/llj-dyn-scatter-guard-under-soft-all.md)).
+- **`soft-all` and `pp_to_llj_dyn`'s scatter guard.** Under `soft-all` the
+  five-seed χ²/dof guard (limit 4.0) once read 4.17, one seed ~3.6σ below the
+  other four under *every* map. Forty seeds at the gate's configuration read
+  χ²/dof 0.91 under both maps, and the gate's five had drawn a one-in-eight
+  quintet (`probe_llj_dyn_scatter_guard_calibration`). Re-read on the later
+  code, the quintet reads 1.96 under `soft-all` with `log τ`, and 1.03 under
+  the shipped `soft-all` + `1/τ²`. `pp_to_llj_fixed`'s five-seed guard reads
+  1.39, and eighty seeds of it read 0.92 under either map. The shipped-map
+  80-seed calibration of the dynamical-scale row is still to be run
+  ([backlog](../backlog/validation/llj-dyn-shipped-map-arm-uncalibrated.md)).
 - **`1/τ²` and `pp_to_jj`'s samples cell.** The flavour χ² against MadGraph's
-  banked events crossed its `1e-4` floor on one seed (p = 2.8e-5); the three-seed
-  sum was 325/212 against 267/210 under `log`, with the reference's own χ²
-  already high. Two 200,000-event samples of our own, one per map, agree at
-  χ² 40.5/47 (same-map controls 47.6/47 and 47.7/46; effective sample sizes
-  ≈19,700 of 20,000 on both)
-  ([backlog](../backlog/validation/jj-samples-flavour-chi2-under-tau-rule.md)).
+  banked events once crossed its `1e-4` floor on one seed (p = 2.8e-5; the
+  three-seed sum was 325/212 against 267/210 under `log`, with the reference's
+  own χ² already high). Two 200,000-event samples of our own, one per map,
+  agree at χ² 40.5/47 (same-map controls 47.6/47 and 47.7/46; effective sample
+  sizes ≈19,700 of 20,000 on both). Under the flip the cell's minimum p is
+  5.6e-2 against the 1e-4 floor. Both maps read the same excess against
+  MadGraph's one 10,000-event draw, which is the reference's composition, not
+  the map's
+  ([backlog](../backlog/validation/jj-flavour-composition-excess-vs-madgraph.md)).
+
+The τ rule is MadEvent's: `1/τ²`, and `Log` when a finite-width resonance
+spans the whole final state, where its peak sits in the τ draw (Drell–Yan reads
+1.06 ± 0.05 the other way). It is decided once per process, over every diagram,
+where MadEvent decides per channel, so `p p > b b~ QCD=2` stays on `Log`
+([backlog](../backlog/performance/tau-rule-reads-whole-process.md)).
+
+A comparison that replays one generation seed through two maps or grids is
+paired, not independent
+([backlog](../backlog/validation/seed-reuse-across-arms-audit.md)).
+
+Probe names: the calibration probes without a map suffix now run the shipped
+defaults, so `probe_llj_dyn_scatter_guard_calibration` is `soft-all` + `1/τ²`,
+and the arm the unsuffixed probe ran when 0.91 was measured (the isotropic,
+`log τ` default of that time) is `…_legacy`.
 
 Two three-seed readings did not survive twenty seeds: reversed rungs "4–14%
 better" (1.01 ± 0.02 at twenty) and the lepton-pair window "worse than the
@@ -212,6 +233,6 @@ Open items it named:
 
 [^n37-survey]: Note 37 §1: MadEvent's maps against ours, at the pinned tree.
 [^n37-s3]: Note 37 §3: fixed-beam evaluations to 0.1% and the `ee_to_mumua` row.
-[^n37-s6]: Note 37 §6: the twenty-seed hadronic measurements, the rules and the two held-back cells.
-[^n37-dec]: Note 37 §4: the soft-emission rule adopted; `soft-all` everywhere and the unregulated map not adopted.
+[^n37-s6]: Note 37 §6: the twenty-seed hadronic measurements, the rules and the two cells held back at the time.
+[^n37-dec]: Note 37 §4: the soft-emission rule, and the unregulated map not adopted.
 [^n37-s5]: Note 37 §5: the choices as flags, banked in the artifact, `MapChoices::LEGACY`.
