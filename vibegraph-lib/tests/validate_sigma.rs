@@ -58,22 +58,22 @@
 //! banked sigma and hold across independent RNG seeds. The three QCD processes
 //! are gated too, now that they run alpha_s to the same scale MadGraph does.
 //!
-//! The 2->6 states are the class that stays out: they are not integrated at all,
-//! their ~1 ms matrix-element cost over a 24-dim map making a meaningful integral
-//! prohibitively slow.
+//! The 2->6 states are the class that stays out of this suite: they are measured
+//! and reported by the oracle layer's own driver ([`Plan::Long`]) and not
+//! asserted, for the seed-sweep reason recorded on their plan.
 //!
-//! Sixteen rows here have a model that is not the Standard Model: the SMEFTsim
+//! Nineteen rows here have a model that is not the Standard Model: the SMEFTsim
 //! ladder's own cross sections under the vendored model and one restrict card per
 //! Wilson-coefficient class, and the two toy models this repository authors. Each
 //! row's model is the one its manifest entry names, so the comparison is against
 //! the process MadGraph generated and not against a same-named Standard-Model one,
 //! and the parameters are MadGraph's own `Cards/param_card.dat` for that run.
 //!
-//! Two rows of that set are not integrated at all, for reasons that live in their
-//! banked run cards rather than in their physics — `gg_to_gg_cg`'s
-//! `dynamical_scale_choice = 3` and `wpwm_to_wpwmz_cw`'s `nhel = 1`. Neither
-//! `.mg5` script asks for either; MadGraph chose them per process, and the run
-//! card is part of the reference.
+//! One row of that set is not integrated at all, for a reason that lives in its
+//! banked run card rather than in its physics: `wpwm_to_wpwmz_cw`'s `nhel = 1`.
+//! Its `.mg5` script does not ask for it; MadGraph chose it for the process, and
+//! the run card is part of the reference. `gg_to_gg_cg`, whose card MadGraph gave
+//! `dynamical_scale_choice = 3`, is integrated at that closed form and gated.
 //!
 //! Every process is driven through the same run-card-pinned setup, so the cut
 //! compiler and beam handling are exercised for all of them.
@@ -149,20 +149,28 @@ use common::seeds::{combine, SeedMean};
 /// once the budget makes `err_vg` small).
 ///
 /// This is a false-positive rate against a trial count, not a tolerance, and it
-/// is read that way. `probe_gate_row_seed_headroom` sweeps every gated row over
-/// five seeds at its own plan budget: the worst pull per row runs `0.51`
-/// (`gg_to_ttx`) to `2.65` (`ddx_to_epemg`), with a median near `1.5`. That is
-/// what a correctly sized bound on the maximum of five roughly standard-normal
-/// draws looks like — the expected maximum is about `1.16` and the bound is
-/// crossed once in some hundreds of rows — so a row reading "only" twice inside
-/// this limit is the instrument working rather than a margin running out. A
-/// limit with more room than that would have stopped rejecting.
+/// is read that way. The statistic it bounds is one draw per row: the pull of
+/// the five [`HEADROOM_SEEDS`]' unweighted mean against the row's MadEvent seed
+/// record, each side's error `max(quoted, spread/√5)`. When both sides' quoted
+/// errors are right that pull is a little narrower than a standard normal (the
+/// `max` only ever widens the denominator): a simulation of the rule puts its
+/// standard deviation at `0.91` and `P(|pull| > 3.5)` at `2.4e-4`, so the 35
+/// gated rows flag spuriously about once in 120 full runs. A side whose seeds
+/// scatter at twice their quoted error, which the four-dof spread estimate only
+/// partly catches, raises that to `4.6e-3` a row; the limit is set for the
+/// estimator as measured, not for an ideal one. Measured on the gate's own
+/// statistic over the 35 rows (`probe_gate_row_seed_headroom`, five seeds at
+/// each row's plan budget): the mean pulls have mean `+0.38` and standard
+/// deviation `0.84`, the largest `|pull|` is `2.29` (`ddx_to_epemg`), and the
+/// median `0.50`. A row whose mean pull reads twice inside this limit is the
+/// instrument working rather than a margin running out; a limit with more room
+/// would have stopped rejecting.
 ///
 /// A reference that is itself biased reads as a many-sigma pull here, which is
 /// why every gated σ reference is a seeded MadEvent record: a single MadEvent
 /// run at the default survey can sit a percent low (`ee_to_mumua`'s single
 /// 10k-event run read `1.04%` below this side; its seeded reference reads
-/// `−0.074%`, pull `−0.42`).
+/// `−0.036%`, pull `−0.42`, over the gate's five seeds).
 const PULL_LIMIT: f64 = 3.5;
 
 /// The gated rows whose pull is reported rather than asserted, and why the pull
@@ -189,11 +197,15 @@ const PULL_LIMIT: f64 = 3.5;
 /// `probe_cluster_scale_spread_over_configurations`), and they carried a
 /// systematic while their scale was read in the channel the *sampler* drew the
 /// point in. Each point's configuration is drawn from its own squared amplitudes
-/// now, and what is left on both rows is Monte Carlo: five seeds at the gate
-/// budget and at four times it scatter about zero at `|pull| ≤ 0.67` with
-/// `χ²/dof` in `0.58`–`1.74`, worst `|rel|` `1.5e-3` against a reference whose
-/// own error is `1.8e-3` and `2.0e-3`. A row leaves this list by its residual
-/// shrinking, not by its budget being cut.
+/// now, and what is left on both rows is Monte Carlo
+/// (`probe_llj_parton_seed_stability`, the gate's five seeds at its budget and
+/// at four times it, against the rows' seed records): the five-seed means read
+/// `+0.039%` and `+0.052%` on `gu_to_epemu` (pull `+0.41`, `+0.61`) and
+/// `+0.115%` and `+0.090%` on `gux_to_epemux` (`+1.24`, `+1.08`), the seeds
+/// scatter at `χ²/dof` `1.20`/`2.14` and `1.05`/`1.93`, and the worst single
+/// seed is `|rel|` `1.73e-3` and `2.43e-3`, against references whose own error
+/// is `0.076%` and `0.075%`. A row leaves this list by its residual shrinking,
+/// not by its budget being cut.
 const PULL_REPORTED_NOT_ASSERTED: [&str; 0] = [];
 
 /// The rows whose subprocess re-evaluates the whole model on each scale change
@@ -227,8 +239,9 @@ const SEED: u64 = 20_260_719;
 /// the error is `max(quoted, spread/√n)` and the pull is taken against the row's
 /// seed record. A single seed is one draw from a distribution it never sees, and
 /// every gated row sharing that one seed shifts the whole population together:
-/// over these five the 34 gated rows' mean pull against their seed records is
-/// `+0.41`, where the first seed alone reads `+0.61`.
+/// over these five the 35 gated rows' mean pull against their seed records
+/// averages `+0.38`, where the first seed's own pulls average `+0.55`
+/// (`probe_gate_row_seed_headroom`).
 const HEADROOM_SEEDS: [u64; 5] = [SEED, 11, 22, 33, 44];
 
 /// The fewest seeds a [`Plan::Gate`] row may be read on; [`gate_dir`] asserts it,
@@ -301,56 +314,57 @@ impl Plan {
 /// three QCD processes, which are now driven at the run card's own per-event
 /// renormalisation scale rather than at the param card's alpha_s, and the SMEFTsim
 /// and toy-model rows below. Their budgets are sized to bring `err_vg` near the
-/// banked MG error while keeping the default test suite fast. The 2->6 states cost
-/// ~1 ms per matrix-element evaluation over a 24-dim map, too slow to integrate
-/// meaningfully.
+/// banked MG error while keeping the default test suite fast. The 2->6 states are
+/// [`Plan::Long`]: measured by the oracle layer's driver, for the budget floor
+/// their channel count sets.
 fn plan_for(dir: &str) -> Plan {
     match dir {
         // ── smooth electroweak, asserted ────────────────────────────────────
         // `rel_tol` on these six is the measured five-seed spread with headroom,
-        // never the achieved central value. The seeds are `[SEED, 11, 22, 33, 44]`
-        // at each row's own budget (`probe_gate_row_seed_headroom`); the census
-        // reading is the one recorded at `0538e2d`, and the worst |rel| below is
-        // the larger of it and the same probe's reading at `3f401f0`.
+        // never the achieved central value. The worst |rel| quoted on every gated
+        // row in this function is the worst single seed of [`HEADROOM_SEEDS`] at
+        // the row's own budget against its MadEvent seed record
+        // (`probe_gate_row_seed_headroom`); the gate itself asserts on the five
+        // seeds' mean, which sits inside it.
         //
         // Colored initial state, purely electroweak (alpha_s-independent)
-        // s-channel. Worst |rel| 2.03e-3, so 0.005 clears it by 2.5x.
+        // s-channel. Worst |rel| 1.20e-3, so 0.005 clears it by 4.2x.
         "uux_to_mumu" => Plan::Gate {
             neval: 30_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // Worst |rel| 1.25e-3: 4.0x.
+        // Worst |rel| 7.96e-4: 6.3x.
         "ee_to_mumu" => Plan::Gate {
             neval: 30_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // Worst |rel| 9.2e-4: 5.4x.
+        // Worst |rel| 9.03e-4: 5.5x.
         "ee_to_ttx" => Plan::Gate {
             neval: 30_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // Worst |rel| 1.06e-3: 4.7x.
+        // Worst |rel| 1.07e-3: 4.7x.
         "ee_to_zh" => Plan::Gate {
             neval: 30_000,
             niter: 6,
             rel_tol: 0.005,
         },
-        // A converged offset rather than a spread, the one `ee_to_wpwm_cw` shares:
-        // five-seed mean rel -2.22e-3 against the reference's own 0.15% error,
-        // worst |rel| 2.80e-3. The bound covers offset plus spread, so it is the
-        // twin's 0.008, which clears the worst seed by 2.9x.
+        // The twin of `ee_to_wpwm_cw`, at the same 0.008. Against the seed record
+        // the five-seed mean reads +3.70e-4 (pull +0.50) and the worst seed
+        // 7.18e-4, so the bound clears it by 11.1x; the -0.22% offset these two
+        // rows once carried was the single MadEvent run's, not the process's.
         "ee_to_wpwm" => Plan::Gate {
             neval: 40_000,
             niter: 8,
             rel_tol: 0.008,
         },
-        // The t-channel photon pole puts the widest spread of the six here: worst
-        // |rel| 1.44e-3 in the census, 3.24e-3 at `3f401f0` (seed 22), with the
-        // five seeds at χ²/dof 2.31 about their mean. 0.01 clears the larger by
-        // 3.1x.
+        // The t-channel photon pole, the hardest integrand of the six. Worst
+        // |rel| 3.56e-4, so 0.01 clears it by 28.1x; the five seeds sit at
+        // χ²/dof 0.07 about their mean, a seed spread (1.5e-4) a quarter of their
+        // quoted errors (6.0e-4), which is under-dispersion rather than margin.
         "ee_to_ee" => Plan::Gate {
             neval: 80_000,
             niter: 10,
@@ -362,11 +376,10 @@ fn plan_for(dir: &str) -> Plan {
         //
         // Their tolerances are set by the t-channel-peaked integrand, not by the
         // coupling, and are the measured five-seed spread with headroom, read as
-        // the six electroweak rows above are: `gg_to_ttx` worst |rel| 6.7e-4
-        // (|pull| <= 0.51), `gg_to_gg` 1.97e-3 in the census and 2.66e-3 at
-        // `3f401f0` (|pull| <= 2.09), `uux_to_uux` 1.04e-3 (|pull| <= 0.87).
-        // `gg_to_ttx` and `uux_to_uux` take 0.005 (7.5x and 4.8x); `gg_to_gg`
-        // takes 0.008, which clears its larger reading by 3.0x where 0.005 would
+        // the six electroweak rows above are: `gg_to_ttx` worst |rel| 5.67e-4
+        // (single-seed |pull| <= 0.79), `gg_to_gg` 2.59e-3 (<= 2.34), `uux_to_uux`
+        // 1.55e-3 (<= 1.57). `gg_to_ttx` and `uux_to_uux` take 0.005 (8.8x and
+        // 3.2x); `gg_to_gg` takes 0.008, which clears it by 3.1x where 0.005 would
         // leave 1.9x.
         //
         // The two coloured 2 -> 2 rows carry a jet cut, so their peripheral channels
@@ -393,10 +406,11 @@ fn plan_for(dir: &str) -> Plan {
         },
         // ── sharply resonant electroweak, asserted via the multichannel sampler ──
         // The per-diagram Breit–Wigner combiner resolves the Z/γ* peaks flat RAMBO
-        // under-samples, so these converge and are gated against the banked σ. Both
-        // hold |pull| <= 1.8 with chi2/dof ≈ 1 across five independent RNG seeds
-        // (`probe_resonant_seed_stability`), so the fixed-seed assertion below is a
-        // representative draw and not a seed that happens to land well.
+        // under-samples, so these converge and are gated against the banked σ.
+        // Over the five gate seeds (`probe_resonant_seed_stability`) `ee_to_tatah`
+        // holds single-seed |pull| <= 0.86 and |rel| <= 7.9e-4 at seed χ²/dof
+        // 0.42, and `ee_to_mumua` |pull| <= 2.02 and |rel| <= 3.06e-3 at 1.60:
+        // 25.4x and 9.8x inside their bounds.
         "ee_to_tatah" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -410,8 +424,10 @@ fn plan_for(dir: &str) -> Plan {
         // The narrowest resonance under gate: a 6.4 MeV `h -> tau tau` peak inside
         // a 500 GeV range, carrying 5% of the cross section. It reaches the pole
         // through the resonant channel's own mapping, and the tolerance is set by
-        // the seed spread of that channel (0.45% over five seeds,
-        // `probe_resonant_seed_stability`) rather than by the reference's error.
+        // the seed spread of that channel rather than by the reference's error:
+        // over five seeds (`probe_resonant_seed_stability`) the worst seed reads
+        // +4.77e-3 (|pull| 2.51) and the seeds' standard deviation is 0.22%, so
+        // 0.02 clears the worst by 4.2x.
         //
         // The row is the reason the references are banked with MadGraph 3.7.1.
         // MadGraph 3.5.7 computes the `sde_strategy = 2` channel weight from
@@ -438,17 +454,17 @@ fn plan_for(dir: &str) -> Plan {
         // ones span the whole final state and the dipole and current-shift ones sit
         // on the same γ/Z poles as the Standard-Model pair — so the budget is set by
         // how finely the reference is known rather than by a resonance. 160 000 × 8
-        // puts `err_vg` at 2.95e-4 relative against the banked run's own 2.37e-4,
-        // which is what "comparable precision" means here.
+        // puts one seed's `err_vg` at 2.9e-4 relative, and the five-seed mean's at
+        // 1.3e-4, against the seed record's 0.9e-4.
         //
         // `rel_tol` is the measured seed spread with headroom, not the reference's
         // error and not the achieved central value. Over seven seeds at this budget
-        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 1.44 and
-        // |rel| <= 5.5e-4 with per-seed χ²/dof in 0.62–1.96; their seed-policy mean
-        // is +2.5e-4 of the bank at χ²/dof 0.40 over the seeds, at the reference's
-        // own 2.4e-4 error. The ladder is flat: rel +8.9e-4 / +7.1e-4 / +4.3e-4
-        // / +6.5e-4 / +9.8e-5 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points
-        // an iteration, scattering inside the same band over a sixteenfold budget
+        // (`probe_smeft_capstone_seed_stability`) the row holds |pull| <= 0.98 and
+        // |rel| <= 3.0e-4 with per-seed χ²/dof in 0.62–1.96; their seed-policy mean
+        // is +3.8e-6 of the seed record at χ²/dof 0.40 over the seeds. The ladder,
+        // one seed a rung, reads rel +6.5e-4 / +4.7e-4 / +1.9e-4 / +4.0e-4 /
+        // -1.5e-4 at 40 000 / 80 000 / 160 000 / 320 000 / 640 000 points an
+        // iteration, scattering inside a 0.08% band over a sixteenfold budget
         // rather than drifting, which is what says the residual is sampling — a
         // defect migrates between seeds at fixed size instead.
         "ee_to_ttx_smeft" => Plan::Gate {
@@ -465,12 +481,13 @@ fn plan_for(dir: &str) -> Plan {
         // it clear of the strong coupling and the PDFs entirely.
         //
         // The tolerance is the seed spread, not the reference's error. Over five
-        // seeds (`probe_resonant_seed_stability`) the row holds |pull| <= 0.96
-        // and |rel| <= 2.6e-3 with chi2/dof in 1.00-1.39. Quadrupling the budget
-        // does not move it: rel -5.9e-4 / +1.3e-4 / -1.3e-3 at one, two and four
-        // times, pulls -0.22 / +0.05 / -0.51, scattering inside a band the
-        // reference's own 0.24% error sets and no budget can shrink. A defect
-        // would migrate between seeds at fixed size instead.
+        // seeds (`probe_resonant_seed_stability`) the row holds single-seed
+        // |pull| <= 1.52 and |rel| <= 3.80e-3 (2.6x inside 0.01), with per-seed
+        // chi2/dof in 1.03-2.23 and a seed-policy mean of +0.235% (pull +1.47)
+        // against a seed record whose own error is 0.14%. Quadrupling the budget
+        // does not move it: rel +1.22e-3 / +1.79e-3 / +1.48e-3 at one, two and four
+        // times on the first seed. A defect would migrate between seeds at fixed
+        // size instead.
         "ud_to_epemud_qcd0" => Plan::Gate {
             neval: 120_000,
             niter: 8,
@@ -486,29 +503,24 @@ fn plan_for(dir: &str) -> Plan {
         // implies, so the four split by how much the channel moves the scale at
         // all. On `uux_to_epemg` and `ddx_to_epemg` no banked event needs a
         // channel other than the first, and both are numerically identical to
-        // what they were when every point was clustered in channel 1: over five
-        // seeds at this budget and at four times it
-        // (`probe_llj_parton_seed_stability`) they hold |rel| <= 4.2e-3 and
-        // 6.3e-3 at one times, 2.8e-3 and 5.5e-3 at four, with means +3.0e-3 /
-        // +4.5e-3 falling to +2.2e-3 / +4.2e-3 — inside twice the banked runs'
-        // own 0.21% and 0.20% Monte-Carlo error. `rel_tol` is set at 0.01 by that
-        // spread rather than by the reference's error, which is the tighter of
-        // the two here.
+        // what they were when every point was clustered in channel 1. Over the
+        // gate's five seeds at this budget and at four times it
+        // (`probe_llj_parton_seed_stability`, against the rows' seed records,
+        // whose own errors are 0.081% and 0.074%) they hold worst |rel| 3.21e-3
+        // and 2.80e-3 at one times, 2.99e-3 and 2.66e-3 at four, with five-seed
+        // means +1.85e-3 / +2.09e-3 at one times and +2.28e-3 / +1.48e-3 at four.
+        // `rel_tol` is set at 0.01 by that spread and offset together rather than
+        // by the reference's error, which is the tighter of the two here.
         //
-        // `ddx_to_epemg` is the narrower of the pair and the narrowest σ cell in
-        // this file: its worst seed sits `1.6x` inside `rel_tol` and its worst
-        // pull `1.3x` inside `PULL_LIMIT`. Neither margin is a seed accident. The
-        // residual is a converged offset — mean `+0.45%` at this budget and
-        // `+0.42%` at four times it — against a reference whose own error is
-        // `0.20%`, so what the bound has room for after the offset is another
-        // `0.35%`. The pull cannot run away with budget the way a systematic's
-        // usually does, because the combined error here is the reference's:
-        // quadrupling the points halves `err_vg` and leaves the worst pull at
-        // `2.62` against `2.65`, its saturation value `rel / (σ_MG err / σ_MG)`
-        // ≈ `2.2` plus seed scatter. Spending four times the points is what
-        // would buy margin on `rel` — it is measured at `5.5e-3` worst there —
-        // and that is a budget decision this row's ladder has not been asked to
-        // make.
+        // Both rows sit high by about 0.2% at every rung, and that offset, not
+        // the seed scatter, is what their margins are made of. Their worst seeds
+        // clear `rel_tol` by 3.1x and 3.6x. Their five-seed mean pulls are the
+        // largest of the 35 gated rows, `+1.85` and `+2.29` at the gate budget,
+        // and they do not shrink with budget the way scatter would: `+2.65` and
+        // `+1.69` at four times it, where this side's error is a third of the
+        // seed record's. A bigger budget buys no margin on `rel` here (worst
+        // 2.99e-3 and 2.66e-3 at four times), and it costs about 2.5 times the
+        // wall time (13 s to 32-35 s for the five seeds).
         "uux_to_epemg" | "ddx_to_epemg" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -530,19 +542,19 @@ fn plan_for(dir: &str) -> Plan {
         // its own noise, and brings the rows to +3.98e-5 and −1.10e-3 of the
         // reference.
         //
-        // `rel_tol` 0.005 is set from the larger of the reference's own
-        // Monte-Carlo error (0.18% and 0.20%) and the measured five-seed spread
-        // (worst |rel| 1.84e-3 and 2.63e-3 at this budget, 1.27e-3 and 1.37e-3 at
-        // four times it — `probe_llj_parton_seed_stability`). It is not fitted to
-        // the achieved central value, which is smaller than either: the five-seed
-        // means are +7.3e-4 and −6.3e-4.
+        // `rel_tol` 0.005 is set from the measured five-seed spread (worst |rel|
+        // 1.73e-3 and 2.43e-3 at this budget, 1.31e-3 and 2.27e-3 at four times it
+        // — `probe_llj_parton_seed_stability`, against the seed records), which is
+        // wider than either reference's own 0.076% and 0.075%. It is not fitted to
+        // the achieved central value, which is smaller: the five-seed means are
+        // +3.9e-4 and +1.15e-3 at this budget.
         //
-        // `gux_to_epemux`'s worst seed clears `rel_tol` by `1.9x`, and the
-        // distinction that matters is that this is spread and not an offset. One
-        // seed of the five lands at −2.63e-3 where the other four are inside
-        // 8.7e-4, and quadrupling the budget takes the worst to 1.37e-3 and the
-        // mean to −1.4e-4. A bound whose margin is eaten by the estimator's own
-        // scatter is bought back with points rather than with tolerance.
+        // `gux_to_epemux`'s worst seed clears `rel_tol` by `2.1x`, the second
+        // narrowest margin in this file, and quadrupling the points leaves it at
+        // `2.2x`: the worst seed there is a different one, at +2.27e-3, on a mean
+        // of +0.90e-3 (pull +1.08). Scatter about a small positive mean, not a
+        // spread that points shrink, so a larger budget does not buy this margin
+        // back at these seeds.
         "gu_to_epemu" | "gux_to_epemux" => Plan::Gate {
             neval: 60_000,
             niter: 8,
@@ -572,20 +584,24 @@ fn plan_for(dir: &str) -> Plan {
         // restrict card's pruning -- is not, and a cross section is where that path's
         // couplings meet the flux and the measure.
         //
-        // Budgets are set from the reference's own error: 40 000 x 6 puts `err_vg`
-        // between 4.9e-4 and 7.0e-4 relative, which is at or below the banked error
-        // on every row here except the three whose reference is finer than 3e-4, and
-        // those run at 160 000 x 8. `rel_tol` is the measured five-seed spread with
-        // headroom (`probe_non_sm_seed_stability`), never the achieved central value:
-        // over five seeds at these budgets the worst |rel| is 6.0e-4
-        // (`ee_to_mumu_smlimit`), 2.1e-3 (`gg_to_ttx_smlimit`), 1.4e-3
-        // (`gg_to_ttx_smlimit_qcd2`), 1.1e-3 (`ee_to_ttx_smlimit`), 1.2e-3
-        // (`ee_to_ttx_dipole`), 3.7e-4 (`ee_to_zh_smeft`), 6.4e-4 (`ee_to_mumu_4f`),
-        // 7.5e-4 (`uux_to_ttx_4f`), 7.7e-4 (`tata_to_ttx_tensor4f`), 9.1e-4 and
-        // 2.2e-3 (`ll_to_qqx_toy_dipole`, `_tensor`) and 4.2e-4
+        // Budgets were set from the single MadEvent runs' errors: 40 000 x 6 puts
+        // one seed's `err_vg` between 6.3e-4 and 7.0e-4 relative, and the three
+        // rows whose run was finer than 3e-4 run at 160 000 x 8 (2.7e-4 to
+        // 2.9e-4). The seed records the gate reads are finer still (3e-5 to
+        // 5.3e-4), so on every row here this side's error is the larger part of
+        // the pull's denominator. `rel_tol` is the measured five-seed spread with
+        // headroom (`probe_non_sm_seed_stability`), never the achieved central
+        // value: over five seeds at these budgets the worst |rel| is 5.8e-4
+        // (`ee_to_mumu_smlimit`), 1.6e-3 (`gg_to_ttx_smlimit`), 1.5e-3
+        // (`gg_to_ttx_smlimit_qcd2`), 1.0e-3 (`ee_to_ttx_smlimit`), 9.7e-4
+        // (`ee_to_ttx_dipole`), 3.4e-4 (`ee_to_zh_smeft`), 8.4e-4 (`ee_to_mumu_4f`),
+        // 6.5e-4 (`uux_to_ttx_4f`), 6.0e-4 (`tata_to_ttx_tensor4f`), 1.0e-3 and
+        // 2.3e-3 (`ll_to_qqx_toy_dipole`, `_tensor`) and 3.1e-4
         // (`ll_to_qqx_toy_yukawa`), with per-row chi2/dof over the seeds in
-        // 0.46-2.77. Every ladder is flat: quadrupling and quartering the budget
-        // moves each row inside its own seed band rather than in a direction.
+        // 0.46-2.73. The ladders, one seed a rung, hold each row inside its own
+        // seed band from the gate budget to four times it; at a quarter and a half
+        // of it several rows read 0.15-0.27% high (pull up to 2.6), which is the
+        // reason the budgets are not lower.
         "ee_to_mumu_smlimit"
         | "gg_to_ttx_smlimit"
         | "ee_to_ttx_smlimit"
@@ -596,15 +612,12 @@ fn plan_for(dir: &str) -> Plan {
             niter: 6,
             rel_tol: 0.005,
         },
-        // The one row whose residual is a converged offset rather than a spread:
-        // rel settles at -2.2e-3 and stays there over a sixteenfold budget
-        // (-2.62e-3 / -8.80e-4 / -2.24e-3 / -2.22e-3 / -2.18e-3 across the ladder),
-        // with the five-seed worst at -3.1e-3. The offset is the process's, not the
-        // card's: at 160 000 x 6 over the same five seeds the Standard-Model
-        // `ee_to_wpwm` row sits at -2.258e-3 and this one at -2.222e-3, and both are
-        // inside the reference's own 1.5e-3 relative Monte-Carlo error. `rel_tol`
-        // therefore has to cover offset plus spread, and 0.008 does with 2.6x
-        // headroom -- still four times tighter than the Standard-Model twin's 0.03.
+        // The row whose single MadEvent run sat -0.22% from this side, as the
+        // Standard-Model `ee_to_wpwm` run did. Against the seed record the ladder
+        // reads -1.3e-4 / +3.0e-4 / -1.4e-4 / -1.2e-4 / -8.4e-5 from a quarter of
+        // the budget to four times it, the five seeds' mean +2.9e-4 (pull +0.39,
+        // chi2/dof 0.40) and their worst 5.9e-4, so 0.008, the twin's bound,
+        // clears it by 13.5x.
         "ee_to_wpwm_cw" => Plan::Gate {
             neval: 40_000,
             niter: 6,
@@ -655,10 +668,12 @@ fn plan_for(dir: &str) -> Plan {
         //
         // `rel_tol` is the toy-row convention, set from the measured five-seed
         // spread (`probe_non_sm_seed_stability`) and not from the achieved central
-        // value: worst |rel| 1.9e-3, 1.0e-3 and 1.1e-3 over the seeds at chi2/dof
-        // 0.98, 0.99 and 0.68, seed-policy means -9.1e-4, +7.1e-5 and -2.4e-4.
-        // The ladders converge rather than drift -- `p3 r3` epsilon reads +3.6e-3 /
-        // +1.3e-3 / +8.0e-4 / +6.2e-4 / +2.2e-4 from a quarter of the budget to four
+        // value: worst |rel| 1.06e-3, 1.20e-3 and 8.9e-4 over the seeds
+        // (`qqx_to_o8o8_toy_dcolor`, `_epsilon`, `_sextet`) at chi2/dof 0.98, 0.99
+        // and 0.61, seed-policy means -9.6e-5, +4.8e-4 and +3.7e-4. The two
+        // `p3 r3` ladders converge from above rather than drift -- epsilon reads
+        // +4.0e-3 / +1.7e-3 / +1.2e-3 / +1.0e-3 / +6.3e-4 and sextet +4.0e-3 /
+        // +1.5e-3 / +8.9e-4 / +6.9e-4 / +5.0e-4 from a quarter of the budget to four
         // times it -- which is what says the residual is sampling.
         "qqx_to_o8o8_toy_dcolor" | "p3r3_to_p3r3_toy_epsilon" | "p3r3_to_p3r3_toy_sextet" => {
             Plan::Gate {
@@ -675,7 +690,12 @@ fn plan_for(dir: &str) -> Plan {
         // scales on all 10 000 banked events.
         //
         // `rel_tol` is the SMEFTsim rows' 0.005, read against the row's seed
-        // record.
+        // record. Its worst seed reads 2.55e-3 on a five-seed mean of +4.3e-4
+        // (chi2/dof 0.97), so the bound clears it by 2.0x, the narrowest margin
+        // in this file; the seeds scatter at 0.12% about their mean, as quoted,
+        // and the ladder reads -9.0e-4 / +1.2e-3 / -2.0e-4 / -1.4e-3 / -3.0e-4
+        // from a quarter of the budget to four times it
+        // (`probe_non_sm_seed_stability`), so that margin is scatter, not offset.
         "gg_to_gg_cg" => Plan::Gate {
             neval: 40_000,
             niter: 6,
