@@ -180,10 +180,10 @@ Options:
       --map-split-angle <SPLIT_ANGLE>
           How each 2-body split of the decay tree draws its decay angle.
           
-          Every choice is a parametrisation of the same phase space — none moves the cross section, only the evaluations needed to reach an accuracy. `auto` picks `soft-emission` where the process has a split it shapes (0.67× the evaluations on `u u~ > g g g`) and `isotropic` elsewhere. `soft-all` measures better still where it differs — half the evaluations on `p p > l+ l- j`, 0.85× on `g u > e+ e- u` — and is worth asking for on processes with a lepton pair or other boosted decay. On a `2 → 2` process no split moves and every choice is the same map. The choice is recorded in the artifact and replayed by `vibegraph generate`.
+          Every choice is a parametrisation of the same phase space — none moves the cross section, only the evaluations needed to reach an accuracy. `auto` is `soft-all`, which measures half the evaluations of `isotropic` on `p p > l+ l- j`, 0.85× on `g u > e+ e- u` and 0.67× on `u u~ > g g g`, where every moving split has a gluon daughter and it is the `soft-emission` map. On a `2 → 2` process no split moves and every choice is the same map. The choice is recorded in the artifact and replayed by `vibegraph generate`.
 
           Possible values:
-          - auto:          `soft-emission` where some split has a gluon or photon daughter, `isotropic` otherwise
+          - auto:          `soft-all`
           - isotropic:     Flat in `cos θ` and `φ` against the collision-CM axes
           - windowed:      Flat in `cos θ*` from the parent's flight direction, confined to the window the cut-implied energy floors admit, on every split
           - soft-emission: Density `∝ 1/(E₁E₂)` — a splitting kernel's `1/(z(1−z))` — on the splits with a single gluon or photon daughter
@@ -194,10 +194,10 @@ Options:
       --map-tau <TAU>
           How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
           
-          `auto` is `log`, the map every banked hadronic row was integrated under. `inverse-square` is MadEvent's choice when no resonance spans the final state, and measures better there (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
+          `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance spans the whole final state, and `log` where one does. `inverse-square` measures better where it applies (0.77× the evaluations on `p p > j j`, 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the resonance's peak sits in the `τ` draw.
 
           Possible values:
-          - auto
+          - auto:           `inverse-square`, or `log` where a resonance spans the whole final state
           - log:            Density `∝ 1/τ` above the cut-implied `τ_min`
           - inverse-square: Density `∝ 1/τ²`, MadEvent's map for a hadronic run with no resonance spanning the whole final state
           
@@ -214,6 +214,23 @@ Options:
           - reversed: The same rungs in reverse — a control, not a recommendation
           
           [default: auto]
+
+      --grid-bin-weight <BIN_WEIGHT>
+          What each point adds to its bins of the refinement histogram
+
+          Possible values:
+          - squared:  The point's squared weight `(f·w)²`
+          - absolute: The point's weight `|f·w|`, as MadEvent accumulates it
+          
+          [default: squared]
+
+      --grid-acceptance-rescale
+          Credit each bin with the mean of its accepted points: multiply its histogram entry by the iteration's accepted points over the bin's, capped at 10⁴, as MadEvent does while its grid adapts
+
+      --grid-max-bin-width <K>
+          Bound every refined bin's width at this multiple of the uniform width, which must exceed 1; `none` leaves the width unbounded
+          
+          [default: 6]
 
   -h, --help
           Print help (see a summary with '-h')
