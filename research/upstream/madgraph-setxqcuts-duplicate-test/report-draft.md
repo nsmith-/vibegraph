@@ -1,6 +1,6 @@
 ---
 severity: low
-rank: 6  # of 7; 1 = most severe
+rank: 6  # of 9; 1 = most severe
 severity_reason: "An integration hint is set or not depending on the order the particles are written; it changes only how the integrator samples, not the result."
 ---
 

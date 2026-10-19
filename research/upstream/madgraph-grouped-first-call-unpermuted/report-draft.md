@@ -1,6 +1,6 @@
 ---
 severity: high
-rank: 1  # of 7; 1 = most severe
+rank: 1  # of 9; 1 = most severe
 severity_reason: "Default settings give a cross section about 4 % too low for common multi-jet processes, with no warning, in every release since 3.6.0."
 ---
 

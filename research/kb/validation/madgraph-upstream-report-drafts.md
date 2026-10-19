@@ -51,7 +51,7 @@ latest release (3.8.1) are affected, so both columns are given.
 - "read": source only.
 
 Severity is set in each draft's front matter, with a one-line reason. It runs
-from 1 (most severe) to 7. Each draft's front matter is not part of the posted
+from 1 (most severe) to 9. Each draft's front matter is not part of the posted
 issue.
 
 | defect | folder | severity | 3.5.17 (LTS) | 3.8.1 | file:line (3.8.1) | draft | filed |
@@ -60,16 +60,12 @@ issue.
 | `scalefact` skipped with only `fixed_fac_scale1` set | [`madgraph-fixed-fac-scale-precedence`](../../upstream/madgraph-fixed-fac-scale-precedence/README.md) | 2 medium | affected (ran) | affected (ran) | `reweight.f:1138` | yes | [#454](https://github.com/mg5amcnlo/mg5amcnlo/issues/454) |
 | `setxqcuts` tests `iforest(2)` twice | [`madgraph-setxqcuts-duplicate-test`](../../upstream/madgraph-setxqcuts-duplicate-test/README.md) | 6 low | affected (ran) | affected (ran) | `setcuts.f:948-951` | yes | [#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458) |
 | `NMASSLESS` `.and.`/`.or.` precedence (`ktdurham`, `ptlund`) | [`madgraph-nmassless-precedence`](../../upstream/madgraph-nmassless-precedence/README.md) | 3 medium | affected (ran) | affected (ran) | `cuts.f:643-644`, `:745-746` | yes | [#455](https://github.com/mg5amcnlo/mg5amcnlo/issues/455) |
-| `addmothers` compares `igraphs(1)` to a stale loop index | [`madgraph-addmothers-stale-index`](../../upstream/madgraph-addmothers-stale-index/README.md) | 7 trivial | not affected (read; no such code) | present, unreachable at runtime (read) | `addmothers.f:115` | yes (code quality) | not filed (user's decision, 2026-10-19) |
+| `addmothers` compares `igraphs(1)` to a stale loop index | [`madgraph-addmothers-stale-index`](../../upstream/madgraph-addmothers-stale-index/README.md) | 9 trivial | not affected (read; no such code) | present, unreachable at runtime (read) | `addmothers.f:115` | yes (code quality) | not filed (user's decision, 2026-10-19) |
 | `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | 5 low | affected (ran, code level) | affected (ran, code level) | `banner.py:1831` | yes | [#457](https://github.com/mg5amcnlo/mg5amcnlo/issues/457) |
 | `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | 4 medium | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | [#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) |
 | ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | — (fixed) | not affected (ran; no `P1D` for `$`, fix backported) | **fixed** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
-| `AQCDUP`/`AQEDUP` divide by `3.1415926` | none; note 07's appendix[^n07-older] | — (not ranked) | present (read, `unwgt.f:719-720`) | present (read) | `unwgt.f:768-769` | note 07 | no |
-| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | none; note 07's appendix[^n07-older] | — (not ranked) | present (read, `rambo.py:220`) | present (read) | `rambo.py:218` | note 07 | no |
-
-The `AQCDUP` and `rambo.py` drafts were checked by reading only. They have no
-folder or reproducer here, and their note 07 drafts are not written in the
-one-issue form.
+| `AQCDUP`/`AQEDUP` divide by `3.1415926` | [`madgraph-aqcdup-truncated-pi`](../../upstream/madgraph-aqcdup-truncated-pi/README.md) | 7 low | affected (ran) | affected (ran) | `unwgt.f:768-769` | yes | no |
+| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | [`madgraph-rambo-massive-overflow-warning`](../../upstream/madgraph-rambo-massive-overflow-warning/README.md) | 8 trivial | affected (ran, code level) | affected (ran, code level) | `rambo.py:218` | yes | no |
 
 ## Versions
 
@@ -138,4 +134,3 @@ These are new findings from this check. Neither has a report draft.
   `reweight.f:1138` fix.
 
 [^mg381]: MadGraph5_aMC@NLO v3.8.1, tag commit `a5b17913`.
-[^n07-older]: Note 07 appendix: the `AQCDUP`, `rambo.py` and ALOHA `P1D` findings and drafts.

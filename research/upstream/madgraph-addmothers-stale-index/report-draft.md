@@ -1,6 +1,6 @@
 ---
 severity: trivial
-rank: 7  # of 7; 1 = most severe
+rank: 9  # of 9; 1 = most severe
 severity_reason: "A comparison against a leftover loop variable that can never be reached at runtime; a code clean-up only."
 ---
 

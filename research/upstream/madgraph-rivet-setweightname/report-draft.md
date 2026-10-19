@@ -1,6 +1,6 @@
 ---
 severity: low
-rank: 5  # of 7; 1 = most severe
+rank: 5  # of 9; 1 = most severe
 severity_reason: "Running Rivet on any matched sample crashes straight away; it fails loudly and setting weight_name by hand avoids it."
 ---
 

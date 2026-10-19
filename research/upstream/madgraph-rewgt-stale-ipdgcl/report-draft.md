@@ -1,6 +1,6 @@
 ---
 severity: medium
-rank: 4  # of 7; 1 = most severe
+rank: 4  # of 9; 1 = most severe
 severity_reason: "In a specific MLM setup (five-flavour proton, four-flavour jets), b-quark events get a PDF weight computed for the wrong quark, which depends on the events before them."
 ---
 

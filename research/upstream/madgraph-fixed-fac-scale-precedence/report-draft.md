@@ -1,6 +1,6 @@
 ---
 severity: medium
-rank: 2  # of 7; 1 = most severe
+rank: 2  # of 9; 1 = most severe
 severity_reason: "Fixing only one beam's factorisation scale and varying scalefact silently gives the other beam the wrong scale, moving the cross section by about 10 %."
 ---
 

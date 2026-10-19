@@ -1,6 +1,6 @@
 ---
 severity: medium
-rank: 3  # of 7; 1 = most severe
+rank: 3  # of 9; 1 = most severe
 severity_reason: "For merged (CKKW-L) runs, the ktdurham cut can wrongly throw away events whose only b quarks come from a decay, removing up to a third of the cross section."
 ---
 
