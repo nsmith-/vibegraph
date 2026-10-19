@@ -1143,8 +1143,9 @@ fn with_integrand_parts<R>(
 /// defect (a channel set that occasionally misses the dominant region, collapsing
 /// σ̂) is visible before a row is trusted as a hard gate. A stable row keeps
 /// `|pull| ≲ few` across seeds; an unstable one swings wildly (see
-/// `ee_to_mumu_tata_qcd0`, whose worst observed seed lands ~25× low). Run with
-/// `--ignored --nocapture`.
+/// `ee_to_mumu_tata_qcd0`, whose worst observed seed lands ~25× low). Each seed
+/// is read against the MadEvent reference the gate reads
+/// ([`BankedSigma::madevent_reference`]). Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_resonant_seed_stability() {
@@ -1158,20 +1159,34 @@ fn probe_resonant_seed_stability() {
         ("ee_to_mumu_tata_qcd0", 100_000, 8),
         ("ud_to_epemud_qcd0", 120_000, 8),
     ] {
-        let e = &banked[dir];
+        let (e, source) = banked[dir].madevent_reference(dir);
+        let e = &e;
         eprintln!(
-            "── {dir} (MG {:.6e} ± {:.2e}) ──",
-            e.sigma_pb, e.sigma_err_pb
+            "── {dir} (MG {:.6e} ± {:.2e}; {}) ──",
+            e.sigma_pb,
+            e.sigma_err_pb,
+            source
+                .as_deref()
+                .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
         );
+        let mut runs = Vec::new();
         for seed in seeds {
             let (s, err, chi2) = integrate(dir, &e.process, neval, niter, seed);
-            let pull = (s - e.sigma_pb) / (err * err + e.sigma_err_pb * e.sigma_err_pb).sqrt();
+            let (pull, rel) = compare(s, err, e);
             eprintln!(
                 "  seed {seed:>10}: vg {s:.6e} ± {err:.3e} | pull {pull:+8.2} | \
-                 rel {:+.2e} | chi2/dof {chi2:.2}",
-                s / e.sigma_pb - 1.0,
+                 rel {rel:+.3e} | chi2/dof {chi2:.2}",
             );
+            runs.push((s, err));
         }
+        let read = combine(&runs);
+        eprintln!(
+            "  {} seeds: mean rel {:+.3e} | mean pull {:+.2} | chi2/dof {:.2}",
+            read.n,
+            read.mean / e.sigma_pb - 1.0,
+            read.pull(e.sigma_pb, e.sigma_err_pb),
+            read.chi2_per_dof,
+        );
         // The second axis: a residual that is sampling shrinks with budget, where a
         // defect migrates between seeds at fixed size.
         for scale in [2usize, 4] {
@@ -1195,23 +1210,28 @@ fn probe_resonant_seed_stability() {
 /// one pull — with the ladder beside it, because a residual that is sampling
 /// shrinks with budget where a defect migrates between seeds at fixed size.
 ///
-/// Run with `--ignored --nocapture`.
+/// Read against the MadEvent reference the gate reads
+/// ([`BankedSigma::madevent_reference`]). Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_smeft_capstone_seed_stability() {
     let text = std::fs::read_to_string(reference_path()).unwrap();
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
     let dir = "ee_to_ttx_smeft";
-    let e = &banked[dir];
+    let (e, source) = banked[dir].madevent_reference(dir);
+    let e = &e;
     let (neval, niter) = match plan_for(dir) {
         Plan::Gate { neval, niter, .. } => (neval, niter),
         _ => panic!("[{dir}] has no gate plan to sweep"),
     };
     eprintln!(
-        "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) ──",
+        "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%; {}) ──",
         e.sigma_pb,
         e.sigma_err_pb,
-        100.0 * e.sigma_err_pb / e.sigma_pb
+        100.0 * e.sigma_err_pb / e.sigma_pb,
+        source
+            .as_deref()
+            .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
     );
     for (label, n, k) in [
         ("ladder x1/4", neval / 4, niter),
@@ -1377,24 +1397,29 @@ const NON_SM_SIGMA_ROWS: [&str; 17] = [
 /// mean inside the reference's own error. A defect migrates between seeds at
 /// fixed size and survives a sixteenfold budget instead. Both halves are printed
 /// per row so a tolerance can be read off the spread rather than off the achieved
-/// central value. Run with `--ignored --nocapture`.
+/// central value, against the MadEvent reference the gate reads
+/// ([`BankedSigma::madevent_reference`]). Run with `--ignored --nocapture`.
 #[test]
 #[ignore]
 fn probe_non_sm_seed_stability() {
     let text = std::fs::read_to_string(reference_path()).unwrap();
     let banked: BTreeMap<String, BankedSigma> = serde_json::from_str(&text).unwrap();
     for dir in NON_SM_SIGMA_ROWS {
-        let e = &banked[dir];
+        let (e, source) = banked[dir].madevent_reference(dir);
+        let e = &e;
         let (neval, niter) = match plan_for(dir) {
             Plan::Gate { neval, niter, .. } => (neval, niter),
             Plan::Info { neval, niter, .. } => (neval, niter),
             _ => panic!("[{dir}] is not measured by this suite"),
         };
         eprintln!(
-            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%) at {neval}x{niter} ──",
+            "── {dir} (MG {:.6e} ± {:.2e}, {:.3}%; {}) at {neval}x{niter} ──",
             e.sigma_pb,
             e.sigma_err_pb,
-            100.0 * e.sigma_err_pb / e.sigma_pb
+            100.0 * e.sigma_err_pb / e.sigma_pb,
+            source
+                .as_deref()
+                .unwrap_or("MadEvent side: the single run of sigma_reference.json"),
         );
         for (label, n, k) in [
             ("ladder x1/4", neval / 4, niter),
