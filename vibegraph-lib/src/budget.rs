@@ -689,7 +689,11 @@ where
 
     let mut grids: Vec<VegasGrid> = ndims
         .iter()
-        .map(|&ndim| VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha).with_combination(combination))
+        .map(|&ndim| {
+            VegasGrid::new(ndim, VEGAS_NBINS, vegas_alpha)
+                .with_combination(combination)
+                .with_rule(integrand.grid_rule())
+        })
         .collect();
     let mut channels: Vec<ChannelHistory> = alphas
         .iter()

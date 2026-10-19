@@ -2075,7 +2075,7 @@ mod tests {
     use vibegraph::hadronic::FixedBeams;
     use vibegraph::phasespace::maps::MapChoices;
     use vibegraph::ufo::sm::SMRestrict;
-    use vibegraph::vegas::VegasGrid;
+    use vibegraph::vegas::{GridRule, VegasGrid};
 
     fn sm() -> ModelIdentity {
         ModelIdentity::interned_sm(SMRestrict::Default)
@@ -2157,6 +2157,7 @@ mod tests {
                 sampler: None,
             }],
             maps: MapChoices::LEGACY,
+            grid_rule: Some(GridRule::UNBOUNDED),
             sigma_pb: 1.0,
             sigma_err_pb: 0.01,
             chi2_per_dof: 1.0,

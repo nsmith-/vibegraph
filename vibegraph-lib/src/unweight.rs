@@ -49,7 +49,7 @@ use rayon::prelude::*;
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::select::select_index;
-use crate::vegas::VegasGrid;
+use crate::vegas::{GridRule, VegasGrid};
 
 /// The RNG stream the per-channel weight scans run on, offset by channel index so
 /// each channel's scan is independent of the others and of the event generation.
@@ -246,6 +246,12 @@ pub trait ChannelIntegrand {
     /// channel's `αⱼ`, so the terms sum to the full integral. Points the cuts
     /// reject return exactly `0.0`.
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64;
+
+    /// How an integration of this integrand refines its channels' grids. An
+    /// accept/reject pass over frozen grids never reads it.
+    fn grid_rule(&self) -> GridRule {
+        GridRule::default()
+    }
 }
 
 /// What a frozen scan of one channel's grid found.
@@ -262,6 +268,38 @@ pub(crate) struct ChannelScan {
     /// Points with a non-zero weight — a channel whose grid mostly lands outside
     /// the cuts shows up here.
     pub(crate) nonzero: usize,
+    /// Hill's estimate of the weight tail's index from the scan's
+    /// [`HILL_TAIL_POINTS`] largest weights ([`hill_tail_index`]); `None` under
+    /// [`MaxRule::Extremum`], which keeps no weights, or with too few non-zero
+    /// ones.
+    pub(crate) tail_index: Option<f64>,
+}
+
+/// How many of a scan's largest weights its tail index is estimated from.
+pub(crate) const HILL_TAIL_POINTS: usize = 20;
+
+/// Hill's estimator of a Pareto tail's index from the `k` largest of `sorted`
+/// (ascending, positive) weights: `k / Σᵢ ln(wᵢ / w₍ₖ₊₁₎)`, the threshold being
+/// the largest weight not among them.
+///
+/// An index `a` means `P(w > x) ∝ x⁻ᵃ` far out, so the weight's variance is
+/// finite only for `a > 2` and its mean only for `a > 1`. `None` with `k` or
+/// fewer weights, or when the top `k + 1` are all equal.
+pub(crate) fn hill_tail_index(sorted: &[f64], k: usize) -> Option<f64> {
+    let n = sorted.len();
+    if k == 0 || n <= k {
+        return None;
+    }
+    let threshold = sorted[n - k - 1];
+    if !(threshold > 0.0) {
+        return None;
+    }
+    let h = sorted[n - k..]
+        .iter()
+        .map(|&w| (w / threshold).ln())
+        .sum::<f64>()
+        / k as f64;
+    (h > 0.0).then(|| 1.0 / h)
 }
 
 /// Running counts of an accept/reject pass.
@@ -392,11 +430,14 @@ fn scan_channel<I: ChannelIntegrand>(
             }
         }
     }
-    let w_max = if keep {
+    let (w_max, tail_index) = if keep {
         weights.sort_by(f64::total_cmp);
-        rule.apply(&weights)
+        (
+            rule.apply(&weights),
+            hill_tail_index(&weights, HILL_TAIL_POINTS),
+        )
     } else {
-        w_peak
+        (w_peak, None)
     };
     (
         UnweightChannel {
@@ -406,6 +447,7 @@ fn scan_channel<I: ChannelIntegrand>(
                 w_max,
                 w_peak,
                 nonzero,
+                tail_index,
             },
         },
         trailing,
@@ -493,8 +535,13 @@ impl Unweighter {
             .enumerate()
             .map(|(j, &(grid, draws))| {
                 let out = scan_channel(integrand, grid, draws, j, seed, rule);
+                let tail = out
+                    .0
+                    .scan
+                    .tail_index
+                    .map_or(String::new(), |a| format!(", tail index {a:.3}"));
                 tracing::debug!(
-                    "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero",
+                    "channel {j}: w_max {:.6e}, peak {:.6e}, {} of {draws} draws non-zero{tail}",
                     out.0.scan.w_max,
                     out.0.scan.w_peak,
                     out.0.scan.nonzero
@@ -1128,5 +1175,41 @@ mod tests {
         assert_eq!(uw.empty_channels(), vec![1]);
         assert_eq!(uw.w_max()[1], 0.0);
         assert!((uw.largest_channel_share() - 1.0).abs() < 1e-12);
+    }
+
+    /// Hill's estimator on an exact Pareto sample. At the quantiles
+    /// `w = (1 − q)^(−1/a)`, `q = (i + ½)/n`, the `j`-th largest weight over the
+    /// `(k+1)`-th is `((k + ½)/(j − ½))^(1/a)`, so the estimate is exactly
+    /// `a · k / Σⱼ₌₁..ₖ ln((k + ½)/(j − ½))` whatever `n` — about `0.993 a` at
+    /// `k = 20`, inside the estimator's `a/√k` spread. Pinning the closed form
+    /// rather than the spread fixes the count, the threshold and the scaling
+    /// with `a`.
+    #[test]
+    fn hill_tail_index_recovers_a_pareto_index() {
+        let k = HILL_TAIL_POINTS;
+        let kf = k as f64;
+        let factor = kf
+            / (1..=k)
+                .map(|j| ((kf + 0.5) / (j as f64 - 0.5)).ln())
+                .sum::<f64>();
+        assert!((factor - 1.0).abs() < 1.0 / kf.sqrt());
+        for a in [1.0_f64, 2.0, 5.0] {
+            let n = 25_000;
+            let weights: Vec<f64> = (0..n)
+                .map(|i| (1.0 - (i as f64 + 0.5) / n as f64).powf(-1.0 / a))
+                .collect();
+            let got = hill_tail_index(&weights, k).expect("enough weights");
+            assert!(
+                (got / (a * factor) - 1.0).abs() < 1e-9,
+                "index {a}: estimated {got}, closed form {}",
+                a * factor
+            );
+        }
+        assert_eq!(hill_tail_index(&[1.0; 20], k), None);
+        assert_eq!(hill_tail_index(&[2.0; 30], k), None);
+        // A threshold of zero leaves no ratio to take a logarithm of.
+        let mut zero_threshold = vec![0.0; 10];
+        zero_threshold.extend((1..=20).map(f64::from));
+        assert_eq!(hill_tail_index(&zero_threshold, k), None);
     }
 }

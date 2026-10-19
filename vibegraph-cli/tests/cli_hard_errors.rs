@@ -414,3 +414,45 @@ fn cli_mixed_multiplicity_at_fixed_energy_beams_is_refused() {
         "got:\n{stderr}"
     );
 }
+
+/// A bin-width bound at or below the uniform width, or not finite, is refused by
+/// the flag's own check before any integration starts: no grid of `nbins` bins
+/// spanning `[0, 1]` has every bin narrower than `1/nbins` except the uniform
+/// one. The `--flag=value` spelling reaches the value check for the negative
+/// case too, and the refusal names the flag and the value, not a panic in the
+/// library's own assertion.
+#[test]
+fn cli_a_bin_width_bound_not_above_one_is_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+
+    for (bad, shown) in [
+        ("1", "1"),
+        ("0.5", "0.5"),
+        ("-2", "-2"),
+        ("inf", "inf"),
+        ("NaN", "NaN"),
+    ] {
+        let output = vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("integrate")
+            .arg(&proc_card)
+            .arg("--out")
+            .arg(cwd.path().join("out"))
+            .arg(format!("--grid-max-bin-width={bad}"))
+            .output()
+            .expect("spawn vibegraph");
+
+        let stderr = stderr_of(&output);
+        assert!(!output.status.success(), "{bad} must be refused:\n{stderr}");
+        assert!(!stderr.contains("panicked"), "{bad} panicked:\n{stderr}");
+        assert!(
+            stderr.contains(&format!(
+                "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {shown}"
+            )),
+            "{bad}: got\n{stderr}"
+        );
+    }
+}

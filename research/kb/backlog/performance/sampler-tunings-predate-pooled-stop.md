@@ -12,7 +12,7 @@ tags: [vegas, stop-rule, map-choices, damping, re-measure]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
 sources:
   - {id: maps, resource: "../../../../vibegraph-lib/src/phasespace/maps.rs", title: "phasespace/maps.rs MapOptions::resolve doc (~:218-243), measured to a χ²-scaled 0.1%"}
-  - {id: integrate, resource: "../../../../vibegraph-cli/src/integrate.rs", title: "vibegraph-cli/src/integrate.rs --max-iters (~:320-328)"}
+  - {id: integrate, resource: "../../../../vibegraph-cli/src/integrate.rs", title: "vibegraph-cli/src/integrate.rs --max-iters (~:405-412)"}
   - {id: hadronic, resource: "../../../../vibegraph-lib/src/hadronic.rs", title: "hadronic.rs VEGAS_ALPHA_MAPPED rationale (~:71-87)"}
 ---
 Three settings rest on measurements made under rules the sampler no longer uses:
@@ -23,7 +23,7 @@ Three settings rest on measurements made under rules the sampler no longer uses:
   (`budget.rs`, `pooled_scale`, from 403cff8), and channels are merged per
   MadGraph configuration.
 - **`--max-iters`.** Its default is sized for "the widest gated process needing
-  ~156 iterations" (`vibegraph-cli/src/integrate.rs` ~:320-328), counted under
+  ~156 iterations" (`vibegraph-cli/src/integrate.rs` ~:405-412), counted under
   the old stop and before channel merging.
 - **`VEGAS_ALPHA_MAPPED = 0.5`.** Its rationale (`hadronic.rs` ~:71-87) is that
   confident wrong iterations dominate "since iterations are combined by `1/σ²`".

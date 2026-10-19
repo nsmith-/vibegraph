@@ -51,3 +51,4 @@
 * [validation-3](validation-3/index.md)
 * [validation-sprint](validation-sprint/index.md)
 * [vegas-constant-integrand](vegas-constant-integrand/index.md)
+* [vegas-low-acceptance-bins](vegas-low-acceptance-bins/index.md)

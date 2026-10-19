@@ -45,6 +45,7 @@ use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
+use vibegraph::vegas::GridRule;
 
 /// A process with a resonance in reach of the beams, so the multichannel sampler
 /// has something to resolve and the artifact banks more than one channel.
@@ -654,6 +655,8 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
 fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
     let mut artifact = run.artifact.clone();
     artifact.format_version = format_version;
+    // A file that old records no grid rule and reads back as the unbounded one.
+    artifact.grid_rule = Some(GridRule::UNBOUNDED);
     let path = run.dir.join(name);
     artifact
         .write_to_path(&path, true)
@@ -734,6 +737,8 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
          branch it claims to"
     );
     artifact.format_version = 6;
+    // A file that old records no grid rule and reads back as the unbounded one.
+    artifact.grid_rule = Some(GridRule::UNBOUNDED);
     let stale = dir.join("stale-fixed.bin.zst");
     artifact
         .write_to_path(&stale, true)
