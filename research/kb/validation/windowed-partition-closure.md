@@ -126,7 +126,7 @@ weight: `get_channel_cut` computed `tmp = (t-Mass)*(t+Mass)` with `t` already
 run's realised split was 0.198%). The 3.7.1 form,
 `tmp = (t-Mass**2)` with a plain Breit–Wigner, gives α ≈ 1; an `sde_strategy = 1`
 rerun agreed within 1.1σ. The fix is upstream `286feb8e` (first released in
-3.6.2, never backported to 3.5.x).[^n27-b1][^mg-genps] See
+3.6.2). It reached the 3.5.x LTS line only in 3.5.17, as `186052bbb`.[^n27-b1][^mg-genps] See
 [MadGraph defects](madgraph-defects.md). The windowed agreement is a live
 measurement, `validate_samples::the_higgs_pole_window_is_measured_against_madgraph`,
 against the committed `higgs_window_reference.json`.

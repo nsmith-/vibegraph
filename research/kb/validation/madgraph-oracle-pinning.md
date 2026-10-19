@@ -36,8 +36,10 @@ never MadGraph's internal `nn23lo1`[^n29-g].
 ## Why 3.7.1
 
 - The 3.5.x line's `sde_strategy = 2` channel weight is dimensionally wrong and
-  never peaks on a resonance; the fix (3.6.2) was never backported, so no 3.5.x
-  run can be a narrow-resonance reference
+  never peaks on a resonance up to and including 3.5.16. The fix (3.6.2)
+  reached the LTS line only in 3.5.17 (2026-10-09, upstream `186052bbb`), after
+  this pin was chosen, so no 3.5.16-or-earlier run can be a narrow-resonance
+  reference
   ([madgraph-defects](madgraph-defects.md)). Banking on a known-defective version
   would build every later bundle on it.
 - 3.5.7 also applied the `nn23lo1` set's `αs(M_Z) = 0.130` to fixed-energy runs
