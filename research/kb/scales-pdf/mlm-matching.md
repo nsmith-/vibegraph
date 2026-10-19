@@ -130,8 +130,9 @@ Per-event scales, `rewgt` factors and record fields against an instrumented MadE
 [validation/mlm-dump-oracle](../validation/mlm-dump-oracle.md). The three
 single-multiplicity `ℓℓj` rows' shared 0.03–0.23% high reading was on the
 MadEvent reference side ([MLM σ gate](../validation/mlm-sigma-gate.md)).
-Open: `pp_to_ttx_0j1j_mlm`'s `@1` reads 1.28% high, undiagnosed
-([backlog: ttx-mlm-at1-sigma-high](../backlog/validation/ttx-mlm-at1-sigma-high.md)).
+`pp_to_ttx_0j1j_mlm`'s `@1`, once 1.28 % high, is attributed (lab-frame clustering on this
+side, MadEvent's default survey on the other) and gates on refdata-10
+([MLM σ gate](../validation/mlm-sigma-gate.md)).
 
 [^n41-intro]: Note 41, goal and division of labour.
 [^n41-flow]: Note 41 §1.1, MadEvent's call flow per point on the scalar path.

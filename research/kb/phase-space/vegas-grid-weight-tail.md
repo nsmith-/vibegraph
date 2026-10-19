@@ -66,10 +66,27 @@ grid(1,i,j) = grid(1,i,j)
 Adding that rescale to the histogram `adapt_blocks_iteration` returns, as a
 probe only, moved `pp_to_llj_mlm`'s median Hill index from 1.8 to 2.2 and its
 worst channel's from 1.0–1.2 to 1.5–1.6 (two seeds each, 150k × 10). It helps
-and does not cure; the rest of the tail is not located. Any of the candidate
-rules — the acceptance rescale, `Σ|w|` adaptation, a bound on bin width —
-moves every integration, so each must be measured on the banked rows before
-adoption: [VEGAS grid starves low-acceptance bins](../backlog/performance/vegas-grid-starves-low-acceptance-bins.md).
+and does not cure; the rest of the tail is not located.
+
+## The default bounds the bin width at six uniform widths
+
+The three candidate rules — the acceptance rescale, `Σ|w|` adaptation and a
+bound on bin width — were measured as opt-in `GridRule`s on the banked rows,
+and the bound was adopted as the default at `K = 6`: no refined bin is wider
+than six times `1/nbins`, which caps each coordinate's Jacobian factor at 6
+(`vegas.rs`, `DEFAULT_MAX_BIN_WIDTH`, `bound_bin_width`). Over 20 seeds on
+`pp_to_llj`, `pp_to_llj_mlm` and `pp_to_jj` it raised the predicted
+unweighting efficiency ×1.38, ×1.59 and ×1.22 and the worst channel's Hill
+index by +0.23, +0.48 and +0.53, with σ unmoved and the quoted variance per
+evaluation at 0.96, 0.93 and 1.00 of the unbounded grid's; tighter bounds
+bought more efficiency on the Drell–Yan rows for more variance, and `K = 10`
+gave back the tail index on `pp_to_llj_mlm`. `Σ|w|` lost on every row; the
+acceptance rescale traded variance for CPU. The full ladder and its reading
+are the [`vegas-low-acceptance-bins` sprint](../sprints/vegas-low-acceptance-bins/sprint.md)'s
+P1 and P2 reports. `vibegraph integrate --grid-max-bin-width none` restores
+the unbounded grid for comparison runs; an artifact records the rule its grids
+were refined under (format version 12), and one written before reads back as
+unbounded.
 
 A higher but provably implied `τ` floor also fattens the tail: on
 `pp_to_llj_fixed` the partition bound `√ŝ ≥ 50 + 20·n_j` raised the summed

@@ -24,7 +24,7 @@ the diagnosis points into `helas/`.
 
 Backlog items claimed (one `Backlog: <slug>` line each in the draft PR):
 
-- [ttx-mlm-at1-sigma-high](../../backlog/validation/ttx-mlm-at1-sigma-high.md)
+- `ttx-mlm-at1-sigma-high` (closed in [refdata10-cell-flips](../refdata10-cell-flips/closeout.md))
 
 Sibling PRs of the same planner hand-off ("cross sections that disagree
 with MadEvent, cause unattributed") are `sigma-2to4-offset`, `sigma-ttx-mlm-at1`,

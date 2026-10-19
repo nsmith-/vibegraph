@@ -5,7 +5,7 @@ description: "ChannelGrid::grid is a bare bincode VegasGrid with no kind tag, so
 area: feature
 state: open
 priority: medium
-closes_when: "ChannelGrid carries a kind-tagged trained sampler state; a VEGAS-only artifact is written byte-identical at the version it has today; another kind writes a new FORMAT_VERSION that older builds refuse by number; generate rebuilds the sampler from the artifact's kind, with round-trip and refusal tests."
+closes_when: "ChannelGrid carries a kind-tagged trained sampler state; a VEGAS-only artifact is written byte-identical at the version version_for gives it today (9–11 unbounded, 12 with a recorded grid rule); another kind writes a new FORMAT_VERSION that older builds refuse by number; generate rebuilds the sampler from the artifact's kind, with round-trip and refusal tests."
 blocked_by: [sampler-hardwired-to-vegas-grid]
 opened: 2026-10-17
 tags: [artifact, sampler, serialisation, versioning, refactor]
@@ -20,15 +20,17 @@ before misreading its bytes.
 Resolve it with a sampler-kind enum around the trained state, following the
 precedent `IntegrateArtifact::version_for` already sets: a writer records the
 oldest version whose schema holds what it banks. A VEGAS-only artifact stays at
-today's version and today's bytes (bincode would otherwise add a variant tag),
+the version `version_for` gives it today (9–11 under the unbounded rule, 12
+when it records the default bin-width bound) and today's bytes (bincode would otherwise add a variant tag),
 and only an artifact holding another kind needs the new version, which
 `read_from_path` refuses on an older build by number rather than by a decode
 error. Versions 3–11 upgrade to the VEGAS kind. `generate` takes the kind from
 the artifact, never from a flag, and keeps its `ndim` checks
-(`generate.rs:957`, `:1502`) against whatever the kind reports. Adaptation
-settings (`GridRule`, damping) stay out of the wire format as they are today;
-recording the kind's config for provenance is optional and, if added, goes in a
-field a VEGAS-only artifact omits.
+(`generate.rs:957`, `:1502`) against whatever the kind reports. The VEGAS
+`GridRule` is already in the wire format (top-level `grid_rule:
+Option<GridRule>`, PR #48; `None` reserved for an artifact with no VEGAS grid);
+other adaptation settings (damping) stay out, and recording a non-VEGAS kind's
+config for provenance is optional and, if added, goes beside that field.
 
 Note the name: `ChannelGrid::sampler: Option<ChannelSampler>` already exists and
 records the phase-space map composition, so the new field needs another name.
