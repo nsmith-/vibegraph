@@ -56,7 +56,9 @@ mg5amcnlo/mg5amcnlo
 The index, [madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md),
 maps each report to its issue. The unreachable `addmothers` report was not
 filed. The ALOHA `P1D` defect is fixed upstream (PR #428). The `AQCDUP` and
-`rambo.py` reports are drafted in the same form and remain unfiled
+`rambo.py` reports are drafted in the same form. The user has not filed them,
+since their priority is too low for now. The remaining unfiled candidate is
+the default-survey bias
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
 
 Every entry is a **failure** (MadGraph's code does not do what it intends)

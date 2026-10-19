@@ -36,7 +36,9 @@ nothing from vibegraph. It holds:
 **Six reports were filed on 2026-10-19, as
 [#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) to
 [#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458)**; the index row gives each
-link. The user chose not to file the unreachable `addmothers` one. Filing is the
+link. The user chose not to file the unreachable `addmothers` one, nor, for now,
+the low-priority `AQCDUP` and `rambo.py` ones, whose drafts stay ready in their
+folders. Filing is the
 user's step
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
 A filed report's link goes in its row below. What each defect means for this
@@ -64,8 +66,8 @@ issue.
 | `RivetCard.setWeightName` `.str(…)` | [`madgraph-rivet-setweightname`](../../upstream/madgraph-rivet-setweightname/README.md) | 5 low | affected (ran, code level) | affected (ran, code level) | `banner.py:1831` | yes | [#457](https://github.com/mg5amcnlo/mg5amcnlo/issues/457) |
 | `rewgt` keeps a non-jet leg's stale `ipdgcl` | [`madgraph-rewgt-stale-ipdgcl`](../../upstream/madgraph-rewgt-stale-ipdgcl/README.md) | 4 medium | affected (ran) | affected (ran) | `reweight.f:1537-1538` | yes | [#456](https://github.com/mg5amcnlo/mg5amcnlo/issues/456) |
 | ALOHA `P1D`: `$` never vetoes `FFV2P1D_1` | [`madgraph-aloha-p1d-flipped-fermion`](../../upstream/madgraph-aloha-p1d-flipped-fermion/README.md) | — (fixed) | not affected (ran; no `P1D` for `$`, fix backported) | **fixed** (ran), PR #428 | `create_aloha.py:263-280` | no | n/a |
-| `AQCDUP`/`AQEDUP` divide by `3.1415926` | [`madgraph-aqcdup-truncated-pi`](../../upstream/madgraph-aqcdup-truncated-pi/README.md) | 7 low | affected (ran) | affected (ran) | `unwgt.f:768-769` | yes | no |
-| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | [`madgraph-rambo-massive-overflow-warning`](../../upstream/madgraph-rambo-massive-overflow-warning/README.md) | 8 trivial | affected (ran, code level) | affected (ran, code level) | `rambo.py:218` | yes | no |
+| `AQCDUP`/`AQEDUP` divide by `3.1415926` | [`madgraph-aqcdup-truncated-pi`](../../upstream/madgraph-aqcdup-truncated-pi/README.md) | 7 low | affected (ran) | affected (ran) | `unwgt.f:768-769` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
+| `rambo.py` massive overflow warning tests `iwarn[4] > 5` | [`madgraph-rambo-massive-overflow-warning`](../../upstream/madgraph-rambo-massive-overflow-warning/README.md) | 8 trivial | affected (ran, code level) | affected (ran, code level) | `rambo.py:218` | yes | not filed (user's decision, 2026-10-19: priority too low for now) |
 
 ## Versions
 
