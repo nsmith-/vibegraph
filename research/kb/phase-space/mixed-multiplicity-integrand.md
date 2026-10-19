@@ -4,7 +4,7 @@ title: Mixed-multiplicity composite integrand
 description: "MultiplicitySum: one ProtonIntegrand per @N multiplicity with its own channels and grid dimension (channel_grid_ndim), a budget split by part spread, union-shape maps, versioned keys."
 status: draft
 tags: [phase-space, mlm, multiplicity, integrand, artifact]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
+generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-17}
 verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-09}]
 sources:
   - {id: n41-33, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/research/notes/41-mlm-feature-sprint-plan.md#L253-L275", title: "Note 41 §3.3 (a composite integrand, not a wider one)"}
@@ -76,10 +76,11 @@ including merging pairs with identical maps
 ## Maps
 
 An artifact banks one set of map choices. For several parts they are settled
-once over `union_shape` of the parts' shapes. The only shape-dependent choice
-is the split angle (soft-emission wherever any channel has a soft-emission
-split), and a part with no such split is unaffected by it, so the union settles
-each part where it would settle alone
+once over `union_shape` of the parts' shapes. The split angle is `soft-all`
+whatever the shape. The only shape-dependent choice is the τ map: a
+whole-state resonance in any part keeps `Log` for every part, so a Drell–Yan
+part's τ map is shared by the multiplicities beside it, and a mixed card with no
+such part draws `1/τ²` throughout
 ([phase-space/map-choices](map-choices.md)).
 
 ## Where it applies, and what it refuses
