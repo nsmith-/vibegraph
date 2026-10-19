@@ -21,7 +21,7 @@ while `update_scale_coupling_vec` indexes its argument as
 the mirror loop with the momenta copied into an array of that shape. That
 change is not part of this patch and is not measured.
 
-Applied by validation/madgraph/repro/permuted_first_call/repro.sh (variant
+Applied by research/upstream/madgraph-grouped-first-call-unpermuted/repro.sh (variant
 `patched`) as that one-line edit of the generated `auto_dsig.f`, never to the
 pinned MadGraph 3.7.1 tree itself.
 

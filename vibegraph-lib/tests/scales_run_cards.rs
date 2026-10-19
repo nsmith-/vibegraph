@@ -66,34 +66,22 @@ fn the_parser_fixture_compiles_to_the_free_scale_branch() {
     assert!(choice.needs_channels());
 }
 
-/// Every run card committed under `validation/madgraph/` and `tests/data/` is
-/// accepted by the parser's field enforcement.
+/// Every run card committed under `validation/madgraph/`, `tests/data/` and
+/// `research/upstream/*/` is accepted by the parser's field enforcement.
 ///
 /// The enforcement refuses a card that moves a recognized-but-unread parameter
 /// off MadGraph's default where that would change what this generator produces,
 /// so it can only be sound if it rejects nothing a real card carries. The cards
-/// are found by name (`*run_card*.dat`) in those directories and in
-/// `validation/madgraph/repro/*/`, so a card committed there is read without
-/// being listed here. This is the bare-clone half of that check; the banked
-/// runs' own cards are read by `validate_scales.rs`, which needs the reference
-/// data.
+/// are found by name (`*run_card*.dat`), so a card committed there is read
+/// without being listed here. The first two directories must each hold a card.
+/// A folder under `research/upstream/` holds whatever its upstream report needs,
+/// often no run card at all, so those folders are scanned without that demand.
+/// Their total must still be non-zero, so the scan cannot silently find nothing.
+/// This is the bare-clone half of that check; the banked runs' own cards are
+/// read by `validate_scales.rs`, which needs the reference data.
 #[test]
 fn the_committed_run_cards_are_accepted() {
-    let madgraph = validation_dir().join("madgraph");
-    let mut dirs = vec![
-        madgraph.clone(),
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"),
-    ];
-    let mut repro: Vec<PathBuf> = std::fs::read_dir(madgraph.join("repro"))
-        .expect("validation/madgraph/repro is committed")
-        .map(|e| e.expect("directory entry").path())
-        .filter(|p| p.is_dir())
-        .collect();
-    repro.sort();
-    dirs.extend(repro);
-
-    let mut committed: Vec<PathBuf> = Vec::new();
-    for dir in &dirs {
+    fn run_cards(dir: &Path) -> Vec<PathBuf> {
         let mut cards: Vec<PathBuf> = std::fs::read_dir(dir)
             .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
             .map(|e| e.expect("directory entry").path())
@@ -105,10 +93,35 @@ fn the_committed_run_cards_are_accepted() {
                         .is_some_and(|n| n.contains("run_card"))
             })
             .collect();
-        assert!(!cards.is_empty(), "{} holds no run card", dir.display());
         cards.sort();
+        cards
+    }
+
+    let mut committed: Vec<PathBuf> = Vec::new();
+    for dir in [
+        validation_dir().join("madgraph"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"),
+    ] {
+        let cards = run_cards(&dir);
+        assert!(!cards.is_empty(), "{} holds no run card", dir.display());
         committed.extend(cards);
     }
+
+    let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join("../research/upstream");
+    let mut folders: Vec<PathBuf> = std::fs::read_dir(&upstream)
+        .expect("research/upstream is committed")
+        .map(|e| e.expect("directory entry").path())
+        .filter(|p| p.is_dir())
+        .collect();
+    folders.sort();
+    let upstream_cards: Vec<PathBuf> = folders.iter().flat_map(|d| run_cards(d)).collect();
+    assert!(
+        !upstream_cards.is_empty(),
+        "{} holds no run card in any folder",
+        upstream.display()
+    );
+    committed.extend(upstream_cards);
+
     let mut refused = Vec::new();
     for path in &committed {
         if let Err(e) = RunCard::parse_file(path) {

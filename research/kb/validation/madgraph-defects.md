@@ -42,12 +42,24 @@ affected rows' manifest notes) kept as a registered deviation; it is never
 silently "fixed". Lines are at the pinned tree
 `b7687064` (3.7.1) unless stated.
 
-**Upstream status: nothing filed.** Report drafts for the AQCDUP truncation,
-the ALOHA `P1D` veto and the grouped first call are in note 07's appendix, drafted
-and unfiled; filing is the user's step
+**Upstream status.** On 2026-10-19 six reports were filed as
+mg5amcnlo/mg5amcnlo
+[#453](https://github.com/mg5amcnlo/mg5amcnlo/issues/453) to
+[#458](https://github.com/mg5amcnlo/mg5amcnlo/issues/458):
+- H1;
+- `reweight.f:1138`;
+- `cuts.f` `NMASSLESS`;
+- `rewgt`;
+- Rivet `setWeightName`;
+- `setxqcuts`.
+
+The index, [madgraph-upstream-report-drafts](madgraph-upstream-report-drafts.md),
+maps each report to its issue. The unreachable `addmothers` report was not
+filed. The ALOHA `P1D` defect is fixed upstream (PR #428). The `AQCDUP` and
+`rambo.py` reports are drafted in the same form. The user has not filed them,
+since their priority is too low for now. The remaining unfiled candidate is
+the default-survey bias
 ([madgraph-defect-reports-unfiled](../backlog/validation/madgraph-defect-reports-unfiled.md)).
-The six MLM-path defects have no draft
-([mlm-madgraph-defects-undrafted](../backlog/validation/mlm-madgraph-defects-undrafted.md)).
 
 Every entry is a **failure** (MadGraph's code does not do what it intends)
 except those marked as an **approximation** (a deliberate choice this project
@@ -58,12 +70,12 @@ kind is treated.
 | defect | where | changes a compared weight? | handling |
 |---|---|---|---|
 | `AQCDUP`/`AQEDUP` with π truncated to 8 digits | `unwgt.f:760-761` | the record field, +1.7e-8 | truncation reproduced before comparing |
-| `$` never vetoes a flipped-slot fermion propagator | `create_aloha.py:262-263, 527-530` | σ of `$ t t~` 37% high | reference from patched ALOHA |
+| `$` never vetoes a flipped-slot fermion propagator | `create_aloha.py:262-263, 527-530`; fixed in 3.8.1 | σ of `$ t t~` 37% high | reference from patched ALOHA |
 | grouped first `setclscales` on the unpermuted point (H1) | `super_auto_dsig_group_v4.inc:842`, `update_scale_coupling(pp, wgt)` | process-dependent | registered deviation, [own concept](madgraph-permuted-first-call.md) |
 | `aS` injected into a model with none, inconsistent with `G` | `export_v4.py:7076` | `AQCDUP` on six toy rows | measured, not enforced |
 | **approximation**: UFO literal printed at seven digits in Fortran | Fortran model writer | `GC_303` by 1.2e-8, `GC_299` by 2.8e-8 | registered deviation: Python `model_reader` is the arbiter, and the graphs carrying them are exempted by name |
 | `t` read unassigned in `get_channel_cut` at `sde_strat = 1`, `tmin_for_channel ≠ -1` | `genps.f:1878-1960`, read at `:1937-1938` | unreachable here | such a card refused (run-card parser, `hadronic::configurations_weighted_by_amp2`) |
-| 3.5.x `get_channel_cut` dimensionally wrong | 3.5.x `genps.f` | yes, at narrow poles | references come from 3.7.1 |
+| 3.5.x `get_channel_cut` dimensionally wrong (fixed in 3.5.17) | 3.5.16 and earlier `genps.f` | yes, at narrow poles | references come from 3.7.1 |
 | 3.5.7 applied a PDF set's `αs(M_Z)` at `lpp = 0` | 3.5.7 parameter card | partonic σ by `0.920ⁿ` | cuts across it not comparable |
 | six MLM-path defects | note 41 §1.5 | at most one, refused | table below |
 | reweight module keeps one hypothesis per card | `reweight_interface.py` | the reweight oracle | one hypothesis per work area |
@@ -156,8 +168,11 @@ weight computes `tmp = (t-Mass)*(t+Mass)` with `t` already `p²`, so it never
 peaks on a pole: it handed 99.8% of a Higgs pole to continuum channels, and the
 unwindowed σ came out 2.3% low with a quoted 0.2% error that three fresh seeds
 confirmed. 3.7.1 has `tmp = (t-Mass**2)` with a plain Breit–Wigner
-weight[^n27-b1]. The fix, upstream `286feb8e`[^mg-286feb8], shipped in 3.6.2 and
-was never backported to 3.5.x, which is why references come from 3.7.1
+weight[^n27-b1]. The fix, upstream `286feb8e`[^mg-286feb8], shipped in 3.6.2. It
+reached the 3.5.x LTS line only in 3.5.17 (2026-10-09), as `186052bbb`
+(2026-10-06): 3.5.16 and every earlier 3.5.x still carry the defect, and 3.5.17's
+`get_channel_cut` weight is the same as 3.7.1's. The bank predates 3.5.17, which
+is why references come from 3.7.1
 ([madgraph-oracle-pinning](madgraph-oracle-pinning.md); MadEvent's channel weight
 is [phase-space/madevent-single-diagram-enhancement](../phase-space/madevent-single-diagram-enhancement.md)).
 
@@ -167,16 +182,17 @@ is [phase-space/madevent-single-diagram-enhancement](../phase-space/madevent-sin
 our σ tracked exactly, since every gate reads `αs` from the run's own card
 ([refdata-sigma-comparability](refdata-sigma-comparability.md)).
 
-**The MLM path** (read off the source while porting `ickkw = 1`)[^n41-15]:
+**The MLM path** (read off the source while porting `ickkw = 1`; every one is
+still present in 3.8.1, and each has a report draft)[^n41-15]:
 
 | where | defect | effect here |
 |---|---|---|
-| `reweight.f:1138` | `.not.fixed_fac_scale1.or.fixed_fac_scale2` precedence | changes a weight with exactly one fixed μF under matching; refused, the message naming the line |
+| `reweight.f:1138` | `.not.fixed_fac_scale1.or.fixed_fac_scale2` precedence | changes a weight with exactly one fixed μF and a clustering scale, matched or not (σ +10 % with the fix on `p p > z`, `scalefact = 2`); refused, under matching at card compile and otherwise per event |
 | `setcuts.f:939-942` | duplicate `iforest(2)` test | grids only |
-| `cuts.f:565` | `ktdurham` `.and.`/`.or.` precedence | CKKW-L, out of scope |
+| `cuts.f:565` (and `:667`, ptlund) | `ktdurham` `.and.`/`.or.` precedence | CKKW-L, out of scope |
 | `addmothers.f:115` | compares `igraphs(1)` to a stale loop index | unreachable on the banked MLM rows: `vec_igraph` is never 0 on their written events (M0 census) |
-| `banner.py:1706` | `setWeightName` raises when `ickkw ≠ 0` (`"…".str(…)`) | Python systematics only |
-| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty on the banked MLM rows: none has an `IPROC` mixing jet and non-jet final-state flavours (`mlm_census.json`) |
+| `banner.py:1706` | `setWeightName` raises when `ickkw ≠ 0` (`"…".str(…)`) | Rivet on a matched sample only |
+| `rewgt` | reads the final-state `ipdgcl` left by the previous event | empty on the banked MLM rows: none has an `IPROC` mixing jet and non-jet final-state flavours (`mlm_census.json`); reached by a five-flavour `p p > z j` at `maxjetflavor = 4` |
 
 **The reweight module.** `launch` blocks after the first in one card each
 rewrite `events_out.lhe` from the unmodified input, so a multi-launch card keeps
