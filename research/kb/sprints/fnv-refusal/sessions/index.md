@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: refuse Majorana and fermion-number-violating processes before evaluation](F1.md) - A structural check on fermion lines refuses Majorana externals or propagators and fermion-number-violating vertices with an error naming the flow; the three panic sites become unreachable from such models.
+
+## Session Report
+
+* [F1 report: Majorana and fermion-number-violating diagrams are refused at enumeration](F1-report.md) - Each kept diagram is checked before it reaches the evaluator: a Majorana fermion on a leg or propagator, or a vertex pairing two particles or two antiparticles, is refused with a ConvertError naming it. Before the fix the FNV toy panicked at the survey's run.rs:1354 site, and both Majorana toys returned a σ without any error. The compile-time bra/ket resolution now asserts its operand pair.
