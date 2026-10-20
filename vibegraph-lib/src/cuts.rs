@@ -1032,11 +1032,17 @@ fn forced_shat_floor(legs: &[ExternalLeg], forced: &ForcedResonances, bwcutoff: 
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Upper bounds on one object's (or the missing system's) transverse momentum.
+/// Upper bounds on one object's (or the missing system's) transverse momentum:
+/// `missetmax` bounds the transverse momentum of the neutrino momentum sum,
+/// `ptj<n>max` and `ptl<n>max` that of the `n`-th hardest jet or lepton.
+///
 /// Such a momentum cannot reach half the partonic centre-of-mass energy: in the
 /// partonic rest frame the object's momentum balances the rest of the final
 /// state, so `|p| <= E_object` and `|p| <= E_rest` give `|p| <= sqrt(s_hat)/2`,
-/// and the transverse momentum is boost-invariant along the beam.
+/// and the transverse momentum is boost-invariant along the beam. With
+/// `s_hat <= s` and the collider's `sqrt(s)` taken as `ebeam1 + ebeam2` (as the
+/// generator does), a bound at or above `(ebeam1 + ebeam2) / 2` cannot exclude
+/// any point and reads as the default.
 const SINGLE_PT_MAXIMA: &[&str] = &[
     "missetmax",
     "ptj1max",
@@ -1051,8 +1057,8 @@ const SINGLE_PT_MAXIMA: &[&str] = &[
 
 /// Refuse a run card that activates a cut this crate parses but does not apply.
 /// Reads the run card alone, so callers run it before any process enumeration.
-/// An upper bound at or above the transverse-momentum ceiling of the collider
-/// (`(ebeam1 + ebeam2) / 2`) cannot exclude any point and reads as the default.
+/// A single-object transverse-momentum maximum at or above the collider's
+/// ceiling reads as its default.
 pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
     let pt_ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
     for &name in UNIMPLEMENTED_CUTS {
@@ -2098,22 +2104,60 @@ mod tests {
         ));
     }
 
+    /// The nine single-object transverse-momentum maxima, written out here so
+    /// that membership of `SINGLE_PT_MAXIMA` is checked against an independent list.
+    const NINE_PT_MAXIMA: [&str; 9] = [
+        "missetmax",
+        "ptj1max",
+        "ptj2max",
+        "ptj3max",
+        "ptj4max",
+        "ptl1max",
+        "ptl2max",
+        "ptl3max",
+        "ptl4max",
+    ];
+
     #[test]
     fn unbindable_pt_maxima_read_as_default() {
-        for name in SINGLE_PT_MAXIMA {
+        for name in NINE_PT_MAXIMA {
             let cut = lhc(&format!("1e5 = {name}\n"));
             assert!(detect_unimplemented(&cut).is_ok(), "{name}");
             assert!(Cuts::compile(&cut, &dy_legs()).is_ok(), "{name}");
         }
     }
 
+    /// Every other unimplemented cut stays refused at a value no collider can
+    /// bind, so the no-op rule covers exactly `NINE_PT_MAXIMA`.
+    #[test]
+    fn no_other_unimplemented_cut_reads_an_unbindable_value_as_default() {
+        let mut refused = 0;
+        for &name in UNIMPLEMENTED_CUTS {
+            if NINE_PT_MAXIMA.contains(&name) {
+                continue;
+            }
+            let Ok(cut) = RunCard::parse(&format!("{LHC}1e5 = {name}\n")) else {
+                continue;
+            };
+            assert!(
+                matches!(
+                    detect_unimplemented(&cut),
+                    Err(CutError::UnimplementedCutActive { .. })
+                ),
+                "{name} at 1e5"
+            );
+            refused += 1;
+        }
+        assert!(refused > 20, "only {refused} cuts exercised");
+    }
+
     #[test]
     fn bindable_pt_maxima_are_refused() {
-        for name in SINGLE_PT_MAXIMA {
+        for name in NINE_PT_MAXIMA {
             let err = detect_unimplemented(&lhc(&format!("500 = {name}\n"))).unwrap_err();
             match err {
                 CutError::UnimplementedCutActive { name: n, value, .. } => {
-                    assert_eq!(n, *name);
+                    assert_eq!(n, name);
                     assert_eq!(value, "500");
                 }
             }
