@@ -5,7 +5,7 @@ description: "integrate loads --pdf-set (default NNPDF23) member 0 whatever lhai
 area: feature
 state: open
 priority: high
-closes_when: "integrate and generate take no PDF option; the run card picks the set and member (pdlabel = lhapdf: the set whose SetIndex range holds lhaid, member lhaid − SetIndex; a built-in pdlabel: its LHAPDF equivalent, or a refusal); lookup goes $LHAPDF_DATA_PATH, then CVMFS lhapdfsets, then the cache, then an HTTPS download with consent; the artifact records lhaid, set and member, and generate reads them from it; tests cover a non-zero member, a lhaid in no known set, each lookup tier and the default card."
+closes_when: "integrate and generate take no PDF option; the run card picks the set and member (pdlabel = lhapdf: the set whose SetIndex range holds lhaid, member lhaid − SetIndex; a built-in pdlabel: its LHAPDF equivalent, or a refusal); lookup goes $LHAPDF_DATA_PATH, then CVMFS lhapdfsets, then the cache, then an HTTPS download with consent; the artifact records lhaid, set, member and a checksum of the loaded set files, and generate reads them from it and refuses a set whose checksum differs; tests cover a non-zero member, a lhaid in no known set, each lookup tier and the default card."
 blocked_by: []
 opened: 2026-10-20
 tags: [pdf, lhapdf, run-card, cli, cvmfs, network-consent, cms, user-requested]
@@ -44,10 +44,12 @@ Every LO CMS card names another set: 325300 (41), 325500 (17), 306000 (6) and
 The [network-consent](../../tooling/network-consent.md) and
 [asset-resolution](../../tooling/asset-resolution.md) concepts change with it.
 
-**Open questions for the implementer:**
-- Whether the artifact also records a digest of the loaded set files, so a
-  CVMFS set that changes under a saved grid is caught.
-- Which built-in `pdlabel`s have an exact LHAPDF equivalent. `nn23lo1` is
-  NNPDF23_lo_as_0130_qed, 247000; refuse the rest until each is checked.
-- Tests and `scripts/acceptance.sh` pass `--pdf-dir` today, and will need an
-  environment variable instead.
+**Settled (user, 2026-10-20):**
+- The artifact records a checksum of the loaded set files, so a CVMFS set that
+  changes under a saved grid is caught.
+- Environment variables stay. Tests and `scripts/acceptance.sh` move from
+  `--pdf-dir` to an environment variable.
+
+**Left to the implementer:** which built-in `pdlabel`s have an exact LHAPDF
+equivalent. `nn23lo1` is NNPDF23_lo_as_0130_qed, 247000; refuse the rest until
+each is checked.
