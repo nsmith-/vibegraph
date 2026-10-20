@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [V1: re-record the σ seed calibrations from one current run](V1.md) - Re-record plan_for's seed figures, the census page, the σ and ℓℓj gate rationale comments and the 20-seed spreads from one recorded run on the tree with both default flips, attribute the drift, and re-measure ddx_to_epemg and gux_to_epemux against refdata-10.
+
+## Session Report
+
+* [V1 report: the σ seed calibrations re-recorded from one current run](V1-report.md) - Every seed figure in validate_sigma.rs, validate_hadronic.rs, the hadronic manifest notes and a new census page is re-recorded against refdata-10's seed records under both default flips; the drift attribution to the note-34 draw commits is falsified and replaced by a bisection (e99b05c, 7664ff9, b6a0b88, and c2c5407 after the census); ddx_to_epemg is no longer thin, gux_to_epemux sits at 2.1x and four times the budget does not buy it margin.
