@@ -194,6 +194,11 @@ pub enum EventNorm {
     /// The weights' sum is the cross section (`IDWTUP = -3`).
     Sum,
     /// Every weight is one (`IDWTUP = -3`).
+    ///
+    /// MadGraph admits `unity` on the card, but its unweighting compares the
+    /// normalization against `'unit'` (`lhe_parser.py:1232` at b7687064), so a
+    /// MadGraph run under `unity` never sets its weight strategy and cannot
+    /// complete. This follows the `'unit'` branch MadGraph evidently intends.
     Unity,
 }
 
