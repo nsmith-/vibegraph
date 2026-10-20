@@ -50,7 +50,8 @@ use vibegraph::phasespace::maps::{MapChoices, MapOptions, RungOrder, SplitAngle,
 use vibegraph::proton::{derive_flavor_groups, process_shape, FlavorGroups, ProtonIntegrand};
 use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::vegas::VegasResult;
+use vibegraph::unweight::ChannelIntegrand;
+use vibegraph::vegas::{BinWeight, GridRule, VegasResult};
 
 use vibegraph::budget::{BlockAllocation, Budget, ConvergenceReport, StopReason};
 
@@ -148,8 +149,7 @@ impl From<Allocation> for BlockAllocation {
 /// ([`SplitAngle`]); `auto` lets the rule read the process.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum SplitAngleArg {
-    /// `soft-emission` where some split has a gluon or photon daughter,
-    /// `isotropic` otherwise.
+    /// `soft-all`.
     Auto,
     /// Flat in `cos θ` and `φ` against the collision-CM axes.
     Isotropic,
@@ -163,9 +163,10 @@ pub(crate) enum SplitAngleArg {
     SoftAll,
 }
 
-/// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is `log`.
+/// How a hadronic run draws `τ = ŝ/s` ([`TauMap`]); `auto` is MadEvent's rule.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum TauMapArg {
+    /// `inverse-square`, or `log` where a resonance spans the whole final state.
     Auto,
     /// Density `∝ 1/τ` above the cut-implied `τ_min`.
     Log,
@@ -192,23 +193,23 @@ pub(crate) struct MapArgs {
     /// How each 2-body split of the decay tree draws its decay angle.
     ///
     /// Every choice is a parametrisation of the same phase space — none moves the
-    /// cross section, only the evaluations needed to reach an accuracy. `auto`
-    /// picks `soft-emission` where the process has a split it shapes (0.67× the
-    /// evaluations on `u u~ > g g g`) and `isotropic` elsewhere. `soft-all`
-    /// measures better still where it differs — half the evaluations on
-    /// `p p > l+ l- j`, 0.85× on `g u > e+ e- u` — and is worth asking for on
-    /// processes with a lepton pair or other boosted decay. On a `2 → 2` process
-    /// no split moves and every choice is the same map. The choice is recorded in
-    /// the artifact and replayed by `vibegraph generate`.
+    /// cross section, only the evaluations needed to reach an accuracy. `auto` is
+    /// `soft-all`, which measures half the evaluations of `isotropic` on
+    /// `p p > l+ l- j`, 0.85× on `g u > e+ e- u` and 0.67× on `u u~ > g g g`,
+    /// where every moving split has a gluon daughter and it is the
+    /// `soft-emission` map. On a `2 → 2` process no split moves and every choice
+    /// is the same map. The choice is recorded in the artifact and replayed by
+    /// `vibegraph generate`.
     #[arg(long = "map-split-angle", value_enum, default_value_t = SplitAngleArg::Auto)]
     pub(crate) split_angle: SplitAngleArg,
 
     /// How a proton-beam run draws `τ = ŝ/s` above the cut-implied minimum.
     ///
-    /// `auto` is `log`, the map every banked hadronic row was integrated under.
-    /// `inverse-square` is MadEvent's choice when no resonance spans the final
-    /// state, and measures better there (0.77× the evaluations on `p p > j j`,
-    /// 0.65× on `p p > b b~`); on Drell–Yan it measures worse (1.06×).
+    /// `auto` is MadEvent's rule: `inverse-square` unless a finite-width resonance
+    /// spans the whole final state, and `log` where one does. `inverse-square`
+    /// measures better where it applies (0.77× the evaluations on `p p > j j`,
+    /// 0.65× on `p p > b b~`) and worse on Drell–Yan (1.06×), where the
+    /// resonance's peak sits in the `τ` draw.
     #[arg(long = "map-tau", value_enum, default_value_t = TauMapArg::Auto)]
     pub(crate) tau: TauMapArg,
 
@@ -241,6 +242,88 @@ impl MapArgs {
                 RungOrderArg::Reversed => Some(RungOrder::Reversed),
             },
         }
+    }
+}
+
+/// What a point adds to its bins of a VEGAS grid's refinement histogram
+/// ([`BinWeight`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum BinWeightArg {
+    /// The point's squared weight `(f·w)²`.
+    Squared,
+    /// The point's weight `|f·w|`, as MadEvent accumulates it.
+    Absolute,
+}
+
+/// A bin-width bound as the command line spells it: a multiple of the uniform
+/// width, or `none` for no bound.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct MaxBinWidthArg(pub(crate) Option<f64>);
+
+impl std::str::FromStr for MaxBinWidthArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("none") {
+            return Ok(MaxBinWidthArg(None));
+        }
+        s.parse::<f64>()
+            .map(|k| MaxBinWidthArg(Some(k)))
+            .map_err(|_| format!("expected a number or `none`, got `{s}`"))
+    }
+}
+
+impl std::fmt::Display for MaxBinWidthArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(k) => write!(f, "{k}"),
+            None => f.write_str("none"),
+        }
+    }
+}
+
+/// The VEGAS grid-refinement flags ([`GridRule`]). The defaults are
+/// [`GridRule::default`]; the rule a run used is recorded in its artifact.
+#[derive(Args, Debug, Clone, Copy)]
+pub(crate) struct GridRuleArgs {
+    /// What each point adds to its bins of the refinement histogram.
+    #[arg(long = "grid-bin-weight", value_enum, default_value_t = BinWeightArg::Squared)]
+    pub(crate) bin_weight: BinWeightArg,
+
+    /// Credit each bin with the mean of its accepted points: multiply its
+    /// histogram entry by the iteration's accepted points over the bin's, capped
+    /// at 10⁴, as MadEvent does while its grid adapts.
+    #[arg(long = "grid-acceptance-rescale")]
+    pub(crate) acceptance_rescale: bool,
+
+    /// Bound every refined bin's width at this multiple of the uniform width,
+    /// which must exceed 1; `none` leaves the width unbounded.
+    #[arg(
+        long = "grid-max-bin-width",
+        value_name = "K",
+        default_value_t = MaxBinWidthArg(GridRule::default().max_bin_width)
+    )]
+    pub(crate) max_bin_width: MaxBinWidthArg,
+}
+
+impl GridRuleArgs {
+    /// The rule the flags spell.
+    pub(crate) fn rule(&self) -> Result<GridRule, CliError> {
+        if let Some(k) = self.max_bin_width.0 {
+            if !(k > 1.0 && k.is_finite()) {
+                return Err(err(format!(
+                    "--grid-max-bin-width is a multiple of the uniform bin width above 1; got {k}"
+                )));
+            }
+        }
+        Ok(GridRule {
+            weight: match self.bin_weight {
+                BinWeightArg::Squared => BinWeight::Squared,
+                BinWeightArg::Absolute => BinWeight::Absolute,
+            },
+            acceptance_rescale: self.acceptance_rescale,
+            max_bin_width: self.max_bin_width.0,
+        })
     }
 }
 
@@ -352,6 +435,9 @@ pub(crate) struct IntegrateArgs {
 
     #[command(flatten)]
     pub(crate) maps: MapArgs,
+
+    #[command(flatten)]
+    pub(crate) grid: GridRuleArgs,
 }
 
 /// The card's forbidden on-shell s-channels (`$`) as PDG codes, empty for a card
@@ -488,6 +574,8 @@ struct RunOutput {
     channels: Vec<ChannelGrid>,
     /// The phase-space maps the run integrated under, every choice settled.
     maps: MapChoices,
+    /// The rule the integrand refined its grids under.
+    grid_rule: GridRule,
     result: VegasResult,
     convergence: ConvergenceReport,
 }
@@ -523,6 +611,11 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
             "{} already exists (pass --force to overwrite)",
             out_path.display()
         )));
+    }
+
+    let grid_rule = args.grid.rule()?;
+    if !grid_rule.is_default() {
+        info!("VEGAS grid rule: {grid_rule:?}");
     }
 
     let opts = ParsingOptions::default();
@@ -661,7 +754,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
     }
 
     let artifact = IntegrateArtifact {
-        format_version: IntegrateArtifact::version_for(&output.channels),
+        format_version: IntegrateArtifact::version_for(&output.channels, Some(output.grid_rule)),
         process: output.process,
         model: model_id,
         pdf_set: output.pdf_set,
@@ -677,6 +770,7 @@ pub(crate) fn run(args: &IntegrateArgs, network: NetworkPolicy) -> Result<(), Cl
         sigma_err_pb,
         chi2_per_dof: output.result.chi2_per_dof,
         maps: output.maps,
+        grid_rule: Some(output.grid_rule),
     };
 
     std::fs::create_dir_all(&args.out).map_err(|e| {
@@ -871,6 +965,7 @@ fn integrate_hadronic(
     }
     let scale_report = scale_report.expect("an enumeration has a multiplicity");
     let mut integ = MultiplicitySum::new(parts);
+    integ.set_grid_rule(args.grid.rule()?);
 
     tui::state::note_channels(integ.channel_count());
 
@@ -901,6 +996,7 @@ fn integrate_hadronic(
         sqrt_s: sqrt_s_had,
         channels,
         maps: integ.maps(),
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })
@@ -985,6 +1081,7 @@ fn integrate_fixed_energy(
     let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
     integ.use_onshell_veto(&vetoes, evaluated);
     integ.set_map_options(args.maps.options());
+    integ.set_grid_rule(args.grid.rule()?);
     // The strong coupling follows the run card's per-event renormalisation scale.
     // Installed before the α-adaptation so the survey sees the same integrand the
     // integration will.
@@ -1024,6 +1121,7 @@ fn integrate_fixed_energy(
             })
             .collect(),
         maps,
+        grid_rule: integ.grid_rule(),
         result,
         convergence,
     })

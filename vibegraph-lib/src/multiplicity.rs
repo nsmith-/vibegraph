@@ -24,7 +24,7 @@ use crate::phasespace::maps::{MapChoices, ProcessShape};
 use crate::proton::{ProtonEvent, ProtonIntegrand};
 use crate::runcard::RunCard;
 use crate::unweight::ChannelIntegrand;
-use crate::vegas::{IterationCombination, VegasResult};
+use crate::vegas::{GridRule, IterationCombination, VegasResult};
 
 /// Split a proc card's enumeration by final-state multiplicity, in increasing
 /// order of outgoing legs, each part keeping the enumeration's own order.
@@ -73,9 +73,10 @@ pub fn split_by_multiplicity(sets: Vec<DiagramSet>, card: &RunCard) -> Vec<Vec<D
 /// multiplicities: every part's shape, summed as if one channel set.
 ///
 /// The choices are one per run, and an artifact banks one. The only choice the
-/// rule reads off the shape is the split angle, taken as the soft-emission map
-/// wherever any channel has a soft-emission split; on a part with none that map
-/// shapes nothing, so the union settles each part where it would settle alone.
+/// rule reads off the shape is the `τ` map, which keeps the log map wherever any
+/// part carries a resonance spanning its whole final state: a Drell–Yan part
+/// keeps the map its peak needs, and the parts above it, which would take
+/// `1/τ²` alone, take the log map with it.
 pub fn union_shape(shapes: impl IntoIterator<Item = ProcessShape>) -> ProcessShape {
     shapes
         .into_iter()
@@ -103,6 +104,8 @@ pub struct MultiplicitySum<'a> {
     offsets: Vec<usize>,
     /// Each part's share of the per-iteration budget, summing to one.
     budget_shares: Vec<f64>,
+    /// How a per-channel adaptation refines the channels' grids.
+    grid_rule: GridRule,
 }
 
 impl<'a> MultiplicitySum<'a> {
@@ -138,7 +141,14 @@ impl<'a> MultiplicitySum<'a> {
             parts,
             offsets,
             budget_shares: vec![1.0 / n as f64; n],
+            grid_rule: GridRule::default(),
         }
+    }
+
+    /// Refine the channels' grids under `rule` in
+    /// [`adapt_grids_budget`](Self::adapt_grids_budget).
+    pub fn set_grid_rule(&mut self, rule: GridRule) {
+        self.grid_rule = rule;
     }
 
     /// The parts, in increasing multiplicity.
@@ -422,6 +432,10 @@ impl ChannelIntegrand for MultiplicitySum<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         MultiplicitySum::value_in_channel(self, channel, u)
+    }
+
+    fn grid_rule(&self) -> GridRule {
+        self.grid_rule
     }
 }
 
