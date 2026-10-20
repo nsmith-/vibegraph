@@ -230,7 +230,8 @@ Other refusals:
 ## Backlog filed from this survey
 
 - Silent σ changes: [run-card hidden_parameter lines dropped](../backlog/hygiene/runcard-hidden-parameter-lines-dropped.md),
-  [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated).
+  [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
+  [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
 - Bugs and panics: [WEIGHTED search cap](../backlog/feature/auto-weighted-search-cap-uses-hierarchy.md),
   [UFO `if configuration` branches](../backlog/feature/ufo-parameters-conditional-branches-panic.md),
   [fermion-number violation panics](../backlog/feature/fermion-number-violation-panics-instead-of-refusing.md),

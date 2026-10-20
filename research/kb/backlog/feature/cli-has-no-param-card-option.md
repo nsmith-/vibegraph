@@ -26,11 +26,11 @@ is refused (`vibegraph-lib/src/reweight/card.rs`).
 
 The [CMS gridpack survey](../../validation/cms-gridpack-survey-2026-10.md)
 makes this a silent wrong σ: 54 of 65 LO CMS cards move the param card (top
-mass and Yukawa, MW, MZ, widths, 1/α, G_F), 53 through customizecards \`set\`
+mass and Yukawa, MW, MZ, widths, 1/α, G_F), 53 through customizecards `set`
 lines. As shipped, card 075 is ×12 off MadGraph and 072 ×5,200; with the card
 baked into the UFO and the gridpack's PDF, both agree with MadGraph.
-customizecards are out of scope: they rewrite the param card before generation,
-so a gridpack's final \`Cards/param_card.dat\` already carries them.
+customizecards are out of scope (user, 2026-10-20: a CMS-specific step; read the param card): they rewrite the param card before generation,
+so a gridpack's final `Cards/param_card.dat` already carries them.
 
 Scope (user, 2026-10-06):
 
