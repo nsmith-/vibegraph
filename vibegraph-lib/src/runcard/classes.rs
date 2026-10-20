@@ -112,7 +112,9 @@ const B_INTEGRATOR: &str = "a directive for MadEvent's own integrator or helicit
                             helicities explicitly, so a reference cross section is invariant \
                             under it up to Monte-Carlo error";
 const B_SYST: &str = "post-hoc systematics reweighting, which writes only the <mgrwt>/<rwgt> \
-                      block of the event file and never enters a cross section";
+                      block of the event file and never enters a cross section; a card that \
+                      requests it (use_syst with the field off its default) warns that the \
+                      variation weights are not written";
 const B_EVA: &str = "an EVA lepton-PDF parameter, reachable only at |lpp| of 3 or 4; the \
                      parser admits only the (0,0) and (1,1) beam configurations";
 const B_EXTRA_SCALE: &str = "the Ellis-Sexton 'extra scale' family: it appears in the LO \
@@ -437,6 +439,45 @@ pub(super) fn refuse_ignored_physics(
     Ok(())
 }
 
+/// The fields through which a card asks for the systematics module's variation
+/// weights.
+const SYSTEMATICS_REQUEST_FIELDS: [&str; 7] = [
+    "systematics_program",
+    "systematics_arguments",
+    "sys_scalefact",
+    "sys_alpsfact",
+    "sys_matchscale",
+    "sys_pdf",
+    "sys_scalecorrelation",
+];
+
+/// Warn, once, when a card with `use_syst` set asks for variation weights that
+/// this crate does not write: any systematics field off its MadGraph default.
+/// The cross section is unaffected; the event file lacks the `<rwgt>` scale,
+/// PDF and alpha_s weights the card requested.
+pub(super) fn warn_unwritten_systematics(values: &BTreeMap<String, ParamValue>) {
+    if !matches!(values.get("use_syst"), Some(ParamValue::Bool(true))) {
+        return;
+    }
+    let requested: Vec<&str> = SYSTEMATICS_REQUEST_FIELDS
+        .iter()
+        .copied()
+        .filter(|name| {
+            matches!(
+                (values.get(*name), param_default(name)),
+                (Some(current), Some(default)) if *current != default
+            )
+        })
+        .collect();
+    if !requested.is_empty() {
+        tracing::warn!(
+            fields = requested.join(", "),
+            "use_syst = T with systematics requested: the scale, PDF and alpha_s variation \
+             weights (<rwgt>) are not written; the cross section and events are unchanged"
+        );
+    }
+}
+
 /// A parameter value as the refusal message prints it. The cut detector renders
 /// its own refusals the same way, so the two hard errors a card can hit read
 /// alike.
@@ -453,6 +494,77 @@ fn describe(v: &ParamValue) -> String {
 mod tests {
     use super::*;
     use crate::runcard::{card_spelling, parse_value, Kind, RunCard, PARAM_DEFAULTS};
+    use std::sync::{Arc, Mutex};
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Level, Metadata, Subscriber};
+
+    /// Keeps the level and rendered fields of every event.
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
+
+    struct Render(String);
+    impl Visit for Render {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.0.push_str(&format!("{}={value:?} ", field.name()));
+        }
+    }
+
+    impl Subscriber for Capture {
+        fn enabled(&self, _: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            let mut r = Render(String::new());
+            event.record(&mut r);
+            self.0
+                .lock()
+                .expect("capture")
+                .push((*event.metadata().level(), r.0));
+        }
+        fn enter(&self, _: &Id) {}
+        fn exit(&self, _: &Id) {}
+    }
+
+    fn warnings_for(text: &str) -> Vec<String> {
+        let capture = Capture::default();
+        tracing::subscriber::with_default(capture.clone(), || {
+            // Callsite interest is cached process-wide from whichever thread
+            // reaches it first; rebuild it so this subscriber is consulted.
+            tracing::callsite::rebuild_interest_cache();
+            RunCard::parse(text).expect("run card");
+        });
+        let events = capture.0.lock().expect("capture").clone();
+        events
+            .into_iter()
+            .filter(|(level, msg)| *level == Level::WARN && msg.contains("systematics"))
+            .map(|(_, msg)| msg)
+            .collect()
+    }
+
+    #[test]
+    fn a_systematics_request_warns_once_and_a_default_card_does_not() {
+        assert!(warnings_for("").is_empty());
+        assert!(warnings_for("True = use_syst").is_empty());
+        let one = warnings_for("'0.5 1 2 4' = sys_scalefact\n'None' = sys_pdf\n");
+        assert_eq!(one.len(), 1, "{one:?}");
+        assert!(
+            one[0].contains("sys_scalefact") && one[0].contains("<rwgt>"),
+            "{one:?}"
+        );
+        assert_eq!(warnings_for("'mysyst' = systematics_program").len(), 1);
+        assert_eq!(warnings_for("['--mur'] = systematics_arguments").len(), 1);
+    }
+
+    #[test]
+    fn systematics_fields_do_not_warn_when_use_syst_is_off() {
+        assert!(warnings_for("False = use_syst\n'0.5 1' = sys_scalefact\n").is_empty());
+    }
 
     /// Every recognized name is classified exactly once, and every
     /// classification names a recognized parameter.

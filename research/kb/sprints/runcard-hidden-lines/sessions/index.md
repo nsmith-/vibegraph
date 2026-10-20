@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: read '# hidden_parameter' lines, and warn on a systematics request](F1.md) - split_line strips '#' comments as MadGraph does, so hidden run-card lines take effect; a card asking for systematics weights warns that none are written.
+
+## Session Report
+
+* [F1 report: hidden_parameter lines read, systematics request warns](F1-report.md) - split_line cuts comments at the first '#' or '!'; a card requesting systematics weights warns that none are written.
