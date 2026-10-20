@@ -92,9 +92,9 @@ the diagram behind it.[^n28-b3][^n28-s6] The full method is
 
 Its σ gates at `rel_tol 0.01`, set from the five-seed spread, not from the
 reference error. The spread was recorded as worst `|rel| 2.6e-3`; the
-September 2026 headroom census reran the same seeds after the note-34 draw
-commits and measured `3.954e-3`, still well inside 0.01 (see
-[the seed-headroom census](seed-headroom-census-2026-09.md)).
+October 2026 headroom census reran the same seeds against the refdata-10 seed
+record and measured `3.80e-3`, 2.6× inside 0.01 (see
+[the seed-headroom census](seed-headroom-census-2026-10.md)).
 Either way: at four times the budget our
 error is a third of MadGraph's, so the pull is floored by the reference and the
 budget ladder cannot shrink the residual. What the ladder does show is that no

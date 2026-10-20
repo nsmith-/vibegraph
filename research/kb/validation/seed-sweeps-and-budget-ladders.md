@@ -119,9 +119,11 @@ Worked cases:
   pull is floored by the reference and the ladder cannot shrink the residual.
   What the ladder rules out is a defect, which would migrate between seeds at
   fixed size rather than scatter inside a band. `rel_tol` was set at 3.8× the
-  worst seed as then recorded; after the note-34 draw commits moved the
-  sampling stream, the same five seeds read a worst of `3.954e-3`, 2.5× inside
-  it ([seed headroom census](seed-headroom-census-2026-09.md)).[^n28-s6]
+  worst seed as then recorded (`2.6e-3`); after the unbiased iteration
+  combination, the cut-implied invariant floors and the accepted-point channel
+  floor moved the sampling stream, the same five seeds read a worst of
+  `3.80e-3` against the refdata-10 seed record, 2.6× inside it
+  ([seed headroom census](seed-headroom-census-2026-10.md)).[^n28-s6]
 - `pp_to_jj`'s five-seed ladder over an eightfold budget moves by less than
   half the reference's own 0.22% error without resolving an asymptote (0.11%
   when first measured; an `0.08%` span with no direction in the ladder its gate
@@ -181,7 +183,7 @@ threshold.[^n34-floor]
 Each was measured two-arm (with and without the change) before anything was
 proposed, and none was widened. The standing census of how many seeds form and
 calibrate each statistic is
-[seed headroom census](seed-headroom-census-2026-09.md); thresholds are
+[seed headroom census](seed-headroom-census-2026-10.md); thresholds are
 [gate thresholds](gate-thresholds.md). Extremum-vs-floor statistics (the samples
 `P_FLOOR`) are the exception: more seeds there raise the false-flag rate.
 
@@ -228,6 +230,14 @@ the spread reported, never a headline pull:[^n29-d4]
 
 A heavy shared host does not move σ, χ² or α statistics, but timings taken
 while another heavy suite runs are not quotable.[^n34-w1]
+
+A claim that a commit moved the sampling stream carries the first-seed σ of
+the affected rows at that commit and at its parent. Dating the change by when
+a calibration comment was written is not evidence: the 2026-09 census blamed
+three draw commits that way, and a bisection of the 108 first-parent commits
+between the comments' era and the census tree found them bit-identical to
+their parents and three others responsible ([the 2026-10
+census](seed-headroom-census-2026-10.md), "What moved the 2026-09 figures").
 
 [^n21-prod]: Note 21, "Addendum — putting the sampler into production".
 [^n24-p3]: Note 24 P3: the five-seed sweep was necessary and not sufficient; plan corrections.

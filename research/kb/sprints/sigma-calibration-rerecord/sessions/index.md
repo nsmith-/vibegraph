@@ -8,4 +8,5 @@
 
 ## Session Report
 
+* [C1 report: the MLM notes, the ensemble figure, the census links and the attribution rule](C1-report.md) - V1's Found 5-8 closed on the PR: the five MLM manifest notes re-recorded against refdata-10, probe_llj_seed_ensemble's forty-seed figure replaced by the 20-seed reading, the remaining concept pages repointed at the 2026-10 census, and a first-seed-sigma rule for drift attribution.
 * [V1 report: the σ seed calibrations re-recorded from one current run](V1-report.md) - Every seed figure in validate_sigma.rs, validate_hadronic.rs, the hadronic manifest notes and a new census page is re-recorded against refdata-10's seed records under both default flips; the drift attribution to the note-34 draw commits is falsified and replaced by a bisection (e99b05c, 7664ff9, b6a0b88, and c2c5407 after the census); ddx_to_epemg is no longer thin, gux_to_epemux sits at 2.1x and four times the budget does not buy it margin.
