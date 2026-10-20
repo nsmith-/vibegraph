@@ -10,3 +10,4 @@
 ## Session Report
 
 * [F1 report: MadGraph's default particle names, and --modelname](F1-report.md) - import model renames particles to MadGraph's PDG-keyed default names in a lookup table on the model (resolution follows MadGraph, outputs keep the UFO names); --modelname switches it off; the table is vendored and hash-pinned; 9 new tests, 10 of 10 mutations caught.
+* [HY1 report: hygiene review of the default-name table and --modelname](HY1-report.md) - Review of F1's diff: the name table can no longer go stale unnoticed in debug builds, one loader entry point, the UFOModel doc corrected, narrower visibility, two tests added and one tightened; 5 mutations, 1 survivor found and closed.
