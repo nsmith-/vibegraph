@@ -12,6 +12,7 @@
 * [banked-open-ends](banked-open-ends/index.md)
 * [color-flow](color-flow/index.md)
 * [convergence-and-2to3-abort](convergence-and-2to3-abort/index.md)
+* [cut-refusal](cut-refusal/index.md)
 * [draw-followup](draw-followup/index.md)
 * [draw-performance](draw-performance/index.md)
 * [dynamical-scales](dynamical-scales/index.md)
