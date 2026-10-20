@@ -14,6 +14,7 @@
 //! labels, diagram dumps, error messages about enumerated subprocesses) is the
 //! UFO's; only what a card may write follows MadGraph.
 
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use indexmap::IndexMap;
@@ -50,7 +51,7 @@ pub struct DefaultNameConflict {
 /// them: a line whose first non-blank character is `#` is a comment, any other
 /// line that does not split into exactly two fields is skipped, and the name is
 /// lowercased. A repeated code keeps its first position and its last name.
-pub fn madgraph_default_names() -> &'static IndexMap<i64, String> {
+pub(crate) fn madgraph_default_names() -> &'static IndexMap<i64, String> {
     static TABLE: OnceLock<IndexMap<i64, String>> = OnceLock::new();
     TABLE.get_or_init(|| parse_default_names(DEFAULT_NAMES_FILE))
 }
@@ -86,7 +87,7 @@ pub struct ParticleNames {
 
 impl ParticleNames {
     /// The model's own names, unchanged.
-    pub fn of_model<'a>(particles: impl IntoIterator<Item = (&'a str, i64)>) -> Self {
+    pub(crate) fn of_model<'a>(particles: impl IntoIterator<Item = (&'a str, i64)>) -> Self {
         ParticleNames {
             accepted: particles
                 .into_iter()
@@ -113,7 +114,7 @@ impl ParticleNames {
     /// change the outcome here: such a model has no particle whose exact name is
     /// another's lowercased one, so a name differing from its default by case
     /// alone (`Z` for `z`) takes it unopposed, and resolution ignores case.
-    pub fn madgraph<'a>(
+    pub(crate) fn madgraph<'a>(
         particles: impl IntoIterator<Item = (&'a str, i64)>,
         model_name: &str,
     ) -> Result<Self, DefaultNameConflict> {
@@ -157,7 +158,7 @@ impl ParticleNames {
     }
 
     /// The names under `naming`.
-    pub fn with_naming<'a>(
+    pub(crate) fn with_naming<'a>(
         particles: impl IntoIterator<Item = (&'a str, i64)>,
         naming: ParticleNaming,
         model_name: &str,
@@ -171,30 +172,36 @@ impl ParticleNames {
     /// The UFO name of the particle `name` denotes: an exact match first, then
     /// one ignoring ASCII case.
     pub fn resolve(&self, name: &str) -> Option<&str> {
-        self.accepted
-            .get(name)
-            .or_else(|| {
-                self.accepted
-                    .iter()
-                    .find(|(accepted, _)| accepted.eq_ignore_ascii_case(name))
-                    .map(|(_, ufo)| ufo)
-            })
-            .map(String::as_str)
+        lookup(&self.accepted, name)
     }
 
     /// The name that replaced `ufo_name`, if the model's own name was renamed
     /// away (matched as [`resolve`](Self::resolve) matches).
     pub fn renamed_to(&self, ufo_name: &str) -> Option<&str> {
-        self.renamed
-            .get(ufo_name)
-            .or_else(|| {
-                self.renamed
-                    .iter()
-                    .find(|(ufo, _)| ufo.eq_ignore_ascii_case(ufo_name))
-                    .map(|(_, name)| name)
-            })
-            .map(String::as_str)
+        lookup(&self.renamed, ufo_name)
     }
+
+    /// Whether the table covers exactly the particles `particles` lists (by UFO
+    /// name), as it does when built from them.
+    pub(crate) fn is_built_from<'a>(
+        &self,
+        particles: impl IntoIterator<Item = (&'a str, i64)>,
+    ) -> bool {
+        let covered: HashSet<&str> = self.accepted.values().map(String::as_str).collect();
+        let listed: HashSet<&str> = particles.into_iter().map(|(name, _)| name).collect();
+        covered == listed
+    }
+}
+
+/// `map[key]`, else the value of the first key equal to `key` ignoring ASCII case.
+fn lookup<'m>(map: &'m IndexMap<String, String>, key: &str) -> Option<&'m str> {
+    map.get(key)
+        .or_else(|| {
+            map.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(_, v)| v)
+        })
+        .map(String::as_str)
 }
 
 #[cfg(test)]
@@ -323,8 +330,11 @@ mod tests {
             let names = ParticleNames::madgraph([("h01", 25)], model).unwrap();
             assert_eq!(names.resolve("h1"), Some("h01"), "{model}");
         }
-        let names = ParticleNames::madgraph([("h01", 25)], "MSSM_SLHA2").unwrap();
-        assert_eq!(names.resolve("h01"), Some("h01"));
+        for model in ["MSSM_SLHA2", "mssm_slha2"] {
+            let names = ParticleNames::madgraph([("h01", 25)], model).unwrap();
+            assert_eq!(names.resolve("h01"), Some("h01"), "{model}");
+            assert_eq!(names.resolve("h1"), None, "{model}");
+        }
     }
 
     /// The Standard Model's names already are MadGraph's defaults up to case
@@ -349,5 +359,35 @@ mod tests {
             }
             assert_eq!(sm.particle_names().resolve("Z"), Some("Z"), "{restrict:?}");
         }
+    }
+
+    /// The table matches a particle set exactly: a particle added, one removed or
+    /// one replaced is seen.
+    #[test]
+    fn the_table_knows_which_particles_it_was_built_from() {
+        let names = ParticleNames::madgraph(LOOP_SM_LIKE.iter().copied(), "loop_sm").unwrap();
+        assert!(names.is_built_from(LOOP_SM_LIKE.iter().copied()));
+        assert!(!names.is_built_from(LOOP_SM_LIKE[1..].iter().copied()));
+        let extra = LOOP_SM_LIKE.iter().copied().chain([("h", 25)]);
+        assert!(!names.is_built_from(extra));
+        let swapped = LOOP_SM_LIKE.iter().copied().skip(1).chain([("zz", 13)]);
+        assert!(
+            !names.is_built_from(swapped),
+            "same count, another particle"
+        );
+    }
+
+    /// Reading the names of a model whose particles changed after the table was
+    /// built panics in debug builds, and rebuilding the table clears it.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "call with_particle_naming")]
+    fn a_stale_table_is_caught_at_the_lookup() {
+        let mut model = (*sm_model(SMRestrict::ALL[0])).clone();
+        let mut twin = model.particles["a"].clone();
+        twin.name = "a2".to_owned();
+        twin.antiname = "a2".to_owned();
+        model.particles.insert("a2".to_owned(), twin);
+        let _ = model.particle_names();
     }
 }

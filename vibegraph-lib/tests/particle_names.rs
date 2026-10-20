@@ -70,8 +70,8 @@ fn default_names_resolve() {
     );
 }
 
-/// The model's own name for a renamed particle no longer resolves, as in
-/// MadGraph, and the refusal names the default that replaced it.
+/// The model's own name for a renamed particle is refused, as in MadGraph, and
+/// the refusal names the default that replaced it.
 #[test]
 fn renamed_model_names_are_refused() {
     for (process, name, default) in [

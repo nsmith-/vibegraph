@@ -147,9 +147,10 @@ pub enum UfoError {
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
 ///
-/// Each collection is an `IndexMap<String, T>` keyed by the Python variable name,
-/// preserving insertion order and providing O(1) name→index and name→value lookups
-/// without a separate index map.
+/// Each collection is an `IndexMap<String, T>` preserving insertion order and
+/// providing O(1) name→index and name→value lookups without a separate index map.
+/// The keys are the Python variable names, except for `particles`, which is keyed
+/// by the particle's UFO `name`, an antiparticle having its own entry.
 #[derive(Clone)]
 pub struct UFOModel {
     pub particles: IndexMap<String, Particle>,
@@ -344,26 +345,19 @@ impl UFOModel {
     /// If `restrict_card` is `None`, automatically looks for `restrict_default.dat`
     /// in the UFO directory. If found, it is used for vertex pruning (zero-coupling vertices are removed).
     pub fn load(path: &Path, restrict_card: Option<&Path>) -> Result<Arc<Self>, UfoError> {
-        Self::load_with_digest(path, restrict_card).map(|(model, _)| model)
+        Self::load_with_digest(path, restrict_card, ParticleNaming::default())
+            .map(|(model, _)| model)
     }
 
     /// [`load`](Self::load), also returning the [`model_digest`] of the restricted
-    /// model it built.
+    /// model it built, with the particle names `naming` gives (the model's name
+    /// for MadGraph's renaming being the directory's base name).
     ///
     /// Loading and identifying share this one path so the digest can never
-    /// describe a different model than the one returned.
+    /// describe a different model than the one returned. The digest does not
+    /// depend on the naming: it identifies the physics, which a name cannot
+    /// change.
     pub fn load_with_digest(
-        path: &Path,
-        restrict_card: Option<&Path>,
-    ) -> Result<(Arc<Self>, String), UfoError> {
-        Self::load_with_digest_and_naming(path, restrict_card, ParticleNaming::default())
-    }
-
-    /// [`load_with_digest`](Self::load_with_digest) with the particle names
-    /// `naming` gives, the model's name for MadGraph's renaming being the
-    /// directory's base name. The digest does not depend on the naming: it
-    /// identifies the physics, which a name cannot change.
-    pub fn load_with_digest_and_naming(
         path: &Path,
         restrict_card: Option<&Path>,
         naming: ParticleNaming,
@@ -423,7 +417,16 @@ impl UFOModel {
     }
 
     /// The names a card may write for this model's particles.
+    ///
+    /// The table is built from [`particles`](Self::particles) when the naming is
+    /// applied; code that edits `particles` afterwards must call
+    /// [`with_particle_naming`](Self::with_particle_naming) again. Debug builds
+    /// panic here if the table no longer matches the particles.
     pub fn particle_names(&self) -> &ParticleNames {
+        debug_assert!(
+            self.names.is_built_from(particle_codes(&self.particles)),
+            "UFOModel::particles changed after its names were built: call with_particle_naming"
+        );
         &self.names
     }
 

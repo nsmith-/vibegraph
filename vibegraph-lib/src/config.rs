@@ -125,11 +125,8 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        let (model, digest) = UFOModel::load_with_digest_and_naming(
-            &dir,
-            restrict.as_deref(),
-            import.particle_naming,
-        )?;
+        let (model, digest) =
+            UFOModel::load_with_digest(&dir, restrict.as_deref(), import.particle_naming)?;
         let label = import.restrict_variant.as_deref().unwrap_or("default");
         let identity = ModelIdentity::from_loaded(&import.name, label, digest);
         Ok(describe(model, identity))
