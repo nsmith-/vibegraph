@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: read '# hidden_parameter' lines, and warn on a systematics request](F1.md) - split_line strips '#' comments as MadGraph does, so hidden run-card lines take effect; a card asking for systematics weights warns that none are written.
+* [HY1: hygiene review of the hidden-line parser fix and the systematics warning](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 
 ## Session Report
 
