@@ -2,6 +2,7 @@
 type: Session Report
 title: "HY1 report: hygiene review of the hidden-line parser fix and the systematics warning"
 description: "One shared tracing test capture, the systematics field list derived from the classification table, a per-field warning test, split_line's doc in the code's own terms."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "ba65b18", title: "HY1 fix commit on sprintd-runcard-hidden-lines"}

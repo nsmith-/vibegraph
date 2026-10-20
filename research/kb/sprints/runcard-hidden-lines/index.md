@@ -6,6 +6,10 @@
 
 * [Run-card hidden lines and the systematics warning](sprint.md) - Run-card lines tagged '# hidden_parameter' are read as MadGraph reads them, and a card asking for systematics weights warns that none will be written.
 
+## Sprint Record
+
+* [Run-card hidden lines and the systematics warning](closeout.md) - Run-card lines tagged '# hidden_parameter' are read as MadGraph reads them, and a card asking for systematics weights warns once that none are written.
+
 ## Directories
 
 * [sessions](sessions/index.md)

@@ -3,7 +3,7 @@ type: Sprint
 title: "Run-card hidden lines and the systematics warning"
 description: "Run-card lines tagged '# hidden_parameter' are read as MadGraph reads them, and a card asking for systematics weights warns that none will be written."
 status: draft
-active: true
+active: false
 tags: [runcard, parser, systematics, cms, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

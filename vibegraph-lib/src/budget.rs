@@ -1833,19 +1833,93 @@ mod tests {
     /// iteration, so meeting the target is exactly a full bar.
     #[test]
     fn the_progress_total_projects_the_convergence_target() {
-        use crate::test_capture::capture_primed;
+        use std::sync::{Arc, Mutex};
+
+        use tracing::field::{Field, Visit};
+        use tracing::span::{Attributes, Id, Record};
+        use tracing::{Event, Metadata, Subscriber};
+
+        #[derive(Default)]
+        struct Fields {
+            stage: Option<String>,
+            done: Option<u64>,
+            total: Option<u64>,
+            sigma: Option<f64>,
+        }
+
+        impl Visit for Fields {
+            fn record_str(&mut self, field: &Field, value: &str) {
+                if field.name() == "stage" {
+                    self.stage = Some(value.to_string());
+                }
+            }
+            fn record_u64(&mut self, field: &Field, value: u64) {
+                match field.name() {
+                    "done" => self.done = Some(value),
+                    "total" => self.total = Some(value),
+                    _ => {}
+                }
+            }
+            fn record_f64(&mut self, field: &Field, value: f64) {
+                if field.name() == "sigma" {
+                    self.sigma = Some(value);
+                }
+            }
+            fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+        }
 
         /// `(done, total, sigma)` from one `vegas_iteration` event.
         type VegasEvent = (u64, Option<u64>, f64);
+
+        /// Keeps every `vegas_iteration` event — the ones that carry an
+        /// estimate field — and nothing else.
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<VegasEvent>>>);
+
+        impl Subscriber for Capture {
+            fn enabled(&self, meta: &Metadata<'_>) -> bool {
+                meta.target() == crate::progress::TARGET
+            }
+            fn new_span(&self, _: &Attributes<'_>) -> Id {
+                Id::from_u64(1)
+            }
+            fn record(&self, _: &Id, _: &Record<'_>) {}
+            fn record_follows_from(&self, _: &Id, _: &Id) {}
+            fn event(&self, event: &Event<'_>) {
+                let mut fields = Fields::default();
+                event.record(&mut fields);
+                if fields.stage.as_deref() != Some(crate::progress::stage::VEGAS) {
+                    return;
+                }
+                if let (Some(done), Some(sigma)) = (fields.done, fields.sigma) {
+                    self.0
+                        .lock()
+                        .expect("capture")
+                        .push((done, fields.total, sigma));
+                }
+            }
+            fn enter(&self, _: &Id) {}
+            fn exit(&self, _: &Id) {}
+        }
 
         let integ = toy(vec![1.0, 0.3, 0.0, 0.0]);
         let target_rel = 2.0e-3;
         let min_iters = 6;
         let max_iters = 200;
-        let ((_per_channel, _total, report), captured) = capture_primed(
-            // The primer carries `done = 0`, which no real iteration does.
-            || crate::progress::vegas_iteration(0, None, 0.0, 0.0, 0.0),
-            || {
+        let capture = Capture::default();
+        let (_per_channel, _total, report) =
+            tracing::subscriber::with_default(capture.clone(), || {
+                // `tracing` caches each callsite's interest process-wide from
+                // whichever thread hits it first — under a parallel test run
+                // that is usually a test with no subscriber at all, which
+                // stamps the progress callsites `never` and this capture is
+                // skipped before `enabled` is consulted. Hit the callsite from
+                // this thread (registering it against this subscriber if it is
+                // new), then rebuild the cache (healing it if it was already
+                // stamped). The primer carries `done = 0`, which no real
+                // iteration does, and is filtered out below.
+                crate::progress::vegas_iteration(0, None, 0.0, 0.0, 0.0);
+                tracing::callsite::rebuild_interest_cache();
                 integrate_channels(
                     &integ,
                     &integ.alphas.clone(),
@@ -1862,21 +1936,16 @@ mod tests {
                     0x5EED_7,
                     &StopSignal::default(),
                 )
-            },
-        );
+            });
         assert_eq!(report.stop, StopReason::TargetMet);
 
-        let events: Vec<VegasEvent> = captured
+        let events: Vec<VegasEvent> = capture
+            .0
+            .lock()
+            .expect("capture")
             .iter()
-            .filter(|e| {
-                e.target == crate::progress::TARGET
-                    && e.field("stage") == Some(crate::progress::stage::VEGAS)
-            })
-            .filter_map(|e| {
-                let sigma = e.field("sigma")?.parse().ok()?;
-                let done: u64 = e.field("done")?.parse().ok()?;
-                (done > 0).then(|| (done, e.field("total").and_then(|t| t.parse().ok()), sigma))
-            })
+            .copied()
+            .filter(|&(done, ..)| done > 0)
             .collect();
         assert_eq!(events.len(), report.iterations, "one event per iteration");
         let stop_floor = min_iters.max(DEFAULT_WARMUP_ITERS + 2) as u64;
