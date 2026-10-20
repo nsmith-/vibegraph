@@ -2,6 +2,7 @@
 type: Session Report
 title: "HY1 report: hygiene review of the conditional-definition refusals and the fallible recompute"
 description: "Review of F1 and F2: a dead error branch in the no-aS rescale path replaced by a stated invariant, an unchecked public launch name now refused, untested refusals pinned, one displaced doc comment and duplicated formatting merged."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 ## Findings (written before any edit)

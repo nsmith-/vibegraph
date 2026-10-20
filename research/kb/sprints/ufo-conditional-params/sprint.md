@@ -3,7 +3,7 @@ type: Sprint
 title: "UFO parameters defined under 'if configuration' load or are refused"
 description: "A parameters.py that defines a parameter only inside 'if configuration.…' branches loads with MadGraph's default branch or is refused naming the parameter; expr::eval no longer panics on a missing parameter."
 status: draft
-active: true
+active: false
 tags: [ufo, parser, panic, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

@@ -6,6 +6,10 @@
 
 * [UFO parameters defined under 'if configuration' load or are refused](sprint.md) - A parameters.py that defines a parameter only inside 'if configuration.…' branches loads with MadGraph's default branch or is refused naming the parameter; expr::eval no longer panics on a missing parameter.
 
+## Sprint Record
+
+* [UFO definitions under 'if configuration' are refused by name](closeout.md) - A UFO object defined only under 'if' is refused at load naming it (MadGraph supplies no configuration to pick a branch); no public entry point panics on an unknown parameter.
+
 ## Directories
 
 * [sessions](sessions/index.md)
