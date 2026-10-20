@@ -40,17 +40,11 @@ taken on `pp_to_llj_fixed`, `pp_to_jj` and `pp_to_llj_mlm`. They cover:
 - whether the trained (τ, y) grids agree across channels;
 - what a rejected point costs against an accepted one.
 
-M1 left four inputs the session must settle:
-- **The multi-multiplicity MLM tail is unmeasured.** `pp_to_ll_0j2j_mlm` is a
-  `MultiplicitySum`, which the probe does not cover. It is the row where the
-  outer (τ, y) edge bins carried the tail.
-- **A shared (τ, y) tier needs an offline variance replay, not an L1.**
-  Starved channels' τ grids differ from the pool at 1.8–2.8× seed noise. The
-  replay re-weights each channel's recorded points to the pooled q*.
-- **About half of the ℓℓj tail is in the interior, away from every cut edge,
-  and where it sits is unmeasured.**
-- **The ℓℓj jet-pT window is two intervals (±cos θ) in all-timelike
-  channels**, so a conditional window there is not one interval.
+M1 left four inputs the session must settle (its Found 1–4):
+- the multi-multiplicity MLM tail (`pp_to_ll_0j2j_mlm`) is unmeasured;
+- a shared (τ, y) tier needs an offline variance replay to the pooled q*;
+- where the interior half of the ℓℓj tail sits is unmeasured;
+- the ℓℓj jet-pT window is two intervals in all-timelike channels.
 
 Rewritten against the outcome:
 - [sampler-hardwired-to-vegas-grid](sampler-hardwired-to-vegas-grid.md)
