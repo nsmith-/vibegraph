@@ -90,7 +90,10 @@ fn chain_sets(
         decays: Vec::new(),
         ..process.clone()
     };
-    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model)?
+    // MadGraph flags every decay of a chain `is_decay_chain`, which keeps the
+    // automatic WEIGHTED search on for it; only the chain's own core can be a
+    // top-level one-particle process that skips it.
+    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model, node.0 != 0)?
         .into_iter()
         .filter(|s| !s.diagrams.is_empty())
         .collect();
