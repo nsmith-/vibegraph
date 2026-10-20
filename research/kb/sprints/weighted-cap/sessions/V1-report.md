@@ -396,3 +396,43 @@ The diagram census is unmoved: 57 passed, as F1 left it.
    it changes no diagram set and no refusal. Close: nothing needed beyond
    noting it wherever the search's divergences from MadGraph are listed; if
    refusal messages ever quote the bound, quote MadGraph's.
+
+## 2026-10-20 follow-up: was the Found 1 disagreement there before F1?
+
+**Yes. F1 did not introduce it.** I reproduced the pre-F1 loop with explicit
+bounds, as for the decays: start `(n-2)*min(hierarchy)`, cap
+`(n-2)*max(hierarchy)` inclusive, return the first bound with a diagram. The
+probe was scratch (`.../scratchpad/wcapE-V1-probes/wcap_v1_probe4.rs`) and is
+not committed. SMEFTsim's declared hierarchy runs from 1 (QCD, `NPc*`) to 99
+(`NP`, `SMHLOOP`, ...), so for `e+ e- > z g g` (n = 5) the old start is 3 and
+the old cap is 297.
+
+| Restrict | `<=3` | `<=6` | `<=106` | `<=107` | `<=297` | old loop stops at | old result | new result |
+|---|---|---|---|---|---|---|---|---|
+| SMlimit_massless | none | none | none | 1 | 2 | 107 | 1 diagram | 1 diagram (found 107) |
+| vg_cG | none | none | none | 1 | 2 | 107 | 1 diagram | 1 diagram |
+| vg_cHG | none | none | 1 | 2 | 4 | first nonempty bound, at most 106 | 1 diagram | 1 diagram |
+
+On vg_cHG the old stopping bound is not pinned exactly, but it does not need to
+be. Both loops climb one step at a time from a start that has no diagrams (old
+3, new 6, and `<=6` is empty), so each stops at the same first bound with a
+diagram and keeps the same set. MadGraph refuses on all three (its gluon-free
+trial returns 6). The disagreement is therefore older than F1, which neither
+created nor fixed it.
+
+`five_flavour_forbidden_j` (`u u~ > e+ e- g / j`, sm-no_b_mass, n = 5): the old
+start is 3 and the old cap is 2 * 3 = 6, inclusive. The full process has no
+diagram at `<=6` (the new loop generated there and refused), so the old loop
+also refused, at 6. MadGraph refuses at 5. Both versions refuse; only the bound
+in the message differs, before F1 and after it.
+
+Because F1 introduced nothing here, Found 1 stays an existing gap rather than a
+regression. For sizing anyway: reproducing the gluon-free trial is local to the
+search loop in `generate_undecayed`. Each trial would generate the same expanded
+process with final-state gluons (pdg 21, only when 21 is in the lowest class)
+removed from every final leg's id set, at `w - nglue * hierarchy[QCD]`. A final
+state left empty succeeds through MadGraph's identity vertex when the initial
+pair is conjugate. That is tens of lines plus that edge case. The awkward parts
+are two: the reduced trial is per flavour assignment where the loop now trials
+the whole multiprocess, and a leg whose multiparticle mixes gluons with other
+ids drops only its gluon assignments.
