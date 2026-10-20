@@ -5,3 +5,7 @@
 ## Sprint
 
 * [VEGAS grid on absolute invariant coordinates](sprint.md) - Add --map-grid-coords: bin each invariant's VEGAS coordinate on the absolute s/s_tot or −t/s_tot scale with the draw restricted to the point's window, as MadEvent's sample_get_x does, and measure it on the cut-edge rows.
+
+## Directories
+
+* [sessions](sessions/index.md)
