@@ -28,6 +28,7 @@
 * [mlm](mlm/index.md)
 * [mlm-pythia-tolerance](mlm-pythia-tolerance/index.md)
 * [note-29-validation](note-29-validation/index.md)
+* [pdf-from-run-card](pdf-from-run-card/index.md)
 * [perf-3-addendum](perf-3-addendum/index.md)
 * [perf-sprint-3](perf-sprint-3/index.md)
 * [process-grammar](process-grammar/index.md)
