@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: resolve particles by MadGraph's default names; accept --modelname](F1.md) - Vendor MadGraph's particles_name_default.txt, rename (or alias) by PDG code as MadGraph's import does, and accept 'import model X --modelname' as switching that renaming off.
+
+## Session Report
+
+* [F1 report: MadGraph's default particle names, and --modelname](F1-report.md) - import model renames particles to MadGraph's PDG-keyed default names in a lookup table on the model (resolution follows MadGraph, outputs keep the UFO names); --modelname switches it off; the table is vendored and hash-pinned; 9 new tests, 10 of 10 mutations caught.
