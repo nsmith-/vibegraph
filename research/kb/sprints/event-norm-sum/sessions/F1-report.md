@@ -3,6 +3,7 @@ type: Session Report
 title: "F1 report: event_norm = sum and unity in the written events"
 description: "generate honours event_norm: sum writes IDWTUP -3 and weights summing to sigma, unity writes IDWTUP -3 and weights of one, average is unchanged; pinned to MadGraph's source and to five banked MadEvent init blocks written under sum."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "sprintd-event-norm-sum, the F1 commit"}

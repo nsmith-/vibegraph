@@ -5,3 +5,8 @@
 ## Session Brief
 
 * [F1: honour event_norm = sum and unity in the written events](F1.md) - Consume event_norm; generate writes XWGTUP and IDWTUP as MadGraph does for average, sum and unity; σ and the integration unchanged; pinned against MadGraph's writer and, where one exists, a banked sample.
+* [HY1: hygiene review of the event_norm weights](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
+
+## Session Report
+
+* [F1 report: event_norm = sum and unity in the written events](F1-report.md) - generate honours event_norm: sum writes IDWTUP -3 and weights summing to sigma, unity writes IDWTUP -3 and weights of one, average is unchanged; pinned to MadGraph's source and to five banked MadEvent init blocks written under sum.
