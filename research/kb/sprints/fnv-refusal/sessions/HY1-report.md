@@ -4,6 +4,7 @@ title: "HY1 report: hygiene review of the fermion-flow refusal"
 description: "Review of F1's diff: five findings fixed with mutation evidence (a swapped particle/antiparticle kind, the veto-order, the charge convention doc, the error prefix, a toy's MadGraph-only order), two sites no mutation reaches, three Found."
 status: draft
 tags: [hygiene, majorana, fermion-flow, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 Commit `1727b8d` on `sprintd-fnv-refusal`. Pixi absent; commands run directly with

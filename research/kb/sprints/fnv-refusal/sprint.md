@@ -3,7 +3,7 @@ type: Sprint
 title: "Majorana and fermion-number-violating models are refused, not panicked on"
 description: "A process with a Majorana fermion or a fermion-number-violating vertex is refused before evaluation with an error naming the fermion flow, and the evaluator's panic sites are unreachable from such models."
 status: draft
-active: true
+active: false
 tags: [majorana, fermion-flow, refusal, panic, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---
