@@ -1032,7 +1032,29 @@ fn forced_shat_floor(legs: &[ExternalLeg], forced: &ForcedResonances, bwcutoff: 
         .fold(f64::INFINITY, f64::min)
 }
 
-fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
+/// Upper bounds on one object's (or the missing system's) transverse momentum.
+/// Such a momentum cannot reach half the partonic centre-of-mass energy: in the
+/// partonic rest frame the object's momentum balances the rest of the final
+/// state, so `|p| <= E_object` and `|p| <= E_rest` give `|p| <= sqrt(s_hat)/2`,
+/// and the transverse momentum is boost-invariant along the beam.
+const SINGLE_PT_MAXIMA: &[&str] = &[
+    "missetmax",
+    "ptj1max",
+    "ptj2max",
+    "ptj3max",
+    "ptj4max",
+    "ptl1max",
+    "ptl2max",
+    "ptl3max",
+    "ptl4max",
+];
+
+/// Refuse a run card that activates a cut this crate parses but does not apply.
+/// Reads the run card alone, so callers run it before any process enumeration.
+/// An upper bound at or above the transverse-momentum ceiling of the collider
+/// (`(ebeam1 + ebeam2) / 2`) cannot exclude any point and reads as the default.
+pub fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
+    let pt_ceiling = 0.5 * (rc.ebeam1 + rc.ebeam2);
     for &name in UNIMPLEMENTED_CUTS {
         let (Some(cur), Some(def)) = (rc.get(name), param_default(name)) else {
             continue;
@@ -1040,13 +1062,19 @@ fn detect_unimplemented(rc: &RunCard) -> Result<(), CutError> {
         // `remove_all_cut`'s reset value is off too: `ktdurham = 0`, `ptlund = 0`
         // and `deltaeta = -1` fail the `> 0` guards `cuts.f` reads them through,
         // exactly as their LO defaults do.
-        if *cur != def && Some(cur) != decay_cut_reset(name).as_ref() {
-            return Err(CutError::UnimplementedCutActive {
-                name: name.to_string(),
-                value: describe(cur),
-                default: describe(&def),
-            });
+        if *cur == def || Some(cur) == decay_cut_reset(name).as_ref() {
+            continue;
         }
+        if SINGLE_PT_MAXIMA.contains(&name)
+            && matches!(cur, ParamValue::Float(x) if *x >= pt_ceiling)
+        {
+            continue;
+        }
+        return Err(CutError::UnimplementedCutActive {
+            name: name.to_string(),
+            value: describe(cur),
+            default: describe(&def),
+        });
     }
     Ok(())
 }
@@ -2052,6 +2080,59 @@ mod tests {
     fn misset_activation_errors() {
         let err = Cuts::compile(&card("15 = misset\n"), &dy_legs()).unwrap_err();
         assert!(matches!(err, CutError::UnimplementedCutActive { .. }));
+    }
+
+    /// Cards at 13 TeV (`ebeam = 6500`): the transverse-momentum ceiling is 6500.
+    const LHC: &str = "6500 = ebeam1\n6500 = ebeam2\n";
+
+    fn lhc(extra: &str) -> RunCard {
+        card(&format!("{LHC}{extra}"))
+    }
+
+    #[test]
+    fn detection_needs_no_legs() {
+        assert!(detect_unimplemented(&card("")).is_ok());
+        assert!(matches!(
+            detect_unimplemented(&card("30 = ptj1min\n")),
+            Err(CutError::UnimplementedCutActive { name, .. }) if name == "ptj1min"
+        ));
+    }
+
+    #[test]
+    fn unbindable_pt_maxima_read_as_default() {
+        for name in SINGLE_PT_MAXIMA {
+            let cut = lhc(&format!("1e5 = {name}\n"));
+            assert!(detect_unimplemented(&cut).is_ok(), "{name}");
+            assert!(Cuts::compile(&cut, &dy_legs()).is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn bindable_pt_maxima_are_refused() {
+        for name in SINGLE_PT_MAXIMA {
+            let err = detect_unimplemented(&lhc(&format!("500 = {name}\n"))).unwrap_err();
+            match err {
+                CutError::UnimplementedCutActive { name: n, value, .. } => {
+                    assert_eq!(n, *name);
+                    assert_eq!(value, "500");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pt_maximum_threshold_is_half_the_collider_energy() {
+        assert!(detect_unimplemented(&lhc("6500 = missetmax\n")).is_ok());
+        assert!(detect_unimplemented(&lhc("6499.9 = missetmax\n")).is_err());
+        let beams = "100 = ebeam1\n50 = ebeam2\n";
+        assert!(detect_unimplemented(&card(&format!("{beams}75 = ptj1max\n"))).is_ok());
+        assert!(detect_unimplemented(&card(&format!("{beams}74.9 = ptj1max\n"))).is_err());
+    }
+
+    #[test]
+    fn unbindable_value_does_not_excuse_other_cuts() {
+        assert!(detect_unimplemented(&lhc("1e5 = missetmax\n1e5 = htjmax\n")).is_err());
+        assert!(detect_unimplemented(&lhc("1e5 = ptj1min\n")).is_err());
     }
 
     // ── cut-implied timelike floors ─────────────────────────────────────

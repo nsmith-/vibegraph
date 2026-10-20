@@ -243,11 +243,10 @@ Other refusals:
   and [the silent drop of a systematics request](../backlog/hygiene/systematics-request-dropped-silently.md),
   [`ckm_no_b_mass`](../backlog/feature/sm-lacks-ckm-no-b-mass-restriction.md),
   [`event_norm = sum`](../backlog/feature/event-norm-sum-refused.md),
-  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) and
-  [their late refusal](../backlog/hygiene/unimplemented-cut-refused-after-enumeration.md),
+  [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
+  since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),
   [crossing pairs without a shared colour basis](../backlog/feature/crossing-pair-colour-basis-differs-refused.md),
   [massive incoming partons](../backlog/feature/massive-incoming-partons-refused.md),
   [mixed outgoing masses in a group](../backlog/feature/flavour-group-mixed-outgoing-masses-refused.md),
-  [no-op cut values](../backlog/feature/no-op-cut-values-refused-as-active.md),
   [enumeration cost](../backlog/feature/diagram-enumeration-cost-unmeasured.md) (updated).

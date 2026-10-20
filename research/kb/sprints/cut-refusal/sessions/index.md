@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: refuse unimplemented cuts before enumeration; let no-op values through](F1.md) - detect_unimplemented runs on the run card alone, before diagram enumeration, naming the cut and value; an upper bound that cannot bind at the collider's energy reads as the default.
+
+## Session Report
+
+* [F1 report: unimplemented cuts refused before enumeration, no-op maxima let through](F1-report.md) - detect_unimplemented is public and runs in load_run_card ahead of enumeration for integrate and generate; single-object pT maxima at or above half the collider energy read as the default.
