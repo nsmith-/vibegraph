@@ -4,6 +4,7 @@ title: "F1 report: the automatic WEIGHTED search is MadGraph's loop"
 description: "The search starts at MadGraph's get_minimum_WEIGHTED, steps by one, stops at (n_ext-2) x int(max interaction WEIGHTED per equivalent cubic vertex) and generates at the bound it stopped at; a top-level 1->n process runs no search. A QED+NP toy finds its diagrams; the SM cap does not move (the brief's x4 was wrong); the SM search got cheaper, not dearer."
 status: draft
 tags: [diagrams, coupling-orders, weighted, madgraph-parity, sprint-d, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: d6ca65a, resource: "https://github.com/nsmith-/vibegraph/commit/d6ca65a", title: "diagrams: run the automatic WEIGHTED search as MadGraph runs it"}
