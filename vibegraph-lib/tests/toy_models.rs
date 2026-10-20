@@ -31,7 +31,7 @@ use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptio
 use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massive;
-use vibegraph::ufo::{EvaluatedModel, UFOModel};
+use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
 
 /// The two model directories whose rows this file owns, as the manifest spells
 /// them.
@@ -264,9 +264,13 @@ const MERGE_NPCP: (&str, &str, &str) = ("couplings.py", "order={'NPCP': 1}", "or
 const MERGE_NPD: (&str, &str, &str) = ("couplings.py", "order={'NPD': 1}", "order={'NP': 1}");
 
 /// A copy of `vibegraph_toy_UFO` in a fresh scratch directory, with each
-/// `(file, from, to)` replacement applied, loaded under `restrict_all`. Every `from`
-/// must occur in its file.
-fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
+/// `(file, from, to)` replacement applied and `parameters_tail` appended to
+/// `parameters.py`, loaded under `restrict_all`. Every `from` must occur in its
+/// file.
+fn try_edited_toy_model(
+    edits: &[(&str, &str, &str)],
+    parameters_tail: &str,
+) -> Result<Arc<UFOModel>, UfoError> {
     let src = toy_ufo_dir();
     let scratch = tempfile::tempdir().expect("create a scratch directory");
     let dst = scratch.path();
@@ -284,8 +288,79 @@ fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
         );
         std::fs::write(dst.join(file), text.replace(from, to)).unwrap();
     }
+    let parameters = std::fs::read_to_string(dst.join("parameters.py")).unwrap();
+    std::fs::write(
+        dst.join("parameters.py"),
+        format!("{parameters}\n{parameters_tail}\n"),
+    )
+    .unwrap();
     UFOModel::load(dst, Some(&dst.join("restrict_all.dat")))
-        .unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
+}
+
+fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
+    try_edited_toy_model(edits, "").unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
+}
+
+const LV_ON_GL_ALT: (&str, &str, &str) = (
+    "couplings.py",
+    "value='complex(0,1)*gl'",
+    "value='complex(0,1)*gl_alt'",
+);
+
+/// A parameter defined only under `if configuration.<flag>:` / `else:` is refused
+/// at load with an error naming it. The loader cannot know which branch Python
+/// takes (`configuration` is a module the UFO imports, and MadGraph supplies no
+/// default for it), so it never picks one.
+#[test]
+fn parameter_defined_only_under_a_conditional_is_refused_by_name() {
+    let tail = "\
+if configuration.use_alt:
+    gl_alt = Parameter(name='gl_alt', nature='internal', type='real', value='1.5', texname='g')
+else:
+    gl_alt = Parameter(name='gl_alt', nature='internal', type='real', value='2.5', texname='g')
+";
+    let err = try_edited_toy_model(&[LV_ON_GL_ALT], tail)
+        .err()
+        .expect("a conditionally defined parameter must be refused");
+    assert!(
+        matches!(&err, UfoError::Parameters(_)) && err.to_string().contains("'gl_alt'"),
+        "error does not name the parameter: {err}"
+    );
+}
+
+/// A coupling that names a parameter `parameters.py` never defines is refused at
+/// load, naming both, where evaluation would otherwise have no value to read.
+#[test]
+fn coupling_referencing_an_undefined_parameter_is_refused_by_name() {
+    let edit = (
+        "couplings.py",
+        "value='complex(0,1)*gl'",
+        "value='complex(0,1)*gl_missing'",
+    );
+    let err = try_edited_toy_model(&[edit], "")
+        .err()
+        .expect("an undefined parameter must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("'gl_missing'") && msg.contains("'GC_LV'"),
+        "error does not name parameter and coupling: {msg}"
+    );
+}
+
+/// An internal parameter whose expression names an undefined parameter is refused
+/// at load, naming both.
+#[test]
+fn internal_parameter_referencing_an_undefined_parameter_is_refused_by_name() {
+    let tail = "gx = Parameter(name='gx', nature='internal', type='real', \
+                value='2*gx_missing', texname='g')";
+    let err = try_edited_toy_model(&[], tail)
+        .err()
+        .expect("an undefined parameter must be refused");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("'gx_missing'") && msg.contains("'gx'"),
+        "error does not name both parameters: {msg}"
+    );
 }
 
 /// Incoming momenta along ±z for masses `initial` at `√s`, then the final state

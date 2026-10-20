@@ -14,6 +14,10 @@ pub enum CouplingError {
     Parse(String),
     #[error("Expression parse error for coupling '{name}': {cause}")]
     ExprParse { name: String, cause: String },
+    #[error(
+        "coupling '{coupling}' references parameter '{name}', which parameters.py does not define"
+    )]
+    UnknownParameter { name: String, coupling: String },
 }
 
 /// Strongly typed index for [`Coupling`] lookup

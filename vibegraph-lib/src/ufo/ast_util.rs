@@ -39,6 +39,42 @@ pub(crate) fn constructor_calls<'a>(
     })
 }
 
+/// The names assigned `Ctor(...)` (bare or `module.Ctor`) inside an `if`/`elif`/
+/// `else` statement of a UFO file, at any nesting depth, in file order.
+///
+/// These are the definitions [`constructor_calls`] does not see: which branch
+/// runs depends on Python evaluated at import time.
+pub(crate) fn conditional_constructor_names<'a>(
+    stmts: &'a [ast::Stmt],
+    ctor: &str,
+) -> Vec<&'a str> {
+    fn walk<'a>(body: &'a [ast::Stmt], ctor: &str, inside_if: bool, out: &mut Vec<&'a str>) {
+        for stmt in body {
+            match stmt {
+                ast::Stmt::If(ast::StmtIf { body, orelse, .. }) => {
+                    walk(body, ctor, true, out);
+                    walk(orelse, ctor, true, out);
+                }
+                ast::Stmt::Assign(ast::StmtAssign { targets, value, .. }) if inside_if => {
+                    if let (
+                        Some(ast::Expr::Name(ast::ExprName { id, .. })),
+                        ast::Expr::Call(call),
+                    ) = (targets.first(), value.as_ref())
+                    {
+                        if call_func_name(&call.func) == Some(ctor) {
+                            out.push(id.as_str());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(stmts, ctor, false, &mut out);
+    out
+}
+
 /// Extract a string constant from an expression.
 pub(crate) fn extract_str(expr: &ast::Expr) -> Option<&str> {
     if let ast::Expr::Constant(ast::ExprConstant {

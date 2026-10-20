@@ -106,7 +106,10 @@ pub(crate) fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
 
 /// Evaluate an expression given a map of parameter name → complex value.
 ///
-/// A reference to a parameter missing from `params` panics.
+/// A reference to a parameter missing from `params` panics. Every model the
+/// loader returns has had its parameter and coupling expressions checked
+/// against the parameters `parameters.py` defines, so a loaded model never
+/// reaches that case with its own tables.
 pub(crate) fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     use std::f64::consts::PI;
     match expr {

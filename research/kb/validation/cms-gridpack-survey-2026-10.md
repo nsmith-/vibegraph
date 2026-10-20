@@ -233,7 +233,7 @@ Other refusals:
   [no param card in the CLI](../backlog/feature/cli-has-no-param-card-option.md) (updated),
   [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
 - Bugs and panics: [WEIGHTED search cap](../backlog/feature/auto-weighted-search-cap-uses-hierarchy.md),
-  [UFO `if configuration` branches](../backlog/feature/ufo-parameters-conditional-branches-panic.md),
+  UFO `if configuration` branches (closed: refused by name at load),
   [fermion-number violation panics](../backlog/feature/fermion-number-violation-panics-instead-of-refusing.md),
   [default particle names and `--modelname`](../backlog/feature/madgraph-default-particle-names-missing.md).
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),

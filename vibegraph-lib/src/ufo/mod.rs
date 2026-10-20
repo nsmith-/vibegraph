@@ -212,6 +212,15 @@ impl ParsedModel {
             .collect();
 
         let params = parse_parameters(&params_src)?;
+        for coupling in couplings.values() {
+            if let Some(name) = coupling.deps.iter().find(|d| !params.defines(d)) {
+                return Err(CouplingError::UnknownParameter {
+                    name: name.clone(),
+                    coupling: coupling.python_name.clone(),
+                }
+                .into());
+            }
+        }
         let raw_vertices = parse_vertices(&vertices_src)?;
         let vertices = resolve_vertices(raw_vertices, &particles, &lorentz, &couplings)?;
         let vertices = split_vertices_by_coupling_order(vertices, &couplings);
