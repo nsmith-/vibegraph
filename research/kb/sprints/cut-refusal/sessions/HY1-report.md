@@ -2,6 +2,7 @@
 type: Session Report
 title: "HY1 report: hygiene review of the early cut refusal"
 description: "Findings table (written before any edit), dispositions, mutation evidence and gates."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 ## Findings (written before any edit)

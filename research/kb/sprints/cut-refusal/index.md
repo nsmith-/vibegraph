@@ -6,6 +6,10 @@
 
 * [Unimplemented cuts: refused early, and no-op values let through](sprint.md) - An active unimplemented cut is refused before diagram enumeration with a message naming it, and one set where it cannot bind is treated as its default.
 
+## Sprint Record
+
+* [Unimplemented cuts: refused early, and no-op values let through](closeout.md) - An active unimplemented cut is refused from the run card alone, before diagram enumeration, naming the cut and value; single-object pT maxima at or above half the beam-energy sum read as their default.
+
 ## Directories
 
 * [sessions](sessions/index.md)
