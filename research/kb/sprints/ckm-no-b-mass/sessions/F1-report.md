@@ -4,6 +4,7 @@ title: "F1 report: the CMS ckm_no_b_mass card interned in the built-in SM"
 description: "SMRestrict::CkmNoBMass loads the vendored CMS card (sha256-pinned); WTau survives, MB/ymb lock; couplings pinned by composition with ckm, no_b_mass and MadGraph's default-restriction tables; MadGraph banking at this card still owed."
 status: draft
 tags: [model, restriction, ckm, sm, cms, sprint-d, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "https://github.com/nsmith-/vibegraph/commit/9dc76b47d66af0e49e72c88e2b3d7ace8d8af66f", title: "feat(ufo): intern the CMS ckm_no_b_mass restriction of the SM (9dc76b4)"}
