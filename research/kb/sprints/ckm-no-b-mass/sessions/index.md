@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: vendor the CMS ckm_no_b_mass restrict card into the built-in SM](F1.md) - Add SMRestrict::CkmNoBMass with the CMS card vendored under its provenance; pin its parsed values, WTA surviving restriction, and its couplings against the existing references by composition.
+
+## Session Report
+
+* [F1 report: the CMS ckm_no_b_mass card interned in the built-in SM](F1-report.md) - SMRestrict::CkmNoBMass loads the vendored CMS card (sha256-pinned); WTau survives, MB/ymb lock; couplings pinned by composition with ckm, no_b_mass and MadGraph's default-restriction tables; MadGraph banking at this card still owed.
