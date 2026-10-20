@@ -1,18 +1,18 @@
 //! What MadGraph's automatic lowest-WEIGHTED search reads from a model: the
 //! largest WEIGHTED of any interaction, which caps the search, and the particle
-//! hierarchy classes, which set where it starts.
-//!
-//! Both follow MadGraph 3.x's `base_objects.py`: `Interaction.get_WEIGHTED_order`
-//! and `Model.get_max_WEIGHTED` for the cap, `Model.get_particles_hierarchy` and
-//! `ProcessDefinition.get_minimum_WEIGHTED` for the start. MadGraph raises
-//! `KeyError` on an interaction order its hierarchy does not list; here such an
-//! order weighs nothing and admits its interaction to no class, as the diagram
-//! filter the search bounds ignores it too.
+//! hierarchy classes, which set where it starts. The quantities follow MadGraph
+//! 3.x's `base_objects.py`; each cites its lines where it is computed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The WEIGHTED of one coupling-order tuple: each order's power times its
-/// hierarchy, summed. An order the hierarchy does not list weighs nothing.
+/// hierarchy, summed (`Interaction.get_WEIGHTED_order`, `base_objects.py:893-899`,
+/// before its division by the vertex size).
+///
+/// An order the hierarchy does not list weighs nothing, and an interaction
+/// carrying one joins no particle class (see [`WeightedSearchModel::new`]): the
+/// diagram filter the search bounds ignores such an order too, where MadGraph
+/// raises `KeyError` (`base_objects.py:897`, `:1448`).
 pub(crate) fn order_weight(
     orders: &BTreeMap<String, usize>,
     hierarchy: &BTreeMap<String, u32>,
@@ -33,15 +33,18 @@ pub(crate) struct Interaction<'a> {
 
 /// The model-level inputs of the automatic WEIGHTED search, computed once from
 /// the restricted interaction set.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone)]
 pub(crate) struct WeightedSearchModel {
     /// The largest WEIGHTED of any interaction per equivalent three-point
-    /// vertex, `WEIGHTED / max(n_particles - 2, 1)`, truncated to an integer
-    /// as `find_optimal_process_orders` truncates it. A four-point vertex
-    /// carrying QED=2 under a QED hierarchy of 2 counts 2, not 4.
+    /// vertex, `WEIGHTED / max(n_particles - 2, 1)` (`Interaction.get_WEIGHTED_order`,
+    /// `Model.get_max_WEIGHTED`, `base_objects.py:893-899`, `:1481-1486`),
+    /// truncated to an integer as `find_optimal_process_orders` truncates it
+    /// (`diagram_generation.py:1999`). A four-point vertex carrying QED=2 under a
+    /// QED hierarchy of 2 counts 2, not 4.
     pub(crate) max_interaction_weighted: u32,
     /// Rising hierarchy values, each with the particles first reached by the
-    /// interactions all of whose orders sit at or below it.
+    /// interactions all of whose orders sit at or below it
+    /// (`Model.get_particles_hierarchy`, `base_objects.py:1432-1479`).
     pub(crate) particle_classes: Vec<(u32, BTreeSet<i64>)>,
 }
 
@@ -89,7 +92,8 @@ impl WeightedSearchModel {
         }
     }
 
-    /// The bound the search tries first (`get_minimum_WEIGHTED`).
+    /// The bound the search tries first (`ProcessDefinition.get_minimum_WEIGHTED`,
+    /// `base_objects.py:3910-3966`).
     ///
     /// Each leg takes the value of the first class holding any of its PDG codes
     /// (a leg in no class takes none); the two smallest values are dropped, as
@@ -134,19 +138,15 @@ impl WeightedSearchModel {
         match propagator {
             None => legs_sum,
             Some((w, n)) => {
-                // Python's `rest[:-2n]`, which is empty for n = 0.
-                let kept = if n == 0 {
-                    0
-                } else {
-                    rest.len().saturating_sub(2 * n)
-                };
+                let kept = rest.len().saturating_sub(2 * n);
                 legs_sum.max(w + rest[..kept].iter().sum::<u32>())
             }
         }
     }
 
     /// The bound the search stops at: `(n_ext - 2)` times
-    /// [`max_interaction_weighted`](Self::max_interaction_weighted).
+    /// [`max_interaction_weighted`](Self::max_interaction_weighted)
+    /// (`diagram_generation.py:1998-1999`).
     pub(crate) fn maximum_weighted(&self, n_ext: usize) -> u32 {
         n_ext.saturating_sub(2) as u32 * self.max_interaction_weighted
     }
@@ -203,6 +203,24 @@ mod tests {
             search.particle_classes,
             vec![(1, BTreeSet::new()), (2, everything)]
         );
+    }
+
+    /// Powers multiply the hierarchy; an order the hierarchy omits adds nothing,
+    /// and an interaction carrying one is in no class (its other orders still
+    /// count towards the cap).
+    #[test]
+    fn an_unlisted_order_weighs_nothing_and_joins_no_class() {
+        let h = hierarchy(&[("QCD", 1), ("QED", 2)]);
+        assert_eq!(order_weight(&orders(&[("QCD", 3), ("QED", 2)]), &h), 7);
+        assert_eq!(order_weight(&orders(&[("QED", 1), ("LOOP", 5)]), &h), 2);
+        let loop_vertex = orders(&[("QED", 1), ("LOOP", 1)]);
+        let interactions = [Interaction {
+            pdg_codes: vec![25, 21, 21],
+            orders: &loop_vertex,
+        }];
+        let search = WeightedSearchModel::new(&interactions, &h);
+        assert_eq!(search.max_interaction_weighted, 2);
+        assert_eq!(search.particle_classes, vec![(2, BTreeSet::new())]);
     }
 
     fn sm_like() -> WeightedSearchModel {

@@ -49,7 +49,7 @@ use super::diagram::{
     CanonicalDiagram, ChainNode, DecayOrigin, Diagram, Leg, LegIdx, OnShell, Prop, PropIdx, Ray,
     VtxIdx,
 };
-use super::{generate_from_process, DiagramError, DiagramSet};
+use super::{generate_from_process, DiagramError, DiagramSet, ProcessRole};
 use crate::ufo::UFOModel;
 
 /// Enumerate a decay-chain process by stitching: one [`DiagramSet`] per core subprocess
@@ -90,10 +90,13 @@ fn chain_sets(
         decays: Vec::new(),
         ..process.clone()
     };
-    // MadGraph flags every decay of a chain `is_decay_chain`, which keeps the
-    // automatic WEIGHTED search on for it; only the chain's own core can be a
-    // top-level one-particle process that skips it.
-    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model, node.0 != 0)?
+    // Only the chain's own core can be a top-level one-particle process.
+    let role = if node.0 == 0 {
+        ProcessRole::TopLevel
+    } else {
+        ProcessRole::ChainDecay
+    };
+    let core_sets: Vec<DiagramSet> = generate_from_process(&core_process, model, role)?
         .into_iter()
         .filter(|s| !s.diagrams.is_empty())
         .collect();

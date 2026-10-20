@@ -35,14 +35,18 @@ fn toy_model() -> std::sync::Arc<UFOModel> {
     UFOModel::load(&dir, None).expect("the toy WEIGHTED model loads")
 }
 
-fn generate(process: &str, model: &UFOModel) -> Result<Vec<DiagramSet>, DiagramError> {
+/// The refusal-carrying counterpart of `common::generate_with`.
+fn try_generate(process: &str, model: &UFOModel) -> Result<Vec<DiagramSet>, DiagramError> {
     let card = parse_proc_card(&format!("generate {process}"), &ParsingOptions::default())
         .expect("the process card parses");
     generate_from_proc_card(&card, model)
 }
 
-fn total(sets: &[DiagramSet]) -> usize {
-    sets.iter().map(|s| s.diagrams.len()).sum()
+fn count(process: &str, model: &UFOModel) -> usize {
+    common::generate_with(process, model)
+        .iter()
+        .map(|s| s.diagrams.len())
+        .sum()
 }
 
 /// `fw~ fw > xw xw`: the only diagrams are the t- and u-channel `fw` exchanges,
@@ -57,8 +61,7 @@ fn total(sets: &[DiagramSet]) -> usize {
 #[test]
 fn a_two_order_vertex_is_found_above_the_largest_hierarchy() {
     let model = toy_model();
-    let sets = generate("fw~ fw > xw xw", &model).expect("diagrams at WEIGHTED 6");
-    assert_eq!(total(&sets), 2);
+    assert_eq!(count("fw~ fw > xw xw", &model), 2);
 }
 
 /// `fw~ fw > xw xw vw`: the fermion line emits two `xw` and one `vw`, in any
@@ -69,8 +72,7 @@ fn a_two_order_vertex_is_found_above_the_largest_hierarchy() {
 #[test]
 fn a_two_order_vertex_is_found_by_the_search_below_the_cap() {
     let model = toy_model();
-    let sets = generate("fw~ fw > xw xw vw", &model).expect("diagrams at WEIGHTED 8");
-    assert_eq!(total(&sets), 6);
+    assert_eq!(count("fw~ fw > xw xw vw", &model), 6);
 }
 
 /// `xw xw > xw xw`: the contact `xw^4` (WEIGHTED 2) and the s-, t- and
@@ -81,8 +83,7 @@ fn a_two_order_vertex_is_found_by_the_search_below_the_cap() {
 #[test]
 fn the_search_starts_where_madgraph_starts() {
     let model = toy_model();
-    let sets = generate("xw xw > xw xw", &model).expect("diagrams at WEIGHTED 4");
-    assert_eq!(total(&sets), 4);
+    assert_eq!(count("xw xw > xw xw", &model), 4);
 }
 
 /// A process with no tree at any order is refused, as MadGraph raises
@@ -91,9 +92,9 @@ fn the_search_starts_where_madgraph_starts() {
 #[test]
 fn a_process_without_diagrams_at_the_cap_is_refused() {
     let model = toy_model();
-    match generate("vw vw > yw", &model) {
+    match try_generate("vw vw > yw", &model) {
         Err(DiagramError::NoDiagrams { .. }) => {}
-        other => panic!("expected NoDiagrams, got {:?}", other.map(|s| total(&s))),
+        other => panic!("expected NoDiagrams, got {:?}", other.map(|s| s.len())),
     }
 }
 
@@ -110,9 +111,9 @@ fn a_process_without_diagrams_at_the_cap_is_refused() {
 #[test]
 fn a_top_level_decay_runs_no_weighted_search() {
     let model = common::sm_model();
-    let auto = total(&generate("z > u u~ d d~", &model).unwrap());
-    let unbounded = total(&generate("z > u u~ d d~ QCD<=99 QED<=99", &model).unwrap());
-    let lowest = total(&generate("z > u u~ d d~ WEIGHTED<=4", &model).unwrap());
+    let auto = count("z > u u~ d d~", &model);
+    let unbounded = count("z > u u~ d d~ QCD<=99 QED<=99", &model);
+    let lowest = count("z > u u~ d d~ WEIGHTED<=4", &model);
     assert_eq!(lowest, 4, "the four gluon exchanges");
     assert_eq!(auto, unbounded);
     assert!(auto > lowest, "{auto} diagrams, {lowest} at WEIGHTED<=4");
@@ -126,10 +127,24 @@ fn a_top_level_decay_runs_no_weighted_search() {
 #[test]
 fn a_decay_inside_a_chain_runs_the_search() {
     let model = common::sm_model();
-    let chained = total(&generate("e+ e- > z h, z > u u~ d d~", &model).unwrap());
-    let core = total(&generate("e+ e- > z h", &model).unwrap());
+    let chained = count("e+ e- > z h, z > u u~ d d~", &model);
+    let core = count("e+ e- > z h", &model);
     assert_eq!(core, 1);
     assert_eq!(chained, 4);
+}
+
+/// The core of a chain that is itself a one-particle process is top-level, and
+/// runs no search: `z > t t~ u u~` has 13 diagrams unbounded and 4 at
+/// `WEIGHTED<=4` (the gluon exchanges), and with the two top decays attached
+/// (each one diagram) the chain keeps all 13.
+#[test]
+fn a_chain_whose_core_is_a_decay_runs_no_search_on_the_core() {
+    let model = common::sm_model();
+    let bounded = count("z > t t~ u u~ WEIGHTED<=4", &model);
+    let core = count("z > t t~ u u~", &model);
+    let chained = count("z > t t~ u u~, t > b w+, t~ > b~ w-", &model);
+    assert_eq!((bounded, core), (4, 13));
+    assert_eq!(chained, core);
 }
 
 /// MadGraph's search drops the final-state gluons from each trial when the
@@ -146,23 +161,23 @@ fn a_decay_inside_a_chain_runs_the_search() {
 /// `NoDiagramException`. A search that trials the full process instead runs on
 /// past 6 to the `Z* -> Z h*, h* -> g g` diagram.
 #[test]
-#[ignore = "the search trials the full process; MadGraph trials it with the final-state gluons removed"]
+#[ignore = "passes once the search trials each subprocess with its final-state gluons removed, as MadGraph does; today it trials the full process"]
 fn a_final_state_gluon_pair_without_a_qcd_vertex_is_refused() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
     let model = UFOModel::load(&dir, Some(&dir.join("restrict_SMlimit_massless.dat")))
         .expect("SMEFTsim's SM limit loads");
-    let reduced = total(&generate("e+ e- > z WEIGHTED<=4", &model).unwrap());
+    let reduced = count("e+ e- > z WEIGHTED<=4", &model);
     assert_eq!(reduced, 1, "the trial MadGraph makes at its start, 6");
     assert!(
         matches!(
-            generate("e+ e- > z g g WEIGHTED<=6", &model),
+            try_generate("e+ e- > z g g WEIGHTED<=6", &model),
             Err(DiagramError::NoDiagrams { .. })
         ),
         "nothing at the bound MadGraph returns"
     );
-    match generate("e+ e- > z g g", &model) {
+    match try_generate("e+ e- > z g g", &model) {
         Err(DiagramError::NoDiagrams { .. }) => {}
-        other => panic!("expected NoDiagrams, got {:?}", other.map(|s| total(&s))),
+        other => panic!("expected NoDiagrams, got {:?}", other.map(|s| s.len())),
     }
 }

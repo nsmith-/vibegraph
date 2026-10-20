@@ -416,7 +416,7 @@ fn enumerate(proc_card: &SupportedCard, model: &UFOModel) -> Result<Vec<DiagramS
     // count is refused.
     let mut owner: HashMap<FlavourKey, Vec<(usize, usize)>> = HashMap::new();
     for (index, process) in proc_card.processes.iter().enumerate() {
-        let process_sets = generate_from_process(process, model, false)?;
+        let process_sets = generate_from_process(process, model, ProcessRole::TopLevel)?;
         if process_sets.iter().all(|s| s.diagrams.is_empty()) {
             return Err(DiagramError::NoDiagrams {
                 process: process.to_string(),
@@ -527,6 +527,17 @@ fn concrete_polarization(
 /// orders.
 const WEIGHTED: &str = "WEIGHTED";
 
+/// Where a process sits in the card, which decides whether a one-particle
+/// process gets the automatic WEIGHTED search.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProcessRole {
+    /// A process the card asks for, or a decay chain's core.
+    TopLevel,
+    /// A decay inside a chain, which MadGraph flags `is_decay_chain`
+    /// (`diagram_generation.py:1381-1382`).
+    ChainDecay,
+}
+
 /// Generate diagrams for one process of a checked card.
 ///
 /// Resolves the legs against the model, builds a `DiagramSelector` for each
@@ -542,7 +553,8 @@ const WEIGHTED: &str = "WEIGHTED";
 /// UFO `coupling_orders.py` (e.g. QCD→1, QED→2 in the SM). An explicit
 /// `WEIGHTED<=n` is that same filter at a bound the card chose. A one-particle
 /// process runs no search unless it is a decay inside a chain
-/// (`is_decay_chain`): every order is generated.
+/// ([`ProcessRole::ChainDecay`]): every order is generated
+/// (`diagram_generation.py:1978-1980`).
 ///
 /// The s-channel restrictions filter the converted diagrams inside the search,
 /// as they do inside MadGraph's (`find_optimal_process_orders` generates each
@@ -551,12 +563,12 @@ const WEIGHTED: &str = "WEIGHTED";
 fn generate_from_process(
     process: &SupportedProcess,
     model: &UFOModel,
-    is_decay_chain: bool,
+    role: ProcessRole,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     if !process.decays.is_empty() {
         return chain::generate_chain(process, model);
     }
-    let mut sets = generate_undecayed(process, model, is_decay_chain)?;
+    let mut sets = generate_undecayed(process, model, role)?;
     for diagram in sets.iter_mut().flat_map(|s| s.diagrams.iter_mut()) {
         diagram.provenance.process = process.id;
     }
@@ -567,7 +579,7 @@ fn generate_from_process(
 fn generate_undecayed(
     process: &SupportedProcess,
     model: &UFOModel,
-    is_decay_chain: bool,
+    role: ProcessRole,
 ) -> Result<Vec<DiagramSet>, DiagramError> {
     // MadGraph accepts `EW` on a model whose order is called `QED` (and the
     // reverse), then constrains the name as written, which no vertex carries:
@@ -678,8 +690,8 @@ fn generate_undecayed(
     // but they never decide whether the automatic WEIGHTED search runs: MadGraph
     // applies them (`Process.check_expansion_orders`) only after
     // `find_optimal_process_orders` has looked at the process's own orders.
-    let is_decay = n_in == 1 && !is_decay_chain;
-    let auto_weighted = process.orders.is_empty() && !is_decay;
+    let top_level_decay = n_in == 1 && role == ProcessRole::TopLevel;
+    let auto_weighted = process.orders.is_empty() && !top_level_decay;
     let expanded = ExpandedProcess {
         orders: capped_orders(&expanded.orders, model),
         ..expanded
@@ -691,9 +703,11 @@ fn generate_undecayed(
         let start = search.minimum_weighted(&leg_ids, &expanded.schannels.required) as usize;
         let cap = search.maximum_weighted(n_ext) as usize;
 
-        // MadGraph tries every bound below the cap and, finding nothing, generates
-        // at the bound it stopped at, `max(start, cap)`; its diagrams, if any, are
-        // the result.
+        // `find_optimal_process_orders`: start at the model's estimate for the legs
+        // (`get_minimum_WEIGHTED`), raise the bound by one (:2111) while it is
+        // below the cap (:2013) and no subprocess has a diagram, then generate at
+        // the bound the loop stopped at, `max(start, cap)` (:2115, :1683-1686);
+        // its diagrams, if any, are the result.
         let mut w = start;
         while w < cap {
             let sets = generate_sets_inner(&expanded, model, Some(w), &cached_topologies)?;
