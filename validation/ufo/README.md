@@ -109,3 +109,15 @@ whose particle multiset is not self-conjugate is reachable from one side only
 unless the h.c. term is in the model too. Every Standard-Model vertex happens to
 be self-conjugate as a multiset, which is why nothing in this repository had met
 the rule before.
+
+## `vibegraph_toy_names_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | Particle names that are not MadGraph's defaults for their PDG codes: the muon as `m-`/`m+` (what `loop_sm` calls it) and the up quark as `up`/`up~`, beside a photon `a` that already has its default name. `vibegraph-lib/tests/particle_names.rs` reads it to pin `import model`'s renaming by PDG code and `--modelname` switching it off |
+
+Two massless fermions coupled to the photon, one vertex each, so `u u~ > mu+ mu-`
+is a single s-channel diagram. `object_library.py` and `function_library.py`
+are `vibegraph_toy_UFO`'s.

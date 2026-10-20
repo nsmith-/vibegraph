@@ -4,6 +4,7 @@ pub(crate) mod couplings;
 pub(crate) mod expr;
 pub mod identity;
 pub mod lorentz;
+pub mod names;
 pub mod parameters;
 pub mod particles;
 pub(crate) mod propagators;
@@ -31,7 +32,13 @@ use std::{
 use thiserror::Error;
 use vertices::{parse_vertices, RawVertex, Vertex, VertexError, VertexId};
 
+use names::{DefaultNameConflict, ParticleNames, ParticleNaming};
 use topo::build_feyngraph_model;
+
+/// Every particle and antiparticle as (UFO name, PDG code).
+fn particle_codes(particles: &IndexMap<String, Particle>) -> impl Iterator<Item = (&str, i64)> {
+    particles.values().map(|p| (p.name.as_str(), p.pdg_code))
+}
 
 /// UFO source files [`ParsedModel::parse`] requires, in read order.
 pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
@@ -134,6 +141,8 @@ pub enum UfoError {
     },
     #[error("unknown SM restrict variant '{variant}' (the built-in SM has: {known})")]
     UnknownSmRestrict { variant: String, known: String },
+    #[error("{0}")]
+    DefaultName(#[from] DefaultNameConflict),
 }
 
 /// A UFO model with all topology and field/parameter/coupling information loaded.
@@ -157,6 +166,8 @@ pub struct UFOModel {
     /// far a process may go in each order. Read through
     /// [`expansion_order_caps`], which applies MadGraph's `0 < v < 99` rule.
     pub expansion_order: BTreeMap<String, i64>,
+    /// The names a card may write for the particles; see [`names`].
+    pub(crate) names: ParticleNames,
 }
 
 /// The parsed, pre-restriction UFO model data.
@@ -312,7 +323,9 @@ impl ParsedModel {
             &self.vertices,
         )?;
 
+        let names = ParticleNames::of_model(particle_codes(&self.particles));
         Ok(UFOModel {
+            names,
             particles: self.particles,
             lorentz: self.lorentz,
             couplings: self.couplings,
@@ -342,6 +355,18 @@ impl UFOModel {
     pub fn load_with_digest(
         path: &Path,
         restrict_card: Option<&Path>,
+    ) -> Result<(Arc<Self>, String), UfoError> {
+        Self::load_with_digest_and_naming(path, restrict_card, ParticleNaming::default())
+    }
+
+    /// [`load_with_digest`](Self::load_with_digest) with the particle names
+    /// `naming` gives, the model's name for MadGraph's renaming being the
+    /// directory's base name. The digest does not depend on the naming: it
+    /// identifies the physics, which a name cannot change.
+    pub fn load_with_digest_and_naming(
+        path: &Path,
+        restrict_card: Option<&Path>,
+        naming: ParticleNaming,
     ) -> Result<(Arc<Self>, String), UfoError> {
         let mut parsed = ParsedModel::parse(path)?;
 
@@ -374,8 +399,32 @@ impl UFOModel {
         }
         let digest = model_digest(&parsed);
         // The restriction is already baked in, so `into_model` only builds topology.
-        let model = parsed.into_model(None)?;
+        let model_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let model = parsed
+            .into_model(None)?
+            .with_particle_naming(naming, &model_name)?;
         Ok((Arc::new(model), digest))
+    }
+
+    /// The model with its particles answering to the names `naming` gives;
+    /// `model_name` is the name MadGraph's renaming reads (its directory's base
+    /// name).
+    pub fn with_particle_naming(
+        mut self,
+        naming: ParticleNaming,
+        model_name: &str,
+    ) -> Result<Self, UfoError> {
+        self.names =
+            ParticleNames::with_naming(particle_codes(&self.particles), naming, model_name)?;
+        Ok(self)
+    }
+
+    /// The names a card may write for this model's particles.
+    pub fn particle_names(&self) -> &ParticleNames {
+        &self.names
     }
 
     // ── Name → index lookup ───────────────────────────────────────────────────

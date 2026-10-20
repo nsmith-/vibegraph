@@ -235,7 +235,7 @@ Other refusals:
 - Bugs and panics: [WEIGHTED search cap](../backlog/feature/auto-weighted-search-cap-uses-hierarchy.md),
   [UFO `if configuration` branches](../backlog/feature/ufo-parameters-conditional-branches-panic.md),
   [fermion-number violation panics](../backlog/feature/fermion-number-violation-panics-instead-of-refusing.md),
-  [default particle names and `--modelname`](../backlog/feature/madgraph-default-particle-names-missing.md).
+  default particle names and `--modelname` (closed by [the default-particle-names sprint](../sprints/default-particle-names/sprint.md)).
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),
   [duplicate subprocess across decay assignments](../backlog/validation/decay-chain-duplicate-subprocess-vs-madgraph.md).
