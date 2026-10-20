@@ -131,3 +131,38 @@ fn a_decay_inside_a_chain_runs_the_search() {
     assert_eq!(core, 1);
     assert_eq!(chained, 4);
 }
+
+/// MadGraph's search drops the final-state gluons from each trial when the
+/// gluon sits in the lowest hierarchy class, and lowers the trial's bound by
+/// their QCD weight (`find_optimal_process_orders`, `diagram_generation.py`
+/// :2040-2059); the bound it returns is then used for the full process.
+///
+/// SMEFTsim's SM limit, `e+ e- > z g g`: every leg but the gluons is in the
+/// QED class (2), the gluons in the QCD class (1), so the search starts at
+/// 2 + 2 + 2 = 6. The trial at 6 is `e+ e- > z` at `WEIGHTED<=4`, which has
+/// its one `e+ e- Z` vertex (WEIGHTED 2): MadGraph returns 6, finds no diagram
+/// of the full process at `WEIGHTED<=6` (the gluon pair couples only through the
+/// loop-induced `h g g` vertex, order `SMHLOOP`, hierarchy 99) and raises
+/// `NoDiagramException`. A search that trials the full process instead runs on
+/// past 6 to the `Z* -> Z h*, h* -> g g` diagram.
+#[test]
+#[ignore = "the search trials the full process; MadGraph trials it with the final-state gluons removed"]
+fn a_final_state_gluon_pair_without_a_qcd_vertex_is_refused() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../validation/ufo/SMEFTsim_topU3l_MwScheme_UFO");
+    let model = UFOModel::load(&dir, Some(&dir.join("restrict_SMlimit_massless.dat")))
+        .expect("SMEFTsim's SM limit loads");
+    let reduced = total(&generate("e+ e- > z WEIGHTED<=4", &model).unwrap());
+    assert_eq!(reduced, 1, "the trial MadGraph makes at its start, 6");
+    assert!(
+        matches!(
+            generate("e+ e- > z g g WEIGHTED<=6", &model),
+            Err(DiagramError::NoDiagrams { .. })
+        ),
+        "nothing at the bound MadGraph returns"
+    );
+    match generate("e+ e- > z g g", &model) {
+        Err(DiagramError::NoDiagrams { .. }) => {}
+        other => panic!("expected NoDiagrams, got {:?}", other.map(|s| total(&s))),
+    }
+}
