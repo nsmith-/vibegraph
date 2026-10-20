@@ -13,6 +13,7 @@ generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: tiers, resource: "../../phase-space/multi-tier-vegas-and-cut-edges.md", title: "Multi-tier VEGAS, absolute grid coordinates and sharp cut edges (draft)"}
   - {id: seam, resource: "../../phase-space/importance-sampler-seam.md", title: "A pluggable importance sampler (proposed)"}
+  - {id: m1, resource: "../../sprints/vegas-absolute-grid-coords/sessions/M1-report.md", title: "M1: where the weight tail meets the cut edges, per channel"}
 ---
 The user asked (2026-10-20) for the pluggable sampler and the pluggable phase
 space to be designed together.
@@ -32,10 +33,24 @@ Several pieces of planned work meet in the same draw → map → weight path:
   flows. So which side owns the window is the central question.
 
 Designed apart, each seam would fix an interface the other then has to work
-around. The design session should start from the measurements the multi-tier
-draft asks for: each edge's share of σ, variance and w_max per channel; whether
-the trained (τ, y) grids agree across channels; and what a rejected point costs
-against an accepted one.
+around. The design session should start from the measurements in
+[M1's report](../../sprints/vegas-absolute-grid-coords/sessions/M1-report.md),
+taken on `pp_to_llj_fixed`, `pp_to_jj` and `pp_to_llj_mlm`. They cover:
+- each edge's share of σ, variance and w_max per channel;
+- whether the trained (τ, y) grids agree across channels;
+- what a rejected point costs against an accepted one.
+
+M1 left four inputs the session must settle:
+- **The multi-multiplicity MLM tail is unmeasured.** `pp_to_ll_0j2j_mlm` is a
+  `MultiplicitySum`, which the probe does not cover. It is the row where the
+  outer (τ, y) edge bins carried the tail.
+- **A shared (τ, y) tier needs an offline variance replay, not an L1.**
+  Starved channels' τ grids differ from the pool at 1.8–2.8× seed noise. The
+  replay re-weights each channel's recorded points to the pooled q*.
+- **About half of the ℓℓj tail is in the interior, away from every cut edge,
+  and where it sits is unmeasured.**
+- **The ℓℓj jet-pT window is two intervals (±cos θ) in all-timelike
+  channels**, so a conditional window there is not one interval.
 
 Rewritten against the outcome:
 - [sampler-hardwired-to-vegas-grid](sampler-hardwired-to-vegas-grid.md)

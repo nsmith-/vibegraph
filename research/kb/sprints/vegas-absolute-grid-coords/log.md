@@ -36,3 +36,9 @@
   - A rejected point costs 0.06–1.7% of the evaluation time, and removing
     rejection could buy at most 1.3–1.5× in variance × CPU. That corrects the
     design draft's "tends to 1".
+* **Close-out, the user's decision (2026-10-20, relayed by the planner): #49
+  merges the probe and the M1 report.** It closes no backlog item, and
+  `vegas-grid-coords-not-absolute` stays open for the design session to
+  rewrite. M1's Found 1–4 are folded into
+  `sampler-and-phase-space-seams-designed-apart` as inputs. Found 5 is filed as
+  `resolve-mom-dead-code-under-release-debug-tests`.
