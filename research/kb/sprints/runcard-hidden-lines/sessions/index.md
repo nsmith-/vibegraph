@@ -10,3 +10,4 @@
 ## Session Report
 
 * [F1 report: hidden_parameter lines read, systematics request warns](F1-report.md) - split_line cuts comments at the first '#' or '!'; a card requesting systematics weights warns that none are written.
+* [HY1 report: hygiene review of the hidden-line parser fix and the systematics warning](HY1-report.md) - One shared tracing test capture, the systematics field list derived from the classification table, a per-field warning test, split_line's doc in the code's own terms.
