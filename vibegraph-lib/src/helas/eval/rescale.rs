@@ -193,11 +193,11 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
         }
         match self.model {
             Some(ref mut model) => {
-                // A model with no `aS` has no strong coupling to move.
-                if model.set_alpha_s(alpha_s).is_err() {
-                    self.alpha_s = alpha_s;
-                    return;
-                }
+                // A scale-dependent plan tags a power of `G` driven by `aS`, so the model
+                // has an `aS`; a model without one never gets here (see above).
+                model
+                    .set_alpha_s(alpha_s)
+                    .expect("a scale-dependent plan implies the model has an `aS`");
                 let (c, f) = self.amp.evaluator().folded().pools::<F>(model);
                 self.amp.set_pools(c, f);
             }
@@ -363,9 +363,9 @@ fn sqrt_law_violation(
     }
     let mut probe = evaluated.clone();
     for ratio in [4.0, 0.37] {
-        if probe.set_alpha_s(alpha_s_ref * ratio).is_err() {
-            return Some(RescaleFallback::NoReferenceCoupling);
-        }
+        probe
+            .set_alpha_s(alpha_s_ref * ratio)
+            .expect("`G` is driven by `aS`, so the model has an `aS`");
         let g = probe.param_values["G"];
         if g.im != 0.0 {
             return Some(RescaleFallback::CouplingExponent(f64::NAN));

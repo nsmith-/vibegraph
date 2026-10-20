@@ -28,7 +28,7 @@ use std::sync::Arc;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude};
+use vibegraph::helas::eval::{AmplitudeEvaluator, BoundAmplitude, ScaleAwareAmplitude};
 use vibegraph::helas::LorentzVector;
 use vibegraph::phasespace::rambo_massive;
 use vibegraph::ufo::{EvaluatedModel, UFOModel, UfoError};
@@ -265,7 +265,7 @@ const MERGE_NPD: (&str, &str, &str) = ("couplings.py", "order={'NPD': 1}", "orde
 
 /// A copy of `vibegraph_toy_UFO` in a fresh scratch directory, with each
 /// `(file, from, to)` replacement applied and each `(file, text)` of `appends`
-/// appended to its file, loaded under `restrict_all`. Every `from` must occur in its
+/// appended to its file (created if the model has none), loaded under `restrict_all`. Every `from` must occur in its
 /// file.
 fn try_edited_toy_model(
     edits: &[(&str, &str, &str)],
@@ -289,7 +289,7 @@ fn try_edited_toy_model(
         std::fs::write(dst.join(file), text.replace(from, to)).unwrap();
     }
     for (file, tail) in appends {
-        let text = std::fs::read_to_string(dst.join(file)).unwrap();
+        let text = std::fs::read_to_string(dst.join(file)).unwrap_or_default();
         std::fs::write(dst.join(file), format!("{text}\n{tail}\n")).unwrap();
     }
     UFOModel::load(dst, Some(&dst.join("restrict_all.dat")))
@@ -405,26 +405,42 @@ if configuration.extra:
     );
 }
 
-/// The same refusal for couplings and Lorentz structures.
-#[test]
-fn conditional_coupling_and_lorentz_definitions_are_refused_by_name() {
-    let coupling = "\
-if configuration.extra:
-    GC_extra = Coupling(name='GC_extra', value='gl', order={'QED': 1})
-";
-    let err = try_edited_toy_model(&[], &[("couplings.py", coupling)])
+/// The refusal names its file and the object, whichever of the six files holds it.
+fn assert_refused_in(file: &str, tail: &str, name: &str) {
+    let err = try_edited_toy_model(&[], &[(file, tail)])
         .err()
-        .expect("a conditional coupling must be refused");
-    assert!(err.to_string().contains("'GC_extra'"), "{err}");
+        .unwrap_or_else(|| panic!("a conditional definition in {file} must be refused"));
+    assert!(
+        matches!(&err, UfoError::ConditionalDefinition { file: f, names } if *f == file && names == name),
+        "{file}: {err}"
+    );
+}
 
-    let lorentz = "\
-if configuration.extra:
-    L_extra = Lorentz(name='L_extra', spins=[1, 1], structure='Identity(1,2)')
-";
-    let err = try_edited_toy_model(&[], &[("lorentz.py", lorentz)])
-        .err()
-        .expect("a conditional Lorentz structure must be refused");
-    assert!(err.to_string().contains("'L_extra'"), "{err}");
+/// The same refusal for the remaining files: couplings, Lorentz structures, coupling
+/// orders and propagators (the last absent from the toy model, so appended to a new
+/// file).
+#[test]
+fn conditional_coupling_lorentz_order_and_propagator_definitions_are_refused() {
+    assert_refused_in(
+        "couplings.py",
+        "if configuration.extra:\n    GC_extra = Coupling(name='GC_extra', value='gl', order={'QED': 1})\n",
+        "'GC_extra'",
+    );
+    assert_refused_in(
+        "lorentz.py",
+        "if configuration.extra:\n    L_extra = Lorentz(name='L_extra', spins=[1, 1], structure='Identity(1,2)')\n",
+        "'L_extra'",
+    );
+    assert_refused_in(
+        "coupling_orders.py",
+        "if configuration.extra:\n    NPX = CouplingOrder(name='NPX', expansion_order=1, hierarchy=2)\n",
+        "'NPX'",
+    );
+    assert_refused_in(
+        "propagators.py",
+        "if configuration.extra:\n    P_extra = Propagator(name='P_extra', numerator='1', denominator='1')\n",
+        "'P_extra'",
+    );
 }
 
 /// `recompute` and `set_alpha_s` return an error naming the parameter the model
@@ -439,6 +455,40 @@ fn recompute_of_an_unknown_parameter_is_an_error() {
     assert!(err.to_string().contains("'no_such_parameter'"), "{err}");
     let err = ev.set_alpha_s(0.118).expect_err("the toy model has no aS");
     assert!(err.to_string().contains("'aS'"), "{err}");
+}
+
+/// A model with no `aS` has no strong coupling to move: a per-event `αs` leaves the
+/// amplitude exactly where it was bound, on the scaling path and without a panic.
+///
+/// Blind to which early return of `ScaleAwareAmplitude::set_alpha_s` fires, since
+/// every pool entry of such a model has power zero and a rescale would multiply
+/// nothing; it sees a path that reaches `EvaluatedModel::set_alpha_s` (an error
+/// for this model) instead.
+#[test]
+fn a_model_without_a_strong_coupling_ignores_the_per_event_alpha_s() {
+    let model = UFOModel::load(
+        &toy_ufo_dir(),
+        Some(&toy_ufo_dir().join("restrict_all.dat")),
+    )
+    .expect("load the toy model");
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    assert!(evaluated.alpha_s().is_none(), "the toy model has an aS");
+    let set = common::generate_with("lt~ lt > qt qt~ NP<=1", model.as_ref()).remove(0);
+    let ev = AmplitudeEvaluator::compile(&set, model.as_ref()).expect("compile");
+    let mut amp = ScaleAwareAmplitude::<f64>::new(&ev, &evaluated);
+    assert!(amp.fallback().is_none(), "{:?}", amp.fallback());
+
+    let mut rng = ChaCha8Rng::seed_from_u64(7);
+    let momenta = toy_point(1000.0, [10.0, 10.0], &[50.0, 50.0], &mut rng);
+    let mut scratch = amp.scratch_space();
+    let before = amp.eval_m2(&momenta, &mut scratch);
+    let pools: Vec<_> = amp.amplitude().pools().0.to_vec();
+    assert!(before > 0.0 && before.is_finite(), "{before}");
+    for alpha_s in [0.3, 0.05, 0.3] {
+        amp.set_alpha_s(alpha_s);
+        assert_eq!(amp.amplitude().pools().0, pools.as_slice());
+        assert_eq!(amp.eval_m2(&momenta, &mut scratch), before);
+    }
 }
 
 /// Incoming momenta along ±z for masses `initial` at `√s`, then the final state

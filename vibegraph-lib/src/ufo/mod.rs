@@ -58,18 +58,10 @@ fn refuse_conditional_definitions(
     let Ok(stmts) = ast_util::parse_stmts(src) else {
         return Ok(());
     };
-    let names = ast_util::conditional_constructor_names(&stmts, ctor);
-    if names.is_empty() {
-        return Ok(());
+    match ast_util::conditional_definitions(&stmts, ctor) {
+        Some(names) => Err(UfoError::ConditionalDefinition { file, names }),
+        None => Ok(()),
     }
-    Err(UfoError::ConditionalDefinition {
-        file,
-        names: names
-            .iter()
-            .map(|n| format!("'{n}'"))
-            .collect::<Vec<_>>()
-            .join(", "),
-    })
 }
 
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
@@ -1033,8 +1025,7 @@ mod tests {
         assert!(checked >= 10, "only {checked} externals checked");
     }
 
-    /// Moving a parameter the restriction locked to zero changes nothing: not the
-    /// parameter, not an internal reading it, not a coupling.
+    /// `recompute` of a name the model lacks is an error naming it, and moves nothing.
     #[test]
     fn recompute_refuses_an_unknown_parameter_and_changes_nothing() {
         let mut ev = EvaluatedModel::from_model(sm::sm_model(sm::SMRestrict::Default));
@@ -1047,6 +1038,8 @@ mod tests {
         assert_eq!(ev.param_values, before);
     }
 
+    /// Moving a parameter the restriction locked to zero changes nothing: not the
+    /// parameter, not an internal reading it, not a coupling.
     #[test]
     fn recompute_leaves_a_restriction_locked_parameter_alone() {
         let model = sm::sm_model(sm::SMRestrict::Default);

@@ -1,6 +1,5 @@
 use super::ast_util::{
-    conditional_constructor_names, constructor_calls, extract_int, kwarg_float, kwarg_str,
-    parse_stmts,
+    conditional_definitions, constructor_calls, extract_int, kwarg_float, kwarg_str, parse_stmts,
 };
 use super::expr::{collect_deps, eval, parse_expr, Expr};
 use super::slha::ParamCard;
@@ -198,15 +197,8 @@ impl ParameterSet {
 pub(crate) fn parse_parameters(content: &str) -> Result<ParameterSet, ParameterError> {
     let stmts = parse_stmts(content).map_err(|e| ParameterError::Parse(e.to_string()))?;
 
-    let conditional = conditional_constructor_names(&stmts, "Parameter");
-    if !conditional.is_empty() {
-        return Err(ParameterError::ConditionalDefinition {
-            names: conditional
-                .iter()
-                .map(|n| format!("'{n}'"))
-                .collect::<Vec<_>>()
-                .join(", "),
-        });
+    if let Some(names) = conditional_definitions(&stmts, "Parameter") {
+        return Err(ParameterError::ConditionalDefinition { names });
     }
 
     let mut externals: Vec<Parameter> = Vec::new();

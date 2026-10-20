@@ -44,10 +44,7 @@ pub(crate) fn constructor_calls<'a>(
 ///
 /// These are the definitions [`constructor_calls`] does not see: which branch
 /// runs depends on Python evaluated at import time.
-pub(crate) fn conditional_constructor_names<'a>(
-    stmts: &'a [ast::Stmt],
-    ctor: &str,
-) -> Vec<&'a str> {
+fn conditional_constructor_names<'a>(stmts: &'a [ast::Stmt], ctor: &str) -> Vec<&'a str> {
     fn walk<'a>(body: &'a [ast::Stmt], ctor: &str, inside_if: bool, out: &mut Vec<&'a str>) {
         for stmt in body {
             match stmt {
@@ -73,6 +70,19 @@ pub(crate) fn conditional_constructor_names<'a>(
     let mut out = Vec::new();
     walk(stmts, ctor, false, &mut out);
     out
+}
+
+/// [`conditional_constructor_names`] as one quoted, comma-separated list for an
+/// error message, or `None` when nothing is defined conditionally.
+pub(crate) fn conditional_definitions(stmts: &[ast::Stmt], ctor: &str) -> Option<String> {
+    let names = conditional_constructor_names(stmts, ctor);
+    (!names.is_empty()).then(|| {
+        names
+            .iter()
+            .map(|n| format!("'{n}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
 }
 
 /// Extract a string constant from an expression.
