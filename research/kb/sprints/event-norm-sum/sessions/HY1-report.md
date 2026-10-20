@@ -3,6 +3,7 @@ type: Session Report
 title: "HY1 report: hygiene review of the event_norm weights"
 description: "Review of F1's event_norm change: one weight rule and one refusal predicate, stale IDWTUP docs, a multi-part sum test, shared CLI integrations; F1's include=False finding does not reproduce."
 status: draft
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 ## Findings (written before any edit)
