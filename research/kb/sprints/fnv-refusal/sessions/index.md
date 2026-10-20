@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: refuse Majorana and fermion-number-violating processes before evaluation](F1.md) - A structural check on fermion lines refuses Majorana externals or propagators and fermion-number-violating vertices with an error naming the flow; the three panic sites become unreachable from such models.
+* [HY1: hygiene review of the fermion-flow refusal](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence; list the two toy UFOs in the toy-model concept.
 
 ## Session Report
 

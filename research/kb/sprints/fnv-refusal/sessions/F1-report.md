@@ -4,6 +4,7 @@ title: "F1 report: Majorana and fermion-number-violating diagrams are refused at
 description: "Each kept diagram is checked before it reaches the evaluator: a Majorana fermion on a leg or propagator, or a vertex pairing two particles or two antiparticles, is refused with a ConvertError naming it. Before the fix the FNV toy panicked at the survey's run.rs:1354 site, and both Majorana toys returned a σ without any error. The compile-time bra/ket resolution now asserts its operand pair."
 status: draft
 tags: [majorana, fermion-flow, refusal, panic, toy-ufo, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: fix, resource: "https://github.com/nsmith-/vibegraph/commit/a04fc80", title: "fix(diagrams): refuse Majorana and fermion-number-violating diagrams"}
