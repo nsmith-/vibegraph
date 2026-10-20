@@ -3,10 +3,10 @@ type: Backlog Item
 title: MadSpin decays are unsupported
 description: "11 of 65 LO CMS cards decay resonances with MadSpin; in scope only as a phase-space plugin, whose seam does not exist yet and needs a design session."
 area: feature
-state: needs-user
+state: blocked
 priority: medium
 closes_when: "MadSpin-style decays (spin-correlated, on-shell-window decays of production events) are implemented as a phase-space plugin behind a seam agreed with the user, and decayed distributions and σ × BR match MadSpin on a banked CMS card such as tt̄ with leptonic decays."
-blocked_by: []
+blocked_by: [sampler-and-phase-space-seams-designed-apart]
 opened: 2026-10-20
 tags: [madspin, decays, phase-space, plugin, design, cms]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
