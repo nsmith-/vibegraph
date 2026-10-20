@@ -4,7 +4,7 @@
 
 ## Sprint
 
-* [VEGAS grid on absolute invariant coordinates](sprint.md) - Add --map-grid-coords: bin each invariant's VEGAS coordinate on the absolute s/s_tot or −t/s_tot scale with the draw restricted to the point's window, as MadEvent's sample_get_x does, and measure it on the cut-edge rows.
+* [Where the weight tail meets the cut edges: measurements for the sampler seam design](sprint.md) - Measurement only, after the user's pivot (2026-10-20): per-channel edge proximity and coordinate alignment of the weight tail, cross-channel (τ, y) grid similarity and rejected-point cost, feeding the sampler and phase-space seam design. Absolute grid coordinates are not built.
 
 ## Directories
 

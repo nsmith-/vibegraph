@@ -4,6 +4,7 @@
 
 ## Session Brief
 
+* [M1: measure where the weight tail meets the cut edges, per channel](M1.md) - Measurement only: per-channel edge proximity and coordinate alignment of the weight tail on pp_to_llj_fixed, pp_to_jj and one MLM row; cross-channel similarity of the trained (τ, y) grids; and the cost of a rejected point against an accepted one.
 * [P1: invert the VEGAS↔channel contract and make every analytic map a fixed transform](P1.md) - Inert plumbing for absolute grid coordinates: the channel drives the grid one coordinate at a time, every analytic map becomes a fixed transform with the point's window inverted through it, and every seeded golden stays bit-identical.
 
 ## Session Report
