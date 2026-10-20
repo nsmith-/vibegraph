@@ -109,7 +109,7 @@ Findings:[^n36a-sigma]
   commits (`f85718d`, `c48fc69`, `f3d6e8b`). The falsifier for that attribution
   is one run of `probe_gate_row_seed_headroom` at `f85718d^`, not yet run. The
   re-record is
-  [σ calibration comments stale](../backlog/validation/sigma-calibration-comments-stale.md).
+  σ calibration comments stale (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md)).
 
 **Re-read, 2026-10-10.** `probe_gate_row_seed_headroom` at `3f401f0` no longer
 gives this page's readings: worst-of-five |rel| on `ee_to_ee` is 3.24e-3
@@ -118,7 +118,7 @@ against 1.44e-3 here (χ²/dof 2.31), `gg_to_gg` 2.66e-3 against 1.97e-3, and
 before the hygiene sprint, is identical line for line over its 68 rows, so the
 drift predates that sprint. The tables above are the census as measured; the
 re-record and the cause are
-[σ seed calibrations drifted](../backlog/validation/sigma-seed-calibrations-drifted.md)[^f-g2-report].
+σ seed calibrations drifted (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md))[^f-g2-report].
 
 ## `validate_samples.rs`: `P_FLOOR`
 
@@ -196,7 +196,7 @@ No threshold was widened.[^n36a-thin]
 | unweighting `SIGMA_PULL_LIMIT` | 1.77× at 4 seeds | 2.2× | `GEN_SEEDS` 4 → 5: the fifth seed buys the denominator of a pull whose error comes from the same seeds |
 
 The budget decision for the two σ rows is
-[σ cells thin budget headroom](../backlog/validation/sigma-cells-thin-budget-headroom.md).
+σ cells thin budget headroom (closed by [the re-record sprint](../sprints/sigma-calibration-rerecord/sprint.md)).
 The general seed and ladder protocol is
 [seed sweeps and budget ladders](seed-sweeps-and-budget-ladders.md).
 

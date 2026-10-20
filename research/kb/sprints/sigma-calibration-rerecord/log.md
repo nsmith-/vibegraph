@@ -98,3 +98,16 @@ multichannel; no per-channel stop record).
 * **V1 dispatched**: #44, #51 and #48 are on main (`e3f543f`), so both default
   flips are in. Main merged into this branch at `445aa59`;
   [V1's brief](sessions/V1.md) records today's numbers on that tree.
+* **V1 done** (`508e094`..`2b1f9b1`, [report](sessions/V1-report.md)): one
+  recorded run on tree `340683c`; the baseline and closing banked runs match
+  (209 cells, none moved). The census's drift attribution was wrong: the
+  bisection names `e99b05c`, `7664ff9` and `b6a0b88`/`09cfb61`, and `c2c5407`
+  after the census.
+* **D1, the user's decision (2026-10-20, relayed by the planner): keep every
+  gate budget.** `ddx_to_epemg` clears `rel_tol` 3.6× against the seed record;
+  `gux_to_epemux` reads 2.1× at 1× and 2.2× at 4× the points, so margin is not
+  for sale. This closes `sigma-cells-thin-budget-headroom`.
+* **Close-out**: deleted the four claimed items. V1 Found 1–4 are filed as
+  `llj-fixed-gate-headroom-under-2x`, `llj-family-reads-high-vs-seed-records`,
+  `ee-to-ee-seeds-under-dispersed` and `gg-to-gg-cg-headroom-at-2x`. Found 5–8
+  are fixed on this PR (the user's call, via the planner).

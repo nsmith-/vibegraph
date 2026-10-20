@@ -153,8 +153,8 @@ a χ²/dof of 0.03, as loud a warning as 4.0 and read as reassurance. So a
 ladder comparison is read against the estimator's measured seed spread, from 20
 or more seeds on the two rungs that matter.[^n34-w1] The falsifier for that
 verdict is recorded: about 0.1% between 40-seed rung means would overturn it.
-The gate comments that still quote the older ladder are
-[llj gate comments quote pre-floor ladders](../backlog/hygiene/llj-gate-comments-quote-pre-floor-ladders.md).
+The gate comments were re-recorded from current ladders in the
+[2026-10 census](seed-headroom-census-2026-10.md).
 
 Survey seeds count too: a "wide rows degrade above the cap" reading on the 2→6
 α survey was one unlucky α draw, killed by sweeping three survey

@@ -79,10 +79,10 @@ They are measured and reported on the long tier rather than gated (see
   re-banked on `lhaid = 247000` at `refdata-5`, which changed both their values
   and their errors; compare a budget argument only against the reference it was
   measured with ([refdata σ comparability](refdata-sigma-comparability.md)).
-- **Some ladder comments in `validate_hadronic.rs` are stale.** The `LLJ_NEVAL`
-  family quotes ladders measured before the cut-implied timelike floors
-  ([llj-gate-comments-quote-pre-floor-ladders](../backlog/hygiene/llj-gate-comments-quote-pre-floor-ladders.md)),
-  and the re-carded `pp_to_llj` entry of `RECARDED_ROWS` still describes its
+- **The ladder comments in `validate_hadronic.rs` were once stale.** The
+  `LLJ_NEVAL` family quoted ladders measured before the cut-implied timelike
+  floors until the [2026-10 census](seed-headroom-census-2026-10.md)
+  re-recorded them, and the re-carded `pp_to_llj` entry of `RECARDED_ROWS` still describes its
   ladder as "climbing monotonically". A forty-seed-per-rung ensemble showed that
   climb was a five-seed misread: the estimator's expectation is flat from 150k up,
   and the drift hypothesis fails at 7.3σ (see

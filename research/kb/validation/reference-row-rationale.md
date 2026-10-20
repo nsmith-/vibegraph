@@ -197,11 +197,11 @@ census counted one measurement twice. Coverage was unchanged, because
 
 ## Where the gates' calibrations stand
 
-The llj gates' budget comments in `validate_hadronic.rs` still quote ladder
-readings from before later sampler changes, including a "monotone climb" on
-`pp_to_llj` that a 40-seed ensemble showed to be a five-seed misread
-([seed sweeps](seed-sweeps-and-budget-ladders.md)). Re-recording them is
-[llj gate comments quote pre-floor ladders](../backlog/hygiene/llj-gate-comments-quote-pre-floor-ladders.md).
+The llj gates' budget comments in `validate_hadronic.rs` quote ladders
+re-recorded on one tree in the
+[2026-10 census](seed-headroom-census-2026-10.md). An earlier "monotone climb"
+on `pp_to_llj` was a five-seed misread, which a 40-seed ensemble showed
+([seed sweeps](seed-sweeps-and-budget-ladders.md)).
 For the gates themselves see [the σ gate](sigma-gate.md).
 
 [^n24-p0]: Note 24 P0, "What was banked".
