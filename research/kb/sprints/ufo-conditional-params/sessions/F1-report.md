@@ -2,6 +2,7 @@
 type: Session Report
 title: "F1 report: conditional parameter definitions refused by name"
 description: "parameters.py definitions under 'if' branches are refused at load naming the parameter; undefined parameter references in parameters and couplings are refused at load, so expr::eval cannot panic on a loaded model."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "git:HEAD of sprintd-ufo-conditional-params after F1", title: "F1 commit"}

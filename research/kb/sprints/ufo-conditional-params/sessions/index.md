@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: conditional parameter definitions in parameters.py](F1.md) - Read 'if configuration.<flag>:' branches with MadGraph's default, or refuse naming the parameter; make expr::eval return an error on an unknown parameter.
+* [HY1: hygiene review of the conditional-definition refusals and the fallible recompute](HY1.md) - Review F1 and F2's diff for maintainability, test non-vacuity, visibility and reuse; pin the no-aS rescale path; fix what is local, with mutation evidence.
 
 ## Session Report
 

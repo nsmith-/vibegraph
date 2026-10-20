@@ -2,6 +2,7 @@
 type: Session Report
 title: "F2 report: no panic on an unknown parameter from a public entry; conditional objects refused"
 description: "recompute and set_alpha_s return an error naming an unknown parameter; conditional Particle, Lorentz, Coupling, Vertex, CouplingOrder and Propagator definitions are refused at model load."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "git:92152df", title: "F2 commit 92152df"}
