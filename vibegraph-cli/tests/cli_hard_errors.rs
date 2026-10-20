@@ -601,3 +601,48 @@ fn cli_generate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
         "got:\n{stderr}"
     );
 }
+
+// `generate` reads the run card before the artifact, as `integrate` reads it
+// before enumerating: a refusable run card is the first refusal either command
+// gives, whatever is wrong with the artifact.
+#[test]
+fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let artifact = cwd.path().join("not_an_artifact.json");
+    std::fs::write(&artifact, "not an artifact").unwrap();
+    let generate_with = |card: &str| {
+        let run_card = cwd.path().join("run_card.dat");
+        std::fs::write(&run_card, card).unwrap();
+        vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(&artifact)
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(&run_card)
+            .args(["--nevents", "10", "-o"])
+            .arg(cwd.path().join("events.lhe"))
+            .output()
+            .expect("spawn vibegraph")
+    };
+
+    let control = generate_with(CUT_BEAMS);
+    assert!(!control.status.success());
+    let control_stderr = stderr_of(&control);
+    assert!(
+        control_stderr.contains("cannot read") && control_stderr.contains("not_an_artifact"),
+        "the clean card must fail on the artifact, got:\n{control_stderr}"
+    );
+
+    let output = generate_with(&format!("{CUT_BEAMS}  30 = ptj1min\n"));
+    assert!(!output.status.success());
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
+    assert!(
+        !stderr.contains("not_an_artifact"),
+        "the artifact was read before the run card:\n{stderr}"
+    );
+}
