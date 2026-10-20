@@ -11,3 +11,4 @@
 
 * [F1 report: conditional parameter definitions refused by name](F1-report.md) - parameters.py definitions under 'if' branches are refused at load naming the parameter; undefined parameter references in parameters and couplings are refused at load, so expr::eval cannot panic on a loaded model.
 * [F2 report: no panic on an unknown parameter from a public entry; conditional objects refused](F2-report.md) - recompute and set_alpha_s return an error naming an unknown parameter; conditional Particle, Lorentz, Coupling, Vertex, CouplingOrder and Propagator definitions are refused at model load.
+* [HY1 report: hygiene review of the conditional-definition refusals and the fallible recompute](HY1-report.md) - Review of F1 and F2: a dead error branch in the no-aS rescale path replaced by a stated invariant, an unchecked public launch name now refused, untested refusals pinned, one displaced doc comment and duplicated formatting merged.
