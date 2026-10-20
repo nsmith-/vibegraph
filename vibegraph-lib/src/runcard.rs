@@ -507,10 +507,10 @@ fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
 }
 
 /// Split a raw card line into `(value, name)`, or `None` for comment / blank /
-/// structural lines. The comment is stripped first, at the first `#` or `!`
-/// (`banner.py`'s `RunCard.read` cuts at both), so a hidden field written
-/// `<value> = <name> # hidden_parameter` reads as `<value> = <name>`; a value
-/// cannot itself contain `#` or `!`. The line is then split on the single `=`.
+/// structural lines. The comment is stripped first, at the first `#` or `!`, so
+/// a hidden field written `<value> = <name> # hidden_parameter` reads as
+/// `<value> = <name>`; a value cannot itself contain `#` or `!`. The line is
+/// then split on its first `=`.
 fn split_line(raw: &str) -> Option<(&str, &str)> {
     let no_comment = match raw.find(['#', '!']) {
         Some(pos) => &raw[..pos],

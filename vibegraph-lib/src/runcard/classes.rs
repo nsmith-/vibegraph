@@ -28,7 +28,7 @@ pub(crate) enum FieldClass {
     Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    IgnoredBenign(&'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///
@@ -440,16 +440,12 @@ pub(super) fn refuse_ignored_physics(
 }
 
 /// The fields through which a card asks for the systematics module's variation
-/// weights.
-const SYSTEMATICS_REQUEST_FIELDS: [&str; 7] = [
-    "systematics_program",
-    "systematics_arguments",
-    "sys_scalefact",
-    "sys_alpsfact",
-    "sys_matchscale",
-    "sys_pdf",
-    "sys_scalecorrelation",
-];
+/// weights: every field classified under [`B_SYST`].
+fn systematics_request_fields() -> impl Iterator<Item = &'static str> {
+    FIELD_CLASSES.iter().filter_map(|(name, class)| {
+        matches!(class, FieldClass::IgnoredBenign(reason) if *reason == B_SYST).then_some(*name)
+    })
+}
 
 /// Warn, once, when a card with `use_syst` set asks for variation weights that
 /// this crate does not write: any systematics field off its MadGraph default.
@@ -459,9 +455,7 @@ pub(super) fn warn_unwritten_systematics(values: &BTreeMap<String, ParamValue>) 
     if !matches!(values.get("use_syst"), Some(ParamValue::Bool(true))) {
         return;
     }
-    let requested: Vec<&str> = SYSTEMATICS_REQUEST_FIELDS
-        .iter()
-        .copied()
+    let requested: Vec<&str> = systematics_request_fields()
         .filter(|name| {
             matches!(
                 (values.get(*name), param_default(name)),
@@ -494,56 +488,20 @@ fn describe(v: &ParamValue) -> String {
 mod tests {
     use super::*;
     use crate::runcard::{card_spelling, parse_value, Kind, RunCard, PARAM_DEFAULTS};
-    use std::sync::{Arc, Mutex};
-    use tracing::field::{Field, Visit};
-    use tracing::span::{Attributes, Id, Record};
-    use tracing::{Event, Level, Metadata, Subscriber};
-
-    /// Keeps the level and rendered fields of every event.
-    #[derive(Clone, Default)]
-    struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
-
-    struct Render(String);
-    impl Visit for Render {
-        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-            self.0.push_str(&format!("{}={value:?} ", field.name()));
-        }
-    }
-
-    impl Subscriber for Capture {
-        fn enabled(&self, _: &Metadata<'_>) -> bool {
-            true
-        }
-        fn new_span(&self, _: &Attributes<'_>) -> Id {
-            Id::from_u64(1)
-        }
-        fn record(&self, _: &Id, _: &Record<'_>) {}
-        fn record_follows_from(&self, _: &Id, _: &Id) {}
-        fn event(&self, event: &Event<'_>) {
-            let mut r = Render(String::new());
-            event.record(&mut r);
-            self.0
-                .lock()
-                .expect("capture")
-                .push((*event.metadata().level(), r.0));
-        }
-        fn enter(&self, _: &Id) {}
-        fn exit(&self, _: &Id) {}
-    }
+    use crate::test_capture::capture;
+    use tracing::Level;
 
     fn warnings_for(text: &str) -> Vec<String> {
-        let capture = Capture::default();
-        tracing::subscriber::with_default(capture.clone(), || {
-            // Callsite interest is cached process-wide from whichever thread
-            // reaches it first; rebuild it so this subscriber is consulted.
-            tracing::callsite::rebuild_interest_cache();
-            RunCard::parse(text).expect("run card");
-        });
-        let events = capture.0.lock().expect("capture").clone();
+        let (_, events) = capture(|| RunCard::parse(text).expect("run card"));
         events
             .into_iter()
-            .filter(|(level, msg)| *level == Level::WARN && msg.contains("systematics"))
-            .map(|(_, msg)| msg)
+            .filter(|e| e.level == Level::WARN)
+            .map(|e| {
+                let fields: Vec<String> =
+                    e.fields.iter().map(|(n, v)| format!("{n}={v}")).collect();
+                fields.join(" ")
+            })
+            .filter(|rendered| rendered.contains("systematics"))
             .collect()
     }
 
@@ -564,6 +522,41 @@ mod tests {
     #[test]
     fn systematics_fields_do_not_warn_when_use_syst_is_off() {
         assert!(warnings_for("False = use_syst\n'0.5 1' = sys_scalefact\n").is_empty());
+        // The same card warns once the gate is open, so the absence above is the
+        // gate's doing and not a field that never warns.
+        assert_eq!(
+            warnings_for("True = use_syst\n'0.5 1' = sys_scalefact\n").len(),
+            1
+        );
+    }
+
+    /// The request fields are exactly the systematics block, and each one warns
+    /// on its own when moved off its default.
+    #[test]
+    fn every_systematics_field_warns_on_its_own() {
+        let fields: Vec<&str> = systematics_request_fields().collect();
+        assert_eq!(
+            fields,
+            [
+                "systematics_program",
+                "systematics_arguments",
+                "sys_scalefact",
+                "sys_alpsfact",
+                "sys_matchscale",
+                "sys_pdf",
+                "sys_scalecorrelation"
+            ]
+        );
+        for name in fields {
+            let line = match param_default(name).expect("known field") {
+                ParamValue::Int(i) => format!("{} = {name}", i + 1),
+                ParamValue::Opaque(_) => format!("['--x'] = {name}"),
+                _ => format!("'changed' = {name}"),
+            };
+            let warned = warnings_for(&line);
+            assert_eq!(warned.len(), 1, "{line}: {warned:?}");
+            assert!(warned[0].contains(name), "{line}: {warned:?}");
+        }
     }
 
     /// Every recognized name is classified exactly once, and every
