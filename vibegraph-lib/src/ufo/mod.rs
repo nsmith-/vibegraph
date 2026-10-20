@@ -46,6 +46,32 @@ pub(crate) const REQUIRED_SOURCE_FILES: [&str; 5] = [
 /// built-in default when absent.
 pub(crate) const OPTIONAL_SOURCE_FILES: [&str; 2] = ["coupling_orders.py", "propagators.py"];
 
+/// Refuse a `ctor(...)` object that `src` defines only inside an `if` branch,
+/// naming it. The branch depends on Python the loader does not run, and the
+/// readers of each file see top-level definitions only. A file that does not
+/// parse is left for its own reader to report.
+fn refuse_conditional_definitions(
+    file: &'static str,
+    src: &str,
+    ctor: &str,
+) -> Result<(), UfoError> {
+    let Ok(stmts) = ast_util::parse_stmts(src) else {
+        return Ok(());
+    };
+    let names = ast_util::conditional_constructor_names(&stmts, ctor);
+    if names.is_empty() {
+        return Ok(());
+    }
+    Err(UfoError::ConditionalDefinition {
+        file,
+        names: names
+            .iter()
+            .map(|n| format!("'{n}'"))
+            .collect::<Vec<_>>()
+            .join(", "),
+    })
+}
+
 // Default SM coupling hierarchy: QCD (strong) counts once, QED (electroweak) counts twice.
 // Used when coupling_orders.py is absent or contains no hierarchy data.
 fn default_sm_hierarchy() -> BTreeMap<String, u32> {
@@ -109,10 +135,20 @@ pub fn expansion_order_caps(expansion_order: &BTreeMap<String, i64>) -> BTreeMap
         .collect()
 }
 
+/// A parameter name the model does not define.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("the model has no parameter '{0}'")]
+pub struct UnknownParameter(pub String);
+
 #[derive(Debug, Error)]
 pub enum UfoError {
     #[error("IO error reading UFO file '{file}': {cause}")]
     Io { file: String, cause: std::io::Error },
+    #[error(
+        "{file}: {names} defined only inside an `if` branch; which branch runs depends on \
+         Python evaluated at import time, which the loader does not run"
+    )]
+    ConditionalDefinition { file: &'static str, names: String },
     #[error("Parameter parse error: {0}")]
     Parameters(#[from] ParameterError),
     #[error("Coupling parse error: {0}")]
@@ -196,6 +232,11 @@ impl ParsedModel {
         let params_src = params_src?;
         let vertices_src = vertices_src?;
 
+        refuse_conditional_definitions("particles.py", &particles_src, "Particle")?;
+        refuse_conditional_definitions("lorentz.py", &lorentz_src, "Lorentz")?;
+        refuse_conditional_definitions("couplings.py", &couplings_src, "Coupling")?;
+        refuse_conditional_definitions("vertices.py", &vertices_src, "Vertex")?;
+
         let particles: IndexMap<String, Particle> = parse_particles(&particles_src)?
             .into_iter()
             .map(|p| (p.name.clone(), p))
@@ -231,6 +272,11 @@ impl ParsedModel {
         let (order_hierarchy, expansion_order) =
             match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[0])) {
                 Ok(src) => {
+                    refuse_conditional_definitions(
+                        OPTIONAL_SOURCE_FILES[0],
+                        &src,
+                        "CouplingOrder",
+                    )?;
                     let (hierarchy, expansion) = parse_coupling_orders(&src);
                     if hierarchy.is_empty() {
                         (default_sm_hierarchy(), expansion)
@@ -243,10 +289,13 @@ impl ParsedModel {
 
         let propagators: IndexMap<String, Propagator> =
             match std::fs::read_to_string(path.join(OPTIONAL_SOURCE_FILES[1])) {
-                Ok(src) => parse_propagators(&src)?
-                    .into_iter()
-                    .map(|p| (p.python_name.clone(), p))
-                    .collect(),
+                Ok(src) => {
+                    refuse_conditional_definitions(OPTIONAL_SOURCE_FILES[1], &src, "Propagator")?;
+                    parse_propagators(&src)?
+                        .into_iter()
+                        .map(|p| (p.python_name.clone(), p))
+                        .collect()
+                }
                 Err(_) => IndexMap::new(),
             };
         for particle in particles.values() {
@@ -585,8 +634,12 @@ impl EvaluatedModel {
     /// The model-level half of MadGraph's per-event `update_as_param`: `G` and the
     /// couplings built from it follow `aS` through the UFO expressions themselves, so
     /// the result is exact for any model, at the cost of walking the parameter graph.
-    pub fn set_alpha_s(&mut self, alpha_s: f64) {
-        self.recompute("aS", Complex64::new(alpha_s, 0.0));
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownParameter`] for a model with no `aS` parameter.
+    pub fn set_alpha_s(&mut self, alpha_s: f64) -> Result<(), UnknownParameter> {
+        self.recompute("aS", Complex64::new(alpha_s, 0.0))
     }
 
     /// Get the mass of a particle
@@ -638,15 +691,22 @@ impl EvaluatedModel {
     /// transitively depending on it and every coupling that reads any of them.
     ///
     /// A parameter a restriction locked to zero keeps its value, and nothing
-    /// moves: the restriction pruned the vertices it would revive. Panics on a
-    /// parameter the model does not have.
-    pub fn recompute(&mut self, changed: &str, new_value: Complex64) {
+    /// moves: the restriction pruned the vertices it would revive.
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownParameter`] for a name the model does not define; nothing changes.
+    pub fn recompute(
+        &mut self,
+        changed: &str,
+        new_value: Complex64,
+    ) -> Result<(), UnknownParameter> {
         let slot = self
             .param_values
             .get_mut(changed)
-            .unwrap_or_else(|| panic!("attempted to recompute unknown parameter '{changed}'"));
+            .ok_or_else(|| UnknownParameter(changed.to_owned()))?;
         if self.model.params.zeros.contains(changed) {
-            return;
+            return Ok(());
         }
         *slot = new_value;
 
@@ -661,6 +721,7 @@ impl EvaluatedModel {
                 self.coupling_values[i] = val;
             }
         }
+        Ok(())
     }
 }
 
@@ -902,7 +963,7 @@ mod tests {
         let mut ev = EvaluatedModel::from_model(model.clone());
 
         let new_as = 0.130f64;
-        ev.recompute("aS", Complex64::new(new_as, 0.0));
+        ev.recompute("aS", Complex64::new(new_as, 0.0)).unwrap();
 
         let expected_g = 2.0 * new_as.sqrt() * PI.sqrt();
         let g_val = ev.param_values["G"].re;
@@ -949,7 +1010,7 @@ mod tests {
             let fresh = EvaluatedModel::from_model_card(model.clone(), &card);
             assert_eq!(fresh.param_values[&p.name].re, value, "{}", p.name);
             let mut moved = base.clone();
-            moved.recompute(&p.name, value.into());
+            moved.recompute(&p.name, value.into()).unwrap();
             for (name, v) in &fresh.param_values {
                 assert!(
                     close(moved.param_values[name], *v),
@@ -975,13 +1036,25 @@ mod tests {
     /// Moving a parameter the restriction locked to zero changes nothing: not the
     /// parameter, not an internal reading it, not a coupling.
     #[test]
+    fn recompute_refuses_an_unknown_parameter_and_changes_nothing() {
+        let mut ev = EvaluatedModel::from_model(sm::sm_model(sm::SMRestrict::Default));
+        let before = ev.param_values.clone();
+        let err = ev
+            .recompute("not_a_parameter", Complex64::new(1.0, 0.0))
+            .unwrap_err();
+        assert_eq!(err, UnknownParameter("not_a_parameter".to_owned()));
+        assert!(err.to_string().contains("'not_a_parameter'"));
+        assert_eq!(ev.param_values, before);
+    }
+
+    #[test]
     fn recompute_leaves_a_restriction_locked_parameter_alone() {
         let model = sm::sm_model(sm::SMRestrict::Default);
         let base = EvaluatedModel::from_model(model.clone());
         assert!(!model.params.zeros.is_empty());
         for name in &model.params.zeros {
             let mut moved = base.clone();
-            moved.recompute(name, Complex64::new(1.5, 0.0));
+            moved.recompute(name, Complex64::new(1.5, 0.0)).unwrap();
             assert_eq!(moved.param_values, base.param_values, "after moving {name}");
             assert_eq!(
                 moved.coupling_values, base.coupling_values,

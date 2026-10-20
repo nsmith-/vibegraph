@@ -106,10 +106,21 @@ pub(crate) fn collect_deps(expr: &Expr, deps: &mut Vec<String>) {
 
 /// Evaluate an expression given a map of parameter name → complex value.
 ///
-/// A reference to a parameter missing from `params` panics. Every model the
-/// loader returns has had its parameter and coupling expressions checked
-/// against the parameters `parameters.py` defines, so a loaded model never
-/// reaches that case with its own tables.
+/// A reference to a parameter missing from `params` panics: an internal
+/// invariant, not an input check. Every path from a public entry point supplies
+/// the model's own expressions and a map holding every parameter the model
+/// defines, and the guards are:
+///
+/// * `parse_parameters` refuses an internal expression naming an undefined
+///   parameter, and any `Parameter` defined under an `if`;
+/// * model load refuses a coupling naming an undefined parameter, and any
+///   particle, Lorentz structure, coupling, vertex, coupling order or
+///   propagator defined under an `if`;
+/// * `ParameterSet::evaluate` inserts every external and internal parameter
+///   (restriction-zeroed ones as `0.0`), so `EvaluatedModel::from_model_card`,
+///   `from_model` and the restriction pruning see a complete map;
+/// * `EvaluatedModel::recompute` and `set_alpha_s` check the caller's parameter
+///   name and return `UnknownParameter` before evaluating anything.
 pub(crate) fn eval(expr: &Expr, params: &HashMap<String, Complex64>) -> Complex64 {
     use std::f64::consts::PI;
     match expr {

@@ -442,7 +442,9 @@ fn generic_point(base: &EvaluatedModel, launches: &[Launch]) -> EvaluatedModel {
         if shifted.abs() < 0.5 * offset * scale {
             shifted = v0 - offset * scale;
         }
-        generic.recompute(name, shifted.into());
+        generic
+            .recompute(name, shifted.into())
+            .expect("launch parameters are checked against the model when the card is read");
     }
     generic
 }
@@ -455,7 +457,9 @@ fn check_finite(base: &EvaluatedModel, launches: &[Launch]) -> Result<(), Reweig
     for launch in launches {
         let mut point = base.clone();
         for (name, value) in &launch.values {
-            point.recompute(name, (*value).into());
+            point
+                .recompute(name, (*value).into())
+                .expect("launch parameters are checked against the model when the card is read");
         }
         if let Some(name) = point
             .non_finite()
@@ -592,7 +596,9 @@ fn plan_subprocess(
                     if let NodeSource::Slot(slot) = node {
                         let mut model = base.clone();
                         for (name, value) in points.next().expect("one point per slot node") {
-                            model.recompute(&name, value.into());
+                            model
+                                .recompute(&name, value.into())
+                                .expect("launch parameters are checked against the model when the card is read");
                         }
                         *slot = slots.len();
                         slots.push(model);
@@ -625,7 +631,9 @@ fn plan_subprocess(
             }
             let mut point = base.clone();
             for (name, value) in &launches[k].values {
-                point.recompute(name, (*value).into());
+                point.recompute(name, (*value).into()).expect(
+                    "launch parameters are checked against the model when the card is read",
+                );
             }
             slots.push(point);
             exact_points.push((key, slots.len() - 1));
@@ -1054,7 +1062,7 @@ mod tests {
         let eval = AmplitudeEvaluator::compile(set, &model).unwrap();
         let mut at = base.clone();
         if let Some(a) = alpha_s {
-            at.set_alpha_s(a);
+            at.set_alpha_s(a).unwrap();
         }
         let mut rw = plan.bind();
         let mut out = Vec::new();
@@ -1302,7 +1310,7 @@ launch --rwgt_name=y4
         let p = &points(&eval, &base, 1000.0)[0];
         let at = |v: f64| {
             let mut point = base.clone();
-            point.recompute("ymt", v.into());
+            point.recompute("ymt", v.into()).unwrap();
             let bound = BoundAmplitude::<f64>::bind(&eval, &point);
             let mut scratch = bound.scratch_space();
             bound.eval_m2(p, &mut scratch)
@@ -1398,7 +1406,7 @@ launch --rwgt_name=y4
     fn the_pruning_point_avoids_zero() {
         let model = sm_model(SMRestrict::Default);
         let mut base = EvaluatedModel::from_model(model.clone());
-        base.recompute("ymt", (-(0.291_7 + 0.017)).into());
+        base.recompute("ymt", (-(0.291_7 + 0.017)).into()).unwrap();
         let launches = resolve(
             &"launch\n set ymt 1\nlaunch\n set ymt 173\nlaunch\n set ymt 350\n"
                 .parse()
@@ -1589,7 +1597,7 @@ launch --rwgt_name=aew
     fn pruning_keeps_what_a_hypothesis_revives() {
         let model = sm_model(SMRestrict::Default);
         let mut base = EvaluatedModel::from_model(model.clone());
-        base.recompute("ymt", 0.0.into());
+        base.recompute("ymt", 0.0.into()).unwrap();
         let sets = sets("e+ e- > t t~ h", &model);
         let launches = resolve(&YMT_SCAN.parse().unwrap(), &model).unwrap();
         let refs: Vec<&DiagramSet> = sets.iter().collect();
@@ -1612,7 +1620,7 @@ launch --rwgt_name=aew
         let (before, after) = at_card.zeroamp_node_reduction();
         assert!(after < before, "the card's pruning removed nothing");
         let mut point = base.clone();
-        point.recompute("ymt", 173.0.into());
+        point.recompute("ymt", 173.0.into()).unwrap();
         let p = &points(&eval, &base, 1000.0)[0];
         let pruned = BoundAmplitude::<f64>::bind(&at_card, &point);
         let mut scratch = pruned.scratch_space();

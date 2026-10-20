@@ -264,12 +264,12 @@ const MERGE_NPCP: (&str, &str, &str) = ("couplings.py", "order={'NPCP': 1}", "or
 const MERGE_NPD: (&str, &str, &str) = ("couplings.py", "order={'NPD': 1}", "order={'NP': 1}");
 
 /// A copy of `vibegraph_toy_UFO` in a fresh scratch directory, with each
-/// `(file, from, to)` replacement applied and `parameters_tail` appended to
-/// `parameters.py`, loaded under `restrict_all`. Every `from` must occur in its
+/// `(file, from, to)` replacement applied and each `(file, text)` of `appends`
+/// appended to its file, loaded under `restrict_all`. Every `from` must occur in its
 /// file.
 fn try_edited_toy_model(
     edits: &[(&str, &str, &str)],
-    parameters_tail: &str,
+    appends: &[(&str, &str)],
 ) -> Result<Arc<UFOModel>, UfoError> {
     let src = toy_ufo_dir();
     let scratch = tempfile::tempdir().expect("create a scratch directory");
@@ -288,17 +288,15 @@ fn try_edited_toy_model(
         );
         std::fs::write(dst.join(file), text.replace(from, to)).unwrap();
     }
-    let parameters = std::fs::read_to_string(dst.join("parameters.py")).unwrap();
-    std::fs::write(
-        dst.join("parameters.py"),
-        format!("{parameters}\n{parameters_tail}\n"),
-    )
-    .unwrap();
+    for (file, tail) in appends {
+        let text = std::fs::read_to_string(dst.join(file)).unwrap();
+        std::fs::write(dst.join(file), format!("{text}\n{tail}\n")).unwrap();
+    }
     UFOModel::load(dst, Some(&dst.join("restrict_all.dat")))
 }
 
 fn edited_toy_model(edits: &[(&str, &str, &str)]) -> Arc<UFOModel> {
-    try_edited_toy_model(edits, "").unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
+    try_edited_toy_model(edits, &[]).unwrap_or_else(|e| panic!("load the edited toy model: {e}"))
 }
 
 const LV_ON_GL_ALT: (&str, &str, &str) = (
@@ -319,7 +317,7 @@ if configuration.use_alt:
 else:
     gl_alt = Parameter(name='gl_alt', nature='internal', type='real', value='2.5', texname='g')
 ";
-    let err = try_edited_toy_model(&[LV_ON_GL_ALT], tail)
+    let err = try_edited_toy_model(&[LV_ON_GL_ALT], &[("parameters.py", tail)])
         .err()
         .expect("a conditionally defined parameter must be refused");
     assert!(
@@ -337,7 +335,7 @@ fn coupling_referencing_an_undefined_parameter_is_refused_by_name() {
         "value='complex(0,1)*gl'",
         "value='complex(0,1)*gl_missing'",
     );
-    let err = try_edited_toy_model(&[edit], "")
+    let err = try_edited_toy_model(&[edit], &[])
         .err()
         .expect("an undefined parameter must be refused");
     let msg = err.to_string();
@@ -353,7 +351,7 @@ fn coupling_referencing_an_undefined_parameter_is_refused_by_name() {
 fn internal_parameter_referencing_an_undefined_parameter_is_refused_by_name() {
     let tail = "gx = Parameter(name='gx', nature='internal', type='real', \
                 value='2*gx_missing', texname='g')";
-    let err = try_edited_toy_model(&[], tail)
+    let err = try_edited_toy_model(&[], &[("parameters.py", tail)])
         .err()
         .expect("an undefined parameter must be refused");
     let msg = err.to_string();
@@ -361,6 +359,86 @@ fn internal_parameter_referencing_an_undefined_parameter_is_refused_by_name() {
         msg.contains("'gx_missing'") && msg.contains("'gx'"),
         "error does not name both parameters: {msg}"
     );
+}
+
+/// An object a UFO file defines only under `if configuration.<flag>:` is refused
+/// at load, naming it and its file, rather than silently left out of the model.
+#[test]
+fn conditional_particle_and_vertex_definitions_are_refused_by_name() {
+    let particle = "\
+if configuration.extra:
+    extra_part = Particle(pdg_code=9000099, name='xx', antiname='xx', spin=1, color=1,
+                          mass=Param.ZERO, width=Param.ZERO, charge=0)
+";
+    let err = try_edited_toy_model(&[], &[("particles.py", particle)])
+        .err()
+        .expect("a conditional particle must be refused");
+    let msg = err.to_string();
+    assert!(
+        matches!(
+            err,
+            UfoError::ConditionalDefinition {
+                file: "particles.py",
+                ..
+            }
+        ) && msg.contains("'extra_part'"),
+        "{msg}"
+    );
+
+    let vertex = "\
+if configuration.extra:
+    V_extra = Vertex(name='V_extra', particles=[], color=['1'], lorentz=[], couplings={})
+";
+    let err = try_edited_toy_model(&[], &[("vertices.py", vertex)])
+        .err()
+        .expect("a conditional vertex must be refused");
+    let msg = err.to_string();
+    assert!(
+        matches!(
+            err,
+            UfoError::ConditionalDefinition {
+                file: "vertices.py",
+                ..
+            }
+        ) && msg.contains("'V_extra'"),
+        "{msg}"
+    );
+}
+
+/// The same refusal for couplings and Lorentz structures.
+#[test]
+fn conditional_coupling_and_lorentz_definitions_are_refused_by_name() {
+    let coupling = "\
+if configuration.extra:
+    GC_extra = Coupling(name='GC_extra', value='gl', order={'QED': 1})
+";
+    let err = try_edited_toy_model(&[], &[("couplings.py", coupling)])
+        .err()
+        .expect("a conditional coupling must be refused");
+    assert!(err.to_string().contains("'GC_extra'"), "{err}");
+
+    let lorentz = "\
+if configuration.extra:
+    L_extra = Lorentz(name='L_extra', spins=[1, 1], structure='Identity(1,2)')
+";
+    let err = try_edited_toy_model(&[], &[("lorentz.py", lorentz)])
+        .err()
+        .expect("a conditional Lorentz structure must be refused");
+    assert!(err.to_string().contains("'L_extra'"), "{err}");
+}
+
+/// `recompute` and `set_alpha_s` return an error naming the parameter the model
+/// lacks, rather than panicking.
+#[test]
+fn recompute_of_an_unknown_parameter_is_an_error() {
+    let model = edited_toy_model(&[]);
+    let mut ev = EvaluatedModel::from_model(model);
+    let err = ev
+        .recompute("no_such_parameter", 1.0.into())
+        .expect_err("an unknown parameter must be refused");
+    assert!(err.to_string().contains("'no_such_parameter'"), "{err}");
+    let err = ev.set_alpha_s(0.118).expect_err("the toy model has no aS");
+    assert!(err.to_string().contains("'aS'"), "{err}");
 }
 
 /// Incoming momenta along ±z for masses `initial` at `√s`, then the final state
