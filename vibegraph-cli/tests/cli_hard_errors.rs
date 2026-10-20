@@ -4,24 +4,11 @@
 //! request names the file or flag it came from. A run card that activates a cut
 //! the generator does not apply is refused, naming the cut, before enumeration.
 
-use std::path::Path;
-use std::process::{Command, Output};
+mod common;
 
-/// The binary, with `VIBEGRAPH_HOME` pointed at a temp dir so `cache_root()`
-/// never touches the real `$HOME`.
-fn vibegraph(cwd: &Path, home: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
-    cmd.current_dir(cwd)
-        .env("VIBEGRAPH_HOME", home)
-        .env_remove("VIBEGRAPH_NO_NETWORK")
-        .env_remove("VIBEGRAPH_PDF_DIR")
-        .env_remove("VIBEGRAPH_UFO_DIR");
-    cmd
-}
+use std::process::Output;
 
-fn stderr_of(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
+use common::{fixed_beams, stderr_of, vibegraph};
 
 #[test]
 fn cli_polarized_beam_card_is_refused() {
@@ -35,7 +22,7 @@ fn cli_polarized_beam_card_is_refused() {
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(
         &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n  1.0 = polbeam1\n",
+        format!("{}  1.0 = polbeam1\n", fixed_beams(45.6, 45.6)),
     )
     .unwrap();
 
@@ -206,7 +193,7 @@ fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(
         &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n  0 = nevents\n",
+        format!("{}  0 = nevents\n", fixed_beams(45.6, 45.6)),
     )
     .unwrap();
     let out = cwd.path().join("run");
@@ -339,11 +326,7 @@ fn cli_custom_propagator_in_a_diagram_is_refused() {
     .unwrap();
 
     let run_card = cwd.path().join("run_card.dat");
-    std::fs::write(
-        &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_card, fixed_beams("250.0", "250.0")).unwrap();
 
     let output = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
@@ -386,11 +369,7 @@ fn cli_mixed_multiplicity_at_fixed_energy_beams_is_refused() {
     )
     .unwrap();
     let run_card = cwd.path().join("run_card.dat");
-    std::fs::write(
-        &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_card, fixed_beams(45.6, 45.6)).unwrap();
 
     let output = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
@@ -468,7 +447,9 @@ fn cli_a_bin_width_bound_not_above_one_is_refused() {
 // the order of the two failures; it cannot show how long the refused run spent
 // before failing.
 
-const CUT_BEAMS: &str = "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n";
+fn cut_beams() -> String {
+    fixed_beams(45.6, 45.6)
+}
 
 fn integrate_with_cuts(proc_line: &str, cuts: &str) -> Output {
     let home = tempfile::tempdir().unwrap();
@@ -480,7 +461,7 @@ fn integrate_with_cuts(proc_line: &str, cuts: &str) -> Output {
     )
     .unwrap();
     let run_card = cwd.path().join("run_card.dat");
-    std::fs::write(&run_card, format!("{CUT_BEAMS}{cuts}")).unwrap();
+    std::fs::write(&run_card, format!("{}{cuts}", cut_beams())).unwrap();
     vibegraph(cwd.path(), home.path())
         .arg("--no-network")
         .arg("integrate")
@@ -556,7 +537,7 @@ fn cli_generate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
     let proc_card = cwd.path().join("proc_card.dat");
     std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
     let clean_card = cwd.path().join("clean_run_card.dat");
-    std::fs::write(&clean_card, CUT_BEAMS).unwrap();
+    std::fs::write(&clean_card, cut_beams()).unwrap();
     let out = cwd.path().join("out");
     let integrated = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
@@ -576,7 +557,7 @@ fn cli_generate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
     );
 
     let cut_card = cwd.path().join("cut_run_card.dat");
-    std::fs::write(&cut_card, format!("{CUT_BEAMS}  30 = ptj1min\n")).unwrap();
+    std::fs::write(&cut_card, format!("{}  30 = ptj1min\n", cut_beams())).unwrap();
     let artifact = std::fs::read_dir(&out)
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -629,7 +610,7 @@ fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
             .expect("spawn vibegraph")
     };
 
-    let control = generate_with(CUT_BEAMS);
+    let control = generate_with(&cut_beams());
     assert!(!control.status.success());
     let control_stderr = stderr_of(&control);
     assert!(
@@ -637,7 +618,7 @@ fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
         "the clean card must fail on the artifact, got:\n{control_stderr}"
     );
 
-    let output = generate_with(&format!("{CUT_BEAMS}  30 = ptj1min\n"));
+    let output = generate_with(&format!("{}  30 = ptj1min\n", cut_beams()));
     assert!(!output.status.success());
     let stderr = stderr_of(&output);
     assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");

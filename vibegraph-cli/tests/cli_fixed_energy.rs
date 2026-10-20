@@ -10,8 +10,12 @@
 //! only to be finite and positive, since the reference holds no point at its
 //! beam energy.
 
+mod common;
+
 use std::path::Path;
 use std::process::Command;
+
+use common::fixed_beams;
 
 use vibegraph::artifact::IntegrateArtifact;
 
@@ -26,11 +30,7 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, format!("import model sm\ngenerate {process}\n")).unwrap();
     // Fixed-energy partonic beams; MG default cuts otherwise.
-    std::fs::write(
-        &run_path,
-        format!("  0 = lpp1\n  0 = lpp2\n  {ebeam} = ebeam1\n  {ebeam} = ebeam2\n"),
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(ebeam, ebeam)).unwrap();
     let sqrt_s = 2.0 * ebeam;
 
     let out = tmp.path().join("out");
@@ -160,11 +160,7 @@ fn integrate_is_thread_count_independent() {
     let proc_path = tmp.path().join("proc_card.dat");
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(100, 100)).unwrap();
 
     let mut bytes = Vec::new();
     for threads in ["1", "16"] {
@@ -215,11 +211,7 @@ fn integrate_spends_iterations_to_reach_a_target() {
     let proc_path = tmp.path().join("proc_card.dat");
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > ta+ ta- H\n").unwrap();
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  100 = ebeam1\n  100 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(100, 100)).unwrap();
 
     let integrate = |target: &str, out: &std::path::Path| {
         let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
@@ -296,11 +288,7 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
     let proc_path = tmp.path().join("proc_card.dat");
     let run_path = tmp.path().join("run_card.dat");
     std::fs::write(&proc_path, "import model sm\ngenerate e+ e- > mu+ mu- a\n").unwrap();
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  250 = ebeam1\n  250 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams(250, 250)).unwrap();
     let integrate = |name: &str, flags: &[&str]| {
         let out = tmp.path().join(name);
         let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))

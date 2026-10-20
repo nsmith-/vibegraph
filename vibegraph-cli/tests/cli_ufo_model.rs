@@ -15,8 +15,12 @@
 //! Hermetic: the model is committed to this repository and no PDF set is needed
 //! (`lpp = 0`).
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::Command;
+
+use common::fixed_beams;
 
 use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::ufo::UFOModel;
@@ -47,11 +51,7 @@ fn write_cards(tmp: &std::path::Path, restrict: &str) -> (PathBuf, PathBuf) {
     )
     .unwrap();
     let run_path = tmp.join("run_card.dat");
-    std::fs::write(
-        &run_path,
-        "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_path, fixed_beams("250.0", "250.0")).unwrap();
     (proc_path, run_path)
 }
 

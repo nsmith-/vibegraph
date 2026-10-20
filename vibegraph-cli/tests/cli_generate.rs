@@ -36,6 +36,8 @@
 //! evidence that they share a stream. Reproducibility is checked separately, where
 //! sharing a seed is exactly the point.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
@@ -83,7 +85,7 @@ struct Run {
 fn write_run_card(path: &Path, ebeam1: f64, extra: &str) {
     std::fs::write(
         path,
-        format!("  0 = lpp1\n  0 = lpp2\n  {ebeam1} = ebeam1\n  {EBEAM} = ebeam2\n{extra}"),
+        format!("{}{extra}", common::fixed_beams(ebeam1, EBEAM)),
     )
     .unwrap();
 }
