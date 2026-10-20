@@ -242,8 +242,11 @@ impl std::hash::Hash for CanonicalDiagram {
     }
 }
 
-/// Errors from translating a feyngraph view into an owned [`Diagram`]. This is pure
-/// translation (no rooting), so these are distinct from `helas::eval`'s rooting errors.
+/// Errors from translating a feyngraph view into an owned [`Diagram`], and the diagram
+/// shapes the evaluator refuses ([`MajoranaFermion`](Self::MajoranaFermion),
+/// [`FermionNumberViolation`](Self::FermionNumberViolation),
+/// [`CustomPropagator`](Self::CustomPropagator)). None involves rooting, so these are
+/// distinct from `helas::eval`'s rooting errors.
 #[derive(Clone, Debug, Error)]
 pub enum ConvertError {
     /// A leg or propagator particle name is absent from the UFO model.
@@ -545,17 +548,18 @@ impl Diagram {
 
     /// Refuse a diagram whose fermion lines have no fermion-number arrow.
     ///
-    /// The evaluator types each external fermion as a ket or a bra from its charge and
-    /// direction, and carries that adjoint unchanged along its line, so every bilinear
-    /// it builds needs a line with a ket at one end and a bra at the other. A Majorana
-    /// fermion on the line, or a vertex whose pairing joins two particles or two
-    /// antiparticles, leaves the line without that orientation. Without either,
-    /// fermion number flows through every vertex of every line, so the line's two end
-    /// legs, read all-incoming as [`Leg::charge`] is, are one particle and one
-    /// antiparticle. That is the condition under which the evaluator's external typing
-    /// (`helas::eval::root_diagram::external_leg`, with a final-state leg on a line to
-    /// the initial state typed by its physical particle) gives one ket and one bra; the
-    /// debug assertion below holds every enumerated diagram to it.
+    /// Two things leave a line without one: a Majorana fermion on it (its PDG code is
+    /// positive whichever way the line runs), and a vertex whose fermion pairing joins two
+    /// particles or two antiparticles (the arrow reverses there). Without either, fermion
+    /// number flows through every vertex of every line, so its two end legs are one
+    /// particle and one antiparticle.
+    ///
+    /// Particle and antiparticle are meant all-incoming throughout, by PDG sign: an
+    /// interaction's slots, [`Leg::charge`] and the debug assertion below all read a
+    /// final-state fermion as its crossed antiparticle. The evaluator flips such a leg
+    /// back (`helas::eval::root_diagram::external_leg` types a final-state leg of a line
+    /// to the initial state by its physical particle), so one particle end and one
+    /// antiparticle end here is what gives it the one ket and one bra every bilinear needs.
     pub(crate) fn check_fermion_flow(&self, model: &UFOModel) -> Result<(), ConvertError> {
         let majorana = |pid: ParticleId| {
             let p = model.particle(pid);

@@ -123,11 +123,31 @@ fn a_fermion_number_violating_vertex_is_refused() {
         "vibegraph_toy_fnv_UFO",
         "at bt > at bt",
         &[
-            "vertex 'V_atbtdq",
-            "on one fermion line as two incoming",
+            "vertex 'V_atbtdq' joins 'at' and 'bt'",
+            "on one fermion line as two incoming particles",
             "fermion-number-violating",
         ],
     );
+}
+
+/// The conjugate vertex pairs two antiparticles, which the message names as such.
+#[test]
+fn a_vertex_pairing_two_antiparticles_is_refused() {
+    assert_refused(
+        "vibegraph_toy_fnv_UFO",
+        "at~ bt~ > at~ bt~",
+        &[
+            "vertex 'V_atbtdqc' joins 'at~' and 'bt~'",
+            "on one fermion line as two incoming antiparticles",
+        ],
+    );
+}
+
+/// The refusal judges the diagrams the s-channel restrictions keep: `$$ dq` removes
+/// the diquark diagram, and the t-channel vector diagram left integrates.
+#[test]
+fn a_refused_diagram_removed_by_an_s_channel_veto_does_not_refuse() {
+    assert_integrates("vibegraph_toy_fnv_UFO", "at bt > at bt $$ dq");
 }
 
 /// The control for both refusals: a Dirac-only process of each model, whose

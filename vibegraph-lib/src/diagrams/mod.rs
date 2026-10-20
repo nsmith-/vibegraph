@@ -102,7 +102,7 @@ pub enum DiagramError {
     MixedOnShellVeto { a: String, b: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
-    #[error("diagram conversion error: {0}")]
+    #[error("{0}")]
     Convert(#[from] ConvertError),
     #[error("cannot build the enumeration worker pool: {0}")]
     Pool(#[from] rayon::ThreadPoolBuildError),
