@@ -34,7 +34,8 @@ committed at `vibegraph-lib/src/ufo/sm_assets/` and compiled in with
   `vendored_card_is_the_cms_genproductions_bytes`). MadGraph does not ship it;
   it is `restrict_ckm.dat` with `MB`, `ymb` and the tau width changed, so its
   text is MadGraph's param-card writer's output with values edited by CMS.
-  Whether that edit carries terms of its own is not established;
+  It needs no licence of its own beyond MadGraph's (user decision,
+  2026-10-20);
 - `sm_parsed.bin.zst`, a serialised parse of the rest of `models/sm`
   (`particles.py`, `parameters.py`, `vertices.py`, `lorentz.py`,
   `couplings.py` and the other `.py` sources), produced by the `gen_sm_blob`
