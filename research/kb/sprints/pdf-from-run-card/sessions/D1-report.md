@@ -4,6 +4,7 @@ title: "D1 report: the run inputs the integrate artifact records"
 description: "Design for artifact version 13 (PDF lhaid, set, member, per-file SHA-256; moved param-card values), generate's checks, lhaid lookup over four tiers; twelve open choices for the user."
 status: draft
 tags: [pdf, lhapdf, param-card, artifact, design, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---
 Design only; no Rust written, no cargo run. The concept is
