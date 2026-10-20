@@ -92,9 +92,9 @@ the diagram behind it.[^n28-b3][^n28-s6] The full method is
 
 Its σ gates at `rel_tol 0.01`, set from the five-seed spread, not from the
 reference error. The spread was recorded as worst `|rel| 2.6e-3`; the
-September 2026 headroom census reran the same seeds after the note-34 draw
-commits and measured `3.954e-3`, still well inside 0.01 (see
-[the seed-headroom census](seed-headroom-census-2026-09.md)).
+October 2026 headroom census reran the same seeds against the refdata-10 seed
+record and measured `3.80e-3`, 2.6× inside 0.01 (see
+[the seed-headroom census](seed-headroom-census-2026-10.md)).
 Either way: at four times the budget our
 error is a third of MadGraph's, so the pull is floored by the reference and the
 budget ladder cannot shrink the residual. What the ladder does show is that no
@@ -197,11 +197,11 @@ census counted one measurement twice. Coverage was unchanged, because
 
 ## Where the gates' calibrations stand
 
-The llj gates' budget comments in `validate_hadronic.rs` still quote ladder
-readings from before later sampler changes, including a "monotone climb" on
-`pp_to_llj` that a 40-seed ensemble showed to be a five-seed misread
-([seed sweeps](seed-sweeps-and-budget-ladders.md)). Re-recording them is
-[llj gate comments quote pre-floor ladders](../backlog/hygiene/llj-gate-comments-quote-pre-floor-ladders.md).
+The llj gates' budget comments in `validate_hadronic.rs` quote ladders
+re-recorded on one tree in the
+[2026-10 census](seed-headroom-census-2026-10.md). An earlier "monotone climb"
+on `pp_to_llj` was a five-seed misread, which a 40-seed ensemble showed
+([seed sweeps](seed-sweeps-and-budget-ladders.md)).
 For the gates themselves see [the σ gate](sigma-gate.md).
 
 [^n24-p0]: Note 24 P0, "What was banked".

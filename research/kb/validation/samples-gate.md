@@ -123,7 +123,8 @@ quoted `2.74e-4` until a re-measurement corrected it[^n29-addenda]), so the `P_F
   is re-recorded whenever checked rather than trusted. Its current account
   names `ee_to_wpwm` `pt(w+)` at `1.573e-4` (1.6× the floor) as the row to
   watch, unchanged over five seeds (`probe_samples_p_floor_headroom`). See
-  [seed headroom census](seed-headroom-census-2026-09.md) and
+  [2026-09 seed headroom census](seed-headroom-census-2026-09.md) (the only page that
+  measures `P_FLOOR`; the [2026-10 census](seed-headroom-census-2026-10.md) does not re-measure samples) and
   [gate thresholds](gate-thresholds.md).[^vs-rs]
 
 ## Gate or info: decided before measuring

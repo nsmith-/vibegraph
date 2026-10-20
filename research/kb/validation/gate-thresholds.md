@@ -126,7 +126,7 @@ above 4.0 — the gate's five had drawn a one-in-eight quintet
 (`probe_llj_dyn_scatter_guard_calibration`, which ran the then-default maps: since the flip that name is the shipped `soft-all` + `1/τ²` and the arm measured here is `…_legacy`)[^n37-cells]. A
 [seed sweep](seed-sweeps-and-budget-ladders.md) separates that from a real miss;
 the current per-statistic readings are
-[the seed headroom census](seed-headroom-census-2026-09.md). A failing samples
+[the seed headroom census](seed-headroom-census-2026-10.md). A failing samples
 cell can also be the reference's fluctuation: two samples of this crate's own
 under the two maps compared at χ² 40.5/47 on the weighted flavour composition,
 twice as sensitive per category as the gate, while the reference's own flavour
