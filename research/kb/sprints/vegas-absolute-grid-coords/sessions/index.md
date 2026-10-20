@@ -9,4 +9,5 @@
 
 ## Session Report
 
+* [M1 report: where the weight tail meets the cut edges, per channel](M1-report.md) - Measured on pp_to_llj_fixed, pp_to_jj and pp_to_llj_mlm: near-edge shares of the weight tail, how each edge sits in the grid coordinates, cross-channel (τ, y) grid distances, and accepted against rejected point cost. The jj tail sits on the jet pT edge, which is pinned by the earlier coordinates and not fixed in absolute coordinates. Most of the llj tail is away from every edge. Rejected points cost 1–2% of evaluation time, yet removing rejection would still be worth 1.3–1.5× in variance × CPU.
 * [P1 report: contract inversion and fixed-transform maps (paused, work in progress)](P1-report.md) - Paused at the user's request before any gate ran: the channel walk now requests each coordinate from a source, VEGAS grids map coordinates on request, and invariant maps are fixed transforms with an inverse; bit-identity is argued, not yet measured.
