@@ -10,3 +10,4 @@
 ## Session Report
 
 * [F1 report: unimplemented cuts refused before enumeration, no-op maxima let through](F1-report.md) - detect_unimplemented is public and runs in load_run_card ahead of enumeration for integrate and generate; single-object pT maxima at or above half the collider energy read as the default.
+* [HY1 report: hygiene review of the early cut refusal](HY1-report.md) - Findings table (written before any edit), dispositions, mutation evidence and gates.
