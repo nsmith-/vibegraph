@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [P1: invert the VEGAS↔channel contract and make every analytic map a fixed transform](P1.md) - Inert plumbing for absolute grid coordinates: the channel drives the grid one coordinate at a time, every analytic map becomes a fixed transform with the point's window inverted through it, and every seeded golden stays bit-identical.
+
+## Session Report
+
+* [P1 report: contract inversion and fixed-transform maps (paused, work in progress)](P1-report.md) - Paused at the user's request before any gate ran: the channel walk now requests each coordinate from a source, VEGAS grids map coordinates on request, and invariant maps are fixed transforms with an inverse; bit-identity is argued, not yet measured.
