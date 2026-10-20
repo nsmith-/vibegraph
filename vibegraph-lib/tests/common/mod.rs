@@ -151,8 +151,8 @@ pub fn floor_coverage_line(spend: &vibegraph::budget::ConvergenceReport) -> Stri
 }
 
 /// The model a manifest row's gate evaluates in: the interned Standard Model
-/// where the row names none, and the vendored UFO directory under its restrict
-/// card where it does.
+/// where the row names none or names it (`model = "sm"`) under a restriction,
+/// and the vendored UFO directory under its restrict card otherwise.
 ///
 /// The `Err` is the message an informational cell carries: a row whose model
 /// this crate cannot read is reported with the refusal as its measurement rather
@@ -179,9 +179,26 @@ pub fn model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
 type ModelCache = BTreeMap<String, Result<Arc<UFOModel>, String>>;
 
 fn load_model_for_row(key: &str) -> Result<Arc<UFOModel>, String> {
-    let Some(row) = manifest::row_models().get(key).cloned() else {
-        return Ok(sm_model());
-    };
+    match manifest::row_models().get(key) {
+        Some(row) => load_row_model(row),
+        None => Ok(sm_model()),
+    }
+}
+
+/// The model a row that names one evaluates in: the interned Standard Model
+/// under the named restriction, or the UFO directory under its restrict card.
+pub fn load_row_model(row: &manifest::RowModel) -> Result<Arc<UFOModel>, String> {
+    if row.is_interned_sm() {
+        return SMRestrict::from_suffix(row.restrict.as_deref())
+            .map(interned_sm)
+            .ok_or_else(|| {
+                format!(
+                    "the interned SM has no restriction `{}` (it has: {})",
+                    row.restrict.as_deref().unwrap_or(""),
+                    SMRestrict::ALL.map(SMRestrict::suffix).join(", ")
+                )
+            });
+    }
     let dir = row.dir_path();
     let card = row.restrict_card();
     if let Some(card) = card.as_ref() {

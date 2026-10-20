@@ -18,12 +18,15 @@
 //! # What composition cannot see
 //!
 //! - **MadGraph's own restriction of this card.** Every comparison here runs this
-//!   crate's restriction on both sides. Where MadGraph's `RestrictModel` would
-//!   act differently on this card than on the two it composes — its `1e-13`
-//!   coupling-zero threshold, its merging of identical parameters and couplings —
-//!   nothing here notices. MadGraph checks parameters for *exact* zero
-//!   (`detect_special_parameters`), which is why `WTau = 2.27e-12` is expected to
-//!   survive; that is a reading of the source, not a run.
+//!   crate's restriction on both sides. Two of the ways MadGraph's
+//!   `RestrictModel` acts differently are closed from the card alone: its
+//!   `1e-13` coupling-zero threshold (no coupling at this card lies near either
+//!   side's threshold) and its merging of couplings that coincide at the card
+//!   (every pair it could merge is an identity). What MadGraph's interaction
+//!   split and pruning make of the vertex set is not: that needs its
+//!   `display interactions` count at this card. MadGraph checks parameters for
+//!   *exact* zero (`detect_special_parameters`), which is why `WTau = 2.27e-12`
+//!   is expected to survive; that is a reading of the source, not a run.
 //! - **The CKM sector against MadGraph.** No coupling table is banked at `ckm`;
 //!   the couplings the Wolfenstein parameters enter are compared only with this
 //!   crate's own `ckm` restriction.
@@ -316,4 +319,202 @@ fn madgraph_default_couplings_hold_outside_the_b_and_ckm_sectors() {
     );
     assert!(tables > 0, "no default-restriction SM coupling tables");
     assert!(!skipped.is_empty() && compared.len() > skipped.len());
+}
+
+/// `variant`'s card with every non-zero external moved off its value by a
+/// different factor; a parameter the card sets to zero stays locked there.
+fn moved_card(variant: SMRestrict) -> String {
+    let card = card(variant);
+    let mut moved_card = String::new();
+    for (i, p) in sm_parsed_model().params.externals.iter().enumerate() {
+        let ParamNature::External {
+            lha_block,
+            lha_code,
+            ..
+        } = &p.nature
+        else {
+            unreachable!("externals are external")
+        };
+        let Some(value) = card.get(lha_block, lha_code) else {
+            continue;
+        };
+        if value == 0.0 {
+            continue;
+        }
+        let moved = value * (1.0 + 0.0137 * (i as f64 + 1.0));
+        let code: Vec<String> = lha_code.iter().map(i32::to_string).collect();
+        if lha_block.eq_ignore_ascii_case("decay") {
+            moved_card.push_str(&format!("DECAY {} {moved:e}\n", code.join(" ")));
+        } else {
+            moved_card.push_str(&format!(
+                "Block {lha_block}\n {} {moved:e}\n",
+                code.join(" ")
+            ));
+        }
+    }
+    moved_card
+}
+
+/// The couplings a set of externals reaches at all, found by poisoning them:
+/// each is set to NaN on a card evaluated afresh, and NaN survives every
+/// arithmetic step, including a product with a factor that is zero at the
+/// card. This is the structural answer the value probes above approximate.
+fn poisoned(model: &Arc<UFOModel>, entries: &str) -> BTreeSet<String> {
+    couplings(model, entries)
+        .into_iter()
+        .filter(|(_, v)| v.re.is_nan() || v.im.is_nan())
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// The value probes behind [`b_sector`] and [`ckm_sector`] find every coupling
+/// `MB`, `ymb` or a Wolfenstein parameter enters that this restriction can make
+/// non-zero.
+///
+/// A probe that moves one parameter misses a coupling whose other factor is
+/// zero at the probe point; that is how a comparison of restrictions missed the
+/// four couplings that are products of `yb` and an off-diagonal CKM element.
+/// Poisoning has no such point. What it finds and the probes do not must carry
+/// a factor the restriction locks to zero (`yc·CKM2x1` and its kin: `ymc = 0`
+/// in every card the composition reads), so it must stay zero with every free
+/// external moved, and no vertex may carry it.
+#[test]
+fn value_probes_find_every_coupling_their_parameters_enter() {
+    let ckm = sm_model(SMRestrict::Ckm);
+    let ours = sm_model(SMRestrict::CkmNoBMass);
+    let off_card = couplings(&ours, &moved_card(SMRestrict::CkmNoBMass));
+    let carried: BTreeSet<String> = [&ckm, &ours]
+        .into_iter()
+        .flat_map(|m| vertex_couplings(m).into_values().flatten())
+        .collect();
+
+    let sectors = [
+        (
+            "b",
+            b_sector(),
+            "Block MASS\n 5 nan\nBlock YUKAWA\n 5 nan\n",
+        ),
+        (
+            "CKM",
+            ckm_sector(),
+            "Block Wolfenstein\n 1 nan\n 2 nan\n 3 nan\n 4 nan\n",
+        ),
+    ];
+    for (sector, probed, poison) in sectors {
+        let reached = poisoned(&ckm, poison);
+        assert!(
+            probed.is_subset(&reached),
+            "{sector}: the probe moves {:?}, which poisoning does not reach",
+            &probed - &reached
+        );
+        let missed = &reached - &probed;
+        for name in &missed {
+            assert_eq!(
+                off_card[name],
+                Complex64::new(0.0, 0.0),
+                "{sector}: {name} is missed by the probe and can be non-zero"
+            );
+            assert!(
+                !carried.contains(name),
+                "{sector}: {name} is missed by the probe and a vertex carries it"
+            );
+        }
+        println!(
+            "{sector} sector: probe {} couplings, poisoning {}; missed, all locked at zero: {missed:?}",
+            probed.len(),
+            reached.len()
+        );
+    }
+}
+
+/// MadGraph's zero rule and this crate's select the same couplings at this
+/// card, so they prune the same vertices.
+///
+/// MadGraph's `RestrictModel.detect_identical_couplings` evaluates every
+/// coupling at the restrict card and treats `|g| < 1e-13` as zero, unless some
+/// coupling lies in `[1e-13, 1e-10)`, in which case it starts again treating
+/// only exact zeros as zero. This crate prunes `|g| < 1e-20`. The two rules
+/// agree whenever no coupling lies in `[1e-20, 1e-10)`; this asserts the wider
+/// `(0, 1e-10)` empty, so the margin is the card's, not the rule's.
+#[test]
+fn no_coupling_sits_between_the_zero_thresholds() {
+    let model = sm_model(SMRestrict::CkmNoBMass);
+    let values = couplings(&model, SMRestrict::CkmNoBMass.restrict_card_text());
+    let small: Vec<(&String, f64)> = values
+        .iter()
+        .map(|(name, v)| (name, v.norm()))
+        .filter(|&(_, n)| n > 0.0 && n < 1e-10)
+        .collect();
+    assert!(
+        small.is_empty(),
+        "couplings between the zero thresholds: {small:?}"
+    );
+    let smallest = values
+        .values()
+        .map(|v| v.norm())
+        .filter(|&n| n > 0.0)
+        .fold(f64::INFINITY, f64::min);
+    let zeros = values.values().filter(|v| v.norm() == 0.0).count();
+    println!(
+        "{} couplings at the card: {zeros} exactly zero, smallest non-zero {smallest:.3e}",
+        values.len()
+    );
+}
+
+/// Merging cannot change an amplitude: every pair of couplings MadGraph could
+/// fuse at this card is one coupling up to sign off the card too.
+///
+/// `RestrictModel` replaces each coupling by another of the same coupling
+/// orders whose value at the restrict card agrees with it, up to sign, to at
+/// least ten significant digits (`limit_to_6_digit`); this crate fuses nothing.
+/// Where two such couplings were equal only at the card, MadGraph's model would
+/// move them together under a param card that moves either, and this crate's
+/// would not. Pairs are found here with a looser bound than MadGraph's
+/// rounding, a superset of the pairs in its groups, and each must hold at a
+/// point where every free external is moved off the card.
+#[test]
+fn couplings_madgraph_could_merge_are_identities() {
+    let model = sm_model(SMRestrict::CkmNoBMass);
+    let at_card = couplings(&model, SMRestrict::CkmNoBMass.restrict_card_text());
+    let moved_card = moved_card(SMRestrict::CkmNoBMass);
+    let moved_any = moved_card
+        .lines()
+        .filter(|l| l.starts_with(' ') || l.starts_with("DECAY"))
+        .count();
+    assert!(moved_any > 10, "only {moved_any} externals moved");
+    let off_card = couplings(&model, &moved_card);
+
+    let close =
+        |a: Complex64, b: Complex64, tol: f64| (a - b).norm() <= tol * a.norm().max(b.norm());
+    let names: Vec<&String> = at_card
+        .keys()
+        .filter(|n| at_card[*n].norm() > 0.0)
+        .collect();
+    let mut pairs = 0;
+    for (i, a) in names.iter().enumerate() {
+        for b in &names[i + 1..] {
+            if model.couplings[*a].orders != model.couplings[*b].orders {
+                continue;
+            }
+            let (ga, gb) = (at_card[*a], at_card[*b]);
+            let sign = if close(ga, gb, 1e-9) {
+                1.0
+            } else if close(ga, -gb, 1e-9) {
+                -1.0
+            } else {
+                continue;
+            };
+            pairs += 1;
+            let (ma, mb) = (off_card[*a], off_card[*b] * sign);
+            assert!(
+                ma != at_card[*a] || mb != at_card[*b] * sign,
+                "{a}, {b}: the moved card moves neither"
+            );
+            assert!(
+                close(ma, mb, 1e-13),
+                "{a} = {sign:+} {b} at the card ({ga}, {gb}) but not off it ({ma}, {mb})"
+            );
+        }
+    }
+    println!("{pairs} coupling pairs MadGraph could merge, every one an identity");
 }
