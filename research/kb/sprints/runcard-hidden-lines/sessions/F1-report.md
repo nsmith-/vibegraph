@@ -4,7 +4,7 @@ title: "F1 report: hidden_parameter lines read, systematics request warns"
 description: "split_line cuts comments at the first '#' or '!'; a card requesting systematics weights warns that none are written."
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
-  - {id: commit, resource: "da9beaa", title: "F1 commit on sprintd-runcard-hidden-lines"}
+  - {id: commit, resource: "de96d8c", title: "F1 commit on sprintd-runcard-hidden-lines"}
 ---
 ## Implemented
 
