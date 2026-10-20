@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: resolve particles by MadGraph's default names; accept --modelname](F1.md) - Vendor MadGraph's particles_name_default.txt, rename (or alias) by PDG code as MadGraph's import does, and accept 'import model X --modelname' as switching that renaming off.
+* [HY1: hygiene review of the default-name table and --modelname](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 
 ## Session Report
 

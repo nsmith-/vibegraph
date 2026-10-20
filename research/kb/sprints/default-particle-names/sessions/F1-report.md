@@ -4,6 +4,7 @@ title: "F1 report: MadGraph's default particle names, and --modelname"
 description: "import model renames particles to MadGraph's PDG-keyed default names in a lookup table on the model (resolution follows MadGraph, outputs keep the UFO names); --modelname switches it off; the table is vendored and hash-pinned; 9 new tests, 10 of 10 mutations caught."
 status: draft
 tags: [process-grammar, model, particle-names, madgraph-parity, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: 63f50a6, resource: "https://github.com/nsmith-/vibegraph/commit/63f50a6", title: "feat(model): MadGraph's default particle names; accept --modelname"}
