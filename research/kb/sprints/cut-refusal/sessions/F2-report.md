@@ -2,6 +2,7 @@
 type: Session Report
 title: "F2 report: run card first in generate, one CLI test module, and what unequal beams need"
 description: "generate refuses a run card before reading the artifact; the CLI tests share tests/common; unequal beams are exact on the lpp = 0 path but the proton path is built for equal beams only, so part 3 stopped at the finding."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---
 Worktree `/home/user/wt/B`, branch `sprintd-cut-refusal`. Parts 1 and 2 are
