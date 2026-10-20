@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: vendor the CMS ckm_no_b_mass restrict card into the built-in SM](F1.md) - Add SMRestrict::CkmNoBMass with the CMS card vendored under its provenance; pin its parsed values, WTA surviving restriction, and its couplings against the existing references by composition.
+* [HY1: hygiene review of the ckm_no_b_mass restriction and its banking plumbing](HY1.md) - Review F1 and V1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 * [V1: make the ckm_no_b_mass MadGraph reference a pure banking run](V1.md) - Review F1's composition oracle for blind spots, and land the plumbing (a manifest spelling for an SM restriction, the MG5 root override in the generator scripts) so the M3 only runs commands.
 
 ## Session Report
