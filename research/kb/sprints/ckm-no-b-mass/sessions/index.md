@@ -11,4 +11,5 @@
 ## Session Report
 
 * [F1 report: the CMS ckm_no_b_mass card interned in the built-in SM](F1-report.md) - SMRestrict::CkmNoBMass loads the vendored CMS card (sha256-pinned); WTau survives, MB/ymb lock; couplings pinned by composition with ckm, no_b_mass and MadGraph's default-restriction tables; MadGraph banking at this card still owed.
+* [HY1 report: hygiene review of the ckm_no_b_mass restriction and its banking plumbing](HY1-report.md) - Review of F1 (9dc76b4) and V1 (768a207): shared banked-card test helpers, named thresholds, a MadGraph anchor that can see its exclusion widen, an empty VG_MG5_ROOT treated as unset.
 * [V1 report: ckm_no_b_mass blind spots closed from the card, and the banking plumbing](V1-report.md) - Three hermetic tests close MadGraph's zero threshold, coupling merging and the probe-completeness gap at this card; a fourth reads MadGraph's generated param cards; model = "sm" names an interned-SM restriction on both sides and gen_couplings honours VG_MG5_ROOT; the M3 banking request in final form.
