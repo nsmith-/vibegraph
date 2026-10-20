@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: the automatic WEIGHTED search cap is MadGraph's](F1.md) - max_w = (n_ext−2) × the largest WEIGHTED of any interaction; a toy UFO with a two-order vertex finds its diagrams above the old cap; SM census and search cost unmoved.
+
+## Session Report
+
+* [F1 report: the automatic WEIGHTED search is MadGraph's loop](F1-report.md) - The search starts at MadGraph's get_minimum_WEIGHTED, steps by one, stops at (n_ext-2) x int(max interaction WEIGHTED per equivalent cubic vertex) and generates at the bound it stopped at; a top-level 1->n process runs no search. A QED+NP toy finds its diagrams; the SM cap does not move (the brief's x4 was wrong); the SM search got cheaper, not dearer.
