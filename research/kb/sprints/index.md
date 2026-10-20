@@ -54,3 +54,4 @@
 * [vegas-absolute-grid-coords](vegas-absolute-grid-coords/index.md)
 * [vegas-constant-integrand](vegas-constant-integrand/index.md)
 * [vegas-low-acceptance-bins](vegas-low-acceptance-bins/index.md)
+* [weighted-cap](weighted-cap/index.md)
