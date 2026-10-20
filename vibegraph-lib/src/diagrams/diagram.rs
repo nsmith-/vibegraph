@@ -273,6 +273,34 @@ pub enum ConvertError {
         particle: String,
         propagator: String,
     },
+    /// A self-conjugate (Majorana) fermion is on a line of the diagram. Its charge
+    /// fixes no direction for the line, which needs charge-conjugated wavefunctions
+    /// and propagators to evaluate.
+    #[error(
+        "particle '{particle}' is a Majorana fermion (its own antiparticle) and is \
+         {role} here; Majorana fermion flow needs charge conjugation, which this \
+         evaluator does not implement"
+    )]
+    MajoranaFermion {
+        particle: String,
+        /// `"an external leg"` or `"an internal propagator"`.
+        role: &'static str,
+    },
+    /// A vertex pairs two particles, or two antiparticles, on one fermion line (its
+    /// particles read all-incoming): it changes fermion number by two, and the line
+    /// through it has no consistent fermion-number arrow.
+    #[error(
+        "vertex '{vertex}' joins '{first}' and '{second}' on one fermion line as two \
+         incoming {kind}; a fermion-number-violating vertex needs charge conjugation, \
+         which this evaluator does not implement"
+    )]
+    FermionNumberViolation {
+        vertex: String,
+        first: String,
+        second: String,
+        /// `"particles"` or `"antiparticles"`.
+        kind: &'static str,
+    },
 }
 
 impl Diagram {
@@ -513,6 +541,68 @@ impl Diagram {
             });
         }
         lines
+    }
+
+    /// Refuse a diagram whose fermion lines have no fermion-number arrow.
+    ///
+    /// The evaluator types each external fermion as a ket or a bra from its charge and
+    /// direction, and carries that adjoint unchanged along its line, so every bilinear
+    /// it builds needs a line with a ket at one end and a bra at the other. A Majorana
+    /// fermion on the line, or a vertex whose pairing joins two particles or two
+    /// antiparticles, leaves the line without that orientation. Without either,
+    /// fermion number flows through every vertex of every line, so the line's two end
+    /// legs, read all-incoming as [`Leg::charge`] is, are one particle and one
+    /// antiparticle. That is the condition under which the evaluator's external typing
+    /// (`helas::eval::root_diagram::external_leg`, with a final-state leg on a line to
+    /// the initial state typed by its physical particle) gives one ket and one bra; the
+    /// debug assertion below holds every enumerated diagram to it.
+    pub(crate) fn check_fermion_flow(&self, model: &UFOModel) -> Result<(), ConvertError> {
+        let majorana = |pid: ParticleId| {
+            let p = model.particle(pid);
+            (p.spin.abs() == 2 && p.is_self_conjugate).then(|| p.name.clone())
+        };
+        let legs = self.legs.iter().map(|l| (l.particle, "an external leg"));
+        let props = self
+            .props
+            .iter()
+            .map(|p| (p.particle, "an internal propagator"));
+        for (pid, role) in legs.chain(props) {
+            if let Some(particle) = majorana(pid) {
+                return Err(ConvertError::MajoranaFermion { particle, role });
+            }
+        }
+        for vertex in &self.vertices {
+            let def = model.vertex_def(vertex.interaction);
+            let group =
+                crate::ufo::topo::flow_groups(def, &model.lorentz).swap_remove(vertex.flow_group);
+            for (a, &pa) in def.particles.iter().enumerate() {
+                let b = group.partner(a);
+                if b <= a || model.particle(pa).spin.abs() != 2 {
+                    continue;
+                }
+                let (first, second) = (model.particle(pa), model.particle(def.particles[b]));
+                if (first.pdg_code > 0) == (second.pdg_code > 0) {
+                    return Err(ConvertError::FermionNumberViolation {
+                        vertex: def.name.clone(),
+                        first: first.name.clone(),
+                        second: second.name.clone(),
+                        kind: if first.pdg_code > 0 {
+                            "particles"
+                        } else {
+                            "antiparticles"
+                        },
+                    });
+                }
+            }
+        }
+        debug_assert!(
+            self.fermion_lines(model)
+                .iter()
+                .all(|line| self.leg(line.legs[0]).charge != self.leg(line.legs[1]).charge),
+            "a diagram with no Majorana fermion and no fermion-number-violating vertex has \
+             a fermion line whose two ends are both particles or both antiparticles"
+        );
+        Ok(())
     }
 
     /// The relative fermion sign that the external-leg permutation parity leaves out,

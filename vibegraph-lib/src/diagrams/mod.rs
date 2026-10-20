@@ -899,6 +899,9 @@ fn generate_sets_inner(
             .collect::<Result<Vec<_>, _>>()?;
         let enumerated = diagrams.len();
         diagrams.retain(|d| process.schannels.keeps(d, model));
+        for diagram in &diagrams {
+            diagram.check_fermion_flow(model)?;
+        }
         if diagrams.len() != enumerated {
             debug!(
                 "{} > {}: the s-channel restrictions keep {} of {enumerated} diagrams",
