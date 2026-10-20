@@ -2,6 +2,7 @@
 type: Session Report
 title: "F1 report: unimplemented cuts refused before enumeration, no-op maxima let through"
 description: "detect_unimplemented is public and runs in load_run_card ahead of enumeration for integrate and generate; single-object pT maxima at or above half the collider energy read as the default."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 sources:
   - {id: commit, resource: "0576ca2", title: "F1 commit on sprintd-cut-refusal"}
