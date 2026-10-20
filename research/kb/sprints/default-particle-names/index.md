@@ -6,6 +6,10 @@
 
 * [MadGraph's default particle names, and --modelname](sprint.md) - A model's particles answer to MadGraph's PDG-keyed default names (mu+ on loop_sm, u~ and mu- on BSM UFOs), and 'import model X --modelname' is accepted and switches only that renaming off.
 
+## Sprint Record
+
+* [MadGraph's default particle names, and --modelname](closeout.md) - Particles answer to MadGraph's PDG-keyed default names through a renamed lookup table, a renamed-away UFO name is refused as MadGraph refuses it, every printed name stays the UFO's, and --modelname switches the renaming off.
+
 ## Directories
 
 * [sessions](sessions/index.md)

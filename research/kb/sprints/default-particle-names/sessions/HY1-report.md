@@ -4,6 +4,7 @@ title: "HY1 report: hygiene review of the default-name table and --modelname"
 description: "Review of F1's diff: the name table can no longer go stale unnoticed in debug builds, one loader entry point, the UFOModel doc corrected, narrower visibility, two tests added and one tightened; 5 mutations, 1 survivor found and closed."
 status: draft
 tags: [hygiene, particle-names, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 Session HY1 of [the sprint](../sprint.md), worktree `/home/user/wt/F`, branch
