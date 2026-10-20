@@ -20,6 +20,7 @@ use crate::budget::{integrate_channels, BlockAllocation, Budget, ConvergenceRepo
 use crate::diagrams::DiagramSet;
 use crate::hadronic::{combine_channels, ChannelIntegration};
 use crate::phasespace::channel::AlphaAdaptation;
+use crate::phasespace::coords::Coordinates;
 use crate::phasespace::maps::{MapChoices, ProcessShape};
 use crate::proton::{ProtonEvent, ProtonIntegrand};
 use crate::runcard::RunCard;
@@ -212,6 +213,20 @@ impl<'a> MultiplicitySum<'a> {
     pub(crate) fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (k, j) = self.locate(channel);
         self.parts[k].value_in_channel(j, self.part_point(k, u))
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel) with the grid coordinates
+    /// requested from `coords` and the trailing uniforms handed over whole; a part
+    /// that consumes fewer trailing uniforms than the widest reads the leading ones.
+    pub(crate) fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        trailing: &[f64],
+    ) -> f64 {
+        let (k, j) = self.locate(channel);
+        let part = &self.parts[k];
+        part.value_in_channel_driven(j, coords, &trailing[..part.scale_draw_ndim()])
     }
 
     /// [`value_in_channel`](Self::value_in_channel) with the point kept, and the
@@ -432,6 +447,15 @@ impl ChannelIntegrand for MultiplicitySum<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         MultiplicitySum::value_in_channel(self, channel, u)
+    }
+
+    fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        trailing: &[f64],
+    ) -> f64 {
+        MultiplicitySum::value_in_channel_driven(self, channel, coords, trailing)
     }
 
     fn grid_rule(&self) -> GridRule {

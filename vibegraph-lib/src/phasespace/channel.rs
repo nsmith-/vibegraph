@@ -26,6 +26,7 @@ use thread_local::ThreadLocal;
 use crate::helas::repr::lorentz::LorentzVector;
 use crate::helas::repr::Real;
 
+use super::coords::Coordinates;
 use super::rambo::{flat_weight, rambo};
 use super::rng::SubStream;
 #[cfg(test)]
@@ -54,6 +55,18 @@ pub trait PhaseSpaceMap<F: Real> {
 
     /// Map uniforms `u ∈ [0,1]^ndim` to a phase-space point.
     fn sample(&self, u: &[F]) -> PhaseSpacePoint<F>;
+
+    /// [`sample`](Self::sample) with the coordinates requested from `coords` one
+    /// at a time, as the map reaches each of them.
+    ///
+    /// A map whose coordinate windows do not move takes all
+    /// [`ndim`](Self::ndim) of them over the unit interval first, which is what
+    /// the default does; a map that knows each coordinate's window only once the
+    /// earlier ones are drawn overrides it.
+    fn sample_driven(&self, coords: &mut dyn Coordinates<F>) -> PhaseSpacePoint<F> {
+        let u: Vec<F> = (0..self.ndim()).map(|_| coords.unit()).collect();
+        self.sample(&u)
+    }
 }
 
 /// A single phase-space channel on a fixed `√ŝ` and external-mass set.
@@ -235,6 +248,13 @@ pub(crate) trait ScaledChannel<F: Real>: PhaseSpaceMap<F> + Send + Sync {
     /// Map uniforms to a phase-space point at CM energy `sqrt_s`, with the weight
     /// `1/g` this channel alone assigns.
     fn sample_at(&self, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F>;
+
+    /// [`sample_at`](Self::sample_at) with the coordinates requested from
+    /// `coords` as the map reaches them; see [`PhaseSpaceMap::sample_driven`].
+    fn sample_at_driven(&self, sqrt_s: F, coords: &mut dyn Coordinates<F>) -> PhaseSpacePoint<F> {
+        let u: Vec<F> = (0..self.ndim()).map(|_| coords.unit()).collect();
+        self.sample_at(sqrt_s, &u)
+    }
 
     /// The sampling density this channel assigns to `momenta` at CM energy
     /// `sqrt_s`.
@@ -651,6 +671,21 @@ impl<F: Real> MultiChannel<F> {
         self.channels[j].sample(u)
     }
 
+    /// [`draw_in_channel`](Self::draw_in_channel) with channel `j` requesting its
+    /// coordinates from `coords` as it reaches them.
+    ///
+    /// # Panics
+    ///
+    /// If `j` is not a channel index.
+    pub(crate) fn draw_in_channel_driven(
+        &self,
+        j: usize,
+        coords: &mut dyn Coordinates<F>,
+    ) -> PhaseSpacePoint<F> {
+        assert!(j < self.channels.len(), "channel index out of range");
+        self.channels[j].sample_driven(coords)
+    }
+
     /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in
     /// channel `j`, with `g = Σₖ αₖ gₖ` the same combined density the mixture
     /// divides by.
@@ -881,6 +916,22 @@ impl<F: Real> ScaledMultiChannel<F> {
     pub(crate) fn draw_in_channel_at(&self, j: usize, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
         assert!(j < self.channels.len(), "channel index out of range");
         self.channels[j].sample_at(sqrt_s, u)
+    }
+
+    /// [`draw_in_channel_at`](Self::draw_in_channel_at) with channel `j`
+    /// requesting its coordinates from `coords` as it reaches them.
+    ///
+    /// # Panics
+    ///
+    /// If `j` is not a channel index.
+    pub(crate) fn draw_in_channel_at_driven(
+        &self,
+        j: usize,
+        sqrt_s: F,
+        coords: &mut dyn Coordinates<F>,
+    ) -> PhaseSpacePoint<F> {
+        assert!(j < self.channels.len(), "channel index out of range");
+        self.channels[j].sample_at_driven(sqrt_s, coords)
     }
 
     /// The weight `αⱼ/g(p)` the channel-split estimator gives a point drawn in

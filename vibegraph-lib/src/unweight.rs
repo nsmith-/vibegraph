@@ -46,10 +46,11 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 
+use crate::phasespace::coords::Coordinates;
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::select::select_index;
-use crate::vegas::{GridRule, VegasGrid};
+use crate::vegas::{GridPoint, GridRule, VegasGrid};
 
 /// The RNG stream the per-channel weight scans run on, offset by channel index so
 /// each channel's scan is independent of the others and of the event generation.
@@ -247,6 +248,28 @@ pub trait ChannelIntegrand {
     /// reject return exactly `0.0`.
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64;
 
+    /// [`value_in_channel`](Self::value_in_channel) with the channel's grid
+    /// coordinates requested from `coords` as the channel's map reaches them, and
+    /// the trailing uniforms handed over whole.
+    ///
+    /// The value is the one `value_in_channel` returns at the coordinates
+    /// `coords` produced. The default takes all
+    /// [`channel_grid_ndim`](Self::channel_grid_ndim) of them over the unit
+    /// interval first; an integrand whose map asks for each coordinate within a
+    /// window overrides it.
+    fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        trailing: &[f64],
+    ) -> f64 {
+        let ndim = self.channel_grid_ndim(channel);
+        let mut u = Vec::with_capacity(ndim + trailing.len());
+        u.extend((0..ndim).map(|_| coords.unit()));
+        u.extend_from_slice(trailing);
+        self.value_in_channel(channel, &u)
+    }
+
     /// How an integration of this integrand refines its channels' grids. An
     /// accept/reject pass over frozen grids never reads it.
     fn grid_rule(&self) -> GridRule {
@@ -406,9 +429,9 @@ fn scan_channel<I: ChannelIntegrand>(
     seed: u64,
     rule: MaxRule,
 ) -> (UnweightChannel, SubStream) {
-    let ndim = integrand.channel_grid_ndim(j);
     let scale_ndim = integrand.scale_draw_ndim();
-    let mut u = vec![0.0; ndim + scale_ndim];
+    let mut point = GridPoint::new(grid);
+    let mut trailing_u = vec![0.0; scale_ndim];
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     rng.set_stream(SCAN_STREAM_BASE + j as u64);
     let mut trailing = SubStream::from_stream(seed, SCALE_DRAW_STREAM_BASE + j as u64);
@@ -419,9 +442,10 @@ fn scan_channel<I: ChannelIntegrand>(
     let mut weights: Vec<f64> = Vec::new();
     let keep = rule != MaxRule::Extremum;
     for _ in 0..draws {
-        let jac = grid.draw(&mut rng, &mut u[..ndim]);
-        trailing.fill_uniforms(&mut u[ndim..]);
-        let w = jac * integrand.value_in_channel(j, &u);
+        point.draw(&mut rng);
+        trailing.fill_uniforms(&mut trailing_u);
+        let value = integrand.value_in_channel_driven(j, &mut point, &trailing_u);
+        let w = point.finish() * value;
         if w > 0.0 {
             nonzero += 1;
             w_peak = w_peak.max(w);
@@ -660,10 +684,13 @@ impl Unweighter {
             .expect("the summed maximum is positive, so some channel carries weight");
         let channel = &self.channels[j];
         let grid_ndim = channel.grid.ndim();
-        let point = &mut self.u[..grid_ndim + self.scale_ndim];
-        let jac = channel.grid.draw(rng, &mut point[..grid_ndim]);
-        self.scale_draw[j].fill_uniforms(&mut point[grid_ndim..]);
-        let w = jac * integrand.value_in_channel(j, point);
+        let mut point = GridPoint::new(&channel.grid);
+        point.draw(rng);
+        let (coords, trailing) = self.u[..grid_ndim + self.scale_ndim].split_at_mut(grid_ndim);
+        self.scale_draw[j].fill_uniforms(trailing);
+        let value = integrand.value_in_channel_driven(j, &mut point, trailing);
+        let w = point.finish() * value;
+        coords.copy_from_slice(point.x());
         let r = w / channel.w_max;
         let accept: f64 = rng.random();
 

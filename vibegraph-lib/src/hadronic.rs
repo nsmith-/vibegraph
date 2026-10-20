@@ -54,6 +54,7 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::phasespace::beams;
+use crate::phasespace::coords::{Coordinates, SliceCoords};
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::phasespace::{
@@ -1768,6 +1769,22 @@ impl Sampler {
         }
     }
 
+    /// [`draw_in_channel`](Self::draw_in_channel) with the channel requesting its
+    /// coordinates from `coords` as its map reaches them.
+    fn draw_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+    ) -> PhaseSpacePoint<f64> {
+        match self {
+            Sampler::Flat(c) => {
+                assert_eq!(channel, 0, "the flat map has a single channel");
+                c.sample_driven(coords)
+            }
+            Sampler::Multi(c) => c.draw_in_channel_driven(channel, coords),
+        }
+    }
+
     /// The mixture weight `1/g` at `momenta`, completing a
     /// [`draw_from`](Self::draw_from). `own` is the weight the drawing channel
     /// gave the point, which under the single-channel flat map already is it.
@@ -2678,7 +2695,19 @@ impl<'a> FixedBeamIntegrand<'a> {
     /// the sampler's own channel, which is a difference no cross section announces.
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
-        let point = self.sampler.draw_in_channel(channel, grid_u);
+        self.value_in_channel_driven(channel, &mut SliceCoords::new(grid_u), scale_u)
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel) with the grid coordinates
+    /// requested from `coords` as the channel's map reaches them, and the
+    /// `scale_u` trailing uniforms handed over whole.
+    pub(crate) fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        scale_u: &[f64],
+    ) -> f64 {
+        let point = self.sampler.draw_in_channel_driven(channel, coords);
         let ext = self.externals(&point.momenta);
         if !self.passes_cuts(&ext) {
             return 0.0;
@@ -3138,6 +3167,21 @@ impl ChannelIntegrand for FixedBeamIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         FixedBeamIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        trailing: &[f64],
+    ) -> f64 {
+        assert_eq!(
+            trailing.len(),
+            self.scale_draw_ndim(),
+            "a point carries {} scale-draw uniforms",
+            self.scale_draw_ndim()
+        );
+        FixedBeamIntegrand::value_in_channel_driven(self, channel, coords, trailing)
     }
 
     fn grid_rule(&self) -> GridRule {

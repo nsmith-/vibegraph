@@ -68,6 +68,7 @@ use std::f64::consts::PI;
 
 pub(crate) mod beams;
 pub(crate) mod channel;
+pub mod coords;
 pub mod diagram_channel;
 pub mod maps;
 pub(crate) mod rambo;

@@ -96,6 +96,7 @@ use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::phasespace::coords::Coordinates;
 use crate::phasespace::rng::WORDS_PER_DRAW;
 
 /// Leading adaptation iterations a freshly built grid excludes from its
@@ -322,6 +323,125 @@ fn bound_bin_width(m: &mut [f64], edges: &[f64], max_width: f64) {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SamplePoint<'a> {
     pub(crate) u: &'a [f64],
+}
+
+/// One point on a [`VegasGrid`], its coordinates mapped through the bins as the
+/// integrand asks for them.
+///
+/// The point's `ndim` uniforms are drawn up front, one 64-bit draw per dimension
+/// in dimension order, so a point costs the same generator words whatever the
+/// integrand reads and the draw addressing of [`adapt_blocks_iteration_driven`] holds.
+/// What waits for the request is the mapping: dimension `d` is placed in its bin
+/// when the integrand asks for its `d`-th coordinate, and the integrand names the
+/// window of that coordinate's axis it may occupy
+/// ([`Coordinates::within`]). Dimensions the integrand never asks for are mapped
+/// by [`finish`](Self::finish), in order, so the bins every dimension records for
+/// refinement and the Jacobian `1/p(x)` — accumulated as a product in dimension
+/// order — are those of the whole point.
+///
+/// The grid's coordinate is the position within the requested window: a value in
+/// `[lo, hi]` placed at the grid-mapped fraction of it. The window's own uniform
+/// density is the map's to account for, which leaves the Jacobian a function of
+/// the grid alone.
+#[derive(Debug)]
+pub(crate) struct GridPoint<'g> {
+    grid: &'g VegasGrid,
+    uniforms: Vec<f64>,
+    /// Grid-mapped coordinate per dimension, filled up to `mapped`.
+    x: Vec<f64>,
+    /// Bin index per dimension, filled up to `mapped`.
+    ks: Vec<usize>,
+    mapped: usize,
+    wgt: f64,
+}
+
+impl<'g> GridPoint<'g> {
+    /// A point buffer for `grid`, holding no draw yet.
+    pub(crate) fn new(grid: &'g VegasGrid) -> Self {
+        GridPoint {
+            grid,
+            uniforms: vec![0.0; grid.ndim],
+            x: vec![0.0; grid.ndim],
+            ks: vec![0; grid.ndim],
+            mapped: grid.ndim,
+            wgt: 1.0,
+        }
+    }
+
+    /// The grid's dimension: how many coordinates the point holds.
+    pub(crate) fn ndim(&self) -> usize {
+        self.grid.ndim
+    }
+
+    /// Draw the next point's uniforms from `rng`, leaving every dimension unmapped.
+    pub(crate) fn draw(&mut self, rng: &mut impl Rng) {
+        for u in &mut self.uniforms {
+            *u = rng.random();
+        }
+        self.mapped = 0;
+        self.wgt = 1.0;
+    }
+
+    /// Map the next dimension through its bins and return its grid coordinate in
+    /// `[0, 1]`.
+    ///
+    /// # Panics
+    ///
+    /// If every dimension of the point is already mapped.
+    fn map_next(&mut self) -> f64 {
+        let dim = self.mapped;
+        assert!(
+            dim < self.grid.ndim,
+            "the integrand asked for coordinate {dim} of a {}-dimensional grid point",
+            self.grid.ndim
+        );
+        let nbins = self.grid.nbins;
+        let edges = &self.grid.xi[dim];
+        let pos = self.uniforms[dim] * nbins as f64;
+        let k = (pos as usize).min(nbins - 1);
+        let r = pos - k as f64;
+        let lo = edges[k];
+        let hi = edges[k + 1];
+        let x = lo + r * (hi - lo);
+        // Jacobian dx/du = bin width × nbins, so the product is 1/p(x).
+        self.wgt *= nbins as f64 * (hi - lo);
+        self.x[dim] = x;
+        self.ks[dim] = k;
+        self.mapped += 1;
+        x
+    }
+
+    /// Map every dimension not yet asked for and return the point's VEGAS
+    /// Jacobian `1/p(x)`.
+    pub(crate) fn finish(&mut self) -> f64 {
+        while self.mapped < self.grid.ndim {
+            self.map_next();
+        }
+        self.wgt
+    }
+
+    /// The grid-mapped coordinates of a [finished](Self::finish) point.
+    pub(crate) fn x(&self) -> &[f64] {
+        debug_assert_eq!(self.mapped, self.grid.ndim, "the point is not finished");
+        &self.x
+    }
+
+    /// The bin each dimension of a [finished](Self::finish) point fell in.
+    fn bins(&self) -> &[usize] {
+        debug_assert_eq!(self.mapped, self.grid.ndim, "the point is not finished");
+        &self.ks
+    }
+}
+
+impl Coordinates<f64> for GridPoint<'_> {
+    fn within(&mut self, lo: f64, hi: f64) -> f64 {
+        let x = self.map_next();
+        lo + (hi - lo) * x
+    }
+
+    fn unit(&mut self) -> f64 {
+        self.map_next()
+    }
 }
 
 /// Errors rejected by [`VegasGrid::from_raw`] (and hence by `Deserialize`).
@@ -760,37 +880,22 @@ impl VegasGrid {
     /// against. Draws the same sequence [`sample_frozen`](Self::sample_frozen)
     /// draws from the same `rng` state.
     pub fn draw(&self, rng: &mut impl Rng, x: &mut [f64]) -> f64 {
-        self.draw_into(rng, x, |_, _| {})
+        let mut point = GridPoint::new(self);
+        point.draw(rng);
+        let wgt = point.finish();
+        x.copy_from_slice(point.x());
+        wgt
     }
 
     /// Draw one point: fill `x` (length `ndim`) and `ks` (length `ndim`,
     /// bin index per dimension) and return the VEGAS Jacobian weight.
+    #[cfg(test)]
     fn draw_point(&self, rng: &mut impl Rng, x: &mut [f64], ks: &mut [usize]) -> f64 {
-        self.draw_into(rng, x, |dim, k| ks[dim] = k)
-    }
-
-    /// The draw itself, reporting each dimension's bin index to `record` — so a
-    /// caller that needs the bins for grid refinement and one that needs only the
-    /// point share a single definition of the sampling.
-    fn draw_into(
-        &self,
-        rng: &mut impl Rng,
-        x: &mut [f64],
-        mut record: impl FnMut(usize, usize),
-    ) -> f64 {
-        let nbins = self.nbins;
-        let mut wgt = 1.0_f64;
-        for (dim, (xd, edges)) in x.iter_mut().zip(&self.xi).enumerate() {
-            let u: f64 = rng.random();
-            let pos = u * nbins as f64;
-            let k = (pos as usize).min(nbins - 1);
-            let r = pos - k as f64;
-            let lo = edges[k];
-            let hi = edges[k + 1];
-            *xd = lo + r * (hi - lo);
-            wgt *= nbins as f64 * (hi - lo); // Jacobian dx/du = bin_width, wgt = 1/p(x)
-            record(dim, k);
-        }
+        let mut point = GridPoint::new(self);
+        point.draw(rng);
+        let wgt = point.finish();
+        x.copy_from_slice(point.x());
+        ks.copy_from_slice(point.bins());
         wgt
     }
 
@@ -843,14 +948,16 @@ impl VegasGrid {
         let mut flat_ks = vec![0_usize; batch_size * self.ndim];
         let mut wgts = vec![0.0_f64; batch_size];
         let mut fvals = vec![0.0_f64; batch_size];
+        let mut point = GridPoint::new(self);
 
         let mut remaining = neval;
         while remaining > 0 {
             let this_batch = remaining.min(batch_size);
             for i in 0..this_batch {
-                let x = &mut flat_x[i * self.ndim..(i + 1) * self.ndim];
-                let ks = &mut flat_ks[i * self.ndim..(i + 1) * self.ndim];
-                wgts[i] = self.draw_point(rng, x, ks);
+                point.draw(rng);
+                wgts[i] = point.finish();
+                flat_x[i * self.ndim..(i + 1) * self.ndim].copy_from_slice(point.x());
+                flat_ks[i * self.ndim..(i + 1) * self.ndim].copy_from_slice(point.bins());
             }
             let points: Vec<SamplePoint> = flat_x[..this_batch * self.ndim]
                 .chunks_exact(self.ndim)
@@ -968,7 +1075,7 @@ pub(crate) struct BlockPlan {
     /// The block's `ChaCha8Rng` stream id.
     pub(crate) stream: u64,
     /// Points one rayon task evaluates. Scheduling only — the result is
-    /// identical at any chunk size, for the reasons [`adapt_blocks_iteration`]
+    /// identical at any chunk size, for the reasons [`adapt_blocks_iteration_driven`]
     /// documents.
     pub(crate) chunk_size: usize,
 }
@@ -1031,9 +1138,11 @@ impl BlockIteration {
 /// `init` builds a block's per-chunk state from `(block, first global point of
 /// the chunk)` — a substream of its own for any coordinates the integrand draws
 /// beyond the grid's, positioned from that index — and `f` evaluates one point of
-/// a block against it. Grids are **not** refined here: the caller decides whether
-/// another iteration follows and refines from [`BlockIteration::hist`].
-pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
+/// a block against it, requesting the point's coordinates from the
+/// [`GridPoint`] it is handed as it reaches them. Grids are **not** refined here:
+/// the caller decides whether another iteration follows and refines from
+/// [`BlockIteration::hist`].
+pub(crate) fn adapt_blocks_iteration_driven<S, Init, Fp>(
     grids: &[VegasGrid],
     plans: &[BlockPlan],
     seed: u64,
@@ -1042,7 +1151,7 @@ pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
 ) -> Vec<BlockIteration>
 where
     Init: Fn(usize, u64) -> S + Sync,
-    Fp: Fn(usize, &mut S, &[f64]) -> f64 + Sync,
+    Fp: Fn(usize, &mut S, &mut GridPoint) -> f64 + Sync,
     S: Send,
 {
     assert_eq!(
@@ -1084,14 +1193,15 @@ where
             rng.set_word_pos(u128::from(chunk_first) * ndim as u128 * WORDS_PER_DRAW);
 
             let mut state = init(b, chunk_first);
-            let mut x = vec![0.0_f64; ndim];
-            let mut ks = vec![0_usize; ndim];
+            let mut point = GridPoint::new(grid);
             let mut fvals = Vec::with_capacity(this_chunk);
             let mut bins = Vec::with_capacity(this_chunk * ndim);
             for _ in 0..this_chunk {
-                let wgt = grid.draw_point(&mut rng, &mut x, &mut ks);
-                fvals.push(f(b, &mut state, &x) * wgt);
-                bins.extend(ks.iter().map(|&k| k as u16));
+                point.draw(&mut rng);
+                let value = f(b, &mut state, &mut point);
+                let wgt = point.finish();
+                fvals.push(value * wgt);
+                bins.extend(point.bins().iter().map(|&k| k as u16));
             }
             (fvals, bins)
         })
@@ -1133,6 +1243,28 @@ where
         });
     }
     out
+}
+
+/// [`adapt_blocks_iteration_driven`] for an integrand of the whole point: `f`
+/// receives the block's `ndim` grid-mapped coordinates, all drawn and mapped
+/// before it runs.
+#[cfg(test)]
+pub(crate) fn adapt_blocks_iteration<S, Init, Fp>(
+    grids: &[VegasGrid],
+    plans: &[BlockPlan],
+    seed: u64,
+    init: Init,
+    f: Fp,
+) -> Vec<BlockIteration>
+where
+    Init: Fn(usize, u64) -> S + Sync,
+    Fp: Fn(usize, &mut S, &[f64]) -> f64 + Sync,
+    S: Send,
+{
+    adapt_blocks_iteration_driven(grids, plans, seed, init, |b, state, point| {
+        point.finish();
+        f(b, state, point.x())
+    })
 }
 
 /// One iteration's estimate and its variance from the sums of its `neval`

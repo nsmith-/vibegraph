@@ -114,6 +114,7 @@ use crate::lhef::resonance::SubprocessResonances;
 use crate::onshell::OnShellVeto;
 use crate::pdf::grid::AlphaSInfo;
 use crate::pdf::{flavor_slot, FlavorRow, PdfMember, FLAVOR_SLOTS};
+use crate::phasespace::coords::{Coordinates, SliceCoords};
 use crate::phasespace::diagram_channel::MapIdentity;
 use crate::phasespace::maps::{MapChoices, MapOptions, ProcessShape, TauMap};
 use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
@@ -2533,10 +2534,26 @@ impl<'a> ProtonIntegrand<'a> {
     /// If `channel` is not a channel index.
     pub fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         let (grid_u, scale_u) = self.split_point(u);
-        let m = self.map_point(grid_u);
+        self.value_in_channel_driven(channel, &mut SliceCoords::new(grid_u), scale_u)
+    }
+
+    /// [`value_in_channel`](Self::value_in_channel) with the grid coordinates
+    /// requested from `coords` — the outer map's first, then the channel's as its
+    /// map reaches them — and the `scale_u` trailing uniforms handed over whole.
+    pub(crate) fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        scale_u: &[f64],
+    ) -> f64 {
+        let mut outer = [0.0; OUTER_NDIM];
+        for o in &mut outer {
+            *o = coords.unit();
+        }
+        let m = self.map_point(&outer);
         let point = self
             .combiner
-            .draw_in_channel_at(channel, m.sqrt_shat, &grid_u[OUTER_NDIM..]);
+            .draw_in_channel_at_driven(channel, m.sqrt_shat, coords);
         let shape = self.shape(self.scratch(), &m, &point.momenta, channel, scale_u);
         if shape == 0.0 {
             return 0.0;
@@ -2855,7 +2872,7 @@ impl<'a> ProtonIntegrand<'a> {
     /// have drawn in sequence; what the split changes is the summation, which is
     /// reduced from per-chunk partials in chunk order. Carrying every point's whole
     /// `n_channels` density row out to a single sequential reduction — the stronger
-    /// contract [`crate::vegas::adapt_blocks_iteration`] holds — would cost
+    /// contract [`crate::vegas::adapt_blocks_iteration_driven`] holds — would cost
     /// `n_survey × n_channels` doubles, which on a several-hundred-channel process is
     /// hundreds of megabytes, so the partials are summed per chunk instead. That
     /// makes [`SURVEY_CHUNK`] part of the answer and the thread count not.
@@ -3025,6 +3042,21 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 
     fn value_in_channel(&self, channel: usize, u: &[f64]) -> f64 {
         ProtonIntegrand::value_in_channel(self, channel, u)
+    }
+
+    fn value_in_channel_driven(
+        &self,
+        channel: usize,
+        coords: &mut dyn Coordinates<f64>,
+        trailing: &[f64],
+    ) -> f64 {
+        assert_eq!(
+            trailing.len(),
+            self.scale_draw_ndim(),
+            "a point carries {} scale-draw uniforms",
+            self.scale_draw_ndim()
+        );
+        ProtonIntegrand::value_in_channel_driven(self, channel, coords, trailing)
     }
 }
 

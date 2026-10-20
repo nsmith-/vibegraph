@@ -114,6 +114,7 @@ use crate::ufo::EvaluatedModel;
 
 use super::beams::{beam_momenta, beam_momenta_m2, kallen};
 use super::channel::{Channel, PhaseSpaceMap, PhaseSpacePoint, ScaledChannel, SubsystemMemo};
+use super::coords::{Coordinates, SliceCoords};
 
 /// The propagator pole a subsystem's invariant sits on: the timelike line's mass
 /// and width, driving the Breit–Wigner importance map for that invariant.
@@ -1192,27 +1193,51 @@ impl IdentityWords {
     }
 }
 
+/// A coordinate source that counts the requests it passes on.
+struct Counted<'c, F: Real> {
+    inner: &'c mut dyn Coordinates<F>,
+    count: usize,
+}
+
+impl<F: Real> Coordinates<F> for Counted<'_, F> {
+    fn within(&mut self, lo: F, hi: F) -> F {
+        self.count += 1;
+        self.inner.within(lo, hi)
+    }
+
+    fn unit(&mut self) -> F {
+        self.count += 1;
+        self.inner.unit()
+    }
+}
+
 impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
     fn sample_at(&self, sqrt_s: F, u: &[F]) -> PhaseSpacePoint<F> {
+        self.sample_at_driven(sqrt_s, &mut SliceCoords::new(u))
+    }
+
+    fn sample_at_driven(&self, sqrt_s: F, coords: &mut dyn Coordinates<F>) -> PhaseSpacePoint<F> {
         let s = sqrt_s * sqrt_s;
         let total = LorentzVector::new(sqrt_s, F::zero(), F::zero(), F::zero());
         let mut slots: Vec<Option<LorentzVector<F>>> = vec![None; self.n_out];
-        let mut cursor = 0usize;
+        let mut coords = Counted {
+            inner: coords,
+            count: 0,
+        };
         // Accumulated as the walk draws, from the drawn invariants rather than from
         // the momenta they produce — an independent computation of the same
         // Jacobian `density_at` reconstructs, so the two agreeing is a check.
         let mut weight = F::one();
         match &self.topology {
             ChannelTopology::Timelike(root) => {
-                sample_branch(root, s, total, u, &mut cursor, &mut slots, &mut weight)
+                sample_branch(root, s, total, &mut coords, &mut slots, &mut weight)
             }
             ChannelTopology::Spine(spine) => sample_spine(
                 spine,
                 s,
                 &self.beams_at(sqrt_s),
                 total,
-                u,
-                &mut cursor,
+                &mut coords,
                 &mut slots,
                 &mut weight,
             ),
@@ -1223,9 +1248,10 @@ impl<F: Real> ScaledChannel<F> for DiagramChannel<F> {
         // fixed, would still produce momenta and would be integrating a different
         // volume. Cheap enough to assert on every draw a debug build makes.
         debug_assert_eq!(
-            cursor,
+            coords.count,
             self.ndim(),
-            "the walk consumed {cursor} coordinates, not the {} the map declares",
+            "the walk consumed {} coordinates, not the {} the map declares",
+            coords.count,
             self.ndim()
         );
         let momenta: Vec<LorentzVector<F>> = slots
@@ -1265,6 +1291,10 @@ impl<F: Real> PhaseSpaceMap<F> for DiagramChannel<F> {
 
     fn sample(&self, u: &[F]) -> PhaseSpacePoint<F> {
         self.sample_at(self.sqrt_s, u)
+    }
+
+    fn sample_driven(&self, coords: &mut dyn Coordinates<F>) -> PhaseSpacePoint<F> {
+        self.sample_at_driven(self.sqrt_s, coords)
     }
 }
 
@@ -1903,54 +1933,223 @@ fn outside_window<F: Real>(lo: F, hi: F, narrowed: bool, s: F) -> bool {
     narrowed && (s * slack < lo || s > hi * slack)
 }
 
-/// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]`.
+/// A fixed transform `v = T(y)` of a coordinate `y ∈ [0, 1]` onto the support of
+/// one drawn variable, with its inverse and its measure.
 ///
-/// A finite-width pole importance-samples the relativistic Breit–Wigner via
-/// `s = m² + mΓ·tan θ`, with `θ` uniform over `[atan((lo−m²)/mΓ), atan((hi−m²)/mΓ)]`.
-/// A zero-width pole instead gets the two-piece map of [`log_scale`]: the last
-/// `1 − LOG_MAP_TAIL_FRACTION` of `x` is uniform in `ln t` over `[t0, t_hi]`,
-/// importance-sampling the `1/t` rise, and the leading fraction covers the
-/// remaining `[t_lo, t0]` linearly so the map still reaches the kinematic edge.
-/// With neither, the draw is flat.
-fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
-    if let Some((m2, mg)) = bw_scale(res) {
-        let theta_lo = ((lo - m2) / mg).atan();
-        let theta_hi = ((hi - m2) / mg).atan();
-        let theta = theta_lo + (theta_hi - theta_lo) * x;
-        return m2 + mg * theta.tan();
-    }
-    if let Some(m) = log_scale(lo, hi, res) {
-        return if m.frac > F::zero() && x < m.frac {
-            m.m2 + m.t_lo + (m.t0 - m.t_lo) * (x / m.frac)
+/// A draw confined to a window `[lo, hi]` of the support asks its coordinate
+/// source for `y` within `[T⁻¹(lo), T⁻¹(hi)]` and pays the measure
+/// `T′(y)·(T⁻¹(hi) − T⁻¹(lo))` ([`draw_through`]): the map's own density is
+/// uniform over the window on the `y` axis, so it is a function of the window and
+/// the transform alone, and a density evaluated at a point the map did not draw
+/// ([`window_measure`]) needs nothing from whatever shaped `y` inside the window.
+/// A transform built on the window itself places that window at exactly `[0, 1]`,
+/// which is the window-relative draw.
+trait FixedTransform<F: Real> {
+    /// The support `[T(0), T(1)]` the transform was built on.
+    fn support(&self) -> (F, F);
+
+    /// `T(y)`.
+    fn value(&self, y: F) -> F;
+
+    /// `T⁻¹(v)` on the interior of the support.
+    fn interior_coordinate(&self, v: F) -> F;
+
+    /// `T′(y)` at the `y` with `T(y) = v`: the reciprocal of the density in `v` of
+    /// a coordinate uniform over the unit interval.
+    fn measure(&self, v: F) -> F;
+
+    /// `T⁻¹(v)`, exactly `0` and `1` at the support's own edges — so a window equal
+    /// to the support is the unit interval bit for bit, whatever rounding the
+    /// inverse's arithmetic would have left there. A degenerate support (`T(0) =
+    /// T(1)`) reads as the empty window at `0`.
+    fn coordinate(&self, v: F) -> F {
+        let (lo, hi) = self.support();
+        if v == lo {
+            F::zero()
+        } else if v == hi {
+            F::one()
         } else {
-            let y = (x - m.frac) / (F::one() - m.frac);
-            m.m2 + m.t0 * (m.t_hi / m.t0).powf(y)
-        };
+            self.interior_coordinate(v)
+        }
     }
-    lo + (hi - lo) * x
+
+    /// The coordinate window `[T⁻¹(lo), T⁻¹(hi)]` of the variable window `[lo, hi]`.
+    fn window(&self, lo: F, hi: F) -> (F, F) {
+        (self.coordinate(lo), self.coordinate(hi))
+    }
 }
 
-/// The invariant-draw measure `ds/dx` at the realised `s`, whose reciprocal is the
-/// sampling density: the flat range length `hi − lo`; for the Breit–Wigner map
-/// `[(s−m²)²/(mΓ) + mΓ]·(θ_hi−θ_lo)`, the exact `ds/dθ · dθ/dx`; and for the
-/// zero-width log map the piecewise `(t0 − t_lo)/frac` below the floor and
-/// `t·ln(t_hi/t0)/(1 − frac)` above it — a density `∝ 1/t` over the rise.
+/// Draw a variable over `[lo, hi]` through `map`, taking its coordinate from
+/// `coords` within the window's image, and return it with the measure the draw
+/// pays — `T′(y)` times the coordinate window's length, the reciprocal of the
+/// map's density uniform-in-window.
+fn draw_through<F, M, C>(map: &M, lo: F, hi: F, coords: &mut C) -> (F, F)
+where
+    F: Real,
+    M: FixedTransform<F>,
+    C: Coordinates<F> + ?Sized,
+{
+    let (y_lo, y_hi) = map.window(lo, hi);
+    let v = map.value(coords.within(y_lo, y_hi));
+    (v, map.measure(v) * (y_hi - y_lo))
+}
+
+/// The measure [`draw_through`] pays at `v` over the window `[lo, hi]`, from the
+/// window and the transform alone.
+fn window_measure<F: Real, M: FixedTransform<F>>(map: &M, lo: F, hi: F, v: F) -> F {
+    let (y_lo, y_hi) = map.window(lo, hi);
+    map.measure(v) * (y_hi - y_lo)
+}
+
+/// The transform a timelike invariant is drawn through, built on a support
+/// `[lo, hi]`.
+///
+/// A finite-width pole importance-samples the relativistic Breit–Wigner via
+/// `s = m² + mΓ·tan θ`, with `θ` linear in `y` over `[atan((lo−m²)/mΓ),
+/// atan((hi−m²)/mΓ)]`. A zero-width pole instead gets the two-piece map of
+/// [`log_scale`]: the last `1 − LOG_MAP_TAIL_FRACTION` of `y` is uniform in `ln t`
+/// over `[t0, t_hi]`, importance-sampling the `1/t` rise, and the leading fraction
+/// covers the remaining `[t_lo, t0]` linearly so the map still reaches the
+/// kinematic edge. With neither, the transform is linear.
+///
+/// The log map's floor and kink are set by the support, so the transform is a
+/// different one on a different support; the other two are the same curve on any
+/// support, reparametrised.
+#[derive(Clone, Copy, Debug)]
+enum InvariantMap<F: Real> {
+    Flat {
+        lo: F,
+        hi: F,
+    },
+    BreitWigner {
+        lo: F,
+        hi: F,
+        m2: F,
+        mg: F,
+        theta_lo: F,
+        theta_hi: F,
+    },
+    Log {
+        lo: F,
+        hi: F,
+        map: LogMap<F>,
+    },
+}
+
+impl<F: Real> InvariantMap<F> {
+    fn new(lo: F, hi: F, res: Option<Resonance<F>>) -> Self {
+        if let Some((m2, mg)) = bw_scale(res) {
+            return InvariantMap::BreitWigner {
+                lo,
+                hi,
+                m2,
+                mg,
+                theta_lo: ((lo - m2) / mg).atan(),
+                theta_hi: ((hi - m2) / mg).atan(),
+            };
+        }
+        if let Some(map) = log_scale(lo, hi, res) {
+            return InvariantMap::Log { lo, hi, map };
+        }
+        InvariantMap::Flat { lo, hi }
+    }
+}
+
+impl<F: Real> FixedTransform<F> for InvariantMap<F> {
+    fn support(&self) -> (F, F) {
+        match *self {
+            InvariantMap::Flat { lo, hi }
+            | InvariantMap::BreitWigner { lo, hi, .. }
+            | InvariantMap::Log { lo, hi, .. } => (lo, hi),
+        }
+    }
+
+    fn value(&self, y: F) -> F {
+        match *self {
+            InvariantMap::BreitWigner {
+                m2,
+                mg,
+                theta_lo,
+                theta_hi,
+                ..
+            } => {
+                let theta = theta_lo + (theta_hi - theta_lo) * y;
+                m2 + mg * theta.tan()
+            }
+            InvariantMap::Log { map: m, .. } => {
+                if m.frac > F::zero() && y < m.frac {
+                    m.m2 + m.t_lo + (m.t0 - m.t_lo) * (y / m.frac)
+                } else {
+                    let z = (y - m.frac) / (F::one() - m.frac);
+                    m.m2 + m.t0 * (m.t_hi / m.t0).powf(z)
+                }
+            }
+            InvariantMap::Flat { lo, hi } => lo + (hi - lo) * y,
+        }
+    }
+
+    fn interior_coordinate(&self, s: F) -> F {
+        match *self {
+            InvariantMap::BreitWigner {
+                m2,
+                mg,
+                theta_lo,
+                theta_hi,
+                ..
+            } => (((s - m2) / mg).atan() - theta_lo) / (theta_hi - theta_lo),
+            InvariantMap::Log { map: m, .. } => {
+                let t = s - m.m2;
+                if m.frac > F::zero() && t < m.t0 {
+                    m.frac * (t - m.t_lo) / (m.t0 - m.t_lo)
+                } else {
+                    m.frac + (F::one() - m.frac) * (t / m.t0).ln() / (m.t_hi / m.t0).ln()
+                }
+            }
+            InvariantMap::Flat { lo, hi } => (s - lo) / (hi - lo),
+        }
+    }
+
+    /// The flat range length `hi − lo`; for the Breit–Wigner map
+    /// `[(s−m²)²/(mΓ) + mΓ]·(θ_hi−θ_lo)`, the exact `ds/dθ · dθ/dy`; and for the
+    /// zero-width log map the piecewise `(t0 − t_lo)/frac` below the floor and
+    /// `t·ln(t_hi/t0)/(1 − frac)` above it — a density `∝ 1/t` over the rise.
+    fn measure(&self, s: F) -> F {
+        match *self {
+            InvariantMap::BreitWigner {
+                m2,
+                mg,
+                theta_lo,
+                theta_hi,
+                ..
+            } => {
+                let d = s - m2;
+                (d * d / mg + mg) * (theta_hi - theta_lo)
+            }
+            InvariantMap::Log { map: m, .. } => {
+                let t = s - m.m2;
+                if m.frac > F::zero() && t < m.t0 {
+                    (m.t0 - m.t_lo) / m.frac
+                } else {
+                    t * (m.t_hi / m.t0).ln() / (F::one() - m.frac)
+                }
+            }
+            InvariantMap::Flat { lo, hi } => hi - lo,
+        }
+    }
+}
+
+/// Map `x ∈ [0,1]` to an invariant `s ∈ [lo, hi]` through the [`InvariantMap`]
+/// built on `[lo, hi]`.
+#[cfg(test)]
+fn draw_invariant<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, x: F) -> F {
+    InvariantMap::new(lo, hi, res).value(x)
+}
+
+/// The invariant-draw measure `ds/dx` at the realised `s` of [`draw_invariant`],
+/// whose reciprocal is the sampling density.
+#[cfg(test)]
 fn invariant_measure<F: Real>(lo: F, hi: F, res: Option<Resonance<F>>, s: F) -> F {
-    if let Some((m2, mg)) = bw_scale(res) {
-        let theta_lo = ((lo - m2) / mg).atan();
-        let theta_hi = ((hi - m2) / mg).atan();
-        let d = s - m2;
-        return (d * d / mg + mg) * (theta_hi - theta_lo);
-    }
-    if let Some(m) = log_scale(lo, hi, res) {
-        let t = s - m.m2;
-        return if m.frac > F::zero() && t < m.t0 {
-            (m.t0 - m.t_lo) / m.frac
-        } else {
-            t * (m.t_hi / m.t0).ln() / (F::one() - m.frac)
-        };
-    }
-    hi - lo
+    InvariantMap::new(lo, hi, res).measure(s)
 }
 
 /// The soft-emission angular map of a 2-body split: the decay angle `θ*` measured
@@ -2123,12 +2322,11 @@ fn shaped_split<F: Real>(
 /// decays; `p_lab` is its four-momentum in the CM frame. `weight` accumulates the
 /// draw measures and LIPS factors of the walk.
 #[allow(clippy::too_many_arguments)]
-fn sample_branch<F: Real>(
+fn sample_branch<F: Real, C: Coordinates<F> + ?Sized>(
     branch: &Branch<F>,
     s: F,
     p_lab: LorentzVector<F>,
-    u: &[F],
-    cursor: &mut usize,
+    coords: &mut C,
     slots: &mut [Option<LorentzVector<F>>],
     weight: &mut F,
 ) {
@@ -2142,10 +2340,9 @@ fn sample_branch<F: Real>(
         Node::Branch(b) => {
             let hi = (sqrt_s - mu_r).powi(2);
             let (lo, hi, _) = windowed(draw_lo(mu_l, b.floor, hi), hi, b.window);
-            let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            let (s, measure) =
+                draw_through(&InvariantMap::new(lo, hi, b.resonance), lo, hi, coords);
+            *weight = *weight * measure;
             s
         }
     };
@@ -2155,10 +2352,9 @@ fn sample_branch<F: Real>(
         Node::Branch(b) => {
             let hi = (sqrt_s - sqrt_sl).powi(2);
             let (lo, hi, _) = windowed(draw_lo(mu_r, b.floor, hi), hi, b.window);
-            let x = u[*cursor];
-            *cursor += 1;
-            let s = draw_invariant(lo, hi, b.resonance, x);
-            *weight = *weight * invariant_measure(lo, hi, b.resonance, s);
+            let (s, measure) =
+                draw_through(&InvariantMap::new(lo, hi, b.resonance), lo, hi, coords);
+            *weight = *weight * measure;
             s
         }
     };
@@ -2167,8 +2363,7 @@ fn sample_branch<F: Real>(
     // `R_2` carries the isotropic angular volume; a shaped draw replaces the flat
     // `d cos θ* / dx = 2` with its own measure, so the ratio is what enters.
     let soft = shaped_split(branch.angle, s, sqrt_s, p_lab, sl, sr);
-    let x = u[*cursor];
-    *cursor += 1;
+    let x = coords.unit();
     let cos = match soft {
         Some(map) => {
             let c = map.cos(x);
@@ -2177,8 +2372,7 @@ fn sample_branch<F: Real>(
         }
         None => two * x - F::one(),
     };
-    let phi = two * F::PI() * u[*cursor];
-    *cursor += 1;
+    let phi = two * F::PI() * coords.unit();
     let sin = (F::one() - cos * cos).max(F::zero()).sqrt();
     let (dx, dy, dz) = (sin * phi.cos(), sin * phi.sin(), cos);
 
@@ -2212,11 +2406,11 @@ fn sample_branch<F: Real>(
 
     match &branch.left {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pl),
-        Node::Branch(b) => sample_branch(b, sl, pl, u, cursor, slots, weight),
+        Node::Branch(b) => sample_branch(b, sl, pl, coords, slots, weight),
     }
     match &branch.right {
         Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
-        Node::Branch(b) => sample_branch(b, sr, pr, u, cursor, slots, weight),
+        Node::Branch(b) => sample_branch(b, sr, pr, coords, slots, weight),
     }
 }
 
@@ -2293,7 +2487,7 @@ fn branch_jacobian<F: Real>(
         if outside_window(lo, hi, narrowed, sl) {
             return F::infinity();
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sl);
+        f = f * window_measure(&InvariantMap::new(lo, hi, b.resonance), lo, hi, sl);
     }
     if let Node::Branch(b) = &branch.right {
         let hi = (sqrt_s - sqrt_sl).powi(2);
@@ -2301,7 +2495,7 @@ fn branch_jacobian<F: Real>(
         if outside_window(lo, hi, narrowed, sr) {
             return F::infinity();
         }
-        f = f * invariant_measure(lo, hi, b.resonance, sr);
+        f = f * window_measure(&InvariantMap::new(lo, hi, b.resonance), lo, hi, sr);
     }
     f = f * r2_factor(s, sqrt_s, sl, sr);
     if !matches!(branch.angle, AngleMap::Isotropic) {
@@ -2365,37 +2559,82 @@ fn t_pole_shapes<F: Real>(a: F, b: F) -> bool {
     a > F::zero() && b > F::zero() && a != b
 }
 
-/// Map `x ∈ [0,1]` to a spacelike momentum transfer `t ∈ [t_min, t_max]` (both
-/// `≤ 0`) importance-sampling the propagator `1/(t − m²)`: density `∝ 1/(m² − t)`,
-/// realised by `t = m² − (m²−t_min)·exp(−x·N)` with `N = ln[(m²−t_min)/(m²−t_max)]`.
+/// The transform a spacelike momentum transfer is drawn through, built on a
+/// support `[t_min, t_max]` (both `≤ 0`), importance-sampling the propagator
+/// `1/(t − m²)`: density `∝ 1/(m² − t)`, realised by
+/// `t = m² − (m²−t_min)·exp(−y·N)` with `N = ln[(m²−t_min)/(m²−t_max)]`.
+///
 /// A spacelike line has no width, so `m²` is its bare mass². When the pole cannot
 /// shape the draw (a massless line at the collinear edge `t_max = m²`, or a
-/// threshold-degenerate window) the draw is flat over `[t_min, t_max]`, which makes
-/// the spine reduce to the isotropic 2-body split there.
-fn draw_t<F: Real>(t_min: F, t_max: F, t_mass2: F, x: F) -> F {
-    let a = t_mass2 - t_min;
-    let b = t_mass2 - t_max;
-    if t_pole_shapes(a, b) {
-        let n = (a / b).ln();
-        t_mass2 - a * (-x * n).exp()
-    } else {
-        t_min + (t_max - t_min) * x
+/// threshold-degenerate support) the transform is linear over `[t_min, t_max]`,
+/// which makes the spine reduce to the isotropic 2-body split there.
+#[derive(Clone, Copy, Debug)]
+struct TransferMap<F: Real> {
+    t_min: F,
+    t_max: F,
+    t_mass2: F,
+    /// `m² − t_min`.
+    a: F,
+    /// `N`, where the pole shapes the draw.
+    n: Option<F>,
+}
+
+impl<F: Real> TransferMap<F> {
+    fn new(t_min: F, t_max: F, t_mass2: F) -> Self {
+        let a = t_mass2 - t_min;
+        let b = t_mass2 - t_max;
+        let n = t_pole_shapes(a, b).then(|| (a / b).ln());
+        TransferMap {
+            t_min,
+            t_max,
+            t_mass2,
+            a,
+            n,
+        }
     }
 }
 
-/// The t-draw measure `dt/dx` at the realised `t`: `N·(m² − t)` with
-/// `N = ln[(m²−t_min)/(m²−t_max)]`, whose reciprocal is the sampling density
-/// `∝ 1/(m² − t)`; or the flat range `t_max − t_min` where the pole cannot shape
-/// the draw. Its reciprocal is the spine's sampling density in `t`.
-fn t_measure<F: Real>(t_min: F, t_max: F, t_mass2: F, t: F) -> F {
-    let a = t_mass2 - t_min;
-    let b = t_mass2 - t_max;
-    if t_pole_shapes(a, b) {
-        let n = (a / b).ln();
-        n * (t_mass2 - t)
-    } else {
-        t_max - t_min
+impl<F: Real> FixedTransform<F> for TransferMap<F> {
+    fn support(&self) -> (F, F) {
+        (self.t_min, self.t_max)
     }
+
+    fn value(&self, y: F) -> F {
+        match self.n {
+            Some(n) => self.t_mass2 - self.a * (-y * n).exp(),
+            None => self.t_min + (self.t_max - self.t_min) * y,
+        }
+    }
+
+    fn interior_coordinate(&self, t: F) -> F {
+        match self.n {
+            Some(n) => (self.a / (self.t_mass2 - t)).ln() / n,
+            None => (t - self.t_min) / (self.t_max - self.t_min),
+        }
+    }
+
+    /// `N·(m² − t)`, whose reciprocal is the sampling density `∝ 1/(m² − t)`; or
+    /// the flat range `t_max − t_min` where the pole cannot shape the draw.
+    fn measure(&self, t: F) -> F {
+        match self.n {
+            Some(n) => n * (self.t_mass2 - t),
+            None => self.t_max - self.t_min,
+        }
+    }
+}
+
+/// Map `x ∈ [0,1]` to a spacelike momentum transfer `t ∈ [t_min, t_max]` through
+/// the [`TransferMap`] built on that range.
+#[cfg(test)]
+fn draw_t<F: Real>(t_min: F, t_max: F, t_mass2: F, x: F) -> F {
+    TransferMap::new(t_min, t_max, t_mass2).value(x)
+}
+
+/// The t-draw measure `dt/dx` at the realised `t` of [`draw_t`], whose reciprocal
+/// is the spine's sampling density in `t`.
+#[cfg(test)]
+fn t_measure<F: Real>(t_min: F, t_max: F, t_mass2: F, t: F) -> F {
+    TransferMap::new(t_min, t_max, t_mass2).measure(t)
 }
 
 /// The peripheral 2-body kinematics of a system of invariant `s` scattering beam
@@ -2528,13 +2767,12 @@ fn spatial_direction<F: Real>(v: LorentzVector<F>) -> [F; 3] {
 /// is the frame: rung `i > 1` is built in the CM of what the previous rung left
 /// behind, with `q_{i-1}` — not beam `0` — as its polar axis.
 #[allow(clippy::too_many_arguments)]
-fn sample_spine<F: Real>(
+fn sample_spine<F: Real, C: Coordinates<F> + ?Sized>(
     spine: &Spine<F>,
     s: F,
     beams: &[LorentzVector<F>; 2],
     p_lab: LorentzVector<F>,
-    u: &[F],
-    cursor: &mut usize,
+    coords: &mut C,
     slots: &mut [Option<LorentzVector<F>>],
     weight: &mut F,
 ) {
@@ -2557,10 +2795,9 @@ fn sample_spine<F: Real>(
             Node::Branch(b) => {
                 let hi = (sqrt_s_sys - mu_rest).powi(2);
                 let (lo, hi, _) = windowed(draw_lo(mu_blob, b.floor, hi), hi, b.window);
-                let x = u[*cursor];
-                *cursor += 1;
-                let drawn = draw_invariant(lo, hi, b.resonance, x);
-                *weight = *weight * invariant_measure(lo, hi, b.resonance, drawn);
+                let (drawn, measure) =
+                    draw_through(&InvariantMap::new(lo, hi, b.resonance), lo, hi, coords);
+                *weight = *weight * measure;
                 drawn
             }
         };
@@ -2573,10 +2810,9 @@ fn sample_spine<F: Real>(
                 hi,
                 spine.rest_window(i),
             );
-            let x = u[*cursor];
-            *cursor += 1;
-            let drawn = draw_invariant(lo, hi, rest_res, x);
-            *weight = *weight * invariant_measure(lo, hi, rest_res, drawn);
+            let (drawn, measure) =
+                draw_through(&InvariantMap::new(lo, hi, rest_res), lo, hi, coords);
+            *weight = *weight * measure;
             drawn
         } else {
             mu_rest * mu_rest
@@ -2584,12 +2820,14 @@ fn sample_spine<F: Real>(
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
         apply_fiducial_t_max(&mut tk, rung.t_max_cap);
-        let t = draw_t(tk.t_min, tk.t_max, rung.t_mass2, u[*cursor]);
-        *cursor += 1;
-        *weight = *weight
-            * peripheral_factor(s_sys, tk.k, t_measure(tk.t_min, tk.t_max, rung.t_mass2, t));
-        let phi = two * F::PI() * u[*cursor];
-        *cursor += 1;
+        let (t, t_measure) = draw_through(
+            &TransferMap::new(tk.t_min, tk.t_max, rung.t_mass2),
+            tk.t_min,
+            tk.t_max,
+            coords,
+        );
+        *weight = *weight * peripheral_factor(s_sys, tk.k, t_measure);
+        let phi = two * F::PI() * coords.unit();
 
         let span = two * tk.k * tk.pstar;
         let cos = if span > F::zero() {
@@ -2614,7 +2852,7 @@ fn sample_spine<F: Real>(
 
         match &rung.emitted {
             Node::Leaf { slot, .. } => slots[*slot] = Some(pb),
-            Node::Branch(b) => sample_branch(b, s_blob, pb, u, cursor, slots, weight),
+            Node::Branch(b) => sample_branch(b, s_blob, pb, coords, slots, weight),
         }
 
         if i + 1 < spine.rungs.len() {
@@ -2639,7 +2877,7 @@ fn sample_spine<F: Real>(
         } else {
             match &spine.recoil {
                 Node::Leaf { slot, .. } => slots[*slot] = Some(pr),
-                Node::Branch(b) => sample_branch(b, s_rest, pr, u, cursor, slots, weight),
+                Node::Branch(b) => sample_branch(b, s_rest, pr, coords, slots, weight),
             }
         }
     }
@@ -2679,7 +2917,7 @@ fn spine_jacobian<F: Real>(
             if outside_window(lo, hi, narrowed, s_blob) {
                 return F::infinity();
             }
-            f = f * invariant_measure(lo, hi, b.resonance, s_blob);
+            f = f * window_measure(&InvariantMap::new(lo, hi, b.resonance), lo, hi, s_blob);
         }
         if spine.rest_is_composite(i) {
             let hi = (sqrt_s_sys - sqrt_s_blob).powi(2);
@@ -2691,7 +2929,8 @@ fn spine_jacobian<F: Real>(
             if outside_window(lo, hi, narrowed, s_rest) {
                 return F::infinity();
             }
-            f = f * invariant_measure(lo, hi, spine.rest_resonance(i), s_rest);
+            let map = InvariantMap::new(lo, hi, spine.rest_resonance(i));
+            f = f * window_measure(&map, lo, hi, s_rest);
         }
 
         let mut tk = t_kinematics(s_sys, t_prev, mb2, s_blob, s_rest);
@@ -2712,7 +2951,8 @@ fn spine_jacobian<F: Real>(
         if restricted && t > tk.t_max {
             return F::infinity();
         }
-        f = f * peripheral_factor(s_sys, tk.k, t_measure(tk.t_min, tk.t_max, rung.t_mass2, t));
+        let t_map = TransferMap::new(tk.t_min, tk.t_max, rung.t_mass2);
+        f = f * peripheral_factor(s_sys, tk.k, window_measure(&t_map, tk.t_min, tk.t_max, t));
 
         t_prev = t;
         s_sys = s_rest;

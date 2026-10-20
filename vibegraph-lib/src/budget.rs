@@ -106,8 +106,8 @@ use crate::phasespace::rng::{SubStream, SCALE_DRAW_STREAM_BASE};
 use crate::progress;
 use crate::unweight::ChannelIntegrand;
 use crate::vegas::{
-    adapt_blocks_iteration, combine_iterations, BlockIteration, BlockPlan, IterationCombination,
-    VegasGrid, VegasResult,
+    adapt_blocks_iteration_driven, combine_iterations, BlockIteration, BlockPlan,
+    IterationCombination, VegasGrid, VegasResult,
 };
 
 /// Floor on the points a channel gets through the cuts in one iteration.
@@ -571,7 +571,7 @@ fn pooled_scale(kept: &[(f64, f64, usize)]) -> f64 {
 /// generator seek, a substream, two small allocations) stays far below the cost
 /// of the points in it.
 ///
-/// The result is a scheduling knob only — [`adapt_blocks_iteration`] is
+/// The result is a scheduling knob only — [`adapt_blocks_iteration_driven`] is
 /// bit-identical at any chunk size, which a run at `CHUNKS_PER_THREAD` 2, 8 and
 /// 32 confirms artifact-byte for artifact-byte — so it is chosen for balance
 /// alone. Sizing from the channel's own budget rather than the iteration's is a
@@ -651,7 +651,7 @@ pub(crate) fn neyman_allocation(sd: &[f64], total: usize, floors: &[usize]) -> V
 /// Every iteration is a single rayon region scheduled by `(channel, chunk)`:
 /// a narrow channel does not get a parallel region to itself, and a wide one does
 /// not serialise the iteration behind it. The scheduling is inert — see
-/// [`adapt_blocks_iteration`] — so which channels a region happens to interleave
+/// [`adapt_blocks_iteration_driven`] — so which channels a region happens to interleave
 /// cannot move a number.
 ///
 /// `vegas_alpha` is the grid-damping exponent every channel's grid is built with.
@@ -1163,7 +1163,8 @@ fn running_estimate(channels: &[ChannelHistory], combination: IterationCombinati
 }
 
 /// Draw one iteration of every channel under `plans`, each point's trailing
-/// scale-draw uniforms appended to its grid coordinates.
+/// scale-draw uniforms handed over beside its grid coordinates, which the
+/// channel requests from the grid as its map reaches them.
 ///
 /// The grid draws its own coordinates from `CHANNEL_STREAM_BASE + j`; the scale
 /// draw's trailing uniforms come off a stream of its own, so the grid's sequence
@@ -1181,7 +1182,7 @@ fn draw_iteration<I>(
 where
     I: ChannelIntegrand + Sync,
 {
-    adapt_blocks_iteration(
+    adapt_blocks_iteration_driven(
         grids,
         plans,
         seed,
@@ -1192,13 +1193,13 @@ where
                     SCALE_DRAW_STREAM_BASE + j as u64,
                     first * scale_ndim as u64,
                 ),
-                vec![0.0; ndims[j] + scale_ndim],
+                vec![0.0; scale_ndim],
             )
         },
-        |j, (scale_draw, point), u| {
-            point[..ndims[j]].copy_from_slice(u);
-            scale_draw.fill_uniforms(&mut point[ndims[j]..]);
-            integrand.value_in_channel(j, point)
+        |j, (scale_draw, trailing), point| {
+            debug_assert_eq!(point.ndim(), ndims[j]);
+            scale_draw.fill_uniforms(trailing);
+            integrand.value_in_channel_driven(j, point, trailing)
         },
     )
 }
