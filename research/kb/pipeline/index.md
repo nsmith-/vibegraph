@@ -6,6 +6,7 @@
 
 * [The integrate artifact and the compiled-program cache](integrate-artifact.md) - What vibegraph integrate persists (per-channel grids, model identity, run card, map choices), how generate checks and replays it, and the compiled-program cache designed but not built.
 * [Release scope and the hard-error rule](release-scope.md) - How the release scope is enforced: every card surface vibegraph does not honour is refused at parse time, never silently accepted; where each refusal lives and how a feature leaves the list.
+* [Run inputs the integrate artifact records (PDF set and param card)](run-inputs-in-the-artifact.md) - Integrate artifact version 13: the PDF the run card picked (lhaid, set, member, per-file SHA-256) and the parameters a param card moved; how generate checks them; lhaid lookup across four tiers.
 
 ## Design Decision
 

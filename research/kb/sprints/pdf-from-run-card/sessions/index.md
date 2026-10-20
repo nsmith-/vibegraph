@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [D1: the run inputs an integrate artifact records (PDF set and param card)](D1.md) - Design, no code: which PDF and param-card fields the integrate artifact gains, how generate checks them, the artifact version step, and the PDF lookup and consent flow.
+
+## Session Report
+
+* [D1 report: the run inputs the integrate artifact records](D1-report.md) - Design for artifact version 13 (PDF lhaid, set, member, per-file SHA-256; moved param-card values), generate's checks, lhaid lookup over four tiers; twelve open choices for the user.
