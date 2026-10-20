@@ -5,6 +5,7 @@
 ## Session Brief
 
 * [F1: refuse unimplemented cuts before enumeration; let no-op values through](F1.md) - detect_unimplemented runs on the run card alone, before diagram enumeration, naming the cut and value; an upper bound that cannot bind at the collider's energy reads as the default.
+* [F2: the three items filed from this PR (user request)](F2.md) - generate loads the run card first; one tests/common module for the CLI tests; √s for unequal beams correct or refused.
 * [HY1: hygiene review of the early cut refusal and the no-op threshold](HY1.md) - Review F1's diff for maintainability, test non-vacuity, visibility and reuse; fix what is local, with mutation evidence.
 
 ## Session Report
