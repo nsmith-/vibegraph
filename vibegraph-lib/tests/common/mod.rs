@@ -63,6 +63,8 @@ pub const REFUSED_RUN_CARDS: &[(&str, &str)] = &[(
      helicity is a different estimator and a different per-event weight, so the card \
      is refused rather than read as an explicit sum",
 )];
+use vibegraph::ufo::parameters::{ParamNature, Parameter};
+use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model as interned_sm, SMRestrict};
 use vibegraph::ufo::UFOModel;
 
@@ -369,4 +371,35 @@ pub fn assert_no_scale_draw_fallbacks(fallbacks: u64, what: &str) {
          {fallbacks} points: their squared amplitudes summed to something the draw could \
          not normalise"
     );
+}
+
+/// The SLHA block and code an external parameter reads from its param card.
+pub fn lha_slot(p: &Parameter) -> (&str, &[i32]) {
+    let ParamNature::External {
+        lha_block,
+        lha_code,
+        ..
+    } = &p.nature
+    else {
+        unreachable!("externals are external")
+    };
+    (lha_block, lha_code)
+}
+
+/// The param card a banked table (amplitude or coupling) carries, as MadGraph
+/// wrote it for the run. The table must bank one: a missing or empty card would
+/// parse to the model's defaults, which is the substitution a banked card rules out.
+pub fn banked_param_card(table: &serde_json::Value) -> ParamCard {
+    let key = table["key"].as_str().unwrap_or("?");
+    let lines = table["param_card"]
+        .as_array()
+        .unwrap_or_else(|| panic!("[{key}] the table banks no param card"));
+    assert!(!lines.is_empty(), "[{key}] the banked param card is empty");
+    lines
+        .iter()
+        .map(|l| l.as_str().expect("param card line"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .parse()
+        .unwrap_or_else(|e| panic!("[{key}] banked param card: {e:?}"))
 }

@@ -34,13 +34,14 @@
 //!   only the tau propagator; an amplitude or cross-section reference at this
 //!   restriction is what would see it.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
 use num_complex::Complex64;
 use vibegraph::ufo::identity::digest_bytes;
-use vibegraph::ufo::parameters::ParamNature;
 use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model, sm_parsed_model, SMRestrict};
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
@@ -54,8 +55,19 @@ const CMS_CARD_SHA256: &str = "ad6e3eaf03443bc14148d392fe98deb712de29166061a7408
 const CHANGED_FROM_CKM: [(&str, f64); 3] = [("MB", 0.0), ("ymb", 0.0), ("WTau", 2.27e-12)];
 
 /// Same bound as the coupling gate's `PYTHON_REL_TOL` (`coupling_oracle.rs`):
-/// this crate's couplings against MadGraph's Python on the same card.
+/// this crate's couplings against MadGraph's Python on the same card. Also the
+/// bound on two evaluations of one coupling expression at a moved card.
 const PYTHON_REL_TOL: f64 = 1e-13;
+
+/// MadGraph's `RestrictModel` rounds couplings to ten significant digits before
+/// it merges them, so two couplings it could merge agree to better than this;
+/// the pair search uses it as a looser bound, which finds a superset of its pairs.
+const MERGE_PAIR_REL: f64 = 1e-9;
+
+/// Top of the band where MadGraph's coupling-zero rule (`|g| < 1e-13`, or exact
+/// zero once a coupling lies in `[1e-13, 1e-10)`) and this crate's prune
+/// (`|g| < 1e-20`) could disagree, widened to the whole `(0, 1e-10)`.
+const ZERO_RULE_BAND_TOP: f64 = 1e-10;
 
 fn card(variant: SMRestrict) -> ParamCard {
     variant
@@ -144,14 +156,7 @@ fn card_is_restrict_ckm_with_b_massless_and_a_tau_width() {
     let parsed = sm_parsed_model();
     let mut seen = BTreeSet::new();
     for p in &parsed.params.externals {
-        let ParamNature::External {
-            lha_block,
-            lha_code,
-            ..
-        } = &p.nature
-        else {
-            unreachable!("externals are external")
-        };
+        let (lha_block, lha_code) = common::lha_slot(p);
         let value = ours.get(lha_block, lha_code);
         match changed.get(p.name.as_str()) {
             Some(&expected) => {
@@ -281,15 +286,7 @@ fn madgraph_default_couplings_hold_outside_the_b_and_ckm_sectors() {
             continue;
         }
         tables += 1;
-        let card: ParamCard = json["param_card"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|l| l.as_str().unwrap())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .parse()
-            .unwrap();
+        let card = common::banked_param_card(&json);
         let evaluated = EvaluatedModel::from_model_card(Arc::clone(&model), &card);
         for (name, z) in json["python"].as_object().unwrap() {
             let id = model.coupling_id(name).expect("MadGraph coupling in model");
@@ -317,8 +314,18 @@ fn madgraph_default_couplings_hold_outside_the_b_and_ckm_sectors() {
         compared.len(),
         skipped.len()
     );
-    assert!(tables > 0, "no default-restriction SM coupling tables");
-    assert!(!skipped.is_empty() && compared.len() > skipped.len());
+    // The recorded reading is 49 compared and 4 skipped over 25 tables; each
+    // table adds couplings, none removes them.
+    assert!(
+        tables >= 25,
+        "only {tables} default-restriction SM coupling tables"
+    );
+    assert!(
+        compared.len() >= 49,
+        "only {} couplings compared",
+        compared.len()
+    );
+    assert!(!skipped.is_empty(), "the sector exclusion excluded nothing");
 }
 
 /// `variant`'s card with every non-zero external moved off its value by a
@@ -327,14 +334,7 @@ fn moved_card(variant: SMRestrict) -> String {
     let card = card(variant);
     let mut moved_card = String::new();
     for (i, p) in sm_parsed_model().params.externals.iter().enumerate() {
-        let ParamNature::External {
-            lha_block,
-            lha_code,
-            ..
-        } = &p.nature
-        else {
-            unreachable!("externals are external")
-        };
+        let (lha_block, lha_code) = common::lha_slot(p);
         let Some(value) = card.get(lha_block, lha_code) else {
             continue;
         };
@@ -443,7 +443,7 @@ fn no_coupling_sits_between_the_zero_thresholds() {
     let small: Vec<(&String, f64)> = values
         .iter()
         .map(|(name, v)| (name, v.norm()))
-        .filter(|&(_, n)| n > 0.0 && n < 1e-10)
+        .filter(|&(_, n)| n > 0.0 && n < ZERO_RULE_BAND_TOP)
         .collect();
     assert!(
         small.is_empty(),
@@ -497,9 +497,9 @@ fn couplings_madgraph_could_merge_are_identities() {
                 continue;
             }
             let (ga, gb) = (at_card[*a], at_card[*b]);
-            let sign = if close(ga, gb, 1e-9) {
+            let sign = if close(ga, gb, MERGE_PAIR_REL) {
                 1.0
-            } else if close(ga, -gb, 1e-9) {
+            } else if close(ga, -gb, MERGE_PAIR_REL) {
                 -1.0
             } else {
                 continue;
@@ -511,7 +511,7 @@ fn couplings_madgraph_could_merge_are_identities() {
                 "{a}, {b}: the moved card moves neither"
             );
             assert!(
-                close(ma, mb, 1e-13),
+                close(ma, mb, PYTHON_REL_TOL),
                 "{a} = {sign:+} {b} at the card ({ga}, {gb}) but not off it ({ma}, {mb})"
             );
         }

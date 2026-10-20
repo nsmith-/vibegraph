@@ -21,8 +21,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::manifest::{RowModel, INTERNED_SM};
-use vibegraph::ufo::parameters::ParamNature;
-use vibegraph::ufo::slha::ParamCard;
 use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
 
@@ -123,26 +121,11 @@ fn interned_sm_defaults_are_madgraphs_generated_param_card() {
             Some(_) => continue,
         };
         let model = common::model_for_row(key).unwrap_or_else(|e| panic!("[{key}] {e}"));
-        let card: ParamCard = json["param_card"]
-            .as_array()
-            .unwrap_or_else(|| panic!("[{key}] the table banks no param card"))
-            .iter()
-            .map(|l| l.as_str().expect("param card line"))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .parse()
-            .unwrap_or_else(|e| panic!("[{key}] banked param card: {e:?}"));
+        let card = common::banked_param_card(&json);
         let evaluated = EvaluatedModel::from_model(model.clone());
         let mut here = 0;
         for p in &model.params.externals {
-            let ParamNature::External {
-                lha_block,
-                lha_code,
-                ..
-            } = &p.nature
-            else {
-                unreachable!("externals are external")
-            };
+            let (lha_block, lha_code) = common::lha_slot(p);
             // The card a hadronic run leaves carries its PDF set's alpha_s(M_Z)
             // in `aS` (`pp_to_ll_qcd0`'s reads 0.13 where the restriction's is
             // 0.118), so the card's `aS` is the run's. No SM restriction locks it.
