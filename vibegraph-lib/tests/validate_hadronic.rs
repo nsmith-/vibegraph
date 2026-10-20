@@ -102,22 +102,26 @@ const LLJ_ADAPT_ITERS: usize = 5;
 /// VEGAS budget per seed, chosen from a measured budget scan and not from cost
 /// alone: the rung both ℓℓj rows have stopped moving on, over five seeds a rung.
 ///
-/// `probe_llj_fixed_budget_ladder` reads `423.81` / `424.09` / `424.24` /
-/// `423.94` pb at `75k` / `150k` / `300k` / `600k` (χ²/dof `1.66`, `1.03`,
-/// `1.11`, `0.40`) against MadGraph's `423.84 ± 1.52`, and
-/// `probe_llj_dyn_budget_ladder` reads `416.23` / `416.27` / `416.26` /
-/// `416.13` pb (χ²/dof `2.59`, `0.66`, `0.75`, `0.29`) against its
-/// `415.42 ± 1.36`. Both ladders are flat across an eightfold budget —
-/// `0.10 %` and `0.04 %` end to end, against the references' own `0.36 %` and
-/// `0.33 %` — so this is a rung where the estimator has converged rather than
-/// the cheapest one that happens to agree.
+/// `probe_llj_fixed_budget_ladder` reads `424.76` / `424.27` / `423.75` /
+/// `424.01` pb at `75k` / `150k` / `300k` / `600k` (χ²/dof `1.15`, `0.55`,
+/// `1.15`, `0.49`; the five seeds' standard deviation `0.20 %`, `0.097 %`,
+/// `0.10 %`, `0.046 %` of σ against quoted errors of `0.19 %`, `0.13 %`,
+/// `0.092 %`, `0.065 %`) against MadEvent's seed record `423.07 ± 0.90`, and
+/// `probe_llj_dyn_budget_ladder` reads `416.18` / `415.65` / `415.29` /
+/// `415.54` pb (χ²/dof `0.93`, `0.53`, `0.88`, `0.39`; standard deviation
+/// `0.18 %`, `0.095 %`, `0.087 %`, `0.041 %` against quoted `0.19 %`, `0.13 %`,
+/// `0.093 %`, `0.065 %`) against its `414.72 ± 0.90`. Five seeds are not
+/// enough to read a rung-to-rung step against: at `150k` eighty seeds
+/// (`probe_llj_fixed_scatter_guard_calibration`,
+/// `probe_llj_dyn_scatter_guard_calibration`) put one seed's spread at
+/// `0.123 %` and `0.125 %` of σ, `0.94` and `0.95` of its quoted error, where
+/// the five gate seeds read `0.097 %` and `0.095 %`.
 ///
-/// `150 000` rather than `75 000`, even though the reference's precision alone
-/// would license the cut: the two ladders are flat at both, but `75k` carries the
-/// largest inter-seed scatter on either row (χ²/dof `1.66` and `2.59` against
-/// `≤ 1.11` everywhere above it, the dynamical row's driven by one seed `2.6`
-/// standard deviations high), which is the rung a three-seed gate would be
-/// reading. Seed scatter is the floor a precision argument does not get to cross.
+/// `150 000` rather than `75 000`: on both rows the lowest rung reads highest,
+/// `+0.40 %` and `+0.35 %` from the reference against `+0.22 %` and `+0.20 %`
+/// at `600k`, `1.9` and `1.7` standard errors of the two five-seed means apart;
+/// from `150k` up no two rungs differ by more than `1.7`. Seed scatter is the
+/// floor a precision argument does not get to cross.
 ///
 /// The per-channel allocation floors at 512 points a channel, so the 24 pooled
 /// `(group, diagram)` channels spend at least 12 288 evaluations an iteration
@@ -126,12 +130,14 @@ const LLJ_NEVAL: usize = 150_000;
 const LLJ_NITER: usize = 10;
 /// Largest relative distance from the banked MadGraph σ the ℓℓj sweep may show.
 ///
-/// Above MadGraph's own `0.36%` Monte-Carlo error on this run, which is the
+/// Above MadEvent's own `0.21%` error on this row's seed record, which is the
 /// floor: no agreement tighter than the reference's precision is meaningful.
 /// Below the `1.0%` an under-converged budget produces, which is what it exists
-/// to catch. The whole measured budget family — `−0.01%`, `+0.06%`, `+0.09%`,
-/// `+0.02%` over five seeds at 75 000 to 600 000 — sits an order inside it, so it
-/// is not a bound around one number.
+/// to catch. The measured budget family reads `+0.40%`, `+0.28%`, `+0.16%`,
+/// `+0.22%` over five seeds at 75 000 to 600 000, and eighty seeds at the gate
+/// budget read `+0.23%` (`probe_llj_fixed_scatter_guard_calibration`). The
+/// gate's own five seeds read `+0.28%`, which clears this bound by `1.8x`: an
+/// offset of about `0.2%` that budget does not remove, plus seed scatter.
 const LLJ_MAX_REL: f64 = 0.005;
 /// The same bound for the *dynamical*-scale row, and now set at the same thing.
 ///
@@ -139,21 +145,26 @@ const LLJ_MAX_REL: f64 = 0.005;
 /// channel the sampler drew the point in, so σ depended on the channel partition
 /// it was integrated with, and the row read `−0.68%`. Each point's integration
 /// configuration is now drawn from its own squared amplitudes, and what is left
-/// is the reference's own error: `+0.21%` over five seeds at this budget, at
-/// `χ²/dof 0.66`.
+/// is `+0.23%` over the gate's five seeds at this budget (`χ²/dof 0.53`) and
+/// `+0.21%` over eighty (`probe_llj_dyn_scatter_guard_calibration`), against a
+/// seed record whose own error is `0.22%`.
 ///
-/// `0.005` is MadGraph's own `0.33%` on this run — the floor no agreement can be
-/// tighter than — with headroom. The budget ladder is what says the row is
-/// converged here rather than merely close: `416.23`, `416.27`, `416.26`,
-/// `416.13` pb over five seeds at `75k`, `150k`, `300k` and `600k`
-/// (`probe_llj_dyn_budget_ladder`) against MadGraph's `415.42 ± 1.36` — a
-/// `0.04%` end-to-end span across an eightfold budget, an eighth of the
-/// reference's own error, with no direction to it.
+/// `0.005` is that `0.22%` with headroom. The budget ladder is what says the
+/// row is converged here rather than merely close: `416.18`, `415.65`,
+/// `415.29`, `415.54` pb over five seeds at `75k`, `150k`, `300k` and `600k`
+/// (`probe_llj_dyn_budget_ladder`) against the seed record's `414.72 ± 0.90`
+/// — the lowest rung high, as on the fixed-scale row, and the three above it
+/// inside a `0.09%` span, under half the reference's own error.
 const LLJ_DYN_MAX_REL: f64 = 0.005;
 /// Scatter the estimates are allowed about their own mean, in units of their
-/// quoted errors. Measured over the same budget family, worst rung first:
-/// `2.59`, `1.66`, `1.11`, `1.03`, `0.75`, `0.66`, `0.40`, `0.29` across both
-/// ℓℓj ladders.
+/// quoted errors. Measured over the same budget family, five seeds a rung,
+/// worst rung first: `1.15`, `1.15`, `0.93`, `0.88`, `0.55`, `0.53`, `0.49`,
+/// `0.39` across both ℓℓj ladders. Eighty seeds at the gate budget calibrate it
+/// as the false-positive rate it is: over sixteen disjoint quintets each the
+/// fixed-scale row reads `0.15`–`2.00` and the dynamical `0.14`–`2.02`, none
+/// above `3.32`, the four-dof one-percent point
+/// (`probe_llj_fixed_scatter_guard_calibration`,
+/// `probe_llj_dyn_scatter_guard_calibration`).
 ///
 /// Both gates that read this form it over [`LLJ_SEEDS`], which is the same
 /// five-seed sweep those ladder rungs used, so the bound and the statistic it
@@ -162,22 +173,22 @@ const LLJ_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// Largest relative distance from the banked MadGraph σ a Drell–Yan row may show.
 ///
-/// Asserted together with `|pull| < 3`, not instead of it. MadGraph's own error
-/// is `0.051%` on the default card and `0.044%` on the m_ll window, and this
-/// side's five-seed mean carries about `0.05%`, so the pull's denominator is
-/// near `0.07%` and the pull is the binding bound, at about `0.22%`. This one
+/// Asserted together with `|pull| < 3`, not instead of it. MadEvent's seed
+/// records carry `0.020%` on the default card and `0.018%` on the m_ll window,
+/// and this side's five-seed mean about `0.045%`, so the pull's denominator is
+/// near `0.05%` and the pull is the binding bound, at about `0.15%`. This one
 /// bounds what the pull cannot: a run whose quoted error is inflated — a seed
 /// that caught a weight tail — shrinks the pull without moving σ any closer.
 ///
-/// `0.005` is the census reading with headroom: over the gate's five seeds
-/// `+4.5e-4` and `+2.2e-4` (`probe_hadronic_seed_headroom`), so the bound clears
-/// the worst by `11x`, and it is the value every other σ row in this file is
-/// held to.
+/// `0.005` is the measured reading with headroom: over the gate's five seeds
+/// `+3.7e-4` and `+5.0e-4` (pull `+0.73` and `+1.06`), so the bound clears the
+/// larger by `10x`, and it is the value every other σ row in this file is held
+/// to.
 const DY_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
 /// errors — the guard the scalar pull cannot be: a run that missed a region
-/// reports a small integral *and* a small error. The census reads `1.23` and
-/// `0.41` over the gate's five seeds (`probe_hadronic_seed_headroom`); like the
+/// reports a small integral *and* a small error. The gate's five seeds read
+/// `0.80` and `0.16` on the two cards; like the
 /// other rows' `χ²/dof < 4` it is a false-positive rate, `0.30%` on the four
 /// degrees of freedom five seeds give.
 const DY_MAX_CHI2_PER_DOF: f64 = 4.0;
@@ -1372,12 +1383,13 @@ fn dyn_run_present(gate: &str, run: &str) -> bool {
 /// this process do not share a merge graph, so which group is asked matters as
 /// much as which configuration. The row has read three numbers under three rules:
 /// `−3.05%` while every point was clustered in channel 1, `−0.68%` while the
-/// scale was read in the channel the *sampler* drew the point in, and `+0.25%`
-/// now. The budget ladder in [`probe_llj_dyn_budget_ladder`] gives `416.23`,
-/// `416.27`, `416.26`, `416.13` pb over five seeds at `75k`, `150k`, `300k` and
-/// `600k` against MadGraph's `415.42 ± 1.36` — flat to `0.04%` across an
-/// eightfold budget, so what is left is the reference's own error and not a
-/// budget the row has yet to spend.
+/// scale was read in the channel the *sampler* drew the point in, and `+0.23%`
+/// now, against a seed record `414.72 ± 0.90` pb whose own error is `0.22%`.
+/// The budget ladder in [`probe_llj_dyn_budget_ladder`] gives `416.18`,
+/// `415.65`, `415.29`, `415.54` pb over five seeds at `75k`, `150k`, `300k` and
+/// `600k`, inside `0.09%` from `150k` up, and eighty seeds at `150k` read
+/// `415.57` (`+0.21%`), so what is left is a residual of the reference's own
+/// size and not a budget the row has yet to spend.
 ///
 /// **The channel partition is what the middle number was, and it is gone.** Once
 /// the scale reads the integration channel, σ is no longer independent of the
@@ -1391,8 +1403,8 @@ fn dyn_run_present(gate: &str, run: &str) -> bool {
 ///
 /// The **pull is asserted**. It was reported and not asserted while the residual
 /// was a systematic of about `0.6%`, whose pull grows without bound as this
-/// side's budget rises; five seeds now sit at `χ²/dof 0.65` with the mean
-/// `0.11σ` from the reference, which is what the statistic is for.
+/// side's budget rises; the gate's five seeds now sit at `χ²/dof 0.53` with the
+/// mean `1.01σ` from the reference, which is what the statistic is for.
 ///
 /// What it cannot see: everything a scalar integrates over. The per-event scale
 /// enters σ through an average, so a clustering that got individual events wrong
@@ -1486,10 +1498,10 @@ fn sigma_llj_dynamical_scale_vs_mg() {
     row.note = Some(
         "each point clustered in the integration configuration drawn from its own \
          AMP2, inside the flavour group that produced it. Five seeds at 150k here; \
-         twenty seeds at the same budget read +0.005% (pull +0.01, chi2/dof 1.25), \
-         the row's recorded reading, and the budget ladder is oracle-layer. \
-         rel_tol 0.005 is the reference's own 0.33% with headroom; the pull is \
-         asserted, because MadGraph's error dominates the combination and no budget \
+         eighty seeds at the same budget read +0.21% (chi2/dof 0.91, per-seed spread \
+         0.95 of the quoted error), and the budget ladder is oracle-layer. \
+         rel_tol 0.005 is the seed record's own 0.22% with headroom; the pull is \
+         asserted, because MadEvent's error dominates the combination and no budget \
          spent here can drive it up"
             .to_string(),
     );
@@ -1608,32 +1620,31 @@ const BB_ADAPT_ITERS: usize = 5;
 /// MadGraph's Monte-Carlo error on this run is visible to the comparison, so
 /// points spent past it buy the gate nothing.
 ///
-/// Five seeds a rung (`probe_bb_budget_ladder`) read `+0.15%`, `+0.16%`, `+0.11%`,
-/// `+0.14%` at 75 000, 150 000, 300 000 and 600 000 points an iteration, at χ²/dof
-/// `0.63`, `0.79`, `0.68`, `0.06` — an `0.05%` span with no direction to it across
-/// an eightfold budget, and no rung whose seeds scatter by more than they claim.
-/// So this row is converged at the rung it runs at, and the seed sweep is
-/// measuring an agreement rather than this crate's convergence. The ℓℓj rows,
-/// which spread the same budget over 24 pooled channels and so reach a converged
-/// rung much later, are the reason that is checked rather than assumed.
+/// Five seeds a rung (`probe_bb_budget_ladder`, against the seed record) read
+/// `+0.17%`, `+0.06%`, `+0.02%`, `+0.06%` at 75 000, 150 000, 300 000 and
+/// 600 000 points an iteration, at χ²/dof `1.00`, `2.33`, `0.31`, `0.45` — a
+/// `0.15%` span whose only outlier is the gate rung itself, `1.7` standard
+/// errors above the top one, with no direction above it and no rung whose
+/// seeds scatter beyond `χ²/dof 4`. The ℓℓj rows, which spread the same budget
+/// over 24 pooled channels and so reach a converged rung much later, are the
+/// reason that is checked rather than assumed.
 ///
-/// At `75 000` five seeds leave this side's error at `0.059%` against the banked
-/// run's own `0.182%`, so the combined error of the two sides is still dominated
-/// by the reference.
+/// At `75 000` five seeds leave this side's error at `0.061%` against the seed
+/// record's `0.060%`, so the two sides are compared at the same precision.
 const BB_NEVAL: usize = 75_000;
 const BB_NITER: usize = 10;
 /// Largest relative distance from the banked MadGraph σ the `b b̄` sweep may show.
 ///
-/// MadGraph's own Monte-Carlo error on the banked run is `0.182%`, which is the
-/// floor — no agreement tighter than the reference's precision is meaningful —
-/// and this side's is `0.059%` at the gate budget, so `0.005` is two and a half
-/// times the two sides' combined `0.191%`. The whole measured budget family sits
-/// inside `0.16%`.
+/// MadGraph's own Monte-Carlo error on the single banked run is `0.182%` and
+/// on the seed record the gate reads `0.060%`, which is the floor — no
+/// agreement tighter than the reference's precision is meaningful — and this
+/// side's is `0.061%` at the gate budget. The whole measured budget family sits
+/// inside `+0.17%`, and the gate reads `+0.17%`, `3.0x` inside the bound.
 const BB_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their own
 /// quoted errors — the guard the scalar pull cannot be, since a run that missed a
-/// region reports a small integral *and* a small error. Measured `0.63`, `0.79`,
-/// `0.68`, `0.06` over five seeds a rung of the same budget ladder.
+/// region reports a small integral *and* a small error. Measured `1.00`, `2.33`,
+/// `0.31`, `0.45` over five seeds a rung of the same budget ladder.
 const BB_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// The `ŝ` floor the banked `pp_to_bb_fixed` card implies, against MadGraph's own
@@ -1804,9 +1815,9 @@ fn sigma_bb_fixed_scale_vs_mg() {
     row.subsampler = summary;
     row.note = Some(
         "five seeds at 75k in this layer; the five-seed 75k to 600k ladder \
-         (probe_bb_budget_ladder) reads +0.15% / +0.16% / +0.11% / +0.14% at \
-         chi2/dof 0.63 / 0.79 / 0.68 / 0.06, an 0.05% span with no direction to \
-         it, so the gate runs at the lowest rung the ladder resolves as converged"
+         (probe_bb_budget_ladder) reads +0.17% / +0.06% / +0.02% / +0.06% at \
+         chi2/dof 1.00 / 2.33 / 0.31 / 0.45 against the seed record, the gate rung \
+         highest and 1.7 standard errors above the top one"
             .to_string(),
     );
     row.duration_s = Some(clock.seconds());
@@ -1909,56 +1920,47 @@ const JJ_RUN: &str = "pp_to_jj";
 /// Five rather than three, and the same five [`probe_jj_budget_ladder`] walks its
 /// rungs with, so the χ²/dof the gate forms carries the four degrees of freedom
 /// [`JJ_MAX_CHI2_PER_DOF`] was calibrated on: `χ²/dof < 4` is a `0.30 %`
-/// false-positive rate on four and `1.8 %` on the two three seeds give. The
-/// residual here is a converged offset rather than a spread, so the extra seeds
-/// sharpen the mean the bound is read against rather than move it.
+/// false-positive rate on four and `1.8 %` on the two three seeds give.
 const JJ_SEEDS: &[u64] = &[20260810, 20260811, 20260812, 20260813, 20260814];
 /// Points per survey iteration, and iterations, of the channel-weight adaptation.
 const JJ_ADAPT_SURVEY: usize = 8_000;
 const JJ_ADAPT_ITERS: usize = 5;
 /// VEGAS budget per seed, taken from a measured ladder rather than from cost, and
 /// sized against the reference's own precision rather than below it: the gate's
-/// resolving power is `√(σ_ours² + σ_MG²)`, so once this side's error is well
-/// inside MadGraph's `0.22 %` on this run, further points buy the comparison
-/// nothing it can see.
+/// resolving power is `√(σ_ours² + σ_MG²)`, so once this side's error is
+/// inside MadEvent's `0.074 %` on this row's seed record, further points buy
+/// the comparison little it can see.
 ///
 /// Over five seeds at 75 000, 150 000, 300 000 and 600 000 points an iteration
-/// (`probe_jj_budget_ladder`) this row read `+0.33 %`, `+0.26 %`, `+0.25 %`,
-/// `+0.30 %` at χ²/dof `1.40`, `0.44`, `0.82`, `1.21` — an `0.08 %` span with no
-/// direction to it and no rung whose seeds scatter by more than they claim. That
-/// ladder was walked before the vector-vertex sign fix, which leaves
-/// `g g → g g`'s `|M|²` alone and moves the other channels; at the gate rung the
-/// fix took the row to `+0.18 %` (pull `+0.80`, χ²/dof `1.58`, the manifest's
-/// recorded reading), and the ladder has not been re-walked since. A `2 → 2`
-/// final state gives every channel far more points per iteration than the
-/// 24-channel ℓℓj rows get, which is why this row is flat at budgets where those
-/// need more.
+/// (`probe_jj_budget_ladder`, against the seed record) this row reads
+/// `−0.05 %`, `−0.03 %`, `−0.00 %`, `−0.02 %` at χ²/dof `1.03`, `0.55`, `0.93`,
+/// `1.27` — a `0.05 %` span with no direction to it and no rung whose seeds
+/// scatter by more than they claim; the five seeds' standard deviation is
+/// `0.12 %`, `0.061 %`, `0.056 %`, `0.046 %` of σ. A `2 → 2` final state gives
+/// every channel far more points per iteration than the 24-channel ℓℓj rows
+/// get, which is why this row is flat at budgets where those need more.
 ///
 /// `75 000` is the ladder's lowest rung. Five seeds there leave this side's error
-/// at `0.065 %` against the reference's `0.217 %`, so the combined error is still
-/// the reference's and the row is compared at the precision the bank was written
-/// with.
+/// at `0.053 %` against the seed record's `0.074 %`, so the two sides are
+/// compared at comparable precision.
 const JJ_NEVAL: usize = 75_000;
 const JJ_NITER: usize = 10;
 /// Relative agreement this row is held to.
 ///
-/// Set from the reference's own Monte-Carlo error — `1.4726e6` on `6.7885e8 pb`,
-/// `0.22 %` — and not from the channel-partition band the `ℓℓj` rows carry: a
-/// `2 → 2` final state gives the clustering no merge to choose, so σ here is a
-/// function of the momenta alone and `probe_jj_channel_partition` measures the
+/// Set from the reference's own Monte-Carlo error — `0.22 %` on the single
+/// MadEvent run, `0.074 %` on the seed record the gate reads — and not from the
+/// channel-partition band the `ℓℓj` rows carry: a `2 → 2` final state gives the
+/// clustering no merge to choose, so σ here is a function of the momenta alone and `probe_jj_channel_partition` measures the
 /// partition gap at `1.0e-3` against its own `9.6e-4` Monte Carlo. What is left
 /// is Monte Carlo, so the pull is asserted too.
 ///
-/// Over [`JJ_SEEDS`] at the gate budget the row reads `+0.18 %` (the manifest's
-/// recorded reading), so `0.005` clears it by `2.8x`. The residual is a converged
-/// offset the seeds resolve, not a spread they scatter over, so the margin is
-/// what the reference's own `0.22 %` error leaves after the offset, and no budget
-/// on either side shrinks it.
+/// Over [`JJ_SEEDS`] at the gate budget the row reads `−0.046 %` (pull `−0.51`)
+/// against the seed record, so `0.005` clears it by `10.9x`.
 const JJ_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their quoted
-/// errors — the guard the scalar pull cannot be. The gate budget was the ladder's
-/// worst rung at `1.40` over five seeds, against `0.44`, `0.82` and `1.21` at the
-/// three rungs above it, and reads `1.58` at the recorded reading. The gate forms
+/// errors — the guard the scalar pull cannot be. The ladder reads `1.03` at the
+/// gate budget over five seeds, against `0.55`, `0.93` and `1.27` at the three
+/// rungs above it. The gate forms
 /// it over the same five, so the bound and the statistic it bounds carry the same
 /// four degrees of freedom; three seeds would give two, wide enough for a
 /// converged row to post an alarming value and a scattered one an unremarkable
@@ -2488,12 +2490,12 @@ fn probe_jj_channel_partition() {
 /// unordered-outgoing rule matters, and a scalar cross section is far too coarse
 /// to see a subprocess counted twice as anything but a normalisation.
 ///
-/// `JJ_MAX_REL` is the reference's own `0.22 %` Monte-Carlo error with headroom,
-/// and the **pull is asserted** rather than reported: the residual here is Monte
-/// Carlo rather than a systematic of fixed size, and the arithmetic says a budget
-/// increase cannot drive the pull up — MadGraph's error on this run is `1.47e6 pb`
-/// against this side's `1.9e5` at the gate budget, so the combined error is
-/// essentially the reference's.
+/// `JJ_MAX_REL` is the reference's own Monte-Carlo error with headroom, and the
+/// **pull is asserted** rather than reported: the residual here is Monte Carlo
+/// rather than a systematic of fixed size. Over the gate's five seeds the row
+/// reads `−0.046 %`, pull `−0.51`, with this side's error `3.6e5 pb` against
+/// the seed record's `5.0e5`, and the budget ladder is flat from `75k` to
+/// `600k`, so a larger budget has no offset to drive the pull up with.
 ///
 /// What the number can and cannot see: σ is a
 /// scalar, so a clustering that got individual events wrong while preserving their
@@ -2587,14 +2589,13 @@ fn sigma_jj_dynamical_scale_vs_mg() {
          carry unequal identical-particle symmetry factors. Its 65 concrete \
          subprocesses are MadGraph's own, asserted entry for entry against the run's \
          leshouche.inc by jj_subprocesses_are_madgraphs_own. rel_tol is the reference's \
-         own 0.22% Monte-Carlo error with headroom, and the pull is asserted: the \
+         own Monte-Carlo error with headroom, and the pull is asserted: the \
          partition ambiguity that sets the llj tolerances is 1.0e-3 here, at its own \
          Monte Carlo, because a 2 -> 2 final state gives the clustering no merge to \
          choose. Five seeds at 75k, the lowest rung of the oracle-layer five-seed \
-         ladder; the row's recorded reading there is +0.18% (pull +0.80, chi2/dof \
-         1.58), 2.8x inside rel_tol, and with this side's five-seed error at 0.065% \
-         against the reference's 0.217% the comparison is made at the bank's own \
-         precision"
+         ladder, which reads -0.05% / -0.03% / -0.00% / -0.02% from 75k to 600k; \
+         this side's five-seed error there is 0.053% against the seed record's \
+         0.074%, so the comparison is made at the reference's own precision"
             .to_string(),
     );
     row.duration_s = Some(clock.seconds());
@@ -3105,18 +3106,18 @@ fn comps(p: &V) -> [f64; 4] {
 /// ladders are flat at the rung the gate runs at, but `pp_to_llj`'s is not, and a
 /// shared "the rung this row's ladder is flat at" sentence would misdescribe it.
 const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
-    // Flat across the whole ladder — `+0.07%`, `−0.01%`, `+0.02%`, `−0.02%` at
-    // 75k, 150k, 300k and 600k, with χ²/dof 0.55, 1.00, 0.09, 0.19 — so the
-    // lowest rung is the converged one. Five seeds there leave this side's
-    // error at `0.043%` against the reference's `0.071%`.
+    // Flat across the whole ladder — `+0.06%`, `+0.06%`, `+0.07%`, `+0.04%` at
+    // 75k, 150k, 300k and 600k against the seed record, with χ²/dof 1.71, 0.32,
+    // 0.37, 0.32 — so the lowest rung is the converged one. Five seeds there
+    // leave this side's error at `0.034%` against the seed record's `0.033%`.
     (
         "pp_to_bb",
         "p p > b b~",
         75_000,
         "the rung this row's budget ladder is flat at",
     ),
-    // The explicit-order twin, and flat on the same ladder: `+0.03%`, `+0.04%`,
-    // `+0.00%`, `+0.00%` at χ²/dof 0.23, 1.03, 0.89, 0.15.
+    // The explicit-order twin, on the same ladder: `+0.10%`, `+0.04%`, `+0.02%`,
+    // `+0.06%` at χ²/dof 1.12, 0.25, 0.46, 0.46, an `0.08%` span.
     (
         "pp_to_bb_qcd2",
         "p p > b b~ QCD=2",
@@ -3124,25 +3125,24 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
         "the rung this row's budget ladder is flat at",
     ),
     // `mmll = 0` opens the low lepton-pair-mass region, the hardest budget on
-    // any row here. Its five-seed ladder read `+0.04%`, `+0.07%`, `+0.11%`,
-    // `+0.21%` at 75k, 150k, 300k and 600k, which looks like a climb and is not
-    // one: forty seeds a rung (`probe_llj_seed_ensemble`) put the estimator's
-    // expectation flat from 150k up, rejecting a drift at 7.3σ, and show five
-    // seeds understating this row's per-seed spread by 2x at 150k and 5x at
-    // 600k. `150k` is where the estimator already is; the `75k` rung's error is
-    // inflated to `0.29%` by a single seed (χ²/dof 1.49 against ≤0.65 above it).
+    // any row here. Its five-seed ladder reads `+0.28%`, `+0.20%`, `+0.22%`,
+    // `+0.21%` at 75k, 150k, 300k and 600k against the seed record, at χ²/dof
+    // 1.32, 0.49, 0.49, 1.43: flat from 150k up, the lowest rung highest.
+    // Twenty seeds at 150k read one seed's spread at 1.01 of its quoted error,
+    // where the gate's five read 0.70: five seeds understate this row's
+    // per-seed spread.
     (
         "pp_to_llj",
         "p p > l+ l- j",
         150_000,
-        "the lowest rung of a ladder flat from 150k up, measured over forty seeds \
-         a rung (a five-seed read of the same ladder looks like a climb, because \
-         five seeds understate this row's per-seed spread by 2-5x); the 75k \
-         rung's error is inflated by a single seed",
+        "the lowest rung of a ladder flat from 150k up (+0.20% / +0.22% / +0.21% \
+         at 150k / 300k / 600k over five seeds a rung; twenty seeds at 150k read \
+         one seed's spread at 1.01 of its quoted error against 0.70 over the \
+         gate's five); the 75k rung reads +0.28%",
     ),
-    // Flat: `−0.03%`, `+0.05%`, `−0.02%`, `−0.04%` at χ²/dof 0.82, 0.65, 0.65,
-    // 0.21, with this side's five-seed error `0.065%` against the reference's
-    // `0.198%` at the lowest rung.
+    // Within `0.08%`: `−0.02%`, `+0.00%`, `+0.03%`, `+0.05%` at χ²/dof 0.65,
+    // 1.43, 0.25, 0.49 against the seed record, with this side's five-seed
+    // error `0.065%` against the seed record's `0.101%` at the lowest rung.
     (
         "pp_to_ll_scalefact2",
         "p p > l+ l-",
@@ -3166,16 +3166,18 @@ const RECARDED_NITER: usize = 10;
 /// Relative agreement these rows are held to.
 ///
 /// Set from the references' own Monte-Carlo errors — `0.071%` on both `b b̄`
-/// runs, `0.33%` on `ℓℓj`, `0.198%` on the `scalefact` Drell-Yan run — since no
+/// runs, `0.33%` on `ℓℓj`, `0.198%` on the `scalefact` Drell-Yan run, and
+/// `0.033%`, `0.17%` and `0.10%` on the seed records the gates read — since no
 /// agreement tighter than the reference's precision is meaningful. This is the
-/// loosest of those with headroom; the measured distances are an order inside
-/// it, and so is every rung of every row's budget ladder — the widest is `ℓℓj`'s
-/// `+0.21%` at 600k.
+/// loosest of those with headroom; every rung of every row's budget ladder sits
+/// inside it, the widest `ℓℓj`'s `+0.28%` at 75k, and its gate reads `+0.20%`
+/// at 150k, `2.5x` inside.
 const RECARDED_MAX_REL: f64 = 0.005;
 /// Scatter the seeds are allowed about their own mean, in units of their own
 /// quoted errors — the guard the scalar pull cannot be, since a run that missed
-/// a region reports a small integral *and* a small error. Measured `0.09` to
-/// `1.49` over five seeds a rung across the whole ladder, worst on `ℓℓj` at 75k.
+/// a region reports a small integral *and* a small error. Measured `0.25` to
+/// `1.71` over five seeds a rung across the whole ladder, worst on `pp_to_bb`
+/// at 75k.
 const RECARDED_MAX_CHI2_PER_DOF: f64 = 4.0;
 
 /// Gate one re-carded row's σ over [`RECARDED_SEEDS`] and write its cell.
