@@ -10,3 +10,4 @@
 ## Session Report
 
 * [F1 report: Majorana and fermion-number-violating diagrams are refused at enumeration](F1-report.md) - Each kept diagram is checked before it reaches the evaluator: a Majorana fermion on a leg or propagator, or a vertex pairing two particles or two antiparticles, is refused with a ConvertError naming it. Before the fix the FNV toy panicked at the survey's run.rs:1354 site, and both Majorana toys returned a σ without any error. The compile-time bra/ket resolution now asserts its operand pair.
+* [HY1 report: hygiene review of the fermion-flow refusal](HY1-report.md) - Review of F1's diff: five findings fixed with mutation evidence (a swapped particle/antiparticle kind, the veto-order, the charge convention doc, the error prefix, a toy's MadGraph-only order), two sites no mutation reaches, three Found.
