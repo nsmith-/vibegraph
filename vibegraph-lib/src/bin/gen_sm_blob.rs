@@ -2,7 +2,8 @@
 //!
 //! Reads the SM UFO model from the `research/refs/mg5amcnlo` submodule, parses it
 //! with the crate's own parser, and writes the compressed pre-restriction blob plus
-//! the nine restrict cards into the committed source tree. Normal builds only
+//! the restrict cards MadGraph ships into the committed source tree (a card vendored
+//! from elsewhere, such as `restrict_ckm_no_b_mass.dat`, is left untouched). Normal builds only
 //! `include_bytes!`/`include_str!` those files; this binary is the only thing that
 //! reads the submodule.
 //!

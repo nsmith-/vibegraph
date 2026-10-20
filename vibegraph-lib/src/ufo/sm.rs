@@ -2,8 +2,8 @@
 //!
 //! The SM model data is baked into the binary so that normal `cargo build`/`test`
 //! never touch the `research/refs/mg5amcnlo` submodule. A single compressed blob
-//! holds the pre-restriction parsed model ([`ParsedModel`]); the nine SM restrict
-//! cards are baked in as raw SLHA text. [`sm_model`] deserializes the blob, applies
+//! holds the pre-restriction parsed model ([`ParsedModel`]); the SM restrict cards
+//! are baked in as raw SLHA text. [`sm_model`] deserializes the blob, applies
 //! a variant's restrict card, and caches the resulting [`UFOModel`] per variant.
 //!
 //! To regenerate the blob after the submodule model changes, run the committed dev
@@ -15,11 +15,14 @@ use super::identity::model_digest;
 use super::slha::ParamCard;
 use super::{ParsedModel, UFOModel, UfoError};
 
-/// The nine SM restrict-card variants shipped with the MadGraph SM UFO model.
+/// The SM restrict-card variants: the nine MadGraph ships with its SM UFO model,
+/// and [`SMRestrict::CkmNoBMass`], which CMS genproductions adds to it.
 ///
 /// Each selects one `restrict_*.dat` card (`import model sm-<variant>`), which
 /// zeroes a set of parameters and prunes the corresponding zero-coupling vertices.
 /// [`SMRestrict::Default`] is the plain `restrict_default.dat` (`import model sm`).
+/// [`ships_with_madgraph`](SMRestrict::ships_with_madgraph) says which source a
+/// card's bytes come from.
 ///
 /// The `snake_case` variant name is the MadGraph restrict-suffix and card stem
 /// (`restrict_<suffix>.dat`); the suffix ↔ variant round-trip
@@ -37,11 +40,17 @@ pub enum SMRestrict {
     NoTauMass,
     NoWidths,
     ZeromassCkm,
+    /// `restrict_ckm_no_b_mass.dat` as bundled in CMS genproductions' copy of
+    /// `models/sm`: MadGraph's `restrict_ckm.dat` with `MB = ymb = 0` and the tau
+    /// width `WTau` at 2.27e-12 (its `parameters.py` default; MadGraph's card has
+    /// 0), so the four-flavour CKM model of `restrict_ckm` becomes five-flavour
+    /// with a non-zero, unlocked tau width. MadGraph itself does not ship it.
+    CkmNoBMass,
 }
 
 impl SMRestrict {
     /// All variants, in declaration order (parallel to the per-variant cache).
-    pub const ALL: [SMRestrict; 9] = [
+    pub const ALL: [SMRestrict; 10] = [
         SMRestrict::Default,
         SMRestrict::CMass,
         SMRestrict::Ckm,
@@ -51,6 +60,7 @@ impl SMRestrict {
         SMRestrict::NoTauMass,
         SMRestrict::NoWidths,
         SMRestrict::ZeromassCkm,
+        SMRestrict::CkmNoBMass,
     ];
 
     fn index(self) -> usize {
@@ -74,6 +84,15 @@ impl SMRestrict {
         }
     }
 
+    /// Whether this variant's card is a byte-for-byte copy of a `models/sm` card
+    /// in MadGraph's own distribution, and so regenerated from and checked
+    /// against the pinned `mg5amcnlo` submodule. A card that is not (only
+    /// [`SMRestrict::CkmNoBMass`]) is vendored from its own source and pinned by
+    /// its SHA-256 instead.
+    pub fn ships_with_madgraph(self) -> bool {
+        !matches!(self, SMRestrict::CkmNoBMass)
+    }
+
     /// The raw SLHA text of this variant's restrict card (baked into the binary).
     pub fn restrict_card_text(self) -> &'static str {
         match self {
@@ -86,6 +105,7 @@ impl SMRestrict {
             SMRestrict::NoTauMass => include_str!("sm_assets/restrict_no_tau_mass.dat"),
             SMRestrict::NoWidths => include_str!("sm_assets/restrict_no_widths.dat"),
             SMRestrict::ZeromassCkm => include_str!("sm_assets/restrict_zeromass_ckm.dat"),
+            SMRestrict::CkmNoBMass => include_str!("sm_assets/restrict_ckm_no_b_mass.dat"),
         }
     }
 }
@@ -170,9 +190,11 @@ pub fn sm_model(restrict: SMRestrict) -> Arc<UFOModel> {
 /// Regenerate the interned SM assets from a UFO `sm` model directory.
 ///
 /// Used by the `gen_sm_blob` dev binary: parses `sm_dir` with the crate's own
-/// [`ParsedModel::parse`], writes the compressed blob and the nine restrict cards
-/// into `out_dir` (the committed `src/ufo/sm_assets/` tree). Normal builds only
-/// read these via `include_bytes!`/`include_str!`; the submodule is needed only here.
+/// [`ParsedModel::parse`], writes the compressed blob and the restrict cards MadGraph
+/// ships ([`SMRestrict::ships_with_madgraph`]) into `out_dir` (the committed
+/// `src/ufo/sm_assets/` tree). A vendored card is not in `sm_dir` and is left as it
+/// is. Normal builds only read these via `include_bytes!`/`include_str!`; the
+/// submodule is needed only here.
 pub fn regenerate(sm_dir: &std::path::Path, out_dir: &std::path::Path) -> Result<(), UfoError> {
     std::fs::create_dir_all(out_dir).map_err(|e| UfoError::Io {
         file: out_dir.display().to_string(),
@@ -187,7 +209,10 @@ pub fn regenerate(sm_dir: &std::path::Path, out_dir: &std::path::Path) -> Result
         cause: e,
     })?;
 
-    for variant in SMRestrict::ALL {
+    for variant in SMRestrict::ALL
+        .into_iter()
+        .filter(|v| v.ships_with_madgraph())
+    {
         let card = format!("restrict_{}.dat", variant.suffix());
         let src = sm_dir.join(&card);
         let dst = out_dir.join(&card);

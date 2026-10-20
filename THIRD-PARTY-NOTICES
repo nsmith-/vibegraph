@@ -33,6 +33,16 @@ every `vibegraph` binary via `include_str!`/`include_bytes!`
     UFO model definition, produced by the `gen_sm_blob` dev binary
     (`vibegraph-lib/src/ufo/sm.rs::regenerate`) and checked in.
 
+One further card in the same directory, `restrict_ckm_no_b_mass.dat`, is not
+part of MadGraph5_aMC@NLO's distribution. It is copied verbatim, byte for
+byte, from the `models/sm` directory that CMS genproductions bundles with
+MadGraph in its gridpacks (the copy in gridpack `041_WWjj_SS_ewk`, under
+`mgbasedir/models/sm/`; all 88 gridpacks of a 2026-10 survey, MadGraph 2.4.2
+to 2.9.18, carry the same bytes), SHA-256
+ad6e3eaf03443bc14148d392fe98deb712de29166061a7408eff521a47591b05. It is
+MadGraph's `restrict_ckm.dat`, as written by the UFO model's param-card
+writer, with three values changed (MB, ymb, and the tau width).
+
 `models/sm` carries no license of its own; it is covered by the license at
 the root of the mg5amcnlo repository, reproduced below in full (this repo
 vendors mg5amcnlo as the `research/refs/mg5amcnlo` git submodule; the assets
