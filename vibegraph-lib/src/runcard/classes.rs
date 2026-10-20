@@ -183,8 +183,9 @@ const P_NHEL: &str = "Monte-Carlo over helicities in place of the explicit sum, 
                       both the estimator and the per-event weight";
 const P_LIMHEL: &str = "the threshold below which MadGraph drops a helicity configuration; \
                         raising it drops contributions this crate keeps";
-const P_EVENT_NORM: &str = "the normalisation of XWGTUP (average, sum or unity) — a factor of \
-                            the event count in the written record";
+const R_EVENT_NORM: &str = "lhef::emit::EmitPlan::event_norm, the normalisation of the \
+                            written XWGTUP and the IDWTUP; RunCard::event_norm refuses a \
+                            value outside MadGraph's list at the parse";
 const P_TIME_OF_FLIGHT: &str = "writes a nonzero VTIMUP for long-lived particles, where this \
                                 crate always writes zero";
 const P_BOOST_EVENT: &str = "boosts the whole event before it is written";
@@ -253,7 +254,7 @@ pub(crate) static FIELD_CLASSES: &[(&str, FieldClass)] = &[
     ("boost_event",             IgnoredPhysics { why: P_BOOST_EVENT }),
     ("me_frame",                Consumed(R_FRAME)),
     ("frame_id",                IgnoredBenign(B_FRAME_ID)),
-    ("event_norm",              IgnoredPhysics { why: P_EVENT_NORM }),
+    ("event_norm",              Consumed(R_EVENT_NORM)),
     ("keep_log",                IgnoredBenign(B_JOB)),
     ("auto_ptj_mjj",            Consumed(R_AUTO_PTJ_MJJ)),
     ("bwcutoff",                Consumed(R_BWCUTOFF)),
@@ -518,7 +519,7 @@ mod tests {
 
             checked += 1;
         }
-        assert_eq!(checked, 21, "the refused inventory changed size");
+        assert_eq!(checked, 20, "the refused inventory changed size");
     }
 
     /// A card line that moves `name` off its default, in the syntax the parser

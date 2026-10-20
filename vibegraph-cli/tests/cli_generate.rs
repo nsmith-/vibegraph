@@ -95,12 +95,17 @@ fn run() -> &'static Run {
 }
 
 fn integrate() -> Run {
+    integrate_with("")
+}
+
+/// An integration whose run card carries `extra` card lines after the beams.
+fn integrate_with(extra: &str) -> Run {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().to_path_buf();
     let proc_card = dir.join("proc_card.dat");
     let run_card = dir.join("run_card.dat");
     std::fs::write(&proc_card, format!("import model sm\ngenerate {PROCESS}\n")).unwrap();
-    write_run_card(&run_card, EBEAM, "");
+    write_run_card(&run_card, EBEAM, extra);
 
     let out = dir.join("out");
     let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
@@ -763,4 +768,131 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
         String::from_utf8_lossy(&gen_status.stderr)
     );
     assert!(output.exists());
+}
+
+/// One sample per `event_norm`, each from its own integration of the same card
+/// plus that line: the written weights follow MadGraph's rule for the setting,
+/// and nothing else about the run moves.
+///
+/// MadGraph's rule is `MultiEventFile.unweight` (`lhe_parser.py:1225-1239`) and
+/// `EventFile.unweight` (`lhe_parser.py:519-527`): `sum` writes `IDWTUP = -3` and
+/// weights σ/N, `average` `IDWTUP = -4` and weights σ, `unity` `IDWTUP = -3` and
+/// weights 1. This file keeps an overweight event above the rest where
+/// MadGraph's flattens it, so the weights are compared as ratios to the
+/// `average` sample's own rather than as constants.
+///
+/// What this cannot see: it reads the files with this crate's own parser, so a
+/// weight convention both ends share is invisible; the MadGraph rule it pins
+/// is a reading of the source, not a banked MadGraph file written under `sum`.
+#[test]
+fn event_norm_changes_the_written_weights_and_nothing_else() {
+    let norms = ["average", "sum", "unity"];
+    let runs: Vec<Run> = norms
+        .iter()
+        .map(|norm| integrate_with(&format!("  {norm} = event_norm\n")))
+        .collect();
+    let files: Vec<(LheFile, String)> = runs
+        .iter()
+        .zip(norms)
+        .map(|(run, norm)| run.generate("buffer", SEED_A, FEW_EVENTS, &format!("{norm}.lhe")))
+        .collect();
+    let (average, sum, unity) = (&files[0].0, &files[1].0, &files[2].0);
+    let n = FEW_EVENTS as f64;
+
+    let sigma = runs[0].artifact.sigma_pb;
+    for run in &runs {
+        assert_eq!(
+            run.artifact.sigma_pb, sigma,
+            "the integration moved with event_norm"
+        );
+    }
+
+    assert_eq!(
+        average.init.weight_strategy,
+        WeightStrategy::MeanCrossSectionPb
+    );
+    assert_eq!(sum.init.weight_strategy, WeightStrategy::SumCrossSectionPb);
+    assert_eq!(
+        unity.init.weight_strategy,
+        WeightStrategy::SumCrossSectionPb
+    );
+    for file in [average, sum, unity] {
+        let declared = file.init.processes[0].xsec_pb;
+        assert!(
+            (declared / sigma - 1.0).abs() < 1e-6,
+            "XSECUP {declared:.6e} is not the integration's {sigma:.6e}"
+        );
+        check_record_shape(file, 4, 2);
+    }
+
+    let mean: f64 = average.events.iter().map(|e| e.weight).sum::<f64>() / n;
+    let total: f64 = sum.events.iter().map(|e| e.weight).sum();
+    assert!((mean / sigma - 1.0).abs() < 1e-6, "average: {mean:.6e}");
+    assert!((total / sigma - 1.0).abs() < 1e-6, "sum: {total:.6e}");
+    assert!(unity.events.iter().all(|e| e.weight == 1.0));
+    assert_eq!(unity.init.processes[0].xmax, 1.0);
+
+    // The same seed draws the same events: only the weights differ.
+    for (index, ((a, s), u)) in average
+        .events
+        .iter()
+        .zip(&sum.events)
+        .zip(&unity.events)
+        .enumerate()
+    {
+        for other in [s, u] {
+            assert_eq!(
+                a.particles.iter().map(|p| p.momentum).collect::<Vec<_>>(),
+                other
+                    .particles
+                    .iter()
+                    .map(|p| p.momentum)
+                    .collect::<Vec<_>>(),
+                "event {index}: the kinematics moved with event_norm"
+            );
+        }
+        assert!(
+            (s.weight * n / a.weight - 1.0).abs() < 1e-5,
+            "event {index}: sum weight {:.6e} is not the average weight {:.6e} over {n}",
+            s.weight,
+            a.weight
+        );
+    }
+}
+
+/// A card that asks for a different `event_norm` than the grid was integrated
+/// with is refused like any other differing card parameter: the card is the
+/// artifact's fingerprint, and `event_norm` is not exempt from it.
+#[test]
+fn an_event_norm_that_did_not_train_the_grid_is_refused() {
+    let run = run();
+    let card = run.dir.join("sum_card.dat");
+    write_run_card(&card, EBEAM, "  sum = event_norm\n");
+    let out = run.refuse(&run.proc_card, Some(&card), "event_norm_refused.lhe");
+    expect_refusal(
+        out,
+        "the card is not the one that trained the grid",
+        "event_norm",
+    );
+}
+
+/// Stochastic rounding's `IDWTUP = +3` unit-weight file is no `sum` or `unity`
+/// file, so the combination is refused before anything is drawn.
+#[test]
+fn stochastic_rounding_refuses_an_event_norm_off_average() {
+    let run = integrate_with("  sum = event_norm\n");
+    let out = run
+        .generate_cmd(
+            "stochastic-rounding",
+            SEED_A,
+            10,
+            &run.dir.join("refused.lhe"),
+        )
+        .output()
+        .expect("spawn vibegraph");
+    expect_refusal(
+        out,
+        "unit weights under event_norm = sum",
+        "--strategy stochastic-rounding writes unit weights",
+    );
 }
