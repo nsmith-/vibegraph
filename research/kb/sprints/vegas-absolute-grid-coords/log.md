@@ -22,3 +22,17 @@
     note.
   - The pre-edit baseline banked run is at `a8b1427`, with its collator output in
     the manager's scratchpad as `gridcoords-P1-baseline-report`.
+* **M1 done** (`ffefe94`, [report](sessions/M1-report.md)). The measurements
+  feed `sampler-and-phase-space-seams-designed-apart`; no production code
+  changed (the probe is a `#[cfg(test)]` module inside `vibegraph-lib`, because
+  rejected points' momenta and grid edges are crate-private).
+  - On `pp_to_jj`, about 0.7 of the top-0.1% second moment sits within 5% of a
+    cut edge, mostly jet pT, which τ alone pins (a D window).
+  - On `pp_to_llj_fixed` and `pp_to_llj_mlm`, 53–76% of the tail is away from
+    every edge, and lepton η aligns with no coordinate (C).
+  - No high-weight edge is fixed in absolute coordinates.
+  - The y grids agree across channels; starved channels' τ grids differ from
+    the pool at 1.8–2.8× seed noise.
+  - A rejected point costs 0.06–1.7% of the evaluation time, and removing
+    rejection could buy at most 1.3–1.5× in variance × CPU. That corrects the
+    design draft's "tends to 1".
