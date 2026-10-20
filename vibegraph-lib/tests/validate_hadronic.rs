@@ -3127,20 +3127,18 @@ const RECARDED_ROWS: &[(&str, &str, usize, &str)] = &[
     // `mmll = 0` opens the low lepton-pair-mass region, the hardest budget on
     // any row here. Its five-seed ladder reads `+0.28%`, `+0.20%`, `+0.22%`,
     // `+0.21%` at 75k, 150k, 300k and 600k against the seed record, at χ²/dof
-    // 1.32, 0.49, 0.49, 1.43: flat from 150k up, the lowest rung highest. Forty
-    // seeds a rung (`probe_llj_seed_ensemble`, on an earlier sampler) put the
-    // estimator's expectation flat from 150k up and showed five seeds
-    // understating this row's per-seed spread by 2x at 150k and 5x at 600k;
-    // twenty seeds on this sampler read one seed's spread at 1.01 of its
-    // quoted error at 150k, where the gate's five read 0.70.
+    // 1.32, 0.49, 0.49, 1.43: flat from 150k up, the lowest rung highest.
+    // Twenty seeds at 150k read one seed's spread at 1.01 of its quoted error,
+    // where the gate's five read 0.70: five seeds understate this row's
+    // per-seed spread.
     (
         "pp_to_llj",
         "p p > l+ l- j",
         150_000,
         "the lowest rung of a ladder flat from 150k up (+0.20% / +0.22% / +0.21% \
-         at 150k / 300k / 600k over five seeds a rung; forty seeds a rung once \
-         showed five understating this row's per-seed spread by 2-5x); the 75k \
-         rung reads +0.28%",
+         at 150k / 300k / 600k over five seeds a rung; twenty seeds at 150k read \
+         one seed's spread at 1.01 of its quoted error against 0.70 over the \
+         gate's five); the 75k rung reads +0.28%",
     ),
     // Within `0.08%`: `−0.02%`, `+0.00%`, `+0.03%`, `+0.05%` at χ²/dof 0.65,
     // 1.43, 0.25, 0.49 against the seed record, with this side's five-seed
