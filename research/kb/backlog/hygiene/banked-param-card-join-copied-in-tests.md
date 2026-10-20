@@ -1,7 +1,7 @@
 ---
 type: Backlog Item
 title: Six test files re-implement reading a banked MadGraph param card
-description: "coupling_oracle, validate_scale_couplings, standalone_jamps, polarization_frame, validate_hadronic and amplitude_oracle each join and parse a table's param card; tests/common::banked_param_card now does it once."
+description: "Six oracle test files each join and parse a banked table's param card by hand; tests/common::banked_param_card now does it once."
 area: hygiene
 state: open
 priority: low
