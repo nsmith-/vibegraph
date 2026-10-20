@@ -98,6 +98,20 @@ fn integrate() -> Run {
     integrate_with("")
 }
 
+/// The integration of the same card with `event_norm` set to `norm`, run once
+/// per setting for every case that needs it. `average` is the card default, so
+/// it is [`run`]'s own.
+fn run_with_event_norm(norm: &str) -> &'static Run {
+    static SUM: OnceLock<Run> = OnceLock::new();
+    static UNITY: OnceLock<Run> = OnceLock::new();
+    match norm {
+        "average" => run(),
+        "sum" => SUM.get_or_init(|| integrate_with("  sum = event_norm\n")),
+        "unity" => UNITY.get_or_init(|| integrate_with("  unity = event_norm\n")),
+        other => panic!("no such event_norm: {other}"),
+    }
+}
+
 /// An integration whose run card carries `extra` card lines after the beams.
 fn integrate_with(extra: &str) -> Run {
     let tmp = tempfile::tempdir().unwrap();
@@ -770,8 +784,8 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     assert!(output.exists());
 }
 
-/// One sample per `event_norm`, each from its own integration of the same card
-/// plus that line: the written weights follow MadGraph's rule for the setting,
+/// One sample per `event_norm`, each from an integration of the same card plus
+/// that line (`average` being the card default): the written weights follow MadGraph's rule for the setting,
 /// and nothing else about the run moves.
 ///
 /// MadGraph's rule is `MultiEventFile.unweight` (`lhe_parser.py:1225-1239`) and
@@ -787,10 +801,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
 #[test]
 fn event_norm_changes_the_written_weights_and_nothing_else() {
     let norms = ["average", "sum", "unity"];
-    let runs: Vec<Run> = norms
-        .iter()
-        .map(|norm| integrate_with(&format!("  {norm} = event_norm\n")))
-        .collect();
+    let runs: Vec<&Run> = norms.iter().map(|norm| run_with_event_norm(norm)).collect();
     let files: Vec<(LheFile, String)> = runs
         .iter()
         .zip(norms)
@@ -880,7 +891,7 @@ fn an_event_norm_that_did_not_train_the_grid_is_refused() {
 /// file, so the combination is refused before anything is drawn.
 #[test]
 fn stochastic_rounding_refuses_an_event_norm_off_average() {
-    let run = integrate_with("  sum = event_norm\n");
+    let run = run_with_event_norm("sum");
     let out = run
         .generate_cmd(
             "stochastic-rounding",

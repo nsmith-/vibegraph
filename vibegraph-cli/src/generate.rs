@@ -95,7 +95,8 @@ const MAX_TRIALS_PER_EVENT: usize = 5_000_000;
 /// How the accept/reject weights become the file's events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Strategy {
-    /// Hold the sample, write the weights (`IDWTUP = -4`).
+    /// Hold the sample, write the weights (`IDWTUP = -4`, or `-3` under the run card's
+    /// `event_norm = sum` or `unity`).
     Buffer,
     /// Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit
     /// weight (`IDWTUP = +3`).
@@ -445,7 +446,7 @@ fn refuse_rounding_on_mixed_multiplicity(strategy: Strategy, parts: usize) -> Re
 /// to be written. The emitter refuses it too; refusing here does so before the
 /// scan and the draw.
 fn refuse_rounding_off_average(strategy: Strategy, norm: EventNorm) -> Result<(), CliError> {
-    if !matches!(strategy, Strategy::StochasticRounding) || norm == EventNorm::Average {
+    if !matches!(strategy, Strategy::StochasticRounding) || StochasticRounding::honours(norm) {
         return Ok(());
     }
     Err(err(format!(

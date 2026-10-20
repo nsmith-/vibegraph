@@ -187,10 +187,9 @@ pub enum RunCardError {
 /// The run card's `event_norm`: how the written event weights `XWGTUP` are
 /// normalised. It changes the file and not the integration: the cross section
 /// is the same under all three.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventNorm {
     /// The weights' mean is the cross section (`IDWTUP = -4`); the card default.
-    #[default]
     Average,
     /// The weights' sum is the cross section (`IDWTUP = -3`).
     Sum,
@@ -202,7 +201,7 @@ impl EventNorm {
     /// The value MadGraph's `allowed` list matches `text` to, case-insensitively
     /// (`ConfigFile.__setitem__`, `banner.py:1285-1298`), or `None` for a value
     /// outside the list.
-    pub fn parse(text: &str) -> Option<Self> {
+    pub(crate) fn parse(text: &str) -> Option<Self> {
         match text.to_ascii_lowercase().as_str() {
             "average" => Some(EventNorm::Average),
             "sum" => Some(EventNorm::Sum),

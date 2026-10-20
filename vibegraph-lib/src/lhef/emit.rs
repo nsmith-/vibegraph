@@ -6,8 +6,10 @@
 //! it. [`UnweightStrategy`] is the choice, and the two implemented here differ in
 //! what they put in `IDWTUP`:
 //!
-//! * [`Buffer`] keeps the weights, declaring `IDWTUP = -4` — `XWGTUP` is a cross
-//!   section in picobarns and the total is the *mean* of the event weights. The
+//! * [`Buffer`] keeps the weights, declaring `IDWTUP = -4` under the card's
+//!   default `event_norm = average` — `XWGTUP` is a cross section in picobarns
+//!   and the total is the *mean* of the event weights; `sum` declares `-3` and
+//!   weights summing to the cross section, `unity` `-3` and weights of one. The
 //!   overweight tail stays visible in the file, event by event, and each part of
 //!   the sample is normalised to its integrated cross section.
 //! * [`StochasticRounding`] keeps unit weights, declaring `IDWTUP = +3`, and
@@ -464,7 +466,8 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 }
 
 /// Generate the whole sample in memory, then write it with the weights it
-/// carries (`IDWTUP = -4`), each part normalised to its integrated cross section.
+/// carries (`IDWTUP = -4` under `event_norm = average`, the others as
+/// [`EventNorm`] says), each part normalised to its integrated cross section.
 ///
 /// The overweight events an accept/reject pass keeps above weight `1` stay in the
 /// file as weights, so a consumer sees the tail rather than a smoothed version of
@@ -478,7 +481,7 @@ fn draw_all(source: &mut dyn EventSource, n: usize) -> Result<Vec<WeightedEvent>
 /// common factor so that they contribute exactly its integrated `σₖ` to the
 /// file's cross section: `Σ_{i∈k} XWGTUPᵢ / N = σₖ` over the file's `N` events,
 /// which under `IDWTUP = -4` is the statement that the part's weights sum to its
-/// cross section. MadEvent pins each of its channels to its integral the same
+/// cross section; under `sum` the `/ N` drops out. MadEvent pins each of its channels to its integral the same
 /// way (`unwgt.f`, `xscale = xsecabs/xsum`); taking it at the multiplicity
 /// level keeps every part normalised over at least the events of its share of
 /// the sample rather than over a handful.
@@ -537,10 +540,7 @@ struct PartTally {
 
 impl UnweightStrategy for Buffer {
     fn weight_strategy(&self, norm: EventNorm) -> WeightStrategy {
-        match norm {
-            EventNorm::Average => WeightStrategy::MeanCrossSectionPb,
-            EventNorm::Sum | EventNorm::Unity => WeightStrategy::SumCrossSectionPb,
-        }
+        norm_rule(norm).idwtup
     }
 
     fn describe(&self) -> String {
@@ -594,14 +594,53 @@ impl UnweightStrategy for Buffer {
     }
 }
 
-/// The `XWGTUP` of an event of generator weight `w` in a part whose weights are
-/// scaled by `scale`, under `norm`. [`EventNorm::Unity`] flattens every event to
-/// one, which is MadGraph's rule: an overweight event keeps no weight above the
-/// rest.
-fn written_weight(norm: EventNorm, scale: f64, w: f64) -> f64 {
+/// What an `event_norm` makes [`Buffer`] write: the one place the setting is
+/// decided.
+///
+/// MadGraph's rule is `MultiEventFile.unweight` (`lhe_parser.py:1225-1239`) and
+/// `EventFile.unweight` (`lhe_parser.py:519-527`, `lha_stra = -1*abs(strategy)`
+/// with the sign of the strategy kept): `average` weights sum to `N` times the
+/// cross section and are declared `IDWTUP = -4`; `sum` weights sum to the cross
+/// section (`-3`); `unity` writes weight one (`-3`).
+#[derive(Clone, Copy)]
+struct NormRule {
+    /// The `IDWTUP` the file declares.
+    idwtup: WeightStrategy,
+    /// Whether a part's weights sum to its `σₖ` (`sum`), and not to `N σₖ` over
+    /// the file's `N` events (the mean is then `σₖ`).
+    sums_to_sigma: bool,
+    /// Whether every event is written at weight one, an overweight event keeping
+    /// no weight above the rest.
+    flatten: bool,
+}
+
+fn norm_rule(norm: EventNorm) -> NormRule {
     match norm {
-        EventNorm::Average | EventNorm::Sum => scale * w,
-        EventNorm::Unity => 1.0,
+        EventNorm::Average => NormRule {
+            idwtup: WeightStrategy::MeanCrossSectionPb,
+            sums_to_sigma: false,
+            flatten: false,
+        },
+        EventNorm::Sum => NormRule {
+            idwtup: WeightStrategy::SumCrossSectionPb,
+            sums_to_sigma: true,
+            flatten: false,
+        },
+        EventNorm::Unity => NormRule {
+            idwtup: WeightStrategy::SumCrossSectionPb,
+            sums_to_sigma: false,
+            flatten: true,
+        },
+    }
+}
+
+/// The `XWGTUP` of an event of generator weight `w` in a part whose weights are
+/// scaled by `scale`, under `norm`.
+fn written_weight(norm: EventNorm, scale: f64, w: f64) -> f64 {
+    if norm_rule(norm).flatten {
+        1.0
+    } else {
+        scale * w
     }
 }
 
@@ -630,9 +669,10 @@ fn tally_parts(
         // Averaged weights have the part contribute `σₖ` as their mean over the
         // file's `n` events, and summed weights as their sum, `n` times smaller
         // each.
-        let events_per_weight = match plan.event_norm {
-            EventNorm::Average | EventNorm::Unity => n as f64,
-            EventNorm::Sum => 1.0,
+        let events_per_weight = if norm_rule(plan.event_norm).sums_to_sigma {
+            1.0
+        } else {
+            n as f64
         };
         t.scale = if t.weight > 0.0 {
             part.sigma_pb * events_per_weight / t.weight
@@ -779,6 +819,14 @@ impl StochasticRounding {
         StochasticRounding { seed }
     }
 
+    /// Whether the strategy can write a file under `norm`: its unit weights are
+    /// declared `IDWTUP = +3`, which is no `event_norm` but its own, so only the
+    /// card default `average` is honoured. The emitter and the command line both
+    /// refuse on this.
+    pub fn honours(norm: EventNorm) -> bool {
+        norm == EventNorm::Average
+    }
+
     /// Run the pass without writing, returning each process's written-event count
     /// as its share and the total written.
     fn count_shares(
@@ -831,7 +879,7 @@ impl UnweightStrategy for StochasticRounding {
         plan: &EmitPlan,
         sink: &mut dyn Write,
     ) -> Result<EmitSummary, EmitError> {
-        if plan.event_norm != EventNorm::Average {
+        if !Self::honours(plan.event_norm) {
             return Err(EmitError::EventNormUnsupported {
                 strategy: "stochastic rounding",
                 norm: plan.event_norm,
@@ -1570,6 +1618,44 @@ mod tests {
             .filter(|e| filter(e))
             .map(|e| e.weight)
             .sum::<f64>()
+    }
+
+    /// With several parts each part's written weights are pinned to its own
+    /// integration under every `event_norm`: they sum to `N σₖ` (mean `σₖ`) under
+    /// `average` and to `σₖ` under `sum`, whatever share of the `N` events the
+    /// part drew. A single part cannot tell the part's event count from `N`, so
+    /// the parts here draw unequal shares (two thirds and one third).
+    #[test]
+    fn each_part_is_normalised_to_its_integration_under_every_event_norm() {
+        let weights = vec![1.0, 1.0, 3.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0];
+        let sigmas = [31.0, 9.0];
+        for (norm, per_event) in [(EventNorm::Average, 600.0), (EventNorm::Sum, 1.0)] {
+            let mut source = PartedSource {
+                inner: FixedWeights::new(weights.clone(), 47.0),
+                parts: vec![0, 0, 1],
+                ids: vec![10, 10, 11],
+            };
+            let mut two = plan(600, 40.0);
+            two.parts = sigmas
+                .iter()
+                .map(|&sigma_pb| PartSigma {
+                    sigma_pb,
+                    sigma_err_pb: 0.1,
+                })
+                .collect();
+            two.process_ids = vec![10, 11];
+            two.event_norm = norm;
+            let (text, _) = emit_to_string(&Buffer, &mut source, &two);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            for (id, sigma) in [(10, sigmas[0]), (11, sigmas[1])] {
+                let summed = written_weights(&file, |e| e.process_id == id);
+                assert!(
+                    (summed / (per_event * sigma) - 1.0).abs() < 1e-6,
+                    "{norm:?}: process {id}'s weights sum to {summed}, want {}",
+                    per_event * sigma
+                );
+            }
+        }
     }
 
     /// The buffered file pins every part to its integration: the written weights
