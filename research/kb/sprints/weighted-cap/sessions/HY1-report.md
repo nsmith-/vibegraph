@@ -4,6 +4,7 @@ title: "HY1 report: hygiene review of the MadGraph WEIGHTED search loop"
 description: "Review of F1 and V1: a named chain role replaces the positional bool, MadGraph's lines are cited once each, a blind spot on a chain's top-level core and on unlisted orders is pinned with mutation evidence."
 status: draft
 tags: [diagrams, weighted, hygiene, sprint-d, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-20}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-20}
 ---
 Worktree `/home/user/wt/E`, branch `sprintd-weighted-cap`; fix commit `2f31cce`.
