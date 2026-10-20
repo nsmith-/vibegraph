@@ -30,6 +30,7 @@
 * [Per-diagram channels from the propagator chain](diagram-channels.md) - How a diagram's Prop chain becomes a 2-body decomposition tree, with non-prefix s-channel recovery and the beam-content rule that survives feyngraph's momentum routing.
 * [A pluggable importance sampler in front of the phase-space map (proposed)](importance-sampler-seam.md) - Where integration, the w_max scan, unweighting and the artifact assume a VegasGrid; the trait that would separate draw, accumulate, refine, freeze and serialise; and what each candidate sampler needs of it.
 * [Mixed-multiplicity composite integrand](mixed-multiplicity-integrand.md) - MultiplicitySum: one ProtonIntegrand per @N multiplicity with its own channels and grid dimension (channel_grid_ndim), a budget split by part spread, union-shape maps, versioned keys.
+* [Multi-tier VEGAS, absolute grid coordinates and sharp cut edges (draft)](multi-tier-vegas-and-cut-edges.md) - Which cut edges each channel's grid can see, what absolute coordinates, a shared (τ, y) tier, cut-aware conditional windows and a pluggable sampler would each buy, and what to measure before choosing.
 
 ## Design Decision
 

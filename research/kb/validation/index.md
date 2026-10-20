@@ -31,6 +31,7 @@
 
 ## Measurement
 
+* [CMS gridpack survey, 88 production cards through the CLI (e3f543f)](cms-gridpack-survey-2026-10.md) - 88 CMS MadGraph gridpacks run through vibegraph integrate as shipped: 1 gives a σ, 5 after run-card resets; three silent σ changes, four loader/parser bugs, and the refusals ranked by frequency.
 * [MadEvent's default survey settings bias σ low](madevent-default-survey-bias.md) - MadEvent 3.7.1's default survey can leave a channel's grid short, biasing σ low by 0.5–1 % (g q > t t~ q: −0.55 % in G2); hard_survey = 2 removes it, but is inert when mmjj > 1 % of ebeam1 + ebeam2, and does not fix rare-large-weight channels.
 * [MadEvent's iteration combination reads low](madevent-iteration-weighting-bias.md) - MadEvent weights VEGAS iterations by mean²/variance, so an iteration that under-samples a peak counts extra and σ reads 0.1–0.25 % low on fixed-beam 2 → 4 and 2 → 3 rows; adaptation-free estimators land on its equal-weight recombination.
 * [The pp_to_ll_0j2j_mlm @2 excess decomposed](mlm-at2-excess-decomposition.md) - The split of a +1.94 pb @2 excess into reference, H1, composite and a generic 2->4 offset, what each probe eliminated, and where @2 stands against the independent-directory reference.
