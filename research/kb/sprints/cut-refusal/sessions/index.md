@@ -14,3 +14,4 @@
 * [F1 report: unimplemented cuts refused before enumeration, no-op maxima let through](F1-report.md) - detect_unimplemented is public and runs in load_run_card ahead of enumeration for integrate and generate; single-object pT maxima at or above half the collider energy read as the default.
 * [F2 report: run card first in generate, one CLI test module, and what unequal beams need](F2-report.md) - generate refuses a run card before reading the artifact; the CLI tests share tests/common; unequal beams are exact on the lpp = 0 path but the proton path is built for equal beams only, so part 3 stopped at the finding.
 * [HY1 report: hygiene review of the early cut refusal](HY1-report.md) - Findings table (written before any edit), dispositions, mutation evidence and gates.
+* [HY2 report: hygiene review of F2](HY2-report.md) - Findings table (written before any edit), dispositions, mutation evidence and gates.
