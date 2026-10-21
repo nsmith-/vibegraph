@@ -1,10 +1,10 @@
 ---
 type: Design
 title: Run inputs the integrate artifact records (PDF set and param card)
-description: "Integrate artifact version 13: the PDF the run card picked (lhaid, set, member, per-file SHA-256) and the parameters a param card moved; how generate checks them; lhaid lookup across four tiers."
+description: "What the integrate artifact records of the PDF (lhaid, set, member, per-file SHA-256) and the param card (moved parameters); how generate re-reads them as checked assets; lhaid lookup across five tiers."
 status: draft
 tags: [artifact, pdf, lhapdf, param-card, run-card, cvmfs, network-consent, design]
-generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
+generated: {by: claude-code/claude-opus-5-5, at: 2026-10-21}
 sources:
   - {id: mg-pdfid, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/madgraph/various/banner.py#L3839-L3853", title: "banner.py get_pdf_id: built-in pdlabel to LHAPDF id"}
   - {id: mg-pdfwrap, resource: "https://github.com/mg5amcnlo/mg5amcnlo/blob/b7687064b9a013317ca164aa1395bc9c0e39ae1e/Template/LO/Source/PDF/pdfwrap.f#L224-L267", title: "pdfwrap.f: the data file and alpha_s each built-in pdlabel loads"}
@@ -17,21 +17,25 @@ measured:
 ---
 # Run inputs the integrate artifact records
 
-Two sibling PRs add run inputs to `IntegrateArtifact`:
+Two PRs add run inputs to `IntegrateArtifact`:
 [pdf-set-not-taken-from-run-card](../backlog/feature/pdf-set-not-taken-from-run-card.md)
 (the run card picks the PDF) and
 [cli-has-no-param-card-option](../backlog/feature/cli-has-no-param-card-option.md)
-(`--param-card`). This concept fixes the shared field layout, the version step,
-`generate`'s checks, and the PDF lookup, so both PRs land against one schema.
-It sits beside [the integrate artifact](integrate-artifact.md) because the
-artifact contract is what both PRs share; the lookup half amends
+(`integrate --param-card`). This concept fixes what the artifact records of
+each, how `generate` re-reads them, and the PDF lookup. The artifact as a
+whole, the run-card split and `generate`'s new command line are
+[integrate and generate split by data dependency](integrate-generate-split.md),
+which this concept assumes: `generate` takes no proc card, run card, param card
+or PDF option, and binds everything from the artifact (user decision,
+2026-10-21, `sprints/pdf-from-run-card/log.md`). The lookup half amends
 [asset resolution](../tooling/asset-resolution.md) and
-[network consent](../tooling/network-consent.md). Open choices are marked
-**C1–C12** and collected in the last section with a recommendation each.
+[network consent](../tooling/network-consent.md). Open choices are collected
+in the split concept's last section; the ones decided here keep their
+numbers (C1, C2, C4–C10, C12).
 
 ## 1. The fields
 
-`pdf_set: String` and `pdf_member: u32` are replaced by one trailing field,
+`pdf_set: String` and `pdf_member: u32` are replaced by one field,
 `inputs: RunInputs`:
 
 ```rust
@@ -39,7 +43,6 @@ pub struct RunInputs { pub pdf: PdfInput, pub params: Vec<MovedParam> }
 pub enum PdfInput {
     None,                                   // fixed-energy beams or a decay
     Lhapdf { lhaid: i64, set: String, member: u32, files: Vec<FileDigest> },
-    Unrecorded { set: String, member: u32 }, // only from an upgraded file (§2)
 }
 pub struct FileDigest { pub name: String, pub sha256: String }
 pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>, pub value: f64 }
@@ -47,71 +50,54 @@ pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>,
 
 - **`lhaid`** is the id actually loaded, `SetIndex + member`. For a built-in
   `pdlabel` it is the label's equivalent (247000 for `nn23lo1`), not the card's
-  ignored `lhaid`; the card itself is already banked in `run_card`.
+  ignored `lhaid`; the card's own `pdlabel` and `lhaid` stay in the recorded
+  integrate settings.
 - **`files`** (C1): SHA-256 (`sha2`, through `ufo::identity::digest_bytes`)
   of exactly the bytes the loader parsed, in load order: `<set>.info`, then
   `<set>_<mmmm>.dat`. The loader reads each file once and parses from that
   buffer (`parse_info` already takes a `&str`; the `.dat` parser gains the same
   form), so the hash and the grid cannot come from two different reads. The
   digest is per file, not per archive, because CVMFS and `$LHAPDF_DATA_PATH`
-  have no archive, and a set reached from a different tier on a worker must
-  compare equal when its files are equal. Members the run never read are not
-  hashed: a CVMFS update to another member does not change this run.
+  have no archive in use, and a set reached from a different tier on a worker
+  must compare equal when its files are equal. Members the run never read are
+  not hashed. Measured on CVMFS (sprint log, 2026-10-20): the default set's
+  `.info` and `_0000.dat` hash identically to the pinned download's.
 - **`params`** (C2): every external parameter whose bound value differs from
-  the restricted model's default, in the model's external order, after the
-  card is bound through `EvaluatedModel::from_model_card`. No card, an empty
-  card and a card that restates the defaults all produce `[]`, so they compare
-  equal by construction, and the artifact is byte-identical across them (the
-  item's bit-for-bit clause becomes a file comparison). The defaults
-  themselves are already pinned by `model.digest`, which hashes the restricted
-  model. Values compare with `==`, as the run card does: both sides come from
-  the same SLHA parser.
+  the restricted model's default, in the model's external order, after
+  `integrate --param-card` is bound through `EvaluatedModel::from_model_card`.
+  It is the **only** record of the card: `generate` rebuilds a `ParamCard`
+  from these entries and binds the model with it. Because `evaluate` takes the
+  card value or the default, that rebind gives the same `f64` for every
+  external as integrate had. No card, an empty card and a card restating the
+  defaults all record `[]` and give byte-identical artifacts. The defaults are
+  pinned by `model.digest`, which hashes the restricted model.
 
-## 2. Version 13 and older files
+## 2. Version
 
-`RUN_INPUTS_VERSION = 13` (`FORMAT_VERSION = 13`), with a doc paragraph in the
-`FORMAT_VERSION` history. Today's struct becomes a frozen `v12` module.
+These fields land in the version step of
+[the split concept](integrate-generate-split.md) (§2 there). No older file
+carries a proc card, so `generate` cannot replay one; the old `Unrecorded`
+upgrade and the write-down rule of the first draft are dropped with it.
 
-- **Upgrade** (rule 5 of [artifact format versioning](artifact-format-versioning.md)):
-  every version 3–12 file records `pdf_set` and `pdf_member` (always 0), so the
-  upgrade knows the set the old run loaded. `"none"` becomes `PdfInput::None`;
-  any other name becomes `Unrecorded { set, member }`, the name `--pdf-set`
-  chose, with no id and no checksum, because neither was recorded. `params`
-  upgrades to `[]` exactly: no version ≤ 12 writer could bind a card.
-  The file's own `format_version` is kept, as for every upgrade.
-- **Write-down** (rule 6, C11): an artifact with `PdfInput::None` and
-  `params == []` holds nothing version 12 lacks, so `version_for` still
-  returns 9–12 for it and the writer serializes through `v9`/`v12`
-  (`pdf_set: "none"`, `pdf_member: 0`). Every hadronic artifact and every
-  artifact with a moved parameter is version 13.
-- **`generate` on `Unrecorded`** (C3): refused —
-  `this artifact (format version {v}) was integrated with PDF set {set} member
-  {m}, chosen by the removed --pdf-set option rather than by the run card, and
-  records no checksum of the set's files; re-run vibegraph integrate`.
+## 3. What `generate` checks of these inputs
 
-## 3. What `generate` checks, in order
+`card_mismatches`, `pdf_mismatches`, `refuse_on_mismatch`, `NO_PDF` and
+`PDF_MEMBER` go: nothing is passed that could mismatch. What remains are asset
+checks, after the model's digest check (split concept, §3):
 
-1. **Version guards**, the three existing ones, then the `Unrecorded` refusal.
-2. **One mismatch list**, refused together as today (`refuse_on_mismatch`):
-   model label/digest, process, every run-card parameter, then the params.
-   A run card whose PDF differs shows here as
-   `run card lhaid: artifact has 325300, this run has 325500` (or `pdlabel`).
-   `param_mismatches` binds `generate --param-card` (or none) the same way,
-   diffs its moved list against the banked one, and lists each parameter:
-   `param card MZ (mass 23): artifact has 91.188, this run has 91.1876`, with
-   `the restriction default` on the side that did not move it.
-3. **The PDF**, only after 2 passes. `generate` does **not** resolve the run
-   card's `lhaid` again: step 2 proved the card equal, and the index may have
-   moved since (`current` is a moving target). It locates the banked `set` by
-   name through the tiers of §5 (download with consent if absent), checks the
-   `.info` `SetIndex + member == lhaid`, hashes the two files, and compares
-   each with `files` (C9 for what happens on a mismatch):
+1. **Params**: bind the model from `inputs.params`. A recorded name the model
+   lacks, or one the restriction zeroed, cannot happen unless the model files
+   changed, which the digest check already refused.
+2. **PDF**: locate the recorded `set` by name through the tiers of §5
+   (download with consent if absent), check `.info` `SetIndex + member ==
+   lhaid` (the parser trims: CVMFS's 325300 `.info` writes `SetIndex: 325300 `
+   with a trailing space), hash the two files and compare each with `files`
+   (C9 for a mismatch):
    `PDF set {set} member {m} at {dir} ({tier}) is not the one the grid was
    trained on: {file} has sha256 {got}, the artifact recorded {want}. The set
    changed after vibegraph integrate ran (a CVMFS or LHAPDF update does this);
    re-integrate, or point $VIBEGRAPH_PDF_DIR at the original files.`
-
-`pdf_mismatches` and the `NO_PDF` sentinel go; `PDF_MEMBER` goes.
+   `generate` never reads `pdfsets.index`: the set name is recorded.
 
 ## 4. Choosing the set and member
 
@@ -159,7 +145,7 @@ Tiers, for both a set directory and `pdfsets.index`, first hit wins:
 |---|---|---|
 | 0. `$VIBEGRAPH_PDF_DIR` (C7) | `<dir>/<set>/` | `<dir>/pdfsets.index` |
 | 1. `$LHAPDF_DATA_PATH`, split on `:`[^mg-datadir] | each `<entry>/<set>/` | each `<entry>/pdfsets.index` |
-| 2. CVMFS `/cvmfs/sft.cern.ch/lcg/external/lhapdfsets/current` | `<root>/<set>/` | `<root>/pdfsets.index` (assumed, unverified from this container) |
+| 2. CVMFS `/cvmfs/sft.cern.ch/lcg/external/lhapdfsets/current` | `<root>/<set>/`; `@DEPRECATED`, `@UNVALIDATED` and the `.tar.gz` twins are not sets | `<root>/pdfsets.index` (layout measured on a CERN host, sprint log 2026-10-20) |
 | 3. cache `<root>/pdf/` | `<set>/` with sidecar | `pdfsets.index`, fetched copy |
 | 4. HTTPS, consent | `lhapdfsets.web.cern.ch/current/<set>.tar.gz` | `…/current/pdfsets.index` (47.6 kB) |
 
@@ -201,84 +187,70 @@ For `pdf-set-not-taken-from-run-card`, one line per `closes_when` clause:
 - *no PDF option*: `integrate --pdf-set x` and `generate --pdf-dir x` fail as
   unknown arguments (CLI).
 - *lhaid picks set and member*: unit, synthetic index + set `SetIndex 900000,
-  NumMembers 3`: 900000 → member 0, 900002 → member 2. CLI, non-zero member:
-  member 1 is member 0 with every knot ×2 (exact in binary), fixed budget, same
-  seed; σ(member 1) / σ(member 0) = 4 within 1e-12 for a qq̄ process.
+  NumMembers 3`: 900000 → member 0, 900002 → member 2; a `SetIndex` line with
+  a trailing space. CLI, non-zero member: member 1 is member 0 with every knot
+  ×2 (exact in binary), fixed budget, same seed; σ(member 1) / σ(member 0) = 4
+  within 1e-12 for a qq̄ process.
 - *built-in pdlabel*: unit, `nn23lo1` → `NNPDF23_lo_as_0130_qed` member 0;
   each refused label of §4 refused with its reason.
 - *lhaid in no known set*: unit, below every set; past `NumMembers`; `.info`
   `SetIndex` disagreeing with the index; `.info` without `SetIndex`. CLI: the
   refusal names the lhaid and the index paths read.
 - *each lookup tier*: unit on the library resolver over temp dirs, each tier
-  alone and each shadowing the next; the `:` list; index fall-through;
-  cache pinned-current, pinned-stale (refetched), unpinned-present;
-  download granted, refused, and a pinned checksum mismatch that publishes
-  nothing; the callback is never called when a local tier hits.
-- *artifact records lhaid, set, member, checksum*: round trip of version 13;
-  upgrade of a version-12 and a version-9 file to `Unrecorded`/`None` keeping
-  their `format_version`; write-down of a no-PDF default-card artifact to
-  version ≤ 12; CLI integrate then read back: `files` equal the SHA-256 of the
-  two files on disk.
+  alone and each shadowing the next; the `:` list; a CVMFS-shaped root with
+  `@DEPRECATED/` and `<set>.tar.gz` entries; index fall-through; cache
+  pinned-current, pinned-stale (refetched), unpinned-present; download
+  granted, refused, and a pinned checksum mismatch that publishes nothing; the
+  callback is never called when a local tier hits.
+- *artifact records lhaid, set, member, checksum*: round trip; CLI integrate
+  then read back: `files` equal the SHA-256 of the two files on disk.
 - *generate reads them and refuses a changed checksum*: CLI, integrate on a
   synthetic set, append a comment line to the member `.dat` (parses the same,
-  hashes differently), `generate` refuses naming the file; a changed `lhaid`
-  in the run card is refused through the run-card list; an `Unrecorded`
-  artifact is refused.
+  hashes differently), `generate` refuses naming the file; `generate` with the
+  set reachable only from another tier with equal files succeeds.
 - *the default card*: CLI, no `--run-card` on proton beams loads
   `NNPDF23_lo_as_0130_qed` member 0 and records lhaid 247000.
 
-Informational, while F1 is open: the survey's `p p > e+ e-` runs gave one σ,
-690.095053 pb, for the default card and for `pdlabel = lhapdf` at lhaid
-325300 and 230000; after F1 the last two must differ from the first. Every gated proton
-card is `nn23lo1` or `lhapdf`/247000, so every banked σ gate is expected
-bit-for-bit unchanged; F1 confirms that rather than assumes it.
+Informational, while the PDF PR is open: the survey's `p p > e+ e-` runs gave
+one σ, 690.095053 pb, for the default card and for `pdlabel = lhapdf` at lhaid
+325300 and 230000; afterwards the last two must differ from the first. Every
+gated proton card is `nn23lo1` or `lhapdf`/247000, so every banked σ gate is
+expected bit-for-bit unchanged; the PR confirms that rather than assumes it.
 
-For `cli-has-no-param-card-option`, this design fixes: `params == []` for no
-card, an empty card and a defaults card, and the artifacts compare byte for
-byte; a moved `MZ` records one `MovedParam`; `generate` with a different or
-missing card lists each differing parameter; a card reviving a zeroed
-parameter is refused at bind time, in `integrate` and in `generate`.
+For `cli-has-no-param-card-option`: `params == []` for no card, an empty card
+and a defaults card, and the artifacts compare byte for byte; a moved `MZ`
+records one `MovedParam`; `generate` on that artifact writes events whose
+replayed weights equal integrate's at the same points (the rebind is exact);
+`generate --reweight-card` uses the recorded point as its denominator; a card
+reviving a zeroed parameter is refused by `integrate`. The item's scope line
+"`generate` uses the same card or refuses" is superseded by the 2026-10-21
+decision.
 
 ## 7. What else moves
 
-- **Code**: `vibegraph-cli/src/{integrate,generate,assets,network}.rs`;
+The command-line migration (every test and script that passes cards or PDF
+options to `generate`) is in the split concept, §4. Specific to this concept:
+
+- **Code**: `vibegraph-cli/src/{integrate,assets,network}.rs`;
   `vibegraph-lib/src/{artifact.rs,cache/*,pdf/mod.rs,pdf/grid.rs}`.
-- **Tests passing a flag** (`vibegraph-cli/tests/`): `cli_integrate`,
-  `cli_generate_proton`, `cli_reweight_proton`, `cli_onshell_veto`,
-  `cli_decay_chain`, `cli_decay_chain_events`, `validate_samples_proton`,
-  `cli_pdf_cache`, `cli_pdf_cache_fetched`. `cli_first_run` and
-  `cli_hard_errors` also remove `LHAPDF_DATA_PATH`; `cli_reference_docs`
-  follows the regenerated help.
+- **Tests passing `--pdf-set`/`--pdf-dir` to `integrate`**
+  (`vibegraph-cli/tests/`): `cli_integrate`, `cli_generate_proton`,
+  `cli_reweight_proton`, `cli_onshell_veto`, `cli_decay_chain`,
+  `cli_decay_chain_events`, `validate_samples_proton`, `cli_pdf_cache`,
+  `cli_pdf_cache_fetched`. `cli_first_run` and `cli_hard_errors` also remove
+  `LHAPDF_DATA_PATH`.
 - **Scripts**: `--pdf-dir` in `validation/pythia/generate_samples.sh`,
   `validation/pythia/generate_mlm_samples.sh`,
   `validation/madgraph/gen_reweight_oracle.py`,
   `validation/madgraph/bench_reweight.py`; `scripts/demo_pp.tape`.
-  `scripts/acceptance.sh` passes no flag: it unsets `VIBEGRAPH_PDF_DIR`, must
-  also unset `LHAPDF_DATA_PATH`, and with C5 its `lhapdf`/247000 card still
-  downloads only the set. Without C5, `validation/pdf/fetch.sh` must also
+  `scripts/acceptance.sh` passes no PDF flag: it unsets `VIBEGRAPH_PDF_DIR`,
+  must also unset `LHAPDF_DATA_PATH`, and with C5 its `lhapdf`/247000 card
+  still downloads only the set. Without C5, `validation/pdf/fetch.sh` must also
   fetch `pdfsets.index`.
 - **Gates**: the `cli-pdf-cache-fetched` rationale in `validation/manifest.toml`.
 - **Docs**: `docs/src/cli/reference.md`, `docs/src/cli/overview.md:96`.
 - **Concepts**: `tooling/{asset-resolution,network-consent,pdf-set-distribution,release-acceptance}.md`,
-  `pipeline/integrate-artifact.md`, `events/generate.md`,
   `scales-pdf/{pinned-pdf-set,alpha-s-sources}.md`.
-
-## Open choices for the user
-
-| | choice | recommended | alternative |
-|---|---|---|---|
-| C1 | PDF checksum | per-file SHA-256 of `.info` + the member `.dat` read | one digest over the whole set directory (hashes ~100 MB, refuses on unused members); the archive SHA-256 (none exists on CVMFS) |
-| C2 | param record | moved externals only | every external's value (no "default" equivalence for free); card-file SHA-256 (comments and formatting refuse) |
-| C3 | old hadronic artifact | refuse | replay the recorded set unchecked when the card resolves to it |
-| C4 | built-in labels | `nn23lo1` only | also `nn23lo` on name evidence |
-| C5 | pinned shortcut | pin carries `set_index`, `num_members` | every lhaid through an index |
-| C6 | index across tiers | first found, fall through on "no known set" | first found only |
-| C7 | `$VIBEGRAPH_PDF_DIR` | kept as tier 0; tests use it | retired; tests set `$LHAPDF_DATA_PATH` |
-| C8 | `validation/pdf` dev fallback | removed | kept as a last local tier |
-| C9 | checksum mismatch in `generate` | refuse at the first tier holding the set | try later tiers for a matching copy |
-| C10 | unpinned prompt | states size and SHA-256 unknown | HEAD request for the size first |
-| C11 | write-down | no-PDF default-card artifacts stay ≤ 12 | always write 13 |
-| C12 | download-tier test | library level with `MapFetch` only | also a CLI test through a base-URL override and a local server |
 
 [^mg-copy]: `common_run_interface.py`, `copy_lhapdf_set`, L4566–4572.
 [^mg-lo-lhapdf]: `madevent_interface.py`, L6111–6116.

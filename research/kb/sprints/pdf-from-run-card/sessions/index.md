@@ -9,3 +9,4 @@
 ## Session Report
 
 * [D1 report: the run inputs the integrate artifact records](D1-report.md) - Design for artifact version 13 (PDF lhaid, set, member, per-file SHA-256; moved param-card values), generate's checks, lhaid lookup over four tiers; twelve open choices for the user.
+* [D1b report: integrate and generate split by data dependency](D1b-report.md) - D1 revised after the user's gridpack decision: run-card fields classified by stage, GenerateSettings, artifact versions 13/14, the new generate CLI and its migration, choices restated, and a four-step PR split.
