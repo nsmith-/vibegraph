@@ -109,3 +109,23 @@ whose particle multiset is not self-conjugate is reachable from one side only
 unless the h.c. term is in the model too. Every Standard-Model vertex happens to
 be self-conjugate as a multiset, which is why nothing in this repository had met
 the rule before.
+
+## `vibegraph_toy_majorana_UFO` and `vibegraph_toy_fnv_UFO`
+
+| | |
+|---|---|
+| Provenance | Authored in this repository, 2026-10-20 |
+| Licence | `MIT OR Apache-2.0`, the repository's own |
+| Role | Refusal fixtures, gated by no MadGraph row: `vibegraph-cli/tests/cli_fermion_flow.rs` checks that each process reaching their unsupported fermion flow is refused with an error naming it |
+
+`vibegraph_toy_majorana_UFO` has a Dirac lepton `lt`, a Majorana fermion `nt`
+(`name == antiname`), a neutral vector `vt` and a charged scalar `sc`. `nt`
+couples to itself through `vt` and to `lt` through `sc`, so `lt~ lt > nt nt`
+carries it on external legs and `lt~ lt > sc sc~` on a t-channel propagator
+only. `vibegraph_toy_fnv_UFO` has two Dirac fermions `at` and `bt`, a neutral
+vector `vt`, and a diquark-like scalar `dq` whose vertex `V_atbtdq` (and its
+conjugate) pairs two particles on one fermion line, with no `C` in its Lorentz
+structure; `at bt > at bt` reaches it. In both models the Dirac fermions also
+couple to `vt`, which gives each a process (`lt~ lt > lt~ lt`, `at~ at > at~ at`)
+that must still be accepted. No restrict cards: every parameter is used at its
+default.
