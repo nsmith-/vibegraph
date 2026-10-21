@@ -1,26 +1,14 @@
 //! Refusals at the CLI boundary, through `main` rather than a unit test that
 //! never reaches it: card surfaces out of the v0.1 restricted scope refuse with
 //! the message the underlying parser raises, and an unreadable card or an empty
-//! request names the file or flag it came from.
+//! request names the file or flag it came from. A run card that activates a cut
+//! the generator does not apply is refused, naming the cut, before enumeration.
 
-use std::path::Path;
-use std::process::{Command, Output};
+mod common;
 
-/// The binary, with `VIBEGRAPH_HOME` pointed at a temp dir so `cache_root()`
-/// never touches the real `$HOME`.
-fn vibegraph(cwd: &Path, home: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
-    cmd.current_dir(cwd)
-        .env("VIBEGRAPH_HOME", home)
-        .env_remove("VIBEGRAPH_NO_NETWORK")
-        .env_remove("VIBEGRAPH_PDF_DIR")
-        .env_remove("VIBEGRAPH_UFO_DIR");
-    cmd
-}
+use std::process::Output;
 
-fn stderr_of(output: &Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
+use common::{fixed_beams, stderr_of, vibegraph};
 
 #[test]
 fn cli_polarized_beam_card_is_refused() {
@@ -34,7 +22,7 @@ fn cli_polarized_beam_card_is_refused() {
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(
         &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n  1.0 = polbeam1\n",
+        format!("{}  1.0 = polbeam1\n", fixed_beams(45.6, 45.6)),
     )
     .unwrap();
 
@@ -205,7 +193,7 @@ fn cli_a_generation_of_no_events_names_where_the_zero_came_from() {
     let run_card = cwd.path().join("run_card.dat");
     std::fs::write(
         &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n  0 = nevents\n",
+        format!("{}  0 = nevents\n", fixed_beams(45.6, 45.6)),
     )
     .unwrap();
     let out = cwd.path().join("run");
@@ -338,11 +326,7 @@ fn cli_custom_propagator_in_a_diagram_is_refused() {
     .unwrap();
 
     let run_card = cwd.path().join("run_card.dat");
-    std::fs::write(
-        &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  250.0 = ebeam1\n  250.0 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_card, fixed_beams("250.0", "250.0")).unwrap();
 
     let output = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
@@ -385,11 +369,7 @@ fn cli_mixed_multiplicity_at_fixed_energy_beams_is_refused() {
     )
     .unwrap();
     let run_card = cwd.path().join("run_card.dat");
-    std::fs::write(
-        &run_card,
-        "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n",
-    )
-    .unwrap();
+    std::fs::write(&run_card, fixed_beams(45.6, 45.6)).unwrap();
 
     let output = vibegraph(cwd.path(), home.path())
         .arg("--no-network")
@@ -455,4 +435,195 @@ fn cli_a_bin_width_bound_not_above_one_is_refused() {
             "{bad}: got\n{stderr}"
         );
     }
+}
+
+// ── unimplemented cuts ────────────────────────────────────────────────
+//
+// A run card that activates a cut the generator parses but does not apply is
+// refused by naming the cut and its value, before the process is enumerated.
+// "Before" is observed through a process whose enumeration cannot succeed (QED
+// order 0 for a purely electroweak final state): were enumeration reached
+// first, its own error would reach stderr instead of the cut's. The test shows
+// the order of the two failures; it cannot show how long the refused run spent
+// before failing.
+
+fn cut_beams() -> String {
+    fixed_beams(45.6, 45.6)
+}
+
+fn integrate_with_cuts(proc_line: &str, cuts: &str) -> Output {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(
+        &proc_card,
+        format!("import model sm\ngenerate {proc_line}\n"),
+    )
+    .unwrap();
+    let run_card = cwd.path().join("run_card.dat");
+    std::fs::write(&run_card, format!("{}{cuts}", cut_beams())).unwrap();
+    vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&run_card)
+        .arg("--out")
+        .arg(cwd.path().join("out"))
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph")
+}
+
+#[test]
+fn cli_integrate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
+    let output = integrate_with_cuts("e+ e- > mu+ mu-", "  30 = ptj1min\n");
+    assert!(!output.status.success());
+    let stderr = stderr_of(&output);
+    assert!(
+        stderr.contains("'ptj1min' (= 30"),
+        "the refusal must name the cut and its value, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("flavour groups") && !stderr.contains("cut compilation failed"),
+        "got:\n{stderr}"
+    );
+}
+
+#[test]
+fn cli_unimplemented_cut_is_refused_before_enumeration() {
+    let process = "e+ e- > mu+ mu- QED=0";
+    let control = integrate_with_cuts(process, "");
+    assert!(!control.status.success());
+    let control_stderr = stderr_of(&control);
+    assert!(
+        control_stderr.contains("enumerate") || control_stderr.contains("diagram"),
+        "the control card must fail in enumeration, got:\n{control_stderr}"
+    );
+
+    let output = integrate_with_cuts(process, "  30 = ptj1min\n");
+    assert!(!output.status.success());
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
+    assert!(
+        !stderr.contains("enumerate"),
+        "enumeration ran before the refusal:\n{stderr}"
+    );
+}
+
+#[test]
+fn cli_an_unbindable_maximum_is_let_through_and_a_bindable_one_refused() {
+    // Collider energy 91.2 GeV: a transverse momentum cannot exceed 45.6.
+    let bindable = integrate_with_cuts("e+ e- > mu+ mu-", "  30 = missetmax\n");
+    assert!(!bindable.status.success());
+    assert!(
+        stderr_of(&bindable).contains("'missetmax' (= 30"),
+        "got:\n{}",
+        stderr_of(&bindable)
+    );
+
+    let unbindable = integrate_with_cuts("e+ e- > mu+ mu-", "  1e5 = missetmax\n");
+    assert!(
+        unbindable.status.success(),
+        "got:\n{}",
+        stderr_of(&unbindable)
+    );
+}
+
+#[test]
+fn cli_generate_refuses_an_unimplemented_cut_naming_it_and_its_value() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let clean_card = cwd.path().join("clean_run_card.dat");
+    std::fs::write(&clean_card, cut_beams()).unwrap();
+    let out = cwd.path().join("out");
+    let integrated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&clean_card)
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrated.status.success(),
+        "got:\n{}",
+        stderr_of(&integrated)
+    );
+
+    let cut_card = cwd.path().join("cut_run_card.dat");
+    std::fs::write(&cut_card, format!("{}  30 = ptj1min\n", cut_beams())).unwrap();
+    let artifact = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.is_file())
+        .expect("an artifact");
+    let output = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("generate")
+        .arg(&artifact)
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&cut_card)
+        .args(["--nevents", "10", "-o"])
+        .arg(cwd.path().join("events.lhe"))
+        .output()
+        .expect("spawn vibegraph");
+    assert!(!output.status.success());
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
+    assert!(
+        !stderr.contains("flavour groups") && !stderr.contains("cut compilation failed"),
+        "got:\n{stderr}"
+    );
+}
+
+// `generate` reads the run card before the artifact, as `integrate` reads it
+// before enumerating: a refusable run card is the first refusal either command
+// gives, whatever is wrong with the artifact.
+#[test]
+fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let artifact = cwd.path().join("not_an_artifact.json");
+    std::fs::write(&artifact, "not an artifact").unwrap();
+    let generate_with = |card: &str| {
+        let run_card = cwd.path().join("run_card.dat");
+        std::fs::write(&run_card, card).unwrap();
+        vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(&artifact)
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(&run_card)
+            .args(["--nevents", "10", "-o"])
+            .arg(cwd.path().join("events.lhe"))
+            .output()
+            .expect("spawn vibegraph")
+    };
+
+    let control = generate_with(&cut_beams());
+    assert!(!control.status.success());
+    let control_stderr = stderr_of(&control);
+    assert!(
+        control_stderr.contains("cannot read") && control_stderr.contains("not_an_artifact"),
+        "the clean card must fail on the artifact, got:\n{control_stderr}"
+    );
+
+    let output = generate_with(&format!("{}  30 = ptj1min\n", cut_beams()));
+    assert!(!output.status.success());
+    let stderr = stderr_of(&output);
+    assert!(stderr.contains("'ptj1min' (= 30"), "got:\n{stderr}");
+    assert!(
+        !stderr.contains("not_an_artifact"),
+        "the artifact was read before the run card:\n{stderr}"
+    );
 }

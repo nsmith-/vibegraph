@@ -22,6 +22,3 @@ In the [CMS gridpack survey](../../validation/cms-gridpack-survey-2026-10.md)
 γ+jets, QCD and V+jets sample. `htjmin` was the first blocker on 9 cards and
 `ihtmin` on 1. MadGraph's definitions are in `cuts.f`; see
 [MadGraph cut conventions](../../run-card/madgraph-cut-conventions.md).
-
-The refusal itself arrives late and mislabelled:
-[unimplemented-cut-refused-after-enumeration](../hygiene/unimplemented-cut-refused-after-enumeration.md).

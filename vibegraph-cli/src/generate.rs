@@ -783,9 +783,6 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
     let process = process_string(&parsed)?;
 
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
-
     let config = GlobalConfig {
         ufo_search_path: crate::assets::resolve_ufo_search_path(
             parsed.model.as_ref(),
@@ -798,7 +795,12 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
+    // The run card is checked before the artifact is opened, as `integrate` checks
+    // it before enumerating: a card the generator must refuse is the first error
+    // whatever is wrong with the artifact.
     let rc = load_run_card(&config, &parsed)?;
+    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
 
     tui::state::describe_model(
         &model_id.label(),

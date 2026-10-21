@@ -32,7 +32,7 @@ use clap::Args;
 use tracing::{info, warn};
 use vibegraph::artifact::{ChannelGrid, ChannelKey, ChannelSampler, IntegrateArtifact};
 use vibegraph::config::GlobalConfig;
-use vibegraph::cuts::{Cuts, ForcedResonances};
+use vibegraph::cuts::{detect_unimplemented, Cuts, ForcedResonances};
 use vibegraph::diagrams::{
     forbidden_onshell_ids, generate_from_proc_card_in, DiagramSet, EnumerationPool, ParsingOptions,
     SupportedCard,
@@ -512,7 +512,8 @@ pub(crate) fn is_decay(parsed: &SupportedCard) -> bool {
 
 /// The run card a run over `parsed` reads: the `--run-card` file, or without one
 /// MadGraph's own default for the process, which for a decay has every cut
-/// removed.
+/// removed. A card that activates a cut no stage applies is refused here, ahead
+/// of every stage that costs anything.
 pub(crate) fn load_run_card(
     config: &GlobalConfig,
     parsed: &SupportedCard,
@@ -522,10 +523,12 @@ pub(crate) fn load_run_card(
     } else {
         config.load_run_card()
     };
-    card.map_err(|e| match &config.run_card_path {
+    let rc = card.map_err(|e| match &config.run_card_path {
         Some(path) => err(format!("cannot load the run card {}: {e}", path.display())),
         None => err(format!("cannot build the default run card: {e}")),
-    })
+    })?;
+    detect_unimplemented(&rc).map_err(|e| err(e.to_string()))?;
+    Ok(rc)
 }
 
 /// The canonical string of the proc card's processes, for artifact metadata: the

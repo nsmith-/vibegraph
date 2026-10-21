@@ -47,9 +47,10 @@
 //! * Which configuration MadEvent integrated an event in: the replay accepts a
 //!   `SCALUP` any configuration of the event's subprocess reproduces.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Deserialize;
 use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card};
@@ -154,7 +155,7 @@ fn proc_card(dir: &Path, row: &Row) -> PathBuf {
 }
 
 fn vibegraph(args: &[&std::ffi::OsStr]) -> std::process::Output {
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph_ambient()
         .args(args)
         .output()
         .expect("spawn vibegraph");
@@ -162,7 +163,7 @@ fn vibegraph(args: &[&std::ffi::OsStr]) -> std::process::Output {
         output.status.success(),
         "vibegraph {:?} failed:\n{}",
         args,
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
     output
 }

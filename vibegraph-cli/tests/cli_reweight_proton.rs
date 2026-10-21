@@ -34,8 +34,9 @@
 //! the numerators are compared against an independent generator in the
 //! MadGraph-reweight oracle, not here.
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use vibegraph::lhef::parse::LheFile;
 
@@ -150,7 +151,7 @@ fn reweighted_sample(
     let rw_card = dir.join("reweight_card.dat");
     std::fs::write(&rw_card, CARD).unwrap();
     let out = dir.join("out");
-    let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let integrate = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -166,10 +167,10 @@ fn reweighted_sample(
     assert!(
         integrate.status.success(),
         "integrate failed:\n{}",
-        String::from_utf8_lossy(&integrate.stderr)
+        common::stderr_of(&integrate)
     );
     let lhe = dir.join("events.lhe");
-    let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let generate = common::vibegraph_ambient()
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
         .arg(&proc_card)
@@ -185,7 +186,7 @@ fn reweighted_sample(
         .arg("--force")
         .output()
         .expect("spawn vibegraph");
-    let log = String::from_utf8_lossy(&generate.stderr);
+    let log = common::stderr_of(&generate);
     assert!(generate.status.success(), "generate failed:\n{log}");
     let audit = audit_of(&log);
     eprintln!("{audit:?}");

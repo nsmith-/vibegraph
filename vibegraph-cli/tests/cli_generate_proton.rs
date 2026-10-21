@@ -39,6 +39,8 @@
 //! file and agrees with itself. `validate_hadronic` and `amplitude_oracle`
 //! cover those.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -158,7 +160,7 @@ fn integrate_at(seed: &str) -> Run {
     let run_card = run_dir().join("Cards/run_card.dat");
 
     let out = dir.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let output = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -174,9 +176,9 @@ fn integrate_at(seed: &str) -> Run {
     assert!(
         output.status.success(),
         "vibegraph integrate failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
+        common::stderr_of(&output)
     );
-    eprint!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", common::stdout_of(&output));
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
@@ -204,7 +206,7 @@ impl Run {
     }
 
     fn generate_cmd_at(&self, name: &str, seed: &str) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+        let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
             .arg(&self.proc_card)
@@ -232,9 +234,9 @@ impl Run {
         assert!(
             out.status.success(),
             "vibegraph generate failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
+            common::stderr_of(&out)
         );
-        eprint!("{}", String::from_utf8_lossy(&out.stdout));
+        eprint!("{}", common::stdout_of(&out));
         let text = std::fs::read_to_string(self.dir.join(name)).expect("read the event file");
         let file = LheFile::parse(&text).expect("our own file parses");
         (file, text)
@@ -653,7 +655,7 @@ fn a_different_pdf_set_is_refused() {
         .arg("CT14lo")
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(!out.status.success(), "a foreign PDF set was accepted");
     assert!(
         stderr.contains("PDF set") && stderr.contains(PDF_SET) && stderr.contains("CT14lo"),
@@ -703,7 +705,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
     let dynamical = run.dir.join("dynamical_run_card.dat");
     std::fs::write(&dynamical, dynamical_card()).expect("write the dynamical card");
 
-    let out = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let out = common::vibegraph_ambient()
         .arg("generate")
         .arg(&run.artifact_path)
         .arg(&run.proc_card)
@@ -718,7 +720,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
         .arg("--force")
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(!out.status.success(), "a dynamical-scale card was accepted");
     assert!(
         stderr.contains("run card `fixed_ren_scale`"),
@@ -727,7 +729,7 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
 
     // And the card that would have to produce such an artifact now runs to a
     // cross section instead of stopping part-way through.
-    let out: Output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let out: Output = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&run.proc_card)
         .arg("--run-card")
@@ -739,12 +741,12 @@ fn a_dynamical_scale_card_runs_past_the_density_grid_and_past_the_coupling_table
         .args(["--fixed-budget", "--neval", "2000", "--niter", "2"])
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(
         out.status.success(),
         "a dynamical-scale card did not integrate:\n{stderr}"
     );
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = common::stdout_of(&out);
     let sigma: f64 = stdout
         .lines()
         .find_map(|line| line.strip_prefix("σ = "))
@@ -853,7 +855,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     .unwrap();
     let run_card = run_dir().join("Cards/run_card.dat");
     let out = dir.join("out");
-    let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let integrate = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -866,7 +868,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         .args(["--seed", SEED])
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&integrate.stderr);
+    let stderr = common::stderr_of(&integrate);
     assert!(integrate.status.success(), "integrate failed:\n{stderr}");
     assert!(
         stderr.contains("ickkw = 0") && stderr.contains("double counts"),
@@ -909,7 +911,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let nevents = 4_000;
     let lhe = dir.join("events.lhe");
-    let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let generate = common::vibegraph_ambient()
         .arg("generate")
         .arg(&artifact_path)
         .arg(&proc_card)
@@ -926,7 +928,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     assert!(
         generate.status.success(),
         "generate failed:\n{}",
-        String::from_utf8_lossy(&generate.stderr)
+        common::stderr_of(&generate)
     );
     let text = std::fs::read_to_string(&lhe).unwrap();
     let file = LheFile::parse(&text).expect("our file parses");
@@ -1010,7 +1012,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     stale
         .write_to_path(&stale_path, true)
         .expect("write the stale copy");
-    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let refused = common::vibegraph_ambient()
         .arg("generate")
         .arg(&stale_path)
         .arg(&proc_card)
@@ -1024,7 +1026,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         .arg("--force")
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&refused.stderr);
+    let stderr = common::stderr_of(&refused);
     assert!(
         !refused.status.success(),
         "a version-9 artifact of a sum was replayed"
@@ -1039,7 +1041,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     stale
         .write_to_path(&stale_path, true)
         .expect("write the stale copy");
-    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let refused = common::vibegraph_ambient()
         .arg("generate")
         .arg(&stale_path)
         .arg(&proc_card)
@@ -1053,7 +1055,7 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
         .arg("--force")
         .output()
         .expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&refused.stderr);
+    let stderr = common::stderr_of(&refused);
     assert!(
         !refused.status.success(),
         "a version-10 artifact of a merging process was replayed"
@@ -1084,7 +1086,7 @@ fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
         let proc_card = dir.join("proc_card.dat");
         std::fs::write(&proc_card, "import model sm\ngenerate p p > e+ e- j\n").unwrap();
         let out = dir.join("out");
-        let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let integrate = common::vibegraph_ambient()
             .arg("integrate")
             .arg(&proc_card)
             .arg("--run-card")
@@ -1100,10 +1102,10 @@ fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
         assert!(
             integrate.status.success(),
             "integrate failed:\n{}",
-            String::from_utf8_lossy(&integrate.stderr)
+            common::stderr_of(&integrate)
         );
         let lhe = dir.join("events.lhe");
-        let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let generate = common::vibegraph_ambient()
             .arg("generate")
             .arg(out.join("grid.bin.zst"))
             .arg(&proc_card)
@@ -1120,7 +1122,7 @@ fn matched_sample() -> &'static (tempfile::TempDir, LheFile, String) {
         assert!(
             generate.status.success(),
             "generate failed:\n{}",
-            String::from_utf8_lossy(&generate.stderr)
+            common::stderr_of(&generate)
         );
         let text = std::fs::read_to_string(&lhe).unwrap();
         let file = LheFile::parse(&text).expect("our file parses");
