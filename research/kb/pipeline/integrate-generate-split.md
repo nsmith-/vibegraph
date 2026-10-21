@@ -107,8 +107,9 @@ library does not read it.
 - The param-card PR then fills `params` and lifts that refusal, with no shape
   change and so no version bump.
 
-**Older files** (N7): none carries a proc card, so `generate` cannot replay
-one. H1 raises `OLDEST_READABLE_VERSION` to 13 and deletes the `v3`, `v4`,
+**Older files** (C3, settled: refused; N7 is how): none carries a proc card,
+so `generate` cannot replay one. Every artifact is written at the current
+version (C11, settled). H1 raises `OLDEST_READABLE_VERSION` to 13 and deletes the `v3`, `v4`,
 `v5`, `v7` and `v9` readers. It also deletes everything that existed only for
 them:
 
@@ -134,9 +135,11 @@ vibegraph generate <ARTIFACT> [--nevents N] [--seed S] [-o FILE] [--force]
     [--ufo-dir D] [parallel options]
 ```
 
-The global `--no-network`, `--yes` and the environment variables
-(`VIBEGRAPH_PDF_DIR`, `LHAPDF_DATA_PATH`, `VIBEGRAPH_UFO_DIR`,
-`VIBEGRAPH_HOME`, `VIBEGRAPH_NO_NETWORK`) are unchanged.
+The global `--no-network` and `--yes` are unchanged. The environment
+variables are `LHAPDF_DATA_PATH` (or, when it is unset, `LHAPATH`),
+`VIBEGRAPH_UFO_DIR`, `VIBEGRAPH_HOME` and `VIBEGRAPH_NO_NETWORK`;
+`VIBEGRAPH_PDF_DIR` is retired (C7, settled; sites in
+[run inputs](run-inputs-in-the-artifact.md) §7).
 
 - **Removed from `generate`:** the positional proc card, `--run-card`,
   `--pdf-set` and `--pdf-dir`. `--param-card` never exists there.
@@ -227,33 +230,105 @@ calls):
   examples that become history.
 - `tooling/release-acceptance.md`
 
-## 5. Open choices for the user, in one round
+### The `nn23lo1` migration (C4, settled)
 
-N-numbers are new. C-numbers keep the first draft's numbering. C3 and C11 are
-gone: no file older than the floor is replayed or written.
+Every built-in `pdlabel` is refused where a density is read, and the default
+card becomes `pdlabel = lhapdf`, `lhaid = 247000`
+([run inputs](run-inputs-in-the-artifact.md) §4). Sites, all in H2:
+
+- **Code.**
+  - `vibegraph-lib/src/runcard.rs:615-618`: the `pdlabel`, `pdlabel1`,
+    `pdlabel2` defaults become `lhapdf`, and `lhaid` becomes 247000. The
+    comment above them records the departure from MadGraph's template.
+  - `runcard.rs:289`: the `pdfsup` doc names the new default. The
+    `get_pdf_id` table stays, because fixed-energy cards keep spelling
+    `nn23lo1`.
+  - `vibegraph-lib/src/coupling/alphas.rs`: `pdf_label_alpha_s` (L279-293)
+    and its doc at L241 go. Its tests change as follows:
+    - L564 and L649 become refusal tests where the label is refused;
+    - L570 and L580 stay (fixed-energy beams ignore the label).
+  - `vibegraph-lib/src/runcard/matching.rs:264`: the fixed-energy default
+    resolves to `lhapdf`. L258 stays (asymmetric labels are still refused
+    first).
+  - `vibegraph-lib/src/cache/pinned.rs:32`: doc comment.
+- **Tests and the αs source.** In these files, proton cards written inline
+  without a `pdlabel` line move from the `nn23lo1` αs table (0.130, two-loop)
+  to the 247000 grid's αs:
+  - `vibegraph-cli/tests/`: `cli_generate_proton`, `cli_integrate`,
+    `cli_reweight_proton`, `cli_decay_chain_events`, `cli_hard_errors`,
+    `validate_samples_proton`;
+  - `vibegraph-lib/tests/`: `validate_hadronic`, `decay_chain_ladder`,
+    `diagram_channel`, `validate_alphas`.
+
+  The densities do not move, and Drell-Yan carries no αs. Any number pinned
+  from a default-card proton QCD run in these files moves. H2 lists each
+  moved pin with its old and new value rather than retuning it silently.
+  This list was not run here.
+  - `cli_decay.rs:475`: only a comment changes, since `PDFSUP` stays 247000.
+- **Validation cards.**
+  - `validation/madgraph/onshell_uu_run_card.dat` is the only proton
+    `nn23lo1` card a test reads. It is the `uu_tt` row of `cli_onshell_veto`,
+    which is reported, not gated, and is also read by `gen_onshell_veto.sh`
+    and `bank_seeded_sigma.sh:416`.
+
+    Plan: re-card it to `lhapdf`/247000 and file a banking request to
+    regenerate the MadGraph row. Until that lands, the test overrides the two
+    lines in the copy it writes (`cli_onshell_veto.rs:90-120`). The row stays
+    informational, with the reason recorded.
+  - These cards are fixed-energy or decays, read no density, and are not
+    refused, so they stay as they are: `onshell_ee_run_card.dat` (`lpp = 0`),
+    and `onshell_t_bev_run_card.dat`, `decay_h4l_cuts_run_card.dat`,
+    `decay_tbev_cuts_run_card.dat` (decays, `for_decay` sets `lpp = 0`).
+  - The `research/upstream/madgraph-grouped-first-call-unpermuted/` cards are
+    MadGraph-only repro material and stay as they are.
+  - `validation/manifest.toml:629`: the `pp_to_jj` rationale ("departs from
+    them in pdlabel and lhaid alone") now describes vibegraph's own default.
+- **Docs.**
+  - `docs/src/cli/overview.md:55`: the departure paragraph.
+  - `docs/src/guide/10-hadronic.md:37`: the default set sentence.
+  - `docs/src/guide/11-unweighting-events.md:145`: the PDFSUP example.
+- **Concepts.**
+  - `scales-pdf/pinned-pdf-set.md`: "What vibegraph does with a `nn23lo1`
+    card".
+  - `scales-pdf/alpha-s-sources.md`: the table.
+  - `run-card/field-classification.md:148`.
+  - `run-card/run-card-parser-and-defaults.md`: the defaults list.
+  - `events/lhef-record-conventions.md:36`.
+
+**No gate's comparison changes, but not for the reason the log gives.** The
+log says the banked references used MadGraph's internal `nn23lo1` grid. They
+did not. Every banked proton σ and sample row was carded at `pdlabel = lhapdf`,
+`lhaid = 247000` on the MadGraph side ([MadGraph oracle
+pinning](../validation/madgraph-oracle-pinning.md); `manifest.toml:151`: the
+four `nn23lo1` rows were re-carded at cut 5), and vibegraph reads those same
+cards. So both sides were already LHAPDF 247000 with the grid's αs, and no
+gated comparison changes:
+
+- the default-card change touches only cards that omit `pdlabel`, and no
+  gated MadGraph card does;
+- the only proton `nn23lo1` comparison is the ungated `uu_tt` row above;
+- fixed-energy and decay rows are untouched.
+
+## 5. Open choices for the user
+
+All twelve C-choices are settled (sprint log, 2026-10-21; summary in [run
+inputs](run-inputs-in-the-artifact.md)). Open, with the recommendation taken
+as the working assumption:
 
 | | choice | recommended | alternative |
 |---|---|---|---|
-| N1 | proc card in the artifact | verbatim text, re-parsed and checked against `process` | a serialized parsed card (needs serde on `SupportedCard`, and pins this build's parse) |
-| N2 | generate settings | inside the artifact, one file | a sidecar file beside `grid.bin.zst`, editable without a tool |
-| N3 | classification | §1's table, with the ambiguous rows as listed | move `clusinfo` or the bookkeeping rows |
-| N4 | seed | `--seed` only, default constant; `iseed` recorded, unread | a non-zero `iseed` is the default seed |
-| N5 | `event_norm` at generate | a `--event-norm` flag, defaulting to the recorded value | recorded value only; changing it means re-integrating |
-| N6 | systematics | verbatim strings; nothing evaluates them yet | typed fields now |
-| N7 | older artifacts | raise the floor at each step, delete the old readers and guards | keep the readers; `generate` refuses by named thresholds |
-| N8 | `--ufo-dir` on `generate` | kept (asset location) | environment variable only |
-| N9 | `<MGRunCard>` banner | integrate settings ∪ generate settings as used, `nevents` as requested, `iseed` = the generation seed when it fits an `i32` | integrate settings ∪ recorded generate settings, verbatim |
-| N10 | library boundary | H1 moves the sampling driver from `vibegraph-cli/src/generate.rs` into `vibegraph-lib` behind the new signature | the boundary in the CLI crate first; move later |
-| C1 | PDF checksum | per-file SHA-256 of `.info` + the member `.dat` read | whole-directory digest; archive digest |
-| C2 | param record | moved externals, which are also what `generate` rebinds from | every external's value |
-| C4 | built-in labels | `nn23lo1` only | also `nn23lo` on name evidence |
-| C5 | pinned shortcut | pin carries `set_index`, `num_members` | every lhaid through an index |
-| C6 | index across tiers | first found, fall through on "no known set" | first found only |
-| C7 | `$VIBEGRAPH_PDF_DIR` | kept as tier 0; tests use it | retired; tests set `$LHAPDF_DATA_PATH` |
-| C8 | `validation/pdf` dev fallback | removed | kept as a last local tier |
-| C9 | checksum mismatch in `generate` | refuse at the first tier holding the set | try later tiers for a matching copy |
-| C10 | unpinned prompt | states size and SHA-256 unknown | HEAD request for the size first |
-| C12 | download-tier test | library level with `MapFetch` only | also a CLI test through a base-URL override and a local server |
+| N1 | proc card in the artifact | verbatim text, re-parsed and checked against `process` | a serialized parsed card |
+| N2 | generate settings | inside the artifact | a sidecar file beside `grid.bin.zst` |
+| N3 | classification | §1's table, the ambiguous rows as listed | move `clusinfo` or the bookkeeping rows |
+| N4 | seed | `--seed` only; `iseed` recorded, unread | a non-zero `iseed` is the default seed |
+| N5 | `event_norm` at generate | a `--event-norm` flag, default the recorded value | recorded value only |
+| N6 | systematics | verbatim strings | typed fields now |
+| N7 | older artifacts (C3's how) | raise the floor at each step, delete old readers and guards | keep readers; refuse by named thresholds |
+| N8 | `--ufo-dir` on `generate` | kept | environment variable only |
+| N9 | `<MGRunCard>` banner | integrate ∪ generate settings as used, `iseed` = generation seed when it fits an `i32` | recorded settings verbatim |
+| N10 | library boundary | H1 moves the sampling driver into `vibegraph-lib` | boundary in the CLI crate first |
+| N11 | where `generate` records generate-read PDF files (new, from C1) | the `<vibegraphInputs>` header block only | also a sidecar record file |
+| N12 | a set `$VIBEGRAPH_PDF_DIR` (new, from C7) | one warning naming `LHAPDF_DATA_PATH` | ignored silently; or refused |
 
 ## 6. PR split
 
@@ -269,14 +344,22 @@ The work no longer fits one PR. In order:
    - Covers: the stage column, `RunCard::split`, `GenerateSettings`, artifact
      version 13 (`proc_card`, the narrowed `run_card`, `generate`), the floor
      raised to 13, and the new `generate` CLI and library entry point.
-   - Takes no PDF lookup change: `generate` locates the recorded `pdf_set` by
-     name through today's resolution.
+   - Also takes C7 and C8, because it rewrites every `generate` call anyway:
+     `LHAPDF_DATA_PATH` (with `LHAPATH`) replaces `VIBEGRAPH_PDF_DIR` as the
+     environment tier, the `validation/pdf` fallback goes, and tests set
+     `LHAPDF_DATA_PATH` instead of passing `--pdf-dir`. `generate` locates the
+     recorded `pdf_set` by name through that tier and today's cache. Moving
+     the tests once avoids a second migration in H2.
    - Closes no current item. The manager files one (see Found in the D1b
      report).
 3. **H2, the PDF from the run card.**
-   - Covers: [run inputs](run-inputs-in-the-artifact.md) §1 PDF, §3–§5,
-     `RunInputs` at version 14 with the floor raised, and `--pdf-*` removed
-     from `integrate`.
+   - Covers: [run inputs](run-inputs-in-the-artifact.md) §1 PDF, §3, §3a's
+     central entry and grid digest, §4 (every built-in label refused, the
+     default card, the αs table removed, the `nn23lo1` migration above), §5's
+     CVMFS, index and download tiers, `RunInputs` at version 14 with the floor
+     raised, and `--pdf-*` removed from `integrate`.
+   - §3a's systematics entries land with whatever PR first evaluates PDF
+     systematics, not here.
    - Closes `pdf-set-not-taken-from-run-card`.
 4. **The param-card PR.**
    - Covers: `integrate --param-card`, filling `inputs.params`, and the rebind

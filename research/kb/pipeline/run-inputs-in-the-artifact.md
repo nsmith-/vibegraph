@@ -29,9 +29,17 @@ which this concept assumes: `generate` takes no proc card, run card, param card
 or PDF option, and binds everything from the artifact (user decision,
 2026-10-21, `sprints/pdf-from-run-card/log.md`). The lookup half amends
 [asset resolution](../tooling/asset-resolution.md) and
-[network consent](../tooling/network-consent.md). Open choices are collected
-in the split concept's last section; the ones decided here keep their
-numbers (C1, C2, C4–C10, C12).
+[network consent](../tooling/network-consent.md). The twelve choices of the
+first draft are **settled** (user, 2026-10-21, sprint log): C1 per-file
+SHA-256 of what was read, generate-read files recorded by `generate`; C2 moved
+externals only; C3 older artifacts refused; C4 every built-in `pdlabel`
+refused; C5 pins carry `set_index`/`num_members`; C6 index fall-through;
+C7 `LHAPDF_DATA_PATH` replaces `VIBEGRAPH_PDF_DIR`; C8 no `validation/pdf`
+fallback; C9 a checksum mismatch is refused; C10 the unpinned prompt says size
+and SHA-256 are unknown; C11 always the new version; C12 the download tier
+tested at library level, the consent prompt separately. The `(Cn)` tags below
+mark where each applies. What is still open is listed at the end of
+[the split concept](integrate-generate-split.md).
 
 ## 1. The fields
 
@@ -48,10 +56,9 @@ pub struct FileDigest { pub name: String, pub sha256: String }
 pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>, pub value: f64 }
 ```
 
-- **`lhaid`** is the id actually loaded, `SetIndex + member`. For a built-in
-  `pdlabel` it is the label's equivalent (247000 for `nn23lo1`), not the card's
-  ignored `lhaid`; the card's own `pdlabel` and `lhaid` stay in the recorded
-  integrate settings.
+- **`lhaid`** is the id actually loaded, `SetIndex + member`, equal to the
+  card's `lhaid`: every built-in `pdlabel` is refused where a density is read
+  (§4), so `pdlabel = lhapdf` is the only way a proton run names its PDF.
 - **`files`** (C1): SHA-256 (`sha2`, through `ufo::identity::digest_bytes`)
   of exactly the bytes the loader parsed, in load order: `<set>.info`, then
   `<set>_<mmmm>.dat`. The loader reads each file once and parses from that
@@ -61,7 +68,10 @@ pub struct MovedParam { pub name: String, pub block: String, pub code: Vec<i32>,
   have no archive in use, and a set reached from a different tier on a worker
   must compare equal when its files are equal. Members the run never read are
   not hashed. Measured on CVMFS (sprint log, 2026-10-20): the default set's
-  `.info` and `_0000.dat` hash identically to the pinned download's.
+  `.info` and `_0000.dat` hash identically to the pinned download's. This is
+  the record of what *integrate* read; files that only `generate` reads (PDF
+  systematics members and sets) are recorded by `generate` in what it writes,
+  §3a (user, C1).
 - **`params`** (C2): every external parameter whose bound value differs from
   the restricted model's default, in the model's external order, after
   `integrate --param-card` is bound through `EvaluatedModel::from_model_card`.
@@ -96,8 +106,50 @@ checks, after the model's digest check (split concept, §3):
    `PDF set {set} member {m} at {dir} ({tier}) is not the one the grid was
    trained on: {file} has sha256 {got}, the artifact recorded {want}. The set
    changed after vibegraph integrate ran (a CVMFS or LHAPDF update does this);
-   re-integrate, or point $VIBEGRAPH_PDF_DIR at the original files.`
-   `generate` never reads `pdfsets.index`: the set name is recorded.
+   re-integrate, or point LHAPDF_DATA_PATH at the original files.`
+   A mismatch is refused, never searched past (C9, user). `generate` never
+   reads `pdfsets.index`: the set name is recorded.
+
+## 3a. What `generate` records of the PDF files it reads (C1)
+
+Every PDF file `generate` reads is hashed as it is parsed, by the same
+read-once loader as at integrate, and listed in the event file's header in a
+block of its own, beside `<MGRunCard>`:
+
+```xml
+<vibegraphInputs>
+  <pdf use="central" set="NNPDF23_lo_as_0130_qed" lhaid="247000" member="0" tier="cvmfs">
+    <file name="NNPDF23_lo_as_0130_qed.info" sha256="f961a1…"/>
+    <file name="NNPDF23_lo_as_0130_qed_0000.dat" sha256="5ac949…"/>
+  </pdf>
+  <pdf use="systematics" set="…" lhaid="…" member="…" tier="cache" archive_sha256="…">
+    <file name="…" sha256="…"/>
+  </pdf>
+  <grid sha256="…"/>  <!-- the integrate artifact file as read -->
+</vibegraphInputs>
+```
+
+- The **central** entry repeats the digests `generate` has just checked
+  against the artifact, so the event file alone says which densities its
+  weights came from.
+- A **systematics** member or set is introduced at generate (`sys_pdf`,
+  `use_syst`, generate settings in the split concept), so it has nothing to be
+  checked against. It is recorded, not compared. When it sits in the same set
+  directory as the verified central member it carries the same `tier`; when
+  `generate` had to fetch it, the entry carries the archive's SHA-256 from the
+  cache sidecar (`archive_sha256`), and for a pinned set that archive was
+  verified against the pin before anything was extracted, so its members are
+  verified transitively. A consent refusal for a systematics set refuses the
+  run before any event is written: a sample silently missing a requested
+  variation is worse than none.
+- `tier` names the tier (`lhapdf_data_path`, `lhapath`, `cvmfs`, `cache`,
+  `download`), never a path: the header is copied between machines, and a home
+  directory is not provenance.
+- No separate generate record file: the event file is what `generate` writes,
+  and a sidecar would be a second copy to keep consistent (open as N11 in the
+  split concept). No systematics are evaluated today, so until they are the
+  block holds the central entry and the grid digest only; the schema above
+  fixes where the rest goes.
 
 ## 4. Choosing the set and member
 
@@ -116,12 +168,22 @@ checks, after the model's digest check (split concept, §3):
   vibegraph extension with no MadGraph reference; its test is synthetic (§6).
 - **Pinned sets skip the index** (C5): `PinnedPdfSet` gains `set_index` and
   `num_members` (247000, 101), so the default lhaid needs no index fetch.
-- **Built-in `pdlabel`s** (C4). αs stays the `pdfwrap.f` table value; only the
-  densities come from LHAPDF:
+- **Built-in `pdlabel`s are refused wherever a density is read** (C4, user):
+  proton beams on a scattering process. The message:
+  `run card sets pdlabel = {label}, MadGraph's built-in parameterisation; vibegraph
+  reads parton densities only from LHAPDF6 grids. Set pdlabel = lhapdf and lhaid
+  to the set's LHAPDF id (247000 is NNPDF23_lo_as_0130_qed, the set nn23lo1 is
+  fitted to).` The `247000` hint is printed only for `nn23lo1`; for other
+  labels the message ends after "LHAPDF id". On fixed-energy beams and decays
+  (`for_decay` sets `lpp = 0`) the label is inert, as `setrun.f` makes it, and
+  is not refused; `RunCard::pdfsup` still writes `get_pdf_id(pdlabel)` there.
+  With every proton label refused, `pdf_label_alpha_s` and its table are
+  unreachable and go: on proton beams αs is always the set's own grid
+  (`GridAlphaS`). The table below records why no label could have been mapped:
 
 | pdlabel | MadGraph loads[^mg-pdfwrap] | `get_pdf_id`[^mg-pdfid] | index today[^index] | verdict |
 |---|---|---|---|---|
-| `nn23lo1` | `NNPDF23_lo_as_0130_qed_mem0.grid` | 247000 | 247000 `NNPDF23_lo_as_0130_qed` | **admit** (user, 2026-10-20), member 0, with a logged note: same fit, not the same numbers; MadGraph's internal grid and LHAPDF's moved a `b b̄` σ by 9.8% ([pinned PDF set](../scales-pdf/pinned-pdf-set.md)) |
+| `nn23lo1` | `NNPDF23_lo_as_0130_qed_mem0.grid` | 247000 | 247000 `NNPDF23_lo_as_0130_qed` | refuse: same fit, not the same numbers; MadGraph's internal grid and LHAPDF's moved a `b b̄` σ by 9.8% ([pinned PDF set](../scales-pdf/pinned-pdf-set.md)) |
 | `nn23lo` | `NNPDF23_lo_as_0119_qed_mem0.grid` | 246800 | 246800 `NNPDF23_lo_as_0119_qed` | refuse: names agree, no gate has compared the densities |
 | `nn23nlo` | `NNPDF23nlo_as_0119_qed_mem0.grid` (its comment says `nlo_as_0130_qed_mc`) | 244800 | 244800 `NNPDF23_nlo_as_0119_qed` | refuse: MadGraph's own comment and file disagree |
 | `cteq6l1` | `cteq6l1.tbl` through `Ctq6Pdf` | 10042 | 10042 `cteq6l1` | refuse: CTEQ's own table and interpolation, not an lhagrid1 file |
@@ -130,12 +192,18 @@ checks, after the model's digest check (split concept, §3):
 | `cteq6_d` | `cteq6d.tbl` | none | – | refuse |
 | `none`, `iww`, `eva`, `edff`, `chff` | lepton or no PDF | 0 | – | refuse on proton beams |
 
-  No built-in label has an *exact* LHAPDF equivalent: each reads MadGraph's
-  own tabulation. `nn23lo1` is admitted because it is the default card's label
-  and the user named its set; refusing it would refuse every proton run
-  without a run card. Refusals name the label and suggest `pdlabel = lhapdf`
-  with an explicit `lhaid`. The `cteq6_m` row is why `get_pdf_id` cannot be
-  adopted wholesale: its id now names another set.
+- **The default card changes** so a proton run with no run card is not
+  refused: `PARAM_DEFAULTS` gets `pdlabel = pdlabel1 = pdlabel2 = lhapdf` and
+  `lhaid = 247000` (MadGraph's template: `nn23lo1`, `230000`). A card that
+  omits the lines gets the same. This is a documented departure from
+  MadGraph's default card, written in three places: the `PARAM_DEFAULTS` rows'
+  comment in `runcard.rs`, the run-card section of `docs/src/cli/overview.md`
+  (the "With no run card at all" paragraph, line 55), and the defaults list of
+  [run-card parser and defaults](../run-card/run-card-parser-and-defaults.md).
+  `PDFSUP` is unchanged by it: `get_pdf_id` gives 247000 for both spellings.
+  On proton beams the αs source moves from the `nn23lo1` table (0.130, two-loop
+  β-function) to the set's own `AlphaS_*` grid, which is what MadGraph does
+  under `pdlabel = lhapdf` and so what every banked proton reference used.
 
 ## 5. Lookup and consent
 
@@ -143,14 +211,24 @@ Tiers, for both a set directory and `pdfsets.index`, first hit wins:
 
 | tier | set | index |
 |---|---|---|
-| 0. `$VIBEGRAPH_PDF_DIR` (C7) | `<dir>/<set>/` | `<dir>/pdfsets.index` |
-| 1. `$LHAPDF_DATA_PATH`, split on `:`[^mg-datadir] | each `<entry>/<set>/` | each `<entry>/pdfsets.index` |
+| 1. `$LHAPDF_DATA_PATH`, split on `:`; if it is unset, `$LHAPATH` (C7)[^lhapdf-paths][^mg-datadir] | each `<entry>/<set>/` | each `<entry>/pdfsets.index` |
 | 2. CVMFS `/cvmfs/sft.cern.ch/lcg/external/lhapdfsets/current` | `<root>/<set>/`; `@DEPRECATED`, `@UNVALIDATED` and the `.tar.gz` twins are not sets | `<root>/pdfsets.index` (layout measured on a CERN host, sprint log 2026-10-20) |
 | 3. cache `<root>/pdf/` | `<set>/` with sidecar | `pdfsets.index`, fetched copy |
 | 4. HTTPS, consent | `lhapdfsets.web.cern.ch/current/<set>.tar.gz` | `…/current/pdfsets.index` (47.6 kB) |
 
-- `--pdf-set` and `--pdf-dir` are removed; so is the cwd-relative
-  `validation/pdf` dev fallback (C8). Tiers 0–2 are used as found, no checksum.
+- `--pdf-set`, `--pdf-dir` and `$VIBEGRAPH_PDF_DIR` are retired, and so is
+  the cwd-relative `validation/pdf` dev fallback (C7, C8, user). Tiers 1–2 are
+  used as found, no checksum.
+- **The variable is parsed as LHAPDF 6.5.3 parses it** (`Paths.cc`,
+  `paths()`): `LHAPDF_DATA_PATH` if it is set (even to the empty string),
+  otherwise `LHAPATH`, split on `:`. vibegraph honours `LHAPATH` for the same
+  reason it reads `LHAPDF_DATA_PATH` at all: a user whose LHAPDF installation
+  works resolves the same sets here as their MadGraph does. Two LHAPDF details
+  are not copied: the install-prefix entry LHAPDF appends (vibegraph has no
+  LHAPDF install; CVMFS, the cache and the download are its later tiers), and
+  the trailing `::` that blocks it (empty entries are skipped). A set
+  `$VIBEGRAPH_PDF_DIR` draws one warning naming `LHAPDF_DATA_PATH` (N12), so an
+  old environment does not silently fall through to a download.
 - **Index fall-through** (C6): the first index found is used; if the lhaid is
   "in no known set" there, the next tier's index is tried, and last the
   current index is fetched (consent) into the cache, replacing a stale copy.
@@ -164,7 +242,7 @@ Tiers, for both a set directory and `pdfsets.index`, first hit wins:
   or SHA-256 in advance and says so (C10); `network::Download` makes both
   optional.
 - **Injection.** Resolution moves into `vibegraph-lib::cache` as a pure
-  function over a `Tiers { vibegraph_pdf_dir, lhapdf_data_path: Vec<PathBuf>,
+  function over a `Tiers { lhapdf_data_path: Vec<PathBuf>,
   cvmfs: Option<PathBuf>, cache_root }` value and a fetch-factory callback
   `&dyn Fn(&DownloadRequest) -> Result<Box<dyn Fetch>, String>`, where
   `DownloadRequest` is a library type carrying what `network::Download` shows
@@ -175,8 +253,8 @@ Tiers, for both a set directory and `pdfsets.index`, first hit wins:
   `MapFetch` (url → bytes) or a refusal: every tier, every refusal, with no
   socket and no `VIBEGRAPH_FETCH_CONSENT` (C12). The CLI reads the variables
   once (`Tiers::from_env`, untested like `locate_from_env`).
-- Tests and scripts that passed `--pdf-dir` set `$VIBEGRAPH_PDF_DIR` (C7) and
-  `env_remove("LHAPDF_DATA_PATH")`. A host with a real `/cvmfs` is still
+- Tests and scripts that passed `--pdf-dir` set `LHAPDF_DATA_PATH` and
+  remove `LHAPATH` and `VIBEGRAPH_PDF_DIR`. A host with a real `/cvmfs` is still
   reachable from tier 2; refusal tests therefore use an lhaid and set name
   that exist in no index.
 
@@ -191,8 +269,15 @@ For `pdf-set-not-taken-from-run-card`, one line per `closes_when` clause:
   a trailing space. CLI, non-zero member: member 1 is member 0 with every knot
   ×2 (exact in binary), fixed budget, same seed; σ(member 1) / σ(member 0) = 4
   within 1e-12 for a qq̄ process.
-- *built-in pdlabel*: unit, `nn23lo1` → `NNPDF23_lo_as_0130_qed` member 0;
-  each refused label of §4 refused with its reason.
+- *built-in pdlabel*: every label of §4, `nn23lo1` included, refused on proton
+  beams with the `pdlabel = lhapdf` message (the `247000` hint only for
+  `nn23lo1`); the same labels accepted on fixed-energy beams and decays, with
+  `PDFSUP` unchanged.
+- *environment*: `LHAPDF_DATA_PATH` as a `:` list with an empty entry;
+  `LHAPATH` used only when `LHAPDF_DATA_PATH` is unset, and not when it is set
+  to the empty string; `$VIBEGRAPH_PDF_DIR` alone does not resolve a set and
+  draws the warning; from a checkout holding `validation/pdf/` and no variable
+  set, `--no-network` refuses (no dev fallback).
 - *lhaid in no known set*: unit, below every set; past `NumMembers`; `.info`
   `SetIndex` disagreeing with the index; `.info` without `SetIndex`. CLI: the
   refusal names the lhaid and the index paths read.
@@ -208,8 +293,13 @@ For `pdf-set-not-taken-from-run-card`, one line per `closes_when` clause:
   synthetic set, append a comment line to the member `.dat` (parses the same,
   hashes differently), `generate` refuses naming the file; `generate` with the
   set reachable only from another tier with equal files succeeds.
-- *the default card*: CLI, no `--run-card` on proton beams loads
-  `NNPDF23_lo_as_0130_qed` member 0 and records lhaid 247000.
+- *the default card*: CLI, no `--run-card` on proton beams resolves to
+  `pdlabel = lhapdf`, loads `NNPDF23_lo_as_0130_qed` member 0, records lhaid
+  247000, takes αs from the set's grid, and writes `lhapdf = pdlabel` and
+  `247000 = lhaid` in `<MGRunCard>`.
+- *what generate records*: the `<vibegraphInputs>` block lists the central
+  member's two files with the artifact's digests, the tier it was found in,
+  and the grid file's SHA-256.
 
 Informational, while the PDF PR is open: the survey's `p p > e+ e-` runs gave
 one σ, 690.095053 pb, for the default card and for `pdlabel = lhapdf` at lhaid
@@ -237,15 +327,29 @@ options to `generate`) is in the split concept, §4. Specific to this concept:
   (`vibegraph-cli/tests/`): `cli_integrate`, `cli_generate_proton`,
   `cli_reweight_proton`, `cli_onshell_veto`, `cli_decay_chain`,
   `cli_decay_chain_events`, `validate_samples_proton`, `cli_pdf_cache`,
-  `cli_pdf_cache_fetched`. `cli_first_run` and `cli_hard_errors` also remove
-  `LHAPDF_DATA_PATH`.
+  `cli_pdf_cache_fetched`. `env_remove("VIBEGRAPH_PDF_DIR")` becomes
+  `env_remove("LHAPDF_DATA_PATH")` and `env_remove("LHAPATH")` in
+  `cli_first_run.rs:47`, `cli_hard_errors.rs:16`, `cli_pdf_cache.rs:47,132`,
+  `cli_pdf_cache_fetched.rs:96`.
+- **`VIBEGRAPH_PDF_DIR` sites** (C7): `vibegraph-lib/src/cache/mod.rs:64,90`
+  (`AssetKind::Pdf.env_var`), `cache/resolve.rs:43,101`,
+  `vibegraph-cli/src/assets.rs:76`, the `integrate.rs:352` and `generate.rs:150`
+  help text, `scripts/acceptance.sh:183`, `scripts/demo_pp.tape:29` (becomes
+  `export LHAPDF_DATA_PATH=…`), `docs/src/cli/overview.md:96`,
+  `docs/src/cli/reference.md:89,313`, `tooling/asset-resolution.md`,
+  `tooling/release-acceptance.md:52`. CI (`.github/workflows/ci.yml`) does not
+  set it; it caches `validation/pdf`, which tests now reach through
+  `LHAPDF_DATA_PATH`. The MadGraph-side scripts already export
+  `LHAPDF_DATA_PATH=validation/pdf:…` (`validation/madgraph/mg5_pinned.sh:55`
+  and the `gen_*.sh` scripts) and need no change.
+- **`nn23lo1` sites**: the migration list is in the split concept, §4.
 - **Scripts**: `--pdf-dir` in `validation/pythia/generate_samples.sh`,
   `validation/pythia/generate_mlm_samples.sh`,
   `validation/madgraph/gen_reweight_oracle.py`,
   `validation/madgraph/bench_reweight.py`; `scripts/demo_pp.tape`.
-  `scripts/acceptance.sh` passes no PDF flag: it unsets `VIBEGRAPH_PDF_DIR`,
-  must also unset `LHAPDF_DATA_PATH`, and with C5 its `lhapdf`/247000 card
-  still downloads only the set. Without C5, `validation/pdf/fetch.sh` must also
+  `scripts/acceptance.sh` passes no PDF flag: its `unset VIBEGRAPH_PDF_DIR`
+  (line 183) becomes `unset LHAPDF_DATA_PATH LHAPATH`, and with C5 its
+  `lhapdf`/247000 card still downloads only the set. Without C5, `validation/pdf/fetch.sh` must also
   fetch `pdfsets.index`.
 - **Gates**: the `cli-pdf-cache-fetched` rationale in `validation/manifest.toml`.
 - **Docs**: `docs/src/cli/reference.md`, `docs/src/cli/overview.md:96`.
@@ -258,3 +362,4 @@ options to `generate`) is in the split concept, §4. Specific to this concept:
 [^mg-pdfid]: `banner.py`, `get_pdf_id`, L3839–3853.
 [^mg-datadir]: `common_run_interface.py`, `get_lhapdf_pdfsetsdir_static`, L4870–4893.
 [^index]: `pdfsets.index` as served on 2026-10-20.
+[^lhapdf-paths]: LHAPDF 6.5.3 `src/Paths.cc`, `paths()`, lines 20–28: `LHAPDF_DATA_PATH`, falling back to `LHAPATH` when unset, split on `:`, then the install prefix unless the value ends in `::` (https://gitlab.com/hepcedar/lhapdf/-/blob/lhapdf-6.5.3/src/Paths.cc).
