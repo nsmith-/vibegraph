@@ -167,9 +167,7 @@ Options:
           - neyman:   Neyman: `Nⱼ ∝ αⱼ σⱼ`, driven by the variance each channel measures
 
       --seed <SEED>
-          RNG seed for the integration
-          
-          [default: 20260719]
+          RNG seed for the integration; defaults to the run card's `iseed` when it is not 0, and to 20260719 otherwise. The seed used is recorded in the artifact
 
   -j, --parallel <N>
           Worker threads (default: one per core). Results do not depend on it: any thread count produces byte-identical output

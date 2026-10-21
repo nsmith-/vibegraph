@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: the run card split by stage, GenerateSettings and artifact version 13](F1.md) - Library half of gridpack-style generate: the stage column, RunCard::split, GenerateSettings, the iseed integrate seed, artifact v13 with the floor raised, and the generation entry point moved into vibegraph-lib.
+
+## Session Report
+
+* [F1 report: the run card split by stage, GenerateSettings, artifact version 13 and the library generation entry point](F1-report.md) - FIELD_CLASSES carries a stage (14 Generate fields); RunCard::split narrows the card and yields GenerateSettings; iseed seeds integrate; artifact v13 records proc_card, the narrowed card and the generate settings, with the v3-v12 readers and guards deleted; the sampling driver moved to vibegraph::generate::generate. Event files are byte-identical to the baseline on five fixed-energy and decay runs.

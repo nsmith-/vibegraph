@@ -31,6 +31,14 @@ pub(crate) fn read_proc_card(
     path: &Path,
     opts: &ParsingOptions,
 ) -> Result<SupportedCard, CliError> {
+    read_proc_card_text(path, opts).map(|(card, _)| card)
+}
+
+/// [`read_proc_card`], with the card's text as read.
+pub(crate) fn read_proc_card_text(
+    path: &Path,
+    opts: &ParsingOptions,
+) -> Result<(SupportedCard, String), CliError> {
     let (card, origin) = if path == Path::new("-") {
         let mut card = String::new();
         let read = std::io::stdin().read_to_string(&mut card).map(|_| card);
@@ -39,8 +47,9 @@ pub(crate) fn read_proc_card(
         (std::fs::read_to_string(path), path.display().to_string())
     };
     let card = card.map_err(|e| err(format!("cannot read the proc card {origin}: {e}")))?;
-    parse_proc_card(&card, opts)
-        .map_err(|e| err(format!("cannot parse the proc card {origin}: {e}")))
+    let parsed = parse_proc_card(&card, opts)
+        .map_err(|e| err(format!("cannot parse the proc card {origin}: {e}")))?;
+    Ok((parsed, card))
 }
 
 /// `--version` output: version line, then every license notice the binary is

@@ -43,11 +43,9 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use vibegraph::artifact::IntegrateArtifact;
-use vibegraph::coupling::scales::ScaleChoice;
 use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
-use vibegraph::vegas::GridRule;
 
 /// A process with a resonance in reach of the beams, so the multichannel sampler
 /// has something to resolve and the artifact banks more than one channel.
@@ -671,32 +669,26 @@ fn a_card_that_did_not_train_the_grid_is_refused() {
     );
 }
 
-/// A copy of `run()`'s artifact, stamped with an older format version so the
-/// stale-artifact guard has something to refuse or admit.
-fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
-    let mut artifact = run.artifact.clone();
-    artifact.format_version = format_version;
-    // A file that old records no grid rule and reads back as the unbounded one.
-    artifact.grid_rule = Some(GridRule::UNBOUNDED);
-    let path = run.dir.join(name);
-    artifact
-        .write_to_path(&path, true)
-        .expect("write stale copy");
-    path
-}
-
-/// `run()`'s own card selects the clustering scale (`dynamical_scale_choice = -1`
-/// is the default and nothing here fixes it), so a copy of its artifact stamped
-/// with format version 6 must be refused: version 6's `sigma_pb` was computed
-/// with the scale read from the sampler's own channel, and this build draws that
-/// channel's configuration from `AMP2` per point instead, which is a different
-/// rule for the same run card.
+/// An artifact written before version 13 records no proc card for a
+/// generation to replay, so `generate` refuses it by its version and says to
+/// re-integrate. The file is `run()`'s own payload with its version stamped
+/// down to 12: everything after the version decodes, so only the version can be
+/// what refuses it.
 #[test]
-fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
+fn a_version_12_artifact_is_refused() {
     let run = run();
-    let stale = stale_copy(run, "stale-clustering.bin.zst", 6);
-    let mut cmd = common::vibegraph_ambient();
-    cmd.arg("generate")
+    let mut raw = zstd::decode_all(
+        std::fs::read(&run.artifact_path)
+            .expect("read the artifact")
+            .as_slice(),
+    )
+    .expect("decompress the artifact");
+    raw[..4].copy_from_slice(&12u32.to_le_bytes());
+    let stale = run.dir.join("v12.bin.zst");
+    std::fs::write(&stale, zstd::encode_all(raw.as_slice(), 19).unwrap()).unwrap();
+
+    let out = common::vibegraph_ambient()
+        .arg("generate")
         .arg(&stale)
         .arg(&run.proc_card)
         .arg("--run-card")
@@ -704,86 +696,15 @@ fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
         .arg("--nevents")
         .arg("10")
         .arg("-o")
-        .arg(run.dir.join("never.lhe"));
-    let out = cmd.output().expect("spawn vibegraph");
-    let stderr = common::stderr_of(&out);
-    assert!(
-        !out.status.success(),
-        "generate accepted a format-version-6 artifact on a clustering-scale card; it must \
-         refuse\nstdout: {}",
-        common::stdout_of(&out)
-    );
-    assert!(
-        stderr.contains("AMP2") && stderr.contains("format version"),
-        "the refusal must name the scale rule and the version, got: {stderr}"
-    );
-}
-
-/// The same stale artifact, on a card that fixes every scale: `is_fully_fixed`
-/// takes the clustering branch out of the picture entirely (`ScaleChoice::
-/// needs_channels`), so the version-6 `sigma_pb` was computed by the same closed
-/// form this run would use and the guard must not fire.
-#[test]
-fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path().to_path_buf();
-    let proc_card = dir.join("proc_card.dat");
-    let run_card = dir.join("run_card.dat");
-    std::fs::write(&proc_card, format!("import model sm\ngenerate {PROCESS}\n")).unwrap();
-    write_run_card(
-        &run_card,
-        EBEAM,
-        "True = fixed_ren_scale\nTrue = fixed_fac_scale\n",
-    );
-
-    let out = dir.join("out");
-    let status = common::vibegraph_ambient()
-        .arg("integrate")
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--out")
-        .arg(&out)
-        .args(["--neval", NEVAL, "--niter", NITER])
-        .status()
-        .expect("spawn vibegraph");
-    assert!(status.success(), "vibegraph integrate exited non-zero");
-
-    let artifact_path = out.join("grid.bin.zst");
-    let mut artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    let choice = ScaleChoice::from_run_card(&artifact.run_card).expect("scale choice compiles");
-    assert!(
-        !choice.needs_channels(),
-        "the fixture card must actually be fully fixed, or this test is not exercising the \
-         branch it claims to"
-    );
-    artifact.format_version = 6;
-    // A file that old records no grid rule and reads back as the unbounded one.
-    artifact.grid_rule = Some(GridRule::UNBOUNDED);
-    let stale = dir.join("stale-fixed.bin.zst");
-    artifact
-        .write_to_path(&stale, true)
-        .expect("write stale copy");
-
-    let output = dir.join("fixed.lhe");
-    let gen_status = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--nevents")
-        .arg("10")
-        .arg("-o")
-        .arg(&output)
+        .arg(run.dir.join("never.lhe"))
         .output()
         .expect("spawn vibegraph");
+    let stderr = common::stderr_of(&out);
+    expect_refusal(out, "a version-12 artifact", "artifact format version 12");
     assert!(
-        gen_status.status.success(),
-        "a format-version-6 artifact on a fixed-scale card must still load:\n{}",
-        common::stderr_of(&gen_status)
+        stderr.contains("regenerate it with `vibegraph integrate`"),
+        "the refusal does not say to re-integrate:\n{stderr}"
     );
-    assert!(output.exists());
 }
 
 /// One sample per `event_norm`, each from an integration of the same card plus

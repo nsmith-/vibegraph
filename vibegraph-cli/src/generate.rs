@@ -2,95 +2,55 @@
 //! unweighted event sample, serialised as a Les Houches Event File.
 //!
 //! The grid artifact is the run: it carries the trained per-channel VEGAS grids,
-//! the channel selection weights they were trained under, the resolved run card,
-//! the process string and the identity of the model behind it. What it does
-//! **not** carry is the compiled amplitude, so the proc card has to be supplied
-//! again — and is then checked against the artifact rather than trusted. A grid
-//! trained on one process, or on the same process in another model, and replayed
-//! against another samples a perfectly plausible-looking wrong distribution, so
-//! the mismatch is refused instead of being taken as new input.
+//! the channel selection weights they were trained under, the integration's run
+//! card, the process string and the identity of the model behind it. What it
+//! does **not** carry is the compiled amplitude, so the proc card has to be
+//! supplied again — and is then checked against the artifact rather than
+//! trusted. A grid trained on one process, or on the same process in another
+//! model, and replayed against another samples a perfectly plausible-looking
+//! wrong distribution, so the mismatch is refused instead of being taken as new
+//! input.
 //!
-//! The physics inputs are read from the artifact and never re-taken as flags: the
-//! only knobs here are how many events to write, where to write them, and which
-//! weight strategy to write them under.
-//!
-//! A `--reweight-card` adds, to every event, its weight under each of the card's
-//! alternative parameter hypotheses (see [`vibegraph::reweight`]); the sample
-//! itself, drawn under the model's own parameters, is unchanged by it.
+//! The sampling itself is [`vibegraph::generate::generate`]; this command
+//! gathers its inputs: the artifact, the model and PDF assets, the generation
+//! settings the artifact recorded with `--nevents` applied, and the options of
+//! how many events to write, where, and under which weight strategy.
 
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-use tracing::{info, warn};
-use vibegraph::artifact::{IntegrateArtifact, MULTIPLICITY_VERSION, SCALE_DRAW_VERSION};
+use vibegraph::artifact::IntegrateArtifact;
 use vibegraph::config::GlobalConfig;
-use vibegraph::coupling::scales::MatchedRecord;
-use vibegraph::coupling::scales::ScaleChoice;
-use vibegraph::cuts::{Cuts, ForcedResonances};
-use vibegraph::diagrams::{generate_from_proc_card_in, DiagramSet, ParsingOptions, SupportedCard};
-use vibegraph::hadronic::{
-    compile_subprocesses, initial_spin_color_average, process_external_legs,
-    refuse_polarized_frame, FixedBeamIntegrand, InitialState, Observable,
+use vibegraph::diagrams::{ParsingOptions, SupportedCard};
+use vibegraph::generate::{
+    generate, GenerateAssets, GenerateOptions, GenerateSettings, Strategy as SampleStrategy,
 };
-use vibegraph::helas::eval::BoundAmplitude;
-use vibegraph::helas::repr::lorentz::LorentzVector;
-use vibegraph::lhef::build::{
-    pt_clust_scales, scalup, EventHeader, Intermediate, SubprocessRecord,
-};
-use vibegraph::lhef::emit::{
-    Buffer, EmitPlan, EmitSummary, EventSource, PartSigma, StochasticRounding, UnweightStrategy,
-    WeightedEvent,
-};
-use vibegraph::lhef::record::{STATUS_INCOMING, STATUS_OUTGOING};
-use vibegraph::lhef::resonance::{member_line_pdg, SubprocessResonances};
-use vibegraph::lhef::write::{generator_element, mg_run_card};
-use vibegraph::multiplicity::MultiplicitySum;
-use vibegraph::onshell::subprocess_vetoes;
-use vibegraph::pdf::{PdfMember, PdfSet};
-use vibegraph::phasespace::maps::MapOptions;
-use vibegraph::phasespace::GEV2_TO_PB;
-use vibegraph::proton::{BeamOrdering, FlavorGroups, ProtonIntegrand};
 use vibegraph::reweight::card::ReweightCard;
-use vibegraph::reweight::engine::{ReweightOptions, ReweightPlan, Reweighter, SubprocessSummary};
+use vibegraph::reweight::engine::ReweightOptions;
 use vibegraph::reweight::{resolve, resolve_couplings, Launch};
-use vibegraph::runcard::{BeamMode, EventNorm, RunCard};
+use vibegraph::runcard::{BeamMode, RunCard};
 use vibegraph::ufo::identity::ModelIdentity;
 use vibegraph::ufo::{EvaluatedModel, UFOModel};
-use vibegraph::unweight::{MaxRule, ScanBudget, UnweightStats, Unweighter, DEFAULT_EXCESS_SHARE};
-
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha8Rng;
+use vibegraph::unweight::{MaxRule, ScanBudget, DEFAULT_EXCESS_SHARE};
 
 use crate::error::{err, CliError};
 use crate::integrate::{
-    forbidden_onshell, initial_state, is_decay, load_pdf_set, load_run_card, multiplicity_groups,
-    multiplicity_maps, process_string, refuse_mixed_multiplicity, MultiplicityGroups, NO_PDF,
-    PDF_MEMBER,
+    forbidden_onshell, load_pdf_set, load_run_card, process_string, NO_PDF, PDF_MEMBER,
 };
 use crate::network::NetworkPolicy;
 use crate::parallel::ParallelArgs;
 use crate::tui;
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 
-type V = LorentzVector<f64>;
-
 /// Default output file.
 const DEFAULT_OUTPUT: &str = "events.lhe";
-/// Seed offsets, so the weight scan, the event generation and a strategy's own
-/// draws never share a stream with each other or with the integration.
-const SCAN_SEED_OFFSET: u64 = 0x5CA7_0000;
-const GEN_SEED_OFFSET: u64 = 0xE7E7_0000;
-const ROUNDING_SEED_OFFSET: u64 = 0x524E_4400;
+
 /// Default `--scan-points`. Measured on the 24-channel `p p > l+ l- j` grids, a
 /// flat per-channel budget and the integration's own allocation sit on the same
 /// trade-off curve between the summed maximum (which sets acceptance) and the
 /// cross-section share above the maxima, so the allocation that costs nothing to
 /// compute is the default. [`ScanBudget`] carries what the curve is.
 const DEFAULT_SCAN_POINTS: &str = "share";
-/// Trials one event may cost before the source gives up. Sized well above the
-/// reciprocal of the worst unweighting efficiency measured on any gated process
-/// (~3e-2), so only a genuinely stuck sampler reaches it.
-const MAX_TRIALS_PER_EVENT: usize = 5_000_000;
 
 /// How the accept/reject weights become the file's events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -101,6 +61,15 @@ pub(crate) enum Strategy {
     /// Stream, writing each event `floor(w) + Bernoulli(frac(w))` times at unit
     /// weight (`IDWTUP = +3`).
     StochasticRounding,
+}
+
+impl From<Strategy> for SampleStrategy {
+    fn from(strategy: Strategy) -> Self {
+        match strategy {
+            Strategy::Buffer => SampleStrategy::Buffer,
+            Strategy::StochasticRounding => SampleStrategy::StochasticRounding,
+        }
+    }
 }
 
 #[derive(Args, Debug)]
@@ -375,696 +344,44 @@ fn refuse_on_mismatch(mismatches: &[CardMismatch]) -> Result<(), CliError> {
     Err(err(msg))
 }
 
-/// The one thing a schema-identical format bump can still break: format version 7
-/// changes no field, but it changes what a clustering-scale artifact's `sigma_pb`
-/// means (see [`vibegraph::artifact::FORMAT_VERSION`]'s doc). An artifact written
-/// before it was integrated with the per-event scale read from the sampler's own
-/// channel; from version 7 the clustering scale draws its configuration per point
-/// from the per-diagram `AMP2` instead, so a stale artifact's `sigma_pb` is a
-/// different run's cross section, not this run's. A card whose every scale is
-/// fixed never reaches the clustering branch at all, so it is unaffected and
-/// still loads.
-fn refuse_stale_artifact_on_clustering_scale(
+/// Every difference between the generation settings of the card handed to this
+/// run and the ones the artifact recorded, each named by its run-card field.
+pub(crate) fn settings_mismatches(
     artifact: &IntegrateArtifact,
-    run_card: &RunCard,
-) -> Result<(), CliError> {
-    if artifact.format_version >= SCALE_DRAW_VERSION {
-        return Ok(());
-    }
-    let needs_channels = ScaleChoice::from_run_card(run_card)
-        .map(|choice| choice.needs_channels())
-        .unwrap_or(false);
-    if !needs_channels {
-        return Ok(());
-    }
-    Err(err(format!(
-        "this artifact was written at format version {} (the draw arrived at {SCALE_DRAW_VERSION}); its \
-         sigma_pb was computed with the per-event scale read from the sampler's own channel, \
-         and this run card selects the clustering scale, which now draws its configuration \
-         per point from the per-diagram AMP2 instead. That is a different rule, so the \
-         artifact's sigma_pb no longer means this run's cross section; re-integrate with the \
-         current build",
-        artifact.format_version,
-    )))
-}
-
-/// An artifact written before sums over final-state multiplicities existed
-/// cannot hold one, so on a card of several multiplicities it was integrated for
-/// something else — refused by its version, which says why, rather than by the
-/// channel keys it would then fail to match.
-fn refuse_stale_artifact_on_mixed_multiplicity(
-    artifact: &IntegrateArtifact,
-    parts: usize,
-) -> Result<(), CliError> {
-    if parts <= 1 || artifact.format_version >= MULTIPLICITY_VERSION {
-        return Ok(());
-    }
-    Err(err(format!(
-        "this card sums {parts} final-state multiplicities, which an artifact holds from format \
-         version {MULTIPLICITY_VERSION} on; this one was written at version {}, so its grids \
-         were not trained on this sum. Re-integrate with the current build",
-        artifact.format_version,
-    )))
-}
-
-/// Stochastic rounding writes unit weights, so on a sum over several
-/// multiplicities each part's share of the file would be the sample's own rather
-/// than its integration's. The emitter refuses it too; refusing here does so
-/// before the scan and the draw.
-fn refuse_rounding_on_mixed_multiplicity(strategy: Strategy, parts: usize) -> Result<(), CliError> {
-    if parts <= 1 || !matches!(strategy, Strategy::StochasticRounding) {
-        return Ok(());
-    }
-    Err(err(format!(
-        "--strategy stochastic-rounding cannot normalise a sum over {parts} final-state \
-         multiplicities to each one's integrated cross section; use --strategy buffer"
-    )))
-}
-
-/// Stochastic rounding writes unit weights under `IDWTUP = +3`, which is no
-/// `event_norm` but its own, so a card asking for `sum` or `unity` has no file
-/// to be written. The emitter refuses it too; refusing here does so before the
-/// scan and the draw.
-fn refuse_rounding_off_average(strategy: Strategy, norm: EventNorm) -> Result<(), CliError> {
-    if !matches!(strategy, Strategy::StochasticRounding) || StochasticRounding::honours(norm) {
-        return Ok(());
-    }
-    Err(err(format!(
-        "--strategy stochastic-rounding writes unit weights (IDWTUP = +3) and cannot honour the \
-         run card's event_norm = {}; use --strategy buffer",
-        norm.as_str()
-    )))
-}
-
-/// The accept/reject pass as a replayable source of events.
-///
-/// Each accepted point is turned straight into a record: the momenta come back
-/// from the same channel map at the same `u` the trial was accepted on, and the
-/// discrete labels are selected off the diagonals at that point.
-struct SampleSource<'s, 'a> {
-    integrand: &'s FixedBeamIntegrand<'a>,
-    records: &'s [SubprocessRecord],
-    /// The unweighter as the scan left it, kept so a restart returns the pass to
-    /// its initial state rather than continuing with accumulated statistics.
-    pristine: Unweighter,
-    unweighter: Unweighter,
-    rng: ChaCha8Rng,
-    seed: u64,
-    /// The card the run was set up from, which supplies the record's scale where
-    /// nothing in the matrix element moves with `αs` and so no per-event scale
-    /// prescription was installed.
-    card: &'s RunCard,
-    alpha_qed: f64,
-    momenta: Vec<V>,
-    /// The factor from the integrand's natural units to the file's.
-    unit: f64,
-    /// Per subprocess, its card line's process number (`IDPRUP`).
-    process_of: &'s [i32],
-    /// Per subprocess, the resonances its records list; empty on a card without
-    /// decay chains.
-    resonances: &'s [SubprocessResonances],
-    tally: ResonanceTally,
-    /// The reweighting hypotheses, indexed by subprocess.
-    reweighter: Option<Reweighter<'s>>,
-    evaluation: Vec<V>,
-    audit: ReweightAudit,
-}
-
-impl<'s, 'a> SampleSource<'s, 'a> {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        integrand: &'s FixedBeamIntegrand<'a>,
-        records: &'s [SubprocessRecord],
-        unweighter: Unweighter,
-        seed: u64,
-        card: &'s RunCard,
-        alpha_qed: f64,
-        process_of: &'s [i32],
-        resonances: &'s [SubprocessResonances],
-        reweighter: Option<Reweighter<'s>>,
-    ) -> Self {
-        SampleSource {
-            integrand,
-            records,
-            pristine: unweighter.clone(),
-            unweighter,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-            seed,
-            card,
-            alpha_qed,
-            momenta: Vec::new(),
-            unit: integrand.observable().per_natural_unit(),
-            process_of,
-            resonances,
-            tally: ResonanceTally::default(),
-            reweighter,
-            evaluation: Vec::new(),
-            audit: ReweightAudit::default(),
-        }
-    }
-
-    fn stats(&self) -> &vibegraph::unweight::UnweightStats {
-        self.unweighter.stats()
-    }
-}
-
-impl EventSource for SampleSource<'_, '_> {
-    fn next_event(&mut self) -> Option<WeightedEvent> {
-        let point =
-            self.unweighter
-                .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
-        self.integrand
-            .event_in_channel(point.channel, &point.u, &mut self.momenta);
-        let selection = self.integrand.select_event(
-            &self.momenta,
-            point.channel,
-            [
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-            ],
-        )?;
-        let externals: Vec<[f64; 4]> = self
-            .integrand
-            .incoming()
-            .iter()
-            .chain(self.momenta.iter())
-            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
-            .collect();
-        // A point the scale prescription rejects has no scale to report, so the
-        // source stops rather than inventing one, and the strategy reports a
-        // sample it could not fill.
-        let (scale, alpha_qcd) = self
-            .integrand
-            .record_scales(&self.momenta, point.channel, &point.u, self.card)
-            .ok()?;
-        let header = EventHeader {
-            process_id: self.process_of[selection.subprocess],
-            // The strategy imposes the file's weight convention; this slot is
-            // overwritten before the record is written.
-            weight: 0.0,
-            scale,
-            alpha_qed: self.alpha_qed,
-            alpha_qcd,
-        };
-        let record = event_record(
-            &self.records[selection.subprocess],
-            &externals,
-            &selection.helicity,
-            selection.flow,
-            header,
-            self.resonances
-                .get(selection.subprocess)
-                .map(|table| (table, None)),
-            (selection.config, selection.leading),
-            &mut self.tally,
-        )?;
-        let mut reweights = Vec::new();
-        if let Some(rw) = self.reweighter.as_mut() {
-            self.evaluation.clear();
-            self.evaluation.extend_from_slice(self.integrand.incoming());
-            self.evaluation.extend_from_slice(&self.momenta);
-            let m0 = rw.ratios(
-                selection.subprocess,
-                &self.evaluation,
-                Some(alpha_qcd),
-                &mut reweights,
-            );
-            self.audit.check(
-                (0, BeamOrdering::Direct),
-                m0,
-                selection.m2,
-                rw.pdgs(selection.subprocess),
-                &record,
-                (&reweights, rw.launches()),
-            );
-        }
-        Some(WeightedEvent {
-            record,
-            weight: point.weight,
-            part: 0,
-            reweights,
-        })
-    }
-
-    fn restart(&mut self) {
-        self.unweighter = self.pristine.clone();
-        self.rng = ChaCha8Rng::seed_from_u64(self.seed);
-        self.tally = ResonanceTally::default();
-        self.audit = ReweightAudit::default();
-    }
-
-    fn sigma_pb(&self) -> f64 {
-        self.unweighter.sigma_from_events() * self.unit
-    }
-}
-
-/// Events written without the intermediate records their configuration names.
-#[derive(Clone, Copy, Debug, Default)]
-struct ResonanceTally {
-    /// Events whose colour flow their configuration does not reach at leading
-    /// colour, for which MadEvent's `addmothers` writes no intermediate either.
-    subleading: u64,
-    /// Events whose intermediates could not be given a colour their daughters
-    /// fit, written without them rather than with a wrong one.
-    refused: u64,
-}
-
-/// One event's record, with the resonances of its configuration as status-2
-/// records where `resonances` names a table: the lines MadEvent's `cut_bw` flags
-/// at the event's momenta ([`SubprocessResonances::on_shell`]), each carrying the
-/// PDG code `pdgs[config][line]` where the record's flavours differ from the
-/// table's, its own otherwise.
-#[allow(clippy::too_many_arguments)]
-fn event_record(
-    record: &SubprocessRecord,
-    externals: &[[f64; 4]],
-    helicity: &[i32],
-    flow: usize,
-    header: EventHeader,
-    resonances: Option<(&SubprocessResonances, Option<&[Vec<i32>]>)>,
-    (config, leading): (Option<usize>, bool),
-    tally: &mut ResonanceTally,
-) -> Option<vibegraph::lhef::record::LheEvent> {
-    let Some((table, pdgs)) = resonances else {
-        return record.event(externals, helicity, flow, header).ok();
-    };
-    let Some(config) = config.filter(|_| leading) else {
-        tally.subleading += 1;
-        return record.event(externals, helicity, flow, header).ok();
-    };
-    let lines = table.lines(config);
-    let intermediates: Vec<Intermediate> = table
-        .on_shell(config, &externals[record.n_in()..])
-        .into_iter()
-        .map(|i| Intermediate {
-            pdg: pdgs.map_or(lines[i].pdg, |p| p[config][i]),
-            color: lines[i].color,
-            slots: lines[i].slots,
-        })
-        .collect();
-    match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
-        Ok(event) => Some(event),
-        Err(
-            vibegraph::lhef::LhefError::IntermediateColor { .. }
-            | vibegraph::lhef::LhefError::IntermediateNesting { .. },
-        ) => {
-            tally.refused += 1;
-            record.event(externals, helicity, flow, header).ok()
-        }
-        Err(_) => None,
-    }
-}
-
-/// A matched (`ickkw > 0`) event's record: the resonances `addmothers` writes
-/// under matching and the `<scales>` line after the particles.
-///
-/// The status-2 lines are the clustered configuration's timelike propagators
-/// whose leg sets the clustering found on their Breit–Wigner
-/// ([`SubprocessResonances::clustered_on_shell`]), none where the drawn flow is
-/// below leading colour in that configuration (`addmothers.f:129-131`, 195).
-/// `pdgs[config][line]` carries each line's code in the record's flavours.
-/// `ptclus` is indexed like the record's legs: the record reorders only the
-/// incoming ones, which have none.
-#[allow(clippy::too_many_arguments)]
-fn matched_event_record(
-    record: &SubprocessRecord,
-    externals: &[[f64; 4]],
-    helicity: &[i32],
-    flow: usize,
-    header: EventHeader,
-    resonances: Option<(&SubprocessResonances, &[Vec<i32>])>,
-    (config, leading): (Option<usize>, bool),
-    matched: &MatchedRecord,
-    tally: &mut ResonanceTally,
-) -> Option<vibegraph::lhef::record::LheEvent> {
-    let n_in = record.n_in();
-    let intermediates: Vec<Intermediate> = match (resonances, config) {
-        (Some((table, pdgs)), Some(config)) if leading => {
-            let lines = table.lines(config);
-            table
-                .clustered_on_shell(config, &matched.on_shell, n_in)
-                .into_iter()
-                .map(|i| Intermediate {
-                    pdg: pdgs[config][i],
-                    color: lines[i].color,
-                    slots: lines[i].slots,
-                })
-                .collect()
-        }
-        (Some(_), Some(_)) => {
-            tally.subleading += 1;
-            Vec::new()
-        }
-        _ => Vec::new(),
-    };
-    let mut event =
-        match record.event_with_intermediates(externals, helicity, flow, header, &intermediates) {
-            Ok(event) => event,
-            Err(
-                vibegraph::lhef::LhefError::IntermediateColor { .. }
-                | vibegraph::lhef::LhefError::IntermediateNesting { .. },
-            ) => {
-                tally.refused += 1;
-                record.event(externals, helicity, flow, header).ok()?
-            }
-            Err(_) => return None,
-        };
-    let line = pt_clust_scales(&event, matched.ptclus.get(n_in..)?);
-    event.trailer.push(line);
-    Some(event)
-}
-
-/// Whether any process line of the card carries decays, which is when an event
-/// record lists its resonances.
-fn has_decay_chains(parsed: &SupportedCard) -> bool {
-    parsed.processes.iter().any(|p| !p.decays.is_empty())
-}
-
-/// The `LPRUP` of every process the card declares: its process numbers, each
-/// once, in increasing order.
-fn process_ids(parsed: &SupportedCard) -> Vec<i32> {
-    let mut ids: Vec<i32> = parsed.processes.iter().map(|p| p.id as i32).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids
-}
-
-/// Say how many events went out without the intermediates their configuration
-/// names.
-fn report_resonances(tally: ResonanceTally, written: usize) {
-    if tally.subleading > 0 {
-        info!(
-            "resonances: {} of {written} events carry a colour flow their configuration reaches \
-             only below leading colour and list no intermediate record, as MadEvent's do",
-            tally.subleading
-        );
-    }
-    if tally.refused > 0 {
-        warn!(
-            "resonances: {} of {written} events list no intermediate record because a \
-             resonance's daughters leave colour lines that do not fit it",
-            tally.refused
-        );
-    }
-}
-
-pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
-    args.parallel.install().map_err(err)?;
-    if !args.force && args.out.exists() {
-        return Err(err(format!(
-            "{} already exists (pass --force to overwrite)",
-            args.out.display()
-        )));
-    }
-
-    let opts = ParsingOptions::default();
-    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
-    let process = process_string(&parsed)?;
-
-    let config = GlobalConfig {
-        ufo_search_path: crate::assets::resolve_ufo_search_path(
-            parsed.model.as_ref(),
-            args.ufo_dir.as_deref(),
-        )
-        .map_err(err)?,
-        restrict_path_override: None,
-        run_card_path: args.run_card.clone(),
-    };
-    let (model, model_id) = config
-        .load_ufo_with_identity(&parsed.model)
-        .map_err(|e| err(format!("failed to load model: {e}")))?;
-    // The run card is checked before the artifact is opened, as `integrate` checks
-    // it before enumerating: a card the generator must refuse is the first error
-    // whatever is wrong with the artifact.
-    let rc = load_run_card(&config, &parsed)?;
-    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
-        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
-
-    tui::state::describe_model(
-        &model_id.label(),
-        &model_id.digest,
-        model.particles.len(),
-        model.vertices.len(),
-        model.couplings.len(),
-    );
-    tui::state::describe_process(&process);
-    tui::state::note_channels(artifact.channels.len());
-
-    let hadronic = !is_decay(&parsed) && rc.beam_mode() == BeamMode::Proton;
-    let mut mismatches = card_mismatches(&artifact, &model_id, &process, &rc);
-    // A fixed-energy run reads no parton distributions, and the artifact says so;
-    // the flag is only meaningful on the hadronic path.
-    let pdf_set = if hadronic { &args.pdf_set } else { NO_PDF };
-    mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
-    refuse_on_mismatch(&mismatches)?;
-    refuse_rounding_off_average(args.strategy, rc.event_norm())?;
-    refuse_stale_artifact_on_clustering_scale(&artifact, &rc)?;
-
-    let evaluated = EvaluatedModel::from_model(model.clone());
-    let launches = reweight_launches(args, &parsed, &model)?;
-    let nevents = args
-        .nevents
-        .unwrap_or(artifact.run_card.nevents.max(0) as usize);
-    if nevents == 0 {
-        return Err(err(match args.nevents {
-            Some(_) => "no events requested: --nevents is 0".to_string(),
-            None => format!(
-                "no events requested: --nevents is absent and the run card recorded in {} \
-                 asks for nevents = {}",
-                args.artifact.display(),
-                artifact.run_card.nevents
+    given: &GenerateSettings,
+) -> Vec<CardMismatch> {
+    fn fields(settings: &GenerateSettings) -> Vec<(String, String)> {
+        let mut out = vec![
+            ("nevents".to_string(), settings.nevents.to_string()),
+            (
+                "event_norm".to_string(),
+                settings.event_norm.as_str().to_string(),
             ),
-        }));
+            (
+                "use_syst".to_string(),
+                settings.systematics.enabled.to_string(),
+            ),
+            ("clusinfo".to_string(), settings.clustering_info.to_string()),
+        ];
+        out.extend(settings.systematics.fields.iter().cloned());
+        out
     }
-
-    if hadronic {
-        let set = load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?;
-        let pdf = set
-            .member(PDF_MEMBER)
-            .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))?;
-        generate_proton_sample(
-            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, &set, &pdf, launches,
-        )?;
-    } else {
-        generate_sample(
-            args, &artifact, &parsed, &model, &evaluated, &rc, nevents, launches,
-        )?;
-    }
-    // The command's result: the path a caller pipes this to learn, at any
-    // verbosity. Everything else the run had to say went to the notice stream.
-    tui::result_line(format_args!("wrote {}", args.out.display()));
-    Ok(())
-}
-
-/// Build the integrand the artifact describes, unweight against its grids, and
-/// write the file.
-#[allow(clippy::too_many_arguments)]
-fn generate_sample(
-    args: &GenerateArgs,
-    artifact: &IntegrateArtifact,
-    parsed: &vibegraph::diagrams::SupportedCard,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    rc: &RunCard,
-    nevents: usize,
-    launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, CliError> {
-    let sets = generate_from_proc_card_in(parsed, model, args.parallel.enumeration())
-        .map_err(|e| err(format!("failed to enumerate process: {e}")))?;
-    refuse_mixed_multiplicity(&sets)?;
-    let evals = compile_subprocesses(&sets, model, evaluated)
-        .map_err(|e| err(format!("failed to compile subprocesses: {e}")))?;
-    let vetoes = subprocess_vetoes(
-        &sets,
-        &evals,
-        &forbidden_onshell(parsed, model)?,
-        evaluated,
-        rc,
-    )
-    .map_err(|e| err(e.to_string()))?;
-    refuse_polarized_frame(rc, &evals, model).map_err(|e| err(e.to_string()))?;
-    let bounds: Vec<_> = evals
-        .iter()
-        .map(|e| BoundAmplitude::<f64>::bind(e, evaluated))
-        .collect();
-
-    let rep = &evals[0];
-    let legs = process_external_legs(rep, model, evaluated);
-    let initial = initial_state(rc, &legs)?;
-    let diagrams: Vec<_> = sets
-        .iter()
-        .flat_map(|s| s.diagrams.iter().cloned())
-        .collect();
-    let cuts = Cuts::compile_with(rc, &legs, &ForcedResonances::of(&diagrams, evaluated))
-        .map_err(|e| err(format!("failed to compile cuts: {e}")))?;
-    let final_masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
-        .iter()
-        .map(|&id| evaluated.mass(id))
-        .collect();
-    let spin_color_avg = initial_spin_color_average(rep, model, evaluated);
-
-    // The subprocesses `compile_subprocesses` kept, in the evaluators' order.
-    let compiled_sets: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
-    let process_of: Vec<i32> = compiled_sets
-        .iter()
-        .map(|s| s.diagrams[0].provenance.process as i32)
-        .collect();
-    let reweight_plan = launches
-        .map(|l| {
-            reweight_plan(
-                &compiled_sets,
-                &forbidden_onshell(parsed, model)?,
-                model,
-                evaluated,
-                l,
-            )
-        })
-        .transpose()?;
-    let resonances: Vec<SubprocessResonances> = if has_decay_chains(parsed) {
-        compiled_sets
-            .iter()
-            .zip(&evals)
-            .map(|(set, eval)| {
-                SubprocessResonances::new(
-                    eval,
-                    &set.diagrams,
-                    model,
-                    evaluated,
-                    rc.float("bwcutoff"),
-                )
+    let given = fields(given);
+    fields(&artifact.generate)
+        .into_iter()
+        .filter_map(|(name, banked)| {
+            let theirs = given
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| "<absent>".to_string());
+            (theirs != banked).then(|| CardMismatch {
+                what: format!("run card `{name}`"),
+                banked,
+                given: theirs,
             })
-            .collect::<Result<_, _>>()
-            .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?
-    } else {
-        Vec::new()
-    };
-
-    let amps: Vec<&BoundAmplitude<f64>> = bounds.iter().collect();
-    let mut integ = FixedBeamIntegrand::new(amps, &cuts, initial, final_masses, spin_color_avg);
-    integ.use_onshell_veto(&vetoes, evaluated);
-    integ.use_resonances(&resonances);
-    // The grids were trained under the artifact's maps; the channels are rebuilt
-    // under exactly those, whatever the rule would choose today.
-    integ.set_map_options(MapOptions::fixed(artifact.maps));
-    integ
-        .use_running_coupling(&diagrams, model, evaluated, rc)
-        .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-
-    let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
-    check_alphas(&alphas)?;
-    match integ.use_multichannel_with_alphas(&diagrams, evaluated, &alphas) {
-        Some(Err(built)) => {
-            return Err(err(format!(
-                "the artifact banks {} channel grids but this process enumerates {built} \
-                 diagrams: the grids were trained on a different process",
-                alphas.len()
-            )))
-        }
-        Some(Ok(())) => {}
-        None => {
-            if alphas.len() != 1 {
-                return Err(err(
-                    "the artifact banks several channel grids but the process enumerates no \
-                     diagrams to map them onto",
-                ));
-            }
-        }
-    }
-    for (j, channel) in artifact.channels.iter().enumerate() {
-        if channel.grid.ndim() != integ.channel_grid_ndim() {
-            return Err(err(format!(
-                "channel {j}'s banked grid is over {} coordinates, this process's channels over \
-                 {}: the grids were trained on a different process",
-                channel.grid.ndim(),
-                integ.channel_grid_ndim()
-            )));
-        }
-    }
-
-    let records: Vec<SubprocessRecord> = evals
-        .iter()
-        .map(|e| SubprocessRecord::new(e, model, evaluated))
-        .collect::<Result<_, _>>()
-        .map_err(|e| err(format!("cannot build a subprocess record: {e}")))?;
-    let (beam_pdg, beam_energy) = match initial {
-        InitialState::Beams(_) => (beam_pdg(&records)?, [rc.ebeam1, rc.ebeam2]),
-        InitialState::Decay(decay) => (decay_pdg(&records)?, [decay.mass(), 0.0]),
-    };
-    let observable = initial.observable();
-
-    let rule = max_rule(args);
-    let scan = Unweighter::scan_with(
-        &integ,
-        artifact
-            .channels
-            .iter()
-            .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
-        args.seed ^ SCAN_SEED_OFFSET,
-        rule,
-    );
-    report_scan(&scan, artifact, args.scan_points, rule, observable);
-
-    let alpha_qed = evaluated
-        .param_values
-        .get("aEW")
-        .map(|v| v.re)
-        .unwrap_or(0.0);
-
-    let mut source = SampleSource::new(
-        &integ,
-        &records,
-        scan,
-        args.seed ^ GEN_SEED_OFFSET,
-        rc,
-        alpha_qed,
-        &process_of,
-        &resonances,
-        reweight_plan.as_ref().map(ReweightPlan::bind),
-    );
-
-    let strategy = weight_strategy(args);
-    let plan = EmitPlan {
-        nevents,
-        sigma_pb: artifact.sigma_pb,
-        sigma_err_pb: artifact.sigma_err_pb,
-        // One final-state multiplicity: the whole file is normalised to the
-        // integration.
-        parts: Vec::new(),
-        beam_pdg,
-        beam_energy,
-        // No parton densities on a fixed-energy or a decay run; `PDFSUP` is
-        // still MadEvent's, read off the card's `pdlabel`.
-        pdf_group: [0, 0],
-        pdf_set: [rc.pdfsup(); 2],
-        process_ids: process_ids(parsed),
-        trailer: vec![generator_element(
-            "vibegraph",
-            env!("CARGO_PKG_VERSION"),
-            "",
-        )],
-        header_blocks: Vec::new(),
-        header: Some(file_header(args, artifact, strategy.as_ref(), observable)),
-        reweights: declared_reweights(reweight_plan.as_ref()),
-        event_norm: rc.event_norm(),
-    };
-
-    let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
-    report_resonances(source.tally, summary.drawn);
-    if reweight_plan.is_some() {
-        source.audit.finish(&args.out)?;
-    }
-    report(
-        artifact,
-        source.stats(),
-        source.sigma_pb(),
-        &summary,
-        strategy.as_ref(),
-        rc.event_norm(),
-        observable,
-    );
-    Ok(summary)
+        })
+        .collect()
 }
 
 /// The reweight card's hypotheses and how to evaluate them, resolved against the
@@ -1105,998 +422,114 @@ fn reweight_launches(
     Ok(Some((launches, options)))
 }
 
-/// Compile and plan the reweighting of `sets`, the run's concrete subprocesses in
-/// the indexing its event source reports, and say what each event will cost.
-fn reweight_plan(
-    sets: &[&DiagramSet],
-    forbidden_onshell: &[i64],
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    (launches, options): (Vec<Launch>, ReweightOptions),
-) -> Result<ReweightPlan, CliError> {
-    let n = launches.len();
-    let plan = ReweightPlan::new(sets, forbidden_onshell, model, evaluated, launches, options)
-        .map_err(|e| err(format!("reweighting: {e}")))?;
-    report_reweighting(n, &plan.summary());
-    Ok(plan)
-}
-
-/// One line per distinct subprocess plan: how many subprocesses share it, how
-/// many amplitude evaluations an event costs, and what serves the hypotheses.
-fn report_reweighting(hypotheses: usize, summary: &[SubprocessSummary]) {
-    let mut lines: Vec<(String, usize)> = Vec::new();
-    for sub in summary {
-        let mut parts: Vec<String> = sub
-            .polynomial
-            .iter()
-            .map(|g| {
-                format!(
-                    "{} as a polynomial in {} ({} amplitude monomials)",
-                    g.hypotheses,
-                    g.params.join(","),
-                    g.terms
-                )
-            })
-            .collect();
-        if sub.exact > 0 {
-            parts.push(format!("{} evaluated directly", sub.exact));
-        }
-        if sub.unchanged > 0 {
-            parts.push(format!("{} not moving |M|^2", sub.unchanged));
-        }
-        let line = format!(
-            "{} evaluations per event: {}",
-            sub.evaluations(),
-            parts.join(", ")
-        );
-        match lines.iter_mut().find(|(l, _)| *l == line) {
-            Some((_, count)) => *count += 1,
-            None => lines.push((line, 1)),
-        }
-    }
-    info!("reweight: {hypotheses} hypotheses");
-    for (line, count) in lines {
-        info!("reweight: {count} subprocess(es), {line}");
-    }
-}
-
-/// The `(id, description)` of every hypothesis the file declares.
-fn declared_reweights(plan: Option<&ReweightPlan>) -> Vec<(String, String)> {
-    plan.map(|p| {
-        p.launches()
-            .iter()
-            .map(|l| (l.id.clone(), l.info.clone()))
-            .collect()
-    })
-    .unwrap_or_default()
-}
-
-/// How far the reweighter's card-point `|M|²` may sit from the integrand's, relative.
-///
-/// The two are independent compilations of the same subprocess — the
-/// reweighter's from the member's own diagrams, pruned at a generic parameter
-/// point; the integrand's from the flavour group's representative, pruned at the
-/// card — so they agree to rounding, not bit for bit. An indexing error (another
-/// member, part or ordering) or a coupling taken at another scale moves `|M|²` at
-/// order one.
-const CARD_POINT_TOLERANCE: f64 = 1e-9;
-
-/// Every reweighted event's denominator checked against the integrand that drew
-/// it: the `|M|²` the reweighter evaluates at the card's own parameters against
-/// the one the integrand evaluated for the drawn subprocess, ordering and coupling,
-/// and the reweighter's subprocess flavours against the event record's.
-///
-/// The ratios themselves are not checked here: a wrong subprocess that still
-/// reproduces the card-point `|M|²` (a member of the same flavour group, which
-/// shares it) is what the flavour comparison is for. Both checks share with the
-/// reweighter the event's momenta, its beam mirror and the model's parameters, and
-/// are blind to an error in any of them.
-#[derive(Default)]
-struct ReweightAudit {
-    /// Events checked per part and beam ordering.
-    terms: Vec<((usize, BeamOrdering), usize)>,
-    largest: f64,
-    m2_mismatches: usize,
-    flavour_mismatches: usize,
-    /// Events with a hypothesis ratio that is not finite.
-    non_finite: usize,
-    first: Option<String>,
-}
-
-impl ReweightAudit {
-    fn check(
-        &mut self,
-        term: (usize, BeamOrdering),
-        m0: f64,
-        m2: f64,
-        pdgs: &[i32],
-        record: &vibegraph::lhef::record::LheEvent,
-        (ratios, launches): (&[f64], &[Launch]),
-    ) {
-        if let Some(k) = ratios.iter().position(|r| !r.is_finite()) {
-            self.non_finite += 1;
-            self.first.get_or_insert_with(|| {
-                format!(
-                    "part {} {:?}: hypothesis `{}` weighs the event {}",
-                    term.0, term.1, launches[k].id, ratios[k]
-                )
-            });
-        }
-        match self.terms.iter_mut().find(|(t, _)| *t == term) {
-            Some((_, n)) => *n += 1,
-            None => self.terms.push((term, 1)),
-        }
-        let deviation = (m0 - m2).abs() / m2.abs().max(f64::MIN_POSITIVE);
-        self.largest = self.largest.max(deviation);
-        if !(deviation <= CARD_POINT_TOLERANCE) {
-            self.m2_mismatches += 1;
-            self.first.get_or_insert_with(|| {
-                format!(
-                    "part {} {:?}: |M|^2 {m0:e} against the integrand's {m2:e}",
-                    term.0, term.1
-                )
-            });
-        }
-        let incoming: Vec<i32> = record
-            .particles
-            .iter()
-            .filter(|p| p.status == STATUS_INCOMING)
-            .map(|p| p.pdg)
-            .collect();
-        let mut outgoing: Vec<i32> = record
-            .particles
-            .iter()
-            .filter(|p| p.status == STATUS_OUTGOING)
-            .map(|p| p.pdg)
-            .collect();
-        outgoing.sort_unstable();
-        let n_in = incoming.len();
-        let mut own_in = pdgs[..n_in.min(pdgs.len())].to_vec();
-        if term.1 == BeamOrdering::Exchanged {
-            own_in.reverse();
-        }
-        let mut own_out = pdgs[n_in.min(pdgs.len())..].to_vec();
-        own_out.sort_unstable();
-        if own_in != incoming || own_out != outgoing {
-            self.flavour_mismatches += 1;
-            self.first.get_or_insert_with(|| {
-                format!(
-                    "part {} {:?}: reweighted {pdgs:?} for an event recorded as \
-                     {incoming:?} > {outgoing:?}",
-                    term.0, term.1
-                )
-            });
-        }
-    }
-
-    /// Report what was checked, and refuse a file whose weights were taken against
-    /// another subprocess than the one each event was drawn in, or are not finite.
-    /// A refused file is removed rather than left beside the error.
-    fn finish(&self, out: &std::path::Path) -> Result<(), CliError> {
-        let events: usize = self.terms.iter().map(|(_, n)| n).sum();
-        let mut terms = self.terms.clone();
-        terms.sort_by_key(|((part, ordering), _)| (*part, *ordering == BeamOrdering::Exchanged));
-        let breakdown = terms
-            .iter()
-            .map(|((part, ordering), n)| {
-                let ordering = match ordering {
-                    BeamOrdering::Direct => "direct",
-                    BeamOrdering::Exchanged => "exchanged",
-                };
-                format!("part {part} {ordering} {n}")
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        info!(
-            "reweight: card-point |M|^2 checked against the integrand on {events} events \
-             ({breakdown}); largest relative deviation {:.1e}; beyond \
-             {CARD_POINT_TOLERANCE:.0e}: {}; flavour mismatches: {}; non-finite weights: {}",
-            self.largest, self.m2_mismatches, self.flavour_mismatches, self.non_finite
-        );
-        let why = if self.m2_mismatches + self.flavour_mismatches > 0 {
-            format!(
-                "reweighting evaluated {} of {events} events in another subprocess than the \
-                 integrand drew them in",
-                self.m2_mismatches.max(self.flavour_mismatches)
-            )
-        } else if self.non_finite > 0 {
-            format!(
-                "{} of {events} events carry a non-finite reweighting weight",
-                self.non_finite
-            )
-        } else {
-            return Ok(());
-        };
-        let removed = match std::fs::remove_file(out) {
-            Ok(()) => "removed it".to_string(),
-            Err(e) => format!("could not remove it ({e})"),
-        };
-        Err(err(format!(
-            "{why}, so the weights in {} are wrong and {removed}; first: {}",
-            out.display(),
-            self.first.as_deref().unwrap_or("")
-        )))
-    }
-}
-
-/// Per part, per flavour group, the index of its first member in the run's
-/// flattened list of concrete subprocesses: every member of every part, in order.
-fn member_offsets<'g>(parts: impl IntoIterator<Item = &'g FlavorGroups>) -> Vec<Vec<usize>> {
-    let mut next = 0;
-    parts
-        .into_iter()
-        .map(|groups| {
-            groups
-                .groups()
-                .iter()
-                .map(|g| {
-                    let first = next;
-                    next += g.members().len();
-                    first
-                })
-                .collect()
-        })
-        .collect()
-}
-
-/// What the frozen scan cost and what it found, then the channels it never
-/// reached.
-///
-/// The draw count and the rule are both printed because between them they set the
-/// maxima every overweight number the run goes on to print is measured against.
-fn report_scan(
-    scan: &Unweighter,
-    artifact: &IntegrateArtifact,
-    budget: ScanBudget,
-    rule: MaxRule,
-    observable: Observable,
-) {
-    let draws = budget.total_draws(artifact.channels.iter().map(|c| c.neval));
-    let per_channel = match budget {
-        ScanBudget::PerChannel(n) => format!("{n} per channel"),
-        ScanBudget::IntegrationShare => {
-            "each channel's share of the integration budget".to_string()
-        }
-    };
-    let unit = observable.per_natural_unit();
-    let efficiency = artifact.sigma_pb / (scan.total_w_max() * unit);
-    tui::state::note_unweighting_efficiency(efficiency);
-    info!(
-        "scan:     {draws} points over {} channels ({per_channel}), sum w_max {:.6e}, \
-         predicted efficiency {efficiency:.4e}",
-        artifact.channels.len(),
-        scan.total_w_max() * unit,
-    );
-    match rule {
-        MaxRule::Extremum => info!("maxima:   the largest weight each channel's scan saw"),
-        MaxRule::Truncated { excess_share } => info!(
-            "maxima:   {:.3}% of each channel's scanned cross section left above them, \
-             summing to {:.4} of the summed largest weight",
-            100.0 * excess_share,
-            scan.total_w_max() / scan.total_w_peak()
-        ),
-    }
-    warn_on_empty_channels(scan, artifact);
-}
-
-/// A channel the frozen scan never reached is never drawn from, so its share of the
-/// banked cross section is simply missing from the sample. That is a property of the
-/// run worth saying out loud rather than a failure.
-fn warn_on_empty_channels(scan: &Unweighter, artifact: &IntegrateArtifact) {
-    let empty = scan.empty_channels();
-    if !empty.is_empty() {
-        warn!(
-            "{} of {} channels produced no point in the weight scan and will never be drawn from \
-             ({empty:?}); their share of the banked cross section is missing from the sample",
-            empty.len(),
-            artifact.channels.len()
-        );
-    }
-}
-
-fn weight_strategy(args: &GenerateArgs) -> Box<dyn UnweightStrategy> {
-    match args.strategy {
-        Strategy::Buffer => Box::new(Buffer),
-        Strategy::StochasticRounding => {
-            Box::new(StochasticRounding::new(args.seed ^ ROUNDING_SEED_OFFSET))
-        }
-    }
-}
-
-/// The provenance block the file carries in its `<header>`.
-fn file_header(
-    args: &GenerateArgs,
-    artifact: &IntegrateArtifact,
-    strategy: &dyn UnweightStrategy,
-    observable: Observable,
-) -> String {
-    let quantity = match observable {
-        Observable::CrossSection => "sigma",
-        // MadEvent's decay-run convention: `XSECUP` and `XWGTUP` carry the
-        // width, in GeV, where a scattering run's carry picobarns.
-        Observable::PartialWidth => "width (XSECUP and XWGTUP in GeV)",
-    };
-    format!(
-        "process {}\nartifact {}\nintegration {quantity} {:.6e} +- {:.6e} {}\nseed {}\n{}",
-        artifact.process,
-        args.artifact.display(),
-        artifact.sigma_pb,
-        artifact.sigma_err_pb,
-        observable.unit(),
-        args.seed,
-        strategy.describe(),
-    )
-}
-
-fn emit_to(
-    args: &GenerateArgs,
-    source: &mut dyn EventSource,
-    plan: &EmitPlan,
-    strategy: &dyn UnweightStrategy,
-) -> Result<EmitSummary, CliError> {
-    let file = std::fs::File::create(&args.out)
-        .map_err(|e| err(format!("cannot create {}: {e}", args.out.display())))?;
-    let mut sink = std::io::BufWriter::new(file);
-    strategy
-        .emit(source, plan, &mut sink)
-        .map_err(|e| err(e.to_string()))
-}
-
-/// Every concrete flavour assignment of every group, under both beam orderings, as
-/// the record layer sees it: `[group][member][ordering]`, with the exchanged slot
-/// absent where the two beams carry the same parton and there is only one ordering.
-type FlavorRecords = Vec<Vec<[Option<SubprocessRecord>; 2]>>;
-
-/// The record slot an ordering occupies.
-fn ordering_slot(ordering: BeamOrdering) -> usize {
-    usize::from(ordering == BeamOrdering::Exchanged)
-}
-
-/// Resolve the record layer's view of every flavour a group's events can be
-/// labelled with.
-///
-/// One compiled amplitude serves the whole group, so each member is that
-/// amplitude's record relabelled: the PDG codes, the colour reps and the colour-flow
-/// table are the member's own — a group may join subprocesses that route their colour
-/// lines between different pairs of legs — and an exchanged beam ordering additionally
-/// trades the two incoming legs of every per-leg field.
-fn flavor_records(
-    groups: &FlavorGroups,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-) -> Result<FlavorRecords, CliError> {
-    let mut out = Vec::with_capacity(groups.groups().len());
-    for group in groups.groups() {
-        let base = SubprocessRecord::new(group.evaluator(), model, evaluated)
-            .map_err(|e| err(format!("cannot build a subprocess record: {e}")))?;
-        let mut members = Vec::with_capacity(group.members().len());
-        for (i, member) in group.members().iter().enumerate() {
-            let mut slots = [None, None];
-            for ordering in [BeamOrdering::Direct, BeamOrdering::Exchanged] {
-                if ordering == BeamOrdering::Exchanged && !member.has_mirror() {
-                    continue;
-                }
-                let (pdg, order) = group.event_legs(i, ordering);
-                let legs = group.event_leg_colors(i, ordering);
-                slots[ordering_slot(ordering)] = Some(
-                    base.relabelled(&order, &pdg, &legs, &member.flows)
-                        .map_err(|e| err(format!("cannot relabel {pdg:?}: {e}")))?,
-                );
-            }
-            members.push(slots);
-        }
-        out.push(members);
-    }
-    Ok(out)
-}
-
-/// The artifact's channels, matched to this process's **position by position**.
-///
-/// A hadronic channel is a `(group, diagram)` pair, or the pairs sharing one map
-/// — of one multiplicity, on a card of several — and the grids are banked in the integrand's own channel
-/// order, so the same set of keys in another order would install every grid on
-/// the wrong channel — a run that samples a perfectly plausible wrong
-/// distribution with nothing else to show for it. Comparing counts, or comparing
-/// the keys as a set, would not see it.
-fn check_channel_keys(
-    artifact: &IntegrateArtifact,
-    integ: &MultiplicitySum<'_>,
-) -> Result<(), CliError> {
-    let derived = integ.channel_keys();
-    if artifact.channels.len() != derived.len() {
+pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), CliError> {
+    args.parallel.install().map_err(err)?;
+    if !args.force && args.out.exists() {
         return Err(err(format!(
-            "the artifact banks {} channel grids but this process has {} (group, diagram) \
-             channels: the grids were trained on a different process",
-            artifact.channels.len(),
-            derived.len()
+            "{} already exists (pass --force to overwrite)",
+            args.out.display()
         )));
     }
-    for (j, (banked, want)) in artifact.channels.iter().zip(&derived).enumerate() {
-        if banked.key != *want {
-            return Err(err(format!(
-                "the artifact's channel {j} is {:?} but this process's channel {j} is {want:?}: \
-                 the grids were trained on a different process, or on the same one in a \
-                 different channel order",
-                banked.key
-            )));
-        }
-        if banked.grid.ndim() != integ.channel_grid_ndim(j) {
-            return Err(err(format!(
-                "channel {j}'s banked grid is over {} coordinates, this process's channel over \
-                 {}: the grids were trained on a different process",
-                banked.grid.ndim(),
-                integ.channel_grid_ndim(j)
-            )));
-        }
-    }
-    Ok(())
-}
 
-/// One multiplicity's record-layer tables: its flavour records, and where the card
-/// has decay chains, each group's resonances and their per-member PDG codes.
-struct PartRecords {
-    records: FlavorRecords,
-    resonances: Vec<SubprocessResonances>,
-    /// `[group][member][config][line]`: the PDG code a resonance line of the
-    /// group's representative carries in a member.
-    member_pdgs: Vec<Vec<Vec<Vec<i32>>>>,
-}
+    let opts = ParsingOptions::default();
+    let parsed = crate::read_proc_card(&args.proc_card, &opts)?;
+    let process = process_string(&parsed)?;
 
-/// The accept/reject pass over a hadronic integrand as a replayable source.
-///
-/// The difference from a fixed-beam run is entirely in what an accepted point
-/// carries: its own beam momentum fractions, its own scales, and a concrete flavour
-/// assignment drawn from the parton luminosities at those fractions. On a card of
-/// several final-state multiplicities a channel of any of them may be drawn, and
-/// the event is labelled from its own multiplicity's tables.
-struct ProtonSampleSource<'s, 'a> {
-    integrand: &'s MultiplicitySum<'a>,
-    /// Per multiplicity, in the integrand's part order.
-    parts: &'s [PartRecords],
-    pristine: Unweighter,
-    unweighter: Unweighter,
-    rng: ChaCha8Rng,
-    seed: u64,
-    alpha_qed: f64,
-    tally: ResonanceTally,
-    /// The reweighting hypotheses, indexed by concrete subprocess across every
-    /// part: `member_offset[part][group] + member`.
-    reweighter: Option<Reweighter<'s>>,
-    member_offset: Vec<Vec<usize>>,
-    mirrored: Vec<V>,
-    audit: ReweightAudit,
-}
-
-impl<'s, 'a> ProtonSampleSource<'s, 'a> {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        integrand: &'s MultiplicitySum<'a>,
-        parts: &'s [PartRecords],
-        unweighter: Unweighter,
-        seed: u64,
-        alpha_qed: f64,
-        reweighter: Option<Reweighter<'s>>,
-    ) -> Self {
-        ProtonSampleSource {
-            integrand,
-            parts,
-            pristine: unweighter.clone(),
-            unweighter,
-            rng: ChaCha8Rng::seed_from_u64(seed),
-            seed,
-            alpha_qed,
-            tally: ResonanceTally::default(),
-            reweighter,
-            member_offset: member_offsets(integrand.parts().iter().map(ProtonIntegrand::groups)),
-            mirrored: Vec::new(),
-            audit: ReweightAudit::default(),
-        }
-    }
-}
-
-impl EventSource for ProtonSampleSource<'_, '_> {
-    fn next_event(&mut self) -> Option<WeightedEvent> {
-        let point =
-            self.unweighter
-                .next_event(self.integrand, &mut self.rng, MAX_TRIALS_PER_EVENT)?;
-        let (k, event) = self.integrand.event_in_channel(point.channel, &point.u)?;
-        let integrand: &ProtonIntegrand<'_> = &self.integrand.parts()[k];
-        let part = &self.parts[k];
-        let selection = integrand.select_event(
-            &event,
-            [
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-                self.rng.random(),
-            ],
-        )?;
-        let externals: Vec<[f64; 4]> = event
-            .lab
-            .iter()
-            .map(|p| [p.e(), p.px(), p.py(), p.pz()])
-            .collect();
-        // The coupling the matrix element itself ran at, off the PDF set's own
-        // tabulation — the one the densities were fitted with.
-        let alpha_qcd = integrand
-            .alpha_s_source()
-            .map(|source| source.eval(selection.scales.mu_r))
-            .unwrap_or(0.0);
-        let member = &integrand.groups().groups()[selection.group].members()[selection.member];
-        let header = EventHeader {
-            // `IDPRUP` is the member's process number, `@N`: MadEvent writes the
-            // number of the event's `P<n>` directory, which is the `@N` of the
-            // processes grouped into it.
-            process_id: member.process as i32,
-            // The strategy imposes the file's weight convention; this slot is
-            // overwritten before the record is written.
-            weight: 0.0,
-            scale: scalup(&selection.scales),
-            alpha_qed: self.alpha_qed,
-            alpha_qcd,
-        };
-        let resonances = part.resonances.get(selection.group).map(|table| {
-            (
-                table,
-                part.member_pdgs[selection.group][selection.member].as_slice(),
-            )
-        });
-        let subprocess = part.records[selection.group][selection.member]
-            [ordering_slot(selection.ordering)]
-        .as_ref()?;
-        let record = match &selection.record {
-            Some(matched) => matched_event_record(
-                subprocess,
-                &externals,
-                &selection.helicity,
-                selection.flow,
-                header,
-                resonances,
-                (selection.scales.clustered_config, selection.leading),
-                matched,
-                &mut self.tally,
-            )?,
-            None => event_record(
-                subprocess,
-                &externals,
-                &selection.helicity,
-                selection.flow,
-                header,
-                resonances.map(|(table, pdgs)| (table, Some(pdgs))),
-                (selection.config, selection.leading),
-                &mut self.tally,
-            )?,
-        };
-        let mut reweights = Vec::new();
-        if let Some(rw) = self.reweighter.as_mut() {
-            // The member's own amplitude, in the frame and leg order the group's
-            // was evaluated in for this ordering.
-            let group = &integrand.groups().groups()[selection.group];
-            let momenta = match selection.ordering {
-                BeamOrdering::Direct => &event.cm,
-                BeamOrdering::Exchanged => {
-                    group.mirror_into(&event.cm, &mut self.mirrored);
-                    &self.mirrored
-                }
-            };
-            let sub = self.member_offset[k][selection.group] + selection.member;
-            let m0 = rw.ratios(sub, momenta, Some(alpha_qcd), &mut reweights);
-            self.audit.check(
-                (k, selection.ordering),
-                m0,
-                selection.m2,
-                rw.pdgs(sub),
-                &record,
-                (&reweights, rw.launches()),
-            );
-        }
-        Some(WeightedEvent {
-            record,
-            weight: point.weight,
-            part: k,
-            reweights,
-        })
-    }
-
-    fn restart(&mut self) {
-        self.unweighter = self.pristine.clone();
-        self.rng = ChaCha8Rng::seed_from_u64(self.seed);
-        self.tally = ResonanceTally::default();
-        self.audit = ReweightAudit::default();
-    }
-
-    fn sigma_pb(&self) -> f64 {
-        self.unweighter.sigma_from_events() * GEV2_TO_PB
-    }
-}
-
-/// Rebuild the hadronic integrand the artifact describes, unweight against its
-/// frozen grids, and write the file.
-///
-/// Every physics input is taken from the cards the artifact was checked against;
-/// the channel selection weights are *installed* from the artifact rather than
-/// re-surveyed, because a survey reproduces them only by accident and `alpha_j`
-/// enters every channel's weight.
-#[allow(clippy::too_many_arguments)]
-fn generate_proton_sample(
-    args: &GenerateArgs,
-    artifact: &IntegrateArtifact,
-    parsed: &vibegraph::diagrams::SupportedCard,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    rc: &RunCard,
-    nevents: usize,
-    set: &PdfSet,
-    pdf: &PdfMember,
-    launches: Option<(Vec<Launch>, ReweightOptions)>,
-) -> Result<EmitSummary, CliError> {
-    let sqrt_s_had = rc.ebeam1 + rc.ebeam2;
-
-    let MultiplicityGroups { groups, vetoes } =
-        multiplicity_groups(parsed, model, evaluated, rc, args.parallel.enumeration())?;
-    refuse_stale_artifact_on_mixed_multiplicity(artifact, groups.len())?;
-    refuse_rounding_on_mixed_multiplicity(args.strategy, groups.len())?;
-    let mut parts_records = Vec::with_capacity(groups.len());
-    // Under matching every record lists the resonances the clustering found on
-    // their Breit–Wigner, whatever the card's decays.
-    let matched = rc.int("ickkw") > 0;
-    for part_groups in &groups {
-        let (resonances, member_pdgs) = if has_decay_chains(parsed) || matched {
-            group_resonances(part_groups, model, evaluated, rc.float("bwcutoff"))?
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        parts_records.push(PartRecords {
-            records: flavor_records(part_groups, model, evaluated)?,
-            resonances,
-            member_pdgs,
-        });
-    }
-    let amps: Vec<Vec<BoundAmplitude<f64>>> = groups
-        .iter()
-        .map(|part| {
-            part.groups()
-                .iter()
-                .map(|g| BoundAmplitude::<f64>::bind(g.evaluator(), evaluated))
-                .collect()
-        })
-        .collect();
-
-    // The grids were trained under the artifact's maps; the channels and the `τ`
-    // draw are rebuilt under exactly those, whatever the rule would choose today.
-    let maps = multiplicity_maps(
-        &groups,
-        evaluated,
-        sqrt_s_had,
-        MapOptions::fixed(artifact.maps),
-    );
-    let mut parts = Vec::with_capacity(groups.len());
-    for (((part_groups, part_amps), part_vetoes), records) in
-        groups.iter().zip(&amps).zip(&vetoes).zip(&parts_records)
-    {
-        let mut integ = ProtonIntegrand::new_with_maps(
-            part_groups,
-            part_amps,
-            evaluated,
-            pdf,
-            sqrt_s_had,
-            rc.dsqrt_q2fact1,
-            maps,
+    let config = GlobalConfig {
+        ufo_search_path: crate::assets::resolve_ufo_search_path(
+            parsed.model.as_ref(),
+            args.ufo_dir.as_deref(),
         )
-        .map_err(|e| err(format!("failed to build the hadronic integrand: {e}")))?;
-        integ.use_onshell_veto(part_vetoes, evaluated);
-        integ
-            .use_run_card_scales(model, evaluated, rc, Some(&set.info.alpha_s))
-            .map_err(|e| err(format!("run card scale prescription: {e}")))?;
-        if has_decay_chains(parsed) {
-            integ.use_resonances(&records.resonances);
-        }
-        parts.push(integ);
-    }
-    let mut integ = MultiplicitySum::new(parts);
+        .map_err(err)?,
+        restrict_path_override: None,
+        run_card_path: args.run_card.clone(),
+    };
+    let (model, model_id) = config
+        .load_ufo_with_identity(&parsed.model)
+        .map_err(|e| err(format!("failed to load model: {e}")))?;
+    // The run card is checked before the artifact is opened, as `integrate` checks
+    // it before enumerating: a card the generator must refuse is the first error
+    // whatever is wrong with the artifact.
+    let (rc, card_settings) = load_run_card(&config, &parsed)?.split();
+    let artifact = IntegrateArtifact::read_from_path(&args.artifact)
+        .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;
 
-    artifact
-        .refuse_unmerged_grids(&integ.channel_keys())
-        .map_err(err)?;
-    check_channel_keys(artifact, &integ)?;
-    let alphas: Vec<f64> = artifact.channels.iter().map(|c| c.alpha).collect();
-    for k in 0..groups.len() {
-        check_alphas(&alphas[integ.offsets()[k]..integ.offsets()[k + 1]])?;
-    }
-    integ.set_channel_alphas(alphas);
+    tui::state::describe_model(
+        &model_id.label(),
+        &model_id.digest,
+        model.particles.len(),
+        model.vertices.len(),
+        model.couplings.len(),
+    );
+    tui::state::describe_process(&process);
+    tui::state::note_channels(artifact.channels.len());
 
-    // Every member of every part, in the order `member_offsets` indexes them.
-    let reweight_plan = launches
-        .map(|l| {
-            let members: Vec<&DiagramSet> = groups
-                .iter()
-                .flat_map(FlavorGroups::groups)
-                .flat_map(|g| (0..g.members().len()).map(|i| g.member_diagram_set(i)))
-                .collect();
-            reweight_plan(
-                &members,
-                &forbidden_onshell(parsed, model)?,
-                model,
-                evaluated,
-                l,
-            )
+    let hadronic = !parsed.is_decay() && rc.beam_mode() == BeamMode::Proton;
+    let mut mismatches = card_mismatches(&artifact, &model_id, &process, &rc);
+    mismatches.extend(settings_mismatches(&artifact, &card_settings));
+    // A fixed-energy run reads no parton distributions, and the artifact says so;
+    // the flag is only meaningful on the hadronic path.
+    let pdf_set = if hadronic { &args.pdf_set } else { NO_PDF };
+    mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
+    refuse_on_mismatch(&mismatches)?;
+
+    let evaluated = EvaluatedModel::from_model(model.clone());
+    let reweight = reweight_launches(args, &parsed, &model)?;
+    let mut settings = artifact.generate.clone();
+    if let Some(nevents) = args.nevents {
+        settings.nevents = nevents as u64;
+    }
+    if settings.nevents == 0 {
+        return Err(err(match args.nevents {
+            Some(_) => "no events requested: --nevents is 0".to_string(),
+            None => format!(
+                "no events requested: --nevents is absent and the run card recorded in {} \
+                 asks for nevents = 0",
+                args.artifact.display(),
+            ),
+        }));
+    }
+
+    let set = if hadronic {
+        Some(load_pdf_set(&args.pdf_set, args.pdf_dir.as_ref(), network)?)
+    } else {
+        None
+    };
+    let member = set
+        .as_ref()
+        .map(|set| {
+            set.member(PDF_MEMBER)
+                .map_err(|e| err(format!("cannot load PDF member {PDF_MEMBER}: {e}")))
         })
         .transpose()?;
-    let beam_pdg = PROTON_BEAM_PDG;
-
-    let rule = max_rule(args);
-    let scan = Unweighter::scan_with(
-        &integ,
-        artifact
-            .channels
-            .iter()
-            .map(|c| (&c.grid, args.scan_points.draws_for(c.neval))),
-        args.seed ^ SCAN_SEED_OFFSET,
-        rule,
-    );
-    report_scan(
-        &scan,
-        artifact,
-        args.scan_points,
-        rule,
-        Observable::CrossSection,
-    );
-
-    let alpha_qed = evaluated
-        .param_values
-        .get("aEW")
-        .map(|v| v.re)
-        .unwrap_or(0.0);
-    let mut source = ProtonSampleSource::new(
-        &integ,
-        &parts_records,
-        scan,
-        args.seed ^ GEN_SEED_OFFSET,
-        alpha_qed,
-        reweight_plan.as_ref().map(ReweightPlan::bind),
-    );
-
-    let strategy = weight_strategy(args);
-    let plan = EmitPlan {
-        nevents,
-        sigma_pb: artifact.sigma_pb,
-        sigma_err_pb: artifact.sigma_err_pb,
-        parts: part_sigmas(artifact, integ.offsets()),
-        beam_pdg,
-        beam_energy: [rc.ebeam1, rc.ebeam2],
-        // MadGraph writes the LHAPDF id in `PDFSUP` and leaves `PDFGUP` at zero,
-        // the accord's "the set is named by its LHAPDF id alone" spelling.
-        pdf_group: [0, 0],
-        pdf_set: [rc.pdfsup(); 2],
-        process_ids: process_ids(parsed),
-        trailer: vec![generator_element(
-            "vibegraph",
-            env!("CARGO_PKG_VERSION"),
-            "",
-        )],
-        // The card a shower's MLM matching reads its parameters from.
-        header_blocks: if matched {
-            vec![mg_run_card(rc)]
-        } else {
-            Vec::new()
-        },
-        header: Some(file_header(
-            args,
-            artifact,
-            strategy.as_ref(),
-            Observable::CrossSection,
-        )),
-        reweights: declared_reweights(reweight_plan.as_ref()),
-        event_norm: rc.event_norm(),
+    let assets = GenerateAssets {
+        card: &parsed,
+        model: &model,
+        evaluated: &evaluated,
+        pdf: set.as_ref().zip(member.as_ref()),
     };
-
-    let summary = emit_to(args, &mut source, &plan, strategy.as_ref())?;
-    report_resonances(source.tally, summary.drawn);
-    if reweight_plan.is_some() {
-        source.audit.finish(&args.out)?;
-    }
-    report(
-        artifact,
-        source.unweighter.stats(),
-        source.sigma_pb(),
-        &summary,
-        strategy.as_ref(),
-        rc.event_norm(),
-        Observable::CrossSection,
-    );
-    Ok(summary)
-}
-
-/// Each final-state multiplicity's integrated cross section, from its channels'
-/// banked terms (`offsets[k]..offsets[k + 1]` in the artifact's channel order),
-/// for a sum over several; empty for one, whose part is the whole integration.
-fn part_sigmas(artifact: &IntegrateArtifact, offsets: &[usize]) -> Vec<PartSigma> {
-    if offsets.len() <= 2 {
-        return Vec::new();
-    }
-    offsets
-        .windows(2)
-        .map(|range| {
-            let channels = &artifact.channels[range[0]..range[1]];
-            PartSigma {
-                sigma_pb: channels.iter().map(|c| c.sigma_pb).sum(),
-                sigma_err_pb: channels
-                    .iter()
-                    .map(|c| c.sigma_err_pb * c.sigma_err_pb)
-                    .sum::<f64>()
-                    .sqrt(),
-            }
-        })
-        .collect()
-}
-
-/// Every flavour group's resonance lines, and the PDG code each line carries in
-/// each of the group's members (`[group][member][config][line]`).
-///
-/// A group's lines are its representative's; a member's line is the same
-/// flavour or its antiparticle ([`member_line_pdg`]), resolved here once so a
-/// member whose resonance neither describes is refused before any event is drawn.
-#[allow(clippy::type_complexity)]
-fn group_resonances(
-    groups: &FlavorGroups,
-    model: &UFOModel,
-    evaluated: &EvaluatedModel,
-    bwcutoff: f64,
-) -> Result<(Vec<SubprocessResonances>, Vec<Vec<Vec<Vec<i32>>>>), CliError> {
-    let mut tables = Vec::with_capacity(groups.groups().len());
-    let mut pdgs = Vec::with_capacity(groups.groups().len());
-    for group in groups.groups() {
-        let table = SubprocessResonances::new(
-            group.evaluator(),
-            group.diagrams(),
-            model,
-            evaluated,
-            bwcutoff,
-        )
-        .map_err(|e| err(format!("cannot resolve the resonances: {e}")))?;
-        let mut members = Vec::with_capacity(group.members().len());
-        for member in group.members() {
-            let mut configs = Vec::with_capacity(group.evaluator().n_configs());
-            for config in 0..group.evaluator().n_configs() {
-                let lines = table
-                    .lines(config)
-                    .iter()
-                    .map(|line| {
-                        member_line_pdg(line, table.outgoing(), &member.outgoing, model).ok_or_else(
-                            || {
-                                err(format!(
-                                    "the resonance {} of {} has no flavour in the subprocess \
-                                     with outgoing {:?} that shares its matrix element",
-                                    line.pdg,
-                                    group.diagram_set().label(),
-                                    member.outgoing
-                                ))
-                            },
-                        )
-                    })
-                    .collect::<Result<Vec<i32>, _>>()?;
-                configs.push(lines);
-            }
-            members.push(configs);
-        }
-        tables.push(table);
-        pdgs.push(members);
-    }
-    Ok((tables, pdgs))
-}
-
-/// `IDBMUP` for a hadron-collider run: a proton on each side, the one hadron
-/// beam pair [`BeamMode::Proton`] stands for (the run card admits it only as
-/// `lpp1 = lpp2 = 1`).
-const PROTON_BEAM_PDG: [i32; 2] = [2212, 2212];
-
-/// `IDBMUP` for a fixed-beam run: the incoming legs' PDG codes, which every
-/// subprocess sharing one `<init>` block has to agree on.
-fn beam_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
-    let first = &records[0];
-    if first.n_in() != 2 {
-        return Err(err(format!(
-            "a Les Houches beam pair needs two incoming legs, this process has {}",
-            first.n_in()
-        )));
-    }
-    let beams = [first.pdg()[0], first.pdg()[1]];
-    for record in records {
-        if record.pdg()[..2] != beams {
-            return Err(err(
-                "the subprocesses do not share an initial state, so one <init> block cannot \
-                 describe them",
-            ));
-        }
-    }
-    Ok(beams)
-}
-
-/// `IDBMUP` for a decay run: the decaying particle's PDG code and `0`, as MadEvent
-/// writes it — the second beam slot is empty, since there is no second incoming
-/// particle.
-fn decay_pdg(records: &[SubprocessRecord]) -> Result<[i32; 2], CliError> {
-    let mother = records[0].pdg()[0];
-    if records
-        .iter()
-        .any(|r| r.n_in() != 1 || r.pdg()[0] != mother)
-    {
-        return Err(err(
-            "the subprocesses do not share one decaying particle, so one <init> block cannot \
-             describe them",
-        ));
-    }
-    Ok([mother, 0])
-}
-
-/// The banked channel weights have to be a usable selection distribution before
-/// they are installed, since the combiner asserts rather than reports.
-fn check_alphas(alphas: &[f64]) -> Result<(), CliError> {
-    if alphas.is_empty() {
-        return Err(err("the artifact banks no channel grids"));
-    }
-    let sum: f64 = alphas.iter().sum();
-    if !alphas.iter().all(|&a| a > 0.0) || (sum - 1.0).abs() >= 1e-9 {
-        return Err(err(format!(
-            "the artifact's channel weights are not a normalised selection distribution \
-             (sum {sum}); regenerate it with `vibegraph integrate`"
-        )));
-    }
+    let options = GenerateOptions {
+        seed: args.seed,
+        strategy: args.strategy.into(),
+        scan_points: args.scan_points,
+        max_rule: max_rule(args),
+        reweight,
+        enumeration: args.parallel.enumeration(),
+        out: args.out.clone(),
+        artifact_label: args.artifact.display().to_string(),
+        on_scan: Some(&tui::state::note_unweighting_efficiency),
+    };
+    generate(&artifact, &assets, &settings, &options).map_err(|e| err(e.to_string()))?;
+    // The command's result: the path a caller pipes this to learn, at any
+    // verbosity. Everything else the run had to say went to the notice stream.
+    tui::result_line(format_args!("wrote {}", args.out.display()));
     Ok(())
-}
-
-fn report(
-    artifact: &IntegrateArtifact,
-    stats: &UnweightStats,
-    sample_sigma: f64,
-    summary: &EmitSummary,
-    strategy: &dyn UnweightStrategy,
-    norm: EventNorm,
-    observable: Observable,
-) {
-    let (symbol, unit) = (observable.symbol(), observable.unit());
-    info!("process:  {}", artifact.process);
-    info!("strategy: {}", strategy.describe());
-    info!(
-        "sampling: {} events from {} accepted points in {} trials (efficiency {:.4e})",
-        summary.written,
-        summary.drawn,
-        stats.trials,
-        stats.efficiency()
-    );
-    info!(
-        "overweight: rate {:.3e}, cross-section share {:.3e}, largest w/w_max {:.3}",
-        stats.overweight_fraction(),
-        stats.overweight_weight_share(),
-        stats.ratio_max
-    );
-    info!(
-        "{symbol}:        {sample_sigma:.6} ± {:.6} {unit} from the sample vs {:.6} ± {:.6} \
-         {unit} from the integration ({:+.3}%, pull {:+.2})",
-        summary.sample_sigma_err_pb,
-        artifact.sigma_pb,
-        artifact.sigma_err_pb,
-        100.0 * (sample_sigma / artifact.sigma_pb - 1.0),
-        (sample_sigma - artifact.sigma_pb)
-            / summary
-                .sample_sigma_err_pb
-                .hypot(artifact.sigma_err_pb)
-                .max(f64::MIN_POSITIVE)
-    );
-    info!(
-        "file:     IDWTUP = {}, XSECUP = {:.6e} {unit}, XMAXUP = {:.6e}",
-        strategy.weight_strategy(norm).as_i32(),
-        summary.xsec_pb,
-        summary.xmax
-    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use vibegraph::artifact::{ChannelGrid, ChannelKey, FORMAT_VERSION};
-    use vibegraph::hadronic::FixedBeams;
     use vibegraph::phasespace::maps::MapChoices;
     use vibegraph::ufo::sm::SMRestrict;
     use vibegraph::vegas::{GridRule, VegasGrid};
@@ -2105,62 +538,11 @@ mod tests {
         ModelIdentity::interned_sm(SMRestrict::Default)
     }
 
-    /// A file the reweighting audit refuses is removed, and a clean audit leaves
-    /// it in place.
-    #[test]
-    fn a_refused_reweighting_removes_its_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("events.lhe");
-        let launches = vec![Launch {
-            id: "zero".to_string(),
-            info: String::new(),
-            values: vec![("aEWM1".to_string(), 0.0)],
-        }];
-        let record = vibegraph::lhef::record::LheEvent {
-            process_id: 1,
-            weight: 1.0,
-            scale: 0.0,
-            alpha_qed: 0.0,
-            alpha_qcd: 0.0,
-            particles: Vec::new(),
-            trailer: Vec::new(),
-            source: None,
-        };
-
-        std::fs::write(&out, "<LesHouchesEvents>").unwrap();
-        let mut clean = ReweightAudit::default();
-        clean.check(
-            (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
-            &[],
-            &record,
-            (&[2.0], &launches),
-        );
-        clean.finish(&out).unwrap();
-        assert!(out.exists());
-
-        let mut refused = ReweightAudit::default();
-        refused.check(
-            (0, BeamOrdering::Direct),
-            1.0,
-            1.0,
-            &[],
-            &record,
-            (&[f64::NAN], &launches),
-        );
-        let why = refused.finish(&out).unwrap_err().to_string();
-        assert!(
-            why.contains("non-finite") && why.contains("`zero`"),
-            "{why}"
-        );
-        assert!(!out.exists(), "{why}");
-    }
-
     fn artifact(process: &str, run_card: RunCard) -> IntegrateArtifact {
         IntegrateArtifact {
             format_version: FORMAT_VERSION,
             process: process.to_string(),
+            proc_card: format!("import model sm\ngenerate {process}\n"),
             model: sm(),
             pdf_set: "none".to_string(),
             pdf_member: 0,
@@ -2170,6 +552,7 @@ mod tests {
             niter: 2,
             seed: 1,
             run_card,
+            generate: RunCard::default().split().1,
             channels: vec![ChannelGrid {
                 key: ChannelKey::Whole,
                 alpha: 1.0,
@@ -2189,18 +572,10 @@ mod tests {
     }
 
     fn card(text: &str) -> RunCard {
-        RunCard::parse(text).expect("run card")
+        RunCard::parse(text).expect("run card").split().0
     }
 
     const BASE_CARD: &str = "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n";
-
-    /// Stochastic rounding is refused on a sum over multiplicities and only there.
-    #[test]
-    fn stochastic_rounding_is_refused_on_a_sum_over_multiplicities() {
-        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 1).is_ok());
-        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::Buffer, 3).is_ok());
-        assert!(refuse_rounding_on_mixed_multiplicity(Strategy::StochasticRounding, 3).is_err());
-    }
 
     /// The refusal is the point, so it is the refusal that is tested: a matching
     /// pair passing proves nothing on its own, since a check that always passes
@@ -2278,136 +653,42 @@ mod tests {
     #[test]
     fn omitting_the_run_card_does_not_pass_as_a_match() {
         let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
-        let found = card_mismatches(&banked, &sm(), "e+ e- > mu+ mu-", &RunCard::default());
+        let found = card_mismatches(
+            &banked,
+            &sm(),
+            "e+ e- > mu+ mu-",
+            &RunCard::default().split().0,
+        );
         assert!(
             found.iter().any(|m| m.what == "run card `lpp1`"),
             "{found:?}"
         );
     }
 
+    /// A generation setting a card moves is refused by its run-card name, the
+    /// same card is not, and `--nevents` alone never reaches the comparison.
     #[test]
-    fn channel_weights_must_be_a_selection_distribution() {
-        assert!(check_alphas(&[0.25, 0.75]).is_ok());
-        assert!(check_alphas(&[]).is_err());
-        assert!(check_alphas(&[0.25, 0.25]).is_err());
-        assert!(check_alphas(&[-0.5, 1.5]).is_err());
-    }
-
-    /// [`EventSource::restart`] promises the identical sequence follows, and a
-    /// two-pass strategy would be silently wrong if it did not. Nothing here
-    /// consumes it yet, so this is where the promise is kept honest: the sequence
-    /// is drawn, the source restarted, and the sequence drawn again — records and
-    /// weights, not just counts, since a restart that reseeded only the accept
-    /// stream would still produce the right number of events.
-    #[test]
-    fn restarting_the_source_replays_the_same_events() {
-        use vibegraph::diagrams::{generate_from_proc_card, parse_proc_card, ParsingOptions};
-        use vibegraph::ufo::sm::{sm_model, SMRestrict};
-        use vibegraph::vegas::VegasGrid;
-
-        let model = sm_model(SMRestrict::Default);
-        let evaluated = EvaluatedModel::from_model(model.clone());
-        let opts = ParsingOptions::default();
-        let parsed = parse_proc_card("generate e+ e- > mu+ mu-", &opts).unwrap();
-        let sets = generate_from_proc_card(&parsed, &model).unwrap();
-        let evals = compile_subprocesses(&sets, &model, &evaluated).unwrap();
-        let bounds: Vec<_> = evals
-            .iter()
-            .map(|e| BoundAmplitude::<f64>::bind(e, &evaluated))
-            .collect();
-        let rep = &evals[0];
-        let rc = RunCard::parse(BASE_CARD).unwrap();
-        let cuts = Cuts::compile(&rc, &process_external_legs(rep, &model, &evaluated)).unwrap();
-        let masses: Vec<f64> = rep.external_particles()[rep.n_in()..]
-            .iter()
-            .map(|&id| evaluated.mass(id))
-            .collect();
-        let avg = initial_spin_color_average(rep, &model, &evaluated);
-        let diagrams: Vec<_> = sets
-            .iter()
-            .flat_map(|s| s.diagrams.iter().cloned())
-            .collect();
-
-        let legs = process_external_legs(rep, &model, &evaluated);
-        let mut integ = FixedBeamIntegrand::new(
-            bounds.iter().collect(),
-            &cuts,
-            FixedBeams::from_run_card(&rc, &legs),
-            masses,
-            avg,
-        );
-        let n = diagrams.len();
-        let alphas = vec![1.0 / n as f64; n];
-        integ
-            .use_multichannel_with_alphas(&diagrams, &evaluated, &alphas)
+    fn a_changed_generation_setting_is_refused() {
+        let banked = artifact("e+ e- > mu+ mu-", card(BASE_CARD));
+        let same = RunCard::parse(BASE_CARD).unwrap().split().1;
+        assert!(settings_mismatches(&banked, &same).is_empty());
+        let moved = RunCard::parse(&format!("{BASE_CARD}  sum = event_norm\n"))
             .unwrap()
-            .unwrap();
-
-        let records: Vec<SubprocessRecord> = evals
-            .iter()
-            .map(|e| SubprocessRecord::new(e, &model, &evaluated).unwrap())
-            .collect();
-        let grids: Vec<VegasGrid> = (0..n)
-            .map(|_| VegasGrid::new(integ.channel_grid_ndim(), 16, 0.0))
-            .collect();
-        let scan = Unweighter::scan(&integ, grids.iter().map(|g| (g, 2_000)), 3);
-
-        let process_of = vec![1; records.len()];
-        let launches = resolve(
-            &"launch\n set MZ 90.0\nlaunch\n set DECAY 23 3.0\nlaunch\n"
-                .parse()
-                .unwrap(),
-            &model,
-        )
-        .unwrap();
-        let compiled: Vec<&DiagramSet> = sets.iter().filter(|s| !s.diagrams.is_empty()).collect();
-        let plan = ReweightPlan::new(
-            &compiled,
-            &[],
-            &model,
-            &evaluated,
-            launches,
-            ReweightOptions::default(),
-        )
-        .unwrap();
-        let mut source = SampleSource::new(
-            &integ,
-            &records,
-            scan,
-            11,
-            &rc,
-            0.0075,
-            &process_of,
-            &[],
-            Some(plan.bind()),
+            .split()
+            .1;
+        let found = settings_mismatches(&banked, &moved);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].what, "run card `event_norm`");
+        assert_eq!(
+            (found[0].banked.as_str(), found[0].given.as_str()),
+            ("average", "sum")
         );
-        let first: Vec<_> = (0..40)
-            .map(|_| source.next_event().expect("an event"))
-            .map(|e| (e.record, e.weight, e.reweights))
-            .collect();
-        for (_, _, reweights) in &first {
-            assert_eq!(reweights.len(), 3);
-            assert!(reweights[0] > 0.0 && reweights[0] != 1.0, "{reweights:?}");
-            assert!(reweights[1] > 0.0 && reweights[1] != 1.0, "{reweights:?}");
-            assert_eq!(
-                reweights[2], 1.0,
-                "a launch changing nothing is the event itself"
-            );
-        }
-        let trials = source.stats().trials;
-        let sigma = source.sigma_pb();
-        assert!(trials > 40 && sigma > 0.0, "the pass produced nothing");
-
-        source.restart();
-        assert_eq!(source.stats().trials, 0, "the accumulators did not reset");
-        let again: Vec<_> = (0..40)
-            .map(|_| source.next_event().expect("an event"))
-            .map(|e| (e.record, e.weight, e.reweights))
-            .collect();
-        assert_eq!(first, again, "a restarted source drew a different sample");
-        // The accumulators went back with the stream, so a second pass reports the
-        // sample it produced rather than both passes at once.
-        assert_eq!(source.stats().trials, trials);
-        assert_eq!(source.sigma_pb().to_bits(), sigma.to_bits());
+        let syst = RunCard::parse(&format!("{BASE_CARD}  '0.5 1' = sys_scalefact\n"))
+            .unwrap()
+            .split()
+            .1;
+        let found = settings_mismatches(&banked, &syst);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].what, "run card `sys_scalefact`");
     }
 }

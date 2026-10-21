@@ -51,7 +51,6 @@ use vibegraph::lhef::emit::sample_estimate_in;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::record::{LheEvent, WeightStrategy, STATUS_INCOMING, STATUS_OUTGOING};
 use vibegraph::pdf::PdfSet;
-use vibegraph::vegas::GridRule;
 
 /// The banked run this replays: MadGraph's own cards, its own PDF set, and its own
 /// event file as the flavour and colour oracle.
@@ -877,13 +876,12 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
 
     let artifact_path = out.join("grid.bin.zst");
     let artifact = IntegrateArtifact::read_from_path(&artifact_path).expect("reload artifact");
-    // `@1`'s 24 (group, diagram) pairs share six maps; the default grid rule
-    // bounds the bin widths, which only a version-12 file records.
+    // `@1`'s 24 (group, diagram) pairs share six maps.
     assert!(artifact
         .channels
         .iter()
         .any(|c| matches!(c.key, ChannelKey::MergedChannel { .. })));
-    assert_eq!(artifact.format_version, 12);
+    assert_eq!(artifact.format_version, 13);
     let mut sigma = [0.0f64; 2];
     let mut alpha = [0.0f64; 2];
     let mut previous = 0;
@@ -1001,68 +999,6 @@ fn a_mixed_multiplicity_card_is_integrated_and_sampled_as_a_sum() {
     assert!(
         (f - expected).abs() < 5.0 * sd,
         "@0's share {f} against the integration's {expected} ± {sd}"
-    );
-
-    let mut stale = artifact.clone();
-    stale.format_version = 9;
-    // A file older than version 12 records no grid rule and reads back as the
-    // unbounded one.
-    stale.grid_rule = Some(GridRule::UNBOUNDED);
-    let stale_path = dir.join("stale.bin.zst");
-    stale
-        .write_to_path(&stale_path, true)
-        .expect("write the stale copy");
-    let refused = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale_path)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
-        .args(["--nevents", "10"])
-        .arg("-o")
-        .arg(dir.join("stale.lhe"))
-        .arg("--force")
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = common::stderr_of(&refused);
-    assert!(
-        !refused.status.success(),
-        "a version-9 artifact of a sum was replayed"
-    );
-    assert!(
-        stderr.contains("format version 10") && stderr.contains("written at version 9"),
-        "the refusal does not say why:\n{stderr}"
-    );
-
-    // A sum written before its channels merged holds one grid per pair.
-    stale.format_version = 10;
-    stale
-        .write_to_path(&stale_path, true)
-        .expect("write the stale copy");
-    let refused = common::vibegraph_ambient()
-        .arg("generate")
-        .arg(&stale_path)
-        .arg(&proc_card)
-        .arg("--run-card")
-        .arg(&run_card)
-        .arg("--pdf-dir")
-        .arg(pdf_dir())
-        .args(["--nevents", "10"])
-        .arg("-o")
-        .arg(dir.join("stale.lhe"))
-        .arg("--force")
-        .output()
-        .expect("spawn vibegraph");
-    let stderr = common::stderr_of(&refused);
-    assert!(
-        !refused.status.success(),
-        "a version-10 artifact of a merging process was replayed"
-    );
-    assert!(
-        stderr.contains("format version 11") && stderr.contains("written at version 10"),
-        "the refusal does not say why:\n{stderr}"
     );
 }
 
