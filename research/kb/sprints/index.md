@@ -21,6 +21,7 @@
 * [ee-ee-nsz-low-budget](ee-ee-nsz-low-budget/index.md)
 * [eval-perf-2](eval-perf-2/index.md)
 * [eval-performance-program](eval-performance-program/index.md)
+* [event-norm-sum](event-norm-sum/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
 * [fnv-refusal](fnv-refusal/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)

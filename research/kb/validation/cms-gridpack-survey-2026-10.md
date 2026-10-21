@@ -242,7 +242,7 @@ Other refusals:
 - Feature gaps: [variation weights](../backlog/feature/systematics-variation-weights-not-written.md)
   and the silent drop of a systematics request (now a warning),
   [`ckm_no_b_mass`](../backlog/feature/sm-lacks-ckm-no-b-mass-restriction.md),
-  [`event_norm = sum`](../backlog/feature/event-norm-sum-refused.md),
+  `event_norm = sum` (closed by [the event-norm-sum sprint](../sprints/event-norm-sum/sprint.md)),
   [HT cuts](../backlog/feature/ht-cuts-unimplemented.md) (their late refusal is
   since fixed),
   [MadSpin](../backlog/feature/madspin-decays-unsupported.md),

@@ -91,7 +91,11 @@ Houches Accord ([Boos et al. 2001](../bibliography.md#event-files)).
 The overweight tail has to be represented somehow, and the file offers two
 honest ways. The default keeps the weights, declaring `IDWTUP = -4`, so the
 weight column is a cross section in picobarns and the total is the mean of
-the event weights; the tail stays visible event by event.
+the event weights; the tail stays visible event by event. The run card's
+`event_norm = sum` declares `IDWTUP = -3` and divides the same weights by the
+event count, so their sum is the cross section, and `event_norm = unity`
+declares `-3` and writes every weight as one; stochastic rounding takes
+neither.
 `--strategy stochastic-rounding` declares `IDWTUP = +3` and writes an
 overweight event $\lfloor w \rfloor + \mathrm{Bernoulli}(w - \lfloor w \rfloor)$
 times, representing the tail as multiplicity. Since `<init>` precedes the
