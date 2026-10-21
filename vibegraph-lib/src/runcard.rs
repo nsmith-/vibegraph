@@ -504,6 +504,7 @@ impl RunCard {
             return Err(RunCardError::UnsupportedLpp { lpp1, lpp2 });
         }
         classes::refuse_ignored_physics(&values)?;
+        classes::warn_unwritten_systematics(&values);
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         Ok(RunCard {
@@ -578,15 +579,17 @@ fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
 }
 
 /// Split a raw card line into `(value, name)`, or `None` for comment / blank /
-/// structural lines. The comment (`!...`) is stripped first, then the line is
-/// split on the single `=`.
+/// structural lines. The comment is stripped first, at the first `#` or `!`, so
+/// a hidden field written `<value> = <name> # hidden_parameter` reads as
+/// `<value> = <name>`; a value cannot itself contain `#` or `!`. The line is
+/// then split on its first `=`.
 fn split_line(raw: &str) -> Option<(&str, &str)> {
-    let no_comment = match raw.find('!') {
+    let no_comment = match raw.find(['#', '!']) {
         Some(pos) => &raw[..pos],
         None => raw,
     };
     let trimmed = no_comment.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('$') {
+    if trimmed.is_empty() || trimmed.starts_with('$') {
         return None;
     }
     let (value, name) = trimmed.split_once('=')?;
@@ -1067,6 +1070,31 @@ mod tests {
         assert_eq!(rc.float("etal"), 3.0);
         assert_eq!(rc.pdlabel, "lhapdf");
         assert!(rc.fixed_fac_scale);
+    }
+
+    /// `# hidden_parameter` comments are cut as `banner.py` cuts them, so the
+    /// field takes effect: a Float, a Bool and a consumed field all read as
+    /// they do without the comment.
+    #[test]
+    fn hidden_parameter_comment_is_stripped() {
+        let plain = RunCard::parse("50.0 = mmll\nFalse = pdfwgt\n7000 = ebeam1\n").unwrap();
+        let hidden = RunCard::parse(
+            "50.0 = mmll # hidden_parameter\n\
+             False = pdfwgt # hidden_parameter\n\
+             7000 = ebeam1 # hidden_parameter\n",
+        )
+        .unwrap();
+        assert_eq!(hidden.float("mmll"), 50.0);
+        assert!(!hidden.get("pdfwgt").unwrap().as_bool());
+        assert_eq!(hidden.ebeam1, 7000.0);
+        for (name, value) in plain.iter() {
+            assert_eq!(hidden.get(name), Some(value), "{name}");
+        }
+        assert!(RunCard::parse("True = pdfwgt # c")
+            .unwrap()
+            .get("pdfwgt")
+            .unwrap()
+            .as_bool());
     }
 
     #[test]

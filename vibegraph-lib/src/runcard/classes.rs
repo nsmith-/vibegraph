@@ -28,7 +28,7 @@ pub(crate) enum FieldClass {
     Consumed(#[cfg_attr(not(test), allow(dead_code))] &'static str),
     /// Not read, and unable to reach the cross section, the event record or the
     /// cuts. The string argues that, rather than reporting an absent consumer.
-    IgnoredBenign(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    IgnoredBenign(&'static str),
     /// Not implemented, and able to change what this generator produces. Refused
     /// when a card moves it off the MadGraph default.
     ///
@@ -112,7 +112,9 @@ const B_INTEGRATOR: &str = "a directive for MadEvent's own integrator or helicit
                             helicities explicitly, so a reference cross section is invariant \
                             under it up to Monte-Carlo error";
 const B_SYST: &str = "post-hoc systematics reweighting, which writes only the <mgrwt>/<rwgt> \
-                      block of the event file and never enters a cross section";
+                      block of the event file and never enters a cross section; a card that \
+                      requests it (use_syst with the field off its default) warns that the \
+                      variation weights are not written";
 const B_EVA: &str = "an EVA lepton-PDF parameter, reachable only at |lpp| of 3 or 4; the \
                      parser admits only the (0,0) and (1,1) beam configurations";
 const B_EXTRA_SCALE: &str = "the Ellis-Sexton 'extra scale' family: it appears in the LO \
@@ -438,6 +440,39 @@ pub(super) fn refuse_ignored_physics(
     Ok(())
 }
 
+/// The fields through which a card asks for the systematics module's variation
+/// weights: every field classified under [`B_SYST`].
+fn systematics_request_fields() -> impl Iterator<Item = &'static str> {
+    FIELD_CLASSES.iter().filter_map(|(name, class)| {
+        matches!(class, FieldClass::IgnoredBenign(reason) if *reason == B_SYST).then_some(*name)
+    })
+}
+
+/// Warn, once, when a card with `use_syst` set asks for variation weights that
+/// this crate does not write: any systematics field off its MadGraph default.
+/// The cross section is unaffected; the event file lacks the `<rwgt>` scale,
+/// PDF and alpha_s weights the card requested.
+pub(super) fn warn_unwritten_systematics(values: &BTreeMap<String, ParamValue>) {
+    if !matches!(values.get("use_syst"), Some(ParamValue::Bool(true))) {
+        return;
+    }
+    let requested: Vec<&str> = systematics_request_fields()
+        .filter(|name| {
+            matches!(
+                (values.get(*name), param_default(name)),
+                (Some(current), Some(default)) if *current != default
+            )
+        })
+        .collect();
+    if !requested.is_empty() {
+        tracing::warn!(
+            fields = requested.join(", "),
+            "use_syst = T with systematics requested: the scale, PDF and alpha_s variation \
+             weights (<rwgt>) are not written; the cross section and events are unchanged"
+        );
+    }
+}
+
 /// A parameter value as the refusal message prints it. The cut detector renders
 /// its own refusals the same way, so the two hard errors a card can hit read
 /// alike.
@@ -454,6 +489,76 @@ fn describe(v: &ParamValue) -> String {
 mod tests {
     use super::*;
     use crate::runcard::{card_spelling, parse_value, Kind, RunCard, PARAM_DEFAULTS};
+    use crate::test_capture::capture;
+    use tracing::Level;
+
+    fn warnings_for(text: &str) -> Vec<String> {
+        let (_, events) = capture(|| RunCard::parse(text).expect("run card"));
+        events
+            .into_iter()
+            .filter(|e| e.level == Level::WARN)
+            .map(|e| {
+                let fields: Vec<String> =
+                    e.fields.iter().map(|(n, v)| format!("{n}={v}")).collect();
+                fields.join(" ")
+            })
+            .filter(|rendered| rendered.contains("systematics"))
+            .collect()
+    }
+
+    #[test]
+    fn a_systematics_request_warns_once_and_a_default_card_does_not() {
+        assert!(warnings_for("").is_empty());
+        assert!(warnings_for("True = use_syst").is_empty());
+        let one = warnings_for("'0.5 1 2 4' = sys_scalefact\n'None' = sys_pdf\n");
+        assert_eq!(one.len(), 1, "{one:?}");
+        assert!(
+            one[0].contains("sys_scalefact") && one[0].contains("<rwgt>"),
+            "{one:?}"
+        );
+        assert_eq!(warnings_for("'mysyst' = systematics_program").len(), 1);
+        assert_eq!(warnings_for("['--mur'] = systematics_arguments").len(), 1);
+    }
+
+    #[test]
+    fn systematics_fields_do_not_warn_when_use_syst_is_off() {
+        assert!(warnings_for("False = use_syst\n'0.5 1' = sys_scalefact\n").is_empty());
+        // The same card warns once the gate is open, so the absence above is the
+        // gate's doing and not a field that never warns.
+        assert_eq!(
+            warnings_for("True = use_syst\n'0.5 1' = sys_scalefact\n").len(),
+            1
+        );
+    }
+
+    /// The request fields are exactly the systematics block, and each one warns
+    /// on its own when moved off its default.
+    #[test]
+    fn every_systematics_field_warns_on_its_own() {
+        let fields: Vec<&str> = systematics_request_fields().collect();
+        assert_eq!(
+            fields,
+            [
+                "systematics_program",
+                "systematics_arguments",
+                "sys_scalefact",
+                "sys_alpsfact",
+                "sys_matchscale",
+                "sys_pdf",
+                "sys_scalecorrelation"
+            ]
+        );
+        for name in fields {
+            let line = match param_default(name).expect("known field") {
+                ParamValue::Int(i) => format!("{} = {name}", i + 1),
+                ParamValue::Opaque(_) => format!("['--x'] = {name}"),
+                _ => format!("'changed' = {name}"),
+            };
+            let warned = warnings_for(&line);
+            assert_eq!(warned.len(), 1, "{line}: {warned:?}");
+            assert!(warned[0].contains(name), "{line}: {warned:?}");
+        }
+    }
 
     /// Every recognized name is classified exactly once, and every
     /// classification names a recognized parameter.
