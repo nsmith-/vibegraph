@@ -37,7 +37,7 @@ fn digest_of(restrict: &str) -> String {
     let dir = ufo_dir().join(MODEL);
     let card = dir.join(format!("restrict_{restrict}.dat"));
     assert!(card.is_file(), "no restrict card at {}", card.display());
-    UFOModel::load_with_digest(&dir, Some(&card))
+    UFOModel::load_with_digest(&dir, Some(&card), Default::default())
         .unwrap_or_else(|e| panic!("load {MODEL}-{restrict}: {e}"))
         .1
 }
