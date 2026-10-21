@@ -436,3 +436,81 @@ pair is conjugate. That is tens of lines plus that edge case. The awkward parts
 are two: the reduced trial is per flavour assignment where the loop now trials
 the whole multiprocess, and a leg whose multiparticle mixes gluons with other
 ids drops only its gluon assignments.
+
+## 5. Banking request, corrected after the M3 build (supersedes §4's `Trying` lines)
+
+Section 4 is superseded where it predicts the `Trying coupling order` lines and
+the notes built on them. Its scripts, manifest rows' `rationale` text, `class`
+choice, extraction steps and the test descriptions stand, except as changed
+below. The cause is [V2's reading of the source](V2-report.md): MadGraph prints
+the `Trying` line *before* it runs the trial (`diagram_generation.py:2014`,
+the trial is at :2023-2109), so a trial that succeeds is still one of the
+printed lines, and the loop runs a trial at every bound strictly below the cap
+(:2013), so a row whose diagrams weigh less than the cap succeeds inside the
+loop. §4 predicted the lines of the failed trials only, and for the second row
+took the stop at 7 where the diagrams weigh 8.
+
+**Expected `Trying coupling order WEIGHTED<=N` lines** (each line continues
+`: WEIGTHED IS <hierarchy definition>`, MadGraph's constant text; the notes
+below omit it):
+
+| row | start | cap | lines | what happens after |
+|---|---|---|---|---|
+| `fw~ fw > xw xw` | 4 | 6 | 4, 5 | the loop leaves at the cap and generates at 6 (no line for 6); 2 diagrams |
+| `fw~ fw > xw xw vw` | 6 | 9 | 6, 7, 8 | the trial at 8 succeeds (its diagrams weigh 3 + 3 + 2 = 8); 6 diagrams |
+| `xw xw > xw xw` | 4 | 6 | 4 | the trial at 4 succeeds; 4 diagrams |
+| `z > u u~ d d~` | -- | -- | none | one-particle process, no search (:1978-1980); 17 diagrams |
+
+The first and fourth rows matched §4 and the M3 measurement; the second and
+third are the corrected ones, and the M3 measured all four.
+
+**Scripts.** The three toy scripts are as in §4. `z_to_uuxddx_decay.mg5` has no
+`import model` line (the harness rejects it for the default SM, and the repo's
+other default-SM scripts omit it):
+
+```
+# MadGraph5 batch script: z > u u~ d d~
+# in the default SM, no restrict card.
+#
+# Why this exact process:
+#   A top-level 1 -> n decay without orders runs no WEIGHTED search in MadGraph
+#   (find_optimal_process_orders returns the empty orders for a one-particle
+#   process that is not a decay-chain decay), so every order is kept: the four
+#   QCD^2 QED gluon exchanges and the QED^3 photon, Z and W exchanges.
+generate z > u u~ d d~
+output z_to_uuxddx_decay -nojpeg
+```
+
+**Manifest `diagrams` notes**, exact text; the rest of each row is as in §4.
+
+```toml
+# ffx_to_xwxw_toy_weighted
+diagrams = { tier = "hermetic", mode = "gate", note = "2 diagrams enumerated against MadGraph's 2 (t and u fermion exchange). MadGraph's build log: Trying coupling order WEIGHTED<=4, <=5; no trial at 6, the loop leaves at the cap 6 and generates there." }
+
+# ffx_to_xwxwvw_toy_weighted
+diagrams = { tier = "hermetic", mode = "gate", note = "6 diagrams enumerated against MadGraph's 6 (the three emissions in any order along the fermion line, each diagram WEIGHTED 8). MadGraph's build log: Trying coupling order WEIGHTED<=6, <=7, <=8; the trial at 8 succeeds, below the cap 9." }
+
+# xwxw_to_xwxw_toy_weighted
+diagrams = { tier = "hermetic", mode = "gate", note = "4 diagrams enumerated against MadGraph's 4 (the contact term and the s, t and u yw exchanges). MadGraph's build log: Trying coupling order WEIGHTED<=4 only; the first trial succeeds, below the cap 6." }
+
+# z_to_uuxddx_decay
+diagrams = { tier = "hermetic", mode = "gate", note = "17 diagrams enumerated against MadGraph's 17; a search would have stopped at WEIGHTED<=4 with 4. MadGraph's build log carries no Trying coupling order line." }
+```
+
+The three toy rows' `rationale` lines: the first as in §4; for the other two
+use `fw~ fw > xw xw vw`: "The automatic WEIGHTED search stops inside its loop, above the
+largest hierarchy and below the cap: the six diagrams weigh 3 + 3 + 2 = 8, the
+search starts at 6, and MadGraph's cap (n_ext - 2) times int(3.5) = 9 is not
+reached." and `xw xw > xw xw`: "The automatic WEIGHTED search starts at the sum of the
+n_ext - 2 largest leg values, 4, not at the lowest WEIGHTED any diagram has (the
+contact term, 2): the first trial already holds the four diagrams."
+
+**Instruction for the M3 session.** Commit the banked tree as it stands, with
+the four notes above verbatim (they agree with the logs the M3 measured: the
+`Trying` lines 4, 5 / 6, 7, 8 / 4 / none and the counts 2, 6, 4, 17). Before
+committing, check each `build.log` still shows exactly those `Trying` values and
+no others; if a log differs, stop and report instead of editing the note to
+match. Add the `z_to_uuxddx_decay.mg5` text above without `import model`; keep
+`model` unset on that row. The `e+ e- > z g g` SMEFTsim run stays outside the
+bank, and its recorded outcome (`NoDiagramException` at `WEIGHTED<=6`) is
+the confirmation the ignored test of §3 needs.
