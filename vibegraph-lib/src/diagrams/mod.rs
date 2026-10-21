@@ -102,7 +102,7 @@ pub enum DiagramError {
     MixedOnShellVeto { a: String, b: String },
     #[error("feyngraph error: {0}")]
     FeynGraph(#[from] feyngraph::model::ModelError),
-    #[error("diagram conversion error: {0}")]
+    #[error("{0}")]
     Convert(#[from] ConvertError),
     #[error("cannot build the enumeration worker pool: {0}")]
     Pool(#[from] rayon::ThreadPoolBuildError),
@@ -920,6 +920,9 @@ fn generate_sets_inner(
             .collect::<Result<Vec<_>, _>>()?;
         let enumerated = diagrams.len();
         diagrams.retain(|d| process.schannels.keeps(d, model));
+        for diagram in &diagrams {
+            diagram.check_fermion_flow(model)?;
+        }
         if diagrams.len() != enumerated {
             debug!(
                 "{} > {}: the s-channel restrictions keep {} of {enumerated} diagrams",

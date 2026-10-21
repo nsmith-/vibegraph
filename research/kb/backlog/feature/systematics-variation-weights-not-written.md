@@ -22,4 +22,6 @@ gridpacks. Its arguments are always
 other 6 LO cards are Run 2 packs that use SysCalc from the run card.
 
 vibegraph writes no variation weights. Until it does, a card asking for them
-should say so: [systematics-request-dropped-silently](../hygiene/systematics-request-dropped-silently.md).
+(`use_syst` with a systematics field off its default) logs a warning naming the
+fields (`warn_unwritten_systematics`); the warning goes when the weights are
+written.
