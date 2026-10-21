@@ -82,6 +82,7 @@ kind is treated.
 | `rambo.py` overflow warning never fires | `rambo.py:218` | no | none needed |
 | VEGAS iterations combined with weight mean²/variance | `dsample.f:1995-1997` | σ low by 0.1–0.2 % on a fixed-beam 2 → 4, shrinking with budget | measured, [own concept](madevent-iteration-weighting-bias.md); references are read with it in mind, never reproduced |
 | **approximation**: identical particles across decays, one pairing kept and the interference between pairings dropped | `helas_objects.py:4581` `identical_decay_chain_factor` | σ by about −0.2 % (+0.26 % ± 0.08 % here on `e+ e- > z z, z > e+ e-`) | registered deviation, [own concept](../process/identical-particles-across-decays.md) |
+| `event_norm = unity` aborts `MultiEventFile.unweight`: `'unity'` is allowed on the card but the branch compares `'unit'`, leaving `new_wgt` unbound | `lhe_parser.py:1232-1238` | no: MadEvent writes no event file under it | observed (`UnboundLocalError` on `new_wgt` at `lhe_parser.py:1238`, run on 3.7.1 at `b7687064`, `e+ e- > mu+ mu-` on the `ee500` card, seed 20261021); `EventNorm::Unity` follows the intended `'unit'` branch and has no MadGraph sample to compare to; not reported upstream |
 
 **`AQCDUP` with a truncated π.** `unwgt.f` writes
 `aaqcd = g*g/4d0/3.1415926d0` (and `aaqed` alike) while `g = √(4π·αs)` used full

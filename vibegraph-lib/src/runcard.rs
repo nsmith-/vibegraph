@@ -196,9 +196,13 @@ pub enum EventNorm {
     /// Every weight is one (`IDWTUP = -3`).
     ///
     /// MadGraph admits `unity` on the card, but its unweighting compares the
-    /// normalization against `'unit'` (`lhe_parser.py:1232` at b7687064), so a
-    /// MadGraph run under `unity` never sets its weight strategy and cannot
-    /// complete. This follows the `'unit'` branch MadGraph evidently intends.
+    /// normalization against `'unit'` (`lhe_parser.py:1232` at b7687064). A
+    /// MadEvent run of `e+ e- > mu+ mu-` under `event_norm = unity` (3.7.1 at
+    /// b7687064, 1000 events, seed 20261021) aborted in
+    /// `MultiEventFile.unweight` with `UnboundLocalError` on `new_wgt`
+    /// (`lhe_parser.py:1238`) before any event file was written, so no MadGraph
+    /// sample exists to compare against. This follows the `'unit'` branch
+    /// MadGraph evidently intends.
     Unity,
 }
 

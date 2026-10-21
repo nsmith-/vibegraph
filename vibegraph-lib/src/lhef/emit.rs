@@ -1466,6 +1466,129 @@ mod tests {
         }
     }
 
+    /// MadEvent's own `e+ e- > mu+ mu-` samples under `event_norm = sum` and
+    /// `average` (`validation/madgraph/event_norm_reference.json`: one card, one
+    /// seed, 1000 events, differing only in `event_norm`), read per event.
+    ///
+    /// MadGraph writes `IDWTUP -3` with `XMAXUP = XWGTUP = σ/N` on every event
+    /// under `sum`, and `IDWTUP -4` with `XWGTUP = σ` on every event under
+    /// `average`. The banked `σ` and `N` go through [`Buffer`] under the same
+    /// norm, so the file's `IDWTUP`, its `XSECUP`/`XMAXUP` and each event's
+    /// `XWGTUP` are this crate's weight rule against MadEvent's, not a
+    /// re-integration.
+    ///
+    /// A source of equal generator weights has no overweight tail, and then
+    /// every written `XWGTUP` equals MadEvent's. MadGraph flattens the tail to
+    /// the constant weight; this writer keeps it proportional, so with a tail
+    /// the bulk sits below MadEvent's constant by the tail's excess of the mean
+    /// and a tail event above it. There the per-event comparison can assert
+    /// only what the rule fixes: the bulk is constant and below MadEvent's
+    /// weight, the tail is above it, and the sum (`sum`) or mean (`average`)
+    /// of the weights is MadEvent's `σ`.
+    ///
+    /// What this cannot see: both samples come from one process, one card, one
+    /// part and one process entry, so a rule that is wrong only when several
+    /// parts or processes share the file is not exercised here (see
+    /// `each_part_is_normalised_to_its_integration_under_every_event_norm`),
+    /// and a rescaling that preserves the sum or mean but moves weight between
+    /// events is visible only through the tail's ordering and ratio.
+    #[test]
+    fn event_norm_weights_match_madevents_per_event() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../validation/madgraph/event_norm_reference.json"
+        );
+        let text = std::fs::read_to_string(path).expect("the committed event_norm reference");
+        let dump: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let nevents = dump["nevents"].as_u64().unwrap() as usize;
+        let samples = dump["samples"].as_object().expect("samples");
+        assert_eq!(samples.len(), 2, "the reference holds sum and average");
+
+        for (norm_name, norm, banked_idwtup, per_event_of_sigma) in [
+            ("sum", EventNorm::Sum, -3, 1.0 / nevents as f64),
+            ("average", EventNorm::Average, -4, 1.0),
+        ] {
+            let sample = &samples[norm_name];
+            let lines: Vec<Vec<&str>> = sample["init"]
+                .as_array()
+                .expect("init")
+                .iter()
+                .map(|l| l.as_str().unwrap().split_whitespace().collect())
+                .collect();
+            assert_eq!(lines.len(), 2, "{norm_name}: one process line");
+            assert_eq!(lines[0][8].parse::<i32>().unwrap(), banked_idwtup);
+            let sigma: f64 = lines[1][0].parse().unwrap();
+            let banked_xmax: f64 = lines[1][2].parse().unwrap();
+            let process_id: i32 = lines[1][3].parse().unwrap();
+            assert!(
+                (banked_xmax / (sigma * per_event_of_sigma) - 1.0).abs() < 1e-5,
+                "{norm_name}: banked XMAXUP {banked_xmax:e} is not {per_event_of_sigma:e} sigma"
+            );
+            let banked: Vec<f64> = sample["xwgtup"]
+                .as_array()
+                .expect("xwgtup")
+                .iter()
+                .map(|w| w.as_str().unwrap().parse().unwrap())
+                .collect();
+            assert_eq!(banked.len(), nevents, "{norm_name}: one XWGTUP per event");
+            let constant = banked[0];
+            assert!(
+                banked.iter().all(|w| (w / constant - 1.0).abs() < 1e-6),
+                "{norm_name}: MadEvent's weights are not constant"
+            );
+
+            let mut plan = plan(nevents, sigma);
+            plan.process_ids = vec![process_id];
+            plan.event_norm = norm;
+
+            // No tail: every event is MadEvent's.
+            let mut source = FixedWeights::new(vec![1.0], sigma);
+            let (text, _) = emit_to_string(&Buffer, &mut source, &plan);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            assert_eq!(file.init.weight_strategy.as_i32(), banked_idwtup);
+            assert!((file.init.processes[0].xsec_pb / sigma - 1.0).abs() < 1e-6);
+            assert!((file.init.processes[0].xmax / banked_xmax - 1.0).abs() < 1e-5);
+            assert_eq!(file.events.len(), nevents);
+            for (k, (ours, theirs)) in file.events.iter().zip(&banked).enumerate() {
+                assert!(
+                    (ours.weight / theirs - 1.0).abs() < 1e-5,
+                    "{norm_name} event {k}: XWGTUP {:e} vs MadEvent's {theirs:e}",
+                    ours.weight
+                );
+            }
+
+            // A tail: one event in ten carries four times the generator weight.
+            let mut weights = vec![1.0; 10];
+            weights[9] = 4.0;
+            let mut source = FixedWeights::new(weights, sigma);
+            let (text, _) = emit_to_string(&Buffer, &mut source, &plan);
+            let file = LheFile::parse(&text).expect("our own file parses");
+            let total: f64 = file.events.iter().map(|e| e.weight).sum();
+            assert!(
+                (total / (sigma * nevents as f64 * per_event_of_sigma) - 1.0).abs() < 1e-5,
+                "{norm_name}: the tailed weights' sum {total:e}"
+            );
+            let bulk: Vec<f64> = file.events.iter().map(|e| e.weight).step_by(10).collect();
+            let tail: Vec<f64> = file
+                .events
+                .iter()
+                .skip(9)
+                .step_by(10)
+                .map(|e| e.weight)
+                .collect();
+            assert!(bulk.iter().all(|w| (w / bulk[0] - 1.0).abs() < 1e-6));
+            assert!(tail.iter().all(|w| (w / tail[0] - 1.0).abs() < 1e-6));
+            assert!(
+                bulk[0] < constant && tail[0] > constant,
+                "{norm_name}: tail ordering"
+            );
+            assert!(
+                (tail[0] / bulk[0] - 4.0).abs() < 1e-5,
+                "{norm_name}: the tail keeps its generator weight ratio"
+            );
+        }
+    }
+
     /// A file of several process numbers declares one `<init>` entry per
     /// number, each carrying its process's share of the sample: under `-4` the
     /// share of the written weight, under `+3` the share of the written events —
