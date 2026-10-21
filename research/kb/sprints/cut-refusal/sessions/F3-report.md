@@ -2,6 +2,7 @@
 type: Session Report
 title: "F3 report: every CLI test file on tests/common"
 description: "Per-file environment before/after, test lists, mutation evidence, gates and Found."
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-21}]
 generated: {by: claude-code/claude-sonnet-5-5, at: 2026-10-21}
 ---
 ## What changed
