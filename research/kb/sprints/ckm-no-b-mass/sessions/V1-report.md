@@ -351,6 +351,91 @@ whether this crate's SM split disagrees with MadGraph's at *every*
 restriction; banking `display interactions` for one default-restriction row
 would localise it before anyone blames the card.
 
+### 6. Correction: the count is 67, in unitary gauge (written by V2)
+
+The brief for V2 calls this addition "§5"; §5 above is the tests table, so it
+is numbered 6. It supersedes every "133" in §4 (the `grep … expect 133` line) and
+in §5's `smeftsim` row. Those two lines are left as written.
+
+**Why 133 was wrong.** MadGraph's default `import model sm` is unitary gauge.
+Its interaction list has no ghost and no Goldstone vertex
+(`import_ufo.py` L1241–1243 and L1245–1255 drop those particles when the model is
+read, and `add_interaction` L1779–1781 skips every vertex naming one; see
+[the V2 report](V2-report.md) for the lines). This crate's `sm_model` keeps all
+133 vertices of the UFO; diagram enumeration leaves the unphysical ones out
+(`Vertex::is_physical`, the predicate `ufo/topo.rs` and the count now share).
+`CkmNoBMass` has 133 vertices: 24 with a ghost, 42 with a Goldstone and no
+ghost, 67 with neither. (Goldstone-and-ghost vertices number 8, so "42 with a
+Goldstone" in the M3's tally is the ghost-free ones; 50 vertices carry a
+Goldstone in all.)
+
+**Expected count.** `Current model contains 67 interactions`, in both build
+logs. A different number means the split or the pruning differs from
+MadGraph's, which is what the check is for.
+
+**What the test now compares.** `restricted_interaction_counts_match_madgraph`
+counts `UFOModel::unitary_gauge_vertices()` for a pair whose manifest row names
+the interned SM (`model = "sm"`), and `vertices.len()` for every other pair, so
+the SMEFTsim pairs assert what they asserted. The hermetic pin is
+`unitary_gauge_leaves_67_of_133_vertices` in `tests/sm_ckm_no_b_mass.rs`.
+
+**The `interactions.json` entry** `extract_interactions.py` writes (key
+`os.path.basename("sm")` + `-ckm_no_b_mass`; the extractor needs no change):
+
+```json
+"sm-ckm_no_b_mass": {
+  "interactions": 67,
+  "model": "sm",
+  "restrict": "ckm_no_b_mass",
+  "rows": [
+    "bbx_to_tapta_ckm_no_b_mass",
+    "ubx_to_epve_ckm_no_b_mass"
+  ]
+}
+```
+
+**Manifest notes.** The two rows in §3 are unchanged. Neither names a count.
+When the `diagrams` cells flip to `gate`, add to each note: "MadGraph's
+interaction list at this card (67, unitary gauge) is compared with this crate's
+unitary-gauge vertex set; a count cannot see one vertex swapped for another".
+
+**Optional Feynman-gauge build: recommended, as a one-off, with its expected
+count corrected to 109, not 133.** `set gauge Feynman` keeps Goldstones
+(`import_ufo.py` L1245–1255 skips the Goldstone drop when `1 in model['gauge']`, and
+the SM declares `gauge = [0, 1]`), but a tree-level model never reads ghosts
+(L1241–1243), in any gauge. So the count is 67 + 42 = **109** (the 24 ghost vertices
+and the 8 ghost-Goldstone ones stay out), which checks the Goldstone vertices
+and cannot reach the ghost ones. Run it by hand from the same MadGraph copy,
+outside `scripts/` (`build.sh` builds every `scripts/*.mg5`):
+
+```
+# display_interactions_feynman_ckm_no_b_mass.mg5
+set gauge Feynman
+import model sm-ckm_no_b_mass
+display interactions
+```
+
+```sh
+bash validation/madgraph/mg5_pinned.sh "$PWD/display_interactions_feynman_ckm_no_b_mass.mg5" 2>&1 \
+  | tee feynman.log | grep "Current model contains"     # expect 109
+```
+
+Do not bank it into `interactions.json` (the extractor reads build logs of
+manifest rows and the test has no gauge); put the log line in the M3's report.
+
+**Resuming the M3 from its uncommitted tree** (two scripts, two manifest rows,
+the `output/*_ckm_no_b_mass` build directories): rebase or fast-forward onto the
+sprint branch at or after V2's commit, then run §4's commands from
+`extract_diagrams.py` on, skipping `build.sh` (the directories exist):
+`extract_diagrams.py`, `extract_interactions.py` (expect `sm-ckm_no_b_mass: 67
+interactions` and the entry above), `extract_configs.py`, `build_amplitude.sh`,
+`gen_amplitude.py`, `gen_amplitude_tables.py`, `gen_couplings.py`. Then the §5
+tests (`smeftsim restricted_interaction_counts_match_madgraph` now exercises the
+new pair; confirm its output names `sm-ckm_no_b_mass`, since a pair that fails
+to load prints and continues unless a row's `amplitudes` cell is enforced), and
+only then flip the `diagrams` and `amplitudes` cells from `info` to `gate`
+with the measured numbers.
+
 ## Found
 
 - **No test compares MadGraph's generated param card with the restricted
