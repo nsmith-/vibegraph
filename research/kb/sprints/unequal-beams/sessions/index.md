@@ -6,6 +6,7 @@
 
 * [F1: proton runs with unequal beam energies](F1.md) - √s = 2√(E1E2); beam energies plumbed through ProtonIntegrand; build_frames at x_i·E_i with MadGraph's cm_rap; a unit test at unequal energies; equal beams bit-identical; docs fixed.
 * [V1: unequal beams, what moves and how it is checked against MadGraph](V1.md) - Show which gates read √s and that no banked cell can move; add the two guards F1 found (non-positive beam energies, a stale artifact √s); write the banking request for an unequal-beam MadGraph σ row.
+* [V2: prepare the unequal-beam Drell-Yan banking row](V2.md) - Land what the M3 needs to bank the 6500 x 4000 Drell-Yan row, and what the test needs to read it: the card, the script entries, the planned manifest row, and validate_hadronic taking the card's beams.
 
 ## Session Report
 
