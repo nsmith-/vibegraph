@@ -11,3 +11,4 @@
 * **HY1 checked** (481c979): the manager re-ran `sm_ckm_no_b_mass` (9), `interned_sm_rows` (4) and fmt from the committed tree, filed HY1's report from its final message, fixed the two "nine restrict cards" concept lines, and filed `banked-param-card-join-copied-in-tests` and `gen-reweight-oracle-empty-mg5-root`. The item stays open until the user decides whether it closes before the M3 banking run.
 * **User decision** (2026-10-20, relayed by the planner): the vendored CMS card needs no licence of its own; `licensing.md` records it as settled. Close-before-banking is still open.
 - 2026-10-21: M3 banking stopped at the count check: MadGraph (unitary gauge) has 67 interactions; this crate has 133 vertices = 67 + 24 ghost + 42 Goldstone. V2 dispatched.
+- 2026-10-21: V2 checked (4111f68, 3d89456). import_ufo.py:1241-1255 confirmed; sm_ckm_no_b_mass and smeftsim suites pass. Feynman-gauge count is 109, not 133.
