@@ -193,7 +193,11 @@ impl<'a, F: Real + FromPrimitive> ScaleAwareAmplitude<'a, F> {
         }
         match self.model {
             Some(ref mut model) => {
-                model.set_alpha_s(alpha_s);
+                // A scale-dependent plan tags a power of `G` driven by `aS`, so the model
+                // has an `aS`; a model without one never gets here (see above).
+                model
+                    .set_alpha_s(alpha_s)
+                    .expect("a scale-dependent plan implies the model has an `aS`");
                 let (c, f) = self.amp.evaluator().folded().pools::<F>(model);
                 self.amp.set_pools(c, f);
             }
@@ -359,7 +363,9 @@ fn sqrt_law_violation(
     }
     let mut probe = evaluated.clone();
     for ratio in [4.0, 0.37] {
-        probe.set_alpha_s(alpha_s_ref * ratio);
+        probe
+            .set_alpha_s(alpha_s_ref * ratio)
+            .expect("`G` is driven by `aS`, so the model has an `aS`");
         let g = probe.param_values["G"];
         if g.im != 0.0 {
             return Some(RescaleFallback::CouplingExponent(f64::NAN));
@@ -463,7 +469,7 @@ mod tests {
                 let alpha_s = 0.05 + 0.01 * k as f64;
                 fast.set_alpha_s(alpha_s);
                 let mut reference = evaluated.clone();
-                reference.set_alpha_s(alpha_s);
+                reference.set_alpha_s(alpha_s).unwrap();
                 let bound = BoundAmplitude::<f64>::bind(&eval, &reference);
                 let (fc, ff) = fast.amplitude().pools();
                 let (rc, rf) = bound.pools();
@@ -549,7 +555,7 @@ mod tests {
         let base: Vec<C<f64>> = amp.amplitude().pools().0.to_vec();
         amp.set_alpha_s(alpha_s);
         let mut reference = evaluated.clone();
-        reference.set_alpha_s(alpha_s);
+        reference.set_alpha_s(alpha_s).unwrap();
         let reference_bound = BoundAmplitude::<f64>::bind(&eval, &reference);
         let exact: Vec<C<f64>> = reference_bound.pools().0.to_vec();
 

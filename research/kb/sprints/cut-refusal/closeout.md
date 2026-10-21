@@ -2,13 +2,16 @@
 type: Sprint Record
 title: "Unimplemented cuts: refused early, and no-op values let through"
 description: "An active unimplemented cut is refused from the run card alone, before diagram enumeration, naming the cut and value; single-object pT maxima at or above half the beam-energy sum read as their default."
-closed: 2026-10-20
+closed: 2026-10-21
 status: draft
 tags: [cuts, runcard, refusal, cms, sprint-d, sprint-record]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 sources:
   - {id: f1, resource: "sessions/F1-report.md", title: "F1 report"}
   - {id: hy1, resource: "sessions/HY1-report.md", title: "HY1 report"}
+  - {id: f2, resource: "sessions/F2-report.md", title: "F2 report"}
+  - {id: hy2, resource: "sessions/HY2-report.md", title: "HY2 report"}
+  - {id: f3, resource: "sessions/F3-report.md", title: "F3 report"}
   - {id: pr, resource: "https://github.com/nsmith-/vibegraph/pull/59", title: "nsmith-/vibegraph#59"}
 ---
 One PR ([nsmith-/vibegraph#59](https://github.com/nsmith-/vibegraph/pull/59))
@@ -59,3 +62,29 @@ The manager re-ran the new CLI tests (13 in `cli_hard_errors`) and the 54
 
 F1 once used `pkill -f`, killing only its own wrapper; later briefs forbid it.
 HY1 waited on its mutation log with a `sleep` loop, against the brief.
+
+## Widened at the user's request (2026-10-20/21)
+
+The user asked on the PR for three items filed from it to be fixed here.
+
+- **`generate-reads-run-card-after-artifact`** (closed, [F2](sessions/F2-report.md)):
+  `generate` loads the run card before the artifact, so a run-card refusal
+  comes first in both commands; a test pins the order and fails both if the
+  order is reversed and if the card goes unchecked.
+- **`cli-test-helpers-copied-per-file`** (closed, F2, [HY2](sessions/HY2-report.md),
+  [F3](sessions/F3-report.md)): every CLI test file invokes the binary and
+  reads its output through `vibegraph-cli/tests/common`; test lists per binary
+  identical before and after. Seven binaries use the ambient-environment
+  helper (filed: `cli-tests-on-ambient-environment`).
+- **`collider-energy-sum-of-beam-energies`** (moved): F2 found the fixed-energy
+  path already exact and the whole proton frame chain equal-beam only
+  (`build_frames` places partons at x_i·√s/2 and boosts by (x1−x2)/(x1+x2)).
+  By the user's choice it moved to its own PR,
+  [nsmith-/vibegraph#67](https://github.com/nsmith-/vibegraph/pull/67), stacked
+  on this branch; the item's text now describes the whole chain.
+- **Also filed:** `fixed-beam-written-event-frame-unsettled` (validation),
+  with the CERN host's measurement and a candidate MadGraph defect entry
+  (the written frame decided by a one-ulp fallback in `unwgt.f`).
+
+The manager re-ran the touched CLI binaries from the committed tree after
+each session (151 default CLI tests at F3).

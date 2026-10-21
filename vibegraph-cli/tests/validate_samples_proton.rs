@@ -45,9 +45,12 @@
 //! per-mille of the cross section is pooled into the χ²'s residual category rather
 //! than compared on its own.
 
+mod common;
+
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::validation_dir;
 
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
@@ -150,10 +153,6 @@ type Scan = (
     fn(&Row, &EventSample) -> (usize, usize),
 );
 
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
-
 /// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
 ///
 /// Reference-free: it reads the emitted record against the Les Houches convention
@@ -241,7 +240,7 @@ impl Generator {
         };
 
         let out = dir.join("out");
-        let integrate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let integrate = common::vibegraph_ambient()
             .arg("integrate")
             .arg(&proc_card)
             .arg("--run-card")
@@ -264,7 +263,7 @@ impl Generator {
         assert!(
             integrate.status.success(),
             "vibegraph integrate failed:\n{}",
-            String::from_utf8_lossy(&integrate.stderr)
+            common::stderr_of(&integrate)
         );
         Generator {
             artifact: out.join("grid.bin.zst"),
@@ -278,7 +277,7 @@ impl Generator {
     /// One unweighted sample from those grids, at `seed`.
     fn sample(&self, seed: u64) -> EventSample {
         let file = self.dir.join(format!("events_{seed:#x}.lhe"));
-        let generate = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let generate = common::vibegraph_ambient()
             .arg("generate")
             .arg(&self.artifact)
             .arg(&self.proc_card)
@@ -298,7 +297,7 @@ impl Generator {
         assert!(
             generate.status.success(),
             "vibegraph generate failed:\n{}",
-            String::from_utf8_lossy(&generate.stderr)
+            common::stderr_of(&generate)
         );
         let text = std::fs::read_to_string(&file).expect("read the emitted event file");
         let ours = EventSample::from_lhe(LheFile::parse(&text).expect("our own file parses"));

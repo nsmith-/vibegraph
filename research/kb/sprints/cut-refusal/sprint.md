@@ -3,7 +3,7 @@ type: Sprint
 title: "Unimplemented cuts: refused early, and no-op values let through"
 description: "An active unimplemented cut is refused before diagram enumeration with a message naming it, and one set where it cannot bind is treated as its default."
 status: draft
-active: true
+active: false
 tags: [cuts, runcard, refusal, cms, sprint-d]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-20}
 ---

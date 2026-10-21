@@ -3077,6 +3077,9 @@ impl ChannelIntegrand for ProtonIntegrand<'_> {
 }
 
 #[cfg(test)]
+mod edge_probe;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::artifact::SamplerTopology;

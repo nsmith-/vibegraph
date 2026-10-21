@@ -96,6 +96,8 @@ impl GlobalConfig {
             ));
         };
 
+        // The SM's particle names are MadGraph's defaults, so `--modelname`
+        // leaves the interned model as it is (`names::tests::the_sm_is_unchanged`).
         if import.name == "sm" {
             let restrict =
                 SMRestrict::from_suffix(import.restrict_variant.as_deref()).ok_or_else(|| {
@@ -123,7 +125,8 @@ impl GlobalConfig {
                 .as_ref()
                 .map(|v| dir.join(format!("restrict_{v}.dat"))),
         };
-        let (model, digest) = UFOModel::load_with_digest(&dir, restrict.as_deref())?;
+        let (model, digest) =
+            UFOModel::load_with_digest(&dir, restrict.as_deref(), import.particle_naming)?;
         let label = import.restrict_variant.as_deref().unwrap_or("default");
         let identity = ModelIdentity::from_loaded(&import.name, label, digest);
         Ok(describe(model, identity))
@@ -170,6 +173,7 @@ mod tests {
             .load_ufo(&Some(ModelImport {
                 name: "sm".into(),
                 restrict_variant: None,
+                particle_naming: Default::default(),
             }))
             .unwrap();
         // Same interned Arc for the default SM in both paths.
@@ -184,6 +188,7 @@ mod tests {
             .load_ufo(&Some(ModelImport {
                 name: "sm".into(),
                 restrict_variant: Some("lepton_masses".into()),
+                particle_naming: Default::default(),
             }))
             .unwrap();
         assert!(Arc::ptr_eq(&m, &sm_model(SMRestrict::LeptonMasses)));
@@ -201,6 +206,7 @@ mod tests {
             .load_ufo_with_identity(&Some(ModelImport {
                 name: "sm".into(),
                 restrict_variant: Some("no_b_mass".into()),
+                particle_naming: Default::default(),
             }))
             .unwrap();
         assert_eq!(default.label(), "sm-default");
@@ -226,6 +232,7 @@ mod tests {
             .load_ufo(&Some(ModelImport {
                 name: "sm".into(),
                 restrict_variant: Some("bogus".into()),
+                particle_naming: Default::default(),
             }))
             .err()
             .expect("an unknown variant is refused");

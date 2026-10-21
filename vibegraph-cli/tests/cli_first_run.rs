@@ -23,18 +23,14 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 
-use common::{fixed_beams, stderr_of, vibegraph_behind_dead_proxy};
+use common::{fixed_beams, stderr_of, validation_dir, vibegraph_behind_dead_proxy};
 
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::lhef::parse::LheFile;
 use vibegraph::lhef::write::LheWriter;
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
 
 /// A hadronic run, which needs the PDF set that is not there.
 fn integrate_drell_yan(cwd: &Path, cache_root: &Path, out: &Path, extra: &[&str]) -> Output {

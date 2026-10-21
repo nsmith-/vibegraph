@@ -181,6 +181,11 @@ pub enum RunCardError {
          refuses an asymmetric proton-proton PDF (banner.py's PDLabelBlock)"
     )]
     AsymmetricBeamPdf { beam1: String, beam2: String },
+    #[error(
+        "run card sets event_norm = '{value}': MadGraph admits only 'average', 'sum' and 'unity' \
+         (banner.py declares event_norm with allowed = ['sum', 'average', 'unity'])"
+    )]
+    UnsupportedEventNorm { value: String },
     #[error("run card sets '{name}' to {value} (MadGraph default {default}): {why}")]
     UnsupportedField {
         name: String,
@@ -188,6 +193,51 @@ pub enum RunCardError {
         default: String,
         why: &'static str,
     },
+}
+
+/// The run card's `event_norm`: how the written event weights `XWGTUP` are
+/// normalised. It changes the file and not the integration: the cross section
+/// is the same under all three.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventNorm {
+    /// The weights' mean is the cross section (`IDWTUP = -4`); the card default.
+    Average,
+    /// The weights' sum is the cross section (`IDWTUP = -3`).
+    Sum,
+    /// Every weight is one (`IDWTUP = -3`).
+    ///
+    /// MadGraph admits `unity` on the card, but its unweighting compares the
+    /// normalization against `'unit'` (`lhe_parser.py:1232` at b7687064). A
+    /// MadEvent run of `e+ e- > mu+ mu-` under `event_norm = unity` (3.7.1 at
+    /// b7687064, 1000 events, seed 20261021) aborted in
+    /// `MultiEventFile.unweight` with `UnboundLocalError` on `new_wgt`
+    /// (`lhe_parser.py:1238`) before any event file was written, so no MadGraph
+    /// sample exists to compare against. This follows the `'unit'` branch
+    /// MadGraph evidently intends.
+    Unity,
+}
+
+impl EventNorm {
+    /// The value MadGraph's `allowed` list matches `text` to, case-insensitively
+    /// (`ConfigFile.__setitem__`, `banner.py:1285-1298`), or `None` for a value
+    /// outside the list.
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        match text.to_ascii_lowercase().as_str() {
+            "average" => Some(EventNorm::Average),
+            "sum" => Some(EventNorm::Sum),
+            "unity" => Some(EventNorm::Unity),
+            _ => None,
+        }
+    }
+
+    /// The spelling the card carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EventNorm::Average => "average",
+            EventNorm::Sum => "sum",
+            EventNorm::Unity => "unity",
+        }
+    }
 }
 
 /// How the incoming state of a run is prepared.
@@ -274,6 +324,17 @@ impl RunCard {
             .get(name)
             .unwrap_or_else(|| panic!("no such parameter: {name}"))
             .as_i64()
+    }
+
+    /// The card's `event_norm`; a card that never sets it resolves to
+    /// [`EventNorm::Average`], the card default.
+    pub fn event_norm(&self) -> EventNorm {
+        let raw = self
+            .values
+            .get("event_norm")
+            .expect("event_norm is a recognized parameter")
+            .as_str();
+        EventNorm::parse(raw).expect("from_values admits only MadGraph's event_norm values")
     }
 
     /// MadGraph's `frame_id` for the card's `me_frame`: the legs whose summed
@@ -428,6 +489,17 @@ impl RunCard {
     }
 
     fn from_values(mut values: BTreeMap<String, ParamValue>) -> Result<Self, RunCardError> {
+        let raw = values
+            .get("event_norm")
+            .expect("event_norm is a recognized parameter")
+            .as_str()
+            .to_string();
+        let norm =
+            EventNorm::parse(&raw).ok_or(RunCardError::UnsupportedEventNorm { value: raw })?;
+        values.insert(
+            "event_norm".to_string(),
+            ParamValue::Str(norm.as_str().to_string()),
+        );
         let as_parsed = values.clone();
         matching::resolve(&mut values)?;
         let beam = |name: &str| values.get(name).expect("known param").as_i64();
@@ -453,6 +525,7 @@ impl RunCard {
             }
         }
         classes::refuse_ignored_physics(&values)?;
+        classes::warn_unwritten_systematics(&values);
         frame_id_of(values.get("me_frame").expect("known param").as_str())?;
 
         Ok(RunCard {
@@ -527,15 +600,17 @@ fn frame_id_of(raw: &str) -> Result<i64, RunCardError> {
 }
 
 /// Split a raw card line into `(value, name)`, or `None` for comment / blank /
-/// structural lines. The comment (`!...`) is stripped first, then the line is
-/// split on the single `=`.
+/// structural lines. The comment is stripped first, at the first `#` or `!`, so
+/// a hidden field written `<value> = <name> # hidden_parameter` reads as
+/// `<value> = <name>`; a value cannot itself contain `#` or `!`. The line is
+/// then split on its first `=`.
 fn split_line(raw: &str) -> Option<(&str, &str)> {
-    let no_comment = match raw.find('!') {
+    let no_comment = match raw.find(['#', '!']) {
         Some(pos) => &raw[..pos],
         None => raw,
     };
     let trimmed = no_comment.trim();
-    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('$') {
+    if trimmed.is_empty() || trimmed.starts_with('$') {
         return None;
     }
     let (value, name) = trimmed.split_once('=')?;
@@ -947,6 +1022,32 @@ pub(crate) fn card_spelling(value: &serde_json::Value) -> String {
 mod tests {
     use super::*;
 
+    /// `event_norm` takes MadGraph's three values, spelled in any case, and an
+    /// unset card resolves to `average`; a value outside the list is refused at
+    /// the parse rather than carried to the writer.
+    #[test]
+    fn event_norm_is_parsed_against_madgraphs_allowed_list() {
+        assert_eq!(RunCard::default().event_norm(), EventNorm::Average);
+        for (text, norm) in [
+            ("average", EventNorm::Average),
+            ("sum", EventNorm::Sum),
+            ("Sum", EventNorm::Sum),
+            ("UNITY", EventNorm::Unity),
+        ] {
+            let card = RunCard::parse(&format!("  {text} = event_norm\n")).expect(text);
+            assert_eq!(card.event_norm(), norm, "{text}");
+            assert_eq!(card.get("event_norm").unwrap().as_str(), norm.as_str());
+        }
+        for text in ["unit", "bias", "mean", "average sum"] {
+            let err = RunCard::parse(&format!("  {text} = event_norm\n"))
+                .expect_err("a value outside the allowed list");
+            assert!(
+                matches!(err, RunCardError::UnsupportedEventNorm { .. }),
+                "{text}: {err}"
+            );
+        }
+    }
+
     #[test]
     fn empty_card_reproduces_mg_defaults() {
         let rc = RunCard::parse("").unwrap();
@@ -990,6 +1091,31 @@ mod tests {
         assert_eq!(rc.float("etal"), 3.0);
         assert_eq!(rc.pdlabel, "lhapdf");
         assert!(rc.fixed_fac_scale);
+    }
+
+    /// `# hidden_parameter` comments are cut as `banner.py` cuts them, so the
+    /// field takes effect: a Float, a Bool and a consumed field all read as
+    /// they do without the comment.
+    #[test]
+    fn hidden_parameter_comment_is_stripped() {
+        let plain = RunCard::parse("50.0 = mmll\nFalse = pdfwgt\n7000 = ebeam1\n").unwrap();
+        let hidden = RunCard::parse(
+            "50.0 = mmll # hidden_parameter\n\
+             False = pdfwgt # hidden_parameter\n\
+             7000 = ebeam1 # hidden_parameter\n",
+        )
+        .unwrap();
+        assert_eq!(hidden.float("mmll"), 50.0);
+        assert!(!hidden.get("pdfwgt").unwrap().as_bool());
+        assert_eq!(hidden.ebeam1, 7000.0);
+        for (name, value) in plain.iter() {
+            assert_eq!(hidden.get(name), Some(value), "{name}");
+        }
+        assert!(RunCard::parse("True = pdfwgt # c")
+            .unwrap()
+            .get("pdfwgt")
+            .unwrap()
+            .as_bool());
     }
 
     #[test]
