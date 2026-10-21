@@ -24,6 +24,7 @@
 * [event-norm-sum](event-norm-sum/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
 * [fnv-refusal](fnv-refusal/index.md)
+* [gridpack-generate](gridpack-generate/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)
 * [hygiene](hygiene/index.md)
 * [kt-spine](kt-spine/index.md)
