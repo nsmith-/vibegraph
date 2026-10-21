@@ -4,6 +4,7 @@ title: "D1c report: the user's answers on the run-input choices folded in"
 description: "All twelve C-choices settled in both concepts: generate-read PDF files recorded in the LHE header, every built-in pdlabel refused with lhapdf/247000 as the default card, LHAPDF_DATA_PATH (with LHAPATH) replaces VIBEGRAPH_PDF_DIR."
 status: draft
 tags: [pdf, lhapdf, run-card, artifact, design, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-21}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-21}
 ---
 This session was design only: no Rust was written and no cargo command was
