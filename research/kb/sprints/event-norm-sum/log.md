@@ -10,3 +10,4 @@
 * **Open for the user:** whether to accept `event_norm = unity` (MadGraph's own path tests `'unit'`), and whether the item closes before the per-event banking run. The item file stays until then.
 * **User decision** (2026-10-20, relayed by the planner): keep `event_norm = unity` as implemented (unit weights, IDWTUP −3), noting that MadGraph's own `unity` path tests `'unit'` and cannot run. Close-before-banking is still open.
 - 2026-10-21: M3 banked event_norm_reference.json (9743133). Sum and average match the rule; unity crashed MadGraph (UnboundLocalError, lhe_parser.py:1238). V1 dispatched to pin the samples per event.
+- 2026-10-21: V1 checked (b53c68e, 775d4e0). The per-event mutations fail the test. Item deleted; PR marked ready.
