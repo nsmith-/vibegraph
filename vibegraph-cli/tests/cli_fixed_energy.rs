@@ -13,7 +13,6 @@
 mod common;
 
 use std::path::Path;
-use std::process::Command;
 
 use common::fixed_beams;
 
@@ -34,7 +33,7 @@ fn run_fixed_energy(process: &str, ebeam: f64, expected_ndim: usize) -> Integrat
     let sqrt_s = 2.0 * ebeam;
 
     let out = tmp.path().join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph(tmp.path(), tmp.path())
         .arg("integrate")
         .arg(&proc_path)
         .arg("--run-card")
@@ -165,7 +164,7 @@ fn integrate_is_thread_count_independent() {
     let mut bytes = Vec::new();
     for threads in ["1", "16"] {
         let out = tmp.path().join(format!("out-j{threads}"));
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph(tmp.path(), tmp.path())
             .args(["integrate"])
             .arg(&proc_path)
             .arg("--run-card")
@@ -214,7 +213,7 @@ fn integrate_spends_iterations_to_reach_a_target() {
     std::fs::write(&run_path, fixed_beams(100, 100)).unwrap();
 
     let integrate = |target: &str, out: &std::path::Path| {
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph(tmp.path(), tmp.path())
             .args(["integrate"])
             .arg(&proc_path)
             .arg("--run-card")
@@ -291,7 +290,7 @@ fn cli_integrate_records_its_grid_rule_and_none_unbounds_it() {
     std::fs::write(&run_path, fixed_beams(250, 250)).unwrap();
     let integrate = |name: &str, flags: &[&str]| {
         let out = tmp.path().join(name);
-        let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+        let status = common::vibegraph(tmp.path(), tmp.path())
             .arg("integrate")
             .arg(&proc_path)
             .arg("--run-card")

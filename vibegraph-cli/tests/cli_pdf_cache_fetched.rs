@@ -115,7 +115,7 @@ fn a_cached_pdf_set_serves_integrate_with_no_dev_checkout() {
         out.path(),
         &["--pdf-set", LOCAL_SET],
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = common::stderr_of(&output);
     assert!(
         output.status.success(),
         "integrate failed with a populated cache:\n{stderr}"
@@ -140,7 +140,7 @@ fn an_explicit_pdf_dir_still_takes_precedence() {
         out.path(),
         &["--pdf-dir", dev_pdf_dir().to_str().unwrap()],
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = common::stderr_of(&output);
     assert!(output.status.success(), "--pdf-dir run failed:\n{stderr}");
     assert!(
         !home.path().join("pdf").exists(),

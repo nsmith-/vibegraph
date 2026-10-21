@@ -18,7 +18,6 @@
 mod common;
 
 use std::path::PathBuf;
-use std::process::Command;
 
 use common::fixed_beams;
 
@@ -72,7 +71,7 @@ fn a_smeft_model_integrates_through_ufo_dir_and_records_its_identity() {
     let (proc_path, run_path) = write_cards(tmp.path(), "massless");
     let out = tmp.path().join("out");
 
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph(tmp.path(), tmp.path())
         .arg("integrate")
         .arg(&proc_path)
         .args(["--ufo-dir".as_ref(), ufo_dir().as_os_str()])
@@ -126,7 +125,7 @@ fn generate_refuses_another_restrict_variant_of_the_same_model() {
     let tmp = tempfile::tempdir().unwrap();
     let (proc_path, run_path) = write_cards(tmp.path(), "massless");
     let out = tmp.path().join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph(tmp.path(), tmp.path())
         .arg("integrate")
         .arg(&proc_path)
         .args(["--ufo-dir".as_ref(), ufo_dir().as_os_str()])
@@ -141,7 +140,7 @@ fn generate_refuses_another_restrict_variant_of_the_same_model() {
     assert!(status.success(), "vibegraph integrate exited {status}");
 
     let (sm_limit, _) = write_cards(tmp.path(), "SMlimit_massless");
-    let refused = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let refused = common::vibegraph(tmp.path(), tmp.path())
         .arg("generate")
         .arg(out.join("grid.bin.zst"))
         .arg(&sm_limit)
@@ -157,7 +156,7 @@ fn generate_refuses_another_restrict_variant_of_the_same_model() {
         !refused.status.success(),
         "generate accepted grids trained on a different restrict card"
     );
-    let stderr = String::from_utf8_lossy(&refused.stderr);
+    let stderr = common::stderr_of(&refused);
     assert!(
         stderr.contains(&format!("{MODEL}-massless"))
             && stderr.contains(&format!("{MODEL}-SMlimit_massless")),

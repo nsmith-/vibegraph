@@ -39,7 +39,7 @@ fn a_missing_pinned_set_reports_what_it_would_download() {
         !output.status.success(),
         "a missing set with downloads refused must fail"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = common::stderr_of(&output);
     for expected in [
         DEFAULT_PDF_SET,
         "https://lhapdfsets.web.cern.ch/current/NNPDF23_lo_as_0130_qed.tar.gz",
@@ -93,8 +93,7 @@ fn the_no_network_variable_refuses_at_any_value_in_the_binary_and_the_fetch_scri
         let home = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
         let out = tempfile::tempdir().unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
-            .current_dir(cwd.path())
+        let output = common::vibegraph(cwd.path(), home.path())
             .arg("integrate")
             .arg(validation_dir().join("dy13_proc_card.dat"))
             .arg("--run-card")
@@ -102,12 +101,10 @@ fn the_no_network_variable_refuses_at_any_value_in_the_binary_and_the_fetch_scri
             .arg("--out")
             .arg(out.path())
             .arg("-y")
-            .env("VIBEGRAPH_HOME", home.path())
             .env("VIBEGRAPH_NO_NETWORK", value)
-            .env_remove("VIBEGRAPH_PDF_DIR")
             .output()
             .expect("spawn vibegraph");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = common::stderr_of(&output);
         assert!(
             !output.status.success()
                 && stderr.contains("downloads are disabled by VIBEGRAPH_NO_NETWORK"),
@@ -134,7 +131,7 @@ fn an_unpinned_missing_set_is_refused_without_reaching_the_network() {
         !output.status.success(),
         "an unpinned missing set must fail"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = common::stderr_of(&output);
     assert!(
         stderr.contains("no download pin"),
         "error should say the set is unpinned, got:\n{stderr}"

@@ -1,5 +1,6 @@
 //! What the CLI integration tests share: the binary with no route to data a test
-//! did not set up, its stderr, the fixed-energy run cards and the MadGraph
+//! did not set up (or, for tests that read the ambient configuration, the bare
+//! binary), its stderr and stdout, the fixed-energy run cards and the MadGraph
 //! validation inputs.
 //!
 //! Each test binary compiles this module whole and calls part of it, so every
@@ -24,6 +25,15 @@ pub fn vibegraph(cwd: &Path, home: &Path) -> Command {
     cmd
 }
 
+/// The binary in the test process's own working directory and environment,
+/// untouched. For tests that read the ambient configuration on purpose and name
+/// their data with explicit flags (`--pdf-dir`); a test with no such need uses
+/// [`vibegraph`].
+#[allow(dead_code)]
+pub fn vibegraph_ambient() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+}
+
 /// [`vibegraph`] with `ALL_PROXY` pointed at `127.0.0.1:1`, where nothing
 /// listens, and `NO_PROXY`/`no_proxy` removed. For tests that run under the
 /// default network policy and must still never download: a fetch that a refusal
@@ -40,6 +50,11 @@ pub fn vibegraph_behind_dead_proxy(cwd: &Path, home: &Path) -> Command {
 #[allow(dead_code)]
 pub fn stderr_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[allow(dead_code)]
+pub fn stdout_of(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 /// The run-card lines for fixed-energy (`lpp = 0`) beams of the given energies;

@@ -105,7 +105,7 @@ fn integrate() -> Run {
     write_run_card(&run_card, EBEAM, "");
 
     let out = dir.join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -132,7 +132,7 @@ fn integrate() -> Run {
 
 impl Run {
     fn generate_cmd(&self, strategy: &str, seed: &str, nevents: usize, output: &Path) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+        let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
             .arg(&self.proc_card)
@@ -165,9 +165,9 @@ impl Run {
         assert!(
             out.status.success(),
             "vibegraph generate ({strategy}) failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
+            common::stderr_of(&out)
         );
-        eprint!("{}", String::from_utf8_lossy(&out.stdout));
+        eprint!("{}", common::stdout_of(&out));
         let text = std::fs::read_to_string(&output).expect("read the event file");
         let file = LheFile::parse(&text).expect("our own file parses");
         (file, text)
@@ -180,7 +180,7 @@ impl Run {
         let mut cmd = self.generate_cmd("buffer", seed, FEW_EVENTS, &output);
         cmd.args(extra);
         let out = cmd.output().expect("spawn vibegraph");
-        let notices = String::from_utf8_lossy(&out.stderr).into_owned();
+        let notices = common::stderr_of(&out);
         assert!(
             out.status.success(),
             "vibegraph generate {extra:?} failed:\n{notices}"
@@ -194,7 +194,7 @@ impl Run {
 
     /// A `generate` invocation expected to fail, with the cards spelled out.
     fn refuse(&self, proc_card: &Path, run_card: Option<&Path>, name: &str) -> Output {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+        let mut cmd = common::vibegraph_ambient();
         cmd.arg("generate")
             .arg(&self.artifact_path)
             .arg(proc_card)
@@ -557,11 +557,11 @@ fn a_scan_budget_that_is_not_a_positive_count_is_refused() {
 /// panic, which would also exit non-zero without refusing anything.
 #[track_caller]
 fn expect_refusal(out: Output, because: &str, names: &str) {
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(
         !out.status.success(),
         "generate accepted {because}; it must refuse\nstdout: {}",
-        String::from_utf8_lossy(&out.stdout)
+        common::stdout_of(&out)
     );
     assert!(
         !stderr.contains("panicked"),
@@ -676,7 +676,7 @@ fn stale_copy(run: &Run, name: &str, format_version: u32) -> PathBuf {
 fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
     let run = run();
     let stale = stale_copy(run, "stale-clustering.bin.zst", 6);
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibegraph"));
+    let mut cmd = common::vibegraph_ambient();
     cmd.arg("generate")
         .arg(&stale)
         .arg(&run.proc_card)
@@ -687,12 +687,12 @@ fn a_pre_draw_artifact_is_refused_on_a_clustering_card() {
         .arg("-o")
         .arg(run.dir.join("never.lhe"));
     let out = cmd.output().expect("spawn vibegraph");
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = common::stderr_of(&out);
     assert!(
         !out.status.success(),
         "generate accepted a format-version-6 artifact on a clustering-scale card; it must \
          refuse\nstdout: {}",
-        String::from_utf8_lossy(&out.stdout)
+        common::stdout_of(&out)
     );
     assert!(
         stderr.contains("AMP2") && stderr.contains("format version"),
@@ -718,7 +718,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     );
 
     let out = dir.join("out");
-    let status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let status = common::vibegraph_ambient()
         .arg("integrate")
         .arg(&proc_card)
         .arg("--run-card")
@@ -747,7 +747,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
         .expect("write stale copy");
 
     let output = dir.join("fixed.lhe");
-    let gen_status = Command::new(env!("CARGO_BIN_EXE_vibegraph"))
+    let gen_status = common::vibegraph_ambient()
         .arg("generate")
         .arg(&stale)
         .arg(&proc_card)
@@ -762,7 +762,7 @@ fn a_pre_draw_artifact_still_loads_on_a_fixed_scale_card() {
     assert!(
         gen_status.status.success(),
         "a format-version-6 artifact on a fixed-scale card must still load:\n{}",
-        String::from_utf8_lossy(&gen_status.stderr)
+        common::stderr_of(&gen_status)
     );
     assert!(output.exists());
 }
