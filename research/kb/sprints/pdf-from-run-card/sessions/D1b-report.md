@@ -4,6 +4,7 @@ title: "D1b report: integrate and generate split by data dependency"
 description: "D1 revised after the user's gridpack decision: run-card fields classified by stage, GenerateSettings, artifact versions 13/14, the new generate CLI and its migration, choices restated, and a four-step PR split."
 status: draft
 tags: [artifact, generate, run-card, pdf, param-card, design, report]
+verified: [{by: claude-code/claude-opus-5-5, at: 2026-10-21}]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-21}
 ---
 This session was design only. No Rust was written and no cargo command was
