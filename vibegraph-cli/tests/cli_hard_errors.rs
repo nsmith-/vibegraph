@@ -9,6 +9,9 @@ mod common;
 use std::process::Output;
 
 use common::{fixed_beams, stderr_of, vibegraph};
+use vibegraph::artifact::IntegrateArtifact;
+use vibegraph::cache::pinned::DEFAULT_PDF_SET;
+use vibegraph::runcard::RunCard;
 
 #[test]
 fn cli_polarized_beam_card_is_refused() {
@@ -626,4 +629,84 @@ fn cli_generate_refuses_the_run_card_before_reading_the_artifact() {
         !stderr.contains("not_an_artifact"),
         "the artifact was read before the run card:\n{stderr}"
     );
+}
+
+/// `generate` on a proton card refuses an artifact whose recorded collider energy
+/// is not the `2√(E₁E₂)` the card's beams give, naming both energies: an artifact
+/// edited to record `E₁ + E₂` at 6500 × 4000 GeV, as one integrated before
+/// unequal beams were supported would. The same artifact recording `2√(E₁E₂)`, and
+/// an equal-beam one recording `E₁ + E₂`, pass this check and stop later, on the
+/// parton distributions this hermetic run cannot read.
+#[test]
+fn cli_generate_refuses_a_proton_artifact_at_a_stale_collider_energy() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let proc_card = cwd.path().join("proc_card.dat");
+    std::fs::write(&proc_card, "import model sm\ngenerate e+ e- > mu+ mu-\n").unwrap();
+    let fixed_card = cwd.path().join("fixed_run_card.dat");
+    std::fs::write(&fixed_card, fixed_beams(45.6, 45.6)).unwrap();
+    let out = cwd.path().join("run");
+    let integrated = vibegraph(cwd.path(), home.path())
+        .arg("--no-network")
+        .arg("integrate")
+        .arg(&proc_card)
+        .arg("--run-card")
+        .arg(&fixed_card)
+        .arg("--out")
+        .arg(&out)
+        .args(["--fixed-budget", "--neval", "1000", "--niter", "2"])
+        .output()
+        .expect("spawn vibegraph");
+    assert!(
+        integrated.status.success(),
+        "integrate failed:\n{}",
+        stderr_of(&integrated)
+    );
+    let integrated = IntegrateArtifact::read_from_path(&out.join("grid.bin.zst")).unwrap();
+
+    let generate_at = |name: &str, beams: &str, sqrt_s_had: f64| {
+        let run_card = cwd.path().join(format!("{name}_run_card.dat"));
+        std::fs::write(&run_card, beams).unwrap();
+        let mut artifact = integrated.clone();
+        artifact.run_card = RunCard::parse(beams).unwrap();
+        artifact.pdf_set = DEFAULT_PDF_SET.to_string();
+        artifact.pdf_member = 0;
+        artifact.sqrt_s_had = sqrt_s_had;
+        let path = cwd.path().join(format!("{name}.bin.zst"));
+        artifact.write_to_path(&path, true).unwrap();
+        let output = vibegraph(cwd.path(), home.path())
+            .arg("--no-network")
+            .arg("generate")
+            .arg(&path)
+            .arg(&proc_card)
+            .arg("--run-card")
+            .arg(&run_card)
+            .args(["--nevents", "10", "-o"])
+            .arg(cwd.path().join("never.lhe"))
+            .output()
+            .expect("spawn vibegraph");
+        assert!(!output.status.success(), "{name}: generate must stop");
+        stderr_of(&output)
+    };
+    const UNEQUAL: &str = "  6500 = ebeam1\n  4000 = ebeam2\n";
+    const EQUAL: &str = "  6500 = ebeam1\n  6500 = ebeam2\n";
+    let refusal = "its grids were trained at a different collision energy";
+
+    let stale = generate_at("stale", UNEQUAL, 6500.0 + 4000.0);
+    assert!(
+        stale.contains(refusal)
+            && stale.contains("sqrt(s) = 10500 GeV")
+            && stale.contains("= 10198.03902718557 GeV"),
+        "{stale}"
+    );
+    for (name, beams, sqrt_s_had) in [
+        ("current", UNEQUAL, 2.0 * (6500.0_f64 * 4000.0).sqrt()),
+        ("equal", EQUAL, 6500.0 + 6500.0),
+    ] {
+        let stderr = generate_at(name, beams, sqrt_s_had);
+        assert!(
+            !stderr.contains(refusal) && stderr.contains(DEFAULT_PDF_SET),
+            "{name}: must pass the collider-energy check and stop on the PDF set:\n{stderr}"
+        );
+    }
 }

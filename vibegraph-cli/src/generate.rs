@@ -407,6 +407,30 @@ fn refuse_stale_artifact_on_clustering_scale(
     )))
 }
 
+/// The proton grids were trained at the collider energy the artifact recorded;
+/// the run card's beams, which [`card_mismatches`] has already matched, give it
+/// again as `2√(E₁E₂)`. An artifact that recorded `E₁ + E₂` at unequal beams was
+/// trained on the frames that collision energy implies and is refused rather than
+/// replayed under the current ones. At equal beams the two expressions agree to
+/// the bit, so such an artifact is accepted.
+fn refuse_stale_collider_energy(
+    artifact: &IntegrateArtifact,
+    beams: ProtonBeams,
+) -> Result<(), CliError> {
+    let sqrt_s = beams.sqrt_s();
+    if artifact.sqrt_s_had.to_bits() == sqrt_s.to_bits() {
+        return Ok(());
+    }
+    let [e1, e2] = beams.energies();
+    Err(err(format!(
+        "this artifact records a collider energy sqrt(s) = {} GeV, and the run card's proton \
+         beams of {e1} and {e2} GeV collide at sqrt(s) = 2*sqrt(ebeam1*ebeam2) = {sqrt_s} GeV; \
+         its grids were trained at a different collision energy. Re-integrate with the current \
+         build",
+        artifact.sqrt_s_had,
+    )))
+}
+
 /// An artifact written before sums over final-state multiplicities existed
 /// cannot hold one, so on a card of several multiplicities it was integrated for
 /// something else — refused by its version, which says why, rather than by the
@@ -801,6 +825,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     mismatches.extend(pdf_mismatches(&artifact, pdf_set, PDF_MEMBER));
     refuse_on_mismatch(&mismatches)?;
     refuse_stale_artifact_on_clustering_scale(&artifact, &rc)?;
+    if hadronic {
+        refuse_stale_collider_energy(&artifact, ProtonBeams::from_run_card(&rc))?;
+    }
 
     let evaluated = EvaluatedModel::from_model(model.clone());
     let launches = reweight_launches(args, &parsed, &model)?;
@@ -2169,6 +2196,33 @@ mod tests {
     }
 
     const BASE_CARD: &str = "  0 = lpp1\n  0 = lpp2\n  45.6 = ebeam1\n  45.6 = ebeam2\n";
+
+    /// A proton artifact that recorded `E₁ + E₂` at unequal beams is refused,
+    /// naming both energies; one that recorded `2√(E₁E₂)` is accepted, and so is
+    /// an equal-beam artifact that recorded `E₁ + E₂`, which is the same number.
+    #[test]
+    fn a_proton_artifact_at_a_stale_collider_energy_is_refused() {
+        let unequal = card("  6500 = ebeam1\n  4000 = ebeam2\n");
+        let mut banked = artifact("p p > e+ e-", unequal.clone());
+        let beams = ProtonBeams::from_run_card(&unequal);
+
+        banked.sqrt_s_had = 6500.0 + 4000.0;
+        let why = refuse_stale_collider_energy(&banked, beams)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains("sqrt(s) = 10500 GeV") && why.contains("= 10198.03902718557 GeV"),
+            "{why}"
+        );
+
+        banked.sqrt_s_had = beams.sqrt_s();
+        assert!(refuse_stale_collider_energy(&banked, beams).is_ok());
+
+        let equal = card("  6500 = ebeam1\n  6500 = ebeam2\n");
+        let mut before = artifact("p p > e+ e-", equal.clone());
+        before.sqrt_s_had = 6500.0 + 6500.0;
+        assert!(refuse_stale_collider_energy(&before, ProtonBeams::from_run_card(&equal)).is_ok());
+    }
 
     /// Stochastic rounding is refused on a sum over multiplicities and only there.
     #[test]
