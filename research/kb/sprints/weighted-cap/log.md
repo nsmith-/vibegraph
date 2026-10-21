@@ -11,3 +11,4 @@
 * **Filed:** `weighted-search-gluon-free-trial-missing` (the SMEFTsim gap, medium), `coupling-orders-fallback-differs-from-madgraph` (low), `diagram-count-test-helper-duplicated` (low); a dated note on `weighted-order-computed-three-ways` naming the fourth site. The item `auto-weighted-search-cap-uses-hierarchy` stays until the user decides whether it closes before the banking run.
 - 2026-10-21: M3 ran the V1 banking request. Diagram counts match (2, 6, 4, 17); the Trying lines differ from V1 on rows 2 and 3; the z row needs no import model. The tree is uncommitted on the M3. V2 dispatched to reconcile.
 - 2026-10-21: V2 checked (f30f94c): MG diagram_generation.py:2013-2014, 2104-2107 and 2115 confirmed; weighted_search 8 passed. Main merged (2030cde). Corrected banking text is V1-report §5.
+- 2026-10-21: M3 banked the four rows (67ee2c2); the Trying lines match §5. validate_madgraph_diagrams passes 61 locally. Item deleted; PR marked ready.
