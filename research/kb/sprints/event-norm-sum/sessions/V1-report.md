@@ -53,12 +53,30 @@ Run as `cargo test -p vibegraph-lib --lib event_norm_weights_match`.
 - The brief says the branch is at `9743133`; HEAD was `efe2ce1` (the assignment's
   expected value), which has `9743133` as an ancestor. No effect.
 
+## Mutations that keep XMAXUP and sigma and change the per-event weights
+
+Applied at the `xwgtup` line of `Buffer::emit` only (the XMAXUP in the `<init>` is
+computed separately and stays untouched), each reverted afterwards. Command:
+`cargo test -p vibegraph-lib --lib event_norm_weights_match`; logs
+`/tmp/claude-0/J-V1-muta.log`, `/tmp/claude-0/J-V1-mutb.log`.
+
+- (a) Flatten the tail to the bulk constant, MadGraph's behaviour: the generator
+  weight passed to `written_weight` is the part's mean weight instead of the
+  event's. The sum is preserved. FAILED:
+  `sum: tail ordering` (`emit.rs:1581`), since bulk and tail are then equal.
+- (b) Move weight between events keeping the sum: event 0 times 1.1, event 1 times
+  0.9. FAILED: `sum event 0: XWGTUP 4.615864e-4 vs MadEvent's 4.19624e-4`
+  (`emit.rs:1554`, the per-event loop).
+
+Neither survived, so the test needed no tightening.
+
+## Gate for this follow-up
+
+fmt, clippy, kb lint and `cargo test -p vibegraph-lib --lib` (see the reply).
+
 ## Found
 
-- The `.agents`/CI path cannot tell which of the per-event or XMAXUP assertions
-  fires first in a mutation; both mutations stop at the XMAXUP assertion, so the
-  per-event loop itself has no recorded failing mutation. A mutation that keeps
-  XMAXUP but moves weight between events would be needed to exercise it
-  (`Buffer` has none today to mutate to).
-- `cargo test --workspace` on this host takes about 20 minutes with sibling builds
-  running; no defect, only a planning note.
+- Closed: the per-event loop and tail assertions had no recorded failing mutation;
+  (a) and (b) above are it.
+- `cargo test --workspace` takes about 20 minutes on this host with sibling builds
+  running (planning note, not a defect).

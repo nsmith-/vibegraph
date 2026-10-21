@@ -12,3 +12,4 @@
 
 * [F1 report: event_norm = sum and unity in the written events](F1-report.md) - generate honours event_norm: sum writes IDWTUP -3 and weights summing to sigma, unity writes IDWTUP -3 and weights of one, average is unchanged; pinned to MadGraph's source and to five banked MadEvent init blocks written under sum.
 * [HY1 report: hygiene review of the event_norm weights](HY1-report.md) - Review of F1's event_norm change: one weight rule and one refusal predicate, stale IDWTUP docs, a multi-part sum test, shared CLI integrations; F1's include=False finding does not reproduce.
+* [V1 report: event_norm weights pinned per event against MadEvent](V1-report.md) - A hermetic test reads the banked MadEvent sum and average samples event by event against Buffer's weight rule; MadGraph's crash under event_norm = unity is recorded as an observed result.
