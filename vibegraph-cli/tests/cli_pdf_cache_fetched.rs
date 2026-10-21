@@ -15,9 +15,12 @@
 //!     cargo test -p vibegraph --features extended-validation \
 //!         --test cli_pdf_cache_fetched
 
+mod common;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::integrate_from_bare_cwd;
 
 use vibegraph::cache::pinned::{ensure_pdf_set_pinned, DEFAULT_PDF_SET};
 use vibegraph::cache::store::FixedFetch;
@@ -25,10 +28,6 @@ use vibegraph::ufo::identity::digest_bytes;
 
 /// A set name no build pins, so resolving it can never reach for a URL.
 const LOCAL_SET: &str = "VibegraphTestSet";
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
 
 fn dev_pdf_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")
@@ -71,31 +70,6 @@ fn local_set_archive() -> Vec<u8> {
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     encoder.write_all(&tar_bytes).unwrap();
     encoder.finish().unwrap()
-}
-
-/// Run `integrate` from an empty working directory, with the cache root
-/// redirected, downloads refused, and every other PDF resolution route removed.
-fn integrate_from_bare_cwd(
-    cwd: &Path,
-    cache_root: &Path,
-    out: &Path,
-    extra: &[&str],
-) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_vibegraph"))
-        .current_dir(cwd)
-        .arg("integrate")
-        .arg(validation_dir().join("dy13_proc_card.dat"))
-        .arg("--run-card")
-        .arg(validation_dir().join("dy13_default_run_card.dat"))
-        .arg("--out")
-        .arg(out)
-        .args(["--neval", "2000", "--niter", "2"])
-        .args(extra)
-        .env("VIBEGRAPH_HOME", cache_root)
-        .env("VIBEGRAPH_NO_NETWORK", "1")
-        .env_remove("VIBEGRAPH_PDF_DIR")
-        .output()
-        .expect("spawn vibegraph")
 }
 
 /// The acceptance case: with no dev checkout reachable and no `--pdf-dir`, a set

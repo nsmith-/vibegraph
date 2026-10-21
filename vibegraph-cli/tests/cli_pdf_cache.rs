@@ -14,40 +14,15 @@
 //! also makes them need no data, so they run on a bare clone; the half that
 //! needs a real fetched set is `cli_pdf_cache_fetched.rs`.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::Path;
 use std::process::Command;
+
+use common::{integrate_from_bare_cwd, validation_dir};
 
 use vibegraph::cache::pinned::DEFAULT_PDF_SET;
 use vibegraph::ufo::identity::digest_bytes;
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
-
-/// Run `integrate` from an empty working directory, with the cache root
-/// redirected, downloads refused, and every other PDF resolution route removed.
-fn integrate_from_bare_cwd(
-    cwd: &Path,
-    cache_root: &Path,
-    out: &Path,
-    extra: &[&str],
-) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_vibegraph"))
-        .current_dir(cwd)
-        .arg("integrate")
-        .arg(validation_dir().join("dy13_proc_card.dat"))
-        .arg("--run-card")
-        .arg(validation_dir().join("dy13_default_run_card.dat"))
-        .arg("--out")
-        .arg(out)
-        .args(["--neval", "2000", "--niter", "2"])
-        .args(extra)
-        .env("VIBEGRAPH_HOME", cache_root)
-        .env("VIBEGRAPH_NO_NETWORK", "1")
-        .env_remove("VIBEGRAPH_PDF_DIR")
-        .output()
-        .expect("spawn vibegraph")
-}
 
 /// The default set, absent from the cache, with downloads refused: the refusal
 /// must name the exact URL, size, and checksum a fetch would use — the material

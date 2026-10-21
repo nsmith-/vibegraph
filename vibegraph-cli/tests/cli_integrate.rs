@@ -11,8 +11,12 @@
 //!     pixi run -e madgraph generate-hadronic-sigma
 //!     cargo test -p vibegraph --features extended-validation --test cli_integrate
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use common::validation_dir;
 
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -28,10 +32,6 @@ use vibegraph::ufo::sm::{sm_model, SMRestrict};
 use vibegraph::ufo::EvaluatedModel;
 
 const PDF_SET: &str = "NNPDF23_lo_as_0130_qed";
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
 
 fn pdf_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/pdf")

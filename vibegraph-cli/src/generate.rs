@@ -779,6 +779,9 @@ pub(crate) fn run(args: &GenerateArgs, network: NetworkPolicy) -> Result<(), Cli
     let (model, model_id) = config
         .load_ufo_with_identity(&parsed.model)
         .map_err(|e| err(format!("failed to load model: {e}")))?;
+    // The run card is checked before the artifact is opened, as `integrate` checks
+    // it before enumerating: a card the generator must refuse is the first error
+    // whatever is wrong with the artifact.
     let rc = load_run_card(&config, &parsed)?;
     let artifact = IntegrateArtifact::read_from_path(&args.artifact)
         .map_err(|e| err(format!("cannot read {}: {e}", args.artifact.display())))?;

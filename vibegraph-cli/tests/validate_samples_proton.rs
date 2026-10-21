@@ -45,9 +45,13 @@
 //! per-mille of the cross section is pooled into the χ²'s residual category rather
 //! than compared on its own.
 
+mod common;
+
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use common::validation_dir;
 
 use flate2::read::MultiGzDecoder;
 use vibegraph::lhef::observables::Labelling;
@@ -149,10 +153,6 @@ type Scan = (
     &'static str,
     fn(&Row, &EventSample) -> (usize, usize),
 );
-
-fn validation_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../validation/madgraph")
-}
 
 /// Every leg's `ICOLUP` slots are the ones its own colour rep allows.
 ///
