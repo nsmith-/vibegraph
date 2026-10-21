@@ -761,9 +761,15 @@ fn lower_node(
     // bilinear, mirroring the runtime `resolve_bra_ket`: `reversed` is set when the
     // operands arrive in (ket, bra) order.
     let bra_ket = |a: NodeId, b: NodeId| -> (NodeId, NodeId, bool) {
-        match an.out_type(a) {
-            NodeType::FermionOut => (a, b, false),
-            _ => (b, a, true),
+        match (an.out_type(a), an.out_type(b)) {
+            (NodeType::FermionOut, NodeType::FermionIn) => (a, b, false),
+            (NodeType::FermionIn, NodeType::FermionOut) => (b, a, true),
+            other => panic!(
+                "internal invariant: a fermion bilinear needs one bra and one ket operand, \
+                 got {other:?}; diagram generation refuses Majorana fermions and \
+                 fermion-number-violating vertices (`Diagram::check_fermion_flow`), so \
+                 every fermion line has a ket at one end and a bra at the other"
+            ),
         }
     };
     let opref = |id: NodeId| -> OperandRef {
