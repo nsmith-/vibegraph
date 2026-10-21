@@ -242,8 +242,11 @@ impl std::hash::Hash for CanonicalDiagram {
     }
 }
 
-/// Errors from translating a feyngraph view into an owned [`Diagram`]. This is pure
-/// translation (no rooting), so these are distinct from `helas::eval`'s rooting errors.
+/// Errors from translating a feyngraph view into an owned [`Diagram`], and the diagram
+/// shapes the evaluator refuses ([`MajoranaFermion`](Self::MajoranaFermion),
+/// [`FermionNumberViolation`](Self::FermionNumberViolation),
+/// [`CustomPropagator`](Self::CustomPropagator)). None involves rooting, so these are
+/// distinct from `helas::eval`'s rooting errors.
 #[derive(Clone, Debug, Error)]
 pub enum ConvertError {
     /// A leg or propagator particle name is absent from the UFO model.
@@ -272,6 +275,34 @@ pub enum ConvertError {
     CustomPropagator {
         particle: String,
         propagator: String,
+    },
+    /// A self-conjugate (Majorana) fermion is on a line of the diagram. Its charge
+    /// fixes no direction for the line, which needs charge-conjugated wavefunctions
+    /// and propagators to evaluate.
+    #[error(
+        "particle '{particle}' is a Majorana fermion (its own antiparticle) and is \
+         {role} here; Majorana fermion flow needs charge conjugation, which this \
+         evaluator does not implement"
+    )]
+    MajoranaFermion {
+        particle: String,
+        /// `"an external leg"` or `"an internal propagator"`.
+        role: &'static str,
+    },
+    /// A vertex pairs two particles, or two antiparticles, on one fermion line (its
+    /// particles read all-incoming): it changes fermion number by two, and the line
+    /// through it has no consistent fermion-number arrow.
+    #[error(
+        "vertex '{vertex}' joins '{first}' and '{second}' on one fermion line as two \
+         incoming {kind}; a fermion-number-violating vertex needs charge conjugation, \
+         which this evaluator does not implement"
+    )]
+    FermionNumberViolation {
+        vertex: String,
+        first: String,
+        second: String,
+        /// `"particles"` or `"antiparticles"`.
+        kind: &'static str,
     },
 }
 
@@ -513,6 +544,69 @@ impl Diagram {
             });
         }
         lines
+    }
+
+    /// Refuse a diagram whose fermion lines have no fermion-number arrow.
+    ///
+    /// Two things leave a line without one: a Majorana fermion on it (its PDG code is
+    /// positive whichever way the line runs), and a vertex whose fermion pairing joins two
+    /// particles or two antiparticles (the arrow reverses there). Without either, fermion
+    /// number flows through every vertex of every line, so its two end legs are one
+    /// particle and one antiparticle.
+    ///
+    /// Particle and antiparticle are meant all-incoming throughout, by PDG sign: an
+    /// interaction's slots, [`Leg::charge`] and the debug assertion below all read a
+    /// final-state fermion as its crossed antiparticle. The evaluator flips such a leg
+    /// back (`helas::eval::root_diagram::external_leg` types a final-state leg of a line
+    /// to the initial state by its physical particle), so one particle end and one
+    /// antiparticle end here is what gives it the one ket and one bra every bilinear needs.
+    pub(crate) fn check_fermion_flow(&self, model: &UFOModel) -> Result<(), ConvertError> {
+        let majorana = |pid: ParticleId| {
+            let p = model.particle(pid);
+            (p.spin.abs() == 2 && p.is_self_conjugate).then(|| p.name.clone())
+        };
+        let legs = self.legs.iter().map(|l| (l.particle, "an external leg"));
+        let props = self
+            .props
+            .iter()
+            .map(|p| (p.particle, "an internal propagator"));
+        for (pid, role) in legs.chain(props) {
+            if let Some(particle) = majorana(pid) {
+                return Err(ConvertError::MajoranaFermion { particle, role });
+            }
+        }
+        for vertex in &self.vertices {
+            let def = model.vertex_def(vertex.interaction);
+            let group =
+                crate::ufo::topo::flow_groups(def, &model.lorentz).swap_remove(vertex.flow_group);
+            for (a, &pa) in def.particles.iter().enumerate() {
+                let b = group.partner(a);
+                if b <= a || model.particle(pa).spin.abs() != 2 {
+                    continue;
+                }
+                let (first, second) = (model.particle(pa), model.particle(def.particles[b]));
+                if (first.pdg_code > 0) == (second.pdg_code > 0) {
+                    return Err(ConvertError::FermionNumberViolation {
+                        vertex: def.name.clone(),
+                        first: first.name.clone(),
+                        second: second.name.clone(),
+                        kind: if first.pdg_code > 0 {
+                            "particles"
+                        } else {
+                            "antiparticles"
+                        },
+                    });
+                }
+            }
+        }
+        debug_assert!(
+            self.fermion_lines(model)
+                .iter()
+                .all(|line| self.leg(line.legs[0]).charge != self.leg(line.legs[1]).charge),
+            "a diagram with no Majorana fermion and no fermion-number-violating vertex has \
+             a fermion line whose two ends are both particles or both antiparticles"
+        );
+        Ok(())
     }
 
     /// The relative fermion sign that the external-leg permutation parity leaves out,

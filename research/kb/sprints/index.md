@@ -20,6 +20,7 @@
 * [eval-perf-2](eval-perf-2/index.md)
 * [eval-performance-program](eval-performance-program/index.md)
 * [event-output-lhef](event-output-lhef/index.md)
+* [fnv-refusal](fnv-refusal/index.md)
 * [hadronic-xsec](hadronic-xsec/index.md)
 * [hygiene](hygiene/index.md)
 * [kt-spine](kt-spine/index.md)

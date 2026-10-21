@@ -234,7 +234,7 @@ Other refusals:
   [PDF set not taken from the run card](../backlog/feature/pdf-set-not-taken-from-run-card.md).
 - Bugs and panics: [WEIGHTED search cap](../backlog/feature/auto-weighted-search-cap-uses-hierarchy.md),
   [UFO `if configuration` branches](../backlog/feature/ufo-parameters-conditional-branches-panic.md),
-  [fermion-number violation panics](../backlog/feature/fermion-number-violation-panics-instead-of-refusing.md),
+  [fermion-number violation panics](../sprints/fnv-refusal/sprint.md) (closed: now refused),
   [default particle names and `--modelname`](../backlog/feature/madgraph-default-particle-names-missing.md).
 - Triage: [card 048's one-point σ](../backlog/validation/vector-triplet-chain-one-nonzero-point.md),
   [near-degenerate CKM flavour groups](../backlog/validation/ckm-flavour-groups-near-degenerate-refused.md),

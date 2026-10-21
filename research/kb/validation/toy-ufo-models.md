@@ -1,7 +1,7 @@
 ---
 type: Design
 title: The toy UFO models as validation instruments
-description: "vibegraph_toy_UFO and vibegraph_toy_color_UFO put one Lorentz or colour structure in one vertex, so conventions no SM or SMEFT process isolates are gated against MadGraph."
+description: "vibegraph_toy_UFO and vibegraph_toy_color_UFO put one Lorentz or colour structure in one vertex, so conventions no SM or SMEFT process isolates are gated against MadGraph; vibegraph_toy_majorana_UFO and vibegraph_toy_fnv_UFO are refusal fixtures for the fermion flow the evaluator does not implement."
 status: draft
 tags: [validation, ufo, toy-model, colour, lorentz]
 generated: {by: claude-code/claude-opus-5-5, at: 2026-10-09}
@@ -17,8 +17,11 @@ sources:
   - {id: diagram-rs, resource: "https://github.com/nsmith-/vibegraph/blob/787070e46f8b4d247ad020079ba9fcf9a5b37cd8/vibegraph-lib/src/diagrams/diagram.rs#L570", title: "Diagram::fermion_line_sign"}
 ---
 
-Two small UFO models live under `validation/ufo/` (MIT, written here):
-`vibegraph_toy_UFO` and `vibegraph_toy_color_UFO`. Neither is physics anyone
+Four small UFO models live under `validation/ufo/` (MIT, written here):
+`vibegraph_toy_UFO` and `vibegraph_toy_color_UFO`, the MadGraph-gated
+instruments this page is mostly about, and the two refusal fixtures
+`vibegraph_toy_majorana_UFO` and `vibegraph_toy_fnv_UFO` ([below](#the-refusal-fixtures)).
+None is physics anyone
 would simulate. Each vertex holds one structure that no model in reach isolates,
 with couplings chosen so the structure is visible in `|M|²`, and every row is
 gated against MadGraph at every level. MadGraph imports any UFO directory, so
@@ -123,6 +126,28 @@ that only looks right because two errors cancel there. Pair it with a real
 process carrying the same structure before believing a convention it fixes. This
 is the general point of
 [oracle blind spots](oracle-blind-spots-and-non-vacuity.md).
+
+## The refusal fixtures
+
+`vibegraph_toy_majorana_UFO` and `vibegraph_toy_fnv_UFO` are gated by no
+MadGraph row. Each puts one fermion flow the evaluator cannot build in a
+model beside a Dirac process that it can, so a test shows the refusal is
+per process rather than per model. Neither has restrict cards: every parameter
+runs at its default. Both are used only by
+`vibegraph-cli/tests/cli_fermion_flow.rs`, which runs `vibegraph integrate
+--ufo-dir` on them and asserts which refusal
+(`ConvertError::MajoranaFermion` or `ConvertError::FermionNumberViolation`,
+from `Diagram::check_fermion_flow`) fires.
+
+| model | fields | what it holds | processes |
+|---|---|---|---|
+| `vibegraph_toy_majorana_UFO` | Dirac lepton `lt`, Majorana fermion `nt` (`name == antiname`), neutral vector `vt`, charged scalar `sc` (4 fields, 4 vertices) | `V_ltltvt` and `V_ntntvt` (`FFV1`) and the pair `V_ltntsc`/`V_ntltsc` (`FFS1`) that puts `nt` on a line with `lt` | `lt~ lt > nt nt`: `nt` on external legs, refused; `lt~ lt > sc sc~`: `nt` as a t-channel propagator only, refused; `lt~ lt > lt~ lt`: integrates |
+| `vibegraph_toy_fnv_UFO` | Dirac fermions `at` and `bt`, neutral vector `vt`, diquark-like scalar `dq` (4 fields, 4 vertices) | `V_atbtdq` = [`at`, `bt`, `dq~`] and its conjugate `V_atbtdqc`: two particles (or two antiparticles) on one fermion line, with no `C` in the `FFS1` structure | `at bt > at bt`: reaches the diquark vertex, refused; `at~ at > at~ at`: integrates |
+
+The Majorana `lt~ lt > sc sc~` refusal is stricter than the evaluator needs:
+the line has a particle end and an antiparticle end, so a Dirac evaluation
+could be right, but nothing validates it (see
+[Majorana fermions](../backlog/feature/majorana-fermions-unsupported.md)).
 
 ## Blind spots of the colour oracles
 
