@@ -5,3 +5,7 @@
 ## Session Brief
 
 * [F1: proton runs with unequal beam energies](F1.md) - √s = 2√(E1E2); beam energies plumbed through ProtonIntegrand; build_frames at x_i·E_i with MadGraph's cm_rap; a unit test at unequal energies; equal beams bit-identical; docs fixed.
+
+## Session Report
+
+* [F1 report: proton runs with unequal beam energies](F1-report.md) - ProtonIntegrand takes both beam energies; √s = 2√(E1E2); build_frames puts partons at x_i·E_i and boosts by MadGraph's cm_rap; equal beams are bit-identical by construction and pinned; three new tests, six mutations caught.
